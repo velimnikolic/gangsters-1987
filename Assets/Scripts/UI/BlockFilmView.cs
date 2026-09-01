@@ -18,10 +18,9 @@ namespace LivingCity.UI
     /// because the sheet is destroyed and rebuilt whole and a drag through it would
     /// delete the picture mid-drag.
     ///
-    /// The cut is what makes it a block and not a view of a city: the frame is drawn only
-    /// inside the block's own silhouette - its plot and kerb pushed up to the rooflines,
-    /// projected through the same lens - so the plate carries one block standing on the
-    /// dark, and nothing of the streets around it.
+    /// The full frame is what makes the grade read as one element: the block stands on an
+    /// empty stage, so the camera's brown and its vignette can run across the whole plate
+    /// without admitting any of the streets around it.
     ///
     /// The marks are what the design colours a building by ownership FOR: the render is
     /// the street's own paint, so whose door it is is said with a mark over the door
@@ -62,12 +61,6 @@ namespace LivingCity.UI
 
         float yaw = -35f;
 
-        /// <summary>The block's silhouette in the picture's own 0..1 coordinates, and the
-        /// one it was last drawn at. Rebuilt as the block turns and only then.</summary>
-        readonly List<Vector2> hull = new List<Vector2>();
-        readonly List<Vector2> drawn = new List<Vector2>();
-        readonly List<Vector2> scratch = new List<Vector2>();
-
         /// <summary>Answered when the pointer moves onto a premise or off every one.
         /// The sheet writes a caption under it; it does not repaint.</summary>
         public System.Action<int> Hovered;
@@ -79,18 +72,16 @@ namespace LivingCity.UI
         /// repaint a pick causes.</summary>
         public System.Action<float> Turned;
 
-        /// <summary>Raised when a turn has finished and the sheet may repaint.</summary>
+        /// <summary>Raised when a turn has finished. The persistent plate normally needs
+        /// no sheet repaint, but callers may still use this as an interaction boundary.</summary>
         public System.Action Settled;
 
         /// <summary>Where the block is standing, in degrees round it.</summary>
         public float Yaw => yaw;
 
-        /// <summary>True from the moment the reader takes hold of the block until they
-        /// let go of it. The sheet is destroyed and rebuilt whole on every repaint, and
-        /// the city keeps repainting it - a man walks onto a block and the territory's
-        /// observation ticks over - so a turn that is not fenced off is a turn cut short
-        /// a second in. The book reads this and holds its repaint until the turn ends.
-        /// </summary>
+        /// <summary>True from the moment the reader takes hold of the block until they let
+        /// go of it. The book may still defer its surrounding paper refresh while the
+        /// pointer is actively turning the persistent plate.</summary>
         public bool Turning { get; private set; }
 
         public void Watch(BlockFilm crew, List<Door> read, float readYaw)
@@ -103,14 +94,12 @@ namespace LivingCity.UI
             yaw = readYaw;
             hovered = -1;
             BuildMarks();
-            Cut();
         }
 
         public void Turn(float newYaw)
         {
             yaw = Mathf.Repeat(newYaw, 360f);
             Turned?.Invoke(yaw);
-            Cut();
         }
 
         // -------------------------------------------------------------------- marks
@@ -174,119 +163,6 @@ namespace LivingCity.UI
             }
         }
 
-        // ---------------------------------------------------------------------- the cut
-
-        static readonly System.Comparison<Vector2> LeftToRight =
-            (a, b) => a.x == b.x ? a.y.CompareTo(b.y) : a.x.CompareTo(b.x);
-
-        /// <summary>
-        /// The block's silhouette in the picture: the eight corners of the film's volume,
-        /// projected through the film's own lens and wrapped in a convex hull. Worked out
-        /// every frame because the lens may have moved, but the mesh is rebuilt only when
-        /// the shape actually changed - a block standing still costs nothing.
-        /// </summary>
-        void Cut()
-        {
-            if (film == null)
-                return;
-            var box = film.Volume;
-            scratch.Clear();
-            if (box.size.sqrMagnitude > 0.001f)
-            {
-                var min = box.min;
-                var max = box.max;
-                for (var i = 0; i < 8; i++)
-                {
-                    var corner = new Vector3(
-                        (i & 1) == 0 ? min.x : max.x,
-                        (i & 2) == 0 ? min.y : max.y,
-                        (i & 4) == 0 ? min.z : max.z);
-                    // A corner behind the lens leaves no honest shape: show the whole
-                    // frame rather than a wrong silhouette.
-                    if (!film.TryPlace(corner, out var point))
-                    {
-                        scratch.Clear();
-                        break;
-                    }
-                    scratch.Add(new Vector2(
-                        Mathf.Clamp01(point.x), Mathf.Clamp01(point.y)));
-                }
-            }
-
-            Wrap(scratch, hull);
-            if (Same(hull, drawn))
-                return;
-            drawn.Clear();
-            drawn.AddRange(hull);
-            SetVerticesDirty();
-        }
-
-        /// <summary>The frame is drawn only inside the silhouette. Outside it the plate's
-        /// own dark stands, which is what makes the picture a block on a table rather
-        /// than a window onto the city.</summary>
-        protected override void OnPopulateMesh(VertexHelper vh)
-        {
-            if (drawn.Count < 3)
-            {
-                base.OnPopulateMesh(vh);
-                return;
-            }
-
-            vh.Clear();
-            var rect = rectTransform.rect;
-            var uv = uvRect;
-            for (var i = 0; i < drawn.Count; i++)
-            {
-                var point = drawn[i];
-                vh.AddVert(
-                    new Vector3(rect.xMin + point.x * rect.width,
-                                rect.yMin + point.y * rect.height),
-                    color,
-                    new Vector2(uv.x + point.x * uv.width, uv.y + point.y * uv.height));
-            }
-            for (var i = 2; i < drawn.Count; i++)
-                vh.AddTriangle(0, i - 1, i);
-        }
-
-        /// <summary>Andrew's monotone chain over at most eight points.</summary>
-        static void Wrap(List<Vector2> points, List<Vector2> into)
-        {
-            into.Clear();
-            if (points.Count < 3)
-                return;
-            points.Sort(LeftToRight);
-
-            for (var pass = 0; pass < 2; pass++)
-            {
-                var start = into.Count;
-                for (var i = 0; i < points.Count; i++)
-                {
-                    var point = pass == 0 ? points[i] : points[points.Count - 1 - i];
-                    while (into.Count - start >= 2 &&
-                           Turns(into[into.Count - 2], into[into.Count - 1], point) <= 0f)
-                        into.RemoveAt(into.Count - 1);
-                    into.Add(point);
-                }
-                // The chain's last point is the other chain's first.
-                into.RemoveAt(into.Count - 1);
-            }
-            if (into.Count < 3)
-                into.Clear();
-        }
-
-        static float Turns(Vector2 a, Vector2 b, Vector2 c)
-            => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-
-        static bool Same(List<Vector2> a, List<Vector2> b)
-        {
-            if (a.Count != b.Count)
-                return false;
-            for (var i = 0; i < a.Count; i++)
-                if ((a[i] - b[i]).sqrMagnitude > 0.000004f)
-                    return false;
-            return true;
-        }
-
         // ------------------------------------------------------------------ pointer
 
         public void OnPointerEnter(PointerEventData eventData) => pointerInside = true;
@@ -306,10 +182,8 @@ namespace LivingCity.UI
             Turning = true;
         }
 
-        /// <summary>The turn is over. The sheet cuts its plate to the block's shape at
-        /// the angle it is standing at, so it wants to know when that angle has settled -
-        /// during the turn it must not, because repainting destroys the very model the
-        /// pointer is holding on to.</summary>
+        /// <summary>The turn is over. The rendered frame already carries the final angle;
+        /// this only closes the interaction boundary.</summary>
         public void OnEndDrag(PointerEventData eventData)
         {
             Turning = false;
@@ -350,7 +224,6 @@ namespace LivingCity.UI
         void LateUpdate()
         {
             PlaceMarks();
-            Cut();
             var mouse = Mouse.current;
             // A drag that ends anywhere the event system does not see - the pointer off
             // the window, a modal taking the press - would otherwise leave the hold on

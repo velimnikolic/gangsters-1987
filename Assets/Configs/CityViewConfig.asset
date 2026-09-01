@@ -19,7 +19,7 @@ MonoBehaviour:
   cutawayEnterDistance: 55
   cutawayExitDistance: 68
   cutawayProxyHeight: 0.95
-  cutawayGradientAmount: 1.6
+  cutawayGradientAmount: 1.37
   cutawayRestoreDelay: 0.55
   cutawayCrewSamples: 6
   cutawayKeepShadows: 1

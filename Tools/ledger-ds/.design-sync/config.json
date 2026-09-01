@@ -1,0 +1,24 @@
+{
+  "projectId": "afa11da0-a1b0-4df1-bf71-298dae144b68",
+  "shape": "package",
+  "pkg": "@gangsters/ledger-1987",
+  "globalName": "Ledger1987",
+  "buildCmd": "npm run build",
+  "cssEntry": "dist/ledger.css",
+  "docsDir": ".design-sync/docs",
+  "readmeHeader": ".design-sync/conventions.md",
+  "overrides": {
+    "LeaderRow": { "cardMode": "column" },
+    "StatusChip": { "cardMode": "column" },
+    "Meter": { "cardMode": "column" },
+    "PageHead": { "cardMode": "column" },
+    "PaperSheet": { "cardMode": "column" },
+    "Plate": { "cardMode": "column" },
+    "Polaroid": { "cardMode": "column" },
+    "SectionHead": { "cardMode": "column" },
+    "Stars": { "cardMode": "column" },
+    "TelexSlip": { "cardMode": "column" },
+    "Text": { "cardMode": "column" },
+    "Desk": { "cardMode": "single", "primaryStory": "TheFileOnTheDesk" }
+  }
+}

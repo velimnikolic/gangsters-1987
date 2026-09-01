@@ -97,6 +97,8 @@ namespace LivingCity.UI
         public static readonly Color Portrait = Rgb(0xcec2b7);
         public static readonly Color DarkPlate = Rgb(0x39312c);
         public static readonly Color DarkPlateInk = Rgb(0x9c8f87);
+        /// <summary>The warm empty stage behind the filmed block and the Boss card.</summary>
+        public static readonly Color FilmPlate = Rgb(0x261810);
 
         /// <summary>The till roll, and the hand that signs the books.</summary>
         public static readonly Color Tape = Rgb(0xf8f5ef);

@@ -4,8 +4,8 @@ using UnityEngine;
 namespace RoadDemo
 {
     /// <summary>
-    /// The take made visible: from the first door that pays until the front's counter,
-    /// the man walking the collection round carries the pack's duffel in his free hand.
+    /// The collection job made visible: from departure until the front's counter, the
+    /// hood walking the round carries the pack's duffel in his free hand.
     /// Nothing here is money - the round's arithmetic lives in TerritoryRuntime - this
     /// only dresses the man the arithmetic says is carrying it.
     ///
@@ -19,7 +19,12 @@ namespace RoadDemo
     public sealed class BagCarry : MonoBehaviour
     {
         const string BagPath =
-            "Assets/Synty/PolygonGangWarfare/Prefabs/Props/SM_Prop_Bag_01.prefab";
+            "Assets/Synty/PolygonPoliceStation/Prefabs/Props/SM_Prop_Duffle_Bag_01.prefab";
+
+        // The Gang Warfare SM_Prop_Bag_01 used here before is a 9 cm evidence pouch,
+        // not luggage; at street-camera distance it read as part of the fist. This
+        // duffel is authored at 1.7 m, so plant it at a believable carried size.
+        const float DuffleScale = 0.42f;
 
         /// <summary>Seconds a dropped bag lies on the street before it is struck.</summary>
         const float DroppedFor = 45f;
@@ -35,8 +40,8 @@ namespace RoadDemo
         static BagCarry instance;
         readonly List<Carry> carries = new List<Carry>();
 
-        /// <summary>This crew's round is carrying money now, in this man's hand. Safe to
-        /// call every stop - the bag simply changes hands when another man settles one.</summary>
+        /// <summary>This hood owns the crew's collection bag for the active round. Safe
+        /// to call again when a dead carrier must hand the job to a survivor.</summary>
         public static void Give(int crewId, CrewWalker man)
         {
             if (man == null || man.Dead || man.Tf == null)
@@ -66,6 +71,7 @@ namespace RoadDemo
                     return;
                 var bag = Object.Instantiate(prefab).transform;
                 bag.name = "The take";
+                bag.localScale = Vector3.one * DuffleScale;
                 foreach (var col in bag.GetComponentsInChildren<Collider>())
                     Destroy(col);
                 foreach (var body in bag.GetComponentsInChildren<Rigidbody>())
@@ -76,6 +82,7 @@ namespace RoadDemo
 
             carry.Man = man;
             carry.Hand = hand;
+            SetLayer(carry.Bag, man.Tf.gameObject.layer);
         }
 
         /// <summary>The round is over. Banked, the bag goes over the counter with the
@@ -95,6 +102,7 @@ namespace RoadDemo
                 return;
             }
 
+            carry.Bag.gameObject.SetActive(true);
             var rest = carry.Bag.position;
             rest.y = 0.02f;
             carry.Bag.SetPositionAndRotation(
@@ -110,6 +118,15 @@ namespace RoadDemo
             return null;
         }
 
+        static void SetLayer(Transform root, int layer)
+        {
+            if (root == null)
+                return;
+            root.gameObject.layer = layer;
+            for (var i = 0; i < root.childCount; i++)
+                SetLayer(root.GetChild(i), layer);
+        }
+
         void LateUpdate()
         {
             for (var i = carries.Count - 1; i >= 0; i--)
@@ -121,12 +138,19 @@ namespace RoadDemo
                     continue;
                 }
 
-                // The man gone mid-round - dead, or stepped inside a door - parks the
-                // bag where it is; the round system will say soon enough whether it
-                // banked or fell, and Drop settles the bag then.
+                // The bag goes through the door with its man. Leaving it parked at the
+                // last fist position made a paid stop look like a floating duffel on the
+                // pavement while the carrier was inside. Drop re-exposes it when a lost
+                // round actually means to leave it on the street.
                 if (carry.Man == null || carry.Man.Dead || carry.Man.Tf == null ||
                     !carry.Man.Tf.gameObject.activeInHierarchy || carry.Hand == null)
+                {
+                    carry.Bag.gameObject.SetActive(false);
                     continue;
+                }
+
+                if (!carry.Bag.gameObject.activeSelf)
+                    carry.Bag.gameObject.SetActive(true);
 
                 var fwd = carry.Man.Tf.forward;
                 fwd.y = 0f;
@@ -134,8 +158,9 @@ namespace RoadDemo
                     fwd = Vector3.forward;
                 // handle at the fist, weight under it, held upright whatever the arm does
                 carry.Bag.SetPositionAndRotation(
-                    carry.Hand.position - Vector3.up * 0.16f,
-                    Quaternion.LookRotation(fwd.normalized, Vector3.up));
+                    carry.Hand.position - Vector3.up * 0.22f,
+                    Quaternion.LookRotation(fwd.normalized, Vector3.up) *
+                    Quaternion.Euler(0f, -90f, 0f));
             }
         }
 

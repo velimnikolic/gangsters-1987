@@ -420,6 +420,35 @@ namespace RoadDemo
 
         public static void Release() => _holding = false;
 
+        /// <summary>Whether the streamed view covering this ground is fully attached and
+        /// ready to be photographed. Ground owned by no recycler is eager scene content
+        /// and is therefore ready already.</summary>
+        public static bool HeldReady(Rect worldRect)
+        {
+            var belongsToRecycler = false;
+            for (var i = 0; i < Instances.Count; i++)
+            {
+                var recycler = Instances[i];
+                if (recycler == null || recycler._model == null)
+                    continue;
+                var blocks = recycler._model.Blocks;
+                for (var b = 0; b < blocks.Count; b++)
+                {
+                    var recipe = blocks[b];
+                    if (recipe == null)
+                        continue;
+                    var world = recycler._frame.ToWorldRect(recipe.LocalBounds);
+                    if (!world.Overlaps(worldRect, allowInverse: true))
+                        continue;
+                    belongsToRecycler = true;
+                    if (recycler._resident.TryGetValue(recipe.Id, out var view) &&
+                        view != null && view.Active && view.Attached)
+                        return true;
+                }
+            }
+            return !belongsToRecycler;
+        }
+
         static bool Held(Rect world) =>
             _holding && world.Overlaps(_held, allowInverse: true);
 

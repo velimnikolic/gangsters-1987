@@ -14,9 +14,9 @@ Shader "LivingCity/Occlusion Gradient"
         _Cutoff("Source alpha cutoff", Range(0, 1)) = 0.01
         _FadeAmount("Occlusion amount", Range(0, 2)) = 0
         _GradientMode("Vertical gradient", Float) = 1
-        _OpaqueFloor("Opaque floor", Range(0, 0.45)) = 0.08
+        _GradientStartHeight("Gradient start height", Float) = 5
         _BoundsMinY("Bounds min Y", Float) = 0
-        _BoundsInvHeight("Bounds inverse height", Float) = 1
+        _BoundsHeight("Bounds height", Float) = 1
         _BoundsCenter("Bounds center", Vector) = (0, 0, 0, 1)
 
         // Read by the borrowed URP/Lit ShadowCaster pass. Keeping this opaque is
@@ -68,9 +68,9 @@ Shader "LivingCity/Occlusion Gradient"
                 half _Cutoff;
                 half _FadeAmount;
                 half _GradientMode;
-                half _OpaqueFloor;
+                float _GradientStartHeight;
                 float _BoundsMinY;
-                float _BoundsInvHeight;
+                float _BoundsHeight;
                 float4 _BoundsCenter;
             CBUFFER_END
 
@@ -118,12 +118,20 @@ Shader "LivingCity/Occlusion Gradient"
                 clip(albedo.a - _Cutoff);
                 half3 normalWS = NormalizeNormalPerPixel(input.normalWS);
 
-                half height01 = saturate((input.positionWS.y - _BoundsMinY) * _BoundsInvHeight);
-                half verticalAlpha = saturate((1.0h - height01) / max(0.001h, 1.0h - _OpaqueFloor));
+                // Keep the lower building fully opaque, then grade from the requested
+                // world-space height to the roof. This makes the base consistent across
+                // buildings with different total heights.
+                float fadeHeight = max(0.01, _BoundsHeight - _GradientStartHeight);
+                half height01 = saturate(
+                    (input.positionWS.y - (_BoundsMinY + _GradientStartHeight)) / fadeHeight);
+                half linearVerticalAlpha = 1.0h - height01;
+                // Ease the height profile: preserve more body near the 5 m start, but
+                // drive the upper storeys and roof toward zero faster than a linear fade.
+                half verticalAlpha = smoothstep(0.0h, 1.0h, linearVerticalAlpha);
                 half firstHundred = saturate(_FadeAmount);
                 half beyondHundred = max(0.0h, _FadeAmount - 1.0h);
 
-                // 0..100% establishes the requested base-to-roof gradient. 100..200%
+                // 0..100% establishes the requested start-to-roof gradient. 100..200%
                 // carries that same edge below the pavement until no shell remains.
                 half gradedAlpha = _FadeAmount <= 1.0h
                     ? lerp(1.0h, verticalAlpha, firstHundred)

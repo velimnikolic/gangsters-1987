@@ -1,0 +1,629 @@
+/* Component chrome for the 1987 ledger, ported from LedgerKit.cs (the paper
+   edition) and LedgerV2.cs (the terminal edition). Class prefix: lg-.
+   TMP sizes carry each face's measured optical figure (LedgerStyle.Font):
+   mono x0.831, condensed x0.864, serif x1.017, typewriter x1.082 - the px
+   values below are the Unity sizes with that factor already applied. */
+
+/* ================================================================= shared */
+
+.lg-root {
+  font-family: var(--lg-font-mono);
+  color: var(--lg-ink2);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The paper grain: fractal speckle + the 4-unit ruling, laid over stock. */
+.lg-grain::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.04) 0 1px, transparent 1px 4px),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='1987'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.10 0'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ================================================================== desk */
+
+.lg-desk {
+  position: relative;
+  background:
+    radial-gradient(ellipse 90% 60% at 50% 0%, var(--lg-lamp), transparent 70%),
+    linear-gradient(180deg, var(--lg-desk) 0%, var(--lg-desk-mid) 55%, var(--lg-desk-deep) 100%);
+  overflow: hidden;
+}
+.lg-desk::after {
+  /* the vignette: clear through the middle two-fifths, dark at the corners */
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle farthest-corner at 50% 50%,
+    transparent 40%, rgba(0, 0, 0, 0.55) 110%);
+}
+.lg-desk > * { position: relative; z-index: 1; }
+
+/* ============================================================ v2: panels */
+
+.lg-panel {
+  position: relative;
+  background: var(--lg-panel);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.42),
+    0 4px 12px rgba(0, 0, 0, 0.26);
+}
+.lg-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 30px;
+  padding: 0 16px;
+  background: var(--lg-head);
+}
+.lg-panel-head-label {
+  font-family: var(--lg-font-mono);
+  font-weight: 700;
+  font-size: 8.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--lg-head-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lg-panel-head-right {
+  font-family: var(--lg-font-mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lg-head-dim);
+  white-space: nowrap;
+}
+.lg-panel-body { padding: 14px 16px; }
+
+/* ============================================================= v2: heads */
+
+.lg-pagehead-title {
+  font-family: var(--lg-font-cond);
+  font-weight: 400;
+  font-size: 23px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--lg-ink2);
+  line-height: 1.25;
+}
+.lg-pagehead-sub {
+  font-family: var(--lg-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--lg-muted);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lg-pagehead-rule {
+  height: 3px;
+  background: var(--lg-ink2);
+  margin-top: 10px;
+}
+
+.lg-section {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.lg-section-title {
+  font-family: var(--lg-font-cond);
+  font-weight: 400;
+  font-size: 16.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lg-ink2);
+}
+.lg-section-aside {
+  font-family: var(--lg-font-mono);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--lg-muted);
+  white-space: nowrap;
+}
+.lg-section-rule {
+  height: 1px;
+  background: var(--lg-sheet-rule);
+  margin-top: 8px;
+}
+
+/* ============================================================== v2: type */
+
+.lg-text-label {
+  font-family: var(--lg-font-mono);
+  font-size: 8.7px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--lg-label);
+}
+.lg-text-figure {
+  font-family: var(--lg-font-mono);
+  font-weight: 700;
+  font-size: 10.4px;
+  color: var(--lg-ink2);
+  font-variant-numeric: tabular-nums;
+}
+.lg-text-name {
+  font-family: var(--lg-font-cond);
+  font-weight: 400;
+  font-size: 14.7px;
+  letter-spacing: 0.01em;
+  color: var(--lg-ink2);
+}
+.lg-text-copy {
+  font-family: var(--lg-font-serif);
+  font-size: 13.7px;
+  line-height: 1.45;
+  color: var(--lg-copy);
+}
+.lg-text-kicker {
+  font-family: var(--lg-font-cond);
+  font-weight: 400;
+  font-size: 8.6px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lg-ink-label);
+}
+
+/* ============================================================ v2: leader */
+
+.lg-leader {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.lg-leader-dots {
+  flex: 1;
+  height: 1px;
+  align-self: center;
+  margin-top: 3px;
+  background: repeating-linear-gradient(90deg,
+    var(--lg-dotted) 0 2px, transparent 2px 4px);
+}
+
+/* ============================================================== v2: keys */
+
+.lg-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 15px;
+  border: 0;
+  background: transparent;
+  font-family: var(--lg-font-mono);
+  font-weight: 700;
+  font-size: 8.7px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+}
+.lg-key--dark {
+  background: var(--lg-head);
+  color: var(--lg-head-cream);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.30);
+}
+.lg-key--red {
+  background: var(--lg-red);
+  color: var(--lg-head-cream);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.30);
+}
+.lg-key--outline {
+  border: 1px solid var(--lg-sheet-rule);
+  color: var(--lg-ink2);
+}
+.lg-key--ghost { color: var(--lg-red); }
+.lg-key--dark:hover, .lg-key--red:hover { filter: brightness(1.3); }
+.lg-key--outline:hover, .lg-key--ghost:hover { background: rgba(43, 36, 24, 0.06); }
+.lg-key:active { filter: brightness(0.72); }
+.lg-key:disabled { opacity: 0.4; pointer-events: none; }
+
+/* ========================================================= v2: segmented */
+
+.lg-segmented {
+  display: inline-flex;
+  border: 1px solid var(--lg-sheet-rule);
+}
+.lg-segmented > .lg-segment {
+  height: 26px;
+  padding: 0 13px;
+  border: 0;
+  background: transparent;
+  font-family: var(--lg-font-mono);
+  font-weight: 700;
+  font-size: 7.9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--lg-ink2);
+  cursor: pointer;
+}
+.lg-segmented > .lg-segment + .lg-segment {
+  border-left: 1px solid var(--lg-sheet-rule);
+}
+.lg-segmented > .lg-segment--active {
+  background: var(--lg-head);
+  color: var(--lg-head-cream);
+}
+.lg-segmented > .lg-segment:not(.lg-segment--active):hover {
+  background: rgba(43, 36, 24, 0.06);
+}
+
+/* ============================================================ v2: status */
+
+.lg-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 10px;
+  font-family: var(--lg-font-mono);
+  font-weight: 700;
+  font-size: 8.7px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lg-head-cream);
+}
+
+/* ============================================================= v2: meter */
+
+.lg-meter-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.lg-meter-trough {
+  height: 7px;
+  background: var(--lg-trough);
+  margin-top: 6px;
+}
+.lg-meter--dark .lg-meter-trough { background: var(--lg-rail-trough); }
+.lg-meter-fill { height: 100%; }
+.lg-meter-note {
+  font-family: var(--lg-font-mono);
+  font-size: 8.3px;
+  letter-spacing: 0.01em;
+  color: var(--lg-muted);
+  margin-top: 4px;
+}
+.lg-meter--dark .lg-meter-note { color: var(--lg-head-dim); }
+
+/* ============================================================== v2: pips */
+
+.lg-pips { display: inline-flex; gap: 2px; align-items: center; }
+.lg-pip { width: 9px; height: 9px; }
+
+/* ============================================================== v2: mark */
+
+.lg-mark { display: inline-block; width: 12px; height: 12px; vertical-align: middle; }
+.lg-mark--paper {
+  border: 2px solid currentColor;
+  background: repeating-linear-gradient(45deg,
+    currentColor 0 1.2px, transparent 1.2px 4px);
+}
+.lg-mark--street { background: currentColor; }
+
+/* ======================================================== paper: sheets */
+
+.lg-sheet {
+  position: relative;
+  box-shadow:
+    4px 16px 26px rgba(0, 0, 0, 0.21),
+    0 3px 4px rgba(0, 0, 0, 0.38);
+  border: 1px solid rgba(120, 95, 55, 0.25);
+  box-sizing: border-box;
+}
+.lg-sheet::after {
+  /* the lit top edge - a sheet is three-dimensional at its border only */
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+.lg-sheet-body { position: relative; padding: 18px 22px; }
+
+/* the aging pass: lamplight from the top right, one crease, three foxing blooms */
+.lg-aging { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.lg-aging-light {
+  position: absolute;
+  left: 20%; top: 0; right: 0; height: 85%;
+  background: radial-gradient(ellipse at center,
+    rgba(255, 251, 238, 0.30), transparent 70%);
+}
+.lg-aging-crease {
+  position: absolute;
+  left: 0; right: 0; top: 41%; height: 14px;
+  transform: translateY(-50%);
+  background: linear-gradient(180deg,
+    transparent 0%, rgba(60, 48, 30, 0.24) 46%,
+    rgba(255, 250, 236, 0.27) 54%, transparent 100%);
+}
+.lg-foxing {
+  position: absolute;
+  border-radius: 58% 42% 51% 49% / 45% 57% 43% 55%;
+  background: radial-gradient(circle,
+    rgba(150, 110, 58, 0.10) 0%, rgba(150, 110, 58, 0.07) 55%, transparent 78%);
+}
+
+/* the punched holes down an edge */
+.lg-punches {
+  position: absolute;
+  top: 0; bottom: 0; width: 10px;
+  background: radial-gradient(circle 5px at 50% 15px,
+    var(--lg-punch) 4.5px, transparent 5px);
+  background-size: 10px 30px;
+  background-repeat: repeat-y;
+  pointer-events: none;
+}
+
+/* the ring a coffee cup left */
+.lg-coffee {
+  position: absolute;
+  border: 9px solid var(--lg-coffee);
+  border-radius: 50%;
+  transform: rotate(-6deg);
+  pointer-events: none;
+}
+
+/* ruled paper: blue rules at a pitch, the red margin line */
+.lg-ruled {
+  background-image:
+    repeating-linear-gradient(180deg,
+      transparent 0 27px, var(--lg-rule-blue) 27px 28px),
+    linear-gradient(90deg,
+      transparent 0 36px, var(--lg-margin-red) 36px 37px, transparent 37px);
+}
+
+/* greenbar banding at the row pitch */
+.lg-greenbar-bands {
+  background-image: repeating-linear-gradient(180deg,
+    transparent 0 28px, var(--lg-greenbar-band) 28px 56px);
+}
+
+/* ========================================================== paper: telex */
+
+.lg-slip {
+  position: relative;
+  background: linear-gradient(180deg, var(--lg-slip), var(--lg-slip-low));
+  border-left: 3px solid rgba(143, 33, 25, 0.6);
+  box-shadow: 2px 5px 9px rgba(0, 0, 0, 0.18);
+}
+.lg-slip-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 6px 12px 0;
+}
+.lg-slip-source, .lg-slip-time {
+  font-family: var(--lg-font-cond);
+  font-size: 7.8px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lg-ink-label);
+}
+.lg-slip-body {
+  font-family: var(--lg-font-mono);
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--lg-ink-soft);
+  padding: 6px 12px 10px;
+}
+
+/* ========================================================== paper: stamp */
+
+.lg-stamp {
+  display: inline-block;
+  position: relative;
+  padding: 6px 14px;
+  border: 2.5px solid var(--lg-stamp-red);
+  box-shadow:
+    inset 1.5px 0 0 rgba(150, 40, 31, 0.47),   /* the edge that took more ink */
+    inset 0 0 0 99px transparent;
+  transform: rotate(-7.4deg);
+  font-family: var(--lg-font-cond);
+  font-weight: 400;
+  font-size: 17px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--lg-stamp-red);
+  line-height: 1.15;
+}
+.lg-stamp::before {
+  /* the inner rule of the double-ruled box */
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px solid var(--lg-stamp-red);
+  pointer-events: none;
+}
+
+/* ======================================================= paper: polaroid */
+
+.lg-polaroid {
+  display: inline-block;
+  position: relative;
+  background: var(--lg-polaroid-white);
+  padding: 7px 7px 22px;
+  box-shadow: 3px 6px 14px rgba(0, 0, 0, 0.34);
+}
+.lg-polaroid-photo {
+  position: relative;
+  background: var(--lg-polaroid-dark);
+  background-image: repeating-linear-gradient(45deg,
+    rgba(0, 0, 0, 0.18) 0 2.1px, transparent 2.1px 7.1px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.lg-polaroid-initials {
+  font-family: var(--lg-font-cond);
+  font-weight: 400;
+  color: var(--lg-ink-label);
+  letter-spacing: 0.04em;
+}
+.lg-polaroid-print {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  /* the warm cast a 1987 colour print has after a decade in a drawer */
+  filter: sepia(0.22) saturate(0.92);
+}
+.lg-polaroid-caption {
+  position: absolute;
+  left: 0; right: 0; bottom: 4px;
+  text-align: center;
+  font-family: var(--lg-font-cond);
+  font-size: 7.4px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lg-ink-label);
+}
+
+/* ========================================================== paper: plate */
+
+.lg-plate {
+  position: relative;
+  background:
+    /* the coarse screen at a 6-unit pitch, and the fine one offset half a cell */
+    radial-gradient(circle 1.5px at 3px 3px, rgba(0, 0, 0, 0.55) 1.4px, transparent 1.5px),
+    radial-gradient(circle 0.8px at 2px 2px, rgba(0, 0, 0, 0.30) 0.75px, transparent 0.85px),
+    linear-gradient(180deg, var(--lg-paper) 0%, var(--lg-paper-mid) 60%, var(--lg-paper-deep) 100%);
+  background-size: 6px 6px, 4px 4px, 100% 100%;
+  box-shadow: inset 0 0 18px rgba(50, 36, 18, 0.35);   /* the exposure's burnt edge */
+  border: 1px solid var(--lg-ink-faint);
+  overflow: hidden;
+}
+.lg-plate-print {
+  position: absolute;
+  inset: 1px;
+  width: calc(100% - 2px); height: calc(100% - 2px);
+  object-fit: cover;
+  filter: sepia(0.22) saturate(0.92);
+}
+.lg-plate-caption {
+  position: absolute;
+  left: 0; right: 0; bottom: 5px;
+  text-align: center;
+  font-family: var(--lg-font-cond);
+  font-size: 7.4px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lg-ink-label);
+}
+
+/* ========================================================== paper: sticky */
+
+.lg-sticky {
+  position: relative;
+  display: inline-block;
+  background: var(--lg-sticky);
+  transform: rotate(1.5deg);
+  box-shadow: 4px 5px 12px rgba(0, 0, 0, 0.30);
+  padding: 12px 14px;
+  font-family: var(--lg-font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--lg-ink-soft);
+}
+
+/* =========================================================== paper: stars */
+
+.lg-stars { display: inline-flex; gap: 2px; }
+.lg-stars svg { display: block; }
+
+/* ========================================================= paper: stepbar */
+
+.lg-stepbar { display: inline-flex; gap: 2px; align-items: center; }
+.lg-step { width: 5px; height: 11px; }
+
+/* ============================================================ paper: tape */
+
+.lg-tape {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 16px;
+  border: 0;
+  background: var(--lg-tape-black);
+  border-bottom: 2px solid rgba(0, 0, 0, 0.35);
+  font-family: var(--lg-font-cond);
+  font-weight: 400;
+  font-size: 10.4px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lg-tape-text);
+  cursor: pointer;
+  user-select: none;
+  filter: brightness(0.9);
+}
+.lg-tape--red { background: var(--lg-tape-red); }
+.lg-tape--outline {
+  background: transparent;
+  border: 1px solid var(--lg-tape-black);
+  border-bottom-width: 1px;
+  color: var(--lg-tape-black);
+  filter: none;
+}
+.lg-tape--outline.lg-tape--red { border-color: var(--lg-tape-red); color: var(--lg-tape-red); }
+.lg-tape:hover { filter: brightness(1); }
+.lg-tape:active { filter: brightness(0.62); }
+.lg-tape:disabled { opacity: 0.45; pointer-events: none; }
+
+/* ============================================================== highlight */
+
+.lg-highlight {
+  position: relative;
+  background: var(--lg-highlighter);
+  box-shadow: inset 3px 0 0 var(--lg-red-pen);
+}
+.lg-highlight--green {
+  background: var(--lg-highlighter-green);
+  box-shadow: inset 3px 0 0 var(--lg-green-ok);
+}
+
+/* ==================================================================== hud */
+
+.lg-hud-panel {
+  border-style: solid;
+  border-width: 6px;
+  border-image-slice: 2 fill;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+  color: var(--lg-hud-cream);
+  font-family: var(--lg-font-pixel);
+}
+.lg-hud-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-style: solid;
+  border-width: 6px;
+  border-image-slice: 2 fill;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+  background: transparent;
+  padding: 2px 10px;
+  font-family: var(--lg-font-pixel);
+  font-size: 8px;
+  color: var(--lg-hud-cream);
+  cursor: pointer;
+  user-select: none;
+}
+.lg-hud-button:disabled { color: var(--lg-hud-note); }

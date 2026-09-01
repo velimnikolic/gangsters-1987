@@ -94,11 +94,7 @@ namespace RoadDemo
                 !DamagedBusinesses.Add(id.Value))
                 return false;
 
-            var go = new GameObject("Burning · " + id.Value);
-            go.transform.SetParent(Root(), false);
-            var fire = go.AddComponent<ShopFire>();
-            fire.BeginAt(door, outward, id.Value, door.y,
-                FireMaterial(), SmokeMaterial(), BoardMaterial());
+            ScorchAt(door, outward, id.Value, door.y);
             return true;
         }
 
@@ -109,9 +105,29 @@ namespace RoadDemo
             if (!TryFrontage(id, out var door, out var outward) ||
                 !DamagedBusinesses.Add(id.Value))
                 return false;
-            BoardUpAt(door, outward, id.Value, door.y, BoardMaterial());
+            SmashAt(door, outward, id.Value, door.y);
             return true;
         }
+
+        /// <summary>The ordinary-premises torch visual at already resolved frontage
+        /// geometry. The business overload owns persistence; this geometry overload owns
+        /// only the same shared fire presentation and returns it for finite-lived callers.</summary>
+        public static Transform ScorchAt(
+            Vector3 door, Vector3 outward, string label, float groundY)
+        {
+            var go = new GameObject("Burning · " + (label ?? "premises"));
+            go.transform.SetParent(Root(), false);
+            var fire = go.AddComponent<ShopFire>();
+            fire.BeginAt(door, outward, label, groundY,
+                FireMaterial(), SmokeMaterial(), BoardMaterial());
+            return go.transform;
+        }
+
+        /// <summary>The ordinary-premises smash visual at already resolved frontage
+        /// geometry. Uses the exact boarding presentation applied by SmashBusiness.</summary>
+        public static Transform SmashAt(
+            Vector3 door, Vector3 outward, string label, float groundY) =>
+            BoardUpAt(door, outward, label, groundY, BoardMaterial());
 
         /// <summary>The doorstep and which way the front faces, off the SIMULATION's
         /// site (never a marker that may be streamed out): outward is door minus the
@@ -188,7 +204,7 @@ namespace RoadDemo
             BoardUpAt(front.Door, front.Outward, front.GangName, groundY, board);
         }
 
-        internal static void BoardUpAt(
+        internal static Transform BoardUpAt(
             Vector3 doorAt, Vector3 facingOut, string label, float groundY, Material board)
         {
             var outward = facingOut.sqrMagnitude > 1e-4f ? facingOut.normalized : Vector3.forward;
@@ -237,6 +253,8 @@ namespace RoadDemo
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 mr.sharedMaterial = board;
             }
+
+            return boards;
         }
     }
 

@@ -34,6 +34,7 @@ namespace RoadDemo
             public int CrewId;
             public TerritoryGangId GangId;
             public TerritoryBlockId BlockId;
+            public CrewWalker Collector;
             public readonly List<RoundStop> Stops = new List<RoundStop>();
             public int Cursor;
             public int Carried;
@@ -218,16 +219,25 @@ namespace RoadDemo
                 CrewId = unit.CrewId,
                 GangId = gang,
                 BlockId = command.BlockId,
+                Collector = CollectorOf(unit),
             };
+            if (round.Collector == null)
+                return TerritoryCommandExecution.Reject(
+                    "The crew has no hood who can carry the collection bag.");
             OrderStops(candidates, UnitAnchor(unit), round.Stops);
 
             // One errand at a time: the old doorstep order and any old round go.
             DropPendingApproaches(unit.CrewId);
             rounds.Add(round);
+            // The duffel is the collection job's equipment, not loot spawned by the
+            // first shop. This exact hood carries it from departure until the round
+            // banks, is abandoned, or he can no longer continue.
+            BagCarry.Give(round.CrewId, round.Collector);
 
             if (!crews.MarchTo(unit, round.Stops[0].Door))
             {
                 rounds.Remove(round);
+                BagCarry.Drop(round.CrewId, banked: true);
                 return TerritoryCommandExecution.Reject(
                     "The physical crew refused the round.");
             }
@@ -263,6 +273,39 @@ namespace RoadDemo
                 if (unit.Hoods[i] != null && !unit.Hoods[i].Dead && unit.Hoods[i].Tf != null)
                     return unit.Hoods[i].Tf.position;
             return unit.Root != null ? unit.Root.position : Vector3.zero;
+        }
+
+        static CrewWalker CollectorOf(DemoCrews.Unit unit)
+        {
+            if (unit == null)
+                return null;
+            // Match DemoCrews.MarchTo's lead choice exactly. A boarded hood may be
+            // temporarily hidden before MarchTo unboards him, but he is still the man
+            // assigned to this job and the bag appears with him when he steps out.
+            if (unit.Boss != null && !unit.Boss.Dead && unit.Boss.Tf != null)
+                return unit.Boss;
+            for (var i = 0; i < unit.Hoods.Count; i++)
+            {
+                var hood = unit.Hoods[i];
+                if (hood != null && !hood.Dead && hood.Tf != null)
+                    return hood;
+            }
+            return null;
+        }
+
+        static CrewWalker EnsureCollector(CollectionRound round, DemoCrews.Unit unit)
+        {
+            var collector = round.Collector;
+            // DoorBeat temporarily hides the collector while he is inside a shop. That
+            // is not a lost carrier and must never move the bag to a hood outside.
+            if (collector != null && !collector.Dead && collector.Tf != null)
+                return collector;
+
+            collector = CollectorOf(unit);
+            round.Collector = collector;
+            if (collector != null)
+                BagCarry.Give(round.CrewId, collector);
+            return collector;
         }
 
         /// <summary>The round the street card marks, if this crew is walking one.</summary>
@@ -319,6 +362,12 @@ namespace RoadDemo
                 var round = rounds[i];
                 if (round.CrewId != unit.CrewId)
                     continue;
+
+                // Only the hood who visibly owns the collection bag settles this
+                // round. If he is lost, ownership visibly transfers to one survivor.
+                var collector = EnsureCollector(round, unit);
+                if (collector == null || actor != collector)
+                    return;
 
                 if (round.Stage == RoundStage.Walking)
                 {
@@ -387,10 +436,6 @@ namespace RoadDemo
 
             var paid = Mathf.Min(owed, Mathf.RoundToInt(result.Paid * takeScale));
             round.Carried += paid;
-            // From the first door that pays, the take is a thing in a hand: the duffel
-            // rides with whichever man settled the stop (ECON-004's walk, visible).
-            if (round.Carried > 0)
-                BagCarry.Give(round.CrewId, actor);
             var missed = result.Outcome == TerritoryPaymentOutcome.Missed;
             if (missed)
                 round.Missed++;
@@ -428,7 +473,7 @@ namespace RoadDemo
 
             // The world's side of the stop: the man steps inside, and what he came out
             // with (or didn't) is said over the door.
-            DoorBeat.Visit(actor, stop.Door);
+            DoorBeat.VisitBusiness(actor, businessId, stop.Door);
             AnnounceStop(businessId, result, paid);
 
             round.Cursor++;

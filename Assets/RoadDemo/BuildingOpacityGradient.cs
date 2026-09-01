@@ -27,15 +27,16 @@ namespace RoadDemo
 
         const string ShaderName = "LivingCity/Occlusion Gradient";
         const float ActiveThreshold = 0.001f;
+        public const float DefaultGradientStartHeight = 5f;
 
         static readonly int BaseMap = Shader.PropertyToID("_BaseMap");
         static readonly int BaseColor = Shader.PropertyToID("_BaseColor");
         static readonly int Cutoff = Shader.PropertyToID("_Cutoff");
         static readonly int FadeAmount = Shader.PropertyToID("_FadeAmount");
         static readonly int GradientMode = Shader.PropertyToID("_GradientMode");
-        static readonly int OpaqueFloor = Shader.PropertyToID("_OpaqueFloor");
+        static readonly int GradientStartHeight = Shader.PropertyToID("_GradientStartHeight");
         static readonly int BoundsMinY = Shader.PropertyToID("_BoundsMinY");
-        static readonly int BoundsInvHeight = Shader.PropertyToID("_BoundsInvHeight");
+        static readonly int BoundsHeight = Shader.PropertyToID("_BoundsHeight");
         static readonly int BoundsCenter = Shader.PropertyToID("_BoundsCenter");
         static Shader _sharedShader;
 
@@ -59,10 +60,10 @@ namespace RoadDemo
         bool _loggedShaderError;
         bool _loggedNoRenderers;
         float _boundsMinY;
-        float _boundsInvHeight = 1f;
+        float _boundsHeight = 1f;
         Vector3 _boundsCenter;
         float _lastAmount = -1f;
-        float _lastOpaqueFloor = -1f;
+        float _lastGradientStartHeight = -1f;
         Profile _lastProfile;
 
         public bool Ready => _prepared && _states.Count > 0;
@@ -99,6 +100,24 @@ namespace RoadDemo
         internal bool Handles(Renderer renderer) =>
             renderer != null && _renderers.Contains(renderer);
 
+        /// <summary>Copies the untouched material set to an offscreen duplicate. The
+        /// ledger photographs a staged copy of the block, which must not inherit the
+        /// street camera's temporary gradient materials.</summary>
+        internal bool CopyOriginalMaterials(Renderer source, Renderer target)
+        {
+            if (source == null || target == null)
+                return false;
+            for (int i = 0; i < _states.Count; i++)
+            {
+                var state = _states[i];
+                if (state.Renderer != source || state.Original == null)
+                    continue;
+                target.sharedMaterials = state.Original;
+                return true;
+            }
+            return false;
+        }
+
         /// <summary>Refresh world-space bounds immediately before a cut. Recycler binding
         /// composes at the origin and moves the completed holder afterwards, so the final
         /// block position is intentionally read here rather than assumed at prepare time.</summary>
@@ -124,7 +143,7 @@ namespace RoadDemo
                 return false;
 
             _boundsMinY = bounds.min.y;
-            _boundsInvHeight = 1f / Mathf.Max(0.01f, bounds.size.y);
+            _boundsHeight = Mathf.Max(0.01f, bounds.size.y);
             _boundsCenter = bounds.center;
             ApplyBoundsToVariants();
             return true;
@@ -146,7 +165,7 @@ namespace RoadDemo
             }
 
             _boundsMinY = bounds.min.y;
-            _boundsInvHeight = 1f / Mathf.Max(0.01f, bounds.size.y);
+            _boundsHeight = Mathf.Max(0.01f, bounds.size.y);
             _boundsCenter = bounds.center;
 
             if (!SameTopology(renderers, meshRendererCount))
@@ -158,7 +177,7 @@ namespace RoadDemo
 
             _prepared = _states.Count > 0;
             _lastAmount = -1f;
-            _lastOpaqueFloor = -1f;
+            _lastGradientStartHeight = -1f;
             return _prepared;
         }
 
@@ -276,25 +295,28 @@ namespace RoadDemo
 
         /// <summary>
         /// Sets the visual treatment. Amount zero is the untouched opaque building.
-        /// In Vertical mode, amount one (100%) is alpha 1 at the base grading to alpha 0
-        /// at the roof; amount two (200%) continues the wipe until the whole shell is clear.
+        /// In Vertical mode, the shell stays opaque below <paramref name="gradientStartHeight"/>;
+        /// amount one (100%) then grades from alpha 1 there to alpha 0 at the roof. Amount
+        /// two (200%) continues the wipe until the whole shell is clear.
         /// The camera-opposite half is fully clear from 100% onward. Uniform uses the same
         /// 0..200% range but fades the whole shell evenly.
         /// </summary>
-        public bool Set(float amount, Profile profile = Profile.Vertical, float opaqueFloor = 0.08f)
+        public bool Set(float amount, Profile profile = Profile.Vertical,
+                        float gradientStartHeight = DefaultGradientStartHeight)
         {
             if (!Prepare())
                 return false;
 
             amount = Mathf.Clamp(amount, 0f, 2f);
-            opaqueFloor = Mathf.Clamp(opaqueFloor, 0f, 0.45f);
+            gradientStartHeight = Mathf.Clamp(gradientStartHeight, 0f,
+                Mathf.Max(0f, _boundsHeight - 0.01f));
             bool profileChanged = profile != _lastProfile;
 
             if (amount <= ActiveThreshold)
             {
                 _lastProfile = profile;
                 _lastAmount = 0f;
-                _lastOpaqueFloor = opaqueFloor;
+                _lastGradientStartHeight = gradientStartHeight;
                 RestoreOriginals();
                 return true;
             }
@@ -303,32 +325,33 @@ namespace RoadDemo
                 UseGradientMaterials();
 
             if (Mathf.Abs(amount - _lastAmount) < 0.0001f &&
-                Mathf.Abs(opaqueFloor - _lastOpaqueFloor) < 0.0001f &&
+                Mathf.Abs(gradientStartHeight - _lastGradientStartHeight) < 0.0001f &&
                 !profileChanged)
                 return true;
 
             _lastProfile = profile;
             _lastAmount = amount;
-            _lastOpaqueFloor = opaqueFloor;
+            _lastGradientStartHeight = gradientStartHeight;
             float vertical = profile == Profile.Vertical ? 1f : 0f;
-            ApplyValuesToVariants(amount, vertical, opaqueFloor);
+            ApplyValuesToVariants(amount, vertical, gradientStartHeight);
             return true;
         }
 
-        void ApplyValuesToVariants(float amount, float vertical, float opaqueFloor)
+        void ApplyValuesToVariants(float amount, float vertical, float gradientStartHeight)
         {
             foreach (var pair in _variants)
-                SetValues(pair.Value, amount, vertical, opaqueFloor);
-            SetValues(_nullSourceVariant, amount, vertical, opaqueFloor);
+                SetValues(pair.Value, amount, vertical, gradientStartHeight);
+            SetValues(_nullSourceVariant, amount, vertical, gradientStartHeight);
         }
 
-        static void SetValues(Material material, float amount, float vertical, float opaqueFloor)
+        static void SetValues(Material material, float amount, float vertical,
+                              float gradientStartHeight)
         {
             if (material == null)
                 return;
             material.SetFloat(FadeAmount, amount);
             material.SetFloat(GradientMode, vertical);
-            material.SetFloat(OpaqueFloor, opaqueFloor);
+            material.SetFloat(GradientStartHeight, gradientStartHeight);
         }
 
         void UseGradientMaterials()
@@ -393,7 +416,7 @@ namespace RoadDemo
             SetBounds(material);
             material.SetFloat(FadeAmount, 0f);
             material.SetFloat(GradientMode, 1f);
-            material.SetFloat(OpaqueFloor, 0.08f);
+            material.SetFloat(GradientStartHeight, DefaultGradientStartHeight);
             return material;
         }
 
@@ -409,7 +432,7 @@ namespace RoadDemo
             if (material == null)
                 return;
             material.SetFloat(BoundsMinY, _boundsMinY);
-            material.SetFloat(BoundsInvHeight, _boundsInvHeight);
+            material.SetFloat(BoundsHeight, _boundsHeight);
             material.SetVector(BoundsCenter, new Vector4(_boundsCenter.x, _boundsCenter.y,
                 _boundsCenter.z, 1f));
         }

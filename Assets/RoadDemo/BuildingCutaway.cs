@@ -31,8 +31,9 @@ namespace RoadDemo
         const float GroundCapThickness = 0.08f;
         const float GroundCapSink = 0.01f;
         const float GroundCapOverhang = 0.04f;
+        const float FallbackMinimumPlanSpan = 2f;
         public const float DeclaredHeight = 3.5f;
-        public const float DefaultGradientAmount = 1.6f;
+        public const float DefaultGradientAmount = 1.37f;
 
         static readonly Dictionary<Collider, BuildingCutaway> ByCollider =
             new Dictionary<Collider, BuildingCutaway>();
@@ -101,8 +102,15 @@ namespace RoadDemo
             // The catalogue contract is collider and renderer side by side. Do not climb
             // arbitrary district/card roots here: an industrial parcel can contain several
             // buildings and must not disappear as one merely because its card has a box.
-            if (!collider.TryGetComponent<MeshRenderer>(out var renderer) ||
-                renderer.bounds.size.y < minimumHeight)
+            if (!collider.TryGetComponent<MeshRenderer>(out var renderer))
+                return null;
+
+            var size = renderer.bounds.size;
+            // Height alone makes a lamp post, utility pole or narrow tree look like a
+            // building. Explicitly composed buildings above already bypass this fallback;
+            // an undeclared legacy candidate must also have a building-sized footprint.
+            if (size.y < minimumHeight ||
+                Mathf.Min(size.x, size.z) < FallbackMinimumPlanSpan)
                 return null;
 
             return Prepare(collider.gameObject, minimumHeight, proxyHeight);
@@ -128,6 +136,29 @@ namespace RoadDemo
                 return false;
             if (cutaway != null && cutaway._configured) return true;
             ByRenderer.Remove(renderer);
+            return false;
+        }
+
+        /// <summary>Restores the authored visual state on an offscreen duplicate without
+        /// touching the live street renderer. Ledger photographs are records of the full
+        /// building, never of the street camera's current cutaway.</summary>
+        internal static bool RestoreUncutCopy(Renderer source, Renderer copy)
+        {
+            if (source == null || copy == null ||
+                !ByRenderer.TryGetValue(source, out var cutaway) || cutaway == null ||
+                !cutaway._cut)
+                return false;
+
+            for (int i = 0; i < cutaway._states.Count; i++)
+            {
+                var state = cutaway._states[i];
+                if (state.Renderer != source)
+                    continue;
+                copy.shadowCastingMode = state.Shadows;
+                if (cutaway._opacity != null)
+                    cutaway._opacity.CopyOriginalMaterials(source, copy);
+                return true;
+            }
             return false;
         }
 

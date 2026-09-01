@@ -39,7 +39,7 @@ namespace RoadDemo
             {
                 Walk = StockWalk,
                 Idle = StockIdle,
-                Talk = PeopleClip("Standing_Talking"),
+                Talk = DoorTalk,
                 SitLoop = PeopleClip("Sitting_Bench_Idle"), // the seat in the car
                 Shout = PeopleClip("Standing_Shouting"),
                 PistolIdle = UalClip("Pistol_Idle_Loop"),
@@ -103,6 +103,13 @@ namespace RoadDemo
             : stockIdle = Loco("Masculine/Idle/A_Idle_Standing_Masc")
                           ?? PeopleClip("Breathing Idle");
         static AnimationClip stockIdle;
+
+        /// <summary>The authored full-body conversation used by a man addressing a
+        /// shop door. Exposed once so doorstep beats and interior feeds use the exact
+        /// same city clip instead of rebuilding an arm pose.</summary>
+        public static AnimationClip DoorTalk => doorTalk != null ? doorTalk
+            : doorTalk = PeopleClip("Standing_Talking");
+        static AnimationClip doorTalk;
 
         public static AnimationClip StockRun => stockRun != null ? stockRun
             : stockRun = Loco("Masculine/Locomotion/Run/A_Run_F_RootMotion_Masc")

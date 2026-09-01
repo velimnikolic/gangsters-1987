@@ -165,7 +165,13 @@ namespace RoadDemo
         RectTransform _sheetPose, _sheet;
         Canvas _canvas;
         TurfMapPanel _mapChrome;
-        TurfMapPanel _crewPanel;
+        /// <summary>Bumped whenever anything the lieutenant's file shows has moved:
+        /// who is inspected, who is gathered, or which crews exist at all. StreetHud
+        /// draws that file now and polls this rather than being called back - one
+        /// number instead of a wire between two HUDs that never otherwise speak.</summary>
+        public int CrewFileVersion { get; private set; }
+
+        void CrewFileChanged() => CrewFileVersion++;
 
         readonly List<TurfCrew> _units = new List<TurfCrew>();
         readonly List<Marker> _markers = new List<Marker>();
@@ -265,15 +271,13 @@ namespace RoadDemo
             _crewFileRequested = false;
             _inspectedBuilding = null;
             _inspectedDistrict = null;
-            BuildCrewPanel();
 
             // The ruler has to exist before the first draw: the crossings pass steers
             // around the street names, and it runs where the face cannot be asked
             // anything.
             _survey.MeasureNames(_lettering.Measure);
             CollectCrews();
-            _crewPanel.SelectionChanged();
-            _crewPanel.Refresh();
+            CrewFileChanged();
 
             // One draw of the whole city, here and not on a worker: the first frame the
             // wheel opens has to have paper on it, and thirty milliseconds inside a
@@ -437,12 +441,10 @@ namespace RoadDemo
             if (want != IsOpen)
                 Show(want);
 
-            // The roster is present in the 3D city as well as on the plan. Only the
-            // Personal File section is conditional on an explicit lieutenant click.
-            if (_crewPanel != null && !_crewPanel.gameObject.activeSelf)
-                _crewPanel.gameObject.SetActive(true);
+            // The file is present in the 3D city as well as on the plan, and StreetHud
+            // draws it in both. Only its contents are conditional on an explicit
+            // lieutenant click.
             RefreshCrewDossiers();
-            _crewPanel.Refresh();
 
             if (!IsOpen)
                 return;
@@ -499,7 +501,7 @@ namespace RoadDemo
             {
                 _landingTarget = null;
                 CollectCrews();
-                _crewPanel.SelectionChanged();
+                CrewFileChanged();
 
                 // The live layer still carries the last frame it was drawn on, in a
                 // projection that is about to be thrown away - crews and cars would
@@ -749,25 +751,6 @@ namespace RoadDemo
 
             _mapChrome = go.AddComponent<TurfMapPanel>();
             _mapChrome.Init(this, showPanel: false, showMapChrome: true);
-        }
-
-        void BuildCrewPanel()
-        {
-            var go = new GameObject("Crew File Canvas");
-            go.transform.SetParent(transform, false);
-            var canvas = go.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 115;
-
-            var scaler = go.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1280f, 720f);
-            scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-            scaler.matchWidthOrHeight = 1f;
-            go.AddComponent<GraphicRaycaster>();
-
-            _crewPanel = go.AddComponent<TurfMapPanel>();
-            _crewPanel.Init(this, showPanel: true, showMapChrome: false);
         }
 
         RawImage Layer(string name, Texture2D texture, Material material)
@@ -1567,7 +1550,7 @@ namespace RoadDemo
             if (director != null)
                 _seenPersonnelVersion = director.Version;
             if (repaint)
-                _crewPanel.SelectionChanged();
+                CrewFileChanged();
         }
 
         /// <summary>Whether the panel's crew rows describe the same live units as the
@@ -1670,7 +1653,7 @@ namespace RoadDemo
 
             var screen = mouse.position.ReadValue();
             bool overChrome = _mapChrome.ClaimsPointer(screen) ||
-                              _crewPanel.ClaimsPointer(screen) ||
+                              (StreetHud.Instance != null && StreetHud.Instance.Contains(screen)) ||
                               (EventSystem.current && EventSystem.current.IsPointerOverGameObject());
             PointerOverChrome = overChrome;
 
@@ -1936,7 +1919,7 @@ namespace RoadDemo
         void Changed()
         {
             _mapChrome.SelectionChanged();
-            _crewPanel.SelectionChanged();
+            CrewFileChanged();
             if (_crews == null)
                 return;
 

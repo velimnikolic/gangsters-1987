@@ -43,7 +43,16 @@ namespace RoadDemo
         /// which is the plate's own 8:5 - anything else would letterbox the city.
         /// </summary>
         const float CardWide = 256f, CardTall = 160f;
-        const float Inset = 0f, Border = 5f;
+        // No border. The card used to sit on a margin of the plate's own cream, which
+        // read as a mount round a photograph; the design runs the band and the map to
+        // the card's edge and rules only the side that faces the city.
+        const float Inset = 0f, Border = 0f;
+
+        /// <summary>The dark band the design puts across the head of the corner plate:
+        /// where the camera is standing on the left, and who holds it on the right. A
+        /// map with no caption is a picture; the band is what makes it a reading.
+        /// </summary>
+        const float BandTall = 18f;
         const float ViewOverscan = 1.25f;
         const float RedrawPanShare = 0.08f;
         const float RedrawZoomShare = 1.08f;
@@ -74,7 +83,9 @@ namespace RoadDemo
         readonly TurfMapSurvey _survey = new TurfMapSurvey();
 
         Canvas _canvas;
-        RectTransform _card, _view, _sheetPose, _sheetRect;
+        RectTransform _card, _view, _sheetPose, _sheetRect, _band;
+        TMPro.TMP_Text _bandPlace, _bandHolder;
+        string _shownPlace = "", _shownHolder = "";
         Texture2D _paper;
         readonly Color32[] _uploadPixels = new Color32[
             TurfPlate.RW / UploadDownsample * (TurfPlate.RH / UploadDownsample)];
@@ -195,19 +206,32 @@ namespace RoadDemo
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 1f;
 
+            // The corner plate is inside the design's hud region too, and carries its
+            // opacity with the rest of the paper.
+            go.AddComponent<CanvasGroup>().alpha = HudNight.Alpha;
+
             // A card in the corner, and the paper it is printed on showing as a border
             // all the way round - the same plate colour the full map lies on.
             _card = DemoUi.NewRect("Card", go.transform);
             _card.anchorMin = _card.anchorMax = new Vector2(1f, 0f);
             _card.pivot = new Vector2(1f, 0f);
             _card.anchoredPosition = new Vector2(-Inset, Inset);
-            _card.sizeDelta = new Vector2(CardWide + Border * 2f, CardTall + Border * 2f);
-            LivingCity.UI.LedgerKit.Fill(_card, new Color32(240, 231, 205, 236));
-            LivingCity.UI.LedgerKit.Frame(_card, 1f, new Color32(43, 36, 24, 150));
+            _card.sizeDelta = new Vector2(CardWide + Border * 2f,
+                CardTall + Border * 2f + BandTall);
+            LivingCity.UI.LedgerKit.Fill(_card, LivingCity.UI.LedgerV2.Head);
+
+            BuildBand();
 
             _view = DemoUi.NewRect("View", _card);
             DemoUi.Fill(_view, Border);
+            // The band eats the top of the card; the plate keeps the rest.
+            _view.offsetMax = new Vector2(_view.offsetMax.x, -(Border + BandTall));
             _view.gameObject.AddComponent<RectMask2D>();
+
+            // The one rule the design keeps: down the edge that faces the city, so the
+            // corner reads as a card laid on the street and not a hole cut in it.
+            LivingCity.UI.LedgerKit.VRule(_card, 0f, 0f,
+                CardTall + BandTall, LivingCity.UI.LedgerV2.Ink, 1f);
 
             _paper = new Texture2D(
                 TurfPlate.RW / UploadDownsample,
@@ -250,6 +274,71 @@ namespace RoadDemo
             }
 
             _canvas.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// The caption band: the quarter the camera is standing in, and whose street it
+        /// is. Both are read off the survey's own districts - the same rectangles the
+        /// plate is drawn from - so the words and the paper under them can never
+        /// disagree about where the pivot is.
+        /// </summary>
+        void BuildBand()
+        {
+            _band = DemoUi.NewRect("Band", _card);
+            LivingCity.UI.LedgerKit.PlaceTopLeft(_band, Border, -Border,
+                CardWide, BandTall);
+            LivingCity.UI.LedgerKit.Fill(_band, LivingCity.UI.LedgerV2.Head);
+
+            var placeY = -(BandTall - LivingCity.UI.LedgerKit.LineBox(12.7f)) * 0.5f;
+            _bandPlace = LivingCity.UI.LedgerKit.Caps(_band, 8f, placeY, CardWide - 130f,
+                "", 12.7f, LivingCity.UI.LedgerV2.HeadCream, 18f);
+            _bandPlace.font = LivingCity.UI.LedgerStyle.Condensed;
+            _bandPlace.overflowMode = TMPro.TextOverflowModes.Ellipsis;
+
+            var holderY = -(BandTall - LivingCity.UI.LedgerKit.LineBox(10.8f)) * 0.5f;
+            _bandHolder = LivingCity.UI.LedgerKit.Caps(_band, CardWide - 130f, holderY, 122f,
+                "", 10.8f, LivingCity.UI.LedgerV2.HeadDim, 10f,
+                TMPro.TextAlignmentOptions.MidlineRight);
+            _bandHolder.font = LivingCity.UI.LedgerStyle.Mono;
+            _bandHolder.overflowMode = TMPro.TextOverflowModes.Ellipsis;
+        }
+
+        /// <summary>Rewrite the caption when the camera has walked into somewhere else.
+        /// Only when the words actually change: the pivot moves every frame and the
+        /// quarter it is standing in does not.</summary>
+        void RefreshBand()
+        {
+            if (_bandPlace == null)
+                return;
+
+            var place = "The city";
+            var holder = "NO SURVEY";
+
+            var districts = _survey.Districts;
+            for (int i = 0; i < districts.Count; i++)
+            {
+                var district = districts[i];
+                if (!district.World.Contains(_lastPivot))
+                    continue;
+
+                place = district.Name;
+                holder = district.Contested ? "CONTESTED"
+                    : district.GangId < 0 ? "NOBODY'S"
+                    : district.GangId == LivingCity.Gangs.GangCatalog.PlayerGangId ? "OURS"
+                    : LivingCity.Gangs.GangCatalog.Names[district.GangId].ToUpperInvariant();
+                break;
+            }
+
+            if (place != _shownPlace)
+            {
+                _shownPlace = place;
+                _bandPlace.text = place.ToUpperInvariant();
+            }
+            if (holder != _shownHolder)
+            {
+                _shownHolder = holder;
+                _bandHolder.text = holder;
+            }
         }
 
         /// <summary>Quarter names are live UI rather than baked type, so they stay readable
@@ -393,6 +482,8 @@ namespace RoadDemo
                 _canvas.gameObject.SetActive(want);
             if (!want || !_printed)
                 return;
+
+            RefreshBand();
 
             var pivot = _rig != null
                 ? new Vector2(_rig.pivot.x, _rig.pivot.z)

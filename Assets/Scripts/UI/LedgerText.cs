@@ -74,6 +74,34 @@ namespace LivingCity.UI
             _ => "",
         };
 
+        /// <summary>
+        /// The two or three words a wire slip is headed with - what KIND of thing came
+        /// in, before the sentence that says what happened. The sentence itself is
+        /// IncidentText's and is never re-worded here; this is only the label over it,
+        /// and it lives beside every other label the book prints so a re-wording cannot
+        /// make two pages disagree.
+        /// </summary>
+        public static string IncidentLabel(IncidentKind kind)
+        {
+            switch (kind)
+            {
+                case IncidentKind.Froze: return "Froze";
+                case IncidentKind.Fled: return "Ran";
+                case IncidentKind.Escalated: return "Gunfire";
+                case IncidentKind.Deviated: return "Off the order";
+                case IncidentKind.TookRivalMoney: return "Bought";
+                case IncidentKind.DemandedARaise: return "Wants more";
+                case IncidentKind.CaughtSkimming: return "Skimming";
+                case IncidentKind.SlowingDown: return "Slowing";
+                case IncidentKind.DiedOnTheDetail: return "Man down";
+                case IncidentKind.StoppedIt: return "Took it";
+                case IncidentKind.BearsWatching: return "Watch him";
+                case IncidentKind.Defected: return "Gone over";
+                case IncidentKind.Promoted: return "Made";
+                default: return "Wire";
+            }
+        }
+
         public static string RankLabel(Rank rank) => rank switch
         {
             Rank.Hood => "Hood",

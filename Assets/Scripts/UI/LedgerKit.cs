@@ -594,25 +594,34 @@ namespace LivingCity.UI
         /// time in small caps across the head, the message under. What came in over the
         /// night - never a thing to press.
         /// </summary>
+        /// <param name="ink">The colour of the rule down the left edge. The design gives
+        /// a wire slip the ink of what it is CARRYING - money green, police red, a rival
+        /// blue - so a reader can tell a takings note from a body at a glance without
+        /// reading either. Left out, it is the red pen every slip in the book wears.</param>
+        /// <param name="tagged">Leaves a row clear under the head for a caller that
+        /// puts a tag over the message - what kind of thing came in, and what it cost.
+        /// The body starts below that row instead of directly under the source line.
+        /// </param>
         public static RectTransform Slip(Transform parent, float x, float y, float w, float h,
-            string source, string time, string body)
+            string source, string time, string body, Color? ink = null, bool tagged = false)
         {
             var rect = NewRect("Slip", parent);
             PlaceTopLeft(rect, x, y, w, h);
             Stock(rect, LedgerStyle.Slip, LedgerStyle.SlipLow);
             Grain(rect, w, h, 0.6f);
 
+            var mark = ink ?? LedgerStyle.RedPen;
             var edge = NewRect("Edge", rect);
             PlaceTopLeft(edge, 0f, 0f, 3f, h);
-            Fill(edge, new Color(LedgerStyle.RedPen.r, LedgerStyle.RedPen.g,
-                LedgerStyle.RedPen.b, 0.6f));
+            Fill(edge, new Color(mark.r, mark.g, mark.b, 0.6f));
 
             Caps(rect, 12f, -6f, w - 80f, source, 9f, LedgerStyle.InkLabel, 3.5f);
             Caps(rect, w - 74f, -6f, 62f, time, 9f, LedgerStyle.InkLabel, 2f,
                 TextAlignmentOptions.MidlineRight);
 
-            var copy = Paragraph(rect, LedgerStyle.Mono, 12f, LedgerStyle.InkSoft, 12f, -24f,
-                w - 24f, h - 28f, body, lineSpacing: 2f);
+            var top = tagged ? -42f : -24f;
+            var copy = Paragraph(rect, LedgerStyle.Mono, 12f, LedgerStyle.InkSoft, 12f, top,
+                w - 24f, h + top - 4f, body, lineSpacing: 2f);
             copy.overflowMode = TextOverflowModes.Ellipsis;
             return rect;
         }

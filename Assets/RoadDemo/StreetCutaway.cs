@@ -62,8 +62,8 @@ namespace RoadDemo
         public float proxyHeight = 0.95f;
 
         /// <summary>Shared gradient strength for an occluding building. The approved city
-        /// value is 1.6 (160%): the rear is clear and only the low front remains.</summary>
-        [Range(0f, 2f)] public float gradientAmount = 1.6f;
+        /// value is 1.37 (137%): the rear is clear and the low front remains.</summary>
+        [Range(0f, 2f)] public float gradientAmount = 1.37f;
 
         /// <summary>How long an occluder remains cut after the last sample met it. Longer
         /// than the grid refresh so rotating or resting on a facade edge cannot blink it.</summary>
@@ -93,11 +93,12 @@ namespace RoadDemo
         const float CastRange = 160f;
         const float IndoorProbe = 0.4f;
 
-        // Everything except the crowd, the small props, the park-nav proxies and the
+        // Everything except the crowd, props, trees/lamps/poles, park-nav proxies and the
         // engine's own ignore layer: none of them is ever a building, and the crowd in
         // particular is a thousand capsules standing exactly where the samples land.
         static readonly int Mask = ~((1 << 2) | (1 << 8) | (1 << 10)
-                                     | (1 << ScenePerf.PropLayer) | (1 << ScenePerf.CrowdLayer));
+                                     | (1 << ScenePerf.PropLayer) | (1 << ScenePerf.CrowdLayer)
+                                     | (1 << ScenePerf.MidLayer));
 
         static StreetCutaway _instance;
 

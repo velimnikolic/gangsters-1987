@@ -8,19 +8,18 @@ namespace OcclusionDemo
 {
     /// <summary>
     /// One Residential 01 building, three bright crew stand-ins behind it and no city
-    /// generation noise. The scene animates between the exact original materials and a
-    /// bottom-to-top alpha gradient so transparency/sorting can be judged in isolation.
+    /// generation noise. The scene starts at the live city's occlusion amount and remains
+    /// static until manually scrubbed, so transparency/sorting can be judged in isolation.
     /// </summary>
     public sealed class OcclusionDemoBuilder : MonoBehaviour
     {
         const string BuildingPath = "Assets/Prefabs/Residential/residential-01.prefab";
-        const float DefaultOpaqueFloor = 0.08f;
+        const float GradientStartHeight = BuildingOpacityGradient.DefaultGradientStartHeight;
+        const float GameGradientAmount = BuildingCutaway.DefaultGradientAmount;
 
         BuildingOpacityGradient _gradient;
         BuildingOpacityGradient.Profile _profile = BuildingOpacityGradient.Profile.Vertical;
-        float _amount;
-        float _startedAt;
-        bool _animate = true;
+        float _amount = GameGradientAmount;
         int _colliderCount;
 
         GUIStyle _titleStyle;
@@ -46,9 +45,8 @@ namespace OcclusionDemo
 
             _gradient = building.AddComponent<BuildingOpacityGradient>();
             _gradient.Prepare();
-            _gradient.Set(0f, _profile, DefaultOpaqueFloor);
+            _gradient.Set(_amount, _profile, GradientStartHeight);
             _colliderCount = building.GetComponentsInChildren<Collider>(true).Length;
-            _startedAt = Time.unscaledTime;
         }
 
         static void BuildStage(Transform root)
@@ -203,34 +201,21 @@ namespace OcclusionDemo
             var keyboard = Keyboard.current;
             if (keyboard != null)
             {
-                if (keyboard.spaceKey.wasPressedThisFrame)
-                {
-                    _animate = !_animate;
-                    _startedAt = Time.unscaledTime;
-                }
                 if (keyboard.gKey.wasPressedThisFrame)
                     ToggleProfile();
                 if (keyboard.rKey.wasPressedThisFrame)
-                {
-                    _animate = false;
+                    _amount = GameGradientAmount;
+                if (keyboard.oKey.wasPressedThisFrame)
                     _amount = 0f;
-                }
                 if (keyboard.leftArrowKey.isPressed || keyboard.rightArrowKey.isPressed)
                 {
-                    _animate = false;
                     float direction = keyboard.rightArrowKey.isPressed ? 1f : -1f;
                     _amount = Mathf.Clamp(_amount + direction * Time.unscaledDeltaTime * 0.5f,
                         0f, 2f);
                 }
             }
 
-            if (_animate)
-            {
-                float phase = (Time.unscaledTime - _startedAt) / 8f;
-                _amount = 1f - Mathf.Cos(phase * Mathf.PI * 2f);
-            }
-
-            _gradient.Set(_amount, _profile, DefaultOpaqueFloor);
+            _gradient.Set(_amount, _profile, GradientStartHeight);
         }
 
         void ToggleProfile()
@@ -255,7 +240,7 @@ namespace OcclusionDemo
                 : $"UNIFORM CONTROL: alpha {1f - _amount * 0.5f:0.00} over the whole shell";
             GUI.Label(new Rect(30f, 62f, width - 28f, 24f), profile, _stateStyle);
             GUI.Label(new Rect(30f, 86f, width - 28f, 22f),
-                "100%: full-height gradient + rear clear   |   200%: shell clear",
+                $"Gradient starts at {GradientStartHeight:0}m   |   200%: shell clear",
                 _bodyStyle);
             GUI.Label(new Rect(30f, 108f, width - 28f, 22f),
                 $"Effect {_amount * 100f:0}%   |   collider ON ({_colliderCount})   |   full shadow ON",
@@ -264,27 +249,19 @@ namespace OcclusionDemo
             float chosen = GUI.HorizontalSlider(new Rect(30f, 136f, width - 60f, 20f),
                 _amount, 0f, 2f);
             if (Mathf.Abs(chosen - _amount) > 0.001f)
-            {
-                _animate = false;
                 _amount = chosen;
-            }
 
-            if (GUI.Button(new Rect(30f, 164f, 118f, 28f), _animate ? "Pause auto" : "Play auto"))
-            {
-                _animate = !_animate;
-                _startedAt = Time.unscaledTime;
-            }
-            if (GUI.Button(new Rect(156f, 164f, 150f, 28f),
+            if (GUI.Button(new Rect(30f, 164f, 146f, 28f),
                 _profile == BuildingOpacityGradient.Profile.Vertical ? "Show uniform" : "Show gradient"))
                 ToggleProfile();
-            if (GUI.Button(new Rect(314f, 164f, 116f, 28f), "Reset opaque"))
-            {
-                _animate = false;
+            if (GUI.Button(new Rect(184f, 164f, 118f, 28f),
+                $"Game {GameGradientAmount:0.00}"))
+                _amount = GameGradientAmount;
+            if (GUI.Button(new Rect(310f, 164f, 120f, 28f), "Opaque"))
                 _amount = 0f;
-            }
 
             GUI.Label(new Rect(30f, 199f, width - 40f, 42f),
-                "Space: auto   G: compare modes   arrows: scrub   R: opaque\n" +
+                $"G: compare   arrows: scrub   R: game {GameGradientAmount:0.00}   O: opaque\n" +
                 "WASD / Q E / right-drag / wheel: inspect transparent sorting",
                 _bodyStyle);
         }

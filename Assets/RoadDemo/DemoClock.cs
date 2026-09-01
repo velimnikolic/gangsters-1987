@@ -62,6 +62,21 @@ namespace RoadDemo
         /// <summary>Scrub the time of day without changing the campaign day.</summary>
         public void SetHour(float hour) => Hour = Mathf.Repeat(hour, HoursPerDay);
 
+        /// <summary>Which rung of the ladder is set. The HUD's speed control is a
+        /// segmented bar - one question with one answer - so it names a rung outright
+        /// rather than stepping toward it.</summary>
+        public int SpeedIndex => _speedIndex;
+
+        public int SpeedCount => Speeds.Length;
+
+        public float SpeedAt(int index) => Speeds[Mathf.Clamp(index, 0, Speeds.Length - 1)];
+
+        public void SetSpeed(int index)
+        {
+            _speedIndex = Mathf.Clamp(index, 0, Speeds.Length - 1);
+            ApplySpeed();
+        }
+
         public void SpeedUp()
         {
             if (_speedIndex < Speeds.Length - 1)

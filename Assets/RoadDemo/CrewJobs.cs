@@ -160,8 +160,20 @@ namespace RoadDemo
                 return;
 
             Entered[unit.CrewId] = job.Id;
-            // no word at this door - a robbery goes straight in
-            DoorBeat.Visit(lead, door, talk: 0f);
+            // No word at this door - a robbery goes straight in. When the canonical
+            // premises is known, resolve its real streamed entrance and use the full
+            // physical passage instead of the old hide-at-the-pavement fallback.
+            if (!string.IsNullOrEmpty(job.TargetBusinessId))
+            {
+                DoorBeat.VisitBusiness(
+                    lead,
+                    new LivingCity.Territory.TerritoryBusinessId(job.TargetBusinessId),
+                    door);
+            }
+            else
+            {
+                DoorBeat.Visit(lead, door, talk: 0f);
+            }
         }
 
         /// <summary>The wrecking acted, not only booked: while a smash-up or a torching
@@ -169,16 +181,16 @@ namespace RoadDemo
         /// seconds (ArmBeat swaps his gun for the pack's bat and swings it, derived).
         /// A few rounds of it, not the whole shift - the hours run long and a man
         /// swinging for six minutes straight reads as a machine.</summary>
-        const int SwingRounds = 4;
-        const float SwingEvery = 4.5f;
-        const float SwingFor = 2.6f;
+        public const int PremisesSwingRounds = 4;
+        public const float PremisesSwingEvery = 4.5f;
+        public const float PremisesSwingFor = 2.6f;
 
         static void SwingBeat(DemoCrews crews, DemoCrews.Unit unit, Job job)
         {
             if (!job.HasPlace)
                 return;
             if (Swings.TryGetValue(unit.CrewId, out var swung) && swung.JobId == job.Id &&
-                (swung.Count >= SwingRounds || Time.time < swung.NextAt))
+                (swung.Count >= PremisesSwingRounds || Time.time < swung.NextAt))
                 return;
             if (swung.JobId != job.Id)
                 swung = default;
@@ -203,8 +215,9 @@ namespace RoadDemo
             if (lead == null)
                 return;
 
-            ArmBeat.Swing(lead, door, SwingFor);
-            Swings[unit.CrewId] = (job.Id, swung.Count + 1, Time.time + SwingEvery);
+            ArmBeat.Swing(lead, door, PremisesSwingFor);
+            Swings[unit.CrewId] = (
+                job.Id, swung.Count + 1, Time.time + PremisesSwingEvery);
         }
 
         static DemoCrews.Unit NearestRival(DemoCrews crews, DemoCrews.Unit unit, Job job)

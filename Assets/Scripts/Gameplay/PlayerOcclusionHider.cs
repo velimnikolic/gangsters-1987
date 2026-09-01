@@ -90,6 +90,7 @@ namespace LivingCity.Gameplay
         // cost over frames instead of paying for a row of them at once.
         const int MaxClipsPerFrame = 1;
         const long ClipReportMs = 50;           // below this a clip is not worth a log line
+        const string StubName = "BuildingStub";
 
         // A per-frame scene search for the Buildings root would be the most expensive
         // no-op in Update; a miss is remembered and asked again this often.
@@ -154,6 +155,29 @@ namespace LivingCity.Gameplay
             // only ever yaw, so the same fraction of the world AABB is the same rim.
             var bounds = renderer.bounds;
             return worldPoint.y > bounds.min.y + StubFraction * bounds.size.y;
+        }
+
+        /// <summary>The shadow mode an offscreen copy should use when the street camera
+        /// has temporarily reduced this renderer to shadows only.</summary>
+        internal static bool TryOriginalShadowMode(
+            MeshRenderer renderer, out ShadowCastingMode original)
+        {
+            original = default;
+            var self = instance;
+            if (!self || renderer == null ||
+                !self.hidden.TryGetValue(renderer, out var entry))
+                return false;
+            original = entry.Original;
+            return true;
+        }
+
+        /// <summary>A temporary low mesh made only for the street camera. It is never
+        /// part of the real block photographed by the ledger.</summary>
+        internal static bool IsOcclusionArtifact(Renderer renderer)
+        {
+            var self = instance;
+            return self && renderer != null && renderer.transform.parent == self.transform &&
+                   renderer.gameObject.name == StubName;
         }
 
         void OnEnable() => instance = this;
@@ -381,7 +405,7 @@ namespace LivingCity.Gameplay
             }
             else
             {
-                stub = new GameObject("BuildingStub");
+                stub = new GameObject(StubName);
                 stub.transform.SetParent(transform, false);
                 stub.AddComponent<MeshFilter>();
                 var r = stub.AddComponent<MeshRenderer>();

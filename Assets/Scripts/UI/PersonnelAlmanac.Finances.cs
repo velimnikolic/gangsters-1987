@@ -6,17 +6,20 @@ using static LivingCity.UI.LedgerKit;
 namespace LivingCity.UI
 {
     /// <summary>
-    /// FINANCES: a greenbar sheet off the accounting machine, money in down the left
-    /// and money out down the right, with the adding-machine tape torn off and laid
-    /// beside it. Totals are ruled the way an accountant rules them; a loss is in red;
-    /// and the profit after tax gets the boxed callout because it is the one figure the
-    /// whole outfit turns on.
+    /// FINANCES, drawn to the v2 design sheet: three cards laid on one row - MONEY IN
+    /// with the profit callout and the tax lines under it, MONEY OUT with what the
+    /// outfit is worth beneath it, and the adding-machine tape torn off beside them.
+    /// Under the row, the remark and the box the books are posted in.
+    ///
+    /// Every measurement here is the design's own: the 20-unit grid gutter, the
+    /// 9/16 row padding, the 31-unit dark band, the 3-unit rule under the page head.
+    /// Nothing is eyeballed and nothing is a leftover of the old greenbar.
     ///
     /// The books are kept BY THE DAY - there is no week in this game and nothing waits
-    /// for one. The greenbar shows ONE day, and EARLIER / LATER walk the seven the page
-    /// is headed with, one day a press. The tape beside it is the check on that: it
-    /// runs all seven days at once, so a day that looks quiet on its own can still be
-    /// read against the week of trading it sits in.
+    /// for one. The two cards show ONE day, and EARLIER / LATER walk the seven the page
+    /// is headed with, one day a press. The tape is the check on that: it runs all
+    /// seven days at once, so a day that looks quiet on its own can still be read
+    /// against the week of trading it sits in.
     ///
     /// Every figure is derived at read - wages come off the live roster through
     /// Wages.DailyPayroll, the rest through BalanceMath - so hiring a man moves this
@@ -24,52 +27,85 @@ namespace LivingCity.UI
     /// </summary>
     public sealed partial class PersonnelAlmanac
     {
-        /// <summary>The page's own head, over the books.</summary>
+        // ------------------------------------------------------------ the design's ink
+        // The oklch of the finances sheet, converted once. What the shared palette
+        // already carries is used from there; these are the values this page alone owns.
+
+        /// <summary>The green card's rows: the label ink and the band's own dim.</summary>
+        static readonly Color FinRowInk = LedgerV2.Rgb2(0x2d2824);
+        static readonly Color FinBandDim = LedgerV2.Rgb2(0xa89c93);
+
+        /// <summary>The two ways money runs, printed on the dark band.</summary>
+        static readonly Color FinInLabel = LedgerV2.Rgb2(0xa0d4a0);
+        static readonly Color FinOutLabel = LedgerV2.Rgb2(0xfba587);
+
+        /// <summary>The rules: the hairline between rows, the profit band's edge, the
+        /// dotted leader under a tax line and the tape's own.</summary>
+        static readonly Color FinProfitRule = LedgerV2.Rgb2(0xaea298);
+        static readonly Color FinDotted = LedgerV2.Rgb2(0xc8bbb1);
+        static readonly Color FinTaxLabel = LedgerV2.Rgb2(0x51453e);
+
+        /// <summary>The tape's small type, its net rule, and the ribbon note.</summary>
+        static readonly Color FinNetLabel = LedgerV2.Rgb2(0x902828);
+        static readonly Color FinNetRule = LedgerV2.Rgb2(0x322d29);
+        static readonly Color FinRibbon = LedgerV2.Rgb2(0x84776f);
+
+        /// <summary>The foot: the rule over it, the remark's ink, and the box the
+        /// books are signed in.</summary>
+        static readonly Color FinFootRule = LedgerV2.Rgb2(0xb5a89f);
+        static readonly Color FinRemark = LedgerV2.Rgb2(0x322d29);
+        static readonly Color FinSignRule = LedgerV2.Rgb2(0x7b6f66);
+
+        // ------------------------------------------------------------- the design's grid
+
+        /// <summary>The page head: title, the line under it, and the 3-unit rule.</summary>
         const float FinancesHeadH = 72f;
 
+        /// <summary>The gutter between the three cards.</summary>
+        const float FinGridGap = 20f;
+
+        /// <summary>A card's own side padding, and the padding on its rows.</summary>
+        const float FinPad = 16f;
+
+        /// <summary>The heights the design's paddings come to, measured off the type
+        /// each row is set in: 9 + line + 9 for a figure row, 11 + line + 11 for a
+        /// total, 12 + line + 12 for the profit callout, 8 + line + 8 for a tax line.
+        /// </summary>
+        const float FinBandH = 31f;
+        const float FinRowH = 35f;
+        const float FinTotalH = 44f;
+        const float FinProfitH = 53f;
+        const float FinTaxH = 33f;
+
+        /// <summary>The tape's own paddings and pitch.</summary>
+        const float FinTapePad = 16f;
+        const float FinTapeRowH = 26f;
+
         static float FinTopY = PageTop - FinancesHeadH;
-        static float FinanceH = -(PageBottom - FinTopY);
+        static float FinColW = 532f;
+        static float FinCol2X = 552f;
+        static float FinCol3X = 1104f;
 
-        /// <summary>The till roll torn off and laid down the right margin.</summary>
-        const float TapeW = 296f;
-        const float TapeGap = 24f;
-
-        static float GreenW = PageWidth - TapeW - TapeGap;
-        const float GreenPad = 16f;
-        static float GreenInner = GreenW - GreenPad * 2f;
-
-        /// <summary>The two money columns on the greenbar.</summary>
-        const float FinColGap = 24f;
-        static float FinColW = (GreenInner - FinColGap) * 0.5f;
-        static float FinRightX = FinColW + FinColGap;
-
-        /// <summary>The banded rows the sheet is printed on.</summary>
-        const float FinPitch = 26f;
-
-        /// <summary>Where the first banded row's baseline sits, under the head band.</summary>
-        const float FinTop = -64f;
-
-        /// <summary>The greenbar takes what the till roll leaves. Measured, because the
-        /// sheet is full bleed and the roll's width is fixed - a wider window widens the
-        /// two money columns and nothing else.</summary>
+        /// <summary>Three equal tracks with the design's 20-unit gutters. The grid is
+        /// auto-fit at minmax(290, 1fr) over three items, so on any window this sheet
+        /// is drawn at the empty tracks collapse and the three cards share the width.
+        /// </summary>
         static void MeasureFinancesLayout()
         {
             FinTopY = PageTop - FinancesHeadH;
-            FinanceH = -(PageBottom - FinTopY);
-            GreenW = PageWidth - TapeW - TapeGap;
-            GreenInner = GreenW - GreenPad * 2f;
-            FinColW = (GreenInner - FinColGap) * 0.5f;
-            FinRightX = FinColW + FinColGap;
+            FinColW = (PageWidth - FinGridGap * 2f) / 3f;
+            FinCol2X = FinColW + FinGridGap;
+            FinCol3X = (FinColW + FinGridGap) * 2f;
         }
 
-        RectTransform financesSheet;
         RectTransform financesContent;
-        RectTransform tapeContent;
 
         /// <summary>How many days back the pad is turned; 0 = today's open sheet. Held
         /// inside <see cref="Outfit.Campaign.BooksWindow"/> - the page is headed LAST
         /// SEVEN DAYS and a heading that can be paged past is a heading that lies.</summary>
         int financeDayBack;
+
+        TMP_Text financeWindowLine;
 
         void BuildFinancesPage(RectTransform sheet)
         {
@@ -78,75 +114,53 @@ namespace LivingCity.UI
             LedgerV2.PageHead(root, PageLeft, PageTop, PageWidth, "FINANCES",
                 "THE BOOKS · LAST SEVEN DAYS · STRUCK AS THEY STAND THIS MINUTE");
 
-            financesSheet = LedgerV2.Card("Books", root, PageLeft, FinTopY, GreenW,
-                FinanceH, LedgerV2.Money);
+            // The two keys that turn the pad, held to the right margin against the
+            // title's baseline, with the window they walk written to their left.
+            const float keyH = 28f;
+            var laterW = LedgerV2.ButtonWidth("LATER DAYS ›", 10.5f, 6f, 14f);
+            var earlierW = LedgerV2.ButtonWidth("‹ EARLIER DAYS", 10.5f, 6f, 14f);
+            var laterX = PageLeft + PageWidth - laterW;
+            var earlierX = laterX - 8f - earlierW;
 
-            // The panel's own dark band: which of the seven days is on the glass, and
-            // the two keys that turn the pad.
-            var band = NewRect("Head", financesSheet);
-            PlaceTopLeft(band, 0f, 0f, GreenW, 30f);
-            Fill(band, LedgerV2.Head);
-
-            financeHeading = LedgerV2.Mono(band, GreenPad, -8f, 400f, "", 10f,
-                LedgerV2.HeadInk, 13f);
-            financeHeading.font = LedgerStyle.MonoBold;
-
-            financeDayLine = LedgerV2.Mono(band, GreenPad + 410f, -8f, GreenInner - 700f,
-                "", 10f, LedgerV2.HeadDim, 4f, TextAlignmentOptions.MidlineRight);
-
-            LedgerV2.Button(band, "< EARLIER DAYS", GreenInner - 268f, -3f, 130f, 24f, () =>
-            {
-                var sheets = outfit ? outfit.Accounts.Sheets.Count : 1;
-                var back = sheets - 1;
-                if (back > Outfit.Campaign.BooksWindow - 1)
-                    back = Outfit.Campaign.BooksWindow - 1;
-                if (financeDayBack < back)
+            LedgerV2.Button(root, "‹ EARLIER DAYS", earlierX, PageTop - 8f, earlierW,
+                keyH, () =>
                 {
-                    financeDayBack++;
-                    dirty = true;
-                }
-            }, red: false, size: 10f);
-            LedgerV2.Button(band, "LATER DAYS >", GreenInner - 128f, -3f, 128f, 24f, () =>
-            {
-                if (financeDayBack > 0)
+                    var sheets = outfit ? outfit.Accounts.Sheets.Count : 1;
+                    var back = sheets - 1;
+                    if (back > Outfit.Campaign.BooksWindow - 1)
+                        back = Outfit.Campaign.BooksWindow - 1;
+                    if (financeDayBack < back)
+                    {
+                        financeDayBack++;
+                        dirty = true;
+                    }
+                }, LedgerV2.Key.Dark, 10.5f);
+            LedgerV2.Button(root, "LATER DAYS ›", laterX, PageTop - 8f, laterW, keyH,
+                () =>
                 {
-                    financeDayBack--;
-                    dirty = true;
-                }
-            }, red: false, size: 10f);
+                    if (financeDayBack > 0)
+                    {
+                        financeDayBack--;
+                        dirty = true;
+                    }
+                }, LedgerV2.Key.Dark, 10.5f);
 
-            financesContent = NewRect("Figures", financesSheet);
-            Stretch(financesContent);
+            financeWindowLine = LedgerV2.Mono(root, PageLeft + PageWidth * 0.4f,
+                PageTop - 12f, PageWidth * 0.6f - (laterW + earlierW + 14f), "", 11f,
+                LedgerV2.Muted, 2f, TextAlignmentOptions.MidlineRight);
 
-            BuildAddingTape(root);
-        }
-
-        TMP_Text financeHeading;
-        TMP_Text financeDayLine;
-
-        /// <summary>The adding-machine tape: the same week run through the machine, in
-        /// the order the operator punched it, torn off at the bottom. It is a CHECK on
-        /// the sheet beside it, which is what a tape is for.</summary>
-        void BuildAddingTape(RectTransform root)
-        {
-            var tape = LedgerV2.Card("Tape", root, PageLeft + GreenW + TapeGap, FinTopY,
-                TapeW, FinanceH, LedgerV2.Tape);
-
-            tapeContent = NewRect("Run", tape);
-            Stretch(tapeContent);
-
-            // Torn off the roll: the teeth are the colour of the sheet behind it.
+            financesContent = NewRect("Books", root);
+            PlaceTopLeft(financesContent, PageLeft, FinTopY, PageWidth,
+                -(PageBottom - FinTopY));
         }
 
         /// <summary>
-        /// Paints the balance sheet and its tape. EVERY figure is derived at this
-        /// moment from game state - never a stored display string.
+        /// Paints the three cards and the foot under them. EVERY figure is derived at
+        /// this moment from game state - never a stored display string.
         /// </summary>
         void RebuildFinances()
         {
             foreach (Transform old in financesContent)
-                Destroy(old.gameObject);
-            foreach (Transform old in tapeContent)
                 Destroy(old.gameObject);
 
             if (!outfit)
@@ -166,23 +180,14 @@ namespace LivingCity.UI
                 accounts.RiskyMoney,
                 Outfit.BalanceMath.AssetsOf(roster));
 
-            // The heading is the SECTION - the seven days the page covers - and the
-            // line under it says which of them is on the glass. Two lines rather than
-            // one because they answer two different questions.
-            if (financeHeading)
-                financeHeading.text = "THE BOOKS";
-
+            // The window the pad is turned to, written where the design writes it.
             var shownDate = News.NewsDate.FromClockDay(report.Day - 1);
-            if (financeDayLine)
-                financeDayLine.text = financeDayBack == 0
-                    ? shownDate.Stamped() + "  ·  TODAY, STILL OPEN"
-                    : shownDate.Stamped() + "  ·  " +
+            if (financeWindowLine)
+                financeWindowLine.text = financeDayBack == 0
+                    ? shownDate.Stamped() + " · TODAY STILL OPEN"
+                    : shownDate.Stamped() + " · " +
                       (financeDayBack == 1 ? "YESTERDAY" : financeDayBack + " DAYS BACK") +
-                      (report.Closed ? "  ·  CLOSED" : "");
-
-            if (report.Closed)
-                LedgerV2.Status(financesContent, GreenPad + GreenInner - 120f, -4f, 120f,
-                    22f, "CLOSED", LedgerV2.Head, 10f);
+                      (report.Closed ? " · CLOSED" : "");
 
             // ---- the payroll, broken out where the biggest number is born ----
             var hoods = 0;
@@ -217,125 +222,259 @@ namespace LivingCity.UI
                     }
                 }
 
-            // ---- money in, money out ----
-            FinanceColumnHead(0f, FinTop + FinPitch, "MONEY IN");
-            FinanceColumnHead(FinRightX, FinTop + FinPitch, "MONEY OUT");
+            var inH = FinBandH + FinRowH * 3f + FinTotalH + FinProfitH + FinTaxH * 3f;
+            // Five outgoings are always drawn - two wage lines, bribes, purchases and
+            // other costs - and a sixth when the outfit keeps a specialist on retainer.
+            var outRows = 5 + (specialists > 0 ? 1 : 0);
+            var outH = FinBandH + FinRowH * outRows + FinTotalH +
+                       (report.Closed ? FinRowH : FinBandH + FinRowH * 4f + FinTotalH);
 
-            var y = FinTop;
-            FinanceRow(0f, y, "Protection", report.IllegalIncome);
-            FinanceRow(FinRightX, y, "Wages — " + hoods + (hoods == 1 ? " hood" : " hoods"),
-                hoodWages);
-            y -= FinPitch;
+            var moneyIn = LedgerV2.Card("Money in", financesContent, 0f, 0f, FinColW,
+                inH, LedgerV2.Money);
+            var moneyOut = LedgerV2.Card("Money out", financesContent, FinCol2X, 0f,
+                FinColW, outH, LedgerV2.Money);
 
-            FinanceRow(0f, y, "Sales", report.SalesIncome);
-            FinanceRow(FinRightX, y, "Wages — " + lieutenants +
-                (lieutenants == 1 ? " lieutenant" : " lieutenants"), lieutenantWages);
-            y -= FinPitch;
-
-            FinanceRow(0f, y, "Legitimate", report.LegalIncome);
-            if (specialists > 0)
-                FinanceRow(FinRightX, y, "Retainers — " + specialists, specialistWages);
-            else
-                FinanceRow(FinRightX, y, "Bribes", report.Bribes);
-            y -= FinPitch;
-
-            if (specialists > 0)
-            {
-                FinanceRow(FinRightX, y, "Bribes", report.Bribes);
-                y -= FinPitch;
-            }
-
-            FinanceRow(FinRightX, y, "Purchases", report.Purchases);
-            y -= FinPitch;
-            FinanceRow(FinRightX, y, "Other costs", report.OtherCosts);
-            y -= FinPitch;
-
-            // The two totals land on the same rule whatever the column lengths were.
-            var totalsY = FinTop - FinPitch * 5f;
-            Rule(financesContent, GreenPad, totalsY + FinPitch - 2f, FinColW,
-                LedgerV2.MoneyEdge, 2f);
-            Rule(financesContent, GreenPad + FinRightX, totalsY + FinPitch - 2f, FinColW,
-                LedgerV2.MoneyEdge, 2f);
-            FinanceRow(0f, totalsY, "TOTAL IN", report.TotalIncome, bold: true);
-            FinanceRow(FinRightX, totalsY, "TOTAL OUT", report.TotalOutgoings, bold: true);
-
-            // ---- what is left of it, and what the outfit is worth ----
-            var runY = totalsY - FinPitch * 2f;
+            // ---- MONEY IN ----
+            var y = FinanceBand(moneyIn, "MONEY IN", FinInLabel);
+            y = FinanceRow(moneyIn, y, "Protection", report.IllegalIncome, 0);
+            y = FinanceRow(moneyIn, y, "Sales", report.SalesIncome, 1);
+            y = FinanceRow(moneyIn, y, "Legitimate", report.LegalIncome, 2);
+            y = FinanceTotal(moneyIn, y, "TOTAL IN", report.TotalIncome);
 
             var loss = report.TotalProfit < 0;
-            var callout = NewRect("Profit", financesContent);
-            PlaceTopLeft(callout, GreenPad, runY, FinColW, 34f);
-            Fill(callout, new Color(143f / 255f, 33f / 255f, 25f / 255f, loss ? 0.10f : 0.05f));
-            Frame(callout, 1f, new Color(143f / 255f, 33f / 255f, 25f / 255f, 0.4f));
-            Caps(callout, 12f, -8f, 260f, "PROFIT AFTER TAX", 12f,
-                loss ? LedgerV2.Red : LedgerV2.MoneyEdge, 4f);
-            var figure = Line(callout, LedgerStyle.Condensed, 20f,
-                loss ? LedgerV2.Red : LedgerV2.MoneyEdge,
-                FinColW - 190f, -6f, 178f, 26f, LedgerText.Cash(report.TotalProfit),
-                TextAlignmentOptions.MidlineRight);
-            figure.characterSpacing = 1f;
+            var callout = NewRect("Profit", moneyIn);
+            PlaceTopLeft(callout, 0f, y, FinColW, FinProfitH);
+            Fill(callout, LedgerV2.ProfitBand);
+            Rule(callout, 0f, 0f, FinColW, FinProfitRule);
+            var profitInk = loss ? LedgerV2.Red : LedgerV2.Green;
+            Caps(callout, FinPad, -12f, FinColW * 0.6f, "PROFIT AFTER TAX", 15f,
+                profitInk, 5f);
+            LedgerV2.Figure(callout, FinColW * 0.45f, -12f, FinColW * 0.55f - FinPad,
+                LedgerText.Cash(report.TotalProfit), 22f, profitInk);
+            y -= FinProfitH;
 
-            var leftY = runY - 40f;
-            FinanceRow(0f, leftY, "Profit before tax", report.Profit, red: report.Profit < 0);
-            leftY -= FinPitch;
-            FinanceRow(0f, leftY, "Tax due (" + Outfit.BalanceMath.TaxRatePercent + "%)",
-                report.TaxDue);
-            leftY -= FinPitch;
-            FinanceRow(0f, leftY, "Tax paid", report.TaxPaid);
-            leftY -= FinPitch;
+            y = FinanceTax(moneyIn, y, "Profit before tax", report.Profit,
+                report.Profit < 0 ? LedgerV2.Red : LedgerV2.Ink);
+            y = FinanceTax(moneyIn, y, "Tax due (" + Outfit.BalanceMath.TaxRatePercent +
+                "%)", report.TaxDue, LedgerV2.Ink);
+            FinanceTax(moneyIn, y, "Tax paid", report.TaxPaid,
+                report.TaxPaid == 0 ? LedgerV2.Muted : LedgerV2.Ink);
 
-            // Stocks are NOW-figures; a closed week's page keeps to its flows.
-            var rightY = runY;
+            // ---- MONEY OUT ----
+            var oy = FinanceBand(moneyOut, "MONEY OUT", FinOutLabel);
+            var row = 0;
+            oy = FinanceRow(moneyOut, oy, "Wages — " + hoods +
+                (hoods == 1 ? " hood" : " hoods"), hoodWages, row++);
+            oy = FinanceRow(moneyOut, oy, "Wages — " + lieutenants +
+                (lieutenants == 1 ? " lieutenant" : " lieutenants"), lieutenantWages, row++);
+            if (specialists > 0)
+                oy = FinanceRow(moneyOut, oy, "Retainers — " + specialists,
+                    specialistWages, row++);
+            oy = FinanceRow(moneyOut, oy, "Bribes", report.Bribes, row++);
+            oy = FinanceRow(moneyOut, oy, "Purchases", report.Purchases, row++);
+            oy = FinanceRow(moneyOut, oy, "Other costs", report.OtherCosts, row);
+            oy = FinanceTotal(moneyOut, oy, "TOTAL OUT", report.TotalOutgoings);
+
+            // Stocks are NOW-figures; a closed day's page keeps to its flows.
             if (!report.Closed)
             {
-                FinanceRow(FinRightX, rightY, "Money in safe", report.Safe);
-                rightY -= FinPitch;
-                FinanceRow(FinRightX, rightY, "Stock at book value", report.Assets);
-                rightY -= FinPitch;
+                oy = FinanceBand(moneyOut, "WHAT THE OUTFIT IS WORTH", LedgerV2.HeadInk,
+                    unit: false, at: oy);
+                oy = FinanceRow(moneyOut, oy, "Money in safe", report.Safe, -1);
+                oy = FinanceRow(moneyOut, oy, "Stock at book value", report.Assets, -1);
                 var risky = report.Risk >= Outfit.RiskRating.Moderate;
-                FinanceRow(FinRightX, rightY, "Risky money (unlaundered)", report.RiskyMoney,
-                    red: risky);
-                rightY -= FinPitch;
-                FinanceText(FinRightX, rightY, "Risk",
-                    LedgerText.RiskLabel(report.Risk).ToUpperInvariant(), bold: risky,
-                    red: risky);
-                rightY -= FinPitch;
-                Rule(financesContent, GreenPad + FinRightX, rightY + FinPitch - 2f, FinColW,
-                    LedgerV2.MoneyEdge, 2f);
-                FinanceRow(FinRightX, rightY, "TOTAL WEALTH", report.TotalWealth, bold: true);
-                rightY -= FinPitch;
+                oy = FinanceRow(moneyOut, oy, "Risky money (unlaundered)",
+                    report.RiskyMoney, -1, red: risky);
+                oy = FinanceText(moneyOut, oy, "Risk",
+                    LedgerText.RiskLabel(report.Risk).ToUpperInvariant(), -1,
+                    risky ? LedgerV2.Red : LedgerV2.Green);
+                FinanceTotal(moneyOut, oy, "TOTAL WEALTH", report.TotalWealth);
             }
             else
             {
-                Line(financesContent, LedgerStyle.MonoItalic, 13f, LedgerV2.Muted,
-                    GreenPad + FinRightX, rightY, FinColW, FinPitch,
-                    "A closed day - the record of what moved.");
-                rightY -= FinPitch;
+                Line(moneyOut, LedgerStyle.MonoItalic, 13f, LedgerV2.Muted, FinPad,
+                    oy - 9f, FinColW - FinPad * 2f, LineBox(13f),
+                    "A closed day — the record of what moved.");
             }
 
-            // Pinned to the foot of the sheet, not to wherever the figures ended:
-            // the explainer and the signature are the sheet's bottom margin.
-            BuildFinanceFoot(roster, -(FinanceH - 96f));
-            BuildTapeRun(report, accounts, roster);
+            var tapeH = BuildTapeRun(report, accounts, roster);
+
+            // ---- the foot, under the tallest of the three ----
+            var gridH = Mathf.Max(inH, Mathf.Max(outH, tapeH));
+            BuildFinanceFoot(roster, -(gridH + 18f));
         }
 
-        /// <summary>The explainer and the bookkeeper's signature, across the foot. The
-        /// name in the box is the outfit's OWN accountant if it has bought one - and
-        /// when it has not, the box says who is doing the books instead.</summary>
+        /// <summary>A card's dark band: what the column is, in the colour of which way
+        /// the money runs, and the unit held to its right. Answers the y below it.
+        /// </summary>
+        float FinanceBand(RectTransform card, string label, Color ink,
+            bool unit = true, float at = 0f)
+        {
+            var band = NewRect("Band " + label, card);
+            PlaceTopLeft(band, 0f, at, FinColW, FinBandH);
+            Fill(band, LedgerV2.Head);
+
+            var name = LedgerV2.Mono(band, FinPad, -9f, FinColW - 120f, label, 10f, ink,
+                13f);
+            name.font = LedgerStyle.MonoBold;
+            if (unit)
+                LedgerV2.Mono(band, FinColW - 116f, -9f, 100f, "DOLLARS", 10f,
+                    FinBandDim, 8f, TextAlignmentOptions.MidlineRight);
+            return at - FinBandH;
+        }
+
+        /// <summary>One figure row on a green card: the label on the left, the money
+        /// held to the right, a hairline under it and the design's stripe on every
+        /// other one. A stripe index below zero is a row the design leaves unstriped.
+        /// </summary>
+        float FinanceRow(RectTransform card, float y, string label, int amount,
+            int stripe, bool red = false) =>
+            FinanceText(card, y, label, LedgerText.Cash(amount), stripe,
+                red ? LedgerV2.Red : amount == 0 ? LedgerV2.Muted : LedgerV2.Ink);
+
+        float FinanceText(RectTransform card, float y, string label, string value,
+            int stripe, Color ink)
+        {
+            var row = NewRect("Figure " + label, card);
+            PlaceTopLeft(row, 0f, y, FinColW, FinRowH);
+            if (stripe > 0 && (stripe & 1) == 1)
+                Fill(row, LedgerV2.MoneyStripe);
+            Rule(row, 0f, -(FinRowH - 1f), FinColW, LedgerV2.MoneyRule);
+
+            var text = Line(row, LedgerStyle.Mono, 13f, FinRowInk, FinPad, -9f,
+                FinColW - FinPad * 2f - 150f, LineBox(13f), label);
+            text.overflowMode = TextOverflowModes.Ellipsis;
+
+            LedgerV2.Figure(row, FinColW - FinPad - 150f, -9f, 150f, value, 13.5f, ink);
+            return y - FinRowH;
+        }
+
+        /// <summary>A card's ruled total: the heavy rule the accountant strikes, the
+        /// word in the condensed gothic and the figure in the mono.</summary>
+        float FinanceTotal(RectTransform card, float y, string label, int amount)
+        {
+            var row = NewRect("Total " + label, card);
+            PlaceTopLeft(row, 0f, y, FinColW, FinTotalH);
+            Rule(row, 0f, 0f, FinColW, LedgerV2.MoneyEdge, 2f);
+            Caps(row, FinPad, -11f, FinColW * 0.6f, label, 15f, LedgerV2.Ink, 6f);
+            LedgerV2.Figure(row, FinColW - FinPad - 170f, -11f, 170f,
+                LedgerText.Cash(amount), 17f, LedgerV2.Ink);
+            return y - FinTotalH;
+        }
+
+        /// <summary>A tax line under the profit callout: smaller type, a dotted leader
+        /// under it, and no stripe.</summary>
+        float FinanceTax(RectTransform card, float y, string label, int amount, Color ink)
+        {
+            var row = NewRect("Tax " + label, card);
+            PlaceTopLeft(row, 0f, y, FinColW, FinTaxH);
+            DottedRule(row, 0f, -(FinTaxH - 1f), FinColW, FinDotted);
+
+            Line(row, LedgerStyle.Mono, 12.5f, FinTaxLabel, FinPad, -8f,
+                FinColW - FinPad * 2f - 150f, LineBox(12.5f), label);
+            LedgerV2.Figure(row, FinColW - FinPad - 150f, -8f, 150f,
+                LedgerText.Cash(amount), 13f, ink);
+            return y - FinTaxH;
+        }
+
+        /// <summary>
+        /// The tape: the LAST SEVEN DAYS punched through the machine, one line a day in
+        /// the order they happened, then netted. It is the check on the two cards beside
+        /// it - they show one day, and one day of a real-time outfit can look like
+        /// nothing at all; the run says whether that day was normal.
+        ///
+        /// Fixed pitch throughout: a tape that does not line up is not a tape. Answers
+        /// the height the card came to, because the grid is laid to the tallest of the
+        /// three.
+        /// </summary>
+        float BuildTapeRun(Outfit.FinanceReport report, Outfit.Accounts accounts,
+            Roster roster)
+        {
+            // The window: the last seven sheets there are, oldest first, so the run
+            // reads down the tape the way the days actually fell.
+            var first = accounts.Sheets.Count - Outfit.Campaign.BooksWindow;
+            if (first < 0)
+                first = 0;
+            var days = accounts.Sheets.Count - first;
+
+            var height = 14f + 19f + 3f + 13f + 12f + days * FinTapeRowH +
+                         12f + 2f + 9f + 24f + 12f + 13f + 20f;
+
+            var card = LedgerV2.Card("Tape", financesContent, FinCol3X, 0f, FinColW,
+                height, LedgerV2.Tape);
+            var inner = FinColW - FinTapePad * 2f;
+
+            var y = -14f;
+            Caps(card, FinTapePad, y, inner, "ADDING MACHINE TAPE", 14f, LedgerV2.Ink, 6f);
+            y -= 19f + 3f;
+            LedgerV2.Mono(card, FinTapePad, y, inner, "SEVEN DAYS, IN ORDER", 10f,
+                LedgerV2.Label, 5f);
+            y -= 13f + 12f;
+
+            var liveWages = Outfit.Wages.DailyPayroll(roster);
+            var run = 0;
+            for (var i = first; i < accounts.Sheets.Count; i++)
+            {
+                var day = accounts.Sheets[i];
+                var line = Outfit.FinanceReport.For(day, liveWages, accounts.Safe,
+                    accounts.RiskyMoney, 0);
+                var net = line.TotalIncome - line.TotalOutgoings;
+                run += net;
+
+                var stamp = News.NewsDate.FromClockDay(day.Day - 1);
+                // The day on the glass is marked so the eye finds it in the run.
+                var label = (day.Day == report.Day ? "▸ " : "  ") + stamp.Short();
+                y = TapeLine(card, label, net, y, inner);
+            }
+
+            y -= 12f;
+            Rule(card, FinTapePad, y, inner, FinNetRule, 2f);
+            y -= 9f;
+            Caps(card, FinTapePad, y, 120f, "NET", 15f, FinNetLabel, 8f);
+            Line(card, LedgerStyle.MonoBold, 18f,
+                run < 0 ? LedgerV2.Red : LedgerV2.Green, FinTapePad + inner - 170f, y,
+                170f, LineBox(18f), LedgerText.Cash(run),
+                TextAlignmentOptions.MidlineRight);
+            y -= 24f + 12f;
+
+            LedgerV2.Mono(card, FinTapePad, y, inner, "RIBBON LOW · REPLACE SOON", 9.5f,
+                FinRibbon, 7f);
+            return height;
+        }
+
+        float TapeLine(RectTransform card, string label, int amount, float y, float inner)
+        {
+            var row = NewRect("Tape line", card);
+            PlaceTopLeft(row, FinTapePad, y, inner, FinTapeRowH);
+            DottedRule(row, 0f, -(FinTapeRowH - 1f), inner, FinDotted);
+
+            Line(row, LedgerStyle.Mono, 11.5f, FinTaxLabel, 0f, -5f, inner - 130f,
+                LineBox(11.5f), label);
+            Line(row, LedgerStyle.MonoBold, 12.5f,
+                amount < 0 ? LedgerV2.Red : LedgerV2.Green, inner - 130f, -5f, 130f,
+                LineBox(12.5f), LedgerText.Cash(amount),
+                TextAlignmentOptions.MidlineRight);
+            return y - FinTapeRowH;
+        }
+
+        /// <summary>The remark and the box the books are posted in, across the foot of
+        /// the sheet under a hairline. The name in the box is the outfit's OWN
+        /// accountant if it has bought one - and when it has not, the box says who is
+        /// doing the books instead.</summary>
         void BuildFinanceFoot(Roster roster, float y)
         {
-            const float signW = 190f;
-            var foot = NewRect("Foot", financesContent);
-            PlaceTopLeft(foot, GreenPad, y, GreenInner, 78f);
-            Fill(foot, new Color(34f / 255f, 48f / 255f, 28f / 255f, 0.07f));
+            Rule(financesContent, 0f, y, PageWidth, FinFootRule);
+            y -= 14f;
 
-            Paragraph(foot, LedgerStyle.Serif, 14f, LedgerV2.MoneyEdge, 14f, -10f,
-                GreenInner - signW - 40f, 58f,
+            const float signW = 220f;
+            const float remarkW = 900f;
+            LedgerV2.Copytext(financesContent, 0f, y,
+                Mathf.Min(remarkW, PageWidth - signW - 40f), 72f,
                 "Every figure is struck from the books as they stand this minute — the " +
                 "sheet moves while you read it. The books close at midnight and the men " +
                 "are paid then, every day, whether they worked it or not. A big crew " +
                 "with no earner under it is the classic way an outfit dies.",
-                lineSpacing: 3f);
+                14.5f, FinRemark);
 
             string bookkeeper = null;
             if (roster != null)
@@ -346,142 +485,17 @@ namespace LivingCity.UI
                         break;
                     }
 
-            var box = NewRect("Signature", foot);
-            PlaceTopLeft(box, GreenInner - signW - 14f, -8f, signW, 62f);
-            Frame(box, 1f, new Color(34f / 255f, 48f / 255f, 28f / 255f, 0.35f));
-            Caps(box, 0f, -6f, signW, "POSTED BY", 9f, LedgerV2.Label, 3f,
+            var box = NewRect("Signature", financesContent);
+            PlaceTopLeft(box, PageWidth - signW, y, signW, 66f);
+            Frame(box, 1f, FinSignRule);
+            LedgerV2.Mono(box, 18f, -8f, signW - 36f, "POSTED BY", 9f, LedgerV2.Label,
+                12f, TextAlignmentOptions.Center);
+            Line(box, LedgerStyle.SerifItalic, 19f, LedgerV2.Signature, 18f, -22f,
+                signW - 36f, LineBox(19f), bookkeeper ?? "the boss himself",
                 TextAlignmentOptions.Center);
-            Line(box, LedgerStyle.SerifItalic, 17f, LedgerV2.PaperBlue, 0f, -20f, signW,
-                24f, bookkeeper ?? "the boss himself", TextAlignmentOptions.Center);
-            Caps(box, 0f, -44f, signW, bookkeeper != null ? "BOOKKEEPER" : "NO BOOKKEEPER ON THE BOOKS",
-                8.5f, LedgerV2.Label, 2f, TextAlignmentOptions.Center);
-        }
-
-        /// <summary>
-        /// The tape: the LAST SEVEN DAYS punched through the machine, one line a day in
-        /// the order they happened, then netted. It is the check on the greenbar beside
-        /// it - the greenbar shows one day, and one day of a real-time outfit can look
-        /// like nothing at all; the run says whether that day was normal.
-        ///
-        /// Fixed pitch throughout: a tape that does not line up is not a tape.
-        /// </summary>
-        void BuildTapeRun(Outfit.FinanceReport report, Outfit.Accounts accounts,
-            Roster roster)
-        {
-            const float pitch = 17f;
-            const float pad = 18f;
-            var inner = TapeW - pad * 2f;
-            var y = -18f;
-
-            Caps(tapeContent, pad, y, inner, "ADDING MACHINE TAPE", 10f,
-                LedgerV2.Label, 4f);
-            y -= 20f;
-            Caps(tapeContent, pad, y, inner, "SEVEN DAYS, IN ORDER", 8.5f,
-                LedgerV2.Muted, 3f);
-            y -= 22f;
-
-            // The window: the last seven sheets there are, oldest first, so the run
-            // reads down the tape the way the days actually fell.
-            var first = accounts.Sheets.Count - Outfit.Campaign.BooksWindow;
-            if (first < 0)
-                first = 0;
-
-            var liveWages = Outfit.Wages.DailyPayroll(roster);
-            var runIn = 0;
-            var runOut = 0;
-            for (var i = first; i < accounts.Sheets.Count; i++)
-            {
-                var day = accounts.Sheets[i];
-                var line = Outfit.FinanceReport.For(day, liveWages, accounts.Safe,
-                    accounts.RiskyMoney, 0);
-                runIn += line.TotalIncome;
-                runOut += line.TotalOutgoings;
-
-                var stamp = News.NewsDate.FromClockDay(day.Day - 1);
-                var net = line.TotalIncome - line.TotalOutgoings;
-                // The day on the glass is marked so the eye finds it in the run.
-                var label = (day.Day == report.Day ? "\u25B8 " : "  ") + stamp.Short();
-                y = TapeLine(label, net, y, pad, inner, pitch);
-            }
-
-            y -= 4f;
-            y = TapeLine("seven days in", runIn, y, pad, inner, pitch, true);
-            y = TapeLine("seven days out", runOut, y, pad, inner, pitch, true);
-            y -= 6f;
-
-            LedgerV2.Leader(tapeContent, pad, y + 8f, inner);
-            var run = runIn - runOut;
-            Caps(tapeContent, pad, y, 120f, "NET", 12f, LedgerV2.Red, 4f);
-            Line(tapeContent, LedgerStyle.MonoBold, 13.5f, LedgerV2.Red,
-                pad + inner - 160f, y, 160f, pitch, LedgerText.Cash(run),
-                TextAlignmentOptions.MidlineRight);
-            y -= 24f;
-
-            // What the outfit owes upward, if anything - the one outgoing that is not
-            // on the greenbar's own columns until the day it is actually handed over.
-            if (outfit)
-            {
-                var owed = outfit.Tribute.TotalOwed();
-                if (owed > 0)
-                    y = TapeLine("tribute standing", owed, y, pad, inner, pitch);
-            }
-
-            y -= 6f;
-            Caps(tapeContent, pad, y, inner, "RIBBON LOW · REPLACE SOON", 8.5f,
-                LedgerV2.Label, 2f);
-        }
-
-        float TapeLine(string label, int amount, float y, float pad, float inner,
-            float pitch, bool rule = false)
-        {
-            Line(tapeContent, LedgerStyle.Mono, 12f, LedgerV2.Body, pad, y,
-                inner - 130f, pitch, label);
-            Line(tapeContent, LedgerStyle.Mono, 12f, LedgerV2.Body, pad + inner - 150f,
-                y, 150f, pitch, LedgerText.Cash(amount), TextAlignmentOptions.MidlineRight);
-            if (rule)
-                Rule(tapeContent, pad, y - pitch + 2f, inner, LedgerV2.Rule);
-            return y - pitch;
-        }
-
-        /// <summary>The dark band over a money column: what the column is, in the
-        /// colour of which way the money runs, and the unit held to its right.</summary>
-        void FinanceColumnHead(float x, float y, string label)
-        {
-            var band = NewRect("Column head", financesContent);
-            PlaceTopLeft(band, GreenPad + x, y + 8f, FinColW, 28f);
-            Fill(band, LedgerV2.Head);
-
-            var name = LedgerV2.Mono(band, 12f, -7f, FinColW - 100f, label, 10f,
-                label == "MONEY IN" ? LedgerV2.HeadStreet : LedgerV2.Boss, 13f);
-            name.font = LedgerStyle.MonoBold;
-            LedgerV2.Mono(band, FinColW - 112f, -7f, 100f, "DOLLARS", 10f,
-                LedgerV2.HeadDim, 8f, TextAlignmentOptions.MidlineRight);
-        }
-
-        void FinanceRow(float x, float y, string label, int amount, bool bold = false,
-            bool dim = false, bool red = false) =>
-            FinanceText(x, y, label, LedgerText.Cash(amount), bold, dim, red);
-
-        void FinanceText(float x, float y, string label, string value, bool bold = false,
-            bool dim = false, bool red = false)
-        {
-            var colour = red ? LedgerV2.Red
-                : dim ? LedgerV2.Muted
-                : LedgerV2.MoneyEdge;
-            var font = bold ? LedgerStyle.MonoBold : LedgerStyle.Mono;
-
-            var text = Line(financesContent, font, 13.5f, colour, GreenPad + x + 4f, y,
-                FinColW - 160f, FinPitch, label);
-            text.overflowMode = TextOverflowModes.Ellipsis;
-
-            Line(financesContent, font, 13.5f, colour, GreenPad + x + FinColW - 150f, y,
-                146f, FinPitch, value, TextAlignmentOptions.MidlineRight);
-
-            // A dotted leader carries the eye from the word to the figure - the one
-            // job the whole of a ruled sheet exists to do.
-            if (!bold)
-                LedgerV2.Leader(financesContent, GreenPad + x + 4f, y - FinPitch + 5f,
-                    FinColW - 8f);
+            LedgerV2.Mono(box, 18f, -46f, signW - 36f,
+                bookkeeper != null ? "BOOKKEEPER" : "NO BOOKKEEPER ON THE BOOKS", 9f,
+                LedgerV2.Label, 8f, TextAlignmentOptions.Center);
         }
     }
 }

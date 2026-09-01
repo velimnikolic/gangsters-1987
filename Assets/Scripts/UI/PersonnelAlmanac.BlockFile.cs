@@ -54,11 +54,6 @@ namespace LivingCity.UI
         TextMeshProUGUI blockCardHoverName;
         TextMeshProUGUI blockCardHoverLine;
 
-        /// <summary>How many plate pixels the film is exposed for every pixel the plate
-        /// shows. The lens has no antialiasing, so the picture is oversampled and the
-        /// plate's own bilinear filter resolves the edges on the way down.</summary>
-        const float Supersample = 2f;
-
         /// <summary>How many men are printed before the column offers the rest.</summary>
         const int BlockCardMenShown = 6;
 
@@ -304,15 +299,15 @@ namespace LivingCity.UI
                     // A house's own premises is a house's, whatever the deed book has
                     // caught up to - the street said so and the street is the authority
                     // on where a family sits.
-                    if (trade.Tenure == BlockTenure.Open)
+                    if (front.GangId == GangCatalog.PlayerGangId)
                     {
-                        if (front.GangId == GangCatalog.PlayerGangId)
-                            trade.Tenure = BlockTenure.Ours;
-                        else
-                        {
-                            trade.Tenure = BlockTenure.Rival;
-                            trade.RivalName = GangName(front.GangId);
-                        }
+                        trade.Tenure = BlockTenure.Ours;
+                        trade.RivalName = null;
+                    }
+                    else if (trade.Tenure == BlockTenure.Open)
+                    {
+                        trade.Tenure = BlockTenure.Rival;
+                        trade.RivalName = GangName(front.GangId);
                     }
                 }
 
@@ -482,7 +477,9 @@ namespace LivingCity.UI
         static readonly Color TenureOpen = LedgerV2.Rgb2(0xb4a99e);
         static readonly Color RivalInk = LedgerV2.Rgb2(0x60438d);
 
-        static readonly Color ModelPlate = LedgerV2.Rgb2(0x241e1a);
+        // The film grades its clear colour into this warm brown. Carry that same brown
+        // across the whole plate so the block does not sit on a separate dark rectangle.
+        static readonly Color ModelPlate = LedgerV2.FilmPlate;
         static readonly Color ModelTip = LedgerV2.Rgb2(0x110c09);
         static readonly Color ModelCaption = LedgerV2.Rgb2(0x998c84);
         static readonly Color ModelHint = LedgerV2.Rgb2(0x72665e);
@@ -569,41 +566,40 @@ namespace LivingCity.UI
 
             RoadDemo.CityBlockRecycler.Hold(blockCardGround);
 
-            // The plate is a wide band and a block is not. The picture is cut to the
-            // block's own shape at the angle it is standing at and stood in the middle of
-            // the band; what fell outside the block was never the block, it was the road
-            // it stands next to, and the file is not a picture of the road.
-            //
-            // BOTH sides are solved, not just the width. Fixing the height and taking the
-            // width from it means a block longer than the band is wide cannot get its
-            // shape, and a picture whose shape is not the block's shows road on two sides
-            // and cuts the block off on the other two. The largest rectangle of the
-            // block's own shape that fits the band always can.
-            var shape = BlockFilm.PlateExtents(
-                blockCardGround, blockCardRise, blockCardYaw);
-            var shot = shape.y > 0.01f ? shape.x / shape.y : 1f;
-            var filmW = Mathf.Min(organizationW, plateH * shot);
-            var filmH = filmW / Mathf.Max(0.05f, shot);
-
+            // The film covers the WHOLE band. Its camera contains the block at the same
+            // size the old fitted rectangle did, leaving only the empty stage around it.
+            // That makes the camera's grade and vignette one continuous treatment across
+            // the plate instead of a post-processed rectangle between two flat UI fills.
             var film = BlockFilm.Get();
-            var view = NewRect("Model", plate);
-            PlaceTopLeft(view, (organizationW - filmW) * 0.5f,
-                -(plateH - filmH) * 0.5f, filmW, filmH);
-            view.gameObject.AddComponent<CanvasRenderer>();
-            blockCardModel = view.gameObject.AddComponent<BlockFilmView>();
-            blockCardModel.raycastTarget = true;
-            blockCardModel.color = Color.white;
+            RectTransform view;
+            if (blockCardModel != null)
+            {
+                // Ordinary page refreshes keep the live plate. Only its paper parent and
+                // geometry move; the RawImage, texture and interaction state stay alive.
+                view = blockCardModel.rectTransform;
+                view.SetParent(plate, false);
+                view.gameObject.name = "Model";
+            }
+            else
+            {
+                view = NewRect("Model", plate);
+                view.gameObject.AddComponent<CanvasRenderer>();
+                blockCardModel = view.gameObject.AddComponent<BlockFilmView>();
+                blockCardModel.raycastTarget = true;
+                blockCardModel.color = Color.white;
+            }
+            PlaceTopLeft(view, 0f, 0f, organizationW, plateH);
+            view.SetAsFirstSibling();
 
-            // The film is cut to the plate's real pixel size, so a wide window gets a
-            // wide negative rather than a square one stretched across it - and it is
-            // exposed at twice that size. The lens renders no antialiasing of its own, so
-            // a negative shot at the plate's size hands the reader a block with stepped
-            // eaves and a stepped kerb; shot at twice and filtered back down by the plate,
-            // every edge on it is resolved.
-            var scale = view.lossyScale.x <= 0f ? 1f : view.lossyScale.x;
+            // Render exactly as many pixels as this rectangle shows on screen. The film
+            // used to expose at twice this size, which made an open file pay for four
+            // times as many pixels while the reader was trying to scroll the sheet.
+            var scale = view.lossyScale;
+            var pixelScaleX = Mathf.Abs(scale.x) <= 0f ? 1f : Mathf.Abs(scale.x);
+            var pixelScaleY = Mathf.Abs(scale.y) <= 0f ? 1f : Mathf.Abs(scale.y);
             blockCardModel.texture = film.Reel(
-                Mathf.RoundToInt(filmW * scale * Supersample),
-                Mathf.RoundToInt(filmH * scale * Supersample));
+                Mathf.RoundToInt(view.rect.width * pixelScaleX),
+                Mathf.RoundToInt(view.rect.height * pixelScaleY));
             film.Look(blockCardGround, blockCardGroundY, blockCardYaw, blockCardRise);
 
             blockCardDoors.Clear();
@@ -631,10 +627,9 @@ namespace LivingCity.UI
                 BlockFilm.Get().Look(blockCardGround, blockCardGroundY, yaw,
                     blockCardRise);
             };
-            // The plate is cut for one angle. When the reader has finished turning the
-            // block, the sheet repaints and cuts it again for the angle it now stands at
-            // - never during the turn, which would destroy the model under the pointer.
-            blockCardModel.Settled = () => dirty = true;
+            // Turning changes only the cached film frame. It is not a reason to rebuild
+            // the paper around the model.
+            blockCardModel.Settled = null;
             blockCardModel.Picked = key => PickTrade(
                 key >= 0 && key < blockCardTrades.Count
                     ? blockCardTrades[key].Id
@@ -664,8 +659,36 @@ namespace LivingCity.UI
         /// </summary>
         void StopBlockFilm()
         {
+            if (blockCardModel != null)
+            {
+                var old = blockCardModel;
+                blockCardModel = null;
+                Destroy(old.gameObject);
+            }
+            blockCardHoverName = null;
+            blockCardHoverLine = null;
             RoadDemo.CityBlockRecycler.Release();
             BlockFilm.StopIfRunning();
+        }
+
+        /// <summary>Moves the persistent live plate out of the old block-file hierarchy
+        /// before Organization destroys and rebuilds that hierarchy.</summary>
+        void ParkBlockModelForRebuild()
+        {
+            if (blockCardModel == null || organizationContent == null)
+                return;
+            var view = blockCardModel.rectTransform;
+            view.SetParent(organizationContent, false);
+            view.SetAsFirstSibling();
+        }
+
+        /// <summary>If no rebuilt block file claimed the parked plate, the file really did
+        /// close or disappear; dispose it instead of leaving the last block on the page.</summary>
+        void FinishBlockModelRebuild()
+        {
+            if (blockCardModel != null &&
+                blockCardModel.transform.parent == organizationContent)
+                StopBlockFilm();
         }
 
         /// <summary>The two turns. There is no angle to pick any more: the block stands
@@ -702,9 +725,6 @@ namespace LivingCity.UI
                     if (blockCardModel == null)
                         return;
                     blockCardModel.Turn(blockCardModel.Yaw + step);
-                    // Deferred to the next frame, so this key finishes its own click
-                    // before the sheet that carries it is rebuilt.
-                    dirty = true;
                 });
                 x += chipW + gap;
             }
@@ -747,13 +767,14 @@ namespace LivingCity.UI
         {
             var words = new[] { "OURS", "PAYS US", "ANOTHER HOUSE", "NOBODY LEANS" };
             var inks = new[] { TenureOurs, TenurePaying, TenureRival, TenureOpen };
-            var x = 18f;
+            const float margin = 18f;
+            var cellW = (organizationW - margin * 2f) / words.Length;
             for (var i = 0; i < words.Length; i++)
             {
+                var x = margin + i * cellW;
                 LedgerV2.StreetMark(plate, x, -(plateH - 26f), inks[i], 9f);
-                var label = LedgerV2.Mono(plate, x + 14f, -(plateH - 27f), 130f, words[i],
+                LedgerV2.Mono(plate, x + 14f, -(plateH - 27f), cellW - 18f, words[i],
                     9f, ModelLegend, 2f);
-                x += 14f + Mathf.Min(130f, label.preferredWidth) + 18f;
             }
         }
 

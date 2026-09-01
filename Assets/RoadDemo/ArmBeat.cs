@@ -5,15 +5,16 @@ namespace RoadDemo
 {
     /// <summary>
     /// The small acted gestures the street's errands were missing: a man making his
-    /// point at a shopkeeper's door, and a man taking a bat to a frontage. DERIVED, the
-    /// project's one rule for poses (BikePose, SeatPose): the idle clip keeps the body -
-    /// the breathing, the weight - and this writes only the arm, two bones and a fist,
-    /// in LateUpdate after the Animator has had its say.
+    /// point at a shopkeeper's door, and a man taking a bat to a frontage. TALK uses the
+    /// city's authored Standing_Talking take: the old two-bone hand solve bent badly on
+    /// some Synty rigs and read as a broken-arm attempt to open the door. SWING remains
+    /// derived, because the project has no authored frontage strike and the bat must land
+    /// against the actual building rather than an animation's imaginary target.
     ///
-    /// TALK is the left arm (the right holds his piece): raised to chest height and
-    /// moved the way a man moves a hand he is talking with. SWING is the right arm and
-    /// a bat from the pack in it: up over the shoulder and down at the glass, over and
-    /// over, while the man's own gun waits hidden in his fist's slot. A man who comes
+    /// TALK keeps the whole authored body and only turns its root toward the owner.
+    /// SWING is the right arm and a bat from the pack in it: up over the shoulder and
+    /// down at the glass, over and over, while the man's own gun waits hidden in his
+    /// fist's slot. A man who comes
     /// under fire mid-gesture drops the act at once and gets his gun back - nobody
     /// finishes an argument, or a swing, in a gunfight.
     /// </summary>
@@ -42,10 +43,10 @@ namespace RoadDemo
         static ArmBeat instance;
         readonly List<Act> acts = new List<Act>();
 
-        public static void Talk(CrewWalker man, Vector3 at, float seconds) =>
+        public static bool Talk(CrewWalker man, Vector3 at, float seconds) =>
             Play(man, Kind.Talk, at, seconds);
 
-        public static void Swing(CrewWalker man, Vector3 at, float seconds) =>
+        public static bool Swing(CrewWalker man, Vector3 at, float seconds) =>
             Play(man, Kind.Swing, at, seconds);
 
         /// <summary>Is this man mid-gesture? DoorBeat waits for the word to finish.</summary>
@@ -59,28 +60,33 @@ namespace RoadDemo
             return false;
         }
 
-        static void Play(CrewWalker man, Kind kind, Vector3 at, float seconds)
+        static bool Play(CrewWalker man, Kind kind, Vector3 at, float seconds)
         {
             if (man == null || man.Dead || man.Tf == null ||
                 !man.Tf.gameObject.activeInHierarchy || seconds <= 0f)
-                return;
+                return false;
             // one act per man; and a man in a fight has both hands full already
             if (Acting(man) || man.WantsGunOut)
-                return;
+                return false;
 
             var an = man.Tf.GetComponentInChildren<Animator>();
             if (an == null || an.avatar == null || !an.avatar.isHuman)
-                return;
+                return false;
 
-            var left = kind == Kind.Talk;
-            var armUp = an.GetBoneTransform(
-                left ? HumanBodyBones.LeftUpperArm : HumanBodyBones.RightUpperArm);
-            var armLow = an.GetBoneTransform(
-                left ? HumanBodyBones.LeftLowerArm : HumanBodyBones.RightLowerArm);
-            var hand = an.GetBoneTransform(
-                left ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
-            if (!armUp || !armLow || !hand)
-                return;
+            Transform armUp = null, armLow = null, hand = null;
+            if (kind == Kind.Talk)
+            {
+                if (!man.PlayTake(CrewKit.DoorTalk, loop: true, speed: 1f, at: 0f))
+                    return false;
+            }
+            else
+            {
+                armUp = an.GetBoneTransform(HumanBodyBones.RightUpperArm);
+                armLow = an.GetBoneTransform(HumanBodyBones.RightLowerArm);
+                hand = an.GetBoneTransform(HumanBodyBones.RightHand);
+                if (!armUp || !armLow || !hand)
+                    return false;
+            }
 
             if (instance == null)
             {
@@ -88,7 +94,6 @@ namespace RoadDemo
                 instance = go.AddComponent<ArmBeat>();
             }
 
-            var inv = Quaternion.Inverse(CrewArms.TPoseRotation(an, hand));
             var act = new Act
             {
                 Man = man,
@@ -99,16 +104,20 @@ namespace RoadDemo
                 ArmUp = armUp,
                 ArmLow = armLow,
                 Hand = hand,
-                Fingers = inv * (left ? Vector3.left : Vector3.right),
-                Thumb = inv * Vector3.forward,
-                Reach = Vector3.Distance(armUp.position, armLow.position) +
-                        Vector3.Distance(armLow.position, hand.position),
             };
 
             if (kind == Kind.Swing)
+            {
+                var inv = Quaternion.Inverse(CrewArms.TPoseRotation(an, hand));
+                act.Fingers = inv * Vector3.right;
+                act.Thumb = inv * Vector3.forward;
+                act.Reach = Vector3.Distance(armUp.position, armLow.position) +
+                            Vector3.Distance(armLow.position, hand.position);
                 TakeUpBat(act, an);
+            }
 
             instance.acts.Add(act);
+            return true;
         }
 
         /// <summary>The bat into the fist, the gun out of sight. CrewArms lays the piece
@@ -155,17 +164,23 @@ namespace RoadDemo
                 var interrupted = !gone && man.WantsGunOut;
                 if (gone || interrupted || Time.time >= act.Until)
                 {
-                    PutDownBat(act);
+                    Finish(act);
                     acts.RemoveAt(i);
                     continue;
                 }
 
                 Face(act);
-                if (act.Kind == Kind.Talk)
-                    TalkPose(act);
-                else
+                if (act.Kind == Kind.Swing)
                     SwingPose(act);
             }
+        }
+
+        static void Finish(Act act)
+        {
+            if (act.Kind == Kind.Talk)
+                act.Man?.EndTake();
+            else
+                PutDownBat(act);
         }
 
         /// <summary>He addresses the thing, not the street: the root eased round to face
@@ -180,30 +195,6 @@ namespace RoadDemo
                 act.Man.Tf.rotation,
                 Quaternion.LookRotation(to.normalized, Vector3.up),
                 8f * Time.deltaTime);
-        }
-
-        /// <summary>The talking hand: chest height, a beat up and down, a smaller one
-        /// side to side - two frequencies that never line up, which is what keeps it
-        /// from reading as a metronome.</summary>
-        void TalkPose(Act act)
-        {
-            var root = act.Man.Tf;
-            var shoulder = act.ArmUp.position;
-            var t = Time.time - act.Began;
-
-            var target = shoulder + root.forward * 0.30f - root.right * 0.05f +
-                         Vector3.up * (-0.04f + 0.10f * Mathf.Sin(t * 6.3f)) +
-                         root.right * 0.05f * Mathf.Sin(t * 3.1f);
-            var dir = target - shoulder;
-            var span = dir.magnitude;
-            if (span > act.Reach * 0.9f)
-                target = shoulder + dir * (act.Reach * 0.9f / span);
-
-            BikePose.TwoBone(act.ArmUp, act.ArmLow, act.Hand, target,
-                shoulder - root.right * 0.35f - Vector3.up * 0.45f + root.forward * 0.15f);
-
-            // palm up and open, the way a point is made
-            AimFist(act, root.forward + Vector3.up * 0.4f, Vector3.up);
         }
 
         /// <summary>The swing: up over the shoulder, down at the glass, back to the
@@ -256,7 +247,7 @@ namespace RoadDemo
         void OnDestroy()
         {
             for (var i = 0; i < acts.Count; i++)
-                PutDownBat(acts[i]);
+                Finish(acts[i]);
             acts.Clear();
             if (instance == this)
                 instance = null;

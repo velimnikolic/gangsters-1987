@@ -17,14 +17,15 @@ namespace LivingCity.UI
     ///
     /// It films ONE block, not the city round it. The lens stands at the city's own
     /// street pitch and closes its near and far planes onto the block's own volume, so
-    /// the ground in front of it and the city behind it are never exposed at all; the
-    /// picture is then drawn only inside the block's silhouette - see
-    /// <see cref="BlockFilmView"/>, which takes <see cref="Volume"/> for the shape.
+    /// the ground in front of it and the city behind it are never exposed at all. The
+    /// empty stage around it fills the whole block-file plate, letting the camera's grade
+    /// and vignette span the full element instead of ending at the block's fitted box.
     ///
-    /// Cheap on purpose: no shadows, no post, no anti-aliasing, and the camera is
-    /// switched OFF the moment the file closes. It also never renders a frame while the
-    /// city has that ground put away - see <see cref="RoadDemo.CityBlockRecycler"/>,
-    /// which the file asks to hold the block up while it is open.
+    /// Bounded on purpose: shadows and the city grade run only while the file is open,
+    /// the render texture matches the plate's visible pixel size, and the camera is
+    /// switched OFF the moment the file closes. It also never renders while the city has
+    /// that ground put away - see <see cref="RoadDemo.CityBlockRecycler"/>, which the file
+    /// asks to hold the block up while it is open.
     /// </summary>
     public sealed class BlockFilm : MonoBehaviour
     {
@@ -127,6 +128,16 @@ namespace LivingCity.UI
         public Camera Lens => lens;
         public RenderTexture Frame => frame;
 
+        // The lens is a still camera. These fields distinguish a repaint of the paper
+        // around the plate from a shot that actually changed and must be exposed again.
+        bool shotValid;
+        bool frameChanged = true;
+        Rect shotGround;
+        float shotGroundY;
+        float shotYaw;
+        float shotRise;
+        bool waitingForStream;
+
         /// <summary>Puts the lens away WITHOUT standing a rig up to do it - the closing
         /// path must not build a camera it is about to switch off.</summary>
         public static void StopIfRunning()
@@ -189,8 +200,8 @@ namespace LivingCity.UI
                 // moment it shuts.
                 data.renderPostProcessing = true;
                 data.renderShadows = true;
-                // The plate oversamples the film and filters it down, which is a better
-                // edge than a morphological pass and does not cost one.
+                // The plate is already rendered at its visible pixel size; it does not
+                // pay for a second antialiasing-sized buffer.
                 data.antialiasing = AntialiasingMode.None;
                 data.requiresColorOption = CameraOverrideOption.Off;
                 data.requiresDepthOption = CameraOverrideOption.Off;
@@ -202,10 +213,9 @@ namespace LivingCity.UI
         /// plate rather than a constant nobody can see.</summary>
         public RenderTexture Reel(int width, int height)
         {
-            // The plate is very wide, and the file oversamples it, so both sides can run
-            // past the ceiling at once. They are brought down TOGETHER by one factor: a
-            // negative clamped on either side alone comes back at the wrong shape and the
-            // street leans.
+            // A very large game window can still run past the texture ceiling. Both sides
+            // are brought down TOGETHER by one factor: a negative clamped on either side
+            // alone comes back at the wrong shape and the street leans.
             const int MaxWidth = 4096;
             const int MaxHeight = 2048;
             width = Mathf.Max(1, width);
@@ -227,12 +237,12 @@ namespace LivingCity.UI
             {
                 name = "Block Film",
                 antiAliasing = 1,
-                // The file exposes at twice the plate and lets this filter carry the
-                // picture down, so the filter is the antialiasing.
+                // Keep fractional canvas scaling smooth when a plate lands between pixels.
                 filterMode = FilterMode.Bilinear,
                 wrapMode = TextureWrapMode.Clamp,
             };
             lens.targetTexture = frame;
+            frameChanged = true;
             return frame;
         }
 
@@ -248,6 +258,13 @@ namespace LivingCity.UI
         /// </summary>
         public void Look(Rect groundWorld, float groundY, float yaw, float rise)
         {
+            if (shotValid && !frameChanged && stage != null &&
+                Same(shotGround, groundWorld) &&
+                Mathf.Approximately(shotGroundY, groundY) &&
+                Mathf.Approximately(shotYaw, yaw) &&
+                Mathf.Approximately(shotRise, rise))
+                return;
+
             Ground = groundWorld;
 
             var plot = Rect.MinMaxRect(
@@ -275,17 +292,12 @@ namespace LivingCity.UI
                 ? (float)frame.width / frame.height
                 : 1f;
 
-            // COVER, and only cover. The file solves BOTH sides of its picture from the
-            // measure below, so the picture carries the block's own shape and covering it
-            // is the same number as fitting it - the frame is the block's box exactly.
-            //
-            // The two only come apart while the reader is turning the block, because the
-            // picture is not re-cut until the turn stops. Covering gives up a little of
-            // the block for that moment. It must never do the other thing: a frame that
-            // opened up instead would fill the difference with the road, which is the one
-            // thing this picture is not of.
+            // CONTAIN the whole block in the full-width plate. The stage is empty outside
+            // this box, so the extra horizontal room is only the film's own clear colour;
+            // no street can enter it. Max preserves the block's proportions and gives it
+            // exactly the same fitted size whether the plate is wider or taller than it.
             lens.orthographicSize =
-                Mathf.Min(plate.y, plate.x / Mathf.Max(0.05f, aspect)) * Margin;
+                Mathf.Max(plate.y, plate.x / Mathf.Max(0.05f, aspect)) * Margin;
 
             // Orthographic, so the standoff buys depth clearance and nothing else: the
             // lens stands just clear of the block instead of a quarter of a kilometre
@@ -318,7 +330,39 @@ namespace LivingCity.UI
             lens.nearClipPlane = Mathf.Max(0.05f, distance - halfDeep - 0.25f);
             FitShadowRange(lens.farClipPlane);
             GatherDirectionals();
+            shotGround = groundWorld;
+            shotGroundY = groundY;
+            shotYaw = yaw;
+            shotRise = rise;
+            shotValid = true;
+            frameChanged = false;
+            // A held residential block may still be composing or attaching when its file
+            // first opens. Keep the first quick exposure, then replace it once with the
+            // complete block; never leave that partial startup frame frozen on the page.
+            waitingForStream = !RoadDemo.CityBlockRecycler.HeldReady(groundWorld);
+            // One enabled frame is one exposure. CloseShutter switches the lens back off
+            // after URP has filled the texture.
             lens.enabled = true;
+        }
+
+        static bool Same(Rect a, Rect b) =>
+            Mathf.Approximately(a.x, b.x) && Mathf.Approximately(a.y, b.y) &&
+            Mathf.Approximately(a.width, b.width) && Mathf.Approximately(a.height, b.height);
+
+        void Update()
+        {
+            if (!waitingForStream ||
+                !RoadDemo.CityBlockRecycler.HeldReady(shotGround))
+                return;
+
+            // RaiseStage deliberately reuses a stage for an unchanged rectangle. This is
+            // the one time it must not: the old stage was copied while the recycler was
+            // still attaching the block, so rebuild it from the now-complete view and take
+            // one final exposure.
+            waitingForStream = false;
+            StrikeStage();
+            shotValid = false;
+            Look(shotGround, shotGroundY, shotYaw, shotRise);
         }
 
         /// <summary>What the pipeline's shadow range was before this lens widened it, or
@@ -365,10 +409,8 @@ namespace LivingCity.UI
 
         /// <summary>
         /// How wide and how tall, in metres, the picture has to be to hold this block at
-        /// this angle. The file cuts its plate to this shape, so the frame stops at the
-        /// block's kerb instead of filling the rest of a wide band with the road it
-        /// stands next to. Answered here rather than worked out twice, because the plate
-        /// and the lens disagreeing is exactly how street gets back into the picture.
+        /// this angle. The full-width film uses this to contain the block without changing
+        /// its proportions; the remaining frame is the empty stage, never the street.
         /// </summary>
         public static Vector2 PlateExtents(Rect groundWorld, float rise, float yaw)
         {
@@ -565,6 +607,7 @@ namespace LivingCity.UI
             {
                 var piece = world[i];
                 if (piece == null || IsMerged(piece.transform) ||
+                    LivingCity.Gameplay.PlayerOcclusionHider.IsOcclusionArtifact(piece) ||
                     !piece.gameObject.activeInHierarchy)
                     continue;
                 var centre = piece.bounds.center;
@@ -633,8 +676,33 @@ namespace LivingCity.UI
             }
 
             Strip(root);
+            RestoreStageRendering(root);
             Light(root);
             root.SetActive(true);
+        }
+
+        /// <summary>The street may currently be looking through one of these buildings.
+        /// Its staged ledger copy is not: restore only the COPY to the renderer state it
+        /// had before either cutaway system touched the live city.</summary>
+        void RestoreStageRendering(GameObject root)
+        {
+            var copies = root.GetComponentsInChildren<Renderer>(true);
+            for (var i = 0; i < copies.Length; i++)
+            {
+                var copy = copies[i];
+                if (copy == null || !cityOf.TryGetValue(copy.transform, out var real) ||
+                    real == null)
+                    continue;
+                var source = real.GetComponent<Renderer>();
+                if (source == null)
+                    continue;
+
+                RoadDemo.BuildingCutaway.RestoreUncutCopy(source, copy);
+                if (source is MeshRenderer sourceMesh && copy is MeshRenderer copyMesh &&
+                    LivingCity.Gameplay.PlayerOcclusionHider.TryOriginalShadowMode(
+                        sourceMesh, out var original))
+                    copyMesh.shadowCastingMode = original;
+            }
         }
 
         /// <summary>Whether a piece is the city's merged output rather than the geometry
@@ -737,6 +805,10 @@ namespace LivingCity.UI
             if (camera != lens || !shutterOpen)
                 return;
             shutterOpen = false;
+            // This RenderTexture is a still. The next Look call enables the lens only if
+            // the block, angle, rise or visible texture size has actually changed.
+            if (lens != null)
+                lens.enabled = false;
 
             RenderSettings.ambientMode = heldAmbientMode;
             RenderSettings.ambientSkyColor = heldAmbientSky;
@@ -750,14 +822,16 @@ namespace LivingCity.UI
                     dimmed[i].enabled = true;
             dimmed.Clear();
 
-            if (key == null)
-                return;
-            key.transform.rotation = keyRotation;
-            key.color = keyColour;
-            key.intensity = keyIntensity;
-            key.shadows = keyShadows;
-            key.enabled = keyEnabled;
+            if (key != null)
+            {
+                key.transform.rotation = keyRotation;
+                key.color = keyColour;
+                key.intensity = keyIntensity;
+                key.shadows = keyShadows;
+                key.enabled = keyEnabled;
+            }
             key = null;
+            RestoreShadowRange();
         }
 
         /// <summary>Switches the lens off. Called the moment the file closes, so an open
@@ -772,6 +846,9 @@ namespace LivingCity.UI
                 CloseShutter(default, lens);
             StrikeStage();
             RestoreShadowRange();
+            shotValid = false;
+            frameChanged = true;
+            waitingForStream = false;
         }
 
         /// <summary>What is standing under a point of the picture, in the picture's own
@@ -781,7 +858,7 @@ namespace LivingCity.UI
         public bool TryPick(Vector2 viewport, out RaycastHit hit)
         {
             hit = default;
-            if (lens == null || !lens.enabled)
+            if (lens == null || stage == null)
                 return false;
             if (viewport.x < 0f || viewport.x > 1f || viewport.y < 0f || viewport.y > 1f)
                 return false;

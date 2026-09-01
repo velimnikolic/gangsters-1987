@@ -745,6 +745,9 @@ namespace RoadDemo
             _root = new GameObject("Crews").transform;
             gameObject.AddComponent<CrewOverlay>().Init(this);
             gameObject.AddComponent<CrewBar>().Init(this, BarTopInset);
+            // The screen-edge paperwork: the picked lieutenant's file, the wire and the
+            // key that opens the book. It reads this instance and never writes to it.
+            gameObject.AddComponent<StreetHud>().Init(this);
             // last onto the click chain, so the front card is asked first and hands the
             // click straight back to the crews if a man was standing in front of the door
             gameObject.AddComponent<FrontOverlay>().Init();

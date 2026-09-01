@@ -129,6 +129,12 @@ namespace LivingCity.UI
             MeasureOrdersLayout();
         }
 
+        /// <summary>The book standing in this scene. A HUD key that opens the same
+        /// folder the P key opens needs a way to ask for it, and hunting a MonoBehaviour
+        /// by type from a click handler is a scan of the whole city. Same registry
+        /// convention - and the same Play reset - as every other layer here.</summary>
+        public static PersonnelAlmanac Instance { get; private set; }
+
         /// <summary>True while the book is open. Every world-input reader checks this -
         /// the keyboard half of the modal shield (the raycast-target desk is the pointer
         /// half).</summary>
@@ -150,6 +156,7 @@ namespace LivingCity.UI
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {
+            Instance = null;
             IsOpen = false;
             lastCloseFrame = -1;
             lastTab = LedgerPage.Newspaper;
@@ -268,6 +275,7 @@ namespace LivingCity.UI
             EnsureEventSystem();
             BuildCanvas();
             BuildBook();
+            Instance = this;
         }
 
         /// <summary>ContextMenuUI usually gets here first, but the almanac must not assume
@@ -465,7 +473,10 @@ namespace LivingCity.UI
             return true;
         }
 
-        void Open() => OpenAtPage(lastTab);
+        /// <summary>Open the book where the boss left it - what the P key does, and what
+        /// the street HUD's ledger key asks for. Public because the key is not on this
+        /// canvas; the page it lands on is still the book's own business.</summary>
+        public void Open() => OpenAtPage(lastTab);
 
         /// <summary>
         /// Opens the same modal folder at a specific leaf. Normal P-key entry reopens on
@@ -515,6 +526,8 @@ namespace LivingCity.UI
         /// scene, and the map would keep sending clicks to a page that is gone.</summary>
         void OnDestroy()
         {
+            if (Instance == this)
+                Instance = null;
             RestoreOtherCanvases();
             IsOpen = false;
             StopOrganizationTargeting();

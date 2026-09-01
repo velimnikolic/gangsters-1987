@@ -1671,14 +1671,14 @@ namespace RoadDemo
                     if (ResolveDemand(
                             observation.GangId, pending.BusinessId, out var verdict, out _))
                         AnnounceVerdict(pending.BusinessId, threat: false, verdict);
-                    DoorBeat.Visit(actor, pending.Door);
+                    DoorBeat.VisitBusiness(actor, pending.BusinessId, pending.Door);
                 }
                 else if (pending.FollowUp == TerritoryRacketIntent.Threaten)
                 {
                     if (ResolveThreat(observation.GangId, pending.BusinessId,
                             observation.CharacterId, out var verdict, out _))
                         AnnounceVerdict(pending.BusinessId, threat: true, verdict);
-                    DoorBeat.Visit(actor, pending.Door);
+                    DoorBeat.VisitBusiness(actor, pending.BusinessId, pending.Door);
                 }
             }
         }
@@ -2342,7 +2342,8 @@ namespace RoadDemo
             // the door steps inside, and what the owner said is put over the street.
             AnnounceVerdict(command.BusinessId, threat: false, verdict);
             if (TryGetBusinessApproach(command.BusinessId, out var door))
-                DoorBeat.Visit(FindWalker(command.ActorId), door);
+                DoorBeat.VisitBusiness(
+                    FindWalker(command.ActorId), command.BusinessId, door);
 
             switch (verdict)
             {
@@ -2371,7 +2372,8 @@ namespace RoadDemo
 
             AnnounceVerdict(command.BusinessId, threat: true, verdict);
             if (TryGetBusinessApproach(command.BusinessId, out var door))
-                DoorBeat.Visit(FindWalker(command.ActorId), door);
+                DoorBeat.VisitBusiness(
+                    FindWalker(command.ActorId), command.BusinessId, door);
 
             switch (verdict)
             {

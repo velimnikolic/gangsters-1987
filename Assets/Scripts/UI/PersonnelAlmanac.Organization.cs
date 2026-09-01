@@ -141,7 +141,6 @@ namespace LivingCity.UI
             new Dictionary<TerritoryBlockId, BlockControl>();
 
         readonly List<TerritoryBlockId> organizationBlockRows = new List<TerritoryBlockId>();
-        readonly List<ReadTile> organizationTiles = new List<ReadTile>();
 
         /// <summary>Blocks one of our men is standing on right now. A block earns a line
         /// on this sheet by being on our paper, being ours on the street, or having our
@@ -187,10 +186,16 @@ namespace LivingCity.UI
             if (organizationNote == FiledNote && outfit && outfit.Filings.AwaitingCount == 0)
                 organizationNote = "";
 
+            // The live plate is not page furniture. Park it directly under the scrolling
+            // content while the old columns are torn down, then BuildBlockModel puts that
+            // SAME view into the new plate. The camera and RenderTexture therefore survive
+            // ordinary observation/roster repaints instead of being recreated with them.
+            ParkBlockModelForRebuild();
             foreach (Transform old in organizationFixed)
                 Destroy(old.gameObject);
             foreach (Transform old in organizationContent)
-                Destroy(old.gameObject);
+                if (blockCardModel == null || old != blockCardModel.transform)
+                    Destroy(old.gameObject);
             organizationHoverNote = null;
 
             LedgerV2.PageHead(organizationFixed, PageLeft, PageTop, PageWidth,
@@ -208,6 +213,7 @@ namespace LivingCity.UI
                     LedgerV2.Red, 0f, 0f, PageWidth, 24f,
                     "The command file has no authoritative Boss Character.");
                 CloseOrganization(24f);
+                FinishBlockModelRebuild();
                 return;
             }
 
@@ -227,9 +233,7 @@ namespace LivingCity.UI
             if (organizationPickedHoodId >= 0 && !IsPooled(organizationPickedHoodId))
                 organizationPickedHoodId = -1;
 
-
             var cursor = 0f;
-            cursor = BuildOrganizationTiles(query, cursor);
 
             // The sheet is read in two columns. The chain of command goes down the left
             // because it is the thing a reader scans; the ledger takes the right, with
@@ -259,6 +263,7 @@ namespace LivingCity.UI
                 cursor = BuildFiledOrders(cursor);
             }
             CloseOrganization(cursor);
+            FinishBlockModelRebuild();
         }
 
         /// <summary>Opens a column inside the page and points every section builder at
@@ -278,77 +283,6 @@ namespace LivingCity.UI
             organizationScroll = Mathf.Clamp(
                 organizationScroll, 0f, Mathf.Max(0f, contentHeight - OrganizationHeight));
             organizationContent.anchoredPosition = new Vector2(0f, organizationScroll);
-        }
-
-        // -------------------------------------------------------------- what to read
-
-        float BuildOrganizationTiles(IOrganizationQuery query, float cursor)
-        {
-            var over = 0;
-            for (var i = 1; i < organizationLeaders.Count; i++)
-                if (query.CapacityOf(organizationLeaders[i].Id).IsOverCapacity)
-                    over++;
-            var idle = CountUnassigned();
-            var paperOnly = CountPaperOnly();
-            var awaiting = outfit ? outfit.Filings.AwaitingCount : 0;
-
-            organizationTiles.Clear();
-            if (over > 0)
-                organizationTiles.Add(new ReadTile(over.ToString(), LedgerV2.Red,
-                    "COMMANDERS OVER CAPACITY", "he will refuse the next man"));
-            if (idle > 0)
-                organizationTiles.Add(new ReadTile(idle.ToString(), LedgerV2.Red,
-                    "MEN IDLE UNDER YOU", "paid daily, earning nothing"));
-            if (paperOnly > 0)
-                organizationTiles.Add(new ReadTile(paperOnly.ToString(), LedgerV2.Amber,
-                    "NAMED ON GROUND WE DO NOT HOLD", "paper only · earns nothing"));
-            if (awaiting > 0)
-                organizationTiles.Add(new ReadTile(awaiting.ToString(), LedgerV2.PaperBlue,
-                    "ORDERS AWAITING RULING", "the outfit has not answered yet"));
-            if (organizationTiles.Count == 0)
-                return cursor;
-
-            // The tiles fill the row however many there are - one alert is a banner
-            // across the sheet, four are a quarter each. Never a stub at the left with
-            // three quarters of empty paper beside it.
-            const float gap = 12f;
-            var width = (PageWidth - gap * (organizationTiles.Count - 1)) /
-                        organizationTiles.Count;
-            for (var i = 0; i < organizationTiles.Count; i++)
-                Tile(organizationTiles[i], i * (width + gap), cursor, width);
-            return cursor + 60f;
-        }
-
-        readonly struct ReadTile
-        {
-            public ReadTile(string value, Color accent, string label, string caption)
-            {
-                Value = value;
-                Accent = accent;
-                Label = label;
-                Caption = caption;
-            }
-
-            public string Value { get; }
-            public Color Accent { get; }
-            public string Label { get; }
-            public string Caption { get; }
-        }
-
-        void Tile(ReadTile read, float x, float cursor, float width)
-        {
-            const float height = 46f;
-            var tile = NewRect("Tile " + read.Label, organizationContent);
-            PlaceTopLeft(tile, x, -cursor, width, height);
-            Fill(tile, LedgerV2.Panel);
-            Frame(tile, 1f, LedgerV2.Rule);
-            Block("Accent", tile, 0f, 0f, 4f, height, read.Accent);
-
-            Line(tile, LedgerStyle.Condensed, 22f, read.Accent,
-                14f, -10f, 58f, 26f, read.Value);
-            Caps(tile, 76f, -9f, width - 86f, read.Label, 9f, LedgerV2.Body, 3f);
-            Line(tile, LedgerStyle.Mono, 9.5f, LedgerV2.Label,
-                76f, -26f, width - 86f, 16f, read.Caption);
         }
 
         // ---------------------------------------------------------- chain of command
@@ -401,21 +335,27 @@ namespace LivingCity.UI
             const float meterMax = 330f;
             const float pad = 12f;
             const float textX = plateW + gutter;
+            const float cardH = headH + 4f;
 
-            // Wide, the meters stand at the card's right edge beside the name. In a
-            // column there is no room beside a name for even the narrowest meter, so the
-            // pair drops under the head and splits what the card has.
-            var stacked = organizationW - textX - 460f < 150f;
-            var textW = Mathf.Max(140f,
-                (stacked ? organizationW - pad : organizationW - 460f) - textX);
+            // The Boss always keeps one capacity column on his right. Let that column
+            // take a measured share of the card instead of dropping both meters into a
+            // wide footer; the portrait/name remain one block on the left at every page
+            // width this layout supports.
+            var meterW = Mathf.Clamp(
+                (organizationW - textX - gutter) * 0.42f, 150f, meterMax);
+            var meterX = organizationW - meterW - pad;
+            var textW = Mathf.Max(140f, meterX - gutter - textX);
 
             var card = NewRect("Boss", organizationColumn);
-            PlaceTopLeft(card, 0f, -cursor, organizationW, headH);
-            Fill(card, LedgerV2.Head);
+            PlaceTopLeft(card, 0f, -cursor, organizationW, cardH);
+            Fill(card, LedgerV2.FilmPlate);
+            // The same warm stage and full-card falloff as the filmed block. Built
+            // before the card contents so the vignette shades only their background.
+            Vignette(card);
             Block("Rank", card, 0f, 0f, organizationW, 4f, LedgerV2.Red);
 
             var member = director.Roster != null ? director.Roster.Find(boss.Id) : null;
-            Face(card, 0f, -4f, plateW, headH - 4f, member, "BOSS",
+            Face(card, 0f, -4f, plateW, cardH - 4f, member, "BOSS",
                 LedgerV2.DarkPlate, LedgerV2.HeadDim);
 
             var kicker = Line(card, LedgerStyle.MonoBold, 10f, LedgerV2.Boss,
@@ -435,7 +375,9 @@ namespace LivingCity.UI
 
             var under = Line(card, LedgerStyle.Mono, 10f, LedgerV2.HeadDim,
                 textX, -78f, textW, LineBox(10f),
-                stacked ? "HEAD OF THE FAMILY" : "HEAD OF THE FAMILY · ANSWERS TO NOBODY");
+                textW >= 330f
+                    ? "HEAD OF THE FAMILY · ANSWERS TO NOBODY"
+                    : "HEAD OF THE FAMILY");
             under.characterSpacing = 3f;
             under.overflowMode = TextOverflowModes.Ellipsis;
 
@@ -448,26 +390,11 @@ namespace LivingCity.UI
             // figure on his card is the city, not his own paperwork.
             var held = new CapacityMeasure(CountHeldBlocks(), capacity.Blocks.Maximum);
 
-            float height;
-            if (stacked)
-            {
-                var meterW = (organizationW - pad * 2f - gutter) * 0.5f;
-                var took = Meter(card, pad, headH + 2f, meterW, "MEN ON THE BOOKS",
-                    capacity.Manpower, "man", "men", dark: true);
-                Meter(card, pad + meterW + gutter, headH + 2f, meterW,
-                    "BLOCKS THE OUTFIT HOLDS", held, "block", "blocks", dark: true);
-                height = headH + 2f + took + 12f;
-            }
-            else
-            {
-                var meterW = Mathf.Clamp(organizationW - textX - 460f, 150f, meterMax);
-                var meterX = organizationW - meterW - pad;
-                var took = Meter(card, meterX, 14f, meterW, "MEN ON THE BOOKS",
-                    capacity.Manpower, "man", "men", dark: true);
-                Meter(card, meterX, 14f + took + 8f, meterW, "BLOCKS THE OUTFIT HOLDS",
-                    held, "block", "blocks", dark: true);
-                height = headH + 4f;
-            }
+            var took = Meter(card, meterX, 14f, meterW, "MEN ON THE BOOKS",
+                capacity.Manpower, "man", "men", dark: true);
+            Meter(card, meterX, 14f + took + 8f, meterW, "BLOCKS THE OUTFIT HOLDS",
+                held, "block", "blocks", dark: true);
+            var height = cardH;
             card.sizeDelta = new Vector2(organizationW, height);
 
             // The file's own corner marks, top right and bottom right: what a photograph
@@ -490,28 +417,22 @@ namespace LivingCity.UI
         float BuildLieutenantBranch(
             IOrganizationQuery query, OrganizationPerson lieutenant, float cursor)
         {
-            // The design's 70 | min-160 | 1fr | auto grid over a 92-unit head, with the
-            // rank flash down its left edge and the two meters filling the middle.
-            const float headH = 92f;
+            // The design's 70 | 1fr | meter grid, with the two capacity meters stacked
+            // in one right-hand column just as they are on the Boss card.
+            const float headH = 124f;
             const float plateW = 70f;
             const float gutter = 14f;
             const float flashW = 5f;
             const float pad = 14f;
-            const float nameW = 190f;
+            const float meterMax = 260f;
 
             var width = organizationW - BranchX;
             var x = flashW + plateW + gutter;
             var leaderId = lieutenant.Id;
             var picking = organizationPickedHoodId >= 0;
-            var acceptW = 280f;
-
-            // A meter is unreadable under about 150 units and there are two of them, so
-            // the card asks whether the middle column can hold the pair beside the name
-            // with the accept key still on the end of the line. In a column it cannot:
-            // the meters drop under the head and the key takes a line of its own.
-            var lineRoom = width - x - nameW - gutter - pad -
-                           (picking ? acceptW + gutter : 0f);
-            var stacked = lineRoom < 320f;
+            var meterW = Mathf.Clamp((width - x - gutter) * 0.42f, 150f, meterMax);
+            var meterX = width - pad - meterW;
+            var nameW = Mathf.Max(140f, meterX - gutter - x);
 
             Stub(cursor + headH * 0.5f);
 
@@ -526,10 +447,10 @@ namespace LivingCity.UI
 
             var rank = Line(card, LedgerStyle.MonoBold, 10f,
                 capacity.IsOverCapacity ? LedgerV2.Red : LedgerV2.Lieutenant,
-                x, -18f, stacked ? width - x - pad : nameW, LineBox(10f), "LIEUTENANT");
+                x, -18f, nameW, LineBox(10f), "LIEUTENANT");
             rank.characterSpacing = 8f;
             var name = Line(card, LedgerStyle.Condensed, 18f, LedgerV2.Ink,
-                x, -34f, stacked ? width - x - pad : nameW, LineBox(18f), lieutenant.Name);
+                x, -34f, nameW, LineBox(18f), lieutenant.Name);
             name.characterSpacing = 0.5f;
             name.overflowMode = TextOverflowModes.Ellipsis;
 
@@ -544,9 +465,9 @@ namespace LivingCity.UI
                               ? " · " + LieutenantArchetypes.Word(branchCrew.Policy) +
                                 " ROUNDS"
                               : "");
-            // The reading runs under the name, so it takes the same measure the name
-            // took: the whole card in a column, the name's own column across a sheet.
-            var readingW = stacked ? width - x - pad : nameW + 40f;
+            // The reading stays with the name; the right column belongs only to the
+            // two capacity meters.
+            var readingW = nameW;
             var readingRow = NewRect("Reading", card);
             PlaceTopLeft(readingRow, x, -62f, readingW, 16f);
             var readingFace = ClickSurface(readingRow);
@@ -560,60 +481,26 @@ namespace LivingCity.UI
                     () => { director.SetCrewPolicy(branchCrewId, next); dirty = true; });
             }
 
-            float height;
-            if (stacked)
-            {
-                var meterW = (width - pad * 2f - gutter) * 0.5f;
-                var took = Meter(card, pad, headH, meterW, "MANPOWER UNDER HIM",
-                    capacity.Manpower, "man", "men", dark: false, labelSize: 11f,
-                    figureSize: 14f);
-                Meter(card, pad + meterW + gutter, headH, meterW, "BLOCKS ON HIS PAPER",
-                    capacity.Blocks, "block", "blocks", dark: false, labelSize: 11f,
-                    figureSize: 14f);
-                height = headH + took + 10f;
+            var took = Meter(card, meterX, 8f, meterW, "MANPOWER UNDER HIM",
+                capacity.Manpower, "man", "men", dark: false);
+            Meter(card, meterX, 8f + took + 8f, meterW, "BLOCKS ON HIS PAPER",
+                capacity.Blocks, "block", "blocks", dark: false);
 
-                if (picking)
-                {
-                    var picked = Person(organizationPickedHoodId);
-                    var hoodId = organizationPickedHoodId;
-                    LedgerV2.Button(card,
-                        "FILE · PUT " + FirstName(picked.Name).ToUpperInvariant() +
-                        " UNDER HIM", pad, -height, width - pad * 2f, 30f,
-                        () => FileHoodPlacement(hoodId, leaderId), red: false, size: 10f);
-                    height += 38f;
-                }
-            }
-            else
+            var height = headH;
+            if (picking)
             {
-                // The two meters take the middle column and split it evenly; the accept
-                // key is the grid's last column and only stands while a man is waiting.
-                var meterX = x + nameW + gutter;
-                var meterRoom = width - meterX - pad -
-                                (picking ? acceptW + gutter : 0f);
-                var meterW = (meterRoom - gutter) * 0.5f;
-                Meter(card, meterX, 20f, meterW, "MANPOWER UNDER HIM",
-                    capacity.Manpower, "man", "men", dark: false, labelSize: 11f,
-                    figureSize: 14f);
-                Meter(card, meterX + meterW + gutter, 20f, meterW, "BLOCKS ON HIS PAPER",
-                    capacity.Blocks, "block", "blocks", dark: false, labelSize: 11f,
-                    figureSize: 14f);
-
-                if (picking)
-                {
-                    var picked = Person(organizationPickedHoodId);
-                    var hoodId = organizationPickedHoodId;
-                    LedgerV2.Button(card,
-                        "FILE · PUT " + FirstName(picked.Name).ToUpperInvariant() +
-                        " UNDER HIM", width - pad - acceptW, -(headH - 34f) * 0.5f,
-                        acceptW, 34f, () => FileHoodPlacement(hoodId, leaderId),
-                        red: false, size: 10f);
-                }
-                height = headH;
+                var picked = Person(organizationPickedHoodId);
+                var hoodId = organizationPickedHoodId;
+                LedgerV2.Button(card,
+                    "FILE · PUT " + FirstName(picked.Name).ToUpperInvariant() +
+                    " UNDER HIM", x, -height, width - x - pad, 30f,
+                    () => FileHoodPlacement(hoodId, leaderId), red: false, size: 10f);
+                height += 38f;
             }
 
             card.sizeDelta = new Vector2(width, height);
-            // The flash runs the whole card, so it is drawn once the card knows how tall
-            // it stands - a stacked card with a 92-unit flash is a card with a stub.
+            // The flash runs the whole card, including the filing row while a transfer
+            // is waiting.
             Block("Rank", card, 0f, 0f, flashW, height,
                 capacity.IsOverCapacity ? LedgerV2.Red : LedgerV2.Lieutenant);
 
@@ -668,9 +555,9 @@ namespace LivingCity.UI
                       " — NOW PRESS FILE ON THE LIEUTENANT WHO SHOULD TAKE HIM"
                 : pool.Count > 0
                     ? terse
-                        ? "UNDER YOU · " + pool.Count + " IDLE — CLICK A MAN TO PLACE HIM"
+                        ? "UNDER YOU · " + pool.Count + " IDLE — TRANSFER A MAN"
                         : "UNDER YOU DIRECTLY · " + pool.Count +
-                          " IDLE, NO BRANCH, NO EARNINGS — CLICK A MAN TO PLACE HIM"
+                          " IDLE, NO BRANCH, NO EARNINGS — TRANSFER A MAN TO A LIEUTENANT"
                     : "UNDER YOU DIRECTLY · NOBODY IS SITTING IDLE";
             var hintLine = Line(organizationColumn, LedgerStyle.MonoBold, 11f,
                 LedgerV2.Red, BranchX + 8f, -cursor, organizationW - BranchX - 8f,
@@ -701,19 +588,20 @@ namespace LivingCity.UI
             const float thumbW = 30f;
             const float thumbH = 38f;
             const float pitch = 33f;
-            const float rosterW = 200f;
-            const float hireW = 250f;
-
-            // Wide, the strip reads across: faces, the count, then the keys held to the
-            // right margin. In a column there is no margin to hold them to, so the keys
-            // take their own line under the faces and the count sits over them.
-            var room = organizationW - x;
+            var rosterLabel = open
+                ? "HIDE ROSTER"
+                : "OPEN ROSTER · " + men.Count + " →";
+            var hireLabel = onHire != null
+                ? "HIRE · " + LedgerText.Cash(director.HoodRecruitmentCost)
+                : "";
+            var rosterW = LedgerV2.ButtonWidth(rosterLabel, 10f);
+            var hireW = onHire != null ? LedgerV2.ButtonWidth(hireLabel, 10f) : 0f;
             var keysW = rosterW + (onHire != null ? hireW + 8f : 0f);
-            var stacked = room < keysW + 200f;
+            var keysX = organizationW - keysW;
 
             // Ten faces are 330 units. A column that cannot show ten shows what it can
             // and says how many it did not, which is what the +n was always for.
-            var faceRoom = stacked ? room - 60f : room - keysW - 130f;
+            var faceRoom = Mathf.Max(pitch, keysX - x - 80f);
             var limit = Mathf.Clamp(Mathf.FloorToInt(faceRoom / pitch), 1, ThumbLimit);
 
             var shown = Mathf.Min(men.Count, limit);
@@ -728,48 +616,23 @@ namespace LivingCity.UI
                 run += 46f;
             }
 
-            if (stacked)
+            var noteW = keysX - run - 12f;
+            if (noteW > 40f)
             {
                 var note = Line(organizationColumn, LedgerStyle.Mono, 11f, LedgerV2.Muted,
-                    run, -(cursor + 12f), Mathf.Max(40f, organizationW - run),
-                    LineBox(11f), summary);
+                    run, -(cursor + 12f), noteW, LineBox(11f), summary);
                 note.overflowMode = TextOverflowModes.Ellipsis;
-
-                var keyY = -(cursor + thumbH + 6f);
-                var keyW = onHire != null ? (room - 8f) * 0.5f : Mathf.Min(rosterW, room);
-                LedgerV2.Button(organizationColumn,
-                    open ? "HIDE ROSTER" : "OPEN ROSTER · " + men.Count + " →",
-                    x, keyY, keyW, 26f, onToggle, red: false, outline: true, size: 10f);
-
-                // The design hangs the hire on the BRANCH, not on the lieutenant's card:
-                // a man is taken on for a branch, and this is the line the branch owns.
-                if (onHire != null)
-                {
-                    var hire = LedgerV2.Button(organizationColumn,
-                        "HIRE · " + LedgerText.Cash(director.HoodRecruitmentCost),
-                        x + keyW + 8f, keyY, keyW, 26f, onHire,
-                        red: false, outline: true, size: 10f);
-                    SetActionEnabled(hire, director != null);
-                }
-
-                return cursor + thumbH + 6f + 26f + 10f;
             }
 
-            var wideNote = Line(organizationColumn, LedgerStyle.Mono, 11f, LedgerV2.Muted,
-                run, -(cursor + 12f), 460f, LineBox(11f), summary);
-            wideNote.overflowMode = TextOverflowModes.Ellipsis;
-
-            var wideKeyY = -(cursor + 6f);
+            var keyY = -(cursor + 6f);
             LedgerV2.Button(organizationColumn,
-                open ? "HIDE ROSTER" : "OPEN ROSTER · " + men.Count + " →",
-                organizationW - rosterW, wideKeyY, rosterW, 26f, onToggle,
+                rosterLabel, keysX, keyY, rosterW, 26f, onToggle,
                 red: false, outline: true, size: 10f);
 
             if (onHire != null)
             {
                 var hire = LedgerV2.Button(organizationColumn,
-                    "HIRE A MAN FOR HIM · " + LedgerText.Cash(director.HoodRecruitmentCost),
-                    run + wideNote.preferredWidth + 16f, wideKeyY, hireW, 26f, onHire,
+                    hireLabel, keysX + rosterW + 8f, keyY, hireW, 26f, onHire,
                     red: false, outline: true, size: 10f);
                 SetActionEnabled(hire, director != null);
             }
@@ -874,7 +737,7 @@ namespace LivingCity.UI
                     Caps(row, stateX, -4f, Mathf.Max(20f, cell - stateX - 6f),
                         isPicked
                             ? terse ? "PICKED" : "PICKED · CHOOSE A LIEUTENANT ABOVE"
-                            : terse ? "IDLE · CLICK" : "IDLE · CLICK TO PLACE",
+                            : terse ? "IDLE · TRANSFER" : "IDLE · TRANSFER TO A LIEUTENANT",
                         9f, isPicked ? LedgerV2.Red : LedgerV2.Label, 2f,
                         TextAlignmentOptions.MidlineRight);
                     RowButton(row, stock, () => PickHood(personId));
@@ -2159,16 +2022,6 @@ namespace LivingCity.UI
         {
             var person = Person(id);
             return person.IsValid && person.IsUnassigned && person.IsAvailable;
-        }
-
-        int CountUnassigned()
-        {
-            var count = 0;
-            for (var i = 0; i < organizationPeople.Count; i++)
-                if (organizationPeople[i].IsUnassigned &&
-                    organizationPeople[i].IsAvailable)
-                    count++;
-            return count;
         }
 
         static string FirstName(string fullName)

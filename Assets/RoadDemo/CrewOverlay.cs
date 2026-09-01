@@ -472,6 +472,9 @@ namespace RoadDemo
             }
             // a click on the crew bar is the bar's (it selects there); the street keeps out
             if (CrewBar.Instance != null && CrewBar.Instance.Contains(screen)) return true;
+            // and the same for the screen-edge paperwork: a press that worked a key on
+            // the file, the wire or the ledger key must not also pick a man behind it
+            if (StreetHud.Instance != null && StreetHud.Instance.Contains(screen)) return true;
             if (_previousVeto != null && _previousVeto(screen))
             {
                 _crews.Select(null);
@@ -1007,57 +1010,123 @@ namespace RoadDemo
                 return default;
 
             var ray = _cam.ScreenPointToRay(screen);
-            if (LivingCity.Business.BusinessViewBindings.Count > 0)
+            var hits = Physics.RaycastAll(
+                ray, PickReach, BusinessPickMask, QueryTriggerInteraction.Ignore);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            for (var i = 0; i < hits.Length; i++)
             {
-                var hits = Physics.RaycastAll(ray, PickReach);
-                System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
-                for (var i = 0; i < hits.Length; i++)
+                var hit = hits[i];
+                var collider = hit.collider;
+
+                // A cutaway collider is not uniformly invisible: the current vertical
+                // treatment deliberately keeps the ground-floor storefront visible. Let
+                // that visible part answer, while a click through the clear upper shell
+                // continues to the street behind it.
+                if (StreetCutaway.Invisible(collider) && !CutawaySurfaceVisible(hit))
+                    continue;
+                var marker = collider
+                    .GetComponentInParent<LivingCity.Entities.BusinessMarker>();
+
+                // Every run uses this same physical answer. BusinessViewBindings.Count
+                // is deliberately irrelevant: streamed views arrive in a different order
+                // as the camera and composition budget change, and a global count must not
+                // switch the whole city between a collider picker and a ground-plane picker.
+                var building = marker != null ||
+                               collider.GetComponentInParent<BuildingCutaway>() != null;
+                if (!building)
+                    return default;
+
+                // A house that carries several shop units wears ONE marker; the hit
+                // point says which unit was pointed at - the nearest authored door
+                // to where the ray landed, asked at ground height.
+                var territory = TerritoryRuntime.Instance;
+                var at = hit.point;
+                at.y = _crews.GroundY;
+                if (territory != null &&
+                    territory.TryGetBusinessNear(at, SliceSlack, out var sliced))
                 {
-                    // A facade the cutaway is seeing through is still solid to physics,
-                    // but the player is looking at the street behind it and clicking on
-                    // that - the building card's own rule.
-                    if (StreetCutaway.Invisible(hits[i].collider))
-                        continue;
-                    var marker = hits[i].collider
-                        .GetComponentInParent<LivingCity.Entities.BusinessMarker>();
-                    if (marker == null)
-                        return default;
-                    // A house that carries several shop units wears ONE marker; the hit
-                    // point says which unit was pointed at - the nearest authored door
-                    // to where the ray landed, asked at ground height.
-                    var territory = TerritoryRuntime.Instance;
-                    var at = hits[i].point;
-                    at.y = _crews.GroundY;
-                    if (territory != null &&
-                        territory.TryGetBusinessNear(at, SliceSlack, out var sliced))
+                    // A marker proves the struck shell is commercial. Without one, the
+                    // persistent site's own footprint must contain the hit; this recovers
+                    // a not-yet-bound streamed shop without making the neighbouring house
+                    // or pavement answer for it.
+                    var businesses = LivingCity.Business.BusinessRuntime.Instance;
+                    var point = new LivingCity.Territory.TerritoryPoint(at.x, at.z);
+                    if (marker != null ||
+                        (businesses != null && businesses.TryGetSite(sliced, out var site) &&
+                         site.Footprint.DistanceTo(point) <= BusinessFootprintSlack))
                         return sliced;
-                    return marker.BusinessId;
                 }
-                return default;
+                return marker != null ? marker.BusinessId : default;
             }
 
-            // A scene that stands no shop views up at all - nothing to point at - keeps
-            // the old reading: the nearest authored door within reach owns the click.
-            var runtime = TerritoryRuntime.Instance;
-            var plane = new Plane(Vector3.up, new Vector3(0f, _crews.GroundY, 0f));
-            if (runtime == null || !plane.Raycast(ray, out float enter))
-                return default;
+            return default;
+        }
 
-            return runtime.TryGetBusinessNear(ray.GetPoint(enter), BusinessPickRange, out var id)
-                ? id
-                : default;
+        /// <summary>
+        /// Mirrors the opacity profile only as far as pointer ownership needs it. The
+        /// ray already struck the camera-facing surface, so rear-shell suppression cannot
+        /// turn this hit into the visible face; vertical/uniform alpha and the roof cut can.
+        /// </summary>
+        static bool CutawaySurfaceVisible(RaycastHit hit)
+        {
+            var gradient = hit.collider != null
+                ? hit.collider.GetComponentInParent<BuildingOpacityGradient>()
+                : null;
+            if (gradient == null || !gradient.GradientMaterialsActive)
+                return false;
+
+            var amount = gradient.Amount;
+            float alpha;
+            if (gradient.CurrentProfile == BuildingOpacityGradient.Profile.Uniform)
+            {
+                alpha = 1f - Mathf.Clamp01(amount * 0.5f);
+            }
+            else
+            {
+                var bounds = hit.collider.bounds;
+                var start = Mathf.Clamp(
+                    BuildingOpacityGradient.DefaultGradientStartHeight,
+                    0f, Mathf.Max(0f, bounds.size.y - 0.01f));
+                var fadeHeight = Mathf.Max(0.01f, bounds.size.y - start);
+                var height = Mathf.Clamp01(
+                    (hit.point.y - (bounds.min.y + start)) / fadeHeight);
+                var vertical = 1f - height;
+                alpha = amount <= 1f
+                    ? Mathf.Lerp(1f, vertical, Mathf.Clamp01(amount))
+                    : Mathf.Clamp01(vertical - (amount - 1f));
+            }
+
+            // The shader removes roofs and balcony slabs faster beyond 100%.
+            var normalY = hit.normal.sqrMagnitude > 0.0001f
+                ? hit.normal.normalized.y
+                : 0f;
+            var upwardT = Mathf.Clamp01((normalY - 0.35f) / 0.4f);
+            var upward = upwardT * upwardT * (3f - 2f * upwardT);
+            alpha *= 1f - upward * Mathf.Clamp01((amount - 1f) * 2f);
+
+            return alpha >= CutawayPointerAlpha;
         }
 
         /// <summary>How far a click reaches into the city; past the far side of it.</summary>
         const float PickReach = 3000f;
 
+        /// <summary>Below this opacity the player is looking through the shell, not at it.</summary>
+        const float CutawayPointerAlpha = 0.05f;
+
+        /// <summary>The business picker asks for solid city geometry. Pedestrian proxies,
+        /// runtime crowd capsules and small dressing props move between otherwise identical
+        /// runs and must never decide whether the facade behind them is clickable.</summary>
+        static readonly int BusinessPickMask =
+            ~((1 << 2) | (1 << 8) | (1 << 10) |
+              (1 << ScenePerf.PropLayer) | (1 << ScenePerf.CrowdLayer));
+
         /// <summary>How far from the ray's landing a shop unit's own door can sit and
         /// still be the unit that was pointed at - half a wide facade, no more.</summary>
         const float SliceSlack = 14f;
 
-        /// <summary>How far from a door a click still means that door, where there is no
-        /// shop view to point at.</summary>
-        const float BusinessPickRange = 12f;
+        /// <summary>Authored facade/collider seams may sit a fraction outside the plan's
+        /// footprint; small enough that the neighbouring pavement cannot claim the shop.</summary>
+        const float BusinessFootprintSlack = 0.75f;
 
         /// <summary>The card over a shop: what the picked crew can put to its owner - or,
         /// with nobody picked, which crew is to go.</summary>
@@ -1107,12 +1176,17 @@ namespace RoadDemo
                 return false;
 
             // Our own paper - the headquarters, a bought premises - is not a door the
-            // racket has anything to put to. No card at all: the right-click near it
-            // stays a move order, and the one thing it can be given (a guard) is the
-            // ledger's SIT ON IT.
+            // racket has anything to put to. It is still a business the player clicked,
+            // so answer with an honest informational row instead of silently turning the
+            // click into a move order. Guard and management orders remain the ledger's
+            // responsibility; the shared row also makes TurfMap and the street agree.
             if (LivingCity.Business.BusinessDeeds.GangOf(businessId) ==
                 LivingCity.Gangs.GangCatalog.PlayerGangId)
-                return false;
+            {
+                actions.Add(new CrewEnemyAction(
+                    "OUR PREMISES", "guard and management orders are filed in the ledger", null));
+                return true;
+            }
 
             // Nobody picked to send: the card asks that question first and answers itself
             // - pick a lieutenant and it comes straight back with what he can do. With a

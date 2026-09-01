@@ -74,3 +74,12 @@ dev/
 # Editor screenshot dumps
 Assets/Logs/
 Assets/Logs.meta
+
+# ledger web design system (design-sync)
+Tools/ledger-ds/node_modules/
+Tools/ledger-ds/dist/
+Tools/ledger-ds/.ds-sync/
+Tools/ledger-ds/ds-bundle/
+Tools/ledger-ds/.design-sync/.cache/
+Tools/ledger-ds/.design-sync/learnings/
+Tools/ledger-ds/.design-sync/node_modules

@@ -15,11 +15,21 @@ namespace RoadDemo
     /// </summary>
     public sealed class DemoClockHud : MonoBehaviour
     {
-        public const float Height = 48f;
+        /// <summary>The design's top bar: the clock strip and the crew chips beside it
+        /// are the same 62 tall, so the two read as one bar bolted across the top rather
+        /// than two panels that happen to touch.</summary>
+        public const float Height = 62f;
+
+        /// <summary>The strip's width, flat rather than a share of the frame - the design
+        /// gives the clock 200 and the chips whatever is left. Public because the chip
+        /// row starts where this ends.</summary>
+        public const float PlateWidth = 200f;
 
         const float WidthFraction = 0.18f;
-        const float DateTall = 24f;
-        const float Pad = 11f;
+        /// <summary>The dark band across the head of the strip, carrying the date and
+        /// the hour.</summary>
+        const float BandTall = 22f;
+        const float Pad = 9f;
 
         static readonly Color Paper = new Color32(244, 236, 214, 250);
         static readonly Color Ink = new Color32(43, 36, 24, 255);
@@ -28,11 +38,18 @@ namespace RoadDemo
         static readonly Color Key = new Color32(43, 36, 24, 16);
         static readonly Color KeyOn = new Color32(143, 33, 25, 35);
 
+        /// <summary>The night pass, shared with the panels beside it: the strip and
+        /// the crew chips are one bar across the top and must cross together. It was
+        /// two tables, and the segmented control's ink was in the other one - which is
+        /// why the speed keys printed near-black on a near-black plate after dark.
+        /// </summary>
+        readonly HudNight _night = new HudNight();
+
         DemoClock _clock;
         Canvas _canvas;
-        RectTransform _plate, _dateRect, _timeRect, _slower, _speed, _faster, _pause;
-        TMP_Text _dateText, _timeText, _speedText, _pauseText;
-        Image _pauseFace;
+        RectTransform _plate, _band, _dateRect, _timeRect, _speedBar;
+        TMP_Text _dateText, _timeText;
+        int _shownSpeed = int.MinValue;
         int _shownMinute = -1, _shownDay = -1;
 
         DemoCamera _rig;
@@ -48,7 +65,7 @@ namespace RoadDemo
             Build();
         }
 
-        float Width => Screen.width / Mathf.Max(0.01f, _canvas.scaleFactor) * WidthFraction;
+        float Width => PlateWidth;
 
         void Build()
         {
@@ -65,6 +82,12 @@ namespace RoadDemo
             scaler.matchWidthOrHeight = 1f;
             gameObject.AddComponent<GraphicRaycaster>();
 
+            // The strip is inside the design's hud region like every other panel, so it
+            // is a fifth see-through like every other panel. It was solid, which made
+            // the left end of the top bar read as a different material from the chips
+            // butted onto it.
+            gameObject.AddComponent<CanvasGroup>().alpha = HudNight.Alpha;
+
             if (!EventSystem.current)
             {
                 var events = new GameObject("EventSystem");
@@ -77,27 +100,26 @@ namespace RoadDemo
             _plate.pivot = new Vector2(0f, 1f);
             _plate.anchoredPosition = Vector2.zero;
             LedgerKit.Fill(_plate, Paper);
-            LedgerKit.Frame(_plate, 0.5f, Rule);
 
-            _dateText = Line(_plate, "MON 5 JAN 1987", LedgerStyle.Condensed, 11f, Ink,
-                TextAlignmentOptions.MidlineLeft);
-            _dateText.characterSpacing = 10f;
-            _timeText = Line(_plate, "00:00", LedgerStyle.Mono, 11f, Red,
-                TextAlignmentOptions.MidlineRight);
+            // The head band: what day it is on the left, what hour on the right in the
+            // rail's gold. The band is the design's own, and it is what makes the strip
+            // the left END OF A BAR rather than a cream card floating in the corner.
+            _band = DemoUi.NewRect("Band", _plate);
+            LedgerKit.Fill(_band, LedgerV2.Head);
+
+            _dateText = Line(_band, "MON 5 JAN 1987", LedgerStyle.Condensed, 13.9f,
+                LedgerV2.HeadCream, TextAlignmentOptions.MidlineLeft);
+            _dateText.characterSpacing = 12f;
+            _timeText = Line(_band, "00:00", LedgerStyle.MonoBold, 14.4f,
+                LedgerStyle.RailGold, TextAlignmentOptions.MidlineRight);
 
             _dateRect = _dateText.rectTransform;
             _timeRect = _timeText.rectTransform;
-            _slower = Control("Slower", "<<", () => Step(faster: false));
-            _speed = DemoUi.NewRect("Speed", _plate);
-            _speedText = Line(_speed, "1X", LedgerStyle.Mono, 9f, Ink,
-                TextAlignmentOptions.Center);
-            DemoUi.Fill(_speedText.rectTransform);
-            _faster = Control("Faster", ">>", () => Step(faster: true));
-            _pause = Control("Pause", "II", TogglePause, out _pauseText, out _pauseFace);
 
             Layout();
-            RefreshControls();
             BuildTimeScrubber();
+            RefreshControls();
+            _night.Register(transform);
         }
 
         /// <summary>The T readout's interactive half. It lives on the permanent clock
@@ -192,24 +214,68 @@ namespace RoadDemo
 
             float width = Width;
             _plate.sizeDelta = new Vector2(width, Height);
-            float dateY = -(DateTall - LedgerKit.LineBox(11f)) * 0.5f;
-            LedgerKit.PlaceTopLeft(_dateRect, Pad, dateY, width - Pad * 2f,
-                LedgerKit.LineBox(11f));
-            LedgerKit.PlaceTopLeft(_timeRect, Pad, dateY, width - Pad * 2f,
-                LedgerKit.LineBox(11f));
+            LedgerKit.PlaceTopLeft(_band, 0f, 0f, width, BandTall);
 
-            const float small = 30f, speed = 34f, pause = 36f, gap = 3f, tall = 18f;
-            // The control ladder belongs to the same left reading edge as the date,
-            // rather than floating in the middle of the narrow clock plate.
-            float x = Pad;
-            float y = -DateTall - 3f;
-            LedgerKit.PlaceTopLeft(_slower, x, y, small, tall);
-            x += small + gap;
-            LedgerKit.PlaceTopLeft(_speed, x, y, speed, tall);
-            x += speed + gap;
-            LedgerKit.PlaceTopLeft(_faster, x, y, small, tall);
-            x += small + gap;
-            LedgerKit.PlaceTopLeft(_pause, x, y, pause, tall);
+            float line = LedgerKit.LineBox(13.9f);
+            float y = -(BandTall - line) * 0.5f;
+            LedgerKit.PlaceTopLeft(_dateRect, Pad, y, width - Pad * 2f, line);
+            LedgerKit.PlaceTopLeft(_timeRect, Pad, y, width - Pad * 2f, line);
+        }
+
+        /// <summary>
+        /// The speed control: one segmented bar, the design's own - a single question
+        /// with a single answer, rather than two arrows to step toward the rung you
+        /// wanted. HOLD is the last cell, because a held clock is a speed and not a
+        /// mode. Rebuilt when the rung moves: a segmented bar carries its answer in its
+        /// chrome, so there is nothing to merely re-tint.
+        /// </summary>
+        void BuildSpeedBar()
+        {
+            if (_clock == null || _plate == null)
+                return;
+
+            var rung = _clock.Paused ? _clock.SpeedCount : _clock.SpeedIndex;
+            if (rung == _shownSpeed && _speedBar != null)
+                return;
+            _shownSpeed = rung;
+
+            if (_speedBar != null)
+                Destroy(_speedBar.gameObject);
+
+            _speedBar = DemoUi.NewRect("Speed", _plate);
+            float wide = Width - 14f;
+            LedgerKit.PlaceTopLeft(_speedBar, 7f, -(BandTall + 4f), wide, 26f);
+
+            var labels = new string[_clock.SpeedCount + 1];
+            for (var i = 0; i < _clock.SpeedCount; i++)
+                labels[i] = _clock.SpeedAt(i).ToString("0.#") + "X";
+            labels[_clock.SpeedCount] = "Hold";
+
+            LedgerV2.Segmented(_speedBar, 0f, 0f, 26f, labels, rung, Pick,
+                wide / labels.Length, 9.5f);
+
+            // The bar is new paper, so it has to be taken into the night palette and
+            // brought to wherever the sky is now - and the paper it replaced struck
+            // from the register, or every rung change would leave a dead entry behind.
+            _night.ForgetDead();
+            _night.Register(_speedBar);
+        }
+
+        void Pick(int rung)
+        {
+            if (_clock == null)
+                return;
+
+            if (rung >= _clock.SpeedCount)
+            {
+                _clock.Paused = true;
+            }
+            else
+            {
+                _clock.Paused = false;
+                _clock.SetSpeed(rung);
+            }
+            RefreshControls();
         }
 
         void TogglePause()
@@ -236,20 +302,15 @@ namespace RoadDemo
             if (_clock == null)
                 return;
 
-            if (_speedText)
-                _speedText.text = _clock.SpeedMultiplier.ToString("0.#") + "X";
-            if (_pauseText)
-                _pauseText.text = _clock.Paused ? ">" : "II";
-            if (_pauseFace)
-                _pauseFace.color = _clock.Paused ? KeyOn : Key;
-            if (_pauseText)
-                _pauseText.color = _clock.Paused ? Red : Ink;
+            BuildSpeedBar();
         }
 
         void LateUpdate()
         {
             if (_clock == null)
                 return;
+
+            _night.Relight();
 
             if (_rig == null)
                 _rig = FindAnyObjectByType<DemoCamera>();

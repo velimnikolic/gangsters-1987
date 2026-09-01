@@ -1,0 +1,175 @@
+/* The 1987 ledger's tokens, ported 1:1 from LedgerStyle.cs and LedgerV2.cs.
+   Every hex is the design handoff's own value - nothing here is eyeballed. */
+:root {
+  /* ---- fonts ---- */
+  --lg-font-type: 'Lekton', 'Courier New', monospace;          /* the typewriter, always bold */
+  --lg-font-mono: 'IBM Plex Mono', 'Courier New', monospace;   /* figures and body copy */
+  --lg-font-serif: 'PT Serif', Georgia, serif;                 /* copy a reader reads */
+  --lg-font-cond: 'Oswald', sans-serif;                        /* stamped chrome, small caps */
+  --lg-font-pixel: 'Silkscreen', monospace;                    /* the VGA survey terminal */
+
+  /* ---- the desk ---- */
+  --lg-desk: #2a1f14;
+  --lg-desk-mid: #16100a;
+  --lg-desk-deep: #0d0906;
+  --lg-lamp: rgba(226, 187, 120, 0.20);
+
+  /* ---- stock ---- */
+  --lg-paper: #f0e6cd;
+  --lg-paper-mid: #e7dabb;
+  --lg-paper-deep: #ddcfae;
+  --lg-manila: #cdb387;
+  --lg-manila-low: #c2a67a;
+  --lg-card: #f7f2e2;
+  --lg-card-low: #efe6cf;
+  --lg-printout: #fbf6e6;
+  --lg-printout-low: #f3ecd6;
+  --lg-index-card: #fdf9ec;
+  --lg-index-card-low: #f4eedb;
+  --lg-slip: #fdfaf0;
+  --lg-slip-low: #f2ebd8;
+  --lg-newsprint: #eee8d8;
+  --lg-newsprint-low: #e4dcc7;
+  --lg-greenbar: #e9eede;
+  --lg-greenbar-low: #dfe6d2;
+  --lg-greenbar-band: rgba(146, 176, 140, 0.42);
+  --lg-greenbar-ink: #22301c;
+  --lg-carbon: #f6dfd9;
+  --lg-carbon-low: #eed3cb;
+  --lg-carbon-ink: #6b2b23;
+  --lg-sticky: #ffed80;
+
+  /* ---- ink ---- */
+  --lg-ink: #241f1a;
+  --lg-ink-soft: #3b3226;
+  --lg-ink-mid: #4a3f2c;
+  --lg-ink-dim: #6d5c40;
+  --lg-ink-pale: #7a684a;
+  --lg-ink-label: #8a7756;
+  --lg-ink-faint: rgba(43, 36, 24, 0.22);
+  --lg-ink-hair: rgba(43, 36, 24, 0.10);
+  --lg-ink-dotted: rgba(43, 36, 24, 0.40);
+
+  /* ---- red, and the other verdicts ---- */
+  --lg-red-pen: #8f2119;
+  --lg-stamp-red: rgba(150, 40, 31, 0.85);
+  --lg-deep-red: #6b2b23;
+  --lg-soft-red: #e79a8c;
+  --lg-green-ok: #3f6b3a;
+  --lg-pen-amber: #8a6412;
+  --lg-ballpoint: #2f4a7a;
+
+  /* ---- rules and marks ---- */
+  --lg-rule-blue: rgba(47, 74, 122, 0.16);
+  --lg-rule-green: rgba(34, 48, 28, 0.22);
+  --lg-margin-red: rgba(143, 33, 25, 0.35);
+  --lg-highlighter: rgba(143, 33, 25, 0.09);
+  --lg-highlighter-green: rgba(63, 107, 58, 0.14);
+  --lg-punch: rgba(13, 9, 5, 0.55);
+  --lg-coffee: rgba(120, 78, 32, 0.16);
+  --lg-polaroid-white: #faf7ed;
+  --lg-polaroid-dark: #e3d8bd;
+  --lg-paperclip: rgba(90, 90, 96, 0.75);
+  --lg-shadow: rgba(0, 0, 0, 0.38);
+  --lg-folder-shadow: rgba(0, 0, 0, 0.55);
+
+  /* ---- v1 buttons (tape) ---- */
+  --lg-tape-black: #1d1812;
+  --lg-tape-red: #8f2119;
+  --lg-tape-text: #efe4c9;
+  --lg-tape-idle: rgba(43, 36, 24, 0.10);
+
+  /* ---- the blotter strip ---- */
+  --lg-blotter: #221a11;
+  --lg-blotter-low: #171009;
+  --lg-blotter-rule: rgba(255, 255, 255, 0.10);
+  --lg-hud-amber: #e0b464;
+  --lg-hud-cream: #f0e3c2;
+  --lg-hud-label: #9a8560;
+  --lg-hud-note: #7c6a4a;
+  --lg-hud-meter-warm: #c97a4a;
+
+  /* ---- the 1987 chrome: bar, rail, telex, footer ---- */
+  --lg-chrome: #110c09;
+  --lg-chrome-rule: #332c28;
+  --lg-chrome-title: #f0eae4;
+  --lg-chrome-file: #8a7d75;
+  --lg-tab-red: #a51e24;
+  --lg-tab-active-text: #fdf7f1;
+  --lg-tab-idle: #a89c93;
+  --lg-rail: #1f1915;
+  --lg-rail-hair: #2b2521;
+  --lg-rail-trough: #302a26;
+  --lg-rail-kicker: #b14e49;
+  --lg-rail-label: #90837b;
+  --lg-rail-note: #84776f;
+  --lg-rail-bright: #dbcec4;
+  --lg-rail-value: #e9e4de;
+  --lg-rail-green: #6dba70;
+  --lg-rail-red: #f2716a;
+  --lg-rail-gold: #f2c86c;
+  --lg-rail-amber: #a66d00;
+  --lg-rail-safe-gold: #d4a73e;
+  --lg-telex-paper: #e1d9d0;
+  --lg-telex-rule: #b5a89f;
+  --lg-telex-badge: #18120f;
+  --lg-telex-badge-ink: #c8bbb1;
+  --lg-telex-stamp: #6d6059;
+  --lg-telex-urgent: #971a20;
+  --lg-telex-warn: #6f4100;
+  --lg-telex-plain: #37322e;
+  --lg-ground: #ebe3da;
+  --lg-footer-ink: #a2968c;
+  --lg-footer-ink-dim: #7b6f67;
+
+  /* ---- the v2 terminal sheet ---- */
+  --lg-panel: #f4efe9;
+  --lg-panel-band: #ede7df;
+  --lg-panel-dark: #e7e0d9;
+  --lg-head: #18120f;
+  --lg-head-ink: #dbcec4;
+  --lg-head-dim: #90837b;
+  --lg-head-cream: #f3ede7;
+  --lg-rule: #c5bcb4;
+  --lg-hair: #d8cfc7;
+  --lg-dotted: #c1b5ab;
+  --lg-sheet-rule: #a2968c;
+  --lg-ink2: #1a1512;
+  --lg-body: #231e1b;
+  --lg-muted: #675b53;
+  --lg-label: #6d6059;
+  --lg-faint: #7b6f67;
+  --lg-red: #ac3031;
+  --lg-amber: #a66d00;
+  --lg-green: #146720;
+  --lg-paper-blue: #364452;
+  --lg-picked: #ebddb9;
+  --lg-wrong: #fbe2d9;
+  --lg-money: #e5f3e9;
+  --lg-money-stripe: #dcede1;
+  --lg-money-rule: #cbd8cd;
+  --lg-money-edge: #1a3520;
+  --lg-profit-band: #f1d8cf;
+  --lg-plate: #dcd3c6;
+  --lg-press-plate: #c2b5a2;
+  --lg-thumb: #c7bbb1;
+  --lg-portrait: #cec2b7;
+  --lg-dark-plate: #39312c;
+  --lg-dark-plate-ink: #9c8f87;
+  --lg-till-tape: #f8f5ef;
+  --lg-signature: #213c59;
+  --lg-lieutenant: #624727;
+  --lg-boss: #ea6a64;
+  --lg-filed: #4075aa;
+  --lg-head-paper: #a0bbd7;
+  --lg-head-street: #99ce9a;
+  --lg-copy: #37322e;
+  --lg-caption: #49403b;
+  --lg-trough: #c5bcb4;
+  --lg-pip-empty: #48413c;
+
+  /* ---- the gold star ---- */
+  --lg-gold-top: #fff299;
+  --lg-gold-bottom: #db8c1f;
+  --lg-gold-rim: #7a4a0d;
+}
