@@ -949,7 +949,9 @@ namespace LivingCity.UI
                             ? racketLedger.StateOf(businessId, new Territory.TerritoryGangId(
                                 Gangs.GangCatalog.PlayerGangId))
                             : Territory.TerritoryProtectionState.Unaffiliated,
-                        racketable: true, hasCrew: true, atDoor: false, racketRows);
+                        Gameplay.DoorHolder.Read(businessId),
+                        racketable: true, hasCrew: true, atDoor: false,
+                        Gameplay.DoorJobs.AskingPrice(businessId), racketRows);
 
                     // EVERY available row, not the first: since the approach carries the
                     // intent, a demand or a threat given from the desk is one order too -
@@ -957,7 +959,11 @@ namespace LivingCity.UI
                     var racketX = 212f;
                     for (var r = 0; r < racketRows.Count; r++)
                     {
-                        if (!racketRows[r].Available)
+                        // Only the doorstep chain belongs beside a drafted order: the
+                        // shared list's JOB rows are the very thing SEND THEM files, and
+                        // offering them twice on one page would file two of them.
+                        if (!racketRows[r].Available ||
+                            racketRows[r].Kind != Territory.TerritoryDoorRowKind.Racket)
                             continue;
                         var intent = racketRows[r].Intent;
                         LedgerV2.Button(ordersContent,

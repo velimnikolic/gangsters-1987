@@ -215,8 +215,7 @@ namespace RoadDemo
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 1f;
 
-            // The corner plate is inside the design's hud region too, and carries its
-            // opacity with the rest of the paper.
+            // Keep the corner plate opaque with the rest of the screen-edge HUD.
             go.AddComponent<CanvasGroup>().alpha = HudNight.Alpha;
 
             // A card in the corner, and the paper it is printed on showing as a border

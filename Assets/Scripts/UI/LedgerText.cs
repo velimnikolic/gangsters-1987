@@ -165,6 +165,20 @@ namespace LivingCity.UI
             return amount < 0 ? "-" + figure : figure;
         }
 
+        /// <summary>The tag beside one line of door news, in the wire's shorthand.</summary>
+        public static string DoorNewsLabel(Territory.TerritoryDoorNews news) => news switch
+        {
+            Territory.TerritoryDoorNews.Approached => "At the door",
+            Territory.TerritoryDoorNews.Agreed => "He pays",
+            Territory.TerritoryDoorNews.Wavered => "Wavering",
+            Territory.TerritoryDoorNews.Refused => "Refused",
+            Territory.TerritoryDoorNews.Threatened => "Leaned on",
+            Territory.TerritoryDoorNews.Wrecked => "Wrecked",
+            Territory.TerritoryDoorNews.Beaten => "Assault",
+            Territory.TerritoryDoorNews.StoppedPaying => "Lapsed",
+            _ => "Lost the door",
+        };
+
         public static string RiskLabel(Outfit.RiskRating risk) => risk switch
         {
             Outfit.RiskRating.None => "None",

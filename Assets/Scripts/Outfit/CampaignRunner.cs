@@ -690,16 +690,45 @@ namespace LivingCity.Outfit
             return OpResult.Fail(UI.LedgerText.ReasonNoSuchOrder);
         }
 
-        /// <summary>The street's answer to a Violence job: the crew went, the sim played
-        /// it out, and this is what happened. Held until the job's hours are done rather
-        /// than resolving on the spot, so one code path writes every record and the men
-        /// still owe the time it took.</summary>
+        /// <summary>
+        /// The men are AT the address. The book's travel hours are an estimate of how
+        /// long getting there takes; when the street has actually put them on the
+        /// doorstep the estimate is spent, whatever it said.
+        ///
+        /// Without this they stood outside the shop they had walked to, doing nothing,
+        /// until an arithmetic somewhere agreed they had arrived - which is the delay a
+        /// player reads as the game being broken, because the men are visibly there.
+        /// </summary>
+        public void ReportArrived(int jobId)
+        {
+            for (var i = 0; i < Book.Jobs.Count; i++)
+            {
+                var job = Book.Jobs[i];
+                if (job.Id != jobId || !job.Live || job.Stage != JobStage.Travelling)
+                    continue;
+                job.TravelHoursLeft = 0f;
+                return;
+            }
+        }
+
+        /// <summary>
+        /// The street's answer to a Violence job: the crew went, the sim played it out,
+        /// and this is what happened. Still RESOLVED through Finish on the next tick, so
+        /// one code path writes every record - but the work hours end here, because the
+        /// street has already spent them.
+        ///
+        /// They used to run on: a front went in, the men then stood by the boarded window
+        /// for the rest of the order's hours with the next order queued behind it, and
+        /// the shop was not told it had been wrecked until the clock caught up. The hours
+        /// are what the work COSTS, and the work is over the moment the street says so.
+        /// </summary>
         public void ReportStreetOutcome(int jobId, OrderOutcome outcome)
         {
             for (var i = 0; i < Book.Jobs.Count; i++)
                 if (Book.Jobs[i].Id == jobId && Book.Jobs[i].Live)
                 {
                     Book.Jobs[i].StreetOutcome = outcome;
+                    Book.Jobs[i].WorkHoursLeft = 0f;
                     return;
                 }
         }

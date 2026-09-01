@@ -62,6 +62,36 @@ namespace LivingCity.Outfit
             type == OrderType.Bomb;
 
         /// <summary>
+        /// How heavily one act lands on the man it was done to. The fear ledger knows
+        /// only the CATEGORY - a bat through the window and a firebomb are both property
+        /// damage - and they are not the same argument to a man who has to open again
+        /// tomorrow.
+        ///
+        /// These numbers exist because the ladder did not terminate: an owner could be
+        /// leaned on, smashed and burnt out and still only waver, because a wrecked front
+        /// was worth a fifth of what a demand needs and a torch was worth exactly the
+        /// same as a bat. The rule they encode is the one the game is about - VIOLENCE
+        /// FRIGHTENS, PRESENCE COLLECTS: a wrecked front is enough to fold an owner while
+        /// the family that wrecked it is standing on his street, and not enough on its
+        /// own when nobody is there to pay.
+        /// </summary>
+        public static float ViolenceSeverity(OrderType type)
+        {
+            switch (type)
+            {
+                case OrderType.SmashUp: return 2.5f;
+                case OrderType.Torch: return 4f;
+                case OrderType.Bomb: return 5f;
+                // A raid files as an ASSAULT rather than property damage, and that
+                // category's own impact is already heavier, so it needs less on top -
+                // but it still has to CARRY, because a man robbed by the family whose
+                // men are standing outside has been given the whole argument at once.
+                case OrderType.Raid: return 1.5f;
+                default: return 1f;
+            }
+        }
+
+        /// <summary>
         /// Why this order cannot be given against this door, in the planner's own voice,
         /// or null when it can. The planner explains; the report never does.
         /// </summary>

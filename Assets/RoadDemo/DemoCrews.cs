@@ -1177,7 +1177,6 @@ namespace RoadDemo
             var dir = world - boss.Tf.position;
             dir.y = 0f;
             var rot = Quaternion.LookRotation(dir.sqrMagnitude > 0.25f ? dir.normalized : boss.Tf.forward);
-            bool stagger = SettledTogether(unit, boss);
             Reseat(boss);
             Unwedge(boss);
             boss.OrderAcross(world, keepOffRoad: keepOffRoad);
@@ -1187,19 +1186,59 @@ namespace RoadDemo
             // a panic, and the player who wants them there quicker can say so.
             boss.Urgent = run;
             boss.Post = world;
+
+            // WHO STANDS WHERE IS DECIDED BY WHO IS NEAREST IT, not by the order the
+            // hoods happen to sit in the list. Handing a man the place his index names
+            // sends two of them across each other behind the lieutenant to swap ends -
+            // from outside that reads as a crew setting off in the wrong direction and
+            // then turning round, which is exactly what it is.
+            _dispatchMen.Clear();
+            _dispatchSpots.Clear();
             for (int k = 0; k < unit.Hoods.Count; k++)
             {
                 var man = unit.Hoods[k];
                 if (man == null || man.Dead || man == boss || man.Riding) continue;
-                Reseat(man);
-                Unwedge(man);
+                _dispatchMen.Add(man);
                 // spread behind him, so three men arrive as a crew and not as a column
-                man.OrderAcross(WalkObstacles.ClearSpot(
-                    world + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius),
-                    stagger ? HoodBeat() : 0f, keepOffRoad);
-                man.Urgent = run;
+                _dispatchSpots.Add(WalkObstacles.ClearSpot(
+                    world + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius));
+            }
+
+            while (_dispatchMen.Count > 0)
+            {
+                var bestMan = 0;
+                var bestSpot = 0;
+                var best = float.MaxValue;
+                for (int m = 0; m < _dispatchMen.Count; m++)
+                for (int spot = 0; spot < _dispatchSpots.Count; spot++)
+                {
+                    var gap = _dispatchSpots[spot] - _dispatchMen[m].Tf.position;
+                    gap.y = 0f;
+                    var square = gap.sqrMagnitude;
+                    if (square >= best) continue;
+                    best = square;
+                    bestMan = m;
+                    bestSpot = spot;
+                }
+
+                var taking = _dispatchMen[bestMan];
+                Reseat(taking);
+                Unwedge(taking);
+                // AND THEY GO WHEN HE GOES. The hoods used to be handed a stagger of up
+                // to nine tenths of a second each, so a crew told to move set off in
+                // dribs while the lieutenant walked away from it.
+                taking.OrderAcross(_dispatchSpots[bestSpot], 0f, keepOffRoad);
+                taking.Urgent = run;
+                _dispatchMen.RemoveAt(bestMan);
+                _dispatchSpots.RemoveAt(bestSpot);
             }
         }
+
+        /// <summary>Scratch for the formation hand-out: the men still without a place and
+        /// the places still unclaimed. Fields rather than locals so an order costs no
+        /// allocation, the way every other per-order list here is kept.</summary>
+        readonly List<CrewWalker> _dispatchMen = new List<CrewWalker>();
+        readonly List<Vector3> _dispatchSpots = new List<Vector3>();
 
         /// <summary>The fallback for a man who is standing INSIDE something - a wall, a
         /// doorway, a car that parked on him. He cannot take a step from there, so every
@@ -1340,7 +1379,6 @@ namespace RoadDemo
         /// is passed in rather than assumed to be the lieutenant.</summary>
         void Dispatch(Unit unit, CrewWalker lead, PedLink link, float t, bool run = false)
         {
-            bool stagger = SettledTogether(unit, lead);
             // a man who walked off his stretch (to a car door he never got into) sets
             // off from where he stands
             if (lead != null && !lead.Dead && !lead.Riding)
@@ -1362,38 +1400,19 @@ namespace RoadDemo
                 var man = unit.Hoods[k];
                 if (man == null || man == lead || man.Dead || man.Riding) continue;
                 Reseat(man);
-                man.OrderTo(link, FormationT(link, t, unit.CrewId, k),
-                    stagger ? HoodBeat() : 0f);
+                // No beat: when the man in front steps off, they step off WITH him.
+                man.OrderTo(link, FormationT(link, t, unit.CrewId, k));
                 man.Urgent = run;
             }
         }
 
-        /// <summary>The beat a hood waits before he follows an order the boss got - each
-        /// his own, so a crew steps off one man after another, not as one machine.</summary>
-        static float HoodBeat() => Random.Range(0.15f, 0.9f);
-
-        /// <summary>A stagger belongs only to a crew setting off together. If the last
-        /// order has not finished for every man, or even one standing hood is still
-        /// outside the tether's definition of "back with his crew", the replacement
-        /// order moves everybody at once. Repeating clicks can therefore never keep
-        /// restarting the hoods' wait while the lieutenant walks away.</summary>
-        static bool SettledTogether(Unit unit, CrewWalker lead)
-        {
-            if (unit == null || lead == null || lead.Tf == null ||
-                lead.State != CrewWalker.Mode.Standing)
-                return false;
-            for (int k = 0; k < unit.Hoods.Count; k++)
-            {
-                var hood = unit.Hoods[k];
-                if (hood == null || hood == lead || hood.Dead || hood.Tf == null || hood.Riding)
-                    continue;
-                if (hood.State != CrewWalker.Mode.Standing) return false;
-                var gap = hood.Tf.position - lead.Tf.position;
-                gap.y = 0f;
-                if (gap.sqrMagnitude > TetherNear * TetherNear) return false;
-            }
-            return true;
-        }
+        /// <summary>
+        /// A crew steps off TOGETHER. There used to be a beat here - up to nine tenths
+        /// of a second, each man his own - so that a crew read as men rather than as one
+        /// machine. From outside it read as the lieutenant walking away from hoods who
+        /// had not been told, and it was removed on the user's word (2026-09-01).
+        /// </summary>
+        const float HoodBeatSeconds = 0f;
 
         /// <summary>A man's own nudge off the formation's lattice, in -1..1, settled
         /// for the run: crew, his place in it, and which of his nudges is asked for.
@@ -2377,7 +2396,7 @@ namespace RoadDemo
         void FallIn(Unit unit, CrewWalker hood, int k)
         {
             var boss = unit.Boss;
-            float beat = HoodBeat();
+            const float beat = HoodBeatSeconds;
             if (FreeRoam)
             {
                 var facing = boss.HasOrder ? (boss.Destination - boss.Tf.position) : boss.Tf.forward;

@@ -16,6 +16,10 @@ namespace LivingCity.Tests
         static readonly TerritoryBusinessId Shop = new TerritoryBusinessId("biz:corner-shop");
         static readonly TerritoryBusinessId Bar = new TerritoryBusinessId("biz:bar");
 
+        /// <summary>The block the corner shop stands on, for the tests that have to put
+        /// real Fear on a real street before they ask the owner anything.</summary>
+        static readonly TerritoryBlockId Street = new TerritoryBlockId("block:corner");
+
         public static List<string> Run()
         {
             var failures = new List<string>();
@@ -34,6 +38,7 @@ namespace LivingCity.Tests
             TheCardSaysWhereTheShopStands(failures);
             EverySurfaceOffersTheSameOrders(failures);
             NobodyRobsADoorThatPaysUs(failures);
+            TheLadderTerminates(failures);
 
             return failures;
         }
@@ -459,40 +464,47 @@ namespace LivingCity.Tests
         static void EverySurfaceOffersTheSameOrders(List<string> failures)
         {
             var rows = new List<TerritoryRacketOrder>();
+            const Outfit.DoorTenure open = Outfit.DoorTenure.Open;
 
             // A place that carries no business has nothing to ask.
             TerritoryRacketOrders.For(
-                TerritoryProtectionState.Unaffiliated, false, true, true, rows);
+                TerritoryProtectionState.Unaffiliated, open, false, true, true, 0, rows);
             if (rows.Count != 0)
                 failures.Add("ORDER: a civic building offered a racket order.");
 
-            // Nobody picked to send: the approach row stands, faded, saying why.
+            // Nobody picked to send: every doorstep row still STANDS, faded, saying why.
             TerritoryRacketOrders.For(
-                TerritoryProtectionState.Unaffiliated, true, false, false, rows);
-            if (rows.Count != 1 || rows[0].Available || rows[0].Note.Length == 0)
-                failures.Add("ORDER: with no crew picked the card says nothing useful.");
+                TerritoryProtectionState.Unaffiliated, open, true, false, false, 0, rows);
+            if (Offers(rows, TerritoryRacketIntent.Approach, true) ||
+                Offers(rows, TerritoryRacketIntent.Demand, true))
+                failures.Add("ORDER: men were sent with no crew picked.");
+            for (var i = 0; i < rows.Count; i++)
+                if (rows[i].Note.Length == 0)
+                    failures.Add("ORDER: a faded row does not say why.");
 
             // Men elsewhere: every order can be given - the approach CARRIES the demand
             // or the threat to the door (the RACKUI-001 chain: ApproachBusinessCommand
             // takes the intent and the arrival resolves it), so from range the rows
             // read available with the walking note rather than faded.
             TerritoryRacketOrders.For(
-                TerritoryProtectionState.Unaffiliated, true, true, false, rows);
-            if (rows.Count != 3)
-                failures.Add("ORDER: the rows vanish instead of explaining themselves.");
-            else
-            {
-                if (!Offers(rows, TerritoryRacketIntent.Approach, true))
-                    failures.Add("ORDER: the men could not be sent to the door.");
-                if (!Offers(rows, TerritoryRacketIntent.Demand, true) ||
-                    !Offers(rows, TerritoryRacketIntent.Threaten, true))
-                    failures.Add(
-                        "ORDER: a demand from range no longer walks to the door.");
-            }
+                TerritoryProtectionState.Unaffiliated, open, true, true, false, 0, rows);
+            if (!Offers(rows, TerritoryRacketIntent.Approach, true))
+                failures.Add("ORDER: the men could not be sent to the door.");
+            if (!Offers(rows, TerritoryRacketIntent.Demand, true) ||
+                !Offers(rows, TerritoryRacketIntent.Threaten, true))
+                failures.Add("ORDER: a demand from range no longer walks to the door.");
+
+            // RACKUI-002. The wrecking is part of the LADDER, not a separate trade: an
+            // owner who only wavers under a threat is exactly the man a smashed front is
+            // meant to settle, so it stands open from the first visit - never gated
+            // behind a refusal the player has to earn first.
+            if (!Offers(rows, Outfit.OrderType.SmashUp, true) ||
+                !Offers(rows, Outfit.OrderType.Torch, true))
+                failures.Add("ORDER: the shop could be asked but never touched.");
 
             // Men at the door: the conversations open, and walking up again does not.
             TerritoryRacketOrders.For(
-                TerritoryProtectionState.Defiant, true, true, true, rows);
+                TerritoryProtectionState.Defiant, open, true, true, true, 0, rows);
             if (!Offers(rows, TerritoryRacketIntent.Demand, true) ||
                 !Offers(rows, TerritoryRacketIntent.Threaten, true))
                 failures.Add("ORDER: with the men at the door there is nothing to say.");
@@ -500,36 +512,267 @@ namespace LivingCity.Tests
                 failures.Add("ORDER: the men were sent to a door they are standing at.");
 
             // A shop already paying us is COLLECTED from, never asked again (ECON-008):
-            // the round is its one live row, and the demand never lights.
+            // the round is its live doorstep row, and the demand never lights. The
+            // violence is closed too - we do not rob the takings we collect.
             TerritoryRacketOrders.For(
-                TerritoryProtectionState.Compliant, true, true, true, rows);
+                TerritoryProtectionState.Compliant, Outfit.DoorTenure.Paying,
+                true, true, true, 4000, rows);
             if (!Offers(rows, TerritoryRacketIntent.Collect, true))
                 failures.Add("ORDER: a paying shop's card does not offer the round.");
-            for (var i = 0; i < rows.Count; i++)
-                if (rows[i].Available && rows[i].Intent != TerritoryRacketIntent.Collect)
-                    failures.Add("ORDER: a shop that already pays us was asked again.");
+            if (Offers(rows, TerritoryRacketIntent.Demand, true) ||
+                Offers(rows, TerritoryRacketIntent.Threaten, true) ||
+                Offers(rows, TerritoryRacketIntent.Approach, true))
+                failures.Add("ORDER: a shop that already pays us was asked again.");
+            if (Offers(rows, Outfit.OrderType.SmashUp, true) ||
+                Offers(rows, Outfit.OrderType.Torch, true) ||
+                Offers(rows, Outfit.OrderType.Raid, true))
+                failures.Add("ORDER: the family was offered its own takings to wreck.");
 
-            // Every intent is named exactly once, whatever the situation.
+            // Our own paper: nothing hostile stands, but a guard on the door does.
             TerritoryRacketOrders.For(
-                TerritoryProtectionState.Hesitant, true, true, true, rows);
-            var seen = new List<TerritoryRacketIntent>();
+                TerritoryProtectionState.Unaffiliated, Outfit.DoorTenure.Ours,
+                true, true, false, 4000, rows);
+            if (Offers(rows, TerritoryRacketIntent.Demand, true) ||
+                Offers(rows, Outfit.OrderType.SmashUp, true) ||
+                Offers(rows, Outfit.OrderType.BuyPremises, true))
+                failures.Add("ORDER: our own premises were shaken down or sold to us.");
+            if (!Offers(rows, Outfit.OrderType.Guard, true))
+                failures.Add("ORDER: our own door could not be guarded.");
+
+            // The deed carries its price on the row itself, so every surface prints the
+            // same sum beside the same word - and a door with no price does not offer it.
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, open, true, true, false, 4000, rows);
+            if (!Offers(rows, Outfit.OrderType.BuyPremises, true) ||
+                Cash(rows, Outfit.OrderType.BuyPremises) != 4000)
+                failures.Add("ORDER: the asking price is not on the deed row.");
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, open, true, true, false, 0, rows);
+            if (Offers(rows, Outfit.OrderType.BuyPremises, true))
+                failures.Add("ORDER: premises with no asking price were offered for sale.");
+
+            // Every row is named exactly once and carries words, whatever the situation.
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Hesitant, open, true, true, true, 4000, rows);
+            var seen = new List<string>();
             for (var i = 0; i < rows.Count; i++)
             {
-                if (seen.Contains(rows[i].Intent))
-                    failures.Add("ORDER: the same intent is on the card twice.");
-                seen.Add(rows[i].Intent);
+                var key = rows[i].Kind + ":" +
+                          (rows[i].Kind == TerritoryDoorRowKind.Racket
+                              ? rows[i].Intent.ToString()
+                              : rows[i].Job.ToString());
+                if (seen.Contains(key))
+                    failures.Add("ORDER: the same order is on the card twice.");
+                seen.Add(key);
                 if (string.IsNullOrEmpty(rows[i].Label))
                     failures.Add("ORDER: a row has no words on it.");
             }
+
+            // RACKUI-003. The block file and the street card read THIS list and nothing
+            // else, so the menu against one door is the same on both. The chain, the
+            // wrecking, the robbery, the watch and the deed are all of it.
+            if (!Named(rows, TerritoryRacketOrders.ApproachLabel) ||
+                !Named(rows, TerritoryRacketOrders.DemandLabel) ||
+                !Named(rows, TerritoryRacketOrders.ThreatenLabel) ||
+                !Named(rows, TerritoryRacketOrders.CollectLabel) ||
+                !Named(rows, TerritoryRacketOrders.SmashLabel) ||
+                !Named(rows, TerritoryRacketOrders.TorchLabel) ||
+                !Named(rows, TerritoryRacketOrders.RobLabel) ||
+                !Named(rows, TerritoryRacketOrders.GuardLabel) ||
+                !Named(rows, TerritoryRacketOrders.BuyLabel))
+                failures.Add("ORDER: a door row the ledger has is missing from the list.");
         }
 
         static bool Offers(
             List<TerritoryRacketOrder> rows, TerritoryRacketIntent intent, bool available)
         {
             for (var i = 0; i < rows.Count; i++)
-                if (rows[i].Intent == intent && rows[i].Available == available)
+                if (rows[i].Kind == TerritoryDoorRowKind.Racket &&
+                    rows[i].Intent == intent && rows[i].Available == available)
                     return true;
             return false;
+        }
+
+        static bool Offers(
+            List<TerritoryRacketOrder> rows, Outfit.OrderType job, bool available)
+        {
+            for (var i = 0; i < rows.Count; i++)
+                if (rows[i].Kind == TerritoryDoorRowKind.Job &&
+                    rows[i].Job == job && rows[i].Available == available)
+                    return true;
+            return false;
+        }
+
+        static int Cash(List<TerritoryRacketOrder> rows, Outfit.OrderType job)
+        {
+            for (var i = 0; i < rows.Count; i++)
+                if (rows[i].Kind == TerritoryDoorRowKind.Job && rows[i].Job == job)
+                    return rows[i].Cash;
+            return 0;
+        }
+
+        static bool Named(List<TerritoryRacketOrder> rows, string label)
+        {
+            for (var i = 0; i < rows.Count; i++)
+                if (rows[i].Label == label)
+                    return true;
+            return false;
+        }
+
+        // ------------------------------------------------------------------- RACK-013
+
+        /// <summary>
+        /// THE LADDER HAS A LAST RUNG. The whole doorstep chain is a threat of violence,
+        /// and a threat nobody ever has to make good on is not a threat: a player who
+        /// asks, leans, smashes and burns and is still told "he is wavering" is playing
+        /// a game that cannot be won at the thing it is about.
+        ///
+        /// The rule this pins down is VIOLENCE FRIGHTENS, PRESENCE COLLECTS. A wrecked
+        /// front folds an owner while the family that wrecked it is standing on his
+        /// street; the same wrecked front with nobody there is a frightened man with
+        /// nobody to pay, and he only wavers. Both halves are asserted, because a
+        /// balance that makes the first true by making everything true is not a balance.
+        ///
+        /// It runs the REAL ledgers - the fear table's own impacts, the presence table's
+        /// own weights, the compliance evaluation, the racket's own Demand - so it fails
+        /// when any of those is retuned past the point where the chain still ends.
+        /// </summary>
+        static void TheLadderTerminates(List<string> failures)
+        {
+            // What a crew standing on a block is worth, out of the presence table itself
+            // rather than a number chosen here: a lieutenant and two men, stationed.
+            var presenceConfig = new TerritoryPresenceConfig();
+            var crewOnTheStreet = presenceConfig.PointsPerContributor *
+                presenceConfig.StationedWeight *
+                (presenceConfig.LieutenantWeight + 2f * presenceConfig.HoodWeight);
+
+            var config = TerritoryRacketConfig.Default;
+
+            // A shop that has just said no to us. ownerShift and tierBar are the man's
+            // own nerve and what his kind of place is worth (ECON-002/007): the pair
+            // that turned a 34 into a refusal in the live city while every screen
+            // printed the table's own 30.
+            TerritoryComplianceVerdict Ask(
+                float fearOfUs, float presenceOfUs, float ownerShift = 0f, float tierBar = 0f)
+            {
+                var ledger = new TerritoryRacketLedger(config);
+                ledger.Demand(
+                    Shop, Gang(0),
+                    new TerritoryComplianceInputs(fearOfUs, presenceOfUs, 0f, 0f, 0f, false),
+                    12.0, out var terms, null, ownerShift, tierBar);
+                return terms.Verdict;
+            }
+
+            // What one act of a given weight leaves the SHOPKEEPER feeling about us -
+            // his own memory of it plus the share of it the street carries (FEAR-007).
+            float FearAfter(Outfit.OrderType act)
+            {
+                var fear = new TerritoryFearLedger(new TerritoryFearConfig());
+                fear.Record(new TerritoryFearEvent(
+                    Gang(0), Street,
+                    act == Outfit.OrderType.Raid
+                        ? TerritoryFearCategory.Assault
+                        : TerritoryFearCategory.PropertyDamage,
+                    Outfit.DoorOrders.ViolenceSeverity(act),
+                    TerritoryFearVisibility.Public, 12.0, Shop));
+                return fear.BusinessFear(Street, Shop, Gang(0), 12.0);
+            }
+
+            // The ladder walked to its end on one door: the front put in, then burnt.
+            float FearAfterBoth()
+            {
+                var fear = new TerritoryFearLedger(new TerritoryFearConfig());
+                fear.Record(new TerritoryFearEvent(
+                    Gang(0), Street, TerritoryFearCategory.PropertyDamage,
+                    Outfit.DoorOrders.ViolenceSeverity(Outfit.OrderType.SmashUp),
+                    TerritoryFearVisibility.Public, 12.0, Shop));
+                fear.Record(new TerritoryFearEvent(
+                    Gang(0), Street, TerritoryFearCategory.PropertyDamage,
+                    Outfit.DoorOrders.ViolenceSeverity(Outfit.OrderType.Torch),
+                    TerritoryFearVisibility.Public, 12.0, Shop));
+                return fear.BusinessFear(Street, Shop, Gang(0), 12.0);
+            }
+
+            float FearAfterThreat()
+            {
+                var fear = new TerritoryFearLedger(new TerritoryFearConfig());
+                fear.Record(new TerritoryFearEvent(
+                    Gang(0), Street, TerritoryFearCategory.Threat, config.ThreatSeverity,
+                    TerritoryFearVisibility.Seen, 12.0, Shop));
+                return fear.BusinessFear(Street, Shop, Gang(0), 12.0);
+            }
+
+            // The last rung: the front went in, and our men are on the street.
+            if (Ask(FearAfter(Outfit.OrderType.SmashUp), crewOnTheStreet) !=
+                TerritoryComplianceVerdict.Accept)
+                failures.Add("RACK-013: a smashed front with our men on the street " +
+                             "still would not fold the owner - the ladder has no last rung.");
+
+            if (Ask(FearAfter(Outfit.OrderType.Torch), crewOnTheStreet) !=
+                TerritoryComplianceVerdict.Accept)
+                failures.Add("RACK-013: a BURNT OUT owner with our men on the street " +
+                             "still would not pay.");
+
+            if (Ask(FearAfter(Outfit.OrderType.Raid), crewOnTheStreet) !=
+                TerritoryComplianceVerdict.Accept)
+                failures.Add("RACK-013: a robbed owner with our men on the street " +
+                             "still would not pay.");
+
+            // And the other half of the rule: frightening a man buys nothing from a
+            // street we do not stand on. He has nobody to pay.
+            if (Ask(FearAfter(Outfit.OrderType.SmashUp), 0f) ==
+                TerritoryComplianceVerdict.Accept)
+                failures.Add("RACK-013: a shop paid a family that was not there.");
+
+            // Leaning on him is a step, not the whole ladder: the same street, the same
+            // men, a threat instead of a wrecked front, and he does not fold.
+            if (Ask(FearAfterThreat(), crewOnTheStreet) == TerritoryComplianceVerdict.Accept)
+                failures.Add("RACK-013: a threat alone folded him - then nothing after " +
+                             "it means anything.");
+
+            // The acts are ordered by what they cost the man they are done to.
+            if (Outfit.DoorOrders.ViolenceSeverity(Outfit.OrderType.Torch) <=
+                Outfit.DoorOrders.ViolenceSeverity(Outfit.OrderType.SmashUp) ||
+                Outfit.DoorOrders.ViolenceSeverity(Outfit.OrderType.Bomb) <=
+                Outfit.DoorOrders.ViolenceSeverity(Outfit.OrderType.Torch))
+                failures.Add("RACK-013: a firebomb is worth no more than a bat.");
+
+            // A HARDER man at a BETTER place: a proud owner (+10) of a tier-two premises
+            // (+8) does not fold to one wrecked front - and does fold when the ladder is
+            // walked to its end. Without this the contract would pass on the one owner
+            // the city never actually deals: the neutral one.
+            const float proud = 10f;
+            var tierTwo = TerritoryTierGuard.AcceptBar(2);
+            if (Ask(FearAfter(Outfit.OrderType.SmashUp), crewOnTheStreet, proud, tierTwo) ==
+                TerritoryComplianceVerdict.Accept)
+                failures.Add("RACK-013: a proud owner of a better place folded to one " +
+                             "wrecked front - then the ladder has no rungs above it.");
+
+            if (Ask(FearAfterBoth(), crewOnTheStreet, proud, tierTwo) !=
+                TerritoryComplianceVerdict.Accept)
+                failures.Add("RACK-013: a proud owner smashed AND burnt out, with our " +
+                             "men on his street, still would not pay - there is nothing " +
+                             "left to do to him.");
+
+            // And the terms say what HIS yes costs, so a surface can print it. A player
+            // told only the score reads 34 against a table bar of 30 and cannot see why
+            // he was refused.
+            var priced = TerritoryComplianceEvaluation.Evaluate(
+                new TerritoryComplianceInputs(0f, 0f, 0f, 0f, 0f, false),
+                config, proud, tierTwo);
+            if (Off(priced.AcceptAt, config.AcceptAt + proud + tierTwo, 0.01f))
+                failures.Add("RACK-013: the terms do not carry the bar this owner is " +
+                             "actually held to.");
+            if (Off(priced.Short, priced.AcceptAt, 0.01f))
+                failures.Add("RACK-013: the terms cannot say how far short he is.");
+
+            // A wrecked shop is INTIMIDATED, never paying: violence frightens a man, it
+            // does not sign him up. The demand is still the only door into compliance.
+            var wrecked = new TerritoryRacketLedger(config);
+            wrecked.Escalate(
+                Shop, Gang(0), TerritoryEscalationKind.PropertyDamage, 12.0);
+            if (wrecked.StateOf(Shop, Gang(0)) == TerritoryProtectionState.Compliant)
+                failures.Add("RACK-013: a shop started paying without ever being asked.");
         }
 
         // ------------------------------------------------------------------- fixtures

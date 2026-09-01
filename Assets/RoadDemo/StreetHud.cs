@@ -85,7 +85,13 @@ namespace RoadDemo
         const float WireGap = 4f;
         /// <summary>How many slips the strip carries. The design's own default, inside
         /// the two-to-six range it lets a boss set.</summary>
-        const int WireLines = 3;
+        const int WireLines = 4;
+
+        /// <summary>How many of the strip's slots the doorstep news is guaranteed. The
+        /// racket is the thing the player is DOING, and the wire is the four NEWEST
+        /// things: new door news pushes the old off, and what his men got up to
+        /// yesterday fills whatever is left.</summary>
+        const int DoorLinesKept = WireLines;
 
         // ---- the ledger key ----
         /// <summary>The width of the left column TurfMapPanel keeps for the crews and
@@ -104,6 +110,7 @@ namespace RoadDemo
         Canvas _canvas;
         RectTransform _wireRoot, _keyRoot, _fileRoot;
         bool _wireOpen = true;
+        int _paintedDoorNews = -1;
 
         TurfMapHud _hud;
         RectTransform _chipRoot;
@@ -185,8 +192,7 @@ namespace RoadDemo
             scaler.matchWidthOrHeight = 1f;
 
             root.AddComponent<GraphicRaycaster>();
-            // The design's whole hud region stands at four fifths, so the city reads
-            // through every panel on it.
+            // Keep the screen-edge HUD fully opaque over the 3D city.
             root.AddComponent<CanvasGroup>().alpha = HudNight.Alpha;
 
             // The design lays a wide vignette over the city before any panel goes down:
@@ -253,13 +259,20 @@ namespace RoadDemo
             var outfit = OutfitDirector.Instance;
             var incidents = outfit != null ? outfit.Incidents.Count : 0;
             var day = outfit != null ? outfit.Campaign.Day : -1;
+            // AND THE RACKET. The strip used to repaint only when the incident count or
+            // the day moved, so door news was filed into the feed and the wire went on
+            // showing whatever it had been painted with - a strip that prints the first
+            // few things that ever happened and then stops for the rest of the game.
+            var racket = TerritoryRuntime.Instance?.Racket;
+            var doorNews = racket != null ? racket.Version : 0;
 
             if (incidents == _paintedIncidents && day == _paintedCampaignDay &&
-                _wireOpen == _paintedWireOpen)
+                doorNews == _paintedDoorNews && _wireOpen == _paintedWireOpen)
                 return;
 
             _paintedIncidents = incidents;
             _paintedCampaignDay = day;
+            _paintedDoorNews = doorNews;
             _paintedWireOpen = _wireOpen;
             PaintWire(outfit);
         }
@@ -902,21 +915,36 @@ namespace RoadDemo
                 return _lines;
 
             var book = outfit.Incidents;
-            for (var i = book.Count - 1; i >= 0 && _lines.Count < WireLines; i--)
+            var doors = TerritoryRuntime.Instance?.Racket?.Dispatches;
+
+            // TWO books, one strip. The incidents are what OUR MEN did that nobody
+            // ordered; the dispatches are what happened AT A DOOR - the answer an owner
+            // gave, the front that went in. A boss on the map used to be told the first
+            // and never the second, so the whole racket played out in silence unless he
+            // had the ledger open on the right page.
+            //
+            // The two are NOT sorted against each other. They are counted on different
+            // clocks - the campaign's day and the city clock's - and comparing them let
+            // the incidents take every slot, which is how door news came to be filed and
+            // never printed. Instead the strip GUARANTEES the racket a share: the last
+            // few doors first, then the incidents, then more doors if the strip has room.
+            var incident = book.Count - 1;
+            var door = doors != null ? doors.Count - 1 : -1;
+
+            for (var kept = 0; kept < DoorLinesKept && door >= 0 && _lines.Count < WireLines;
+                 kept++, door--)
+                _lines.Add(DoorSlip(doors[door]));
+
+            while (incident >= 0 && _lines.Count < WireLines)
             {
-                var incident = book[i];
-                _lines.Add(new WireLine(
-                    incident.Where.Length > 0
-                        ? "WIRE - " + incident.Where.ToUpperInvariant()
-                        : "WIRE",
-                    "DAY " + incident.Day,
-                    incident.Line,
-                    LedgerText.IncidentLabel(incident.Kind),
-                    // The figure the design puts beside the tag is whatever this one
-                    // cost. For an incident that is the police attention it drew, and
-                    // an incident that drew none says nothing rather than nothing-shaped.
-                    incident.Heat > 0 ? "+" + incident.Heat + " HEAT" : "",
-                    InkOf(incident.Kind)));
+                _lines.Add(IncidentSlip(book[incident]));
+                incident--;
+            }
+
+            while (door >= 0 && _lines.Count < WireLines)
+            {
+                _lines.Add(DoorSlip(doors[door]));
+                door--;
             }
 
             // A wire with nothing on it reads as a machine that has failed, not a quiet
@@ -926,6 +954,63 @@ namespace RoadDemo
                     "Nothing on the wire. Nobody of ours has done a thing he was not told to.",
                     "", "", LedgerStyle.TelexPlain));
             return _lines;
+        }
+
+        static WireLine IncidentSlip(LivingCity.Personnel.Incident incident) =>
+            new WireLine(
+                incident.Where.Length > 0
+                    ? "WIRE - " + incident.Where.ToUpperInvariant()
+                    : "WIRE",
+                "DAY " + incident.Day,
+                incident.Line,
+                LedgerText.IncidentLabel(incident.Kind),
+                // The figure the design puts beside the tag is whatever this one cost.
+                // For an incident that is the police attention it drew, and an incident
+                // that drew none says nothing rather than nothing-shaped.
+                incident.Heat > 0 ? "+" + incident.Heat + " HEAT" : "",
+                InkOf(incident.Kind));
+
+        /// <summary>One line of door news, in the racket's own words - the vocabulary
+        /// the ledger's telex prints from too, so the two strips never differ.</summary>
+        static WireLine DoorSlip(LivingCity.Territory.TerritoryDoorDispatch dispatch)
+        {
+            var name = "";
+            var rows = LivingCity.Business.CityBusinesses.All;
+            for (var i = 0; i < rows.Count; i++)
+                if (rows[i].Id == dispatch.BusinessId)
+                {
+                    name = rows[i].Name;
+                    break;
+                }
+
+            var ours = dispatch.GangId ==
+                new LivingCity.Territory.TerritoryGangId(
+                    LivingCity.Gangs.GangCatalog.PlayerGangId);
+            return new WireLine(
+                ours ? "WIRE - THE RACKET" : "WIRE - ANOTHER HOUSE",
+                "DAY " + dispatch.Day,
+                LivingCity.Territory.TerritoryStandingVocabulary.Default.Describe(
+                    dispatch.News, name),
+                LedgerText.DoorNewsLabel(dispatch.News),
+                "",
+                DoorInk(dispatch.News));
+        }
+
+        static Color DoorInk(LivingCity.Territory.TerritoryDoorNews news)
+        {
+            switch (news)
+            {
+                case LivingCity.Territory.TerritoryDoorNews.Refused:
+                case LivingCity.Territory.TerritoryDoorNews.StoppedPaying:
+                case LivingCity.Territory.TerritoryDoorNews.ChangedHands:
+                    return LedgerStyle.RedPen;
+                case LivingCity.Territory.TerritoryDoorNews.Wrecked:
+                case LivingCity.Territory.TerritoryDoorNews.Beaten:
+                case LivingCity.Territory.TerritoryDoorNews.Threatened:
+                    return LedgerStyle.Ballpoint;
+                default:
+                    return LedgerStyle.TelexPlain;
+            }
         }
 
         // --------------------------------------------------------------- ledger key

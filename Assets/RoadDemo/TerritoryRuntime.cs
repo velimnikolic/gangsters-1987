@@ -72,7 +72,14 @@ namespace RoadDemo
         [SerializeField, Min(0f)] float complianceTroubleWeight = 0.15f;
         [Tooltip("How heavily another family's claim counts against the one asking.")]
         [SerializeField, Min(0f)] float complianceRivalWeight = 0.5f;
-        [SerializeField] float complianceAcceptAt = 40f;
+        [Tooltip("What a family must be worth on the street before an owner says yes. " +
+                 "Lowered from 40 on 2026-09-01: at 40 the whole violence ladder - a " +
+                 "threat is worth 3 points, a wrecked front 7, a robbery 13 - could not " +
+                 "carry a demand on its own and every shop stayed wavering. Keep it in " +
+                 "step with TerritoryRacketConfig's own default; THIS is the number the " +
+                 "live city uses, and the two disagreeing is how the class default came " +
+                 "to be dead code.")]
+        [SerializeField] float complianceAcceptAt = 30f;
         [SerializeField] float complianceHesitateAt = 16f;
         [Tooltip("How far ahead a challenger must be to take a shop, and for how many " +
                  "business ticks running.")]
@@ -203,6 +210,11 @@ namespace RoadDemo
         public TerritoryCommandGateway Commands => commands;
         public TerritorySimulationScheduler Scheduler => scheduler;
         public int StateVersion => state?.Version ?? 0;
+
+        /// <summary>Moves whenever a shopkeeper's standing with anybody changes, which
+        /// the block signals do NOT: wavering and shaken are the same fraction of a yes.
+        /// A page showing what one owner said watches this.</summary>
+        public int RacketVersion => racket?.Version ?? 0;
         public int ObservationVersion { get; private set; }
 
         /// <summary>Men standing on road space that belongs to no block at this tick -

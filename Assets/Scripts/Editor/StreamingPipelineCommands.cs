@@ -330,6 +330,38 @@ namespace GangstersTools
                 driveBy = ours.Car != null };
         }
 
+        [CliCommand("gangsters_racket_probe",
+                    "Drive the doorstep chain with nobody at the keyboard: two SMASH IT UP " +
+                    "orders and a DEMAND PROTECTION, watching whether the fronts go in, " +
+                    "what the wire says, and whether any man teleports or vanishes.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "gameplay" })]
+        public static object RacketProbe(
+            [CliArg("run", "True starts a fresh probe; false reads the verdict of the last one.")] bool run = true,
+            [CliArg("patience", "Sim seconds one order is given to come off.")] float patience = 90f,
+            [CliArg("after", "Sim seconds before the first order.")] float after = 4f,
+            [CliArg("overlap", "File the second smash without waiting for the first to land.")] bool overlap = false,
+            [CliArg("far", "Only pick doors at least this many metres from the crew.")] float far = 0f)
+        {
+            var prior = Object.FindAnyObjectByType<RoadDemo.RacketProbe>();
+            if (!run)
+                return prior == null
+                    ? new { running = false, finished = false, verdict = "no probe has been run" }
+                    : new { running = !prior.Finished, prior.Finished, prior.Verdict };
+
+            if (!Application.isPlaying)
+                return new { running = false, finished = false, verdict = "Play Mode is not running." };
+            if (prior != null) Object.Destroy(prior.gameObject);
+
+            var probe = new GameObject("Racket probe (temporary)")
+                .AddComponent<RoadDemo.RacketProbe>();
+            probe.patience = Mathf.Max(5f, patience);
+            probe.startAfter = Mathf.Max(0f, after);
+            probe.overlap = overlap;
+            probe.atLeastMetres = Mathf.Max(0f, far);
+            return new { running = true, finished = false,
+                verdict = "running - poll gangsters_racket_probe --run false" };
+        }
+
         [CliCommand("gangsters_monkey",
                     "Start or stop the existing unattended movement/driving/combat soak.",
                     MainThreadRequired = true, Tags = new[] { "gangsters", "gameplay" })]

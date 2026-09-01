@@ -315,6 +315,38 @@ namespace LivingCity.Territory
                 default: return "Nothing yet";
             }
         }
+
+        /// <summary>
+        /// One line of door news as the wire sets it. The strip over the street and the
+        /// book's own telex both print THIS - 1987 wire brevity, the shop named, no
+        /// adjective the machine would have cut - so a boss on the map and a boss with
+        /// the book open are told the same thing in the same words.
+        /// </summary>
+        public string Describe(TerritoryDoorNews news, string shop)
+        {
+            var name = string.IsNullOrWhiteSpace(shop) ? "A SHOP" : shop.ToUpperInvariant();
+            switch (news)
+            {
+                case TerritoryDoorNews.Approached:
+                    return "OUR MEN ARE STANDING IN THE DOOR OF " + name;
+                case TerritoryDoorNews.Agreed:
+                    return name + " PAYS US FROM TODAY";
+                case TerritoryDoorNews.Wavered:
+                    return "THE OWNER OF " + name + " IS WAVERING - HE HAS NOT SAID NO";
+                case TerritoryDoorNews.Refused:
+                    return "THE OWNER OF " + name + " REFUSED US";
+                case TerritoryDoorNews.Threatened:
+                    return "WE LEANED ON THE OWNER OF " + name;
+                case TerritoryDoorNews.Wrecked:
+                    return "THE FRONT OF " + name + " WENT IN";
+                case TerritoryDoorNews.Beaten:
+                    return "SOMEBODY WAS PUT ON THE GROUND AT " + name;
+                case TerritoryDoorNews.StoppedPaying:
+                    return name + " HAS STOPPED PAYING US";
+                default:
+                    return name + " PAYS SOMEBODY ELSE NOW";
+            }
+        }
     }
 
     public interface ITerritoryPlayerQuery

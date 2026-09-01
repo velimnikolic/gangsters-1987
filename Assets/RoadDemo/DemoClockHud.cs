@@ -82,10 +82,7 @@ namespace RoadDemo
             scaler.matchWidthOrHeight = 1f;
             gameObject.AddComponent<GraphicRaycaster>();
 
-            // The strip is inside the design's hud region like every other panel, so it
-            // is a fifth see-through like every other panel. It was solid, which made
-            // the left end of the top bar read as a different material from the chips
-            // butted onto it.
+            // Use the shared, fully opaque HUD alpha so the city cannot show through.
             gameObject.AddComponent<CanvasGroup>().alpha = HudNight.Alpha;
 
             if (!EventSystem.current)

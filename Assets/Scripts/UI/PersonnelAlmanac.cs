@@ -5,8 +5,11 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
+using LivingCity.Business;
+using LivingCity.Gangs;
 using LivingCity.Gameplay;
 using LivingCity.Personnel;
+using LivingCity.Territory;
 using RoadDemo;
 using static LivingCity.UI.LedgerKit;
 
@@ -243,6 +246,7 @@ namespace LivingCity.UI
         int paintedGangVersion = -1;
         int paintedTerritoryVersion = -1;
         int paintedTerritoryObservationVersion = -1;
+        int paintedRacketVersion = -1;
 
         /// <summary>The plate the block file was last painted around. A block arrives
         /// from the streamer seconds after the file opens, and the picture is re-exposed
@@ -407,6 +411,13 @@ namespace LivingCity.UI
             var territoryObservationVersion = TerritoryRuntime.Instance
                 ? TerritoryRuntime.Instance.ObservationVersion
                 : -1;
+            // What one shopkeeper said is not a block figure: a shop going from wavering
+            // to shaken leaves the block's compliance share exactly where it was, so the
+            // state version never moves and an open block file would keep printing the
+            // line it was painted with over a shop that has since been smashed.
+            var racketVersion = TerritoryRuntime.Instance
+                ? TerritoryRuntime.Instance.RacketVersion
+                : 0;
             // The reader is holding the block on the organization sheet. A repaint
             // destroys the sheet whole and with it the model under their hand, and this
             // page is repainted often - an observation tick, a man moving, a gang
@@ -421,6 +432,7 @@ namespace LivingCity.UI
                 paintedGangVersion != Gangs.GangRegistry.Version ||
                 paintedTerritoryVersion != territoryVersion ||
                 paintedTerritoryObservationVersion != territoryObservationVersion ||
+                paintedRacketVersion != racketVersion ||
                 paintedExposure != exposure)
             {
                 paintedExposure = exposure;
@@ -429,6 +441,7 @@ namespace LivingCity.UI
                 paintedGangVersion = Gangs.GangRegistry.Version;
                 paintedTerritoryVersion = territoryVersion;
                 paintedTerritoryObservationVersion = territoryObservationVersion;
+                paintedRacketVersion = racketVersion;
                 dirty = false;
                 Repaint();
             }
@@ -1691,6 +1704,8 @@ namespace LivingCity.UI
 
         readonly List<(string Text, TelexVoice Voice)> telexMessages =
             new List<(string, TelexVoice)>();
+        TerritoryBusinessId telexBusinessTarget;
+        string telexBusinessMessage = "";
 
         void RefreshTelex()
         {
@@ -1722,7 +1737,12 @@ namespace LivingCity.UI
             for (var i = 0; i < telexMessages.Count; i++)
             {
                 var (body, voice) = telexMessages[i];
-                var width = pad * 2f + body.Length * (11.5f * 0.6f + 11.5f * 0.02f) + 16f;
+                var target = body == telexBusinessMessage
+                    ? telexBusinessTarget
+                    : default;
+                const float ctaW = 104f;
+                var width = pad * 2f + body.Length * (11.5f * 0.6f + 11.5f * 0.02f) +
+                    16f + (target.IsValid ? ctaW + 10f : 0f);
 
                 var slot = NewRect("Wire " + i, telexRun);
                 PlaceTopLeft(slot, cursor, 0f, width, TelexH);
@@ -1739,8 +1759,14 @@ namespace LivingCity.UI
                     voice == TelexVoice.Urgent ? LedgerStyle.TelexUrgent
                     : voice == TelexVoice.Warn ? LedgerStyle.TelexWarn
                     : LedgerStyle.TelexPlain,
-                    pad + 15f, -8f, width - pad - 15f, 16f, body);
+                    pad + 15f, -8f,
+                    width - pad - 15f - (target.IsValid ? ctaW + 10f : 0f), 16f, body);
                 text.characterSpacing = 2f;
+
+                if (target.IsValid)
+                    LedgerV2.Button(slot, "SHOW STORE", width - ctaW - 10f, -3f,
+                        ctaW, TelexH - 6f, () => FocusWireBusiness(target),
+                        LedgerV2.Key.Dark, 8.5f);
 
                 cursor += width;
             }
@@ -1755,9 +1781,13 @@ namespace LivingCity.UI
         void ComposeTelex()
         {
             telexMessages.Clear();
+            telexBusinessTarget = default;
+            telexBusinessMessage = "";
 
             if (lastRefusal.Length > 0)
                 telexMessages.Add((lastRefusal, TelexVoice.Urgent));
+
+            ComposeBusinessRefusal();
 
             var context = PageNote();
             if (context.Length > 0)
@@ -1787,6 +1817,89 @@ namespace LivingCity.UI
             if (telexMessages.Count == 0)
                 telexMessages.Add(("Nothing on the wire. The city is quiet and the books " +
                     "are open.", TelexVoice.Plain));
+        }
+
+        /// <summary>How many lines of door news the book's own strip carries.</summary>
+        const int TelexDoorLines = 3;
+
+        /// <summary>
+        /// What happened at our doors, newest first: the answer an owner gave, the front
+        /// that went in, the shop that stopped paying. The racket's own dispatches, in
+        /// the racket's own words - the strip over the street prints the SAME sentences
+        /// from the SAME feed, so the book and the map never report different nights.
+        ///
+        /// The newest line carries the door's identity, so its CTA can take the boss
+        /// straight back to the place instead of merely reporting an unactionable NO.
+        /// </summary>
+        void ComposeBusinessRefusal()
+        {
+            var racket = TerritoryRuntime.Instance?.Racket;
+            if (racket == null)
+                return;
+
+            var dispatches = racket.Dispatches;
+            var us = new TerritoryGangId(GangCatalog.PlayerGangId);
+            var shown = 0;
+            for (var i = dispatches.Count - 1; i >= 0 && shown < TelexDoorLines; i--)
+            {
+                var dispatch = dispatches[i];
+                if (dispatch.GangId != us)
+                    continue;
+
+                var name = "THIS STORE";
+                var rows = CityBusinesses.All;
+                for (var r = 0; r < rows.Count; r++)
+                    if (rows[r].Id == dispatch.BusinessId)
+                    {
+                        if (!string.IsNullOrWhiteSpace(rows[r].Name))
+                            name = rows[r].Name;
+                        break;
+                    }
+
+                var body = TerritoryStandingVocabulary.Default.Describe(dispatch.News, name);
+                if (shown == 0)
+                {
+                    telexBusinessTarget = dispatch.BusinessId;
+                    telexBusinessMessage = body;
+                }
+
+                telexMessages.Add((body, VoiceOf(dispatch.News)));
+                shown++;
+            }
+        }
+
+        static TelexVoice VoiceOf(TerritoryDoorNews news)
+        {
+            switch (news)
+            {
+                case TerritoryDoorNews.Refused:
+                case TerritoryDoorNews.StoppedPaying:
+                case TerritoryDoorNews.ChangedHands:
+                    return TelexVoice.Urgent;
+                case TerritoryDoorNews.Wrecked:
+                case TerritoryDoorNews.Beaten:
+                case TerritoryDoorNews.Threatened:
+                    return TelexVoice.Warn;
+                default:
+                    return TelexVoice.Plain;
+            }
+        }
+
+        void FocusWireBusiness(TerritoryBusinessId businessId)
+        {
+            if (!CityBusinesses.TryApproachPoint(businessId, out var world))
+                return;
+
+            Close();
+            if (StrategicMapHud.IsOpen)
+            {
+                StrategicMapHud.Instance?.FocusOn(world, 34f);
+                return;
+            }
+
+            var rig = FindAnyObjectByType<CameraRig.IsometricCameraController>();
+            if (rig)
+                rig.FocusOn(world);
         }
 
         void ComposePageTelex()

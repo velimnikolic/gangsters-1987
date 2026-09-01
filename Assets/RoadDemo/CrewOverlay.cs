@@ -1151,13 +1151,32 @@ namespace RoadDemo
             var runtime = TerritoryRuntime.Instance;
             _cardTitle.text = runtime != null &&
                               runtime.TryGetBusinessView(businessId, out var view)
-                ? view.BusinessName.ToUpperInvariant() + " · " + view.Standing.ToUpperInvariant()
+                ? view.BusinessName.ToUpperInvariant() + " · " +
+                  view.Standing.ToUpperInvariant() + Price(businessId)
                 : businessId.Value.ToUpperInvariant();
 
             foreach (var action in _enemyActions)
                 Row(action.Label, action.Note, action.Run, action.Run != null);
 
             LayoutAndShow(screen);
+        }
+
+        /// <summary>What this owner's yes costs, beside where he stands - the same
+        /// figures the ledger's block file prints, so the street and the book agree
+        /// about how far off a shop is rather than both saying "wavering".</summary>
+        static string Price(LivingCity.Territory.TerritoryBusinessId businessId)
+        {
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime == null || !runtime.TryExplainDemand(
+                    businessId,
+                    new LivingCity.Territory.TerritoryGangId(
+                        LivingCity.Gangs.GangCatalog.PlayerGangId),
+                    out var terms))
+                return "";
+
+            return " · " + Mathf.RoundToInt(terms.Score) + " OF " +
+                   Mathf.RoundToInt(terms.AcceptAt) +
+                   (terms.Short <= 0f ? " · HE WOULD SAY YES" : "");
         }
 
         /// <summary>
@@ -1174,19 +1193,6 @@ namespace RoadDemo
             var crew = _crews != null ? _crews.Selected : null;
             if (runtime == null || !businessId.IsValid)
                 return false;
-
-            // Our own paper - the headquarters, a bought premises - is not a door the
-            // racket has anything to put to. It is still a business the player clicked,
-            // so answer with an honest informational row instead of silently turning the
-            // click into a move order. Guard and management orders remain the ledger's
-            // responsibility; the shared row also makes TurfMap and the street agree.
-            if (LivingCity.Business.BusinessDeeds.GangOf(businessId) ==
-                LivingCity.Gangs.GangCatalog.PlayerGangId)
-            {
-                actions.Add(new CrewEnemyAction(
-                    "OUR PREMISES", "guard and management orders are filed in the ledger", null));
-                return true;
-            }
 
             // Nobody picked to send: the card asks that question first and answers itself
             // - pick a lieutenant and it comes straight back with what he can do. With a
@@ -1206,15 +1212,35 @@ namespace RoadDemo
                          runtime.HasManAt(gang, door, ApproachSlack(runtime));
 
             LivingCity.Territory.TerritoryRacketOrders.For(
-                standing, runtime.IsRacketable(businessId), crew != null, atDoor, _racketOrders);
+                standing,
+                LivingCity.Gameplay.DoorHolder.Read(businessId),
+                runtime.IsRacketable(businessId), crew != null, atDoor,
+                LivingCity.Gameplay.DoorJobs.AskingPrice(businessId),
+                _racketOrders);
 
             for (var i = 0; i < _racketOrders.Count; i++)
             {
                 var order = _racketOrders[i];
-                var intent = order.Intent;
-                actions.Add(new CrewEnemyAction(
-                    order.Label, order.Note,
-                    order.Available ? () => Submit(intent, businessId) : (System.Action)null));
+                var word = order.Cash > 0
+                    ? order.Label + " · " + LivingCity.UI.LedgerText.Cash(order.Cash)
+                    : order.Label;
+
+                System.Action run = null;
+                if (order.Available)
+                {
+                    if (order.Kind == LivingCity.Territory.TerritoryDoorRowKind.Racket)
+                    {
+                        var intent = order.Intent;
+                        run = () => Submit(intent, businessId);
+                    }
+                    else
+                    {
+                        var type = order.Job;
+                        run = () => FileDoorJob(type, businessId);
+                    }
+                }
+
+                actions.Add(new CrewEnemyAction(word, order.Note, run));
             }
 
             return actions.Count > 0;
@@ -1333,6 +1359,61 @@ namespace RoadDemo
                     intent == LivingCity.Territory.TerritoryRacketIntent.Threaten
                         ? AttackTint
                         : MarkTint);
+        }
+
+        /// <summary>
+        /// Work FILED with the outfit's book rather than put to the owner on the spot -
+        /// the wrecking, the torch, the robbery, the guard, the deed. The block file's
+        /// keys build the very same Job through the same builder, so a shop smashed from
+        /// the street and one smashed off the sheet are one order under one set of rules.
+        /// </summary>
+        void FileDoorJob(
+            LivingCity.Outfit.OrderType type,
+            LivingCity.Territory.TerritoryBusinessId businessId)
+        {
+            var crew = _crews != null ? _crews.Selected : null;
+            if (crew == null)
+                return;
+
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            if (outfit == null)
+            {
+                _refusal = ("the outfit's order book is not open in this scene",
+                    Time.unscaledTime + 2.5f);
+                return;
+            }
+
+            if (!LivingCity.Gameplay.DoorJobs.TryBuild(
+                    businessId, type, crew.CrewId, crew.Standing(),
+                    out var job, out var refusal))
+            {
+                _refusal = (refusal, Time.unscaledTime + 2.5f);
+                return;
+            }
+
+            // The one purchase gate answers before the order is filed, so the street card
+            // refuses a deed the safe cannot cover in the same words the ledger uses.
+            if (type == LivingCity.Outfit.OrderType.BuyPremises &&
+                outfit.Accounts.Safe < job.TargetWorth)
+            {
+                _refusal = (
+                    "the safe does not cover " +
+                    LivingCity.UI.LedgerText.Cash(job.TargetWorth),
+                    Time.unscaledTime + 2.5f);
+                return;
+            }
+
+            var result = outfit.IssueOrder(job);
+            if (!result.Ok)
+            {
+                _refusal = (result.Reason, Time.unscaledTime + 2.5f);
+                return;
+            }
+
+            if (TerritoryRuntime.Instance != null &&
+                TerritoryRuntime.Instance.TryGetBusinessApproach(businessId, out var door))
+                ShowMark(door + Vector3.up * 1.0f,
+                    LivingCity.Outfit.DoorOrders.IsViolence(type) ? AttackTint : MarkTint);
         }
 
         /// <summary>Whoever of the crew is nearest the front of it does the talking.</summary>

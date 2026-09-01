@@ -25,11 +25,29 @@ namespace RoadDemo
         /// <summary>How long the word at the door runs before he goes in.</summary>
         public const float TalkSeconds = 1.7f;
 
+        /// <summary>Near enough the doorstep to start going through it. A stride, no
+        /// more: the passage is a man crossing a threshold, not stepping in from the
+        /// kerb.</summary>
+        public const float AtTheDoor = 1.6f;
+
+        /// <summary>Real seconds a man is given to WALK to the door before the visit is
+        /// given up. A pavement he cannot cross - a fight in the way, a lattice that
+        /// does not reach - must end the beat, never leave him walking at a wall.</summary>
+        public const float WalkPatience = 25f;
+
         /// <summary>The visible stages of a visit. The viewer reads this shared state;
         /// it does not guess from a hidden body or run its own doorway timer.</summary>
         public enum VisitPhase
         {
             None,
+
+            /// <summary>Walking the last stretch to the doorstep. A visit begins where
+            /// the man IS, and he can be half a street away when it is called for; until
+            /// this phase existed he was simply put on the door, which is a teleport, or
+            /// ordered straight at a point INSIDE the shop, which walks him through the
+            /// facade. Neither is a man going through a door.</summary>
+            Approaching,
+
             Talking,
             OpeningEntry,
             Entering,
@@ -62,6 +80,10 @@ namespace RoadDemo
             public float RealNextAt;
 
             public bool Through;
+
+            /// <summary>What the word at the door is worth, held while he walks to it.</summary>
+            public float Talk;
+
             public VisitPhase Phase;
             public Vector3 Outside;
             public Vector3 Threshold;
@@ -197,21 +219,20 @@ namespace RoadDemo
                     return;
 
             var call = new Call { Man = man, Door = door, Home = man.Tf.position };
-            if (talk > 0f)
+            if (!Near(man.Tf.position, door, AtTheDoor))
             {
-                ArmBeat.Talk(man, door, talk);
-                call.Inside = false;
-                call.Phase = VisitPhase.Talking;
-                call.NextAt = Time.time + talk;
-                call.RealNextAt = Time.unscaledTime + talk * 4f;
-            }
-            else
-            {
-                StepInside(call);
-                call.NextAt = Time.time + InsideSeconds;
-                call.RealNextAt = Time.unscaledTime + InsideSeconds * 4f;
+                // He is not at the door yet. He WALKS there - the beat used to put him
+                // on it from wherever he stood, which is the teleport a player sees when
+                // a man thirty metres up the street suddenly steps inside a shop.
+                man.OrderToPoint(door);
+                call.Talk = talk;
+                call.Phase = VisitPhase.Approaching;
+                call.RealNextAt = Time.unscaledTime + WalkPatience;
+                instance.calls.Add(call);
+                return;
             }
 
+            Arrive(call, talk);
             instance.calls.Add(call);
         }
 
@@ -244,18 +265,32 @@ namespace RoadDemo
 
             outside.y = threshold.y = inside.y = man.Tf.position.y;
             var swing = new DoorSwing(doorway);
-            swing.Open();
-            Face(man, inside);
+            // The passage starts AT the doorstep. Ordering a man at the inside point
+            // from across the street walks him in a straight line through the shopfront,
+            // which is what a player reads as a man entering a door from thirty metres.
+            var atDoor = Near(man.Tf.position, outside, AtTheDoor);
+            if (atDoor)
+            {
+                swing.Open();
+                Face(man, inside);
+            }
+            else
+            {
+                man.OrderToPoint(outside);
+            }
+
             instance.calls.Add(new Call
             {
                 Man = man,
                 Door = threshold,
+                Home = man.Tf.position,
                 Outside = outside,
                 Threshold = threshold,
                 Inner = inside,
                 Through = true,
-                Phase = VisitPhase.OpeningEntry,
+                Phase = atDoor ? VisitPhase.OpeningEntry : VisitPhase.Approaching,
                 PhaseAt = Time.time,
+                RealNextAt = Time.unscaledTime + WalkPatience,
                 Swing = swing,
             });
         }
@@ -303,6 +338,18 @@ namespace RoadDemo
 
         public static bool Active(CrewWalker man) => PhaseOf(man) != VisitPhase.None;
 
+        /// <summary>The doorway this man's visit is about, for anything measuring how
+        /// far off it began. Zero when he is not on a visit.</summary>
+        public static Vector3 DoorOf(CrewWalker man)
+        {
+            if (instance == null || man == null)
+                return Vector3.zero;
+            for (var i = 0; i < instance.calls.Count; i++)
+                if (instance.calls[i].Man == man)
+                    return instance.calls[i].Door;
+            return Vector3.zero;
+        }
+
         void Update()
         {
             for (var i = calls.Count - 1; i >= 0; i--)
@@ -323,6 +370,25 @@ namespace RoadDemo
                      !call.Man.Tf.gameObject.activeInHierarchy))
                 {
                     calls.RemoveAt(i);
+                    continue;
+                }
+
+                if (call.Phase == VisitPhase.Approaching)
+                {
+                    if (Near(call.Man.Tf.position, call.Door, AtTheDoor))
+                    {
+                        // He walked it. From here it is the beat it always was - and
+                        // the pavement he goes back out to is where he is NOW, not
+                        // where he was standing when the order was given.
+                        call.Home = call.Man.Tf.position;
+                        Arrive(call, call.Talk);
+                        continue;
+                    }
+
+                    // He is not getting there. Give the visit up rather than leave a man
+                    // walking at a wall for the rest of the game.
+                    if (Time.unscaledTime > call.RealNextAt || UnderFire(call.Man))
+                        calls.RemoveAt(i);
                     continue;
                 }
 
@@ -350,6 +416,27 @@ namespace RoadDemo
                 calls.RemoveAt(i);
                 StepOut(call);
             }
+        }
+
+        /// <summary>He is at the door: the word, or straight in when there is no word.
+        /// Shared by the visit that started on the doorstep and the one that had to walk
+        /// there first, so a man who walked gets the same beat as one who was already
+        /// standing at it.</summary>
+        static void Arrive(Call call, float talk)
+        {
+            if (talk > 0f)
+            {
+                ArmBeat.Talk(call.Man, call.Door, talk);
+                call.Inside = false;
+                call.Phase = VisitPhase.Talking;
+                call.NextAt = Time.time + talk;
+                call.RealNextAt = Time.unscaledTime + talk * 4f;
+                return;
+            }
+
+            StepInside(call);
+            call.NextAt = Time.time + InsideSeconds;
+            call.RealNextAt = Time.unscaledTime + InsideSeconds * 4f;
         }
 
         /// <summary>All the way in: the body goes off at the door, and while it is off it
@@ -390,6 +477,23 @@ namespace RoadDemo
 
             switch (call.Phase)
             {
+                case VisitPhase.Approaching:
+                    if (Near(call.Man.Tf.position, call.Outside, AtTheDoor))
+                    {
+                        call.Swing?.Open();
+                        Face(call.Man, call.Inner);
+                        call.Phase = VisitPhase.OpeningEntry;
+                        call.PhaseAt = Time.time;
+                        break;
+                    }
+
+                    if (Time.unscaledTime > call.RealNextAt || UnderFire(call.Man))
+                    {
+                        call.Swing?.SnapClosed();
+                        calls.RemoveAt(index);
+                    }
+                    break;
+
                 case VisitPhase.OpeningEntry:
                     Face(call.Man, call.Inner);
                     if (call.Swing == null || call.Swing.IsOpen)

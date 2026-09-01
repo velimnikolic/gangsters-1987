@@ -102,7 +102,8 @@ namespace LivingCity.Territory
             float trouble,
             float rivalPressure,
             float score,
-            TerritoryComplianceVerdict verdict)
+            TerritoryComplianceVerdict verdict,
+            float acceptAt = 0f)
         {
             Fear = fear;
             Presence = presence;
@@ -110,6 +111,7 @@ namespace LivingCity.Territory
             RivalPressure = rivalPressure;
             Score = score;
             Verdict = verdict;
+            AcceptAt = acceptAt;
         }
 
         /// <summary>How much this street fears the family doing the asking.</summary>
@@ -128,6 +130,18 @@ namespace LivingCity.Territory
 
         public float Score { get; }
         public TerritoryComplianceVerdict Verdict { get; }
+
+        /// <summary>
+        /// What THIS man's yes actually costs - the table's bar plus his own nerve plus
+        /// what his kind of place is worth (ECON-002/007). It is on the terms because a
+        /// surface that prints the score without it tells the player a number he cannot
+        /// use: a shop reading 34 was refusing because ITS bar was 43, and nothing on
+        /// any screen said so.
+        /// </summary>
+        public float AcceptAt { get; }
+
+        /// <summary>How far short of a yes he is, or 0 when he would say yes.</summary>
+        public float Short => Math.Max(0f, AcceptAt - Score);
     }
 
     /// <summary>The block-side inputs an owner weighs, gathered by the caller.</summary>
@@ -173,7 +187,7 @@ namespace LivingCity.Territory
             float presenceWeight = 0.35f,
             float troubleWeight = 0.15f,
             float rivalWeight = 0.5f,
-            float acceptAt = 40f,
+            float acceptAt = 30f,
             float hesitateAt = 16f,
             float hesitantComplianceShare = 0.35f,
             float switchMargin = 18f,
@@ -207,6 +221,11 @@ namespace LivingCity.Territory
         /// <summary>How heavily another claim counts against the asking family.</summary>
         public float RivalWeight { get; }
 
+        /// <summary>What a family must be worth on the street before an owner says yes.
+        /// Lowered from 40 on the user's word (2026-09-01): at 40 the whole violence
+        /// ladder - a threat is 3 points, a wrecked front 7, a robbery 13 - could not
+        /// carry a demand on its own, and every shop stayed wavering while the boss ran
+        /// out of things to do to it.</summary>
         public float AcceptAt { get; }
         public float HesitateAt { get; }
 
@@ -284,8 +303,68 @@ namespace LivingCity.Territory
 
             return new TerritoryComplianceTerms(
                 inputs.FearOfAsker, inputs.PresenceOfAsker, inputs.BlockTrouble,
-                opposing, score, verdict);
+                opposing, score, verdict, acceptAt);
         }
+    }
+
+    /// <summary>
+    /// What happened at one door, as a wire would carry it. A KIND, never a sentence:
+    /// the strip over the street and the ledger's own telex both set the words from
+    /// this, and nothing downstream ever reads English back into facts.
+    /// </summary>
+    public enum TerritoryDoorNews
+    {
+        /// <summary>The men stood at his door. Nothing asked yet.</summary>
+        Approached,
+
+        /// <summary>He said yes. The shop pays for peace.</summary>
+        Agreed,
+
+        /// <summary>Not a yes and not a no.</summary>
+        Wavered,
+
+        /// <summary>He said no, out loud, to men standing in his doorway.</summary>
+        Refused,
+
+        /// <summary>He was leaned on.</summary>
+        Threatened,
+
+        /// <summary>The front went in - smashed or burnt.</summary>
+        Wrecked,
+
+        /// <summary>Somebody at the premises was put on the ground.</summary>
+        Beaten,
+
+        /// <summary>The arrangement lapsed from HIS side: he stopped paying.</summary>
+        StoppedPaying,
+
+        /// <summary>Another family is being paid now.</summary>
+        ChangedHands,
+    }
+
+    /// <summary>One line of door news, filed the hour it happened.</summary>
+    public readonly struct TerritoryDoorDispatch
+    {
+        public TerritoryDoorDispatch(
+            TerritoryBusinessId businessId, TerritoryGangId gangId,
+            TerritoryDoorNews news, double gameHour)
+        {
+            BusinessId = businessId;
+            GangId = gangId;
+            News = news;
+            GameHour = gameHour;
+        }
+
+        public TerritoryBusinessId BusinessId { get; }
+
+        /// <summary>The family that did it, or was answered.</summary>
+        public TerritoryGangId GangId { get; }
+
+        public TerritoryDoorNews News { get; }
+        public double GameHour { get; }
+
+        /// <summary>The campaign day, counted the way the block file counts it.</summary>
+        public int Day => (int)(GameHour / 24.0);
     }
 
     /// <summary>One thing that happened between a family and a business.</summary>
@@ -405,6 +484,47 @@ namespace LivingCity.Territory
                 row.CollectHistory(into);
         }
 
+        /// <summary>How many lines of door news the ledger keeps. A wire is a strip of
+        /// the last few hours, not an archive - the per-business history is the archive.
+        /// </summary>
+        public const int DispatchesKept = 24;
+
+        readonly List<TerritoryDoorDispatch> dispatches = new List<TerritoryDoorDispatch>();
+
+        /// <summary>The city's door news, oldest first. Every surface that carries a wire
+        /// reads THIS - the strip over the street and the book's own telex - so the two
+        /// can never report different nights.</summary>
+        public IReadOnlyList<TerritoryDoorDispatch> Dispatches => dispatches;
+
+        void FileEscalation(
+            TerritoryBusinessId businessId, TerritoryGangId gangId,
+            TerritoryEscalationKind kind, double gameHour) =>
+            File(businessId, gangId,
+                kind == TerritoryEscalationKind.Assault
+                    ? TerritoryDoorNews.Beaten
+                    : TerritoryDoorNews.Wrecked,
+                gameHour);
+
+        /// <summary>Files one line and moves the version the surfaces watch.</summary>
+        void File(
+            TerritoryBusinessId businessId, TerritoryGangId gangId,
+            TerritoryDoorNews news, double gameHour)
+        {
+            if (dispatches.Count >= DispatchesKept)
+                dispatches.RemoveAt(0);
+            dispatches.Add(new TerritoryDoorDispatch(businessId, gangId, news, gameHour));
+            Version++;
+        }
+
+        /// <summary>
+        /// Moves on every interaction the ledger records. A SURFACE reads this to know
+        /// its painted sheet is stale: the block's compliance figures do not move when a
+        /// shop goes from wavering to shaken (both count as the same fraction of a yes),
+        /// so a smashed front left the open block file showing the line it was painted
+        /// with - "the owner is wavering" over a boarded shop.
+        /// </summary>
+        public int Version { get; private set; }
+
         /// <summary>Men stood at the door. Nothing has been asked, and nothing is owed.</summary>
         public bool Approach(
             TerritoryBusinessId businessId,
@@ -424,6 +544,7 @@ namespace LivingCity.Territory
                 return false;
 
             row.Move(entry, TerritoryProtectionState.Approached, gameHour, "approached", 0f, Config, changes);
+            File(businessId, gangId, TerritoryDoorNews.Approached, gameHour);
             return true;
         }
 
@@ -467,6 +588,13 @@ namespace LivingCity.Territory
                     break;
             }
 
+            File(businessId, gangId,
+                terms.Verdict == TerritoryComplianceVerdict.Accept
+                    ? TerritoryDoorNews.Agreed
+                    : terms.Verdict == TerritoryComplianceVerdict.Hesitate
+                        ? TerritoryDoorNews.Wavered
+                        : TerritoryDoorNews.Refused,
+                gameHour);
             return terms.Verdict;
         }
 
@@ -492,11 +620,13 @@ namespace LivingCity.Territory
             if (entry.State == TerritoryProtectionState.Compliant)
             {
                 row.Note(entry, "threatened while paying", gameHour, 0f, Config);
+                File(businessId, gangId, TerritoryDoorNews.Threatened, gameHour);
                 return;
             }
 
             row.Move(entry, TerritoryProtectionState.Intimidated, gameHour,
                 "threatened", 0f, Config, changes);
+            File(businessId, gangId, TerritoryDoorNews.Threatened, gameHour);
         }
 
         /// <summary>
@@ -521,11 +651,13 @@ namespace LivingCity.Territory
             if (entry.State == TerritoryProtectionState.Compliant)
             {
                 row.Note(entry, kind + " against a paying shop", gameHour, 0f, Config);
+                FileEscalation(businessId, gangId, kind, gameHour);
                 return;
             }
 
             row.Move(entry, TerritoryProtectionState.Intimidated, gameHour,
                 kind.ToString().ToLowerInvariant(), 0f, Config, changes);
+            FileEscalation(businessId, gangId, kind, gameHour);
         }
 
         /// <summary>
@@ -548,6 +680,7 @@ namespace LivingCity.Territory
 
             row.Move(entry, TerritoryProtectionState.Hesitant, gameHour,
                 "stopped paying", 0f, Config, changes);
+            File(businessId, gangId, TerritoryDoorNews.StoppedPaying, gameHour);
             return true;
         }
 
@@ -570,6 +703,7 @@ namespace LivingCity.Territory
                 "lost the shop", 0f, Config, changes);
             row.Move(row.Entry(challenger), TerritoryProtectionState.Compliant, gameHour,
                 "took the shop", 0f, Config, changes);
+            File(businessId, challenger, TerritoryDoorNews.ChangedHands, gameHour);
             return true;
         }
 

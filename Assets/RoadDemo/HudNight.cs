@@ -25,17 +25,15 @@ namespace RoadDemo
     public sealed class HudNight
     {
         /// <summary>
-        /// How solid the screen-edge HUD is. The design gives its whole hud region
-        /// opacity 0.8 - a fifth of the city shows through every panel, which is what
-        /// keeps the paper laid ON the street rather than bolted over it, and it is one
-        /// of the decisions the spec marks as deliberate.
+        /// How solid the screen-edge HUD is. Keep it fully opaque so the 3D city does
+        /// not show through the clock strip, street panels, or corner plate.
         ///
         /// Held here because the bar is made of three canvases - the clock strip, the
         /// panels, the corner plate - and they are one region in the design. Two of
         /// them were fully solid while the third was not, and the top bar read as two
         /// different materials butted together.
         /// </summary>
-        public const float Alpha = 0.8f;
+        public const float Alpha = 1f;
 
         /// <summary>One token, in the two faces the design gives it. Base is the colour
         /// the kit paints with; Day and Night are what the HUD re-declares it to.

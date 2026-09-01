@@ -146,6 +146,9 @@ namespace LivingCity.Gameplay
         public void ReportStreetOutcome(int jobId, OrderOutcome outcome) =>
             Runner.ReportStreetOutcome(jobId, outcome);
 
+        /// <summary>The street reports the men standing at the address.</summary>
+        public void ReportArrived(int jobId) => Runner.ReportArrived(jobId);
+
         OpResult Commit(OpResult result)
         {
             if (result.Ok)
@@ -354,13 +357,15 @@ namespace LivingCity.Gameplay
                 case OrderType.Raid:
                     RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
                         new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
-                        businessId, Territory.TerritoryEscalationKind.Assault);
+                        businessId, Territory.TerritoryEscalationKind.Assault,
+                        DoorOrders.ViolenceSeverity(job.Type));
                     break;
 
                 case OrderType.SmashUp:
                     RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
                         new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
-                        businessId, Territory.TerritoryEscalationKind.PropertyDamage);
+                        businessId, Territory.TerritoryEscalationKind.PropertyDamage,
+                        DoorOrders.ViolenceSeverity(job.Type));
                     // The wreck is VISIBLE: the ground floor nailed shut, the same
                     // boards a bombed front gets - a smashed shop must look smashed.
                     RoadDemo.ShopDamage.SmashBusiness(businessId);
@@ -370,7 +375,8 @@ namespace LivingCity.Gameplay
                 case OrderType.Bomb:
                     RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
                         new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
-                        businessId, Territory.TerritoryEscalationKind.PropertyDamage);
+                        businessId, Territory.TerritoryEscalationKind.PropertyDamage,
+                        DoorOrders.ViolenceSeverity(job.Type));
                     // And a torched one burns: the full ShopFire, then the boards.
                     RoadDemo.ShopDamage.ScorchBusiness(businessId);
                     break;

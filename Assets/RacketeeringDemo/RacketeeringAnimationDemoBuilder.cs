@@ -516,6 +516,9 @@ namespace RacketeeringDemo
 
             switch (sharedPhase)
             {
+                case DoorBeat.VisitPhase.Approaching:
+                    _phase = "CREWWALKER.ORDERTOPOINT · WALKING TO THE DOORSTEP";
+                    return;
                 case DoorBeat.VisitPhase.OpeningEntry:
                     _phase = "DOORBEAT · OPENING THE SHOP DOORS";
                     return;

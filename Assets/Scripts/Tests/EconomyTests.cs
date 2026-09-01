@@ -107,9 +107,16 @@ namespace LivingCity.Tests
         static void OwnerAndTierShiftVerdictsInTheDocumentedDirection(List<string> failures)
         {
             var config = TerritoryRacketConfig.Default;
-            // A street standing worth a score right between hesitate and accept.
+            // A street standing worth a score right between hesitate and accept, DERIVED
+            // from the bars rather than written down: the accept bar is a tuning dial
+            // (it moved from 40 to 30 when a wrecked front could not carry a demand),
+            // and a fixture with the old number baked in fails for no better reason than
+            // that the dial moved.
+            const float presence = 6f;
+            var midway = (config.HesitateAt + config.AcceptAt) * 0.5f;
             var inputs = new TerritoryComplianceInputs(
-                fearOfAsker: 60f, presenceOfAsker: 6f, blockTrouble: 0f,
+                fearOfAsker: (midway - config.PresenceWeight * presence) / config.FearWeight,
+                presenceOfAsker: presence, blockTrouble: 0f,
                 strongestRival: 0f, protectorStanding: 0f, alreadyProtectedByAsker: false);
             var neutral = TerritoryComplianceEvaluation.Evaluate(inputs, config);
             if (neutral.Verdict != TerritoryComplianceVerdict.Hesitate)

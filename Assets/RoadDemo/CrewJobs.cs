@@ -75,12 +75,29 @@ namespace RoadDemo
                 {
                     case JobStage.Travelling:
                         March(crews, unit, job);
+                        // The clock does not decide whether they have arrived - the
+                        // pavement does. A crew standing at the door with travel hours
+                        // still on the book is a crew waiting for arithmetic.
+                        if (AtPlace(crews, unit, job))
+                            outfit.ReportArrived(job.Id);
                         break;
                     case JobStage.Working:
                         Work(crews, outfit, unit, job);
                         break;
                 }
             }
+        }
+
+        /// <summary>How near the address a man has to be for the crew to count as
+        /// there: the same reach the door beats use to find the man who acts.</summary>
+        public const float ArrivedWithin = 9f;
+
+        static bool AtPlace(DemoCrews crews, DemoCrews.Unit unit, Job job)
+        {
+            if (!job.HasPlace)
+                return false;
+            var door = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
+            return LeadAt(unit, door, ArrivedWithin) != null;
         }
 
         /// <summary>Sends them once, not every frame: MarchTo clears the crew's target
@@ -104,9 +121,9 @@ namespace RoadDemo
             if (job.Type == OrderType.Raid)
                 EnterOnce(crews, unit, job);
             else if (job.Type == OrderType.SmashUp)
-                SwingBeat(crews, unit, job);
+                SwingBeat(crews, outfit, unit, job);
             else if (job.Type == OrderType.Torch)
-                TorchBeat(crews, unit, job);
+                TorchBeat(crews, outfit, unit, job);
 
             var spec = OrderTable.SpecOf(job.Type);
             if (spec.Resolution != JobResolution.Street || job.StreetOutcome.HasValue)
@@ -185,6 +202,18 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>
+        /// The street's answer for a job whose DEED is the whole of it - the front put
+        /// in, the bottle thrown. Reported once: a second call while the same answer
+        /// stands would be the same order finishing twice.
+        /// </summary>
+        static void Done(OutfitDirector outfit, Job job)
+        {
+            if (outfit == null || job == null || job.StreetOutcome.HasValue)
+                return;
+            outfit.ReportStreetOutcome(job.Id, OrderOutcome.Completed);
+        }
+
         /// <summary>A smash-up is two clear blows, then the frontage is visibly shut.
         /// Keeping this just over two seconds makes it read as an action rather than a man
         /// mechanically beating the same pane for half the job.</summary>
@@ -192,11 +221,24 @@ namespace RoadDemo
         public const float PremisesSmashEvery = 1.15f;
         public const float PremisesSmashFor = 0.9f;
 
-        static void SwingBeat(DemoCrews crews, DemoCrews.Unit unit, Job job)
+        static void SwingBeat(
+            DemoCrews crews, OutfitDirector outfit, DemoCrews.Unit unit, Job job)
         {
             if (!job.HasPlace)
                 return;
+
+            // He swings at the SHOPFRONT, not at the pavement he was marched to. The
+            // job's target is the doorstep - a walkable spot on the kerb - and a bat
+            // aimed there is a man beating the air a couple of metres short of the glass
+            // that is about to be boarded. The torch has always thrown at the real
+            // frontage; the bat now goes to the same place.
             var door = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
+            var businessId = new LivingCity.Territory.TerritoryBusinessId(
+                job.TargetBusinessId);
+            if (businessId.IsValid &&
+                ShopDamage.TryBusinessFrontage(businessId, out var frontage, out _))
+                door = frontage;
+
             if (Swings.TryGetValue(unit.CrewId, out var swung) && swung.JobId == job.Id)
             {
                 if (swung.Count >= PremisesSmashRounds)
@@ -204,18 +246,22 @@ namespace RoadDemo
                     if (swung.Count > PremisesSmashRounds || ArmBeat.Acting(LeadAt(unit, door, 9f)))
                         return;
 
-                    if (!string.IsNullOrEmpty(job.TargetBusinessId))
-                    {
-                        ShopDamage.SmashBusiness(
-                            new LivingCity.Territory.TerritoryBusinessId(job.TargetBusinessId));
-                    }
+                    if (businessId.IsValid)
+                        ShopDamage.SmashBusiness(businessId);
                     else
-                    {
                         ShopDamage.SmashAt(
                             door, Vector3.forward, "JOB " + job.Id, crews.GroundY);
-                    }
+
                     Swings[unit.CrewId] = (
                         job.Id, PremisesSmashRounds + 1, float.PositiveInfinity);
+                    // THE DEED IS THE ANSWER. A smash-up used to report nothing at all
+                    // unless a rival crew happened to be standing there and got wiped -
+                    // so with nobody to fight, the front went in and the job sat open for
+                    // its full hours with the men standing by, the NEXT order queued
+                    // behind it, and the shop never told it had been wrecked (the racket
+                    // only hears about a job that COMPLETES). The window is broken: that
+                    // is the order carried out, and the book is told so now.
+                    Done(outfit, job);
                     return;
                 }
                 if (Time.time < swung.NextAt)
@@ -238,7 +284,8 @@ namespace RoadDemo
 
         /// <summary>A torch is not a bat routine. The nearest hood at the premises throws
         /// one real Molotov model; the bottle's impact starts ShopDamage that same frame.</summary>
-        static void TorchBeat(DemoCrews crews, DemoCrews.Unit unit, Job job)
+        static void TorchBeat(
+            DemoCrews crews, OutfitDirector outfit, DemoCrews.Unit unit, Job job)
         {
             if (!job.HasPlace)
                 return;
@@ -266,7 +313,13 @@ namespace RoadDemo
             var impact = door + Vector3.up * 0.85f;
             var crewId = unit.CrewId;
             var jobId = job.Id;
-            void Lit(Transform _) => Torched[crewId] = (jobId, null, true);
+            void Lit(Transform _)
+            {
+                Torched[crewId] = (jobId, null, true);
+                // Same rule as the bat: the bottle landed and the front is alight, so
+                // the order was carried out - the book is not left waiting on a fight.
+                Done(outfit, job);
+            }
 
             if (businessId.IsValid)
             {
