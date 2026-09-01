@@ -1638,6 +1638,10 @@ namespace RoadDemo
         {
             if (racket == null || pendingApproaches.Count == 0 || actor?.Tf == null)
                 return;
+            // Doorstep errands are the player's; a rival unit that happens to share a
+            // crew number must not spring one walking past the door.
+            if (unit.Faction != 0)
+                return;
 
             for (var i = pendingApproaches.Count - 1; i >= 0; i--)
             {
@@ -1661,16 +1665,66 @@ namespace RoadDemo
                 // the man actually STEPS INSIDE for the conversation (DoorBeat).
                 if (pending.FollowUp == TerritoryRacketIntent.Demand)
                 {
-                    ResolveDemand(observation.GangId, pending.BusinessId, out _, out _);
+                    if (ResolveDemand(
+                            observation.GangId, pending.BusinessId, out var verdict, out _))
+                        AnnounceVerdict(pending.BusinessId, threat: false, verdict);
                     DoorBeat.Visit(actor, pending.Door);
                 }
                 else if (pending.FollowUp == TerritoryRacketIntent.Threaten)
                 {
-                    ResolveThreat(observation.GangId, pending.BusinessId,
-                        observation.CharacterId, out _, out _);
+                    if (ResolveThreat(observation.GangId, pending.BusinessId,
+                            observation.CharacterId, out var verdict, out _))
+                        AnnounceVerdict(pending.BusinessId, threat: true, verdict);
                     DoorBeat.Visit(actor, pending.Door);
                 }
             }
+        }
+
+        /// <summary>What the owner said, put over the street - the demand and the threat
+        /// used to resolve in silence, and a player who ordered one watched nothing
+        /// happen. Only the player's own conversations come through here; a rival's
+        /// demand is his business.</summary>
+        void AnnounceVerdict(
+            TerritoryBusinessId businessId, bool threat, TerritoryComplianceVerdict verdict)
+        {
+            var name = businessId.Value;
+            if (TryGetBusinessView(businessId, out var view))
+                name = view.BusinessName;
+            name = name.ToUpperInvariant();
+
+            switch (verdict)
+            {
+                case TerritoryComplianceVerdict.Accept:
+                    CrewOverlay.Announce(name + (threat ? " FOLDED - THEY PAY" : " AGREED - THEY PAY"),
+                        4f, new Color(0.75f, 0.95f, 0.7f));
+                    break;
+                case TerritoryComplianceVerdict.Hesitate:
+                    CrewOverlay.Announce("THE OWNER OF " + name + " IS WAVERING",
+                        4f, new Color(1f, 0.85f, 0.55f));
+                    break;
+                default:
+                    CrewOverlay.Announce("THE OWNER OF " + name + " REFUSED" + (threat ? " AGAIN" : ""),
+                        4f, new Color(1f, 0.6f, 0.45f));
+                    break;
+            }
+        }
+
+        /// <summary>The body on the street for one of the outfit's characters, if he is
+        /// standing on it - the direct demand wants the man who spoke to step inside.</summary>
+        CrewWalker FindWalker(TerritoryCharacterId actorId)
+        {
+            if (!actorId.IsValid || crews == null)
+                return null;
+            foreach (var unit in crews.Units)
+            {
+                if (unit == null || unit.Faction != 0)
+                    continue;
+                foreach (var man in unit.All())
+                    if (man != null && !man.Dead && man.CharacterId == actorId.Value)
+                        return man;
+            }
+
+            return null;
         }
 
         /// <summary>The crew's doorstep errand, dropped. Called whenever the crew is
@@ -1690,6 +1744,12 @@ namespace RoadDemo
         /// overlay reads it to keep a mark on that doorstep while they are on their way -
         /// the order is visible in the world, not only in the card that issued it.
         /// </summary>
+        /// <summary>A direct street order countermands the crew's errand: the doorstep
+        /// walk is dropped and a collection round in hand is lost with its take. The
+        /// street overlay calls this for orders that never pass the command gateway -
+        /// the gateway's own moves already do it.</summary>
+        public void CallOffErrands(int crewId) => DropPendingApproaches(crewId);
+
         public bool TryGetPendingApproach(int crewId, out Vector3 door)
         {
             door = default;
@@ -2125,6 +2185,12 @@ namespace RoadDemo
             if (!ResolveDemand(gangId, command.BusinessId, out var verdict, out _))
                 return TerritoryCommandExecution.Reject("The demand could not be resolved.");
 
+            // The same beat and the same banner the walked-in demand gets: the man at
+            // the door steps inside, and what the owner said is put over the street.
+            AnnounceVerdict(command.BusinessId, threat: false, verdict);
+            if (TryGetBusinessApproach(command.BusinessId, out var door))
+                DoorBeat.Visit(FindWalker(command.ActorId), door);
+
             switch (verdict)
             {
                 case TerritoryComplianceVerdict.Accept:
@@ -2149,6 +2215,10 @@ namespace RoadDemo
             if (!ResolveThreat(gangId, command.BusinessId, command.ActorId,
                     out var verdict, out _))
                 return TerritoryCommandExecution.Reject("The threat could not be resolved.");
+
+            AnnounceVerdict(command.BusinessId, threat: true, verdict);
+            if (TryGetBusinessApproach(command.BusinessId, out var door))
+                DoorBeat.Visit(FindWalker(command.ActorId), door);
 
             switch (verdict)
             {

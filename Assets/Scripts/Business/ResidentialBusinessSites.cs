@@ -89,20 +89,60 @@ namespace LivingCity.Business
 
                     // The one face CoreResidentialFronts would have chosen, by its own salt.
                     var primary = faces[(FaceSalt(recipe, spot, index) & int.MaxValue) % faces.Count];
-                    sites.Add(FrontageSite(
-                        recipe, spot, index, primary, block, order++, FrontageRole));
+                    SpotRect(recipe, spot, out var whole);
 
                     // A corner unit's shopfronts wrap ONE corner: one authored group, one
-                    // site. Anything else with glass on two streets is two shops.
+                    // site, the whole house - never split.
                     if (spot.Unit.Kind == ResidentialKind.Corner)
+                    {
+                        sites.Add(FrontageSite(recipe, whole, primary,
+                            FaceSiteId(spot, index, primary),
+                            recipe.Name + " · " + spot.Unit.Name,
+                            block, order++, FrontageRole));
                         continue;
+                    }
 
+                    // Every other face is split where its walls go (ECON/BIZ-004): each
+                    // run of contiguous shopfront panes is its own shop with its own
+                    // door. The run nearest the facade's middle keeps the legacy site id
+                    // - and on the primary face the frontage role with it - so every
+                    // business, owner and outfit front dealt before the split stays put.
                     for (var f = 0; f < faces.Count; f++)
                     {
-                        if (faces[f] == primary)
+                        var side = faces[f];
+                        turn.ShopRuns(side, shopRuns);
+                        if (shopRuns.Count == 0)
                             continue;
-                        sites.Add(FrontageSite(
-                            recipe, spot, index, faces[f], block, order++, ExtraFrontageRole));
+
+                        var extent = side == 0 || side == 2 ? turn.CW : turn.CD;
+                        var keep = 0;
+                        var best = float.MaxValue;
+                        for (var r = 0; r < shopRuns.Count; r++)
+                        {
+                            var middle = Mathf.Abs(
+                                shopRuns[r].At + shopRuns[r].Len * 0.5f - extent * 0.5f);
+                            if (middle >= best)
+                                continue;
+                            best = middle;
+                            keep = r;
+                        }
+
+                        for (var r = 0; r < shopRuns.Count; r++)
+                        {
+                            var run = shopRuns[r];
+                            var local = run.At == 0 && run.Len >= extent
+                                ? whole
+                                : RunRect(whole, side, run);
+                            var siteId = r == keep
+                                ? FaceSiteId(spot, index, side)
+                                : FaceSiteId(spot, index, side) + ":run:" + r;
+                            var role = side == primary && r == keep
+                                ? FrontageRole
+                                : ExtraFrontageRole;
+                            sites.Add(FrontageSite(recipe, local, side, siteId,
+                                recipe.Name + " · " + spot.Unit.Name,
+                                block, order++, role));
+                        }
                     }
                 }
 
@@ -117,16 +157,30 @@ namespace LivingCity.Business
 
         // ------------------------------------------------------------------ the shapes
 
-        BusinessSite FrontageSite(
-            ResidentialBlockRecipe recipe, ResidentialLot.Spot spot, int index, int side,
-            TerritoryBlockId block, int order, string role)
+        readonly List<(int At, int Len)> shopRuns = new List<(int At, int Len)>();
+
+        static string FaceSiteId(ResidentialLot.Spot spot, int index, int side) =>
+            $"spot:{index}:{spot.Unit.Name}:face:{side}";
+
+        /// <summary>One run's slice of the house: the run's cells along the facade, the
+        /// house's full depth across it - a shop unit, not a floor plan.</summary>
+        static Rect RunRect(Rect whole, int side, (int At, int Len) run)
         {
-            SpotRect(recipe, spot, out var local);
+            float cell = ResidentialLot.Cell;
+            return side == 0 || side == 2
+                ? new Rect(whole.xMin + run.At * cell, whole.yMin, run.Len * cell, whole.height)
+                : new Rect(whole.xMin, whole.yMin + run.At * cell, whole.width, run.Len * cell);
+        }
+
+        BusinessSite FrontageSite(
+            ResidentialBlockRecipe recipe, Rect local, int side, string siteId,
+            string title, TerritoryBlockId block, int order, string role)
+        {
             var door = DoorOnFacade(local, side);
             return new BusinessSite(
                 BusinessProviders.Residential,
                 recipe.Id,
-                $"spot:{index}:{spot.Unit.Name}:face:{side}",
+                siteId,
                 Bounds(local),
                 Point(frame.ToWorld(door)),
                 Direction(side),
@@ -134,7 +188,7 @@ namespace LivingCity.Business
                 SizeOf(local),
                 block,
                 recipe.BlockId,
-                recipe.Name + " · " + spot.Unit.Name,
+                title,
                 role,
                 order);
         }

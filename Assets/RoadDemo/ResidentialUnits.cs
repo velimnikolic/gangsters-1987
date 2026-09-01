@@ -27,6 +27,11 @@ namespace RoadDemo
         /// <summary>South, east, north, west.</summary>
         public bool[] Face;
         public int[] Doors, Shops, Stoops;
+        /// <summary>Per side (S,E,N,W): '0' where the frontage cell is bare wall;
+        /// every other letter is a shopfront pane, lettered per authored module.
+        /// A run breaks at a wall AND where the letter changes - each run is an
+        /// individual shop. Null in a table older than the pane masks.</summary>
+        public string[] ShopCells;
         /// <summary>What reaches out past the footprint on each side, metres.</summary>
         public float[] Over;
         public int Trees, Pieces;
@@ -120,6 +125,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 0, 1, 3, 4 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "00000", "00d0", "0cbbe", "fagh" },
                 Over = new[] { 0.73f, 0.47f, 1.97f, 2.03f },
             },
             new ResidentialUnit
@@ -139,6 +145,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 6, 1, 1, 3 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "kibhjff0", "a0000", "0e000000", "0dccg" },
                 Over = new[] { 1.76f, 1.76f, 0.46f, 1.68f },
             },
             new ResidentialUnit
@@ -158,6 +165,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 7, 1, 1, 3 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "kgihfaad0", "c0000", "0b0000000", "0jlle" },
                 Over = new[] { 3.25f, 1.76f, 0.73f, 1.76f },
             },
             new ResidentialUnit
@@ -177,6 +185,7 @@ namespace RoadDemo
                 Doors = new[] { 1, 3, 3, 0 },
                 Shops = new[] { 0, 0, 0, 0 },
                 Stoops = new[] { 0, 5, 3, 0 },
+                ShopCells = new[] { "00000", "00000", "00000", "00000" },
                 Over = new[] { 1.14f, 0.13f, 0.13f, 1.76f },
             },
             new ResidentialUnit
@@ -200,6 +209,7 @@ namespace RoadDemo
                 Doors = new[] { 1, 6, 1, 6 },
                 Shops = new[] { 0, 0, 0, 0 },
                 Stoops = new[] { 1, 6, 1, 8 },
+                ShopCells = new[] { "0000", "000000000", "0000", "000000000" },
                 Over = new[] { 0.00f, 0.13f, 0.00f, 0.13f },
             },
             new ResidentialUnit
@@ -223,6 +233,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 4, 2, 0 },
                 Shops = new[] { 1, 4, 6, 1 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "00000000g0", "e00d0bc00", "0ih0kll0af", "00000000j" },
                 Over = new[] { 1.76f, 1.76f, 1.76f, 0.27f },
             },
             new ResidentialUnit
@@ -242,6 +253,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 1, 0, 0 },
                 Shops = new[] { 2, 2, 1, 3 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "gh", "0ab00", "0e", "0dccf" },
                 Over = new[] { 1.74f, 1.84f, 0.46f, 1.68f },
             },
             new ResidentialUnit
@@ -258,6 +270,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 2, 1, 3, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "fdd0", "b0", "0eca", "00" },
                 Over = new[] { 1.76f, 1.76f, 1.78f, 0.75f },
             },
             new ResidentialUnit
@@ -275,6 +288,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 3, 0, 0, 1 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "dbc", "000", "000", "0a0" },
                 Over = new[] { 1.74f, 1.40f, 0.72f, 1.68f },
             },
             new ResidentialUnit
@@ -291,6 +305,7 @@ namespace RoadDemo
                 Doors = new[] { 1, 0, 0, 0 },
                 Shops = new[] { 0, 1, 2, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "000", "a0", "b0c", "00" },
                 Over = new[] { 1.65f, 0.57f, 1.81f, 0.81f },
             },
             new ResidentialUnit
@@ -307,6 +322,7 @@ namespace RoadDemo
                 Doors = new[] { 1, 0, 0, 0 },
                 Shops = new[] { 0, 1, 2, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "000", "a0", "b0c", "00" },
                 Over = new[] { 1.65f, 0.57f, 1.81f, 0.81f },
             },
             new ResidentialUnit
@@ -323,6 +339,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 1, 1, 3, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "0dd0", "b0", "0eca", "00" },
                 Over = new[] { 1.76f, 1.76f, 1.78f, 0.75f },
             },
             new ResidentialUnit
@@ -340,6 +357,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 3, 0, 0, 1 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "dbc", "000", "000", "0a0" },
                 Over = new[] { 0.72f, 1.40f, 0.72f, 1.68f },
             },
             new ResidentialUnit
@@ -359,6 +377,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 1, 0, 0 },
                 Shops = new[] { 2, 2, 1, 3 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "gh", "0ab00", "0e", "0dccf" },
                 Over = new[] { 1.74f, 1.84f, 0.46f, 1.68f },
             },
             new ResidentialUnit
@@ -377,6 +396,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 0, 0, 0, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "0000", "0000", "0000", "0000" },
                 Over = new[] { 0.36f, 0.36f, 0.36f, 0.36f },
             },
             new ResidentialUnit
@@ -394,6 +414,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 0, 0, 0, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "0000000", "000", "0000000", "000" },
                 Over = new[] { 0.36f, 0.36f, 0.36f, 0.36f },
             },
             new ResidentialUnit
@@ -410,6 +431,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 1, 0, 0, 1 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "a", "00", "0", "0b" },
                 Over = new[] { 0.46f, 0.19f, 0.46f, 0.54f },
             },
             new ResidentialUnit
@@ -426,6 +448,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 2, 0, 2, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "cd", "00", "ab", "00" },
                 Over = new[] { 0.46f, 0.85f, 0.75f, 0.88f },
             },
             new ResidentialUnit
@@ -443,6 +466,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 0, 0, 0, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "0000", "000", "0000", "000" },
                 Over = new[] { 0.00f, 0.16f, 0.51f, 0.00f },
             },
             new ResidentialUnit
@@ -460,6 +484,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 1, 0 },
                 Shops = new[] { 0, 0, 3, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "00000", "000", "bc000", "000" },
                 Over = new[] { 0.00f, 0.47f, 0.00f, 0.00f },
             },
             new ResidentialUnit
@@ -479,6 +504,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 3, 0 },
                 Shops = new[] { 1, 0, 2, 2 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "0bb000", "00000", "0aacc0", "0dee0" },
                 Over = new[] { 0.00f, 0.00f, 0.00f, 0.00f },
             },
             new ResidentialUnit
@@ -496,6 +522,7 @@ namespace RoadDemo
                 Doors = new[] { 1, 1, 0, 1 },
                 Shops = new[] { 0, 0, 0, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "000", "000", "000", "000" },
                 Over = new[] { 0.00f, 0.76f, 0.00f, 0.00f },
             },
             new ResidentialUnit
@@ -514,6 +541,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 0, 0, 0, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "0000000", "0000", "0000000", "0000" },
                 Over = new[] { 0.00f, 0.00f, 0.00f, 0.00f },
             },
             new ResidentialUnit
@@ -530,6 +558,7 @@ namespace RoadDemo
                 Doors = new[] { 2, 0, 1, 0 },
                 Shops = new[] { 0, 1, 0, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "000", "aa", "000", "00" },
                 Over = new[] { 0.00f, 0.00f, 0.00f, 0.00f },
             },
             new ResidentialUnit
@@ -546,6 +575,7 @@ namespace RoadDemo
                 Doors = new[] { 4, 1, 5, 0 },
                 Shops = new[] { 0, 0, 0, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "00000", "00", "00000", "00" },
                 Over = new[] { 0.00f, 0.00f, 0.00f, 0.00f },
             },
             new ResidentialUnit
@@ -562,6 +592,7 @@ namespace RoadDemo
                 Doors = new[] { 2, 0, 2, 0 },
                 Shops = new[] { 0, 0, 0, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
+                ShopCells = new[] { "000", "00", "000", "00" },
                 Over = new[] { 0.00f, 0.00f, 0.00f, 0.00f },
             },
             new ResidentialUnit
@@ -583,6 +614,7 @@ namespace RoadDemo
                 Doors = new[] { 0, 0, 0, 0 },
                 Shops = new[] { 0, 0, 0, 0 },
                 Stoops = new[] { 2, 0, 2, 0 },
+                ShopCells = new[] { "00000000", "0000000", "00000000", "0000000" },
                 Over = new[] { 0.00f, 0.48f, 0.00f, 0.00f },
             },
         };

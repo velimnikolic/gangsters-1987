@@ -269,20 +269,24 @@ namespace LivingCity.UI
                         trade.Name = record.DisplayName;
                 }
 
-                // The DEED first - BusinessMarker.GangId is the single source of who owns
-                // ground - and only then what the racket says about a door nobody owns.
+                // The DEED first - the deed book is the record and the marker only a view
+                // of it, so a street that is streamed out still reads as held.
                 var marker = row.Marker;
                 if (marker == null)
                     BusinessViewBindings.TryGet(row.Id, out marker);
 
-                if (marker != null && marker.GangId == GangCatalog.PlayerGangId)
+                var deedGang = BusinessDeeds.GangOf(row.Id);
+                if (deedGang < 0 && marker != null)
+                    deedGang = marker.GangId;
+
+                if (deedGang == GangCatalog.PlayerGangId)
                 {
                     trade.Tenure = BlockTenure.Ours;
                 }
-                else if (marker != null && marker.GangId >= 0)
+                else if (deedGang >= 0)
                 {
                     trade.Tenure = BlockTenure.Rival;
-                    trade.RivalName = GangName(marker.GangId);
+                    trade.RivalName = GangName(deedGang);
                 }
                 else if (racket != null && racket.TryGetProtector(row.Id, out var protector))
                 {
@@ -1081,12 +1085,48 @@ namespace LivingCity.UI
             BlockTenure.Rival =>
                 (trade.RivalName ?? "Another house") +
                 " holds this door. Taking it means their men answer for it.",
-            _ =>
-                trade.BuyPrice > 0
-                    ? "Nobody leans on it. " + LedgerText.Cash(trade.BuyPrice) +
-                      " buys the premises outright."
-                    : "Nobody leans on it. A quiet door and an open one.",
+            _ => OpenNote(trade),
         };
+
+        /// <summary>
+        /// An open door's line carries THE LAST WORD SPOKEN AT IT. The demand's verdict
+        /// used to live only in a four-second banner over the street ("kako cu ja da
+        /// reagujem na 2? treba u ledgeru da vidim to negde") - the racket has remembered
+        /// the state and the hour all along, so the sheet reads it back: asked and
+        /// refused, asked and wavering, leaned on. Nothing new is stored.
+        /// </summary>
+        string OpenNote(BlockTrade trade)
+        {
+            var buyLine = trade.BuyPrice > 0
+                ? " " + LedgerText.Cash(trade.BuyPrice) + " buys the premises outright."
+                : "";
+
+            var racket = TerritoryRuntime.Instance?.Racket;
+            var us = new TerritoryGangId(GangCatalog.PlayerGangId);
+            if (racket != null && racket.TryGetRelationship(trade.Id, us, out var word))
+            {
+                var day = " on day " + (int)(word.LastInteraction / 24.0);
+                switch (word.State)
+                {
+                    case TerritoryProtectionState.Approached:
+                        return "Our men stood at his door" + day +
+                               " - nothing has been asked of him yet.";
+                    case TerritoryProtectionState.Hesitant:
+                        return "Asked" + day +
+                               " - the owner is wavering. Ask again, or lean on him.";
+                    case TerritoryProtectionState.Defiant:
+                        return "Asked" + day + " - the owner refused. He answers " +
+                               "differently to a street with a reason to be afraid.";
+                    case TerritoryProtectionState.Intimidated:
+                        return "Leaned on" + day +
+                               " - the owner is shaken. Put the question again.";
+                }
+            }
+
+            return trade.BuyPrice > 0
+                ? "Nobody leans on it." + buyLine
+                : "Nobody leans on it. A quiet door and an open one.";
+        }
 
         /// <summary>What a paying door's line on the sheet says: the dues meter, read
         /// off the ledger (ECON-001/008) - what it owes right now and when it last
@@ -1227,8 +1267,12 @@ namespace LivingCity.UI
                     cursorX = x;
                     y += 32f;
                 }
-                LedgerV2.Button(panel, word, cursorX, -y, keyW, 26f,
+                var label = LedgerV2.Button(panel, word, cursorX, -y, keyW, 26f,
                     () => press(), red ? LedgerV2.Key.Red : LedgerV2.Key.Outline, 9f);
+                // The outline key writes in Ink, and this panel is the dark Head fill -
+                // the same override the BUY key below always needed.
+                if (!red)
+                    label.color = LedgerV2.HeadCream;
                 cursorX += keyW + 6f;
             }
 

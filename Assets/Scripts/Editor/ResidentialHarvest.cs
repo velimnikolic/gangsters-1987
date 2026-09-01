@@ -135,6 +135,11 @@ namespace LivingCity.EditorTools
             public float[] Over = new float[4];   // what hangs out over the pavement, metres
             /// <summary>How many cells of this side's outer line the unit stands on.</summary>
             public int[] Front = new int[4];
+            /// <summary>Which cells along each side carry a shopfront pane - S/N indexed
+            /// by i, E/W by j. '0' is bare wall; every authored storefront piece writes
+            /// its own letter, so a run breaks BOTH at a wall and where one module ends
+            /// and the next begins - each module is a shop unit of its own (BIZ-004).</summary>
+            public char[][] ShopCells;
             public int Trees, Pieces;
             /// <summary>Chairs, tables, umbrellas and benches the unit brings with it. A
             /// diner that arrives with its own terrace is not given a second one.</summary>
@@ -503,6 +508,10 @@ namespace LivingCity.EditorTools
             unit.Wall = new bool[unit.CW, unit.CD];
             unit.Yard = new bool[unit.CW, unit.CD];
             unit.Pit = new bool[unit.CW, unit.CD];
+            unit.ShopCells = new[]
+            {
+                Bare(unit.CW), Bare(unit.CD), Bare(unit.CW), Bare(unit.CD),
+            };
             foreach (var c in wall) unit.Wall[c.x - minI, c.y - minJ] = true;
             Fill(unit.Wall);
             foreach (var c in yard)
@@ -523,6 +532,7 @@ namespace LivingCity.EditorTools
             // as a wall left the diner with no frontage at all and nowhere it could stand.
             var blocks = family == Family.Amenity ? built : wall;
             var opens = family == Family.Amenity ? wall : yard;
+            var shopSeq = 0;
             foreach (var p in shell)
             {
                 int side = Side(p.Yaw);
@@ -535,7 +545,23 @@ namespace LivingCity.EditorTools
                     if (Sees(c, Out[side], blocks, opens, minI, maxI, minJ, maxJ)) { open = true; break; }
                 if (!open) continue;
                 if (p.Door) unit.Doors[side]++;
-                if (p.Shop) unit.Shops[side]++;
+                if (p.Shop)
+                {
+                    unit.Shops[side]++;
+                    // WHERE the glass runs AND which authored module it belongs to: the
+                    // piece's cells along this side's axis, lettered per piece. The
+                    // pack's storefronts stand shoulder to shoulder - a wall almost
+                    // never takes a whole cell - so the module boundary is the wall the
+                    // business layer splits the facade at.
+                    var letter = (char)('a' + shopSeq % 26);
+                    shopSeq++;
+                    foreach (var c in Standing(p.Box, drift, family))
+                    {
+                        int at = side == 0 || side == 2 ? c.x - minI : c.y - minJ;
+                        var lane = unit.ShopCells[side];
+                        if (at >= 0 && at < lane.Length) lane[at] = letter;
+                    }
+                }
                 if (p.Stoop) unit.Stoops[side]++;
             }
 
@@ -1020,6 +1046,11 @@ namespace LivingCity.EditorTools
             sb.AppendLine("        /// <summary>South, east, north, west.</summary>");
             sb.AppendLine("        public bool[] Face;");
             sb.AppendLine("        public int[] Doors, Shops, Stoops;");
+            sb.AppendLine("        /// <summary>Per side (S,E,N,W): '0' where the frontage cell is bare wall;");
+            sb.AppendLine("        /// every other letter is a shopfront pane, lettered per authored module.");
+            sb.AppendLine("        /// A run breaks at a wall AND where the letter changes - each run is an");
+            sb.AppendLine("        /// individual shop. Null in a table older than the pane masks.</summary>");
+            sb.AppendLine("        public string[] ShopCells;");
             sb.AppendLine("        /// <summary>What reaches out past the footprint on each side, metres.</summary>");
             sb.AppendLine("        public float[] Over;");
             sb.AppendLine("        public int Trees, Pieces;");
@@ -1056,6 +1087,49 @@ namespace LivingCity.EditorTools
             sb.AppendLine("        public static bool IsLot(ResidentialUnit unit) => unit != null &&");
             sb.AppendLine("            (unit.Kind == ResidentialKind.Park || unit.Kind == ResidentialKind.Amenity);");
             sb.AppendLine();
+            // NOT measured: the frontage modules are authored one-cell apartment pieces
+            // the frontage planner assembles, and they lived in this file by hand once -
+            // which a re-run of the harvest silently deleted (2026-09-01). The writer
+            // owns them now, so the bake can never eat them again.
+            sb.AppendLine("        /// <summary>");
+            sb.AppendLine("        /// One-cell apartment modules for the 5-10 m rear strips left by Core's authored");
+            sb.AppendLine("        /// blocks. They are deliberately outside <see cref=\"All\"/>: the ordinary dealer");
+            sb.AppendLine("        /// must keep using the harvested complete houses, while");
+            sb.AppendLine("        /// <see cref=\"ResidentialLot.Frontage\"/> may explicitly build a contiguous street");
+            sb.AppendLine("        /// wall out of these modular POLYGON City pieces.");
+            sb.AppendLine("        /// </summary>");
+            sb.AppendLine("        public static readonly ResidentialUnit[] Frontages =");
+            sb.AppendLine("        {");
+            sb.AppendLine("            FrontageUnit(\"residential-frontage-01\", doors: 1),");
+            sb.AppendLine("            FrontageUnit(\"residential-frontage-02\", doors: 1),");
+            sb.AppendLine("            FrontageUnit(\"residential-frontage-03\", doors: 0),");
+            sb.AppendLine("        };");
+            sb.AppendLine();
+            sb.AppendLine("        public static bool IsFrontage(ResidentialUnit unit) =>");
+            sb.AppendLine("            unit != null && unit.Name != null &&");
+            sb.AppendLine("            unit.Name.StartsWith(\"residential-frontage-\");");
+            sb.AppendLine();
+            sb.AppendLine("        static ResidentialUnit FrontageUnit(string name, int doors) => new ResidentialUnit");
+            sb.AppendLine("        {");
+            sb.AppendLine("            Name = name,");
+            sb.AppendLine("            CW = 1,");
+            sb.AppendLine("            CD = 1,");
+            sb.AppendLine("            Kind = ResidentialKind.Row,");
+            sb.AppendLine("            MaxH = 12.75f,");
+            sb.AppendLine("            Floor = 0f,");
+            sb.AppendLine("            Trees = 0,");
+            sb.AppendLine("            Pieces = 3,");
+            sb.AppendLine("            Seats = 0,");
+            sb.AppendLine("            Plan = new[] { \"#\" },");
+            sb.AppendLine("            // The modular apartment's authored facade is north. The frontage planner");
+            sb.AppendLine("            // rotates this single face toward the real serving street.");
+            sb.AppendLine("            Face = new[] { false, false, true, false },");
+            sb.AppendLine("            Doors = new[] { 0, 0, doors, 0 },");
+            sb.AppendLine("            Shops = new[] { 0, 0, 0, 0 },");
+            sb.AppendLine("            Stoops = new[] { 0, 0, 0, 0 },");
+            sb.AppendLine("            Over = new[] { 0f, 0f, 0.75f, 0f },");
+            sb.AppendLine("        };");
+            sb.AppendLine();
             sb.AppendLine("        public static readonly ResidentialUnit[] All =");
             sb.AppendLine("        {");
             foreach (var unit in units)
@@ -1080,6 +1154,7 @@ namespace LivingCity.EditorTools
                 sb.AppendLine($"                Doors = new[] {{ {string.Join(", ", unit.Doors)} }},");
                 sb.AppendLine($"                Shops = new[] {{ {string.Join(", ", unit.Shops)} }},");
                 sb.AppendLine($"                Stoops = new[] {{ {string.Join(", ", unit.Stoops)} }},");
+                sb.AppendLine($"                ShopCells = new[] {{ {string.Join(", ", (unit.ShopCells ?? new char[4][]).Select(Lane))} }},");
                 sb.AppendLine($"                Over = new[] {{ {string.Join(", ", unit.Over.Select(o => Metres(o)))} }},");
                 sb.AppendLine("            },");
             }
@@ -1092,6 +1167,16 @@ namespace LivingCity.EditorTools
 
         static string Metres(float m) =>
             Mathf.Max(0f, m).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + "f";
+
+        static char[] Bare(int cells)
+        {
+            var lane = new char[cells];
+            for (int i = 0; i < cells; i++) lane[i] = '0';
+            return lane;
+        }
+
+        static string Lane(char[] lane) =>
+            "\"" + (lane == null ? "" : new string(lane)) + "\"";
 
         static char Glyph(Unit unit, int i, int j)
         {

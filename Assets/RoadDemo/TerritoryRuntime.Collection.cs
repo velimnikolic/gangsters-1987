@@ -387,6 +387,10 @@ namespace RoadDemo
 
             var paid = Mathf.Min(owed, Mathf.RoundToInt(result.Paid * takeScale));
             round.Carried += paid;
+            // From the first door that pays, the take is a thing in a hand: the duffel
+            // rides with whichever man settled the stop (ECON-004's walk, visible).
+            if (round.Carried > 0)
+                BagCarry.Give(round.CrewId, actor);
             var missed = result.Outcome == TerritoryPaymentOutcome.Missed;
             if (missed)
                 round.Missed++;
@@ -510,6 +514,7 @@ namespace RoadDemo
         void Bank(CollectionRound round, double gameHour)
         {
             rounds.Remove(round);
+            BagCarry.Drop(round.CrewId, banked: true);
             var director = LivingCity.Gameplay.OutfitDirector.Instance;
             if (round.Carried > 0 && director != null)
                 director.BankCollection(round.Carried);
@@ -530,6 +535,7 @@ namespace RoadDemo
                     continue;
                 var round = rounds[i];
                 rounds.RemoveAt(i);
+                BagCarry.Drop(round.CrewId, banked: false);
                 events.Publish(new CollectionRoundSettled(
                     round.BlockId, round.GangId, round.CrewId, round.Carried,
                     round.Cursor, round.Missed, TerritoryRoundEnd.Lost, lastGameHour));
@@ -548,6 +554,7 @@ namespace RoadDemo
                     continue;
 
                 rounds.RemoveAt(i);
+                BagCarry.Drop(round.CrewId, banked: false);
                 events.Publish(new CollectionRoundSettled(
                     round.BlockId, round.GangId, round.CrewId, round.Carried,
                     round.Cursor, round.Missed, TerritoryRoundEnd.Lost, gameHour));

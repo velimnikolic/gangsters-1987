@@ -452,6 +452,21 @@ namespace LivingCity.UI
                     " wants a business door - nothing stands there.";
                 return;
             }
+
+            // A door on our own paper - the headquarters, a bought premises - takes a
+            // guard and nothing hostile. Robbing your own till is not an order.
+            var hostile = spec.Type == Outfit.OrderType.SmashUp ||
+                spec.Type == Outfit.OrderType.Raid ||
+                spec.Type == Outfit.OrderType.Torch ||
+                spec.Type == Outfit.OrderType.Bomb ||
+                spec.Type == Outfit.OrderType.BuyPremises ||
+                spec.Type == Outfit.OrderType.AdjustProtection;
+            if (found && hostile && Business.BusinessDeeds.GangOf(best.Id) ==
+                Gangs.GangCatalog.PlayerGangId)
+            {
+                ordersNote = "That door is on our own paper - only a guard can be put on it.";
+                return;
+            }
             if (blockId < 0 && !found)
             {
                 ordersNote = "Open street - nothing to target.";

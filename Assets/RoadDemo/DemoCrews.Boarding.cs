@@ -303,6 +303,7 @@ namespace RoadDemo
         void Board(Unit unit, CrewCar car)
         {
             CallOffRaids(unit, "a car order");
+            NoteRetask(unit);
             if (DriveTrace.On)
             {
                 var sb = DriveTrace.Take();

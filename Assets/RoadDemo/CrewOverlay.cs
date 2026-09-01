@@ -1020,7 +1020,18 @@ namespace RoadDemo
                         continue;
                     var marker = hits[i].collider
                         .GetComponentInParent<LivingCity.Entities.BusinessMarker>();
-                    return marker != null ? marker.BusinessId : default;
+                    if (marker == null)
+                        return default;
+                    // A house that carries several shop units wears ONE marker; the hit
+                    // point says which unit was pointed at - the nearest authored door
+                    // to where the ray landed, asked at ground height.
+                    var territory = TerritoryRuntime.Instance;
+                    var at = hits[i].point;
+                    at.y = _crews.GroundY;
+                    if (territory != null &&
+                        territory.TryGetBusinessNear(at, SliceSlack, out var sliced))
+                        return sliced;
+                    return marker.BusinessId;
                 }
                 return default;
             }
@@ -1039,6 +1050,10 @@ namespace RoadDemo
 
         /// <summary>How far a click reaches into the city; past the far side of it.</summary>
         const float PickReach = 3000f;
+
+        /// <summary>How far from the ray's landing a shop unit's own door can sit and
+        /// still be the unit that was pointed at - half a wide facade, no more.</summary>
+        const float SliceSlack = 14f;
 
         /// <summary>How far from a door a click still means that door, where there is no
         /// shop view to point at.</summary>
@@ -1089,6 +1104,14 @@ namespace RoadDemo
             var runtime = TerritoryRuntime.Instance;
             var crew = _crews != null ? _crews.Selected : null;
             if (runtime == null || !businessId.IsValid)
+                return false;
+
+            // Our own paper - the headquarters, a bought premises - is not a door the
+            // racket has anything to put to. No card at all: the right-click near it
+            // stays a move order, and the one thing it can be given (a guard) is the
+            // ledger's SIT ON IT.
+            if (LivingCity.Business.BusinessDeeds.GangOf(businessId) ==
+                LivingCity.Gangs.GangCatalog.PlayerGangId)
                 return false;
 
             // Nobody picked to send: the card asks that question first and answers itself

@@ -43,11 +43,17 @@ The plan can only say "a storefront fronts the street here", so the site carries
 sign. Moving that choice into `ResidentialLot` would let the sign be exact; it is a
 generator change, not a business change, and is deliberately out of EPIC 2.5.
 
-**Known limitation.** `ResidentialUnit.Shops[side]` counts shopfront PANES, not authored
-shop groups: the harvest measures each storefront piece separately and no grouping data
-survives the bake. A facade with four panes is therefore one business, not four. A future
-harvest that emits runs of contiguous panes would let BIZ-004 split them without changing
-any other layer.
+**Closed (2026-09-01).** The harvest now also measures WHERE the glass runs and which
+authored module each pane belongs to: `ResidentialUnit.ShopCells` carries a per-side mask
+('0' = bare wall, a letter per storefront module), and `ResidentialLot.Turn.ShopRuns` cuts
+it into runs - a run breaks at a wall AND at the seam between two modules, because the
+pack's storefronts stand shoulder to shoulder and the seam is the wall between two shops.
+BIZ-004 publishes one site per run with its own door and its own slice of the house; the
+run nearest the facade's middle keeps the pre-split site id (and on the primary face the
+`frontage` role), so no business, owner or outfit front dealt before the split moved. A
+corner unit stays ONE site - its authored glass wraps the corner. Tables older than the
+masks fall back to one run per facade, which is exactly the old behaviour. (Seed 1987:
+614 → 1055 businesses.)
 
 ---
 

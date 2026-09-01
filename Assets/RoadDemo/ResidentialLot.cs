@@ -202,6 +202,73 @@ namespace RoadDemo
             public int Doors(int side) => Unit.Doors[From(side)];
             public int Shops(int side) => Unit.Shops[From(side)];
             public float Over(int side) => Unit.Over[From(side)];
+
+            /// <summary>
+            /// The turned side's shopfront runs: contiguous panes between walls, each run
+            /// one real shop (the measured answer to "gde idu zidovi"). Each entry is
+            /// (start cell, length) along the turned side's own axis. A table older than
+            /// the pane masks - or a mask that went unmeasured - falls back to ONE run the
+            /// width of the side, which is exactly the old one-business-per-facade deal.
+            /// (Plain tuples, no Unity types: Tools/CoreSim compiles this file too.)
+            /// </summary>
+            public void ShopRuns(int side, List<(int At, int Len)> into)
+            {
+                into.Clear();
+                if (Shops(side) <= 0)
+                    return;
+
+                int us = From(side);
+                int extent = side == 0 || side == 2 ? CW : CD;
+                var lane = Unit.ShopCells != null && us < Unit.ShopCells.Length
+                    ? Unit.ShopCells[us]
+                    : null;
+                if (string.IsNullOrEmpty(lane))
+                {
+                    into.Add((0, extent));
+                    return;
+                }
+
+                int start = -1;
+                char run = '0';
+                for (int p = 0; p <= extent; p++)
+                {
+                    char pane = '0';
+                    if (p < extent)
+                    {
+                        int i, j;
+                        switch (side)
+                        {
+                            case 0: i = p; j = 0; break;
+                            case 1: i = CW - 1; j = p; break;
+                            case 2: i = p; j = CD - 1; break;
+                            default: i = 0; j = p; break;
+                        }
+                        Back(i, j, out int u, out int v);
+                        int at = us == 0 || us == 2 ? u : v;
+                        if (at >= 0 && at < lane.Length) pane = lane[at];
+                    }
+
+                    // A run ends at bare wall AND where one authored module's letter
+                    // gives way to the next - the modules stand shoulder to shoulder,
+                    // and the seam between two of them IS the wall between two shops.
+                    if (start >= 0 && (pane == '0' || pane != run))
+                    {
+                        into.Add((start, p - start));
+                        start = -1;
+                    }
+                    if (pane != '0' && start < 0)
+                    {
+                        start = p;
+                        run = pane;
+                    }
+                }
+
+                // Panes were counted on this side but none landed on the mask (a piece
+                // whose box missed every cell centre): keep the old whole-facade reading
+                // rather than deal the side no shop at all.
+                if (into.Count == 0)
+                    into.Add((0, extent));
+            }
         }
 
         // ------------------------------------------------------------------ the deal

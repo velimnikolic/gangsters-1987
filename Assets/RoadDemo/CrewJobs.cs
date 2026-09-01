@@ -36,6 +36,16 @@ namespace RoadDemo
         static readonly Dictionary<int, DemoCrews.Unit> Marks =
             new Dictionary<int, DemoCrews.Unit>();
 
+        /// <summary>Which job each crew has already acted the door beat for. A robbery
+        /// is not all arithmetic: the lead man STEPS INSIDE the place he is turning
+        /// over, once, the same beat the racket's conversations use.</summary>
+        static readonly Dictionary<int, int> Entered = new Dictionary<int, int>();
+
+        /// <summary>The wrecking beats already acted per crew: which job, how many
+        /// rounds of swinging, and when the next one is due.</summary>
+        static readonly Dictionary<int, (int JobId, int Count, float NextAt)> Swings =
+            new Dictionary<int, (int, int, float)>();
+
         public static void Tick(DemoCrews crews)
         {
             var outfit = OutfitDirector.Instance;
@@ -84,6 +94,11 @@ namespace RoadDemo
 
         static void Work(DemoCrews crews, OutfitDirector outfit, DemoCrews.Unit unit, Job job)
         {
+            if (job.Type == OrderType.Raid)
+                EnterOnce(crews, unit, job);
+            else if (job.Type == OrderType.SmashUp || job.Type == OrderType.Torch)
+                SwingBeat(crews, unit, job);
+
             var spec = OrderTable.SpecOf(job.Type);
             if (spec.Resolution != JobResolution.Street || job.StreetOutcome.HasValue)
                 return;
@@ -111,6 +126,85 @@ namespace RoadDemo
                 outfit.ReportStreetOutcome(job.Id, OrderOutcome.Completed);
             else if (DemoCrews.Finished(unit))
                 outfit.ReportStreetOutcome(job.Id, OrderOutcome.Failed);
+        }
+
+        /// <summary>The robbery's one visible beat: whichever man of the crew is at the
+        /// door goes in through it. Marked done whether the beat played or not -
+        /// DoorBeat refuses a man under fire, and then the fight at the door IS the
+        /// scene, not a man popping calmly indoors in the middle of it.</summary>
+        static void EnterOnce(DemoCrews crews, DemoCrews.Unit unit, Job job)
+        {
+            if (!job.HasPlace)
+                return;
+            if (Entered.TryGetValue(unit.CrewId, out var did) && did == job.Id)
+                return;
+
+            var door = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
+            CrewWalker lead = null;
+            var best = 8f * 8f; // he must actually be AT the door, not walking up
+            foreach (var man in unit.All())
+            {
+                if (man == null || man.Dead || man.Tf == null ||
+                    !man.Tf.gameObject.activeInHierarchy)
+                    continue;
+                var to = man.Tf.position - door;
+                to.y = 0f;
+                var sqr = to.sqrMagnitude;
+                if (sqr >= best)
+                    continue;
+                best = sqr;
+                lead = man;
+            }
+
+            if (lead == null)
+                return;
+
+            Entered[unit.CrewId] = job.Id;
+            // no word at this door - a robbery goes straight in
+            DoorBeat.Visit(lead, door, talk: 0f);
+        }
+
+        /// <summary>The wrecking acted, not only booked: while a smash-up or a torching
+        /// is being worked, the man at the door takes a bat to the frontage every few
+        /// seconds (ArmBeat swaps his gun for the pack's bat and swings it, derived).
+        /// A few rounds of it, not the whole shift - the hours run long and a man
+        /// swinging for six minutes straight reads as a machine.</summary>
+        const int SwingRounds = 4;
+        const float SwingEvery = 4.5f;
+        const float SwingFor = 2.6f;
+
+        static void SwingBeat(DemoCrews crews, DemoCrews.Unit unit, Job job)
+        {
+            if (!job.HasPlace)
+                return;
+            if (Swings.TryGetValue(unit.CrewId, out var swung) && swung.JobId == job.Id &&
+                (swung.Count >= SwingRounds || Time.time < swung.NextAt))
+                return;
+            if (swung.JobId != job.Id)
+                swung = default;
+
+            var door = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
+            CrewWalker lead = null;
+            var best = 9f * 9f;
+            foreach (var man in unit.All())
+            {
+                if (man == null || man.Dead || man.Tf == null ||
+                    !man.Tf.gameObject.activeInHierarchy)
+                    continue;
+                var to = man.Tf.position - door;
+                to.y = 0f;
+                var sqr = to.sqrMagnitude;
+                if (sqr >= best)
+                    continue;
+                best = sqr;
+                lead = man;
+            }
+
+            if (lead == null)
+                return;
+
+            ArmBeat.Swing(lead, door, SwingFor);
+            Swings[unit.CrewId] = (job.Id, swung.Count + 1, Time.time + SwingEvery);
         }
 
         static DemoCrews.Unit NearestRival(DemoCrews crews, DemoCrews.Unit unit, Job job)
@@ -164,6 +258,8 @@ namespace RoadDemo
             Dispatched.Clear();
             Sicced.Clear();
             Marks.Clear();
+            Entered.Clear();
+            Swings.Clear();
         }
     }
 }

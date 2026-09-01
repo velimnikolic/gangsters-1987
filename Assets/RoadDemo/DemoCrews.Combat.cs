@@ -135,7 +135,7 @@ namespace RoadDemo
 
         void SetTarget(Unit unit, Unit target, bool ordered)
         {
-            if (ordered) CallOffRaids(unit, "an attack order");
+            if (ordered) { CallOffRaids(unit, "an attack order"); NoteRetask(unit); }
             // an ordered job clears its own street: the player asked for this fight, so
             // the town is not left putting a bus between him and it
             if (ordered && target != null)

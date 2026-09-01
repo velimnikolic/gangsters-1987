@@ -71,6 +71,12 @@ namespace RoadDemo
         {
             public GangFront Front;
             public Transform Paint;
+
+            /// <summary>The doorstep the arrow's tip is pinned to, at pavement height,
+            /// and the way out of it - the mark is grown from here rather than about
+            /// its own middle, so the tip stays on the step at every boom.</summary>
+            public Vector3 Step;
+            public Vector3 Out;
         }
 
         readonly Dictionary<EntityId, Mark> _marks = new Dictionary<EntityId, Mark>();
@@ -149,7 +155,7 @@ namespace RoadDemo
                     continue;
                 var key = front.GetEntityId();
                 if (!_marks.ContainsKey(key))
-                    _marks[key] = new Mark { Front = front, Paint = Lay(front) };
+                    _marks[key] = Lay(front);
             }
 
             // A front whose building was streamed out takes its mark with it.
@@ -165,11 +171,10 @@ namespace RoadDemo
             }
         }
 
-        /// <summary>Lay one mark on the pavement outside a door.</summary>
-        Transform Lay(GangFront front)
+        /// <summary>Lay one mark on the pavement at a door.</summary>
+        Mark Lay(GangFront front)
         {
             var tint = LivingCity.UI.GangPalette.Of(front.GangId);
-            var at = front.Outside;
 
             // Which way the facade faces. A front with no measured normal (a demo scene
             // that bound one by hand) falls back to the line from the doorstep out to
@@ -178,19 +183,26 @@ namespace RoadDemo
             outward.y = 0f;
             if (outward.sqrMagnitude < 1e-4f)
             {
-                outward = at - front.Door;
+                outward = front.Outside - front.Door;
                 outward.y = 0f;
             }
             outward = outward.sqrMagnitude < 1e-4f ? Vector3.forward : outward.normalized;
 
+            // The DOORSTEP, at pavement height - not the pedestrian link out in the
+            // middle of the pavement. The mark names a door, so it is laid against that
+            // door: the arrow's tip on the step and the words backing out toward the
+            // kerb behind it.
+            var step = new Vector3(front.Door.x, front.Outside.y + Lift, front.Door.z);
+
             var mark = new GameObject("Mark · " + front.GangName + " · " + front.Role)
                 .transform;
             mark.SetParent(_root, false);
-            // Flat on the ground, facing the sky, with the letters' tops toward the
-            // building: read by a man walking up to the door, not by one inside it.
-            mark.SetPositionAndRotation(
-                new Vector3(at.x, at.y + Lift, at.z),
-                Quaternion.LookRotation(Vector3.up, -outward));
+            // Flat on the ground with the letters' tops toward the building: read by a
+            // man walking up to the door, not by one inside it. Forward points INTO the
+            // ground, because the visible face of a flat mesh is -forward - aimed at the
+            // sky, every word here was read from its back, which is to say mirrored.
+            mark.SetPositionAndRotation(step + outward * ArrowTip,
+                Quaternion.LookRotation(Vector3.down, -outward));
 
             var arrow = new GameObject("Arrow", typeof(MeshFilter), typeof(MeshRenderer));
             arrow.transform.SetParent(mark, false);
@@ -202,7 +214,7 @@ namespace RoadDemo
 
             Word(mark, front.Role, tint, RoleMid, RoleHeight, 1f);
             Word(mark, front.GangName, tint, HouseMid, HouseHeight, 0.78f);
-            return mark;
+            return new Mark { Front = front, Paint = mark, Step = step, Out = outward };
         }
 
         /// <summary>One line of the mark's lettering, laid in the same flat frame as the
@@ -245,11 +257,16 @@ namespace RoadDemo
 
             foreach (var pair in _marks)
             {
-                var paint = pair.Value.Paint;
+                var mark = pair.Value;
+                var paint = mark.Paint;
                 if (paint == null) continue;
-                var boom = Mathf.Max(1f, _cam.transform.position.y - paint.position.y);
-                paint.localScale = Vector3.one *
-                    Mathf.Clamp(boom / TrueSizeHeight, 1f, MaxGrowth);
+                var boom = Mathf.Max(1f, _cam.transform.position.y - mark.Step.y);
+                var grown = Mathf.Clamp(boom / TrueSizeHeight, 1f, MaxGrowth);
+                paint.localScale = Vector3.one * grown;
+                // Grown OUT of the door rather than about its own middle: scaled in
+                // place the arrow would drive its tip through the wall and drag the
+                // words into the road.
+                paint.position = mark.Step + mark.Out * (ArrowTip * grown);
             }
         }
 

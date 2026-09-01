@@ -1080,6 +1080,7 @@ namespace RoadDemo
             destination = world;
             if (unit == null || unit.Boss == null || unit.Boss.Dead) return false;
             CallOffRaids(unit, "a move order");
+            NoteRetask(unit);
             unit.TargetUnit = null;
             unit.OrderedAt = Time.time;
 
@@ -1181,6 +1182,17 @@ namespace RoadDemo
                     stagger ? HoodBeat() : 0f, keepOffRoad);
                 man.Urgent = run;
             }
+        }
+
+        /// <summary>A direct order to one of the outfit's crews countermands its
+        /// territory errand - the doorstep walk, the collection round. MarchTo stays out
+        /// of this on purpose: the round system marches crews leg by leg through it, and
+        /// a round that cancelled itself walking its own route banked nothing ever.</summary>
+        void NoteRetask(Unit unit)
+        {
+            if (unit == null || unit.Faction != 0)
+                return;
+            TerritoryRuntime.Instance?.CallOffErrands(unit.CrewId);
         }
 
         /// <summary>The first man of this crew still on his feet - who leads it when the
