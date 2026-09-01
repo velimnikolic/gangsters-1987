@@ -146,6 +146,12 @@ namespace RoadDemo
         // ------------------------------------------------------------------ wiring
 
         RoadDemoBuilder _builder;
+
+        /// <summary>The city the plate is drawn from, for the chrome that has to read
+        /// the city's own plan rather than the survey - the block chips and quarter
+        /// plates over the paper.</summary>
+        public RoadDemoBuilder City => _builder;
+
         Transform _blockRoot;
         DemoCrews _crews;
         CrewOverlay _crewOverlay;
@@ -157,6 +163,20 @@ namespace RoadDemo
         readonly TurfMapSurvey _survey = new TurfMapSurvey();
         readonly TurfPlate _live = new TurfPlate();
         TurfMapLabels _lettering;
+
+        /// <summary>The city's own names over the paper - a chip on every block and the
+        /// quarter's name across the middle of the neighbourhood. The SAME rig the O
+        /// overlay prints out in the street, so the map and the street cannot come to
+        /// two different readings of who holds what.</summary>
+        readonly TerritoryPlaques _places = new TerritoryPlaques();
+        RectTransform _placesRoot;
+
+        /// <summary>The map's own crossing to night, on the shared HUD table, and the
+        /// wash that darkens the plate under it.</summary>
+        readonly HudNight _night = new HudNight();
+        RectTransform _nightRect;
+        Image _nightInk;
+        float _nightRegistered = -1f;
         TurfMapBuildingLayer _buildingLayer;
         TurfMinimap _minimapView;
 
@@ -462,14 +482,96 @@ namespace RoadDemo
                 return;
             }
 
+            // O is the same key on the paper as it is out in the street: it puts the
+            // city's names up and takes them down. The street overlay stands down while
+            // the map is out, so exactly one of the two ever reads the press - and they
+            // read it onto the SAME switch, so the names are found as they were left
+            // whichever side of the map line the player is on.
+            if (keyboard != null && keyboard.oKey.wasPressedThisFrame)
+            {
+                TerritoryPlaques.Toggle();
+                // paper, because that is what the plan is drawn as
+                DemoAudio.Ui(DemoSounds.Paper);
+            }
+
             PumpSurvey();
             FitSheet();
             Pointer();
             Zoom();
             Steer();
             DrawLive();
+            Places();
 
             _mapChrome.Refresh();
+            Night();
+        }
+
+        /// <summary>
+        /// The block chips and the quarter names over the ground they belong to.
+        ///
+        /// Built on the first frame the plan is there to build them from - the city
+        /// finishes its territory plan during its own build and the map is standing by
+        /// then, but a streamed city may finish later and a map that decided once at
+        /// Start would carry no names for the rest of the session.
+        /// </summary>
+        void Places()
+        {
+            if (_placesRoot == null)
+                return;
+
+            // Down with the switch, and not built at all until it is first thrown: a
+            // chip per block is a hundred small objects nobody has asked for yet.
+            bool shown = TerritoryPlaques.Shown;
+            if (_placesRoot.gameObject.activeSelf != shown)
+                _placesRoot.gameObject.SetActive(shown);
+            if (!shown)
+                return;
+
+            if (_places.Count == 0)
+            {
+                if (!TerritoryPlaques.Available(_builder))
+                    return;
+                _places.Build(_placesRoot, _builder);
+            }
+
+            _places.Layout(OnPlate, _pixelsPerMetre);
+        }
+
+        /// <summary>Where the plate puts a piece of ground, and whether it is far enough
+        /// inside the window to carry a name. The margin is what stops a chip from
+        /// standing half off the screen at the edge of the paper.</summary>
+        bool OnPlate(Vector3 world, out Vector2 screen)
+        {
+            const float Margin = 40f;
+            screen = WorldToScreen(new Vector2(world.x, world.z));
+            return screen.x >= Margin && screen.y >= Margin &&
+                   screen.x <= Screen.width - Margin &&
+                   screen.y <= Screen.height - Margin;
+        }
+
+        /// <summary>
+        /// The map after dark: the shared HUD table over every piece of chrome on this
+        /// canvas, and the wash over the paper.
+        ///
+        /// The register is refilled on a slow tick rather than per frame because the
+        /// chrome is rebuilt from under it - the key restrikes whenever a family
+        /// appears on the ground, the menu is built when it opens - and a graphic that
+        /// was never registered would stand in its day colour on a night sheet. Twice a
+        /// second is far under the eye and far over the rate anything here is rebuilt
+        /// at.
+        /// </summary>
+        void Night()
+        {
+            const float Sweep = 0.5f;
+            if (Time.unscaledTime - _nightRegistered >= Sweep)
+            {
+                _nightRegistered = Time.unscaledTime;
+                _night.ForgetDead();
+                _night.Register(_canvas != null ? _canvas.transform : null);
+            }
+
+            _night.Relight();
+            PaintNight();
         }
 
         void Show(bool on)
@@ -749,8 +851,19 @@ namespace RoadDemo
             _lettering.Attach(_sheet);
             EnsureMapLayerOrder();
 
+            // The city's names, on the CANVAS rather than on the sheet. A street name
+            // is cartography and belongs to the paper - it turns and foreshortens with
+            // it. A block chip is a label the player reads, so it stands upright at
+            // every heading, like every other chip on this screen, and is placed each
+            // frame from the survey's own projection.
+            //
+            // Over the plate and under the key, the menu and the tip, which are built
+            // after it and are the only things allowed to cover a name.
+            _placesRoot = DemoUi.NewRect("Places", go.transform);
+            DemoUi.Fill(_placesRoot);
+
             _mapChrome = go.AddComponent<TurfMapPanel>();
-            _mapChrome.Init(this, showPanel: false, showMapChrome: true);
+            _mapChrome.Init(this, showMapChrome: true);
         }
 
         RawImage Layer(string name, Texture2D texture, Material material)
@@ -790,6 +903,11 @@ namespace RoadDemo
         const float EasyZoom = 1.06f, EasyPan = 0.035f;
 
         float _sheetScale = 1f, _sheetHeading, _sheetTilt = 1f;
+
+        /// <summary>How many screen pixels a metre of ground is worth at the boom's
+        /// current height. The chips over the blocks stand down when the ground they
+        /// name gets smaller than the words.</summary>
+        float _pixelsPerMetre = 1f;
         float _indicatorScale = 1f;
         Vector2 _sheetAt;
 
@@ -1000,6 +1118,7 @@ namespace RoadDemo
                 ? Mathf.Max(40f, _rig.distance * DemoCamera.BoomToMetres)
                 : drawn.height;
             float screenPerMetre = Mathf.Max(1f, Screen.height) / down;
+            _pixelsPerMetre = screenPerMetre;
 
             _sheetScale = drawn.height / TurfPlate.RH * screenPerMetre;
             float ui = UiScale;
@@ -1129,9 +1248,74 @@ namespace RoadDemo
                     volumes.SetSiblingIndex(afterGround);
             }
 
+            EnsureNightWash();
+
             if (_liveImage != null &&
                 _liveImage.transform.GetSiblingIndex() != _sheet.childCount - 1)
                 _liveImage.transform.SetAsLastSibling();
+        }
+
+        /// <summary>
+        /// The night over the paper: one wash across the whole sheet, laid on the
+        /// cartography and UNDER the street names and every live tactical mark.
+        ///
+        /// The plate is a raster drawn on a worker thread out of one fixed palette, so
+        /// there is no second, darker palette to draw it in - and there must not be, or
+        /// every step of the twilight would cost a full survey. A wash costs one
+        /// transparent quad, dims the terrain, the roads and the footprints exactly the
+        /// way a lamp does, and leaves the names and the crews at the strength they are
+        /// read at noon.
+        ///
+        /// Adopts a wash left by the previous script when the assembly reloads in Play,
+        /// rather than stacking a second one over the first.
+        /// </summary>
+        void EnsureNightWash()
+        {
+            if (_sheet == null)
+                return;
+
+            if (_nightRect == null)
+            {
+                _nightRect = _sheet.Find("Night") as RectTransform;
+                if (_nightRect == null)
+                {
+                    _nightRect = DemoUi.NewRect("Night", _sheet);
+                    DemoUi.Fill(_nightRect);
+                }
+
+                // Never `??` onto an AddComponent: a destroyed-but-not-null Unity
+                // object is not null to the operator, and a missing one is.
+                _nightInk = _nightRect.GetComponent<Image>();
+                if (_nightInk == null)
+                    _nightInk = _nightRect.gameObject.AddComponent<Image>();
+                _nightInk.raycastTarget = false;
+                PaintNight();
+            }
+
+            // Directly over the cartography: after the footprint volumes when they are
+            // mounted, otherwise straight after the ground plate.
+            int over = _buildingLayer != null && _buildingLayer.transform.parent == _sheet
+                ? _buildingLayer.transform.GetSiblingIndex()
+                : _groundImage != null ? _groundImage.transform.GetSiblingIndex() : 0;
+            if (_nightRect.GetSiblingIndex() != over + 1)
+                _nightRect.SetSiblingIndex(over + 1);
+        }
+
+        /// <summary>How dark the paper stands right now. Quantised by the shared table,
+        /// so the wash and the chrome cross at the same moment, and switched off
+        /// entirely by day rather than left as a clear full-screen quad.</summary>
+        void PaintNight()
+        {
+            if (_nightInk == null)
+                return;
+
+            var wash = HudNight.PlateWash();
+            if (Mathf.Abs(_nightInk.color.a - wash.a) > 0.001f)
+                _nightInk.color = wash;
+
+            bool lit = wash.a > 0.002f;
+            if (_nightInk.enabled != lit)
+                _nightInk.enabled = lit;
         }
 
         /// <summary>Adopts a sheet built before this field existed when scripts reload

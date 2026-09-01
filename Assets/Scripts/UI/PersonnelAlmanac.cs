@@ -243,6 +243,12 @@ namespace LivingCity.UI
         int paintedGangVersion = -1;
         int paintedTerritoryVersion = -1;
         int paintedTerritoryObservationVersion = -1;
+
+        /// <summary>The plate the block file was last painted around. A block arrives
+        /// from the streamer seconds after the file opens, and the picture is re-exposed
+        /// when it does - the paper has to be re-read with it, or the sheet keeps saying
+        /// the street is still coming up over a photograph of a finished block.</summary>
+        int paintedExposure = -1;
         bool dirty;
 
         void Start()
@@ -394,6 +400,7 @@ namespace LivingCity.UI
             RunTelex();
 
             var outfitVersion = outfit ? outfit.Version : 0;
+            var exposure = blockCardId.IsValid ? BlockFilm.Get().Exposures : -1;
             var territoryVersion = TerritoryRuntime.Instance
                 ? TerritoryRuntime.Instance.StateVersion
                 : -1;
@@ -413,8 +420,10 @@ namespace LivingCity.UI
                 paintedOutfitVersion != outfitVersion ||
                 paintedGangVersion != Gangs.GangRegistry.Version ||
                 paintedTerritoryVersion != territoryVersion ||
-                paintedTerritoryObservationVersion != territoryObservationVersion)
+                paintedTerritoryObservationVersion != territoryObservationVersion ||
+                paintedExposure != exposure)
             {
+                paintedExposure = exposure;
                 paintedVersion = director.Version;
                 paintedOutfitVersion = outfitVersion;
                 paintedGangVersion = Gangs.GangRegistry.Version;

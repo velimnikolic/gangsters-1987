@@ -248,7 +248,9 @@ namespace RoadDemo
 
             var labels = new string[_clock.SpeedCount + 1];
             for (var i = 0; i < _clock.SpeedCount; i++)
-                labels[i] = _clock.SpeedAt(i).ToString("0.#") + "X";
+                // The design's own multiplication sign, not a capital X: the rung is a
+                // multiplier and the sign says so.
+                labels[i] = _clock.SpeedAt(i).ToString("0.#") + "×";
             labels[_clock.SpeedCount] = "Hold";
 
             LedgerV2.Segmented(_speedBar, 0f, 0f, 26f, labels, rung, Pick,

@@ -83,7 +83,9 @@ namespace RoadDemo
         const float WireHeadTall = 26f;
         const float SlipTall = 56f;
         const float WireGap = 4f;
-        const int WireLines = 4;
+        /// <summary>How many slips the strip carries. The design's own default, inside
+        /// the two-to-six range it lets a boss set.</summary>
+        const int WireLines = 3;
 
         // ---- the ledger key ----
         /// <summary>The width of the left column TurfMapPanel keeps for the crews and
@@ -112,8 +114,7 @@ namespace RoadDemo
         int _paintedCrewFile = -1;
         int _paintedCrewId = int.MinValue;
         int _paintedStanding = -1;
-        TurfOrder _paintedOrder = (TurfOrder)(-1);
-        TextMeshProUGUI _menText, _orderText;
+        TextMeshProUGUI _menText;
 
         // What is painted, so a HUD over a city running at 4x is not rebuilt every frame
         // for a wire nothing has been added to.
@@ -184,6 +185,8 @@ namespace RoadDemo
             scaler.matchWidthOrHeight = 1f;
 
             root.AddComponent<GraphicRaycaster>();
+            // The design's whole hud region stands at four fifths, so the city reads
+            // through every panel on it.
             root.AddComponent<CanvasGroup>().alpha = HudNight.Alpha;
 
             // The design lays a wide vignette over the city before any panel goes down:
@@ -200,9 +203,9 @@ namespace RoadDemo
             shade.SetAsFirstSibling();
 
             // The design's vignette is a SIBLING of the map layer, outside the hud
-            // region - so it is laid at full strength and the 20% the panels are seeing
-            // through is 20% of an already darkened street. Riding inside the group
-            // would put the wash at eight tenths as well, and the panels would be
+            // region - so it is laid at full strength and the fifth the panels are
+            // seeing through is a fifth of an already darkened street. Riding inside the
+            // group would put the wash at four fifths as well, and the panels would be
             // reading through onto a brighter city than the design ever shows.
             shade.gameObject.AddComponent<CanvasGroup>().ignoreParentGroups = true;
 
@@ -283,6 +286,10 @@ namespace RoadDemo
                     continue;
                 stamp = stamp * 31 + crew.Id;
                 stamp = stamp * 31 + crew.MenStanding;
+                // What he is doing is printed on the chip and nowhere else now, so an
+                // order landing has to redraw the row - the file it used to be written
+                // into a second time is the design's CREWS AFIELD column, gone.
+                stamp = stamp * 31 + (int)crew.Order;
             }
             return stamp;
         }
@@ -384,11 +391,22 @@ namespace RoadDemo
             var name = LedgerV2.Name(chip, textX, -2f, textW, crew.Name, 15f);
             name.raycastTarget = false;
 
+            // Upper case, as every measured label on this HUD is: the design sets the
+            // chip's status line in the mono face's caps.
             var note = LedgerV2.Mono(chip, textX, -22f, textW,
-                TurfOrders.Label(crew.Order), 10.8f, LedgerV2.Muted, 10f);
+                TurfOrders.Label(crew.Order).ToUpperInvariant(), 10.8f, LedgerV2.Muted,
+                10f);
             note.raycastTarget = false;
 
-            LedgerV2.StreetMark(chip, textX, -44f, LedgerV2.Red, 8f);
+            // The design's two marks, and they say different things: a SOLID red square
+            // for a lieutenant whose men are out on the street, and the hatched blue
+            // one - the ink the book writes what is only on PAPER in - for a man who is
+            // in the house. A crew walking home or with nobody left standing is not
+            // afield, and printing the street's own mark beside it would say it was.
+            if (Afield(crew))
+                LedgerV2.StreetMark(chip, textX, -44f, LedgerV2.Red, 8f);
+            else
+                LedgerV2.PaperMark(chip, textX, -44f, LedgerV2.PaperBlue, 8f);
             var men = LedgerV2.Figure(chip, textX + 13f, -36f, textW - 13f,
                 crew.MenStanding + " men", 13.2f, LedgerV2.Ink,
                 TextAlignmentOptions.MidlineLeft);
@@ -459,12 +477,14 @@ namespace RoadDemo
                 _paintedStanding = crew.MenStanding;
                 _menText.text = MenLine(crew);
             }
-            if (_orderText != null && crew.Order != _paintedOrder)
-            {
-                _paintedOrder = crew.Order;
-                _orderText.text = TurfOrders.Label(crew.Order);
-            }
         }
+
+        /// <summary>Are this lieutenant's men out on the street, or is he in the house?
+        /// The design carries the answer as a MARK rather than a word - solid for the
+        /// street, hatched for the paper - and the two states it draws are exactly
+        /// these: somebody standing out there, and nobody.</summary>
+        static bool Afield(TurfCrew crew) =>
+            crew.MenStanding > 0 && crew.Order != TurfOrder.ToTheOutfit;
 
         static string MenLine(TurfCrew crew) =>
             crew.MenStanding + " of " + (crew.HoodsOnBooks + 1) + " men";
@@ -475,15 +495,13 @@ namespace RoadDemo
                 Destroy(_fileRoot.gameObject);
             _fileRoot = null;
             _night.ForgetDead();
-            _menText = _orderText = null;
+            _menText = null;
             _paintedStanding = -1;
-            _paintedOrder = (TurfOrder)(-1);
 
             if (crew == null)
                 return;
 
             _paintedStanding = crew.MenStanding;
-            _paintedOrder = crew.Order;
 
             var card = LedgerV2.Card("Personal file", _canvas.transform, 0f, -FileTop,
                 FileWide, 10f);
@@ -499,16 +517,16 @@ namespace RoadDemo
             var textX = FilePad + PlateWide + 10f;
             var textW = FileWide - textX - FilePad;
             LedgerV2.Name(card, textX, y - 2f, textW, crew.Name);
-            if (crew.Rank.Length > 0)
-                LedgerV2.Mono(card, textX, y - 24f, textW, crew.Rank, 9f, LedgerV2.Red, 10f);
 
-            // A solid mark: these are men standing on a street, not a number on a page.
-            LedgerV2.StreetMark(card, textX, y - 44f, LedgerV2.Red, 9f);
-            _menText = LedgerV2.Figure(card, textX + 15f, y - 45f, textW - 15f,
-                MenLine(crew), 13f, LedgerV2.Ink, TextAlignmentOptions.MidlineLeft);
-
-            _orderText = LedgerV2.Mono(card, textX, y - 66f, textW,
-                TurfOrders.Label(crew.Order), 9.5f, LedgerV2.Muted, 8f);
+            // The name, and under it his headcount. NOTHING else: the design puts the
+            // rank and what he is doing on the CHIP at the top of the screen, and a
+            // dossier that prints them a second time is the CREWS AFIELD column all
+            // over again - the same fact in two places, drifting apart the moment
+            // either is touched. A solid mark, because these are men standing on a
+            // street and not a number on a page.
+            LedgerV2.StreetMark(card, textX, y - 28f, LedgerV2.Red, 9f);
+            _menText = LedgerV2.Figure(card, textX + 15f, y - 29f, textW - 15f,
+                MenLine(crew), 15.6f, LedgerV2.Ink, TextAlignmentOptions.MidlineLeft);
 
             y -= PlateTall + 10f;
 
@@ -523,8 +541,11 @@ namespace RoadDemo
             y -= 4f;
             Rule(card, FilePad, y, FileWide - FilePad * 2f, LedgerV2.Hair);
             y -= 10f;
-            LedgerV2.Mono(card, FilePad, y, FileWide - FilePad * 2f, "Carrying", 9.5f,
-                LedgerV2.Label, 10f);
+            // The design's caption is 10px on a 0.16em tape - a hair larger and a good
+            // deal wider than the kit's default label, which is what makes it read as a
+            // caption over two boxes rather than a fourth stat row.
+            LedgerV2.Mono(card, FilePad, y, FileWide - FilePad * 2f, "CARRYING", 12f,
+                LedgerV2.Label, 16f);
             y -= 18f;
             y = Band(card, y, crew.Gun);
             y = Band(card, y, crew.Ride);
@@ -541,6 +562,12 @@ namespace RoadDemo
             card.sizeDelta = new Vector2(FileWide, -y);
             _night.Register(card);
         }
+
+        /// <summary>What the six order keys are lettered at. The design overrides the
+        /// kit's own key here - [data-key-cell] sets 11px against the DS key's 8.7 -
+        /// because these six are the panel's verbs and not a row of filters, and at the
+        /// kit's size they read as small print on a card of stat rows.</summary>
+        const float OrderKeyType = 13.2f;
 
         /// <summary>
         /// The six orders, three to a row, exactly as the crew column offered them and
@@ -579,15 +606,15 @@ namespace RoadDemo
         void Order(RectTransform card, float x, float y, float w, float h, TurfCrew crew,
             string label, TurfOrder order, LedgerV2.Key key) =>
             LedgerV2.Button(card, label, x, y, w, h,
-                () => _hud.Order(order, crew.Plan, null), key, 9f);
+                () => _hud.Order(order, crew.Plan, null), key, OrderKeyType);
 
         /// <summary>One trade: the word, and the ten-mark meter the personnel file and
         /// the plate both print it on. Never a star rating of its own.</summary>
         static float Trade(RectTransform card, float y, string label, int halfSteps)
         {
             var pipsX = FileWide - FilePad - LedgerV2.PipsWidth(Meter, 5f, 7f);
-            LedgerV2.Mono(card, FilePad, y, pipsX - FilePad - 6f, label, 10f,
-                LedgerV2.Label, 8f);
+            LedgerV2.Mono(card, FilePad, y, pipsX - FilePad - 6f,
+                label.ToUpperInvariant(), 13.2f, LedgerV2.Label, 10f);
             LedgerV2.Pips(card, pipsX, y - 9f, Meter, Mathf.Clamp(halfSteps, 0, Meter),
                 LedgerV2.Red, 5f, 11f, 7f);
             return y - 20f;
@@ -614,9 +641,13 @@ namespace RoadDemo
             // The design's close is a grey glyph in the band, not a red key: red is
             // the ink of a verb that undoes something, and shutting a file undoes
             // nothing.
-            var shut = LedgerV2.Button(card, "x", FileWide - 30f, 4f, 22f, 22f,
+            var shut = LedgerV2.Button(card, "\u00d7", FileWide - 26f, -2f, 22f, 22f,
                 () => _hud.ClearInspection(), LedgerV2.Key.Ghost, 18f);
             shut.color = LedgerV2.HeadDim;
+            // Grey until the pointer is on it, and then the rail's red: shutting a file
+            // undoes nothing, so the key is not red until it is about to be pressed.
+            HoverTint.On((RectTransform)shut.transform.parent, shut, LedgerV2.HeadDim,
+                LedgerStyle.RailRed);
             return -tall - 8f;
         }
 
@@ -628,7 +659,10 @@ namespace RoadDemo
             PlaceTopLeft(band, FilePad, y, FileWide - FilePad * 2f, 20f);
             Fill(band, LedgerV2.PanelBand);
             Frame(band, 1f, LedgerV2.Hair);
-            var line = Line(band, LedgerStyle.Type, 12f, LedgerV2.Ink, 6f, -1f,
+            // The design sets these two in the typewriter face at 12px. Lekton prints
+            // larger than the face this book's sizes were written against - the measured
+            // 1.082 - so 12px on the page is 11.1 asked for here.
+            var line = Line(band, LedgerStyle.Type, 11.1f, LedgerV2.Ink, 6f, -1f,
                 FileWide - FilePad * 2f - 12f, 18f, text);
             line.overflowMode = TextOverflowModes.Ellipsis;
             return y - 24f;
@@ -779,8 +813,11 @@ namespace RoadDemo
 
             var head = NewRect("Head", root);
             PlaceTopLeft(head, 0f, 0f, WireWide, WireHeadTall);
-            Fill(head, LedgerV2.Head);
+            var headFace = Fill(head, LedgerV2.Head);
             RowButton(head, ClickSurface(head), () => _wireOpen = !_wireOpen);
+            // The design lifts the band a shade under the pointer, so a strip that can
+            // be shut says so before it is pressed.
+            HoverTint.On(head, headFace, LedgerV2.Head, LedgerV2.Rgb2(0x241c17));
 
             var title = Caps(head, 9f, -(WireHeadTall - LineBox(13.9f)) * 0.5f, 180f,
                 "The wire", 13.9f, LedgerV2.HeadCream, 18f);
@@ -802,7 +839,7 @@ namespace RoadDemo
 
             var caret = Line(head, LedgerStyle.MonoBold, 13.2f, LedgerStyle.RailGold,
                 WireWide - 26f, -(WireHeadTall - 16f) * 0.5f, 18f, 16f,
-                _wireOpen ? "-" : "+",
+                _wireOpen ? "\u2014" : "+",
                 TextAlignmentOptions.MidlineRight);
             caret.raycastTarget = false;
 
@@ -818,9 +855,34 @@ namespace RoadDemo
                     line.Source, line.Stamp, line.Body, line.Ink, line.Tag.Length > 0);
                 if (line.Tag.Length > 0)
                     Tag(slip, line);
+
+                // The design rules the slip's edge in the kind's own ink at FULL
+                // strength - the wire is read by colour before it is read by word, and
+                // the kit's own edge is laid at three fifths, which on a slip already
+                // stepped back by age comes out as no colour at all.
+                var edge = slip.Find("Edge");
+                if (edge != null)
+                {
+                    var ink = edge.GetComponent<Image>();
+                    if (ink != null)
+                        ink.color = line.Ink;
+                }
+
                 // Newest at full strength and the ones behind it stepping back: the wire
-                // is read from the top, and the tail is only there for context.
-                slip.gameObject.AddComponent<CanvasGroup>().alpha = 1f - i * 0.18f;
+                // is read from the top, and the tail is only there for context. It steps
+                // back by AGE and not by importance, so the pointer brings any of them
+                // back to full - a boss reading the third slip down is reading it, not
+                // glancing past it.
+                var group = slip.gameObject.AddComponent<CanvasGroup>();
+                var fade = slip.gameObject.AddComponent<WireSlip>();
+                fade.Rest = 1f - i * 0.18f;
+                fade.Group = group;
+                // The newest slip arrives: it comes in from eight units above and fades
+                // up over the design's 260ms, so a message landing on a busy screen is
+                // seen to land instead of merely being there next time the eye passes.
+                fade.Arrive = i == 0;
+                ClickSurface(slip);
+
                 y -= tall + WireGap;
             }
             root.sizeDelta = new Vector2(WireWide, -y);
@@ -877,8 +939,9 @@ namespace RoadDemo
             root.sizeDelta = new Vector2(KeyWide, KeyTall);
             _keyRoot = root;
 
-            Fill(root, LedgerStyle.RailGold);
+            var face = Fill(root, LedgerStyle.RailGold);
             RowButton(root, ClickSurface(root), OpenLedger);
+            HoverTint.On(root, face, LedgerStyle.RailGold, LedgerV2.Rgb2(0xf7d788));
 
             // Both words are centred on the key's own height rather than hung from its
             // top: a line box is taller than the type in it and taller again for larger
@@ -922,6 +985,117 @@ namespace RoadDemo
                 Ride?.Invoke();
             else if (eventData.button == PointerEventData.InputButton.Left)
                 Pick?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// A surface that lifts a shade under the pointer, in the design's own second
+    /// colour rather than a brightness multiplier.
+    ///
+    /// Unity's own Button tint MULTIPLIES the graphic it is given, which cannot reach a
+    /// named hex: the ledger key's hover is #f7d788 against a gold of #d4a73e, and no
+    /// single factor takes one to the other. And the colour it goes back to is asked of
+    /// <see cref="HudNight.Cross"/> rather than remembered, because a band remembered at
+    /// build is a DAY colour that would be repainted onto a night panel the first time
+    /// the pointer left it.
+    /// </summary>
+    sealed class HoverTint : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+    {
+        Graphic _face;
+        Color _rest, _over;
+
+        public static void On(RectTransform rect, Graphic face, Color rest, Color over)
+        {
+            var tint = rect.gameObject.AddComponent<HoverTint>();
+            tint._face = face;
+            tint._rest = rest;
+            tint._over = over;
+        }
+
+        public void OnPointerEnter(PointerEventData eventData)
+        {
+            if (_face != null)
+                _face.color = _over;
+        }
+
+        public void OnPointerExit(PointerEventData eventData)
+        {
+            if (_face != null)
+                _face.color = HudNight.Cross(_rest);
+        }
+    }
+
+    /// <summary>
+    /// How one slip on the wire behaves: it arrives, it steps back as the strip fills
+    /// behind it, and it comes back to full under the pointer.
+    ///
+    /// The stepping back is by AGE - the newest slip is at full and each one behind it
+    /// is a fifth fainter - which is a way of SORTING, not of saying that an older
+    /// message matters less. So the pointer undoes it: a boss reading the third slip
+    /// down is reading it, and it prints as solid as the first.
+    ///
+    /// Unscaled time throughout. The clock has a HOLD rung and runs at four times as
+    /// well, and a message landing must take the same quarter second to land at every
+    /// one of them.
+    /// </summary>
+    sealed class WireSlip : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+    {
+        /// <summary>The design's own three figures: how long a slip takes to arrive,
+        /// how far above its place it starts, and how long the fade under the pointer
+        /// takes.</summary>
+        const float ArriveSeconds = 0.26f, ArriveRise = 8f, HoverSeconds = 0.14f;
+
+        public CanvasGroup Group;
+
+        /// <summary>What this slip prints at when the pointer is elsewhere.</summary>
+        public float Rest = 1f;
+
+        /// <summary>Whether this one is the message that just came in.</summary>
+        public bool Arrive;
+
+        RectTransform _rect;
+        Vector2 _home;
+        float _arrival, _shown;
+        bool _hover;
+
+        void Start()
+        {
+            _rect = (RectTransform)transform;
+            _home = _rect.anchoredPosition;
+            _arrival = Arrive ? 0f : 1f;
+            _shown = Arrive ? 0f : Rest;
+            Apply();
+        }
+
+        public void OnPointerEnter(PointerEventData eventData) => _hover = true;
+        public void OnPointerExit(PointerEventData eventData) => _hover = false;
+
+        void Update()
+        {
+            if (Group == null)
+                return;
+
+            var step = Time.unscaledDeltaTime;
+            if (_arrival < 1f)
+                _arrival = Mathf.Min(1f, _arrival + step / ArriveSeconds);
+
+            var want = _hover ? 1f : Rest;
+            _shown = Mathf.MoveTowards(_shown, want, step / HoverSeconds);
+            Apply();
+        }
+
+        /// <summary>Where the slip stands and how solid it is, this frame. The arrival
+        /// eases OUT - fast off the mark and settling in - which is the curve the design
+        /// names, and it multiplies the resting strength rather than replacing it, so a
+        /// slip that lands already stepped back lands at the strength it will keep.
+        /// </summary>
+        void Apply()
+        {
+            var eased = 1f - (1f - _arrival) * (1f - _arrival);
+            Group.alpha = _shown * eased;
+            if (_rect != null)
+                _rect.anchoredPosition =
+                    new Vector2(_home.x, _home.y + ArriveRise * (1f - eased));
         }
     }
 }

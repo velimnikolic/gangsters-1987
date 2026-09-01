@@ -33,9 +33,11 @@ namespace RacketeeringDemo
         const int DemoCrewId = 1987;
         const int FeedBagCrewId = DemoCrewId + 1;
         const int InteriorFeedLayer = 29;
+        const string ViewerRootName = "Live City Racket Animation Viewer";
         const float FloorY = 0.26f;
         const float SetOffAfter = 1f;
         const float CompleteHold = 1.8f;
+        const float DamageHold = 4f;
 
         static readonly Vector3 StreetStart = new Vector3(0f, FloorY, 11f);
         // The authored front doors sit on z=4.21 and the character bounds reach about
@@ -120,11 +122,66 @@ namespace RacketeeringDemo
         float _nextSwingAt;
         bool _damageApplied;
         Transform _damageVisual;
+        Transform _molotovVisual;
 
         void Awake()
         {
-            if (transform.Find("Live City Racket Animation Viewer") != null)
+            EnsureBuilt();
+        }
+
+        void OnEnable()
+        {
+            // Unity preserves scene-object references across a hot reload, but the
+            // plain C# CrewWalker is intentionally not serialized. Rebuild the thin
+            // viewer instead of leaving a perfectly rendered actor that can no longer
+            // tick any of the shared city actions.
+            if (Application.isPlaying && (_runtime == null || _walker == null))
+                EnsureBuilt();
+        }
+
+        void EnsureBuilt()
+        {
+            if (_runtime != null && _walker != null)
                 return;
+
+            var staleRuntime = _runtime != null
+                ? _runtime
+                : transform.Find(ViewerRootName);
+            if (staleRuntime != null)
+            {
+                staleRuntime.gameObject.SetActive(false);
+                Destroy(staleRuntime.gameObject);
+            }
+
+            BagCarry.Drop(DemoCrewId, banked: true);
+            BagCarry.Drop(FeedBagCrewId, banked: true);
+            _walker?.Dispose();
+            _feedVisitor?.Dispose();
+            _feedOwner?.Dispose();
+            if (_feedTexture != null)
+            {
+                _feedTexture.Release();
+                Destroy(_feedTexture);
+            }
+            if (_damageVisual != null)
+                Destroy(_damageVisual.gameObject);
+            if (_molotovVisual != null)
+                Destroy(_molotovVisual.gameObject);
+            TestBench.DestroyAll(_materials);
+
+            _runtime = null;
+            _actor = null;
+            _shop = null;
+            _feedRoot = null;
+            _feedVisitorActor = null;
+            _walker = null;
+            _feedVisitor = null;
+            _feedOwner = null;
+            _camera = null;
+            _feedCamera = null;
+            _feedTexture = null;
+            _damageVisual = null;
+            _molotovVisual = null;
 
             _originalTimeScale = Time.timeScale;
             Build();
@@ -132,7 +189,7 @@ namespace RacketeeringDemo
 
         void Build()
         {
-            _runtime = new GameObject("Live City Racket Animation Viewer").transform;
+            _runtime = new GameObject(ViewerRootName).transform;
             _runtime.SetParent(transform, false);
 
             MakeMaterials();
@@ -385,7 +442,8 @@ namespace RacketeeringDemo
                     ReadSharedDoorBeat();
             }
 
-            if (_returned && Time.time - _arrivedAt >= CompleteHold)
+            var hold = IsWrecking(_selected) ? DamageHold : CompleteHold;
+            if (_returned && Time.time - _arrivedAt >= hold)
             {
                 var next = _restartQueued ? _queuedAction : _selected;
                 RestartNow(next);
@@ -571,49 +629,92 @@ namespace RacketeeringDemo
         {
             _visitCalled = true;
             _visitStartedAt = Time.time;
+            _damageApplied = false;
+
+            if (_selected == DemoAction.TorchShop)
+            {
+                _phase = "MOLOTOVPROJECTILE · LIGHTING AND THROWING";
+                var projectile = MolotovProjectile.ThrowAt(
+                    _walker,
+                    DoorThreshold + Vector3.up * 0.85f,
+                    DoorThreshold,
+                    Vector3.forward,
+                    "RACKET DEMO",
+                    FloorY,
+                    OnTorchIgnited);
+                if (projectile != null)
+                {
+                    _molotovVisual = projectile.transform;
+                    return;
+                }
+
+                _phase = "MOLOTOV THROW REFUSED · COMPLETE";
+                _visitCalled = false;
+                _returned = true;
+                _arrivedAt = Time.time;
+                return;
+            }
+
             _swingCount = 0;
             _nextSwingAt = Time.time;
-            _damageApplied = false;
-            _phase = _selected == DemoAction.SmashUpShop
-                ? "CREWJOBS.SMASHUP · READY AT THE SHOPFRONT"
-                : "CREWJOBS.TORCH · READY AT THE SHOPFRONT";
+            _phase = "CREWJOBS.SMASHUP · TWO QUICK BLOWS AT THE SHOPFRONT";
             TickWreckingAction();
         }
 
         void TickWreckingAction()
         {
-            if (_swingCount < CrewJobs.PremisesSwingRounds)
+            if (_selected == DemoAction.TorchShop)
+            {
+                // The projectile normally finishes through OnTorchIgnited. This is only
+                // a defensive escape if its scene object was removed mid-flight.
+                if (!_damageApplied && _molotovVisual == null &&
+                    Time.time - _visitStartedAt > 2.5f)
+                {
+                    _damageVisual = ShopDamage.ScorchAt(
+                        DoorThreshold, Vector3.forward, "RACKET DEMO", FloorY);
+                    CompleteDamageAction("SHOPDAMAGE.SCORCHAT · PREMISES BURNING");
+                }
+                return;
+            }
+
+            if (_swingCount < CrewJobs.PremisesSmashRounds)
             {
                 if (Time.time < _nextSwingAt || ArmBeat.Acting(_walker))
                     return;
 
-                if (!ArmBeat.Swing(_walker, DoorThreshold, CrewJobs.PremisesSwingFor))
+                if (!ArmBeat.Swing(
+                    _walker, DoorThreshold, CrewJobs.PremisesSmashFor))
                 {
                     _phase = "ARMBEAT REFUSED THE EXISTING CITY SWING";
                     return;
                 }
 
                 _swingCount++;
-                _nextSwingAt = Time.time + CrewJobs.PremisesSwingEvery;
-                _phase = (_selected == DemoAction.SmashUpShop
-                        ? "ARMBEAT.SWING · SMASH ROUND "
-                        : "ARMBEAT.SWING · TORCH PREP ROUND ") +
-                    _swingCount + "/" + CrewJobs.PremisesSwingRounds;
+                _nextSwingAt = Time.time + CrewJobs.PremisesSmashEvery;
+                _phase = "ARMBEAT.SWING · SMASH BLOW " +
+                    _swingCount + "/" + CrewJobs.PremisesSmashRounds;
                 return;
             }
 
             if (ArmBeat.Acting(_walker) || _damageApplied)
                 return;
 
+            _damageVisual = ShopDamage.SmashAt(
+                DoorThreshold, Vector3.forward, "RACKET DEMO", FloorY);
+            CompleteDamageAction("SHOPDAMAGE.SMASHAT · EXTERIOR BOARDS UP");
+        }
+
+        void OnTorchIgnited(Transform damage)
+        {
+            _molotovVisual = null;
+            _damageVisual = damage;
+            CompleteDamageAction("SHOPDAMAGE.SCORCHAT · PREMISES BURNING NOW");
+        }
+
+        void CompleteDamageAction(string phase)
+        {
             _damageApplied = true;
-            _damageVisual = _selected == DemoAction.SmashUpShop
-                ? ShopDamage.SmashAt(
-                    DoorThreshold, Vector3.forward, "RACKET DEMO", FloorY)
-                : ShopDamage.ScorchAt(
-                    DoorThreshold, Vector3.forward, "RACKET DEMO", FloorY);
-            _phase = _selected == DemoAction.SmashUpShop
-                ? "SHOPDAMAGE.SMASHAT · PREMISES WRECKED"
-                : "SHOPDAMAGE.SCORCHAT · PREMISES BURNING";
+            _phase = phase;
             _visitCalled = false;
             _returned = true;
             _arrivedAt = Time.time;
@@ -630,6 +731,11 @@ namespace RacketeeringDemo
             {
                 Destroy(_damageVisual.gameObject);
                 _damageVisual = null;
+            }
+            if (_molotovVisual != null)
+            {
+                Destroy(_molotovVisual.gameObject);
+                _molotovVisual = null;
             }
             _selected = action;
             _queuedAction = action;
@@ -852,9 +958,9 @@ namespace RacketeeringDemo
                 case DemoAction.RaidPremises:
                     return "CITY SOURCE: CrewJobs Raid → DoorBeat.VisitBusiness / VisitThrough → authored inside takes";
                 case DemoAction.SmashUpShop:
-                    return "CITY SOURCE: CrewJobs 4× ArmBeat.Swing → ShopDamage.SmashAt";
+                    return "CITY SOURCE: CrewJobs 2× quick ArmBeat.Swing → exterior ShopDamage.SmashAt";
                 case DemoAction.TorchShop:
-                    return "CITY SOURCE: CrewJobs 4× ArmBeat.Swing → ShopDamage.ScorchAt";
+                    return "CITY SOURCE: Synty MolotovProjectile throw → immediate ShopDamage.ScorchAt";
                 default:
                     return "CITY SOURCE: shared live-city racket sequence";
             }
@@ -977,6 +1083,8 @@ namespace RacketeeringDemo
             BagCarry.Drop(FeedBagCrewId, banked: true);
             if (_damageVisual != null)
                 Destroy(_damageVisual.gameObject);
+            if (_molotovVisual != null)
+                Destroy(_molotovVisual.gameObject);
             _walker?.Dispose();
             _feedVisitor?.Dispose();
             _feedOwner?.Dispose();

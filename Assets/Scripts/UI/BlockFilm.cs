@@ -125,6 +125,12 @@ namespace LivingCity.UI
         /// is already over the right ground.</summary>
         public Rect Ground { get; private set; }
 
+        /// <summary>How many plates this lens has exposed. The sheet around the picture
+        /// is read off the same city the picture is of - what has risen on the block,
+        /// how tall it stands - so a block that arrives late gives the page a new
+        /// photograph AND a reason to read the block again.</summary>
+        public int Exposures { get; private set; }
+
         public Camera Lens => lens;
         public RenderTexture Frame => frame;
 
@@ -136,7 +142,22 @@ namespace LivingCity.UI
         float shotGroundY;
         float shotYaw;
         float shotRise;
-        bool waitingForStream;
+
+        /// <summary>What the streamer had standing when this plate was exposed. A block
+        /// arrives over many frames - composed, activated, then its renderers attached a
+        /// budgeted slice at a time - and a file opened while the city is still coming up
+        /// photographs an empty lot. The shot is taken again whenever this moves.</summary>
+        int shotRevision;
+
+        /// <summary>When the city last changed under an open file, plus a moment for it
+        /// to settle. A block streaming in moves the revision on nearly every frame; the
+        /// plate is exposed once at the end of that, not once per frame of it.</summary>
+        float restageAt;
+
+        /// <summary>How long the city has to hold still before the plate is exposed
+        /// again. Long enough that one arriving block is one re-exposure, short enough
+        /// that the reader sees the block appear rather than waits for it.</summary>
+        const float Settle = 0.3f;
 
         /// <summary>Puts the lens away WITHOUT standing a rig up to do it - the closing
         /// path must not build a camera it is about to switch off.</summary>
@@ -337,12 +358,17 @@ namespace LivingCity.UI
             shotValid = true;
             frameChanged = false;
             // A held residential block may still be composing or attaching when its file
-            // first opens. Keep the first quick exposure, then replace it once with the
-            // complete block; never leave that partial startup frame frozen on the page.
-            waitingForStream = !RoadDemo.CityBlockRecycler.HeldReady(groundWorld);
+            // first opens - a whole block takes seconds to arrive, and the first thing
+            // the file can photograph is the empty ground it will stand on. What was
+            // standing at this moment is remembered, and Update exposes the plate again
+            // every time the city changes it, so the picture catches up with the street
+            // however late the block gets there.
+            shotRevision = RoadDemo.CityBlockRecycler.StreamRevision;
+            restageAt = 0f;
             // One enabled frame is one exposure. CloseShutter switches the lens back off
             // after URP has filled the texture.
             lens.enabled = true;
+            Exposures++;
         }
 
         static bool Same(Rect a, Rect b) =>
@@ -351,15 +377,26 @@ namespace LivingCity.UI
 
         void Update()
         {
-            if (!waitingForStream ||
-                !RoadDemo.CityBlockRecycler.HeldReady(shotGround))
+            if (!shotValid)
                 return;
+
+            var revision = RoadDemo.CityBlockRecycler.StreamRevision;
+            if (revision == shotRevision)
+                return;
+
+            // The city is still moving. Wait for it to stop moving before spending a
+            // stage rebuild on it - a block coming up touches the streamer on nearly
+            // every frame, and one arriving block is worth one photograph.
+            if (restageAt <= 0f)
+                restageAt = Time.unscaledTime + Settle;
+            if (Time.unscaledTime < restageAt)
+                return;
+            restageAt = 0f;
 
             // RaiseStage deliberately reuses a stage for an unchanged rectangle. This is
             // the one time it must not: the old stage was copied while the recycler was
-            // still attaching the block, so rebuild it from the now-complete view and take
-            // one final exposure.
-            waitingForStream = false;
+            // still attaching the block, so rebuild it from the now-complete view and
+            // take the exposure again.
             StrikeStage();
             shotValid = false;
             Look(shotGround, shotGroundY, shotYaw, shotRise);
@@ -848,7 +885,7 @@ namespace LivingCity.UI
             RestoreShadowRange();
             shotValid = false;
             frameChanged = true;
-            waitingForStream = false;
+            restageAt = 0f;
         }
 
         /// <summary>What is standing under a point of the picture, in the picture's own

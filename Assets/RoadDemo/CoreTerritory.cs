@@ -49,6 +49,31 @@ namespace RoadDemo
     }
 
     /// <summary>
+    /// A piece of the city that is DRESSING, not territory: a park, and anything else the
+    /// deal stands on the ground for the look of it. It is walked on like any other ground -
+    /// the roads and the nav mesh are read from the same raster the blocks are - but it
+    /// carries no block id, so nothing in the simulation can hold it, tax it, fear it or
+    /// list it in a block's details. All it keeps is a word for the label over it
+    /// (the user, 2026-09-01: "kao ukras je ... i label treba kaze park").
+    /// </summary>
+    public sealed class CoreDecorationDefinition
+    {
+        public string Label { get; }
+        public string Kind { get; }
+        public CoreQuarterId QuarterId { get; }
+        public Rect LocalBounds { get; }
+
+        internal CoreDecorationDefinition(string label, string kind, CoreQuarterId quarterId,
+                                          Rect localBounds)
+        {
+            Label = label ?? "";
+            Kind = kind ?? "";
+            QuarterId = quarterId;
+            LocalBounds = localBounds;
+        }
+    }
+
+    /// <summary>
     /// Immutable definition of one conquerable quarter. Ownership is deliberately not here:
     /// the same generated plan can be loaded with any campaign state.
     /// </summary>
@@ -91,6 +116,8 @@ namespace RoadDemo
         };
 
         readonly List<CoreBlockDefinition> _blocks = new List<CoreBlockDefinition>();
+        readonly List<CoreDecorationDefinition> _decorations =
+            new List<CoreDecorationDefinition>();
         readonly List<CoreQuarterDefinition> _quarters = new List<CoreQuarterDefinition>();
         readonly Dictionary<int, CoreBlockDefinition> _blockById =
             new Dictionary<int, CoreBlockDefinition>();
@@ -99,6 +126,10 @@ namespace RoadDemo
 
         public int Seed { get; private set; }
         public IReadOnlyList<CoreBlockDefinition> Blocks => _blocks;
+
+        /// <summary>The ground the deal dressed rather than divided - parks. Named so a
+        /// map can print a word over it, and read by nothing else.</summary>
+        public IReadOnlyList<CoreDecorationDefinition> Decorations => _decorations;
         public IReadOnlyList<CoreQuarterDefinition> Quarters => _quarters;
 
         public CoreBlockDefinition Block(int id) =>
@@ -160,6 +191,7 @@ namespace RoadDemo
 
             ordered.Sort(CompareBlocks);
             var ordinal = new Dictionary<CoreQuarterId, int>();
+            int nextId = 0;
             for (int i = 0; i < ordered.Count; i++)
             {
                 var block = ordered[i];
@@ -168,11 +200,24 @@ namespace RoadDemo
                 if (quarter == null)
                     throw new InvalidOperationException($"Core block '{block.Name}' has unknown quarter {block.QuarterId}.");
 
+                // A PARK IS DRESSING, NOT TERRITORY. It is dealt as a block because the road
+                // reader has to see the ground filled, but nobody collects from a lawn: given
+                // a block id it walked into the parcel lines, the chips, presence, fear and
+                // the block's own details as "Downtown Block 06" (the user, 2026-09-01). It
+                // keeps its ground and its name and leaves the ledger alone.
+                if (CoreLayout.IsPark(block))
+                {
+                    block.BlockId = -1;
+                    territory._decorations.Add(new CoreDecorationDefinition(
+                        "Park", Kind(block), block.QuarterId, block.Box));
+                    continue;
+                }
+
                 ordinal.TryGetValue(block.QuarterId, out int inQuarter);
                 inQuarter++;
                 ordinal[block.QuarterId] = inQuarter;
 
-                block.BlockId = i;
+                block.BlockId = nextId++;
                 block.StableId = StableId(seed, block);
                 block.DisplayName = $"{quarter.Name} Block {inQuarter:00}";
 
@@ -342,6 +387,10 @@ namespace RoadDemo
             var block = Block(blockId);
             return block != null ? _frame.ToWorldRect(block.LocalBounds) : Rect.zero;
         }
+
+        /// <summary>The world rectangle of a piece of the plan's own local ground - the
+        /// dressing (a park) has no id to look up, so its bounds come in whole.</summary>
+        public Rect WorldBounds(Rect localBounds) => _frame.ToWorldRect(localBounds);
 
         public Vector3 BattleAnchor(CoreQuarterId id)
         {

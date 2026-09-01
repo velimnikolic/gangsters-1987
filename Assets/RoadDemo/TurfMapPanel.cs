@@ -105,7 +105,6 @@ namespace RoadDemo
     {
         // ------------------------------------------------------------- the paper
 
-        static readonly Color PlateSolid = new Color32(244, 236, 214, 250);
         static readonly Color Hairline = new Color32(43, 36, 24, 140);
         static readonly Color Rule = new Color32(43, 36, 24, 90);
         static readonly Color RuleFaint = new Color32(43, 36, 24, 40);
@@ -113,85 +112,22 @@ namespace RoadDemo
         static readonly Color Body = new Color32(47, 40, 32, 255);
         static readonly Color Red = new Color32(143, 33, 25, 255);
         static readonly Color Label = new Color32(109, 92, 64, 255);
-        static readonly Color Dim = new Color32(138, 119, 86, 255);
         static readonly Color Slate = new Color32(59, 50, 38, 255);
-        static readonly Color Well = new Color32(43, 36, 24, 16);
-        static readonly Color MugField = new Color32(224, 212, 182, 255);
-
-        // Leave a small strip of map paper between the clock controls and the file.
-        const float PanelLeft = 0f, PanelTop = DemoClockHud.Height + 8f, PanelFoot = 24f;
-        const float PanelWidthFraction = 0.18f;
-        const float Pad = 10f, HeadPad = 11f;
-
-        /// <summary>The design's floor for panel type. Anything under it stops being
-        /// a label and becomes texture.</summary>
-        const float MicroType = 8f;
-
-        const float MugHeight = 96f;
-        const float CloseBox = 22f, CloseGlyph = 18f;
-
-        /// <summary>Every row on the panel that carries a label and a value - a stat, a
-        /// roster line, a button - is this tall, and everything inside one is centred on
-        /// its middle. One number instead of a y per element is the whole of what keeps
-        /// a column looking like a column.</summary>
-        const float StatHeight = 17f, ButtonHeight = 22f, RosterHeight = 42f;
 
         TurfMapHud _hud;
         Canvas _canvas;
-        bool _showPanel, _showMapChrome;
+        bool _showMapChrome;
 
-        RectTransform _panelRect, _viewport, _content, _keyRect, _placesRoot, _menuRect;
+        RectTransform _keyRect, _placesRoot, _menuRect;
         DemoCrews.Unit _menuActor, _menuTarget;
 
-        RectTransform _dossierRect;
-        RawImage _mugImage;
-
-        /// <summary>Connects a roster thumbnail to the CrewBar's one shared, rotating
-        /// camera feed. It deliberately owns no camera or RenderTexture: moving the
-        /// picture into the permanent paper panel must not double the cost of filming
-        /// the same lieutenant.</summary>
-        sealed class LieutenantLiveFeed : MonoBehaviour
-        {
-            public DemoCrews.Unit Unit;
-            RawImage _image;
-
-            void Awake() => _image = GetComponent<RawImage>();
-
-            void LateUpdate()
-            {
-                if (CrewBar.Instance != null &&
-                    CrewBar.Instance.TryGetFeed(Unit, out var feed))
-                {
-                    if (_image.texture != feed)
-                        _image.texture = feed;
-                    _image.enabled = true;
-                    return;
-                }
-
-                _image.enabled = false;
-            }
-        }
-
-        int _paintedStamp = -1;
-        float _paintedPanelWidth = -1f;
-        float _scroll;
-
-        public void Init(TurfMapHud owner, bool showPanel, bool showMapChrome)
+        public void Init(TurfMapHud owner, bool showMapChrome)
         {
             _hud = owner;
             _canvas = GetComponent<Canvas>();
-            _showPanel = showPanel;
             _showMapChrome = showMapChrome;
             Build();
         }
-
-        /// <summary>Eighteen percent of the window in CANVAS units, which is what a sizeDelta
-        /// is. Screen.width is a count of real pixels, and handing one straight to a
-        /// scaled canvas is how the panel ended up a third of its intended size on a
-        /// small game view.</summary>
-        float PanelWidth =>
-            Screen.width / (_canvas != null ? Mathf.Max(0.01f, _canvas.scaleFactor) : _hud.UiScale) *
-            PanelWidthFraction;
 
         // ------------------------------------------------------------------ build
 
@@ -200,34 +136,18 @@ namespace RoadDemo
             var root = (RectTransform)transform;
             BuildRuler(root);
 
-            if (_showPanel)
-                BuildPanel(root);
             if (_showMapChrome)
                 BuildMapChrome(root);
         }
 
-        void BuildPanel(RectTransform root)
-        {
-            _panelRect = Paper("Panel", root, PlateSolid, borderThickness: 0.5f);
-            Anchor(_panelRect, 0f, 1f, PanelLeft, -PanelTop);
-
-            _viewport = DemoUi.NewRect("Viewport", _panelRect);
-            DemoUi.Fill(_viewport);
-            _viewport.gameObject.AddComponent<RectMask2D>();
-
-            _content = DemoUi.NewRect("Content", _viewport);
-            _content.anchorMin = new Vector2(0f, 1f);
-            _content.anchorMax = new Vector2(1f, 1f);
-            _content.pivot = new Vector2(0f, 1f);
-            _content.offsetMin = new Vector2(0f, 0f);
-            _content.offsetMax = new Vector2(0f, 0f);
-        }
-
         void BuildMapChrome(RectTransform root)
         {
+            // Straight above the sheet, where it is created: the chrome that may cover
+            // a place name - the key, the menu, the tip - is built after this and lands
+            // over it on its own. Sent to the FRONT of the canvas, as it used to be,
+            // these chips sat under the map's own backdrop and were never once seen.
             _placesRoot = DemoUi.NewRect("Places", root);
             DemoUi.Fill(_placesRoot);
-            _placesRoot.SetAsFirstSibling();
 
             BuildKey(root);
             _paintedKey = KeyStamp();
@@ -454,30 +374,13 @@ namespace RoadDemo
 
         // ---------------------------------------------------------------- refresh
 
-        // Bump when the runtime-built row shape changes, so an in-Play script reload
-        // rebuilds existing paper instead of leaving the pre-change controls standing.
-        const int PanelLayoutVersion = 3;
+        /// <summary>The pick moved. The map's key is what changes with it - which
+        /// houses are worth a swatch - so the key is dropped and drawn again on the
+        /// next refresh.</summary>
+        public void SelectionChanged() => _paintedKey = -1;
 
         public void Refresh()
         {
-            if (_showPanel)
-            {
-                float width = PanelWidth;
-                if (Mathf.Abs(width - _paintedPanelWidth) > 0.1f)
-                {
-                    _paintedPanelWidth = width;
-                    _paintedStamp = -1;
-                }
-
-                int stamp = Stamp();
-                if (stamp != _paintedStamp)
-                {
-                    _paintedStamp = stamp;
-                    Repaint();
-                }
-                Scroll();
-            }
-
             if (_showMapChrome)
             {
                 if (_menuTarget != null &&
@@ -496,380 +399,6 @@ namespace RoadDemo
 
         /// <summary>What the panel is showing. Changing it repaints; a frame that
         /// changed nothing costs one integer.</summary>
-        int Stamp()
-        {
-            int stamp = PanelLayoutVersion;
-            stamp = stamp * 31 + (_hud.TurfOn ? 1 : 0);
-            stamp = stamp * 31 + (_hud.InspectedCrew != null ? _hud.InspectedCrew.Id + 7 : 0);
-            stamp = stamp * 31 + (_hud.InspectedBuilding != null ? _hud.InspectedBuilding.Id + 11 : 0);
-            stamp = stamp * 31 + (_hud.InspectedDistrict != null
-                ? _hud.InspectedDistrict.Name.GetHashCode() : 0);
-            // WHICH crews are gathered, not how many: a marquee thrown over a different
-            // pair of the same size changes nothing in this number, and the roster's
-            // red edge would stay on the crews it was on before.
-            foreach (var crew in _hud.Units)
-            {
-                var boss = crew.Unit != null ? crew.Unit.Boss : null;
-                stamp = stamp * 31 + (int)crew.Order + crew.MenStanding * 13 +
-                        crew.HoodsOnBooks * 17 + (boss != null ? boss.CharacterId * 19 : 0) +
-                        (_hud.IsGathered(crew.Id) ? 7 : 0);
-            }
-            return stamp;
-        }
-
-        public void SelectionChanged() => _paintedStamp = -1;
-
-        void Scroll()
-        {
-            var mouse = Mouse.current;
-            if (mouse != null && ClaimsPointer(mouse.position.ReadValue()))
-            {
-                float wheel = mouse.scroll.ReadValue().y;
-                if (Mathf.Abs(wheel) > 0.01f)
-                    _scroll -= wheel * 0.4f;
-            }
-
-            float max = Mathf.Max(0f, _content.sizeDelta.y - _panelRect.sizeDelta.y);
-            _scroll = Mathf.Clamp(_scroll, 0f, max);
-            _content.anchoredPosition = new Vector2(0f, _scroll);
-        }
-
-        // ---------------------------------------------------------------- repaint
-
-        void Repaint()
-        {
-            for (int i = _content.childCount - 1; i >= 0; i--)
-                Destroy(_content.GetChild(i).gameObject);
-
-            _dossierRect = null;
-            _mugImage = null;
-
-            float width = PanelWidth;
-            _panelRect.sizeDelta = new Vector2(width, 0f);
-            _content.sizeDelta = new Vector2(0f, 0f);
-
-            float y = 0f;
-            if (_hud.InspectedCrew != null)
-                y -= BuildDossier(_hud.InspectedCrew, width, y);
-
-            y -= BuildHeader(width, y);
-
-            if (_hud.InspectedBuilding != null)
-                y -= BuildPropertyFile(_hud.InspectedBuilding, width, y);
-            else if (_hud.InspectedDistrict != null)
-                y -= BuildDistrictFile(_hud.InspectedDistrict, width, y);
-            else
-                y -= BuildRoster(width, y);
-
-            _content.sizeDelta = new Vector2(0f, -y);
-
-            float max = Screen.height / _hud.UiScale - PanelTop - PanelFoot;
-            _panelRect.sizeDelta = new Vector2(width, Mathf.Min(-y, max));
-        }
-
-        // --------------------------------------------------------------- dossier
-
-        float BuildDossier(TurfCrew crew, float width, float top)
-        {
-            _dossierRect = DemoUi.NewRect("Dossier", _content);
-            _dossierRect.anchorMin = new Vector2(0f, 1f);
-            _dossierRect.anchorMax = new Vector2(1f, 1f);
-            _dossierRect.pivot = new Vector2(0.5f, 1f);
-            _dossierRect.offsetMin = new Vector2(0f, 0f);
-            _dossierRect.offsetMax = new Vector2(0f, top);
-
-            float y = -8f;
-            float inner = width - Pad * 2f;
-
-            // The title and the cross are ONE line, so they are centred on one line.
-            // The cross used to be placed off the title's top edge and a box twice the
-            // title's height hung eight units below it.
-            const float titleRow = 24f;
-            Caps(_dossierRect, Pad, y + Mid(titleRow, LedgerKit.LineBox(10f)),
-                inner - CloseBox - 4f, "PERSONAL FILE", 10f, Slate,
-                LedgerStyle.Condensed);
-
-            var close = DemoUi.NewRect("Close", _dossierRect);
-            LedgerKit.PlaceTopLeft(close, width - Pad - CloseBox,
-                y + Mid(titleRow, CloseBox), CloseBox, CloseBox);
-            var closeFace = Clickable(close, new Color(0f, 0f, 0f, 0f));
-            var closeGlyph = LedgerKit.Line(close, LedgerStyle.Condensed, CloseGlyph, Red,
-                0f, 0f, CloseBox, CloseBox, "×", TextAlignmentOptions.Center);
-            LedgerKit.RowButton(close, closeFace, _hud.ClearInspection);
-            Hover.Add(close, closeFace, closeGlyph, Red, new Color32(242, 230, 204, 255));
-
-            y -= titleRow;
-            LedgerKit.Rule(_dossierRect, 0f, y, width, Rule, 1f);
-            y -= Pad;
-
-            var mugFrame = DemoUi.NewRect("Mug", _dossierRect);
-            LedgerKit.PlaceTopLeft(mugFrame, Pad, y, inner, MugHeight);
-            LedgerKit.Fill(mugFrame, MugField);
-            LedgerKit.Frame(mugFrame, 1f, Hairline);
-
-            var mugRect = DemoUi.NewRect("Print", mugFrame);
-            LedgerKit.PlaceTopLeft(mugRect, 1f, -1f, inner - 2f, MugHeight - 2f);
-            _mugImage = mugRect.gameObject.AddComponent<RawImage>();
-            _mugImage.enabled = false;
-            _mugImage.raycastTarget = false;
-
-            // Prefer the exact prefab walking outside. If the unit has not been dealt
-            // yet, ask the same MemberModel door the street spawn uses; never resolve a
-            // second, merely similar face from a copied string.
-            var body = crew.Unit != null && crew.Unit.Boss != null
-                ? crew.Unit.Boss.SourcePrefab
-                : crew.Lieutenant != null ? PersonnelAlmanac.MemberModel(crew.Lieutenant) : null;
-            if (body != null)
-                // The map dossier is the same personnel file viewed from the plan:
-                // use the ledger's full-colour bust, not the newspaper halftone.
-                PortraitStudio.Request(body, PortraitStudio.Framing.Bust, _mugImage);
-            else
-                Caps(mugFrame, 0f, Mid(MugHeight, LedgerKit.LineBox(MicroType)), inner,
-                    "NO PRINT ON FILE", MicroType, Dim, LedgerStyle.Condensed,
-                    TextAlignmentOptions.Center);
-
-            y -= MugHeight + 8f;
-
-            LedgerKit.Line(_dossierRect, LedgerStyle.Condensed, 15f, Ink,
-                Pad, y, inner, LedgerKit.LineBox(15f), crew.Name)
-                .overflowMode = TextOverflowModes.Ellipsis;
-            y -= LedgerKit.LineBox(15f);
-
-            // The typewritten kicker is the one line here that can run to any length -
-            // a rank and a family - so it is set without extra tracking and cut rather
-            // than allowed to run off the paper. Character has no alias field, so this
-            // must not invent one by repeating the unit's name.
-            // A rival's lieutenant is on nobody's books and has no rank to print, so
-            // the line starts at his family rather than at a blank.
-            var house = TurfHouses.For(crew.GangId);
-            var sub = LedgerKit.Line(_dossierRect, LedgerStyle.Mono, 9f, Red, Pad, y, inner,
-                LedgerKit.LineBox(9f),
-                (string.IsNullOrEmpty(crew.Rank) ? "" : crew.Rank + " · ") + house.Short);
-            sub.overflowMode = TextOverflowModes.Ellipsis;
-            y -= LedgerKit.LineBox(9f) + 6f;
-
-            // These are the very same half-step ratings shown in the ledger, in the
-            // ledger's block meter. The map is a view onto that book, not a second
-            // character sheet with its own invented stat names.
-            y -= SkillRow(_dossierRect, Pad, y, inner, "Awareness", crew.Awareness);
-            y -= SkillRow(_dossierRect, Pad, y, inner, "Organization", crew.Organization);
-            y -= SkillRow(_dossierRect, Pad, y, inner, "Combat", crew.Combat);
-            y -= CrewCountRow(_dossierRect, Pad, y, inner, crew);
-
-            y -= 5f;
-            Caps(_dossierRect, Pad, y, inner, "CARRYING", MicroType, Label,
-                LedgerStyle.Condensed);
-            y -= LedgerKit.LineBox(MicroType) + 2f;
-
-            y -= KitBox(_dossierRect, Pad, y, inner, crew.Gun);
-            y -= KitBox(_dossierRect, Pad, y, inner, crew.Ride);
-
-            y -= 6f;
-
-            // One grid for all six: three rows of two, the same gutter down the middle
-            // and the same step down. The two icon buttons used to be a different height
-            // from the four word buttons above them and stepped by a different amount.
-            const float gutter = 4f, step = ButtonHeight + 4f;
-            float half = (inner - gutter) * 0.5f;
-            float rightX = Pad + half + gutter;
-
-            if (crew.Mine)
-            {
-                Action(_dossierRect, Pad, y, half, "GUARD", false,
-                    () => _hud.Order(TurfOrder.Holding, crew.Plan, null));
-                Action(_dossierRect, rightX, y, half, "PATROL", false,
-                    () => _hud.Order(TurfOrder.Walking, crew.Plan, null));
-                y -= step;
-                Action(_dossierRect, Pad, y, half, "TAIL", false,
-                    () => _hud.Order(TurfOrder.Moving, crew.Plan, null));
-                Action(_dossierRect, rightX, y, half, "FLEE", true,
-                    () => _hud.Order(TurfOrder.PullingBack, crew.Plan, null));
-                y -= step;
-
-                // A mark AND its word. The mark alone was a scribble of rotated
-                // rectangles floating in the middle of a hundred-unit button, which
-                // read as neither a picture nor a label.
-                Action(_dossierRect, Pad, y, half, "HOME", false,
-                    () => _hud.Order(TurfOrder.ToTheOutfit, crew.Plan, null),
-                    TurfGlyphs.House);
-                Action(_dossierRect, rightX, y, half, "CAR", false,
-                    () => _hud.Order(TurfOrder.InTheCar, crew.Plan, null),
-                    TurfGlyphs.Car);
-                y -= step;
-            }
-            else
-            {
-                Action(_dossierRect, Pad, y, inner, "WATCHED, NOT SPOKEN TO", false, null);
-                y -= step;
-            }
-
-            y -= Pad - 4f;
-            float tall = -y;
-            _dossierRect.sizeDelta = new Vector2(0f, tall);
-
-            LedgerKit.Rule(_dossierRect, 0f, -tall + 2f, width, Ink, 2f);
-            return tall;
-        }
-
-        /// <summary>One of the dossier's three ledger skills. It deliberately uses the
-        /// exact ten-mark half-step meter found on the personnel file, rather than a
-        /// map-only star rating.</summary>
-        float SkillRow(Transform parent, float x, float y, float w, string label, int halfSteps)
-        {
-            const float labelWide = 126f;
-            float meter = LedgerKit.StepBarWidth(10, 5f, 7f);
-            var row = DemoUi.NewRect("Stat", parent);
-            LedgerKit.PlaceTopLeft(row, x, y, w, StatHeight);
-            var text = LedgerKit.Line(row, LedgerStyle.Mono, 9f, Body, 0f,
-                Mid(StatHeight, LedgerKit.LineBox(9f)), Mathf.Min(labelWide, w - meter - 8f),
-                LedgerKit.LineBox(9f), label);
-            text.overflowMode = TextOverflowModes.Ellipsis;
-            LedgerKit.StepBar(row, w - meter, -StatHeight * 0.5f, 10,
-                Mathf.Clamp(halfSteps, 0, 10), Red, 5f, 9f, 7f);
-
-            return StatHeight;
-        }
-
-        /// <summary>
-        /// Read-only organization manpower. Assignment and recruitment moved to the
-        /// Ledger's ORGANIZATION dossier; the tactical map no longer edits the roster.
-        /// </summary>
-        float CrewCountRow(Transform parent, float x, float y, float w, TurfCrew crew)
-        {
-            const float inset = 6f;
-            var row = DemoUi.NewRect("Hoods", parent);
-            LedgerKit.PlaceTopLeft(row, x, y, w, StatHeight);
-            LedgerKit.Fill(row, Well);
-            LedgerKit.Frame(row, 1f, RuleFaint);
-            Caps(row, inset, Mid(StatHeight, LedgerKit.LineBox(MicroType)), 72f, "MANPOWER",
-                MicroType, Label, LedgerStyle.Condensed);
-
-            var query = PersonnelDirector.Instance?.Organization;
-            var hasCapacity = query != null && crew.Lieutenant != null;
-            var capacity = hasCapacity
-                ? query.CapacityOf(crew.Lieutenant.Id).Manpower
-                : default;
-            Caps(row, 82f, Mid(StatHeight, LedgerKit.LineBox(8f)), w - 150f,
-                "MANAGE IN ORGANIZATION LEDGER", 8f, Dim, LedgerStyle.Condensed);
-            LedgerKit.Line(row, LedgerStyle.Mono, 11f,
-                capacity.IsOverCapacity ? Red : Body, w - 66f, 0f, 60f,
-                StatHeight, hasCapacity
-                    ? capacity.Current + " / " + capacity.Maximum
-                    : "— / —",
-                TextAlignmentOptions.MidlineRight);
-            return StatHeight + 4f;
-        }
-
-        float KitBox(Transform parent, float x, float y, float w, string text)
-        {
-            const float h = 18f;
-            var box = DemoUi.NewRect("Kit", parent);
-            LedgerKit.PlaceTopLeft(box, x, y, w, h);
-            LedgerKit.Frame(box, 1f, Rule);
-            var line = LedgerKit.Line(box, LedgerStyle.Mono, 9f, Body, 6f,
-                Mid(h, LedgerKit.LineBox(9f)), w - 12f, LedgerKit.LineBox(9f), text ?? "");
-            line.overflowMode = TextOverflowModes.Ellipsis;
-            return h + 3f;
-        }
-
-        /// <summary>
-        /// One button on the file, optionally with a mark beside its word. The mark and
-        /// the word are laid out as ONE block and that block is centred, so a button
-        /// with a picture on it sits on the same line as the plain ones next to it.
-        /// </summary>
-        void Action(Transform parent, float x, float y, float w, string label,
-            bool accent, UnityEngine.Events.UnityAction run, Sprite mark = null)
-        {
-            const float markW = 20f, markH = 14f, markToWord = 6f;
-
-            var button = DemoUi.NewRect("Action", parent);
-            LedgerKit.PlaceTopLeft(button, x, y, w, ButtonHeight);
-            var face = Clickable(button, Well);
-            LedgerKit.Frame(button, 1f, accent ? Red : Rule);
-
-            var colour = accent ? (Color)Red : (Color)Slate;
-            const float size = 10f, tracking = 16f;
-            float words = Wide(label, size, LedgerStyle.Condensed, tracking);
-            float block = mark != null ? markW + markToWord + words : words;
-            float left = Mathf.Max(4f, (w - block) * 0.5f);
-
-            Image picture = null;
-            if (mark != null)
-            {
-                var glyph = DemoUi.NewRect("Mark", button);
-                LedgerKit.PlaceTopLeft(glyph, left, Mid(ButtonHeight, markH), markW, markH);
-                picture = glyph.gameObject.AddComponent<Image>();
-                picture.sprite = mark;
-                picture.color = colour;
-                picture.raycastTarget = false;
-                left += markW + markToWord;
-            }
-
-            var text = LedgerKit.Line(button, LedgerStyle.Condensed, size, colour,
-                left, Mid(ButtonHeight, LedgerKit.LineBox(size)), words + 2f,
-                LedgerKit.LineBox(size), label);
-            text.characterSpacing = tracking;
-
-            if (run != null)
-            {
-                LedgerKit.RowButton(button, face, run);
-                Hover.Add(button, face, text, colour, new Color32(242, 230, 204, 255),
-                    null, picture);
-            }
-        }
-
-        // ----------------------------------------------------------------- header
-
-        float BuildHeader(float width, float top)
-        {
-            const float h = 30f;
-            const float buttonH = 17f;
-            var header = DemoUi.NewRect("Header", _content);
-            LedgerKit.PlaceTopLeft(header, 0f, top, width, h);
-            LedgerKit.Fill(header, PlateSolid);
-            LedgerKit.Rule(header, 0f, -h + 1f, width, Rule, 1f);
-
-            bool inspecting = _hud.InspectedBuilding != null || _hud.InspectedDistrict != null;
-
-            // ONE button on this row. The wash's switch used to sit here too and the two
-            // of them together left the roster's own title less room than its words - it
-            // read "CREWS AFIELD · LI…" for as long as it was up there. The switch now
-            // lives on the turf key, which is where the wash is explained.
-            float buttonY = Mid(h, buttonH);
-            string back = inspecting ? "BACK TO CREWS" : "GATHER ALL";
-            float backWide = ButtonWidth(back);
-            float right = width - HeadPad - backWide;
-            SmallButton(header, right, buttonY, backWide, buttonH, back, false,
-                inspecting ? (UnityEngine.Events.UnityAction)_hud.ClearInspection
-                           : _hud.GatherAll);
-
-            // Centred on the same line the button is centred on, and given exactly the
-            // room the button left it - and told what it may print in that room, rather
-            // than handed a title too long for it and an ellipsis to cut it with.
-            float box = Mathf.Max(20f, right - ButtonGap - HeadPad);
-            string title = _hud.InspectedBuilding != null ? "PROPERTY FILE"
-                : _hud.InspectedDistrict != null ? "DISTRICT FILE"
-                : Fits("CREWS AFIELD · LINE PRINTER 03", box) ?? "CREWS AFIELD";
-
-            var label = Caps(header, HeadPad, Mid(h, LedgerKit.LineBox(10f)), box, title,
-                10f, Slate, LedgerStyle.Condensed);
-            label.overflowMode = TextOverflowModes.Ellipsis;
-
-            return h;
-        }
-
-        /// <summary>The words if they fit in the room, and nothing if they do not - so a
-        /// caller can print a shorter form of its own rather than an ellipsis.</summary>
-        string Fits(string words, float room) =>
-            Wide(words, 10f, LedgerStyle.Condensed, 10f) <= room ? words : null;
-
-        /// <summary>Room for a button's words: what the face actually sets, plus the
-        /// frame and a breath either side of it.</summary>
-        float ButtonWidth(string label) =>
-            Wide(label, 9f, LedgerStyle.Condensed, 10f) + 18f;
-
-        const float ButtonGap = 6f;
-
         void SmallButton(Transform parent, float x, float y, float w, float h, string label,
             bool accent, UnityEngine.Events.UnityAction run)
         {
@@ -883,378 +412,6 @@ namespace RoadDemo
             text.characterSpacing = 10f;
             LedgerKit.RowButton(button, face, run);
             Hover.Add(button, face, text, colour, new Color32(242, 230, 204, 255));
-        }
-
-        // ----------------------------------------------------------------- roster
-
-        /// <summary>The roster's columns are shared by heading and every row. The
-        /// first column is the lieutenant's existing street camera, not a duplicate
-        /// block of crew information.</summary>
-        const float FeedColumn = 6f, FeedWide = 36f;
-        const float NameColumn = FeedColumn + FeedWide + 8f, MenWide = 34f;
-
-        float BuildRoster(float width, float top)
-        {
-            float y = top;
-            const float headH = 20f;
-            float box = LedgerKit.LineBox(9f);
-
-            var head = DemoUi.NewRect("Columns", _content);
-            LedgerKit.PlaceTopLeft(head, 0f, y, width, headH);
-            LedgerKit.Rule(head, 0f, -headH + 1f, width, RuleFaint, 1f);
-            Caps(head, FeedColumn, Mid(headH, box), FeedWide, "LIVE", 8f, Label,
-                LedgerStyle.Condensed);
-            Caps(head, NameColumn, Mid(headH, box), 120f, "LIEUTENANT", 9f, Label,
-                LedgerStyle.Condensed);
-            Caps(head, width - HeadPad - MenWide, Mid(headH, box), MenWide, "MEN", 9f, Label,
-                LedgerStyle.Condensed, TextAlignmentOptions.MidlineRight);
-            y -= headH;
-
-            int men = 0;
-            foreach (var crew in _hud.Units)
-            {
-                if (!crew.Mine || !crew.Alive)
-                    continue;
-
-                men += crew.MenStanding;
-                y -= RosterRow(crew, width, y);
-            }
-
-            y -= 10f;
-            LedgerKit.Rule(_content, HeadPad, y, width - HeadPad * 2f, Ink, 2f);
-            y -= 8f;
-
-            const float totalTall = 20f;
-            Caps(_content, HeadPad, y + Mid(totalTall, LedgerKit.LineBox(10f)), 120f,
-                "ON THE STREET", 10f, Ink, LedgerStyle.Condensed);
-            LedgerKit.Line(_content, LedgerStyle.MonoBold, 14f, Ink,
-                width - HeadPad - 90f, y + Mid(totalTall, LedgerKit.LineBox(14f)), 90f,
-                LedgerKit.LineBox(14f), men + " MEN", TextAlignmentOptions.MidlineRight);
-            y -= totalTall + 6f;
-
-            return top - y;
-        }
-
-        /// <summary>
-        /// One lieutenant. His current street view replaces the old ordinal number;
-        /// name, men and order stay here because this is already their compact dossier.
-        /// </summary>
-        float RosterRow(TurfCrew crew, float width, float top)
-        {
-            bool on = _hud.IsGathered(crew.Id);
-
-            var row = DemoUi.NewRect("Crew", _content);
-            LedgerKit.PlaceTopLeft(row, 0f, top, width, RosterHeight);
-            var face = Clickable(row,
-                on ? new Color32(143, 33, 25, 23) : new Color(0f, 0f, 0f, 0f));
-            LedgerKit.Rule(row, 0f, -RosterHeight + 1f, width, RuleFaint, 1f);
-
-            if (on)
-            {
-                var edge = DemoUi.NewRect("Picked", row);
-                LedgerKit.PlaceTopLeft(edge, 0f, 0f, 3f, RosterHeight);
-                LedgerKit.Fill(edge, Red);
-            }
-
-            // Two lines through the row, and every reading placed by the line it belongs
-            // on rather than by its own box. A thirteen-point name asks for a box two
-            // thirds as tall again as its letters, so stacking the boxes put the
-            // standing order underneath the NEXT lieutenant.
-            const float nameLine = -13f, orderLine = -26f;
-            float wide = width - HeadPad - MenWide - 6f - NameColumn;
-
-            var live = DemoUi.NewRect("Live", row);
-            LedgerKit.PlaceTopLeft(live, FeedColumn, -3f, FeedWide, FeedWide);
-            LedgerKit.Fill(live, new Color32(30, 29, 25, 255));
-            LedgerKit.Frame(live, 0.5f, Hairline);
-            var feed = DemoUi.NewRect("Feed", live);
-            DemoUi.Fill(feed);
-            var picture = feed.gameObject.AddComponent<RawImage>();
-            picture.raycastTarget = false;
-            picture.enabled = false;
-            var stream = picture.gameObject.AddComponent<LieutenantLiveFeed>();
-            stream.Unit = crew.Unit;
-
-            var name = LedgerKit.Line(row, LedgerStyle.Mono, 13f, Ink, NameColumn,
-                On(nameLine, LedgerKit.LineBox(13f)), wide, LedgerKit.LineBox(13f),
-                crew.Name);
-            name.overflowMode = TextOverflowModes.Ellipsis;
-
-            LedgerKit.Line(row, LedgerStyle.Mono, 11f, new Color32(74, 63, 44, 255),
-                width - HeadPad - MenWide, On(nameLine, LedgerKit.LineBox(11f)),
-                MenWide, LedgerKit.LineBox(11f), crew.MenStanding.ToString(),
-                TextAlignmentOptions.MidlineRight);
-
-            var under = LedgerKit.Line(row, LedgerStyle.Mono, MicroType, Dim, NameColumn,
-                On(orderLine, LedgerKit.LineBox(MicroType)),
-                width - HeadPad - NameColumn, LedgerKit.LineBox(MicroType),
-                crew.Gun + " · " + TurfOrders.Label(crew.Order));
-            under.overflowMode = TextOverflowModes.Ellipsis;
-
-            LedgerKit.RowButton(row, face, () => _hud.SelectOnly(crew));
-            RightClick.Add(row, () => _hud.Focus(crew));
-            return RosterHeight;
-        }
-
-        // ------------------------------------------------------------------ files
-
-        float BuildPropertyFile(TurfBuilding building, float width, float top)
-        {
-            var house = TurfHouses.For(building.GangId);
-            float metresPerUnit = _hud.Survey.Plan.MetresPerUnit;
-
-            // Only what the city knows. Floors are derived from the height and say so;
-            // the take is the business's own figure and the row is left off when it
-            // has none, because a number invented for a file is a lie in a ledger.
-            string text =
-                building.Name + "\n" +
-                building.District + "\n" +
-                "HELD BY: " + (building.GangId < 0 ? "UNCLAIMED" : house.Name) + "\n" +
-                "FOOTPRINT: " +
-                    Mathf.RoundToInt(_hud.Survey.Plan.Units(building.World.width) * TurfPlate.S) +
-                    " × " +
-                    Mathf.RoundToInt(_hud.Survey.Plan.Units(building.World.height) * TurfPlate.S) +
-                    " px (" + Mathf.RoundToInt(building.World.width) + " × " +
-                    Mathf.RoundToInt(building.World.height) + " m)\n" +
-                "FLOORS: ~" + building.Floors;
-            if (building.Rent > 0)
-                text += "\nTAKE: $" + building.Rent + " a week";
-            text += StreetReading(building);
-
-            // Ground is not taken off a map any more. The button walks the men to the
-            // door and nothing else: what happens there is the racket's business, and
-            // who ends up holding the street is read off what stands on it.
-            return FileSheet(width, top, "PROPERTY FILE", text,
-                "surveyed from the street · owner unaware",
-                "SEND THE MEN",
-                (UnityEngine.Events.UnityAction)(() =>
-                    _hud.Order(TurfOrder.Taking,
-                        _hud.Survey.Plan.ToPlan(building.World.center), building)),
-                metresPerUnit);
-        }
-
-        float BuildDistrictFile(TurfDistrict district, float width, float top)
-        {
-            int held = 0, ours = 0;
-            foreach (var building in _hud.Survey.Buildings)
-            {
-                if (!district.World.Contains(building.World.center))
-                    continue;
-                held++;
-                if (building.GangId == 0)
-                    ours++;
-            }
-
-            string text =
-                district.Name + "\n" +
-                "HELD BY: " + (district.Contested ? "CONTESTED"
-                    : district.GangId < 0 ? "UNCLAIMED" : district.House.Name) + "\n" +
-                "FOOTPRINTS: " + held + "   OURS: " + ours + "\n" +
-                "GROUND: " + (district.World.width / 1000f).ToString("0.0") + " × " +
-                    (district.World.height / 1000f).ToString("0.0") + " km" +
-                QuarterReading(district);
-
-            return FileSheet(width, top, "DISTRICT FILE", text,
-                "pencil marks are this month's · ink is last year's", null, null,
-                _hud.Survey.Plan.MetresPerUnit);
-        }
-
-        /// <summary>
-        /// How the quarter's own streets read, counted off them at the moment of asking.
-        /// A quarter is not a thing anybody takes - it is what its streets add up to, and
-        /// the file says so in the same words the streets use.
-        /// </summary>
-        string QuarterReading(TurfDistrict district)
-        {
-            var runtime = TerritoryRuntime.Instance;
-            if (runtime == null || district == null)
-                return "";
-
-            // CTRL-013: the ONE aggregate, off canonical membership. This page used to
-            // count blocks itself by district rectangle, which is a second answer to the
-            // same question and disagrees with the first wherever a quarter's boundary
-            // and its block membership differ.
-            if (!runtime.TryGetNeighborhoodOf(district.TerritoryId, out var hoodId) ||
-                !runtime.TryReadNeighborhood(hoodId, out var status) ||
-                status.Blocks == 0)
-                return "";
-
-            var line = "\nSTREETS: " + status.Dominated + " outright · " +
-                       status.Controlled + " held · " + status.Contested + " contested · " +
-                       status.Influenced + " leaning · " + status.Neutral + " quiet";
-            if (status.Leader.IsValid)
-                line += "\nMOST OF IT: " +
-                        (status.Leader.Value == LivingCity.Gangs.GangCatalog.PlayerGangId
-                            ? "ours"
-                            : LivingCity.Gangs.GangRegistry.NameOf(status.Leader.Value));
-            return line;
-        }
-
-        /// <summary>
-        /// What the street this building stands on reads as, in the player's words and
-        /// nobody else's: no scores, no percentages, and nothing the page could write back.
-        /// </summary>
-        string StreetReading(TurfBuilding building)
-        {
-            var runtime = TerritoryRuntime.Instance;
-            if (runtime?.PlayerQuery == null || runtime.Control == null ||
-                !runtime.TryGetBlockAtWorld(
-                    new Vector3(building.World.center.x, 0f, building.World.center.y),
-                    out var blockId))
-                return "";
-
-            if (!runtime.PlayerQuery.TryGetBlock(blockId, out var view) || view == null)
-                return "";
-
-            var leader = runtime.Control.LeaderOf(blockId);
-            var line = "\nSTREET: " + view.Control;
-            if (leader.IsValid)
-                line += " · " + (leader.Value == LivingCity.Gangs.GangCatalog.PlayerGangId
-                    ? "ours"
-                    : LivingCity.Gangs.GangRegistry.NameOf(leader.Value));
-            line += "\nOUR MEN: " + view.Presence + " · FEAR OF US: " + view.FearOfUs +
-                    "\nSHOPS: " + view.Businesses +
-                    "\nRIVALS: " + view.RivalPresence;
-
-            // Responsibility is a different claim from control and is printed as one: a
-            // street can be somebody's to answer for and nobody's to hold. Off the
-            // player's own presentation model (UI-001) - a player page that reached into
-            // the debug truth query is exactly the split SIM-007 and UI-009 drew.
-            if (view.AnswersForIt.Length > 0)
-                line += "\nANSWERS FOR IT: " + view.AnswersForIt;
-
-            line += ShopsOn(runtime, blockId);
-            line += RecentOn(runtime, blockId);
-            return line;
-        }
-
-        /// <summary>
-        /// The shops on this street and where each one stands with us - in the same words
-        /// the shop's own card uses, so a street read from the map and a shop read from
-        /// the pavement never say different things.
-        /// </summary>
-        string ShopsOn(TerritoryRuntime runtime, LivingCity.Territory.TerritoryBlockId blockId)
-        {
-            var geography = runtime.Geography;
-            if (geography == null)
-                return "";
-
-            var here = geography.BusinessesOf(blockId);
-            if (here.Count == 0)
-                return "";
-
-            var text = "\nON THIS STREET:";
-            var shown = 0;
-            for (int i = 0; i < here.Count && shown < 5; i++)
-            {
-                if (!runtime.TryGetBusinessView(here[i].BusinessId, out var shop))
-                    continue;
-                shown++;
-                text += "\n  " + shop.BusinessName + " — " + shop.Standing;
-                if (shop.Protector.Length > 0 && shop.Protector != "us")
-                    text += " (" + shop.Protector + ")";
-            }
-
-            if (here.Count > shown)
-                text += "\n  … " + (here.Count - shown) + " more";
-            return shown == 0 ? "" : text;
-        }
-
-        /// <summary>
-        /// What has happened here lately, in words. The event stream is the simulation's
-        /// own account of itself; the file quotes it rather than keeping a second one.
-        /// </summary>
-        string RecentOn(TerritoryRuntime runtime, LivingCity.Territory.TerritoryBlockId blockId)
-        {
-            var events = runtime.Events?.Recent;
-            if (events == null)
-                return "";
-
-            var text = "";
-            var shown = 0;
-            for (int i = events.Count - 1; i >= 0 && shown < 3; i--)
-            {
-                var record = events[i];
-                if (record.Value == null || record.Value.BlockId != blockId)
-                    continue;
-
-                var line = Told(record.Value);
-                if (line.Length == 0)
-                    continue;
-                if (shown == 0)
-                    text += "\nLATELY:";
-                text += "\n  " + line;
-                shown++;
-            }
-
-            return text;
-        }
-
-        /// <summary>One event, as the player would hear it told. Never a number.</summary>
-        static string Told(LivingCity.Territory.ITerritoryEvent value)
-        {
-            switch (value)
-            {
-                case LivingCity.Territory.BlockControlChanged control:
-                    return "the street went " +
-                           LedgerText.ControlWord(control.Current).ToLowerInvariant();
-                case LivingCity.Territory.BlockBecameContested _:
-                    return "two houses started arguing over it";
-                case LivingCity.Territory.BlockControlLost _:
-                    return "a house lost its hold on it";
-                case LivingCity.Territory.FearEventRecorded _:
-                    return "something happened on it";
-                case LivingCity.Territory.BusinessComplianceChanged compliance:
-                    return compliance.Current > compliance.Previous
-                        ? "a shop came round"
-                        : "a shop stopped paying";
-                default:
-                    return "";
-            }
-        }
-
-        float FileSheet(float width, float top, string number, string body, string foot,
-            string action, UnityEngine.Events.UnityAction run, float metresPerUnit)
-        {
-            float y = top - 12f;
-            float inner = width - HeadPad * 2f;
-
-            Caps(_content, HeadPad, y, inner, number, 10f, Dim, LedgerStyle.Mono);
-            y -= 18f;
-
-            var text = LedgerKit.Paragraph(_content, LedgerStyle.Mono, 11f, Body,
-                HeadPad, y, inner, 200f, body, 8f);
-            text.ForceMeshUpdate();
-            float used = text.preferredHeight;
-            text.rectTransform.sizeDelta = new Vector2(inner, used);
-            y -= used + 12f;
-
-            if (action != null)
-            {
-                Action(_content, HeadPad, y,
-                    Wide(action, 10f, LedgerStyle.Condensed, 16f) + 24f, action,
-                    run != null, run);
-                y -= ButtonHeight + 6f;
-            }
-
-            // Wrapped, not cut. At eleven points this line is half again wider than
-            // the panel, and an ellipsis on the one piece of prose in the file reads
-            // as a fault rather than as a margin note.
-            var note = LedgerKit.Paragraph(_content, LedgerStyle.MonoItalic, 10f,
-                new Color32(122, 104, 74, 255), HeadPad, y, inner, 40f, foot, 3f);
-            note.ForceMeshUpdate();
-            float noteTall = note.preferredHeight;
-            note.rectTransform.sizeDelta = new Vector2(inner, noteTall);
-            y -= noteTall + 12f;
-
-            // the sheet reports the plate's own scale once, so a reader can turn a
-            // pixel back into a street
-            Caps(_content, HeadPad, y, inner,
-                "1 PX ≈ " + (metresPerUnit / TurfPlate.S).ToString("0.0") + " M",
-                MicroType, Label, LedgerStyle.Condensed);
-            y -= 20f;
-
-            return top - y;
         }
 
         // ------------------------------------------------------------------ menu
@@ -1387,16 +544,14 @@ namespace RoadDemo
 
         public bool MenuOpen => _menuRect != null && _menuRect.gameObject.activeSelf;
 
-        /// <summary>Whether the pointer is on paper rather than on the map. The map's
-        /// own picks are polled from the mouse, so they have to stand aside for the
-        /// panel the way the street's picker stands aside for the map.</summary>
+        /// <summary>Whether the pointer is on the map's own chrome rather than on the
+        /// map. The map's picks are polled from the mouse, so they have to stand aside
+        /// for the order menu and the key the way the street's picker stands aside for
+        /// the map.</summary>
         public bool ClaimsPointer(Vector2 screen)
         {
             if (_menuRect != null && _menuRect.gameObject.activeSelf &&
                 RectTransformUtility.RectangleContainsScreenPoint(_menuRect, screen))
-                return true;
-            if (_panelRect != null &&
-                RectTransformUtility.RectangleContainsScreenPoint(_panelRect, screen))
                 return true;
             return _keyRect != null &&
                    RectTransformUtility.RectangleContainsScreenPoint(_keyRect, screen);
@@ -1414,18 +569,27 @@ namespace RoadDemo
         /// stay over that city while the player pans; rebuilding is what is expensive
         /// and repositioning is two floats, and tying the two together left every place
         /// name standing where the ground used to be.
+        ///
+        /// These are the survey's OWN districts, and they are printed only where the
+        /// city has no territory plan. A city that has one is named by TurfMapHud off
+        /// the shared rig - the block chips and quarter plates the street's O overlay
+        /// prints - and the district chips would be those same neighbourhood names a
+        /// second time, in a second style, half a chip away from the first.
         /// </summary>
         void Places()
         {
+            if (TerritoryPlaques.Available(_hud.City))
+                return;
+
             if (_placesRoot.childCount > 0 && _placesTurf == _hud.TurfOn &&
-                _placesStamp == _paintedStamp)
+                _placesStamp == _paintedKey)
             {
                 PlaceChips();
                 return;
             }
 
             _placesTurf = _hud.TurfOn;
-            _placesStamp = _paintedStamp;
+            _placesStamp = _paintedKey;
             _chips.Clear();
             for (int i = _placesRoot.childCount - 1; i >= 0; i--)
                 Destroy(_placesRoot.GetChild(i).gameObject);
@@ -1534,14 +698,19 @@ namespace RoadDemo
 
             public void OnPointerExit(PointerEventData eventData) => Paint(false);
 
+            /// <summary>The rest colours were taken when the control was built, which is
+            /// a DAY reading; painted back raw they would put day ink on a night sheet
+            /// the moment a pointer left a button after dark. Everything a hover sets
+            /// therefore goes through the shared table on its way to the graphic - a
+            /// colour the table does not know comes back untouched.</summary>
             void Paint(bool over)
             {
                 if (_face != null)
-                    _face.color = over ? _faceOver : _faceRest;
+                    _face.color = HudNight.Cross(over ? _faceOver : _faceRest);
                 if (_label != null)
-                    _label.color = over ? _inkOver : _inkRest;
+                    _label.color = HudNight.Cross(over ? _inkOver : _inkRest);
                 if (_mark != null)
-                    _mark.color = over ? _inkOver : _inkRest;
+                    _mark.color = HudNight.Cross(over ? _inkOver : _inkRest);
             }
         }
 

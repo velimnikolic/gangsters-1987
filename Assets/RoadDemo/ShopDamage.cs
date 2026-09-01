@@ -26,7 +26,7 @@ namespace RoadDemo
 
         const float StoreWidth = 7f;    // metres of frontage the boards cover
         const float StoreHeight = 2.9f; // the ground floor
-        const float BoardInset = 1f;    // metres the boards sit back from the door, into the building
+        const float BoardOutset = 0.16f; // just proud of the facade, on the street-facing side
 
         static Transform _root;
         static Material _fire, _board, _smoke;
@@ -157,6 +157,14 @@ namespace RoadDemo
             return true;
         }
 
+        /// <summary>Resolve the same authoritative frontage used by business damage so a
+        /// visible projectile can hit the actual facade rather than the job's approach
+        /// point. The simulation ID remains the authority; this only exposes geometry.</summary>
+        internal static bool TryBusinessFrontage(
+            LivingCity.Territory.TerritoryBusinessId id,
+            out Vector3 door,
+            out Vector3 outward) => TryFrontage(id, out door, out outward);
+
         // ------------------------------------------------------------------ materials
 
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
@@ -210,9 +218,9 @@ namespace RoadDemo
             var outward = facingOut.sqrMagnitude > 1e-4f ? facingOut.normalized : Vector3.forward;
             // LookRotation(outward) puts the plank's local +X along the frontage, so the
             // boards run across the storefront with no separate lateral axis to carry.
-            // Set back a metre from the door line, into the building, so they sit inside
-            // the window reveal the way a real boarding-up does rather than out on the kerb.
-            var baseAt = new Vector3(doorAt.x, groundY, doorAt.z) - outward * BoardInset;
+            // Boarding belongs on the exterior face. A small outward offset clears the
+            // glass/facade plane without pushing the planks out onto the pavement.
+            var baseAt = new Vector3(doorAt.x, groundY, doorAt.z) + outward * BoardOutset;
             var facing = Quaternion.LookRotation(outward, Vector3.up);
 
             var boards = new GameObject("Boards · " + label).transform;

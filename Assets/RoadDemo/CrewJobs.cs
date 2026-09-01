@@ -46,6 +46,13 @@ namespace RoadDemo
         static readonly Dictionary<int, (int JobId, int Count, float NextAt)> Swings =
             new Dictionary<int, (int, int, float)>();
 
+        /// <summary>One Molotov leaves one hand per torch job: the bottle in the air, and
+        /// whether it ever landed. A bottle lost before impact - the man carrying it shot
+        /// down, the premises streamed out - leaves the job unworked, so the crew throws
+        /// again rather than standing at a shop the order says to burn.</summary>
+        static readonly Dictionary<int, (int JobId, MolotovProjectile Shot, bool Lit)>
+            Torched = new Dictionary<int, (int, MolotovProjectile, bool)>();
+
         public static void Tick(DemoCrews crews)
         {
             var outfit = OutfitDirector.Instance;
@@ -96,8 +103,10 @@ namespace RoadDemo
         {
             if (job.Type == OrderType.Raid)
                 EnterOnce(crews, unit, job);
-            else if (job.Type == OrderType.SmashUp || job.Type == OrderType.Torch)
+            else if (job.Type == OrderType.SmashUp)
                 SwingBeat(crews, unit, job);
+            else if (job.Type == OrderType.Torch)
+                TorchBeat(crews, unit, job);
 
             var spec = OrderTable.SpecOf(job.Type);
             if (spec.Resolution != JobResolution.Street || job.StreetOutcome.HasValue)
@@ -176,34 +185,124 @@ namespace RoadDemo
             }
         }
 
-        /// <summary>The wrecking acted, not only booked: while a smash-up or a torching
-        /// is being worked, the man at the door takes a bat to the frontage every few
-        /// seconds (ArmBeat swaps his gun for the pack's bat and swings it, derived).
-        /// A few rounds of it, not the whole shift - the hours run long and a man
-        /// swinging for six minutes straight reads as a machine.</summary>
-        public const int PremisesSwingRounds = 4;
-        public const float PremisesSwingEvery = 4.5f;
-        public const float PremisesSwingFor = 2.6f;
+        /// <summary>A smash-up is two clear blows, then the frontage is visibly shut.
+        /// Keeping this just over two seconds makes it read as an action rather than a man
+        /// mechanically beating the same pane for half the job.</summary>
+        public const int PremisesSmashRounds = 2;
+        public const float PremisesSmashEvery = 1.15f;
+        public const float PremisesSmashFor = 0.9f;
 
         static void SwingBeat(DemoCrews crews, DemoCrews.Unit unit, Job job)
         {
             if (!job.HasPlace)
                 return;
-            if (Swings.TryGetValue(unit.CrewId, out var swung) && swung.JobId == job.Id &&
-                (swung.Count >= PremisesSwingRounds || Time.time < swung.NextAt))
-                return;
-            if (swung.JobId != job.Id)
+            var door = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
+            if (Swings.TryGetValue(unit.CrewId, out var swung) && swung.JobId == job.Id)
+            {
+                if (swung.Count >= PremisesSmashRounds)
+                {
+                    if (swung.Count > PremisesSmashRounds || ArmBeat.Acting(LeadAt(unit, door, 9f)))
+                        return;
+
+                    if (!string.IsNullOrEmpty(job.TargetBusinessId))
+                    {
+                        ShopDamage.SmashBusiness(
+                            new LivingCity.Territory.TerritoryBusinessId(job.TargetBusinessId));
+                    }
+                    else
+                    {
+                        ShopDamage.SmashAt(
+                            door, Vector3.forward, "JOB " + job.Id, crews.GroundY);
+                    }
+                    Swings[unit.CrewId] = (
+                        job.Id, PremisesSmashRounds + 1, float.PositiveInfinity);
+                    return;
+                }
+                if (Time.time < swung.NextAt)
+                    return;
+            }
+            else
+            {
                 swung = default;
+            }
+
+            var lead = LeadAt(unit, door, 9f);
+            if (lead == null)
+                return;
+
+            if (!ArmBeat.Swing(lead, door, PremisesSmashFor))
+                return;
+            Swings[unit.CrewId] = (
+                job.Id, swung.Count + 1, Time.time + PremisesSmashEvery);
+        }
+
+        /// <summary>A torch is not a bat routine. The nearest hood at the premises throws
+        /// one real Molotov model; the bottle's impact starts ShopDamage that same frame.</summary>
+        static void TorchBeat(DemoCrews crews, DemoCrews.Unit unit, Job job)
+        {
+            if (!job.HasPlace)
+                return;
+            if (Torched.TryGetValue(unit.CrewId, out var thrown) && thrown.JobId == job.Id &&
+                (thrown.Lit || thrown.Shot != null))
+                return;
 
             var door = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
+            var outward = Vector3.forward;
+            var businessId = new LivingCity.Territory.TerritoryBusinessId(
+                job.TargetBusinessId);
+            if (businessId.IsValid &&
+                ShopDamage.TryBusinessFrontage(
+                    businessId, out var frontageDoor, out var frontageOutward))
+            {
+                door = frontageDoor;
+                outward = frontageOutward;
+            }
+
+            var lead = LeadAt(unit, door, 9f);
+            if (lead == null)
+                return;
+
+            MolotovProjectile projectile;
+            var impact = door + Vector3.up * 0.85f;
+            var crewId = unit.CrewId;
+            var jobId = job.Id;
+            void Lit(Transform _) => Torched[crewId] = (jobId, null, true);
+
+            if (businessId.IsValid)
+            {
+                projectile = MolotovProjectile.ThrowAtBusiness(
+                    lead, impact, businessId, Lit);
+            }
+            else
+            {
+                var towardStreet = lead.Tf.position - door;
+                towardStreet.y = 0f;
+                if (towardStreet.sqrMagnitude > 0.001f)
+                    outward = towardStreet.normalized;
+                projectile = MolotovProjectile.ThrowAt(
+                    lead,
+                    impact,
+                    door,
+                    outward,
+                    "JOB " + job.Id,
+                    crews.GroundY,
+                    Lit);
+            }
+
+            if (projectile != null)
+                Torched[crewId] = (jobId, projectile, false);
+        }
+
+        static CrewWalker LeadAt(DemoCrews.Unit unit, Vector3 point, float radius)
+        {
             CrewWalker lead = null;
-            var best = 9f * 9f;
+            var best = radius * radius;
             foreach (var man in unit.All())
             {
                 if (man == null || man.Dead || man.Tf == null ||
                     !man.Tf.gameObject.activeInHierarchy)
                     continue;
-                var to = man.Tf.position - door;
+                var to = man.Tf.position - point;
                 to.y = 0f;
                 var sqr = to.sqrMagnitude;
                 if (sqr >= best)
@@ -211,13 +310,7 @@ namespace RoadDemo
                 best = sqr;
                 lead = man;
             }
-
-            if (lead == null)
-                return;
-
-            ArmBeat.Swing(lead, door, PremisesSwingFor);
-            Swings[unit.CrewId] = (
-                job.Id, swung.Count + 1, Time.time + PremisesSwingEvery);
+            return lead;
         }
 
         static DemoCrews.Unit NearestRival(DemoCrews crews, DemoCrews.Unit unit, Job job)
@@ -257,6 +350,7 @@ namespace RoadDemo
             Dispatched.Remove(unit.CrewId);
             Sicced.Remove(unit.CrewId);
             Marks.Remove(unit.CrewId);
+            Torched.Remove(unit.CrewId);
 
             if (outfit.TryGetHeadquarters(out var hq, out _))
                 crews.MarchTo(unit, hq);
@@ -273,6 +367,7 @@ namespace RoadDemo
             Marks.Clear();
             Entered.Clear();
             Swings.Clear();
+            Torched.Clear();
         }
     }
 }

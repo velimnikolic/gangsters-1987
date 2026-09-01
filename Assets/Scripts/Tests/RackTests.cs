@@ -33,6 +33,7 @@ namespace LivingCity.Tests
             ThePlayerReadsWordsAboutAShop(failures);
             TheCardSaysWhereTheShopStands(failures);
             EverySurfaceOffersTheSameOrders(failures);
+            NobodyRobsADoorThatPaysUs(failures);
 
             return failures;
         }
@@ -409,6 +410,52 @@ namespace LivingCity.Tests
         /// facts that matter: where the shop stands with us, and whether our men are at
         /// its door.
         /// </summary>
+        /// <summary>
+        /// The block file's sheet and the order book's map ask ONE table what may be done
+        /// to a door (Outfit.DoorOrders), so they cannot disagree. A shop that pays us is
+        /// the case that used to split them: the sheet never offered to rob it, while the
+        /// map checked only the deed book and would send a crew to rob, wreck, torch or
+        /// bomb the premises whose tribute the outfit collects.
+        /// </summary>
+        static void NobodyRobsADoorThatPaysUs(List<string> failures)
+        {
+            var violence = new[]
+            {
+                Outfit.OrderType.Raid,
+                Outfit.OrderType.SmashUp,
+                Outfit.OrderType.Torch,
+                Outfit.OrderType.Bomb,
+            };
+
+            for (var i = 0; i < violence.Length; i++)
+            {
+                if (Outfit.DoorOrders.Refusal(violence[i], Outfit.DoorTenure.Paying) == null)
+                    failures.Add("ORDER: " + violence[i] + " was allowed against a shop " +
+                                 "that pays us for peace.");
+                if (Outfit.DoorOrders.Refusal(violence[i], Outfit.DoorTenure.Ours) == null)
+                    failures.Add("ORDER: " + violence[i] + " was allowed against our own " +
+                                 "premises.");
+                if (Outfit.DoorOrders.Refusal(violence[i], Outfit.DoorTenure.Rival) != null)
+                    failures.Add("ORDER: " + violence[i] + " was refused against a rival's " +
+                                 "door.");
+                if (Outfit.DoorOrders.Refusal(violence[i], Outfit.DoorTenure.Open) != null)
+                    failures.Add("ORDER: " + violence[i] + " was refused against a door " +
+                                 "nobody holds.");
+            }
+
+            // Standing a watch on the shop we are paid by is exactly what protection IS,
+            // and the deed is still bought from a door that pays us.
+            if (Outfit.DoorOrders.Refusal(
+                    Outfit.OrderType.Guard, Outfit.DoorTenure.Paying) != null)
+                failures.Add("ORDER: a paying shop could not be guarded.");
+            if (Outfit.DoorOrders.Refusal(
+                    Outfit.OrderType.BuyPremises, Outfit.DoorTenure.Paying) != null)
+                failures.Add("ORDER: a paying shop could not be bought outright.");
+            if (Outfit.DoorOrders.Refusal(
+                    Outfit.OrderType.BuyPremises, Outfit.DoorTenure.Ours) == null)
+                failures.Add("ORDER: our own premises were offered for sale to us.");
+        }
+
         static void EverySurfaceOffersTheSameOrders(List<string> failures)
         {
             var rows = new List<TerritoryRacketOrder>();

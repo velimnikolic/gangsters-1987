@@ -73,6 +73,233 @@ namespace RoadDemo
     }
 
     /// <summary>
+    /// The torch job's visible bottle. It uses the Palm City Molotov already shipped with
+    /// the project, sits in the thrower's real right hand for one short beat, then follows
+    /// the same deterministic no-Rigidbody arc as a grenade. It does not make a grenade
+    /// blast: impact starts the shared ShopDamage fire immediately.
+    /// </summary>
+    public sealed class MolotovProjectile : MonoBehaviour
+    {
+        public const string ModelPath =
+            "Assets/Synty/PolygonPalmCity/Prefabs/Weapons/SM_Wep_Molotov_02.prefab";
+
+        const string WickFirePath =
+            "Assets/Synty/PolygonParticleFX/Prefabs/FX_Fire_Small_01.prefab";
+        const string ImpactFirePath =
+            "Assets/Synty/PolygonParticleFX/Prefabs/FX_Fire_Explosion_01.prefab";
+        const float Windup = 0.22f;
+        const float Gravity = 13f;
+
+        readonly System.Collections.Generic.List<GameObject> _hiddenInHand =
+            new System.Collections.Generic.List<GameObject>();
+
+        CrewWalker _thrower;
+        Vector3 _target;
+        Vector3 _velocity;
+        float _age;
+        float _flight;
+        bool _released;
+        Transform _wick;
+        System.Func<Transform> _ignite;
+        System.Action<Transform> _onIgnited;
+
+        /// <summary>Throw at an authoritative business. Impact marks and lights the same
+        /// persistent premises that OutfitDirector would resolve later; that later call is
+        /// harmless because ShopDamage is once-only per business.</summary>
+        public static MolotovProjectile ThrowAtBusiness(
+            CrewWalker thrower,
+            Vector3 impact,
+            LivingCity.Territory.TerritoryBusinessId businessId,
+            System.Action<Transform> onIgnited = null)
+        {
+            return Create(
+                thrower,
+                impact,
+                () =>
+                {
+                    ShopDamage.ScorchBusiness(businessId);
+                    return null;
+                },
+                onIgnited);
+        }
+
+        /// <summary>Geometry-explicit form used by the racketeering viewer. The callback
+        /// receives the shared ShopFire root so the finite demo can clear it on replay.</summary>
+        public static MolotovProjectile ThrowAt(
+            CrewWalker thrower,
+            Vector3 impact,
+            Vector3 frontageDoor,
+            Vector3 outward,
+            string label,
+            float groundY,
+            System.Action<Transform> onIgnited = null)
+        {
+            return Create(
+                thrower,
+                impact,
+                () => ShopDamage.ScorchAt(
+                    frontageDoor, outward, label, groundY),
+                onIgnited);
+        }
+
+        static MolotovProjectile Create(
+            CrewWalker thrower,
+            Vector3 impact,
+            System.Func<Transform> ignite,
+            System.Action<Transform> onIgnited)
+        {
+            if (thrower == null || thrower.Dead || thrower.Tf == null ||
+                !thrower.Tf.gameObject.activeInHierarchy)
+                return null;
+
+            var prefab = DemoAssetLoad.Load<GameObject>(ModelPath);
+            GameObject bottle;
+            var animator = thrower.Tf.GetComponentInChildren<Animator>();
+            var held = prefab != null && animator != null
+                ? CrewArms.Attach(animator, prefab)
+                : null;
+            if (held != null)
+            {
+                bottle = held.gameObject;
+            }
+            else if (prefab != null)
+            {
+                bottle = Instantiate(prefab);
+                bottle.transform.position = thrower.ChestPosition + Vector3.up * 0.1f;
+            }
+            else
+            {
+                bottle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                bottle.transform.position = thrower.ChestPosition + Vector3.up * 0.1f;
+                bottle.transform.localScale = new Vector3(0.09f, 0.18f, 0.09f);
+                bottle.GetComponent<MeshRenderer>().sharedMaterial = BombKit.CasingMaterial();
+            }
+
+            bottle.name = "Lit Molotov";
+            foreach (var col in bottle.GetComponentsInChildren<Collider>(true))
+                Destroy(col);
+            foreach (var body in bottle.GetComponentsInChildren<Rigidbody>(true))
+                Destroy(body);
+
+            var projectile = bottle.AddComponent<MolotovProjectile>();
+            projectile._thrower = thrower;
+            projectile._target = impact;
+            projectile._ignite = ignite;
+            projectile._onIgnited = onIgnited;
+            projectile.HideOtherHandProps();
+            projectile.FaceThrower();
+
+            var wick = BombFx.Spawn(
+                WickFirePath,
+                bottle.transform.position + Vector3.up * 0.18f,
+                Quaternion.identity,
+                0.16f,
+                0f);
+            projectile._wick = wick != null ? wick.transform : null;
+            return projectile;
+        }
+
+        void HideOtherHandProps()
+        {
+            if (transform.parent == null)
+                return;
+            var hand = transform.parent;
+            for (var i = 0; i < hand.childCount; i++)
+            {
+                var child = hand.GetChild(i);
+                if (child == transform || !child.gameObject.activeSelf)
+                    continue;
+                child.gameObject.SetActive(false);
+                _hiddenInHand.Add(child.gameObject);
+            }
+        }
+
+        void RestoreHandProps()
+        {
+            for (var i = 0; i < _hiddenInHand.Count; i++)
+                if (_hiddenInHand[i] != null)
+                    _hiddenInHand[i].SetActive(true);
+            _hiddenInHand.Clear();
+        }
+
+        void Update()
+        {
+            var dt = Time.deltaTime;
+            if (dt <= 0f)
+                return;
+
+            _age += dt;
+            if (!_released)
+            {
+                FaceThrower();
+                FollowWick();
+                if (_age < Windup)
+                    return;
+                Release();
+            }
+
+            _velocity.y -= Gravity * dt;
+            transform.position += _velocity * dt;
+            transform.Rotate(620f * dt, 430f * dt, 170f * dt, Space.Self);
+            FollowWick();
+            if (_age - Windup < _flight)
+                return;
+
+            transform.position = _target;
+            BombFx.Spawn(
+                ImpactFirePath,
+                _target,
+                Quaternion.identity,
+                0.55f,
+                1.6f);
+            var damage = _ignite?.Invoke();
+            _onIgnited?.Invoke(damage);
+            Destroy(gameObject);
+        }
+
+        void Release()
+        {
+            _released = true;
+            RestoreHandProps();
+            transform.SetParent(null, true);
+
+            var from = transform.position;
+            var flat = _target - from;
+            flat.y = 0f;
+            _flight = Mathf.Clamp(flat.magnitude / 8f, 0.42f, 1.05f);
+            _velocity = flat / _flight;
+            _velocity.y = (_target.y - from.y) / _flight +
+                          0.5f * Gravity * _flight;
+        }
+
+        void FaceThrower()
+        {
+            if (_thrower == null || _thrower.Tf == null)
+                return;
+            var direction = _target - _thrower.Tf.position;
+            direction.y = 0f;
+            if (direction.sqrMagnitude > 0.001f)
+                _thrower.Tf.rotation = Quaternion.LookRotation(
+                    direction.normalized, Vector3.up);
+        }
+
+        void FollowWick()
+        {
+            if (_wick == null)
+                return;
+            _wick.position = transform.position + Vector3.up * 0.18f;
+            _wick.rotation = Quaternion.identity;
+        }
+
+        void OnDestroy()
+        {
+            RestoreHandProps();
+            if (_wick != null)
+                Destroy(_wick.gameObject);
+        }
+    }
+
+    /// <summary>
     /// A charge laid in front of a car and left armed. It sits and watches the one car
     /// it was set for; the moment that car is driven off - its wheels turning, the
     /// street opening under it - it goes off and tears the car to scrap (Explosion,

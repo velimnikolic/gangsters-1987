@@ -2084,6 +2084,12 @@ namespace RoadDemo
                 for (int i = 0; i < territory.Quarters.Count; i++)
                 {
                     var quarter = territory.Quarters[i];
+                    // A quarter the deal never built - a rig keeps two of the six, and
+                    // CoreTerritoryPlan still names all six so the ids stay stable - has
+                    // no blocks and a zero rectangle sitting at the frame origin. Drawn,
+                    // it becomes a place on the map that does not exist in the city.
+                    if (quarter.BlockIds.Count == 0 || quarter.LocalBounds.width <= 0f)
+                        continue;
                     Districts.Add(new TurfDistrict
                     {
                         Name = quarter.Name.ToUpperInvariant(),

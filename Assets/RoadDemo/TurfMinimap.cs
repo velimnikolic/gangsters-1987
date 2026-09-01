@@ -39,10 +39,12 @@ namespace RoadDemo
         /// HUD rather than a thing instead of the city.</summary>
         const int SortingOrder = 18;
 
-        /// <summary>The card, in canvas units. The design's 256 x 160 render texture,
-        /// which is the plate's own 8:5 - anything else would letterbox the city.
-        /// </summary>
-        const float CardWide = 256f, CardTall = 160f;
+        /// <summary>The card, in canvas units. The design gives the corner 290 across
+        /// and lets the picture set its own height; its plate measures 528 x 344, so at
+        /// 290 the map is 189 deep. Kept as the design's proportion rather than rounded
+        /// to a neat ratio: the card is a WINDOW on the same city the full plate draws,
+        /// and a different shape here would show a different piece of it.</summary>
+        const float CardWide = 290f, CardTall = 189f;
         // No border. The card used to sit on a margin of the plate's own cream, which
         // read as a mount round a photograph; the design runs the band and the map to
         // the card's edge and rules only the side that faces the city.
@@ -58,7 +60,7 @@ namespace RoadDemo
         const float RedrawZoomShare = 1.08f;
         const float RedrawAfterStillSeconds = 0.14f;
         const float MovingRedrawInterval = 0.9f;
-        // The card is only 256 x 160 canvas pixels. A 480 x 300 upload was almost
+        // The card is only 290 x 189 canvas pixels. A 480 x 300 upload was almost
         // four source texels for every displayed pixel and could make Texture2D.Apply
         // the one periodic hitch while the 3D camera was moving. The shared survey is
         // still drawn at full resolution on its worker; only the corner-card handoff is
@@ -84,6 +86,13 @@ namespace RoadDemo
 
         Canvas _canvas;
         RectTransform _card, _view, _sheetPose, _sheetRect, _band;
+
+        /// <summary>The corner plate goes dark with the rest of the street HUD: the
+        /// same wash the full map lays over its own paper, and the same shared table
+        /// over the card's chrome. The card is the turf map printed small, so it cannot
+        /// be the one piece of paper on the screen still lit at midnight.</summary>
+        readonly HudNight _night = new HudNight();
+        Image _nightInk;
         TMPro.TMP_Text _bandPlace, _bandHolder;
         string _shownPlace = "", _shownHolder = "";
         Texture2D _paper;
@@ -263,6 +272,14 @@ namespace RoadDemo
 
             AdoptBuildingLayer();
 
+            // Over the paper and its volumes, under the quarter tags, the crew dots and
+            // the camera's frame - the corner's copy of the full map's night wash.
+            var night = DemoUi.NewRect("Night", _view);
+            DemoUi.Fill(night);
+            _nightInk = night.gameObject.AddComponent<Image>();
+            _nightInk.raycastTarget = false;
+            PaintNight();
+
             BuildDistrictTags();
 
             for (int i = 0; i < _frame.Length; i++)
@@ -273,7 +290,25 @@ namespace RoadDemo
                 LivingCity.UI.LedgerKit.Fill(_frame[i], new Color32(143, 33, 25, 220));
             }
 
+            _night.Register(_card);
+
             _canvas.gameObject.SetActive(false);
+        }
+
+        /// <summary>How dark the corner plate stands right now, off the shared table so
+        /// the card and the panels beside it cross together.</summary>
+        void PaintNight()
+        {
+            if (_nightInk == null)
+                return;
+
+            var wash = HudNight.PlateWash();
+            if (Mathf.Abs(_nightInk.color.a - wash.a) > 0.001f)
+                _nightInk.color = wash;
+
+            bool lit = wash.a > 0.002f;
+            if (_nightInk.enabled != lit)
+                _nightInk.enabled = lit;
         }
 
         /// <summary>
@@ -484,6 +519,11 @@ namespace RoadDemo
                 return;
 
             RefreshBand();
+
+            // The card's chrome is built once and only ever re-lettered, so there is
+            // nothing to re-register: crossing it is the whole of the night's work.
+            _night.Relight();
+            PaintNight();
 
             var pivot = _rig != null
                 ? new Vector2(_rig.pivot.x, _rig.pivot.z)

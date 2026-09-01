@@ -9,6 +9,7 @@ using LivingCity.Personnel;
 using LivingCity.Territory;
 using RoadDemo;
 using static LivingCity.UI.LedgerKit;
+using BlockTenure = LivingCity.Outfit.DoorTenure;
 
 namespace LivingCity.UI
 {
@@ -66,14 +67,6 @@ namespace LivingCity.UI
 
         /// <summary>Where a premise stands with us. Read off the deed
         /// (BusinessMarker.GangId) and the racket ledger, never stored here.</summary>
-        enum BlockTenure
-        {
-            Ours,
-            Paying,
-            Rival,
-            Open,
-        }
-
         /// <summary>One premise on the block, as the city answers for it.</summary>
         struct BlockTrade
         {
@@ -276,25 +269,11 @@ namespace LivingCity.UI
                 if (marker == null)
                     BusinessViewBindings.TryGet(row.Id, out marker);
 
-                var deedGang = BusinessDeeds.GangOf(row.Id);
-                if (deedGang < 0 && marker != null)
-                    deedGang = marker.GangId;
-
-                if (deedGang == GangCatalog.PlayerGangId)
-                {
-                    trade.Tenure = BlockTenure.Ours;
-                }
-                else if (deedGang >= 0)
-                {
-                    trade.Tenure = BlockTenure.Rival;
-                    trade.RivalName = GangName(deedGang);
-                }
-                else if (racket != null && racket.TryGetProtector(row.Id, out var protector))
-                {
-                    trade.Tenure = protector == us ? BlockTenure.Paying : BlockTenure.Rival;
-                    if (trade.Tenure == BlockTenure.Rival)
-                        trade.RivalName = GangName(protector.Value);
-                }
+                // Who holds this door is the ONE shared reading - deed, then the street's
+                // own fronts, then the racket. The sheet and the order book's map ask the
+                // same class so they can never answer it differently.
+                trade.Tenure = Gameplay.DoorHolder.Read(row.Id, marker, out var holder);
+                trade.RivalName = holder >= 0 ? GangName(holder) : null;
 
                 trade.RoleGang = -1;
                 var front = FrontOn(row.Id);
@@ -302,19 +281,6 @@ namespace LivingCity.UI
                 {
                     trade.Role = front.Role;
                     trade.RoleGang = front.GangId;
-                    // A house's own premises is a house's, whatever the deed book has
-                    // caught up to - the street said so and the street is the authority
-                    // on where a family sits.
-                    if (front.GangId == GangCatalog.PlayerGangId)
-                    {
-                        trade.Tenure = BlockTenure.Ours;
-                        trade.RivalName = null;
-                    }
-                    else if (trade.Tenure == BlockTenure.Open)
-                    {
-                        trade.Tenure = BlockTenure.Rival;
-                        trade.RivalName = GangName(front.GangId);
-                    }
                 }
 
                 if (priced)
@@ -1326,14 +1292,17 @@ namespace LivingCity.UI
                     () => FileRacketIntent(target, TerritoryRacketIntent.Threaten), true);
                 cursorX = x;
                 y += 32f;
-
-                Key("ROB IT", () => FileStreetJob(target, Outfit.OrderType.Raid), false);
             }
             else if (trade.Tenure == BlockTenure.Paying)
             {
                 Key(TerritoryRacketOrders.CollectLabel,
                     () => FileRacketIntent(target, TerritoryRacketIntent.Collect), true);
             }
+
+            // What may be done TO the door is the shared table's call, never a tenure
+            // test written out a second time here - the map's planner reads the same one.
+            if (Outfit.DoorOrders.Refusal(Outfit.OrderType.Raid, trade.Tenure) == null)
+                Key("ROB IT", () => FileStreetJob(target, Outfit.OrderType.Raid), false);
 
             Key("SIT ON IT", () => FileStreetJob(target, Outfit.OrderType.Guard), false);
             cursorX = x;
@@ -1541,6 +1510,13 @@ namespace LivingCity.UI
             var men = new List<int>(blockCardCrew);
             FileOrder(word + " at " + trade.Name + " asked for.", () =>
             {
+                // The keys are an offer made when the sheet was painted; the door can
+                // have changed hands since. The rule is asked again at the moment the
+                // job is filed, which is the only moment that binds.
+                var refusal = Outfit.DoorOrders.Refusal(
+                    type, Gameplay.DoorHolder.Read(trade.Id));
+                if (refusal != null)
+                    return Outfit.FilingRuling.Refuse(refusal);
                 if (men.Count == 0)
                     return Outfit.FilingRuling.Refuse("no men picked for the job");
                 if (outfit == null)

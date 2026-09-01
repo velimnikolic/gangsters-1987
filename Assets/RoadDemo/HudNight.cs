@@ -27,7 +27,8 @@ namespace RoadDemo
         /// <summary>
         /// How solid the screen-edge HUD is. The design gives its whole hud region
         /// opacity 0.8 - a fifth of the city shows through every panel, which is what
-        /// keeps the paper laid ON the street rather than bolted over it.
+        /// keeps the paper laid ON the street rather than bolted over it, and it is one
+        /// of the decisions the spec marks as deliberate.
         ///
         /// Held here because the bar is made of three canvases - the clock strip, the
         /// panels, the corner plate - and they are one region in the design. Two of
@@ -85,6 +86,21 @@ namespace RoadDemo
             // terminal palette. They cross to the same three faces.
             new Token(0xf4ecd6, 0xf7f2e6, 0x231c17),   // the strip's paper
             new Token(0x2b2418, 0x2b2418, 0xefe6d5),   // the strip's ink
+
+            // The turf map's own chrome - the key strip, the context menu, the hover
+            // tip and the place chips - was mixed for a survey plate and predates the
+            // terminal palette as well. Same three faces: the paper goes to the panel's
+            // night stock, every ink to the cream the rest of the HUD prints in after
+            // dark. Without these the key came out cream paper carrying near-black type
+            // at midnight, which is the exact failure the shared table exists to stop.
+            new Token(0xf7f0da, 0xf7f0da, 0x231c17),   // map paper: key, menu, chip
+            new Token(0xe6dab9, 0xe6dab9, 0x191410),   // the sheet's own backdrop
+            new Token(0x2f2820, 0x2f2820, 0xe6dccb),   // map body copy
+            new Token(0x6d5c40, 0x6d5c40, 0x9c8f83),   // map label
+            new Token(0x5c4d34, 0x5c4d34, 0xb9ab97),   // map button
+            new Token(0x4a3f2c, 0x4a3f2c, 0xcdc0ab),   // map roster ink
+            new Token(0x7a684a, 0x7a684a, 0x9c8f83),   // map footnote
+            new Token(0xe0d4b6, 0xe0d4b6, 0x2f2620),   // the mug's field
         };
 
         /// <summary>How near two colours must be to be the same token. Well under the
@@ -111,6 +127,14 @@ namespace RoadDemo
         }
 
         readonly List<Inked> _inked = new List<Inked>();
+
+        /// <summary>Who is already in the register. A HUD whose chrome is rebuilt under
+        /// it - the map's key, its context menu - is registered again and again from a
+        /// slow tick, and by day a graphic's colour is still its BASE colour, so without
+        /// this every sweep would enter the same graphic a second time and the register
+        /// would grow without end.</summary>
+        readonly HashSet<Graphic> _known = new HashSet<Graphic>();
+
         int _step = -1;
 
         /// <summary>
@@ -134,6 +158,9 @@ namespace RoadDemo
             for (var i = 0; i < found.Length; i++)
             {
                 var graphic = found[i];
+                if (!_known.Add(graphic))
+                    continue;
+
                 var colour = graphic.color;
                 for (var t = 0; t < Tokens.Length; t++)
                 {
@@ -157,6 +184,10 @@ namespace RoadDemo
             for (var i = _inked.Count - 1; i >= 0; i--)
                 if (_inked[i].Target == null)
                     _inked.RemoveAt(i);
+
+            // And out of the seen-it set, or a HUD that repaints all session keeps a
+            // handle on every panel it ever put down.
+            _known.RemoveWhere(graphic => graphic == null);
         }
 
         /// <summary>How dark it is where the sky says, quantised.</summary>
@@ -164,6 +195,56 @@ namespace RoadDemo
         {
             var clock = LivingCity.Ambient.DayClock.Current;
             return clock != null ? DemoSky.Nightness(clock.Hour) : 0f;
+        }
+
+        /// <summary>
+        /// One colour, crossed to wherever the sky is now - for ink a control has to
+        /// set itself rather than wear off the register, which is every hover: a button
+        /// remembers the colour it goes back to when the pointer leaves, and remembered
+        /// at build that is a DAY colour that would be repainted onto a night panel.
+        ///
+        /// A colour that is not in the table comes back untouched, so a caller may hand
+        /// in anything.
+        /// </summary>
+        public static Color Cross(Color colour)
+        {
+            for (var t = 0; t < Tokens.Length; t++)
+            {
+                var token = Tokens[t];
+                if (Mathf.Abs(colour.r - token.Base.r) > Epsilon ||
+                    Mathf.Abs(colour.g - token.Base.g) > Epsilon ||
+                    Mathf.Abs(colour.b - token.Base.b) > Epsilon)
+                    continue;
+
+                var night = Mathf.RoundToInt(Nightness() * Steps) / (float)Steps;
+                var crossed = Color.Lerp(token.Day, token.Night, night);
+                return new Color(crossed.r, crossed.g, crossed.b, colour.a);
+            }
+            return colour;
+        }
+
+        /// <summary>The ink a survey plate is read under after dark, and how much of it
+        /// there is at midnight. The plate itself is a raster drawn on a worker thread
+        /// in one fixed palette, so night is not printed INTO the paper - it is a wash
+        /// laid over the cartography, under the street names and under every live
+        /// tactical mark, which is why an order stays as bright at two in the morning as
+        /// it is at noon.</summary>
+        static readonly Color PlateInk = LedgerV2.Rgb2(0x0b0e16);
+
+        /// <summary>How much of that ink is on the paper at midnight. Deep enough that
+        /// the plate reads as a sheet held under a desk lamp rather than a daylit one
+        /// dimmed a little: at four fifths the terrain and the roads go to near-black
+        /// and the sheet stops glaring off a dark screen. It can go this far because
+        /// nothing the player has to READ is under the wash - the street names and every
+        /// live mark are laid over it.</summary>
+        const float PlateDeepest = 0.86f;
+
+        /// <summary>How dark the plate stands right now, quantised to the same sixteen
+        /// steps the panels cross on so paper and chrome move together.</summary>
+        public static Color PlateWash()
+        {
+            var night = Mathf.RoundToInt(Nightness() * Steps) / (float)Steps;
+            return new Color(PlateInk.r, PlateInk.g, PlateInk.b, night * PlateDeepest);
         }
 
         /// <summary>Cross everything registered to wherever the sky is now. Only on a

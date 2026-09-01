@@ -1,0 +1,110 @@
+using LivingCity.Business;
+using LivingCity.Entities;
+using LivingCity.Gangs;
+using LivingCity.Outfit;
+using LivingCity.Territory;
+
+namespace LivingCity.Gameplay
+{
+    /// <summary>
+    /// Who holds one door, read from the three books that can answer it: the deed, the
+    /// street's own fronts, and the racket. Paper first, because the deed book survives a
+    /// block being streamed out; the street next, because a house standing in its own
+    /// premises is a house whatever the paperwork has caught up to; the racket last, for
+    /// a door nobody owns but somebody is being paid by.
+    ///
+    /// The block file worked this out inline and the order book's map did not work it out
+    /// at all - it read the deed and nothing else. Both now ask here, so the sheet and the
+    /// map cannot disagree about who a shop belongs to.
+    /// </summary>
+    public static class DoorHolder
+    {
+        /// <summary>
+        /// Where this door stands with the player's family. <paramref name="holderGang"/>
+        /// comes back as the rival house that holds it, or -1 when no other house does.
+        /// </summary>
+        /// <param name="marker">The live view when the caller already has one; null is
+        /// fine and the binding is looked up here.</param>
+        public static DoorTenure Read(
+            TerritoryBusinessId id, BusinessMarker marker, out int holderGang)
+        {
+            holderGang = -1;
+            if (!id.IsValid)
+                return DoorTenure.Open;
+
+            var deedGang = BusinessDeeds.GangOf(id);
+            if (deedGang < 0)
+            {
+                if (marker == null)
+                    BusinessViewBindings.TryGet(id, out marker);
+                if (marker != null)
+                    deedGang = marker.GangId;
+            }
+
+            var tenure = DoorTenure.Open;
+            if (deedGang == GangCatalog.PlayerGangId)
+            {
+                tenure = DoorTenure.Ours;
+            }
+            else if (deedGang >= 0)
+            {
+                tenure = DoorTenure.Rival;
+                holderGang = deedGang;
+            }
+            else
+            {
+                var racket = RoadDemo.TerritoryRuntime.Instance?.Racket;
+                if (racket != null && racket.TryGetProtector(id, out var protector))
+                {
+                    if (protector == new TerritoryGangId(GangCatalog.PlayerGangId))
+                    {
+                        tenure = DoorTenure.Paying;
+                    }
+                    else
+                    {
+                        tenure = DoorTenure.Rival;
+                        holderGang = protector.Value;
+                    }
+                }
+            }
+
+            // A house's own premises is a house's, whatever the deed book has caught up
+            // to - the street said so and the street is the authority on where a family
+            // sits. Only a front that has actually been SEEN counts, so the map cannot
+            // tell the player about a house he has never laid eyes on.
+            var front = FrontOn(id);
+            if (front != null)
+            {
+                if (front.GangId == GangCatalog.PlayerGangId)
+                {
+                    tenure = DoorTenure.Ours;
+                    holderGang = -1;
+                }
+                else if (tenure == DoorTenure.Open)
+                {
+                    tenure = DoorTenure.Rival;
+                    holderGang = front.GangId;
+                }
+            }
+
+            return tenure;
+        }
+
+        public static DoorTenure Read(TerritoryBusinessId id) =>
+            Read(id, null, out _);
+
+        static RoadDemo.GangFront FrontOn(TerritoryBusinessId id)
+        {
+            var all = RoadDemo.GangFront.All;
+            for (var i = 0; i < all.Count; i++)
+            {
+                var front = all[i];
+                if (front == null || front.BusinessId != id)
+                    continue;
+                return RoadDemo.TurfKnowledge.IsKnown(front) ? front : null;
+            }
+
+            return null;
+        }
+    }
+}

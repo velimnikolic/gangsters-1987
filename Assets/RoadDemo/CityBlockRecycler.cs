@@ -420,12 +420,25 @@ namespace RoadDemo
 
         public static void Release() => _holding = false;
 
+        /// <summary>
+        /// Counts every change the streamer makes to what is STANDING in the city: a
+        /// block bound, activated, put away, finished attaching its renderers, or
+        /// evicted. Anyone photographing the city off-camera - the ledger's block file -
+        /// watches this instead of guessing when the ground under its lens is finished:
+        /// a block streams in over many frames and several seconds, and a still exposed
+        /// while it was arriving is a photograph of an empty lot.
+        /// </summary>
+        public static int StreamRevision { get; private set; }
+
+        static void Streamed() => StreamRevision++;
+
         /// <summary>Whether the streamed view covering this ground is fully attached and
-        /// ready to be photographed. Ground owned by no recycler is eager scene content
-        /// and is therefore ready already.</summary>
+        /// ready to be photographed. EVERY view over the ground has to be standing, not
+        /// merely one of them: a block can straddle two recipes, and half a block is
+        /// exactly the half-empty picture this answer exists to prevent. Ground owned by
+        /// no recycler is eager scene content and is therefore ready already.</summary>
         public static bool HeldReady(Rect worldRect)
         {
-            var belongsToRecycler = false;
             for (var i = 0; i < Instances.Count; i++)
             {
                 var recycler = Instances[i];
@@ -440,13 +453,12 @@ namespace RoadDemo
                     var world = recycler._frame.ToWorldRect(recipe.LocalBounds);
                     if (!world.Overlaps(worldRect, allowInverse: true))
                         continue;
-                    belongsToRecycler = true;
-                    if (recycler._resident.TryGetValue(recipe.Id, out var view) &&
-                        view != null && view.Active && view.Attached)
-                        return true;
+                    if (!recycler._resident.TryGetValue(recipe.Id, out var view) ||
+                        view == null || !view.Active || !view.Attached)
+                        return false;
                 }
             }
-            return !belongsToRecycler;
+            return true;
         }
 
         static bool Held(Rect world) =>
@@ -738,6 +750,7 @@ namespace RoadDemo
             view.LastUsed = Time.frameCount;
             if (view.Active) return;
             view.Active = true;
+            Streamed();
             BeginAttachment(view);
             _lamps?.Register(view.Content);
             _parkedGlow?.Register(view.Content);
@@ -748,6 +761,7 @@ namespace RoadDemo
         {
             if (!view.Active) return;
             view.Active = false;
+            Streamed();
             view.LastUsed = Time.frameCount;
             if (view.Recipe != null) _fallbacks?.ShowFallback(view.Recipe.Id);
             CancelAttachment(view);
@@ -782,6 +796,7 @@ namespace RoadDemo
             if (view.AttachRenderers.Count == 0)
             {
                 view.Attached = true;
+                Streamed();
                 if (view.Recipe != null) _fallbacks?.HideFallback(view.Recipe.Id);
                 return;
             }
@@ -813,6 +828,7 @@ namespace RoadDemo
                 {
                     view.Attaching = false;
                     view.Attached = true;
+                    Streamed();
                     if (view.Active && view.Recipe != null)
                         _fallbacks?.HideFallback(view.Recipe.Id);
                     _attachments.RemoveAt(index);
@@ -945,6 +961,7 @@ namespace RoadDemo
         void Evict(View view)
         {
             if (view == null) return;
+            Streamed();
             if (view.Recipe != null) _resident.Remove(view.Recipe.Id);
             if (view.Active) _active = Mathf.Max(0, _active - 1);
             DestroyPayload(view, countEviction: true);

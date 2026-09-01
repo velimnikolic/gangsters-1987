@@ -44,6 +44,12 @@ namespace LivingCity.UI
         float draftX;
         float draftZ;
         string draftLabel = "";
+
+        /// <summary>The door the point pick landed on, carried onto the job itself. Without
+        /// it a raid or a smashing filed from the map bound to no premises at all: the men
+        /// went, the money was booked, and the shop they hit was never told - no racket
+        /// record, no boards on the front (OutfitDirector.OnJobResolved reads this).</summary>
+        string draftBusinessId = "";
         int draftMen = 1;
         string ordersNote = "";
         int selectedOrderId = -1;
@@ -364,6 +370,7 @@ namespace LivingCity.UI
             draftBlocks.Clear();
             draftLabel = "";
             draftBlockId = -1;
+            draftBusinessId = "";
             var skipped = 0;
             var firstRefusal = Refusal.None;
             var firstRival = -1;
@@ -435,38 +442,30 @@ namespace LivingCity.UI
             var found = Business.CityBusinesses.TryNearest(
                 new Vector3(world.x, 0f, world.y), 45f, out var best);
 
-            var needsBusiness = spec.Type == Outfit.OrderType.SmashUp ||
-                spec.Type == Outfit.OrderType.Raid ||
-                spec.Type == Outfit.OrderType.Torch ||
-                spec.Type == Outfit.OrderType.Bomb ||
-                spec.Type == Outfit.OrderType.BuyPremises ||
-                spec.Type == Outfit.OrderType.SetUpBusiness ||
-                spec.Type == Outfit.OrderType.RunBusiness ||
-                spec.Type == Outfit.OrderType.AdjustProtection;
-
             // Verbose BEFORE assignment, opaque after execution - that split is the
             // design: the planner explains, the report never does.
-            if (needsBusiness && !found)
+            if (Outfit.DoorOrders.NeedsDoor(spec.Type) && !found)
             {
                 ordersNote = LedgerText.OrderLabel(spec.Type) +
                     " wants a business door - nothing stands there.";
                 return;
             }
 
-            // A door on our own paper - the headquarters, a bought premises - takes a
-            // guard and nothing hostile. Robbing your own till is not an order.
-            var hostile = spec.Type == Outfit.OrderType.SmashUp ||
-                spec.Type == Outfit.OrderType.Raid ||
-                spec.Type == Outfit.OrderType.Torch ||
-                spec.Type == Outfit.OrderType.Bomb ||
-                spec.Type == Outfit.OrderType.BuyPremises ||
-                spec.Type == Outfit.OrderType.AdjustProtection;
-            if (found && hostile && Business.BusinessDeeds.GangOf(best.Id) ==
-                Gangs.GangCatalog.PlayerGangId)
+            // What may be aimed at this door is the block file's table, asked here rather
+            // than written out again: the sheet has never offered to rob a shop that pays
+            // us, and the map used to check the deed book alone - so a crew could be sent
+            // to rob, wreck, torch or bomb the very premises whose tribute we collect.
+            if (found)
             {
-                ordersNote = "That door is on our own paper - only a guard can be put on it.";
-                return;
+                var refusal = Outfit.DoorOrders.Refusal(
+                    spec.Type, Gameplay.DoorHolder.Read(best.Id, best.Marker, out _));
+                if (refusal != null)
+                {
+                    ordersNote = refusal;
+                    return;
+                }
             }
+
             if (blockId < 0 && !found)
             {
                 ordersNote = "Open street - nothing to target.";
@@ -480,6 +479,7 @@ namespace LivingCity.UI
                 draftX = best.Position.x;
                 draftZ = best.Position.z;
                 draftLabel = best.Name;
+                draftBusinessId = best.Id.Value;
             }
             else
             {
@@ -487,6 +487,7 @@ namespace LivingCity.UI
                 draftX = world.x;
                 draftZ = world.y;
                 draftLabel = "Block #" + blockId;
+                draftBusinessId = "";
             }
             ordersNote = "Target: " + draftLabel + ".";
         }
@@ -983,6 +984,22 @@ namespace LivingCity.UI
 
                 LedgerV2.Button(ordersContent, "SEND THEM", 4f, y, 200f, 28f, () =>
                 {
+                    // The draft was checked when the ground was picked; the door can have
+                    // changed hands while the book was open, and filing is the moment that
+                    // binds. Same table, same answer as the block file's own key.
+                    var door = new Territory.TerritoryBusinessId(draftBusinessId);
+                    if (door.IsValid)
+                    {
+                        var refusal = Outfit.DoorOrders.Refusal(
+                            issueSpec.Type, Gameplay.DoorHolder.Read(door));
+                        if (refusal != null)
+                        {
+                            ordersNote = refusal;
+                            dirty = true;
+                            return;
+                        }
+                    }
+
                     var job = new Outfit.Job
                     {
                         CrewId = crewId,
@@ -993,6 +1010,7 @@ namespace LivingCity.UI
                         TargetZ = draftZ,
                         TargetLabel = draftLabel,
                         TargetWorth = DraftedWorth(issueSpec.Type),
+                        TargetBusinessId = draftBusinessId,
                     };
                     job.BlockTargets.AddRange(draftBlocks);
 
@@ -1001,6 +1019,7 @@ namespace LivingCity.UI
                     {
                         draftBlocks.Clear();
                         draftLabel = "";
+                        draftBusinessId = "";
                         draftMen = 1;
                         ordersNote = "Issued. They go as soon as they are free.";
                     }
