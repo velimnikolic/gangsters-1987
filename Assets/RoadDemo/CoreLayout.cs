@@ -1957,6 +1957,32 @@ namespace RoadDemo
         public const int Deals = 600;
 
         /// <summary>
+        /// The deal that won, for the seeds this project stands on every day.
+        ///
+        /// Judging six hundred deals of the whole city is twenty-two of the twenty-four
+        /// seconds MiniCoreDemo takes to stand up, and it always ends in the same place:
+        /// the same seed runs the same deals, so the winner is the same number every time.
+        /// So the number is written down here rather than found again - in the source, in
+        /// git, on both machines, which a per-machine cache would not be - and the loop is
+        /// skipped for a seed that is on this list.
+        ///
+        /// The city is unchanged: the deal is rolled exactly as the loop would have rolled
+        /// it. The replay is checked against the faults noted here, and if it no longer
+        /// draws them - a block re-baked, a road rule moved - the note is stale, the seed
+        /// is dealt out in full as before, and the console says so.
+        ///
+        /// To add or refresh a seed: Tools/CoreSim, `dotnet run -c Release -- --seed N
+        /// --count 1` prints `deals D faults F`; D counts from one and Attempt from
+        /// zero, so the entry is { N, (D - 1, F) }.
+        /// </summary>
+        static readonly Dictionary<int, (int Attempt, int Faults)> Nailed =
+            new Dictionary<int, (int, int)>
+            {
+                // MiniCoreDemo's rig, and CoreDemo whenever it replays the same number
+                { 1987, (395, 2) },
+            };
+
+        /// <summary>
         /// The plan for a seed, with the roads drawn off it and the drawing judged:
         /// <see cref="SyntySeed"/> gives the demo's arrangement, any other seed a deal of
         /// the rows. A deal whose drawing has a fault - ground left bare, a block with no
@@ -1980,28 +2006,32 @@ namespace RoadDemo
                 raster = CoreRoads.Build(stood, synty);
                 return synty;
             }
+            // A seed whose winner is already written down is rolled once, not six hundred
+            // times. The check is the whole safety net: the noted deal has to draw the
+            // faults the note promises, or the note is out of date and the seed is dealt
+            // out the long way.
+            if (Nailed.TryGetValue(seed, out var noted))
+            {
+                var kept = Deal(blocks, seed, noted.Attempt, out var keptRaster, out int keptFaults);
+                if (keptFaults == noted.Faults)
+                {
+                    FinishRiver(blocks, kept, ref keptRaster);
+                    raster = keptRaster;
+                    return kept;
+                }
+                Debug.LogWarning(
+                    $"[CoreLayout] the noted deal {noted.Attempt} of seed {seed} now draws " +
+                    $"{keptFaults} faults, not the {noted.Faults} on record: a block has been " +
+                    "re-baked or a road rule has moved. Dealing the seed out in full - re-measure " +
+                    "it with Tools/CoreSim and update CoreLayout.Nailed.");
+            }
+
             Plan best = null;
             CoreRoads.Raster bestRaster = null;
             int bestFaults = int.MaxValue;
             for (int attempt = 0; attempt < Deals; attempt++)
             {
-                var plan = Roll(blocks, unchecked(seed * 1000003 + attempt * 7919));
-                plan.Seed = seed;
-                plan.Attempt = attempt;
-                plan.Name = $"seed {seed}" + (attempt > 0 ? $" (deal {attempt + 1})" : "");
-                // THE PARKS GO TO THE ROAD READER TOO, and so does the river's ground. They
-                // are made by the deal rather than handed in, so the caller's list has none
-                // of them - and a park left out of the raster is a hole: the deal spaces the
-                // row for it, nothing fills the ground, and the verdict calls it bare. That
-                // alone took the share of clean deals from 72 % to 24 %.
-                var ground = WithGround(blocks, plan);
-                plan.Territory = CoreTerritoryPlan.Build(seed, ground);
-                var drawn = CoreRoads.Build(ground, plan);
-                // A RUN OF PARKS IS A FAULT LIKE ANY OTHER. It is the plan's fault rather
-                // than the drawing's - the roads come out perfectly well - so it is added
-                // here, where a deal is accepted or thrown away, and not smuggled into the
-                // road reader's own count
-                int faults = drawn.Faults + Mathf.Max(0, plan.ParkRuns - 1);
+                var plan = Deal(blocks, seed, attempt, out var drawn, out int faults);
                 if (faults == 0)
                 {
                     FinishRiver(blocks, plan, ref drawn);
@@ -2018,15 +2048,38 @@ namespace RoadDemo
             // the blocks stand where the last deal left them: put them back on the best.
             // The re-deal makes its own parks, so the plan handed back is the one to read
             // them off - the earlier plan's are the wrong objects in the right places.
-            var again = Roll(blocks, unchecked(seed * 1000003 + best.Attempt * 7919));
-            again.Seed = best.Seed;
-            again.Attempt = best.Attempt;
-            again.Name = best.Name;
-            var finalGround = WithGround(blocks, again);
-            again.Territory = CoreTerritoryPlan.Build(seed, finalGround);
-            raster = CoreRoads.Build(finalGround, again);
+            var again = Deal(blocks, seed, best.Attempt, out raster, out _);
             FinishRiver(blocks, again, ref raster);
             return again;
+        }
+
+        /// <summary>
+        /// One deal of a seed: the rows rolled, the ground the deal made itself added, the
+        /// territory read and the roads drawn over the lot, with the verdict on the drawing.
+        /// The same deal number of the same seed is the same city however it is reached -
+        /// which is what lets <see cref="Nailed"/> skip straight to the winner.
+        /// </summary>
+        static Plan Deal(List<Block> blocks, int seed, int attempt,
+                         out CoreRoads.Raster drawn, out int faults)
+        {
+            var plan = Roll(blocks, unchecked(seed * 1000003 + attempt * 7919));
+            plan.Seed = seed;
+            plan.Attempt = attempt;
+            plan.Name = $"seed {seed}" + (attempt > 0 ? $" (deal {attempt + 1})" : "");
+            // THE PARKS GO TO THE ROAD READER TOO, and so does the river's ground. They
+            // are made by the deal rather than handed in, so the caller's list has none
+            // of them - and a park left out of the raster is a hole: the deal spaces the
+            // row for it, nothing fills the ground, and the verdict calls it bare. That
+            // alone took the share of clean deals from 72 % to 24 %.
+            var ground = WithGround(blocks, plan);
+            plan.Territory = CoreTerritoryPlan.Build(seed, ground);
+            drawn = CoreRoads.Build(ground, plan);
+            // A RUN OF PARKS IS A FAULT LIKE ANY OTHER. It is the plan's fault rather
+            // than the drawing's - the roads come out perfectly well - so it is added
+            // here, where a deal is accepted or thrown away, and not smuggled into the
+            // road reader's own count
+            faults = drawn.Faults + Mathf.Max(0, plan.ParkRuns - 1);
+            return plan;
         }
 
         /// <summary>Expands only the already accepted plan. Keeping this out of the deal's

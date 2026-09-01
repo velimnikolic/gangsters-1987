@@ -167,13 +167,25 @@ namespace RoadDemo
             }
             // the river, before any ground is read: water is neither the ring round a block
             // nor the road between two, whatever lies either side of it
+            // A declared rectangle covers a fraction of the drawing, so only the cells it
+            // could reach are walked - a spare cell each way - and the same per-cell test
+            // as ever stays the judge of each one.
+            void Span(float min, float max, float origin, int cells, out int lo, out int hi)
+            {
+                lo = Mathf.Max(0, Mathf.FloorToInt((min - origin) / Cell) - 1);
+                hi = Mathf.Min(cells - 1, Mathf.CeilToInt((max - origin) / Cell) + 1);
+            }
             if (plan.Water.width > 0f && plan.Water.height > 0f)
-                for (int i = 0; i < w; i++)
-                    for (int j = 0; j < h; j++)
+            {
+                Span(plan.Water.xMin, plan.Water.xMax, r.X0, w, out int wi0, out int wi1);
+                Span(plan.Water.yMin, plan.Water.yMax, r.Z0, h, out int wj0, out int wj1);
+                for (int i = wi0; i <= wi1; i++)
+                    for (int j = wj0; j <= wj1; j++)
                     {
                         float cx = r.X(i) + Cell * 0.5f, cz = r.Z(j) + Cell * 0.5f;
                         if (kinds[i, j] == Kind.Outside && plan.Water.Contains(new Vector2(cx, cz))) kinds[i, j] = Kind.Water;
                     }
+            }
             // and the ground a block keeps beyond its box - the car park behind a block
             // shallower than its row - is its yard like any bay of its own, and is
             // remembered as a lot besides: no road is carved out of one
@@ -194,27 +206,59 @@ namespace RoadDemo
             // measured from the block's whole box, its bays and notches included: a face
             // that steps in by a cell would otherwise push the ring a cell farther out
             // there, and that cell, beyond the street, is a cell nothing can use
+            // The spread is a box: a cell is ringed if a block or yard cell lies within s
+            // of it both ways. Stamping the box from every source cell is s-squared work
+            // per cell of block; spreading along the rows and then along the columns of
+            // that spread is the same set of cells for two straight passes. This one pass
+            // was a fifth of the whole road reading (measured 2026-09-01).
             var ring = new bool[w, h];
+            var row = new bool[w, h];   // ringed along the rows alone
+            for (int j = 0; j < h; j++)
+            {
+                int last = -(s + 1);   // farther than s from any cell: no spread yet
+                for (int i = 0; i < w; i++)
+                {
+                    if (kinds[i, j] == Kind.Block || kinds[i, j] == Kind.Yard) last = i;
+                    if (i - last <= s) row[i, j] = true;
+                }
+                last = w + s + 1;
+                for (int i = w - 1; i >= 0; i--)
+                {
+                    if (kinds[i, j] == Kind.Block || kinds[i, j] == Kind.Yard) last = i;
+                    if (last - i <= s) row[i, j] = true;
+                }
+            }
             for (int i = 0; i < w; i++)
+            {
+                int last = -(s + 1);
                 for (int j = 0; j < h; j++)
                 {
-                    if (kinds[i, j] != Kind.Block && kinds[i, j] != Kind.Yard) continue;
-                    for (int a = Mathf.Max(0, i - s); a <= Mathf.Min(w - 1, i + s); a++)
-                        for (int b = Mathf.Max(0, j - s); b <= Mathf.Min(h - 1, j + s); b++)
-                            ring[a, b] = true;
+                    if (row[i, j]) last = j;
+                    if (j - last <= s) ring[i, j] = true;
                 }
+                last = h + s + 1;
+                for (int j = h - 1; j >= 0; j--)
+                {
+                    if (row[i, j]) last = j;
+                    if (last - j <= s) ring[i, j] = true;
+                }
+            }
             for (int i = 0; i < w; i++)
                 for (int j = 0; j < h; j++)
                     if (kinds[i, j] == Kind.Outside && ring[i, j]) kinds[i, j] = Kind.Bare;
             // the main road runs the whole width of the core, boulevard-wide, to the edge
             // and so does every other road the plan declares across it
             foreach (var band in plan.Bands)
-                for (int i = 0; i < w; i++)
-                    for (int j = 0; j < h; j++)
+            {
+                Span(band.xMin, band.xMax, r.X0, w, out int bi0, out int bi1);
+                Span(band.yMin, band.yMax, r.Z0, h, out int bj0, out int bj1);
+                for (int i = bi0; i <= bi1; i++)
+                    for (int j = bj0; j <= bj1; j++)
                     {
                         float cx = r.X(i) + Cell * 0.5f, cz = r.Z(j) + Cell * 0.5f;
                         if (band.Contains(new Vector2(cx, cz)) && kinds[i, j] == Kind.Outside) kinds[i, j] = Kind.Bare;
                     }
+            }
             // and whatever lies between two blocks no farther apart than a boulevard: the
             // middle of a 35 m gap is farther than a street from either kerb, and is road
             int reach = BlvdCells;
@@ -234,12 +278,16 @@ namespace RoadDemo
             // and the boulevard's run to the edge, are taken back. Nothing is read off that
             // ground and nothing is stood on it - the city goes on from there, not the core
             foreach (var beyond in plan.Outside)
-                for (int i = 0; i < w; i++)
-                    for (int j = 0; j < h; j++)
+            {
+                Span(beyond.xMin, beyond.xMax, r.X0, w, out int oi0, out int oi1);
+                Span(beyond.yMin, beyond.yMax, r.Z0, h, out int oj0, out int oj1);
+                for (int i = oi0; i <= oi1; i++)
+                    for (int j = oj0; j <= oj1; j++)
                     {
                         float cx = r.X(i) + Cell * 0.5f, cz = r.Z(j) + Cell * 0.5f;
                         if (kinds[i, j] == Kind.Bare && beyond.Contains(new Vector2(cx, cz))) kinds[i, j] = Kind.Outside;
                     }
+            }
 
             // ------------------------------------------------------------- the roads
             // A road is NOT read off the gap it stands in. A gap changes width wherever a
@@ -575,19 +623,41 @@ namespace RoadDemo
                                     List<Rect> bands, List<Rect> riverApproaches)
         {
             var roads = new List<Corridor>();
-            var takenNS = new bool[w, h];
-            var takenEW = new bool[w, h];
+            var takenNS = new bool[w * h];
+            var takenEW = new bool[w * h];
+
+            // The sweeps below ask the same few questions of the same unchanging ground a
+            // few million times per deal, so the answers are read once into one flat table
+            // - a third of the road reading went on re-deriving them (measured 2026-09-01).
+            // The questions themselves are unchanged:
+            //  - FREE: ground a road may be READ off - not water: a street found along the
+            //    river bank and out over it is a street into the river
+            //  - BRIDGE: ground a road may be DECLARED over - the water too, which is what
+            //    a bridge is
+            const byte FreeBit = 1, BridgeBit = 2, KerbBit = 4, YardBit = 8, LotBit = 16;
+            var flags = new byte[w * h];
+            for (int fi = 0; fi < w; fi++)
+                for (int fj = 0; fj < h; fj++)
+                {
+                    var kind = kinds[fi, fj];
+                    byte f = 0;
+                    if (kind != Kind.Block && kind != Kind.Outside)
+                    {
+                        f |= BridgeBit;
+                        if (kind != Kind.Water) f |= FreeBit;
+                    }
+                    else if (kind == Kind.Block) f |= KerbBit;
+                    if (kind == Kind.Yard) f |= YardBit;
+                    if (lot[fi, fj]) f |= LotBit;
+                    flags[fi * h + fj] = f;
+                }
 
             bool Ours(int i, int j) => i >= 0 && j >= 0 && i < w && j < h;
-            // ground a road may be READ off: not water - a street found along the river
-            // bank and out over it is a street into the river
-            bool Free(int i, int j) => Ours(i, j) && kinds[i, j] != Kind.Block && kinds[i, j] != Kind.Outside &&
-                                       kinds[i, j] != Kind.Water;
-            // ground a road may be DECLARED over: the water too, which is what a bridge is
-            bool Bridgeable(int i, int j) => Ours(i, j) && kinds[i, j] != Kind.Block && kinds[i, j] != Kind.Outside;
-            bool Kerb(int i, int j) => Ours(i, j) && kinds[i, j] == Kind.Block;
-            bool Yard(int i, int j) => Ours(i, j) && kinds[i, j] == Kind.Yard;
-            bool Lot(int i, int j) => Ours(i, j) && lot[i, j];
+            bool Free(int i, int j) => Ours(i, j) && (flags[i * h + j] & FreeBit) != 0;
+            bool Bridgeable(int i, int j) => Ours(i, j) && (flags[i * h + j] & BridgeBit) != 0;
+            bool Kerb(int i, int j) => Ours(i, j) && (flags[i * h + j] & KerbBit) != 0;
+            bool Yard(int i, int j) => Ours(i, j) && (flags[i * h + j] & YardBit) != 0;
+            bool Lot(int i, int j) => Ours(i, j) && (flags[i * h + j] & LotBit) != 0;
             void Spot(bool vertical, int a, int t, int k, out int i, out int j)
             {
                 if (vertical) { i = a + t; j = k; } else { i = k; j = a + t; }
@@ -629,7 +699,7 @@ namespace RoadDemo
                 for (int t = 0; t < width; t++)
                 {
                     Spot(vertical, a, t, k, out int i, out int j);
-                    if (!Bridgeable(i, j) || taken[i, j]) return false;
+                    if (!Bridgeable(i, j) || taken[i * h + j]) return false;
                 }
                 return true;
             }
@@ -657,11 +727,11 @@ namespace RoadDemo
                 for (int t = 0; t < road.W; t++)
                 {
                     Spot(road.Vertical, road.A, t, k, out int i, out int j);
-                    if (!Free(i, j) || taken[i, j]) return false;
+                    if (!Free(i, j) || taken[i * h + j]) return false;
                 }
                 Spot(road.Vertical, road.A, -1, k, out int li, out int lj);
                 Spot(road.Vertical, road.A, road.W, k, out int ri, out int rj);
-                return !(Ours(li, lj) && taken[li, lj]) && !(Ours(ri, rj) && taken[ri, rj]);
+                return !(Ours(li, lj) && taken[li * h + lj]) && !(Ours(ri, rj) && taken[ri * h + rj]);
             }
             void Take(Corridor road)
             {
@@ -670,7 +740,7 @@ namespace RoadDemo
                     for (int t = 0; t < road.W; t++)
                     {
                         Spot(road.Vertical, road.A, t, k, out int i, out int j);
-                        taken[i, j] = true;
+                        taken[i * h + j] = true;
                     }
                 roads.Add(road);
             }
