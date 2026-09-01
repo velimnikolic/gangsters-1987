@@ -11,11 +11,17 @@ namespace LivingCity.UI
     /// with the outfit's marks hung over the doors on it.
     ///
     /// It is a photograph of the city, not a drawing of one, so the only things this
-    /// component owns are the pointer and the marks. Dragging turns the lens round the
-    /// block and tilts it; the pointer over a building names it; a click on a building
-    /// picks that premise. None of the three repaints the sheet except the pick, because
-    /// the sheet is destroyed and rebuilt whole and a drag through it would delete the
-    /// picture mid-drag.
+    /// component owns are the pointer, the marks and the CUT. Dragging turns the lens
+    /// round the block - only round it: the angle off the ground is the city's own and
+    /// there is nothing to tilt. The pointer over a building names it; a click on a
+    /// building picks that premise. None of the three repaints the sheet except the pick,
+    /// because the sheet is destroyed and rebuilt whole and a drag through it would
+    /// delete the picture mid-drag.
+    ///
+    /// The cut is what makes it a block and not a view of a city: the frame is drawn only
+    /// inside the block's own silhouette - its plot and kerb pushed up to the rooflines,
+    /// projected through the same lens - so the plate carries one block standing on the
+    /// dark, and nothing of the streets around it.
     ///
     /// The marks are what the design colours a building by ownership FOR: the render is
     /// the street's own paint, so whose door it is is said with a mark over the door
@@ -54,12 +60,13 @@ namespace LivingCity.UI
         bool pointerInside;
         bool dragged;
 
-        public const float PlanTilt = 88f;
-        public const float IsoTilt = 52f;
-        public const float StreetTilt = 14f;
-
         float yaw = -35f;
-        float tilt = IsoTilt;
+
+        /// <summary>The block's silhouette in the picture's own 0..1 coordinates, and the
+        /// one it was last drawn at. Rebuilt as the block turns and only then.</summary>
+        readonly List<Vector2> hull = new List<Vector2>();
+        readonly List<Vector2> drawn = new List<Vector2>();
+        readonly List<Vector2> scratch = new List<Vector2>();
 
         /// <summary>Answered when the pointer moves onto a premise or off every one.
         /// The sheet writes a caption under it; it does not repaint.</summary>
@@ -70,12 +77,12 @@ namespace LivingCity.UI
 
         /// <summary>Answered whenever the block is turned, so the angle outlives the
         /// repaint a pick causes.</summary>
-        public System.Action<float, float> Turned;
+        public System.Action<float> Turned;
 
-        /// <summary>Where the lens is standing, so the sheet can light the right key.</summary>
-        public string Angle => tilt > 75f ? "PLAN" : tilt < 26f ? "STREET" : "ISO";
+        /// <summary>Where the block is standing, in degrees round it.</summary>
+        public float Yaw => yaw;
 
-        public void Watch(BlockFilm crew, List<Door> read, float readYaw, float readTilt)
+        public void Watch(BlockFilm crew, List<Door> read, float readYaw)
         {
             current = this;
             film = crew;
@@ -83,16 +90,16 @@ namespace LivingCity.UI
             if (read != null)
                 doors.AddRange(read);
             yaw = readYaw;
-            tilt = Mathf.Clamp(readTilt, 8f, 89f);
             hovered = -1;
             BuildMarks();
+            Cut();
         }
 
-        public void Turn(float newYaw, float newTilt)
+        public void Turn(float newYaw)
         {
-            yaw = newYaw;
-            tilt = Mathf.Clamp(newTilt, 8f, 89f);
-            Turned?.Invoke(yaw, tilt);
+            yaw = Mathf.Repeat(newYaw, 360f);
+            Turned?.Invoke(yaw);
+            Cut();
         }
 
         // -------------------------------------------------------------------- marks
@@ -156,6 +163,119 @@ namespace LivingCity.UI
             }
         }
 
+        // ---------------------------------------------------------------------- the cut
+
+        static readonly System.Comparison<Vector2> LeftToRight =
+            (a, b) => a.x == b.x ? a.y.CompareTo(b.y) : a.x.CompareTo(b.x);
+
+        /// <summary>
+        /// The block's silhouette in the picture: the eight corners of the film's volume,
+        /// projected through the film's own lens and wrapped in a convex hull. Worked out
+        /// every frame because the lens may have moved, but the mesh is rebuilt only when
+        /// the shape actually changed - a block standing still costs nothing.
+        /// </summary>
+        void Cut()
+        {
+            if (film == null)
+                return;
+            var box = film.Volume;
+            scratch.Clear();
+            if (box.size.sqrMagnitude > 0.001f)
+            {
+                var min = box.min;
+                var max = box.max;
+                for (var i = 0; i < 8; i++)
+                {
+                    var corner = new Vector3(
+                        (i & 1) == 0 ? min.x : max.x,
+                        (i & 2) == 0 ? min.y : max.y,
+                        (i & 4) == 0 ? min.z : max.z);
+                    // A corner behind the lens leaves no honest shape: show the whole
+                    // frame rather than a wrong silhouette.
+                    if (!film.TryPlace(corner, out var point))
+                    {
+                        scratch.Clear();
+                        break;
+                    }
+                    scratch.Add(new Vector2(
+                        Mathf.Clamp01(point.x), Mathf.Clamp01(point.y)));
+                }
+            }
+
+            Wrap(scratch, hull);
+            if (Same(hull, drawn))
+                return;
+            drawn.Clear();
+            drawn.AddRange(hull);
+            SetVerticesDirty();
+        }
+
+        /// <summary>The frame is drawn only inside the silhouette. Outside it the plate's
+        /// own dark stands, which is what makes the picture a block on a table rather
+        /// than a window onto the city.</summary>
+        protected override void OnPopulateMesh(VertexHelper vh)
+        {
+            if (drawn.Count < 3)
+            {
+                base.OnPopulateMesh(vh);
+                return;
+            }
+
+            vh.Clear();
+            var rect = rectTransform.rect;
+            var uv = uvRect;
+            for (var i = 0; i < drawn.Count; i++)
+            {
+                var point = drawn[i];
+                vh.AddVert(
+                    new Vector3(rect.xMin + point.x * rect.width,
+                                rect.yMin + point.y * rect.height),
+                    color,
+                    new Vector2(uv.x + point.x * uv.width, uv.y + point.y * uv.height));
+            }
+            for (var i = 2; i < drawn.Count; i++)
+                vh.AddTriangle(0, i - 1, i);
+        }
+
+        /// <summary>Andrew's monotone chain over at most eight points.</summary>
+        static void Wrap(List<Vector2> points, List<Vector2> into)
+        {
+            into.Clear();
+            if (points.Count < 3)
+                return;
+            points.Sort(LeftToRight);
+
+            for (var pass = 0; pass < 2; pass++)
+            {
+                var start = into.Count;
+                for (var i = 0; i < points.Count; i++)
+                {
+                    var point = pass == 0 ? points[i] : points[points.Count - 1 - i];
+                    while (into.Count - start >= 2 &&
+                           Turns(into[into.Count - 2], into[into.Count - 1], point) <= 0f)
+                        into.RemoveAt(into.Count - 1);
+                    into.Add(point);
+                }
+                // The chain's last point is the other chain's first.
+                into.RemoveAt(into.Count - 1);
+            }
+            if (into.Count < 3)
+                into.Clear();
+        }
+
+        static float Turns(Vector2 a, Vector2 b, Vector2 c)
+            => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+
+        static bool Same(List<Vector2> a, List<Vector2> b)
+        {
+            if (a.Count != b.Count)
+                return false;
+            for (var i = 0; i < a.Count; i++)
+                if ((a[i] - b[i]).sqrMagnitude > 0.000004f)
+                    return false;
+            return true;
+        }
+
         // ------------------------------------------------------------------ pointer
 
         public void OnPointerEnter(PointerEventData eventData) => pointerInside = true;
@@ -171,8 +291,11 @@ namespace LivingCity.UI
 
         public void OnBeginDrag(PointerEventData eventData) => dragged = true;
 
+        /// <summary>Left and right turn the block. Up and down do nothing on purpose:
+        /// the block is seen at the city's own angle and the book does not offer a
+        /// second one.</summary>
         public void OnDrag(PointerEventData eventData) =>
-            Turn(yaw - eventData.delta.x * 0.35f, tilt + eventData.delta.y * 0.3f);
+            Turn(yaw - eventData.delta.x * 0.35f);
 
         public void OnPointerClick(PointerEventData eventData)
         {
@@ -201,6 +324,7 @@ namespace LivingCity.UI
         void LateUpdate()
         {
             PlaceMarks();
+            Cut();
             if (!pointerInside)
                 return;
             var mouse = Mouse.current;

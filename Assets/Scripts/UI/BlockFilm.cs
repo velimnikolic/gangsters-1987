@@ -13,6 +13,12 @@ namespace LivingCity.UI
     /// at the kerb and the hour of the day, exactly as the street has them. A block whose
     /// look changes on the street changes in the book the same second.
     ///
+    /// It films ONE block, not the city round it. The lens stands at the city's own
+    /// street pitch and closes its near and far planes onto the block's own volume, so
+    /// the ground in front of it and the city behind it are never exposed at all; the
+    /// picture is then drawn only inside the block's silhouette - see
+    /// <see cref="BlockFilmView"/>, which takes <see cref="Volume"/> for the shape.
+    ///
     /// Cheap on purpose: no shadows, no post, no anti-aliasing, and the camera is
     /// switched OFF the moment the file closes. It also never renders a frame while the
     /// city has that ground put away - see <see cref="RoadDemo.CityBlockRecycler"/>,
@@ -35,7 +41,43 @@ namespace LivingCity.UI
         const float FieldOfView = 26f;
 
         /// <summary>Air left round the block inside the frame.</summary>
-        const float Margin = 1.18f;
+        const float Margin = 1.16f;
+
+        /// <summary>How far past its own plot a block is still itself: the kerb, the
+        /// pavement and the parked car against it. Cut on the plot line alone and the
+        /// block floats in the air with its pavement left behind in the street.</summary>
+        const float Kerb = 6f;
+
+        /// <summary>Assumed rise where nothing is standing yet, so a block the city has
+        /// only just streamed back in is not cut off at its own eaves.</summary>
+        const float BareRise = 14f;
+
+        /// <summary>The block's own volume in world metres - plot, kerb and rooflines.
+        /// The picture is cut to this and to nothing else.</summary>
+        public Bounds Volume { get; private set; }
+
+        static RoadDemo.DemoCamera streetCamera;
+        static bool streetCameraSought;
+
+        /// <summary>The angle the city itself is seen at. The book does not invent a
+        /// second isometric: the block stands in it exactly as it stands under the
+        /// player's own camera, which is why there is no tilt to drag.</summary>
+        public static float CityPitch
+        {
+            get
+            {
+                if (!streetCameraSought)
+                {
+                    streetCamera = FindFirstObjectByType<RoadDemo.DemoCamera>();
+                    streetCameraSought = true;
+                }
+                return streetCamera != null
+                    ? Mathf.Clamp(streetCamera.pitch,
+                        RoadDemo.CityViewConfig.MinimumStreetPitch,
+                        RoadDemo.CityViewConfig.MaximumStreetPitch)
+                    : RoadDemo.CityViewConfig.DefaultStreetPitch;
+            }
+        }
 
         /// <summary>What the file is looking at, so the caller can ask whether the lens
         /// is already over the right ground.</summary>
@@ -119,24 +161,35 @@ namespace LivingCity.UI
             {
                 name = "Block Film",
                 antiAliasing = 1,
+                wrapMode = TextureWrapMode.Clamp,
             };
             lens.targetTexture = frame;
             return frame;
         }
 
         /// <summary>
-        /// Puts the lens over one block. YAW turns it round the block; TILT is the angle
-        /// off the ground, so 90 is a plan of the block and 15 is a look down its street.
-        /// The distance is solved from the block's own rectangle, so a long quay block
-        /// and a small corner one both fill the plate.
+        /// Puts the lens over one block. YAW turns it round; the angle off the ground is
+        /// the city's own street pitch and is not negotiable here - the book shows the
+        /// isometric the player already reads the city in.
+        ///
+        /// The distance is solved from the block's own volume, so a long quay block and a
+        /// small corner one both fill the plate, and the near and far planes are then
+        /// closed onto that volume: the street in front of the block and the city behind
+        /// it fall outside the frustum and are never drawn.
         /// </summary>
-        public void Look(Rect groundWorld, float groundY, float yaw, float tilt, float rise)
+        public void Look(Rect groundWorld, float groundY, float yaw, float rise)
         {
             Ground = groundWorld;
-            var centre = new Vector3(groundWorld.center.x, groundY, groundWorld.center.y);
+
+            var plot = Rect.MinMaxRect(
+                groundWorld.xMin - Kerb, groundWorld.yMin - Kerb,
+                groundWorld.xMax + Kerb, groundWorld.yMax + Kerb);
+            var height = Mathf.Max(BareRise, rise);
+            var centre = new Vector3(plot.center.x, groundY + height * 0.5f, plot.center.y);
+            Volume = new Bounds(centre, new Vector3(plot.width, height, plot.height));
+
             var radius = 0.5f * Mathf.Sqrt(
-                groundWorld.width * groundWorld.width +
-                groundWorld.height * groundWorld.height) + Mathf.Max(6f, rise * 0.5f);
+                plot.width * plot.width + plot.height * plot.height + height * height);
 
             var aspect = frame != null && frame.height > 0
                 ? (float)frame.width / frame.height
@@ -146,19 +199,14 @@ namespace LivingCity.UI
             var distance = Mathf.Max(radius / Mathf.Tan(halfV), radius / Mathf.Tan(halfH)) *
                            Margin;
 
-            var turn = Quaternion.Euler(Mathf.Clamp(tilt, 8f, 89.9f), yaw, 0f);
+            var turn = Quaternion.Euler(CityPitch, yaw, 0f);
             transform.SetPositionAndRotation(
                 centre - turn * Vector3.forward * distance, turn);
 
-            // The block is lifted half its own height into the frame so a tall facade is
-            // not cut off at the top while the pavement takes the bottom third.
-            transform.position += Vector3.up * Mathf.Max(0f, rise * 0.15f);
-            lens.transform.LookAt(centre + Vector3.up * Mathf.Max(0f, rise * 0.35f));
-
-            // Only as far as the block and a street either side of it. The point of the
-            // plate is this block, and every metre past it is a second render of a city
-            // the player is already paying to draw once.
-            lens.farClipPlane = distance + radius * 2.5f + 40f;
+            // The slab. Everything nearer than the block's front corner and everything
+            // further than its back one is another block's business.
+            lens.farClipPlane = distance + radius + 2f;
+            lens.nearClipPlane = Mathf.Max(0.3f, distance - radius - 2f);
             lens.enabled = true;
         }
 

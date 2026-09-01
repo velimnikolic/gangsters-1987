@@ -44,10 +44,11 @@ namespace LivingCity.UI
         /// <summary>The men picked for the next job. Character ids.</summary>
         readonly List<int> blockCardCrew = new List<int>();
 
-        /// <summary>The angle the block is standing at. Held on the sheet rather than on
-        /// the view, so turning it survives the repaint a pick causes.</summary>
+        /// <summary>How far round the block the reader has walked. Held on the sheet
+        /// rather than on the view, so turning it survives the repaint a pick causes.
+        /// There is no second angle: the block stands at the city's own street pitch.
+        /// </summary>
         float blockCardYaw = -35f;
-        float blockCardTilt = BlockFilmView.IsoTilt;
 
         BlockFilmView blockCardModel;
         TextMeshProUGUI blockCardHoverName;
@@ -551,8 +552,7 @@ namespace LivingCity.UI
             var scale = view.lossyScale.x <= 0f ? 1f : view.lossyScale.x;
             blockCardModel.texture = film.Reel(
                 Mathf.RoundToInt(organizationW * scale), Mathf.RoundToInt(plateH * scale));
-            film.Look(blockCardGround, blockCardGroundY, blockCardYaw, blockCardTilt,
-                blockCardRise);
+            film.Look(blockCardGround, blockCardGroundY, blockCardYaw, blockCardRise);
 
             blockCardDoors.Clear();
             for (var i = 0; i < blockCardTrades.Count; i++)
@@ -572,12 +572,11 @@ namespace LivingCity.UI
                 });
             }
 
-            blockCardModel.Watch(film, blockCardDoors, blockCardYaw, blockCardTilt);
-            blockCardModel.Turned = (yaw, tilt) =>
+            blockCardModel.Watch(film, blockCardDoors, blockCardYaw);
+            blockCardModel.Turned = yaw =>
             {
                 blockCardYaw = yaw;
-                blockCardTilt = tilt;
-                BlockFilm.Get().Look(blockCardGround, blockCardGroundY, yaw, tilt,
+                BlockFilm.Get().Look(blockCardGround, blockCardGroundY, yaw,
                     blockCardRise);
             };
             blockCardModel.Picked = key => PickTrade(
@@ -598,7 +597,7 @@ namespace LivingCity.UI
                         : "drag to turn it · click a door",
                 9f, ModelHint, 1f);
 
-            BuildBlockModelAngles(plate);
+            BuildBlockModelTurn(plate);
             BuildBlockModelNote(plate, plateH);
             BuildBlockModelKey(plate, plateH);
             return plateH;
@@ -613,33 +612,30 @@ namespace LivingCity.UI
             BlockFilm.StopIfRunning();
         }
 
-        /// <summary>The three named angles. They turn the live view and never repaint the
-        /// sheet - the model under the pointer must not be destroyed to change its
-        /// angle.</summary>
-        void BuildBlockModelAngles(RectTransform plate)
+        /// <summary>The two turns. There is no angle to pick any more: the block stands
+        /// at the city's own isometric, and all the reader may do is walk round it. They
+        /// turn the live view and never repaint the sheet - the model under the pointer
+        /// must not be destroyed to change where it is standing.</summary>
+        void BuildBlockModelTurn(RectTransform plate)
         {
-            var words = new[] { "ISO", "PLAN", "STREET" };
-            var tilts = new[]
-            {
-                BlockFilmView.IsoTilt, BlockFilmView.PlanTilt, BlockFilmView.StreetTilt,
-            };
-            const float chipW = 62f;
+            var words = new[] { "<< TURN", "TURN >>" };
+            var steps = new[] { -45f, 45f };
+            const float chipW = 74f;
             const float gap = 6f;
             var x = organizationW - 18f - chipW * words.Length - gap * (words.Length - 1);
 
             for (var i = 0; i < words.Length; i++)
             {
-                var tilt = tilts[i];
-                var on = blockCardModel != null && blockCardModel.Angle == words[i];
-                var chip = NewRect("Angle " + words[i], plate);
+                var step = steps[i];
+                var chip = NewRect("Turn " + i, plate);
                 PlaceTopLeft(chip, x, -14f, chipW, 24f);
-                Fill(chip, on ? LedgerV2.Rgb2(0xa51e24) : new Color(0f, 0f, 0f, 0f));
+                Fill(chip, new Color(0f, 0f, 0f, 0f));
                 Frame(chip, 1f, ModelChip);
                 var chipFace = ClickSurface(chip);
-                var word = Text("Label", chip, LedgerStyle.MonoBold, 9f,
-                    on ? LedgerV2.HeadCream : ModelLegend, TextAlignmentOptions.Center);
+                var word = Text("Label", chip, LedgerStyle.MonoBold, 9f, ModelLegend,
+                    TextAlignmentOptions.Center);
                 Stretch(word.rectTransform);
-                word.characterSpacing = 6f;
+                word.characterSpacing = 4f;
                 word.text = words[i];
 
                 var button = chip.gameObject.AddComponent<Button>();
@@ -647,11 +643,8 @@ namespace LivingCity.UI
                 button.transition = Selectable.Transition.None;
                 button.onClick.AddListener(() =>
                 {
-                    blockCardYaw = -35f;
-                    blockCardTilt = tilt;
                     if (blockCardModel != null)
-                        blockCardModel.Turn(blockCardYaw, blockCardTilt);
-                    dirty = true;
+                        blockCardModel.Turn(blockCardModel.Yaw + step);
                 });
                 x += chipW + gap;
             }
