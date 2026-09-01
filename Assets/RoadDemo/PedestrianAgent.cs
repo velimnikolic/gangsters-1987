@@ -400,6 +400,11 @@ namespace RoadDemo
                 _footR = animator.GetBoneTransform(HumanBodyBones.RightFoot);
                 HumanScale = animator.avatar != null && animator.avatar.isHuman
                     ? animator.humanScale : 1f;
+                // AND SET UP TWICE IS A GRAPH LOST. Setup runs again whenever a body
+                // is re-dealt onto an agent, the list above refuses the duplicate, and
+                // the field is about to stop pointing at the old graph - unreachable by
+                // the sweep or anything else. Let go of it while the handle is in hand.
+                if (_graph.IsValid()) _graph.Destroy();
                 _graph = PlayableGraph.Create("Pedestrian");
                 _graph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
                 var output = AnimationPlayableOutput.Create(_graph, "anim", animator);
@@ -735,6 +740,43 @@ namespace RoadDemo
             Cells.Clear();
             SpareCells.Clear();
             _cellFrame = -1;
+            // Subscribed here rather than at the first walker, because this runs once a
+            // play and the handler must not stack up over a session that never reloads
+            // the domain.
+            Application.quitting -= DropCrowdGraphs;
+            Application.quitting += DropCrowdGraphs;
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.playModeStateChanged -= DropCrowdGraphsLeavingPlay;
+            UnityEditor.EditorApplication.playModeStateChanged += DropCrowdGraphsLeavingPlay;
+#endif
+        }
+
+#if UNITY_EDITOR
+        /// <summary>In the editor a run ends without the application ever quitting, and
+        /// Unity takes its count of open graphs BEFORE Application.quitting would have
+        /// run - so the editor needs its own moment, and this is the last one at which
+        /// the whole crowd is still standing.</summary>
+        static void DropCrowdGraphsLeavingPlay(UnityEditor.PlayModeStateChange change)
+        {
+            if (change == UnityEditor.PlayModeStateChange.ExitingPlayMode)
+                DropCrowdGraphs();
+        }
+#endif
+
+        /// <summary>Every walker's animation graph, freed when the run ends.
+        ///
+        /// A PlayableGraph is not a Unity object and nothing collects it: it lives until
+        /// somebody calls Destroy on it, and PedestrianAgent is a plain class with no
+        /// OnDestroy to do that. Dispose frees the graph of a man who dies or despawns,
+        /// but the crowd still ON ITS FEET when the run ends is disposed by nobody, and
+        /// Unity ends the session complaining about every graph left open ("PlayableGraph
+        /// was not destroyed"). This is that sweep: whoever is still walking when the game
+        /// stops, stops properly.</summary>
+        static void DropCrowdGraphs()
+        {
+            for (var i = Walking.Count - 1; i >= 0; i--)
+                Walking[i]?.Dispose();
+            Walking.Clear();
         }
 
         static readonly Dictionary<long, List<PedestrianAgent>> Cells =
@@ -755,7 +797,20 @@ namespace RoadDemo
             for (int i = Walking.Count - 1; i >= 0; i--)
             {
                 var a = Walking[i];
-                if (a == null || a.Tf == null) { Walking.RemoveAt(i); continue; }
+                if (a == null || a.Tf == null)
+                {
+                    // HIS BODY WENT WITHOUT HIM. A walker whose GameObject was destroyed
+                    // by somebody who never called Dispose - a purge, a pooled block, a
+                    // recycler - was dropped from the list here and nowhere else. His
+                    // animation graph is not a Unity object and nothing collects it, and
+                    // once he is off this list the sweep at the end of the run cannot see
+                    // him either: the graph stays open and Unity counts it on the way out.
+                    // The RemoveAt goes first so Dispose's own removal finds nothing and
+                    // cannot take a different man out of the list.
+                    Walking.RemoveAt(i);
+                    a?.Dispose();
+                    continue;
+                }
                 if (!a.Tf.gameObject.activeInHierarchy || !a.InCrowd) continue;
                 var p = a.Tf.position;
                 long key = CellKey(Mathf.FloorToInt(p.x / CrowdCell), Mathf.FloorToInt(p.z / CrowdCell));

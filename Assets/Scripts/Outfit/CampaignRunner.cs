@@ -610,6 +610,23 @@ namespace LivingCity.Outfit
             if (job.Men > available)
                 job.Men = available;
 
+            // NOBODY AGREES TO BUY WHAT HE CANNOT PAY FOR. Only a purchase is gated
+            // here: every other order is an attempt, and an outfit may certainly attempt
+            // something it will struggle to pay for. Premises are a sale - the asking
+            // price is due on the day - so the order book refuses it at the counter,
+            // with the shortfall spelled out, exactly as the Armory does.
+            if (job.Type == OrderType.BuyPremises)
+            {
+                var spec = OrderTable.SpecOf(job.Type);
+                var price = OrderResolution.CostFor(
+                    spec, job.TargetCount,
+                    CrewKit.BestAt(roster, crew, spec.PrimaryAttribute),
+                    job.TargetWorth);
+                if (price > Accounts.Safe)
+                    return OpResult.Fail(
+                        UI.LedgerText.InsufficientFunds(price, Accounts.Safe));
+            }
+
             job.Id = Book.NextJobId();
             job.IssuedDay = Campaign.Day;
             job.Stage = JobStage.Queued;

@@ -231,6 +231,16 @@ namespace LivingCity.Outfit
             }
 
             var completed = outcome == OrderOutcome.Completed;
+
+            // A PRICE IS NOT A FEE. Every other order is paid for either way, and the
+            // comment above says why: the bribe was handed over, the men were fitted
+            // out, and the roll only decides whether it worked. A purchase is not that.
+            // The money buys the premises, so premises that were not bought were not
+            // paid for - booking the asking price against a sale that fell through took
+            // the whole sum for nothing and left the deed exactly where it was.
+            if (!completed && spec.Type == OrderType.BuyPremises)
+                cost = 0;
+
             var payout = completed ? PayoutFor(spec, targets, stat, job.TargetWorth) : 0;
             var heat = HeatFor(spec, targets,
                 CrewKit.BestAt(roster, crew, CharacterAttribute.Stealth));

@@ -114,8 +114,16 @@ namespace LivingCity.Business
             return found;
         }
 
-        /// <summary>Where a crew walks to reach a business. The site's approach point when
-        /// the simulation published one, the live mesh when only a marker exists.</summary>
+        /// <summary>How far off the door a caller stands, metres. A site's Approach is the
+        /// door ITSELF - a point on the line of the facade (BusinessSite.Approach) - and a
+        /// man put down on that line is standing in the wall: off the walk lattice, unable
+        /// to take a step, and stuck there for good. The doorstep is the pavement in front
+        /// of it, so every walker is sent this far out along the entrance's own normal.</summary>
+        public const float DoorstepClearanceMetres = 2f;
+
+        /// <summary>Where a crew walks to reach a business - the pavement at the door, never
+        /// the door line itself. The site's approach point when the simulation published one,
+        /// the live mesh when only a marker exists.</summary>
         public static bool TryApproachPoint(TerritoryBusinessId id, out Vector3 point)
         {
             point = Vector3.zero;
@@ -125,7 +133,7 @@ namespace LivingCity.Business
                 var y = BusinessViewBindings.TryGet(id, out var bound) && bound != null
                     ? bound.transform.position.y
                     : 0f;
-                point = new Vector3(site.Approach.X, y, site.Approach.Z);
+                point = Doorstep(site, y);
                 return true;
             }
 
@@ -145,6 +153,25 @@ namespace LivingCity.Business
             }
 
             return false;
+        }
+
+        /// <summary>The pavement in front of a site's door. Stepped out along the entrance's
+        /// own outward normal when the plan gave one; away from the middle of the footprint
+        /// when it did not, which is the same direction for any door on a facade.</summary>
+        static Vector3 Doorstep(BusinessSite site, float y)
+        {
+            var door = new Vector3(site.Approach.X, y, site.Approach.Z);
+            var outward = new Vector3(site.ApproachOutward.X, 0f, site.ApproachOutward.Z);
+            if (outward.sqrMagnitude < 0.0001f)
+            {
+                var centre = site.Footprint.Center;
+                outward = new Vector3(site.Approach.X - centre.X, 0f, site.Approach.Z - centre.Z);
+            }
+
+            if (outward.sqrMagnitude < 0.0001f)
+                return door;
+
+            return door + outward.normalized * DoorstepClearanceMetres;
         }
 
         static void Rebuild()

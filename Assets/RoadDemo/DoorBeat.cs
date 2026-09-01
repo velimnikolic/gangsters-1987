@@ -29,6 +29,12 @@ namespace RoadDemo
             public CrewWalker Man;
             public Vector3 Door;
 
+            /// <summary>The pavement he called from, and the spot he comes back out to.
+            /// NEVER the door: the door is a point on the line of the facade, and a man
+            /// put down on it is standing in the wall - off the walk lattice, unable to
+            /// take a step, stuck in the shop for the rest of the game.</summary>
+            public Vector3 Home;
+
             /// <summary>Still standing at the door making his point; hidden inside once
             /// the word is done.</summary>
             public bool Inside;
@@ -68,7 +74,7 @@ namespace RoadDemo
                 if (instance.calls[i].Man == man)
                     return;
 
-            var call = new Call { Man = man, Door = door };
+            var call = new Call { Man = man, Door = door, Home = man.Tf.position };
             if (talk > 0f)
             {
                 ArmBeat.Talk(man, door, talk);
@@ -78,8 +84,7 @@ namespace RoadDemo
             }
             else
             {
-                man.Tf.gameObject.SetActive(false);
-                call.Inside = true;
+                StepInside(ref call);
                 call.NextAt = Time.time + InsideSeconds;
                 call.RealNextAt = Time.unscaledTime + InsideSeconds * 4f;
             }
@@ -118,8 +123,7 @@ namespace RoadDemo
                     calls.RemoveAt(i);
                     if (UnderFire(call.Man))
                         continue;
-                    call.Man.Tf.gameObject.SetActive(false);
-                    call.Inside = true;
+                    StepInside(ref call);
                     call.NextAt = Time.time + InsideSeconds;
                     call.RealNextAt = Time.unscaledTime + InsideSeconds * 4f;
                     calls.Add(call);
@@ -127,24 +131,42 @@ namespace RoadDemo
                 }
 
                 calls.RemoveAt(i);
-                if (call.Man == null || call.Man.Tf == null)
-                    continue;
-                // He comes out of the door he went into, whatever the crew did around
-                // him meanwhile - and a man who died invisibly (a blast, a purge) is
-                // left where the systems put him.
-                if (!call.Man.Dead)
-                    call.Man.Tf.position = call.Door;
-                call.Man.Tf.gameObject.SetActive(true);
+                StepOut(call);
             }
+        }
+
+        /// <summary>All the way in: the body goes off at the door, and while it is off it
+        /// stands ON the door - the walk is over the threshold, not a fade on the kerb.
+        /// Nothing reads a hidden man's feet, and StepOut always puts him back on the
+        /// pavement, so the door line he rests on is never a place he can be stranded.</summary>
+        static void StepInside(ref Call call)
+        {
+            if (call.Man?.Tf == null)
+                return;
+            call.Man.Tf.position = call.Door;
+            call.Man.Tf.gameObject.SetActive(false);
+            call.Inside = true;
+        }
+
+        /// <summary>And back out onto the pavement he called from - never onto the door
+        /// itself, which is a point on the wall. A man who died invisibly (a blast, a
+        /// purge) is left where the systems put him.</summary>
+        static void StepOut(Call call)
+        {
+            if (call.Man?.Tf == null)
+                return;
+            if (!call.Man.Dead)
+                call.Man.Tf.position = call.Home;
+            call.Man.Tf.gameObject.SetActive(true);
         }
 
         void OnDestroy()
         {
             // Never strand an invisible man: whatever ends the beat runner ends the
-            // beats, bodies first.
+            // beats, bodies first - and on the pavement, not in the wall.
             for (var i = 0; i < calls.Count; i++)
-                if (calls[i].Inside && calls[i].Man?.Tf != null)
-                    calls[i].Man.Tf.gameObject.SetActive(true);
+                if (calls[i].Inside)
+                    StepOut(calls[i]);
             calls.Clear();
             if (instance == this)
                 instance = null;

@@ -638,6 +638,9 @@ namespace RoadDemo
 
         void SampleActorBlocks(double gameHour, double cadenceHours)
         {
+            // Before the arrivals: a walk that has stopped closing on its door is sent
+            // out again here, because nothing else in the game ever looks at it.
+            TendApproaches();
             sampledLocations.Clear();
             presence?.BeginSample();
             var changed = false;
@@ -1727,6 +1730,130 @@ namespace RoadDemo
             return null;
         }
 
+        /// <summary>How long a doorstep errand may go without getting any nearer its
+        /// door before the walk is sent out again.</summary>
+        const float ApproachStallSeconds = 20f;
+
+        /// <summary>How much closer counts as still walking. Below this the crew is
+        /// shuffling on the spot, not covering ground.</summary>
+        const float ApproachProgressMetres = 1f;
+
+        /// <summary>How many times a stalled walk is sent out again before the men are
+        /// simply put down at the door.</summary>
+        const int ApproachAttempts = 3;
+
+        /// <summary>How far each re-issue may look for a spot beside the door, per go.</summary>
+        const float ApproachReachMetres = 6f;
+
+
+        /// <summary>THE MEN ALWAYS GET THERE. An order the player gave is a thing the game
+        /// owes him: it may take a while, it may need the walk sending out again, but it
+        /// does not quietly die in this list and it does not come back as an apology on
+        /// the banner. So this watches one thing - whether the crew is still CLOSING on
+        /// its door - and when it stops closing it does something about it, on a ladder:
+        ///
+        ///   1-3   send the walk out again, each go with more room to find a standing
+        ///         spot than the last (MarchTo lifts a man who is stuck in a wall on its
+        ///         way through, which is what most stalls turn out to be).
+        ///   4     the ground round that door has beaten the lattice three times over:
+        ///         put the men down at it. A hard placement is what the game already
+        ///         does for a man wedged in geometry, and an order carried out beats an
+        ///         order refused.
+        ///
+        /// The errand only ever leaves this list by being ARRIVED at, by the crew being
+        /// retasked, or by the crew ceasing to exist.</summary>
+        void TendApproaches()
+        {
+            if (pendingApproaches.Count == 0 || crews == null)
+                return;
+
+            var now = Time.time;
+            for (var i = pendingApproaches.Count - 1; i >= 0; i--)
+            {
+                var pending = pendingApproaches[i];
+                var unit = PlayerUnitOfCrew(pending.CrewId);
+                if (unit == null)
+                {
+                    // No crew left to walk it - the men are wiped or gone off the street.
+                    pendingApproaches.RemoveAt(i);
+                    continue;
+                }
+
+                var gap = Vector3.Distance(unit.Position, pending.Door);
+                if (gap < pending.Nearest - ApproachProgressMetres)
+                {
+                    pendingApproaches[i] = pending.Closing(gap, now);
+                    continue;
+                }
+
+                if (now - pending.NearestAt < ApproachStallSeconds)
+                    continue;
+
+                if (pending.Attempts < ApproachAttempts)
+                {
+                    // More room each time round: a doorway the first pass found no
+                    // standing spot beside may have one a few metres further out.
+                    var reach = ApproachReachMetres * (pending.Attempts + 1);
+                    var spot = WalkObstacles.ClearSpot(
+                        pending.Door, WalkObstacles.Radius, reach);
+                    crews.MarchTo(unit, spot);
+                    pendingApproaches[i] = pending.SentAgain(now);
+                    continue;
+                }
+
+                SetDownAtDoor(unit, pending.Door);
+                pendingApproaches[i] = pending.Closing(
+                    Vector3.Distance(unit.Position, pending.Door), now);
+            }
+        }
+
+        /// <summary>The last rung: the men are placed at the door they were sent to. Only
+        /// ever reached when the walk has been tried and re-tried and the ground round
+        /// that door will not take a crew - and the alternative is an order the player
+        /// gave that the game never carries out.</summary>
+        void SetDownAtDoor(DemoCrews.Unit unit, Vector3 door)
+        {
+            // NEVER FURTHER OUT THAN THE ARRIVAL TEST ITSELF. A crew put down beyond
+            // approachRadiusMetres has not arrived, so the next stall would put it down
+            // again, and the one after that, for as long as the errand lived. A
+            // placement has to land inside the radius that ENDS the errand or it is not
+            // a placement, it is a loop.
+            var reach = Mathf.Max(2f, approachRadiusMetres * 0.6f);
+            var spot = WalkObstacles.ClearSpot(door, WalkObstacles.Radius, reach);
+            var k = 0;
+            foreach (var man in unit.All())
+            {
+                if (man == null || man.Dead || man.Tf == null)
+                    continue;
+                // a crew, not a column: the men land a stride apart round the doorstep
+                var ring = k == 0
+                    ? Vector3.zero
+                    : Quaternion.Euler(0f, k * 120f, 0f) * new Vector3(0f, 0f, 1.4f);
+                var at = WalkObstacles.ClearSpot(spot + ring, WalkObstacles.Radius);
+                at.y = man.Tf.position.y;
+                man.Tf.position = at;
+                k++;
+            }
+
+            crews.MarchTo(unit, spot);
+        }
+
+        /// <summary>The outfit's crew that carries this crew number, if it is still on the
+        /// street.</summary>
+        DemoCrews.Unit PlayerUnitOfCrew(int crewId)
+        {
+            for (var i = 0; i < crews.Units.Count; i++)
+            {
+                var unit = crews.Units[i];
+                if (unit == null || unit.IsPolice || unit.Faction != 0 || unit.Wiped)
+                    continue;
+                if (unit.CrewId == crewId)
+                    return unit;
+            }
+
+            return null;
+        }
+
         /// <summary>The crew's doorstep errand, dropped. Called whenever the crew is
         /// retasked - a pending approach must not outlive the order that made it. A
         /// collection round in hand is dropped the same way: the take it was carrying
@@ -1835,11 +1962,21 @@ namespace RoadDemo
             public PendingApproach(
                 int crewId, TerritoryBusinessId businessId, Vector3 door,
                 TerritoryRacketIntent followUp)
+                : this(crewId, businessId, door, followUp, float.MaxValue, Time.time, 0)
+            {
+            }
+
+            PendingApproach(
+                int crewId, TerritoryBusinessId businessId, Vector3 door,
+                TerritoryRacketIntent followUp, float nearest, float nearestAt, int attempts)
             {
                 CrewId = crewId;
                 BusinessId = businessId;
                 Door = door;
                 FollowUp = followUp;
+                Nearest = nearest;
+                NearestAt = nearestAt;
+                Attempts = attempts;
             }
 
             public int CrewId { get; }
@@ -1849,6 +1986,22 @@ namespace RoadDemo
             /// <summary>What the walk was for: the demand or the threat follows the
             /// arrival, so an order given from range is one order.</summary>
             public TerritoryRacketIntent FollowUp { get; }
+
+            /// <summary>The closest the crew has ever been to that door, and when. A walk
+            /// across the city is slow and perfectly legal; a walk that stops CLOSING is a
+            /// walk that has failed, and this is the pair that tells them apart.</summary>
+            public float Nearest { get; }
+            public float NearestAt { get; }
+
+            /// <summary>How many times the walk has been sent out again. Each go is
+            /// given more room to find a spot than the last.</summary>
+            public int Attempts { get; }
+
+            public PendingApproach Closing(float gap, float at) =>
+                new PendingApproach(CrewId, BusinessId, Door, FollowUp, gap, at, Attempts);
+
+            public PendingApproach SentAgain(float at) =>
+                new PendingApproach(CrewId, BusinessId, Door, FollowUp, Nearest, at, Attempts + 1);
         }
 
         public void CollectActors(

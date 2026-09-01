@@ -1148,6 +1148,12 @@ namespace RoadDemo
             Unboard(unit, "a march order");
             unit.PendingDrive = null;
             world = WalkObstacles.ClampToCity(world);
+            // THE SPOT MUST BE A SPOT A MAN CAN STAND ON. The hoods' places have always
+            // gone through ClearSpot; the leader's never did, so an order aimed at a
+            // doorway, a wall or a parked car gave the man who leads the crew nowhere to
+            // put his feet - and a crew whose leader cannot move homes back to where it
+            // came from while the order that sent it reports success.
+            world = WalkObstacles.ClearSpot(world, WalkObstacles.Radius);
             world.y = GroundY;
 
             DispatchAcross(unit, boss, world, run, keepOffRoad);
@@ -1164,6 +1170,7 @@ namespace RoadDemo
             var rot = Quaternion.LookRotation(dir.sqrMagnitude > 0.25f ? dir.normalized : boss.Tf.forward);
             bool stagger = SettledTogether(unit, boss);
             Reseat(boss);
+            Unwedge(boss);
             boss.OrderAcross(world, keepOffRoad: keepOffRoad);
             // A walk unless the player asked for it twice. The run exists (CrewWalker.
             // Running) but nothing reaches for it on its own: men who break into a jog
@@ -1176,12 +1183,34 @@ namespace RoadDemo
                 var man = unit.Hoods[k];
                 if (man == null || man.Dead || man == boss || man.Riding) continue;
                 Reseat(man);
+                Unwedge(man);
                 // spread behind him, so three men arrive as a crew and not as a column
                 man.OrderAcross(WalkObstacles.ClearSpot(
                     world + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius),
                     stagger ? HoodBeat() : 0f, keepOffRoad);
                 man.Urgent = run;
             }
+        }
+
+        /// <summary>The fallback for a man who is standing INSIDE something - a wall, a
+        /// doorway, a car that parked on him. He cannot take a step from there, so every
+        /// order given to him is accepted and then quietly ignored, and the crew that
+        /// waits on him goes nowhere either. Lift him onto the nearest ground he can
+        /// stand on before he is sent anywhere.
+        ///
+        /// A fallback, not a habit: a man on clear ground is never touched, and the move
+        /// is the shortest one ClearSpot can find, so a man who is merely close to a wall
+        /// stays where the player last saw him.</summary>
+        static void Unwedge(CrewWalker man)
+        {
+            if (man == null || man.Tf == null || man.Dead) return;
+            var at = man.Tf.position;
+            if (!WalkObstacles.Occupied(at, WalkObstacles.Radius)) return;
+
+            var free = WalkObstacles.ClearSpot(at, WalkObstacles.Radius);
+            if ((free - at).sqrMagnitude < 0.0001f) return;
+            free.y = at.y;
+            man.Tf.position = free;
         }
 
         /// <summary>A direct order to one of the outfit's crews countermands its
