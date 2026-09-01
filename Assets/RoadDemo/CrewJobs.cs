@@ -119,7 +119,7 @@ namespace RoadDemo
         static void Work(DemoCrews crews, OutfitDirector outfit, DemoCrews.Unit unit, Job job)
         {
             if (job.Type == OrderType.Raid)
-                EnterOnce(crews, unit, job);
+                EnterOnce(crews, outfit, unit, job);
             else if (job.Type == OrderType.SmashUp)
                 SwingBeat(crews, outfit, unit, job);
             else if (job.Type == OrderType.Torch)
@@ -158,7 +158,8 @@ namespace RoadDemo
         /// door goes in through it. Marked done whether the beat played or not -
         /// DoorBeat refuses a man under fire, and then the fight at the door IS the
         /// scene, not a man popping calmly indoors in the middle of it.</summary>
-        static void EnterOnce(DemoCrews crews, DemoCrews.Unit unit, Job job)
+        static void EnterOnce(
+            DemoCrews crews, OutfitDirector outfit, DemoCrews.Unit unit, Job job)
         {
             if (!job.HasPlace)
                 return;
@@ -200,6 +201,14 @@ namespace RoadDemo
             {
                 DoorBeat.Visit(lead, door, talk: 0f);
             }
+
+            // HE WENT IN. That is the robbery, and the book is told so - the same rule
+            // the bat and the bottle answer by. A raid used to report nothing unless a
+            // rival crew happened to be standing there and got wiped, so robbing an
+            // ordinary shop left the order open for its whole span: the men standing at
+            // the door they had just gone through, and EVERY order behind it - the next
+            // smash, the next torch - waiting on a job that was already done.
+            Done(outfit, job);
         }
 
         /// <summary>

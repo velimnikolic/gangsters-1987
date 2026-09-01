@@ -15,8 +15,17 @@ namespace LivingCity.Entities
     public sealed class ShopEntrance : MonoBehaviour
     {
         [SerializeField] Vector3 doorOffset;
+        [SerializeField] float frontage;
 
         public void SetDoor(Vector3 localDoor) => doorOffset = localDoor;
+
+        /// <summary>How wide this shop's front is, in world metres, when whoever derived
+        /// the door measured it - 0 when nobody did. It rides on the marker rather than
+        /// in a table beside it so that a block streamed out takes its measurement with
+        /// it instead of leaving a dead entry behind.</summary>
+        public float Frontage => frontage;
+
+        public void SetFrontage(float metres) => frontage = metres;
 
         /// <summary>On the facade plane, at ground level.</summary>
         public Vector3 DoorWorld => transform.TransformPoint(doorOffset);

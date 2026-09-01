@@ -26,7 +26,10 @@ namespace RoadDemo
 
         const float StoreWidth = 7f;    // metres of frontage the boards cover
         const float StoreHeight = 2.9f; // the ground floor
-        const float BoardOutset = 0.16f; // just proud of the facade, on the street-facing side
+        /// <summary>How far off the door the boards and the fire stand: TEN CENTIMETRES
+        /// toward the street. The old resolution put them at the job's approach point,
+        /// which is a spot on the PAVEMENT and often out in the road.</summary>
+        const float BoardOutset = 0.1f;
 
         static Transform _root;
         static Material _fire, _board, _smoke;
@@ -90,11 +93,11 @@ namespace RoadDemo
         /// door cannot be resolved or the place is already a wreck.</summary>
         public static bool ScorchBusiness(LivingCity.Territory.TerritoryBusinessId id)
         {
-            if (!TryFrontage(id, out var door, out var outward) ||
+            if (!TryFrontage(id, out var door, out var outward, out var width) ||
                 !DamagedBusinesses.Add(id.Value))
                 return false;
 
-            ScorchAt(door, outward, id.Value, door.y);
+            ScorchAt(door, outward, id.Value, door.y, width);
             return true;
         }
 
@@ -102,10 +105,10 @@ namespace RoadDemo
         /// wrecked ground floor nailed shut. Once per premises.</summary>
         public static bool SmashBusiness(LivingCity.Territory.TerritoryBusinessId id)
         {
-            if (!TryFrontage(id, out var door, out var outward) ||
+            if (!TryFrontage(id, out var door, out var outward, out var width) ||
                 !DamagedBusinesses.Add(id.Value))
                 return false;
-            SmashAt(door, outward, id.Value, door.y);
+            SmashAt(door, outward, id.Value, door.y, width);
             return true;
         }
 
@@ -113,48 +116,114 @@ namespace RoadDemo
         /// geometry. The business overload owns persistence; this geometry overload owns
         /// only the same shared fire presentation and returns it for finite-lived callers.</summary>
         public static Transform ScorchAt(
-            Vector3 door, Vector3 outward, string label, float groundY)
+            Vector3 door, Vector3 outward, string label, float groundY,
+            float width = StoreWidth)
         {
             var go = new GameObject("Burning · " + (label ?? "premises"));
             go.transform.SetParent(Root(), false);
             var fire = go.AddComponent<ShopFire>();
             fire.BeginAt(door, outward, label, groundY,
-                FireMaterial(), SmokeMaterial(), BoardMaterial());
+                FireMaterial(), SmokeMaterial(), BoardMaterial(), width);
             return go.transform;
         }
 
         /// <summary>The ordinary-premises smash visual at already resolved frontage
         /// geometry. Uses the exact boarding presentation applied by SmashBusiness.</summary>
         public static Transform SmashAt(
-            Vector3 door, Vector3 outward, string label, float groundY) =>
-            BoardUpAt(door, outward, label, groundY, BoardMaterial());
+            Vector3 door, Vector3 outward, string label, float groundY,
+            float width = StoreWidth) =>
+            BoardUpAt(door, outward, label, groundY, BoardMaterial(), width);
 
         /// <summary>The doorstep and which way the front faces, off the SIMULATION's
         /// site (never a marker that may be streamed out): outward is door minus the
         /// footprint's centre, which is what "facing the street" means for a shop.</summary>
         static bool TryFrontage(
-            LivingCity.Territory.TerritoryBusinessId id, out Vector3 door, out Vector3 outward)
+            LivingCity.Territory.TerritoryBusinessId id, out Vector3 door, out Vector3 outward) =>
+            TryFrontage(id, out door, out outward, out _);
+
+        /// <summary>No shopfront is narrower than this, and none is boarded wider.</summary>
+        const float NarrowestFront = 3f;
+        const float WidestFront = 14f;
+
+        static bool TryFrontage(
+            LivingCity.Territory.TerritoryBusinessId id, out Vector3 door, out Vector3 outward,
+            out float width)
         {
             door = default;
             outward = Vector3.forward;
+            width = StoreWidth;
             var runtime = TerritoryRuntime.Instance;
             if (runtime == null || !id.IsValid ||
                 !runtime.TryGetBusinessApproach(id, out door))
                 return false;
 
+            // HOW WIDE THIS SHOP IS, out of the simulation's own site rather than the
+            // meshes standing there: one view can carry a whole terrace, and measuring it
+            // gave an eighty-metre shopfront to a laundry.
             var business = LivingCity.Business.BusinessRuntime.Instance;
+            LivingCity.Territory.TerritoryBounds footprint = default;
+            var hasSite = false;
             if (business != null && business.TryGetSite(id, out var site) && site != null)
             {
+                footprint = site.Footprint;
+                hasSite = true;
+            }
+
+            // THE SHOP'S OWN DOOR, when the building standing there has one. The approach
+            // point is a spot on the PAVEMENT a man can walk to - it is not the shopfront,
+            // and boarding that up nailed planks across the middle of the street.
+            var entrance = ShopDoors.Of(id, out var measured);
+            if (entrance != null)
+            {
+                outward = entrance.Facing;
+
+                // The facade plane, AT THIS SHOP'S OWN PLACE ALONG IT: the view's door is
+                // the terrace's centre, the approach point is this business's own spot on
+                // the pavement. Slide along the wall to it.
+                var plane = entrance.DoorWorld;
+                var lateral = Vector3.Cross(Vector3.up, outward);
+                door = plane + lateral * Vector3.Dot(door - plane, lateral);
+                door.y = plane.y;
+
+                width = FrontageOf(hasSite, footprint, outward, measured);
+                return true;
+            }
+
+            if (hasSite)
+            {
                 var centre = new Vector3(
-                    site.Footprint.XMin + site.Footprint.Width * 0.5f, door.y,
-                    site.Footprint.ZMin + site.Footprint.Depth * 0.5f);
+                    footprint.XMin + footprint.Width * 0.5f, door.y,
+                    footprint.ZMin + footprint.Depth * 0.5f);
                 var toDoor = door - centre;
                 toDoor.y = 0f;
                 if (toDoor.sqrMagnitude > 1e-4f)
                     outward = toDoor.normalized;
             }
 
+            width = FrontageOf(hasSite, footprint, outward, 0f);
             return true;
+        }
+
+        /// <summary>How wide to cut the boards: the shop's own ground first, whatever the
+        /// meshes measured second, and never wider than a shopfront gets.</summary>
+        static float FrontageOf(
+            bool hasSite, LivingCity.Territory.TerritoryBounds footprint, Vector3 outward,
+            float measured)
+        {
+            var width = StoreWidth;
+            if (hasSite)
+            {
+                var alongZ = Mathf.Abs(outward.z) > Mathf.Abs(outward.x);
+                var own = alongZ ? footprint.Width : footprint.Depth;
+                if (own > 0.5f)
+                    width = own;
+            }
+            else if (measured > 0.5f)
+            {
+                width = measured;
+            }
+
+            return Mathf.Clamp(width, NarrowestFront, WidestFront);
         }
 
         /// <summary>Resolve the same authoritative frontage used by business damage so a
@@ -213,8 +282,12 @@ namespace RoadDemo
         }
 
         internal static Transform BoardUpAt(
-            Vector3 doorAt, Vector3 facingOut, string label, float groundY, Material board)
+            Vector3 doorAt, Vector3 facingOut, string label, float groundY, Material board,
+            float width = StoreWidth)
         {
+            // THE SHOP'S width, not a constant: planks cut to seven metres ran across the
+            // neighbours' fronts, which on an ordinary street is most of them.
+            var frontage = width > 0.5f ? width : StoreWidth;
             var outward = facingOut.sqrMagnitude > 1e-4f ? facingOut.normalized : Vector3.forward;
             // LookRotation(outward) puts the plank's local +X along the frontage, so the
             // boards run across the storefront with no separate lateral axis to carry.
@@ -238,7 +311,7 @@ namespace RoadDemo
                 plank.transform.SetParent(boards, false);
                 plank.transform.rotation = facing * Quaternion.Euler(0f, 0f, Random.Range(-2.5f, 2.5f));
                 plank.transform.position = baseAt + Vector3.up * h;
-                plank.transform.localScale = new Vector3(StoreWidth, gap * 0.82f, 0.09f);
+                plank.transform.localScale = new Vector3(frontage, gap * 0.82f, 0.09f);
                 var mr = plank.GetComponent<MeshRenderer>();
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 mr.sharedMaterial = board;
@@ -252,10 +325,10 @@ namespace RoadDemo
                 var col = brace.GetComponent<Collider>();
                 if (col != null) Object.Destroy(col);
                 brace.transform.SetParent(boards, false);
-                float diag = Mathf.Atan2(StoreHeight, StoreWidth) * Mathf.Rad2Deg;
+                float diag = Mathf.Atan2(StoreHeight, frontage) * Mathf.Rad2Deg;
                 brace.transform.rotation = facing * Quaternion.Euler(0f, 0f, s * diag);
                 brace.transform.position = baseAt + Vector3.up * (StoreHeight * 0.5f);
-                float len = Mathf.Sqrt(StoreWidth * StoreWidth + StoreHeight * StoreHeight);
+                float len = Mathf.Sqrt(frontage * frontage + StoreHeight * StoreHeight);
                 brace.transform.localScale = new Vector3(len, 0.16f, 0.07f);
                 var mr = brace.GetComponent<MeshRenderer>();
                 mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -276,6 +349,7 @@ namespace RoadDemo
         Vector3 _facingOut;
         string _label = "";
         float _groundY;
+        float _frontage = 7f;
         Material _board;
         float _age;
         Light _glow;
@@ -296,8 +370,12 @@ namespace RoadDemo
         /// <summary>The same fire on a front that has no GangFront - an ordinary shop
         /// torched over its dues (EPIC 9). Boards itself up by position and label.</summary>
         public void BeginAt(Vector3 doorAt, Vector3 facingOut, string label,
-            float groundY, Material fire, Material smoke, Material board)
+            float groundY, Material fire, Material smoke, Material board,
+            float width = 7f)
         {
+            // The fire is strung across THIS front, and the boards it leaves behind are
+            // cut to the same width.
+            _frontage = width > 0.5f ? width : 7f;
             _doorAt = doorAt;
             _facingOut = facingOut;
             _label = label ?? "";
@@ -313,9 +391,10 @@ namespace RoadDemo
 
             // the fire itself: the project's Synty fire particle, a run of them strung
             // across the ground-floor frontage
+            var step = Mathf.Max(0.6f, _frontage / 3f);
             for (int i = -1; i <= 1; i++)
             {
-                var pos = baseAt + lateral * (i * 2.4f) + Vector3.up * 0.2f;
+                var pos = baseAt + lateral * (i * step) + Vector3.up * 0.2f;
                 var fx = BombFx.Spawn(BombFx.Fire, pos, facing, 1.15f, 0f, transform);
                 if (fx == null) break;   // pack absent - drop to the procedural flames below
                 _fireFx.Add(fx.transform);
@@ -332,7 +411,9 @@ namespace RoadDemo
                     var col = q.GetComponent<Collider>();
                     if (col != null) Destroy(col);
                     q.transform.SetParent(transform, false);
-                    q.transform.localPosition = lateral * Random.Range(-3f, 3f) + Vector3.up * 0.9f;
+                    q.transform.localPosition =
+                        lateral * Random.Range(-_frontage * 0.5f, _frontage * 0.5f) +
+                        Vector3.up * 0.9f;
                     var mr = q.GetComponent<MeshRenderer>();
                     mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                     mr.sharedMaterial = fire;
@@ -364,7 +445,8 @@ namespace RoadDemo
                 if (_front != null)
                     ShopDamage.BoardUp(_front, _groundY, _board);
                 else
-                    ShopDamage.BoardUpAt(_doorAt, _facingOut, _label, _groundY, _board);
+                    ShopDamage.BoardUpAt(
+                        _doorAt, _facingOut, _label, _groundY, _board, _frontage);
                 Destroy(gameObject);
                 return;
             }

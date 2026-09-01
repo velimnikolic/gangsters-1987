@@ -1727,21 +1727,31 @@ namespace RoadDemo
                 // or the threat happens HERE, by the same resolution a standing man's
                 // click uses. One order from range, not a walk and a second click - and
                 // the man actually STEPS INSIDE for the conversation (DoorBeat).
+                // THE ANSWER COMES FROM INSIDE. The men used to settle it the instant
+                // they came within reach of the door, so the street was told what the
+                // owner had said before anybody had opened it - and then a man walked
+                // in to a conversation that was already over. The visit carries the
+                // question now: he walks up, the door opens, he goes in, and THAT is
+                // when the owner answers. A visit that cannot be played answers at once,
+                // so an order is never lost to a beat that could not run.
+                var speaking = pending.BusinessId;
+                var house = observation.GangId;
+                var mouth = observation.CharacterId;
                 if (pending.FollowUp == TerritoryRacketIntent.Demand)
                 {
-                    if (ResolveDemand(
-                            observation.GangId, pending.BusinessId, out var verdict, out _))
-                        AnnounceVerdict(pending.BusinessId, threat: false, verdict,
-                            observation.CharacterId);
-                    DoorBeat.VisitBusiness(actor, pending.BusinessId, pending.Door);
+                    DoorBeat.VisitBusiness(actor, speaking, pending.Door, () =>
+                    {
+                        if (ResolveDemand(house, speaking, out var verdict, out _))
+                            AnnounceVerdict(speaking, threat: false, verdict, mouth);
+                    });
                 }
                 else if (pending.FollowUp == TerritoryRacketIntent.Threaten)
                 {
-                    if (ResolveThreat(observation.GangId, pending.BusinessId,
-                            observation.CharacterId, out var verdict, out _))
-                        AnnounceVerdict(pending.BusinessId, threat: true, verdict,
-                            observation.CharacterId);
-                    DoorBeat.VisitBusiness(actor, pending.BusinessId, pending.Door);
+                    DoorBeat.VisitBusiness(actor, speaking, pending.Door, () =>
+                    {
+                        if (ResolveThreat(house, speaking, mouth, out var verdict, out _))
+                            AnnounceVerdict(speaking, threat: true, verdict, mouth);
+                    });
                 }
             }
         }
