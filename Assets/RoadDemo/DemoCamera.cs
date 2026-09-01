@@ -338,6 +338,43 @@ namespace RoadDemo
                 GUI.color = was;
             }
         }
+
+        /// <summary>
+        /// THE RIG IS THE MAIN CAMERA, and nothing else in the scene may be.
+        ///
+        /// Camera.main is "the first ENABLED camera tagged MainCamera", and a scene made
+        /// from Unity's own template ships with one - "Main Camera", parked at (0, 1, -10)
+        /// looking down +Z. The builders stand their own rig up beside it and tag that
+        /// MainCamera too; the rig has the higher depth so it is what the player SEES,
+        /// while Camera.main quietly keeps answering with the forgotten one at the origin.
+        ///
+        /// Everything that turns the world into pixels then lies. Every overlay marker
+        /// (CrewOverlay, CityOverlayHud, the police overlay, the cards) projects through
+        /// the wrong lens, so the dots stand over nobody and a card wanders the screen;
+        /// and every pick - the right-click that sends a crew somewhere - casts its ray
+        /// from the origin, so the men walk off to a point nobody clicked. MiniCoreDemo
+        /// had exactly that camera in it; CoreDemo, built as a bare scene, did not, which
+        /// is why the same city behaved in one scene and not in the other.
+        ///
+        /// So the rig retires them: untagged and switched off, named in the log so the
+        /// scene can be tidied. Cameras that never claimed the tag - a portrait studio,
+        /// a crew feed - are nobody's business here and are left alone.
+        /// </summary>
+        public static void ClaimMainCamera(Camera rig)
+        {
+            if (rig == null) return;
+            var all = FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var other in all)
+            {
+                if (other == null || other == rig) continue;
+                if (!other.CompareTag("MainCamera")) continue;
+                other.tag = "Untagged";
+                other.enabled = false;
+                Debug.LogWarning($"[RoadDemo] '{other.name}' was also tagged MainCamera and " +
+                                 "would have answered Camera.main instead of the rig - it is " +
+                                 "untagged and switched off. Take it out of the scene.", other);
+            }
+        }
     }
 
     /// <summary>Transient play-mode harness for measuring streaming under the same

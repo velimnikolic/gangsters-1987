@@ -206,11 +206,12 @@ namespace LivingCity.CameraRig
                 bodyStyle.normal.textColor = new Color(0.85f, 0.88f, 0.93f);
             }
 
-            // Anchor the card to the building's roof point, like a real popup. z < 0
-            // means the anchor is behind the camera - drawing would mirror the point
-            // back onto the screen, so hide instead.
+            // Anchor the card to the building's roof point, like a real popup. Off the
+            // screen - behind the camera, or simply panned out of the view - it is not
+            // drawn at all: the card that stays, clamped against an edge, is the one the
+            // player sees trailing after them as the city scrolls past.
             var sp = cam.WorldToScreenPoint(cardAnchor);
-            if (sp.z < 0f)
+            if (!LivingCity.UI.OverlayCard.OnScreen(sp, Screen.width, Screen.height))
                 return;
 
             // the panel is as tall as its text. Fixed at a hundred pixels it fitted the

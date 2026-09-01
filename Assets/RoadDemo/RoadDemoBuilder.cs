@@ -4149,6 +4149,10 @@ namespace RoadDemo
 
             var camGo = new GameObject("Demo Camera") { tag = "MainCamera" };
             var cam = camGo.AddComponent<Camera>();
+            // and it is the only MainCamera in the scene: a template camera left in a
+            // demo scene answers Camera.main ahead of this one, and every marker and
+            // every click in the game reads through that lens (DemoCamera.ClaimMainCamera)
+            DemoCamera.ClaimMainCamera(cam);
             cam.fieldOfView = 45f;
             // the island is kilometres across now and the map's last click booms the
             // camera five of them up; the fog eats everything past two, but the far

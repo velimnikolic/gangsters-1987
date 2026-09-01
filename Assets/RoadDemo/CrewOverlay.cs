@@ -150,6 +150,7 @@ namespace RoadDemo
         float _rightDownAt;
         bool _rightPending;
         int _hovered = -1;
+        CrewCar _hoveredCar;   // one car pick a frame, shared by the tag and the chip
         float _nextHoverAt;
         Vector3[] _bracketWorld = new Vector3[4];
         Vector2[] _bracketLocal = new Vector2[4];
@@ -317,16 +318,11 @@ namespace RoadDemo
             return unit.Boarding == car ? "GETTING IN" : "GET IN";
         }
 
-        void UpdateCarHint(Mouse mouse, float scale)
+        void UpdateCarHint(float scale)
         {
             if (_carHint == null) return;
-            string hint = null;
-            CrewCar car = null;
-            if (mouse != null && !BookOpen && !PointerOverUi())
-            {
-                car = PickCarAt(mouse.position.ReadValue());
-                hint = CarHintFor(car);
-            }
+            var car = _hoveredCar;
+            var hint = CarHintFor(car);
             bool on = hint != null;
             if (_carHint.gameObject.activeSelf != on) _carHint.gameObject.SetActive(on);
             if (!on) return;
@@ -1543,6 +1539,9 @@ namespace RoadDemo
                 _hovered = PickManAt(mouse.position.ReadValue());
             }
             _claimedThisFrame = false;
+            // The car under the pointer, asked once: the tag over its roof, the GET IN /
+            // GET OUT chip and the right-click hint were three picks of the same question.
+            _hoveredCar = pointerBlocked ? null : PickCarAt(mouse.position.ReadValue());
 
             var kb = Keyboard.current;
             if (kb != null && kb.escapeKey.wasPressedThisFrame &&
@@ -1595,22 +1594,40 @@ namespace RoadDemo
                                 UpdateGroundBracket(bracket, man, selected: lit, own: own);
                 if (!bracketOn && bracket.enabled)
                     bracket.enabled = false;
-                var dotOn = on && !bracketOn;
+                // The dot over the head is the outfit's own. Every family's men wearing
+                // one put a coloured dot over every head in the view at once, all day,
+                // for men the player gives no orders to - a rival is shown by the square
+                // under his feet, and answers the pointer with a bracket and his name.
+                var dotOn = on && !bracketOn && own;
                 if (img.enabled != dotOn) img.enabled = dotOn;
-                // the popup names a selected lieutenant; his tag stands down under it
-                bool tagOn = dotOn && boss && tag != null && !lit;
+
+                // Who carries his name over his head. A tag on every lieutenant in the
+                // view put four and five labels on the street at once, each of them
+                // wider than the man it named and none of them anything to act on. The
+                // outfit's own lieutenants keep theirs - those are the men being given
+                // orders - and every other family, and the police, are named only under
+                // the pointer. A selected lieutenant's name is on his card already.
+                bool named = own || _hovered == i;
+                bool tagOn = on && boss && tag != null && !lit && named;
                 if (tag != null && tag.enabled != tagOn) tag.enabled = tagOn;
-                if (!dotOn) { if (glyph.enabled) glyph.enabled = false; continue; }
+                if (!on)
+                {
+                    if (glyph.enabled) glyph.enabled = false;
+                    continue;
+                }
 
                 float bob = Mathf.Sin(Time.time * (2f * Mathf.PI / BobPeriod) + i * 1.3f)
                     * BobAmplitude * scale;
                 float size = boss ? BossSize : HoodSize;
-                img.rectTransform.sizeDelta = new Vector2(size, size);
-                img.transform.position = new Vector3(screen.x, screen.y + bob, 0f);
-                img.color = police ? (boss ? PoliceBoss : PoliceHood)
-                          : rival ? RivalInk(_menUnit[i].Faction, boss)
-                          : (boss ? BossOn : HoodOn);
-                img.rectTransform.localScale = Vector3.one;
+                if (dotOn)
+                {
+                    img.rectTransform.sizeDelta = new Vector2(size, size);
+                    img.transform.position = new Vector3(screen.x, screen.y + bob, 0f);
+                    img.color = police ? (boss ? PoliceBoss : PoliceHood)
+                              : rival ? RivalInk(_menUnit[i].Faction, boss)
+                              : (boss ? BossOn : HoodOn);
+                    img.rectTransform.localScale = Vector3.one;
+                }
 
                 if (tagOn)
                 {
@@ -1625,8 +1642,9 @@ namespace RoadDemo
 
                 // what he is doing, as the sign his crew's block on the bar shows - beside
                 // the dot, moving the same way, for lieutenants only (a crew's business is
-                // its lieutenant's; five signs a crew would be a swarm)
-                var activity = boss ? CrewGlyphs.Of(man) : CrewGlyphs.Activity.Idle;
+                // its lieutenant's; five signs a crew would be a swarm). It follows the
+                // name: the outfit's own crews wear it, a rival's is read on the hover.
+                var activity = boss && named ? CrewGlyphs.Of(man) : CrewGlyphs.Activity.Idle;
                 var sign = CrewGlyphs.SpriteOf(activity);
                 bool glyphOn = sign != null;
                 if (glyph.enabled != glyphOn) glyph.enabled = glyphOn;
@@ -1643,7 +1661,7 @@ namespace RoadDemo
             }
 
             DrawCars(w, h, scale);
-            UpdateCarHint(mouse, scale);
+            UpdateCarHint(scale);
             UpdateMark();
             UpdatePopup(w, h, scale);
             UpdateBanner();
@@ -1745,17 +1763,22 @@ namespace RoadDemo
                 }
                 var car = cars[i];
                 var screen = _cam.WorldToScreenPoint(car.Position + Vector3.up * 2.0f);
-                bool on = screen.z > 0f && screen.x >= 0f && screen.x <= w && screen.y >= 0f && screen.y <= h;
-                if (img.enabled != on) img.enabled = on;
-                if (tag != null && tag.enabled != on) tag.enabled = on;
-                if (!on) continue;
+                bool on = LivingCity.UI.OverlayCard.OnScreen(screen, w, h);
                 bool owned = car.Owner != null;
+                // Same rule as the men: the outfit's own cars say what they are, a
+                // rival's or a squad car is read under the pointer. "SEDAN · NOBODY'S"
+                // over every kerb was a line of text the player never had to act on.
+                bool tagOn = tag != null && on &&
+                             ((owned && car.Owner.Faction == 0) || _hoveredCar == car);
+                if (img.enabled != on) img.enabled = on;
+                if (tag != null && tag.enabled != tagOn) tag.enabled = tagOn;
+                if (!on) continue;
                 bool lit = owned && _crews.Selected == car.Owner;
                 float bob = Mathf.Sin(Time.time * (2f * Mathf.PI / BobPeriod) + 2.1f) * BobAmplitude * scale;
                 img.transform.position = new Vector3(screen.x, screen.y + bob, 0f);
                 img.color = car.Civic ? PoliceBoss : owned ? BossOn : new Color(DemoUi.InkDim.r, DemoUi.InkDim.g, DemoUi.InkDim.b, 0.8f);
                 img.rectTransform.localScale = Vector3.one * (lit ? SelectedScale : 1f);
-                if (tag != null)
+                if (tagOn)
                 {
                     string name = CarTag(i, car);
                     if (tag.text != name) tag.text = name;
@@ -1995,21 +2018,18 @@ namespace RoadDemo
                 if (line != _shownLine) { _shownLine = line; _popupLine.text = line; }
             }
 
-            var screen = _cam.WorldToScreenPoint(
-                boss.Tf.position + Vector3.up * boss.OverlayHeight);
-            if (screen.z <= 0f)
+            // The card belongs to the man, not to the screen: pan him out of the view and
+            // it goes with him rather than sliding along the edge in front of the player.
+            if (!LivingCity.UI.OverlayCard.TryPlace(
+                    _cam, boss.Tf.position + Vector3.up * boss.OverlayHeight,
+                    PopupLift * scale, new Vector2(PopupWidth * scale, PopupHeight * scale),
+                    w, h, out var where))
             {
-                _popup.SetActive(false);
+                if (_popup.activeSelf) _popup.SetActive(false);
                 return;
             }
             if (!_popup.activeSelf) _popup.SetActive(true);
-
-            float halfWidth = PopupWidth * 0.5f * scale;
-            float height = PopupHeight * scale;
-            _popupRect.position = new Vector3(
-                Mathf.Clamp(screen.x, halfWidth, w - halfWidth),
-                Mathf.Clamp(screen.y + PopupLift * scale, 0f, h - height),
-                0f);
+            _popupRect.position = where;
         }
     }
 }

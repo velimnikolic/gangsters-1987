@@ -628,25 +628,22 @@ namespace LivingCity.UI
 
             RefreshPopupText();
 
-            var screen = cam.WorldToScreenPoint(
-                selected.Target.position + Vector3.up * selected.Subject.OverlayHeight);
-            if (screen.z <= 0f)
+            // Reference-pixel sizes reach the screen multiplied by the scaler's factor.
+            // The card hangs off the subject and is not drawn at all once the subject is
+            // outside the view: clamped into the viewport it used to sit on the edge and
+            // ride along with the camera, over whatever street happened to be there.
+            var scale = canvas.scaleFactor;
+            if (!OverlayCard.TryPlace(
+                    cam, selected.Target.position + Vector3.up * selected.Subject.OverlayHeight,
+                    PopupLift * scale, new Vector2(PopupWidth * scale, PopupHeight * scale),
+                    width, height, out var position))
             {
-                popup.SetActive(false);
+                if (popup.activeSelf)
+                    popup.SetActive(false);
                 return;
             }
             if (!popup.activeSelf)
                 popup.SetActive(true);
-
-            // Reference-pixel sizes reach the screen multiplied by the scaler's factor.
-            var scale = canvas.scaleFactor;
-            var halfWidth = PopupWidth * 0.5f * scale;
-            var popupHeight = PopupHeight * scale;
-
-            var position = new Vector3(
-                Mathf.Clamp(screen.x, halfWidth, width - halfWidth),
-                Mathf.Clamp(screen.y + PopupLift * scale, 0f, height - popupHeight),
-                0f);
             popupRect.position = position;
         }
 

@@ -389,23 +389,20 @@ namespace RoadDemo
             if (title != _shownTitle) { _shownTitle = title; _popupTitle.text = title; }
             if (line != _shownLine) { _shownLine = line; _popupLine.text = line; }
 
-            var screen = _cam.WorldToScreenPoint(
-                tf.position + Vector3.up * subject.MarkerHeight);
-            if (screen.z <= 0f)
+            // Anchored to the officer, and gone the moment he is off the screen - a card
+            // clamped into the viewport follows the player instead of its subject.
+            float scale = _canvas.scaleFactor;
+            if (!LivingCity.UI.OverlayCard.TryPlace(
+                    _cam, tf.position + Vector3.up * subject.MarkerHeight,
+                    PopupLift * scale, new Vector2(PopupWidth * scale, PopupHeight * scale),
+                    w, h, out var where))
             {
-                _popup.SetActive(false);
+                if (_popup.activeSelf) _popup.SetActive(false);
                 return;
             }
             if (!_popup.activeSelf)
                 _popup.SetActive(true);
-
-            float scale = _canvas.scaleFactor;
-            float halfWidth = PopupWidth * 0.5f * scale;
-            float height = PopupHeight * scale;
-            _popupRect.position = new Vector3(
-                Mathf.Clamp(screen.x, halfWidth, w - halfWidth),
-                Mathf.Clamp(screen.y + PopupLift * scale, 0f, h - height),
-                0f);
+            _popupRect.position = where;
         }
     }
 }

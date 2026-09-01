@@ -173,6 +173,9 @@ namespace RoadDemo
         {
             var camGo = new GameObject("Demo Camera") { tag = "MainCamera" };
             var cam = camGo.AddComponent<Camera>();
+            // the same claim the city's own rig makes: one MainCamera in the scene, and
+            // it is this one (DemoCamera.ClaimMainCamera)
+            DemoCamera.ClaimMainCamera(cam);
             cam.fieldOfView = 45f;
             cam.farClipPlane = Mathf.Max(300f, cameraFar);
             cam.clearFlags = skyboxSky ? CameraClearFlags.Skybox : CameraClearFlags.SolidColor;

@@ -39,6 +39,12 @@ namespace RoadDemo
         /// <summary>Rows the card can print on either tab. LEGIT needs eight.</summary>
         const int MaxRows = 8;
 
+        /// <summary>Metres of daylight between the doorway and the card that reads it.
+        /// The card hangs off the DOOR rather than off the click that opened it: placed
+        /// once at the pointer it stayed where the pointer was, so panning the city left
+        /// the premises behind and the card riding along with the player.</summary>
+        const float DoorLift = 3.2f;
+
         static readonly Color TabOff = new Color(0.10f, 0.35f, 0.58f, 0.35f);
         static readonly Color TabOn = new Color(0.10f, 0.35f, 0.58f, 1f);
         static readonly Color Dirty = new Color(1f, 0.62f, 0.42f);
@@ -58,6 +64,7 @@ namespace RoadDemo
             new List<(RectTransform, TMP_Text, TMP_Text)>();
 
         GangFront _open;
+        Vector3 _anchor;   // the doorway the card is reading, in world metres
         bool _crooked;   // which tab is up: false LEGIT, true THE BUSINESS
 
         public void Init()
@@ -92,6 +99,11 @@ namespace RoadDemo
         {
             if (_open == null) return;
 
+            // Follow the door, not the screen. The card is re-placed every frame, so it
+            // sits over its own premises through a pan and a zoom, and stands down
+            // entirely once they are out of the view.
+            Place();
+
             // Escape closes it, the way it closes the plain building card. The ledger
             // claims Escape while the book is open, so a card behind the book does not
             // steal the press that is putting the book away.
@@ -108,7 +120,7 @@ namespace RoadDemo
             // The card is on top and answers first: a tab takes the click, anything else
             // on the card swallows it (so a near miss does not throw the card away), and
             // a click off the card puts it down and goes on to mean whatever it meant.
-            if (_open != null && _card != null &&
+            if (_open != null && _card != null && _card.gameObject.activeSelf &&
                 RectTransformUtility.RectangleContainsScreenPoint(_card, screen))
             {
                 if (RectTransformUtility.RectangleContainsScreenPoint(
@@ -183,9 +195,10 @@ namespace RoadDemo
                 ? "YOUR OWN HOUSE" + Where(front)
                 : front.GangName.ToUpperInvariant() + " FAMILY" + Where(front);
 
+            _anchor = front.Door + Vector3.up * DoorLift;
             Show(false);
             _card.gameObject.SetActive(true);
-            Place(screen);
+            Place();
             return true;
         }
 
@@ -270,12 +283,31 @@ namespace RoadDemo
 
         static string Money(int dollars) => "$" + dollars.ToString("N0");
 
-        void Place(Vector2 screen)
+        /// <summary>Beside the doorway, top-left pivot, so the card reads to the right of
+        /// the premises and level with them - and is not drawn at all while the doorway is
+        /// off the screen.</summary>
+        void Place()
         {
+            if (_card == null) return;
+            // the same lazy fetch the pick does: Camera.main can be missing at Init
+            if (_cam == null) _cam = Camera.main;
+            if (_cam == null) return;
             var scale = _canvas != null ? _canvas.scaleFactor : 1f;
             var w = _card.sizeDelta.x * scale;
             var h = _card.sizeDelta.y * scale;
-            var x = Mathf.Clamp(screen.x + 14f, 0f, Mathf.Max(0f, Screen.width - w));
+            var screen = _cam.WorldToScreenPoint(_anchor);
+            if (!LivingCity.UI.OverlayCard.OnScreen(screen, Screen.width, Screen.height))
+            {
+                if (_card.gameObject.activeSelf) _card.gameObject.SetActive(false);
+                return;
+            }
+            if (!_card.gameObject.activeSelf) _card.gameObject.SetActive(true);
+
+            // Beside the door, and against a right edge it changes sides rather than
+            // being shoved off its own doorway. The pivot is the top-left corner, so the
+            // y below puts the middle of the card level with the door.
+            var x = screen.x + 14f;
+            if (x + w > Screen.width) x = Mathf.Max(0f, screen.x - 14f - w);
             var y = Mathf.Clamp(screen.y + h * 0.5f, h, Screen.height);
             _card.position = new Vector3(x, y, 0f);
         }

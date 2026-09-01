@@ -30,7 +30,8 @@ namespace LivingCity.Entities
     /// Stationary is kept truthful around every shuffle; no per-instance Update.
     /// </summary>
     [RequireComponent(typeof(HumanBehavior))]
-    public sealed class GangMemberAgent : MonoBehaviour, UI.IOverlaySubject
+    public sealed class GangMemberAgent : MonoBehaviour, UI.IOverlaySubject,
+                                          UI.IOverlayStyledSubject
     {
         /// <summary>Seconds between loiter beats - a re-face or a little shuffle.</summary>
         const float LoiterSecondsMin = 12f;
@@ -163,6 +164,17 @@ namespace LivingCity.Entities
 
         long UI.IOverlaySubject.OverlayKey =>
             ((long)GangId << 8) | (Identity != null && Identity.Lieutenant ? 1L : 0L);
+
+        /// <summary>
+        /// A diamond over the head only while this man is the selection - the
+        /// businesses' rule, for the same reason. Every family's men standing at every
+        /// front put a permanent coloured dot over every head in the city at once, which
+        /// is a screen full of marks the player is never going to act on; the man himself
+        /// is the thing to look at, and he is as clickable with the marker off (picking
+        /// is physics, it never consults the Image).
+        /// </summary>
+        UI.MarkerStyle UI.IOverlayStyledSubject.MarkerStyle =>
+            new UI.MarkerStyle { SizeScale = 1f, SelectedOnly = true };
 
         // ------------------------------------------------------------------ movement
         // The shared AgentLocomotion loop, over this agent's own handles.
