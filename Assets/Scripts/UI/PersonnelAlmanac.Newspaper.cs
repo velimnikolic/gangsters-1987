@@ -348,13 +348,8 @@ namespace LivingCity.UI
                 new Color(LedgerV2.Panel.r * 0.94f, LedgerV2.Panel.g * 0.94f,
                     LedgerV2.Panel.b * 0.94f));
 
-            // A wide slot shows the middle band of the square print - the subject is
-            // centred, so a landscape window keeps it whole.
-            if (w > h * 1.3f)
-            {
-                var band = h / w;
-                raw.uvRect = new Rect(0f, (1f - band) * 0.5f, 1f, band);
-            }
+            // The crop that keeps the subject in his own proportions is PortraitFit's,
+            // put on with the print itself - see PortraitStudio.Show.
 
             var photo = story.Photo;
             var model = photo.Subject == PhotoSubject.Vehicle

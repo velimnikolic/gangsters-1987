@@ -10,35 +10,24 @@ namespace HarborDemo.EditorTools
     /// An editor hook because HarborDemoBuilder lives in the player assembly and
     /// cannot call the kit-bash; before Play rather than during it because the bake
     /// writes assets. Only stale or missing stock is baked (HarborShipKitBash.Version),
-    /// so after the first time Play is immediate. The first load of a session with no
-    /// fleet on disk bakes it too, and writes the kit probe alongside.
+    /// so after the first time Play is immediate.
+    ///
+    /// Entering Play is the only thing that bakes here, and deliberately so. This used
+    /// to bake on the first domain reload of a session as well, which meant every
+    /// script edit in a stale project opened an 8 MB Synty demo scene - a scene that
+    /// logs hundreds of missing-prefab errors on the way in - and rewrote four mesh
+    /// assets, while the user was waiting on a recompile and had asked for none of it.
+    /// Nothing needs the stock before Play: HarborDemoBuilder raises the quay from
+    /// Awake, so an idle editor never reads the sheds. What a clone needs at once,
+    /// Tools/City/Catalog/Rebuild Synty Warehouse Kit and Tools/City/Probe Harbor Kit
+    /// still give on demand.
     /// </summary>
     [InitializeOnLoad]
     public static class HarborDemoAutoBake
     {
-        const string TriedKey = "HarborDemo.AutoBake.Tried";
-
         static HarborDemoAutoBake()
         {
             EditorApplication.playModeStateChanged += OnPlayModeChanged;
-            if (!SessionState.GetBool(TriedKey, false) &&
-                (!HarborShipKitBash.IsFresh() || !LivingCity.EditorTools.SyntyWarehouseKit.IsFresh()))
-            {
-                SessionState.SetBool(TriedKey, true);
-                EditorApplication.delayCall += () =>
-                {
-                    try
-                    {
-                        LivingCity.EditorTools.SyntyWarehouseKit.BuildIfStale();
-                        HarborShipKitBash.BuildIfStale();
-                        HarborKitProbe.Probe();
-                    }
-                    catch (System.Exception e)
-                    {
-                        Debug.LogException(e);
-                    }
-                };
-            }
         }
 
         static void OnPlayModeChanged(PlayModeStateChange state)

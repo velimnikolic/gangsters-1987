@@ -29,7 +29,7 @@ namespace LivingCity.UI
     /// </summary>
     [RequireComponent(typeof(CanvasRenderer))]
     public sealed class BlockFilmView : RawImage,
-        IBeginDragHandler, IDragHandler, IPointerClickHandler,
+        IBeginDragHandler, IDragHandler, IEndDragHandler, IPointerClickHandler,
         IPointerEnterHandler, IPointerExitHandler
     {
         /// <summary>One premise the file knows about, and where its door stands.</summary>
@@ -79,8 +79,19 @@ namespace LivingCity.UI
         /// repaint a pick causes.</summary>
         public System.Action<float> Turned;
 
+        /// <summary>Raised when a turn has finished and the sheet may repaint.</summary>
+        public System.Action Settled;
+
         /// <summary>Where the block is standing, in degrees round it.</summary>
         public float Yaw => yaw;
+
+        /// <summary>True from the moment the reader takes hold of the block until they
+        /// let go of it. The sheet is destroyed and rebuilt whole on every repaint, and
+        /// the city keeps repainting it - a man walks onto a block and the territory's
+        /// observation ticks over - so a turn that is not fenced off is a turn cut short
+        /// a second in. The book reads this and holds its repaint until the turn ends.
+        /// </summary>
+        public bool Turning { get; private set; }
 
         public void Watch(BlockFilm crew, List<Door> read, float readYaw)
         {
@@ -289,7 +300,21 @@ namespace LivingCity.UI
             Hovered?.Invoke(-1);
         }
 
-        public void OnBeginDrag(PointerEventData eventData) => dragged = true;
+        public void OnBeginDrag(PointerEventData eventData)
+        {
+            dragged = true;
+            Turning = true;
+        }
+
+        /// <summary>The turn is over. The sheet cuts its plate to the block's shape at
+        /// the angle it is standing at, so it wants to know when that angle has settled -
+        /// during the turn it must not, because repainting destroys the very model the
+        /// pointer is holding on to.</summary>
+        public void OnEndDrag(PointerEventData eventData)
+        {
+            Turning = false;
+            Settled?.Invoke();
+        }
 
         /// <summary>Left and right turn the block. Up and down do nothing on purpose:
         /// the block is seen at the city's own angle and the book does not offer a
@@ -314,6 +339,7 @@ namespace LivingCity.UI
         protected override void OnDisable()
         {
             base.OnDisable();
+            Turning = false;
             if (current != this)
                 return;
             current = null;
@@ -325,9 +351,17 @@ namespace LivingCity.UI
         {
             PlaceMarks();
             Cut();
+            var mouse = Mouse.current;
+            // A drag that ends anywhere the event system does not see - the pointer off
+            // the window, a modal taking the press - would otherwise leave the hold on
+            // and the book frozen mid-repaint. The button itself is the truth.
+            if (Turning && (mouse == null || !mouse.leftButton.isPressed))
+            {
+                Turning = false;
+                Settled?.Invoke();
+            }
             if (!pointerInside)
                 return;
-            var mouse = Mouse.current;
             if (mouse == null)
                 return;
             var found = At(mouse.position.ReadValue(), null);
@@ -362,10 +396,14 @@ namespace LivingCity.UI
 
             if (film.TryPick(viewport, out var hit))
             {
+                // The ray lands on the copy standing on the film's stage, so it is asked
+                // which piece of the city that copy was made from before the premises are
+                // read - a shopfront on the stage is still that shopfront's shopfront.
+                var real = film.Original(hit.transform) ?? hit.transform;
                 for (var i = 0; i < doors.Count; i++)
                 {
                     var view = doors[i].View;
-                    if (view != null && hit.transform.IsChildOf(view))
+                    if (view != null && real.IsChildOf(view))
                         return doors[i].Key;
                 }
             }

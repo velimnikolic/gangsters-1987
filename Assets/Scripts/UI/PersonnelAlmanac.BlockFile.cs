@@ -54,6 +54,11 @@ namespace LivingCity.UI
         TextMeshProUGUI blockCardHoverName;
         TextMeshProUGUI blockCardHoverLine;
 
+        /// <summary>How many plate pixels the film is exposed for every pixel the plate
+        /// shows. The lens has no antialiasing, so the picture is oversampled and the
+        /// plate's own bilinear filter resolves the edges on the way down.</summary>
+        const float Supersample = 2f;
+
         /// <summary>How many men are printed before the column offers the rest.</summary>
         const int BlockCardMenShown = 6;
 
@@ -497,23 +502,19 @@ namespace LivingCity.UI
         };
 
         /// <summary>
-        /// The file itself. Answers the cursor below it, so the ledger above and the
-        /// filed orders below are laid out by the same running y as every other section.
+        /// The file itself, opened INSIDE the block ledger directly under the row that
+        /// was clicked. It carries no head of its own: the row over it already gives the
+        /// block's name, its ward, who answers for it and what the street says, and a
+        /// second copy of all four in a band would only push the block itself down the
+        /// page. Clicking the same row again shuts the file.
+        ///
+        /// Answers the cursor below it, so the rest of the ledger is laid out by the same
+        /// running y as every other row.
         /// </summary>
         float BuildBlockFile(float cursor)
         {
             if (!blockCardId.IsValid)
                 return cursor;
-
-            // The file stands under a ROW. Lose the row - the name was struck off and the
-            // street took the ground back - and the file closes with it rather than
-            // hanging under a ledger that no longer mentions the block.
-            if (!organizationBlockRows.Contains(blockCardId))
-            {
-                blockCardId = default;
-                StopBlockFilm();
-                return cursor;
-            }
 
             ReadBlockFile();
 
@@ -521,46 +522,16 @@ namespace LivingCity.UI
             PlaceTopLeft(card, 0f, -cursor, organizationW, 1f);
             Fill(card, LedgerV2.Panel);
 
-            var y = BuildBlockFileHead(card);
+            var y = -6f;
             y -= BuildBlockModel(card, -y);
             y -= BuildBlockColumns(card, -y);
 
             var height = -y + 14f;
             card.sizeDelta = new Vector2(organizationW, height);
-            return cursor + height + 18f;
-        }
-
-        float BuildBlockFileHead(RectTransform card)
-        {
-            const float bandH = 38f;
-            var band = NewRect("File head", card);
-            PlaceTopLeft(band, 0f, 0f, organizationW, bandH);
-            Fill(band, LedgerV2.Head);
-
-            Caps(band, 16f, -8f, 90f, "BLOCK FILE", 9f, LedgerV2.HeadDim, 8f)
-                .font = LedgerStyle.Mono;
-
-            var name = BlockName(blockCardId);
-            var title = LedgerV2.Name(band, 16f, -18f, organizationW * 0.4f, name, 19f,
-                LedgerV2.HeadCream);
-            title.overflowMode = TextOverflowModes.Ellipsis;
-
-            var wardX = 16f + Mathf.Min(organizationW * 0.4f, title.preferredWidth) + 14f;
-            LedgerV2.Mono(band, wardX, -18f, organizationW * 0.28f,
-                NeighborhoodOf(blockCardId), 10f, LedgerV2.HeadDim, 2f);
-
-            var control = ControlOf(blockCardId);
-            var colour = ControlColour(control);
-            const float closeW = 74f;
-            const float streetW = 190f;
-            LedgerV2.StreetMark(band, organizationW - closeW - streetW - 26f, -20f, colour, 10f);
-            LedgerV2.Figure(band, organizationW - closeW - streetW - 10f, -19f, streetW - 6f,
-                ControlWord(control), 11.5f, colour, TextAlignmentOptions.MidlineRight);
-
-            LedgerV2.Button(band, "CLOSE", organizationW - closeW - 14f, -6f, closeW, 26f,
-                () => OpenBlockCard(blockCardId), LedgerV2.Key.Ghost, 9f);
-
-            return -bandH;
+            // The open row carries a red mark down its left edge; the file continues it,
+            // so the sheet shows at a glance which row this ground belongs to.
+            Block("Open mark", card, 0f, 0f, 3f, height, LedgerV2.Red);
+            return cursor + height + 10f;
         }
 
         // ------------------------------------------------------------------- the model
@@ -576,7 +547,10 @@ namespace LivingCity.UI
         /// </summary>
         float BuildBlockModel(RectTransform card, float top)
         {
-            var plateH = Mathf.Clamp(organizationW * 0.24f, 220f, 330f);
+            // The block is the thing the file is FOR, so it gets the room: near half the
+            // column's width in height rather than a quarter of it. At the sheet's own
+            // floor that is a 430-unit plate instead of a 224-unit strip.
+            var plateH = Mathf.Clamp(organizationW * 0.46f, 260f, 460f);
             var plate = NewRect("Block model", card);
             PlaceTopLeft(plate, 0f, -top, organizationW, plateH);
             Fill(plate, ModelPlate);
@@ -591,19 +565,41 @@ namespace LivingCity.UI
 
             RoadDemo.CityBlockRecycler.Hold(blockCardGround);
 
+            // The plate is a wide band and a block is not. The picture is cut to the
+            // block's own shape at the angle it is standing at and stood in the middle of
+            // the band; what fell outside the block was never the block, it was the road
+            // it stands next to, and the file is not a picture of the road.
+            //
+            // BOTH sides are solved, not just the width. Fixing the height and taking the
+            // width from it means a block longer than the band is wide cannot get its
+            // shape, and a picture whose shape is not the block's shows road on two sides
+            // and cuts the block off on the other two. The largest rectangle of the
+            // block's own shape that fits the band always can.
+            var shape = BlockFilm.PlateExtents(
+                blockCardGround, blockCardRise, blockCardYaw);
+            var shot = shape.y > 0.01f ? shape.x / shape.y : 1f;
+            var filmW = Mathf.Min(organizationW, plateH * shot);
+            var filmH = filmW / Mathf.Max(0.05f, shot);
+
             var film = BlockFilm.Get();
             var view = NewRect("Model", plate);
-            Stretch(view);
+            PlaceTopLeft(view, (organizationW - filmW) * 0.5f,
+                -(plateH - filmH) * 0.5f, filmW, filmH);
             view.gameObject.AddComponent<CanvasRenderer>();
             blockCardModel = view.gameObject.AddComponent<BlockFilmView>();
             blockCardModel.raycastTarget = true;
             blockCardModel.color = Color.white;
 
             // The film is cut to the plate's real pixel size, so a wide window gets a
-            // wide negative rather than a square one stretched across it.
+            // wide negative rather than a square one stretched across it - and it is
+            // exposed at twice that size. The lens renders no antialiasing of its own, so
+            // a negative shot at the plate's size hands the reader a block with stepped
+            // eaves and a stepped kerb; shot at twice and filtered back down by the plate,
+            // every edge on it is resolved.
             var scale = view.lossyScale.x <= 0f ? 1f : view.lossyScale.x;
             blockCardModel.texture = film.Reel(
-                Mathf.RoundToInt(organizationW * scale), Mathf.RoundToInt(plateH * scale));
+                Mathf.RoundToInt(filmW * scale * Supersample),
+                Mathf.RoundToInt(filmH * scale * Supersample));
             film.Look(blockCardGround, blockCardGroundY, blockCardYaw, blockCardRise);
 
             blockCardDoors.Clear();
@@ -631,6 +627,10 @@ namespace LivingCity.UI
                 BlockFilm.Get().Look(blockCardGround, blockCardGroundY, yaw,
                     blockCardRise);
             };
+            // The plate is cut for one angle. When the reader has finished turning the
+            // block, the sheet repaints and cuts it again for the angle it now stands at
+            // - never during the turn, which would destroy the model under the pointer.
+            blockCardModel.Settled = () => dirty = true;
             blockCardModel.Picked = key => PickTrade(
                 key >= 0 && key < blockCardTrades.Count
                     ? blockCardTrades[key].Id
@@ -695,8 +695,12 @@ namespace LivingCity.UI
                 button.transition = Selectable.Transition.None;
                 button.onClick.AddListener(() =>
                 {
-                    if (blockCardModel != null)
-                        blockCardModel.Turn(blockCardModel.Yaw + step);
+                    if (blockCardModel == null)
+                        return;
+                    blockCardModel.Turn(blockCardModel.Yaw + step);
+                    // Deferred to the next frame, so this key finishes its own click
+                    // before the sheet that carries it is rebuilt.
+                    dirty = true;
                 });
                 x += chipW + gap;
             }

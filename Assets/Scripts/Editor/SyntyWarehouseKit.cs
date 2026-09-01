@@ -67,19 +67,30 @@ namespace LivingCity.EditorTools
         /// modules filled), stood in a row, each root named for its kit role - and
         /// opens it; whatever is done to those roots by hand and saved is what the
         /// bake uses from then on, in place of the demo scene. A root missing from the
-        /// workshop falls back to the demo. The bake re-runs whenever the scene file is
-        /// newer than the last bake (the stamp carries its write time).
+        /// workshop falls back to the demo. The bake re-runs whenever a scene file's
+        /// contents differ from the last bake (the stamp carries their digests).
         /// </summary>
         public const string WorkshopScene = SyntyKitExtractor.BuildingsDir + "/WarehouseWorkshop.unity";
         const float WorkshopSpacing = 70f;
 
         static string Stamp()
         {
-            long ticks = System.IO.File.Exists(WorkshopScene) ? System.IO.File.GetLastWriteTimeUtc(WorkshopScene).Ticks : 0;
-            // the demo scene is edited by hand too (the user mends the shells there): a
-            // newer demo re-bakes as well
-            long demoTicks = System.IO.File.Exists(BuildingsScene) ? System.IO.File.GetLastWriteTimeUtc(BuildingsScene).Ticks : 0;
-            return Version + "|" + ticks + "|" + demoTicks;
+            // What the scenes CONTAIN, not when they were written: a git checkout or an
+            // LFS smudge gives an untouched scene a new write time, and a stamp made of
+            // write times then re-bakes for a file nobody edited - reopening an 8 MB demo
+            // scene and rewriting four mesh assets on the next domain reload.
+            // The demo scene counts too, not only the workshop: the shells are mended by
+            // hand in there as well, so an edited demo re-bakes.
+            return Version + "|" + Digest(WorkshopScene) + "|" + Digest(BuildingsScene);
+        }
+
+        /// <summary>A scene file's contents in one line, or "0" when it is not there.</summary>
+        static string Digest(string path)
+        {
+            if (!System.IO.File.Exists(path)) return "0";
+            using (var md5 = System.Security.Cryptography.MD5.Create())
+            using (var stream = System.IO.File.OpenRead(path))
+                return System.BitConverter.ToString(md5.ComputeHash(stream)).Replace("-", "");
         }
 
         /// <summary>Whether the sheds on disk are this version's, baked from the workshop as it stands.</summary>

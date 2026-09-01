@@ -234,13 +234,8 @@ namespace LivingCity.UI
                 new Color(LedgerV2.Panel.r * 0.94f, LedgerV2.Panel.g * 0.94f,
                     LedgerV2.Panel.b * 0.94f));
 
-            // The studio's prints are square and this slot is wider than it is tall:
-            // show the middle band rather than stretching the man in it.
-            if (w > h)
-            {
-                var band = h / w;
-                raw.uvRect = new Rect(0f, (1f - band) * 0.5f, 1f, band);
-            }
+            // The crop that keeps the man in his own proportions is PortraitFit's, put
+            // on with the print itself - see PortraitStudio.Show.
 
             PortraitStudio.Request(MemberModel(man), PortraitStudio.Framing.Bust, raw,
                 PortraitStudio.Treatment.Newsprint);

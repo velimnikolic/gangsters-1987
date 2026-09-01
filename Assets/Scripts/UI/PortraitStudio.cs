@@ -549,6 +549,13 @@ namespace LivingCity.UI
             print.SetPixels32(pixels);
         }
 
+        /// <summary>
+        /// Hand a print to a plate. The studio's prints are square and the plates are
+        /// not, so the fit goes on with the picture: PortraitFit crops the print to the
+        /// plate's proportions and keeps doing so if the page re-lays out. Without it a
+        /// RawImage stretches its texture across the rectangle and the man in the
+        /// photograph is widened or drawn out to match.
+        /// </summary>
         static void Show(RawImage target, Texture2D print)
         {
             if (!target)
@@ -556,6 +563,7 @@ namespace LivingCity.UI
 
             target.texture = print;
             target.enabled = true;
+            PortraitFit.Attach(target);
         }
 
         /// <summary>

@@ -392,6 +392,15 @@ namespace LivingCity.UI
             var territoryObservationVersion = TerritoryRuntime.Instance
                 ? TerritoryRuntime.Instance.ObservationVersion
                 : -1;
+            // The reader is holding the block on the organization sheet. A repaint
+            // destroys the sheet whole and with it the model under their hand, and this
+            // page is repainted often - an observation tick, a man moving, a gang
+            // stirring. Whatever fell due waits for the hand to let go: the end of the
+            // turn raises the flag itself, and nothing is lost because the versions are
+            // only marked painted when the paint actually happens.
+            if (blockCardModel != null && blockCardModel.Turning)
+                return;
+
             if (dirty || paintedVersion != director.Version ||
                 paintedOutfitVersion != outfitVersion ||
                 paintedGangVersion != Gangs.GangRegistry.Version ||

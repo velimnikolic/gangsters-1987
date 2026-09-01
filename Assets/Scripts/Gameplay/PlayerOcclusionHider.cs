@@ -46,6 +46,16 @@ namespace LivingCity.Gameplay
         const float CastDistance = 200f;       // > tallest building / sin(45 deg); the boom itself is 200
         const float KeepHiddenSeconds = 0.25f; // hysteresis so skirting a facade edge does not flicker
         const float MinOccluderHeight = 5f;    // parked cars and kiosks live in the same flat category
+
+        // Height alone is not "a building". The block passes park a park, a port and their
+        // dressing under the same Buildings category, so a street lamp, a quay lamp or a
+        // sign post - tall, and standing right at the kerb - passed the height test and got
+        // hidden with the facades. A pole occludes nothing worth revealing, and cutting one
+        // at StubFraction leaves a stump with its light hanging in the air, so anything
+        // whose narrower horizontal side is thinner than this is not treated as an occluder.
+        // The narrowest real facade is several metres wide (see SampleStrideWidth); the
+        // widest lamp reaches barely two, arm included.
+        const float MinOccluderFootprint = 3f;
         const float StubFraction = 0.2f;       // how much of the building stays standing while hidden
 
         // Zoomed in, foreground buildings wall off the very street the player is
@@ -273,11 +283,25 @@ namespace LivingCity.Gameplay
                 var collider = overlaps[i];
                 if (!collider || collider.transform.parent != buildingsRoot)
                     continue;
-                var renderer = collider.GetComponent<MeshRenderer>();
-                if (renderer && renderer.bounds.size.y >= MinOccluderHeight)
+                if (Occludes(collider.GetComponent<MeshRenderer>()))
                     return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Whether this renderer is a building the sweeps should hide: tall enough to wall
+        /// the camera off, and wide enough on BOTH horizontal axes to be a facade rather
+        /// than a lamp post, a tree trunk or a sign. Buildings only yaw, so the world AABB
+        /// never reads narrower than the real footprint.
+        /// </summary>
+        static bool Occludes(MeshRenderer renderer)
+        {
+            if (!renderer)
+                return false;
+            var size = renderer.bounds.size;
+            return size.y >= MinOccluderHeight
+                   && Mathf.Min(size.x, size.z) >= MinOccluderFootprint;
         }
 
         void HideOccluders(int count)
@@ -290,7 +314,7 @@ namespace LivingCity.Gameplay
 
                 // A building is one GameObject: collider and renderer side by side.
                 var renderer = collider.GetComponent<MeshRenderer>();
-                if (!renderer || renderer.bounds.size.y < MinOccluderHeight)
+                if (!Occludes(renderer))
                     continue;
 
                 if (hidden.TryGetValue(renderer, out var entry))
