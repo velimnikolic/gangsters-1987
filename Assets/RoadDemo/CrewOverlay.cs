@@ -683,7 +683,19 @@ namespace RoadDemo
             if ((up - _rightDown).sqrMagnitude > slack * slack ||
                 Time.unscaledTime - _rightDownAt > ClickHold)
                 return;
-            if (BookOpen || _crews.Selected == null) return;
+            if (BookOpen) return;
+
+            // With NO crew picked, a shop under the click still answers: the card opens
+            // on its crew-picker stage and comes back carrying the orders. Everything
+            // else - cars, rivals, fronts, the ground - is an order TO somebody, and
+            // with nobody picked there is nobody to order.
+            if (_crews.Selected == null)
+            {
+                var shop = BusinessAt(up);
+                if (shop.IsValid)
+                    OpenBusinessOrders(shop, up);
+                return;
+            }
 
             // the car under the click. This crew's own: get in (or out). Somebody
             // else's - a rival's - and there is nothing to board, but there is a charge
@@ -796,6 +808,12 @@ namespace RoadDemo
         DemoCrews.Unit _cardTarget, _cardCrew;
         GangFront _cardFront;
         CrewCar _cardPlantCar;
+
+        /// <summary>The shop the card is asking about, when it is a shop. It is a
+        /// SUBJECT like the other three and has to be held like one: the card puts
+        /// itself away every frame it can name nothing it is about, and a shop that
+        /// went unrecorded here made the racket card open and shut inside one frame.</summary>
+        LivingCity.Territory.TerritoryBusinessId _cardBusiness;
         bool _ordersOpen;
 
         /// <summary>Open the card over this rival. Nothing happens without a crew
@@ -808,6 +826,9 @@ namespace RoadDemo
             if (!TryGetEnemyActions(target, _enemyActions)) return;
 
             _cardTarget = target;
+            _cardFront = null;
+            _cardPlantCar = null;
+            _cardBusiness = default;
             _cardCrew = crew;
             _cardShown = 0;
             _cardTitle.text = target.GangName.ToUpperInvariant() + " · " +
@@ -949,6 +970,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = front;
             _cardPlantCar = null;
+            _cardBusiness = default;
             _cardCrew = crew;
             _cardShown = 0;
             _cardTitle.text = front.GangName.ToUpperInvariant() + " · PREMISES";
@@ -971,19 +993,43 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// The business under the pointer: the click lands on the street, and the nearest
-        /// authored door within reach owns it. Resolved through the territory runtime
-        /// rather than off a marker, so a shop whose view is streamed out is still a shop.
+        /// The business under the pointer - THE BUILDING, not the ground near it. A shop
+        /// is a thing on the street you point at, and the pavement in front of it is
+        /// where the men walk: a click that lands on paving is a walk order and must
+        /// never be swallowed by the shop behind it. ("Ne mogu da pomeram lika po mapi
+        /// vise jer mi se uvek otvori ovaj meni iako kliknem na pavement.") So the first
+        /// solid thing the ray meets decides, and it owns the click only if it IS a
+        /// shop - the same rule the building card picks by.
         /// </summary>
         LivingCity.Territory.TerritoryBusinessId BusinessAt(Vector2 screen)
         {
-            var runtime = TerritoryRuntime.Instance;
-            if (runtime == null || _cam == null)
+            if (_cam == null)
                 return default;
 
             var ray = _cam.ScreenPointToRay(screen);
+            if (LivingCity.Business.BusinessViewBindings.Count > 0)
+            {
+                var hits = Physics.RaycastAll(ray, PickReach);
+                System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+                for (var i = 0; i < hits.Length; i++)
+                {
+                    // A facade the cutaway is seeing through is still solid to physics,
+                    // but the player is looking at the street behind it and clicking on
+                    // that - the building card's own rule.
+                    if (StreetCutaway.Invisible(hits[i].collider))
+                        continue;
+                    var marker = hits[i].collider
+                        .GetComponentInParent<LivingCity.Entities.BusinessMarker>();
+                    return marker != null ? marker.BusinessId : default;
+                }
+                return default;
+            }
+
+            // A scene that stands no shop views up at all - nothing to point at - keeps
+            // the old reading: the nearest authored door within reach owns the click.
+            var runtime = TerritoryRuntime.Instance;
             var plane = new Plane(Vector3.up, new Vector3(0f, _crews.GroundY, 0f));
-            if (!plane.Raycast(ray, out float enter))
+            if (runtime == null || !plane.Raycast(ray, out float enter))
                 return default;
 
             return runtime.TryGetBusinessNear(ray.GetPoint(enter), BusinessPickRange, out var id)
@@ -991,7 +1037,11 @@ namespace RoadDemo
                 : default;
         }
 
-        /// <summary>How far from a door a click still means that door.</summary>
+        /// <summary>How far a click reaches into the city; past the far side of it.</summary>
+        const float PickReach = 3000f;
+
+        /// <summary>How far from a door a click still means that door, where there is no
+        /// shop view to point at.</summary>
         const float BusinessPickRange = 12f;
 
         /// <summary>The card over a shop: what the picked crew can put to its owner - or,
@@ -1010,6 +1060,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardBusiness = businessId;
             _cardCrew = _crews.Selected;
             _cardShown = 0;
 
@@ -1087,7 +1138,7 @@ namespace RoadDemo
 
                 var picked = unit;
                 var name = string.IsNullOrEmpty(unit.Name)
-                    ? "EKIPA #" + unit.CrewId
+                    ? "CREW #" + unit.CrewId
                     : unit.Name.ToUpperInvariant();
                 actions.Add(new CrewEnemyAction(
                     name,
@@ -1101,7 +1152,7 @@ namespace RoadDemo
 
             if (actions.Count == 0)
                 actions.Add(new CrewEnemyAction(
-                    "NEMA KOGA", "not a man of ours left standing", null));
+                    "NOBODY TO SEND", "not a man of ours left standing", null));
             return true;
         }
 
@@ -1124,13 +1175,43 @@ namespace RoadDemo
             if (runtime?.Commands == null || crew == null)
                 return;
 
+            // COLLECT is its own errand: the round takes every paying door on the
+            // shop's block, not just this one (ECON-004).
+            if (intent == LivingCity.Territory.TerritoryRacketIntent.Collect)
+            {
+                if (runtime.Geography == null ||
+                    !runtime.Geography.TryGetBusinessBlock(businessId, out var roundBlock))
+                    return;
+                var roundResult = runtime.Commands.Submit(
+                    new LivingCity.Territory.CollectDuesCommand(
+                        LivingCity.Territory.TerritoryCommandNodeId.Crew(crew.CrewId),
+                        roundBlock));
+                if (roundResult.Status == LivingCity.Territory.TerritoryCommandStatus.Rejected)
+                {
+                    if (!string.IsNullOrEmpty(roundResult.Reason))
+                        _refusal = (roundResult.Reason, Time.unscaledTime + 2.5f);
+                }
+                else if (runtime.TryGetBusinessApproach(businessId, out var firstDoor))
+                    ShowMark(firstDoor + Vector3.up * 1.0f, MarkTint);
+                return;
+            }
+
+            // A demand or a threat given from range is ONE order: the men walk there
+            // and put it to the owner when they arrive (the approach carries the
+            // intent). Only with a man already at the door is it the conversation
+            // itself, spoken now.
+            var gang = new LivingCity.Territory.TerritoryGangId(
+                LivingCity.Gangs.GangCatalog.PlayerGangId);
+            var atDoor = runtime.TryGetBusinessApproach(businessId, out var doorstep) &&
+                         runtime.HasManAt(gang, doorstep, ApproachSlack(runtime));
+
             LivingCity.Territory.TerritoryCommandResult result;
-            if (intent == LivingCity.Territory.TerritoryRacketIntent.Approach)
+            if (intent == LivingCity.Territory.TerritoryRacketIntent.Approach || !atDoor)
             {
                 result = runtime.Commands.Submit(
                     new LivingCity.Territory.ApproachBusinessCommand(
                         LivingCity.Territory.TerritoryCommandNodeId.Crew(crew.CrewId),
-                        businessId));
+                        businessId, intent));
             }
             else
             {
@@ -1181,6 +1262,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = car;
+            _cardBusiness = default;
             _cardCrew = crew;
             _cardShown = 0;
             var carOwner = car.Occupant ?? car.Owner;
@@ -1189,7 +1271,7 @@ namespace RoadDemo
                 : car.DisplayName.ToUpperInvariant();
 
             var canPlant = _crews.CanBombPlant(crew, car);
-            Row("PODMETNI BOMBU",
+            Row("PLANT A BOMB",
                 canPlant ? "lay a charge under it - it blows when they drive off"
                          : (_crews.BombRefusal ?? "cannot lay it"),
                 canPlant ? () =>
@@ -1206,7 +1288,7 @@ namespace RoadDemo
             // bought and nothing signed out, so unlike the charge it is almost never
             // the faded row - which is the point of it being on this card at all.
             var canShoot = _crews.CanShootCar(crew, car);
-            Row("IZREŠETAJ",
+            Row("SHOOT IT UP",
                 canShoot ? "the crew walks up and empties into it"
                          : (_crews.ShootCarRefusal ?? "cannot shoot it"),
                 canShoot ? () =>
@@ -1255,6 +1337,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardBusiness = default;
             _cardCrew = null;
             if (_cardRect != null) _cardRect.gameObject.SetActive(false);
         }
@@ -1288,13 +1371,21 @@ namespace RoadDemo
         {
             if (!_ordersOpen) return;
             // the subject the card asks about, still standing: a rival crew not yet
-            // wiped, a family's premises (a building does not die), or a car not yet
-            // blown. None of them, or the crew gone or swapped, and the card puts itself
-            // away - an order waiting to be given to nobody.
+            // wiped, a family's premises or a shopkeeper's (a building does not die), or
+            // a car not yet blown. None of them and the card puts itself away.
             bool subject = (_cardTarget != null && !_cardTarget.Wiped) ||
                            _cardFront != null ||
+                           _cardBusiness.IsValid ||
                            (_cardPlantCar != null && _cardPlantCar.Tf != null && !_cardPlantCar.Wrecked);
-            if (!subject || _cardCrew == null || _cardCrew.Wiped || _crews.Selected != _cardCrew)
+
+            // And somebody to ask it of. A SHOP's card is the one that is allowed to
+            // stand with nobody picked, because that stage of it IS the question "who
+            // goes"; every other card without a crew is an order waiting for nobody.
+            bool asker = _cardBusiness.IsValid
+                ? _cardCrew == null || !_cardCrew.Wiped
+                : _cardCrew != null && !_cardCrew.Wiped;
+
+            if (!subject || !asker || _crews.Selected != _cardCrew)
             {
                 CloseOrders();
                 return;

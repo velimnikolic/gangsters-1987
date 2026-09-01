@@ -19,7 +19,7 @@ namespace LivingCity.Tests
             BossIsOneRealStableCharacter(failures);
             RecruitmentPaysThenCreatesOneUnassignedHood(failures);
             HierarchyTransfersIdentityAndHasNoFourHoodLimit(failures);
-            CapacityIsCentralAndSoft(failures);
+            CapacityIsCentralHardForMenSoftForBlocks(failures);
             ResponsibilityUsesCanonicalIdsWithoutChangingTerritorySignals(failures);
             QueryProjectsHierarchyAndPhysicalMappings(failures);
             ValidationReportsCorruptionWithoutRepairingIt(failures);
@@ -75,9 +75,10 @@ namespace LivingCity.Tests
                 failures.Add("Filings: the sheet does not read newest order first.");
         }
 
-        /// <summary>Capacity stays SOFT in the roster - a fight or a promotion can leave a
-        /// man over his limit and he stays there. The one hard edge is the filing office,
-        /// which will not put the order that CREATES an overage on paper.</summary>
+        /// <summary>The filing office and the roster refuse the ASSIGNMENT that would
+        /// create an overage (RANK-001) - but an overage that arises without one (the
+        /// config tightening, a succession) is CARRIED, not repaired: nobody is thrown
+        /// off a branch by arithmetic.</summary>
         static void FilingOfficeIsWhereCapacityIsHard(List<string> failures)
         {
             var atLimit = new CapacityMeasure(3, 3);
@@ -96,19 +97,17 @@ namespace LivingCity.Tests
                 !OutfitFilingRules.BlockRefusal("Artie Byrne", atLimit).Contains("3/3"))
                 failures.Add("Filings: a refusal does not print the figure it refused on.");
 
-            // The roster itself must still carry an overage the office never filed.
+            // An overage the ROSTER never assented to - the ceiling dropped under men
+            // already standing - is carried and read, and the men stay where they are.
             var roster = RosterSeeder.Generate(23);
-            RosterOps.ConfigureOrganization(roster, new OrganizationLimits(1, 1, 1, 1));
             var crew = roster.Crews[0];
-            var rng = new System.Random(23);
-            var hood = RosterSeeder.Recruit(roster, rng);
-            var second = RosterSeeder.Recruit(roster, rng);
-            if (!RosterOps.AssignToCrew(roster, hood.Id, crew.Id).Ok ||
-                !RosterOps.AssignToCrew(roster, second.Id, crew.Id).Ok)
-                failures.Add("Filings: the roster stopped carrying a soft overage.");
-            if (!new OrganizationQuery(roster).CapacityOf(crew.LieutenantId)
-                    .Manpower.IsOverCapacity)
-                failures.Add("Filings: the soft overage did not survive in the roster.");
+            var standing = crew.HoodIds.Count;
+            RosterOps.ConfigureOrganization(roster, new OrganizationLimits(70, 4, 1, 1));
+            var capacity = new OrganizationQuery(roster).CapacityOf(crew.LieutenantId);
+            if (standing > 1 && !capacity.Manpower.IsOverCapacity)
+                failures.Add("Filings: a config-shrunk overage is not read as one.");
+            if (crew.HoodIds.Count != standing)
+                failures.Add("Filings: shrinking the ceiling threw men off the branch.");
         }
 
         static void RecruitmentPaysThenCreatesOneUnassignedHood(List<string> failures)
@@ -268,7 +267,12 @@ namespace LivingCity.Tests
                 failures.Add("Hierarchy: Boss/Lieutenant transfer left two parents.");
         }
 
-        static void CapacityIsCentralAndSoft(List<string> failures)
+        /// <summary>The numbers live in ONE serialized config; a lieutenant's manpower
+        /// cap is HARD at the roster (RANK-001 - he refuses the next man), and block
+        /// responsibility stays soft behind its force flag. This test used to assert a
+        /// soft manpower overage and looped forever when RANK-001 made the cap hard -
+        /// every loop below is guarded on principle.</summary>
+        static void CapacityIsCentralHardForMenSoftForBlocks(List<string> failures)
         {
             var defaults = OrganizationLimits.Default;
             if (defaults.BossManpower != 70 || defaults.BossBlocks != 4 ||
@@ -276,30 +280,51 @@ namespace LivingCity.Tests
                 failures.Add("Capacity: canonical defaults moved or became scattered.");
 
             var roster = RosterSeeder.Generate(7);
-            RosterOps.ConfigureOrganization(roster, new OrganizationLimits(1, 1, 2, 1));
+            RosterOps.ConfigureOrganization(roster, new OrganizationLimits(70, 4, 50, 1));
             var crew = roster.Crews[0];
             var rng = new System.Random(7);
-            while (crew.HoodIds.Count < 4)
+            var query = new OrganizationQuery(roster);
+
+            var manpower = query.CapacityOf(crew.LieutenantId).Manpower;
+            if (manpower.Current > manpower.Maximum)
+            {
+                failures.Add("Capacity: the seed dealt a branch already past its cap.");
+                return;
+            }
+
+            // Fill the branch to its own derived cap...
+            var guard = manpower.Maximum - manpower.Current + 2;
+            while (guard-- > 0 &&
+                   query.CapacityOf(crew.LieutenantId).Manpower.Current <
+                   query.CapacityOf(crew.LieutenantId).Manpower.Maximum)
             {
                 var hood = RosterSeeder.Recruit(roster, rng);
                 if (!RosterOps.AssignToCrew(roster, hood.Id, crew.Id).Ok)
-                    failures.Add("Capacity: a soft manpower overage refused the assignment.");
+                {
+                    failures.Add("Capacity: the branch refused a man below its cap.");
+                    return;
+                }
             }
 
-            var query = new OrganizationQuery(roster);
-            if (!RosterOps.AssignBlockResponsibility(
-                    roster, BlockA, crew.LieutenantId, true).Ok ||
-                !RosterOps.AssignBlockResponsibility(
-                    roster, BlockB, crew.LieutenantId, true).Ok)
-                failures.Add("Capacity: a soft block overage refused the assignment.");
+            // ...and the NEXT man is refused at the roster itself (RANK-001).
+            var extra = RosterSeeder.Recruit(roster, rng);
+            if (RosterOps.AssignToCrew(roster, extra.Id, crew.Id).Ok)
+                failures.Add("Capacity: the lieutenant took a man past his manpower cap.");
+            var atCap = query.CapacityOf(crew.LieutenantId).Manpower;
+            if (atCap.Current != atCap.Maximum || atCap.IsOverCapacity)
+                failures.Add("Capacity: manpower did not read full-at-cap after the refusal.");
 
-            var capacity = query.CapacityOf(crew.LieutenantId);
-            if (!capacity.Manpower.IsOverCapacity || capacity.Manpower.Overage != 2 ||
-                capacity.Manpower.Maximum != 2)
-                failures.Add("Capacity: manpower current/max/overage is wrong.");
-            if (!capacity.Blocks.IsOverCapacity || capacity.Blocks.Overage != 1 ||
-                capacity.Blocks.Maximum != 1)
-                failures.Add("Capacity: block current/max/overage is wrong.");
+            // Block responsibility is hard at the cap the same way: ground he cannot
+            // carry is ground the outfit does not really hold (RANK-001).
+            if (!RosterOps.AssignBlockResponsibility(
+                    roster, BlockA, crew.LieutenantId, true).Ok)
+                failures.Add("Capacity: a block below the cap was refused.");
+            if (RosterOps.AssignBlockResponsibility(
+                    roster, BlockB, crew.LieutenantId, true).Ok)
+                failures.Add("Capacity: the lieutenant took a block past his cap.");
+            var blocks = query.CapacityOf(crew.LieutenantId).Blocks;
+            if (blocks.Current != 1 || blocks.Maximum != 1 || blocks.IsOverCapacity)
+                failures.Add("Capacity: block current/max is wrong at the cap.");
         }
 
         static void ResponsibilityUsesCanonicalIdsWithoutChangingTerritorySignals(

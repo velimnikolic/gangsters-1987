@@ -44,6 +44,48 @@ namespace RoadDemo
         /// faces. Boards go up ACROSS this, fire licks up in front of it (ShopDamage).</summary>
         public Vector3 Outward = Vector3.forward;
 
+        /// <summary>What this place IS to the family, in the one word the street mark
+        /// paints on the pavement outside it - "HQ" for the door the family operates
+        /// behind. Every later premises an outfit takes carries its own word, which is
+        /// the whole reason this is a string and not a flag.</summary>
+        public string Role = "HQ";
+
+        /// <summary>The integer block the premises stands on, as the plan numbers them,
+        /// or -1 where the door came from a scene rather than a plan. The deed book and
+        /// the holdings sweep both count in these.</summary>
+        public int BlockId = -1;
+
+        /// <summary>The business site the door was projected from, and the premises in
+        /// the simulated directory that stands on it. The site is handed over when the
+        /// family is seated; the business is looked up once, the first time anybody asks
+        /// - the directory is not always dealt by the time the fronts are.</summary>
+        public LivingCity.Business.BusinessSiteId SiteId;
+
+        LivingCity.Territory.TerritoryBusinessId _businessId;
+        bool _businessLooked;
+
+        /// <summary>The premises behind this door as the simulation knows it, invalid
+        /// until the business directory can name it (and in the demo scenes that have
+        /// no directory at all).</summary>
+        public LivingCity.Territory.TerritoryBusinessId BusinessId
+        {
+            get
+            {
+                if (_businessLooked || !SiteId.IsValid)
+                    return _businessId;
+
+                var runtime = LivingCity.Business.BusinessRuntime.Instance;
+                var directory = runtime != null ? runtime.Directory : null;
+                if (directory == null)
+                    return _businessId;   // asked too early; ask again next time
+
+                _businessLooked = true;
+                if (directory.TryGetBySite(SiteId, out var record))
+                    _businessId = record.Id;
+                return _businessId;
+            }
+        }
+
         /// <summary>Bombed and now a burnt-out shell being boarded up (ShopDamage) - so
         /// a shop is not set alight twice, and the map or a card could say so.</summary>
         public bool Damaged;

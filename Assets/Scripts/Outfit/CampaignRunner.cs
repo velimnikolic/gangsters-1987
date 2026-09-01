@@ -105,6 +105,11 @@ namespace LivingCity.Outfit
         /// ledger and the street both re-deal on.</summary>
         public System.Action RosterMoved;
 
+        /// <summary>Raised as a job finishes, after its money and record are booked.
+        /// The scene applies what the job did to the CITY - a bought deed, a shop put
+        /// in fear - which this class has no hands to touch.</summary>
+        public System.Action<Job, OrderOutcome> JobResolved;
+
         readonly List<int> scratchMen = new List<int>();
         readonly List<Turf.Holding> scratchHoldings = new List<Turf.Holding>();
         readonly List<int> scratchSoured = new List<int>();
@@ -284,13 +289,35 @@ namespace LivingCity.Outfit
             if (result.CasualtyId >= 0 || result.RecruitedId >= 0 || ranOff)
                 RosterMoved?.Invoke();
 
-            OrderResolution.AwardPractice(spec, roster, crew, job.Men,
-                result.Outcome == OrderOutcome.Completed
-                    ? XpOutcome.Completed
-                    : XpOutcome.Failed);
+            // What the job teaches. A deviation (a freeze, a runner, work done louder
+            // than ordered) turns a completed job's lesson into the half-pay Partial -
+            // the outcome the XP table defined for exactly this and nothing ever fed.
+            var lesson = result.Outcome == OrderOutcome.Completed
+                ? XpOutcome.Completed
+                : XpOutcome.Failed;
+            if (lesson == XpOutcome.Completed)
+                for (var i = incidentsBefore; i < Incidents.Count; i++)
+                    if (Incidents[i].Kind == IncidentKind.Froze ||
+                        Incidents[i].Kind == IncidentKind.Fled ||
+                        Incidents[i].Kind == IncidentKind.Deviated)
+                    {
+                        lesson = XpOutcome.Partial;
+                        break;
+                    }
+
+            // A violence job the STREET answered already taught its men out there -
+            // CrewSkill pays the shots that landed, capped per day. Paying the book's
+            // practice on top of that was the double award XP-003 forbids.
+            if (job.StreetOutcome == null)
+                OrderResolution.AwardPractice(spec, roster, crew, job.Men, lesson);
 
             Record(roster, job, result.Outcome, result.Payout - result.Cost, result.Heat);
             job.Stage = JobStage.Finished;
+
+            // The world's turn. The campaign owns money, men and the record; what a
+            // finished job DID to the city - a deed changing hands, a shop frightened -
+            // is the scene's business, and this is the seam it hears it through.
+            JobResolved?.Invoke(job, result.Outcome);
         }
 
         // ----------------------------------------------------------------- the money
@@ -498,8 +525,11 @@ namespace LivingCity.Outfit
 
                 if (spec.Payout <= 0)
                     continue;
+                // The per-type worth rides the job (a casino is not a barber): dropping
+                // it here was what made every RunBusiness pay the flat book figure.
                 BookMoney(spec, OrderResolution.PayoutFor(spec, job.TargetCount,
-                    CrewKit.BestAt(roster, crew, spec.PrimaryAttribute)), 0);
+                    CrewKit.BestAt(roster, crew, spec.PrimaryAttribute),
+                    job.TargetWorth), 0);
                 Heat += OrderResolution.HeatFor(spec, job.TargetCount,
                     CrewKit.BestAt(roster, crew, CharacterAttribute.Stealth));
             }

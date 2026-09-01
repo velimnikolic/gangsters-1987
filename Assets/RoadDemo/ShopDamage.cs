@@ -72,6 +72,75 @@ namespace RoadDemo
                 DriveTrace.Event("bomb", "shop", front.GangName + "'s front set alight");
         }
 
+        // -------------------------------------------------- ordinary premises (EPIC 9)
+
+        /// <summary>Businesses already wrecked, by canonical id - the once-only rule the
+        /// GangFront flags carry, for premises that have no GangFront. Simulation-keyed,
+        /// so a street streamed out and back is still a wreck.</summary>
+        static readonly HashSet<string> DamagedBusinesses = new HashSet<string>();
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetDamagedForPlay() => DamagedBusinesses.Clear();
+
+        public static bool IsBusinessDamaged(LivingCity.Territory.TerritoryBusinessId id) =>
+            id.IsValid && DamagedBusinesses.Contains(id.Value);
+
+        /// <summary>A Torch that came off at an ORDINARY shop: the same fire and the
+        /// same boards the rival fronts get, at the business's own door. False when the
+        /// door cannot be resolved or the place is already a wreck.</summary>
+        public static bool ScorchBusiness(LivingCity.Territory.TerritoryBusinessId id)
+        {
+            if (!TryFrontage(id, out var door, out var outward) ||
+                !DamagedBusinesses.Add(id.Value))
+                return false;
+
+            var go = new GameObject("Burning · " + id.Value);
+            go.transform.SetParent(Root(), false);
+            var fire = go.AddComponent<ShopFire>();
+            fire.BeginAt(door, outward, id.Value, door.y,
+                FireMaterial(), SmokeMaterial(), BoardMaterial());
+            return true;
+        }
+
+        /// <summary>A SmashUp that came off: no fire, straight to the boards - the
+        /// wrecked ground floor nailed shut. Once per premises.</summary>
+        public static bool SmashBusiness(LivingCity.Territory.TerritoryBusinessId id)
+        {
+            if (!TryFrontage(id, out var door, out var outward) ||
+                !DamagedBusinesses.Add(id.Value))
+                return false;
+            BoardUpAt(door, outward, id.Value, door.y, BoardMaterial());
+            return true;
+        }
+
+        /// <summary>The doorstep and which way the front faces, off the SIMULATION's
+        /// site (never a marker that may be streamed out): outward is door minus the
+        /// footprint's centre, which is what "facing the street" means for a shop.</summary>
+        static bool TryFrontage(
+            LivingCity.Territory.TerritoryBusinessId id, out Vector3 door, out Vector3 outward)
+        {
+            door = default;
+            outward = Vector3.forward;
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime == null || !id.IsValid ||
+                !runtime.TryGetBusinessApproach(id, out door))
+                return false;
+
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            if (business != null && business.TryGetSite(id, out var site) && site != null)
+            {
+                var centre = new Vector3(
+                    site.Footprint.XMin + site.Footprint.Width * 0.5f, door.y,
+                    site.Footprint.ZMin + site.Footprint.Depth * 0.5f);
+                var toDoor = door - centre;
+                toDoor.y = 0f;
+                if (toDoor.sqrMagnitude > 1e-4f)
+                    outward = toDoor.normalized;
+            }
+
+            return true;
+        }
+
         // ------------------------------------------------------------------ materials
 
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
@@ -116,15 +185,21 @@ namespace RoadDemo
         internal static void BoardUp(GangFront front, float groundY, Material board)
         {
             front.Boarded = true;
-            var outward = front.Outward.sqrMagnitude > 1e-4f ? front.Outward.normalized : Vector3.forward;
+            BoardUpAt(front.Door, front.Outward, front.GangName, groundY, board);
+        }
+
+        internal static void BoardUpAt(
+            Vector3 doorAt, Vector3 facingOut, string label, float groundY, Material board)
+        {
+            var outward = facingOut.sqrMagnitude > 1e-4f ? facingOut.normalized : Vector3.forward;
             // LookRotation(outward) puts the plank's local +X along the frontage, so the
             // boards run across the storefront with no separate lateral axis to carry.
             // Set back a metre from the door line, into the building, so they sit inside
             // the window reveal the way a real boarding-up does rather than out on the kerb.
-            var baseAt = new Vector3(front.Door.x, groundY, front.Door.z) - outward * BoardInset;
+            var baseAt = new Vector3(doorAt.x, groundY, doorAt.z) - outward * BoardInset;
             var facing = Quaternion.LookRotation(outward, Vector3.up);
 
-            var boards = new GameObject("Boards · " + front.GangName).transform;
+            var boards = new GameObject("Boards · " + label).transform;
             boards.SetParent(Root(), false);
 
             const int planks = 5;
@@ -171,6 +246,9 @@ namespace RoadDemo
     public sealed class ShopFire : MonoBehaviour
     {
         GangFront _front;
+        Vector3 _doorAt;
+        Vector3 _facingOut;
+        string _label = "";
         float _groundY;
         Material _board;
         float _age;
@@ -186,13 +264,24 @@ namespace RoadDemo
         public void Begin(GangFront front, float groundY, Material fire, Material smoke, Material board)
         {
             _front = front;
+            BeginAt(front.Door, front.Outward, front.GangName, groundY, fire, smoke, board);
+        }
+
+        /// <summary>The same fire on a front that has no GangFront - an ordinary shop
+        /// torched over its dues (EPIC 9). Boards itself up by position and label.</summary>
+        public void BeginAt(Vector3 doorAt, Vector3 facingOut, string label,
+            float groundY, Material fire, Material smoke, Material board)
+        {
+            _doorAt = doorAt;
+            _facingOut = facingOut;
+            _label = label ?? "";
             _groundY = groundY;
             _board = board;
             _smokeMat = smoke;
 
-            var outward = front.Outward.sqrMagnitude > 1e-4f ? front.Outward.normalized : Vector3.forward;
+            var outward = facingOut.sqrMagnitude > 1e-4f ? facingOut.normalized : Vector3.forward;
             var lateral = Vector3.Cross(Vector3.up, outward).normalized;
-            var baseAt = new Vector3(front.Door.x, groundY, front.Door.z) + outward * 0.3f;
+            var baseAt = new Vector3(doorAt.x, groundY, doorAt.z) + outward * 0.3f;
             transform.position = baseAt;
             var facing = Quaternion.LookRotation(outward, Vector3.up);
 
@@ -246,7 +335,10 @@ namespace RoadDemo
             // burnt out: board it up and go
             if (_age >= ShopDamage.BurnFor)
             {
-                if (_front != null) ShopDamage.BoardUp(_front, _groundY, _board);
+                if (_front != null)
+                    ShopDamage.BoardUp(_front, _groundY, _board);
+                else
+                    ShopDamage.BoardUpAt(_doorAt, _facingOut, _label, _groundY, _board);
                 Destroy(gameObject);
                 return;
             }

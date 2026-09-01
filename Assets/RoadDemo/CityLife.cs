@@ -22,6 +22,13 @@ namespace RoadDemo
         /// scene doors, where RoadDemoBuilder derives the street address geometrically.</summary>
         public string Address = "";
 
+        /// <summary>The business site this door was projected from, when the plan knows
+        /// one. It is the only stable handle between a door in the street and the
+        /// premises in the simulation: the mesh behind the door is pooled and its name
+        /// is a bake's name, but the site id survives the block being streamed out. Empty
+        /// on ordinary scene doors, which no business pass ever published.</summary>
+        public LivingCity.Business.BusinessSiteId SiteId;
+
         /// <summary>The bake this door is cut into - the block or the single building.
         /// A door is the only handle the street has on a BUILDING (the sidewalk graph
         /// knows pavement, the crowd knows doors), so a family's front premises is

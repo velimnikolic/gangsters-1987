@@ -40,10 +40,18 @@ namespace LivingCity.Gameplay
         public bool Owns(WeaponDef def) => def != null && owned.Contains(def.id);
 
         /// <summary>
-        /// The purchase gate, and the only one. Always yes today: the shop works, the
-        /// price is on the label, and the charge arrives when a wallet does.
+        /// The purchase gate. The outfit's safe is the wallet where a campaign is
+        /// running - the same gate the Armory uses, so the gun counter and the Finances
+        /// page can never disagree. A bench scene with no director still sells free,
+        /// because there is no money in it to charge.
         /// </summary>
-        public bool TryPay(int price) => true;
+        public bool TryPay(int price)
+        {
+            var outfit = OutfitDirector.Instance;
+            if (outfit == null)
+                return true;
+            return outfit.Purchase(price, "Sidearm over the counter").Ok;
+        }
 
         public void Grant(WeaponDef def)
         {

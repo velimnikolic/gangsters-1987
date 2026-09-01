@@ -83,6 +83,21 @@ namespace LivingCity.UI
             public BlockTenure Tenure;
             public string RivalName;
 
+            /// <summary>Where the racket stands with this door - what the shared order
+            /// list keys its rows off. Unaffiliated when no racket runs in the scene.</summary>
+            public TerritoryProtectionState Standing;
+
+            /// <summary>What this door IS to the house that holds it - the same word
+            /// painted on the pavement outside it (RoadDemo.TurfMarks), "HQ" for the
+            /// premises a family operates behind. Empty for an ordinary shop, and empty
+            /// for a rival's place we have not found yet: the book prints what the
+            /// outfit knows, and the street is where it learns it.</summary>
+            public string Role;
+
+            /// <summary>Whose word it is, for the badge's colour. -1 when there is
+            /// none.</summary>
+            public int RoleGang;
+
             /// <summary>What it puts in the books in one day: a tenth of the till over a
             /// week when it is ours, its protection over a week when it pays us, and
             /// nothing at all when it is neither.</summary>
@@ -160,7 +175,20 @@ namespace LivingCity.UI
         void ToggleJobMan(int characterId)
         {
             if (!blockCardCrew.Remove(characterId))
+            {
+                // ONE job rides in ONE lieutenant's book. Picking a man of another
+                // branch does not build an impossible crew for the filing to refuse
+                // later - it starts the pick over on his branch, there and then.
+                var roster = director != null ? director.Roster : null;
+                if (roster != null && blockCardCrew.Count > 0)
+                {
+                    var his = roster.CrewOf(characterId);
+                    var current = roster.CrewOf(blockCardCrew[0]);
+                    if (his == null || current == null || his.Id != current.Id)
+                        blockCardCrew.Clear();
+                }
                 blockCardCrew.Add(characterId);
+            }
             dirty = true;
         }
 
@@ -219,6 +247,9 @@ namespace LivingCity.UI
                     Name = row.Name,
                     Trade = "PREMISES",
                     Tenure = BlockTenure.Open,
+                    Standing = racket != null
+                        ? racket.StateOf(row.Id, us)
+                        : TerritoryProtectionState.Unaffiliated,
                 };
 
                 var archetype = BusinessArchetypeId.Grocer;
@@ -253,6 +284,27 @@ namespace LivingCity.UI
                     trade.Tenure = protector == us ? BlockTenure.Paying : BlockTenure.Rival;
                     if (trade.Tenure == BlockTenure.Rival)
                         trade.RivalName = GangName(protector.Value);
+                }
+
+                trade.RoleGang = -1;
+                var front = FrontOn(row.Id);
+                if (front != null)
+                {
+                    trade.Role = front.Role;
+                    trade.RoleGang = front.GangId;
+                    // A house's own premises is a house's, whatever the deed book has
+                    // caught up to - the street said so and the street is the authority
+                    // on where a family sits.
+                    if (trade.Tenure == BlockTenure.Open)
+                    {
+                        if (front.GangId == GangCatalog.PlayerGangId)
+                            trade.Tenure = BlockTenure.Ours;
+                        else
+                        {
+                            trade.Tenure = BlockTenure.Rival;
+                            trade.RivalName = GangName(front.GangId);
+                        }
+                    }
                 }
 
                 if (priced)
@@ -757,12 +809,14 @@ namespace LivingCity.UI
                         : "heavy enough for the shops to listen");
 
             var takeCap = Mathf.Max(1, blockCardTake, blockCardWages);
+            // True since the daily settlement (OutfitDirector.SettleBusinessDay): these
+            // dollars land in the safe at midnight, on the same price table.
             y += Gauge(card, x, y, width, "TAKE A DAY",
                 LedgerText.Cash(blockCardTake),
                 (float)blockCardTake / takeCap,
                 blockCardTake > 0 ? LedgerV2.Green : LedgerV2.Red,
                 blockCardTake > 0
-                    ? "counted into the books at midnight"
+                    ? "deeds settle at midnight · dues bank when a round walks"
                     : "no door here pays us · it earns nothing");
 
             if (blockCardHeatCap > 0f)
@@ -902,9 +956,12 @@ namespace LivingCity.UI
             LedgerV2.StreetMark(row, 0f, -14f, ink, 10f);
 
             const float figureW = 92f;
-            var textW = width - 16f - figureW - 8f;
+            var badgeW = BadgeWidth(trade.Role);
+            var textW = width - 16f - figureW - 8f - (badgeW > 0f ? badgeW + 6f : 0f);
             var name = LedgerV2.Name(row, 16f, -6f, textW, trade.Name, 13.5f, LedgerV2.Ink);
             name.overflowMode = TextOverflowModes.Ellipsis;
+            if (badgeW > 0f)
+                RoleBadge(row, 16f + textW + 6f, -5f, badgeW, trade);
             var under = LedgerV2.Mono(row, 16f, -22f, textW,
                 trade.Trade.ToLowerInvariant() + " · " + TenureLine(trade), 9f,
                 LedgerV2.Label, 1f);
@@ -916,6 +973,55 @@ namespace LivingCity.UI
             LedgerV2.Mono(row, width - figureW, -23f, figureW, TenureWord(trade.Tenure),
                 9f, ink, 3f, TextAlignmentOptions.MidlineRight);
             return rowH;
+        }
+
+        /// <summary>How wide the badge needs to be for its word. Two letters ("HQ") is
+        /// a chip; a longer word gets the room it needs and no more, because the name
+        /// beside it is the thing the reader is actually looking for.</summary>
+        static float BadgeWidth(string role) =>
+            string.IsNullOrEmpty(role) ? 0f : Mathf.Clamp(role.Length * 8f + 14f, 30f, 86f);
+
+        /// <summary>
+        /// The word painted on the pavement outside this door, printed in the book in
+        /// the same colour it is painted in - so a glance down the column finds a
+        /// house's own premises without reading a line of it.
+        /// </summary>
+        void RoleBadge(RectTransform row, float x, float y, float w, BlockTrade trade)
+        {
+            var tint = GangPalette.Of(trade.RoleGang);
+            var chip = NewRect("Role " + trade.Role, row);
+            PlaceTopLeft(chip, x, y, w, 16f);
+            Fill(chip, tint);
+            // Dark ink on a bright house, cream on a dark one - half the palette is a
+            // deep colour and a badge nobody can read is worse than no badge.
+            var lit = tint.r * 0.299f + tint.g * 0.587f + tint.b * 0.114f;
+            Caps(chip, 0f, 0f, w, trade.Role, 9f,
+                lit > 0.55f ? LedgerV2.Head : LedgerV2.HeadCream, 2f,
+                TextAlignmentOptions.Center);
+        }
+
+        /// <summary>
+        /// The family's premises standing on this business, when the outfit knows about
+        /// it. Ours needs no finding - a man knows where he works. A rival's door stays
+        /// out of the book until a crew of ours has stood outside it
+        /// (<see cref="RoadDemo.TurfKnowledge"/>): the ledger prints what the outfit
+        /// knows, and the street is where it learns it.
+        /// </summary>
+        static RoadDemo.GangFront FrontOn(TerritoryBusinessId id)
+        {
+            if (!id.IsValid)
+                return null;
+
+            var all = RoadDemo.GangFront.All;
+            for (var i = 0; i < all.Count; i++)
+            {
+                var front = all[i];
+                if (front == null || front.BusinessId != id)
+                    continue;
+                return RoadDemo.TurfKnowledge.IsKnown(front) ? front : null;
+            }
+
+            return null;
         }
 
         static string TenureLine(BlockTrade trade) => trade.Tenure switch
@@ -944,6 +1050,7 @@ namespace LivingCity.UI
             name.overflowMode = TextOverflowModes.Ellipsis;
             y += 20f;
             Caps(panel, 12f, -y, width - 24f,
+                (string.IsNullOrEmpty(trade.Role) ? "" : trade.Role + " · ") +
                 trade.Trade + " · " + TenureWord(trade.Tenure), 9f, LedgerV2.HeadDim, 6f)
                 .font = LedgerStyle.Mono;
             y += 18f;
@@ -966,9 +1073,7 @@ namespace LivingCity.UI
             BlockTenure.Ours =>
                 "Ours outright. " + LedgerText.Cash(trade.TakePerDay) +
                 " a day and it shows clean on the books.",
-            BlockTenure.Paying =>
-                "Pays for peace. " + LedgerText.Cash(trade.TakePerDay) +
-                " a day, collected by whoever stands the block.",
+            BlockTenure.Paying => PayingNote(trade),
             BlockTenure.Rival =>
                 (trade.RivalName ?? "Another house") +
                 " holds this door. Taking it means their men answer for it.",
@@ -978,6 +1083,20 @@ namespace LivingCity.UI
                       " buys the premises outright."
                     : "Nobody leans on it. A quiet door and an open one.",
         };
+
+        /// <summary>What a paying door's line on the sheet says: the dues meter, read
+        /// off the ledger (ECON-001/008) - what it owes right now and when it last
+        /// paid, never an invented figure.</summary>
+        string PayingNote(BlockTrade trade)
+        {
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime != null && runtime.TryGetDues(trade.Id, out var owed, out var lastPaid))
+                return "Pays for peace. Owes " + LedgerText.Cash(owed) +
+                       (lastPaid >= 0 ? " · last paid day " + lastPaid : " · never collected") +
+                       " · send a round.";
+            return "Pays for peace. " + LedgerText.Cash(trade.TakePerDay) +
+                   " a day accrues to the dues ledger.";
+        }
 
         /// <summary>The men who can go: the ones already standing on the block first,
         /// then whoever is idle under the outfit. The pip says whether he is carrying.
@@ -991,26 +1110,42 @@ namespace LivingCity.UI
                 9f, LedgerV2.HeadDim, 10f).font = LedgerStyle.Mono;
             var y = top + 18f;
 
+            // The sheet offers only men a filing will ACCEPT: men on a branch. A pool
+            // man has no lieutenant's book to ride in, and a chip that gets refused at
+            // the filing is a trap, not an offer. Men already standing this block come
+            // first, then each crew's own men.
+            var roster = director != null ? director.Roster : null;
             blockCardOffer.Clear();
-            for (var i = 0; i < blockCardHands.Count; i++)
-                blockCardOffer.Add(blockCardHands[i].Id);
-            for (var i = 0; i < organizationPeople.Count && blockCardOffer.Count < 12; i++)
+
+            void Offer(int manId)
             {
-                var person = organizationPeople[i];
-                if (!person.IsUnassigned || !person.IsAvailable ||
-                    blockCardOffer.Contains(person.Id))
-                    continue;
-                blockCardOffer.Add(person.Id);
+                if (roster == null || blockCardOffer.Count >= 12 ||
+                    blockCardOffer.Contains(manId) || roster.CrewOf(manId) == null)
+                    return;
+                var person = Person(manId);
+                if (!person.IsValid || !person.IsAvailable)
+                    return;
+                blockCardOffer.Add(manId);
             }
+
+            for (var i = 0; i < blockCardHands.Count; i++)
+                Offer(blockCardHands[i].Id);
+            if (roster != null)
+                for (var c = 0; c < roster.Crews.Count && blockCardOffer.Count < 12; c++)
+                {
+                    var branch = roster.Crews[c];
+                    Offer(branch.LieutenantId);
+                    for (var h = 0; h < branch.HoodIds.Count &&
+                                    blockCardOffer.Count < 12; h++)
+                        Offer(branch.HoodIds[h]);
+                }
 
             if (blockCardOffer.Count == 0)
             {
                 Line(panel, LedgerStyle.MonoItalic, 10.5f, LedgerV2.Boss, x, -y, width, 18f,
-                    "No man of ours is here or idle.");
+                    "No branch has a man free to send. Idle men ride nowhere - put them under a lieutenant first.");
                 return y + 24f - top;
             }
-
-            var roster = director != null ? director.Roster : null;
             const float chipH = 24f;
             const float gap = 5f;
             var cursorX = x;
@@ -1067,51 +1202,67 @@ namespace LivingCity.UI
             return (string.IsNullOrEmpty(first) ? surname : first) + initial;
         }
 
-        /// <summary>The three jobs, and under them the deed the outfit can strike on the
-        /// premises itself. Every one of them is filed, not done.</summary>
+        /// <summary>
+        /// What can actually be done to THIS door, and only that. Two kinds of key and
+        /// the sheet keeps them apart: the red racket keys are the real chain - the men
+        /// walk to the door and the demand or the threat happens when they arrive
+        /// (ApproachBusinessCommand carries the intent) - and the outline keys are jobs
+        /// filed with the outfit's book. A door that is ours is not shaken down, a door
+        /// that pays is not robbed, and a door with no asking price is not bought.
+        /// </summary>
         float JobKeys(RectTransform panel, float x, float top, float width, BlockTrade trade)
         {
             var y = top;
             var keyW = Mathf.Min(BlockCardKeyMax, (width - 12f) / 3f);
-            var jobs = new[] { "SHAKE IT DOWN", "ROB IT", "SIT ON IT" };
-            var types = new[]
-            {
-                Outfit.OrderType.Extort, Outfit.OrderType.Raid, Outfit.OrderType.Guard,
-            };
-
             var cursorX = x;
-            for (var i = 0; i < jobs.Length; i++)
+
+            void Key(string word, System.Action press, bool red)
             {
-                var type = types[i];
-                var target = trade;
                 if (cursorX > x && cursorX + keyW > x + width)
                 {
                     cursorX = x;
                     y += 32f;
                 }
-                LedgerV2.Button(panel, jobs[i], cursorX, -y, keyW, 26f,
-                    () => FileStreetJob(target, type), LedgerV2.Key.Red, 9f);
+                LedgerV2.Button(panel, word, cursorX, -y, keyW, 26f,
+                    () => press(), red ? LedgerV2.Key.Red : LedgerV2.Key.Outline, 9f);
                 cursorX += keyW + 6f;
             }
-            y += 34f;
 
-            if (trade.Tenure == BlockTenure.Open || trade.Tenure == BlockTenure.Paying)
+            var target = trade;
+
+            // The racket chain, against any door that is not on our own paper. A door
+            // already PAYING is collected from, never demanded from - the round takes
+            // the whole block's paying doors and carries the take home (ECON-004).
+            if (trade.Tenure == BlockTenure.Open || trade.Tenure == BlockTenure.Rival)
             {
-                var target = trade;
+                Key(TerritoryRacketOrders.ApproachLabel,
+                    () => FileRacketIntent(target, TerritoryRacketIntent.Approach), true);
+                Key(TerritoryRacketOrders.DemandLabel,
+                    () => FileRacketIntent(target, TerritoryRacketIntent.Demand), true);
+                Key(TerritoryRacketOrders.ThreatenLabel,
+                    () => FileRacketIntent(target, TerritoryRacketIntent.Threaten), true);
+                cursorX = x;
+                y += 32f;
+
+                Key("ROB IT", () => FileStreetJob(target, Outfit.OrderType.Raid), false);
+            }
+            else if (trade.Tenure == BlockTenure.Paying)
+            {
+                Key(TerritoryRacketOrders.CollectLabel,
+                    () => FileRacketIntent(target, TerritoryRacketIntent.Collect), true);
+            }
+
+            Key("SIT ON IT", () => FileStreetJob(target, Outfit.OrderType.Guard), false);
+            cursorX = x;
+            y += 32f;
+
+            if ((trade.Tenure == BlockTenure.Open || trade.Tenure == BlockTenure.Paying)
+                && trade.BuyPrice > 0)
+            {
                 var deedW = Mathf.Min(BlockCardKeyMax, width);
                 LedgerV2.Button(panel, "BUY IT OUTRIGHT · " + LedgerText.Cash(trade.BuyPrice),
                     x, -y, deedW, 26f, () => FileBuyPremises(target),
                     LedgerV2.Key.Outline, 9f).color = LedgerV2.HeadCream;
-                y += 32f;
-            }
-
-            if (trade.HasDoor)
-            {
-                var target = trade;
-                var doorW = Mathf.Min(BlockCardKeyMax, width);
-                LedgerV2.Button(panel, "SEND THEM TO THE DOOR", x, -y, doorW, 26f,
-                    () => SendToDoor(target), LedgerV2.Key.Outline, 9f)
-                    .color = LedgerV2.HeadCream;
                 y += 32f;
             }
 
@@ -1168,7 +1319,9 @@ namespace LivingCity.UI
                 blockCardAssignOpen ? LedgerV2.Key.Dark : LedgerV2.Key.Outline, 9.5f);
             y += 34f;
 
-            var seeAll = LedgerV2.Button(card, "SHOW IT ON THE MAP", x, -y, keyW, 28f,
+            // Honest label: this opens the city-wide block PICKER (the same one the
+            // ledger's own key opens) - it does not fly the camera to this block.
+            var seeAll = LedgerV2.Button(card, "FIND A BLOCK ON THE MAP", x, -y, keyW, 28f,
                 BeginBlockTargeting, LedgerV2.Key.Outline, 9.5f);
             SetActionEnabled(seeAll,
                 MapTargeting.Available && TerritoryRuntime.Instance?.Commands != null);
@@ -1325,6 +1478,7 @@ namespace LivingCity.UI
                     TargetX = trade.HasDoor ? trade.Door.x : 0f,
                     TargetZ = trade.HasDoor ? trade.Door.z : 0f,
                     TargetLabel = trade.Name,
+                    TargetBusinessId = trade.Id.Value,
                 };
 
                 var result = outfit.IssueOrder(job);
@@ -1355,6 +1509,9 @@ namespace LivingCity.UI
                     crew = roster.Crews[0];
                 if (crew == null)
                     return Outfit.FilingRuling.Refuse("no crew to send about it");
+                if (trade.BuyPrice <= 0)
+                    return Outfit.FilingRuling.Refuse(
+                        "these premises carry no asking price on the book");
                 if (outfit.Accounts.Safe < trade.BuyPrice)
                     return Outfit.FilingRuling.Refuse(
                         "the safe does not cover " + LedgerText.Cash(trade.BuyPrice));
@@ -1369,6 +1526,7 @@ namespace LivingCity.UI
                     TargetZ = trade.HasDoor ? trade.Door.z : 0f,
                     TargetLabel = trade.Name,
                     TargetWorth = trade.BuyPrice,
+                    TargetBusinessId = trade.Id.Value,
                 };
 
                 var result = outfit.IssueOrder(job);
@@ -1379,10 +1537,14 @@ namespace LivingCity.UI
             blockCardCrew.Clear();
         }
 
-        /// <summary>Walks a crew to the premises' own doorstep. The demand follows when
-        /// they arrive - a click from across the city is an intent, not an interaction,
-        /// and the racket layer says so.</summary>
-        void SendToDoor(BlockTrade trade)
+        /// <summary>
+        /// The racket chain from the sheet: the men walk to the premises' own doorstep
+        /// and the demand or the threat happens WHEN THEY ARRIVE - the approach command
+        /// carries the intent, so an order given off paper is one order, not a walk and
+        /// a second click on the street. The note names the crew that goes, because a
+        /// crew the reader did not pick must never be sent silently.
+        /// </summary>
+        void FileRacketIntent(BlockTrade trade, TerritoryRacketIntent intent)
         {
             var runtime = TerritoryRuntime.Instance;
             var roster = director != null ? director.Roster : null;
@@ -1393,22 +1555,82 @@ namespace LivingCity.UI
                 return;
             }
 
-            var crew = blockCardCrew.Count > 0 ? roster.CrewOf(blockCardCrew[0]) : null;
-            if (crew == null && roster.Crews.Count > 0)
-                crew = roster.Crews[0];
-            if (crew == null || !runtime.TryGetCrewNode(crew.Id, out var node))
+            if (!TryPickStreetCrew(runtime, roster, out var crew, out var node,
+                    out var refusal))
             {
-                organizationNote = "no crew of ours is on the street to send";
+                organizationNote = refusal;
                 dirty = true;
                 return;
             }
 
-            var sent = runtime.Commands.Submit(
-                new ApproachBusinessCommand(node, trade.Id));
-            organizationNote = sent.Status == TerritoryCommandStatus.Rejected
-                ? sent.Reason
-                : "they are on their way to the door";
+            // COLLECT is the round: every paying door on this block, walked in order,
+            // the take carried home (ECON-004). Everything else is the doorstep chain.
+            var sent = intent == TerritoryRacketIntent.Collect
+                ? runtime.Commands.Submit(new CollectDuesCommand(node, blockCardId))
+                : runtime.Commands.Submit(
+                    new ApproachBusinessCommand(node, trade.Id, intent));
+            if (sent.Status == TerritoryCommandStatus.Rejected)
+            {
+                organizationNote = sent.Reason;
+                dirty = true;
+                return;
+            }
+
+            var lieutenant = roster.Find(crew.LieutenantId);
+            var who = lieutenant != null ? lieutenant.Surname + "'s crew" : "the crew";
+            organizationNote = intent switch
+            {
+                TerritoryRacketIntent.Demand =>
+                    who + " walks to " + trade.Name + " · the demand follows at the door",
+                TerritoryRacketIntent.Threaten =>
+                    who + " walks to " + trade.Name + " · they lean on him at the door",
+                TerritoryRacketIntent.Collect =>
+                    who + " walks the round · the take banks at the front",
+                _ => who + " is on its way to the door",
+            };
             dirty = true;
+        }
+
+        /// <summary>
+        /// The crew a racket order goes to: the picked men's own crew first, then the
+        /// only crew standing on the street, and nothing else - a crew the outfit
+        /// happens to list first is not an answer, it is a guess with men in it.
+        /// </summary>
+        bool TryPickStreetCrew(TerritoryRuntime runtime, Roster roster,
+            out Crew crew, out TerritoryCommandNodeId node, out string refusal)
+        {
+            crew = blockCardCrew.Count > 0 ? roster.CrewOf(blockCardCrew[0]) : null;
+
+            if (crew == null)
+            {
+                Crew onStreet = null;
+                var streetCrews = 0;
+                for (var i = 0; i < roster.Crews.Count; i++)
+                {
+                    if (!runtime.TryGetCrewNode(roster.Crews[i].Id, out _))
+                        continue;
+                    streetCrews++;
+                    onStreet = roster.Crews[i];
+                }
+                if (streetCrews == 1)
+                    crew = onStreet;
+                else if (streetCrews > 1)
+                {
+                    node = default;
+                    refusal = "several crews are out · pick a man of the one to send";
+                    return false;
+                }
+            }
+
+            if (crew == null || !runtime.TryGetCrewNode(crew.Id, out node))
+            {
+                node = default;
+                refusal = "no crew of ours is on the street to send";
+                return false;
+            }
+
+            refusal = "";
+            return true;
         }
 
         /// <summary>Marches the crew that answers for the block onto it. This is the

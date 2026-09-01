@@ -846,6 +846,13 @@ namespace LivingCity.Personnel
                     roster.Organization.BossHoodIds.Remove(heir.Id);
                     heir.Rank = Rank.Lieutenant;
                     crew.LieutenantId = heir.Id;
+                    // Succession is still a promotion: the rank clock restarts and his
+                    // loyalty re-aims at the Boss, exactly as the regular path stamps
+                    // them. Without these the drift kept fining the new lieutenant as
+                    // "parked" against a date from his corner days.
+                    heir.RankSince = roster.Day;
+                    Loyalty.Reaim(heir,
+                        "stepped up when his lieutenant went down, and answers to the Boss now");
                 }
                 else
                 {

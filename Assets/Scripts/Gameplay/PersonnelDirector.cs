@@ -269,6 +269,23 @@ namespace LivingCity.Gameplay
             return Commit(RosterOps.AssignToCrew(Roster, id, crewId), "reassigned", id);
         }
 
+        /// <summary>How a crew runs its rounds (ECON-005) - the player's one lever
+        /// over collection. A word on the branch card, cycled there.</summary>
+        public OpResult SetCrewPolicy(int crewId, CrewPolicy policy)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+            for (var i = 0; i < Roster.Crews.Count; i++)
+            {
+                if (Roster.Crews[i].Id != crewId)
+                    continue;
+                Roster.Crews[i].Policy = policy;
+                Touch();
+                return OpResult.Success;
+            }
+            return OpResult.Fail("that crew is not on the books");
+        }
+
         public OpResult AssignToBoss(int id, int bossId)
         {
             if (Roster == null)

@@ -73,7 +73,25 @@ namespace LivingCity.Gameplay
             foreach (var business in PropertyRegistry.Businesses)
                 if (business && business.GangId >= 0)
                     into.Add(new Turf.Holding(business.GangId, business.BlockId));
+
+            // The deed book covers the streamed city, where a building the camera left
+            // has no marker to sweep. A deed whose view IS bound was already counted
+            // above - its marker carries the same gang - so only the unbound ones add.
+            Business.BusinessDeeds.Collect(deedScratch);
+            for (var i = 0; i < deedScratch.Count; i++)
+            {
+                var deed = deedScratch[i];
+                if (deed.Value.GangId < 0 ||
+                    Business.BusinessViewBindings.TryGet(deed.Key, out _))
+                    continue;
+                into.Add(new Turf.Holding(deed.Value.GangId, deed.Value.LegacyBlockId));
+            }
         }
+
+        readonly List<KeyValuePair<
+            Territory.TerritoryBusinessId, Business.BusinessDeeds.Deed>> deedScratch =
+            new List<KeyValuePair<
+                Territory.TerritoryBusinessId, Business.BusinessDeeds.Deed>>();
 
         /// <summary>The outfit's front - its headquarters. False until the gang layer
         /// has seated the families.</summary>
@@ -82,11 +100,27 @@ namespace LivingCity.Gameplay
             position = Vector3.zero;
             blockId = -1;
             var front = Gangs.GangRegistry.FrontBusinessOf(Gangs.GangCatalog.PlayerGangId);
-            if (!front)
-                return false;
-            position = front.transform.position;
-            blockId = front.BlockId;
-            return true;
+            if (front)
+            {
+                position = front.transform.position;
+                blockId = front.BlockId;
+                return true;
+            }
+
+            // The planned city seats fronts as GangFront doors, not as marker
+            // businesses (GangDirector never runs there). Without this fallback the
+            // outfit had no address: every job's travel collapsed to the minimum.
+            var fronts = RoadDemo.GangFront.All;
+            for (var i = 0; i < fronts.Count; i++)
+            {
+                if (fronts[i] == null ||
+                    fronts[i].GangId != Gangs.GangCatalog.PlayerGangId)
+                    continue;
+                position = fronts[i].Door;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>Metres from headquarters to a job's door - the one worldly fact the
@@ -180,6 +214,9 @@ namespace LivingCity.Gameplay
             var today = clock.Day + 1;
             while (Campaign.Day < today)
             {
+                // The day's business money lands on the sheet BEFORE midnight closes
+                // it, so a shop's dollars and the day it earned them agree.
+                SettleBusinessDay();
                 var paid = Runner.DayTick(roster);
                 Version++;
 
@@ -213,6 +250,7 @@ namespace LivingCity.Gameplay
         {
             Runner.DistanceOf = DistanceFromHeadquarters;
             Runner.HoldingsOf = CollectHoldings;
+            Runner.JobResolved = OnJobResolved;
             Runner.RosterMoved = () =>
             {
                 if (PersonnelDirector.Instance)
@@ -230,6 +268,113 @@ namespace LivingCity.Gameplay
             };
             Runner.OpenFirstSheet();
             Version++;
+        }
+
+        /// <summary>
+        /// The day's take off the city's doors: a premises on our deed pays its net, a
+        /// shop the racket holds Compliant pays its week's protection a seventh at a
+        /// time. Booked once per campaign day onto the closing sheet - the settlement
+        /// the Block File's figures always promised. EPIC 9's collection rounds will
+        /// replace this flat settle with money that physically walks; until then the
+        /// dollars are at least real.
+        /// </summary>
+        void SettleBusinessDay()
+        {
+            var business = Business.BusinessRuntime.Instance;
+            if (business == null || !business.Populated)
+                return;
+
+            // Only premises the outfit OWNS settle at midnight - a deed's net is a
+            // till a manager runs for you. Protection money never moves here: it sits
+            // on the dues ledger until a crew physically walks the round and banks it
+            // (ECON-004 · TerritoryRuntime.Collection).
+            var legal = 0;
+            var rows = Business.CityBusinesses.All;
+            for (var i = 0; i < rows.Count; i++)
+            {
+                var id = rows[i].Id;
+                if (Business.BusinessDeeds.GangOf(id) != Gangs.GangCatalog.PlayerGangId)
+                    continue;
+                if (business.Directory.TryGet(id, out var record))
+                    legal += EconomyPrices.NetPerDay(record.Archetype);
+            }
+
+            if (legal == 0)
+                return;
+
+            Accounts.Safe += legal;
+            var sheet = Accounts.Current;
+            if (sheet != null)
+                sheet.LegalIncome += legal;
+            Version++;
+        }
+
+        /// <summary>
+        /// A collection round reached the front (ECON-004/007): the take enters the
+        /// safe and today's sheet as illegal income - the ONLY door protection money
+        /// has into the books.
+        /// </summary>
+        public void BankCollection(int amount)
+        {
+            if (amount <= 0)
+                return;
+            Accounts.Safe += amount;
+            var sheet = Accounts.Current;
+            if (sheet != null)
+                sheet.IllegalIncome += amount;
+            Version++;
+            Debug.Log("[Outfit] A round banked " + UI.LedgerText.Cash(amount) + ".");
+        }
+
+        /// <summary>
+        /// What a finished job DID to the city. The campaign booked the money and the
+        /// record; this is where its outcome lands on the world's own state - the deed
+        /// book and the racket - through the seams those systems already own.
+        /// </summary>
+        void OnJobResolved(Job job, OrderOutcome outcome)
+        {
+            if (job == null || outcome != OrderOutcome.Completed ||
+                string.IsNullOrEmpty(job.TargetBusinessId))
+                return;
+
+            var businessId = new Territory.TerritoryBusinessId(job.TargetBusinessId);
+            switch (job.Type)
+            {
+                // The paperwork came back signed: the deed moves to the outfit, in the
+                // simulation, so it survives the street being streamed out and back.
+                case OrderType.BuyPremises:
+                    Business.BusinessDeeds.SetGang(
+                        businessId, Gangs.GangCatalog.PlayerGangId, job.TargetBlockId);
+                    Version++;
+                    break;
+
+                // Violence that came off registers with the shop it landed on - the
+                // RACK-011 seam - so a raided or smashed premises is frightened of the
+                // family that did it, not merely poorer on the outfit's own sheet.
+                case OrderType.Raid:
+                    RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
+                        new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
+                        businessId, Territory.TerritoryEscalationKind.Assault);
+                    break;
+
+                case OrderType.SmashUp:
+                    RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
+                        new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
+                        businessId, Territory.TerritoryEscalationKind.PropertyDamage);
+                    // The wreck is VISIBLE: the ground floor nailed shut, the same
+                    // boards a bombed front gets - a smashed shop must look smashed.
+                    RoadDemo.ShopDamage.SmashBusiness(businessId);
+                    break;
+
+                case OrderType.Torch:
+                case OrderType.Bomb:
+                    RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
+                        new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
+                        businessId, Territory.TerritoryEscalationKind.PropertyDamage);
+                    // And a torched one burns: the full ShopFire, then the boards.
+                    RoadDemo.ShopDamage.ScorchBusiness(businessId);
+                    break;
+            }
         }
 
         /// <summary>

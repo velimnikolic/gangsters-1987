@@ -320,6 +320,13 @@ namespace LivingCity.Outfit
         public float TargetZ;
         public string TargetLabel = "";
 
+        /// <summary>The canonical business the job is against, when the caller knows -
+        /// the raw id value, so this file owes the territory layer nothing. Empty for a
+        /// job aimed at ground rather than at a door. It is what lets a finished buy
+        /// transfer THAT deed and a finished raid frighten THAT shop, instead of the
+        /// outcome evaporating into coordinates.</summary>
+        public string TargetBusinessId = "";
+
         public int Men = 1;
 
         /// <summary>The campaign day it was issued - the record prints it and the roll

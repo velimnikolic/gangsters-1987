@@ -13,6 +13,10 @@ namespace LivingCity.Territory
 
         /// <summary>Lean on him, and ask again.</summary>
         Threaten,
+
+        /// <summary>Collect what he owes - the round: door to door, the take carried
+        /// home (ECON-004). Only a paying shop has anything to collect.</summary>
+        Collect,
     }
 
     /// <summary>
@@ -51,9 +55,10 @@ namespace LivingCity.Territory
     /// </summary>
     public static class TerritoryRacketOrders
     {
-        public const string ApproachLabel = "PRIĐI";
-        public const string DemandLabel = "TRAŽI REKET";
-        public const string ThreatenLabel = "ZAPRETI";
+        public const string ApproachLabel = "GO TO THE DOOR";
+        public const string DemandLabel = "DEMAND PROTECTION";
+        public const string ThreatenLabel = "THREATEN THE OWNER";
+        public const string CollectLabel = "COLLECT THE TAKE";
 
         /// <summary>
         /// The rows for this shop, given where it stands with the asking family and
@@ -95,25 +100,30 @@ namespace LivingCity.Territory
 
             if (standing == TerritoryProtectionState.Compliant)
             {
+                // A paying shop is not demanded from - it is COLLECTED from: the crew
+                // walks the block's paying doors and carries the take home (ECON-004).
                 into.Add(new TerritoryRacketOrder(
-                    TerritoryRacketIntent.Demand, DemandLabel,
-                    "he already pays us - collecting comes later", false));
+                    TerritoryRacketIntent.Collect, CollectLabel,
+                    "walk the round and carry it home", true));
                 return;
             }
 
+            // From range the demand is still one order: the men walk there and put it
+            // to him when they arrive (the approach carries the intent). At the door it
+            // is the conversation itself.
             into.Add(new TerritoryRacketOrder(
                 TerritoryRacketIntent.Demand, DemandLabel,
                 atDoor
                     ? Ask(standing)
-                    : "the men have to be at his door first",
-                atDoor));
+                    : "they walk to his door and put it to him",
+                true));
 
             into.Add(new TerritoryRacketOrder(
                 TerritoryRacketIntent.Threaten, ThreatenLabel,
                 atDoor
                     ? "lean on him, then ask again"
-                    : "the men have to be at his door first",
-                atDoor));
+                    : "they walk to his door and lean on him",
+                true));
         }
 
         static string Ask(TerritoryProtectionState standing)

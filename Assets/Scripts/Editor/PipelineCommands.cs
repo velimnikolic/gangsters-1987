@@ -1091,6 +1091,97 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_economy_tests",
+                    "Run EPIC 9 contracts: the dues meter, owner profiles, payment rolls, the " +
+                    "round planner, policy/archetype tables and the tier guard.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "economy", "tests" })]
+        public static object EconomyTests()
+        {
+            var failures = LivingCity.Tests.EconomyTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        /// <summary>The live city if one is standing and populated, otherwise a quarter
+        /// dealt fresh from the seed. CoreDistrict.Plan is pure data - no prefab is loaded
+        /// and no GameObject is made - which is exactly why this can run from the terminal
+        /// with the editor idle. Shared by every audit that reads a business directory.</summary>
+        static (LivingCity.Business.BusinessSiteCatalog catalog,
+                LivingCity.Business.BusinessDirectory directory,
+                LivingCity.Business.BusinessPopulationReport report,
+                int citySeed, bool live) DealOrReadCity(int seed)
+        {
+            var runtime = seed < 0
+                ? UnityEngine.Object.FindAnyObjectByType<LivingCity.Business.BusinessRuntime>()
+                : null;
+            if (runtime != null && runtime.Populated)
+                return (runtime.Catalog, runtime.Directory, runtime.Report, runtime.CitySeed, true);
+
+            var citySeed = seed < 0 ? 1987 : seed;
+            var core = new CoreDistrict();
+            core.Plan(null, citySeed);
+            core.Frame = DistrictFrame.Identity;
+
+            var catalog = new LivingCity.Business.BusinessSiteCatalog();
+            catalog.Add(new LivingCity.Business.ResidentialBusinessSites(
+                core.ResidentialBlocks, core.Frame));
+            catalog.Add(new LivingCity.Business.StandaloneBusinessSites(core));
+            catalog.Add(new LivingCity.Business.CompoundBusinessSites(core, null));
+            catalog.Build();
+
+            var directory = new LivingCity.Business.BusinessDirectory();
+            var report = LivingCity.Business.BusinessPopulation.Populate(catalog, citySeed, directory);
+            return (catalog, directory, report, citySeed, false);
+        }
+
+        /// <summary>
+        /// What a week of collections would earn (ECON-008). Deals the city's businesses
+        /// (or reads the live ones) and prints the protection book by tier - and what of
+        /// it a day-one outfit could actually reach, which the tier guard says is tier 1.
+        /// </summary>
+        [CliCommand("gangsters_economy_audit",
+                    "Deal a quarter (or read the live city) and report the weekly protection " +
+                    "book by tier, and the slice of it a day-one outfit can reach.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "economy", "audit" })]
+        public static object EconomyAudit(
+            [CliArg("seed", "Deal from this seed instead of the live scene. -1 uses the " +
+                            "running city, falling back to 1987.")] int seed = -1)
+        {
+            var (_, directory, _, citySeed, live) = DealOrReadCity(seed);
+
+            var counts = new int[5];
+            var weekly = new int[5];
+            foreach (var id in directory.BusinessIds)
+            {
+                if (!directory.TryGet(id, out var record) || record == null)
+                    continue;
+                var price = LivingCity.Outfit.EconomyPrices.Of(record.Archetype);
+                var tier = (int)price.Tier;
+                counts[tier]++;
+                weekly[tier] += price.ProtectionPerWeek;
+            }
+
+            return new
+            {
+                seed = citySeed,
+                source = live ? "live city" : "dealt from seed",
+                businesses = directory.BusinessIds.Count,
+                tiers = new[]
+                {
+                    new { tier = 1, doors = counts[1], weeklyProtection = weekly[1] },
+                    new { tier = 2, doors = counts[2], weeklyProtection = weekly[2] },
+                    new { tier = 3, doors = counts[3], weeklyProtection = weekly[3] },
+                    new { tier = 4, doors = counts[4], weeklyProtection = weekly[4] },
+                },
+                dayOneWeeklyTake = weekly[1],
+                note = "a day-one outfit reaches tier 1 only - the tier guard prices " +
+                       "the rest in standing it does not have yet",
+            };
+        }
+
         /// <summary>
         /// Why every business in this city exists, and which source owns it. Report only -
         /// an audit that repaired its data would hide the very faults it is for.
@@ -1104,44 +1195,7 @@ namespace GangstersTools
             [CliArg("seed", "Deal a Core quarter from this seed and audit THAT plan instead of " +
                             "the live scene. -1 uses the running city.")] int seed = -1)
         {
-            var runtime = seed < 0
-                ? UnityEngine.Object.FindAnyObjectByType<LivingCity.Business.BusinessRuntime>()
-                : null;
-
-            LivingCity.Business.BusinessSiteCatalog catalog;
-            LivingCity.Business.BusinessDirectory directory;
-            LivingCity.Business.BusinessPopulationReport report;
-            int citySeed;
-            bool live = runtime != null && runtime.Populated;
-
-            if (live)
-            {
-                catalog = runtime.Catalog;
-                directory = runtime.Directory;
-                report = runtime.Report;
-                citySeed = runtime.CitySeed;
-            }
-            else
-            {
-                // No city standing: deal one from the seed. CoreDistrict.Plan is pure data
-                // - no prefab is loaded and no GameObject is made - which is exactly why
-                // the sweep can be audited from the terminal with the editor idle.
-                citySeed = seed < 0 ? 1987 : seed;
-                var core = new CoreDistrict();
-                core.Plan(null, citySeed);
-                core.Frame = DistrictFrame.Identity;
-
-                catalog = new LivingCity.Business.BusinessSiteCatalog();
-                catalog.Add(new LivingCity.Business.ResidentialBusinessSites(
-                    core.ResidentialBlocks, core.Frame));
-                catalog.Add(new LivingCity.Business.StandaloneBusinessSites(core));
-                catalog.Add(new LivingCity.Business.CompoundBusinessSites(core, null));
-                catalog.Build();
-
-                directory = new LivingCity.Business.BusinessDirectory();
-                report = LivingCity.Business.BusinessPopulation.Populate(
-                    catalog, citySeed, directory);
-            }
+            var (catalog, directory, report, citySeed, live) = DealOrReadCity(seed);
             var failures = new List<string>(report.Problems);
 
             var unpopulated = new List<string>();

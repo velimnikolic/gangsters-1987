@@ -239,13 +239,25 @@ namespace LivingCity.Territory
 
     /// <summary>
     /// What an owner says, and why. Pure and deterministic: the same street, the same
-    /// standing, the same answer - twice. Owner personality belongs to a later epic and is
-    /// deliberately absent, so nothing here is a roll.
+    /// standing, the same answer - twice. Nothing here is a roll. The owner himself
+    /// (ECON-002) and the tier guard (ECON-007) enter as THRESHOLD SHIFTS with neutral
+    /// defaults, so every pre-economy evaluation reads exactly as it always did.
     /// </summary>
     public static class TerritoryComplianceEvaluation
     {
         public static TerritoryComplianceTerms Evaluate(
-            TerritoryComplianceInputs inputs, TerritoryRacketConfig config)
+            TerritoryComplianceInputs inputs, TerritoryRacketConfig config) =>
+            Evaluate(inputs, config, 0f, 0f);
+
+        /// <param name="ownerShift">The owner's own nerve, in score points: positive
+        /// for a man who takes more moving (Proud, Stubborn), negative for one who
+        /// folds early (Cowardly). Zero is the neutral pre-ECON owner.</param>
+        /// <param name="tierBar">The tier guard's addition to the ACCEPT threshold: a
+        /// casino wants near everything a family can be before it pays. Zero for a
+        /// tier-1 shopfront.</param>
+        public static TerritoryComplianceTerms Evaluate(
+            TerritoryComplianceInputs inputs, TerritoryRacketConfig config,
+            float ownerShift, float tierBar)
         {
             config ??= TerritoryRacketConfig.Default;
 
@@ -262,9 +274,11 @@ namespace LivingCity.Territory
                 config.TroubleWeight * Math.Max(0f, inputs.BlockTrouble) -
                 config.RivalWeight * opposing;
 
-            var verdict = score >= config.AcceptAt
+            var acceptAt = config.AcceptAt + ownerShift + tierBar;
+            var hesitateAt = config.HesitateAt + ownerShift + tierBar * 0.5f;
+            var verdict = score >= acceptAt
                 ? TerritoryComplianceVerdict.Accept
-                : score >= config.HesitateAt
+                : score >= hesitateAt
                     ? TerritoryComplianceVerdict.Hesitate
                     : TerritoryComplianceVerdict.Refuse;
 
@@ -423,9 +437,11 @@ namespace LivingCity.Territory
             TerritoryComplianceInputs inputs,
             double gameHour,
             out TerritoryComplianceTerms terms,
-            List<TerritoryProtectionChange> changes = null)
+            List<TerritoryProtectionChange> changes = null,
+            float ownerShift = 0f,
+            float tierBar = 0f)
         {
-            terms = TerritoryComplianceEvaluation.Evaluate(inputs, Config);
+            terms = TerritoryComplianceEvaluation.Evaluate(inputs, Config, ownerShift, tierBar);
             if (!businessId.IsValid || !gangId.IsValid)
                 return terms.Verdict;
 
@@ -510,6 +526,29 @@ namespace LivingCity.Territory
 
             row.Move(entry, TerritoryProtectionState.Intimidated, gameHour,
                 kind.ToString().ToLowerInvariant(), 0f, Config, changes);
+        }
+
+        /// <summary>
+        /// The arrangement lapsed from the OWNER's side (ECON-003): two missed
+        /// collections running and nobody answered it. The shop slides back to
+        /// Hesitant - he has not defied anybody, he has just stopped paying a family
+        /// that stopped collecting like it meant it.
+        /// </summary>
+        public bool Lapse(
+            TerritoryBusinessId businessId,
+            TerritoryGangId gangId,
+            double gameHour,
+            List<TerritoryProtectionChange> changes = null)
+        {
+            if (!businesses.TryGetValue(businessId, out var row) || !gangId.IsValid)
+                return false;
+            var entry = row.Entry(gangId);
+            if (entry.State != TerritoryProtectionState.Compliant)
+                return false;
+
+            row.Move(entry, TerritoryProtectionState.Hesitant, gameHour,
+                "stopped paying", 0f, Config, changes);
+            return true;
         }
 
         /// <summary>

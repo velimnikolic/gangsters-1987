@@ -14,8 +14,13 @@
     <Compile Include="Program.cs" />
     <Compile Include="TurnRound.cs" />
     <Compile Include="RedLight.cs" />
+    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadLine.cs" />
+    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\Scripts\Gameplay\VehiclePerformance.cs" />
+    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\Scripts\Gameplay\VehicleCatalog.cs" />
     <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\LaneNet.cs" />
     <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadCar.cs" />
+    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadCar.Parking.cs" />
+    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadCar.Trace.cs" />
     <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\DriverProfile.cs" />
     <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadDemoNet.cs" />
     <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\DriverNerve.cs" />

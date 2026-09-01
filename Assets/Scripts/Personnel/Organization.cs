@@ -5,8 +5,12 @@ using LivingCity.Territory;
 namespace LivingCity.Personnel
 {
     /// <summary>
-    /// The one editable tuning table for outfit command capacity. Capacity is soft:
-    /// these figures describe overload, they never refuse an otherwise valid assignment.
+    /// The one editable tuning table for outfit command capacity. Since RANK-001 a
+    /// lieutenant's MANPOWER cap is hard at the roster - he refuses the next man - and
+    /// these figures are the ceilings that derivation clamps to. Block responsibility
+    /// and the Boss's own branch stay soft: there the figures describe overload, and an
+    /// overage that arises without an assignment (a shrunk config, a succession) is
+    /// carried and read, never repaired by throwing men off a branch.
     /// </summary>
     [Serializable]
     public sealed class OrganizationCapacityConfig

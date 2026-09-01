@@ -40,6 +40,12 @@ namespace RoadDemo
         [Tooltip("Real seconds for one game hour. 60 means one game minute lasts one real second.")]
         public float realSecondsPerGameHour = 60f;
 
+        [Header("Reading the city")]
+        [Tooltip("Click a building to open the catalog card - its name, footprint and " +
+                 "height. Off in the core scenes: a click there is for the crew, the " +
+                 "patrol and the premises, not for what a prefab measures.")]
+        public bool buildingCards;
+
         [Header("Round the core")]
         [Min(20f)] public float greenBelt = 140f;
 
@@ -104,6 +110,7 @@ namespace RoadDemo
             runtime.policeBeatPairs = police ? Mathf.Max(0, policeBeatPairs) : 0;
             runtime.rivalCrewsInCity = Mathf.Max(0, rivalCrews);
             runtime.rivalHoodsInCity = Mathf.Max(0, rivalHoods);
+            runtime.buildingCards = buildingCards;
             runtime.scaleLifeToCity = false;
             runtime.updateProfile = false;
 

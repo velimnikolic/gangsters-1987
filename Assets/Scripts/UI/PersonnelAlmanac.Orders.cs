@@ -197,8 +197,13 @@ namespace LivingCity.UI
         /// </summary>
         int DraftedWorth(Outfit.OrderType type)
         {
-            if (type != Outfit.OrderType.CollectProtection &&
-                type != Outfit.OrderType.RunBusiness &&
+            // A collection round is worth what the drafted blocks' shops ACTUALLY owe -
+            // never one shop near the centroid multiplied by the block count, which
+            // booked a fuel station's rate six times over for six blocks of barbers.
+            if (type == Outfit.OrderType.CollectProtection)
+                return CollectRoundWorthPerBlock();
+
+            if (type != Outfit.OrderType.RunBusiness &&
                 type != Outfit.OrderType.BuyPremises)
                 return 0;
             if (!TryDraftedBusiness(out var businessId, out _))
@@ -209,14 +214,64 @@ namespace LivingCity.UI
                 !business.Directory.TryGet(businessId, out var record))
                 return 0;
 
-            return type switch
+            return type == Outfit.OrderType.RunBusiness
+                ? Outfit.EconomyPrices.NetPerDay(record.Archetype)
+                : Outfit.EconomyPrices.BuyPrice(record.Archetype);
+        }
+
+        /// <summary>Whether any shop on this legacy block pays the player's family
+        /// through the racket ledger.</summary>
+        static bool BlockPaysUs(int legacyBlockId)
+        {
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            if (runtime?.Racket == null || runtime.Geography == null ||
+                !runtime.TryGetBlock(legacyBlockId, out var blockId))
+                return false;
+
+            var playerGang = new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId);
+            var here = runtime.Geography.BusinessesOf(blockId);
+            for (var i = 0; i < here.Count; i++)
+                if (runtime.Racket.StateOf(here[i].BusinessId, playerGang) ==
+                    Territory.TerritoryProtectionState.Compliant)
+                    return true;
+            return false;
+        }
+
+        /// <summary>
+        /// The week's protection the drafted blocks' Compliant shops owe US, divided by
+        /// the block count - PayoutFor multiplies the unit by the target count, so the
+        /// round books the real sum. Zero when nothing in the box pays, and the order
+        /// falls back on its flat book figure, which is what shaking an empty street
+        /// down has always been worth.
+        /// </summary>
+        int CollectRoundWorthPerBlock()
+        {
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            if (business == null || !business.Populated || runtime?.Racket == null ||
+                draftBlocks.Count == 0)
+                return 0;
+
+            var playerGang = new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId);
+            var owed = 0;
+            foreach (var legacyId in draftBlocks)
             {
-                Outfit.OrderType.CollectProtection =>
-                    Outfit.EconomyPrices.ProtectionPerWeek(record.Archetype),
-                Outfit.OrderType.RunBusiness =>
-                    Outfit.EconomyPrices.NetPerDay(record.Archetype),
-                _ => Outfit.EconomyPrices.BuyPrice(record.Archetype),
-            };
+                if (!runtime.TryGetBlock(legacyId, out var blockId))
+                    continue;
+                var here = runtime.Geography?.BusinessesOf(blockId);
+                if (here == null)
+                    continue;
+                for (var i = 0; i < here.Count; i++)
+                {
+                    if (runtime.Racket.StateOf(here[i].BusinessId, playerGang) !=
+                        Territory.TerritoryProtectionState.Compliant)
+                        continue;
+                    if (business.Directory.TryGet(here[i].BusinessId, out var record))
+                        owed += Outfit.EconomyPrices.ProtectionPerWeek(record.Archetype);
+                }
+            }
+
+            return owed / Mathf.Max(1, draftBlocks.Count);
         }
 
         /// <summary>How far a drafted point may be from a door and still mean it.</summary>
@@ -454,6 +509,14 @@ namespace LivingCity.UI
                     return Refusal.None;
 
                 case Outfit.OrderType.CollectProtection:
+                    // A block collects when we hold a deed on it OR its shops pay us
+                    // through the racket - a compliant street with no bought premises
+                    // was uncollectable before the racket ledger was consulted here.
+                    return Outfit.Turf.CountIn(
+                               holdings, blockId, Gangs.GangCatalog.PlayerGangId) > 0 ||
+                           BlockPaysUs(blockId)
+                        ? Refusal.None : Refusal.NotYourTurf;
+
                 case Outfit.OrderType.Patrol:
                     return Outfit.Turf.CountIn(
                         holdings, blockId, Gangs.GangCatalog.PlayerGangId) > 0
@@ -871,22 +934,36 @@ namespace LivingCity.UI
                                 Gangs.GangCatalog.PlayerGangId))
                             : Territory.TerritoryProtectionState.Unaffiliated,
                         racketable: true, hasCrew: true, atDoor: false, racketRows);
-                    var word = racketRows.Count > 0
-                        ? racketRows[0].Label
-                        : Territory.TerritoryRacketOrders.ApproachLabel;
-                    LedgerV2.Button(ordersContent, word + ": " + racketName, 212f, y, 240f, 28f,
-                        () =>
-                        {
-                            var runtime = RoadDemo.TerritoryRuntime.Instance;
-                            if (runtime?.Commands == null)
-                                return;
-                            var sent = runtime.Commands.Submit(
-                                new Territory.ApproachBusinessCommand(node, businessId));
-                            ordersNote = sent.Status == Territory.TerritoryCommandStatus.Rejected
-                                ? sent.Reason
-                                : "They are on their way to the door.";
-                            dirty = true;
-                        });
+
+                    // EVERY available row, not the first: since the approach carries the
+                    // intent, a demand or a threat given from the desk is one order too -
+                    // the men walk there and put it to him when they arrive.
+                    var racketX = 212f;
+                    for (var r = 0; r < racketRows.Count; r++)
+                    {
+                        if (!racketRows[r].Available)
+                            continue;
+                        var intent = racketRows[r].Intent;
+                        LedgerV2.Button(ordersContent,
+                            racketRows[r].Label + ": " + racketName, racketX, y, 240f, 28f,
+                            () =>
+                            {
+                                var runtime = RoadDemo.TerritoryRuntime.Instance;
+                                if (runtime?.Commands == null)
+                                    return;
+                                var sent = runtime.Commands.Submit(
+                                    new Territory.ApproachBusinessCommand(
+                                        node, businessId, intent));
+                                ordersNote = sent.Status ==
+                                             Territory.TerritoryCommandStatus.Rejected
+                                    ? sent.Reason
+                                    : intent == Territory.TerritoryRacketIntent.Approach
+                                        ? "They are on their way to the door."
+                                        : "They are on their way; the owner is asked at the door.";
+                                dirty = true;
+                            });
+                        racketX += 248f;
+                    }
                 }
 
                 LedgerV2.Button(ordersContent, "SEND THEM", 4f, y, 200f, 28f, () =>

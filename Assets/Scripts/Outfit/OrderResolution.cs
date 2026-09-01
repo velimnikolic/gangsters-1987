@@ -362,8 +362,9 @@ namespace LivingCity.Outfit
 
         /// <summary>
         /// A Recruit order that came off brings a man back with it. He joins the crew
-        /// that went looking. Organization capacity is soft, so a completed recruit is
-        /// never discarded merely because his lieutenant is already overloaded.
+        /// that went looking; a branch already at its RANK-001 cap refuses him, and he
+        /// waits in the Boss's pool instead - the man exists either way, because he was
+        /// found either way, but a refusal is a refusal and is never silently ignored.
         ///
         /// The recruiter's own Awareness rides along: a sharp man knows a promising
         /// corner boy when he sees one (RosterSeeder.Recruit), which is the only thing
@@ -375,6 +376,8 @@ namespace LivingCity.Outfit
                 return -1;
 
             var member = RosterSeeder.Recruit(roster, rng, stat);
+            // A refusal here is allowed to stand: he then waits in the Boss's pool,
+            // where Recruit dealt him - the same place a refused ledger hire waits.
             if (crew != null)
                 RosterOps.AssignToCrew(roster, member.Id, crew.Id);
             return member.Id;

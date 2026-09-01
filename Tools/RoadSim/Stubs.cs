@@ -29,6 +29,17 @@ namespace UnityEngine
         public static float Distance(Vector3 a, Vector3 b) => (a - b).magnitude;
         public static Vector3 Lerp(Vector3 a, Vector3 b, float t) { t = Mathf.Clamp01(t); return a + (b - a) * t; }
         public static Vector3 LerpUnclamped(Vector3 a, Vector3 b, float t) => a + (b - a) * t;
+        public static Vector3 Min(Vector3 a, Vector3 b) => new Vector3(MathF.Min(a.x, b.x), MathF.Min(a.y, b.y), MathF.Min(a.z, b.z));
+        public static Vector3 Max(Vector3 a, Vector3 b) => new Vector3(MathF.Max(a.x, b.x), MathF.Max(a.y, b.y), MathF.Max(a.z, b.z));
+        // Good enough for a headless sim: both callers feed unit-ish directions, and a
+        // normalized lerp bends the same way at the angles the driving ever uses.
+        public static Vector3 Slerp(Vector3 a, Vector3 b, float t)
+        {
+            t = Mathf.Clamp01(t);
+            var m = Mathf.Lerp(a.magnitude, b.magnitude, t);
+            var d = (a.normalized * (1f - t) + b.normalized * t);
+            return d.sqrMagnitude > 1e-10f ? d.normalized * m : a;
+        }
         public static float Angle(Vector3 a, Vector3 b)
         {
             float d = Dot(a.normalized, b.normalized);
@@ -96,6 +107,7 @@ namespace UnityEngine
         public static float Sqrt(float v) => MathF.Sqrt(v);
         public static float Sin(float v) => MathF.Sin(v);
         public static float Cos(float v) => MathF.Cos(v);
+        public static float Tan(float v) => MathF.Tan(v);
         public static float Atan(float v) => MathF.Atan(v);
         public static float Atan2(float a, float b) => MathF.Atan2(a, b);
         public static float Clamp(float v, float a, float b) => v < a ? a : v > b ? b : v;
@@ -134,10 +146,19 @@ namespace UnityEngine
         public Vector3 forward => rotation.fwd;
         public Vector3 right => Vector3.Cross(Vector3.up, rotation.fwd);
         public string name;
+        public GameObject gameObject = new GameObject();
         public void SetPositionAndRotation(Vector3 p, Quaternion q) { position = p; rotation = q; }
     }
 
-    public class Object { }
+    public class GameObject
+    {
+        public string name;
+    }
+
+    public class Object
+    {
+        public static void Destroy(object o) { }
+    }
     public class Component : Object { }
     public class Behaviour : Component { }
     public class MonoBehaviour : Behaviour { }
@@ -180,9 +201,22 @@ namespace RoadDemo
         public static readonly List<IRoadUser> Users = new List<IRoadUser>();
         public static readonly List<Body> Bodies = new List<Body>();
         public static readonly List<UnityEngine.Vector3> Walkers = new List<UnityEngine.Vector3>();
+
+        // The quiet zone a shootout opens (the real one is fed by StreetAlarm): the
+        // headless sim never has one, so the wandering test drivers never detour.
+        public static UnityEngine.Vector3 QuietAt => default;
+        public static bool QuietOpen => false;
+        public static bool CrossesQuiet(UnityEngine.Vector3 a, UnityEngine.Vector3 b) => false;
     }
 
     public class CrewWalker { }
+
+    // The toll plaza is scene furniture (TollPlaza is a MonoBehaviour that stands the
+    // booths up); the sim only ever asks the gate one question, so the stub answers it.
+    public sealed class TollGate
+    {
+        public bool MayPass(RoadCar car) => true;
+    }
 
     public static class StreetAlarm
     {

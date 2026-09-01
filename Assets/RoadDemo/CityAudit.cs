@@ -292,8 +292,34 @@ namespace RoadDemo
                 if (front.GetComponentInChildren<Collider>(true) == null)
                     Fault("front-cannot-be-clicked", front.GangName,
                           "no collider on the premises");
+
+                // A door the simulation cannot name is a door the ledger cannot print a
+                // tenure for: the block file would show the family's own premises as
+                // open ground. Only faulted where a site WAS handed over - the demo
+                // scenes that bind fronts by hand never had one.
+                if (front.SiteId.IsValid && !front.BusinessId.IsValid)
+                    Fault("front-is-not-a-premises", front.GangName,
+                          "site " + front.SiteId.Value + " names no business");
             }
-            Debug.Log($"[audit] {fronts.Count} fronts standing");
+
+            var mine = DemoCrews.PlayerFront();
+            if (mine != null && mine.BusinessId.IsValid &&
+                LivingCity.Business.BusinessDeeds.GangOf(mine.BusinessId) !=
+                LivingCity.Gangs.GangCatalog.PlayerGangId)
+                Fault("outfit-holds-no-paper", mine.GangName,
+                      "the deed book does not name us on our own headquarters");
+
+            var known = 0;
+            foreach (var front in fronts)
+                if (front != null && TurfKnowledge.IsKnown(front))
+                    known++;
+            var marks = FindAnyObjectByType<TurfMarks>();
+            if (marks != null && marks.Painted != known)
+                Fault("places-unmarked", "the outfit",
+                      $"{known} places we can see, {marks.Painted} painted");
+
+            Debug.Log($"[audit] {fronts.Count} fronts standing, {known} of them known to " +
+                      $"us, {(marks != null ? marks.Painted : 0)} marked on the pavement");
         }
 
         static void Fault(string kind, string who, string detail)

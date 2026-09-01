@@ -71,6 +71,7 @@ namespace RoadDemo
             events.BlockContested += OnContested;
             events.ControlLost += OnLost;
             events.BusinessCompliance += OnCompliance;
+            events.RoundSettled += OnRound;
             listening = true;
         }
 
@@ -83,7 +84,26 @@ namespace RoadDemo
             events.BlockContested -= OnContested;
             events.ControlLost -= OnLost;
             events.BusinessCompliance -= OnCompliance;
+            events.RoundSettled -= OnRound;
             listening = false;
+        }
+
+        /// <summary>A round came home, or it did not (ECON-004/008). Only ours - a
+        /// rival family's money is its own business.</summary>
+        void OnRound(CollectionRoundSettled change)
+        {
+            if (change.GangId.Value != LivingCity.Gangs.GangCatalog.PlayerGangId)
+                return;
+            if (change.End == TerritoryRoundEnd.Banked)
+                Say(change.Amount > 0
+                    ? "the round banked " + LivingCity.UI.LedgerText.Cash(change.Amount) +
+                      (change.Missed > 0 ? " — " + change.Missed + " door(s) did not pay" : "")
+                    : "the round came home empty-handed");
+            else
+                Say(change.Amount > 0
+                    ? "a round was lost with " + LivingCity.UI.LedgerText.Cash(change.Amount) +
+                      " on it"
+                    : "a round was lost");
         }
 
         void Build()
@@ -196,14 +216,21 @@ namespace RoadDemo
                 Say(name + " — stopped paying us");
         }
 
-        /// <summary>A street that has become a fight says so once, plainly.</summary>
-        void OnContested(BlockBecameContested change) =>
+        /// <summary>A street that has become a fight says so once, plainly. The same
+        /// quiet spell as OnControl - the runtime publishes both events in one branch,
+        /// and two near-identical lines about one street in one frame read as a stutter.</summary>
+        void OnContested(BlockBecameContested change)
+        {
+            if (TooSoon(change.BlockId))
+                return;
             Say(BlockName(change.BlockId) + " — contested ground now");
+        }
 
         /// <summary>And a street that has slipped out of our hands says that too.</summary>
         void OnLost(BlockControlLost change)
         {
-            if (change.GangId.Value != LivingCity.Gangs.GangCatalog.PlayerGangId)
+            if (change.GangId.Value != LivingCity.Gangs.GangCatalog.PlayerGangId ||
+                TooSoon(change.BlockId))
                 return;
             Say(BlockName(change.BlockId) + " — no longer ours");
         }

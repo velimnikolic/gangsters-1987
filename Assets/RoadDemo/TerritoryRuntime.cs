@@ -14,7 +14,7 @@ namespace RoadDemo
     /// identity, DemoCrews supplies physical truth, Personnel supplies organization truth,
     /// and this component supplies one command/query/event/scheduler boundary between them.
     /// </summary>
-    public sealed class TerritoryRuntime : MonoBehaviour,
+    public sealed partial class TerritoryRuntime : MonoBehaviour,
         ITerritoryCommandExecutor,
         ITerritoryActorSource,
         ITerritoryResponsibilityNameSource
@@ -83,9 +83,12 @@ namespace RoadDemo
         [SerializeField, Min(0f)] float controlPresenceWeight = 0.35f;
         [SerializeField, Min(0f)] float controlFearWeight = 0.25f;
         [SerializeField, Min(0f)] float controlComplianceWeight = 0.4f;
-        [Tooltip("Where a family stops being on the street and starts running it.")]
+        [Tooltip("Where a family stops being on the street and starts running it. " +
+                 "CONTROLLED must sit above what any one pillar can reach alone " +
+                 "(presence caps at 100 x 0.35 = 35): bodies alone hold a street, " +
+                 "they do not run it.")]
         [SerializeField] float influencedAt = 12f;
-        [SerializeField] float controlledAt = 32f;
+        [SerializeField] float controlledAt = 38f;
         [SerializeField] float dominatedAt = 65f;
         [Tooltip("How close the second family must be for the street to be a fight, and " +
                  "how far it must fall behind for the fight to be over.")]
@@ -546,9 +549,20 @@ namespace RoadDemo
                     change.GameHour));
                 if (change.BecameContested)
                 {
-                    control.Scores(blockId, out _, out _);
+                    // The event names the two CONTENDERS - the leader and the actual
+                    // runner-up by score - not whoever led before the fight started.
+                    var second = default(TerritoryGangId);
+                    var secondScore = float.MinValue;
+                    for (var s = 0; s < controlScores.Count; s++)
+                    {
+                        if (controlScores[s].GangId == change.Leader ||
+                            controlScores[s].Total <= secondScore)
+                            continue;
+                        secondScore = controlScores[s].Total;
+                        second = controlScores[s].GangId;
+                    }
                     events.Publish(new BlockBecameContested(
-                        blockId, change.Leader, change.PreviousLeader, change.GameHour));
+                        blockId, change.Leader, second, change.GameHour));
                 }
                 if (change.LostControl && change.PreviousLeader.IsValid)
                     events.Publish(new BlockControlLost(
@@ -634,6 +648,7 @@ namespace RoadDemo
                 // interaction here, off the same sampling, rather than in a command. It is
                 // asked before the block test, because a compound's gate stands on the road.
                 NoteApproachArrival(unit, actor, observation, gameHour);
+                NoteRoundArrival(unit, actor, observation, gameHour);
 
                 if (!blockId.IsValid)
                 {
@@ -658,7 +673,11 @@ namespace RoadDemo
                     ground * LivingCity.Personnel.Command.PresenceFactorFor(
                         roster, observation.CharacterId.IsValid
                             ? observation.CharacterId.Value
-                            : -1));
+                            : -1) *
+                    // ECON-006: a man with a NAME on this street is worth more standing
+                    // on it - the PRES-003 rank weight, extended, and only while he is
+                    // physically here.
+                    ReputationScale(observation.CharacterId, blockId, gameHour));
             });
             BlocklessActors = blockless;
 
@@ -1268,7 +1287,9 @@ namespace RoadDemo
             terms = default;
             if (racket == null || !TryComplianceInputs(businessId, gangId, out var inputs, out _))
                 return false;
-            terms = TerritoryComplianceEvaluation.Evaluate(inputs, racket.Config);
+            DemandShifts(businessId, out var ownerShift, out var tierBar);
+            terms = TerritoryComplianceEvaluation.Evaluate(
+                inputs, racket.Config, ownerShift, tierBar);
             return true;
         }
 
@@ -1290,8 +1311,13 @@ namespace RoadDemo
                 return false;
 
             racketChanges.Clear();
+            // The owner himself and the tier guard shift the thresholds (ECON-002/007):
+            // a cowardly barber folds early, a casino wants near everything a family
+            // can be. Neutral shifts leave the pre-economy answer untouched.
+            DemandShifts(businessId, out var ownerShift, out var tierBar);
             verdict = racket.Demand(
-                businessId, gangId, inputs, lastGameHour, out terms, racketChanges);
+                businessId, gangId, inputs, lastGameHour, out terms, racketChanges,
+                ownerShift, tierBar);
             PublishRacket(blockId);
 
             // A refusal starts the clock the street judges the family by (FEAR-010).
@@ -1322,6 +1348,10 @@ namespace RoadDemo
             RecordResolvedThreat(
                 gangId, businessId, racket.Config.ThreatSeverity,
                 TerritoryFearVisibility.Seen, actorId);
+            // A Connected owner turns heat on the family leaning on him (ECON-002),
+            // and the man who did the leaning starts to have a name here (ECON-006).
+            NoteConnectedHeat(businessId);
+            NoteReputationAt(businessId, actorId, 3f);
 
             racketChanges.Clear();
             racket.Threaten(businessId, gangId, lastGameHour, racketChanges);
@@ -1350,6 +1380,7 @@ namespace RoadDemo
 
             racketChanges.Clear();
             racket.Escalate(businessId, gangId, kind, lastGameHour, racketChanges);
+            NoteConnectedHeat(businessId);
             RecordFear(new TerritoryFearEvent(
                 gangId,
                 blockId,
@@ -1494,6 +1525,8 @@ namespace RoadDemo
             SweepDefiance(gameHour);
             SweepProtectionSwitches();
             DriveRivalDemands();
+            AccrueDues(gameHour);
+            WatchRounds(gameHour);
         }
 
         /// <summary>
@@ -1571,6 +1604,11 @@ namespace RoadDemo
                 for (var g = 0; g < presenceGangs.Count && made < racket.Config.RivalDemandsPerTick; g++)
                 {
                     var gangId = presenceGangs[g].GangId;
+                    // RIVAL demands only. The player's family asks when the player says
+                    // so, through the command gateway and a man at the door - the sim
+                    // must never open a defiance clock in his name off mere presence.
+                    if (gangId.Value == GangCatalog.PlayerGangId)
+                        continue;
                     if (presenceGangs[g].Total < racket.Config.RivalDemandPresence)
                         continue;
 
@@ -1616,7 +1654,35 @@ namespace RoadDemo
                 if (geography != null &&
                     geography.TryGetBusinessBlock(pending.BusinessId, out var blockId))
                     PublishRacket(blockId);
+
+                // The walk carried an intent: the men are at the door now, so the demand
+                // or the threat happens HERE, by the same resolution a standing man's
+                // click uses. One order from range, not a walk and a second click - and
+                // the man actually STEPS INSIDE for the conversation (DoorBeat).
+                if (pending.FollowUp == TerritoryRacketIntent.Demand)
+                {
+                    ResolveDemand(observation.GangId, pending.BusinessId, out _, out _);
+                    DoorBeat.Visit(actor, pending.Door);
+                }
+                else if (pending.FollowUp == TerritoryRacketIntent.Threaten)
+                {
+                    ResolveThreat(observation.GangId, pending.BusinessId,
+                        observation.CharacterId, out _, out _);
+                    DoorBeat.Visit(actor, pending.Door);
+                }
             }
+        }
+
+        /// <summary>The crew's doorstep errand, dropped. Called whenever the crew is
+        /// retasked - a pending approach must not outlive the order that made it. A
+        /// collection round in hand is dropped the same way: the take it was carrying
+        /// walks home in the men's pockets only if the round finishes.</summary>
+        void DropPendingApproaches(int crewId)
+        {
+            for (var i = pendingApproaches.Count - 1; i >= 0; i--)
+                if (pendingApproaches[i].CrewId == crewId)
+                    pendingApproaches.RemoveAt(i);
+            AbandonRound(crewId);
         }
 
         /// <summary>
@@ -1674,6 +1740,13 @@ namespace RoadDemo
                 : "";
             var trouble = fear != null && fear.BlockFear(blockId, lastGameHour) > 0.5f;
 
+            // The dues meter, in words (ECON-008): what it pays, what it owes, when it
+            // last paid. Only for a shop paying US - a rival's books are his own.
+            var paysLine = "";
+            if (TryGetDues(businessId, out var owed, out var lastPaid))
+                paysLine = "pays $" + WeeklyRateOf(businessId) + " a week · owes $" + owed +
+                           (lastPaid >= 0 ? " · last paid day " + lastPaid : " · never collected");
+
             view = new TerritoryBusinessPresentation(
                 businessId,
                 name,
@@ -1683,7 +1756,8 @@ namespace RoadDemo
                 protector,
                 situation,
                 tone,
-                trouble);
+                trouble,
+                paysLine);
             return true;
         }
 
@@ -1699,16 +1773,22 @@ namespace RoadDemo
         readonly struct PendingApproach
         {
             public PendingApproach(
-                int crewId, TerritoryBusinessId businessId, Vector3 door)
+                int crewId, TerritoryBusinessId businessId, Vector3 door,
+                TerritoryRacketIntent followUp)
             {
                 CrewId = crewId;
                 BusinessId = businessId;
                 Door = door;
+                FollowUp = followUp;
             }
 
             public int CrewId { get; }
             public TerritoryBusinessId BusinessId { get; }
             public Vector3 Door { get; }
+
+            /// <summary>What the walk was for: the demand or the threat follows the
+            /// arrival, so an order given from range is one order.</summary>
+            public TerritoryRacketIntent FollowUp { get; }
         }
 
         public void CollectActors(
@@ -1968,6 +2048,12 @@ namespace RoadDemo
                 issued = crews.OrderUnit(unit, world, out _, command.Run);
             }
 
+            // A crew sent somewhere else is off its doorstep errand: without this the
+            // pending approach sat armed for hours and fired the moment the crew
+            // happened to walk past that door on other business.
+            if (issued)
+                DropPendingApproaches(unit.CrewId);
+
             return issued
                 ? TerritoryCommandExecution.Pending("The group is travelling; no territory result was applied.")
                 : TerritoryCommandExecution.Reject("The physical crew refused the move order.");
@@ -1985,10 +2071,12 @@ namespace RoadDemo
 
             var bounds = builder.Territories.WorldBounds(block.LegacyBlockId);
             var destination = new Vector3(bounds.center.x, crews.GroundY, bounds.center.y);
-            return crews.MarchTo(unit, destination)
-                ? TerritoryCommandExecution.Pending(
-                    "The group is moving into the block; operation success is unresolved.")
-                : TerritoryCommandExecution.Reject("The physical crew refused the order.");
+            if (!crews.MarchTo(unit, destination))
+                return TerritoryCommandExecution.Reject("The physical crew refused the order.");
+
+            DropPendingApproaches(unit.CrewId);
+            return TerritoryCommandExecution.Pending(
+                "The group is moving into the block; operation success is unresolved.");
         }
 
         public TerritoryCommandExecution Execute(ApproachBusinessCommand command)
@@ -2013,13 +2101,14 @@ namespace RoadDemo
 
             // Intent only. The interaction begins when the men are actually at the door -
             // the presence sampling notices that, not this command.
-            for (var i = pendingApproaches.Count - 1; i >= 0; i--)
-                if (pendingApproaches[i].CrewId == unit.CrewId)
-                    pendingApproaches.RemoveAt(i);
-            pendingApproaches.Add(new PendingApproach(unit.CrewId, command.BusinessId, door));
+            DropPendingApproaches(unit.CrewId);
+            pendingApproaches.Add(new PendingApproach(
+                unit.CrewId, command.BusinessId, door, command.FollowUp));
 
             return TerritoryCommandExecution.Pending(
-                "The group is approaching; the business state is unchanged.");
+                command.FollowUp == TerritoryRacketIntent.Approach
+                    ? "The group is approaching; the business state is unchanged."
+                    : "The group is on its way; the owner is asked when they arrive.");
         }
 
         /// <summary>

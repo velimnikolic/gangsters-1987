@@ -37,6 +37,7 @@ namespace RoadDemo
                     Outward = new Vector3(site.ApproachOutward.X, 0f, site.ApproachOutward.Z),
                     BlockId = site.LegacyBlockId,
                     Address = site.Label,
+                    SiteId = site.SiteId,
                     LinkFwd = link,
                     EntryT = t,
                     EntryPos = entry,

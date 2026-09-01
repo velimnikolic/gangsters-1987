@@ -245,7 +245,8 @@ namespace LivingCity.Territory
             string protector,
             string localSituation,
             TerritoryOwnerTone ownerTone,
-            bool hasRecentTrouble)
+            bool hasRecentTrouble,
+            string paysLine = "")
         {
             BusinessId = businessId;
             BusinessName = businessName ?? "";
@@ -255,6 +256,7 @@ namespace LivingCity.Territory
             LocalSituation = localSituation ?? "Unknown";
             OwnerTone = ownerTone;
             HasRecentTrouble = hasRecentTrouble;
+            PaysLine = paysLine ?? "";
         }
 
         public TerritoryBusinessId BusinessId { get; }
@@ -275,6 +277,10 @@ namespace LivingCity.Territory
 
         /// <summary>Something happened here lately. Not how much, not to whom.</summary>
         public bool HasRecentTrouble { get; }
+
+        /// <summary>What the place pays and when it last did (ECON-008), pre-rendered
+        /// as words. Empty for a shop that pays the viewer nothing.</summary>
+        public string PaysLine { get; }
     }
 
     /// <summary>The words a shop's standing is read in. Config, never a rule.</summary>

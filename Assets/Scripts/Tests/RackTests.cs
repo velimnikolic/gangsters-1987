@@ -425,8 +425,10 @@ namespace LivingCity.Tests
             if (rows.Count != 1 || rows[0].Available || rows[0].Note.Length == 0)
                 failures.Add("ORDER: with no crew picked the card says nothing useful.");
 
-            // Men elsewhere: approach can be given, the conversations cannot - and they
-            // are still listed, with the reason, rather than silently missing.
+            // Men elsewhere: every order can be given - the approach CARRIES the demand
+            // or the threat to the door (the RACKUI-001 chain: ApproachBusinessCommand
+            // takes the intent and the arrival resolves it), so from range the rows
+            // read available with the walking note rather than faded.
             TerritoryRacketOrders.For(
                 TerritoryProtectionState.Unaffiliated, true, true, false, rows);
             if (rows.Count != 3)
@@ -435,9 +437,10 @@ namespace LivingCity.Tests
             {
                 if (!Offers(rows, TerritoryRacketIntent.Approach, true))
                     failures.Add("ORDER: the men could not be sent to the door.");
-                if (Offers(rows, TerritoryRacketIntent.Demand, true) ||
-                    Offers(rows, TerritoryRacketIntent.Threaten, true))
-                    failures.Add("ORDER: a demand was offered from across the city.");
+                if (!Offers(rows, TerritoryRacketIntent.Demand, true) ||
+                    !Offers(rows, TerritoryRacketIntent.Threaten, true))
+                    failures.Add(
+                        "ORDER: a demand from range no longer walks to the door.");
             }
 
             // Men at the door: the conversations open, and walking up again does not.
@@ -449,14 +452,15 @@ namespace LivingCity.Tests
             if (Offers(rows, TerritoryRacketIntent.Approach, true))
                 failures.Add("ORDER: the men were sent to a door they are standing at.");
 
-            // A shop already paying us has nothing left to be asked in Phase 1.
+            // A shop already paying us is COLLECTED from, never asked again (ECON-008):
+            // the round is its one live row, and the demand never lights.
             TerritoryRacketOrders.For(
                 TerritoryProtectionState.Compliant, true, true, true, rows);
+            if (!Offers(rows, TerritoryRacketIntent.Collect, true))
+                failures.Add("ORDER: a paying shop's card does not offer the round.");
             for (var i = 0; i < rows.Count; i++)
-                if (rows[i].Available)
+                if (rows[i].Available && rows[i].Intent != TerritoryRacketIntent.Collect)
                     failures.Add("ORDER: a shop that already pays us was asked again.");
-            if (rows.Count == 0)
-                failures.Add("ORDER: a paying shop's card is empty instead of saying why.");
 
             // Every intent is named exactly once, whatever the situation.
             TerritoryRacketOrders.For(

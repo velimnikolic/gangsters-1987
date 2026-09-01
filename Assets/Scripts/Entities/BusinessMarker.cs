@@ -98,6 +98,11 @@ namespace LivingCity.Entities
             CanonicalBlockId = site.BlockHint;
             ApproachPoint = new Vector3(site.Approach.X, transform.position.y, site.Approach.Z);
 
+            // The deed is simulation state (BusinessDeeds); this component is a view of
+            // it. A street streamed out and back must come back with the same owner, so
+            // the answer is read here rather than left at whatever the pool remembered.
+            GangId = BusinessDeeds.GangOf(BusinessId);
+
             if (isActiveAndEnabled)
             {
                 if (wasBound.IsValid && wasBound != BusinessId)
@@ -170,8 +175,15 @@ namespace LivingCity.Entities
                 var runtime = RoadDemo.TerritoryRuntime.Instance;
                 if (runtime != null && BusinessId.IsValid &&
                     runtime.TryGetBusinessView(BusinessId, out var view))
-                    return UI.BusinessIntention.Line(
+                {
+                    var line = UI.BusinessIntention.Line(
                         owner, WeeklyIncome, view.Standing, view.Protector);
+                    // The dues meter on the card itself (ECON-008): what it owes us
+                    // and when it last paid, straight off the ledger.
+                    if (view.PaysLine.Length > 0)
+                        line += "\n" + view.PaysLine;
+                    return line;
+                }
 
                 return UI.BusinessIntention.Line(
                     owner, WeeklyIncome, Protected, Gangs.GangRegistry.NameOf(GangId));
@@ -190,12 +202,17 @@ namespace LivingCity.Entities
                           | (Protected ? 1u : 0u);
 
                 // The racket can change the words without any marker field moving, so its
-                // standing has to be part of what the HUD compares.
+                // standing has to be part of what the HUD compares - and so does the
+                // dues meter, which moves daily and on every collection.
                 var runtime = RoadDemo.TerritoryRuntime.Instance;
                 if (runtime?.Racket != null && BusinessId.IsValid)
+                {
                     key ^= (long)runtime.Racket.StateOf(
                         BusinessId, new Territory.TerritoryGangId(
                             Gangs.GangCatalog.PlayerGangId)) << 24;
+                    if (runtime.TryGetDues(BusinessId, out var owedNow, out var paidDay))
+                        key ^= ((long)owedNow << 16) ^ ((long)(paidDay + 2) << 44);
+                }
                 return key;
             }
         }

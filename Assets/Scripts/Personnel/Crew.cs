@@ -21,5 +21,10 @@ namespace LivingCity.Personnel
         public int Id;
         public int LieutenantId;
         public readonly List<int> HoodIds = new List<int>();
+
+        /// <summary>How this crew runs its rounds (ECON-005). The player's one lever
+        /// over collection: what share of a short payment is taken without a word, the
+        /// fear a round leaves, the heat it draws.</summary>
+        public CrewPolicy Policy = CrewPolicy.Normal;
     }
 }

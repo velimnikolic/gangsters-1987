@@ -218,6 +218,12 @@ namespace RoadDemo
                  "strings itself out by what it is holding.")]
         public bool mixedArms = false;
 
+        [Header("Reading the city")]
+        [Tooltip("Click a building to open the catalog card - its name, its footprint " +
+                 "and its height - and gold-tint it. Off leaves the click to the crew, " +
+                 "the patrol and the premises overlays alone.")]
+        public bool buildingCards = true;
+
         [Header("City life")]
         [Tooltip("Share of the crowd that starts indoors and streams out of the doors over the first minute.")]
         [Range(0f, 1f)] public float insideAtStart = 0.45f;
@@ -3349,9 +3355,7 @@ namespace RoadDemo
             var gangs = LivingCity.Gangs.GangSeeder.Generate(RivalSeed, null);
             LivingCity.Gangs.GangRegistry.Install(gangs);
 
-            if (rivalCrewsInCity <= 0) return;
             var sidewalks = _pedLinks.FindAll(l => !l.Gated && l.Length >= 24f);
-            if (sidewalks.Count == 0) return;
             var rng = new System.Random(RivalSeed);
 
             var arms = new[]
@@ -3363,7 +3367,13 @@ namespace RoadDemo
 
             // The books, cut into crews: one entry per capo, with the soldiers standing
             // behind him in the seeder's flat member list (a Lieutenant opens a crew).
-            int families = Mathf.Min(rivalCrewsInCity, gangs.Length - 1);
+            // The outfit takes its own premises whether or not a single rival is dealt.
+            // A don with nowhere to be found is the one man in the city the player
+            // cannot point at, and the street mark outside his door is the first thing
+            // the city is read by - so the budget takes RIVAL families away, never ours.
+            int families = rivalCrewsInCity <= 0
+                ? 0
+                : Mathf.Min(rivalCrewsInCity, gangs.Length - 1);
             var byFamily = new List<List<(string boss, List<string> hoods)>>();
             for (int i = 0; i < families; i++)
             {
@@ -3383,6 +3393,8 @@ namespace RoadDemo
             // corners, which is what the sidewalk pass below is for.
             var taken = new List<Vector3>();
             var fronts = SeatFronts(gangs, families, byFamily, taken);
+
+            if (families == 0 || sidewalks.Count == 0) return;
 
             int placed = 0;
             for (int round = 0; placed < rivalCrewCap; round++)
@@ -3459,9 +3471,16 @@ namespace RoadDemo
                     gangs[id].Name, capo, men, gangs[id].MemberSeed);
                 books.Address = AddressOf(door);
 
-                door.Building.AddComponent<GangFront>()
-                    .Bind(id, gangs[id].Name, books, door.Pos,
-                          door.EntryPos, door.LinkFwd, door.EntryT, door.Outward);
+                var front = door.Building.AddComponent<GangFront>();
+                front.Bind(id, gangs[id].Name, books, door.Pos,
+                           door.EntryPos, door.LinkFwd, door.EntryT, door.Outward);
+                // The premises this door belongs to, as the simulation knows it. Handed
+                // over rather than looked up here: the business directory is not always
+                // dealt by the time the families are seated, and the front resolves it
+                // the first time somebody asks.
+                front.SiteId = door.SiteId;
+                front.BlockId = door.BlockId;
+                front.Role = "HQ";
                 // and into the registry, so the ledger's FAMILIES page names the same
                 // door the street card does
                 LivingCity.Gangs.GangRegistry.SetFrontBooks(id, books);
@@ -4199,10 +4218,14 @@ namespace RoadDemo
             _rig = dc;
 
             // catalog-style building card on click; only the block bakes answer,
-            // the street kit's own colliders stay mute
+            // the street kit's own colliders stay mute. The component goes in whatever
+            // buildingCards says: it is what deals every click on the city out to the
+            // crew, patrol and front overlays, and only the card it draws itself is
+            // the thing that switch turns off.
             _picker = camGo.AddComponent<LivingCity.CameraRig.BuildingCardPicker>();
             _picker.pickRoot = _blocks;
             _picker.additionalPickRoots = _streamRoots.ToArray();
+            _picker.buildingCard = buildingCards;
 
             // and down in the street, the near facades get out of the way of it: the
             // block bakes and the quarters are what may be seen through, and nothing

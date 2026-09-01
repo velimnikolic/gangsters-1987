@@ -221,7 +221,12 @@ namespace LivingCity.Business
                     continue;
 
                 PieceRenderers.Clear();
-                child.GetComponentsInChildren(false, PieceRenderers);
+                // includeInactive, and it is load-bearing: the recycler binds while the
+                // pooled holder is still INACTIVE (the holder is switched on after the
+                // build), so an active-only sweep finds no renderer and no shop ever
+                // binds in the streamed city. Bounds on an inactive renderer are valid -
+                // the recycler's own flat-caster pass reads them the same way.
+                child.GetComponentsInChildren(true, PieceRenderers);
                 if (PieceRenderers.Count == 0)
                     continue;
 

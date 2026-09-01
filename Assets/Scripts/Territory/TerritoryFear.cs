@@ -373,6 +373,18 @@ namespace LivingCity.Territory
         }
 
         /// <summary>
+        /// Attention without an act (ECON-007): money moving draws eyes in proportion
+        /// to the money. It files no fear and frightens no one - the precinct simply
+        /// starts walking the block a little more.
+        /// </summary>
+        public void NotePoliceAttention(TerritoryBlockId blockId, float amount, double gameHour)
+        {
+            if (!blockId.IsValid || amount <= 0f)
+                return;
+            Block(blockId).Police.Add(amount, gameHour, Config);
+        }
+
+        /// <summary>
         /// Fade what every street remembers and report what moved. Presence is not
         /// consulted and cannot reset a thing: a house whose men have all gone home is
         /// still the house that did this here.

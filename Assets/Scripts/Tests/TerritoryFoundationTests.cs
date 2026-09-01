@@ -346,6 +346,8 @@ namespace LivingCity.Tests
                 TerritoryCommandExecution.Reject("Not in fixture.");
             public TerritoryCommandExecution Execute(ThreatenBusinessOwnerCommand command) =>
                 TerritoryCommandExecution.Reject("Not in fixture.");
+            public TerritoryCommandExecution Execute(CollectDuesCommand command) =>
+                TerritoryCommandExecution.Reject("Not in fixture.");
         }
     }
 }

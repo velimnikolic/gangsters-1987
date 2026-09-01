@@ -473,6 +473,30 @@ namespace LivingCity.UI
             name.characterSpacing = 0.5f;
             name.overflowMode = TextOverflowModes.Ellipsis;
 
+            // ECON-005: the man read as a WORD (archetype - derived, never assigned)
+            // and the crew's rounds policy beside it. A click cycles the policy;
+            // the archetype is his own and no click changes it.
+            var branchCrew = director.Roster != null
+                ? director.Roster.CrewOf(lieutenant.Id)
+                : null;
+            var reading = LieutenantArchetypes.Word(LieutenantArchetypes.Of(member)) +
+                          (branchCrew != null
+                              ? " · " + LieutenantArchetypes.Word(branchCrew.Policy) +
+                                " ROUNDS"
+                              : "");
+            var readingRow = NewRect("Reading", card);
+            PlaceTopLeft(readingRow, x, -62f, nameW + 40f, 16f);
+            var readingFace = ClickSurface(readingRow);
+            Line(readingRow, LedgerStyle.Mono, 9f, LedgerV2.Label,
+                0f, 0f, nameW + 40f, 14f, reading).characterSpacing = 2f;
+            if (branchCrew != null)
+            {
+                var branchCrewId = branchCrew.Id;
+                var next = (CrewPolicy)(((int)branchCrew.Policy + 1) % 4);
+                RowButton(readingRow, readingFace,
+                    () => { director.SetCrewPolicy(branchCrewId, next); dirty = true; });
+            }
+
             // The two meters take the middle column and split it evenly; the accept key
             // is the grid's last column and only exists while a man is waiting.
             var leaderId = lieutenant.Id;
@@ -1620,8 +1644,11 @@ namespace LivingCity.UI
             var profile = TerritoryPresentationProfile.Default;
             if (block.Control == profile.Uncontrolled)
                 return BlockControl.NotOurs;
+            // Dominated counts: a street run outright is HELD, not unknown - reading it
+            // as unknown dropped the row and slammed the open block file shut the
+            // moment a family did too well.
             if (block.Control != profile.Controlled && block.Control != profile.Contested &&
-                block.Control != profile.Influenced)
+                block.Control != profile.Influenced && block.Control != profile.Dominated)
                 return BlockControl.Unknown;
 
             // Control alone does not say WHOSE. A held block we hold no premise on
@@ -1632,7 +1659,8 @@ namespace LivingCity.UI
                        block.Holding != profile.Holding.UnknownLabel;
             if (!ours)
                 return BlockControl.Theirs;
-            return block.Control == profile.Controlled
+            return block.Control == profile.Controlled ||
+                   block.Control == profile.Dominated
                 ? BlockControl.Held
                 : BlockControl.Contested;
         }

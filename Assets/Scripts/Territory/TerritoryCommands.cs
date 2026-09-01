@@ -98,13 +98,40 @@ namespace LivingCity.Territory
     {
         public ApproachBusinessCommand(
             TerritoryCommandNodeId groupId, TerritoryBusinessId businessId)
+            : this(groupId, businessId, TerritoryRacketIntent.Approach)
+        {
+        }
+
+        public ApproachBusinessCommand(
+            TerritoryCommandNodeId groupId, TerritoryBusinessId businessId,
+            TerritoryRacketIntent followUp)
         {
             GroupId = groupId;
             BusinessId = businessId;
+            FollowUp = followUp;
         }
 
         public TerritoryCommandNodeId GroupId { get; }
         public TerritoryBusinessId BusinessId { get; }
+
+        /// <summary>What the walk is FOR. Approach is the walk alone; Demand and
+        /// Threaten mean the men put it to the owner the moment they arrive, so an order
+        /// given from across the city is one order, not a walk and a second click.</summary>
+        public TerritoryRacketIntent FollowUp { get; }
+    }
+
+    /// <summary>Send a crew on a collection round (ECON-004): every shop on the block
+    /// that pays this family, door to door, and the take carried home to the front.</summary>
+    public readonly struct CollectDuesCommand
+    {
+        public CollectDuesCommand(TerritoryCommandNodeId groupId, TerritoryBlockId blockId)
+        {
+            GroupId = groupId;
+            BlockId = blockId;
+        }
+
+        public TerritoryCommandNodeId GroupId { get; }
+        public TerritoryBlockId BlockId { get; }
     }
 
     public readonly struct DemandProtectionCommand
@@ -203,6 +230,7 @@ namespace LivingCity.Territory
         TerritoryCommandExecution Execute(ApproachBusinessCommand command);
         TerritoryCommandExecution Execute(DemandProtectionCommand command);
         TerritoryCommandExecution Execute(ThreatenBusinessOwnerCommand command);
+        TerritoryCommandExecution Execute(CollectDuesCommand command);
     }
 
     /// <summary>
@@ -247,6 +275,9 @@ namespace LivingCity.Territory
             Record(executor.Execute(command));
 
         public TerritoryCommandResult Submit(ThreatenBusinessOwnerCommand command) =>
+            Record(executor.Execute(command));
+
+        public TerritoryCommandResult Submit(CollectDuesCommand command) =>
             Record(executor.Execute(command));
 
         public bool TryGet(long commandId, out TerritoryCommandResult result) =>

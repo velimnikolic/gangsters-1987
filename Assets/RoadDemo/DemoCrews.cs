@@ -748,6 +748,11 @@ namespace RoadDemo
             // last onto the click chain, so the front card is asked first and hands the
             // click straight back to the crews if a man was standing in front of the door
             gameObject.AddComponent<FrontOverlay>().Init();
+            // The paint on the pavement outside every place we hold, and outside every
+            // rival door a crew of ours has found. It polls the fronts rather than being
+            // handed them: the families are seated after the crews are stood up.
+            gameObject.AddComponent<TurfMarks>().Init(this);
+            gameObject.AddComponent<FrontDeeds>();
             IntentOverlay = gameObject.AddComponent<CombatIntentOverlay>();
             IntentOverlay.Init(this);
             PersonnelDirector.Instance?.SetOrganizationPhysicalSource(this);

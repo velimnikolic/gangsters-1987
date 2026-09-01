@@ -199,6 +199,47 @@ namespace LivingCity.Territory
         public double GameHour { get; }
     }
 
+    /// <summary>How a collection round ended (ECON-004).</summary>
+    public enum TerritoryRoundEnd
+    {
+        /// <summary>The take reached the front and went into the books.</summary>
+        Banked,
+
+        /// <summary>The crew carrying it was scattered or wiped; the take is gone.</summary>
+        Lost,
+    }
+
+    public readonly struct CollectionRoundSettled : ITerritoryEvent
+    {
+        public CollectionRoundSettled(
+            TerritoryBlockId blockId, TerritoryGangId gangId, int crewId, int amount,
+            int stops, int missed, TerritoryRoundEnd end, double gameHour)
+        {
+            BlockId = blockId;
+            GangId = gangId;
+            CrewId = crewId;
+            Amount = amount;
+            Stops = stops;
+            Missed = missed;
+            End = end;
+            GameHour = gameHour;
+        }
+
+        /// <summary>The block the round was sent to collect.</summary>
+        public TerritoryBlockId BlockId { get; }
+
+        public TerritoryGangId GangId { get; }
+        public int CrewId { get; }
+
+        /// <summary>Dollars carried at the end - banked, or lost with the men.</summary>
+        public int Amount { get; }
+
+        public int Stops { get; }
+        public int Missed { get; }
+        public TerritoryRoundEnd End { get; }
+        public double GameHour { get; }
+    }
+
     public readonly struct TerritoryEventRecord
     {
         public TerritoryEventRecord(long sequence, ITerritoryEvent value)
@@ -231,6 +272,7 @@ namespace LivingCity.Territory
         public event Action<BlockControlChanged> BlockControl;
         public event Action<BlockBecameContested> BlockContested;
         public event Action<BlockControlLost> ControlLost;
+        public event Action<CollectionRoundSettled> RoundSettled;
         public event Action<ITerritoryEvent> Published;
 
         public IReadOnlyList<TerritoryEventRecord> Recent => history;
@@ -245,6 +287,7 @@ namespace LivingCity.Territory
         internal void Publish(BlockControlChanged value) => Record(value, BlockControl);
         internal void Publish(BlockBecameContested value) => Record(value, BlockContested);
         internal void Publish(BlockControlLost value) => Record(value, ControlLost);
+        internal void Publish(CollectionRoundSettled value) => Record(value, RoundSettled);
 
         void Record<T>(T value, Action<T> typed) where T : struct, ITerritoryEvent
         {

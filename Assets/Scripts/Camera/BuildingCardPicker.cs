@@ -29,6 +29,14 @@ namespace LivingCity.CameraRig
         [Tooltip("Other generated-view roots that may answer without widening pickRoot to every street collider.")]
         public Transform[] additionalPickRoots;
 
+        /// <summary>Whether an unclaimed click opens the catalog card - the name of the
+        /// building, its footprint and its height - and gold-tints what it read. Turned
+        /// off, the component stays: it is the one place a click on the city is dealt
+        /// out from, so the crew, the patrol and the front overlays keep answering
+        /// through its veto chain and only the card itself goes away.</summary>
+        [Tooltip("Open the catalog card (name, footprint, height) on a click nobody else claimed.")]
+        public bool buildingCard = true;
+
         /// <summary>
         /// A same-click veto: another overlay (the road demo's police popup) registers
         /// itself here, and any click it claims never reaches the building raycast -
@@ -123,6 +131,11 @@ namespace LivingCity.CameraRig
                 CloseCard();
                 return;
             }
+
+            // The chain above has had the click; with the card turned off there is
+            // nothing left for it to mean here, and no reason to raycast the city.
+            if (!buildingCard)
+                return;
 
             var ray = cam.ScreenPointToRay(screen);
             var hits = Physics.RaycastAll(ray, 3000f);
