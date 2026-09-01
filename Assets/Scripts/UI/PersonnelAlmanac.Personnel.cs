@@ -849,7 +849,16 @@ namespace LivingCity.UI
 
             LedgerV2.Figure(rect, ColWage, -12f, WageW,
                 LedgerText.Cash(Outfit.Wages.WageFor(member)), 15.5f,
-                dead ? LedgerV2.Faint : LedgerV2.Ink);
+                dead ? LedgerV2.Faint : member.WageDemand > 0 ? LedgerV2.Red
+                : LedgerV2.Ink);
+
+            // A standing demand is a DECISION waiting on the page, and the roll is what
+            // the reader scans: what he asked for goes under what he draws, so the file
+            // that can answer it is one click away rather than a discovery.
+            if (!dead && member.WageDemand > 0)
+                LedgerV2.Mono(rect, ColWage, -32f, WageW,
+                    "WANTS " + LedgerText.Cash(member.WageDemand), 9.5f, LedgerV2.Red,
+                    0f, TextAlignmentOptions.MidlineRight);
         }
 
         // ------------------------------------------------------------- the payroll
@@ -1082,6 +1091,11 @@ namespace LivingCity.UI
             }
             y = Particular("WAGE", LedgerText.Cash(Outfit.Wages.WageFor(member)) + " / day",
                 textX, textW, y);
+            // PSY-003. A man who has asked for the rate has asked YOU, and the asking
+            // does not stop until it is answered: while the demand stands he goes on
+            // skimming and his loyalty goes on draining, so the answer belongs on his
+            // own file, beside the wage it is about.
+            y = BuildRaiseDemand(member, textX, textW, y);
             y = Particular("CONDITION", LedgerText.StatusLabel(member.Status), textX, textW, y,
                 member.Status == CharacterStatus.Active ? LedgerV2.Ink : LedgerV2.Red);
             if (TryObservedBlock(member.Id, out var currentBlock))
@@ -1095,6 +1109,14 @@ namespace LivingCity.UI
             // player is meant to learn a man's character from what the man does, and a
             // column of five more figures would let him skip that entirely.
             y = Particular("CHARACTER", CharacterWords(member), textX, textW, y);
+            // ECON-006. His NAME, quarter by quarter - earned at doors he has leaned on
+            // and forgotten wherever he stops going. It already scales what he is worth
+            // standing on a street and what a shop does when he asks; a mechanic the
+            // player cannot see is a mechanic he cannot plan around, so it is printed
+            // in the same words everything else here is printed in.
+            var known = KnownOnLine(member.Id);
+            if (known.Length > 0)
+                y = Particular("KNOWN ON", known, textX, textW, y);
 
             // The stamps: the law's word over the photograph, WANTED beside the name.
             // (CharacterWords is the clerk's line on him - see below.)
@@ -1220,6 +1242,76 @@ namespace LivingCity.UI
         /// <summary>One particular on the file: the label on the left, the answer held
         /// to the right margin, and the dotted rule the design closes every one of them
         /// with. Answers the y below.</summary>
+        static readonly List<(string Neighborhood, float Name)> KnownOn =
+            new List<(string, float)>();
+
+        /// <summary>
+        /// The quarters this man is known on, best first, in words (ECON-006). At most
+        /// three: a file is a page a reader scans, and a man who has worked ten streets
+        /// is described by the three he is biggest on.
+        /// </summary>
+        static string KnownOnLine(int characterId)
+        {
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            if (runtime == null || runtime.Reputation == null)
+                return "";
+
+            runtime.Reputation.CollectFor(characterId, runtime.GameHour, KnownOn);
+            if (KnownOn.Count == 0)
+                return "";
+
+            var line = "";
+            var shown = Mathf.Min(3, KnownOn.Count);
+            for (var i = 0; i < shown; i++)
+                line += (i > 0 ? " · " : "") + KnownOn[i].Neighborhood + " (" +
+                        Territory.TerritoryReputationLedger.Word(KnownOn[i].Name) + ")";
+            if (KnownOn.Count > shown)
+                line += " · +" + (KnownOn.Count - shown) + " more";
+            return line;
+        }
+
+        /// <summary>
+        /// He wants the rate (PSY-003), and there are two answers. YES moves his
+        /// envelope for good and stops him taking it out of the till himself; NO costs
+        /// him loyalty and leaves the underpaid clock running, so the ladder simply
+        /// goes on from where it was. Nothing here decides for the player: a demand
+        /// nobody answers stands, which is the point of it.
+        /// </summary>
+        float BuildRaiseDemand(Character member, float x, float w, float y)
+        {
+            if (member.WageDemand <= 0)
+                return y;
+
+            const float rowH = 30f;
+            var band = NewRect("Raise demand", cardContent);
+            PlaceTopLeft(band, x, y + 2f, w, rowH + 20f);
+            Fill(band, LedgerV2.Wrong);
+
+            var asking = Line(band, LedgerStyle.MonoBold, 10.5f, LedgerV2.Red,
+                6f, -4f, w - 12f, LineBox(10.5f),
+                "HE WANTS " + LedgerText.Cash(member.WageDemand) + " A DAY" +
+                (member.Skimming ? " — AND IS TAKING IT ANYWAY" : ""));
+            asking.characterSpacing = 2f;
+            asking.overflowMode = TextOverflowModes.Ellipsis;
+
+            var half = (w - 12f - 8f) * 0.5f;
+            var id = member.Id;
+            LedgerV2.Button(band, "GRANT IT", 6f, -20f, half, rowH - 6f, () =>
+            {
+                var result = director.GrantRaise(id);
+                lastRefusal = result.Ok ? "" : result.Reason;
+                dirty = true;
+            }, red: false, size: 9.5f);
+            LedgerV2.Button(band, "REFUSE HIM", 6f + half + 8f, -20f, half, rowH - 6f, () =>
+            {
+                var result = director.RefuseRaise(id);
+                lastRefusal = result.Ok ? "" : result.Reason;
+                dirty = true;
+            }, red: true, size: 9.5f);
+
+            return y - (rowH + 26f);
+        }
+
         float Particular(string label, string value, float x, float w, float y, Color? ink = null)
         {
             var labelW = Mathf.Min(130f, w * 0.42f);

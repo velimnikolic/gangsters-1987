@@ -180,7 +180,8 @@ namespace LivingCity.Territory
             string holding = "Unknown",
             string rivalPresence = "Unknown",
             string fearOfUs = "Unknown",
-            TerritoryOwnerTone ownerTone = TerritoryOwnerTone.Unknown)
+            TerritoryOwnerTone ownerTone = TerritoryOwnerTone.Unknown,
+            string answersForIt = "")
         {
             BlockId = blockId;
             BlockName = blockName ?? "";
@@ -195,6 +196,7 @@ namespace LivingCity.Territory
             RivalPresence = rivalPresence ?? "Unknown";
             FearOfUs = fearOfUs ?? "Unknown";
             OwnerTone = ownerTone;
+            AnswersForIt = answersForIt ?? "";
         }
 
         public TerritoryBlockId BlockId { get; }
@@ -228,6 +230,18 @@ namespace LivingCity.Territory
 
         /// <summary>How an owner here is likely to take our visit.</summary>
         public TerritoryOwnerTone OwnerTone { get; }
+
+        /// <summary>
+        /// Who in OUR outfit answers for this street (UI-001), by name - the lieutenant
+        /// it is on the paper of, or the Boss where it is on his own. Empty where nobody
+        /// has been made responsible for it.
+        ///
+        /// Responsibility is a different claim from control and a page prints it as one:
+        /// a street can be somebody's to answer for and nobody's to hold. It is our own
+        /// paperwork and never a rival's - another family's chain of command is not
+        /// something the player's map has any way of knowing.
+        /// </summary>
+        public string AnswersForIt { get; }
     }
 
     /// <summary>
@@ -370,7 +384,26 @@ namespace LivingCity.Territory
                 profile.Holding.Describe(ownHolding),
                 profile.Presence.Describe(strongestRivalPresence),
                 profile.Fear.Describe(ownFear),
-                Tone(ownFear));
+                Tone(ownFear),
+                AnswersFor(truth.Responsibility, viewingGangId));
+        }
+
+        /// <summary>
+        /// The name on the paper for this street, or nothing. Ours only: a rival's
+        /// command chain is not knowledge the player has, and the presentation layer is
+        /// exactly where that line is drawn.
+        /// </summary>
+        static string AnswersFor(
+            TerritoryResponsibilityView view, TerritoryGangId viewingGangId)
+        {
+            var responsibility = view.Responsibility;
+            if (!responsibility.IsAssigned)
+                return "";
+            if (responsibility.GangId.IsValid && responsibility.GangId != viewingGangId)
+                return "";
+            if (view.LieutenantName.Length > 0)
+                return view.LieutenantName;
+            return view.BossName.Length > 0 ? view.BossName : "assigned";
         }
 
         /// <summary>The same thresholds the words are read off, as a hint an interaction

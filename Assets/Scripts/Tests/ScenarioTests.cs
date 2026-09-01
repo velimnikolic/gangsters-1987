@@ -27,6 +27,8 @@ namespace LivingCity.Tests
             failures.AddRange(Contest());
             failures.AddRange(Loss());
             failures.AddRange(Responsibility());
+            failures.AddRange(BossCapacity());
+            failures.AddRange(LieutenantLoad());
             failures.AddRange(UiAuthority());
             return failures;
         }
@@ -294,6 +296,175 @@ namespace LivingCity.Tests
             if (rig.State != TerritoryControlState.Uncontrolled &&
                 rig.State != TerritoryControlState.Unknown)
                 failures.Add("TEST-006: a block nobody stands on reads as somebody's.");
+
+            return failures;
+        }
+
+        /// <summary>
+        /// TEST-005 as the ticket writes it: a Boss with men reporting to him directly
+        /// and ground on his paper, taking blocks up to the ceiling his own Leadership
+        /// sets - and the NEXT one refused, with a reason that names him.
+        ///
+        /// Separate from <see cref="Responsibility"/> on purpose. That one asserts that
+        /// paperwork is not ground; this one asserts what the paperwork itself will and
+        /// will not take, which is a different promise and was covered only inside the
+        /// organization suite.
+        /// </summary>
+        public static List<string> BossCapacity()
+        {
+            var failures = new List<string>();
+            var roster = Personnel.RosterSeeder.Generate(4);
+            var boss = roster.FindBoss();
+            if (boss == null)
+            {
+                failures.Add("TEST-005: the seed dealt no Boss.");
+                return failures;
+            }
+
+            var rng = new Random(4);
+            var query = new Personnel.OrganizationQuery(roster);
+
+            // Men who answer to him and nobody else. A new man LANDS on the Boss's own
+            // branch - that is where an unposted man lives - so the assertion is that
+            // he is there and on the Boss's count, not that he can be moved there.
+            var before = query.CapacityOf(boss.Id).Manpower.Current;
+            for (var i = 0; i < 3; i++)
+            {
+                var hood = Personnel.RosterSeeder.Recruit(roster, rng);
+                if (roster.AssignmentOf(hood.Id).Kind != Personnel.AssignmentKind.Pool)
+                    failures.Add("TEST-005: a new man did not land under the Boss.");
+            }
+
+            var direct = query.CapacityOf(boss.Id).Manpower.Current - before;
+            if (direct != 3)
+                failures.Add("TEST-005: three men reporting to him directly count as " +
+                             direct + " on his books.");
+
+            // Ground on his paper, up to the ceiling and not one block past it.
+            var cap = Personnel.Command.BlockCap(boss, roster.Organization.Limits);
+            if (cap <= 0)
+            {
+                failures.Add("TEST-005: the Boss can carry no ground at all.");
+                return failures;
+            }
+
+            for (var i = 0; i < cap; i++)
+            {
+                var blockId = new TerritoryBlockId("core:test:boss:block:" + i);
+                var taken = Personnel.RosterOps.AssignBlockResponsibility(
+                    roster, blockId, boss.Id, true);
+                if (!taken.Ok)
+                    failures.Add("TEST-005: block " + (i + 1) + " of " + cap +
+                                 " was refused below the cap: " + taken.Reason);
+            }
+
+            var over = new TerritoryBlockId("core:test:boss:block:over");
+            var refused = Personnel.RosterOps.AssignBlockResponsibility(
+                roster, over, boss.Id, true);
+            if (refused.Ok)
+                failures.Add("TEST-005: the Boss took block " + (cap + 1) +
+                             " past his own ceiling of " + cap + ".");
+            else if (string.IsNullOrEmpty(refused.Reason) ||
+                     refused.Reason.IndexOf(boss.FullName, StringComparison.Ordinal) < 0)
+                failures.Add("TEST-005: the refusal does not name the man refusing: " +
+                             "\"" + refused.Reason + "\"" + ".");
+
+            var blocks = query.CapacityOf(boss.Id).Blocks;
+            if (blocks.Current != cap || blocks.Maximum != cap || blocks.IsOverCapacity)
+                failures.Add("TEST-005: his paper reads " + blocks.Current + " / " +
+                             blocks.Maximum + " after the refusal, not " + cap + " / " +
+                             cap + ".");
+
+            return failures;
+        }
+
+        /// <summary>
+        /// TEST-006 as the ticket writes it: a lieutenant loaded to the config's own
+        /// numbers - fifty men and three blocks - and the overload VISIBLE rather than
+        /// paid for by a magic penalty. Nothing here asserts a modifier, because the
+        /// design has none: a branch simply refuses the next man, and the reading says
+        /// so plainly.
+        /// </summary>
+        public static List<string> LieutenantLoad()
+        {
+            var failures = new List<string>();
+            var roster = Personnel.RosterSeeder.Generate(9);
+            Personnel.RosterOps.ConfigureOrganization(
+                roster, new Personnel.OrganizationLimits(70, 4, 50, 3));
+            if (roster.Crews.Count == 0)
+            {
+                failures.Add("TEST-006: the seed dealt no branch to load.");
+                return failures;
+            }
+
+            var crew = roster.Crews[0];
+            var lieutenant = roster.Find(crew.LieutenantId);
+            var query = new Personnel.OrganizationQuery(roster);
+            var rng = new Random(9);
+
+            var manpower = query.CapacityOf(crew.LieutenantId).Manpower;
+            if (manpower.Current > manpower.Maximum)
+            {
+                failures.Add("TEST-006: the seed dealt a branch already past its cap.");
+                return failures;
+            }
+
+            // Fill him to the cap his own Leadership allows of the config's fifty. Every
+            // loop is guarded: a cap that became hard under a rule change must fail the
+            // run, never hang it.
+            var guard = manpower.Maximum - manpower.Current + 4;
+            while (guard-- > 0 &&
+                   query.CapacityOf(crew.LieutenantId).Manpower.Current <
+                   query.CapacityOf(crew.LieutenantId).Manpower.Maximum)
+            {
+                var hood = Personnel.RosterSeeder.Recruit(roster, rng);
+                if (!Personnel.RosterOps.AssignToCrew(roster, hood.Id, crew.Id).Ok)
+                {
+                    failures.Add("TEST-006: the branch refused a man below its cap.");
+                    return failures;
+                }
+            }
+
+            var full = query.CapacityOf(crew.LieutenantId).Manpower;
+            if (full.Current != full.Maximum)
+                failures.Add("TEST-006: the branch never reached its own cap (" +
+                             full.Current + " / " + full.Maximum + ").");
+
+            var extra = Personnel.RosterSeeder.Recruit(roster, rng);
+            var refusedMan = Personnel.RosterOps.AssignToCrew(roster, extra.Id, crew.Id);
+            if (refusedMan.Ok)
+                failures.Add("TEST-006: he took a man past his manpower cap.");
+            else if (lieutenant != null &&
+                     (string.IsNullOrEmpty(refusedMan.Reason) ||
+                      refusedMan.Reason.IndexOf(
+                          lieutenant.FullName, StringComparison.Ordinal) < 0))
+                failures.Add("TEST-006: the refusal does not name the lieutenant: " +
+                             "\"" + refusedMan.Reason + "\"" + ".");
+
+            // Ground the same way: to the ceiling, then no further.
+            var blockCap = Personnel.Command.BlockCap(
+                lieutenant, roster.Organization.Limits);
+            for (var i = 0; i < blockCap; i++)
+                if (!Personnel.RosterOps.AssignBlockResponsibility(
+                        roster, new TerritoryBlockId("core:test:lt:block:" + i),
+                        crew.LieutenantId, true).Ok)
+                    failures.Add("TEST-006: block " + (i + 1) + " of " + blockCap +
+                                 " was refused below the cap.");
+            if (Personnel.RosterOps.AssignBlockResponsibility(
+                    roster, new TerritoryBlockId("core:test:lt:block:over"),
+                    crew.LieutenantId, true).Ok)
+                failures.Add("TEST-006: he took ground past his block cap of " +
+                             blockCap + ".");
+
+            // The load is READ, not paid for: at the cap the reading is full and not
+            // over, and nothing of his has been quietly moved to make it so.
+            var reading = query.CapacityOf(crew.LieutenantId);
+            if (reading.Manpower.IsOverCapacity || reading.Blocks.IsOverCapacity)
+                failures.Add("TEST-006: a branch at its cap reads as OVER it.");
+            if (reading.Blocks.Current != blockCap || reading.Blocks.Maximum != blockCap)
+                failures.Add("TEST-006: his paper reads " + reading.Blocks.Current +
+                             " / " + reading.Blocks.Maximum + ", not " + blockCap +
+                             " / " + blockCap + ".");
 
             return failures;
         }

@@ -684,6 +684,20 @@ namespace GangstersTools
         public static object ScenarioResponsibility() =>
             Scenario(LivingCity.Tests.ScenarioTests.Responsibility());
 
+        [CliCommand("gangsters_scenario_boss_capacity",
+                    "TEST-005: the Boss holds men directly and ground on his paper up to " +
+                    "his own ceiling - and the next block is refused, by name.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "scenario" })]
+        public static object ScenarioBossCapacity() =>
+            Scenario(LivingCity.Tests.ScenarioTests.BossCapacity());
+
+        [CliCommand("gangsters_scenario_lieutenant_load",
+                    "TEST-006: a branch loaded to the config's fifty men and three blocks - " +
+                    "the load READ at the cap, never paid for by a hidden penalty.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "scenario" })]
+        public static object ScenarioLieutenantLoad() =>
+            Scenario(LivingCity.Tests.ScenarioTests.LieutenantLoad());
+
         [CliCommand("gangsters_scenario_ui_authority",
                     "TEST-007: nothing the player can see is anything the player can write.",
                     MainThreadRequired = true, Tags = new[] { "gangsters", "scenario" })]

@@ -120,6 +120,7 @@ namespace LivingCity.Territory
             float seenWeight = 0.7f,
             float publicWeight = 1f,
             float propagationFraction = 0.35f,
+            float neighbourFraction = 0.10f,
             float fearCap = 100f,
             float defianceWindowHours = 12f,
             float policeAttentionCap = 100f,
@@ -133,6 +134,7 @@ namespace LivingCity.Territory
             SeenWeight = Math.Max(0f, seenWeight);
             PublicWeight = Math.Max(0f, publicWeight);
             PropagationFraction = Math.Min(1f, Math.Max(0f, propagationFraction));
+            NeighbourFraction = Math.Min(1f, Math.Max(0f, neighbourFraction));
             FearCap = Math.Max(1f, fearCap);
             DefianceWindowHours = Math.Max(0.01f, defianceWindowHours);
             PoliceAttentionCap = Math.Max(1f, policeAttentionCap);
@@ -175,6 +177,19 @@ namespace LivingCity.Territory
 
         /// <summary>How much of an incident at one premise the whole block feels.</summary>
         public float PropagationFraction { get; }
+
+        /// <summary>
+        /// What the streets that TOUCH the one it happened on hear of it (FEAR-007 over
+        /// the GEO-008 block graph). A killing on the next corner is not a rumour a
+        /// quarter shrugs off, but it is not what the people who saw it feel either -
+        /// so it is a fraction, and a small one: well under the share a shop already
+        /// bleeds into its own block, because a wall is a bigger thing than a doorway.
+        ///
+        /// It goes one street out and stops. Fear is not a fluid and this is not a
+        /// diffusion pass: a bleed that itself bled would carry one act across the whole
+        /// island, which is the opposite of what "local fear" means.
+        /// </summary>
+        public float NeighbourFraction { get; }
 
         public float FearCap { get; }
 
@@ -333,6 +348,13 @@ namespace LivingCity.Territory
 
         public TerritoryFearConfig Config { get; set; }
 
+        /// <summary>
+        /// The block graph, so an act can be heard on the streets that touch the one it
+        /// happened on (GEO-008). OPTIONAL: a rig with no city files fear exactly as it
+        /// did before, which is what keeps every existing fear contract true.
+        /// </summary>
+        public ITerritoryGeography Geography { get; set; }
+
         /// <summary>Every block that fears anybody, or that the police are watching.</summary>
         public IReadOnlyList<TerritoryBlockId> Blocks => blockIds;
 
@@ -369,7 +391,44 @@ namespace LivingCity.Territory
                         value.GameHour, value.BusinessId),
                     Config);
 
+            BleedToNeighbours(value, blockShare, halfLife);
             return impact;
+        }
+
+        /// <summary>
+        /// The streets next door heard it (FEAR-007 over the GEO-008 graph). A fraction
+        /// of what this block felt, filed against the same family with the same fade -
+        /// it is the same act, heard from further away, not a second one.
+        ///
+        /// Deliberately NOT recursive and NOT re-propagated: this writes memory straight
+        /// onto each touching block rather than calling Record again, so one killing
+        /// reaches the streets around it and goes no further. It carries no business, so
+        /// no shop next door is made afraid of its own doorway by something that
+        /// happened round the corner, and it files no police attention - the precinct
+        /// was called to where it happened.
+        /// </summary>
+        void BleedToNeighbours(TerritoryFearEvent value, float blockShare, float halfLife)
+        {
+            var geography = Geography;
+            if (geography == null || Config.NeighbourFraction <= 0f)
+                return;
+
+            var share = blockShare * Config.NeighbourFraction;
+            if (Math.Abs(share) < 0.0001f)
+                return;
+
+            var touching = geography.Neighbours(value.BlockId);
+            for (var i = 0; touching != null && i < touching.Count; i++)
+            {
+                var next = touching[i];
+                if (!next.IsValid || next == value.BlockId)
+                    continue;
+                Block(next).Gang(value.GangId).Remember(
+                    new TerritoryFearMemoryEntry(
+                        value.Category, value.Visibility, share, halfLife,
+                        value.GameHour, default),
+                    Config);
+            }
         }
 
         /// <summary>

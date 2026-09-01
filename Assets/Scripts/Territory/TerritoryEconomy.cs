@@ -566,6 +566,77 @@ namespace LivingCity.Territory
                 ? Decayed(row, gameHour)
                 : 0f;
 
+        /// <summary>
+        /// The streets one man is known on, best first. A name is a fact about him that
+        /// the player has to be able to READ before he can plan around it - which
+        /// quarter to send him back to, and which one has forgotten him.
+        /// </summary>
+        public void CollectFor(int characterId, double gameHour,
+            List<(string Neighborhood, float Name)> into)
+        {
+            if (into == null)
+                return;
+            into.Clear();
+            foreach (var pair in rows)
+            {
+                if (pair.Key.CharacterId != characterId)
+                    continue;
+                var value = Decayed(pair.Value, gameHour);
+                if (value >= Faint)
+                    into.Add((pair.Key.Neighborhood, value));
+            }
+            into.Sort((a, b) =>
+            {
+                var byName = b.Name.CompareTo(a.Name);
+                return byName != 0
+                    ? byName
+                    : string.CompareOrdinal(a.Neighborhood, b.Neighborhood);
+            });
+        }
+
+        /// <summary>The men with a name on one street, best first - who the quarter
+        /// would recognise coming round the corner.</summary>
+        public void CollectOn(string neighborhood, double gameHour,
+            List<(int CharacterId, float Name)> into)
+        {
+            if (into == null)
+                return;
+            into.Clear();
+            if (string.IsNullOrEmpty(neighborhood))
+                return;
+            foreach (var pair in rows)
+            {
+                if (!string.Equals(pair.Key.Neighborhood, neighborhood,
+                        StringComparison.Ordinal))
+                    continue;
+                var value = Decayed(pair.Value, gameHour);
+                if (value >= Faint)
+                    into.Add((pair.Key.CharacterId, value));
+            }
+            into.Sort((a, b) =>
+            {
+                var byName = b.Name.CompareTo(a.Name);
+                return byName != 0 ? byName : a.CharacterId.CompareTo(b.CharacterId);
+            });
+        }
+
+        /// <summary>Under this a name has faded to nothing worth printing.</summary>
+        public const float Faint = 1f;
+
+        /// <summary>
+        /// What a name amounts to, in words. The player never sees the figure - the
+        /// same rule every other territory reading follows - and the quarters are the
+        /// ledger's own: a quarter of the cap each.
+        /// </summary>
+        public static string Word(float name)
+        {
+            if (name < Faint) return "unknown";
+            if (name < Cap * 0.25f) return "seen about";
+            if (name < Cap * 0.5f) return "known";
+            if (name < Cap * 0.75f) return "respected";
+            return "feared";
+        }
+
         /// <summary>The multiplier a man's presence carries on his own streets - the
         /// PRES-003 rank weight, extended (never a second presence channel). One at no
         /// name, up to 1.5 at a full one.</summary>

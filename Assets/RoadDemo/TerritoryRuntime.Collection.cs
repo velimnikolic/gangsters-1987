@@ -471,6 +471,12 @@ namespace RoadDemo
                 NoteReputationAt(businessId, observation.CharacterId,
                     2f + Mathf.Min(6f, paid / 150f));
 
+            // XP-003. The man who actually stood at this door banks the practice for
+            // it, the same table the ordered shakedown banks through - one lesson a
+            // day, so a long round does not turn into a training ground.
+            if (observation.CharacterId.IsValid)
+                CrewSkill.Collected(observation.CharacterId.Value, paid > 0);
+
             // The world's side of the stop: the man steps inside, and what he came out
             // with (or didn't) is said over the door.
             DoorBeat.VisitBusiness(actor, businessId, stop.Door);

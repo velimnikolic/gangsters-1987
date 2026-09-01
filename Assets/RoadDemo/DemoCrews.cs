@@ -748,6 +748,9 @@ namespace RoadDemo
             // The screen-edge paperwork: the picked lieutenant's file, the wire and the
             // key that opens the book. It reads this instance and never writes to it.
             gameObject.AddComponent<StreetHud>().Init(this);
+            // The one thing the campaign cannot say for itself: that it is over
+            // (RANK-002). It watches the runner and paints nothing until it has to.
+            gameObject.AddComponent<OutfitEnd>();
             // last onto the click chain, so the front card is asked first and hands the
             // click straight back to the crews if a man was standing in front of the door
             gameObject.AddComponent<FrontOverlay>().Init();
@@ -755,6 +758,9 @@ namespace RoadDemo
             // rival door a crew of ours has found. It polls the fronts rather than being
             // handed them: the families are seated after the crews are stood up.
             gameObject.AddComponent<TurfMarks>().Init(this);
+            // And what our own crews are AT, on the ground they are at it on (UI-008):
+            // a round being walked, an errand on its way, or men holding a street.
+            gameObject.AddComponent<CrewWorkMark>().Init(this);
             gameObject.AddComponent<FrontDeeds>();
             IntentOverlay = gameObject.AddComponent<CombatIntentOverlay>();
             IntentOverlay.Init(this);

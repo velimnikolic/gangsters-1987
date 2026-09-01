@@ -953,6 +953,18 @@ namespace RoadDemo
                 StrayRound(muzzle, line, reach, from);
                 return;
             }
+            // RANK-003. A round that would put the Don down is spent on his detail
+            // first, man by man: whoever is in front of him takes it, or loses his
+            // nerve and is not in front of him at all. Only when there is nobody left
+            // does the round reach him - which is what makes permadeath a consequence
+            // of how thin he left the detail rather than a coin that came up wrong.
+            if (DetailStoppedIt(target, stats.Damage))
+            {
+                CrewSkill.Landed(shooter.CharacterId);
+                target.UnderFire();
+                return;
+            }
+
             target.TakeHit(stats.Damage, shooter);
             // A round that found its mark is the only shooting practice the game
             // recognises - firing off a magazine into a wall teaches nobody anything.
@@ -1205,6 +1217,107 @@ namespace RoadDemo
                     _cracks.PlayOneShot(CrackClip, 0.3f);
                 }
             }
+        }
+
+        // ------------------------------------------------------------- the detail
+
+        static readonly List<int> DetailBefore = new List<int>();
+        System.Random _attemptRng;
+
+        /// <summary>
+        /// Somebody has come for the Don (RANK-003). Asked only when the round in the
+        /// air would actually put him down, because the detail is what stands between
+        /// him and DEATH, not what soaks up every graze - and because every ask spends
+        /// a man, so a burst of fire eats the detail one guard at a time exactly as
+        /// <see cref="Bodyguards.Attempt"/> describes.
+        ///
+        /// The roster half is the pure layer's: who stood, who ran, who died and who
+        /// went to a bed. This does the street's half - the body of a man the books
+        /// have just struck off falls where he stood rather than blinking out on the
+        /// next re-deal.
+        /// </summary>
+        /// <returns>True when the round was stopped and never reached him.</returns>
+        bool DetailStoppedIt(CrewWalker target, int damage)
+        {
+            if (target == null || target.Faction != 0 || target.Dead ||
+                target.Health - Mathf.Max(1, damage) > 0)
+                return false;
+
+            var director = PersonnelDirector.Instance;
+            var roster = director != null ? director.Roster : null;
+            var boss = roster?.FindBoss();
+            if (boss == null || boss.Id != target.CharacterId)
+                return false;
+
+            var detail = Bodyguards.DetailOf(roster);
+            if (detail == null || detail.HoodIds.Count == 0)
+                return false;
+
+            DetailBefore.Clear();
+            for (var i = 0; i < detail.HoodIds.Count; i++)
+            {
+                var guard = roster.Find(detail.HoodIds[i]);
+                if (guard != null && guard.Status == CharacterStatus.Active)
+                    DetailBefore.Add(guard.Id);
+            }
+            if (DetailBefore.Count == 0)
+                return false;
+
+            var outfit = OutfitDirector.Instance;
+            var day = outfit != null ? outfit.Campaign.Day : 1;
+            var where = BlockNameAt(target.Tf != null ? target.Tf.position : Vector3.zero);
+            // Off the city's own seed, like every other stream here: who stands and who
+            // runs when they come for the Don has to be the same twice.
+            _attemptRng ??= new System.Random(director.Seed * 31 + 977);
+
+            var outcome = Bodyguards.Attempt(roster, _attemptRng, day, where,
+                outfit != null ? outfit.Incidents : null);
+
+            // The books moved under the street: every man who is no longer standing was
+            // spent on this, and his body has to answer for it here.
+            for (var i = 0; i < DetailBefore.Count; i++)
+            {
+                var guard = roster.Find(DetailBefore[i]);
+                if (guard == null || guard.Status == CharacterStatus.Active)
+                    continue;
+                // A man the books know but the street never stood a body for - a scene
+                // with no city, or a guard already taken off - is simply not here to
+                // fall. Tf is checked because everything below writes through it.
+                if (!_byCharacter.TryGetValue(DetailBefore[i], out var body) ||
+                    body == null || body.Dead || body.Tf == null)
+                    continue;
+
+                if (guard.Status == CharacterStatus.Dead)
+                {
+                    // He goes down in front of the Don, and the street hears it: the
+                    // ordinary death path, minus the roster call the books already made.
+                    CrewGore.Death(body, GroundY, floor: !IsAboard(body) && !body.Riding);
+                    body.Kill();
+                    _deaths.Add((body, Time.time + DeathReportDelay));
+                    StreetAlarm.Death(body.Tf.position, StreetAlarm.DeathOf.Gangster);
+                }
+                else
+                {
+                    // Hit but living, or gone over the wall: he is off the street either
+                    // way, and the next re-deal takes his body with him.
+                    body.Tf.gameObject.SetActive(false);
+                }
+            }
+
+            director.Touch();
+            return !outcome.ReachedTheBoss;
+        }
+
+        /// <summary>The street a thing happened on, in the words the books use, or an
+        /// empty line where the city has no canonical block under it.</summary>
+        static string BlockNameAt(Vector3 world)
+        {
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime == null || !runtime.TryGetBlockAtWorld(world, out var blockId) ||
+                runtime.Geography == null ||
+                !runtime.Geography.TryGetBlock(blockId, out var definition))
+                return "";
+            return definition.DisplayName;
         }
 
         /// <summary>The reports for a weapon, falling back to the sidearm's: a kind with

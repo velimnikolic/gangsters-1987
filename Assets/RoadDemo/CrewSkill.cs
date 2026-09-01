@@ -42,6 +42,26 @@ namespace RoadDemo
             Learn(characterId, Activity.Getaway,
                 clean ? XpOutcome.Completed : XpOutcome.Partial);
 
+        /// <summary>
+        /// He walked the round and stood at the door (XP-003). Ordering a shakedown on
+        /// paper trains a man; sending the same man to do it on his feet has to train
+        /// him too, or the book teaches what the street does not. A door that paid is a
+        /// job done; a door that did not is the half-paid collection the table already
+        /// has a word for.
+        /// </summary>
+        public static void Collected(int characterId, bool paid) =>
+            Learn(characterId, Activity.RacketCollection,
+                paid ? XpOutcome.Completed : XpOutcome.Partial);
+
+        /// <summary>
+        /// He leaned on somebody at his own door - asked, threatened, or swung for it
+        /// (XP-003). What he learns is the same lesson the ordered shakedown banks,
+        /// because it is the same work.
+        /// </summary>
+        public static void Leaned(int characterId, bool gaveIn) =>
+            Learn(characterId, Activity.Leaning,
+                gaveIn ? XpOutcome.Completed : XpOutcome.Partial);
+
         static void Learn(int characterId, Activity activity, XpOutcome outcome)
         {
             if (characterId < 0)

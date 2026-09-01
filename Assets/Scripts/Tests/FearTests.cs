@@ -34,6 +34,7 @@ namespace LivingCity.Tests
             ViolenceBuysPoliceAttention(failures);
             ThePlayerReadsWordsAndATone(failures);
             FearRidesTheStoreWithoutWipingIt(failures);
+            TheStreetsThatTouchItHearIt(failures);
 
             return failures;
         }
@@ -211,8 +212,11 @@ namespace LivingCity.Tests
 
         /// <summary>
         /// An incident at one shop is felt hardest by that shop and, in a smaller way, by
-        /// the whole street. A block-wide act is not put through the same reduction twice,
-        /// and the next street along hears nothing - Phase 1 has no gossip.
+        /// the whole street. A block-wide act is not put through the same reduction twice.
+        ///
+        /// This ledger is bound to no city, so nothing reaches the next street: with no
+        /// block graph there is nothing to say which streets touch which. What happens
+        /// when there IS one is the case below.
         /// </summary>
         static void AnIncidentAtAPremiseIsFeltByTheWholeBlock(List<string> failures)
         {
@@ -243,12 +247,98 @@ namespace LivingCity.Tests
                 failures.Add("FEAR-007: a block-wide act was put through propagation anyway.");
         }
 
+        /// <summary>
+        /// And with a city under it, an act is heard on the streets that TOUCH the one
+        /// it happened on (FEAR-007 over the GEO-008 block graph). A fraction of what
+        /// that street felt, one street out and no further: fear is local, and a bleed
+        /// that bled would carry one killing across the island.
+        /// </summary>
+        static void TheStreetsThatTouchItHearIt(List<string> failures)
+        {
+            // Two blocks either side of one street, and a third far enough away that
+            // nothing about it touches either - the GEO-008 graph decides which is which
+            // and this test never says so itself.
+            var here = Plot("bleed:here", 0, 0f, 0f);
+            var next = Plot("bleed:next", 1, Span + Gap, 0f);
+            var away = Plot("bleed:away", 2, 900f, 900f);
+            var geography = new TerritoryGeography(
+                new List<TerritoryBlockDefinition> { here, next, away },
+                TerritoryGeographySettings.Default);
+
+            if (!Touches(geography, here.Id, next.Id))
+            {
+                failures.Add("FEAR-007: the two blocks under test are not neighbours - " +
+                             "the rig, not the rule, is wrong.");
+                return;
+            }
+
+            var config = TerritoryFearConfig.Default;
+            var ledger = new TerritoryFearLedger(config) { Geography = geography };
+            ledger.Record(Act(0, here.Id, TerritoryFearCategory.Killing, hour: 0));
+
+            var onIt = ledger.FearOf(here.Id, Gang(0), 0);
+            var nextDoor = ledger.FearOf(next.Id, Gang(0), 0);
+            var faraway = ledger.FearOf(away.Id, Gang(0), 0);
+
+            if (onIt <= 0f)
+            {
+                failures.Add("FEAR-007: the street it happened on felt nothing.");
+                return;
+            }
+            if (nextDoor <= 0f)
+                failures.Add("FEAR-007: the street next door heard nothing at all.");
+            if (!(nextDoor < onIt))
+                failures.Add("FEAR-007: the street next door felt it as hard as the one " +
+                             "it happened on.");
+            if (Off(nextDoor, onIt * config.NeighbourFraction, 0.05f))
+                failures.Add("FEAR-007: the street next door felt the wrong share (" +
+                             nextDoor.ToString("0.00") + " of " + onIt.ToString("0.00") + ").");
+            if (faraway != 0f)
+                failures.Add("FEAR-007: a block that touches nothing heard it anyway.");
+
+            // It goes ONE street out and stops. Were the bleed itself propagated, a
+            // killing would walk the whole island - which is the opposite of local fear.
+            var chain = new List<TerritoryBlockDefinition>
+            {
+                Plot("chain:0", 0, 0f, 0f),
+                Plot("chain:1", 1, Span + Gap, 0f),
+                Plot("chain:2", 2, (Span + Gap) * 2f, 0f),
+            };
+            var line = new TerritoryGeography(chain, TerritoryGeographySettings.Default);
+            var walked = new TerritoryFearLedger(config) { Geography = line };
+            walked.Record(Act(0, chain[0].Id, TerritoryFearCategory.Killing, hour: 0));
+            if (walked.FearOf(chain[2].Id, Gang(0), 0) != 0f)
+                failures.Add("FEAR-007: the bleed propagated itself two streets out.");
+
+            // A shop on the next street feels what its STREET feels and nothing of its
+            // own: the act was not done to it, and the bleed carries no premise with it.
+            // (A shopkeeper's reading is his street's fear plus his own by design, so
+            // the assertion is that his own half is empty - not that he feels nothing.)
+            if (Off(ledger.BusinessFear(next.Id, Shop, Gang(0), 0), nextDoor, 0.0001f))
+                failures.Add("FEAR-007: a shop on the next street took the act as its own.");
+        }
+
+        const float Span = 40f;
+        const float Gap = 20f;
+
+        static TerritoryBlockDefinition Plot(string id, int legacy, float x, float z) =>
+            new TerritoryBlockDefinition(
+                new TerritoryBlockId(id), legacy,
+                new TerritoryNeighborhoodId("hood:bleed"), "The Bleed", id,
+                new TerritoryBounds(x, z, Span, Span), "test", "res");
+
+        static bool Touches(
+            ITerritoryGeography geography, TerritoryBlockId one, TerritoryBlockId other)
+        {
+            var touching = geography.Neighbours(one);
+            for (var i = 0; touching != null && i < touching.Count; i++)
+                if (touching[i] == other)
+                    return true;
+            return false;
+        }
+
         // ------------------------------------------------------------------- FEAR-008
 
-        /// <summary>
-        /// The street remembers. Fear does not depend on anybody still standing there,
-        /// and the memory is bounded however long the soak runs.
-        /// </summary>
         static void AStreetRemembersAfterTheMenAreGone(List<string> failures)
         {
             var fear = new TerritoryFearLedger();

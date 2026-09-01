@@ -46,6 +46,9 @@ namespace RoadDemo
         [Header("Fear (GAN-90)")]
         [Tooltip("How much of an incident at one premise the whole block feels.")]
         [SerializeField, Range(0f, 1f)] float fearPropagationFraction = 0.35f;
+        [Tooltip("How much of it the streets that TOUCH that block hear (GEO-008). " +
+                 "It goes one street out and stops - fear is not a fluid.")]
+        [SerializeField, Range(0f, 1f)] float fearNeighbourFraction = 0.10f;
         [Tooltip("Game hours a house has to answer an open refusal.")]
         [SerializeField, Min(0.01f)] float defianceWindowHours = 12f;
         [SerializeField, Min(1f)] float policeAttentionCap = 100f;
@@ -212,6 +215,48 @@ namespace RoadDemo
         /// screen without walking every crew again for each one.</summary>
         public bool Occupied(TerritoryBlockId blockId) => occupiedBlocks.Contains(blockId);
 
+        static readonly List<TerritoryBlockId> QuarterMembers = new List<TerritoryBlockId>();
+
+        /// <summary>
+        /// A quarter's standing, counted off the streets that actually belong to it
+        /// (CTRL-013). ONE aggregation, served here: a page that counted blocks itself -
+        /// by rectangle, say - would disagree with this one wherever a quarter's
+        /// boundary and its block membership differ, and two answers to the same
+        /// question is the fault. Nothing is stored; a neighbourhood is not a thing
+        /// anybody takes, it is what its streets add up to.
+        /// </summary>
+        public bool TryReadNeighborhood(
+            TerritoryNeighborhoodId neighborhoodId, out TerritoryNeighborhoodStatus status)
+        {
+            status = default;
+            if (geography == null || control == null ||
+                !geography.TryGetNeighborhood(neighborhoodId, out var hood))
+                return false;
+
+            QuarterMembers.Clear();
+            for (var i = 0; i < hood.BlockIds.Count; i++)
+                QuarterMembers.Add(hood.BlockIds[i]);
+            status = TerritoryNeighborhoodReading.Read(neighborhoodId, QuarterMembers, control);
+            return true;
+        }
+
+        /// <summary>
+        /// The canonical neighbourhood id of one Core quarter. The blocks were registered
+        /// under exactly this identity at Init, so the map's quarter and the simulation's
+        /// neighbourhood are the same object rather than two things with the same name.
+        /// </summary>
+        public bool TryGetNeighborhoodOf(CoreQuarterId quarterId, out TerritoryNeighborhoodId id)
+        {
+            var plan = builder?.Territories?.Plan;
+            if (plan == null)
+            {
+                id = default;
+                return false;
+            }
+            id = TerritoryIdentity.CoreNeighborhood(plan.Seed, (int)quarterId);
+            return geography != null && geography.TryGetNeighborhood(id, out _);
+        }
+
         /// <summary>Every block one family has a man standing on, as of the last Presence
         /// tick. Collected in one pass so a view can ask the question once per repaint
         /// instead of once per block.</summary>
@@ -283,11 +328,15 @@ namespace RoadDemo
                 residualDepositPerHour, residualCap, residualHalfLifeHours));
             fear = new TerritoryFearLedger(new TerritoryFearConfig(
                 propagationFraction: fearPropagationFraction,
+                neighbourFraction: fearNeighbourFraction,
                 defianceWindowHours: defianceWindowHours,
                 policeAttentionCap: policeAttentionCap,
                 policeAttentionHalfLifeHours: policeAttentionHalfLifeHours,
                 policeEscalation: policeEscalation,
                 presenceFloor: presenceFloorUnderHeat));
+            // The block graph is what makes a street have neighbours at all (GEO-008):
+            // without it fear stops at the kerb, which is what it did until now.
+            fear.Geography = geography;
             racket = new TerritoryRacketLedger(new TerritoryRacketConfig(
                 complianceFearWeight, compliancePresenceWeight, complianceTroubleWeight,
                 complianceRivalWeight, complianceAcceptAt, complianceHesitateAt,
@@ -1670,14 +1719,16 @@ namespace RoadDemo
                 {
                     if (ResolveDemand(
                             observation.GangId, pending.BusinessId, out var verdict, out _))
-                        AnnounceVerdict(pending.BusinessId, threat: false, verdict);
+                        AnnounceVerdict(pending.BusinessId, threat: false, verdict,
+                            observation.CharacterId);
                     DoorBeat.VisitBusiness(actor, pending.BusinessId, pending.Door);
                 }
                 else if (pending.FollowUp == TerritoryRacketIntent.Threaten)
                 {
                     if (ResolveThreat(observation.GangId, pending.BusinessId,
                             observation.CharacterId, out var verdict, out _))
-                        AnnounceVerdict(pending.BusinessId, threat: true, verdict);
+                        AnnounceVerdict(pending.BusinessId, threat: true, verdict,
+                            observation.CharacterId);
                     DoorBeat.VisitBusiness(actor, pending.BusinessId, pending.Door);
                 }
             }
@@ -1688,8 +1739,18 @@ namespace RoadDemo
         /// happen. Only the player's own conversations come through here; a rival's
         /// demand is his business.</summary>
         void AnnounceVerdict(
-            TerritoryBusinessId businessId, bool threat, TerritoryComplianceVerdict verdict)
+            TerritoryBusinessId businessId, bool threat, TerritoryComplianceVerdict verdict,
+            TerritoryCharacterId actorId = default)
         {
+            // XP-003. Every doorstep lean comes through here - the walked-in one and the
+            // one a standing man is clicked into - so this is the one place the man who
+            // did the leaning banks what it taught him. An owner who folded is the job
+            // done; one who only wavered or refused is the half of it the table already
+            // has a word for.
+            if (actorId.IsValid)
+                CrewSkill.Leaned(actorId.Value,
+                    verdict == TerritoryComplianceVerdict.Accept);
+
             var name = businessId.Value;
             if (TryGetBusinessView(businessId, out var view))
                 name = view.BusinessName;
@@ -2340,7 +2401,7 @@ namespace RoadDemo
 
             // The same beat and the same banner the walked-in demand gets: the man at
             // the door steps inside, and what the owner said is put over the street.
-            AnnounceVerdict(command.BusinessId, threat: false, verdict);
+            AnnounceVerdict(command.BusinessId, threat: false, verdict, command.ActorId);
             if (TryGetBusinessApproach(command.BusinessId, out var door))
                 DoorBeat.VisitBusiness(
                     FindWalker(command.ActorId), command.BusinessId, door);
@@ -2370,7 +2431,7 @@ namespace RoadDemo
                     out var verdict, out _))
                 return TerritoryCommandExecution.Reject("The threat could not be resolved.");
 
-            AnnounceVerdict(command.BusinessId, threat: true, verdict);
+            AnnounceVerdict(command.BusinessId, threat: true, verdict, command.ActorId);
             if (TryGetBusinessApproach(command.BusinessId, out var door))
                 DoorBeat.VisitBusiness(
                     FindWalker(command.ActorId), command.BusinessId, door);

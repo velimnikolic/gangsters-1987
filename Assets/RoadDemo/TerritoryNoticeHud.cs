@@ -72,6 +72,7 @@ namespace RoadDemo
             events.ControlLost += OnLost;
             events.BusinessCompliance += OnCompliance;
             events.RoundSettled += OnRound;
+            events.Presence += OnPresence;
             listening = true;
         }
 
@@ -85,6 +86,7 @@ namespace RoadDemo
             events.ControlLost -= OnLost;
             events.BusinessCompliance -= OnCompliance;
             events.RoundSettled -= OnRound;
+            events.Presence -= OnPresence;
             listening = false;
         }
 
@@ -233,6 +235,69 @@ namespace RoadDemo
                 TooSoon(change.BlockId))
                 return;
             Say(BlockName(change.BlockId) + " — no longer ours");
+        }
+
+        /// <summary>
+        /// The two warnings a street gives BEFORE it changes hands (UI-007): our own
+        /// weight coming off it, and somebody else's going on. Both come off the one
+        /// Presence channel the simulation already publishes - there is no second
+        /// signal here and nothing is invented; the words are simply what a fall in our
+        /// number and a rise in theirs mean.
+        ///
+        /// Only on ground we have some claim to. A rival gathering men on a street we
+        /// have never stood on is not news, it is the city.
+        /// </summary>
+        void OnPresence(PresenceChanged change)
+        {
+            if (!change.BlockId.IsValid || runtime?.Control == null)
+                return;
+
+            // Only ground with our name on it. A rival gathering men on a street we have
+            // never stood on is not news, it is the city.
+            var leader = runtime.Control.LeaderOf(change.BlockId);
+            if (!leader.IsValid ||
+                leader.Value != LivingCity.Gangs.GangCatalog.PlayerGangId)
+                return;
+
+            // The threshold is the WORD, not a number of our own: the block panel reads
+            // presence off this same scale, so a notice fires exactly when what the
+            // player would read about this street has changed - and a number wobbling
+            // inside one word says nothing and is not said.
+            var scale = TerritoryPresentationProfile.Default.Presence;
+            var was = scale.Describe(change.Previous);
+            var now = scale.Describe(change.Current);
+            if (string.Equals(was, now, System.StringComparison.Ordinal))
+                return;
+
+            var ours = change.GangId.Value == LivingCity.Gangs.GangCatalog.PlayerGangId;
+            if (ours && change.Current >= change.Previous)
+                return;
+            if (!ours && change.Current <= change.Previous)
+                return;
+            if (TooSoonToWarn(change.BlockId))
+                return;
+
+            Say(ours
+                ? BlockName(change.BlockId) + " — our hold is weakening"
+                : BlockName(change.BlockId) + " — " +
+                  LivingCity.Gangs.GangRegistry.NameOf(change.GangId.Value) +
+                  " is working it harder");
+        }
+
+        /// <summary>A warning is a slower thing than an announcement: a street that is
+        /// slipping goes on slipping for a while, and it does not need saying every few
+        /// seconds while it does.</summary>
+        const float WarnQuietSeconds = 45f;
+        readonly Dictionary<TerritoryBlockId, float> warned =
+            new Dictionary<TerritoryBlockId, float>();
+
+        bool TooSoonToWarn(TerritoryBlockId blockId)
+        {
+            if (warned.TryGetValue(blockId, out var last) &&
+                Time.unscaledTime - last < WarnQuietSeconds)
+                return true;
+            warned[blockId] = Time.unscaledTime;
+            return false;
         }
 
         /// <summary>

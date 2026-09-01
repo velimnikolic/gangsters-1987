@@ -475,15 +475,24 @@ namespace LivingCity.Personnel
                 if (!lieutenantIds.Add(crew.LieutenantId))
                     into.Add("ORG: Lieutenant " + crew.LieutenantId + " heads more than one branch.");
 
+                // The Boss's bodyguard detail is a crew he leads HIMSELF (RANK-003), and
+                // it is the one branch whose head is not a Lieutenant. He answers to
+                // nobody, so leading it gives him neither a command parent nor an edge
+                // in the graph - an edge here would make the root its own parent and
+                // read as a cycle.
+                var ownDetail = crew.LieutenantId == roster.BossId;
                 var lieutenant = roster.Find(crew.LieutenantId);
                 if (lieutenant == null)
                     into.Add("ORG: branch " + crew.Id + " references missing Lieutenant " +
                              crew.LieutenantId + ".");
-                else if (lieutenant.Rank != Rank.Lieutenant)
+                else if (!ownDetail && lieutenant.Rank != Rank.Lieutenant)
                     into.Add("ORG: branch " + crew.Id + " parent " + lieutenant.Id +
                              " is " + lieutenant.Rank + ", not Lieutenant.");
-                CountParent(parentCounts, crew.LieutenantId);
-                graphParents[crew.LieutenantId] = roster.BossId;
+                if (!ownDetail)
+                {
+                    CountParent(parentCounts, crew.LieutenantId);
+                    graphParents[crew.LieutenantId] = roster.BossId;
+                }
 
                 var local = new HashSet<int>();
                 for (var h = 0; h < crew.HoodIds.Count; h++)

@@ -1067,36 +1067,27 @@ namespace RoadDemo
         string QuarterReading(TurfDistrict district)
         {
             var runtime = TerritoryRuntime.Instance;
-            var control = runtime?.Control;
-            var geography = runtime?.Geography;
-            if (control == null || geography == null)
+            if (runtime == null || district == null)
                 return "";
 
-            int outright = 0, heldStreets = 0, contested = 0, influenced = 0, quiet = 0;
-            var ids = geography.BlockIds;
-            for (int i = 0; i < ids.Count; i++)
-            {
-                if (!geography.TryGetBlock(ids[i], out var definition))
-                    continue;
-                var centre = definition.Center;
-                if (!district.World.Contains(new Vector2(centre.X, centre.Z)))
-                    continue;
-
-                switch (control.StateOf(ids[i]))
-                {
-                    case LivingCity.Territory.TerritoryControlState.Dominated: outright++; break;
-                    case LivingCity.Territory.TerritoryControlState.Controlled: heldStreets++; break;
-                    case LivingCity.Territory.TerritoryControlState.Contested: contested++; break;
-                    case LivingCity.Territory.TerritoryControlState.Influenced: influenced++; break;
-                    default: quiet++; break;
-                }
-            }
-
-            if (outright + heldStreets + contested + influenced + quiet == 0)
+            // CTRL-013: the ONE aggregate, off canonical membership. This page used to
+            // count blocks itself by district rectangle, which is a second answer to the
+            // same question and disagrees with the first wherever a quarter's boundary
+            // and its block membership differ.
+            if (!runtime.TryGetNeighborhoodOf(district.TerritoryId, out var hoodId) ||
+                !runtime.TryReadNeighborhood(hoodId, out var status) ||
+                status.Blocks == 0)
                 return "";
 
-            return "\nSTREETS: " + outright + " outright · " + heldStreets + " held · " +
-                   contested + " contested · " + influenced + " leaning · " + quiet + " quiet";
+            var line = "\nSTREETS: " + status.Dominated + " outright · " +
+                       status.Controlled + " held · " + status.Contested + " contested · " +
+                       status.Influenced + " leaning · " + status.Neutral + " quiet";
+            if (status.Leader.IsValid)
+                line += "\nMOST OF IT: " +
+                        (status.Leader.Value == LivingCity.Gangs.GangCatalog.PlayerGangId
+                            ? "ours"
+                            : LivingCity.Gangs.GangRegistry.NameOf(status.Leader.Value));
+            return line;
         }
 
         /// <summary>
@@ -1126,16 +1117,11 @@ namespace RoadDemo
                     "\nRIVALS: " + view.RivalPresence;
 
             // Responsibility is a different claim from control and is printed as one: a
-            // street can be somebody's to answer for and nobody's to hold.
-            if (runtime.DebugTruth != null &&
-                runtime.DebugTruth.TryGetBlock(blockId, out var truth) &&
-                truth.Responsibility.Responsibility.IsAssigned)
-            {
-                var who = truth.Responsibility.LieutenantName.Length > 0
-                    ? truth.Responsibility.LieutenantName
-                    : truth.Responsibility.BossName;
-                line += "\nANSWERS FOR IT: " + (who.Length > 0 ? who : "assigned");
-            }
+            // street can be somebody's to answer for and nobody's to hold. Off the
+            // player's own presentation model (UI-001) - a player page that reached into
+            // the debug truth query is exactly the split SIM-007 and UI-009 drew.
+            if (view.AnswersForIt.Length > 0)
+                line += "\nANSWERS FOR IT: " + view.AnswersForIt;
 
             line += ShopsOn(runtime, blockId);
             line += RecentOn(runtime, blockId);

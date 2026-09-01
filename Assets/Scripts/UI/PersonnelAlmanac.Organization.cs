@@ -106,6 +106,7 @@ namespace LivingCity.UI
         /// <summary>Which branch rosters are open, and whether the pool's is.</summary>
         readonly HashSet<int> organizationOpenBranches = new HashSet<int>();
         bool organizationPoolOpen = true;
+        bool organizationDetailOpen;
 
         /// <summary>The block whose "who answers" menu is down, if any.</summary>
         TerritoryBlockId organizationBlockMenu;
@@ -300,6 +301,10 @@ namespace LivingCity.UI
             var spineTop = cursor + 4f;
             cursor += 12f;
 
+            // His own crew comes first, above the lieutenants, because it is the only
+            // branch he leads himself.
+            cursor = BuildDetailBranch(cursor);
+
             for (var i = 1; i < organizationLeaders.Count; i++)
                 cursor = BuildLieutenantBranch(query, organizationLeaders[i], cursor);
 
@@ -335,7 +340,10 @@ namespace LivingCity.UI
             const float meterMax = 330f;
             const float pad = 12f;
             const float textX = plateW + gutter;
-            const float cardH = headH + 4f;
+            // Three ceilings stack in the right-hand column - men, lieutenants, blocks -
+            // and three of them stand taller than the 124-unit head, so the card is
+            // measured off the column rather than clipping it.
+            var cardH = Mathf.Max(headH + 4f, 14f + MeterHeight() * 3f + 16f + 14f);
 
             // The Boss always keeps one capacity column on his right. Let that column
             // take a measured share of the card instead of dropping both meters into a
@@ -390,11 +398,24 @@ namespace LivingCity.UI
             // figure on his card is the city, not his own paperwork.
             var held = new CapacityMeasure(CountHeldBlocks(), capacity.Blocks.Maximum);
 
-            var took = Meter(card, meterX, 14f, meterW, "MEN ON THE BOOKS",
-                capacity.Manpower, "man", "men", dark: true);
-            Meter(card, meterX, 14f + took + 8f, meterW, "BLOCKS THE OUTFIT HOLDS",
+            // Span of control (RANK-002) stands beside the other two ceilings rather
+            // than waiting to be discovered by a refusal: a Boss who can hold no more
+            // branches must be able to READ that before he tries to make one.
+            var span = member != null
+                ? new CapacityMeasure(
+                    Command.LieutenantsHeld(director.Roster),
+                    Command.LieutenantCap(member))
+                : default;
+
+            var meterY = 14f;
+            meterY += Meter(card, meterX, meterY, meterW, "MEN ON THE BOOKS",
+                capacity.Manpower, "man", "men", dark: true) + 8f;
+            meterY += Meter(card, meterX, meterY, meterW, "LIEUTENANTS UNDER HIM",
+                span, "lieutenant", "lieutenants", dark: true) + 8f;
+            meterY += Meter(card, meterX, meterY, meterW, "BLOCKS THE OUTFIT HOLDS",
                 held, "block", "blocks", dark: true);
-            var height = cardH;
+
+            var height = Mathf.Max(cardH, meterY + 14f);
             card.sizeDelta = new Vector2(organizationW, height);
 
             // The file's own corner marks, top right and bottom right: what a photograph
@@ -533,6 +554,75 @@ namespace LivingCity.UI
             DottedVRule(organizationColumn, BranchSpineX, -top,
                 Mathf.Max(0f, cursor - top - 6f), LedgerV2.Hair);
             return cursor + 10f;
+        }
+
+        /// <summary>
+        /// THE DETAIL (RANK-003): the men who stand between the Boss and the street.
+        /// It reads as a branch because it IS one - a crew the Boss leads himself - so
+        /// a guard costs a place at his cap and draws full wages while he learns
+        /// almost nothing. That is the whole decision: protection is never free, and a
+        /// thin detail is what makes a hit on the Don land.
+        /// </summary>
+        float BuildDetailBranch(float cursor)
+        {
+            var detail = director != null ? director.BodyguardDetail() : null;
+            var guards = new List<OrganizationPerson>();
+            if (detail != null)
+                for (var i = 0; i < detail.HoodIds.Count; i++)
+                {
+                    var guard = Person(detail.HoodIds[i]);
+                    if (guard.IsValid)
+                        guards.Add(guard);
+                }
+
+            var picked = organizationPickedHoodId >= 0
+                ? Person(organizationPickedHoodId)
+                : default;
+
+            Stub(cursor + 8f);
+            var terse = organizationW < NarrowColumn;
+            var hint = guards.Count == 0
+                ? terse
+                    ? "THE DETAIL · NOBODY STANDS WITH HIM"
+                    : "THE DETAIL · NOBODY STANDS WITH HIM — THE NEXT SHOT REACHES HIM"
+                : terse
+                    ? "THE DETAIL · " + guards.Count +
+                      (guards.Count == 1 ? " MAN STANDING" : " MEN STANDING")
+                    : "THE DETAIL · " + guards.Count +
+                      (guards.Count == 1 ? " MAN STANDS" : " MEN STAND") +
+                      " IN FRONT OF HIM — FULL WAGES, NO EARNINGS";
+            var hintLine = Line(organizationColumn, LedgerStyle.MonoBold, 11f,
+                guards.Count == 0 ? LedgerV2.Red : LedgerV2.Boss,
+                BranchX + 8f, -cursor, organizationW - BranchX - 8f, LineBox(11f), hint);
+            hintLine.overflowMode = TextOverflowModes.Ellipsis;
+
+            var top = cursor + 16f;
+            cursor += 22f;
+            var contentX = BranchContentX;
+
+            if (picked.IsValid)
+            {
+                var hoodId = picked.Id;
+                var width = organizationW - contentX;
+                LedgerV2.Button(organizationColumn,
+                    "FILE · PUT " + FirstName(picked.Name).ToUpperInvariant() +
+                    " ON THE DETAIL", contentX, -cursor, width, 30f,
+                    () => FileDetailPosting(hoodId), red: true, size: 10f);
+                cursor += 38f;
+            }
+
+            cursor = BuildFaceStrip(guards, contentX, cursor, "THE DETAIL",
+                guards.Count == 0
+                    ? "NOBODY IN FRONT OF HIM"
+                    : guards.Count + (guards.Count == 1 ? " GUARD" : " GUARDS"),
+                organizationDetailOpen, ToggleDetail);
+
+            if (organizationDetailOpen)
+                cursor = BuildRosterGrid(guards, contentX, cursor, recall: true);
+
+            DottedVRule(organizationColumn, BranchSpineX, -top,
+                Mathf.Max(0f, cursor - top - 6f), LedgerV2.Hair);
+            return cursor + 8f;
         }
 
         float BuildPoolBranch(float cursor)
@@ -1236,6 +1326,11 @@ namespace LivingCity.UI
         /// it edge to edge. A framed track with an inset fill reads as an empty box with
         /// a sliver in it at the fractions this page actually shows - 2 of 50 is four
         /// per cent, and four per cent of a bordered box is the border.</summary>
+        /// <summary>What one meter stands, label to note. Independent of where it is
+        /// put, so a card can be measured before its column is drawn.</summary>
+        static float MeterHeight(float labelSize = 10f) =>
+            LineBox(labelSize) + 4f + MeterTrackH + 3f + LineBox(10f);
+
         const float MeterTrackH = 7f;
 
         static void MeterBar(Transform card, float x, float top, float width,
@@ -1385,6 +1480,12 @@ namespace LivingCity.UI
             dirty = true;
         }
 
+        void ToggleDetail()
+        {
+            organizationDetailOpen = !organizationDetailOpen;
+            dirty = true;
+        }
+
         void PickHood(int hoodId)
         {
             organizationPickedHoodId = organizationPickedHoodId == hoodId ? -1 : hoodId;
@@ -1459,6 +1560,36 @@ namespace LivingCity.UI
                 var result = SubmitHoodAssignment(hoodId, target);
                 return result.Ok
                     ? Outfit.FilingRuling.Grant("he reports to " + target.Name + " from today")
+                    : Outfit.FilingRuling.Refuse(result.Reason);
+            });
+        }
+
+        /// <summary>
+        /// Puts one man in front of the Don. Filed like every other posting, and
+        /// refused for the same reason a branch refuses one: the detail eats the Boss's
+        /// own manpower cap, so a full Boss cannot stand another guard up.
+        /// </summary>
+        void FileDetailPosting(int hoodId)
+        {
+            var hood = Person(hoodId);
+            if (!hood.IsValid)
+                return;
+
+            organizationPickedHoodId = -1;
+            FileOrder(hood.Name + " put on the Boss's detail.", () =>
+            {
+                var query = director != null ? director.Organization : null;
+                if (query == null || !query.TryGetBoss(out var boss))
+                    return Outfit.FilingRuling.Refuse(LedgerText.ReasonNoBoss);
+
+                var manpower = query.CapacityOf(boss.Id).Manpower;
+                if (!Outfit.OutfitFilingRules.AcceptsAnotherMan(manpower))
+                    return Outfit.FilingRuling.Refuse(
+                        Outfit.OutfitFilingRules.ManRefusal(boss.Name, manpower));
+
+                var result = director.AssignToDetail(hoodId);
+                return result.Ok
+                    ? Outfit.FilingRuling.Grant("he stands with the Don from today")
                     : Outfit.FilingRuling.Refuse(result.Reason);
             });
         }
@@ -1950,6 +2081,13 @@ namespace LivingCity.UI
             person.IsAvailable && person.Rank == Rank.Hood &&
             person.Assignment != AssignmentKind.Pool;
 
+        /// <summary>Is he one of the men standing in front of the Don?</summary>
+        bool IsOnTheDetail(int id)
+        {
+            var detail = director != null ? director.BodyguardDetail() : null;
+            return detail != null && detail.HoodIds.Contains(id);
+        }
+
         /// <summary>What a man is actually doing, in the sheet's own words.</summary>
         string HoodDuty(OrganizationPerson person)
         {
@@ -1959,6 +2097,8 @@ namespace LivingCity.UI
                 return "commands a branch";
             if (person.Assignment == AssignmentKind.Pool)
                 return "no post · earning nothing";
+            if (IsOnTheDetail(person.Id))
+                return "stands with the Don";
             if (TryObservedBlock(person.Id, out var blockName))
                 return "on the street · " + blockName;
             return person.Assignment == AssignmentKind.Front

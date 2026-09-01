@@ -126,6 +126,12 @@ namespace LivingCity.UI
             public string Duty;
             public bool Armed;
             public int Wage;
+
+            /// <summary>What THIS quarter makes of him (ECON-006), in words - empty
+            /// where the street has never heard of him. His name is his own and it
+            /// counts only where he is standing, so the block file is where it belongs.
+            /// </summary>
+            public string Known;
         }
 
         readonly List<BlockTrade> blockCardTrades = new List<BlockTrade>();
@@ -379,6 +385,13 @@ namespace LivingCity.UI
             runtime.CollectActors(blockCardId, blockCardActors);
             var roster = director != null ? director.Roster : null;
 
+            // The quarter this street belongs to - which is the ground a man's name is
+            // kept on. Read once for the whole card rather than per man.
+            var quarter = "";
+            if (runtime.Geography != null &&
+                runtime.Geography.TryGetBlock(blockCardId, out var here))
+                quarter = here.NeighborhoodName;
+
             for (var i = 0; i < blockCardActors.Count; i++)
             {
                 var actor = blockCardActors[i];
@@ -394,6 +407,7 @@ namespace LivingCity.UI
                     Name = member != null ? member.FullName : actor.DisplayName,
                     Duty = ActivityWord(actor.Activity),
                     Wage = member != null ? Outfit.Wages.WageFor(member) : 0,
+                    Known = KnownHere(runtime, actor.CharacterId.Value, quarter),
                 };
 
                 if (roster != null && member != null)
@@ -1421,7 +1435,8 @@ namespace LivingCity.UI
             var name = LedgerV2.Name(row, 30f, -4f, textW, hand.Name, 13f, LedgerV2.Ink);
             name.overflowMode = TextOverflowModes.Ellipsis;
             var duty = LedgerV2.Mono(row, 30f, -20f, textW,
-                hand.Duty + (hand.Wage > 0 ? " · " + LedgerText.Cash(hand.Wage) + "/day" : ""),
+                hand.Duty + (hand.Wage > 0 ? " · " + LedgerText.Cash(hand.Wage) + "/day" : "") +
+                (hand.Known.Length > 0 ? " · " + hand.Known + " here" : ""),
                 9f, LedgerV2.Label, 1f);
             duty.overflowMode = TextOverflowModes.Ellipsis;
 
@@ -1429,6 +1444,18 @@ namespace LivingCity.UI
             LedgerV2.Button(row, "PULL", width - pullW, -5f, pullW, 24f,
                 () => FileHoodRecall(manId), LedgerV2.Key.Ghost, 9f);
             return rowH;
+        }
+
+        /// <summary>What this quarter makes of one man, in words, or nothing where it
+        /// has never heard of him (ECON-006).</summary>
+        static string KnownHere(TerritoryRuntime runtime, int characterId, string quarter)
+        {
+            if (runtime == null || runtime.Reputation == null || quarter.Length == 0)
+                return "";
+            var name = runtime.Reputation.Of(characterId, quarter, runtime.GameHour);
+            return name < Territory.TerritoryReputationLedger.Faint
+                ? ""
+                : Territory.TerritoryReputationLedger.Word(name);
         }
 
         static string Initials(string first, string surname)

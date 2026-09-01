@@ -294,6 +294,59 @@ namespace LivingCity.Gameplay
                 "assigned directly to the boss", id);
         }
 
+        // ------------------------------------------------------------- the detail
+
+        /// <summary>
+        /// The men who stand between the Boss and the street (RANK-003). Not a second
+        /// structure: the detail is a Crew the Boss leads himself, so putting a man on
+        /// it is the ordinary crew assignment and every rule that already governs a
+        /// crew - his cap, his wages, the street's follow - governs this one unchanged.
+        /// </summary>
+        public OpResult AssignToDetail(int id)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+
+            var detail = Bodyguards.FormDetail(Roster);
+            if (detail == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+
+            return Commit(RosterOps.AssignToCrew(Roster, id, detail.Id),
+                "put on the Boss's detail", id);
+        }
+
+        /// <summary>The Boss's detail, or null while nobody stands with him.</summary>
+        public Crew BodyguardDetail() => Bodyguards.DetailOf(Roster);
+
+        // ------------------------------------------------------------- the bargain
+
+        /// <summary>
+        /// Yes to a man who asked for the rate (PSY-003). His envelope moves to what he
+        /// asked and the asking stops - the one answer that closes a pay gap for good.
+        /// </summary>
+        public OpResult GrantRaise(int id) =>
+            Apply(RosterOps.GrantRaise, id, "granted the rate he asked for");
+
+        /// <summary>
+        /// No. He draws what he drew and he remembers being told: the demand clears,
+        /// his loyalty takes the hit, and the underpaid clock is NOT reset - the ladder
+        /// goes on from where it was.
+        /// </summary>
+        public OpResult RefuseRaise(int id)
+        {
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+
+            // The nudge is a fact about the man, and the feed prints facts: route it
+            // onto the campaign's own change list so the ledger and the wire say the
+            // same thing about why his loyalty moved.
+            var changes = OutfitDirector.Instance != null
+                ? OutfitDirector.Instance.Runner.CharacterChanges
+                : null;
+            return Commit(RosterOps.RefuseRaise(Roster, id, changes),
+                "was refused the rate", id);
+        }
+
         public OpResult AssignToLieutenant(int id, int lieutenantId)
         {
             if (Roster == null)
