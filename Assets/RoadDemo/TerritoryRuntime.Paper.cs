@@ -250,6 +250,23 @@ namespace RoadDemo
                 ground * Command.PresenceFactorFor(house.Roster, characterId));
         }
 
+        /// <summary>
+        /// The canonical block behind a plan index. Orders carry the legacy number
+        /// because the job card is older than the geography; every reader that needs the
+        /// real block asks here rather than keeping its own table.
+        /// </summary>
+        public TerritoryBlockId BlockOfLegacy(int legacyBlockId)
+        {
+            if (geography == null || legacyBlockId < 0)
+                return default;
+            var blocks = geography.BlockIds;
+            for (var i = 0; i < blocks.Count; i++)
+                if (geography.TryGetBlock(blocks[i], out var definition) &&
+                    definition.LegacyBlockId == legacyBlockId)
+                    return blocks[i];
+            return default;
+        }
+
         /// <summary>A crew called off, or a house that has just been stood up: the
         /// posting goes.</summary>
         void ForgetPosting(int crewId) => postings.Remove(crewId);

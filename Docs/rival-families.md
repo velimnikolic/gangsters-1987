@@ -272,6 +272,34 @@ rota — a single frame never carries twenty of them.
 build and put a number in the table, `CoreDemoBuilder.rivalCrews` stays at 6 and
 everything above that runs on paper by the rule above.
 
+## Every order, and what it actually does
+
+A mind may only file an order that is BUILT (`Assets/Scripts/Outfit/OrderEffects.cs`).
+A person who files a stub can see nothing happened and stop; twenty families would file
+it every week for ever and the tally would read as a working economy.
+`gangsters_house_tests` asserts no mind ever files an unbuilt one.
+
+| order | built | what it does |
+|---|---|---|
+| Assault, SmashUp, Raid, Torch | ✔ | the street resolves it; the racket, the fear ledger and the shop all feel it |
+| Bomb | ✔ | shuts the premises for seven days (`BusinessShutdownCause.Bomb`, D12), otherwise as Torch |
+| Kill | ✔ | names a man; struck off HIS family's roster, his block hears it, they are owed 35 |
+| Kidnap | ✔ | names a man; off their books three days, a ransom printed in both books, they are owed 25. **Whether anybody pays is EPIC 10's** |
+| Guard | ✔ | men on the door (D10) |
+| Recruit | ✔ | a signing never fails; the man lands in the recruiting crew |
+| BuyPremises | ✔ | the deed moves to the house that ordered it |
+| Explore | ✔ | that block's doors and fronts become known **to that house** (`TurfKnowledge` is per house now) |
+| Audit | ✔ | every man of the crew who was short in the count stops, one printed line each |
+| RunBusiness | ✔ | a quarter of what the shop takes, for minding it — **not** a second `NetPerDay` |
+| SetUpBusiness | ✘ | refused. **The city has no vacant premises**: `BusinessPopulation` fills every eligible site and invents no vacancies, so there is nothing to open a business in. RIVAL-009 step 4 closed |
+| Bribe, EmployPolice, Donate | ✘ | any house may file one and the money moves; what they BUY is the police plan's (Phase 4) |
+| Extort, Intimidate, CollectProtection, AdjustProtection | ✘ | superseded by the racket's own doorstep chain |
+| Patrol, Ambush | ✘ | Patrol is `OperateInBlock` (D11); Ambush has no street behaviour |
+
+**RunBusiness used to pay twice.** A premises on the family's paper already settles its
+`NetPerDay` into the safe every midnight; a standing watch over the same door paid its
+own book figure on top. It is a bonus now (`OrderResolution.RunBusinessBonus`, D22).
+
 ## See also
 
 * `Docs/racket-collections.md` — the round ledger and the two clocks

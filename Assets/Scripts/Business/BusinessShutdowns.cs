@@ -11,6 +11,10 @@ namespace LivingCity.Business
         None,
         SmashUp,
         Arson,
+
+        /// <summary>Powder. A week shut, the same as a fire, and the same repair bill -
+        /// a blown-out front is a blown-out front however it went (D12).</summary>
+        Bomb,
     }
 
     /// <summary>
@@ -24,12 +28,16 @@ namespace LivingCity.Business
             double smashHours = 3d * 24d,
             double arsonHours = 7d * 24d,
             int smashRepairPrice = 1_000,
-            int arsonRepairPrice = 5_000)
+            int arsonRepairPrice = 5_000,
+            double bombHours = 7d * 24d,
+            int bombRepairPrice = 5_000)
         {
             SmashHours = Math.Max(0d, smashHours);
             ArsonHours = Math.Max(0d, arsonHours);
             SmashRepairPrice = Math.Max(0, smashRepairPrice);
             ArsonRepairPrice = Math.Max(0, arsonRepairPrice);
+            BombHours = Math.Max(0d, bombHours);
+            BombRepairPrice = Math.Max(0, bombRepairPrice);
         }
 
         public double SmashHours { get; }
@@ -37,13 +45,21 @@ namespace LivingCity.Business
         public int SmashRepairPrice { get; }
         public int ArsonRepairPrice { get; }
 
+        /// <summary>D12. Seven days, as a fire - the shop is not there any more either
+        /// way.</summary>
+        public double BombHours { get; }
+
+        public int BombRepairPrice { get; }
+
         public double DurationOf(BusinessShutdownCause cause) =>
             cause == BusinessShutdownCause.Arson ? ArsonHours
+            : cause == BusinessShutdownCause.Bomb ? BombHours
             : cause == BusinessShutdownCause.SmashUp ? SmashHours
             : 0d;
 
         public int RepairPriceOf(BusinessShutdownCause cause) =>
             cause == BusinessShutdownCause.Arson ? ArsonRepairPrice
+            : cause == BusinessShutdownCause.Bomb ? BombRepairPrice
             : cause == BusinessShutdownCause.SmashUp ? SmashRepairPrice
             : 0;
 
@@ -203,9 +219,14 @@ namespace LivingCity.Business
             if (!entries.TryGetValue(businessId, out var entry) ||
                 !IsActive(entry, gameHour))
                 return null;
-            if (entry.Cause == BusinessShutdownCause.Arson)
-                return cause == BusinessShutdownCause.Arson
-                    ? "the premises are already torched"
+            // A shop already blown out or burned out cannot be damaged again until it
+            // reopens: there is nothing left standing to damage.
+            if (entry.Cause == BusinessShutdownCause.Arson ||
+                entry.Cause == BusinessShutdownCause.Bomb)
+                return cause == entry.Cause
+                    ? (entry.Cause == BusinessShutdownCause.Bomb
+                        ? "the premises are already blown out"
+                        : "the premises are already torched")
                     : "the premises are burned out";
             if (entry.Cause == BusinessShutdownCause.SmashUp &&
                 cause == BusinessShutdownCause.SmashUp)

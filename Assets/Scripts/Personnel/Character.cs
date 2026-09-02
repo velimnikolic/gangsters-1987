@@ -47,6 +47,10 @@ namespace LivingCity.Personnel
         /// <summary>Ran from a fight and never came back: struck off like the dead - his
         /// line kept, his gear pooled, his post filled - but with no grave.</summary>
         Deserted,
+
+        /// <summary>Another family has him. He is off the books for as long as they hold
+        /// him and comes back in a bed, not on his feet (RIVAL-009).</summary>
+        Taken,
     }
 
     /// <summary>

@@ -439,6 +439,23 @@ namespace LivingCity.Gameplay
                 return;
             }
 
+            // THEY HAVE HIM (RIVAL-009 step 6). Off their books for three days, a
+            // ransom printed in both books, and a debt on the ladder.
+            if (job.Type == OrderType.Kidnap && job.TargetCharacterId >= 0)
+            {
+                TakeHim(job, whose);
+                return;
+            }
+
+            // A STREET LOOKED OVER (RIVAL-009). Explore brings back what is on a
+            // block - its doors and its fronts - for the house that sent the men, and
+            // for nobody else. It is aimed at ground, not at a door.
+            if (job.Type == OrderType.Explore)
+            {
+                Learned(job, whose);
+                return;
+            }
+
             if (string.IsNullOrEmpty(job.TargetBusinessId))
                 return;
 
@@ -486,7 +503,12 @@ namespace LivingCity.Gameplay
                     RoadDemo.ShopDamage.ScorchBusiness(businessId);
                     break;
 
+                // POWDER SHUTS A SHOP FOR A WEEK (D12). Until now a bomb frightened the
+                // street and left the shop trading, which made it a louder Torch with
+                // none of the point.
                 case OrderType.Bomb:
+                    if (!ShutBusiness(businessId, Business.BusinessShutdownCause.Bomb))
+                        break;
                     RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
                         whose, businessId, Territory.TerritoryEscalationKind.PropertyDamage,
                         DoorOrders.ViolenceSeverity(job.Type));
@@ -527,6 +549,76 @@ namespace LivingCity.Gameplay
                 Version++;
                 return;
             }
+        }
+
+        /// <summary>
+        /// A MAN IN SOMEBODY'S CELLAR. He is off his own family's books for KidnapDays,
+        /// they are told what it would cost to have him back at once, and they are owed
+        /// for it. Whether anybody PAYS is EPIC 10's; this much is real, and it is real
+        /// for every house.
+        /// </summary>
+        void TakeHim(Job job, Territory.TerritoryGangId whose)
+        {
+            var underworld = Underworld.Current;
+            if (underworld == null)
+                return;
+
+            for (var g = 0; g < underworld.Count; g++)
+            {
+                var house = underworld.Of(g);
+                var man = house?.Roster?.Find(job.TargetCharacterId);
+                if (man == null || man.Gone || man.Status != Personnel.CharacterStatus.Active)
+                    continue;
+
+                Personnel.RosterOps.Taken(
+                    house.Roster, man.Id, Campaign.Day + OrderResolution.KidnapDays,
+                    "held by " + Gangs.GangCatalog.Names[whose.Value]);
+                house.Touch();
+
+                var word = Gangs.GangCatalog.Names[whose.Value] + " has " + man.FullName +
+                           " - $" + EconomyPrices.KidnapCut + " to have him back today";
+                var note = new Personnel.Incident(
+                    man.Id, word, Personnel.IncidentKind.AWordBetweenHouses,
+                    Campaign.Day, "", 0, word);
+                house.Runner.Incidents.Add(note);
+                underworld.Of(whose.Value)?.Runner.Incidents.Add(note);
+
+                if (house.GangId != whose.Value)
+                    underworld.Relations.Note(
+                        house.GangId, whose.Value, GrievanceKind.ManTaken);
+                Version++;
+                return;
+            }
+        }
+
+        /// <summary>What the men brought back: every door on that block, and every
+        /// family front standing on it, now known to the house that sent them.</summary>
+        void Learned(Job job, Territory.TerritoryGangId whose)
+        {
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            if (runtime?.Geography == null || !whose.IsValid)
+                return;
+
+            var blockId = runtime.BlockOfLegacy(job.TargetBlockId);
+            if (!blockId.IsValid)
+                return;
+
+            var here = runtime.Geography.BusinessesOf(blockId);
+            for (var i = 0; i < here.Count; i++)
+                RoadDemo.TurfKnowledge.LearnDoor(here[i].BusinessId.Value, whose.Value);
+
+            var fronts = RoadDemo.GangFront.All;
+            for (var i = 0; i < fronts.Count; i++)
+            {
+                var front = fronts[i];
+                if (front == null || !front.BusinessId.IsValid)
+                    continue;
+                if (runtime.Geography.TryGetBusinessBlock(
+                        front.BusinessId, out var frontBlock) && frontBlock == blockId)
+                    RoadDemo.TurfKnowledge.Learn(front, whose.Value);
+            }
+
+            Version++;
         }
 
         bool ShutBusiness(

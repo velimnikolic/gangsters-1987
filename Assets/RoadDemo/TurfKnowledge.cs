@@ -30,7 +30,25 @@ namespace RoadDemo
         /// does not.</summary>
         public const float LearnRange = 28f;
 
-        static readonly HashSet<string> known = new HashSet<string>();
+        /// <summary>
+        /// WHAT EACH FAMILY KNOWS. Keyed by house, because knowing a street is a thing
+        /// a family DOES - it walks it, or it sends somebody to look - and twenty
+        /// families each know a different city.
+        ///
+        /// The player is house 0 and reads exactly what he always did.
+        /// </summary>
+        static readonly Dictionary<int, HashSet<string>> known =
+            new Dictionary<int, HashSet<string>>();
+
+        static HashSet<string> Book(int gangId)
+        {
+            if (!known.TryGetValue(gangId, out var book))
+            {
+                book = new HashSet<string>();
+                known.Add(gangId, book);
+            }
+            return book;
+        }
 
         /// <summary>
         /// WHOSE FACES WE KNOW. A man of another family whose name our men have read on
@@ -69,23 +87,48 @@ namespace RoadDemo
 
         /// <summary>Ours needs no discovering: a man knows where he works.</summary>
         public static bool IsKnown(GangFront front) =>
+            IsKnown(front, LivingCity.Gangs.GangCatalog.PlayerGangId);
+
+        public static bool IsKnown(GangFront front, int gangId) =>
             front != null &&
-            (front.GangId == LivingCity.Gangs.GangCatalog.PlayerGangId ||
-             known.Contains(KeyOf(front)));
+            (front.GangId == gangId || Book(gangId).Contains(KeyOf(front)));
 
         /// <summary>Learn a place. True only the first time, so a caller can log or
         /// announce a discovery without keeping its own set.</summary>
-        public static bool Learn(GangFront front)
+        public static bool Learn(GangFront front) =>
+            Learn(front, LivingCity.Gangs.GangCatalog.PlayerGangId);
+
+        public static bool Learn(GangFront front, int gangId)
         {
             var key = KeyOf(front);
-            if (key.Length == 0 || !known.Add(key))
+            if (key.Length == 0 || !Book(gangId).Add(key))
                 return false;
 
-            Version++;
+            if (gangId == LivingCity.Gangs.GangCatalog.PlayerGangId)
+                Version++;
             return true;
         }
 
-        public static int Count => known.Count;
+        /// <summary>A door learnt by its own id - what an EXPLORE order brings back
+        /// about a street nobody of ours has walked.</summary>
+        public static bool LearnDoor(string businessId, int gangId)
+        {
+            if (string.IsNullOrEmpty(businessId) || !Book(gangId).Add(businessId))
+                return false;
+            if (gangId == LivingCity.Gangs.GangCatalog.PlayerGangId)
+                Version++;
+            return true;
+        }
+
+        public static bool IsKnownDoor(string businessId, int gangId) =>
+            !string.IsNullOrEmpty(businessId) && Book(gangId).Contains(businessId);
+
+        public static int Count =>
+            known.TryGetValue(LivingCity.Gangs.GangCatalog.PlayerGangId, out var book)
+                ? book.Count
+                : 0;
+
+        public static int CountOf(int gangId) => Book(gangId).Count;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()

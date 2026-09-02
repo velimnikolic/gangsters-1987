@@ -84,6 +84,11 @@ namespace LivingCity.Outfit
         /// short enough that it is not a death sentence dressed up.</summary>
         public const int MisfireDays = 6;
 
+        /// <summary>D22. How long another family keeps a man it has taken, before it
+        /// lets him go - and, because he does not come back whistling, how long he then
+        /// spends in a bed.</summary>
+        public const int KidnapDays = 3;
+
         /// <summary>A quiet job draws nothing at all; a merely careful one draws half.
         /// 3.5 stars - the same bar the sheet already uses for its harder floors.</summary>
         public const int QuietHalfSteps = 7;
@@ -129,9 +134,27 @@ namespace LivingCity.Outfit
 
         /// <summary>Money the job pays when it comes off, the crew's best man at its own
         /// trade scaling the take.</summary>
+        /// <summary>
+        /// D22. WHAT A CREW MINDING A SHOP IS WORTH, as a share of what the shop makes.
+        ///
+        /// A premises on the family's own paper already pays its NetPerDay into the safe
+        /// every midnight (OutfitDirector.SettleBusinessDay). A standing RunBusiness over
+        /// the same door used to pay its own book figure on top, which was the same shop
+        /// paying twice - once for being owned and once for being watched. It is a
+        /// BONUS now: men on the premises make it go a quarter better, and that is all.
+        /// </summary>
+        public const float RunBusinessBonus = 0.25f;
+
         public static int PayoutFor(
             in OrderSpec spec, int targetCount, int statHalfSteps, int unitWorth = 0)
         {
+            // MINDING A SHOP IS NOT OWNING IT. See RunBusinessBonus.
+            if (spec.Type == OrderType.RunBusiness)
+                return unitWorth > 0
+                    ? (int)(unitWorth * RunBusinessBonus *
+                            (targetCount < 1 ? 1 : targetCount))
+                    : 0;
+
             // What the target is actually worth beats the book figure. A round of
             // collections off ten barbers and a round off a nightclub were the same
             // sixty dollars while this read a constant.
@@ -264,6 +287,13 @@ namespace LivingCity.Outfit
             var recruited = spec.Type == OrderType.Recruit
                 ? BringHimIn(roster, crew, rng, completed ? stat : 0)
                 : -1;
+
+            // THE BOOKS ARE GONE THROUGH (RIVAL-009). An audit is not a job that MIGHT
+            // catch a short count the way every paying job might - it is a lieutenant
+            // sitting down with the numbers, and what it finds it ends. A failed audit
+            // finds nothing, which is the whole of its risk.
+            if (spec.Type == OrderType.Audit && completed)
+                Audit(job, roster, crew, incidents);
 
             var casualty = Misfire(spec, job, roster, crew, rng, completed);
             // A man who walked into guards and came off worst goes to a bed for the same
@@ -441,6 +471,36 @@ namespace LivingCity.Outfit
                 return -1;
             CrewKit.MenOnJob(roster, crew, job.Men, Scratch);
             return Scratch.Count == 0 ? -1 : Scratch[rng.Next(Scratch.Count)];
+        }
+
+        /// <summary>
+        /// Every man of the crew who has been taking a cut off the top stops taking it,
+        /// and the book says who. Nothing else changes: an audit is a count, not a
+        /// punishment - what the family does about a name on that list is its own
+        /// decision.
+        /// </summary>
+        static void Audit(Job job, Roster roster, Crew crew, List<Incident> incidents)
+        {
+            if (roster == null || crew == null)
+                return;
+
+            CrewKit.MenOnJob(roster, crew, crew.HoodIds.Count + 1, Scratch);
+            for (var i = 0; i < Scratch.Count; i++)
+            {
+                var man = roster.Find(Scratch[i]);
+                if (man == null || man.Gone || !man.Skimming)
+                    continue;
+
+                man.Skimming = false;
+                RapSheet.Add(man, "", "Short in the count", "Established");
+                incidents?.Add(new Incident(
+                    man.Id, man.FullName, IncidentKind.CaughtSkimming,
+                    job != null ? job.IssuedDay : 0,
+                    job != null ? job.TargetLabel : "", 0,
+                    IncidentText.Line(
+                        IncidentKind.CaughtSkimming, man.FullName,
+                        job != null ? job.TargetLabel : "")));
+            }
         }
 
         static int Misfire(in OrderSpec spec, Job job, Roster roster, Crew crew,

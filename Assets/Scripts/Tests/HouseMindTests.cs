@@ -43,6 +43,10 @@ namespace LivingCity.Tests
             MenOnTheDoorMakeTheAttackHarder(failures);
             NobodyBuysBelowTheReserve(failures);
             TheMindReadsNothingButItsView(failures);
+            NoMindFilesAnOrderThatDoesNothing(failures);
+            AnAuditEndsEverySkim(failures);
+            PowderShutsAShopForAWeek(failures);
+            AManTakenComesBackInABed(failures);
             TheMvpRunsForEverySeed(failures);
 
             return failures;
@@ -931,6 +935,135 @@ namespace LivingCity.Tests
                     failures.Add("HOUSE-005: HouseMind.cs:" + (i + 1) +
                                  " reaches past the view.");
             }
+        }
+
+        // ------------------------------------------------------------------ RIVAL-009
+
+        /// <summary>
+        /// A mind may only file an order that DOES something. A person who files a stub
+        /// can see nothing happened and stop; twenty families would file it every week
+        /// for ever and the tally would read as a working economy.
+        /// </summary>
+        static void NoMindFilesAnOrderThatDoesNothing(List<string> failures)
+        {
+            var config = HouseMindConfig.Default;
+            var intents = new List<HouseIntent>();
+
+            for (var seed = 1; seed <= 8; seed++)
+            {
+                var city = new RigCity(seed, 1 + seed);
+                city.Stand(city.BlockIds[0], city.Mine, 60f);
+                city.Attack(city.BlockIds[0], new TerritoryGangId(19));
+
+                for (var think = 0; think < 30; think++)
+                {
+                    city.Hour += 4.0;
+                    HouseMind.Think(city.Look(), config, intents);
+                    for (var i = 0; i < intents.Count; i++)
+                    {
+                        if (intents[i].Kind != HouseIntentKind.Job)
+                            continue;
+                        if (intents[i].Job == null)
+                        {
+                            failures.Add("RIVAL-009: a job intent with no order on it.");
+                            continue;
+                        }
+                        if (!OrderEffects.Built(intents[i].Job.Type))
+                            failures.Add("RIVAL-009: a mind filed " +
+                                         intents[i].Job.Type + ", which does nothing.");
+                    }
+                }
+            }
+        }
+
+        /// <summary>An audit is a count, and what it finds it ends: every man of the
+        /// crew who was taking a cut stops, and the book says who.</summary>
+        static void AnAuditEndsEverySkim(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(17, 2);
+            if (roster.Crews.Count == 0)
+            {
+                failures.Add("RIVAL-009: the fixture dealt no crew to audit.");
+                return;
+            }
+
+            var crew = roster.Crews[0];
+            var skimming = 0;
+            for (var i = 0; i < crew.HoodIds.Count; i++)
+            {
+                var man = roster.Find(crew.HoodIds[i]);
+                if (man == null || man.Gone)
+                    continue;
+                man.Skimming = true;
+                skimming++;
+            }
+            if (skimming == 0)
+            {
+                failures.Add("RIVAL-009: the fixture had nobody to catch.");
+                return;
+            }
+
+            var incidents = new List<Incident>();
+            var job = new Job { CrewId = crew.Id, Type = OrderType.Audit, Men = 4 };
+            OrderResolution.Resolve(
+                OrderTable.SpecOf(OrderType.Audit), job, roster, crew,
+                new System.Random(1), OrderOutcome.Completed, incidents);
+
+            for (var i = 0; i < crew.HoodIds.Count; i++)
+            {
+                var man = roster.Find(crew.HoodIds[i]);
+                if (man != null && !man.Gone && man.Skimming)
+                    failures.Add("RIVAL-009: " + man.FullName +
+                                 " is still short in the count after an audit.");
+            }
+
+            var printed = 0;
+            for (var i = 0; i < incidents.Count; i++)
+                if (incidents[i].Kind == IncidentKind.CaughtSkimming)
+                    printed++;
+            if (printed != skimming)
+                failures.Add("RIVAL-009: the audit caught " + skimming +
+                             " men and printed " + printed + " lines.");
+        }
+
+        /// <summary>D12. Powder shuts a shop for a week, the same as a fire.</summary>
+        static void PowderShutsAShopForAWeek(List<string> failures)
+        {
+            var config = LivingCity.Business.BusinessShutdownConfig.Default;
+            var week = 7d * 24d;
+            if (System.Math.Abs(
+                    config.DurationOf(LivingCity.Business.BusinessShutdownCause.Bomb) -
+                    week) > 0.001)
+                failures.Add("RIVAL-009: a bomb does not shut a shop for a week.");
+            if (config.RepairPriceOf(LivingCity.Business.BusinessShutdownCause.Bomb) <= 0)
+                failures.Add("RIVAL-009: a blown-out front costs nothing to put back.");
+        }
+
+        /// <summary>A man another family let go does not walk back in whistling.
+        /// </summary>
+        static void AManTakenComesBackInABed(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(23, 3);
+            var man = roster.Members.Count > 1 ? roster.Members[1] : null;
+            if (man == null || man.Gone)
+            {
+                failures.Add("RIVAL-009: the fixture dealt nobody to take.");
+                return;
+            }
+
+            roster.Day = 10;
+            RosterOps.Taken(roster, man.Id, 10 + OrderResolution.KidnapDays, "held");
+            if (man.Status != CharacterStatus.Taken)
+                failures.Add("RIVAL-009: the man was not taken.");
+
+            RosterOps.Discharge(roster, 10 + OrderResolution.KidnapDays);
+            if (man.Status != CharacterStatus.Hospitalized)
+                failures.Add("RIVAL-009: they let him go and he was fit at once (" +
+                             man.Status + ").");
+
+            RosterOps.Discharge(roster, man.BackOnDay);
+            if (man.Status != CharacterStatus.Active)
+                failures.Add("RIVAL-009: he never got up again.");
         }
 
         /// <summary>

@@ -1025,6 +1025,31 @@ namespace LivingCity.Personnel
         /// coming back, and the outfit pays him while he is in there (see Wages). The
         /// day he is back on is stored, not counted down, so nothing drifts.
         /// </summary>
+        /// <summary>How long a man they let go spends in a bed - the same span they
+        /// held him for (RIVAL-009 step 6, D22's KidnapDays). Named here rather than
+        /// read from the order table because Personnel owes the order book nothing.
+        /// </summary>
+        public const int HeldDays = 3;
+
+        /// <summary>
+        /// ANOTHER FAMILY HAS HIM. Off the books until they let him go, and he does not
+        /// walk back onto the street when they do - see the return sweep.
+        /// </summary>
+        public static OpResult Taken(Roster roster, int id, int backOnDay, string note = "")
+        {
+            var member = roster?.Find(id);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (member.Gone)
+                return OpResult.Fail(GoneReason(member));
+
+            member.Status = CharacterStatus.Taken;
+            member.BackOnDay = backOnDay;
+            member.ConditionNote = note ?? "";
+            Career.WentDown(member, roster.Day, CharacterStatus.Taken, member.ConditionNote);
+            return OpResult.Success;
+        }
+
         public static OpResult Hospitalize(Roster roster, int id, int backOnDay,
             string note = "")
         {
@@ -1093,6 +1118,16 @@ namespace LivingCity.Personnel
                 // day discharges him, or day one would empty every cell in the city.
                 if (member.BackOnDay <= 0 || member.BackOnDay > day)
                     continue;
+
+                // A MAN THEY LET GO IS NOT A MAN WHO WALKS IN WHISTLING. He comes
+                // back the way people come back from three days in somebody's cellar:
+                // in a bed, for as long again as they held him.
+                if (member.Status == CharacterStatus.Taken)
+                {
+                    member.Status = CharacterStatus.Hospitalized;
+                    member.BackOnDay = day + HeldDays;
+                    continue;
+                }
 
                 member.Status = CharacterStatus.Active;
                 member.BackOnDay = 0;

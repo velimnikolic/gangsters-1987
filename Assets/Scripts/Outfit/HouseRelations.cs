@@ -22,6 +22,10 @@ namespace LivingCity.Outfit
 
         /// <summary>They stopped paying what they owe us.</summary>
         TributeUnpaid,
+
+        /// <summary>They have one of ours in a cellar somewhere (RIVAL-009 step 6).
+        /// </summary>
+        ManTaken,
     }
 
     /// <summary>
@@ -72,6 +76,10 @@ namespace LivingCity.Outfit
         public int WarningIgnored = 10;
         public int TributeUnpaid = 25;
 
+        /// <summary>RIVAL-009 step 6's own figure. A man in their hands is worth what an
+        /// unpaid levy is worth: an insult with a price on it.</summary>
+        public int ManTaken = 25;
+
         /// <summary>D15. A house declares war only if it can pay its men through one,
         /// and sues for peace when it cannot or when it has lost too many.</summary>
         public int MinWarDays = 14;
@@ -92,6 +100,7 @@ namespace LivingCity.Outfit
                 case GrievanceKind.RoundLost: return RoundLost;
                 case GrievanceKind.ManKilled: return ManKilled;
                 case GrievanceKind.WarningIgnored: return WarningIgnored;
+                case GrievanceKind.ManTaken: return ManTaken;
                 default: return TributeUnpaid;
             }
         }

@@ -110,8 +110,17 @@ namespace LivingCity.Outfit
             // TIER 4 NEVER WAITS. A round due today goes out whatever else the family is
             // doing - the money is what everything else is paid from.
             Collect(view, config, into);
+            var tier = Walk(view, config, relations, into);
+            DropTheUnbuilt(into);
+            return tier;
+        }
 
-            // Then the first tier with something to do, in order.
+        /// <summary>The tiers themselves, in order. Split out so nothing may be emitted
+        /// without passing the built-orders gate above.</summary>
+        static int Walk(HouseView view, HouseMindConfig config,
+            HouseRelationsConfig relations, List<HouseIntent> into)
+        {
+            // The first tier with something to do, in order.
             if (Home(view, config, into))
                 return TierSurvive;
             if (Merge(view, config, into))
@@ -130,6 +139,21 @@ namespace LivingCity.Outfit
                 return TierInvest;
 
             return into.Count > 0 ? TierCollect : 0;
+        }
+
+        /// <summary>
+        /// A MIND MAY ONLY FILE AN ORDER THAT DOES SOMETHING (RIVAL-009). A person who
+        /// files an order with no effect can see nothing happened and stop; twenty
+        /// families would file it every week for ever and the tally would read as a
+        /// working economy. <see cref="OrderEffects"/> is the one place that says which
+        /// orders are built, and this is the one place a mind is held to it.
+        /// </summary>
+        static void DropTheUnbuilt(List<HouseIntent> into)
+        {
+            for (var i = into.Count - 1; i >= 0; i--)
+                if (into[i].Kind == HouseIntentKind.Job &&
+                    (into[i].Job == null || !OrderEffects.Built(into[i].Job.Type)))
+                    into.RemoveAt(i);
         }
 
         // ------------------------------------------------------------------- tier 1

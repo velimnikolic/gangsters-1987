@@ -63,6 +63,9 @@ namespace LivingCity.Tests
             return runner;
         }
 
+        /// <summary>What the fixture's shop takes in a day.</summary>
+        const int Takings = 400;
+
         static Job JobFor(Roster roster, OrderType type, int men = 2)
         {
             var job = new Job
@@ -136,6 +139,11 @@ namespace LivingCity.Tests
         {
             var runner = Runner(out var roster);
             var job = JobFor(roster, OrderType.RunBusiness);
+            // WHAT THE SHOP MAKES. Every surface that offers RUN THE BUSINESS puts the
+            // premises' own NetPerDay on the order (DoorMenu, the almanac's order page),
+            // because minding a shop is worth a share of what that shop takes - and a
+            // share of nothing is nothing.
+            job.TargetWorth = Takings;
             runner.Issue(roster, job);
             runner.AdvanceHours(roster, 100f);
 
@@ -181,6 +189,15 @@ namespace LivingCity.Tests
                 var stood = runner.Accounts.Sheets[runner.Accounts.Sheets.Count - 2];
                 if (stood.LegalIncome <= 0)
                     failures.Add("AStandingWatchPaysDaily: the takings went on the wrong line.");
+
+                // A BONUS, NOT A SECOND RENT (D22). The premises already pays its own
+                // NetPerDay into the safe at midnight; men minding it make it go a
+                // quarter better and no more.
+                var expected = (int)(Takings * OrderResolution.RunBusinessBonus);
+                if (stood.LegalIncome != expected)
+                    failures.Add("AStandingWatchPaysDaily: a day's watch over a shop " +
+                                 "taking $" + Takings + " paid $" + stood.LegalIncome +
+                                 ", not the $" + expected + " a quarter of it is.");
                 if (!stood.Closed)
                     failures.Add("AStandingWatchPaysDaily: the day's sheet stayed open.");
 
