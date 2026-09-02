@@ -16,7 +16,7 @@ namespace LivingCity.UI
     /// The price is quoted BY THE DAY, which is how this city advertises a man and how
     /// the books pay him - the column and the balance sheet read the one wage table
     /// (Wages.WageFor), so they can never disagree. Under it, the signing money: a
-    /// month in his hand before he works a day of it.
+    /// fortnight in his hand before he works a day of it.
     ///
     /// The column itself is HireMarket's - dealt off (city seed, campaign day), so the
     /// same morning always prints the same four men, and turning to the page twice

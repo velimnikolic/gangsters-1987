@@ -402,7 +402,7 @@ namespace LivingCity.UI
                     Id = actor.CharacterId.Value,
                     Name = member != null ? member.FullName : actor.DisplayName,
                     Duty = ActivityWord(actor.Activity),
-                    Wage = member != null ? Outfit.Wages.WageFor(member) : 0,
+                    Wage = member != null ? Outfit.Wages.WageFor(member, RosterDay) : 0,
                     Known = KnownHere(runtime, actor.CharacterId.Value, quarter),
                 };
 

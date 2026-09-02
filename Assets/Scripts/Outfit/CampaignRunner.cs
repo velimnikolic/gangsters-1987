@@ -482,13 +482,23 @@ namespace LivingCity.Outfit
                 for (var i = 0; i < roster.Members.Count; i++)
                 {
                     var member = roster.Members[i];
-                    GreedLadder.Tick(member, Wages.WageFor(member),
-                        Wages.WorthOf(member), Campaign.Day, Incidents, CharacterChanges);
+                    // A man who went home with nothing last night is underpaid by the
+                    // WHOLE of his wage, bargain or no bargain (WAGE-003): the ladder
+                    // reads what actually reached his hand, not what the table says he
+                    // is on. The clock is read here, before tonight's payroll, so it
+                    // is last night's envelope that is being answered for.
+                    var drew = member.UnpaidSince > 0
+                        ? 0
+                        : Wages.WageFor(member, roster.Day);
+                    var worth = Wages.WorthOf(member, roster.Day);
+                    GreedLadder.Tick(member, drew, worth, Campaign.Day, Incidents,
+                        CharacterChanges);
 
                     var hasSuperior = branch.TryGetCommandParent(member.Id, out var above);
                     var crowded = hasSuperior &&
                                   branch.CapacityOf(above.Id).IsOverCapacity;
-                    Loyalty.Drift(member, hasSuperior, crowded, Wages.PayGap(member),
+                    var gap = worth - drew;
+                    Loyalty.Drift(member, hasSuperior, crowded, gap > 0 ? gap : 0,
                         Campaign.Day, Campaign.Day - member.RankSince,
                         CharacterChanges, Incidents);
                 }
@@ -513,22 +523,35 @@ namespace LivingCity.Outfit
                 var back = RosterOps.Discharge(roster, Campaign.Day);
                 if (back > 0 || Rises.Count > 0 || Declines.Count > 0)
                     RosterMoved?.Invoke();
+            }
 
+            // The books close BEFORE the day is read off the men. Being paid - or
+            // going home with nothing, and the desertion three of those nights ends in
+            // (WAGE-003) - is the last thing a day does to a man, and the three passes
+            // below promise to read EVERYTHING it did to him. Closing the books after
+            // them left an empty envelope out of his file, his marks and his score
+            // until the following midnight.
+            var paid = Campaign.Settles(Campaign.Day) ? TurnTheBooks(roster) : 0;
+
+            if (roster != null)
+            {
                 // LOY-004. What the book has to say about each man, said once, on the
                 // day it becomes true. Last, so the marks read against everything the
                 // day did to him - a man promoted this morning is judged on the rank
-                // he holds tonight.
+                // he holds tonight, and a man who lost three loyalty to an empty
+                // envelope is judged on what that left him.
                 for (var i = 0; i < roster.Members.Count; i++)
                     ManFlags.Announce(roster.Members[i], Campaign.Day, Incidents);
 
                 // NOTE-001/002. Every event of the day goes onto the man's own file,
                 // through the one door, carrying the sentence the paper will print -
-                // and the day's scores are then folded off those files.
+                // and the day's scores are then folded off those files. The payroll's
+                // own line carries character id -1 (it is the outfit's night, not one
+                // man's), so it reaches the paper and no file.
                 WriteHistory(roster);
                 Notability.Rebuild(roster, Campaign.Day);
             }
 
-            var paid = Campaign.Settles(Campaign.Day) ? TurnTheBooks(roster) : 0;
             if (payTribute)
                 CollectTribute();
             Relations.ApplyPending();
@@ -619,26 +642,189 @@ namespace LivingCity.Outfit
             }
         }
 
-        /// <summary>Payday and a fresh sheet, every midnight. Pay falls due as it falls
-        /// due: there is no envelope and no boundary to wait for, and the jailed and the
-        /// hurt draw their day the same as the men who worked it. The day closed because
-        /// the clock passed midnight, not because anybody pressed anything.</summary>
+        /// <summary>
+        /// Payday and a fresh sheet, every midnight. Pay falls due as it falls due:
+        /// there is no envelope and no boundary to wait for, and the jailed and the
+        /// hurt draw their day the same as the men who worked it. The day closed
+        /// because the clock passed midnight, not because anybody pressed anything.
+        ///
+        /// WAGE-003: THE SAFE NEVER GOES NEGATIVE. What cannot be paid is not paid, and
+        /// every man who goes without is named - a night of empty envelopes is an
+        /// EVENT, printed in the feed, written on the men's files and remembered by
+        /// them, never a number quietly going below zero with nothing to show for it.
+        ///
+        /// The order is the outfit's own priority and not an accident of roster order:
+        /// the lieutenants first (a branch that walks takes its crew with it), then the
+        /// hoods by service with the longest-standing men first, and the retained
+        /// professionals last - they have somewhere else to bill. Within the run every
+        /// envelope is all or nothing and the pass keeps going past a man the safe
+        /// cannot cover, so a cheap man behind an expensive one is still paid; the
+        /// alternative empties nobody's envelope and leaves money in the safe.
+        /// </summary>
         public int TurnTheBooks(Roster roster)
         {
             var paid = 0;
             var sheet = Accounts.Current;
             if (sheet != null && !sheet.Closed)
             {
-                paid = Wages.DailyPayroll(roster);
+                paid = PayTheMen(roster, out var owed, out var unpaid, out var struck);
                 sheet.WagesPaid = paid;
-                Accounts.Safe -= paid;
+                sheet.WagesShort = owed;
                 Accounts.RiskyMoney += sheet.IllegalIncome;
                 sheet.Closed = true;
+
+                // Id -1 on purpose: this line is the OUTFIT's, not one man's, and the
+                // player's own first character is id 0 - a zero here would file the
+                // night on the Boss's own record.
+                if (owed > 0)
+                    Incidents.Add(new Incident(-1, "", IncidentKind.PayrollShort,
+                        Campaign.Day, "", 0,
+                        IncidentText.PayrollShortLine(unpaid, owed)));
+
+                // A man who stopped coming has to LEAVE THE STREET, and the street only
+                // re-reads the roster when the personnel version moves. This pass runs
+                // AFTER the day tick's own RosterMoved calls, so without this the
+                // deserter stayed spawned, selectable and in the tactical mapping until
+                // some unrelated mutation happened to bump the version - a whole day
+                // later, or never. Once for the batch, not once per man.
+                if (struck > 0)
+                    RosterMoved?.Invoke();
             }
 
             Accounts.Open(Campaign.Day);
             return paid;
         }
+
+        /// <summary>The payroll queue, reused every midnight so a nightly pass over a
+        /// long roster allocates nothing.</summary>
+        readonly List<Character> payQueue = new List<Character>();
+
+        /// <summary>
+        /// Hands out the envelopes, in the order above, and does what an empty one
+        /// does to the man who gets it. Returns what was actually paid.
+        /// </summary>
+        /// <param name="struck">How many men were struck off the books over it - the
+        /// count the caller invalidates the street projection on.</param>
+        int PayTheMen(Roster roster, out int owed, out int unpaid, out int struck)
+        {
+            owed = 0;
+            unpaid = 0;
+            struck = 0;
+            if (roster == null)
+                return 0;
+
+            payQueue.Clear();
+            for (var i = 0; i < roster.Members.Count; i++)
+                payQueue.Add(roster.Members[i]);
+            payQueue.Sort(PayOrder);
+
+            var paid = 0;
+            for (var i = 0; i < payQueue.Count; i++)
+            {
+                var man = payQueue[i];
+                var wage = Wages.WageFor(man, roster.Day);
+                if (wage <= 0)
+                {
+                    // The Boss, the dead, and the men out of the city. A night on
+                    // which nothing was DUE is not a night he went unpaid, so the run
+                    // ends here rather than going on ageing while he is off the books.
+                    //
+                    // Leaving it standing was a loaded gun: a hood unpaid on day 10
+                    // and sent out of town on day 11 came back on day 41 still stamped
+                    // UnpaidSince = 10, and one genuinely missed envelope then read as
+                    // thirty-two nights - past DesertAfterUnpaidNights on the spot, so
+                    // he walked off the books for a single empty envelope.
+                    man.UnpaidSince = 0;
+                    continue;
+                }
+
+                if (Accounts.Safe >= wage)
+                {
+                    Accounts.Safe -= wage;
+                    paid += wage;
+                    // A full envelope ends the run, whatever it had reached.
+                    man.UnpaidSince = 0;
+                    continue;
+                }
+
+                owed += wage;
+                unpaid++;
+                if (WentUnpaid(roster, man))
+                    struck++;
+            }
+
+            return paid;
+        }
+
+        /// <summary>
+        /// One man, one empty envelope. He remembers it the night it happens rather
+        /// than through the seven-day drift, and a run of them ends the same way for
+        /// everybody: a hood stops turning up, a lieutenant starts listening to
+        /// somebody else - both through the seams that already exist, so an unpaid man
+        /// leaves exactly the way a disloyal one does.
+        /// </summary>
+        /// <returns>True when the night took him off the books, so the caller knows
+        /// the roster moved and the street has to be told.</returns>
+        bool WentUnpaid(Roster roster, Character man)
+        {
+            if (man.UnpaidSince <= 0)
+                man.UnpaidSince = Campaign.Day;
+
+            RosterOps.NudgePersonality(man, PersonalityTrait.Loyalty,
+                -Wages.UnpaidLoyaltyHit, "went home with an empty envelope",
+                CharacterChanges);
+
+            // His own file carries the night, in the same sentence the paper would set
+            // about him. The feed gets ONE line for the outfit; this is the man's.
+            var line = new Incident(man.Id, man.FullName, IncidentKind.PayrollShort,
+                Campaign.Day, "", 0,
+                IncidentText.Line(IncidentKind.PayrollShort, man.FullName, ""));
+            Career.FromIncident(man, line);
+
+            var nights = Campaign.Day - man.UnpaidSince + 1;
+
+            if (man.Rank == Rank.Lieutenant)
+            {
+                // Not struck off here: his loyalty is put on the floor and the next
+                // midnight's defection pass takes him and his crew over the way
+                // LOY-002 already does, so going over unpaid reads exactly like going
+                // over for any other reason.
+                if (nights >= Wages.DefectAfterUnpaidNights &&
+                    man.Loyalty > Defection.BreakingPoint)
+                    man.Loyalty = Defection.BreakingPoint;
+                // He is still on the books tonight: the defection pass takes him
+                // tomorrow, and that pass tells the street itself.
+                return false;
+            }
+
+            if (man.Rank != Rank.Hood || nights < Wages.DesertAfterUnpaidNights)
+                return false;
+
+            return RosterOps.Desert(roster, man.Id,
+                "Stopped coming. He had not been paid in " + nights + " nights.",
+                0, CharacterChanges).Ok;
+        }
+
+        /// <summary>Who gets his envelope first: lieutenants, then hoods with the
+        /// longest service, then the retained professionals - and the id last so the
+        /// order is total and the same campaign always pays in the same order.</summary>
+        static int PayOrder(Character a, Character b)
+        {
+            var rank = PayRank(a).CompareTo(PayRank(b));
+            if (rank != 0)
+                return rank;
+
+            var joined = Career.JoinedDay(a).CompareTo(Career.JoinedDay(b));
+            if (joined != 0)
+                return joined;
+
+            return a.Id.CompareTo(b.Id);
+        }
+
+        static int PayRank(Character man) =>
+            man.Specialty != Specialty.None ? 2
+            : man.Rank == Rank.Lieutenant ? 0
+            : 1;
 
         /// <summary>
         /// Re-prices what the houses above the outfit are owed against the city as it

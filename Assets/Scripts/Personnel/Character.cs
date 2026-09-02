@@ -183,6 +183,19 @@ namespace LivingCity.Personnel
         /// a long soak and a stored day cannot.</summary>
         public int UnderpaidSince;
 
+        /// <summary>
+        /// The campaign day the outfit last failed to pay him at all - the first night
+        /// of the run he is currently on; 0 when his envelope was full. WAGE-003.
+        ///
+        /// Not the same thing as <see cref="UnderpaidSince"/>, and both can stand at
+        /// once: that one says he is drawing less than he is worth, this one says he
+        /// drew NOTHING. A day rather than a count of nights, for the reason every
+        /// other clock in this class is one - a counter drifts across a long soak and
+        /// a stored day cannot - and cleared the first night he is paid in full, which
+        /// is why the run has to be read as (today - this + 1).
+        /// </summary>
+        public int UnpaidSince;
+
         /// <summary>The campaign day he last changed rank. An ambitious man who has
         /// been exactly what he is for long enough starts to feel it (LOY-001), and a
         /// day rather than a count for the reason every other clock here is one.</summary>

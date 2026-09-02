@@ -59,10 +59,16 @@ namespace LivingCity.Personnel
         }
 
         /// <summary>
-        /// Yes. His envelope is brought up to what he asked, and the asking stops -
-        /// the bargain moves, which is the one thing that closes a pay gap for good.
-        /// A man who was skimming over it stops that too: he was taking what he thought
-        /// he was owed.
+        /// Yes. He asked for the rate, and he is put ON the rate: his bargain is torn
+        /// up (<c>WageAsked = 0</c>) and from that midnight he draws the house scale
+        /// like every man the outfit raised itself. The asking stops, and a man who was
+        /// skimming over it stops too - he was taking what he thought he was owed.
+        ///
+        /// WAGE-002. This used to write the demanded FIGURE onto his bargain, which
+        /// froze his envelope at what he was worth on the day he asked while his stars
+        /// went on rising underneath it - so a greedy man came back with a new demand
+        /// every thirty-five days, forever, and every grant bought thirty-five days of
+        /// quiet instead of settling anything.
         /// </summary>
         public static OpResult GrantRaise(Roster roster, int id)
         {
@@ -72,7 +78,7 @@ namespace LivingCity.Personnel
             if (member.WageDemand <= 0)
                 return OpResult.Fail(LedgerText.ReasonNoDemand);
 
-            member.WageAsked = member.WageDemand;
+            member.WageAsked = 0;
             member.WageDemand = 0;
             member.UnderpaidSince = 0;
             member.Skimming = false;
@@ -170,7 +176,8 @@ namespace LivingCity.Personnel
         /// of choosing a man on his history is that the choice is real, and a promotion
         /// that quietly made him better at leading men would make every choice the same
         /// choice. His wage changes because the house scale is read off his rank
-        /// (Wages.WageFor) - not because anything was written on him.
+        /// (Wages.WageFor) - not because anything was written on him, and it always
+        /// RISES: the lieutenant base sits above the hood ceiling by construction.
         ///
         /// What it does move is the men around him. His old crewmates watch one of
         /// their own rise, and an ambitious man passed over feels it exactly as much as
@@ -197,6 +204,12 @@ namespace LivingCity.Personnel
             member.Duty = Duty.None;   // he runs the branch now; he does not walk it
             member.Rank = Rank.Lieutenant;
             member.RankSince = roster.Day;
+            // A NEW RANK IS A NEW BARGAIN (WAGE-002): whatever he signed for as a hood
+            // has nothing to say about what a lieutenant costs, and the house rate of
+            // the rank he now holds applies the same midnight. A man signed out of the
+            // classified column is promoted on his way onto the books, so the door that
+            // signs him re-stamps his ask AFTER this returns.
+            member.WageAsked = 0;
             // He answers to the Boss now, and a new relationship starts near zero
             // history - what he felt about his old lieutenant does not come with him.
             Loyalty.Reaim(member, "made a lieutenant, and answers to the Boss now", changes);
@@ -280,6 +293,10 @@ namespace LivingCity.Personnel
             member.Rank = Rank.Hood;
             member.RankSince = roster.Day;
             member.Duty = Duty.None;
+            // The other half of WAGE-002's rule: a demoted paper lieutenant used to
+            // draw his old lieutenant's ask as a hood for the rest of his life. He is
+            // a hood now, and he is paid a hood's house rate.
+            member.WageAsked = 0;
             Loyalty.Reaim(member, "taken back down to a hood", changes);
             Loyalty.Sting(member, changes);
             PutUnderBossIfPresent(roster, member.Id);
@@ -1099,6 +1116,13 @@ namespace LivingCity.Personnel
                 // A man on his feet carries no note - leaving the old one would print
                 // "two ribs" beside FIT for the rest of his career.
                 member.ConditionNote = "";
+                // AND HE IS BACK IN THE CITY. Sending a man away (Police.WantedLevels
+                // .SendAway) is the one away-state that also takes him off the payroll,
+                // and nothing anywhere put the flag down again: he came back on his
+                // feet, drew nothing for the rest of the campaign, and could never be
+                // sent away a second time because CanSendAway refuses a man already
+                // gone. The bus ticket buys FOURTEEN DAYS, not a free man for life.
+                member.OutOfTown = false;
                 back++;
             }
             return back;

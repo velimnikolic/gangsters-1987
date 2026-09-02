@@ -79,6 +79,9 @@ namespace LivingCity.Personnel
                 case IncidentKind.Escalated: return 35;
                 case IncidentKind.Froze: return 30;
                 case IncidentKind.DemandedARaise: return 25;
+                // A night with nothing in the envelope is the outfit's failure, not
+                // his: it belongs on his file and it must not make a name of him.
+                case IncidentKind.PayrollShort: return 20;
                 case IncidentKind.Deviated: return 20;
                 default: return 15; // SlowingDown, and anything added later.
             }

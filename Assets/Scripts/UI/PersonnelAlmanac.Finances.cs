@@ -199,7 +199,7 @@ namespace LivingCity.UI
             if (roster != null)
                 foreach (var member in roster.Members)
                 {
-                    var wage = Outfit.Wages.WageFor(member);
+                    var wage = Outfit.Wages.WageFor(member, RosterDay);
                     if (member.Specialty != Specialty.None)
                     {
                         specialists++;
@@ -223,10 +223,23 @@ namespace LivingCity.UI
                 }
 
             var inH = FinBandH + FinRowH * 3f + FinTotalH + FinProfitH + FinTaxH * 3f;
-            // Five outgoings are always drawn - two wage lines, bribes, purchases and
-            // other costs - and a sixth when the outfit keeps a specialist on retainer.
-            var outRows = 5 + (specialists > 0 ? 1 : 0);
-            var outH = FinBandH + FinRowH * outRows + FinTotalH +
+            // WHAT THE ROWS MAY SAY DEPENDS ON WHETHER THE NIGHT IS OVER.
+            //
+            // An OPEN sheet is a forecast: the live roster IS the obligation, so the
+            // payroll is broken out by rank - two lines, three with a specialist on
+            // retainer - and that breakdown is exactly what TOTAL OUT carries.
+            //
+            // A CLOSED sheet is a record, and the breakdown cannot honestly be rebuilt
+            // from a roster that has moved since: a man promoted or hired this morning
+            // would rewrite last night's page. It gets ONE line, what was actually
+            // paid, which is the figure TOTAL OUT is made of.
+            var wageRows = report.Closed ? 1f : 2f + (specialists > 0 ? 1f : 0f);
+            // Bribes, purchases, other costs.
+            var outRows = wageRows + 3f;
+            // And what the safe could not cover, which is NOT an outgoing - that money
+            // never left. It stands under the total as the debt it is.
+            var shortRows = report.WagesShort > 0 ? 1f : 0f;
+            var outH = FinBandH + FinRowH * outRows + FinTotalH + FinRowH * shortRows +
                        (report.Closed ? FinRowH : FinBandH + FinRowH * 4f + FinTotalH);
 
             var moneyIn = LedgerV2.Card("Money in", financesContent, 0f, 0f, FinColW,
@@ -263,17 +276,40 @@ namespace LivingCity.UI
             // ---- MONEY OUT ----
             var oy = FinanceBand(moneyOut, "MONEY OUT", FinOutLabel);
             var row = 0;
-            oy = FinanceRow(moneyOut, oy, "Wages — " + hoods +
-                (hoods == 1 ? " hood" : " hoods"), hoodWages, row++);
-            oy = FinanceRow(moneyOut, oy, "Wages — " + lieutenants +
-                (lieutenants == 1 ? " lieutenant" : " lieutenants"), lieutenantWages, row++);
-            if (specialists > 0)
-                oy = FinanceRow(moneyOut, oy, "Retainers — " + specialists,
-                    specialistWages, row++);
+            if (report.Closed)
+            {
+                // The record: what left the safe, and nothing the live roster has to
+                // say about it.
+                oy = FinanceRow(moneyOut, oy, "Wages paid", report.Wages, row++);
+            }
+            else
+            {
+                oy = FinanceRow(moneyOut, oy, "Wages — " + hoods +
+                    (hoods == 1 ? " hood" : " hoods"), hoodWages, row++);
+                oy = FinanceRow(moneyOut, oy, "Wages — " + lieutenants +
+                    (lieutenants == 1 ? " lieutenant" : " lieutenants"),
+                    lieutenantWages, row++);
+                if (specialists > 0)
+                    oy = FinanceRow(moneyOut, oy, "Retainers — " + specialists,
+                        specialistWages, row++);
+            }
             oy = FinanceRow(moneyOut, oy, "Bribes", report.Bribes, row++);
             oy = FinanceRow(moneyOut, oy, "Purchases", report.Purchases, row++);
             oy = FinanceRow(moneyOut, oy, "Other costs", report.OtherCosts, row);
             oy = FinanceTotal(moneyOut, oy, "TOTAL OUT", report.TotalOutgoings);
+
+            // WAGE-003. What the safe could not cover, said in red on the sheet that
+            // covers the night it happened - never a payroll silently taking the safe
+            // below zero.
+            //
+            // UNDER the total and never among the rows above it. It is money that did
+            // NOT move, and printing it as an outgoing made the column lie twice over:
+            // a $300 payroll with $200 paid drew $300 of wage rows plus a $100 SHORT
+            // against a $200 TOTAL OUT, so the visible items overstated the night by
+            // twice the shortfall.
+            if (report.WagesShort > 0)
+                oy = FinanceRow(moneyOut, oy, "STILL OWED — envelopes not paid",
+                    report.WagesShort, -1, red: true);
 
             // Stocks are NOW-figures; a closed day's page keeps to its flows.
             if (!report.Closed)

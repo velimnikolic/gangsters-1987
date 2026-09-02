@@ -591,9 +591,13 @@ namespace LivingCity.Tests
                              hood.RankSince + ", not the day it happened.");
             if (roster.FindCrew(crewId) == null)
                 failures.Add("PromotionChangesRankAndNothingElse: no crew formed.");
-            if (Wages.WageFor(hood) == wageBefore)
-                failures.Add("PromotionChangesRankAndNothingElse: the house scale did " +
-                             "not follow his rank.");
+            // WAGE-001. A promotion is a RISE, never merely a change: the lieutenant
+            // base sits above the hood ceiling by construction, so making a man can
+            // never cut his pay.
+            if (Wages.WageFor(hood) <= wageBefore)
+                failures.Add($"PromotionChangesRankAndNothingElse: he drew " +
+                             $"{wageBefore} as a hood and {Wages.WageFor(hood)} as a " +
+                             "lieutenant - a promotion must pay more.");
 
             var announced = false;
             for (var i = 0; i < incidents.Count; i++)

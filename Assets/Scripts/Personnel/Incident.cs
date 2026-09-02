@@ -54,6 +54,11 @@ namespace LivingCity.Personnel
 
         /// <summary>Ambition over the line and loyalty under it - the red flag.</summary>
         NotToBeTrusted,
+
+        /// <summary>The safe could not cover the night's wages and men went home with
+        /// nothing. Appended, like every kind before it, so serialized values keep
+        /// their meaning.</summary>
+        PayrollShort,
     }
 
     /// <summary>
@@ -110,10 +115,27 @@ namespace LivingCity.Personnel
                 case IncidentKind.NotToBeTrusted:
                     return name + " wants more than he has, and he no longer thinks " +
                            "it is coming from us.";
+                case IncidentKind.PayrollShort:
+                    return name + " went home with an empty envelope.";
                 default:
                     return name + " is slowing down.";
             }
         }
+
+        /// <summary>
+        /// The short-payroll line: the outfit's own, not one man's, so it is the third
+        /// of the sentences that wants a number rather than a name. One line a night,
+        /// however many envelopes were empty - a feed that printed a line per man
+        /// would bury the night that caused them.
+        /// </summary>
+        public static string PayrollShortLine(int menUnpaid, int owed) =>
+            menUnpaid <= 0
+                ? "The envelopes were short."
+                : menUnpaid == 1
+                    ? "The envelopes were short: one man went home unpaid, $" +
+                      owed + " owed."
+                    : "The envelopes were short: " + menUnpaid +
+                      " men went home unpaid, $" + owed + " owed.";
 
         /// <summary>The aging line, which is the one that wants the number: a man
         /// losing a step reads differently at forty-six and at sixty.</summary>

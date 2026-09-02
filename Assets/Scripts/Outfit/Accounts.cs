@@ -25,6 +25,13 @@ namespace LivingCity.Outfit
         /// <summary>Frozen at midnight; meaningless while the sheet is open.</summary>
         public int WagesPaid;
 
+        /// <summary>What the safe could NOT cover of the night's wages (WAGE-003):
+        /// money the men were owed and did not get. Frozen at midnight beside
+        /// <see cref="WagesPaid"/>, and the two together are the whole bill - a payroll
+        /// that ran short shows as a red line on the Finances page rather than as a
+        /// safe quietly gone negative.</summary>
+        public int WagesShort;
+
         public int TaxPaid;
 
         /// <summary>A committed, read-only record of a finished day.</summary>
@@ -167,6 +174,12 @@ namespace LivingCity.Outfit
         public readonly int IllegalIncome;
         public readonly int SalesIncome;
         public readonly int Wages;
+
+        /// <summary>What the safe could not cover of the night's payroll (WAGE-003).
+        /// Zero on an open sheet - nothing has been paid yet, so nothing is short
+        /// yet.</summary>
+        public readonly int WagesShort;
+
         public readonly int Bribes;
         public readonly int Purchases;
         public readonly int OtherCosts;
@@ -198,6 +211,7 @@ namespace LivingCity.Outfit
             IllegalIncome = sheet?.IllegalIncome ?? 0;
             SalesIncome = sheet?.SalesIncome ?? 0;
             Wages = wages;
+            WagesShort = sheet != null && sheet.Closed ? sheet.WagesShort : 0;
             Bribes = sheet?.Bribes ?? 0;
             Purchases = sheet?.Purchases ?? 0;
             OtherCosts = sheet?.OtherCosts ?? 0;

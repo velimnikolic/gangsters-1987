@@ -652,7 +652,7 @@ namespace LivingCity.UI
                     roster.AssignmentOf(member.Id).Kind != AssignmentKind.Pool)
                     continue;
                 men++;
-                drawn += Outfit.Wages.WageFor(member);
+                drawn += Outfit.Wages.WageFor(member, roster.Day);
             }
             if (men == 0)
                 return "unassigned · earning nothing";
@@ -952,7 +952,7 @@ namespace LivingCity.UI
                 : posted ? LedgerV2.Green : LedgerV2.Red);
 
             LedgerV2.Figure(rect, ColWage, -12f, WageW,
-                LedgerText.Cash(Outfit.Wages.WageFor(member)), 15.5f,
+                LedgerText.Cash(Outfit.Wages.WageFor(member, RosterDay)), 15.5f,
                 dead ? LedgerV2.Faint : member.WageDemand > 0 ? LedgerV2.Red
                 : LedgerV2.Ink);
 
@@ -1193,8 +1193,28 @@ namespace LivingCity.UI
                     textX, textW, y,
                     hasParent ? LedgerV2.Ink : LedgerV2.Red);
             }
-            y = Particular("WAGE", LedgerText.Cash(Outfit.Wages.WageFor(member)) + " / day",
-                textX, textW, y);
+            var wageDay = RosterDay;
+            y = Particular("WAGE",
+                LedgerText.Cash(Outfit.Wages.WageFor(member, wageDay)) + " / day",
+                textX, textW, y,
+                member.UnpaidSince > 0 ? LedgerV2.Red : (Color?)null);
+            // WAGE-003. The one thing about a wage worse than its size: he did not get
+            // it. Printed beside the figure, because the figure on its own reads as
+            // money he has.
+            if (member.UnpaidSince > 0)
+                y = Particular("UNPAID SINCE", "DAY " + member.UnpaidSince,
+                    textX, textW, y, LedgerV2.Red);
+            // WAGE-004. What his service is worth, under the rate it is part of - two
+            // hoods with the same trades are not the same man if one of them has stood
+            // on the corner for a year.
+            var tenure = Outfit.Wages.TenureBonus(member, wageDay);
+            if (tenure > 0)
+            {
+                var months = Outfit.Wages.MonthsOnTheBooks(member, wageDay);
+                y = Particular("ON THE BOOKS",
+                    months + (months == 1 ? " MONTH" : " MONTHS") + "  \u00B7  +" +
+                    LedgerText.Cash(tenure), textX, textW, y);
+            }
             // PSY-003. A man who has asked for the rate has asked YOU, and the asking
             // does not stop until it is answered: while the demand stands he goes on
             // skimming and his loyalty goes on draining, so the answer belongs on his

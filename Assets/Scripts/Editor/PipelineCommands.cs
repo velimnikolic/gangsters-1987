@@ -280,6 +280,11 @@ namespace GangstersTools
             // that broke the books would otherwise only be found in Play.
             failures.AddRange(LivingCity.Tests.PoliceTests.Run()
                 .Select(failure => "Police regression: " + failure));
+            // And the crew economy: the wage table is what the roster COSTS, so a
+            // change to a man's stats, his rank or his file lands on the payroll, and
+            // the yardstick that says one block carries one crew rides here with it.
+            failures.AddRange(LivingCity.Tests.WageTests.Run()
+                .Select(failure => "Wage regression: " + failure));
             return new
             {
                 passed = failures.Count == 0,
@@ -388,6 +393,23 @@ namespace GangstersTools
                 passed = failures.Count == 0,
                 failures = failures.ToArray(),
                 contracts = LivingCity.Tests.UnderworldTests.ContractNames(),
+            };
+        }
+
+        [CliCommand("gangsters_wage_tests",
+                    "Run EPIC 24 contracts for the crew economy: the house rate, the " +
+                    "life of a bargain, the short envelope, service pay, and the " +
+                    "yardstick - one median block carries one crew.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "wages", "tests" })]
+        public static object WageTests()
+        {
+            var failures = LivingCity.Tests.WageTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                contracts = LivingCity.Tests.WageTests.ContractNames(),
             };
         }
 

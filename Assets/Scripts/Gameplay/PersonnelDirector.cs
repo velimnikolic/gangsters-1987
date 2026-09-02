@@ -236,6 +236,7 @@ namespace LivingCity.Gameplay
             Roster.Members.Add(man);
             Career.Joined(man, Roster.Day, "the classified column");
 
+            var ask = ad.Daily;
             var result = RosterOps.Promote(Roster, man.Id, out _, Feed);
             if (!result.Ok)
             {
@@ -248,6 +249,14 @@ namespace LivingCity.Gameplay
                     outfit.Refund(price, "a man out of the paper");
                 return result;
             }
+
+            // The bargain, re-stamped AFTER the promotion: a new rank is a new bargain
+            // and RosterOps.Promote tears the old one up (WAGE-002), so the price the
+            // paper quoted has to be written back on him here or he would quietly drop
+            // onto the house scale the moment he signed. The figure is the ad's own
+            // Daily, read before the promotion, so the column and the books agree to
+            // the dollar.
+            man.WageAsked = ask;
 
             newId = man.Id;
             return Commit(result, "signed out of the paper", man.Id);

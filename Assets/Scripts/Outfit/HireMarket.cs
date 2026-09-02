@@ -149,8 +149,12 @@ namespace LivingCity.Outfit
             FloorHead(man, CharacterAttribute.Awareness);
             FloorHead(man, CharacterAttribute.Organization);
 
-            // He advertises as what he is: a lieutenant, and priced as one - the ask is
-            // stamped on him here and paid for the rest of his life on the books.
+            // He advertises as what he is: a lieutenant, and priced as one - the house
+            // rate for the crew he says he can run, plus the market's premium for a
+            // man who walks in ready-made (Wages.AskFor). The ask is stamped on him
+            // here and drawn for as long as he holds that rank: a promotion or a
+            // demotion tears the bargain up and puts him on the house scale
+            // (RosterOps, WAGE-002).
             man.Rank = Rank.Lieutenant;
             man.WageAsked = Wages.AskFor(man);
 
