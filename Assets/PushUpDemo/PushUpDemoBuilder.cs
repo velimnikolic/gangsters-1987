@@ -3,6 +3,7 @@ using LivingCity.Data;
 using LivingCity.Entities;
 using LivingCity.Generation;
 using LivingCity.UI;
+using RoadDemo;
 using UnityEngine;
 using UnityEngine.Animations;
 using UnityEngine.Playables;
@@ -29,6 +30,8 @@ namespace PushUpDemo
         PlayableGraph _graph;
         PedestrianPicker _cityPicker;
         System.Random _rng;
+        Vector3 _actorAnchorPosition;
+        Quaternion _actorAnchorRotation;
 
         void Awake()
         {
@@ -157,6 +160,8 @@ namespace PushUpDemo
                 PedestrianIdentity.IsFemale(prefab.name),
                 PedestrianAgeCohort.Adult,
                 prefab.name);
+            _actorAnchorPosition = _actor.transform.position;
+            _actorAnchorRotation = _actor.transform.rotation;
 
             animator.enabled = true;
             animator.runtimeAnimatorController = null;
@@ -220,10 +225,21 @@ namespace PushUpDemo
             var extent = Mathf.Max(0.8f, actorBounds.extents.x, actorBounds.extents.y,
                 actorBounds.extents.z);
             var target = actorBounds.center;
-            var direction = new Vector3(0.75f, 0.38f, 1f).normalized;
-            cameraObject.transform.position = target + direction * extent * 4.4f;
-            cameraObject.transform.rotation = Quaternion.LookRotation(
-                target - cameraObject.transform.position, Vector3.up);
+            var rig = cameraObject.AddComponent<DemoCamera>();
+            rig.pivot = target;
+            rig.distance = extent * 4.4f;
+            rig.yaw = 217f;
+            rig.pitch = 28f;
+            rig.minDistance = Mathf.Max(0.5f, extent * 1.25f);
+            rig.mapCeiling = Mathf.Max(rig.distance, extent * 12f);
+            rig.mapAt = 10000f;
+            rig.mapTransition = false;
+            rig.showHint = false;
+
+            // Start in the same pose DemoCamera will maintain from LateUpdate onward.
+            var rotation = Quaternion.Euler(rig.pitch, rig.yaw, 0f);
+            cameraObject.transform.SetPositionAndRotation(
+                rig.pivot + rotation * new Vector3(0f, 0f, -rig.distance), rotation);
         }
 
         static Bounds BoundsOf(GameObject root)
@@ -262,6 +278,14 @@ namespace PushUpDemo
             _playable.SetTime(time % _pushUp.length);
             _playable.SetDone(false);
             _playable.SetSpeed(1d);
+        }
+
+        void LateUpdate()
+        {
+            // Animation review is pose-only: even a future clip carrying root curves may
+            // never move the subject. Navigation belongs exclusively to DemoCamera.
+            if (_actor != null)
+                _actor.transform.SetPositionAndRotation(_actorAnchorPosition, _actorAnchorRotation);
         }
 
         static AnimationClip LoadPushUpClip()

@@ -83,3 +83,8 @@ Tools/ledger-ds/ds-bundle/
 Tools/ledger-ds/.design-sync/.cache/
 Tools/ledger-ds/.design-sync/learnings/
 Tools/ledger-ds/.design-sync/node_modules
+
+# Unity's own extraction of an FBX's embedded textures (.fbm): a build product, and a
+# byte-for-byte duplicate of the Ch15 Textures folder next to it
+/Assets/Animations/Mixamo/Rifle/*.fbm/
+/Assets/Animations/Mixamo/Rifle/*.fbm.meta

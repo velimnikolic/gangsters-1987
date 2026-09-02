@@ -282,6 +282,128 @@ namespace RoadDemo
         public static Transform SupportGripOf(Transform gun) =>
             gun ? gun.Find("SupportGrip") : null;
 
+        /// <summary>Which way this man is LOOKING, whatever his rig calls the axes.
+        ///
+        /// A head bone's own axes are worth nothing here - measured on the Synty skull
+        /// not one of the six is within 36 degrees of the way the man faces. What is
+        /// worth something is the avatar's T-pose: in it the head looks along the rig's
+        /// forward by definition, so the look vector IN HEAD SPACE falls out of one
+        /// inverse, and it is the same vector in every pose after that.</summary>
+        public static Vector3 LookDirection(Animator animator)
+        {
+            if (!animator) return Vector3.forward;
+            var head = animator.GetBoneTransform(HumanBodyBones.Head);
+            if (!head) return animator.transform.forward;
+            // TPoseRotation is relative to the animator root, so its input must be the
+            // root-local forward too. Feeding it animator.transform.forward mixed world
+            // and local spaces; after the man turned that could send the head to the
+            // opposite side of the rifle.
+            var look = Quaternion.Inverse(TPoseRotation(animator, head)) * Vector3.forward;
+            if (look.sqrMagnitude < 1e-6f) return animator.transform.forward;
+            return (head.rotation * look).normalized;
+        }
+
+        /// <summary>Where the supporting hand actually goes: the UNDERSIDE of the
+        /// fore-end - the wooden handguard on the pack's kalashnikov - measured off the
+        /// mesh rather than guessed at.
+        ///
+        /// Attach leaves a derived marker a flat 44% of the way up the bore, which is a
+        /// guess and lands wherever the model happens to be. This is the real thing: the
+        /// slice of the piece between 55% and 75% of the way from grip to muzzle, and
+        /// the lowest point on it. On the pack's rifle that slice is exactly the wooden
+        /// handguard (its wood runs z 0.23..0.55 of a 0.95 m mesh, bottom at y 0.063).
+        ///
+        /// The gun must already be LEVEL when this is called - the low point is taken in
+        /// world Y, which is what makes it rig-agnostic and free of any assumption about
+        /// which way the model calls up.
+        ///
+        /// Returns the gun's own position when the piece has no mesh to measure.</summary>
+        public static Vector3 ForeEndUnderside(Transform gun)
+        {
+            if (!gun) return Vector3.zero;
+            var muzzle = MuzzleOf(gun);
+            if (muzzle == gun) return gun.position;
+            var barrel = muzzle.forward.normalized;
+            float length = Vector3.Dot(muzzle.position - gun.position, barrel);
+            if (length < 1e-4f) return gun.position;
+
+            var found = false;
+            var best = Vector3.zero;
+            foreach (var filter in gun.GetComponentsInChildren<MeshFilter>())
+            {
+                var mesh = filter.sharedMesh;
+                if (mesh == null) continue;
+                foreach (var local in mesh.vertices)
+                {
+                    var world = filter.transform.TransformPoint(local);
+                    float along = Vector3.Dot(world - gun.position, barrel) / length;
+                    if (along < 0.55f || along > 0.75f) continue;
+                    if (found && world.y >= best.y) continue;
+                    best = world;
+                    found = true;
+                }
+            }
+
+            return found ? best : gun.position;
+        }
+
+        /// <summary>Sit the piece ON the supporting palm, not through it.
+        ///
+        /// Turning the barrel onto the hand line puts the AXIS through both fists, and
+        /// an axis through a hand is a rifle sunk into it - the fore-end came out under
+        /// the left palm instead of resting on it. A hand does not hold a barrel on its
+        /// centre line; it holds it from below.
+        ///
+        /// So the piece is slid until the underside of its fore-end meets the left hand
+        /// - ACROSS the barrel only, never along it, so the grip keeps the place in the
+        /// fist that the hold gave it. Both hands end up under the weapon, which is
+        /// where hands go.</summary>
+        public static void RestOnSupportHand(Animator animator, Transform gun)
+        {
+            if (!animator || !gun) return;
+            var muzzle = MuzzleOf(gun);
+            var left = animator.GetBoneTransform(HumanBodyBones.LeftHand);
+            if (muzzle == gun || !left) return;
+
+            var barrel = muzzle.forward;
+            if (barrel.sqrMagnitude < 1e-6f) return;
+            barrel.Normalize();
+
+            var wanted = left.position - ForeEndUnderside(gun);
+            gun.position += wanted - barrel * Vector3.Dot(wanted, barrel);
+        }
+
+        /// <summary>Lay a two-handed gun down a given line without moving either hand.
+        ///
+        /// Attach hangs a piece off the T-pose hold, which is the only frame that exists
+        /// before an animation runs and is right for a clip whose free hand is then
+        /// solved onto the fore-end (PoseLongGun). It is the wrong way round for an
+        /// AUTHORED two-handed take - the Mixamo rifle set, say - where the take already
+        /// puts the man in the pose and it is the GUN that is out of line: hung off the
+        /// T-pose the muzzle rode up past his face while he was supposed to be aiming.
+        ///
+        /// A single animation family can solve this on one representative aiming frame
+        /// and keep the local hold. A review that blends authored families with
+        /// different wrist bases can instead call it after evaluation so the prop stays
+        /// on the live two-hand axis; it still rotates only the gun and never a bone.
+        ///
+        /// The ROLL is set here too: the top of the gun toward <paramref name="up"/>.</summary>
+        public static void FitToAim(Animator animator, Transform gun, Vector3 aim, Vector3 up)
+        {
+            if (!animator || !gun) return;
+            if (aim.sqrMagnitude < 1e-6f) return;
+
+            var muzzle = MuzzleOf(gun);
+            if (muzzle == gun) return;                  // no bore marker: nothing to aim
+            var barrel = muzzle.forward;
+            if (barrel.sqrMagnitude < 1e-6f) return;
+
+            if (up.sqrMagnitude < 1e-6f) up = Vector3.up;
+            var current = Quaternion.LookRotation(barrel.normalized, muzzle.up);
+            var target = Quaternion.LookRotation(aim.normalized, up);
+            gun.rotation = target * Quaternion.Inverse(current) * gun.rotation;
+        }
+
         /// <summary>THE PELVIS, and not whatever the avatar calls the pelvis.
         ///
         /// `GetBoneTransform(HumanBodyBones.Hips)` is only as good as the rig's own

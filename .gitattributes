@@ -2,3 +2,6 @@
 /Assets/CityKit/Catalog/Meshes/Mansion.asset filter=lfs diff=lfs merge=lfs -text
 /Assets/Prefabs/Vehicles/SM_Veh_Motorbike_Enduro_450_Meshes.asset filter=lfs diff=lfs merge=lfs -text
 /Assets/Prefabs/Vehicles/Enduro/enduro_450.glb filter=lfs diff=lfs merge=lfs -text
+/Assets/Animations/Mixamo/Shooting/*.fbx filter=lfs diff=lfs merge=lfs -text
+/Assets/Animations/Mixamo/Rifle/Ch15_nonPBR.fbx filter=lfs diff=lfs merge=lfs -text
+"/Assets/Animations/Mixamo/Rifle/Ch15 Textures/*.png" filter=lfs diff=lfs merge=lfs -text

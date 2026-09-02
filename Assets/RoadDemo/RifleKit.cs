@@ -34,6 +34,12 @@ namespace RoadDemo
     {
         const string Dir = "Assets/Animations/Mixamo/Rifle/";
 
+        /// <summary>The second delivery: the gunplay, the shot and the two turns. A
+        /// separate folder because they came down one at a time rather than as the
+        /// pack, and each one ships with the preview body baked in - 112 MB apiece,
+        /// imported for their motion alone (materials off).</summary>
+        const string ShootingDir = "Assets/Animations/Mixamo/Shooting/";
+
         public static bool Installed => Idle != null;
 
         // ------------------------------------------------------------- the stands
@@ -80,6 +86,25 @@ namespace RoadDemo
         public static AnimationClip JumpDown => Take("jump down", ref jumpDown);
         static AnimationClip jumpDown;
 
+        // ------------------------------------------------------------ the shooting
+
+        /// <summary>The long gun worked: the rifle's own gunplay loop and the machine
+        /// gun's, the shot, the shot taken from behind cover, and the two turns.</summary>
+        public static AnimationClip GunplayRifle => Shot("Gunplay_rifle", ref gunplayRifle);
+        static AnimationClip gunplayRifle;
+        public static AnimationClip GunplayMachineGun =>
+            Shot("Gunplay_machine_gun", ref gunplayMachineGun);
+        static AnimationClip gunplayMachineGun;
+        public static AnimationClip ShootRifle => Shot("Shoot Rifle", ref shootRifle);
+        static AnimationClip shootRifle;
+        public static AnimationClip ShootFromCover =>
+            Shot("shoot_behind_cover", ref shootFromCover);
+        static AnimationClip shootFromCover;
+        public static AnimationClip TurnLeftArmed => Shot("Turn Left", ref turnLeftArmed);
+        static AnimationClip turnLeftArmed;
+        public static AnimationClip TurnRightArmed => Shot("Turn Right", ref turnRightArmed);
+        static AnimationClip turnRightArmed;
+
         // ------------------------------------------------------------ the falling
 
         /// <summary>The six ways the pack drops a man holding a long gun. Dealt per man
@@ -89,6 +114,71 @@ namespace RoadDemo
             "death from front headshot", "death from back headshot",
             "death crouching headshot front");
         static List<AnimationClip> deaths;
+
+        /// <summary>Every take in the pack, in the order a man would want to look
+        /// through them: the stands, then the gaits eight ways each, then the turns,
+        /// the jump and the falls. This is the roster a bench puts in a list - it is
+        /// the file names, so what the list says is what is on disk.</summary>
+        public static IReadOnlyList<AnimationClip> All => all ??= Gather(
+            "idle", "idle aiming", "idle crouching", "idle crouching aiming",
+            "walk forward", "walk forward left", "walk forward right",
+            "walk left", "walk right",
+            "walk backward", "walk backward left", "walk backward right",
+            "run forward", "run forward left", "run forward right",
+            "run left", "run right",
+            "run backward", "run backward left", "run backward right",
+            "sprint forward", "sprint forward left", "sprint forward right",
+            "sprint left", "sprint right",
+            "sprint backward", "sprint backward left", "sprint backward right",
+            "walk crouching forward", "walk crouching forward left", "walk crouching forward right",
+            "walk crouching left", "walk crouching right",
+            "walk crouching backward", "walk crouching backward left", "walk crouching backward right",
+            "turn 90 left", "turn 90 right",
+            "crouching turn 90 left", "crouching turn 90 right",
+            "jump up", "jump loop", "jump down",
+            "death from the front", "death from the back", "death from right",
+            "death from front headshot", "death from back headshot",
+            "death crouching headshot front",
+            "\u0000Gunplay_rifle", "\u0000Gunplay_machine_gun",
+            "\u0000Shoot Rifle", "\u0000shoot_behind_cover",
+            "\u0000Turn Left", "\u0000Turn Right");
+        static List<AnimationClip> all;
+
+        /// <summary>Whether this take is a pose in which the man is actually working
+        /// the sights. The distinction belongs to the animation wardrobe, not to a
+        /// demo: aiming stands, shots and the eight-way tactical gaits keep their eyes
+        /// on the mark; at-ease stands, turns, jumps and falls keep the head authored
+        /// by their own clip.
+        ///
+        /// Mixamo's imported clip is deliberately renamed to its FBX file name (Clip),
+        /// so this remains stable across every Humanoid body that wears the take.</summary>
+        public static bool IsAimingPose(AnimationClip clip)
+        {
+            if (clip == null) return false;
+            var name = clip.name;
+            return StartsWith(name, "walk ") ||
+                   StartsWith(name, "run ") ||
+                   StartsWith(name, "sprint ") ||
+                   Contains(name, "aim") ||
+                   Contains(name, "shoot") ||
+                   Contains(name, "gunplay");
+        }
+
+        /// <summary>Firing takes already author their head motion. The procedural look
+        /// is for sustained aiming stands and tactical gaits only; gunplay and shots
+        /// still aim the rifle, but do not have their skull overwritten.</summary>
+        public static bool TracksTargetWithHead(AnimationClip clip)
+        {
+            if (!IsAimingPose(clip)) return false;
+            var name = clip.name;
+            return !Contains(name, "shoot") && !Contains(name, "gunplay");
+        }
+
+        static bool StartsWith(string value, string prefix) =>
+            value.StartsWith(prefix, System.StringComparison.OrdinalIgnoreCase);
+
+        static bool Contains(string value, string part) =>
+            value.IndexOf(part, System.StringComparison.OrdinalIgnoreCase) >= 0;
 
         // ------------------------------------------------------------- the loading
 
@@ -114,12 +204,21 @@ namespace RoadDemo
         static AnimationClip Take(string file, ref AnimationClip held) =>
             held != null ? held : held = Clip(file);
 
+        static AnimationClip Shot(string file, ref AnimationClip held) =>
+            held != null ? held : held = Clip(ShootingDir, file);
+
+        /// <summary>The takes in order. A name carrying the shooting mark is looked up
+        /// in the second folder - a marker rather than a second list, so the roster
+        /// stays one list read top to bottom, which is what a picker shows.</summary>
+        const char FromShooting = '\u0000';
+
         static List<AnimationClip> Gather(params string[] files)
         {
             var list = new List<AnimationClip>();
             foreach (var file in files)
             {
-                var clip = Clip(file);
+                var shooting = file.Length > 0 && file[0] == FromShooting;
+                var clip = shooting ? Clip(ShootingDir, file.Substring(1)) : Clip(file);
                 if (clip != null) list.Add(clip);
             }
             return list;
@@ -129,20 +228,23 @@ namespace RoadDemo
         /// "mixamo.com", so the FILE is the only address the pack gives us; the import
         /// pass renames each clip to its file name after the fact, and this reads the
         /// first clip in the file either way.</summary>
-        static AnimationClip Clip(string file)
+        static AnimationClip Clip(string file) => Clip(Dir, file);
+
+        static AnimationClip Clip(string directory, string file)
         {
-            if (Cache.TryGetValue(file, out var held)) return held;
+            var key = directory + file;
+            if (Cache.TryGetValue(key, out var held)) return held;
             AnimationClip found = null;
 #if UNITY_EDITOR
             foreach (var asset in UnityEditor.AssetDatabase
-                         .LoadAllAssetRepresentationsAtPath(Dir + file + ".fbx"))
+                         .LoadAllAssetRepresentationsAtPath(directory + file + ".fbx"))
                 if (asset is AnimationClip clip && !clip.name.StartsWith("__preview__"))
                 {
                     found = clip;
                     break;
                 }
 #endif
-            Cache[file] = found;
+            Cache[key] = found;
             return found;
         }
     }

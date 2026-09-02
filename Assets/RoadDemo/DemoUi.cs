@@ -202,6 +202,110 @@ namespace RoadDemo
             return rect;
         }
 
+        /// <summary>A dropdown in the demo's own paint, built from nothing.
+        ///
+        /// TMP_Dropdown will not assemble itself: it wants a caption, and a TEMPLATE -
+        /// a scroll view whose one item is cloned per option - handed to it before it
+        /// is any use, and it wants the template's GameObject switched off so the list
+        /// only exists while it is open. All of that is here once so a bench that needs
+        /// a list of takes, seeds or bodies does not build the same eight objects again.
+        ///
+        /// A dropdown is the one thing in these scenes that must be CLICKED, so unlike
+        /// every other helper here its parts stay raycast targets and the caller has to
+        /// have put an EventSystem up.</summary>
+        public static TMP_Dropdown Dropdown(Transform parent, string name, float width,
+            float rowHeight = 26f, int visibleRows = 12)
+        {
+            var root = NewRect(name, parent);
+            root.sizeDelta = new Vector2(width, rowHeight + 6f);
+            var face = root.gameObject.AddComponent<Image>();
+            face.color = Panel;
+            var dropdown = root.gameObject.AddComponent<TMP_Dropdown>();
+
+            var caption = Text(root, "Label", rowHeight * 0.62f, Ink, TextAlignmentOptions.Left);
+            var captionRect = caption.rectTransform;
+            captionRect.anchorMin = new Vector2(0f, 0f);
+            captionRect.anchorMax = new Vector2(1f, 1f);
+            captionRect.offsetMin = new Vector2(10f, 0f);
+            captionRect.offsetMax = new Vector2(-24f, 0f);
+
+            // ---- the template: scroll view, viewport, content, one item
+            var template = NewRect("Template", root);
+            template.anchorMin = new Vector2(0f, 0f);
+            template.anchorMax = new Vector2(1f, 0f);
+            template.pivot = new Vector2(0.5f, 1f);
+            template.anchoredPosition = new Vector2(0f, 2f);
+            template.sizeDelta = new Vector2(0f, rowHeight * visibleRows);
+            var templateFace = template.gameObject.AddComponent<Image>();
+            templateFace.color = Well;
+            var scroll = template.gameObject.AddComponent<ScrollRect>();
+
+            var viewport = NewRect("Viewport", template);
+            viewport.anchorMin = Vector2.zero;
+            viewport.anchorMax = Vector2.one;
+            viewport.pivot = new Vector2(0f, 1f);
+            viewport.offsetMin = Vector2.zero;
+            viewport.offsetMax = Vector2.zero;
+            var viewportFace = viewport.gameObject.AddComponent<Image>();
+            viewportFace.color = new Color(1f, 1f, 1f, 0.004f);
+            var mask = viewport.gameObject.AddComponent<Mask>();
+            mask.showMaskGraphic = false;
+
+            var content = NewRect("Content", viewport);
+            content.anchorMin = new Vector2(0f, 1f);
+            content.anchorMax = new Vector2(1f, 1f);
+            content.pivot = new Vector2(0.5f, 1f);
+            content.anchoredPosition = Vector2.zero;
+            content.sizeDelta = new Vector2(0f, rowHeight);
+
+            var item = NewRect("Item", content);
+            item.anchorMin = new Vector2(0f, 0.5f);
+            item.anchorMax = new Vector2(1f, 0.5f);
+            item.pivot = new Vector2(0.5f, 0.5f);
+            item.sizeDelta = new Vector2(0f, rowHeight);
+            var toggle = item.gameObject.AddComponent<Toggle>();
+
+            var itemFace = Block(item, "Item Background", new Color(0f, 0f, 0f, 0f));
+            itemFace.raycastTarget = true;
+            var itemFaceRect = itemFace.rectTransform;
+            itemFaceRect.anchorMin = Vector2.zero;
+            itemFaceRect.anchorMax = Vector2.one;
+            itemFaceRect.offsetMin = Vector2.zero;
+            itemFaceRect.offsetMax = Vector2.zero;
+
+            var tick = Block(item, "Item Checkmark", KeyFace);
+            var tickRect = tick.rectTransform;
+            tickRect.anchorMin = Vector2.zero;
+            tickRect.anchorMax = Vector2.one;
+            tickRect.offsetMin = Vector2.zero;
+            tickRect.offsetMax = Vector2.zero;
+
+            var itemText = Text(item, "Item Label", rowHeight * 0.60f, Ink,
+                TextAlignmentOptions.Left);
+            var itemTextRect = itemText.rectTransform;
+            itemTextRect.anchorMin = Vector2.zero;
+            itemTextRect.anchorMax = Vector2.one;
+            itemTextRect.offsetMin = new Vector2(10f, 0f);
+            itemTextRect.offsetMax = new Vector2(-6f, 0f);
+
+            toggle.targetGraphic = itemFace;
+            toggle.graphic = tick;
+            toggle.isOn = true;
+
+            scroll.content = content;
+            scroll.viewport = viewport;
+            scroll.horizontal = false;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+            scroll.scrollSensitivity = rowHeight;
+
+            dropdown.targetGraphic = face;
+            dropdown.template = template;
+            dropdown.captionText = caption;
+            dropdown.itemText = itemText;
+            template.gameObject.SetActive(false);
+            return dropdown;
+        }
+
         /// <summary>A flat block of colour - the fallback material of every screen
         /// here, and the only way the demo draws a rule or a pause bar.</summary>
         public static Image Block(Transform parent, string name, Color colour)
