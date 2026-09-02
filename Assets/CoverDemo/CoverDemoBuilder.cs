@@ -648,6 +648,7 @@ namespace CoverDemo
         static readonly (string, EquipmentKind)[] RivalArms =
         {
             ("SM_Wep_Rifle_01", EquipmentKind.Rifle),
+            (CrewArms.DefaultSidearm, EquipmentKind.Pistol),
         };
 
         // one crew per pavement, turn and turn about, so the fight is fought ACROSS
@@ -658,7 +659,8 @@ namespace CoverDemo
         void SpawnRivals()
         {
             TestBench.SpawnRivals(_crews, nameSeed, rivalCrews, rivalHoods, RivalArms,
-                i => { var at = RivalAnchor(i, out var facing); return (at, facing); }, "[CoverDemo]");
+                i => { var at = RivalAnchor(i, out var facing); return (at, facing); }, "[CoverDemo]",
+                mixArmsWithinCrew: true);
         }
 
         /// <summary>Where a rival crew stands and which way it looks: one per pavement,
@@ -701,15 +703,17 @@ namespace CoverDemo
                 _kit.Plan.Reserve(RivalAnchor(i, out _), 0f, new Vector2(9f, 2.2f));
         }
 
-        // The outfit opens with long guns rather than the .38 in the coat, the same way
-        // the crew demo's bench does it (TestBench.ArmTheOutfit). Once, when the roster
-        // is in (the outfit is dealt off it a frame or two later).
+        // The outfit opens with a deliberate rifle/pistol mix. The issue still goes
+        // through the ledger (TestBench.ArmTheOutfit), so the street and the books name
+        // the same guns. Once, when the roster is in (the outfit is dealt off it a frame
+        // or two later).
         bool _armsGiven;
 
         void ArmTheOutfit()
         {
             if (_armsGiven) return;
-            _armsGiven = TestBench.ArmTheOutfit(EquipmentKind.Rifle, "[CoverDemo]");
+            _armsGiven = TestBench.ArmTheOutfit(
+                new[] { EquipmentKind.Rifle, EquipmentKind.Pistol }, "[CoverDemo]");
         }
     }
 

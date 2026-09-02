@@ -32,7 +32,32 @@ namespace LivingCity.Tests
             CombatRouteFailureReachesCoverCaller(failures);
             RoutedSteerMayStepSidewaysButNotBack(failures);
             NearRouteCornerIsRetained(failures);
+            MixamoRunPacesClearSharedGaitGate(failures);
             return failures;
+        }
+
+        static void MixamoRunPacesClearSharedGaitGate(List<string> failures)
+        {
+            // Root pace read from the imported Mixamo male/female run clips. Their
+            // city pace is deliberately capped below that natural pace, but remains
+            // inside the supported playback band and must still enter the jog.
+            const float maleNatural = 4.3845f;
+            const float femaleNatural = 3.7423f;
+            if (!CrewWalker.GaitPaceAllowedModel(3.8f, maleNatural, 0.9f, false) ||
+                !CrewWalker.GaitPaceAllowedModel(3.37f, femaleNatural, 0.9f, false))
+                failures.Add("Crew run: the Mixamo jog is rejected at the city's own pace.");
+
+            // The hysteresis is still there - 3.5 holds a jog it could not have
+            // entered - but it no longer reaches down to where the feet visibly beat
+            // the ground. Below the band floor the rate clamps UP to it, so a man held
+            // at 3.0 against a 4.3845 clip plays 3.95 while covering 3.0: thirty per
+            // cent of skate, which is what the crowd used to buy.
+            if (!CrewWalker.GaitPaceAllowedModel(3.5f, maleNatural, 0.9f, true) ||
+                CrewWalker.GaitPaceAllowedModel(3.5f, maleNatural, 0.9f, false))
+                failures.Add("Crew run: the crowd hysteresis is lost.");
+            if (CrewWalker.GaitPaceAllowedModel(3f, maleNatural, 0.9f, true) ||
+                CrewWalker.GaitPaceAllowedModel(2.5f, maleNatural, 0.9f, true))
+                failures.Add("Crew run: a braked man keeps a gait his feet outrun.");
         }
 
         static void NearRouteCornerIsRetained(List<string> failures)

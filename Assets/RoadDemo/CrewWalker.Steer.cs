@@ -555,12 +555,14 @@ namespace RoadDemo
             // into the JOG, not into a walk: the sprint's own band is the widest of
             // the three and a single test against it turned every braked flee into a
             // stroll - which is what the player watched a beaten mob do.
-            if (sprint && pace < SprintRateMin * (_strideJog ? 1f : 1.1f) * sprintClip)
+            if (sprint && !GaitPaceAllowedModel(
+                    pace, sprintClip, SprintRateMin, _strideJog))
             {
                 sprint = false;
                 pace = JogSpeed * held;
             }
-            if (jog && pace < RunRateMin * (_strideJog ? 1f : 1.1f) * ClipPace(PoseJog, JogClipPace))
+            if (jog && !GaitPaceAllowedModel(pace,
+                    ClipPace(PoseJog, JogClipPace), RunRateMin, _strideJog))
             {
                 jog = false;
                 pace = (hurry ? Speed * HurryFactor : Speed) * PaceScale * held *

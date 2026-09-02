@@ -255,11 +255,34 @@ namespace RoadDemo
         /// <summary>How fast the smoothed brake follows the raw one, per second.</summary>
         const float GaitEase = 2f;
 
-        /// <summary>The hysteresis on the drop: a running man holds the jog until he is
-        /// braked to GaitDrop of the band's floor, and a walking man does not pick the
-        /// run back up until the way is nearly clear (GaitBack) - two thresholds, so
-        /// the gait cannot flap between them at the edge of a queue.</summary>
-        const float GaitDrop = 0.7f, GaitBack = 0.95f;
+        /// <summary>
+        /// The hysteresis on the drop: a running man holds the jog until he is braked
+        /// to GaitDrop of the band's floor, and a walking man does not pick the run
+        /// back up until the way is nearly clear (GaitBack) - two thresholds, so the
+        /// gait cannot flap between them at the edge of a queue.
+        ///
+        /// GaitDrop IS A SKATE TOLERANCE, and it was set where the feet visibly beat
+        /// the ground. Below the band's floor the playback rate is clamped UP to it
+        /// (RunRateMin), so a man held at 0.7 of the floor covered 3.0 m/s with his
+        /// legs playing 3.95 - thirty per cent of pure skate, held deliberately, for
+        /// as long as the crowd kept him there. At 0.85 the worst case is fifteen,
+        /// which is the mild mismatch the comment below always claimed to be keeping.
+        ///
+        /// It is not set to 1.0 - no skate at all - because it cannot be: the city
+        /// caps a jog at JogQuickest 3.8 m/s while the imported male run clip's own
+        /// pace is 4.3845, so RunRateMin x clip = 3.95 is ABOVE the fastest this town
+        /// lets a man jog. A floor of 1.0 would mean nobody ever runs. That mismatch
+        /// is a real one and it is not this constant's to settle.
+        /// </summary>
+        const float GaitDrop = 0.85f, GaitBack = 0.95f;
+
+        /// <summary>The shared admission floor for a clip-driven gait. A new gait
+        /// needs an almost clear lane; once established it survives a stronger crowd
+        /// brake. Keeping this calculation shared prevents graph walking and free
+        /// strides from disagreeing about the same Mixamo clip.</summary>
+        internal static bool GaitPaceAllowedModel(float pace, float clipPace,
+            float rateFloor, bool holdingGait) =>
+            pace >= rateFloor * clipPace * (holdingGait ? GaitDrop : GaitBack);
 
         bool _runningLeg;
 
@@ -333,8 +356,8 @@ namespace RoadDemo
             // preference to a gait change; only a real queue drops him.
             float brake = PaceScale * Mathf.Max(CrowdHold, 0.25f);
             _gaitBrake = dt > 0f ? Mathf.MoveTowards(_gaitBrake, brake, GaitEase * dt) : brake;
-            if (run && JogSpeed * _gaitBrake < RunRateMin * ClipPace(PoseJog, JogClipPace) *
-                (_runningLeg ? GaitDrop : GaitBack))
+            if (run && !GaitPaceAllowedModel(JogSpeed * _gaitBrake,
+                    ClipPace(PoseJog, JogClipPace), RunRateMin, _runningLeg))
                 run = false;
             LocomotionPose = RunWhile(run) ? VisibleJogPose : VisibleWalkPose;
             // What he actually covers, which is not what he was dealt: the dawdle and

@@ -71,12 +71,27 @@ namespace RoadDemo
         /// benches differ on. Gang 0 is the outfit, so the rivals start at 1.</summary>
         public static void SpawnRivals(DemoCrews crews, int nameSeed, int rivalCrews, int rivalHoods,
             (string weapon, EquipmentKind kind)[] arms,
-            System.Func<int, (Vector3 at, Vector3 facing)> place, string tag)
+            System.Func<int, (Vector3 at, Vector3 facing)> place, string tag,
+            bool mixArmsWithinCrew = false)
         {
+            if (arms == null || arms.Length == 0)
+            {
+                Debug.LogWarning(tag + " no rival guns were listed - the rival crews sit out.");
+                return;
+            }
+
             var rng = new System.Random(nameSeed);
             var gangNames = LivingCity.Gangs.GangCatalog.Names;
             var bossModels = LivingCity.Gangs.GangCatalog.LieutenantModels;
             var soldierModels = LivingCity.Gangs.GangCatalog.SoldierModels;
+            var resolvedArms = new (GameObject weapon, EquipmentKind kind)[arms.Length];
+            for (int i = 0; i < arms.Length; i++)
+            {
+                resolvedArms[i] = (CrewKit.Weapon(arms[i].weapon), arms[i].kind);
+                if (resolvedArms[i].weapon == null)
+                    Debug.LogWarning(tag + " gun " + arms[i].weapon + " not found - " +
+                                     "rivals dealt that slot come unarmed.");
+            }
 
             int count = Mathf.Clamp(rivalCrews, 1, Mathf.Min(gangNames.Length - 1, 4));
             for (int i = 0; i < count; i++)
@@ -102,15 +117,16 @@ namespace RoadDemo
                     if (body) hoodPrefabs.Add(body);
                 }
 
-                var (weaponName, kind) = arms[i % arms.Length];
-                var weapon = CrewKit.Weapon(weaponName);
-                if (weapon == null)
-                    Debug.LogWarning(tag + " gun " + weaponName + " not found - the " +
-                                     gangNames[gang] + " crew comes unarmed.");
+                var arm = resolvedArms[i % resolvedArms.Length];
+                int crewIndex = i;
+                System.Func<int, (GameObject weapon, EquipmentKind kind)> armsFor = null;
+                if (mixArmsWithinCrew)
+                    armsFor = member => resolvedArms[(crewIndex + member) % resolvedArms.Length];
 
                 var (anchor, facing) = place(i);
                 crews.AddRival(gang, gangNames[gang], DrawName(rng), bossPrefab, hoodNames,
-                    hoodPrefabs, anchor, facing, weapon, kind, lineUp: true);
+                    hoodPrefabs, anchor, facing, arm.weapon, arm.kind, lineUp: true,
+                    armsFor: armsFor);
             }
         }
 
@@ -128,23 +144,33 @@ namespace RoadDemo
         /// frame; true once the issue is settled either way.</summary>
         public static bool ArmTheOutfit(EquipmentKind arms, string tag)
         {
+            return ArmTheOutfit(new[] { arms }, tag);
+        }
+
+        /// <summary>Mixed-arms counterpart to the single-kind bench issue. Every crew
+        /// receives one gun per active member, cycling through <paramref name="arms"/>
+        /// from its lieutenant down. NormalizeArms remains the dealer: combat skill and
+        /// organization decide which named member actually carries each piece.</summary>
+        public static bool ArmTheOutfit(IReadOnlyList<EquipmentKind> arms, string tag)
+        {
             var director = LivingCity.Gameplay.PersonnelDirector.Instance;
             if (director == null || director.Roster == null) return false;
             var roster = director.Roster;
             if (roster.Crews.Count == 0) return true;
 
-            if (!CrewArms.IsFirearm(arms))
+            if (arms == null || arms.Count == 0)
             {
-                Debug.LogWarning(tag + " " + arms + " is not a gun - the outfit keeps its .38s.");
+                Debug.LogWarning(tag + " no outfit guns were listed - the outfit keeps its .38s.");
                 return true;
             }
 
-            // bought under the counter's own name and price, so the item reads and
-            // photographs on the armory page exactly as one the player paid for
-            string gun = arms.ToString();
-            int price = 0;
-            foreach (var listing in LivingCity.Outfit.ArmoryCatalog.Weapons)
-                if (listing.Kind == arms) { gun = listing.DisplayName; price = listing.Price; break; }
+            for (int i = 0; i < arms.Count; i++)
+                if (!CrewArms.IsFirearm(arms[i]))
+                {
+                    Debug.LogWarning(tag + " " + arms[i] +
+                                     " is not a gun - the outfit keeps its .38s.");
+                    return true;
+                }
 
             int issued = 0;
             foreach (var crew in roster.Crews)
@@ -159,12 +185,25 @@ namespace RoadDemo
                 }
                 for (int i = 0; i < hands; i++)
                 {
-                    var item = director.AddEquipment(arms, gun, price);
+                    var kind = arms[i % arms.Count];
+                    // Bought under the counter's own name and price, so the item reads
+                    // and photographs exactly as one the player paid for.
+                    string gun = kind.ToString();
+                    int price = 0;
+                    foreach (var listing in LivingCity.Outfit.ArmoryCatalog.Weapons)
+                        if (listing.Kind == kind)
+                        {
+                            gun = listing.DisplayName;
+                            price = listing.Price;
+                            break;
+                        }
+                    var item = director.AddEquipment(kind, gun, price);
                     if (item == null) continue;
                     if (director.GiveEquipment(item.Id, lieutenant.Id).Ok) issued++;
                 }
             }
-            Debug.Log(tag + " " + issued + " x " + gun + " issued to the outfit.");
+            string issue = arms.Count == 1 ? arms[0].ToString() : "mixed firearms";
+            Debug.Log(tag + " " + issued + " x " + issue + " issued to the outfit.");
             return true;
         }
 
