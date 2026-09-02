@@ -59,6 +59,47 @@ namespace LivingCity.Personnel
         /// nothing. Appended, like every kind before it, so serialized values keep
         /// their meaning.</summary>
         PayrollShort,
+
+        // ------------------------------------------------------------- GAN-245
+        // The law's own paper. Appended, like everything before it.
+
+        /// <summary>A shopkeeper who was leaned on picked up the telephone.</summary>
+        ComplaintRung,
+
+        /// <summary>An officer stood at the door with a notebook and nobody to
+        /// arrest.</summary>
+        StatementTaken,
+
+        /// <summary>A case was opened, with a list of names on it.</summary>
+        CaseOpened,
+
+        /// <summary>A witness was leaned on and will not stand up.</summary>
+        WitnessWithdrawn,
+
+        /// <summary>A witness was killed.</summary>
+        WitnessKilled,
+
+        /// <summary>The outfit put money up and got a man out until his day.</summary>
+        BailPosted,
+
+        /// <summary>He did not turn up, and the money is gone.</summary>
+        BailForfeit,
+
+        /// <summary>The court found against him.</summary>
+        Convicted,
+
+        /// <summary>The court found for him.</summary>
+        Acquitted,
+
+        /// <summary>The prosecution had nobody to put up and it was thrown out.</summary>
+        CaseDismissed,
+
+        /// <summary>The boss had a man inside and sold him.</summary>
+        CutLoose,
+
+        /// <summary>His lieutenant handed him the crew's collection bag (GAN-262) - he
+        /// walks the rounds now and stands at the front between them.</summary>
+        BagHanded,
     }
 
     /// <summary>
@@ -117,10 +158,42 @@ namespace LivingCity.Personnel
                            "it is coming from us.";
                 case IncidentKind.PayrollShort:
                     return name + " went home with an empty envelope.";
+                case IncidentKind.ComplaintRung:
+                    return name + " rang the precinct about our men.";
+                case IncidentKind.StatementTaken:
+                    return "An officer took a statement at " + name +
+                           " and found nobody to take in.";
+                case IncidentKind.CaseOpened:
+                    return "The city has opened a case over " + name +
+                           ", and our names are on it.";
+                case IncidentKind.WitnessWithdrawn:
+                    return name + " has remembered nothing after all.";
+                case IncidentKind.WitnessKilled:
+                    return name + " will not be giving evidence.";
+                case IncidentKind.BailPosted:
+                    return name + " is out until his day in court.";
+                case IncidentKind.BailForfeit:
+                    return name + " did not appear. The money is gone and the city " +
+                           "is looking for him.";
+                case IncidentKind.Convicted:
+                    return "The court has passed sentence on " + name + ".";
+                case IncidentKind.Acquitted:
+                    return name + " walked out of it.";
+                case IncidentKind.CaseDismissed:
+                    return name + " walked: nobody would give evidence" + place + ".";
+                case IncidentKind.CutLoose:
+                    return name + " was cut loose while he was inside.";
+                case IncidentKind.BagHanded:
+                    return name + " was handed the bag.";
                 default:
                     return name + " is slowing down.";
             }
         }
+
+        /// <summary>The bag line with both names on it - who gave and who carries.</summary>
+        public static string BagHandedLine(string lieutenant, string hood) =>
+            (string.IsNullOrEmpty(lieutenant) ? "His lieutenant" : lieutenant) +
+            " handed the bag to " + hood + ".";
 
         /// <summary>
         /// The short-payroll line: the outfit's own, not one man's, so it is the third
@@ -149,11 +222,22 @@ namespace LivingCity.Personnel
         /// said "he did not go alone" left the player to notice four missing names on
         /// his own.
         /// </summary>
-        public static string DefectedLine(string name, int menTaken) => menTaken <= 0
-            ? name + " has gone over. Nobody would follow him."
-            : menTaken == 1
-                ? name + " has gone over, and took one of his men with him."
-                : name + " has gone over, and took " + menTaken + " of his men with him.";
+        /// <summary>
+        /// A lieutenant going over, and where he went. The house is named when the
+        /// caller knows it; an empty name prints the words the paper printed before
+        /// anybody worked out whose door he knocked on.
+        /// </summary>
+        public static string DefectedLine(string name, int menTaken, string family = "")
+        {
+            var to = string.IsNullOrEmpty(family)
+                ? " has gone over"
+                : " has gone over to the " + family + " family";
+            return menTaken <= 0
+                ? name + to + ". Nobody would follow him."
+                : menTaken == 1
+                    ? name + to + ", and took one of his men with him."
+                    : name + to + ", and took " + menTaken + " of his men with him.";
+        }
     }
 
     /// <summary>

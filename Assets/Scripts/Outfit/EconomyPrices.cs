@@ -197,6 +197,18 @@ namespace LivingCity.Outfit
         /// <summary>A shakedown of a till and a drawer.</summary>
         public const int Shakedown = 200;
 
+        /// <summary>
+        /// WHAT IT COSTS TO GET A MAN OUT until his court day (GAN-245). The figures
+        /// live on the sentence table with the bands they belong to - one deed, one row
+        /// - and this is the door the safe pays through, so the ledger and the books
+        /// quote the same number.
+        ///
+        /// Nought means no bail at any price, which is what a man accused of killing a
+        /// policeman gets. (Docs/economy-prices.md §7.)
+        /// </summary>
+        public static int Bail(LivingCity.Personnel.Deed deed) =>
+            LivingCity.Personnel.Sentencing.Bail(deed);
+
         /// <summary>A raid: the register and what is on the shelves.</summary>
         public const int Raid = 500;
 

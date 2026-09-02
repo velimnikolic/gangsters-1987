@@ -29,7 +29,7 @@ namespace LivingCity.Tests
             ("NobodyIsOnDutyWhoIsNotOnTheRoster", NobodyIsOnDutyWhoIsNotOnTheRoster),
             ("TheDeedDecidesTheSentence", TheDeedDecidesTheSentence),
             ("LifeIsASentinelAndNotAnOverflow", LifeIsASentinelAndNotAnOverflow),
-            ("AnEscapeCostsHimTwoDaysMore", AnEscapeCostsHimTwoDaysMore),
+            ("AnEscapeCostsHimTheSurcharge", AnEscapeCostsHimTheSurcharge),
             ("HeldMeansHeldUntilAJudgeSaysOtherwise", HeldMeansHeldUntilAJudgeSaysOtherwise),
             ("TheVerdictLandsWhenTheTransferArrives", TheVerdictLandsWhenTheTransferArrives),
             ("AWreckedTransferIsAFreeManUnarmed", AWreckedTransferIsAFreeManUnarmed),
@@ -40,6 +40,28 @@ namespace LivingCity.Tests
             ("OutOfTownDrawsNoWage", OutOfTownDrawsNoWage),
             ("ADeputyRunsTheCrewWhileTheLeaderIsInside", ADeputyRunsTheCrewWhileTheLeaderIsInside),
             ("TheLeaderKeepsHisBranchOnPaper", TheLeaderKeepsHisBranchOnPaper),
+
+            // ------------------------------------------------ GAN-245: the complaint,
+            // the trial, the lawyer, bail, the witnesses and the sale
+            ("TheBandsAreLonger", TheBandsAreLonger),
+            ("AHoodGetsLessAndAMarkedLieutenantMore", AHoodGetsLessAndAMarkedLieutenantMore),
+            ("ALawyerCutsTheDaysButNotLife", ALawyerCutsTheDaysButNotLife),
+            ("AFrightenedOwnerDoesNotRing", AFrightenedOwnerDoesNotRing),
+            ("AConnectedOwnerRings", AConnectedOwnerRings),
+            ("WordAgainstWordMostlyWalks", WordAgainstWordMostlyWalks),
+            ("TwoEyewitnessesConvict", TwoEyewitnessesConvict),
+            ("NoWitnessesIsADismissal", NoWitnessesIsADismissal),
+            ("ThePoliceWhoSawItAreNotSilenced", ThePoliceWhoSawItAreNotSilenced),
+            ("AWithdrawnWitnessIsOffTheCase", AWithdrawnWitnessIsOffTheCase),
+            ("AnOpenComplaintIsAnExtraCount", AnOpenComplaintIsAnExtraCount),
+            ("BailComesBackAsAMan", BailComesBackAsAMan),
+            ("SkippedBailIsWTwoAndTheMoneyIsGone", SkippedBailIsWTwoAndTheMoneyIsGone),
+            ("CutLooseCostsTheCrewMost", CutLooseCostsTheCrewMost),
+            ("StandingByHimPaysAPointAWeek", StandingByHimPaysAPointAWeek),
+            ("ARearrestPutsABailedManBack", ARearrestPutsABailedManBack),
+            ("CuttingLooseTheLastDefendantClosesTheCase",
+                CuttingLooseTheLastDefendantClosesTheCase),
+            ("EveryManTriedOnPaperIsReported", EveryManTriedOnPaperIsReported),
         };
 
         public static List<string> Run()
@@ -241,17 +263,92 @@ namespace LivingCity.Tests
             for (var i = 0; i < 200; i++)
             {
                 var affray = Sentencing.Days(Deed.Affray, rng, false);
-                Want(failures, affray >= 3 && affray <= 5,
-                    "SENTENCE: an affray is three to five days, not " + affray + ".");
+                Want(failures, affray >= 6 && affray <= 10,
+                    "SENTENCE: an affray is six to ten days, not " + affray + ".");
             }
             for (var i = 0; i < 200; i++)
             {
                 var murder = Sentencing.Days(Deed.Murder, rng, false);
-                Want(failures, murder >= 6 && murder <= 10,
+                Want(failures, murder >= 15 && murder <= 25,
                     "SENTENCE: a murder is longer than an affray, not " + murder + ".");
+            }
+            for (var i = 0; i < 200; i++)
+            {
+                var lean = Sentencing.Days(Deed.Extortion, rng, false);
+                Want(failures, lean >= 8 && lean <= 14,
+                    "SENTENCE: extortion is eight to fourteen days, not " + lean + ".");
             }
             Want(failures, Sentencing.IsLife(Sentencing.Days(Deed.CopKilling, rng, false)),
                 "SENTENCE: killing a policeman is life.");
+        }
+
+        /// <summary>GAN-245's "duza za sve": every band moved up, not only the new one -
+        /// so the low end of each is at or above what its HIGH end used to be.</summary>
+        static void TheBandsAreLonger(List<string> failures)
+        {
+            Want(failures, Sentencing.BandLow(Deed.Affray) >= 5,
+                "SENTENCE: the affray band must start at or above the old high end of 5.");
+            Want(failures, Sentencing.BandLow(Deed.Murder) >= 10,
+                "SENTENCE: the murder band must start at or above the old high end of 10.");
+            Want(failures, Sentencing.BandLow(Deed.Extortion) > Sentencing.BandLow(Deed.Affray),
+                "SENTENCE: leaning on a shopkeeper is not a lesser thing than an affray.");
+            Want(failures, Sentencing.BandLow(Deed.WitnessTampering) ==
+                           Sentencing.BandLow(Deed.Extortion),
+                "SENTENCE: intimidating a witness is the same band as the extortion " +
+                "it was meant to bury.");
+            Want(failures, Sentencing.DaysToCourt >= 5,
+                "SENTENCE: there must be days enough between the arrest and the court " +
+                "day to play bail, a lawyer and the witnesses in.");
+            for (var deed = Deed.Affray; deed <= Deed.WitnessTampering; deed++)
+                Want(failures, Sentencing.BandHigh(deed) >= Sentencing.BandLow(deed),
+                    "SENTENCE: " + deed + " has a band that runs backwards.");
+        }
+
+        static void AHoodGetsLessAndAMarkedLieutenantMore(List<string> failures)
+        {
+            var plain = Sentencing.Days(Deed.Murder, new Random(11), false,
+                Rank.Lieutenant, false, 0, 0);
+            var hood = Sentencing.Days(Deed.Murder, new Random(11), false,
+                Rank.Hood, false, 0, 0);
+            var named = Sentencing.Days(Deed.Murder, new Random(11), false,
+                Rank.Lieutenant, true, 0, 0);
+
+            Want(failures, hood < plain,
+                "SENTENCE: sitna riba - a hood goes down for less than the man who " +
+                "sent him (" + hood + " vs " + plain + ").");
+            Want(failures, named > plain,
+                "SENTENCE: a lieutenant the judge has read about goes down for more (" +
+                named + " vs " + plain + ").");
+            var small = Sentencing.Days(Deed.Affray, new Random(11), false,
+                Rank.Hood, false, 5, 0);
+            Want(failures, small >= Sentencing.HoodFloorDays,
+                "SENTENCE: no hood walks out under the floor, whatever the scale says.");
+            Want(failures, Sentencing.IsLife(Sentencing.Days(Deed.CopKilling,
+                    new Random(11), false, Rank.Hood, false, 5, 3)),
+                "SENTENCE: nothing scales a life sentence.");
+        }
+
+        static void ALawyerCutsTheDaysButNotLife(List<string> failures)
+        {
+            var alone = Sentencing.Days(Deed.Murder, new Random(5), false,
+                Rank.Lieutenant, false, 0, 0);
+            var counselled = Sentencing.Days(Deed.Murder, new Random(5), false,
+                Rank.Lieutenant, false, Lawyer.MaxSkill, 0);
+            Want(failures, counselled <= alone,
+                "LAWYER: counsel never lengthens a sentence.");
+            Want(failures, counselled >= Sentencing.BandLow(Deed.Murder),
+                "LAWYER: a lawyer argues the days down, he does not invent a lesser " +
+                "crime - the band's own floor holds.");
+            Want(failures, Sentencing.IsLife(Sentencing.Days(Deed.CopKilling,
+                    new Random(5), false, Rank.Lieutenant, false, Lawyer.MaxSkill, 0)),
+                "LAWYER: nobody argues a cop-killer out of life.");
+
+            var counts = Sentencing.Days(Deed.Extortion, new Random(5), false,
+                Rank.Lieutenant, false, 0, 2);
+            var single = Sentencing.Days(Deed.Extortion, new Random(5), false,
+                Rank.Lieutenant, false, 0, 0);
+            Want(failures, counts == single + 2 * Sentencing.ExtraCountDays,
+                "SENTENCE: each attached count is worth its own days.");
         }
 
         static void LifeIsASentinelAndNotAnOverflow(List<string> failures)
@@ -264,7 +361,7 @@ namespace LivingCity.Tests
                 "SENTENCE: life plus a surcharge is still life.");
         }
 
-        static void AnEscapeCostsHimTwoDaysMore(List<string> failures)
+        static void AnEscapeCostsHimTheSurcharge(List<string> failures)
         {
             var clean = Sentencing.Days(Deed.Affray, new Random(3), false);
             var escaper = Sentencing.Days(Deed.Affray, new Random(3), true);
@@ -311,17 +408,18 @@ namespace LivingCity.Tests
             var prisoner = pipe.Book(roster, man.Id, Deed.Murder, 10);
             var wanted = new List<Prisoner>();
 
-            pipe.DayTick(11, wanted);
+            var courtDay = 10 + Sentencing.DaysToCourt;
+            pipe.DayTick(courtDay - 1, wanted);
             Want(failures, wanted.Count == 0, "PIPE: nobody rides before his court day.");
-            pipe.DayTick(12, wanted);
+            pipe.DayTick(courtDay, wanted);
             Want(failures, wanted.Count == 1 && wanted[0] == prisoner,
                 "PIPE: his court day puts him up for transfer.");
 
             pipe.Away(prisoner);
-            pipe.Convicted(roster, prisoner, 12);
+            pipe.Convicted(roster, prisoner, courtDay);
             Want(failures, prisoner.Stage == PrisonStage.Sentenced && prisoner.SentenceDays >= 6,
                 "PIPE: the verdict lands when the transfer arrives.");
-            Want(failures, man.BackOnDay == 12 + prisoner.SentenceDays,
+            Want(failures, man.BackOnDay == courtDay + prisoner.SentenceDays,
                 "PIPE: sentencing gives him an absolute day to come back on.");
             Want(failures, man.RapSheet.Count >= 2 &&
                            man.RapSheet[man.RapSheet.Count - 1].Outcome.Contains("Convicted"),
@@ -362,8 +460,9 @@ namespace LivingCity.Tests
             pipe.Away(again);
             pipe.Convicted(roster, again, 22);
             var clean = Sentencing.Days(Deed.Affray,
-                new Random(Sentencing.StreamFor(roster.Seed, man.Id, 22)), false);
-            Want(failures, again.SentenceDays == clean + Sentencing.EscapeSurcharge,
+                new Random(Sentencing.StreamFor(roster.Seed, man.Id, 22)), true,
+                man.Rank, Notability.Marked(man, 22), 0, 0);
+            Want(failures, again.SentenceDays == clean,
                 "PIPE: the surcharge reaches the sentence through the pipeline.");
         }
 
@@ -373,17 +472,19 @@ namespace LivingCity.Tests
             var prisoner = pipe.Book(roster, man.Id, Deed.Affray, 10);
             var wanted = new List<Prisoner>();
 
-            pipe.DayTick(12, wanted);
+            var courtDay = 10 + Sentencing.DaysToCourt;
+            pipe.DayTick(courtDay, wanted);
             Want(failures, wanted.Count == 1, "PIPE: he is due on his court day.");
 
             // the precinct has no car: he goes back in the cells and rides tomorrow
-            pipe.BackToTheCells(prisoner, 12);
-            Want(failures, prisoner.Stage == PrisonStage.Held && prisoner.CourtDay == 13,
+            pipe.BackToTheCells(prisoner, courtDay);
+            Want(failures, prisoner.Stage == PrisonStage.Held &&
+                           prisoner.CourtDay == courtDay + 1,
                 "PIPE: a transfer with no car waits a day rather than losing the man.");
             Want(failures, man.Status == CharacterStatus.Jailed && man.BackOnDay == 0,
                 "PIPE: waiting is still being held.");
 
-            pipe.DayTick(13, wanted);
+            pipe.DayTick(courtDay + 1, wanted);
             Want(failures, wanted.Count == 1, "PIPE: and he is due again the next day.");
         }
 
@@ -554,6 +655,507 @@ namespace LivingCity.Tests
             empty.Crews.Add(bare);
             Want(failures, Command.EffectiveLieutenant(empty, bare) == null,
                 "DEPUTY: a branch of nobody has no acting commander - null is the honest answer.");
+        }
+
+        // ------------------------------------------------------------ the telephone
+
+        static void AFrightenedOwnerDoesNotRing(List<string> failures)
+        {
+            // A well-connected man who has been frightened for a month keeps quiet:
+            // his fear is the whole of the cap and it eats his connections outright.
+            var terrified = ComplaintRoll.Chance(0.8f, 100f, 100f, false, false);
+            Want(failures, terrified <= ComplaintRoll.Floor + 0.001f,
+                "COMPLAINT: a terrified shopkeeper does not pick up the telephone (" +
+                terrified + ").");
+
+            var calm = ComplaintRoll.Chance(0.8f, 0f, 100f, false, false);
+            Want(failures, calm > terrified,
+                "COMPLAINT: fear is what silences him - it must subtract.");
+
+            var timid = ComplaintRoll.Chance(0.5f, 20f, 100f, false, true);
+            var plain = ComplaintRoll.Chance(0.5f, 20f, 100f, false, false);
+            Want(failures, timid < plain,
+                "COMPLAINT: a man who wants no trouble rings less than one who does not care.");
+
+            var stream = ComplaintRoll.StreamFor(1987, "shop-4", 11, 3);
+            Want(failures, ComplaintRoll.Rings(0.5f, stream) == ComplaintRoll.Rings(0.5f, stream),
+                "COMPLAINT: one stream must answer the same twice.");
+            Want(failures,
+                ComplaintRoll.StreamFor(1987, "shop-4", 11, 3) !=
+                ComplaintRoll.StreamFor(1987, "shop-4", 12, 3),
+                "COMPLAINT: two days must not share a stream.");
+        }
+
+        static void AConnectedOwnerRings(List<string> failures)
+        {
+            var connected = ComplaintRoll.Chance(0.85f, 10f, 100f, true, false);
+            var nobody = ComplaintRoll.Chance(0.1f, 10f, 100f, false, false);
+            Want(failures, connected > nobody,
+                "COMPLAINT: a cousin at the precinct is worth something (" + connected +
+                " vs " + nobody + ").");
+            Want(failures, connected >= 0.5f,
+                "COMPLAINT: a connected owner who is not frightened rings more often " +
+                "than not (" + connected + ").");
+            Want(failures, connected <= ComplaintRoll.Ceiling &&
+                           nobody >= ComplaintRoll.Floor,
+                "COMPLAINT: nobody is ever a certainty in either direction.");
+
+            var rang = 0;
+            for (var seed = 0; seed < 200; seed++)
+                if (ComplaintRoll.Rings(connected,
+                        ComplaintRoll.StreamFor(1987, "deli", seed, 1)))
+                    rang++;
+            Want(failures, rang > 100,
+                "COMPLAINT: over two hundred mornings a connected owner rings most of " +
+                "them (" + rang + "/200).");
+        }
+
+        // ------------------------------------------------------------------ the trial
+
+        static CourtCase WordAgainstWord(PrisonPipeline pipe, int day)
+        {
+            var file = pipe.OpenCase(Deed.Extortion, 0, day, day + Sentencing.DaysToCourt,
+                "shop-4", "THE DELICATESSEN");
+            file.Witnesses.Add(new Witness
+            {
+                Kind = WitnessKind.Complainant, Name = "Aldo Bruni", Seed = 7,
+                BusinessId = "shop-4",
+            });
+            file.Witnesses.Add(new Witness
+            {
+                Kind = WitnessKind.PoliceFoundThem, Name = "Officer Doyle", Seed = 8,
+            });
+            return file;
+        }
+
+        static void WordAgainstWordMostlyWalks(List<string> failures)
+        {
+            var pipe = new PrisonPipeline { RosterSeed = 1987 };
+            var file = WordAgainstWord(pipe, 10);
+
+            var bare = Verdict.ConvictionChance(file, 0, 0);
+            var counselled = Verdict.ConvictionChance(file, 0, Lawyer.MaxSkill);
+            Want(failures, bare > 0.5f && bare < 0.6f,
+                "TRIAL: his word against the shopkeeper's is a little over even with no " +
+                "counsel (" + bare + ").");
+            Want(failures, counselled <= 0.2f,
+                "TRIAL: moja rec protiv njegove - a good lawyer walks him (" +
+                counselled + ").");
+
+            var convictions = 0;
+            for (var i = 0; i < 200; i++)
+                if (Verdict.Convicts(counselled, Sentencing.StreamFor(1987, i, 10)))
+                    convictions++;
+            Want(failures, convictions <= 40,
+                "TRIAL: over two hundred rolls a lawyered word-against-word is lost by " +
+                "the prosecution four times in five (" + convictions + "/200).");
+        }
+
+        static void TwoEyewitnessesConvict(List<string> failures)
+        {
+            var pipe = new PrisonPipeline { RosterSeed = 1987 };
+            var file = WordAgainstWord(pipe, 10);
+            for (var i = 0; i < 2; i++)
+                file.Witnesses.Add(new Witness
+                {
+                    Kind = WitnessKind.Eyewitness, Name = "Passer-by " + i, Seed = 20 + i,
+                });
+
+            var chance = Verdict.ConvictionChance(file, 0, 0);
+            Want(failures, chance >= 0.7f,
+                "TRIAL: two people who saw it happen convict (" + chance + ").");
+
+            var third = new Witness { Kind = WitnessKind.Eyewitness, Seed = 30 };
+            file.Witnesses.Add(third);
+            Want(failures, Verdict.ConvictionChance(file, 0, 0) == chance,
+                "TRIAL: a third man who saw the same thing is not a third case.");
+
+            var convictions = 0;
+            for (var i = 0; i < 200; i++)
+                if (Verdict.Convicts(chance, Sentencing.StreamFor(1987, i, 10)))
+                    convictions++;
+            Want(failures, convictions >= 120,
+                "TRIAL: and the rolls agree (" + convictions + "/200).");
+        }
+
+        static void NoWitnessesIsADismissal(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var file = WordAgainstWord(pipe, 10);
+            var prisoner = pipe.Book(roster, man.Id, Deed.Extortion, 10, file);
+
+            Want(failures, prisoner != null && file.Defendants.Contains(man.Id),
+                "CASE: an arrest puts the man on the docket.");
+            Want(failures, prisoner.CourtDay == 10 + Sentencing.DaysToCourt,
+                "CASE: and his court day is the case's.");
+
+            foreach (var witness in file.Witnesses)
+                witness.Standing = WitnessStanding.Withdrawn;
+            Want(failures, !file.AnyWilling(), "CASE: nobody is left to give evidence.");
+
+            pipe.Away(prisoner);
+            pipe.Tried(roster, prisoner, 15);
+
+            Want(failures, file.Status == CaseStatus.Dismissed,
+                "TRIAL: a case with no witness of any kind is thrown out before the roll.");
+            Want(failures, man.Status == CharacterStatus.Active && man.BackOnDay == 0,
+                "TRIAL: and the men walk.");
+            Want(failures, man.WantedLevel == 0,
+                "TRIAL: a man the court let go is not a man on the run.");
+            Want(failures, man.RapSheet.Count >= 2 &&
+                           man.RapSheet[man.RapSheet.Count - 1].Outcome ==
+                           Sentencing.DismissedOutcome,
+                "TRIAL: the dismissal is written on his sheet.");
+            Want(failures, pipe.Find(man.Id) == null, "TRIAL: and he leaves the pipe.");
+        }
+
+        static void ThePoliceWhoSawItAreNotSilenced(List<string> failures)
+        {
+            var pipe = new PrisonPipeline { RosterSeed = 1987 };
+            var file = pipe.OpenCase(Deed.Murder, 0, 10, 15);
+            file.Witnesses.Add(new Witness { Kind = WitnessKind.PoliceSawIt, Seed = 4 });
+            file.Witnesses.Add(new Witness { Kind = WitnessKind.Eyewitness, Seed = 5 });
+
+            var full = Verdict.ConvictionChance(file, 0, 0);
+            file.Witnesses[1].Standing = WitnessStanding.Dead;
+            var afterwards = Verdict.ConvictionChance(file, 0, 0);
+
+            Want(failures, afterwards < full,
+                "TRIAL: killing the passer-by takes his evidence off the case.");
+            Want(failures, file.AnyWilling(),
+                "TRIAL: the policeman who watched it is still there.");
+            Want(failures, afterwards >= Verdict.MurderBase + Verdict.PoliceSawItWeight - 0.001f,
+                "TRIAL: and there is no cure for one of those (" + afterwards + ").");
+            Want(failures, !file.Witnesses[0].CanBePressured,
+                "TRIAL: a policeman is not leaned on and not shot at over this.");
+        }
+
+        static void AWithdrawnWitnessIsOffTheCase(List<string> failures)
+        {
+            var pipe = new PrisonPipeline { RosterSeed = 1987 };
+            var file = WordAgainstWord(pipe, 10);
+            file.Witnesses.Add(new Witness
+            {
+                Kind = WitnessKind.Eyewitness, Name = "Ruth Pardo", Seed = 41,
+            });
+
+            var before = file.WillingEyewitnesses();
+            file.Witnesses[2].Standing = WitnessStanding.Withdrawn;
+            Want(failures, file.WillingEyewitnesses() == before - 1,
+                "WITNESS: a man who has been leaned on is off the count.");
+            Want(failures, file.WillingCount() == 2,
+                "WITNESS: and off the case's own tally.");
+            Want(failures, Verdict.ConvictionChance(file, 0, 0) < 0.6f,
+                "WITNESS: which is what leaning on him was for.");
+
+            // A steady man is harder to move than a nervous one, and the roll is the
+            // same twice off one stream.
+            var steady = 0;
+            var nervous = 0;
+            for (var seed = 0; seed < 400; seed++)
+            {
+                if (WitnessPressure.Withdraws(9_000_017,
+                        Sentencing.StreamFor(1987, seed, 3))) steady++;
+                if (WitnessPressure.Withdraws(5,
+                        Sentencing.StreamFor(1987, seed, 3))) nervous++;
+            }
+            Want(failures,
+                WitnessPressure.Nerve(9_000_017) > WitnessPressure.Nerve(5)
+                    ? steady < nervous : nervous < steady,
+                "WITNESS: nerve is what decides whether a lean silences him.");
+        }
+
+        static void AnOpenComplaintIsAnExtraCount(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            const int today = 30;
+            var walkedAway = pipe.OpenCase(Deed.Extortion, 0, today - 2, 0,
+                "shop-1", "THE BARBER");
+            walkedAway.Witnesses.Add(new Witness { Kind = WitnessKind.Complainant, Seed = 1 });
+            var stale = pipe.OpenCase(Deed.Extortion, 0,
+                today - PrisonPipeline.ComplaintMemoryDays - 1, 0, "shop-2");
+            var somebodyElse = pipe.OpenCase(Deed.Extortion, 3, today - 2, 0, "shop-3");
+
+            Want(failures, pipe.OpenComplaintsAgainst(0, today) == 1,
+                "DOCKET: only a complaint inside the memory window is still on it.");
+
+            var file = WordAgainstWord(pipe, today);
+            var attached = pipe.AttachOpenComplaints(file, today);
+            Want(failures, attached == 1 && file.Counts.Count == 1,
+                "DOCKET: an open complaint against the same crew is an extra count.");
+            Want(failures, walkedAway.Status == CaseStatus.Tried,
+                "DOCKET: and a count folded in cannot be charged a second time.");
+            Want(failures, stale.Status == CaseStatus.Open &&
+                           somebodyElse.Status == CaseStatus.Open,
+                "DOCKET: nothing folds in a stale complaint or another family's.");
+            Want(failures, pipe.AttachOpenComplaints(file, today) == 0,
+                "DOCKET: and folding twice attaches nothing.");
+
+            var heard = today + Sentencing.DaysToCourt;
+            var prisoner = pipe.Book(roster, man.Id, Deed.Extortion, today, file);
+            pipe.Away(prisoner);
+            pipe.Tried(roster, prisoner, heard);
+            if (prisoner.Stage == PrisonStage.Sentenced)
+            {
+                var without = Sentencing.Days(Deed.Extortion,
+                    new Random(Sentencing.StreamFor(roster.Seed, man.Id, heard)), false,
+                    man.Rank, Notability.Marked(man, heard), 0, 0);
+                Want(failures, prisoner.SentenceDays > without,
+                    "DOCKET: the count reaches the sentence through the pipeline.");
+            }
+        }
+
+        // ------------------------------------------------------------------- the bail
+
+        static void BailComesBackAsAMan(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var file = WordAgainstWord(pipe, 10);
+            var prisoner = pipe.Book(roster, man.Id, Deed.Extortion, 10, file);
+
+            Want(failures, pipe.BailRefusal(prisoner, 0) == LivingCity.UI.LedgerText.ReasonNoCounsel,
+                "BAIL: with no lawyer on the books nobody gets a hearing listed.");
+            Want(failures, pipe.BailRefusal(prisoner, Lawyer.BailSkill) == null,
+                "BAIL: with counsel he can be bailed.");
+            Want(failures, PrisonPipeline.BailPrice(prisoner) == Sentencing.Bail(Deed.Extortion) &&
+                           PrisonPipeline.BailPrice(prisoner) > 0,
+                "BAIL: the price comes off the deed.");
+
+            Want(failures, pipe.PostBail(roster, prisoner, PrisonPipeline.BailPrice(prisoner), 10),
+                "BAIL: the money is up and he walks out.");
+            Want(failures, man.Status == CharacterStatus.Active &&
+                           man.BailedUntil == prisoner.CourtDay,
+                "BAIL: he is an ordinary man on the street until his day.");
+            Want(failures, prisoner.Stage == PrisonStage.Bailed && pipe.Find(man.Id) != null,
+                "BAIL: and still on the docket.");
+            pipe.Discharged(roster);
+            Want(failures, pipe.Find(man.Id) != null,
+                "BAIL: a bailed man is not swept out of the pipe by the day tick.");
+
+            // his day comes and he turns up: tried on paper with the rest of the case
+            pipe.TryOnPaper(roster, prisoner.CourtDay);
+            Want(failures, man.BailedUntil == 0,
+                "BAIL: the day came and the bail is spent either way.");
+            Want(failures, man.Status == CharacterStatus.Jailed ||
+                           man.Status == CharacterStatus.Active,
+                "BAIL: he was tried on paper - convicted or walking, never held on.");
+            Want(failures, man.WantedLevel == 0,
+                "BAIL: a man who turned up is not wanted for anything.");
+        }
+
+        static void SkippedBailIsWTwoAndTheMoneyIsGone(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var file = WordAgainstWord(pipe, 10);
+            var prisoner = pipe.Book(roster, man.Id, Deed.Extortion, 10, file);
+            var price = PrisonPipeline.BailPrice(prisoner);
+            pipe.PostBail(roster, prisoner, price, 10);
+
+            Want(failures, pipe.SkipBail(prisoner) && prisoner.SkipOrdered,
+                "BAIL: the boss can tell him not to turn up.");
+
+            var forfeited = new List<Prisoner>();
+            pipe.TryOnPaper(roster, prisoner.CourtDay, forfeited);
+
+            Want(failures, forfeited.Count == 1 && prisoner.Stage == PrisonStage.Skipped,
+                "BAIL: a man who skips forfeits it.");
+            Want(failures, man.WantedLevel == WantedLevels.FreedFromTransfer,
+                "BAIL: and the city looks for him on transfer terms - a week out of sight.");
+            Want(failures, prisoner.BailPaid == price && man.BailPaid == price,
+                "BAIL: what it cost is kept, because a forfeit is not refunded.");
+            Want(failures, file.Status == CaseStatus.Open && file.HasDefendant(man.Id),
+                "BAIL: the case stays open against him.");
+            Want(failures, man.RapSheet[man.RapSheet.Count - 1].Outcome ==
+                           Sentencing.BailForfeitOutcome,
+                "BAIL: and it is written on his sheet.");
+            Want(failures, man.BailedUntil == 0, "BAIL: the day is spent.");
+        }
+
+        // ---------------------------------------------------------------- the sale
+
+        static void CutLooseCostsTheCrewMost(List<string> failures)
+        {
+            var roster = CrewRoster(out var lieutenant, out var deputy, out var plodder,
+                out var crew);
+            var other = new Character
+            {
+                Id = roster.NextCharacterId(), FirstName = "Carlo", Surname = "Sesto",
+                Rank = Rank.Lieutenant,
+            };
+            roster.Members.Add(other);
+            roster.Crews.Add(new Crew { Id = roster.NextCrewId(), LieutenantId = other.Id });
+            var stranger = new Character
+            {
+                Id = roster.NextCharacterId(), FirstName = "Enzo", Surname = "Prato",
+            };
+            roster.Members.Add(stranger);
+            roster.Organization.BossHoodIds.Add(stranger.Id);
+
+            Want(failures, !RosterOps.CutLoose(roster, lieutenant.Id).Ok,
+                "CUT LOOSE: nobody is sold off a street corner - he has to be inside.");
+
+            RosterOps.Jail(roster, lieutenant.Id, 0, "Held at the station", "Extortion");
+            var before = new[] { deputy.Loyalty, plodder.Loyalty, other.Loyalty, stranger.Loyalty };
+
+            var changes = new List<PersonalityChange>();
+            Want(failures, RosterOps.CutLoose(roster, lieutenant.Id, changes).Ok,
+                "CUT LOOSE: a man the city is holding can be cut loose.");
+            Want(failures, lieutenant.Status == CharacterStatus.CutLoose && lieutenant.Gone,
+                "CUT LOOSE: he is off the books for good.");
+
+            var crewLoss = before[0] - deputy.Loyalty;
+            var lieutenantLoss = before[2] - other.Loyalty;
+            var outfitLoss = before[3] - stranger.Loyalty;
+            Want(failures, crewLoss > lieutenantLoss && lieutenantLoss > outfitLoss &&
+                           outfitLoss > 0,
+                "CUT LOOSE: his own men take it hardest, then the other lieutenants, " +
+                "then the rest (" + crewLoss + " / " + lieutenantLoss + " / " +
+                outfitLoss + ").");
+            Want(failures, crewLoss <= Loyalty.CutLooseCrewHit,
+                "CUT LOOSE: no man takes more than the outfit-wide figure.");
+            Want(failures, changes.Count >= 3,
+                "CUT LOOSE: every movement is printed with a reason - nothing is hidden.");
+            foreach (var change in changes)
+                Want(failures, !string.IsNullOrEmpty(change.Reason),
+                    "CUT LOOSE: a loyalty move with no reason on it is a hidden percentage.");
+
+            Want(failures, LivingCity.Outfit.Wages.WageFor(lieutenant) == 0,
+                "CUT LOOSE: and he draws nothing, because he is gone.");
+
+            // a hood is a smaller loss and is felt as one
+            var second = CrewRoster(out _, out var hood, out var mate, out _);
+            RosterOps.Jail(second, hood.Id, 0, "Held", "Affray");
+            var mateBefore = mate.Loyalty;
+            RosterOps.CutLoose(second, hood.Id);
+            Want(failures, mateBefore - mate.Loyalty < crewLoss,
+                "CUT LOOSE: selling a hood is a smaller thing than selling a lieutenant.");
+        }
+
+        /// <summary>Codex review, 2026-09-02: a bailed man is an ordinary man on the
+        /// street and can walk into another arrest. The pipe used to book nothing at
+        /// all for him, which left the crew stood in the road with its hands up and the
+        /// new case with no defendant on it.</summary>
+        static void ARearrestPutsABailedManBack(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var first = WordAgainstWord(pipe, 10);
+            var prisoner = pipe.Book(roster, man.Id, Deed.Extortion, 10, first);
+            pipe.PostBail(roster, prisoner, PrisonPipeline.BailPrice(prisoner), 10);
+
+            var second = pipe.OpenCase(Deed.Murder, 0, 12, 12 + Sentencing.DaysToCourt);
+            second.Witnesses.Add(new Witness { Kind = WitnessKind.PoliceSawIt, Seed = 3 });
+
+            var again = pipe.Book(roster, man.Id, Deed.Murder, 12, second);
+            Want(failures, again == prisoner,
+                "REARREST: a bailed man taken again goes back in the pipe he never left.");
+            Want(failures, again != null && again.Stage == PrisonStage.Held,
+                "REARREST: and he is HELD, not still out on the street.");
+            Want(failures, man.Status == CharacterStatus.Jailed && man.BailedUntil == 0,
+                "REARREST: the books say he is inside and his bail day is spent.");
+            Want(failures, second.HasDefendant(man.Id),
+                "REARREST: the new case has him on it.");
+            Want(failures, again != null && again.CourtDay == second.CourtDay,
+                "REARREST: and he is heard on the new case's own day.");
+            Want(failures, again != null && again.Deed == Deed.Murder,
+                "REARREST: he is held on the graver of the two deeds - read off the " +
+                "sentence bands, so appending a deed cannot re-rank the ones above it.");
+            Want(failures, second.Counts.Contains(first.CaseId) &&
+                           first.Status != CaseStatus.Open,
+                "REARREST: what he was already answering for is folded in as a count " +
+                "rather than left open for a trial nobody will list.");
+            Want(failures, again != null && again.BailPaid > 0,
+                "REARREST: the bail money is not handed back.");
+        }
+
+        /// <summary>Codex review, 2026-09-02: cutting the only defendant loose used to
+        /// leave a case nothing could ever resolve - still drawing witness markers and
+        /// taking leans for a trial that cannot happen.</summary>
+        static void CuttingLooseTheLastDefendantClosesTheCase(List<string> failures)
+        {
+            var roster = CrewRoster(out var lieutenant, out var deputy, out _, out _);
+            var pipe = new PrisonPipeline { RosterSeed = roster.Seed };
+            var file = pipe.OpenCase(Deed.Extortion, 0, 10, 15, "shop-4", "THE DELICATESSEN");
+            file.Witnesses.Add(new Witness { Kind = WitnessKind.Complainant, Seed = 1 });
+            pipe.Book(roster, lieutenant.Id, Deed.Extortion, 10, file);
+            pipe.Book(roster, deputy.Id, Deed.Extortion, 10, file);
+
+            pipe.CutLoose(deputy.Id);
+            Want(failures, !file.HasDefendant(deputy.Id),
+                "CUT LOOSE: a man the outfit dropped is off the case.");
+            Want(failures, file.Status == CaseStatus.Open,
+                "CUT LOOSE: the case goes on for the men still on it.");
+
+            pipe.CutLoose(lieutenant.Id);
+            Want(failures, file.Status != CaseStatus.Open,
+                "CUT LOOSE: a case with nobody left on it is closed, not left open " +
+                "forever with its witness markers on the map.");
+            Want(failures, pipe.Find(lieutenant.Id) == null,
+                "CUT LOOSE: and he is out of the pipe.");
+
+            // A complaint nobody was ever taken for is the OTHER case with no
+            // defendants, and it must stay open - that is what becomes a count later.
+            var complaint = pipe.OpenCase(Deed.Extortion, 0, 10, 0, "shop-9");
+            pipe.CutLoose(lieutenant.Id);
+            Want(failures, complaint.Status == CaseStatus.Open,
+                "CUT LOOSE: a complaint nobody answered for is not closed by somebody " +
+                "else's sale.");
+        }
+
+        /// <summary>Codex review, 2026-09-02: a bailed man tried on paper changed from
+        /// active to serving a sentence with nothing said about it anywhere, because
+        /// only the forfeits were reported back.</summary>
+        static void EveryManTriedOnPaperIsReported(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var file = WordAgainstWord(pipe, 10);
+            var prisoner = pipe.Book(roster, man.Id, Deed.Extortion, 10, file);
+            pipe.PostBail(roster, prisoner, PrisonPipeline.BailPrice(prisoner), 10);
+
+            var forfeited = new List<Prisoner>();
+            var tried = new List<Prisoner>();
+            var done = pipe.TryOnPaper(roster, prisoner.CourtDay, forfeited, tried);
+
+            Want(failures, done == 1, "PAPER: his day came and he was dealt with.");
+            Want(failures, forfeited.Count == 0,
+                "PAPER: a man who turned up forfeits nothing.");
+            Want(failures, tried.Count == 1 && tried[0] == prisoner,
+                "PAPER: and the caller is told he was tried, so the verdict can be " +
+                "printed like any other.");
+            Want(failures, tried.Count == 1 &&
+                           (tried[0].Stage == PrisonStage.Sentenced ||
+                            tried[0].Stage == PrisonStage.Cleared),
+                "PAPER: a paper trial ends in a verdict, not in limbo.");
+        }
+
+        static void StandingByHimPaysAPointAWeek(List<string> failures)
+        {
+            var week = Loyalty.DriftEveryDays;
+            var changes = new List<PersonalityChange>();
+
+            var carried = new Character { Id = 1, Surname = "Tosi", Loyalty = 50 };
+            Loyalty.Drift(carried, true, false, 0, week, 1, changes, null,
+                leaderInside: true, leaderPaid: true);
+            Want(failures, carried.Loyalty == 50 + Loyalty.PaidOnTimeGain + Loyalty.StoodByGain,
+                "LOYALTY: a crew whose leader is inside and still paid gains its point " +
+                "(" + carried.Loyalty + ").");
+
+            var sold = new Character { Id = 2, Surname = "Fava", Loyalty = 50 };
+            Loyalty.Drift(sold, true, false, 0, week, 1, changes, null,
+                leaderInside: true, leaderPaid: false);
+            Want(failures, sold.Loyalty == 50 + Loyalty.PaidOnTimeGain - Loyalty.InsideUnpaidLoss,
+                "LOYALTY: a leader inside on an empty envelope costs the crew instead " +
+                "(" + sold.Loyalty + ").");
+
+            var ordinary = new Character { Id = 3, Surname = "Neri", Loyalty = 50 };
+            Loyalty.Drift(ordinary, true, false, 0, week, 1, changes, null);
+            Want(failures, ordinary.Loyalty == 50 + Loyalty.PaidOnTimeGain,
+                "LOYALTY: a crew with nobody inside is untouched by any of it.");
+
+            var told = false;
+            foreach (var change in changes)
+                if (change.Reason == "the boss is standing by a man inside") told = true;
+            Want(failures, told,
+                "LOYALTY: standing by a man is printed like every other movement.");
         }
     }
 }

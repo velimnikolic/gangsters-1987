@@ -664,6 +664,22 @@ namespace RoadDemo
                 return;
             }
 
+            // A NAME ON THE DOCKET COMES FIRST. He is the one thing on this map the
+            // player has a deadline about, and a street's own six lines are always
+            // there to read a second later.
+            var seen = WitnessNear(ground);
+            if (seen != null)
+            {
+                _hoverBlock = default;
+                _hoverText = seen.Name + " — WITNESS\n" +
+                             (seen.Kind == LivingCity.Police.WitnessKind.Complainant
+                                 ? "He made the complaint"
+                                 : "He says he saw it happen") + "\n" +
+                             "He will stand up in court";
+                _mapChrome.ShowBlockTip(_hoverText, screen);
+                return;
+            }
+
             if (!runtime.TryGetBlockAtWorld(new Vector3(ground.x, 0f, ground.y), out var blockId) ||
                 !runtime.PlayerQuery.TryGetBlock(blockId, out var view))
             {
@@ -2656,6 +2672,7 @@ namespace RoadDemo
             DrawPickedBuilding();
             DrawMovementIndicators();
             DrawCrews();
+            DrawWitnesses();
             DrawMarkers();
             DrawMarquee();
 
@@ -2976,6 +2993,82 @@ namespace RoadDemo
                     _live.Px(cx - capWidth / 2, cy + cap, capWidth, capHeight, TurfInk.Red);
                 }
             }
+        }
+
+        /// <summary>
+        /// THE NAMES ON THE DOCKET (GAN-245), drawn on the plate as small red crosses.
+        ///
+        /// A witness is the one thing on this map that is neither a place nor a crew:
+        /// he is a MAN the player has five days to do something about, and the whole of
+        /// the epic's middle is played by finding him. So he is drawn where he was seen
+        /// - the position snapshotted onto the case, which is why it is stored - and he
+        /// goes on being drawn there after the body has walked off the street.
+        ///
+        /// A cross rather than a disc, because colour on this map already means a family
+        /// and shape is what tells one kind of thing from another (DrawCar's own rule).
+        /// </summary>
+        void DrawWitnesses()
+        {
+            var force = PoliceForce.Instance;
+            if (force == null) return;
+
+            _openCases.Clear();
+            force.Pipeline.OpenCases(LivingCity.Gangs.GangCatalog.PlayerGangId, _openCases);
+            for (var c = 0; c < _openCases.Count; c++)
+            {
+                var file = _openCases[c];
+                for (var w = 0; w < file.Witnesses.Count; w++)
+                {
+                    var witness = file.Witnesses[w];
+                    if (!witness.Willing || !witness.CanBePressured) continue;
+                    var plan = _survey.Plan.ToPlan(
+                        new Vector3(witness.X, witness.Y, witness.Z));
+                    int cx = Mathf.RoundToInt(plan.x * TurfPlate.S);
+                    int cy = Mathf.RoundToInt(plan.y * TurfPlate.S);
+                    if (cx < -8 || cy < -8 || cx > TurfPlate.RW + 8 || cy > TurfPlate.RH + 8)
+                        continue;
+
+                    int arm = Mathf.Max(2, Mathf.RoundToInt(3f * _indicatorScale));
+                    for (int k = -arm; k <= arm; k++)
+                    {
+                        _live.OverDot(cx + k, cy + k, TurfInk.Red);
+                        _live.OverDot(cx + k, cy - k, TurfInk.Red);
+                    }
+                }
+            }
+        }
+
+        readonly List<LivingCity.Police.CourtCase> _openCases =
+            new List<LivingCity.Police.CourtCase>();
+
+        /// <summary>Metres of slop about a name on the plate - the same order as the
+        /// business pick, because a cross is about as big as a shop marker.</summary>
+        const float MapWitnessPickRange = 14f;
+
+        /// <summary>The witness nearest the pointer on the plate, or null.</summary>
+        LivingCity.Police.Witness WitnessNear(Vector2 ground)
+        {
+            var force = PoliceForce.Instance;
+            if (force == null) return null;
+
+            LivingCity.Police.Witness best = null;
+            float bestD = MapWitnessPickRange * MapWitnessPickRange;
+            _openCases.Clear();
+            force.Pipeline.OpenCases(LivingCity.Gangs.GangCatalog.PlayerGangId, _openCases);
+            for (var c = 0; c < _openCases.Count; c++)
+            {
+                var file = _openCases[c];
+                for (var w = 0; w < file.Witnesses.Count; w++)
+                {
+                    var witness = file.Witnesses[w];
+                    if (!witness.Willing || !witness.CanBePressured) continue;
+                    float dx = witness.X - ground.x;
+                    float dz = witness.Z - ground.y;
+                    float d = dx * dx + dz * dz;
+                    if (d < bestD) { bestD = d; best = witness; }
+                }
+            }
+            return best;
         }
 
         void Disc(int cx, int cy, float radius, Color32 colour)

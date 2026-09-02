@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LivingCity.Personnel;
 using UnityEngine;
 
 namespace RoadDemo
@@ -24,6 +25,44 @@ namespace RoadDemo
             public CrewWalker Shooter;
         }
 
+        /// <summary>
+        /// A TELEPHONE CALL (GAN-245). Not a shot: the shopkeeper who was leaned on has
+        /// picked up the receiver, and the only thing on the street is a crew standing
+        /// in a doorway. Everything a dispatcher needs to answer one is here.
+        /// </summary>
+        public struct Complaint
+        {
+            /// <summary>The door it was rung about.</summary>
+            public Vector3 Pos;
+
+            public float Time;
+
+            /// <summary>Who is being complained about: 0 the outfit, >0 a mob.</summary>
+            public int Faction;
+
+            public string BusinessId;
+
+            /// <summary>What the shop is called, for the banner and the paper.</summary>
+            public string Where;
+
+            /// <summary>The game hour it was rung, for the Fear ledger's clock.</summary>
+            public double GameHour;
+
+            /// <summary>The call's own number - the complaint sequence, NOT the
+            /// shooting incident's (see <see cref="ComplaintNumber"/>).</summary>
+            public int Number;
+
+            /// <summary>What the men would be charged with if the officer finds them
+            /// standing there: Extortion for a shopkeeper's call, WitnessTampering when
+            /// the man who rang was a witness somebody came to see.</summary>
+            public Deed Charge;
+        }
+
+        /// <summary>What KIND of incident the current number is. A complaint is not a
+        /// shooting and must not be read as one - a squad answering one carries no
+        /// warning phase, because "DROP THE GUNS" needs guns.</summary>
+        public enum IncidentKind { Shooting, Complaint }
+
         /// <summary>The faction number the police carry in the arena.</summary>
         public const int PoliceFaction = -1;
 
@@ -39,6 +78,11 @@ namespace RoadDemo
 
         /// <summary>Raised when somebody dies of a shot: where, and whether a bystander.</summary>
         public static event System.Action<Vector3, DeathOf> OnDeath;
+
+        /// <summary>Raised when a shopkeeper rings the precinct. ONE channel: a
+        /// complaint goes down the same wire as a shot rather than growing a second
+        /// static beside it.</summary>
+        public static event System.Action<Complaint> OnComplaint;
 
         public enum DeathOf { Gangster, Civilian, Officer }
 
@@ -58,6 +102,22 @@ namespace RoadDemo
         public static int OfficerDeaths { get; private set; }
         public static int IncidentNumber { get; private set; }
 
+        /// <summary>The telephone's own counter. A complaint used to take the next
+        /// SHOOTING incident number, which made every consumer of that number - the
+        /// dispatcher's "this is a new incident" test, the one-arrest-per-incident
+        /// guard - believe a fresh gunfight had begun the moment a shopkeeper three
+        /// blocks away picked up a receiver: the response state reset mid-firefight and
+        /// a crew that had already talked its way out could be asked again. The two
+        /// sequences count separately, and a complaint leaves the shooting one exactly
+        /// where it was.</summary>
+        public static int ComplaintNumber { get; private set; }
+
+        /// <summary>What the current incident number is: shots, or a telephone.</summary>
+        public static IncidentKind Kind { get; private set; } = IncidentKind.Shooting;
+
+        /// <summary>The last complaint rung, whether or not anybody answered it.</summary>
+        public static Complaint LastComplaint { get; private set; }
+
         /// <summary>Seconds since the last shot (large when none).</summary>
         public static float QuietFor => Time.time - LastShotAt;
 
@@ -69,8 +129,44 @@ namespace RoadDemo
             IncidentStart = -1000f;
             IncidentShots = CivilianDeaths = GangDeaths = OfficerDeaths = 0;
             IncidentNumber = 0;
+            ComplaintNumber = 0;
+            Kind = IncidentKind.Shooting;
+            LastComplaint = default;
             OnShot = null;
             OnDeath = null;
+            OnComplaint = null;
+        }
+
+        /// <summary>
+        /// SOMEBODY RANG. A number of the call's OWN sequence, and nothing else about
+        /// the street changes: LastShotAt is deliberately untouched, so
+        /// <see cref="IncidentOpen"/>, <see cref="QuietFor"/> and <see cref="Danger"/> go
+        /// on meaning exactly what they meant - a complaint is not gunfire and must not
+        /// put a scene into the state gunfire puts it in, nor take the number a gunfight
+        /// is being counted by.
+        ///
+        /// The 1987 telephone's own delay is the dispatcher's (PoliceDispatch): what is
+        /// recorded here is the moment the receiver came off the hook.
+        /// </summary>
+        public static Complaint Complain(Vector3 pos, int faction, string businessId,
+            string where, double gameHour, Deed charge = Deed.Extortion)
+        {
+            ComplaintNumber++;
+            Kind = IncidentKind.Complaint;
+            var call = new Complaint
+            {
+                Pos = pos,
+                Time = Time.time,
+                Faction = faction,
+                BusinessId = businessId ?? "",
+                Where = where ?? "",
+                GameHour = gameHour,
+                Number = ComplaintNumber,
+                Charge = charge,
+            };
+            LastComplaint = call;
+            OnComplaint?.Invoke(call);
+            return call;
         }
 
         /// <summary>A round left a gun here.</summary>
@@ -85,6 +181,7 @@ namespace RoadDemo
                 CivilianDeaths = GangDeaths = OfficerDeaths = 0;
                 Incident = pos;
                 IncidentNumber++;
+                Kind = IncidentKind.Shooting;
             }
             IncidentShots++;
             // the centre drifts with the shooting: mostly where it is now

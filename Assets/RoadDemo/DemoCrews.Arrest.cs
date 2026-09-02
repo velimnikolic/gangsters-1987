@@ -75,7 +75,8 @@ namespace RoadDemo
         /// was never sentenced. A scene with no pipeline behind it (the crew demo) keeps
         /// the flat hold, so the arrest still means something there.</summary>
         public void TakeIn(Unit unit, Deed deed = Deed.Affray,
-            LivingCity.Police.PrisonPipeline pipeline = null)
+            LivingCity.Police.PrisonPipeline pipeline = null,
+            LivingCity.Police.CourtCase file = null)
         {
             if (unit == null) return;
             if (unit.Faction != 0)
@@ -108,12 +109,44 @@ namespace RoadDemo
                 if (man == null || man.Dead || man.CharacterId < 0) continue;
                 if (pipeline != null)
                 {
-                    if (pipeline.Book(roster, man.CharacterId, deed, today) != null) taken++;
+                    if (pipeline.Book(roster, man.CharacterId, deed, today, file) != null)
+                        taken++;
                 }
                 else if (RosterOps.Jail(roster, man.CharacterId, backOn,
                         "Held at the station", charge, stamp).Ok) taken++;
             }
-            if (taken == 0) return;
+            // NOBODY WENT ON THE BOOKS. The men have already put their hands up, and
+            // leaving them there would stand a crew in the street with its guns away for
+            // the rest of the campaign - the arrest window clears itself without ever
+            // telling them the officer has gone. They pick their guns back up.
+            if (taken == 0)
+            {
+                LetGo(unit);
+                return;
+            }
+
+            // EVERY MAN OF THIS CREW ON ONE CASE (GAN-245), and the arresting officer
+            // on the witness list: he found them at the scene, which is the weakest
+            // thing on a charge sheet and still the reason there is one. Whatever the
+            // crew never answered for lately is attached as extra counts here, because
+            // this is the moment the city has them.
+            if (pipeline != null && file != null)
+            {
+                var found = false;
+                for (var w = 0; w < file.Witnesses.Count; w++)
+                    if (file.Witnesses[w].Kind == LivingCity.Police.WitnessKind.PoliceFoundThem ||
+                        file.Witnesses[w].Kind == LivingCity.Police.WitnessKind.PoliceSawIt)
+                        found = true;
+                if (!found)
+                    file.Witnesses.Add(new LivingCity.Police.Witness
+                    {
+                        Kind = LivingCity.Police.WitnessKind.PoliceFoundThem,
+                        Name = "The arresting officer",
+                        Seed = StreetAlarm.IncidentNumber,
+                        X = unit.Position.x, Y = unit.Position.y, Z = unit.Position.z,
+                    });
+                pipeline.AttachOpenComplaints(file, today);
+            }
 
             // and the street re-deals without them: Sync keeps only Active men, so the
             // bodies go the same way a discharged man's does, through the books

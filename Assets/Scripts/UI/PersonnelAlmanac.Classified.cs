@@ -152,7 +152,7 @@ namespace LivingCity.UI
             Frame(inner, 1f, LedgerV2.Ink);
 
             var trade = Line(box, LedgerStyle.Condensed, 20f, LedgerV2.Ink, 12f, -12f,
-                AdWidth - 24f, 26f, HireMarket.TradeName(ad.Trade),
+                AdWidth - 24f, 26f, HireMarket.HeadingFor(ad),
                 TextAlignmentOptions.Center);
             trade.characterSpacing = 5f;
             Rule(box, 34f, -40f, AdWidth - 68f, LedgerV2.Ink);
@@ -174,18 +174,37 @@ namespace LivingCity.UI
 
             // His three best trades, in stars - the same currency the personal file
             // uses, so a man in the paper reads against a man on the books at a glance.
+            //
+            // A SPECIALIST IS READ FOR ONE FIGURE (GAN-245). A lawyer's three best
+            // trades tell the player nothing he can use; what he is buying is the man's
+            // standing in court, and that is one number off one function - the same one
+            // the trial reads (Personnel.Lawyer.Skill), so the paper cannot quote a
+            // lawyer the courtroom would not deliver.
             var y0 = -222f;
-            for (var slot = 0; slot < 3; slot++)
+            if (ad.Specialty == Specialty.Lawyer)
             {
-                var attribute = NthBest(man, slot);
-                Line(box, LedgerStyle.Serif, 12.5f, LedgerV2.Ink, 14f, y0 - slot * 22f,
-                    150f, 20f, LedgerText.AttributeLabel(attribute));
-                Stars(box, 172f, y0 - slot * 22f - 10f, man.GetHalfSteps(attribute),
-                    15f, 16f);
+                Line(box, LedgerStyle.Serif, 12.5f, LedgerV2.Ink, 14f, y0,
+                    150f, 20f, "IN COURT");
+                Stars(box, 172f, y0 - 10f,
+                    AttributeScale.MaxHalfSteps * ad.Skill / Lawyer.MaxSkill, 15f, 16f);
+                Line(box, LedgerStyle.Serif, 12.5f, LedgerV2.Muted, 14f, y0 - 22f,
+                    AdWidth - 28f, 20f,
+                    "No rank, no crew  ·  counsel on every case we have");
+            }
+            else
+            {
+                for (var slot = 0; slot < 3; slot++)
+                {
+                    var attribute = NthBest(man, slot);
+                    Line(box, LedgerStyle.Serif, 12.5f, LedgerV2.Ink, 14f, y0 - slot * 22f,
+                        150f, 20f, LedgerText.AttributeLabel(attribute));
+                    Stars(box, 172f, y0 - slot * 22f - 10f, man.GetHalfSteps(attribute),
+                        15f, 16f);
+                }
             }
 
             var copy = Paragraph(box, LedgerStyle.Serif, 12.5f, LedgerV2.Ink, 14f, -292f,
-                AdWidth - 28f, 52f, "\u201C" + HireMarket.Pitch(ad.Trade) + "\u201D",
+                AdWidth - 28f, 52f, "\u201C" + HireMarket.PitchFor(ad) + "\u201D",
                 lineSpacing: 3f);
             copy.alignment = TextAlignmentOptions.Top;
             copy.overflowMode = TextOverflowModes.Ellipsis;

@@ -244,6 +244,9 @@ namespace LivingCity.UI
                 case IncidentKind.Escalated:
                 case IncidentKind.DiedOnTheDetail:
                 case IncidentKind.StoppedIt:
+                case IncidentKind.Convicted:
+                case IncidentKind.BailForfeit:
+                case IncidentKind.CutLoose:
                     return LedgerStyle.RedPen;
                 case IncidentKind.TookRivalMoney:
                 case IncidentKind.Defected:
@@ -251,12 +254,20 @@ namespace LivingCity.UI
                 case IncidentKind.NotToBeTrusted:
                 case IncidentKind.Demoted:
                 case IncidentKind.CaughtSkimming:
+                case IncidentKind.CaseOpened:
+                case IncidentKind.WitnessKilled:
                     return LedgerStyle.Ballpoint;
                 case IncidentKind.DemandedARaise:
+                case IncidentKind.ComplaintRung:
+                case IncidentKind.StatementTaken:
                     return LedgerStyle.PenAmber;
                 case IncidentKind.Promoted:
                 case IncidentKind.ReadyForACrew:
                 case IncidentKind.AGunForHire:
+                case IncidentKind.Acquitted:
+                case IncidentKind.CaseDismissed:
+                case IncidentKind.WitnessWithdrawn:
+                case IncidentKind.BailPosted:
                     return LedgerStyle.GreenOk;
                 default:
                     return LedgerStyle.TelexPlain;

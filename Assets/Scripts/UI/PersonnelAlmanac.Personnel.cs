@@ -700,8 +700,22 @@ namespace LivingCity.UI
 
             var ink = dead ? LedgerV2.Faint : LedgerV2.Ink;
 
-            LedgerV2.Mono(rect, 0f, -12f, IdxW, index.ToString("00"), 10.5f,
-                LedgerV2.Muted, 0f);
+            // NOTE-001's second mark, and FOLLOW-003's whole point: a man at or over
+            // the news band gets his file number struck in the book's own ink and
+            // weight, and everybody else keeps the clerk's grey.
+            //
+            // The INDEX and not the name, deliberately. The roll already sets a
+            // lieutenant's name in the bold face, so a marker on the name would say two
+            // things in one weight; the numbers stand in a column of their own down the
+            // left edge and a black one in a run of grey ones is exactly the "look here"
+            // a reader scans for. It is distinct from the red tick beside it, which
+            // says THIS WEEK - a man can be both, and the two marks answer different
+            // questions.
+            var notable = !dead && Board != null && Board.Marked(id);
+            var number = LedgerV2.Mono(rect, 0f, -12f, IdxW, index.ToString("00"), 10.5f,
+                notable ? LedgerV2.Ink : LedgerV2.Muted, 0f);
+            if (notable)
+                number.font = LedgerStyle.MonoBold;
 
             var name = Line(rect, lieutenantRow ? LedgerStyle.MonoBold : LedgerStyle.Mono,
                 16f, ink, ColName, -10f, NameW, 22f, member.FullName);
@@ -799,9 +813,14 @@ namespace LivingCity.UI
         string NewsAside(Character member)
         {
             if (options.Sort != SortKey.Notability || Board == null ||
-                !Board.Fresh(member.Id) || member.Career.Count == 0)
+                member.Career.Count == 0)
                 return "";
-            return member.Career[member.Career.Count - 1].Line;
+            // FOLLOW-003. Fresh OR marked. A mark with no cause beside it is a mark the
+            // player learns to ignore, and a man carrying one a month after the thing
+            // that earned it is exactly the man whose line the reader cannot guess.
+            if (!Board.Fresh(member.Id) && !Board.Marked(member.Id))
+                return "";
+            return Notability.Cause(member);
         }
 
         /// <summary>How many men stand under a lieutenant - the line his own row
@@ -1220,6 +1239,30 @@ namespace LivingCity.UI
             // skimming and his loyalty goes on draining, so the answer belongs on his
             // own file, beside the wage it is about.
             y = BuildRaiseDemand(member, textX, textW, y);
+            // GAN-245. The lawyer has a file like any man, and it says the two things
+            // about him nobody else's file says: what he is worth in court and what he
+            // has done with it.
+            if (member.Specialty == Specialty.Lawyer)
+            {
+                y = Particular("IN COURT",
+                    Lawyer.Skill(member) + " of " + Lawyer.MaxSkill +
+                    (Lawyer.Skill(member) >= Lawyer.BailSkill
+                        ? "  ·  can ask for bail"
+                        : "  ·  cannot get a hearing listed"),
+                    textX, textW, y,
+                    Lawyer.Skill(member) >= Lawyer.BailSkill
+                        ? (Color?)null : LedgerV2.Red);
+                var tried = member.CasesWon + member.CasesLost;
+                y = Particular("HIS RECORD",
+                    tried == 0
+                        ? "no case has reached him yet"
+                        : member.CasesWon + " kept out  ·  " + member.CasesLost +
+                          " went down",
+                    textX, textW, y);
+            }
+            // What the city has on him, and the three things the boss can do about it.
+            // On his own file, beside the condition it is about.
+            y = BuildTheLaw(member, textX, textW, y);
             y = Particular("CONDITION", LedgerText.StatusLabel(member.Status), textX, textW, y,
                 member.Status == CharacterStatus.Active ? LedgerV2.Ink : LedgerV2.Red);
             if (TryObservedBlock(member.Id, out var currentBlock))
@@ -1227,6 +1270,19 @@ namespace LivingCity.UI
                 y = Particular("CURRENT STATUS", "On street", textX, textW, y);
                 y = Particular("CURRENT BLOCK", currentBlock, textX, textW, y);
             }
+            // FOLLOW-004. How long he has been exactly what he is, beside the rank it
+            // is about. RankSince is stamped on every rank change and was read by one
+            // thing only - the parked rule in Loyalty.Drift - so a player watching a
+            // good lieutenant sour had no way to learn the cause was eight weeks in the
+            // same job. A man who has never been anything else has been what he is
+            // since he came on, and the line says that rather than printing a zero.
+            var inRank = Loyalty.TimeInRank(member, wageDay);
+            var parked = Loyalty.IsParked(member, wageDay);
+            y = Particular(member.RankSince > 0 ? "IN RANK" : "A HOOD FOR",
+                (inRank == 1 ? "1 day" : inRank + " days") + "  ·  since " +
+                LedgerText.DayStamp(Loyalty.RankSinceDay(member)) +
+                (parked ? "  ·  parked" : ""),
+                textX, textW, y, parked ? LedgerV2.Red : (Color?)null);
             y = Particular("LOYALTY", member.Loyalty + " of 100", textX, textW, y,
                 member.Loyalty < Loyalty.WatchBand ? LedgerV2.Red : LedgerV2.Ink);
             // What he is LIKE, in words. The numbers behind these are never shown: the
@@ -1526,6 +1582,111 @@ namespace LivingCity.UI
                 lastRefusal = result.Ok ? "" : result.Reason;
                 dirty = true;
             }, red: true, size: 9.5f);
+
+            return y - (rowH + 26f);
+        }
+
+        /// <summary>
+        /// THE LAW'S BLOCK ON HIS FILE (GAN-245): what he is charged with, when he is
+        /// heard, who will give evidence, who is defending him, and what bail costs -
+        /// with the two buttons that spend it and the one that closes his file.
+        ///
+        /// Nothing here decides anything: LawDesk owns the money and the docket, and
+        /// this only prints what it answers and refuses in its own words.
+        /// </summary>
+        float BuildTheLaw(Character member, float x, float w, float y)
+        {
+            var held = RoadDemo.LawDesk.Held(member.Id);
+            var canCut = RoadDemo.LawDesk.CanCutLoose(member);
+            if (held == null && !canCut)
+                return y;
+
+            var file = RoadDemo.LawDesk.CaseOf(member.Id);
+            var today = outfit ? outfit.Campaign.Day : 0;
+            var bailed = held != null && held.Stage == LivingCity.Police.PrisonStage.Bailed;
+
+            var courtDay = held != null ? held.CourtDay : 0;
+            var state = bailed ? "ON BAIL" : "HELD";
+            var when = courtDay > 0
+                ? "  ·  COURT DAY " + courtDay +
+                  (today > 0 && courtDay > today
+                      ? " (" + (courtDay - today) +
+                        (courtDay - today == 1 ? " day" : " days") + ")"
+                      : "")
+                : "";
+            y = Particular("THE LAW",
+                state + when + (held != null
+                    ? "  ·  " + Sentencing.ChargeFor(held.Deed) : ""),
+                x, w, y, LedgerV2.Red);
+
+            if (file != null)
+            {
+                var willing = file.WillingCount();
+                var gone = file.Witnesses.Count - willing;
+                y = Particular("WITNESSES",
+                    willing + " will testify" +
+                    (gone > 0 ? "  ·  " + gone + " off the case" : "") +
+                    (file.Counts.Count > 0
+                        ? "  ·  " + file.Counts.Count + " extra count" +
+                          (file.Counts.Count == 1 ? "" : "s")
+                        : ""),
+                    x, w, y, willing == 0 ? LedgerV2.Green : (Color?)null);
+            }
+
+            var counsel = Lawyer.Counsel(director != null ? director.Roster : null);
+            y = Particular("COUNSEL",
+                counsel != null
+                    ? counsel.FullName + "  ·  " + Lawyer.Skill(counsel) + " of " +
+                      Lawyer.MaxSkill
+                    : "NONE",
+                x, w, y, counsel == null ? LedgerV2.Red : (Color?)null);
+
+            const float rowH = 30f;
+            var id = member.Id;
+            var price = RoadDemo.LawDesk.BailPrice(id);
+            var bailRefusal = RoadDemo.LawDesk.BailRefusal(id);
+            var skipping = RoadDemo.LawDesk.Skipping(id);
+
+            var band = NewRect("The law", cardContent);
+            PlaceTopLeft(band, x, y + 2f, w, rowH + 20f);
+            Fill(band, LedgerV2.Wrong);
+
+            var head = Line(band, LedgerStyle.MonoBold, 10.5f, LedgerV2.Red,
+                6f, -4f, w - 12f, LineBox(10.5f),
+                bailed
+                    ? (skipping ? "HE HAS BEEN TOLD NOT TO APPEAR" : "OUT ON OUR MONEY")
+                    : price > 0
+                        ? "BAIL " + LedgerText.Cash(price)
+                        : "NO BAIL ON A CHARGE LIKE THAT");
+            head.characterSpacing = 2f;
+            head.overflowMode = TextOverflowModes.Ellipsis;
+
+            var third = (w - 12f - 16f) / 3f;
+            // A key that cannot act today is drawn as an OUTLINE rather than hidden -
+            // the player has to be able to see that bail exists before he hires the
+            // lawyer who could ask for it - and pressing it says why in the page's own
+            // refusal line, which is how every other refusal on this book is delivered.
+            LedgerV2.Button(band, "POST BAIL", 6f, -20f, third, rowH - 6f, () =>
+            {
+                var result = RoadDemo.LawDesk.PostBail(id);
+                lastRefusal = result.Ok ? "" : result.Reason;
+                dirty = true;
+            }, red: false, size: 9.5f, outline: bailRefusal != null);
+
+            LedgerV2.Button(band, "SKIP BAIL", 6f + third + 8f, -20f, third, rowH - 6f, () =>
+            {
+                var result = RoadDemo.LawDesk.SkipBail(id);
+                lastRefusal = result.Ok ? "" : result.Reason;
+                dirty = true;
+            }, red: true, size: 9.5f, outline: !bailed || skipping);
+
+            LedgerV2.Button(band, "CUT HIM LOOSE", 6f + (third + 8f) * 2f, -20f, third,
+                rowH - 6f, () =>
+                {
+                    var result = RoadDemo.LawDesk.CutLoose(id);
+                    lastRefusal = result.Ok ? "" : result.Reason;
+                    dirty = true;
+                }, red: true, size: 9.5f, outline: !canCut);
 
             return y - (rowH + 26f);
         }

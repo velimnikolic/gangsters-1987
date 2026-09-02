@@ -29,7 +29,7 @@ out of the classified column whose stars have outgrown the price he printed.
 | Lieutenant | `150 + 6 ×` (Leadership + Awareness + Organization + StreetAuthority in half-steps − 8) | 150–342 | founding lieutenants **192–246** | documented local gang leader $4,000–11,000/mo = $133–367/day |
 | Boss | 0 | — | — | he owns the payroll; he does not draw from it |
 | Accountant | 250 flat | — | — | crooked professional premium. **No code path assigns this specialty yet** |
-| Lawyer | 400 flat | — | — | drug-bar retainers ran to six figures a case. Same: no door assigns it yet |
+| Lawyer | 400 flat | — | — | drug-bar retainers ran to six figures a case. **Hired out of the classified column** (GAN-245) — one lawyer, advertised every 7 days while the outfit has none |
 | Service premium | `+2` per 30 days on the books, capped at **+20** | 0–20 | ~10 months to the cap | a man who has stood on the corner a year is not a corner boy |
 
 The lieutenant **floor (150) is above the hood ceiling (136)**, so a lieutenant out-earns every
@@ -171,6 +171,10 @@ why it must carry proportional heat/risk when the system lands.
 | Cop on the pad | **800/mo** per officer | Knapp pad $400–1,500/mo |
 | Judge / case fix | **2,000–10,000** | Greylord: $100 traffic to thousands for felonies |
 | Bail, felony | **10,000** (drug felony to $37,500) | BJS |
+| Bail — extortion / intimidating a witness | **2,000** | the low end of the BJS felony series; a shakedown charge with one complainant behind it |
+| Bail — affray | **5,000** | firearms in the street, still short of a body |
+| Bail — murder | **25,000** | BJS murder bail runs to the high tens of thousands |
+| Bail — killing a policeman | **none, at any price** | no judge in 1987 Miami bails one |
 | Lawyer, per serious case | **10,000+** | — |
 | Funeral (war cost, §23) | **2,700** | NFDA interpolated |
 | Offload crew, per night | **7,500** | FL smuggling cases |
@@ -196,6 +200,23 @@ only sane way to grow for no reason anybody had decided. `PersonnelDirector.Defa
 The classified column is a separate thing and keeps its own price: a man who advertises
 is a lieutenant, asks the house rate for the rank plus a 25% market premium
 (`Wages.AskFor`), and wants **14 days of that** down (`Wages.DaysDown`). See §1.
+
+**The lawyer advertises there too** (GAN-245). He is priced off the same table — the wage
+table reads a SPECIALTY before it reads a rank, so his ask is `LawyerWage × 125%` = **$500
+a day** with **$7,000** down — and he signs as a specialist: no rank, no crew, no place in
+the chain of command. One ad every `HireMarket.LawyerAdEveryDays` (7) days, and none at all
+while the outfit already has counsel on the books.
+
+### Bail — the money that gets a man out
+
+`EconomyPrices.Bail(deed)` is the door and `Sentencing.Bail` is the table it reads, so the
+sentence bands and the price of avoiding them live on one row each. Bail leaves the safe
+through the one purchase gate (`OutfitDirector.Purchase` → `BalanceMath.TryPurchase`) and
+lands on the day sheet like any other cost. **A forfeited bail is not refunded**: a man who
+does not appear costs the outfit the money AND leaves the case open against him.
+
+It also needs a lawyer: below `Lawyer.BailSkill` (2 of 5) nobody gets a remand hearing
+listed, which is the first thing the retainer actually buys.
 
 ## 8. Order economy (current `Orders.cs` → target)
 

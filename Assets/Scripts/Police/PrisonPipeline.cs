@@ -20,6 +20,21 @@ namespace LivingCity.Police
 
         /// <summary>Out of the back of a wrecked transfer and away.</summary>
         Freed,
+
+        // Appended (GAN-245) so every serialized stage above keeps its meaning.
+
+        /// <summary>Out on the outfit's money until his court day. A normal man on the
+        /// street: he takes orders, he can be arrested again, and on the day itself he
+        /// is tried whether he turns up or not.</summary>
+        Bailed,
+
+        /// <summary>Tried and acquitted, or the case was thrown out. Off the books of
+        /// the city entirely.</summary>
+        Cleared,
+
+        /// <summary>He was bailed and never appeared. The money is gone and the city
+        /// is looking for him.</summary>
+        Skipped,
     }
 
     /// <summary>One man in the pipe.</summary>
@@ -36,21 +51,38 @@ namespace LivingCity.Police
         public int SentenceDays;
         public int OutOnDay;
         public PrisonStage Stage = PrisonStage.Held;
+
+        /// <summary>The docket number he is on, or -1 for an arrest with no case behind
+        /// it (the crew demo, and anything else with no city to try him in).</summary>
+        public int CaseId = -1;
+
+        /// <summary>What the outfit put up to get him out; 0 while he is inside.</summary>
+        public int BailPaid;
+
+        /// <summary>The boss has said he is not turning up. The money is written off on
+        /// his court day rather than the moment the order is given, so a player who
+        /// changes his mind before then still has a man to send.</summary>
+        public bool SkipOrdered;
     }
 
     /// <summary>
-    /// STATION, COURT, PRISON - as paper, plus one drive.
+    /// STATION, COURT, PRISON - as paper, plus one drive, plus a trial.
     ///
     /// An arrest used to end the moment the officer led the men away: three days flat on
     /// the books and nothing in between. This is the between. A man is HELD at the
     /// precinct with no release date at all (the day tick will not discharge a man
     /// without one); on his court day the precinct runs a transfer, and when it arrives
-    /// the verdict lands - the sentence rolled off the deed and his own record, written
-    /// on his rap sheet, and only THEN does he have a day to come back on.
+    /// he is TRIED - and being tried is a thing that can be lost by the prosecution
+    /// (GAN-245). Only then does he have a day to come back on, or an acquittal.
     ///
     /// A transfer that never arrives is the other ending. Wreck the car and the man in
     /// the back walks away: off the books as held, back on his feet, wanted, and with
     /// the escape on his sheet for the next judge to add to.
+    ///
+    /// THE DOCKET (GAN-245) lives here beside the prisoners because it has exactly the
+    /// same lifetime: a case is opened by an arrest or by a complaint nobody answered,
+    /// it carries the witnesses snapshotted when the incident opened, and it is closed
+    /// by a verdict. Prisoner.CaseId points at it.
     ///
     /// No prison interior and no court interior: prison is a ledger state, a release
     /// date and the paper (the epic's own rule). Pure and free of UnityEngine, so the
@@ -60,11 +92,27 @@ namespace LivingCity.Police
     {
         readonly List<Prisoner> _inside = new List<Prisoner>();
         readonly HashSet<int> _everEscaped = new HashSet<int>();
+        readonly List<CourtCase> _cases = new List<CourtCase>();
+        int _nextCaseId = 1;
 
-        /// <summary>The seed the sentence rolls come off. Set once from the roster.</summary>
+        /// <summary>Days an unanswered complaint stays on the docket. A crew arrested
+        /// inside the fortnight answers for it as an extra count; after that the
+        /// precinct has other things to think about.</summary>
+        public const int ComplaintMemoryDays = 14;
+
+        /// <summary>The seed the sentence and verdict rolls come off. Set once from the
+        /// roster.</summary>
         public int RosterSeed;
 
+        /// <summary>
+        /// Whether the shopkeeper is still talking on the morning of the trial - the
+        /// Fear gate, which only the street can answer (TerritoryFear). Null means yes,
+        /// which is what a headless suite with no city means by it.
+        /// </summary>
+        public System.Func<CourtCase, bool> ComplainantStillTalks;
+
         public IReadOnlyList<Prisoner> Inside => _inside;
+        public IReadOnlyList<CourtCase> Cases => _cases;
 
         public Prisoner Find(int characterId)
         {
@@ -74,41 +122,224 @@ namespace LivingCity.Police
             return null;
         }
 
+        public CourtCase FindCase(int caseId)
+        {
+            for (var i = 0; i < _cases.Count; i++)
+                if (_cases[i].CaseId == caseId)
+                    return _cases[i];
+            return null;
+        }
+
+        /// <summary>The case one man is on, or null.</summary>
+        public CourtCase CaseOf(int characterId)
+        {
+            var prisoner = Find(characterId);
+            if (prisoner != null && prisoner.CaseId >= 0)
+                return FindCase(prisoner.CaseId);
+            for (var i = 0; i < _cases.Count; i++)
+                if (_cases[i].Status == CaseStatus.Open &&
+                    _cases[i].HasDefendant(characterId))
+                    return _cases[i];
+            return null;
+        }
+
         /// <summary>Has this man been out of custody before? The surcharge reads it, and
         /// so does the next judge.</summary>
         public bool EverEscaped(int characterId) => _everEscaped.Contains(characterId);
+
+        // ------------------------------------------------------------------ the docket
+
+        /// <summary>
+        /// A NEW CASE. Opened by an arrest, or by a complaint the crew walked away from
+        /// before the officer got there - one with no defendants at all, which is what
+        /// makes it an extra count later rather than a charge today.
+        /// </summary>
+        public CourtCase OpenCase(Deed deed, int gangId, int openedDay, int courtDay,
+            string businessId = "", string where = "")
+        {
+            var file = new CourtCase
+            {
+                CaseId = _nextCaseId++,
+                Deed = deed,
+                GangId = gangId,
+                BusinessId = businessId ?? "",
+                Where = where ?? "",
+                OpenedDay = openedDay,
+                CourtDay = courtDay,
+            };
+            _cases.Add(file);
+            return file;
+        }
+
+        /// <summary>
+        /// Folds every open complaint against this crew, inside the memory window, into
+        /// the case that is actually going to be heard. Each one is worth
+        /// <see cref="Sentencing.ExtraCountDays"/> on a conviction, and each one is
+        /// closed by being folded - a count cannot be charged twice.
+        /// </summary>
+        public int AttachOpenComplaints(CourtCase file, int today)
+        {
+            if (file == null)
+                return 0;
+            var attached = 0;
+            for (var i = 0; i < _cases.Count; i++)
+            {
+                var other = _cases[i];
+                if (other == file || other.Status != CaseStatus.Open) continue;
+                if (other.GangId != file.GangId) continue;
+                if (other.Defendants.Count > 0) continue;   // somebody was taken for it
+                if (today > 0 && other.OpenedDay > 0 &&
+                    today - other.OpenedDay > ComplaintMemoryDays) continue;
+
+                file.Counts.Add(other.CaseId);
+                other.Status = CaseStatus.Tried;
+                attached++;
+            }
+            return attached;
+        }
+
+        /// <summary>Open complaints against a crew, for the paper and the map.</summary>
+        public int OpenComplaintsAgainst(int gangId, int today)
+        {
+            var count = 0;
+            for (var i = 0; i < _cases.Count; i++)
+            {
+                var file = _cases[i];
+                if (file.Status != CaseStatus.Open || file.GangId != gangId) continue;
+                if (file.Defendants.Count > 0) continue;
+                if (today > 0 && file.OpenedDay > 0 &&
+                    today - file.OpenedDay > ComplaintMemoryDays) continue;
+                count++;
+            }
+            return count;
+        }
+
+        /// <summary>Every case still open with a witness the player could do something
+        /// about - what the turf map draws its markers from.</summary>
+        public void OpenCases(int gangId, List<CourtCase> into)
+        {
+            into?.Clear();
+            if (into == null) return;
+            for (var i = 0; i < _cases.Count; i++)
+                if (_cases[i].Status == CaseStatus.Open && _cases[i].GangId == gangId)
+                    into.Add(_cases[i]);
+        }
+
+        // -------------------------------------------------------------------- the pipe
 
         /// <summary>
         /// TAKEN IN. He goes on the books as held with NO release date - a man waiting on
         /// a judge is not serving anything yet, and the day tick only discharges a man
         /// who has a day (RosterOps.Discharge).
         /// </summary>
-        public Prisoner Book(Roster roster, int characterId, Deed deed, int today)
+        public Prisoner Book(Roster roster, int characterId, Deed deed, int today,
+            CourtCase file = null)
         {
             // A roster's first man is id 0 (Roster.NextCharacterId), so the guard is
             // "not a member" and not "not positive": the Don himself would fail the
             // second one.
             if (roster == null || characterId < 0)
                 return null;
-            if (Find(characterId) != null)
+
+            var standing = Find(characterId);
+            if (standing != null)
+            {
+                // TAKEN AGAIN WHILE OUT ON BAIL. A bailed man is an ordinary man on the
+                // street (that is the whole point of bail), so he can walk into another
+                // arrest - and the pipe used to answer that by booking nothing at all,
+                // which left the crew stood in the street with its hands up and the new
+                // case with no defendant on it.
+                if (standing.Stage == PrisonStage.Bailed)
+                    return ReBook(roster, standing, deed, today, file);
                 return null;   // already inside; one arrest per man
+            }
 
             var result = RosterOps.Jail(roster, characterId, 0,
                 "Held at the station", Sentencing.ChargeFor(deed), Stamp(today));
             if (!result.Ok)
                 return null;
 
+            var courtDay = today > 0 ? today + Sentencing.DaysToCourt : 0;
+            if (file != null && file.CourtDay > 0)
+                courtDay = file.CourtDay;
+
             var prisoner = new Prisoner
             {
                 CharacterId = characterId,
                 Deed = deed,
                 TakenOnDay = today,
-                CourtDay = today > 0 ? today + Sentencing.DaysToCourt : 0,
+                CourtDay = courtDay,
                 Stage = PrisonStage.Held,
+                CaseId = file != null ? file.CaseId : -1,
             };
             _inside.Add(prisoner);
+
+            if (file != null)
+            {
+                if (file.CourtDay <= 0) file.CourtDay = courtDay;
+                if (!file.Defendants.Contains(characterId))
+                    file.Defendants.Add(characterId);
+            }
             return prisoner;
         }
+
+        /// <summary>
+        /// BACK INSIDE. His bail bought him the days up to a court date and he has spent
+        /// them getting arrested again: he returns to the cells on whichever deed is the
+        /// worse of the two, on a fresh court day, and the case he was already answering
+        /// for is folded into the new one as an extra count rather than left open for a
+        /// trial that will never be listed.
+        ///
+        /// The bail money is NOT refunded and NOT forfeit: he did not abscond, and the
+        /// safe does not get it back either way.
+        /// </summary>
+        Prisoner ReBook(Roster roster, Prisoner prisoner, Deed deed, int today,
+            CourtCase file)
+        {
+            var member = roster.Find(prisoner.CharacterId);
+            if (member == null || member.Gone)
+                return null;
+
+            var worse = Worse(prisoner.Deed, deed);
+            var result = RosterOps.Jail(roster, prisoner.CharacterId, 0,
+                "Held at the station", Sentencing.ChargeFor(worse), Stamp(today));
+            if (!result.Ok)
+                return null;
+
+            var old = prisoner.CaseId >= 0 ? FindCase(prisoner.CaseId) : null;
+
+            prisoner.Deed = worse;
+            prisoner.Stage = PrisonStage.Held;
+            prisoner.TakenOnDay = today;
+            prisoner.SkipOrdered = false;
+            member.BailedUntil = 0;
+
+            var courtDay = today > 0 ? today + Sentencing.DaysToCourt : 0;
+            if (file != null)
+            {
+                if (file.CourtDay <= 0) file.CourtDay = courtDay;
+                courtDay = file.CourtDay;
+                if (!file.Defendants.Contains(prisoner.CharacterId))
+                    file.Defendants.Add(prisoner.CharacterId);
+                prisoner.CaseId = file.CaseId;
+
+                // What he was already answering for goes on the new sheet as a count.
+                if (old != null && old != file && old.Status == CaseStatus.Open)
+                {
+                    Drop(old, prisoner.CharacterId);
+                    if (!file.Counts.Contains(old.CaseId)) file.Counts.Add(old.CaseId);
+                    old.Status = CaseStatus.Tried;
+                }
+            }
+            prisoner.CourtDay = courtDay;
+            return prisoner;
+        }
+
+        /// <summary>The graver of two deeds - what a man taken twice is held on. Read
+        /// off the band rather than the enum's order, so appending a deed later cannot
+        /// silently re-rank the ones above it.</summary>
+        static Deed Worse(Deed first, Deed second) =>
+            Sentencing.BandHigh(second) > Sentencing.BandHigh(first) ? second : first;
 
         /// <summary>
         /// The day turned. Anybody whose court day has come is put up for transfer, and
@@ -148,32 +379,262 @@ namespace LivingCity.Police
             if (today > 0) prisoner.CourtDay = today + 1;
         }
 
-        /// <summary>
-        /// THE VERDICT. Rolled at the moment the transfer arrives rather than at the
-        /// arrest, because until a judge has seen him nothing is decided - and because
-        /// the whole point of an interceptable transfer is that a man freed off the road
-        /// was never sentenced at all.
-        /// </summary>
-        public void Convicted(Roster roster, Prisoner prisoner, int today)
+        // -------------------------------------------------------------------- the bail
+
+        /// <summary>Why he cannot be bailed, or null when he can. The lawyer is the
+        /// gate: a man with no counsel does not get a remand hearing listed at all, and
+        /// there is no bail whatever on a dead policeman.</summary>
+        public string BailRefusal(Prisoner prisoner, int lawyerSkill)
         {
-            if (roster == null || prisoner == null || prisoner.Stage == PrisonStage.Sentenced)
+            if (prisoner == null)
+                return LivingCity.UI.LedgerText.ReasonNoCase;
+            if (prisoner.Stage == PrisonStage.Bailed)
+                return LivingCity.UI.LedgerText.ReasonAlreadyBailed;
+            if (prisoner.Stage != PrisonStage.Held)
+                return LivingCity.UI.LedgerText.ReasonNotInside;
+            if (Sentencing.Bail(prisoner.Deed) <= 0)
+                return LivingCity.UI.LedgerText.ReasonNoBail;
+            if (lawyerSkill < Lawyer.BailSkill)
+                return LivingCity.UI.LedgerText.ReasonNoCounsel;
+            return null;
+        }
+
+        /// <summary>What it costs to get this one out.</summary>
+        public static int BailPrice(Prisoner prisoner) =>
+            prisoner == null ? 0 : Sentencing.Bail(prisoner.Deed);
+
+        /// <summary>
+        /// OUT UNTIL HIS DAY. The money has already left the safe (the caller's -
+        /// BalanceMath.TryPurchase, so it lands on the day sheet); this is the man.
+        /// He walks out Active with a day stamped on him and is an ordinary man on the
+        /// street until it comes.
+        /// </summary>
+        public bool PostBail(Roster roster, Prisoner prisoner, int paid, int today)
+        {
+            if (roster == null || prisoner == null || prisoner.Stage != PrisonStage.Held)
+                return false;
+            var member = roster.Find(prisoner.CharacterId);
+            if (member == null || member.Gone)
+                return false;
+
+            prisoner.Stage = PrisonStage.Bailed;
+            prisoner.BailPaid = paid;
+            member.Status = CharacterStatus.Active;
+            member.BackOnDay = 0;
+            member.ConditionNote = "";
+            member.BailedUntil = prisoner.CourtDay > 0
+                ? prisoner.CourtDay
+                : (today > 0 ? today + Sentencing.DaysToCourt : 0);
+            member.BailPaid = paid;
+            return true;
+        }
+
+        /// <summary>The boss says he is not turning up. Nothing happens until the day
+        /// itself - see <see cref="TryOnPaper"/>.</summary>
+        public bool SkipBail(Prisoner prisoner)
+        {
+            if (prisoner == null || prisoner.Stage != PrisonStage.Bailed)
+                return false;
+            prisoner.SkipOrdered = true;
+            return true;
+        }
+
+        /// <summary>
+        /// HIS DAY CAME AND HE IS NOT IN THE DOCK. The money is gone, the case stays
+        /// open against him, and the city is looking for him on the same terms as a man
+        /// out of the back of a transfer - a week out of sight and nothing else.
+        /// </summary>
+        public void Forfeit(Roster roster, Prisoner prisoner, int today)
+        {
+            if (roster == null || prisoner == null) return;
+            var member = roster.Find(prisoner.CharacterId);
+            if (member == null) return;
+
+            _inside.Remove(prisoner);
+            prisoner.Stage = PrisonStage.Skipped;
+            member.BailedUntil = 0;
+            WantedLevels.Mark(member, WantedLevels.FreedFromTransfer, today);
+            RapSheet.Add(member, Stamp(today), Sentencing.ChargeFor(prisoner.Deed),
+                Sentencing.BailForfeitOutcome);
+        }
+
+        /// <summary>
+        /// The day tick's half of bail: every bailed man whose day has come is tried on
+        /// paper with the rest of his case - unless he is hidden, out of town or the
+        /// boss ordered him to skip, in which case the money is forfeit instead.
+        ///
+        /// Returns how many were dealt with, so the caller can decide whether the
+        /// ledger needs repainting.
+        /// </summary>
+        public int TryOnPaper(Roster roster, int today, List<Prisoner> forfeited = null,
+            List<Prisoner> tried = null)
+        {
+            forfeited?.Clear();
+            tried?.Clear();
+            if (roster == null || today <= 0)
+                return 0;
+
+            var done = 0;
+            for (var i = _inside.Count - 1; i >= 0; i--)
+            {
+                var prisoner = _inside[i];
+                if (prisoner.Stage != PrisonStage.Bailed) continue;
+                if (prisoner.CourtDay <= 0 || prisoner.CourtDay > today) continue;
+
+                var member = roster.Find(prisoner.CharacterId);
+                if (member == null) { _inside.RemoveAt(i); continue; }
+
+                var runs = prisoner.SkipOrdered || member.OutOfTown ||
+                           member.Gone || member.WantedLevel > 0;
+                if (runs)
+                {
+                    Forfeit(roster, prisoner, today);
+                    forfeited?.Add(prisoner);
+                }
+                else
+                {
+                    member.BailedUntil = 0;
+                    prisoner.Stage = PrisonStage.InTransit;   // he walked into the court
+                    Tried(roster, prisoner, today);
+                    // A man tried on paper gets the SAME paper as a man tried off the
+                    // back of a convoy: without this he changed from active to serving
+                    // a sentence with nothing said about it anywhere.
+                    tried?.Add(prisoner);
+                }
+                done++;
+            }
+            return done;
+        }
+
+        // ------------------------------------------------------------------- the trial
+
+        /// <summary>
+        /// THE TRIAL, for one defendant, rolled at the moment the transfer arrives -
+        /// because until a judge has seen him nothing is decided, and because the whole
+        /// point of an interceptable transfer is that a man freed off the road was never
+        /// tried at all.
+        ///
+        /// Three ways out: the case is thrown out before any roll because nobody is left
+        /// to give evidence, he is acquitted, or he is convicted and the sentence table
+        /// says for how long. One roll per man per case on one deterministic stream, so
+        /// the same city and the same day give the same verdict.
+        /// </summary>
+        public void Tried(Roster roster, Prisoner prisoner, int today)
+        {
+            if (roster == null || prisoner == null ||
+                prisoner.Stage == PrisonStage.Sentenced ||
+                prisoner.Stage == PrisonStage.Cleared)
                 return;
             var member = roster.Find(prisoner.CharacterId);
             if (member == null)
                 return;
 
+            var file = prisoner.CaseId >= 0 ? FindCase(prisoner.CaseId) : null;
+            var counsel = Lawyer.Counsel(roster);
+            var lawyerSkill = counsel == null ? 0 : Lawyer.Skill(counsel);
+            if (file != null && counsel != null)
+                file.LawyerId = counsel.Id;
+
+            // The shopkeeper's nerve is asked ONCE, on the morning of the trial: he has
+            // had five days of the family standing in his doorway to think it over.
+            if (file != null && ComplainantStillTalks != null && !ComplainantStillTalks(file))
+                Silence(file, WitnessKind.Complainant);
+
+            // A CASE WITH NOBODY BEHIND IT IS NOT TRIED AT ALL. Every witness withdrawn
+            // or dead and no policeman on the list, and the men walk before a single
+            // roll - which is what leaning on witnesses is FOR.
+            if (file != null && !file.AnyWilling())
+            {
+                ResolveDefendant(file, prisoner.CharacterId, CaseStatus.Dismissed);
+                Walks(roster, member, prisoner, today, Sentencing.DismissedOutcome);
+                if (counsel != null) counsel.CasesWon++;
+                return;
+            }
+
             var rng = new System.Random(
                 Sentencing.StreamFor(RosterSeed, prisoner.CharacterId, today));
-            var days = Sentencing.Days(prisoner.Deed, rng, EverEscaped(prisoner.CharacterId));
+
+            // NO DOCKET, NO DEFENCE. An arrest made in a scene that keeps no cases -
+            // the crew demo, a bench, anything without a city behind it - is the old
+            // behaviour exactly: caught is convicted, and the only question is how
+            // long. The verdict roll is skipped rather than won, so it consumes no
+            // draw and the sentence off one stream is the same number it always was.
+            if (file != null &&
+                !Verdict.Convicts(
+                    Verdict.ConvictionChance(file, Priors(member), lawyerSkill), rng))
+            {
+                ResolveDefendant(file, prisoner.CharacterId, CaseStatus.Tried);
+                Walks(roster, member, prisoner, today, Sentencing.AcquittedOutcome);
+                if (counsel != null) counsel.CasesWon++;
+                return;
+            }
+
+            ResolveDefendant(file, prisoner.CharacterId, CaseStatus.Tried);
+            if (counsel != null) counsel.CasesLost++;
+
+            var days = Sentencing.Days(prisoner.Deed, rng,
+                EverEscaped(prisoner.CharacterId), member.Rank,
+                Notability.Marked(member, today), lawyerSkill,
+                file != null ? file.Counts.Count : 0);
+
             prisoner.SentenceDays = days;
             prisoner.OutOnDay = Sentencing.IsLife(days) ? Sentencing.Life : today + days;
             prisoner.Stage = PrisonStage.Sentenced;
 
             member.Status = CharacterStatus.Jailed;
             member.BackOnDay = prisoner.OutOnDay;
+            member.BailedUntil = 0;
             member.ConditionNote = Sentencing.IsLife(days) ? "Serving life" : "Serving his time";
             RapSheet.Add(member, Stamp(today), Sentencing.ChargeFor(prisoner.Deed),
                 Sentencing.Verdict(days, Sentencing.IsLife(days) ? 0 : prisoner.OutOnDay));
+        }
+
+        /// <summary>The old door, kept for the callers that only ever wanted the
+        /// convicted branch of it - and because a scene with no docket behind it still
+        /// has to be able to sentence a man.</summary>
+        public void Convicted(Roster roster, Prisoner prisoner, int today) =>
+            Tried(roster, prisoner, today);
+
+        /// <summary>He walked: acquitted, or the case was thrown out. Off the books of
+        /// the city, back on his feet, and NOT wanted - a man the court let go is not a
+        /// man on the run.</summary>
+        void Walks(Roster roster, Character member, Prisoner prisoner, int today,
+            string outcome)
+        {
+            _inside.Remove(prisoner);
+            prisoner.Stage = PrisonStage.Cleared;
+            prisoner.SentenceDays = 0;
+            prisoner.OutOnDay = 0;
+
+            member.Status = CharacterStatus.Active;
+            member.BackOnDay = 0;
+            member.BailedUntil = 0;
+            member.ConditionNote = "";
+            RapSheet.Add(member, Stamp(today), Sentencing.ChargeFor(prisoner.Deed), outcome);
+        }
+
+        /// <summary>How many convictions the city already has on him - what the judge
+        /// has in front of him, capped by the arithmetic that reads it.</summary>
+        public static int Priors(Character member)
+        {
+            if (member == null)
+                return 0;
+            var priors = 0;
+            for (var i = 0; i < member.RapSheet.Count; i++)
+            {
+                var outcome = member.RapSheet[i].Outcome;
+                if (!string.IsNullOrEmpty(outcome) && outcome.StartsWith("Convicted"))
+                    priors++;
+            }
+            return priors;
+        }
+
+        static void Silence(CourtCase file, WitnessKind kind)
+        {
+            for (var i = 0; i < file.Witnesses.Count; i++)
+                if (file.Witnesses[i].Kind == kind &&
+                    file.Witnesses[i].Standing == WitnessStanding.WillTestify)
+                    file.Witnesses[i].Standing = WitnessStanding.Withdrawn;
         }
 
         /// <summary>
@@ -195,6 +656,7 @@ namespace LivingCity.Police
 
             member.Status = CharacterStatus.Active;
             member.BackOnDay = 0;
+            member.BailedUntil = 0;
             member.ConditionNote = "";
             // W2: freed off a transfer. A week out of sight clears it, and nothing else
             // does (WantedLevels).
@@ -214,18 +676,90 @@ namespace LivingCity.Police
         }
 
         /// <summary>He served it, or somebody let him out: he leaves the pipe. Called
-        /// off the roster's own discharge, which is the one place a man stands up.</summary>
+        /// off the roster's own discharge, which is the one place a man stands up.
+        /// A man out on bail is NOT swept: he is Active on purpose and still owes the
+        /// court a morning.</summary>
         public void Discharged(Roster roster)
         {
             if (roster == null)
                 return;
             for (var i = _inside.Count - 1; i >= 0; i--)
             {
+                if (_inside[i].Stage == PrisonStage.Bailed)
+                    continue;
                 var member = roster.Find(_inside[i].CharacterId);
                 if (member == null || member.Status != CharacterStatus.Jailed)
                     _inside.RemoveAt(i);
             }
         }
+
+        /// <summary>The boss cut him loose: the outfit's file is closed, and the city
+        /// keeps him. He comes off the outfit's side of the pipe and his case goes on
+        /// without him.</summary>
+        public void CutLoose(int characterId)
+        {
+            for (var i = _inside.Count - 1; i >= 0; i--)
+            {
+                if (_inside[i].CharacterId != characterId) continue;
+                var file = _inside[i].CaseId >= 0 ? FindCase(_inside[i].CaseId) : null;
+                _inside.RemoveAt(i);
+                DropDefendant(file, characterId);
+            }
+            // He may be on an open case without being in the pipe at all - bailed and
+            // struck off the same morning, say - so the docket is swept as well.
+            for (var i = 0; i < _cases.Count; i++)
+                if (_cases[i].Status == CaseStatus.Open &&
+                    _cases[i].HasDefendant(characterId))
+                    DropDefendant(_cases[i], characterId);
+        }
+
+        /// <summary>
+        /// THIS MAN HAS HAD HIS DAY, and the case is only OVER when every name on it
+        /// has had one.
+        ///
+        /// A case carries the whole crew (the epic's rule: they go in together) and the
+        /// verdict is per man - but the transfer need not bring them in one car, and
+        /// some of them can be held over to another day. Stamping the shared case on
+        /// the FIRST verdict took it straight off OpenCases and dropped its witness
+        /// markers while men were still waiting to be tried: the player lost the
+        /// counterplay he still had, and an unresolved prosecution stopped showing.
+        ///
+        /// So each verdict takes only that man off the list, exactly as a man cut loose
+        /// is taken off it (DropDefendant), and the LAST one closes the case. A trial
+        /// anywhere on it beats a dismissal: a case where one man was heard was not
+        /// thrown out, whatever the men after him managed.
+        /// </summary>
+        static void ResolveDefendant(CourtCase file, int characterId, CaseStatus outcome)
+        {
+            if (file == null) return;
+            if (outcome == CaseStatus.Tried) file.AnyTried = true;
+            file.Defendants.Remove(characterId);
+            if (file.Defendants.Count > 0) return;
+            file.Status = file.AnyTried ? CaseStatus.Tried : outcome;
+        }
+
+        /// <summary>
+        /// He is off this case. A case that had defendants and has none left is CLOSED:
+        /// nothing will ever put it up for transfer again, and an open case with nobody
+        /// on it goes on drawing witness markers and taking leans for a trial that
+        /// cannot happen.
+        ///
+        /// A case that never had a defendant is a COMPLAINT nobody was taken for, and
+        /// that one is left open on purpose - it is what becomes an extra count the next
+        /// time these men are taken.
+        /// </summary>
+        void DropDefendant(CourtCase file, int characterId)
+        {
+            if (file == null || !file.Defendants.Remove(characterId))
+                return;
+            if (file.Defendants.Count == 0 && file.Status == CaseStatus.Open)
+                file.Status = CaseStatus.Tried;
+        }
+
+        /// <summary>Takes a man off a case without judging what is left of it - the
+        /// re-book's own move, where the case is being folded rather than emptied.</summary>
+        static void Drop(CourtCase file, int characterId) =>
+            file?.Defendants.Remove(characterId);
 
         static string Stamp(int day) => day > 0 ? "DAY " + day : "";
     }

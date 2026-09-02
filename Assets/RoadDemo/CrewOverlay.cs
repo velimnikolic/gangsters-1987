@@ -758,6 +758,17 @@ namespace RoadDemo
                 return;
             }
 
+            // A WITNESS UNDER THE CLICK (GAN-245). A man whose name is on a case the
+            // city has open against us is the one bystander in the city there is
+            // anything to say to - so he gets a card, and everybody else on the
+            // pavement goes on being ground to walk to.
+            var seen = PickWitnessAt(up);
+            if (seen != null)
+            {
+                OpenWitnessOrders(seen, up);
+                return;
+            }
+
             // a shopkeeper's premises under the click: nothing to fight and nothing to
             // blow, but everything the racket can put to him. The rows come from the one
             // shared list, so the card and the paper map cannot offer different things.
@@ -784,6 +795,21 @@ namespace RoadDemo
                        (up - _lastOrderAtPx).sqrMagnitude <= slackTwice * slackTwice;
             _lastOrderAt = Time.unscaledTime;
             _lastOrderAtPx = up;
+
+            // A CLICK ON SOMETHING TO GET BEHIND IS AN AMBUSH (COVER-003). A bin, a
+            // planter, a phone box - or somebody else's car stood at the kerb, which on
+            // this map means the NPC parkers above all. One man takes it, the rest take
+            // the furniture round it, and they lie in wait. One click walks them there,
+            // two runs them, like every other order. No card: there is one thing to do
+            // to a bin.
+            if (DemoCrews.AnchorUnder(ray, world, out var anchor))
+            {
+                if (_crews.OrderAmbush(_crews.Selected, anchor, run))
+                    ShowMark(anchor.At + Vector3.up * 0.6f, MarkTint);
+                else if (_crews.AmbushRefusal != null)
+                    Refuse(_crews.AmbushRefusal);
+                return;
+            }
 
             if (_crews.OrderSelected(world, out var destination, run))
                 ShowMark(destination, MarkTint);
@@ -1131,6 +1157,76 @@ namespace RoadDemo
 
             foreach (var action in _enemyActions)
                 Row(action.Label, action.Note, action.Run, action.Run != null);
+
+            LayoutAndShow(screen);
+        }
+
+        /// <summary>The witness under the pointer: the nearest bystander whose name is
+        /// on a case still open against us. Its own pick, the way every other pick on
+        /// this overlay is its own - PickAt walks the crews' men and a civilian is not
+        /// one of them.</summary>
+        CivilianAgent PickWitnessAt(Vector2 screen)
+        {
+            if (_cam == null || _crews == null || _crews.Selected == null) return null;
+            float radius = PickRadius * (_canvas != null ? _canvas.scaleFactor : 1f);
+            float bestD = radius * radius;
+            CivilianAgent best = null;
+            for (int i = 0; i < CivilianAgent.All.Count; i++)
+            {
+                var man = CivilianAgent.All[i];
+                if (man == null || man.Dead || man.Tf == null) continue;
+                if (WitnessWatch.NameOf(man, _crews.Selected.Faction) == null) continue;
+                if (!LivingCity.Gameplay.MapVisionRegistry.IsRevealed(man.Tf.position)) continue;
+                var p = _cam.WorldToScreenPoint(man.Tf.position + Vector3.up * 0.9f);
+                if (p.z <= 0f) continue;
+                float d = ((Vector2)p - screen).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = man; }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// LEAN ON THE WITNESS. One row, because there is one thing to say to him that
+        /// an attack order does not already say - the crew walks over and has a word,
+        /// and either he has remembered nothing or he rings the precinct about the men
+        /// who came to see him.
+        ///
+        /// Killing him is the ordinary attack order and is deliberately NOT on this
+        /// card: it is a murder, with its own witnesses, and it must not read as a menu
+        /// item beside a conversation.
+        /// </summary>
+        void OpenWitnessOrders(CivilianAgent body, Vector2 screen)
+        {
+            if (!BuildCard()) return;
+            var crew = _crews.Selected;
+            var witness = crew != null ? WitnessWatch.NameOf(body, crew.Faction) : null;
+            if (crew == null || witness == null) return;
+
+            _cardTarget = null;
+            _cardFront = null;
+            _cardPlantCar = null;
+            _cardBusiness = default;
+            _cardCrew = crew;
+            _cardShown = 0;
+            _cardTitle.text = witness.Name.ToUpperInvariant() + " · WITNESS";
+
+            var already = WitnessWatch.Leaning(crew);
+            Row("LEAN ON THE WITNESS",
+                already
+                    ? "they are already on their way to somebody"
+                    : "walk over and have a word · he talks to the precinct if it goes wrong",
+                already ? (System.Action)null : () =>
+                {
+                    if (body.Tf == null) return;
+                    if (!_crews.OrderSelected(body.Tf.position, out var destination, false))
+                    {
+                        Refuse(_crews.OrderRefusal);
+                        return;
+                    }
+                    WitnessWatch.OrderLean(crew, witness, body);
+                    ShowMark(destination, AttackTint);
+                },
+                lit: !already);
 
             LayoutAndShow(screen);
         }
@@ -1483,7 +1579,8 @@ namespace RoadDemo
             for (var i = 0; i < _crews.Units.Count; i++)
             {
                 var unit = _crews.Units[i];
-                if (unit == null || unit.IsPolice || unit.Faction != 0 || unit.Wiped)
+                if (unit == null || unit.IsPolice || unit.Faction != 0 || unit.Wiped ||
+                    unit.IsDetachment)
                     continue;
 
                 var picked = unit;
@@ -1702,6 +1799,25 @@ namespace RoadDemo
                 }
                 : (System.Action)null,
                 lit: canShoot);
+
+            // AND THE THIRD THING A CAR IS: something to get behind (COVER-005). Every
+            // other stood car in the town is one right click away (DemoCrews.AnchorUnder),
+            // but a rival crew's motor already opens this card, so the row lives here
+            // rather than the click quietly meaning two things.
+            var stood = DemoCrews.AnchorOf(car);
+            bool canHide = stood.Valid && crew.Boss != null && !crew.Boss.Dead;
+            Row("HIDE BEHIND IT",
+                canHide ? "the crew lies in wait behind its flank"
+                        : "it is moving - there is no flank to take",
+                canHide ? () =>
+                {
+                    if (_crews.OrderAmbush(crew, stood, run: false))
+                        ShowMark(stood.At + Vector3.up * 0.6f, MarkTint);
+                    else if (_crews.AmbushRefusal != null)
+                        Refuse(_crews.AmbushRefusal);
+                }
+                : (System.Action)null,
+                lit: canHide);
 
             LayoutAndShow(screen);
         }

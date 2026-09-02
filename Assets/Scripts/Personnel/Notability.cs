@@ -77,12 +77,27 @@ namespace LivingCity.Personnel
                 case IncidentKind.Fled: return 40;
                 case IncidentKind.BearsWatching: return 35;
                 case IncidentKind.Escalated: return 35;
+                // GAN-245: a court is how a man becomes a name the judge has read -
+                // which is exactly what lengthens a marked lieutenant's next sentence.
+                case IncidentKind.CutLoose: return 85;
+                case IncidentKind.Convicted: return 75;
+                case IncidentKind.BailForfeit: return 55;
+                case IncidentKind.Acquitted: return 55;
+                case IncidentKind.CaseDismissed: return 45;
+                case IncidentKind.WitnessKilled: return 45;
+                case IncidentKind.CaseOpened: return 35;
+                case IncidentKind.BailPosted: return 30;
                 case IncidentKind.Froze: return 30;
                 case IncidentKind.DemandedARaise: return 25;
                 // A night with nothing in the envelope is the outfit's failure, not
                 // his: it belongs on his file and it must not make a name of him.
                 case IncidentKind.PayrollShort: return 20;
                 case IncidentKind.Deviated: return 20;
+                case IncidentKind.WitnessWithdrawn: return 20;
+                // The shopkeeper's telephone call is news about the SHOP, not about a
+                // man - nobody is made a name by being complained about.
+                case IncidentKind.ComplaintRung: return 15;
+                case IncidentKind.StatementTaken: return 15;
                 default: return 15; // SlowingDown, and anything added later.
             }
         }
@@ -159,6 +174,84 @@ namespace LivingCity.Personnel
 
         /// <summary>The roll marks him.</summary>
         public static bool Marked(Character man, int today) => Of(man, today) >= NewsBand;
+
+        /// <summary>
+        /// WHY he is marked, in the words his own file already used: the last thing
+        /// that happened to him. Empty for a man nothing ever has - a mark with no
+        /// cause behind it is a mark the player learns to ignore, so the page that
+        /// draws one asks for this beside it.
+        /// </summary>
+        public static string Cause(Character man)
+        {
+            if (man == null || man.Career.Count == 0)
+                return "";
+            return man.Career[man.Career.Count - 1].Line;
+        }
+
+        /// <summary>
+        /// How his figure is moving: what a week has done to it. A man at ninety
+        /// falling and a man at ninety rising are different problems, and both facts
+        /// are already in the fold - a second fold a week back costs nothing and
+        /// invents nothing.
+        ///
+        /// Positive is rising. Nothing is stored anywhere: run it twice on the same
+        /// history and it answers the same.
+        /// </summary>
+        public static int Trend(Character man, int today) =>
+            Of(man, today) - Of(man, today - FreshDays);
+
+        /// <summary>
+        /// The men worth looking at this morning, most notable first - the plain
+        /// descending sort by <see cref="Of"/>, with the id breaking a tie so the same
+        /// roster always answers in the same order.
+        ///
+        /// Men off the books are left out: the record keeps their line, but nobody is
+        /// going to do anything about them today.
+        /// </summary>
+        public static void Top(Roster roster, int today, int count, List<Character> into)
+        {
+            if (into == null)
+                return;
+            into.Clear();
+            if (roster == null || count <= 0)
+                return;
+
+            // Scored ONCE per man and then sorted on the figures. The fold walks a
+            // whole file every time it is asked, and a comparison that called it would
+            // walk sixty files a hundred times to order sixty men.
+            Ranking.Clear();
+            for (var i = 0; i < roster.Members.Count; i++)
+            {
+                var man = roster.Members[i];
+                if (man != null && !man.Gone)
+                    Ranking.Add(new Standing(man, Of(man, today)));
+            }
+
+            Ranking.Sort((a, b) =>
+            {
+                var byScore = b.Score.CompareTo(a.Score);
+                return byScore != 0 ? byScore : a.Man.Id.CompareTo(b.Man.Id);
+            });
+
+            var take = Ranking.Count < count ? Ranking.Count : count;
+            for (var i = 0; i < take; i++)
+                into.Add(Ranking[i].Man);
+            Ranking.Clear();
+        }
+
+        readonly struct Standing
+        {
+            public readonly Character Man;
+            public readonly int Score;
+
+            public Standing(Character man, int score)
+            {
+                Man = man;
+                Score = score;
+            }
+        }
+
+        static readonly List<Standing> Ranking = new List<Standing>();
     }
 
     /// <summary>
