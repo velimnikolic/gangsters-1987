@@ -208,6 +208,40 @@ namespace LivingCity.Outfit
         }
 
         /// <summary>
+        /// EVERY FAMILY'S TURN OF MIND (D7).
+        ///
+        /// A house thinks when its own four hours are up, staggered by its number so the
+        /// twenty-one never land on one frame. <paramref name="think"/> is handed the
+        /// house and does the reading and the doing - the model owns the cadence, the
+        /// scene owns the ledgers.
+        ///
+        /// THE PLAYER'S HOUSE HAS NO MIND. He is the mind.
+        /// </summary>
+        /// <returns>How many houses thought this call.</returns>
+        public int Think(double gameHour, float everyHours, System.Action<House> think)
+        {
+            if (think == null || everyHours <= 0f)
+                return 0;
+
+            var thought = 0;
+            for (var i = 0; i < houses.Length; i++)
+            {
+                var house = houses[i];
+                if (house == null || house.IsPlayer || house.Extinct)
+                    continue;
+                if (house.NextThinkHour <= 0.0)
+                    house.OpenTheRota(gameHour, everyHours, houses.Length);
+                if (gameHour < house.NextThinkHour)
+                    continue;
+
+                house.NextThinkHour = gameHour + everyHours;
+                think(house);
+                thought++;
+            }
+            return thought;
+        }
+
+        /// <summary>
         /// Midnight for everybody: wages out of each house's own safe, its own men
         /// aging, learning, souring and walking. Tribute is the player's alone - he is
         /// the one who pays the houses above him - and that is the whole of the

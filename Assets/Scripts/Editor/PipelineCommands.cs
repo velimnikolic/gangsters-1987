@@ -407,6 +407,23 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_house_tests",
+                    "Run RIVAL-005's contracts: one family running itself on a paper " +
+                    "city - it loses a man, signs one, takes the next street, asks a " +
+                    "door, collects and pays its men, for every seed 1..30.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "underworld", "tests" })]
+        public static object HouseTests()
+        {
+            var failures = LivingCity.Tests.HouseMindTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                mvp = LivingCity.Tests.HouseMindTests.Notes.ToArray(),
+            };
+        }
+
         [CliCommand("gangsters_loyalty_tests",
                     "Run EPIC 15 contracts for loyalty, promotion and betrayal: who a " +
                     "man answers to, what moves it, who walks and who goes with him.",
@@ -1295,7 +1312,8 @@ namespace GangstersTools
                     hesitantShare = racket.Config.HesitantComplianceShare,
                     switchMargin = racket.Config.SwitchMargin,
                     switchTicks = racket.Config.SwitchTicks,
-                    rivalDemandPresence = racket.Config.RivalDemandPresence,
+                    rivalDemandPresence =
+                        LivingCity.Outfit.HouseMindConfig.Default.DemandPresence,
                     approachRadiusMetres = racket.Config.ApproachRadiusMetres,
                 },
                 businesses = rows.ToArray(),

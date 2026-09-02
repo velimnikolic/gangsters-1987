@@ -91,6 +91,25 @@ namespace RoadDemo
             Row(kind, sb.ToString());
         }
 
+        /// <summary>
+        /// ONE FAMILY'S TURN OF MIND (RIVAL-005). What it decided, which tier decided it,
+        /// what it was reasoning from and what it can afford - the row the underworld
+        /// tally reads to say whether twenty houses played the game or stood still.
+        /// </summary>
+        public static void House(
+            int gang, int tier, string intent, string reason, int safe, int payroll)
+        {
+            if (!On) return;
+            var sb = Take();
+            Int(sb, "gang", gang);
+            Int(sb, "tier", tier);
+            Str(sb, "intent", intent);
+            Str(sb, "why", reason);
+            Int(sb, "safe", safe);
+            Int(sb, "payroll", payroll);
+            Row("house", sb.ToString());
+        }
+
         // -------- the shared builder, so a row is one string and no garbage per field
 
         public static StringBuilder Take() { Sb.Clear(); return Sb; }

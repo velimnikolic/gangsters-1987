@@ -73,6 +73,26 @@ namespace LivingCity.Outfit
         public void Touch() => Version++;
 
         /// <summary>
+        /// WHEN THIS HOUSE NEXT THINKS (D7). Every four game hours, staggered by the
+        /// family's own number so twenty-one minds never land on one frame. Trouble
+        /// against it brings the hour forward (RIVAL-006).
+        /// </summary>
+        public double NextThinkHour;
+
+        /// <summary>Think NOW - something happened that will not wait four hours.
+        /// </summary>
+        public void WakeNow(double gameHour) => NextThinkHour = gameHour;
+
+        /// <summary>The family's own place in the four-hour rota, so the twenty-one are
+        /// spread evenly across it rather than all thinking at nine o'clock.</summary>
+        public void OpenTheRota(double gameHour, float everyHours, int houses)
+        {
+            if (houses < 1)
+                houses = 1;
+            NextThinkHour = gameHour + everyHours * (GangId % houses) / houses;
+        }
+
+        /// <summary>
         /// Nobody left on the books - every name struck through, dead or gone over.
         /// Derived, never stored: a family is finished when its last man is, and no
         /// pass anywhere writes a flag saying so.

@@ -192,8 +192,6 @@ namespace LivingCity.Territory
             float hesitantComplianceShare = 0.35f,
             float switchMargin = 18f,
             int switchTicks = 3,
-            float rivalDemandPresence = 25f,
-            int rivalDemandsPerTick = 2,
             float approachRadiusMetres = 14f,
             float threatSeverity = 1f,
             int historyPerBusiness = 16)
@@ -207,8 +205,6 @@ namespace LivingCity.Territory
             HesitantComplianceShare = Math.Min(1f, Math.Max(0f, hesitantComplianceShare));
             SwitchMargin = Math.Max(0f, switchMargin);
             SwitchTicks = Math.Max(1, switchTicks);
-            RivalDemandPresence = Math.Max(0f, rivalDemandPresence);
-            RivalDemandsPerTick = Math.Max(0, rivalDemandsPerTick);
             ApproachRadiusMetres = Math.Max(1f, approachRadiusMetres);
             ThreatSeverity = Math.Max(0f, threatSeverity);
             HistoryPerBusiness = Math.Max(4, historyPerBusiness);
@@ -239,12 +235,6 @@ namespace LivingCity.Territory
         /// <summary>And for how many consecutive business ticks, so one loud afternoon
         /// does not turn a street over.</summary>
         public int SwitchTicks { get; }
-
-        /// <summary>The Presence a family needs on a block before it starts leaning on the
-        /// shops there of its own accord.</summary>
-        public float RivalDemandPresence { get; }
-
-        public int RivalDemandsPerTick { get; }
 
         /// <summary>How close a man must be standing to the door for the demand to be a
         /// real one. A click from across the city is an intent, not an interaction.</summary>

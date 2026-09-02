@@ -85,9 +85,6 @@ namespace RoadDemo
                  "business ticks running.")]
         [SerializeField, Min(0f)] float switchMargin = 18f;
         [SerializeField, Min(1)] int switchTicks = 3;
-        [Tooltip("The Presence a family needs on a block before it leans on the shops there.")]
-        [SerializeField, Min(0f)] float rivalDemandPresence = 25f;
-        [SerializeField, Min(0)] int rivalDemandsPerTick = 2;
 
         [Header("Derived control (GAN-120)")]
         [SerializeField, Min(0f)] float controlPresenceWeight = 0.35f;
@@ -164,7 +161,6 @@ namespace RoadDemo
         readonly List<TerritoryProtectionRelationship> relationScratch =
             new List<TerritoryProtectionRelationship>();
         readonly List<TerritoryBusinessId> blockBusinessScratch = new List<TerritoryBusinessId>();
-        int rivalDemandCursor;
 
         TerritoryControlLedger control;
         TerritoryPowerLedger power;
@@ -353,8 +349,6 @@ namespace RoadDemo
                 complianceFearWeight, compliancePresenceWeight, complianceTroubleWeight,
                 complianceRivalWeight, complianceAcceptAt, complianceHesitateAt,
                 switchMargin: switchMargin, switchTicks: switchTicks,
-                rivalDemandPresence: rivalDemandPresence,
-                rivalDemandsPerTick: rivalDemandsPerTick,
                 approachRadiusMetres: approachRadiusMetres));
             var controlConfig = new TerritoryControlConfig(
                 controlPresenceWeight, controlFearWeight, controlComplianceWeight,
@@ -1598,7 +1592,7 @@ namespace RoadDemo
         {
             SweepDefiance(gameHour);
             SweepProtectionSwitches();
-            DriveRivalDemands();
+            DriveHouseMinds(gameHour);
             AccrueDues(gameHour);
             TendScheduledRounds(gameHour);
             TickPaperRounds(gameHour);
@@ -1652,60 +1646,6 @@ namespace RoadDemo
                     PublishRacket(blockId);
                 }
             }
-        }
-
-        /// <summary>
-        /// Families lean on the shops where they stand. No planner and no schedule: a
-        /// family with men on a street tries the shops on it, through the same demand the
-        /// player uses, and the owner answers by the same rules.
-        /// </summary>
-        void DriveRivalDemands()
-        {
-            if (racket == null || presence == null || geography == null ||
-                racket.Config.RivalDemandsPerTick <= 0)
-                return;
-
-            var made = 0;
-            var blocks = presence.Blocks;
-            for (var i = 0; i < blocks.Count && made < racket.Config.RivalDemandsPerTick; i++)
-            {
-                // Start where the last tick left off, so one busy block does not soak up
-                // every attempt the city ever makes.
-                var blockId = blocks[(i + rivalDemandCursor) % blocks.Count];
-                var here = geography.BusinessesOf(blockId);
-                if (here.Count == 0)
-                    continue;
-
-                presence.CollectGangs(blockId, presenceGangs);
-                for (var g = 0; g < presenceGangs.Count && made < racket.Config.RivalDemandsPerTick; g++)
-                {
-                    var gangId = presenceGangs[g].GangId;
-                    // RIVAL demands only. The player's family asks when the player says
-                    // so, through the command gateway and a man at the door - the sim
-                    // must never open a defiance clock in his name off mere presence.
-                    // (This whole pass goes in RIVAL-005, when a mind asks instead.)
-                    if (gangId == LivingCity.Gameplay.PlayerCommands.House)
-                        continue;
-                    if (presenceGangs[g].Total < racket.Config.RivalDemandPresence)
-                        continue;
-
-                    for (var b = 0; b < here.Count; b++)
-                    {
-                        var businessId = here[b].BusinessId;
-                        var standing = racket.StateOf(businessId, gangId);
-                        if (standing == TerritoryProtectionState.Compliant ||
-                            standing == TerritoryProtectionState.Defiant)
-                            continue;
-                        if (!ResolveDemand(businessId: businessId, gangId: gangId,
-                                verdict: out _, terms: out _))
-                            continue;
-                        made++;
-                        break;
-                    }
-                }
-            }
-
-            rivalDemandCursor++;
         }
 
         /// <summary>Men who were sent to a door and have got there.</summary>

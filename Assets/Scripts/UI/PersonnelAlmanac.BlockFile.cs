@@ -438,7 +438,7 @@ namespace LivingCity.UI
 
             var standing = presence.TotalOf(
                 blockCardId, new TerritoryGangId(GangCatalog.PlayerGangId));
-            var wanted = racket.Config.RivalDemandPresence;
+            var wanted = Outfit.HouseMindConfig.Default.DemandPresence;
             var perMan = presence.Config.ContributionOf(
                 TerritoryRank.Hood, TerritoryActorActivity.Stationed);
             if (perMan <= 0f || standing >= wanted)

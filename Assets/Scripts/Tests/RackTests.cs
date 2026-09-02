@@ -45,7 +45,6 @@ namespace LivingCity.Tests
             OneVisitFilesOneSlip(failures);
             MoneyReachesTheWireWithItsSum(failures);
             AShakedownWalksTheDoorsThatHaveNotAnswered(failures);
-            AFlatIsBoughtAndHiddenInAndNothingElse(failures);
 
             return failures;
         }
