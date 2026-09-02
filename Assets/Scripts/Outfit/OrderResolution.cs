@@ -448,7 +448,11 @@ namespace LivingCity.Outfit
         {
             if (completed || rng == null || job == null)
                 return -1;
-            if (spec.Type != OrderType.Torch && spec.Type != OrderType.Bomb)
+            // Fire, powder - and a killing. A man sent to shoot somebody by name and
+            // sent home without him has been in something, and the something has a cost
+            // (D16).
+            if (spec.Type != OrderType.Torch && spec.Type != OrderType.Bomb &&
+                spec.Type != OrderType.Kill)
                 return -1;
             if (CrewKit.BestAt(roster, crew, spec.PrimaryAttribute) >= FloorOf(spec))
                 return -1;

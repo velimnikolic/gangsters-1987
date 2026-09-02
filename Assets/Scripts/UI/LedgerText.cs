@@ -265,7 +265,7 @@ namespace LivingCity.UI
         };
 
         public const string StanceTakesEffect =
-            "Stance changes take effect when the week is committed - never mid-plan.";
+            "Stance changes take effect at midnight - never mid-day.";
 
         public const string StrengthUnknown = "Unknown — no eyes inside";
 

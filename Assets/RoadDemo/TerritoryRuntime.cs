@@ -894,7 +894,7 @@ namespace RoadDemo
         /// A killing is filed against the house that was shooting here, and against
         /// nobody at all when more than one was. A guess would be worse than a blank.
         /// </summary>
-        void OnStreetDeath(Vector3 position, StreetAlarm.DeathOf who)
+        void OnStreetDeath(Vector3 position, StreetAlarm.DeathOf who, int victimFaction)
         {
             if (fear == null || geography == null)
                 return;
@@ -904,8 +904,16 @@ namespace RoadDemo
             var severity = who == StreetAlarm.DeathOf.Officer ? 1.6f
                 : who == StreetAlarm.DeathOf.Civilian ? 1.3f
                 : 1f;
-            NoteStreetThreat(
-                AttributeRecentViolence(position), blockId, position, lastGameHour);
+            var shooter = AttributeRecentViolence(position);
+            NoteStreetThreat(shooter, blockId, position, lastGameHour);
+
+            // A MAN OF THEIRS KILLED BY MEN OF OURS IS OWED FOR (D14). The house that
+            // lost him holds the grudge, and it holds it against the house whose men
+            // were shooting - never against a name nobody could put to the shot.
+            if (victimFaction >= 0 && shooter.IsValid && shooter.Value != victimFaction)
+                LivingCity.Outfit.Underworld.Current?.Relations.Note(
+                    victimFaction, shooter.Value,
+                    LivingCity.Outfit.GrievanceKind.ManKilled);
             RecordFear(new TerritoryFearEvent(
                 AttributeRecentViolence(position),
                 blockId,
@@ -1458,6 +1466,14 @@ namespace RoadDemo
                 return false;
 
             racketChanges.Clear();
+            // WHOSE DOOR WAS IT? Asked BEFORE the escalation, because a wrecking can end
+            // an arrangement and the family that was paid for it is still the family
+            // that was wronged.
+            if (racket.TryGetProtector(businessId, out var wronged) && wronged != gangId)
+                LivingCity.Outfit.Underworld.Current?.Relations.Note(
+                    wronged.Value, gangId.Value,
+                    LivingCity.Outfit.GrievanceKind.DoorAttacked);
+
             racket.Escalate(businessId, gangId, kind, lastGameHour, racketChanges);
             NoteConnectedHeat(businessId);
             RecordFear(new TerritoryFearEvent(
@@ -1655,6 +1671,11 @@ namespace RoadDemo
                 {
                     racket.PressTowardSwitch(businessId, challenger, false);
                     PublishRacket(blockId);
+                    // A DOOR TAKEN OFF US IS OWED FOR (D14). The owner made the choice,
+                    // but the family that lost the money does not hold it against HIM.
+                    LivingCity.Outfit.Underworld.Current?.Relations.Note(
+                        protector.Value, challenger.Value,
+                        LivingCity.Outfit.GrievanceKind.DoorSwitched);
                 }
             }
         }

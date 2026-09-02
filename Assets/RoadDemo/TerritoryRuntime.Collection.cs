@@ -964,7 +964,19 @@ namespace RoadDemo
                             ? LivingCity.Gameplay.OutfitDirector.Instance.Campaign.Day
                             : 1);
             }
-            else if (round.Carried > 0 && ours)
+            else if (round.Carried > 0)
+            {
+                // A BAG TAKEN OFF OUR MEN IS OWED FOR (D14) - if anybody was seen. The
+                // most recent house to put hands on somebody on that street is who the
+                // family blames, which is what a family would do.
+                var took = LastThreatOn(round.BlockId, round.House);
+                if (took.IsValid)
+                    LivingCity.Outfit.Underworld.Current?.Relations.Note(
+                        round.House.Value, took.Value,
+                        LivingCity.Outfit.GrievanceKind.RoundLost);
+            }
+
+            if (!banked && round.Carried > 0 && ours)
             {
                 // The loudest money event on the wire was the quietest one on the
                 // street: every ordinary stop calls itself over the door and a bag

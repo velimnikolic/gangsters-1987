@@ -146,6 +146,7 @@ namespace LivingCity.Outfit
         static readonly HouseDoor[] NoDoors = new HouseDoor[0];
         static readonly HouseIncident[] NoIncidents = new HouseIncident[0];
         static readonly HouseThreat[] NoThreats = new HouseThreat[0];
+        static readonly TerritoryGangId[] NoRivals = new TerritoryGangId[0];
         static readonly HouseDefiance[] NoDefiances = new HouseDefiance[0];
         static readonly string[] NoRefusals = new string[0];
 
@@ -170,6 +171,21 @@ namespace LivingCity.Outfit
         public System.Func<TerritoryBlockId, TerritoryControlState> ControlLook;
         public System.Func<TerritoryBlockId, TerritoryGangId> LeaderLook;
         public System.Func<TerritoryGangId, Stance> StanceLook;
+
+        /// <summary>How far up the ladder we are with them - what WE are owed, never
+        /// what they are.</summary>
+        public System.Func<TerritoryGangId, LadderStep> LadderLook;
+
+        /// <summary>How many days we believe THEY could pay their men through a war.
+        /// Never their books: a haze between 0.7 and 1.3 of the truth (D15).</summary>
+        public System.Func<TerritoryGangId, int> EnduranceLook;
+
+        /// <summary>Every other family this one has anything to do with.</summary>
+        public IReadOnlyList<TerritoryGangId> Rivals = NoRivals;
+
+        /// <summary>Men we have lost since this war opened. Enough of them and a family
+        /// sues for peace whatever it is owed (D15).</summary>
+        public int LossesThisWar;
 
         public IReadOnlyList<HouseIncident> Incidents = NoIncidents;
         public IReadOnlyList<HouseThreat> Threats = NoThreats;
@@ -217,5 +233,15 @@ namespace LivingCity.Outfit
         public int DailyPayroll => Wages.DailyPayroll(Roster);
 
         public int Safe => Accounts != null ? Accounts.Safe : 0;
+
+        /// <summary>How many days WE could pay our men through a war (D15).</summary>
+        public int Endurance => HouseRelations.Endurance(Safe, DailyPayroll);
+
+        public LadderStep Ladder(TerritoryGangId other) =>
+            LadderLook != null ? LadderLook(other) : LadderStep.Ignore;
+
+        /// <summary>What we believe they could last. Never the truth.</summary>
+        public int TheirEndurance(TerritoryGangId other) =>
+            EnduranceLook != null ? EnduranceLook(other) : 0;
     }
 }

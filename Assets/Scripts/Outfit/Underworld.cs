@@ -37,6 +37,13 @@ namespace LivingCity.Outfit
         /// him.</summary>
         public HireMarket Column { get; } = new HireMarket();
 
+        /// <summary>
+        /// WHERE EVERY HOUSE STANDS WITH EVERY OTHER. One book for the city, not one per
+        /// family: a stance belongs to the pair, and two families cannot disagree about
+        /// whether they are at war.
+        /// </summary>
+        public HouseRelations Relations { get; } = new HouseRelations();
+
         public int Count => houses.Length;
 
         /// <summary>
@@ -78,7 +85,12 @@ namespace LivingCity.Outfit
                 ArmTheFamily(roster);
                 RosterOps.NormalizeArms(roster);
 
-                var runner = new CampaignRunner { Seed = citySeed };
+                var runner = new CampaignRunner
+                {
+                    Seed = citySeed,
+                    GangId = gangId,
+                    Relations = underworld.Relations,
+                };
                 runner.OpenFirstSheet();
                 underworld.houses[gangId] = new House(gangId, roster, runner);
             }
@@ -250,6 +262,12 @@ namespace LivingCity.Outfit
         /// <returns>What the PLAYER paid his men, for the line the ledger prints.</returns>
         public int DayTick()
         {
+            // MIDNIGHT FOR THE WHOLE CITY. Every pending stance lands at once and every
+            // grudge fades by a day, before anybody's books are turned: a war declared
+            // yesterday is a war this morning, for both sides at the same moment.
+            Relations.ApplyPending();
+            Relations.DayTick(Player != null ? Player.Runner.Campaign.Day : 0);
+
             var paidByPlayer = 0;
             for (var i = 0; i < houses.Length; i++)
             {

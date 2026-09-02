@@ -160,7 +160,7 @@ namespace RoadDemo
                 { _callAt = Mathf.Min(_callAt, Time.time); break; }
         }
 
-        void OnDeath(Vector3 where, StreetAlarm.DeathOf who)
+        void OnDeath(Vector3 where, StreetAlarm.DeathOf who, int victimFaction)
         {
             float add = who switch
             {

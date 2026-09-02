@@ -160,7 +160,8 @@ namespace RoadDemo
 
             CrewGore.Death(man, GroundY, floor: true);
             _deaths.Add((man, Time.time + DeathReportDelay));
-            StreetAlarm.Death(man.Tf.position, StreetAlarm.DeathOf.Gangster);
+            StreetAlarm.Death(
+                man.Tf.position, StreetAlarm.DeathOf.Gangster, man.Faction);
             CrewOverlay.Announce(Surname(man.DisplayName).ToUpperInvariant() + " WENT UNDER THE WHEELS",
                 3.5f, new Color(1f, 0.55f, 0.45f));
         }

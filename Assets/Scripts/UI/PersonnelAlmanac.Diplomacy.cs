@@ -283,9 +283,9 @@ namespace LivingCity.UI
             runBy.overflowMode = TextOverflowModes.Ellipsis;
 
             // ---- the three rows a card carries ----
-            var current = outfit ? outfit.Relations.StanceWith(gang.Id) : Outfit.Stance.Peace;
+            var current = outfit ? outfit.StanceWith(gang.Id) : Outfit.Stance.Peace;
             var pending = Outfit.Stance.Peace;
-            var hasPending = outfit && outfit.Relations.TryGetPending(gang.Id, out pending);
+            var hasPending = outfit && outfit.TryGetPendingStance(gang.Id, out pending);
 
             CardRow(card, pad, -98f, inner, "STANDING",
                 LedgerText.StanceLabel(current) + (hasPending

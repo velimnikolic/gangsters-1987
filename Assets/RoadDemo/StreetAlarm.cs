@@ -38,7 +38,7 @@ namespace RoadDemo
         public static event System.Action<Shot> OnShot;
 
         /// <summary>Raised when somebody dies of a shot: where, and whether a bystander.</summary>
-        public static event System.Action<Vector3, DeathOf> OnDeath;
+        public static event System.Action<Vector3, DeathOf, int> OnDeath;
 
         public enum DeathOf { Gangster, Civilian, Officer }
 
@@ -99,8 +99,10 @@ namespace RoadDemo
             OnShot?.Invoke(shot);
         }
 
-        /// <summary>Somebody died of the shooting.</summary>
-        public static void Death(Vector3 pos, DeathOf who)
+        /// <summary>Somebody died of the shooting. <paramref name="victimFaction"/>
+        /// is the house he belonged to, or -1 for a civilian and anybody nobody can
+        /// name: a grudge has to have somebody to belong to.</summary>
+        public static void Death(Vector3 pos, DeathOf who, int victimFaction = -1)
         {
             switch (who)
             {
@@ -108,7 +110,7 @@ namespace RoadDemo
                 case DeathOf.Officer: OfficerDeaths++; break;
                 default: GangDeaths++; break;
             }
-            OnDeath?.Invoke(pos, who);
+            OnDeath?.Invoke(pos, who, victimFaction);
         }
 
         public static int Deaths => CivilianDeaths + GangDeaths + OfficerDeaths;

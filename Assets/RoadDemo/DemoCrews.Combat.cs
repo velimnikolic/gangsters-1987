@@ -352,29 +352,25 @@ namespace RoadDemo
                 }
                 if (unit.Retreated) { TakeOffRetreated(unit); continue; }
 
-                // a rival crew watches for the OUTFIT only - the mobs are not at war with
-                // each other here, and two rival crews stood a street apart must not
-                // open up on one another before the player has taken a single look;
-                // the police pick their own fights (PoliceDispatch)
-                if (unit.TargetUnit == null && unit.Faction != 0 && !unit.IsPolice)
-                {
-                    var seen = EnemyWithin(unit, AlertRange, outfitOnly: true);
-                    if (seen != null) SetTarget(unit, seen);
-                }
-
-                // THE OUTFIT STARTS NOTHING - and walks through nothing either. A crew of
-                // ours with no fight of its own that is BEING SHOT AT turns and returns
-                // fire on whoever is nearest. Without this a crew sent across the quarter
-                // is target practice: the mobs open up on it at twenty-four metres and it
-                // walks on into the fire, because nothing had told it to shoot back (a
-                // whole outfit, fifteen men, was lost that way for three of theirs).
-                // The law is not answered here - a warning shout is PoliceWarning's
+                // WHO FIGHTS WHOM IS THE STANCE BETWEEN THE TWO HOUSES, and nothing
+                // else (D13). It is the same rule for every pair in the city, the
+                // player's included, and it is the three sentences the FAMILIES card
+                // prints: war on sight, truce on the ground the engager leads, peace
+                // never - except that a man being shot at turns and returns fire.
+                //
+                // Until this, a rival crew watched for the outfit only and the outfit
+                // started nothing. That made the player the only family anybody could
+                // fall out with, which is the whole of what this epic is against.
+                //
+                // The law is not answered here: a warning shout is PoliceWarning's
                 // business, and a crew is not put at war with the police by a stray round.
-                if (unit.TargetUnit == null && unit.Faction == 0 &&
-                    Time.time - unit.ProvokedAt < FightBack &&
-                    Time.time - unit.OrderedAt > HoldFireAfterOrder)
+                if (unit.TargetUnit == null && !unit.IsPolice)
                 {
-                    var seen = EnemyWithin(unit, DefendRange, outfitOnly: false, noPolice: true);
+                    var provoked = Time.time - unit.ProvokedAt < FightBack &&
+                                   Time.time - unit.OrderedAt > HoldFireAfterOrder;
+                    var seen = EnemyWithin(
+                        unit, provoked ? DefendRange : AlertRange, provoked,
+                        noPolice: true);
                     if (seen != null) SetTarget(unit, seen);
                 }
 
@@ -818,14 +814,14 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ the round
 
-        Unit EnemyWithin(Unit unit, float range, bool outfitOnly, bool noPolice = false)
+        Unit EnemyWithin(Unit unit, float range, bool provoked, bool noPolice = false)
         {
             float r2 = range * range;
             foreach (var other in Units)
             {
                 if (other == unit || other.Faction == unit.Faction || other.Wiped) continue;
-                if (outfitOnly && other.Faction != 0) continue;
                 if (noPolice && other.IsPolice) continue;
+                if (!MayEngage(unit, other, provoked)) continue;
                 foreach (var a in unit.All())
                 {
                     if (a.Dead) continue;
@@ -840,6 +836,31 @@ namespace RoadDemo
                 }
             }
             return null;
+        }
+
+        /// <summary>
+        /// MAY THESE MEN START SOMETHING? The pair's stance decides it, read from the
+        /// city's one relations book, with the ground under the OTHER crew's feet as the
+        /// truce's test - a truce is territorial, so the question is whose street they
+        /// are standing in.
+        ///
+        /// A scene with no underworld and no territory falls back on peace, which is
+        /// what a bench with two crews and no city ought to be.
+        /// </summary>
+        static bool MayEngage(Unit unit, Unit other, bool provoked)
+        {
+            if (unit.Faction < 0 || other.Faction < 0)
+                return false;
+
+            var relations = LivingCity.Outfit.Underworld.Current?.Relations;
+            if (relations == null)
+                return provoked;
+
+            var stance = relations.StanceBetween(unit.Faction, other.Faction);
+            var runtime = TerritoryRuntime.Instance;
+            var ours = runtime != null &&
+                       runtime.LeaderAt(other.Position).Value == unit.Faction;
+            return LivingCity.Outfit.Engagement.May(stance, ours, provoked);
         }
 
         /// <summary>A shot left this man's gun: the flash, the bang, and the roll for
@@ -1033,7 +1054,8 @@ namespace RoadDemo
                 CrewGore.Death(target, GroundY, floor: !IsAboard(target) && !target.Riding);
                 _deaths.Add((target, Time.time + DeathReportDelay));
                 StreetAlarm.Death(target.Tf.position,
-                    target.Faction == StreetAlarm.PoliceFaction ? StreetAlarm.DeathOf.Officer : StreetAlarm.DeathOf.Gangster);
+                    target.Faction == StreetAlarm.PoliceFaction ? StreetAlarm.DeathOf.Officer : StreetAlarm.DeathOf.Gangster,
+                    target.Faction);
                 // a friend going down beside a man may break him: he runs, and comes
                 // back when his nerve does (the law does not run)
                 if (victimUnit != null && !victimUnit.IsPolice && !IsAboard(target))
@@ -1353,7 +1375,8 @@ namespace RoadDemo
                     CrewGore.Death(body, GroundY, floor: !IsAboard(body) && !body.Riding);
                     body.Kill();
                     _deaths.Add((body, Time.time + DeathReportDelay));
-                    StreetAlarm.Death(body.Tf.position, StreetAlarm.DeathOf.Gangster);
+                    StreetAlarm.Death(
+                        body.Tf.position, StreetAlarm.DeathOf.Gangster, body.Faction);
                 }
                 else
                 {

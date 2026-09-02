@@ -618,27 +618,32 @@ namespace LivingCity.Tests
 
         static void StancesTurnOverAtMidnight(List<string> failures)
         {
-            var relations = new GangRelations();
+            var relations = new HouseRelations();
 
-            if (relations.StanceWith(1) != Stance.Peace)
+            if (relations.StanceBetween(0, 1) != Stance.Peace)
                 failures.Add("StancesTurnOverAtMidnight: the outfit does not arrive quietly.");
 
-            relations.SetPending(1, Stance.War);
-            if (relations.StanceWith(1) != Stance.Peace)
-                failures.Add("StancesTurnOverAtMidnight: war landed mid-week.");
-            if (!relations.TryGetPending(1, out var pending) || pending != Stance.War)
+            relations.SetPending(0, 1, Stance.War);
+            if (relations.StanceBetween(0, 1) != Stance.Peace)
+                failures.Add("StancesTurnOverAtMidnight: war landed mid-day.");
+            if (!relations.TryGetPending(0, 1, out var pending) || pending != Stance.War)
                 failures.Add("StancesTurnOverAtMidnight: the pending change vanished.");
 
             // "Never mind" - setting back to the current stance withdraws the change.
-            relations.SetPending(1, Stance.Peace);
-            if (relations.TryGetPending(1, out _))
+            relations.SetPending(0, 1, Stance.Peace);
+            if (relations.TryGetPending(0, 1, out _))
                 failures.Add("StancesTurnOverAtMidnight: a withdrawn change survived.");
 
-            relations.SetPending(1, Stance.Truce);
+            relations.SetPending(0, 1, Stance.Truce);
             relations.ApplyPending();
-            if (relations.StanceWith(1) != Stance.Truce ||
-                relations.TryGetPending(1, out _))
+            if (relations.StanceBetween(0, 1) != Stance.Truce ||
+                relations.TryGetPending(0, 1, out _))
                 failures.Add("StancesTurnOverAtMidnight: the commit did not turn the stance.");
+
+            // A STANCE BELONGS TO THE PAIR. Asked from either side it is one answer.
+            if (relations.StanceBetween(1, 0) != Stance.Truce)
+                failures.Add("StancesTurnOverAtMidnight: the two houses disagree about " +
+                             "their own truce.");
         }
 
         static void TurfIsHeldPerBuilding(List<string> failures)

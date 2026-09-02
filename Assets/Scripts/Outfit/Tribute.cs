@@ -99,8 +99,8 @@ namespace LivingCity.Outfit
         /// the outfit has caught up with levies nothing either: the claim is the gap.
         /// An existing claim keeps its due day; a new one starts a cycle out.
         /// </summary>
-        public void Assess(GangRelations relations, IReadOnlyList<Turf.Holding> holdings,
-            int playerGangId, int day)
+        public void Assess(System.Func<int, bool> atWarWith,
+            IReadOnlyList<Turf.Holding> holdings, int playerGangId, int day)
         {
             var mine = Turf.CountOf(holdings, playerGangId);
 
@@ -123,8 +123,7 @@ namespace LivingCity.Outfit
             {
                 var levy = Levies[i];
                 var theirs = Turf.CountOf(holdings, levy.GangId);
-                var atWar = relations != null &&
-                            relations.StanceWith(levy.GangId) == Stance.War;
+                var atWar = atWarWith != null && atWarWith(levy.GangId);
                 var ahead = theirs - mine;
 
                 if (atWar || ahead <= 0)

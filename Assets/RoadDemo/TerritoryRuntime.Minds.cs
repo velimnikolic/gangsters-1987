@@ -47,10 +47,12 @@ namespace RoadDemo
                 Commands == null)
                 return;
 
+            SweepWarnings(gameHour);
             underworld.Think(gameHour, mindConfig.ThinkEveryHours, house =>
             {
                 var view = Look(house, gameHour);
-                var tier = HouseMind.Think(view, mindConfig, intents);
+                var tier = HouseMind.Think(
+                    view, mindConfig, Relations?.Config, intents);
                 Thinks++;
 
                 var refused = Refusals(house.GangId);
@@ -150,6 +152,70 @@ namespace RoadDemo
                     ? lieutenant.GetHalfSteps(CharacterAttribute.Combat)
                     : 0;
             };
+        }
+
+        /// <summary>
+        /// WHOSE GROUND IS THIS? The block under a point, and the house the control
+        /// ledger says leads it. Invalid when the point is on no block - the road
+        /// between two of them belongs to nobody, and a truce holds there.
+        /// </summary>
+        public TerritoryGangId LeaderAt(Vector3 world)
+        {
+            if (control == null || !TryGetBlockForAct(world, out var blockId))
+                return default;
+            return control.LeaderOf(blockId);
+        }
+
+        /// <summary>The last house to put hands on somebody on this street, other than
+        /// the one asking. Invalid when the street has been quiet.</summary>
+        public TerritoryGangId LastThreatOn(TerritoryBlockId blockId, TerritoryGangId mine)
+        {
+            for (var i = streetThreats.Count - 1; i >= 0; i--)
+            {
+                var threat = streetThreats[i];
+                if (threat.BlockId != blockId || !threat.By.IsValid || threat.By == mine)
+                    continue;
+                if (lastGameHour - threat.At > mindConfig.ThreatMemoryHours)
+                    continue;
+                return threat.By;
+            }
+            return default;
+        }
+
+        static LivingCity.Outfit.HouseRelations Relations =>
+            LivingCity.Outfit.Underworld.Current?.Relations;
+
+        readonly List<TerritoryGangId> rivalScratch = new List<TerritoryGangId>();
+
+        /// <summary>Every other family in the city. A mind reads its own side of each
+        /// pair and nothing else about them.</summary>
+        IReadOnlyList<TerritoryGangId> Rivals(House house)
+        {
+            rivalScratch.Clear();
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            for (var g = 0; underworld != null && g < underworld.Count; g++)
+            {
+                var other = underworld.Of(g);
+                if (other == null || other.Extinct || other.GangId == house.GangId)
+                    continue;
+                rivalScratch.Add(new TerritoryGangId(other.GangId));
+            }
+            return rivalScratch;
+        }
+
+        /// <summary>What this house BELIEVES another could last, never the truth
+        /// (D15).</summary>
+        static int Estimate(House house, TerritoryGangId other, double gameHour)
+        {
+            var theirs = LivingCity.Outfit.Underworld.Current?.Of(other.Value);
+            if (theirs == null)
+                return 0;
+            var truth = LivingCity.Outfit.HouseRelations.Endurance(
+                theirs.Runner.Accounts.Safe,
+                LivingCity.Outfit.Wages.DailyPayroll(theirs.Roster));
+            return LivingCity.Outfit.HouseRelations.Estimate(
+                truth, house.Runner.Seed, (int)(gameHour / 24.0), house.GangId,
+                other.Value);
         }
 
         List<string> Refusals(int gangId)
@@ -253,7 +319,15 @@ namespace RoadDemo
                         ? control.StateOf(blockId)
                         : TerritoryControlState.Unknown,
                 LeaderLook = blockId => control != null ? control.LeaderOf(blockId) : default,
-                StanceLook = other => LivingCity.Outfit.Stance.Peace,
+                StanceLook = other => Relations != null
+                    ? Relations.StanceBetween(house.GangId, other.Value)
+                    : LivingCity.Outfit.Stance.Peace,
+                LadderLook = other => Relations != null
+                    ? Relations.StepOf(house.GangId, other.Value)
+                    : LivingCity.Outfit.LadderStep.Ignore,
+                EnduranceLook = other => Estimate(house, other, gameHour),
+                Rivals = Rivals(house),
+                LossesThisWar = 0,
                 Incidents = incidentScratch,
                 Threats = threatScratch,
                 Defiances = defianceScratch,
@@ -399,6 +473,16 @@ namespace RoadDemo
 
                 case HouseIntentKind.Buy:
                     return Bought(house, intent);
+
+                case HouseIntentKind.SetStance:
+                    if (Relations == null)
+                        return "there is no city to fall out in";
+                    Relations.SetPending(
+                        house.GangId, intent.Other.Value, intent.Stance);
+                    return "";
+
+                case HouseIntentKind.Warn:
+                    return Word(house, intent);
             }
             return "nothing to do";
         }
@@ -416,6 +500,19 @@ namespace RoadDemo
                 return;
             power.Answered(blockId, house, lastGameHour);
             RecordRetaliation(blockId, house);
+        }
+
+        /// <summary>
+        /// A KILLING THAT HAPPENED ON PAPER (D16). No body was met, so no street event
+        /// fired; the block still hears it, and it hears whose men did it.
+        /// </summary>
+        public void RecordKilling(TerritoryGangId by, Vector3 where)
+        {
+            if (fear == null || !by.IsValid || !TryGetBlockForAct(where, out var blockId))
+                return;
+            RecordFear(new TerritoryFearEvent(
+                by, blockId, TerritoryFearCategory.Killing, 1f,
+                TerritoryFearVisibility.Public, lastGameHour));
         }
 
         /// <summary>
@@ -454,6 +551,53 @@ namespace RoadDemo
                 house.Roster, item.Id, intent.CharacterId);
             house.Touch();
             return given.Ok ? "" : given.Reason;
+        }
+
+        /// <summary>
+        /// A WORD TO ANOTHER FAMILY. It is printed in both books - theirs so they know,
+        /// ours so the player can read what his own house said - and it starts a clock:
+        /// a warning nobody answers is itself a grievance (D22).
+        /// </summary>
+        string Word(House house, HouseIntent intent)
+        {
+            var theirs = LivingCity.Outfit.Underworld.Current?.Of(intent.Other.Value);
+            if (theirs == null)
+                return "there is nobody to say it to";
+
+            var said = LivingCity.Gangs.GangCatalog.Names[house.GangId] + " " +
+                       intent.Listing +
+                       (intent.Price > 0 ? " - $" + intent.Price : "");
+            var day = house.Runner.Campaign.Day;
+            var word = new LivingCity.Personnel.Incident(
+                -1, said, LivingCity.Personnel.IncidentKind.AWordBetweenHouses, day, "",
+                0, said);
+            house.Runner.Incidents.Add(word);
+            theirs.Runner.Incidents.Add(word);
+            warnings[(house.GangId, intent.Other.Value)] = lastGameHour;
+            return "";
+        }
+
+        /// <summary>When each house last warned each other house, so a warning that goes
+        /// unanswered turns into a grudge after WarningHours (D22).</summary>
+        readonly Dictionary<(int by, int at), double> warnings =
+            new Dictionary<(int, int), double>();
+
+        /// <summary>A word nobody answered. Swept on the business tick.</summary>
+        void SweepWarnings(double gameHour)
+        {
+            if (Relations == null || warnings.Count == 0)
+                return;
+            var hours = Relations.Config.WarningHours;
+            var stale = new List<(int by, int at)>();
+            foreach (var pair in warnings)
+                if (gameHour - pair.Value > hours)
+                    stale.Add(pair.Key);
+            for (var i = 0; i < stale.Count; i++)
+            {
+                warnings.Remove(stale[i]);
+                Relations.Note(stale[i].by, stale[i].at,
+                    LivingCity.Outfit.GrievanceKind.WarningIgnored);
+            }
         }
 
         /// <summary>A territory order, built here and submitted through the gateway - the

@@ -424,6 +424,22 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_relations_tests",
+                    "Run RIVAL-007's contracts: where twenty-one families stand with " +
+                    "one another, what each is owed by each, and the one rule the " +
+                    "street reads before anybody fires.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "underworld", "tests" })]
+        public static object RelationsTests()
+        {
+            var failures = LivingCity.Tests.RelationsTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
         [CliCommand("gangsters_loyalty_tests",
                     "Run EPIC 15 contracts for loyalty, promotion and betrayal: who a " +
                     "man answers to, what moves it, who walks and who goes with him.",

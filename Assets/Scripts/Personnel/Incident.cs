@@ -3,6 +3,11 @@ namespace LivingCity.Personnel
     /// <summary>What a man's character made him do that nobody ordered.</summary>
     public enum IncidentKind
     {
+        /// <summary>One family said something to another - a warning, a threat, or a
+        /// bill. It is printed in both books: theirs so they know, ours so the player
+        /// can read what his own house said (RIVAL-007).</summary>
+        AWordBetweenHouses,
+
         /// <summary>He went to pieces when it turned dangerous and did nothing at
         /// all.</summary>
         Froze,
@@ -72,6 +77,10 @@ namespace LivingCity.Personnel
             var place = string.IsNullOrEmpty(where) ? "" : " at " + where;
             switch (kind)
             {
+                case IncidentKind.AWordBetweenHouses:
+                    // The whole sentence was written by the house that said it: which
+                    // family, and what it said. Nothing here to add to it.
+                    return name;
                 case IncidentKind.Froze:
                     return name + " froze when it started" + place + ".";
                 case IncidentKind.Fled:

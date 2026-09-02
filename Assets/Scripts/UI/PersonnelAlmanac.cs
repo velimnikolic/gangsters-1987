@@ -1944,7 +1944,7 @@ namespace LivingCity.UI
                 var gangs = Gangs.GangRegistry.Gangs;
                 for (var i = 0; i < gangs.Count; i++)
                     if (gangs[i].Id != Gangs.GangCatalog.PlayerGangId &&
-                        outfit.Relations.StanceWith(gangs[i].Id) == Outfit.Stance.War)
+                        outfit.StanceWith(gangs[i].Id) == Outfit.Stance.War)
                         railAtWar++;
 
                 railAwaiting = outfit.Filings.AwaitingCount;

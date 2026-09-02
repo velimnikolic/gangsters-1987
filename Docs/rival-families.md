@@ -186,6 +186,69 @@ must, inside fourteen game days:
 
 The command answers `mvp`: days-to-complete and dollars banked, per seed.
 
+## Where the houses stand with one another
+
+`HouseRelations` (`Assets/Scripts/Outfit/HouseRelations.cs`, pure, one per city on
+`Underworld`) holds two different things and never confuses them:
+
+* a **stance** belongs to the PAIR and is symmetric — two families are at war with each
+  other or they are not, and the street reads one answer for both. It is set as PENDING
+  and lands at midnight, for everybody at once.
+* a **grievance** is DIRECTED, 0–100, and fades by `GrievanceDecayPerDay`. The first
+  argument is always the house holding the grudge. One house may be owed a great deal by
+  another that is owed nothing back.
+
+What puts a grudge on the books (D14):
+
+| what happened | worth | filed from |
+|---|---|---|
+| a door we protect was attacked | 15 | `TerritoryRuntime.ResolveEscalation` |
+| a door switched from us to them | 10 | `SweepProtectionSwitches` |
+| a round of ours was lost on their street | 20 | the round ledger's `Ended` |
+| a man of ours killed by theirs | 35 | `OnStreetDeath`, and a paper `Kill` |
+| a warning of ours ignored for 48 h | 10 | `SweepWarnings` |
+| tribute unpaid | 25 | `CampaignRunner.CollectTribute` |
+
+The ladder (design §26) is derived from the grievance by the D13 thresholds — Ignore 0,
+DiplomaticWarning 10, Threat 20, DemandCompensation 30, RetakeBusiness 40, BeatCollector
+50, AttackBusiness 60, KidnapCrewMember 70, KillCrewMember 80 — and the mind walks it one
+step at a time. It warns, threatens, sends a bill, takes a door back, goes at their men,
+and only at the top and only at war goes at their shops. **A house never skips a step.**
+
+War is declared only by a house that can pay its men through one (`MinWarDays`, D15) and
+that believes it can outlast the other. What it believes is `HouseRelations.Estimate`:
+the truth through a deterministic haze between 0.7 and 1.3 — nobody reads another
+family's books. A house at war it cannot pay for, or that has lost `LossesToSueForPeace`
+men, offers a truce whatever it is owed; a truce whose two sides both stay under
+`PeaceGrievance` for `PeaceAfterDays` becomes peace again on its own.
+
+## Who fights whom
+
+`Engagement.May(stance, oursIsTheGround, provoked)` (`Assets/Scripts/Outfit/Engagement.cs`)
+is the street's ONE rule, for every pair including the player's, and it is exactly the
+three sentences the FAMILIES card prints:
+
+* **Peace** — nobody starts anything, claimed ground or not. A man being shot at still
+  turns and fires back; that is not a stance question.
+* **Truce** — territorial: the engaging house's own ground only. Neutral ground and the
+  road between two blocks stay quiet.
+* **War** — on sight, anywhere.
+
+`DemoCrews.Combat` asks it before it takes a target. Until RIVAL-007 the rule was "a
+rival watches for the outfit only", which made the player the one family anybody could
+fall out with.
+
+## Kill by name
+
+A `Job` may name a man (`Job.TargetCharacterId`). On the street, `CrewJobs` sics the crew
+on whichever unit he is standing in rather than on whoever is nearest; on paper he is
+struck off HIS OWN family's roster, his block hears the killing in the ordering family's
+name, and the family that lost him holds it against them. A failed killing puts one of the
+attackers in a bed for `MisfireDays`, the same as a botched charge.
+
+The player may only name a man his own men have stood near: `TurfKnowledge.LearnMan`
+records a face at the same reach a door is learnt at.
+
 ## See also
 
 * `Docs/racket-collections.md` — the round ledger and the two clocks

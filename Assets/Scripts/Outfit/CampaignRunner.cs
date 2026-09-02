@@ -30,7 +30,14 @@ namespace LivingCity.Outfit
 
         public readonly Campaign Campaign = new Campaign();
         public readonly Accounts Accounts = new Accounts();
-        public readonly GangRelations Relations = new GangRelations();
+        /// <summary>
+        /// WHICH HOUSE'S BOOKS THESE ARE, and where the city keeps who stands with whom.
+        /// Both are hung on the runner when the underworld is dealt; a bench with
+        /// neither still runs, and the tribute simply sours nobody.
+        /// </summary>
+        public int GangId;
+
+        public HouseRelations Relations;
         public readonly OrderBook Book = new OrderBook();
 
         /// <summary>What the outfit kicks up to the houses above it - re-priced off the
@@ -558,7 +565,6 @@ namespace LivingCity.Outfit
             var paid = Campaign.Settles(Campaign.Day) ? TurnTheBooks(roster) : 0;
             if (payTribute)
                 CollectTribute();
-            Relations.ApplyPending();
             return paid;
         }
 
@@ -679,21 +685,18 @@ namespace LivingCity.Outfit
             scratchHoldings.Clear();
             HoldingsOf?.Invoke(scratchHoldings);
 
-            Tribute.Assess(Relations, scratchHoldings, Gangs.GangCatalog.PlayerGangId,
-                Campaign.Day);
+            Tribute.Assess(
+                gangId => Relations != null &&
+                          Relations.StanceBetween(GangId, gangId) == Stance.War,
+                scratchHoldings, Gangs.GangCatalog.PlayerGangId, Campaign.Day);
             Tribute.Settle(Accounts, Campaign.Day, scratchSoured);
 
+            // A HOUSE THAT IS NOT PAID HOLDS THE GRUDGE (D14). It used to harden the
+            // stance a step at a time on its own; now it is owed, and the ladder decides
+            // what being owed that much is worth.
             for (var i = 0; i < scratchSoured.Count; i++)
-            {
-                var gangId = scratchSoured[i];
-                // Pending, like every other stance change: it lands with the next
-                // midnight, so a page open on the families is never rewritten under
-                // the reader's eyes.
-                var harder = Relations.StanceWith(gangId) == Stance.Peace
-                    ? Stance.Truce
-                    : Stance.War;
-                Relations.SetPending(gangId, harder);
-            }
+                Relations?.Note(
+                    scratchSoured[i], GangId, GrievanceKind.TributeUnpaid);
             scratchHoldings.Clear();
         }
 

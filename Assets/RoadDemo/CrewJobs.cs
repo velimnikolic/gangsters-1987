@@ -159,6 +159,24 @@ namespace RoadDemo
             return true;
         }
 
+        /// <summary>The unit this man is standing in, or null when he is not on the
+        /// street at all.</summary>
+        static DemoCrews.Unit Holding(DemoCrews crews, int characterId)
+        {
+            if (crews == null || characterId < 0)
+                return null;
+            for (var i = 0; i < crews.Units.Count; i++)
+            {
+                var unit = crews.Units[i];
+                if (unit == null || unit.Wiped)
+                    continue;
+                foreach (var man in unit.All())
+                    if (man != null && !man.Dead && man.CharacterId == characterId)
+                        return unit;
+            }
+            return null;
+        }
+
         /// <summary>The watch is off: the order was finished, cancelled or the crew is
         /// gone. Called wherever a job leaves a crew's hands.</summary>
         public static void StandDown(int crewId) => Guarding.Remove(crewId);
@@ -268,7 +286,11 @@ namespace RoadDemo
             if (!Sicced.TryGetValue(unit.CrewId, out var on) || on != job.Id)
             {
                 Sicced[unit.CrewId] = job.Id;
-                var mark = NearestRival(crews, unit, job);
+                // A KILL NAMES A MAN (D16). The crew is set on whichever unit he is
+                // standing in, not on whoever happens to be nearest - and if he is
+                // nowhere on the street the book takes him instead.
+                var mark = Holding(crews, job.TargetCharacterId) ??
+                           NearestRival(crews, unit, job);
                 if (mark != null)
                 {
                     Marks[unit.CrewId] = mark;

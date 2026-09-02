@@ -91,8 +91,15 @@ namespace LivingCity.Outfit
         /// print "nothing to do" rather than an empty line.
         /// </summary>
         public static int Think(
-            HouseView view, HouseMindConfig config, List<HouseIntent> into)
+            HouseView view, HouseMindConfig config, List<HouseIntent> into) =>
+            Think(view, config, HouseRelationsConfig.Default, into);
+
+        /// <summary>The same turn of mind, with the city's own relations numbers.
+        /// </summary>
+        public static int Think(HouseView view, HouseMindConfig config,
+            HouseRelationsConfig relations, List<HouseIntent> into)
         {
+            relations = relations ?? HouseRelationsConfig.Default;
             if (into == null)
                 return 0;
             into.Clear();
@@ -114,6 +121,8 @@ namespace LivingCity.Outfit
             if (Answer(view, config, into))
                 return TierAnswer;
             if (Defend(view, config, into))
+                return TierDefend;
+            if (Feud(view, config, relations, into))
                 return TierDefend;
             if (Expand(view, config, into))
                 return TierExpand;
@@ -304,6 +313,191 @@ namespace LivingCity.Outfit
                     HouseOrder.ShakeDownBlock, crew.Id, blockId, TierDefend,
                     "the doors there have gone loose"));
                 return true;
+            }
+            return false;
+        }
+
+        // ------------------------------------------------------------- the feud
+
+        /// <summary>
+        /// WHAT WE DO ABOUT ANOTHER FAMILY, one step at a time (design §26, D13).
+        ///
+        /// A house never skips a step. It warns, then it threatens, then it sends a
+        /// bill, then it takes a door back, then it goes at their collector, then at
+        /// their shops - and only at the top, and only at war, at a man by name. The
+        /// ladder is what makes a war something the player watches coming.
+        ///
+        /// The stance is decided here too (D15): war is declared only by a house that
+        /// can pay its men through one, and a house that cannot - or that has lost too
+        /// many - offers a truce.
+        /// </summary>
+        static bool Feud(HouseView view, HouseMindConfig config,
+            HouseRelationsConfig relations, List<HouseIntent> into)
+        {
+            for (var i = 0; i < view.Rivals.Count; i++)
+            {
+                var them = view.Rivals[i];
+                if (them == view.House || !them.IsValid)
+                    continue;
+
+                var stance = view.StanceToward(them);
+                var step = view.Ladder(them);
+
+                // WAR AND PEACE FIRST. A family with a month's wages behind it and a
+                // grudge worth shops declares; one that cannot pay through the month it
+                // is already in offers a truce, whatever it is owed.
+                if (stance == Stance.War &&
+                    (view.Endurance < relations.MinWarDays ||
+                     view.LossesThisWar >= relations.LossesToSueForPeace))
+                {
+                    into.Add(HouseIntent.Stand(them, Stance.Truce, TierDefend,
+                        "we cannot pay the men through this"));
+                    return true;
+                }
+
+                if (stance != Stance.War && step >= LadderStep.AttackBusiness &&
+                    view.Endurance >= relations.MinWarDays &&
+                    view.Endurance >= view.TheirEndurance(them))
+                {
+                    into.Add(HouseIntent.Stand(them, Stance.War, TierDefend,
+                        "they have taken too much"));
+                    return true;
+                }
+
+                if (stance == Stance.Peace &&
+                    step >= LadderStep.Threat && step < LadderStep.AttackBusiness)
+                {
+                    into.Add(HouseIntent.Stand(them, Stance.Truce, TierDefend,
+                        "they keep off our streets from now on"));
+                    return true;
+                }
+
+                // THEN THE STEP ITSELF.
+                switch (step)
+                {
+                    case LadderStep.Ignore:
+                        continue;
+
+                    case LadderStep.DiplomaticWarning:
+                        into.Add(HouseIntent.Word(them, "warns them off our streets", 0,
+                            TierDefend, "a word, before anything else"));
+                        return true;
+
+                    case LadderStep.Threat:
+                        into.Add(HouseIntent.Word(
+                            them, "will not warn them again", 0, TierDefend,
+                            "the second word is the last one"));
+                        return true;
+
+                    case LadderStep.DemandCompensation:
+                        into.Add(HouseIntent.Word(
+                            them, "sends a bill for what they took",
+                            EconomyPrices.Shakedown * Theirs(view, them), TierDefend,
+                            "they can pay for what they took"));
+                        return true;
+
+                    case LadderStep.RetakeBusiness:
+                        if (Retake(view, them, into))
+                            return true;
+                        continue;
+
+                    case LadderStep.BeatCollector:
+                    case LadderStep.AttackBusiness:
+                    case LadderStep.KidnapCrewMember:
+                    case LadderStep.KillCrewMember:
+                        if (Strike(view, them, step, stance, into))
+                            return true;
+                        continue;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>How many doors on ground we can see are theirs.</summary>
+        static int Theirs(HouseView view, TerritoryGangId them)
+        {
+            var count = 0;
+            for (var b = 0; b < view.Blocks.Count; b++)
+            {
+                var doors = view.Businesses(view.Blocks[b]);
+                for (var i = 0; i < doors.Count; i++)
+                    if (doors[i].Protector == them)
+                        count++;
+            }
+            return count > 0 ? count : 1;
+        }
+
+        /// <summary>A door of theirs, asked for. The one place the mind is allowed at a
+        /// door another house protects, and it takes a grudge worth four steps.</summary>
+        static bool Retake(HouseView view, TerritoryGangId them, List<HouseIntent> into)
+        {
+            for (var b = 0; b < view.Blocks.Count; b++)
+            {
+                var blockId = view.Blocks[b];
+                var crew = CrewOn(view, blockId);
+                if (crew == null)
+                    continue;
+
+                var doors = view.Businesses(blockId);
+                for (var i = 0; i < doors.Count; i++)
+                {
+                    if (doors[i].Protector != them || doors[i].Shut || !doors[i].Trades)
+                        continue;
+                    if (!Offers(doors[i], TerritoryRacketIntent.Demand))
+                        continue;
+                    into.Add(HouseIntent.Door(
+                        crew.Id, doors[i].BusinessId, TerritoryRacketIntent.Demand,
+                        TierDefend, "that door was ours"));
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Hands on them. Which hands depends on the step, and the two hardest are only
+        /// ever laid at war - a family does not burn shops it has a truce with.
+        /// </summary>
+        static bool Strike(HouseView view, TerritoryGangId them, LadderStep step,
+            Stance stance, List<HouseIntent> into)
+        {
+            for (var b = 0; b < view.Blocks.Count; b++)
+            {
+                var blockId = view.Blocks[b];
+                var crew = CrewOn(view, blockId);
+                if (crew == null)
+                    continue;
+
+                var doors = view.Businesses(blockId);
+                for (var i = 0; i < doors.Count; i++)
+                {
+                    if (doors[i].Protector != them)
+                        continue;
+
+                    if (step == LadderStep.BeatCollector)
+                    {
+                        if (Filed(view, OrderType.Assault, crew.Id))
+                            return false;
+                        into.Add(HouseIntent.Work(
+                            Aimed(OrderType.Assault, crew.Id, doors[i].BusinessId,
+                                blockId),
+                            TierDefend, "their men on our streets"));
+                        return true;
+                    }
+
+                    if (stance != Stance.War)
+                        return false;
+
+                    var work = step >= LadderStep.KidnapCrewMember
+                        ? OrderType.Torch
+                        : OrderType.SmashUp;
+                    if (Filed(view, work, crew.Id))
+                        return false;
+                    into.Add(HouseIntent.Work(
+                        Aimed(work, crew.Id, doors[i].BusinessId, blockId),
+                        TierDefend, "what they are paid for goes in"));
+                    return true;
+                }
             }
             return false;
         }

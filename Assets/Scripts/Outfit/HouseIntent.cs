@@ -25,6 +25,12 @@ namespace LivingCity.Outfit
         /// <summary>Buy a thing out of the safe, through HouseOps - a car for a crew, a
         /// gun for a man.</summary>
         Buy,
+
+        /// <summary>Where we mean to stand with another family from midnight.</summary>
+        SetStance,
+
+        /// <summary>A word to another family, printed in both books.</summary>
+        Warn,
     }
 
     /// <summary>
@@ -56,11 +62,14 @@ namespace LivingCity.Outfit
             Job job, int characterId, int crewId, TerritoryBlockId blockId,
             TerritoryBusinessId businessId, TerritoryRacketIntent followUp, Duty duty,
             CrewPolicy policy, EquipmentKind kit = EquipmentKind.Pistol,
-            string listing = "", int price = 0)
+            string listing = "", int price = 0, TerritoryGangId other = default,
+            Stance stance = Stance.Peace)
         {
             Kit = kit;
             Listing = listing ?? "";
             Price = price;
+            Other = other;
+            Stance = stance;
             Kind = kind;
             Tier = tier;
             Reason = reason ?? "";
@@ -99,6 +108,10 @@ namespace LivingCity.Outfit
         public EquipmentKind Kit { get; }
         public string Listing { get; }
         public int Price { get; }
+
+        /// <summary>The other family, for the intents that are about one.</summary>
+        public TerritoryGangId Other { get; }
+        public Stance Stance { get; }
 
         public static HouseIntent Block(
             HouseOrder order, int crewId, TerritoryBlockId blockId, int tier,
@@ -152,6 +165,22 @@ namespace LivingCity.Outfit
             new HouseIntent(HouseIntentKind.AssignBlock, tier, reason, HouseOrder.None,
                 null, lieutenantId, -1, blockId, default,
                 TerritoryRacketIntent.Approach, Duty.None, CrewPolicy.Normal);
+
+        /// <summary>Where we mean to stand with them from the next midnight.</summary>
+        public static HouseIntent Stand(
+            TerritoryGangId other, Stance stance, int tier, string reason) =>
+            new HouseIntent(HouseIntentKind.SetStance, tier, reason, HouseOrder.None,
+                null, -1, -1, default, default, TerritoryRacketIntent.Approach,
+                Duty.None, CrewPolicy.Normal, EquipmentKind.Pistol, "", 0, other,
+                stance);
+
+        /// <summary>A word: a warning, a threat, or a bill.</summary>
+        public static HouseIntent Word(
+            TerritoryGangId other, string text, int price, int tier, string reason) =>
+            new HouseIntent(HouseIntentKind.Warn, tier, reason, HouseOrder.None, null,
+                -1, -1, default, default, TerritoryRacketIntent.Approach, Duty.None,
+                CrewPolicy.Normal, EquipmentKind.Pistol, text, price, other,
+                Stance.Peace);
 
         public static HouseIntent Buy(
             EquipmentKind kind, string listing, int price, int characterId, int crewId,

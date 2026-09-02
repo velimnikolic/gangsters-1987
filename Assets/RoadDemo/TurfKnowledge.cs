@@ -32,6 +32,27 @@ namespace RoadDemo
 
         static readonly HashSet<string> known = new HashSet<string>();
 
+        /// <summary>
+        /// WHOSE FACES WE KNOW. A man of another family whose name our men have read on
+        /// the street - close enough, the same reach a door is learnt at. The player may
+        /// only name a target he has actually seen; a family he has never stood near has
+        /// no names in it, only numbers.
+        /// </summary>
+        static readonly HashSet<int> knownMen = new HashSet<int>();
+
+        public static bool IsKnownMan(int characterId) => knownMen.Contains(characterId);
+
+        /// <summary>Learn a face. True only the first time.</summary>
+        public static bool LearnMan(int characterId)
+        {
+            if (characterId < 0 || !knownMen.Add(characterId))
+                return false;
+            Version++;
+            return true;
+        }
+
+        public static int MenKnown => knownMen.Count;
+
         /// <summary>Bumped whenever something new is learnt, so a view can repaint on a
         /// number rather than sweep its own marks every frame.</summary>
         public static int Version { get; private set; }
@@ -70,6 +91,7 @@ namespace RoadDemo
         static void ResetForPlay()
         {
             known.Clear();
+            knownMen.Clear();
             Version = 0;
         }
     }

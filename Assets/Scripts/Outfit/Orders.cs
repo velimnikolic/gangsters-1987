@@ -324,6 +324,14 @@ namespace LivingCity.Outfit
         /// </summary>
         public int TargetWorth;
 
+        /// <summary>
+        /// THE MAN THIS ORDER IS AGAINST, by his own number, or -1 for an order aimed at
+        /// a place instead of a person. A Kill names one (D16): the street sics the crew
+        /// on whichever unit he is standing in, and if his body is nowhere in the city
+        /// the book strikes him off where he sits.
+        /// </summary>
+        public int TargetCharacterId = -1;
+
         /// <summary>Point target: where it is and what to call it.</summary>
         public int TargetBlockId = -1;
         public float TargetX;

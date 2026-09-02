@@ -94,7 +94,25 @@ namespace LivingCity.Gameplay
 
         public Campaign Campaign => Runner.Campaign;
         public Accounts Accounts => Runner.Accounts;
-        public GangRelations Relations => Runner.Relations;
+        /// <summary>Where every house stands with every other - the city's one book,
+        /// not the player's own.</summary>
+        public HouseRelations Relations =>
+            Underworld.Current != null ? Underworld.Current.Relations : null;
+
+        /// <summary>Where WE stand with them, for the pages that only ever ask about
+        /// the player's own side of a pair.</summary>
+        public Stance StanceWith(int gangId) =>
+            Relations != null
+                ? Relations.StanceBetween(Gangs.GangCatalog.PlayerGangId, gangId)
+                : Stance.Peace;
+
+        public bool TryGetPendingStance(int gangId, out Stance stance)
+        {
+            stance = Stance.Peace;
+            return Relations != null &&
+                   Relations.TryGetPending(
+                       Gangs.GangCatalog.PlayerGangId, gangId, out stance);
+        }
         public OrderBook Book => Runner.Book;
         public List<OrderRecord> Records => Runner.Records;
         public List<Improvement> Rises => Runner.Rises;
@@ -320,7 +338,9 @@ namespace LivingCity.Gameplay
             if (gangId == Gangs.GangCatalog.PlayerGangId)
                 return OpResult.Fail(UI.LedgerText.ReasonOwnOutfit);
 
-            Relations.SetPending(gangId, stance);
+            if (Relations == null)
+                return OpResult.Fail(UI.LedgerText.ReasonFinanceUnavailable);
+            Relations.SetPending(Gangs.GangCatalog.PlayerGangId, gangId, stance);
             Version++;
             return OpResult.Success;
         }
@@ -403,22 +423,33 @@ namespace LivingCity.Gameplay
         /// </summary>
         void OnJobResolved(Job job, OrderOutcome outcome)
         {
-            if (job == null || outcome != OrderOutcome.Completed ||
-                string.IsNullOrEmpty(job.TargetBusinessId))
+            if (job == null || outcome != OrderOutcome.Completed)
                 return;
 
-            var businessId = new Territory.TerritoryBusinessId(job.TargetBusinessId);
             // The house that ORDERED it answers for it - the deed goes in their name,
             // the escalation is filed against them. This used to be the player's name
             // whoever gave the order.
             var whose = new Territory.TerritoryGangId(job.GangId);
+
+            // A KILL NAMES A MAN, not a place (D16). It comes back before the rest,
+            // because everything below is about a door.
+            if (job.Type == OrderType.Kill && job.TargetCharacterId >= 0)
+            {
+                StrikeHimOff(job, whose);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(job.TargetBusinessId))
+                return;
+
+            var businessId = new Territory.TerritoryBusinessId(job.TargetBusinessId);
             switch (job.Type)
             {
                 // The paperwork came back signed: the deed moves to the outfit, in the
                 // simulation, so it survives the street being streamed out and back.
                 case OrderType.BuyPremises:
                     Business.BusinessDeeds.SetGang(
-                        businessId, Gangs.GangCatalog.PlayerGangId, job.TargetBlockId);
+                        businessId, whose.Value, job.TargetBlockId);
                     Version++;
                     break;
 
@@ -427,8 +458,7 @@ namespace LivingCity.Gameplay
                 // family that did it, not merely poorer on the outfit's own sheet.
                 case OrderType.Raid:
                     RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
-                        new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
-                        businessId, Territory.TerritoryEscalationKind.Assault,
+                        whose, businessId, Territory.TerritoryEscalationKind.Assault,
                         DoorOrders.ViolenceSeverity(job.Type));
                     break;
 
@@ -437,8 +467,7 @@ namespace LivingCity.Gameplay
                             businessId, Business.BusinessShutdownCause.SmashUp))
                         break;
                     RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
-                        new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
-                        businessId, Territory.TerritoryEscalationKind.PropertyDamage,
+                        whose, businessId, Territory.TerritoryEscalationKind.PropertyDamage,
                         DoorOrders.ViolenceSeverity(job.Type));
                     // The wreck is VISIBLE: punched-out panes in the ground floor and
                     // their glass across the pavement. Fire damage remains the distinct
@@ -451,8 +480,7 @@ namespace LivingCity.Gameplay
                             businessId, Business.BusinessShutdownCause.Arson))
                         break;
                     RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
-                        new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
-                        businessId, Territory.TerritoryEscalationKind.PropertyDamage,
+                        whose, businessId, Territory.TerritoryEscalationKind.PropertyDamage,
                         DoorOrders.ViolenceSeverity(job.Type));
                     // And a torched one burns: the full ShopFire, then the boards.
                     RoadDemo.ShopDamage.ScorchBusiness(businessId);
@@ -460,11 +488,44 @@ namespace LivingCity.Gameplay
 
                 case OrderType.Bomb:
                     RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
-                        new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
-                        businessId, Territory.TerritoryEscalationKind.PropertyDamage,
+                        whose, businessId, Territory.TerritoryEscalationKind.PropertyDamage,
                         DoorOrders.ViolenceSeverity(job.Type));
                     RoadDemo.ShopDamage.ScorchBusiness(businessId);
                     break;
+            }
+        }
+
+        /// <summary>
+        /// THE MAN IS STRUCK OFF (D16). It happened on paper - nobody's body was met -
+        /// so the book does what the street would have: he is dead in HIS OWN family's
+        /// roster, his street hears the killing, and the family that lost him holds it
+        /// against the family that ordered it.
+        /// </summary>
+        void StrikeHimOff(Job job, Territory.TerritoryGangId whose)
+        {
+            var underworld = Underworld.Current;
+            if (underworld == null)
+                return;
+
+            for (var g = 0; g < underworld.Count; g++)
+            {
+                var house = underworld.Of(g);
+                var man = house?.Roster?.Find(job.TargetCharacterId);
+                if (man == null || man.Gone)
+                    continue;
+
+                HouseOps.Kill(house, man.Id);
+
+                // His street hears it, and it is the ordering family's name on it.
+                if (job.TargetBlockId >= 0)
+                    RoadDemo.TerritoryRuntime.Instance?.RecordKilling(
+                        whose, new Vector3(job.TargetX, 0f, job.TargetZ));
+
+                if (house.GangId != whose.Value)
+                    underworld.Relations.Note(
+                        house.GangId, whose.Value, GrievanceKind.ManKilled);
+                Version++;
+                return;
             }
         }
 
