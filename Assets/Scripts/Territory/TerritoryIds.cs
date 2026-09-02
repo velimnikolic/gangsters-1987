@@ -35,8 +35,14 @@ namespace LivingCity.Territory
     }
 
     /// <summary>
-    /// Canonical character identity. Player characters reuse Personnel.Character.Id;
-    /// physical rival actors may reuse their deterministic negative street IDs.
+    /// Canonical character identity: a man's own Personnel.Character.Id, whichever
+    /// house he belongs to. Ids are unique across all twenty-one books by construction
+    /// (Roster.Create opens each house's counter on its own span), so nothing here has
+    /// to decode a family from a number and nothing may try.
+    ///
+    /// Physical rival actors still carry deterministic NEGATIVE street ids, because
+    /// their bodies are not roster men yet; RIVAL-002 gives them their houses' own
+    /// characters and the negatives go with it. Anonymous civilians keep theirs.
     /// </summary>
     public readonly struct TerritoryCharacterId : IEquatable<TerritoryCharacterId>
     {

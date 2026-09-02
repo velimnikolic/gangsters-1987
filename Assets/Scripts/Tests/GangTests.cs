@@ -27,6 +27,7 @@ namespace LivingCity.Tests
             NamesComeFromTheSharedTables(failures);
             PlayerGangMirrorsRoster(failures);
             EmptyRosterLeavesPlayerGangEmpty(failures);
+            EveryFamilyIsARoster(failures);
             FrontsAreDistinct(failures);
             FrontsPreferDistinctBlocks(failures);
             FrontFallbackWhenFewCandidates(failures);
@@ -48,8 +49,26 @@ namespace LivingCity.Tests
 
         // ------------------------------------------------------------------ fixtures
 
-        static Gang[] Deal(int seed) =>
-            GangSeeder.Generate(seed, RosterSeeder.GenerateStaffed(seed));
+        /// <summary>The city's families, mirrored off the books they actually keep.
+        /// The player's house opens on the Don alone, so the fixture stands the staffed
+        /// six under him - that is what a campaign a few weeks old looks like, and it is
+        /// what the mirror contracts below are written against.</summary>
+        static Gang[] Deal(int seed) => GangSeeder.Generate(seed, gang =>
+            gang == GangCatalog.PlayerGangId
+                ? RosterSeeder.GenerateStaffed(seed)
+                : Family(seed, gang));
+
+        /// <summary>One rival house's opening book, laid out the way the underworld
+        /// lays it out: the canonical limits, the Don's detail standing, arms dealt.
+        /// </summary>
+        static Roster Family(int seed, int gangId)
+        {
+            var roster = RosterSeeder.Generate(seed, gangId);
+            RosterOps.ConfigureOrganization(roster, OrganizationLimits.Default);
+            Bodyguards.FallIn(roster);
+            RosterOps.NormalizeArms(roster);
+            return roster;
+        }
 
         static List<GangFronts.FrontCandidate> Grid(params (int block, float x, float z)[] spots)
         {
@@ -191,7 +210,7 @@ namespace LivingCity.Tests
             var firsts = new HashSet<string>(PedestrianIdentity.AllMaleNames);
             var surnames = new HashSet<string>(PedestrianIdentity.AllSurnames);
 
-            foreach (var gang in GangSeeder.Generate(7, null))
+            foreach (var gang in Deal(7))
                 foreach (var member in gang.Members)
                 {
                     if (!firsts.Contains(member.FirstName))
@@ -208,7 +227,9 @@ namespace LivingCity.Tests
         static void PlayerGangMirrorsRoster(List<string> failures)
         {
             var roster = RosterSeeder.GenerateStaffed(99);
-            var player = GangSeeder.Generate(99, roster)[GangCatalog.PlayerGangId];
+            var player = GangSeeder.Generate(99,
+                gang => gang == GangCatalog.PlayerGangId ? roster : null)
+                [GangCatalog.PlayerGangId];
 
             if (player.Members.Count != roster.Members.Count - 1)
             {
@@ -237,18 +258,67 @@ namespace LivingCity.Tests
                 failures.Add("Mirror: the roster's lieutenant is not first in line.");
         }
 
+        /// <summary>A house whose books the caller does not hand over stands installed
+        /// with nobody outside - the FAMILIES page reads the registry, not the pavement -
+        /// and one house's absence never moves another's.</summary>
         static void EmptyRosterLeavesPlayerGangEmpty(List<string> failures)
         {
-            var gangs = GangSeeder.Generate(5, null);
+            var gangs = GangSeeder.Generate(5,
+                gang => gang == GangCatalog.PlayerGangId ? null : Family(5, gang));
             if (gangs[GangCatalog.PlayerGangId].Members.Count != 0)
                 failures.Add("Mirror: a null roster still produced player members.");
 
-            // The AI crews must be unaffected by the roster's absence - their draws
-            // precede the mirror entirely.
-            var with = GangSeeder.Generate(5, RosterSeeder.GenerateStaffed(5));
+            var with = Deal(5);
             for (var i = 1; i < gangs.Length; i++)
                 if (gangs[i].Members.Count != with[i].Members.Count)
-                    failures.Add($"Mirror: the roster's presence changed AI gang {i}.");
+                    failures.Add($"Mirror: the player's absence changed AI gang {i}.");
+
+            // And the front picks are the same either way: they are drawn before any
+            // book is read.
+            if (gangs[GangCatalog.PlayerGangId].FrontRoll !=
+                with[GangCatalog.PlayerGangId].FrontRoll)
+                failures.Add("Mirror: the front pick moved with the roster.");
+        }
+
+        /// <summary>
+        /// EVERY house is a house. A rival family's street members are Characters on
+        /// that family's own roster - the same books the player keeps - and no two
+        /// families share a man.
+        /// </summary>
+        static void EveryFamilyIsARoster(List<string> failures)
+        {
+            var seen = new Dictionary<int, int>();
+            for (var gangId = 1; gangId < GangCatalog.GangCount; gangId++)
+            {
+                var roster = Family(1987, gangId);
+                var boss = roster.FindBoss();
+                if (boss == null || boss.Surname != GangCatalog.Names[gangId])
+                    failures.Add($"House {gangId}: the name over the door is not the " +
+                                 "Don's own.");
+                if (roster.Crews.Count == 0)
+                    failures.Add($"House {gangId}: a family with no crew at all.");
+
+                var lieutenants = 0;
+                for (var i = 0; i < roster.Members.Count; i++)
+                {
+                    var member = roster.Members[i];
+                    if (member.Rank == Rank.Lieutenant)
+                        lieutenants++;
+                    if (seen.TryGetValue(member.Id, out var other))
+                        failures.Add($"House {gangId}: character {member.Id} is also on " +
+                                     $"house {other}'s books.");
+                    else
+                        seen[member.Id] = gangId;
+                    if (member.Rank == Rank.Hood && roster.CrewOf(member.Id) == null)
+                        failures.Add($"House {gangId}: '{member.FullName}' stands in no " +
+                                     "crew.");
+                }
+
+                if (lieutenants < GangSeeder.MinLieutenants ||
+                    lieutenants > GangSeeder.MaxLieutenants)
+                    failures.Add($"House {gangId}: {lieutenants} capos, outside " +
+                                 $"{GangSeeder.MinLieutenants}-{GangSeeder.MaxLieutenants}.");
+            }
         }
 
         // ------------------------------------------------------------------ fronts
@@ -348,7 +418,7 @@ namespace LivingCity.Tests
         static void FrontBooksAreCompleteAndStable(List<string> failures)
         {
             for (var seed = 0; seed < 20; seed++)
-                foreach (var gang in GangSeeder.Generate(seed, null))
+                foreach (var gang in Deal(seed))
                 {
                     var capo = gang.Members.Count > 0 ? gang.Members[0].FullName : "";
                     var books = FrontBooks.Open(gang.Name, capo, 4, gang.MemberSeed);

@@ -41,6 +41,14 @@ namespace LivingCity.Gameplay
                     deedGang = marker.GangId;
             }
 
+            // EVERY HOUSE HAS PAPER NOW, and paper is public the moment it is written.
+            // A rival's premises is meant to stay a rumour until a crew of ours has
+            // stood outside it, so the deed we may not have seen is not read at all:
+            // the door comes back Open, exactly as it did when their paper was simply
+            // never written (FrontDeeds).
+            if (!Learned(id, deedGang))
+                deedGang = -1;
+
             var tenure = DoorTenure.Open;
             if (deedGang == GangCatalog.PlayerGangId)
             {
@@ -92,6 +100,31 @@ namespace LivingCity.Gameplay
 
         public static DoorTenure Read(TerritoryBusinessId id) =>
             Read(id, null, out _);
+
+        /// <summary>
+        /// Whether the player may be TOLD that this house holds this door. Our own is
+        /// always ours to know; another family's is theirs to keep until one of our men
+        /// has stood within <see cref="RoadDemo.TurfKnowledge.LearnRange"/> of it.
+        ///
+        /// A door with no family's front standing on it carries no secret - nothing in
+        /// the city writes a rival deed except a front, so there is nothing to hide.
+        /// </summary>
+        public static bool Learned(TerritoryBusinessId id, int gangId)
+        {
+            if (gangId < 0 || gangId == GangCatalog.PlayerGangId)
+                return true;
+
+            var all = RoadDemo.GangFront.All;
+            for (var i = 0; i < all.Count; i++)
+            {
+                var front = all[i];
+                if (front == null || front.BusinessId != id)
+                    continue;
+                return RoadDemo.TurfKnowledge.IsKnown(front);
+            }
+
+            return true;
+        }
 
         static RoadDemo.GangFront FrontOn(TerritoryBusinessId id)
         {

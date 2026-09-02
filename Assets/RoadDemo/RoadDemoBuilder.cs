@@ -221,11 +221,6 @@ namespace RoadDemo
                  "DemoCrews.BindBombs counts them onto the crews - so this stays 0.")]
         [Min(0)] public int bombsPerCrew = 0;
 
-        /// <summary>The stream the mobs are dealt from - the whole underworld, names and
-        /// all, off one number. Not the demo's own 1987 seed by accident: it IS that
-        /// seed, so the city and the men standing on it move together.</summary>
-        const int RivalSeed = 1987;
-
         [Header("The monkey")]
         [Tooltip("Nobody at the mouse and the whole underworld at each other's throats: " +
                  "the mobs are set at one another every few seconds and the outfit is " +
@@ -638,6 +633,11 @@ namespace RoadDemo
             // connectors they cross are in
                 Pass("BuildHighwayLinks", BuildHighwayLinks);
             }
+            // the twenty-one families' books, dealt once from the city's own seed and
+            // BEFORE anything reads a roster: every house has men, a safe and a wage
+            // bill from this line on, the player's outfit included. Idempotent - the
+            // directors call it too, a frame later, and get the same deal.
+            LivingCity.Outfit.Underworld.Ensure(BuiltFromSeed);
             // the city's businesses and their gazde, dealt once from the plan BEFORE any
             // consumer - the outfit fronts, the map, the territory runtime - asks who
             // trades where (RoadDemoBuilder.Business.cs)
@@ -3383,12 +3383,13 @@ namespace RoadDemo
         // The city's rival mobs, out on sidewalks of their own, so there is somebody
         // for the outfit to shoot it out with (the ledger deals none).
         //
-        // Who they are is NOT invented here: GangSeeder deals the families - how many
-        // crews each one runs and every man's name - and this pass stands them up and
-        // registers what it dealt (GangRegistry), so the ledger's FAMILIES page names
-        // the capo the player is actually looking at across the street. One knot of men
-        // per LIEUTENANT: a family with three capos holds three corners, in three
-        // different quarters, under one name and one colour.
+        // Who they are is NOT invented here: every family has a ROSTER of its own in
+        // the Underworld - the same books the player's outfit keeps - and GangSeeder
+        // mirrors them onto the street's view. This pass stands them up and registers
+        // what it read (GangRegistry), so the ledger's FAMILIES page names the capo the
+        // player is actually looking at across the street. One knot of men per
+        // LIEUTENANT: a family with three capos holds three corners, in three different
+        // quarters, under one name and one colour.
         //
         // The crews are placed in rounds - every family gets its first corner before any
         // family gets its second - so a budget that runs out takes second crews off the
@@ -3398,11 +3399,13 @@ namespace RoadDemo
             // The books first, and unconditionally: the families exist whether or not
             // this pass finds pavement to stand them on, and the ledger's FAMILIES page
             // reads the registry, not the street.
-            var gangs = LivingCity.Gangs.GangSeeder.Generate(RivalSeed, null);
+            var underworld = LivingCity.Outfit.Underworld.Ensure(BuiltFromSeed);
+            var gangs = LivingCity.Gangs.GangSeeder.Generate(
+                BuiltFromSeed, gang => underworld.Of(gang)?.Roster);
             LivingCity.Gangs.GangRegistry.Install(gangs);
 
             var sidewalks = _pedLinks.FindAll(l => !l.Gated && l.Length >= 24f);
-            var rng = new System.Random(RivalSeed);
+            var rng = new System.Random(BuiltFromSeed);
 
             var arms = new[]
             {

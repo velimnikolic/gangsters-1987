@@ -1,43 +1,46 @@
 using System.Collections.Generic;
 using UnityEngine;
-using LivingCity.Generation;
 using LivingCity.Personnel;
 using LivingCity.Territory;
-using RoadDemo;
 
 namespace LivingCity.Gameplay
 {
     /// <summary>
-    /// The scene's one owner of the outfit's roster. Seeds it from the city's seed at
-    /// Start, then routes every mutation the almanac (and later, the weekly order system)
-    /// makes through thin wrappers that bump <see cref="Version"/> on success - the dirty
-    /// key the UI repaints on, same convention as OverlayRegistry and PropertyRegistry.
+    /// The scene's host of HOUSE 0 - the player's own book. It no longer deals a roster:
+    /// the <see cref="Outfit.Underworld"/> deals all twenty-one at once and this class
+    /// adopts the player's, then routes every mutation the almanac makes through thin
+    /// wrappers that bump <see cref="Version"/> on success - the dirty key the UI
+    /// repaints on, same convention as OverlayRegistry and PropertyRegistry.
     ///
     /// The UI never calls RosterOps directly: a mutation that skipped this class would
     /// change the books without moving Version, and the almanac would sit on a stale page
     /// until the next unrelated click. Routing everything here is what makes the
     /// versioned-repaint convention safe rather than merely customary.
+    ///
+    /// The rules themselves live one layer down in <see cref="Outfit.HouseOps"/>, where
+    /// a rival's mind reaches them through the same call. Nothing here is a rule the
+    /// player has and a family does not.
     /// </summary>
     public sealed class PersonnelDirector : MonoBehaviour
     {
         public static PersonnelDirector Instance { get; private set; }
 
-        /// <summary>The scene the demo scenes get: no CityBuilder, no config, still a
-        /// deterministic roster rather than a null one.</summary>
-        const int FallbackSeed = 42;
-
         [Header("Outfit organization")]
         [SerializeField] OrganizationCapacityConfig organizationCapacity =
             new OrganizationCapacityConfig();
 
-        public const int DefaultHoodRecruitmentCost = 50;
-
-        [SerializeField, Min(0)] int hoodRecruitmentCost = DefaultHoodRecruitmentCost;
-
         public Roster Roster { get; private set; }
         public int Version { get; private set; }
         public IOrganizationQuery Organization => organizationQuery;
-        public int HoodRecruitmentCost => Mathf.Max(0, hoodRecruitmentCost);
+
+        /// <summary>What a signature costs, through this door and every other one
+        /// (<see cref="Outfit.EconomyPrices.RecruitSigning"/>). There used to be a
+        /// cheaper price over the counter than out on the corner; there is one price
+        /// now, and it is not the ledger's to set.</summary>
+        public int HoodRecruitmentCost => Outfit.EconomyPrices.RecruitSigning;
+
+        /// <summary>The player's own book, out of the underworld's twenty-one.</summary>
+        public Outfit.House House { get; private set; }
 
         readonly HashSet<TerritoryBlockId> knownOrganizationBlocks =
             new HashSet<TerritoryBlockId>();
@@ -69,30 +72,26 @@ namespace LivingCity.Gameplay
 
         void Start()
         {
-            var builder = FindAnyObjectByType<CityBuilder>();
-            var roadDemo = FindAnyObjectByType<RoadDemoBuilder>();
-            seed = builder && builder.Config ? builder.Config.seed
-                : roadDemo ? roadDemo.BuiltFromSeed
-                : FallbackSeed;
-            // In the standalone Ledger menu the missing city is the DESIGN, not a
-            // fault - the warning would cry wolf on every single Play there.
-            if ((!builder || !builder.Config) && !roadDemo &&
-                !FindAnyObjectByType<UI.LedgerMenuScene>())
-                Debug.LogWarning("[Personnel] No city generator in the scene - the " +
-                                 "roster runs on the fallback seed.", this);
+            // The city builder has usually dealt the underworld already (its Awake runs
+            // a frame before this); when it has not - the standalone Ledger, a bench
+            // scene - this is the call that deals it. Either way there is one deal.
+            seed = UnderworldHost.SeedForScene(quiet: false, context: this);
+            House = Outfit.Underworld.Ensure(seed).Player;
+            Roster = House.Roster;
 
-            Roster = RosterSeeder.Generate(seed);
+            // The one thing still the player's own: the capacity knob on this component.
+            // The deal gave every house the canonical limits; a scene that overrides
+            // them overrides them for the outfit, which is what an inspector field on
+            // the player's own director means.
             RosterOps.ConfigureOrganization(Roster,
                 organizationCapacity?.Snapshot() ?? OrganizationLimits.Default);
-            StandTheBossUp();
-            RosterOps.NormalizeArms(Roster);
             organizationQuery ??= new OrganizationQuery();
             organizationQuery.Bind(Roster);
             organizationQuery.BindPhysical(physicalSource);
             Version++;
         }
 
-        int seed = FallbackSeed;
+        int seed = UnderworldHost.FallbackSeed;
 
         /// <summary>
         /// THE DON IS ON HIS OWN STREET. The street stands a body for every crew in the
@@ -109,7 +108,9 @@ namespace LivingCity.Gameplay
         ///
         /// Not in RosterSeeder: the seeded roster is a fixture the pure tests measure
         /// (one crew, one lieutenant, six men), and the Don taking the field is the
-        /// GAME's arrangement rather than a change to the books he starts with.
+        /// GAME's arrangement rather than a change to the books he starts with. Every
+        /// house's Don gets it in <see cref="Outfit.Underworld.Deal"/> now; this stays
+        /// for the debug roster, which deals a new book under a standing director.
         /// </summary>
         void StandTheBossUp() => Bodyguards.FallIn(Roster);
 
@@ -121,7 +122,13 @@ namespace LivingCity.Gameplay
         /// </summary>
         public void DebugSeedLarge(int memberCount)
         {
-            Roster = RosterSeeder.GenerateLarge(seed, memberCount);
+            if (House == null)
+                return;
+            // Under the HOUSE, not beside it: a book swapped here and nowhere else
+            // would leave the ledger reading sixty men while every rule wrote into the
+            // seven the house still held.
+            House.Restock(RosterSeeder.GenerateLarge(seed, memberCount));
+            Roster = House.Roster;
             RosterOps.ConfigureOrganization(Roster,
                 organizationCapacity?.Snapshot() ?? OrganizationLimits.Default);
             StandTheBossUp();
@@ -135,26 +142,21 @@ namespace LivingCity.Gameplay
 
         // ------------------------------------------------------------------ mutations
 
-        System.Random recruitRng;
-
         /// <summary>
-        /// Phase-1 Ledger intent: pay through the outfit's one purchase gate, create one
-        /// randomized Hood through the roster authority, and leave him in the unassigned
-        /// pool reporting directly to the Boss. The UI never receives a mutable Character.
+        /// The ledger's HIRE A MAN: the signing money out of the house's own safe, then
+        /// one randomized Hood in the unassigned pool reporting directly to the Boss.
+        /// The UI never receives a mutable Character.
+        ///
+        /// The rule is <see cref="Outfit.HouseOps.Recruit"/> - the same call at the same
+        /// price a rival's mind makes.
         /// </summary>
         public OpResult RecruitHood(out int newId)
         {
             newId = -1;
-            if (Roster == null)
+            if (House == null || Roster == null)
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
 
-            var outfit = OutfitDirector.Instance;
-            if (outfit == null)
-                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonFinanceUnavailable);
-
-            recruitRng ??= new System.Random(seed * 31 + 7);
-            var result = HoodRecruitmentAuthority.Execute(
-                Roster, recruitRng, HoodRecruitmentCost, outfit.Purchase, out var member);
+            var result = Outfit.HouseOps.Recruit(House, out var member);
             if (!result.Ok)
                 return result;
 
@@ -164,7 +166,13 @@ namespace LivingCity.Gameplay
 
         // ------------------------------------------------------------ the classified
 
-        readonly Outfit.HireMarket market = new Outfit.HireMarket();
+        /// <summary>ONE newspaper in town. The column belongs to the underworld, not
+        /// to this director: a man who advertises this morning advertises to every
+        /// family, and the first house to sign him takes him off the page for all of
+        /// them.</summary>
+        Outfit.HireMarket Market =>
+            Outfit.Underworld.Current?.Column ??
+            Outfit.Underworld.Ensure(seed).Column;
 
         /// <summary>
         /// This morning's classified column, set for the campaign day the outfit is
@@ -178,8 +186,9 @@ namespace LivingCity.Gameplay
             var day = OutfitDirector.Instance != null
                 ? OutfitDirector.Instance.Campaign.Day
                 : 1;
-            market.EnsureDealt(Roster, seed, day);
-            return market;
+            var column = Market;
+            column.EnsureDealt(Roster, seed, day);
+            return column;
         }
 
         /// <summary>
@@ -201,7 +210,8 @@ namespace LivingCity.Gameplay
             // Off the column before a dollar moves - and if he is already gone, nothing
             // was paid and nothing is refunded.
             var price = ad.Down;
-            if (!market.Take(ad))
+            var column = Market;
+            if (!column.Take(ad))
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
 
             var outfit = OutfitDirector.Instance;
@@ -212,7 +222,7 @@ namespace LivingCity.Gameplay
                 {
                     // The money was refused, so the ad was never taken: put it back in
                     // the column rather than quietly losing the man off the page.
-                    market.Restore(ad);
+                    column.Restore(ad);
                     return paid;
                 }
             }
@@ -233,7 +243,7 @@ namespace LivingCity.Gameplay
                 // page and the money goes back where it came from, Purchases line included.
                 Roster.Members.Remove(man);
                 man.Id = -1;
-                market.Restore(ad);
+                column.Restore(ad);
                 if (outfit != null)
                     outfit.Refund(price, "a man out of the paper");
                 return result;
@@ -281,41 +291,46 @@ namespace LivingCity.Gameplay
         public OpResult Promote(int id, out int newCrewId)
         {
             newCrewId = -1;
-            return Roster == null
+            return House == null
                 ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
-                : Commit(RosterOps.Promote(Roster, id, out newCrewId, Feed), "promoted", id);
+                : Commit(Outfit.HouseOps.Promote(House, id, out newCrewId, Feed),
+                    "promoted", id);
         }
 
         public OpResult Demote(int id) =>
-            Roster == null
+            House == null
                 ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
-                : Commit(RosterOps.Demote(Roster, id, Feed), "demoted", id);
+                : Commit(Outfit.HouseOps.Demote(House, id, Feed), "demoted", id);
 
         /// <summary>The street reports a man shot dead: struck through, his gear pooled,
         /// his crew passed on. Version moves so every book and bar re-deals.</summary>
         public OpResult Kill(int id) =>
-            Roster == null
+            House == null
                 ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
-                : Commit(RosterOps.Kill(Roster, id, Changes), "shot dead", id);
+                : Commit(Outfit.HouseOps.Kill(House, id, Changes), "shot dead", id);
 
         /// <summary>The street reports a man who ran from the fight and kept running:
         /// struck off as a deserter, his gear pooled, his post passed on.</summary>
         public OpResult Desert(int id) =>
-            Roster == null
+            House == null
                 ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
-                : Commit(RosterOps.Desert(Roster, id, "", 0, Changes), "deserted", id);
+                : Commit(Outfit.HouseOps.Desert(House, id, "", 0, Changes), "deserted", id);
 
         public OpResult AssignToPool(int id) =>
-            Apply(RosterOps.AssignToPool, id, "sent to the pool");
+            House == null
+                ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
+                : Commit(Outfit.HouseOps.AssignToPool(House, id), "sent to the pool", id);
 
         public OpResult AssignToFront(int id) =>
-            Apply(RosterOps.AssignToFront, id, "put on the front");
+            House == null
+                ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
+                : Commit(Outfit.HouseOps.AssignToFront(House, id), "put on the front", id);
 
         public OpResult AssignToCrew(int id, int crewId)
         {
-            if (Roster == null)
+            if (House == null)
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
-            return Commit(RosterOps.AssignToCrew(Roster, id, crewId, Changes),
+            return Commit(Outfit.HouseOps.AssignToCrew(House, id, crewId, Changes),
                 "reassigned", id);
         }
 
@@ -323,24 +338,19 @@ namespace LivingCity.Gameplay
         /// over collection. A word on the branch card, cycled there.</summary>
         public OpResult SetCrewPolicy(int crewId, CrewPolicy policy)
         {
-            if (Roster == null)
+            if (House == null)
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
-            for (var i = 0; i < Roster.Crews.Count; i++)
-            {
-                if (Roster.Crews[i].Id != crewId)
-                    continue;
-                Roster.Crews[i].Policy = policy;
+            var result = Outfit.HouseOps.SetPolicy(House, crewId, policy);
+            if (result.Ok)
                 Touch();
-                return OpResult.Success;
-            }
-            return OpResult.Fail("that crew is not on the books");
+            return result;
         }
 
         public OpResult AssignToBoss(int id, int bossId)
         {
-            if (Roster == null)
-                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
-            return Commit(RosterOps.AssignToBoss(Roster, id, bossId),
+            if (House == null || bossId != Roster.BossId)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoBoss);
+            return Commit(Outfit.HouseOps.AssignToBoss(House, id),
                 "assigned directly to the boss", id);
         }
 
@@ -541,38 +551,6 @@ namespace LivingCity.Gameplay
             Debug.Log("[Personnel] " + (member != null ? member.FullName : "#" + id) +
                       " " + verb + ".");
             return result;
-        }
-    }
-
-    /// <summary>
-    /// Pure coordinator behind the director's Recruit Hood intent. The finance callback
-    /// is the authoritative account gate supplied by OutfitDirector; only after it accepts
-    /// does Personnel create one Character. Keeping this rule free of scene state makes
-    /// the money/roster boundary headlessly testable without giving the Ledger either side.
-    /// </summary>
-    public static class HoodRecruitmentAuthority
-    {
-        public static OpResult Execute(
-            Roster roster,
-            System.Random rng,
-            int cost,
-            System.Func<int, string, OpResult> purchase,
-            out Character member)
-        {
-            member = null;
-            if (roster == null || rng == null)
-                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
-            if (purchase == null)
-                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonFinanceUnavailable);
-            if (cost < 0)
-                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonInvalidRecruitmentCost);
-
-            var paid = purchase(cost, "a new Hood");
-            if (!paid.Ok)
-                return paid;
-
-            member = RosterSeeder.Recruit(roster, rng);
-            return OpResult.Success;
         }
     }
 }

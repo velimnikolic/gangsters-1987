@@ -1533,7 +1533,7 @@ namespace LivingCity.UI
         {
             var outfit = Gameplay.OutfitDirector.Instance;
             if (outfit)
-                outfit.CollectHoldings(holdingsScratch);
+                outfit.CollectKnownHoldings(holdingsScratch);
             else
                 holdingsScratch.Clear();
 

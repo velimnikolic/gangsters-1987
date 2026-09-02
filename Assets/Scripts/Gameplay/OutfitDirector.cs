@@ -25,9 +25,72 @@ namespace LivingCity.Gameplay
     {
         public static OutfitDirector Instance { get; private set; }
 
-        /// <summary>The campaign itself. Public so the headless suite and the ledger
-        /// read the same object the director drives.</summary>
-        public CampaignRunner Runner { get; } = new CampaignRunner();
+        /// <summary>
+        /// The player's own campaign - house 0's runner out of the underworld's
+        /// twenty-one. Public so the headless suite and the ledger read the same object
+        /// the director drives.
+        ///
+        /// Asked for rather than owned: the first read deals the underworld if nobody
+        /// has (the city builder normally has, a frame earlier) and wires this
+        /// director's callbacks onto the player's runner. There is never a second,
+        /// stand-in campaign for a page to read by mistake.
+        /// </summary>
+        public CampaignRunner Runner
+        {
+            get
+            {
+                Adopt();
+                return runner;
+            }
+        }
+
+        CampaignRunner runner;
+
+        /// <summary>The player's house. Everything below that used to say "the outfit"
+        /// says "house 0" now, and every rival has one of these.</summary>
+        public House House
+        {
+            get
+            {
+                Adopt();
+                return house;
+            }
+        }
+
+        House house;
+
+        /// <summary>
+        /// Takes hold of house 0 - once. The seed comes from the one derivation
+        /// (<see cref="UnderworldHost.SeedForScene"/>) so this director and the
+        /// personnel director can never deal two different underworlds, whichever of
+        /// their Starts runs first.
+        /// </summary>
+        void Adopt()
+        {
+            if (house != null)
+                return;
+
+            house = Underworld.Ensure(UnderworldHost.SeedForScene()).Player;
+            runner = house.Runner;
+
+            runner.DistanceOf = DistanceFromHeadquarters;
+            runner.HoldingsOf = CollectHoldings;
+            runner.JobResolved = OnJobResolved;
+            runner.RosterMoved = () =>
+            {
+                if (PersonnelDirector.Instance)
+                    PersonnelDirector.Instance.Touch();
+            };
+            runner.BossFell += () =>
+            {
+                Debug.LogWarning("[Outfit] THE DON IS DEAD - day " + Campaign.Day +
+                                 ". The outfit is finished; nothing advances from here.");
+                Version++;
+                if (PersonnelDirector.Instance)
+                    PersonnelDirector.Instance.Touch();
+            };
+            runner.OpenFirstSheet();
+        }
 
         public Campaign Campaign => Runner.Campaign;
         public Accounts Accounts => Runner.Accounts;
@@ -67,11 +130,26 @@ namespace LivingCity.Gameplay
         /// every call: nothing seeds and no cache can go stale when the takeover layer
         /// starts flipping GangId building by building.
         /// </summary>
-        public void CollectHoldings(List<Turf.Holding> into)
+        public void CollectHoldings(List<Turf.Holding> into) => Holdings(into, false);
+
+        /// <summary>
+        /// The same sweep, minus the doors the player has not seen. THE PAGE reads this
+        /// one - the turf map, the rail, the FAMILIES card - because a deed is public
+        /// the moment it is written and a rival's premises is meant to stay a rumour
+        /// until a crew of ours has stood outside it (DoorHolder.Learned).
+        ///
+        /// The sim reads the other one: what a house actually holds is not a matter of
+        /// what the player has noticed.
+        /// </summary>
+        public void CollectKnownHoldings(List<Turf.Holding> into) => Holdings(into, true);
+
+        void Holdings(List<Turf.Holding> into, bool knownOnly)
         {
             into.Clear();
             foreach (var business in PropertyRegistry.Businesses)
-                if (business && business.GangId >= 0)
+                if (business && business.GangId >= 0 &&
+                    (!knownOnly ||
+                     DoorHolder.Learned(business.BusinessId, business.GangId)))
                     into.Add(new Turf.Holding(business.GangId, business.BlockId));
 
             // The deed book covers the streamed city, where a building the camera left
@@ -83,6 +161,8 @@ namespace LivingCity.Gameplay
                 var deed = deedScratch[i];
                 if (deed.Value.GangId < 0 ||
                     Business.BusinessViewBindings.TryGet(deed.Key, out _))
+                    continue;
+                if (knownOnly && !DoorHolder.Learned(deed.Key, deed.Value.GangId))
                     continue;
                 into.Add(new Turf.Holding(deed.Value.GangId, deed.Value.LegacyBlockId));
             }
@@ -159,24 +239,6 @@ namespace LivingCity.Gameplay
         static Roster RosterOrNull() =>
             PersonnelDirector.Instance ? PersonnelDirector.Instance.Roster : null;
 
-        bool seedTaken;
-
-        /// <summary>
-        /// Takes the city seed the rolls are dealt from - once, and NOT in Start. Both
-        /// directors are seated by the same installer, so which Start runs first is
-        /// undefined; reading the seed in ours could catch PersonnelDirector's fallback
-        /// 42 instead of the city's own number, and every campaign on every seed would
-        /// then have rolled the same way. A dealt roster is the proof its Start has run.
-        /// </summary>
-        void TakeSeed()
-        {
-            if (seedTaken || !PersonnelDirector.Instance ||
-                PersonnelDirector.Instance.Roster == null)
-                return;
-            Runner.Seed = PersonnelDirector.Instance.Seed;
-            seedTaken = true;
-        }
-
         // --------------------------------------------------------------------- clock
 
         void Update()
@@ -206,9 +268,10 @@ namespace LivingCity.Gameplay
             if (elapsed <= 0f)
                 return;
 
-            var roster = RosterOrNull();
-            TakeSeed();
-            if (Runner.AdvanceHours(roster, elapsed))
+            // EVERY house works its book for those hours, not only the player's. One
+            // sweep, one rule; whose orders they were is the only difference there is.
+            Adopt();
+            if (Underworld.Current.AdvanceHours(elapsed))
                 Version++;
 
             // Clock days are 0-based and the campaign's are 1-based; a while rather
@@ -217,11 +280,18 @@ namespace LivingCity.Gameplay
             var today = clock.Day + 1;
             while (Campaign.Day < today)
             {
+                var stood = Campaign.Day;
                 // The day's business money lands on the sheet BEFORE midnight closes
                 // it, so a shop's dollars and the day it earned them agree.
                 SettleBusinessDay();
-                var paid = Runner.DayTick(roster);
+                var paid = Underworld.Current.DayTick();
                 Version++;
+
+                // A campaign that is over turns no more pages (CampaignRunner's
+                // CampaignOver), and a clock that has run past a dead outfit must not
+                // be caught up to for ever.
+                if (Campaign.Day == stood)
+                    break;
 
                 if (paid > 0)
                     Debug.Log("[Outfit] Payday - day " + Campaign.Day + " opens, " +
@@ -251,35 +321,22 @@ namespace LivingCity.Gameplay
 
         void Start()
         {
-            Runner.DistanceOf = DistanceFromHeadquarters;
-            Runner.HoldingsOf = CollectHoldings;
-            Runner.JobResolved = OnJobResolved;
-            Runner.RosterMoved = () =>
-            {
-                if (PersonnelDirector.Instance)
-                    PersonnelDirector.Instance.Touch();
-            };
-            // The one thing the sim cannot do for itself: say so. The rule that the
-            // campaign is over is the runner's; announcing it is the scene's.
-            Runner.BossFell += () =>
-            {
-                Debug.LogWarning("[Outfit] THE DON IS DEAD - day " + Campaign.Day +
-                                 ". The outfit is finished; nothing advances from here.");
-                Version++;
-                if (PersonnelDirector.Instance)
-                    PersonnelDirector.Instance.Touch();
-            };
-            Runner.OpenFirstSheet();
+            // Reading the property is what takes hold of house 0 and wires the
+            // callbacks onto its runner - see Adopt. Nothing else belongs here.
+            Adopt();
             Version++;
         }
 
         /// <summary>
-        /// The day's take off the city's doors: a premises on our deed pays its net, a
-        /// shop the racket holds Compliant pays its week's protection a seventh at a
-        /// time. Booked once per campaign day onto the closing sheet - the settlement
-        /// the Block File's figures always promised. EPIC 9's collection rounds will
-        /// replace this flat settle with money that physically walks; until then the
-        /// dollars are at least real.
+        /// The day's take off the city's doors, for EVERY house: a premises on a
+        /// family's deed pays that family's safe its net. Booked once per campaign day
+        /// onto the closing sheet - the settlement the Block File's figures always
+        /// promised. Protection money never moves here: it sits on the dues ledger
+        /// until a crew physically walks the round and banks it
+        /// (ECON-004 · TerritoryRuntime.Collection).
+        ///
+        /// One pass over the city's doors rather than twenty-one: the deed says whose
+        /// it is, and the money goes to that house's own safe.
         /// </summary>
         void SettleBusinessDay()
         {
@@ -287,29 +344,36 @@ namespace LivingCity.Gameplay
             if (business == null || !business.Populated)
                 return;
 
-            // Only premises the outfit OWNS settle at midnight - a deed's net is a
-            // till a manager runs for you. Protection money never moves here: it sits
-            // on the dues ledger until a crew physically walks the round and banks it
-            // (ECON-004 · TerritoryRuntime.Collection).
-            var legal = 0;
+            var underworld = Underworld.Current;
+            if (underworld == null)
+                return;
+
+            var ours = 0;
             var rows = Business.CityBusinesses.All;
             for (var i = 0; i < rows.Count; i++)
             {
                 var id = rows[i].Id;
-                if (Business.BusinessDeeds.GangOf(id) != Gangs.GangCatalog.PlayerGangId)
+                var owner = underworld.Of(Business.BusinessDeeds.GangOf(id));
+                if (owner == null || owner.Extinct)
                     continue;
-                if (business.Directory.TryGet(id, out var record))
-                    legal += EconomyPrices.NetPerDay(record.Archetype);
+                if (!business.Directory.TryGet(id, out var record))
+                    continue;
+
+                var net = EconomyPrices.NetPerDay(record.Archetype);
+                if (net <= 0)
+                    continue;
+
+                owner.Runner.Accounts.Safe += net;
+                var sheet = owner.Runner.Accounts.Current;
+                if (sheet != null)
+                    sheet.LegalIncome += net;
+                owner.Touch();
+                if (owner.IsPlayer)
+                    ours += net;
             }
 
-            if (legal == 0)
-                return;
-
-            Accounts.Safe += legal;
-            var sheet = Accounts.Current;
-            if (sheet != null)
-                sheet.LegalIncome += legal;
-            Version++;
+            if (ours > 0)
+                Version++;
         }
 
         /// <summary>
@@ -441,9 +505,9 @@ namespace LivingCity.Gameplay
         /// </summary>
         public OpResult Purchase(int price, string what)
         {
-            var refusal = BalanceMath.TryPurchase(Accounts, price);
-            if (refusal != null)
-                return OpResult.Fail(refusal);
+            var result = HouseOps.Purchase(House, price);
+            if (!result.Ok)
+                return result;
 
             Version++;
             Debug.Log("[Outfit] Bought " + what + " for " + UI.LedgerText.Cash(price) +
@@ -462,9 +526,7 @@ namespace LivingCity.Gameplay
             if (price <= 0)
                 return;
 
-            Accounts.Safe += price;
-            if (Accounts.Current != null)
-                Accounts.Current.Purchases -= price;
+            HouseOps.Refund(House, price);
             Version++;
             Debug.Log("[Outfit] Refunded " + UI.LedgerText.Cash(price) + " for " + what +
                       "; safe at " + UI.LedgerText.Cash(Accounts.Safe) + ".");

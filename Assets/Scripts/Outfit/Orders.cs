@@ -195,7 +195,8 @@ namespace LivingCity.Outfit
             // The signing money is the order's cost, so the one gate that moves money
             // moves it here too - the street bar's chip pays its own way separately.
             new OrderSpec(OrderType.Recruit, OrderCategory.Influence, TargetMode.Point,
-                12f, JobResolution.Roll, CharacterAttribute.Awareness, 7, cost: 500),
+                12f, JobResolution.Roll, CharacterAttribute.Awareness, 7,
+                cost: EconomyPrices.RecruitSigning),
             new OrderSpec(OrderType.Bribe, OrderCategory.Influence, TargetMode.Point,
                 8f, JobResolution.Roll, CharacterAttribute.Awareness, 6,
                 cost: EconomyPrices.Bribe),

@@ -245,8 +245,13 @@ namespace LivingCity.Outfit
             var heat = HeatFor(spec, targets,
                 CrewKit.BestAt(roster, crew, CharacterAttribute.Stealth));
 
-            var recruited = completed && spec.Type == OrderType.Recruit
-                ? BringHimIn(roster, crew, rng, stat)
+            // A SIGNING NEVER FAILS. The money was handed over at the counter and there
+            // is always somebody on a corner who will take it; what the roll decides is
+            // whether the man who went looking had an eye for a good one, so a failed
+            // roll brings back a walk-in with no bonus at all. One rule at both doors:
+            // the ledger's own HIRE A MAN cannot fail either.
+            var recruited = spec.Type == OrderType.Recruit
+                ? BringHimIn(roster, crew, rng, completed ? stat : 0)
                 : -1;
 
             var casualty = Misfire(spec, job, roster, crew, rng, completed);
@@ -374,14 +379,16 @@ namespace LivingCity.Outfit
         }
 
         /// <summary>
-        /// A Recruit order that came off brings a man back with it. He joins the crew
-        /// that went looking; a branch already at its RANK-001 cap refuses him, and he
-        /// waits in the Boss's pool instead - the man exists either way, because he was
-        /// found either way, but a refusal is a refusal and is never silently ignored.
+        /// A Recruit order brings a man back with it, whichever way the roll went - the
+        /// signing money bought a name on the books and it buys one every time. He
+        /// joins the crew that went looking; a branch already at its RANK-001 cap
+        /// refuses him, and he waits in the Boss's pool instead - a refusal is a
+        /// refusal and is never silently ignored.
         ///
-        /// The recruiter's own Awareness rides along: a sharp man knows a promising
-        /// corner boy when he sees one (RosterSeeder.Recruit), which is the only thing
-        /// that lifts a recruit above his three-star ceiling.
+        /// The recruiter's own Awareness rides along on a roll that came off: a sharp
+        /// man knows a promising corner boy when he sees one (RosterSeeder.Recruit),
+        /// which is the only thing that lifts a recruit above his three-star ceiling.
+        /// A botched roll passes zero, and the house has signed a walk-in.
         /// </summary>
         static int BringHimIn(Roster roster, Crew crew, System.Random rng, int stat)
         {

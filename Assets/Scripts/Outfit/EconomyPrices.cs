@@ -199,5 +199,16 @@ namespace LivingCity.Outfit
 
         /// <summary>A raid: the register and what is on the shelves.</summary>
         public const int Raid = 500;
+
+        /// <summary>
+        /// What it costs to put a man on the books, through every door there is: the
+        /// ledger's own HIRE A MAN and the Recruit order both. There used to be two
+        /// prices - fifty dollars over the counter and five hundred out on the corner -
+        /// and the fifty made the counter the only sane way to grow, for no reason
+        /// anybody had decided. One signing, one price; the ORDER differs only by
+        /// taking twelve hours and letting the recruiter's eye find a better man.
+        /// (Docs/economy-prices.md Â§8.)
+        /// </summary>
+        public const int RecruitSigning = 500;
     }
 }

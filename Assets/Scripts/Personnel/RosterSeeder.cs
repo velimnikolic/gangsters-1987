@@ -64,9 +64,75 @@ namespace LivingCity.Personnel
         public static Roster Generate(int seed)
         {
             var rng = new System.Random(seed + SeedOffsets.Personnel);
-            var roster = new Roster { Seed = seed };
+            var roster = Roster.Create(GangCatalog.PlayerGangId);
+            roster.Seed = seed;
 
             AddBoss(roster);
+
+            roster.Equipment.Add(new RosterEquipment
+            {
+                Id = roster.NextEquipmentId(),
+                Kind = EquipmentKind.Vehicle,
+                DisplayName = VehicleNames[rng.Next(VehicleNames.Length)],
+                Value = 1500,
+            });
+
+            return roster;
+        }
+
+        /// <summary>
+        /// One house's opening books. House 0 is the player and is dealt exactly as it
+        /// always has been - the Don and his car, nothing else, because everybody after
+        /// him is somebody the player went out and got.
+        ///
+        /// A rival family opens on men, because it has been in business for years: its
+        /// Don, one to three capos, and two or three hoods behind each of them. The
+        /// shape is the one <see cref="GangSeeder"/> used to deal out of thin air; the
+        /// difference is that these are CHARACTERS now, on a roster with a safe and a
+        /// wage bill, dealt through the same doors the player's men go through
+        /// (<see cref="RosterOps.Promote"/> and <see cref="RosterOps.AssignToCrew"/>),
+        /// so a family can never stand in a shape the rules forbid.
+        ///
+        /// One dealer of names for everybody: nothing outside this class draws a
+        /// gangster's name any more.
+        /// </summary>
+        public static Roster Generate(int seed, int gangId)
+        {
+            if (gangId == GangCatalog.PlayerGangId)
+                return Generate(seed);
+
+            // Every house on its own stream, mixed off the city's seed - deepening one
+            // family can never reshuffle another, and the player's own opening is
+            // untouched by any of them.
+            var rng = new System.Random(Potential.Mix(seed + SeedOffsets.Personnel, gangId));
+            var roster = Roster.Create(gangId);
+            roster.Seed = seed;
+
+            // Draw 1..N, in this FROZEN order: the Don's given name, then per crew the
+            // capo and his hoods, then the car. Inserting a draw mid-sequence re-deals
+            // every family on every seed.
+            AddFamilyBoss(rng, roster, gangId);
+
+            var crews = rng.Next(GangSeeder.MinLieutenants, GangSeeder.MaxLieutenants + 1);
+            for (var c = 0; c < crews; c++)
+            {
+                // The span of control binds a family exactly as it binds the outfit: a
+                // Don the street has never heard of holds one capo and no more, and the
+                // family is simply smaller. Never bypassed.
+                var capo = DealMan(rng, roster);
+                if (!RosterOps.Promote(roster, capo.Id, out var crewId).Ok)
+                {
+                    roster.Members.Remove(capo);
+                    break;
+                }
+
+                var hoods = rng.Next(GangSeeder.MinSoldiers, GangSeeder.MaxSoldiers + 1);
+                for (var h = 0; h < hoods; h++)
+                {
+                    var hood = DealMan(rng, roster);
+                    RosterOps.AssignToCrew(roster, hood.Id, crewId);
+                }
+            }
 
             roster.Equipment.Add(new RosterEquipment
             {
@@ -93,7 +159,8 @@ namespace LivingCity.Personnel
         public static Roster GenerateStaffed(int seed)
         {
             var rng = new System.Random(seed + SeedOffsets.Personnel);
-            var roster = new Roster { Seed = seed };
+            var roster = Roster.Create(GangCatalog.PlayerGangId);
+            roster.Seed = seed;
 
             // Draws 1..N, per man in id order: first name, surname (both redrawn together
             // on a full-name collision among the six), his rap sheet (a count, then three
@@ -163,7 +230,8 @@ namespace LivingCity.Personnel
             // +250 on the seed as well as on the stream: the scale fixture's ceilings
             // sit on their own band, the same way its draws do.
             var rng = new System.Random(seed + SeedOffsets.Personnel + 250);
-            var roster = new Roster { Seed = seed + 250 };
+            var roster = Roster.Create(GangCatalog.PlayerGangId);
+            roster.Seed = seed + 250;
 
             var ordinaryCount = System.Math.Max(0, memberCount - 1);
             for (var i = 0; i < ordinaryCount; i++)
@@ -285,6 +353,61 @@ namespace LivingCity.Personnel
 
             roster.Members.Add(boss);
             roster.Organization.BossId = boss.Id;
+        }
+
+        /// <summary>
+        /// A rival family's Don: the family name over the door is his surname, his
+        /// given name is dealt like anybody else's, and his numbers are DEALT, not
+        /// scripted. Only Don Salvatore is written by hand; every other house's head is
+        /// a man the city rolled, which is why one family holds three capos and the
+        /// next holds one - the span of control decides it, not a table.
+        /// </summary>
+        static void AddFamilyBoss(System.Random rng, Roster roster, int gangId)
+        {
+            var firsts = PedestrianIdentity.AllMaleNames;
+            var boss = new Character
+            {
+                Id = roster.NextCharacterId(),
+                FirstName = firsts[rng.Next(firsts.Count)],
+                Surname = GangCatalog.Names[gangId],
+                Rank = Rank.Boss,
+                Loyalty = 100,
+            };
+            DealInto(rng, roster, boss);
+            roster.Members.Add(boss);
+            roster.Organization.BossId = boss.Id;
+        }
+
+        /// <summary>One more man on a family's books, dealt exactly as the founding six
+        /// are dealt: a name nobody in the house carries, a rap sheet, his hidden
+        /// ceilings off his own stream, and eleven numbers rolled into them.</summary>
+        static Character DealMan(System.Random rng, Roster roster)
+        {
+            var member = new Character { Id = roster.NextCharacterId(), Rank = Rank.Hood };
+            DrawName(rng, roster, member);
+            DealInto(rng, roster, member);
+            roster.Members.Add(member);
+            return member;
+        }
+
+        /// <summary>The part of a deal that is the same for every man: the rap sheet,
+        /// the ceilings, the date of birth, the temper, the eleven trades and how much
+        /// he cares. Named separately so the Don of a family and the men under him read
+        /// off one sequence.</summary>
+        static void DealInto(System.Random rng, Roster roster, Character member)
+        {
+            RapSheet.Deal(rng, member);
+            var stream = Potential.StreamFor(roster.Seed, member.Id);
+            Potential.Roll(member, stream);
+            Aging.RollBirth(member, stream, YearOf(roster), CalendarDaysPerYear);
+            Personality.Roll(member, stream);
+
+            for (var a = 0; a < AttributeScale.Count; a++)
+                member.SetHalfSteps((CharacterAttribute)a,
+                    rng.Next(AttributeScale.MinHalfSteps, AttributeScale.MaxHalfSteps + 1));
+
+            if (member.Rank != Rank.Boss)
+                member.Loyalty = rng.Next(35, 86);
         }
 
         /// <summary>A raw recruit's ceiling - three stars, and most of them well under

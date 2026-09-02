@@ -159,30 +159,34 @@ namespace LivingCity.Tests
                 failures.Add("Filings: shrinking the ceiling threw men off the branch.");
         }
 
+        /// <summary>A house of one's own: the book, a safe with a sheet open on it,
+        /// and nothing else. The same object the player's outfit is.</summary>
+        static House HouseOf(Roster roster, int gangId = 0, int safe = -1)
+        {
+            var runner = new CampaignRunner { Seed = roster.Seed };
+            runner.OpenFirstSheet();
+            if (safe >= 0)
+                runner.Accounts.Safe = safe;
+            return new House(gangId, roster, runner);
+        }
+
         static void RecruitmentPaysThenCreatesOneUnassignedHood(List<string> failures)
         {
-            if (PersonnelDirector.DefaultHoodRecruitmentCost != 50)
-                failures.Add("Recruitment: the configurable Phase-1 default is not $50.");
+            if (PersonnelDirector.Instance != null &&
+                PersonnelDirector.Instance.HoodRecruitmentCost !=
+                EconomyPrices.RecruitSigning)
+                failures.Add("Recruitment: the ledger's counter has a price of its own.");
+            if (EconomyPrices.RecruitSigning != 500)
+                failures.Add("Recruitment: the one signing fee is not $500.");
 
             var roster = RosterSeeder.GenerateStaffed(1987);
-            var accounts = new Accounts();
-            accounts.Open(1);
+            var house = HouseOf(roster);
+            var accounts = house.Runner.Accounts;
             var beforeCount = roster.Members.Count;
             var beforeCrewCount = roster.Crews.Count;
             var beforeSafe = accounts.Safe;
 
-            OpResult Purchase(int price, string _)
-            {
-                var refusal = BalanceMath.TryPurchase(accounts, price);
-                return refusal == null ? OpResult.Success : OpResult.Fail(refusal);
-            }
-
-            var result = HoodRecruitmentAuthority.Execute(
-                roster,
-                new System.Random(1401),
-                PersonnelDirector.DefaultHoodRecruitmentCost,
-                Purchase,
-                out var recruit);
+            var result = HouseOps.Recruit(house, out var recruit);
             var query = new OrganizationQuery(roster);
             var hoods = new List<OrganizationPerson>();
             query.CollectHoods(hoods);
@@ -215,29 +219,40 @@ namespace LivingCity.Tests
             if (recruit != null && rolledStats.Count < 2)
                 failures.Add("Recruitment: starting stats were not randomized.");
 
-            if (accounts.Safe != beforeSafe - PersonnelDirector.DefaultHoodRecruitmentCost ||
+            if (accounts.Safe != beforeSafe - EconomyPrices.RecruitSigning ||
                 accounts.Current == null ||
-                accounts.Current.Purchases != PersonnelDirector.DefaultHoodRecruitmentCost)
-                failures.Add("Recruitment: the authoritative account did not book the $50 cost.");
+                accounts.Current.Purchases != EconomyPrices.RecruitSigning)
+                failures.Add("Recruitment: the house's own account did not book the fee.");
 
             var poorRoster = RosterSeeder.GenerateStaffed(1988);
-            var poorAccounts = new Accounts { Safe = 49 };
+            var poor = HouseOf(poorRoster, gangId: 0,
+                safe: EconomyPrices.RecruitSigning - 1);
             var poorCount = poorRoster.Members.Count;
-            OpResult Refuse(int price, string _)
-            {
-                var refusal = BalanceMath.TryPurchase(poorAccounts, price);
-                return refusal == null ? OpResult.Success : OpResult.Fail(refusal);
-            }
+            var poorSafe = poor.Runner.Accounts.Safe;
 
-            var refused = HoodRecruitmentAuthority.Execute(
-                poorRoster,
-                new System.Random(1402),
-                PersonnelDirector.DefaultHoodRecruitmentCost,
-                Refuse,
-                out var unpaid);
+            var refused = HouseOps.Recruit(poor, out var unpaid);
             if (refused.Ok || unpaid != null || poorRoster.Members.Count != poorCount ||
-                poorAccounts.Safe != 49)
+                poor.Runner.Accounts.Safe != poorSafe)
                 failures.Add("Recruitment: insufficient funds still changed money or personnel.");
+
+            // ONE PRICE THROUGH EVERY DOOR. The corner and the counter are the same
+            // signature; only the twelve hours and the recruiter's eye differ.
+            if (OrderTable.SpecOf(OrderType.Recruit).Cost != EconomyPrices.RecruitSigning)
+                failures.Add("Recruitment: the Recruit order and the ledger's door " +
+                             "charge different money for one man.");
+
+            // A rival house signs a man through the same call, at the same price.
+            var rivalRoster = RosterSeeder.Generate(1987, 7);
+            var rival = HouseOf(rivalRoster, gangId: 7);
+            var rivalBefore = rival.Runner.Accounts.Safe;
+            var rivalCount = rivalRoster.Members.Count;
+            if (!HouseOps.Recruit(rival, out var theirs).Ok || theirs == null ||
+                rivalRoster.Members.Count != rivalCount + 1 ||
+                rival.Runner.Accounts.Safe != rivalBefore - EconomyPrices.RecruitSigning)
+                failures.Add("Recruitment: a rival house does not sign a man the way " +
+                             "the player's does.");
+            else if (rivalRoster.Find(theirs.Id) == null || roster.Find(theirs.Id) != null)
+                failures.Add("Recruitment: a rival's new man landed in the wrong book.");
         }
 
         static void BossIsOneRealStableCharacter(List<string> failures)

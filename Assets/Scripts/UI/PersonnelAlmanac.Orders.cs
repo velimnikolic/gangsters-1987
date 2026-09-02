@@ -378,7 +378,7 @@ namespace LivingCity.UI
             // The holdings are gathered once for the whole box: a preview runs this
             // every frame of the drag, over every block the box swallows.
             if (outfit)
-                outfit.CollectHoldings(holdings);
+                outfit.CollectKnownHoldings(holdings);
             else
                 holdings.Clear();
 

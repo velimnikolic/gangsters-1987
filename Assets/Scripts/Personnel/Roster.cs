@@ -66,9 +66,52 @@ namespace LivingCity.Personnel
         /// with the day it happened, and the rules layer cannot reach the calendar.</summary>
         public int Day;
 
+        /// <summary>
+        /// Which house's book this is. The player's outfit is house 0, and a roster
+        /// built by hand - every test fixture - is house 0 too, which is why the plain
+        /// constructor still works and still numbers from zero.
+        ///
+        /// It is written ONCE, by <see cref="Create"/>, and it is not how anybody finds
+        /// out whose man somebody is: ids are unique across all twenty-one books by
+        /// construction (the counters below open on the house's own span), so nothing
+        /// anywhere decodes a house from an id, and nothing may start.
+        /// </summary>
+        public int GangId { get; private set; }
+
+        /// <summary>How far apart two houses' character ids stand. A house that
+        /// out-recruited a hundred thousand men would run into the next one's numbers,
+        /// which is a hundred thousand more men than the city has pavement for.</summary>
+        public const int CharacterIdSpan = 100_000;
+
+        /// <summary>The same for crews. A house may run eight (Command.MaxLieutenants);
+        /// the span is a thousand.</summary>
+        public const int CrewIdSpan = 1_000;
+
+        /// <summary>And for the stock. A gun is numbered off its own counter, so this
+        /// span is independent of the men's.</summary>
+        public const int EquipmentIdSpan = 100_000;
+
         int nextCharacterId;
         int nextCrewId;
         int nextEquipmentId;
+
+        /// <summary>
+        /// A book for one house, with its counters opened on that house's span. House 0
+        /// gets exactly the numbers the outfit has always had - the first man off this
+        /// counter is character 0 - so the player's campaign is dealt unchanged.
+        /// </summary>
+        public static Roster Create(int gangId)
+        {
+            if (gangId < 0)
+                gangId = 0;
+            return new Roster
+            {
+                GangId = gangId,
+                nextCharacterId = gangId * CharacterIdSpan,
+                nextCrewId = gangId * CrewIdSpan,
+                nextEquipmentId = gangId * EquipmentIdSpan,
+            };
+        }
 
         public int NextCharacterId() => nextCharacterId++;
         public int NextCrewId() => nextCrewId++;

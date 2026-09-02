@@ -19,7 +19,7 @@ hood — the whole balance falls out of real prices instead of invented ones.
 | Lieutenant | 200 | documented local gang leader $4,000–11,000/mo | `Wages.cs` 200 — **keep** |
 | Accountant | 250 | crooked professional premium | `Wages.cs` 250 — **keep** |
 | Lawyer | 400 | drug-bar retainers ran to six figures a case | `Wages.cs` 400 — **keep** |
-| Recruit signing fee | 500 | — | `Orders.cs` — **keep** |
+| Recruit signing fee | 500 | — | `EconomyPrices.RecruitSigning` — **keep**. ONE PRICE THROUGH EVERY DOOR: the ledger's HIRE A MAN and the Recruit order both charge it, for every house. The old $50 counter price is gone. |
 | Hired lieutenant signing | 28 days of wage | — | `Wages.cs DaysDown` — **keep** |
 
 Civilian yardsticks (for flavour and NPC dialogue): minimum wage $134/wk, median household
@@ -130,6 +130,24 @@ why it must carry proportional heat/risk when the system lands.
 | Bribe (generic order) | **500** | — |
 | Police employ (order) | **800/mo** | replaces flat 600 |
 | Donation (church/politics) | **1,000+** | — |
+
+### Signing a man — the one rule
+
+There is one price for putting a name on the books, `EconomyPrices.RecruitSigning`
+(**$500**), and it is charged through every door there is:
+
+* the ledger's **HIRE A MAN** on the ORGANIZATION page — `HouseOps.Recruit`, paid out of
+  that house's own safe, and the signing never fails once it is paid for;
+* the **Recruit ORDER** — the same money as the order's cost, paid at issue; it differs
+  only by taking twelve hours and letting the recruiter's Awareness find a better man
+  (`RosterSeeder.Recruit`'s second looks). A failed roll still brings a man back - a
+  walk-in, with no bonus.
+
+The counter used to charge $50 while the corner charged $500, which made the counter the
+only sane way to grow for no reason anybody had decided. `PersonnelDirector.DefaultHoodRecruitmentCost` and its serialized override are deleted.
+
+The classified column is a separate thing and keeps its own price: a man who advertises
+is a lieutenant and wants **28 days of his wage** down (`Wages.DaysDown`).
 
 ## 8. Order economy (current `Orders.cs` → target)
 

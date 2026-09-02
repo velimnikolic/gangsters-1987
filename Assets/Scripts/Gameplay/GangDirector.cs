@@ -83,8 +83,9 @@ namespace LivingCity.Gameplay
                 yield break;
             }
 
+            var underworld = Outfit.Underworld.Ensure(builder.Config.seed);
             var gangs = GangSeeder.Generate(
-                builder.Config.seed, PersonnelDirector.Instance?.Roster);
+                builder.Config.seed, gang => underworld.Of(gang)?.Roster);
             if (gangs[GangCatalog.PlayerGangId].Members.Count == 0)
                 Debug.LogWarning("[Gangs] No personnel roster - the player's front will " +
                                  "stand empty.", this);

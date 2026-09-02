@@ -1619,7 +1619,7 @@ namespace LivingCity.UI
             var all = 0;
             if (outfit)
             {
-                outfit.CollectHoldings(holdings);
+                outfit.CollectKnownHoldings(holdings);
                 mine = Outfit.Turf.CountOf(holdings, Gangs.GangCatalog.PlayerGangId);
                 all = holdings.Count;
                 holdings.Clear();

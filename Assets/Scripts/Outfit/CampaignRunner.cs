@@ -403,9 +403,16 @@ namespace LivingCity.Outfit
         /// Everything that could surprise a player by happening mid-read happens HERE,
         /// once, rather than scattered through the frame where a wage bill could jump
         /// while the Finances page was open.
+        ///
+        /// The tribute is the one line of this pass that is not the same for every
+        /// house: the player is the man who pays the families above him on turf, and
+        /// nobody has generalized that yet (D20). Everything else here - the wages, the
+        /// aging, the loyalty, the books - runs identically for all twenty-one.
         /// </summary>
+        /// <param name="roster">The house's own book.</param>
+        /// <param name="payTribute">False for a house that owes nobody upstairs.</param>
         /// <returns>Wages paid; 0 on the campaign's first day, which settles nothing.</returns>
-        public int DayTick(Roster roster)
+        public int DayTick(Roster roster, bool payTribute = true)
         {
             // Before the day even turns: a campaign with no Boss does not have another
             // morning in it.
@@ -522,7 +529,8 @@ namespace LivingCity.Outfit
             }
 
             var paid = Campaign.Settles(Campaign.Day) ? TurnTheBooks(roster) : 0;
-            CollectTribute();
+            if (payTribute)
+                CollectTribute();
             Relations.ApplyPending();
             return paid;
         }

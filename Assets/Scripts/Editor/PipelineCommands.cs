@@ -374,6 +374,23 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_underworld_tests",
+                    "Run EPIC 25's first contract: twenty-one houses on one set of " +
+                    "rules - a roster, a safe and a wage bill apiece, no two of them " +
+                    "sharing a man, and the player's own campaign dealt unchanged.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "underworld", "tests" })]
+        public static object UnderworldTests()
+        {
+            var failures = LivingCity.Tests.UnderworldTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                contracts = LivingCity.Tests.UnderworldTests.ContractNames(),
+            };
+        }
+
         [CliCommand("gangsters_loyalty_tests",
                     "Run EPIC 15 contracts for loyalty, promotion and betrayal: who a " +
                     "man answers to, what moves it, who walks and who goes with him.",

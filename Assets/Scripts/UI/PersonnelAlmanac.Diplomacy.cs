@@ -119,12 +119,13 @@ namespace LivingCity.UI
                 if (Application.isEditor)
                     LedgerV2.Button(diplomacyContent, "DEAL DUMMY FAMILIES", PageLeft, PageTop - 82f,
                         220f, 28f, () => Gangs.GangRegistry.Install(
-                            Gangs.GangSeeder.Generate(1987, director.Roster)));
+                            Gangs.GangSeeder.Generate(1987,
+                                gang => Outfit.Underworld.Ensure(1987).Of(gang)?.Roster)));
                 return;
             }
 
             if (outfit)
-                outfit.CollectHoldings(holdings);
+                outfit.CollectKnownHoldings(holdings);
             else
                 holdings.Clear();
 
