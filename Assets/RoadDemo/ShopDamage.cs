@@ -1346,7 +1346,7 @@ namespace RoadDemo
         readonly List<Transform> _fireFx = new List<Transform>();          // authored fire instances
         readonly List<Vector3> _fireBase = new List<Vector3>();            // their planted scale
         readonly List<(Transform tf, float born)> _smokes = new List<(Transform, float)>();   // procedural fallback
-        Transform _smokeFx;      // authored smoke instance
+        readonly List<ParticleSystem> _smokeFx = new List<ParticleSystem>(); // authored smoke columns
         Material _smokeMat;
         float _nextSmoke;
 
@@ -1410,14 +1410,19 @@ namespace RoadDemo
                 }
             }
 
-            // black smoke boiling up off the front - the shared textured smoke, a column
-            // rising above the fire (procedural puffs below only if the pack is stripped)
-            var smk = BombFx.Spawn(BombFx.Smoke, baseAt + Vector3.up * 1.2f, Quaternion.identity, 0.5f, 0f, transform);
-            _smokeFx = smk != null ? smk.transform : null;
-            if (smk != null)
-                LivingCity.Ambient.FireSmokeFx.TintSmoke(
-                    smk.GetComponentInChildren<ParticleSystem>(),
-                    LivingCity.Ambient.FireSmokeFx.FireSmoke);
+            // Smoke comes off the whole burning frontage, not one faint point above its
+            // centre. Three overlapping but laterally separated columns make a dense plume
+            // without turning the transparent flipbook into one flat black wall.
+            for (int i = -1; i <= 1; i++)
+            {
+                var pos = baseAt + lateral * (i * step) + Vector3.up * 0.9f;
+                var smk = BombFx.Spawn(
+                    BombFx.Smoke, pos, Quaternion.identity, 1f, 0f, transform);
+                if (smk == null) break;
+                var system = LivingCity.Ambient.FireSmokeFx.TuneFireSmoke(
+                    smk, i == 0 ? 1.15f : 0.9f);
+                if (system != null) _smokeFx.Add(system);
+            }
 
             _glow = gameObject.AddComponent<Light>();
             _glow.type = LightType.Point;
@@ -1456,6 +1461,13 @@ namespace RoadDemo
                 var f = _fireFx[i];
                 if (f != null) f.localScale = _fireBase[i] * Mathf.Lerp(0.35f, 1f, fade);
             }
+            for (int i = 0; i < _smokeFx.Count; i++)
+            {
+                var smoke = _smokeFx[i];
+                if (smoke == null) continue;
+                var emission = smoke.emission;
+                emission.rateOverTime = (i == 1 ? 15f : 12f) * fade;
+            }
 
             for (int i = 0; i < _flames.Count; i++)
             {
@@ -1471,7 +1483,7 @@ namespace RoadDemo
             if (_glow != null) _glow.intensity = (5f + 3f * Mathf.Abs(Mathf.Sin(_age * 11f))) * fade;
 
             // procedural smoke puffs - only when the Synty smoke column is not present
-            if (_smokeFx == null)
+            if (_smokeFx.Count == 0)
             {
             _nextSmoke -= dt;
             if (_nextSmoke <= 0f && _age < ShopDamage.BurnFor - 4f)

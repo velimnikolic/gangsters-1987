@@ -30,9 +30,10 @@ namespace RoadDemo
         {
             EnsureShotAudioSources();
 
-            _combatFxPrewarm ??= new List<GameObject>(3);
+            _combatFxPrewarm ??= new List<GameObject>(4);
             _combatFxPrewarm.Clear();
             AddPrewarmFx(MuzzleFlashPrefab);
+            AddPrewarmFx(GunSmokePrefab);
             AddPrewarmFx(BloodPrefab);
             AddPrewarmFx(ImpactPrefab);
             _combatFxPrewarmAt = 0;
@@ -1177,13 +1178,15 @@ namespace RoadDemo
         // pack simulates in world space (the smoke) trail behind, as smoke does.
         void Flash(Vector3 muzzle, Vector3 forward, Transform follow, EquipmentKind kind)
         {
+            var rotation = Quaternion.LookRotation(forward);
+            float calibre = MuzzleCalibre(kind);
             if (MuzzleFlashPrefab)
             {
                 var flash = CombatFx(MuzzleFlashPrefab, muzzle,
-                    Quaternion.LookRotation(forward), follow);
+                    rotation, follow);
 
-                // ONE TRIGGER PULL IS ONE FLASH. The pack's FX_Gunshot_01 is authored as
-                // a LOOPING system - the flash emitter runs on a tenth of a second and
+                // ONE TRIGGER PULL IS ONE FLASH. Gallery muzzle effects are often authored
+                // as LOOPING systems so they can be inspected - the flash emitter runs and
                 // re-bursts every cycle - and it is instantiated as a CHILD of the gun's
                 // muzzle in local simulation space. Left as it comes, one round strobed
                 // about twenty flashes and a point light over two full seconds, out of
@@ -1201,14 +1204,18 @@ namespace RoadDemo
                 // It is also why every gate added inside TickEngage did nothing for it:
                 // those gates govern the ROUND. What the player watches is this object,
                 // which is bound by none of them and outlives the fight that made it.
-                float live = 0.25f;
-                foreach (var ps in flash.GetComponentsInChildren<ParticleSystem>(true))
-                {
-                    var main = ps.main;
-                    main.loop = false;
-                    live = Mathf.Max(live, main.duration + main.startLifetime.constantMax);
-                }
-                Destroy(flash, Mathf.Min(live, 1.5f));
+                float live = LivingCity.Ambient.FireSmokeFx.TuneMuzzleFlash(
+                    flash, calibre * 0.72f);
+                Destroy(flash, Mathf.Max(0.2f, live));
+            }
+            if (GunSmokePrefab)
+            {
+                var smoke = CombatFx(GunSmokePrefab, muzzle, rotation, follow);
+                bool rapid = kind == EquipmentKind.MachinePistol ||
+                             kind == EquipmentKind.TommyGun;
+                float live = LivingCity.Ambient.FireSmokeFx.TuneGunSmoke(
+                    smoke, calibre, rapid);
+                Destroy(smoke, Mathf.Max(0.6f, live));
             }
             var shots = ShotsFor(kind);
             if (shots.Length > 0)
@@ -1229,6 +1236,16 @@ namespace RoadDemo
                 }
             }
         }
+
+        static float MuzzleCalibre(EquipmentKind kind) => kind switch
+        {
+            EquipmentKind.Shotgun => 0.32f,
+            EquipmentKind.Rifle => 0.27f,
+            EquipmentKind.TommyGun => 0.23f,
+            EquipmentKind.MachinePistol => 0.19f,
+            EquipmentKind.TwinPistols => 0.18f,
+            _ => 0.17f,
+        };
 
         // ------------------------------------------------------------- the detail
 

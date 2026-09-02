@@ -3335,6 +3335,7 @@ namespace RoadDemo
             var clips = CrewKit.WithArms(new PedClips { Walk = _walkClip, Idle = _idleClip });
             _crews = gameObject.AddComponent<DemoCrews>();
             _crews.MuzzleFlashPrefab = CrewKit.MuzzleFlash;
+            _crews.GunSmokePrefab = CrewKit.GunSmoke;
             _crews.BloodPrefab = CrewKit.Blood;
             _crews.ImpactPrefab = CrewKit.Impact;
             _crews.GunshotSets = CrewKit.GunshotSets();

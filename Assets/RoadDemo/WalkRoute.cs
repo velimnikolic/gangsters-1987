@@ -25,6 +25,11 @@ namespace RoadDemo
     /// </summary>
     public static class WalkRoute
     {
+        /// <summary>The free-ground footprint shared by route construction and the
+        /// crew feet that traverse it. Ordinary pavement walkers retain their wider
+        /// shoulder berth in <see cref="WalkObstacles.Radius"/>.</summary>
+        public const float ClearanceRadius = WalkObstacles.CrewTravelRadius;
+
         /// <summary>The lattice pitch. Small enough to find the gap between two
         /// buildings and to go locally around a cafe table group, big enough that a
         /// quarter of a mile square remains well below the lattice safety cap.</summary>
@@ -190,7 +195,7 @@ namespace RoadDemo
         {
             if (_freeAt[i] == _cacheAt) return _free[i];
             var q = Middle(i);
-            _free[i] = !WalkObstacles.Standing(q, WalkObstacles.Radius) &&
+            _free[i] = !WalkObstacles.Standing(q, ClearanceRadius) &&
                        WalkObstacles.InCity(q);
             _freeAt[i] = _cacheAt;
             return _free[i];
@@ -284,7 +289,7 @@ namespace RoadDemo
         {
             into.Clear();
             if (!WalkObstacles.InCity(p) ||
-                WalkObstacles.Standing(p, WalkObstacles.Radius)) return false;
+                WalkObstacles.Standing(p, ClearanceRadius)) return false;
             Index(p, out int x0, out int z0);
             float nearest = float.MaxValue;
             for (int ring = 0; ring <= MaxAnchorRing; ring++)
@@ -418,7 +423,7 @@ namespace RoadDemo
                 // remains to ask; calling Walkable repeated both expensive endpoint
                 // occupancy probes for every edge A* opened.
                 values[from] = WalkObstacles.InCity((a + b) * 0.5f) &&
-                               !WalkObstacles.BlocksStanding(a, b, WalkObstacles.Radius);
+                               !WalkObstacles.BlocksStanding(a, b, ClearanceRadius);
             }
             stamps[from] = _cacheAt;
             return values[from];
@@ -590,7 +595,7 @@ namespace RoadDemo
             d.y = 0f;
             float len = d.magnitude;
             if (!WalkObstacles.InCity(a) || !WalkObstacles.InCity(b)) return false;
-            float r = WalkObstacles.Radius;
+            float r = ClearanceRadius;
             // Reject bad endpoints before sampling the interior. Apart from being the
             // right contract for a zero-length chord, this avoids hundreds of city
             // probes when an old streamed shell has appeared around an endpoint.

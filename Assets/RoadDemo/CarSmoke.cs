@@ -30,7 +30,8 @@ namespace RoadDemo
         /// locally.</summary>
         public static ParticleSystem Tuned(GameObject prefab, Transform under, Vector3 at,
                                            float wide, float grow, float lifeLo, float lifeHi,
-                                           float speed, float rate, Color tint)
+                                           float speed, float rate, Color tint,
+                                           bool riseVertically = false)
         {
             if (prefab == null) return null;
             var go = Object.Instantiate(prefab, under, worldPositionStays: false);
@@ -58,6 +59,26 @@ namespace RoadDemo
             main.prewarm = false;
             var emission = ps.emission;
             emission.rateOverTime = rate;
+            var shape = ps.shape;
+            shape.enabled = true;
+            shape.shapeType = ParticleSystemShapeType.Cone;
+            shape.angle = riseVertically ? 11f : 6f;
+            shape.radius = riseVertically ? 0.13f : 0.025f;
+            shape.radiusThickness = 1f;
+            shape.position = Vector3.zero;
+            shape.rotation = riseVertically ? new Vector3(-90f, 0f, 0f) : Vector3.zero;
+
+            // x, y and z must share one MinMaxCurve mode - a module with mixed modes is
+            // refused outright, and the pack prefab authored its own drift on the axes
+            // this plume does not set.
+            var velocity = ps.velocityOverLifetime;
+            velocity.enabled = true;
+            velocity.space = ParticleSystemSimulationSpace.World;
+            velocity.x = new ParticleSystem.MinMaxCurve(-0.05f, 0.05f);
+            velocity.y = new ParticleSystem.MinMaxCurve(
+                riseVertically ? 0.25f : 0.12f,
+                riseVertically ? 0.48f : 0.28f);
+            velocity.z = new ParticleSystem.MinMaxCurve(-0.05f, 0.05f);
             LivingCity.Ambient.FireSmokeFx.TintSmoke(ps, tint);
             ps.Clear();
             return ps;
@@ -77,7 +98,8 @@ namespace RoadDemo
                   new Vector3(0f, BonnetHeight, car.HalfLen * BonnetAlong),
                   wide: BonnetWide, grow: 1.9f, lifeLo: 1.8f, lifeHi: 3.2f,
                   speed: BonnetRise, rate: BonnetRate,
-                  tint: LivingCity.Ambient.FireSmokeFx.EngineSmoke);
+                  tint: LivingCity.Ambient.FireSmokeFx.EngineSmoke,
+                  riseVertically: true);
         }
 
         /// <summary>Where on the car the plume stands, and how much of it there is: up out

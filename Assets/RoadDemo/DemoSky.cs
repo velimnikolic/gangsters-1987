@@ -46,6 +46,21 @@ namespace RoadDemo
         const float DawnAzimuth = -75f;
         const float DuskAzimuth = 75f;
 
+        // -- sun motion --------------------------------------------------------
+        [Header("Sun motion")]
+        [Tooltip("Seconds of game time used for one smooth sun/shadow movement segment. " +
+                 "The segment follows Time.timeScale, so pause freezes it and the clock's " +
+                 "speed buttons keep light and simulation together.")]
+        [Min(1f)] public float sunAnimationSeconds = 30f;
+        [Tooltip("How gently the sun closes on each thirty-second target. A shorter value " +
+                 "moves shadows faster; a longer one keeps them moving for most of the interval.")]
+        [Min(0.1f)] public float sunAnimationSmoothTime = 8f;
+
+        Quaternion _sunTarget;
+        float _sunSampleElapsed;
+        float _lastSunHour;
+        bool _sunMotionReady;
+
         // -- sun ---------------------------------------------------------------
         // PalmCity's own demo sun, colour and strength both - the grade on top of
         // it (DemoGrade) lifts exposure, so the old 1.35 clipped the pavements
@@ -222,13 +237,29 @@ namespace RoadDemo
 
         // The sun makes the FULL circle: above the horizon by day, below it at
         // night - which is what walks the procedural skybox through sunset glow
-        // into genuine darkness with no blending code at all.
+        // into genuine darkness with no blending code at all. Its direction is
+        // sampled every thirty seconds instead of being assigned straight from a
+        // slightly different clock value every frame. The one existing light eases
+        // toward each sample, leaving the shadow atlas, cascade count and render cost alone.
         void ApplySun(float hour, float night)
         {
             if (!sun)
                 return;
 
-            float elevation, azimuth;
+            Quaternion clockRotation = SunRotation(hour, out float elevation);
+            sun.transform.rotation = AnimatedSunRotation(hour, clockRotation);
+
+            // weaker and warmer near the horizon; gone once night has it
+            float height = Mathf.Sin(Mathf.Max(0f, elevation) * Mathf.Deg2Rad);
+            sun.color = Color.Lerp(SunLow, SunHigh, height);
+            sun.intensity = SunIntensity * Mathf.Lerp(0.35f, 1f, height) * (1f - night);
+            sun.shadows = LightShadows.Soft;
+            sun.enabled = sun.intensity > 0.01f;
+        }
+
+        static Quaternion SunRotation(float hour, out float elevation)
+        {
+            float azimuth;
             if (hour >= SunriseHour && hour <= SunsetHour)
             {
                 float t = Mathf.InverseLerp(SunriseHour, SunsetHour, hour);
@@ -244,14 +275,59 @@ namespace RoadDemo
                 azimuth = Mathf.Lerp(DuskAzimuth, DawnAzimuth + 360f, t);
             }
 
-            sun.transform.rotation = Quaternion.Euler(elevation, azimuth, 0f);
+            return Quaternion.Euler(elevation, azimuth, 0f);
+        }
 
-            // weaker and warmer near the horizon; gone once night has it
-            float height = Mathf.Sin(Mathf.Max(0f, elevation) * Mathf.Deg2Rad);
-            sun.color = Color.Lerp(SunLow, SunHigh, height);
-            sun.intensity = SunIntensity * Mathf.Lerp(0.35f, 1f, height) * (1f - night);
-            sun.shadows = LightShadows.Soft;
-            sun.enabled = sun.intensity > 0.01f;
+        Quaternion AnimatedSunRotation(float hour, Quaternion clockRotation)
+        {
+            // A scene without the shared clock has one authored time of day. Likewise,
+            // an inspector-frozen clock must not let its lighting continue on its own.
+            if (!clock || !clock.Running)
+            {
+                _sunMotionReady = false;
+                return clockRotation;
+            }
+
+            float frameHours = Time.deltaTime / clock.SecondsPerHour;
+            if (!_sunMotionReady || ClockJumped(hour, frameHours))
+            {
+                _sunTarget = clockRotation;
+                _sunSampleElapsed = 0f;
+                _sunMotionReady = true;
+                _lastSunHour = hour;
+                return clockRotation;
+            }
+
+            _lastSunHour = hour;
+            float dt = Mathf.Max(0f, Time.deltaTime);
+            float seconds = Mathf.Max(1f, sunAnimationSeconds);
+            _sunSampleElapsed += dt;
+            if (_sunSampleElapsed >= seconds)
+            {
+                _sunSampleElapsed %= seconds;
+                _sunTarget = clockRotation;
+            }
+
+            // Frame-rate independent exponential ease. It never snaps at a sample
+            // boundary and allocates nothing; only the same directional light moves.
+            float smooth = Mathf.Max(0.1f, sunAnimationSmoothTime);
+            float blend = 1f - Mathf.Exp(-dt / smooth);
+            return Quaternion.Slerp(sun.transform.rotation, _sunTarget, blend);
+        }
+
+        bool ClockJumped(float hour, float expectedFrameHours)
+        {
+            if (!_sunMotionReady)
+                return false;
+
+            // Convert the circular 24-hour clock to a signed shortest delta. Ordinary
+            // ticking agrees with deltaTime; the HUD scrubber does not and starts a new
+            // segment immediately instead of making the sun travel the long way round.
+            float observed = Mathf.Repeat(
+                hour - _lastSunHour + LivingCity.Ambient.CityClock.HoursPerDay * 0.5f,
+                LivingCity.Ambient.CityClock.HoursPerDay) -
+                LivingCity.Ambient.CityClock.HoursPerDay * 0.5f;
+            return Mathf.Abs(observed - expectedFrameHours) > 0.05f;
         }
 
         // The moon comes up where the sun went down, on a lower arc.

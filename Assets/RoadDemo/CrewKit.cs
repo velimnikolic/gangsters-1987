@@ -22,7 +22,8 @@ namespace RoadDemo
         // would fall back to a guessed pace.
         const string LocoDir = "Assets/Synty/AnimationBaseLocomotion/Animations/Polygon/";
         const string IdleDir = "Assets/Synty/AnimationIdles/Animations/Polygon/";
-        const string FlashPath = "Assets/Synty/PolygonGangWarfare/Prefabs/FX/FX_Gunshot_01.prefab";
+        const string FlashPath = LivingCity.Ambient.FireSmokeFx.MuzzleFlash;
+        const string GunSmokePath = LivingCity.Ambient.FireSmokeFx.Smoke;
         const string BloodPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_BloodSplat_Small_01.prefab";
         const string ImpactPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Impact_Small_01.prefab";
         const string FirePath = LivingCity.Ambient.FireSmokeFx.FlamesMedium;
@@ -515,9 +516,10 @@ namespace RoadDemo
         // each an AssetDatabase read per shot before they were held: the flash, the
         // blood and the impact are asked for by every round fired
         public static GameObject MuzzleFlash => _muzzleFlash != null ? _muzzleFlash : _muzzleFlash = Load<GameObject>(FlashPath);
+        public static GameObject GunSmoke => _gunSmoke != null ? _gunSmoke : _gunSmoke = Load<GameObject>(GunSmokePath);
         public static GameObject Blood => _blood != null ? _blood : _blood = Load<GameObject>(BloodPath);
         public static GameObject Impact => _impact != null ? _impact : _impact = Load<GameObject>(ImpactPath);
-        static GameObject _muzzleFlash, _blood, _impact;
+        static GameObject _muzzleFlash, _gunSmoke, _blood, _impact;
 
         /// <summary>The reports for one weapon, drawn at random per shot. Real
         /// recordings of the gun the armoury actually sells - a .45 and a .38 for the

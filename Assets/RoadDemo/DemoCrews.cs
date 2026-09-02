@@ -686,9 +686,9 @@ namespace RoadDemo
         /// sinks its street says so here.</summary>
         public float CarRoadY = 0f;
 
-        /// <summary>The bang, the flash and the blood - set by the scene builder;
+        /// <summary>The bang, flash, muzzle smoke and blood - set by the scene builder;
         /// missing pieces are simply silent.</summary>
-        public GameObject MuzzleFlashPrefab, BloodPrefab, ImpactPrefab;
+        public GameObject MuzzleFlashPrefab, GunSmokePrefab, BloodPrefab, ImpactPrefab;
         /// <summary>One weapon's reports. An array of these rather than a dictionary
         /// because Unity serialises the one and not the other.</summary>
         [System.Serializable]
@@ -704,6 +704,16 @@ namespace RoadDemo
         /// <summary>Reference pixels from the top of the screen to the crew bar - the
         /// road demo sets it under its top bar. Read at Init.</summary>
         public float BarTopInset = 8f;
+
+        /// <summary>The old live-feed crew row is retired in the city, but small test
+        /// scenes can opt back into the same shared selection surface. Default false
+        /// keeps every existing city/demo presentation unchanged.</summary>
+        public bool ShowCrewBar;
+
+        /// <summary>Deal the imported masculine/feminine and sidearm locomotion by
+        /// body in this scene. CoverDemo opts in; the live city remains on its current
+        /// Synty wardrobe until that migration is requested explicitly.</summary>
+        public bool UseMixamoLocomotion;
 
         List<PedLink> _links;
         List<PedLink> _sidewalks;
@@ -828,7 +838,7 @@ namespace RoadDemo
                                  "The builder should fence its floor before the crews are dealt.");
             _root = new GameObject("Crews").transform;
             gameObject.AddComponent<CrewOverlay>().Init(this);
-            gameObject.AddComponent<CrewBar>().Init(this, BarTopInset);
+            gameObject.AddComponent<CrewBar>().Init(this, BarTopInset, ShowCrewBar);
             // The screen-edge paperwork: the picked lieutenant's file, the wire and the
             // key that opens the book. It reads this instance and never writes to it.
             gameObject.AddComponent<StreetHud>().Init(this);
@@ -3164,7 +3174,7 @@ namespace RoadDemo
                 { Speed = pace, CharacterId = member.Id, SourcePrefab = prefab,
                   CombatHalfSteps = member.GetHalfSteps(CharacterAttribute.Combat),
                   Anthropometry = anthropometry };
-            man.Init(go.transform, CrewKit.Draw(_clips, _variety), link, Mathf.Clamp(t, 0.3f, link.Length - 0.3f));
+            man.Init(go.transform, ClipsFor(prefab), link, Mathf.Clamp(t, 0.3f, link.Length - 0.3f));
             man.Fired = OnFired;
             man.RangeFactor = Random.Range(0.55f, 0.85f);
             man.SetJog(Random.Range(2.7f, 3.5f));
@@ -3181,7 +3191,7 @@ namespace RoadDemo
                 { Speed = pace, CharacterId = member.Id, SourcePrefab = prefab,
                   CombatHalfSteps = member.GetHalfSteps(CharacterAttribute.Combat),
                   Anthropometry = anthropometry };
-            man.InitAt(go.transform, CrewKit.Draw(_clips, _variety), Clear(pos, member.FullName), rot);
+            man.InitAt(go.transform, ClipsFor(prefab), Clear(pos, member.FullName), rot);
             man.Fired = OnFired;
             man.RangeFactor = Random.Range(0.55f, 0.85f);
             man.SetJog(Random.Range(2.7f, 3.5f));
@@ -3199,12 +3209,20 @@ namespace RoadDemo
             var man = new CrewWalker
                 { Speed = pace, CharacterId = id, SourcePrefab = prefab, DisplayName = name,
                   Anthropometry = anthropometry };
-            man.InitAt(go.transform, CrewKit.Draw(_clips, _variety),
+            man.InitAt(go.transform, ClipsFor(prefab),
                 afoot ? Clear(pos, name) : pos, rot);
             man.Fired = OnFired;
             man.RangeFactor = Random.Range(0.55f, 0.85f);
             man.SetJog(Random.Range(2.7f, 3.5f));
             return man;
+        }
+
+        PedClips ClipsFor(GameObject prefab)
+        {
+            var clips = CrewKit.Draw(_clips, _variety);
+            if (!UseMixamoLocomotion || prefab == null) return clips;
+            return MixamoLocomotionKit.ForBody(
+                clips, PedestrianIdentity.IsFemale(prefab.name));
         }
 
         GameObject Body(GameObject prefab, string name, int localId, int anthropometrySalt,

@@ -21,6 +21,28 @@ namespace RoadDemo
         float _blockedFor;   // seconds stood on this leg with nowhere to step
         bool _detouring;     // this frame's step was off the line to the spot, round something
         bool _strideJog;     // was he jogging the stride last frame (the gait's own hysteresis)
+        int _routedStrideFrame = -1000;
+        Vector3 _routedStrideGoal;
+        bool _routedStrideRequested;
+
+        /// <summary>The route audit's read-only view of this frame's actual stride
+        /// intent. A timestamp, rather than sticky state, keeps standing/aiming frames
+        /// from inheriting yesterday's waypoint.</summary>
+        internal bool TryRoutedStrideIntent(out Vector3 goal)
+        {
+            goal = _routedStrideGoal;
+            return _routedStrideFrame == Time.frameCount && _routedStrideRequested;
+        }
+
+        /// <summary>Publish the terminal errand, not the current A* corner. Combat can
+        /// redraw a corner every second while making no useful progress; an audit which
+        /// follows that corner would begin a fresh clean window on every redraw.</summary>
+        void NoteRoutedStrideIntent(Vector3 terminalGoal, bool requested)
+        {
+            _routedStrideFrame = Time.frameCount;
+            _routedStrideGoal = terminalGoal;
+            _routedStrideRequested = requested;
+        }
 
         // A combat approach is a route too. Local steering is for the moving last
         // metre around a person or car; asked to solve a whole furnished street it
@@ -31,25 +53,168 @@ namespace RoadDemo
         int _combatWayAt;
         int _combatWayVersion = -1;
         Vector3 _combatWayTarget;
+        Vector3 _combatWayEnd;
+        bool _combatWayEndsAtTarget;
         float _combatReplanAt;
+        float _combatBestGap = float.MaxValue;
+        float _combatNoProgress;
+
+        const float CombatCornerReach = 0.35f;
+        const float CombatProgressGain = 0.15f;
+        const float CombatProgressGrace = 1.25f;
+        const float RoutedForwardDot = 0.1f;
 
         void ClearCombatWay()
         {
             _combatWay.Clear();
             _combatWayAt = 0;
             _combatWayVersion = -1;
+            _combatWayEndsAtTarget = false;
             _combatReplanAt = 0f;
+            _combatBestGap = float.MaxValue;
+            _combatNoProgress = 0f;
         }
 
-        bool PlanCombatWay(Vector3 target)
+        void BeginCombatCorner()
+        {
+            _combatBestGap = float.MaxValue;
+            _combatNoProgress = 0f;
+            _blockedFor = 0f;
+            _steerSide = 0;
+            // `going` is a useful anti-U-turn hint while passing one obstacle, but the
+            // previous corner's heading is not a vote against the new route segment.
+            // Keeping it made the local steer carry on past a corner, then orbit back.
+            _strideDir = Vector3.zero;
+        }
+
+        /// <summary>A moving man can still be stuck: orbiting a point leaves
+        /// _blockedFor at zero. Judge useful progress against the best distance reached
+        /// on this corner and force a fresh route if he only circles around it.</summary>
+        internal static bool CombatCornerStalledModel(float gap, float dt,
+            ref float bestGap, ref float noProgress)
+        {
+            if (gap < bestGap - CombatProgressGain)
+            {
+                bestGap = gap;
+                noProgress = 0f;
+                return false;
+            }
+            noProgress += Mathf.Max(0f, dt);
+            return noProgress >= CombatProgressGrace;
+        }
+
+        /// <summary>A later route corner may be taken as soon as the exact chord from
+        /// the man's current feet is proven clear. This is the safe escape for a man
+        /// who passed beside a waypoint instead of hitting its 35 cm bullseye.</summary>
+        internal static bool CombatCornerCanAdvanceModel(float gap, bool nextChordClear) =>
+            gap <= CombatCornerReach || nextChordClear;
+
+        bool RecoverCombatOverlap(Vector3 toward)
+        {
+            if (!WalkObstacles.Standing(
+                    Tf.position, WalkObstacles.OverlapProbeRadius))
+                return false;
+            var from = Tf.position;
+            if (!WalkObstacles.TryClearStandingSpot(
+                    from, WalkRoute.ClearanceRadius, toward, out var free, 2.5f))
+            {
+                ClearCombatWay();
+                return true;
+            }
+            free.y = from.y;
+            Tf.position = free;
+            ClearCombatWay();
+            if (DriveTrace.On)
+                DriveTrace.Event("walk", DisplayName,
+                    $"recovered {Vector3.Distance(from, free):F1} m from fixed geometry during combat");
+            return true;
+        }
+
+        /// <summary>A route can reject the 22.5 cm travel footprint after a tangent
+        /// step left it only brushing a prop, while the 10 cm centre probe correctly
+        /// says the man is not inside the prop. Repair that shell only after planning
+        /// has actually failed, and only over a proved centre-clear chord.</summary>
+        bool TryRecoverRouteStart(Vector3 toward, string context)
+        {
+            var from = Tf.position;
+            if (!WalkObstacles.TryClearRouteStart(from, WalkRoute.ClearanceRadius,
+                    toward, out var free, 2.5f)) return false;
+            free.y = from.y;
+            Tf.position = free;
+            if (DriveTrace.On)
+                DriveTrace.Event("walk", DisplayName,
+                    $"recovered route start {Vector3.Distance(from, free):F2} m ({context})");
+            return true;
+        }
+
+        static readonly float[] CombatEnvelopeAngles =
+        {
+            0f, 22.5f, -22.5f, 45f, -45f, 67.5f, -67.5f, 90f,
+            -90f, 112.5f, -112.5f, 135f, -135f, 157.5f, -157.5f, 180f,
+        };
+
+        /// <summary>An enemy's exact feet can legally be tight against cover. A shooter
+        /// needs a reachable point inside his firing envelope, not permission to occupy
+        /// those same feet. Prefer the near-side edge, require wall sight to the mark,
+        /// and let the ordinary route planner prove every candidate.</summary>
+        bool TryPlanCombatEnvelope(Vector3 target, float stopWithin,
+            out Vector3 endpoint)
+        {
+            endpoint = target;
+            float outer = stopWithin - 0.15f;
+            if (outer <= WalkRoute.ClearanceRadius + 0.05f) return false;
+
+            var approach = Tf.position - target;
+            approach.y = 0f;
+            if (approach.sqrMagnitude < 1e-5f) approach = Vector3.forward;
+            else approach.Normalize();
+
+            float inner = Mathf.Min(outer,
+                Mathf.Max(WalkRoute.ClearanceRadius + 0.1f, outer * 0.45f));
+            for (int band = 0; band < 3; band++)
+            {
+                float ring = Mathf.Lerp(outer, inner, band * 0.5f);
+                for (int i = 0; i < CombatEnvelopeAngles.Length; i++)
+                {
+                    var dir = Quaternion.AngleAxis(
+                        CombatEnvelopeAngles[i], Vector3.up) * approach;
+                    var candidate = target + dir * ring;
+                    candidate.y = Tf.position.y;
+                    if (!WalkObstacles.InCity(candidate) ||
+                        WalkObstacles.Standing(candidate, WalkRoute.ClearanceRadius) ||
+                        !WalkObstacles.Sees(candidate, target)) continue;
+                    if (!WalkRoute.Plan(Tf.position, candidate, _combatWay, false) ||
+                        _combatWay.Count == 0) continue;
+                    endpoint = candidate;
+                    return true;
+                }
+            }
+            _combatWay.Clear();
+            return false;
+        }
+
+        bool PlanCombatWay(Vector3 target, float stopWithin, bool attackEnvelope)
         {
             _combatWay.Clear();
             _combatWayAt = 0;
             _combatWayTarget = target;
+            _combatWayEnd = target;
+            _combatWayEndsAtTarget = false;
             _combatWayVersion = WalkObstacles.Version;
             _combatReplanAt = Time.time + 0.4f;
-            if (!WalkRoute.Plan(Tf.position, target, _combatWay, false) ||
-                _combatWay.Count == 0)
+
+            bool exact = WalkRoute.Plan(Tf.position, target, _combatWay, false) &&
+                         _combatWay.Count > 0;
+            // Only a failed route earns a relocation. This closes the 10-22.5 cm
+            // clearance dead-zone without making every ordinary wall-brush teleport.
+            if (!exact && TryRecoverRouteStart(target, "combat plan"))
+                exact = WalkRoute.Plan(Tf.position, target, _combatWay, false) &&
+                        _combatWay.Count > 0;
+
+            if (exact)
+                _combatWayEndsAtTarget = true;
+            else if (!attackEnvelope ||
+                     !TryPlanCombatEnvelope(target, stopWithin, out _combatWayEnd))
             {
                 _combatWay.Clear();
                 return false;
@@ -60,35 +225,51 @@ namespace RoadDemo
             {
                 var gap = _combatWay[_combatWayAt] - Tf.position;
                 gap.y = 0f;
-                if (gap.sqrMagnitude > 0.35f * 0.35f) break;
+                if (gap.sqrMagnitude > CombatCornerReach * CombatCornerReach) break;
                 _combatWayAt++;
             }
-            _blockedFor = 0f;
-            _steerSide = 0;
+            BeginCombatCorner();
             return true;
+        }
+
+        /// <summary>A route retry is still part of a fight. An armed man keeps the
+        /// aiming stand authored for the weapon in his hands; feeding this frame
+        /// through the generic locomotion stop would lower both hands into body idle.</summary>
+        void CombatStand(float dt)
+        {
+            RunWhile(false);
+            if (!Armed)
+            {
+                Loco(dt, false);
+                return;
+            }
+            if (Joining) CancelJoin();
+            SetPose(VisibleAimPose);
+            TickBlend(dt);
         }
 
         /// <summary>Close on a live mark over routed static ground. The target may
         /// move, so the final corner is refreshed when it has shifted materially;
         /// props do not move, so a stable target pays for the route only once.</summary>
         void TickCombatStride(float dt, Vector3 target, float stopWithin,
-            bool hurry, bool run)
+            bool hurry, bool run, bool attackEnvelope = false)
         {
             target.y = Tf.position.y;
             var toTarget = target - Tf.position;
             toTarget.y = 0f;
-            if (toTarget.magnitude <= stopWithin)
+            bool closing = toTarget.magnitude > stopWithin;
+            NoteRoutedStrideIntent(target, closing);
+            // A tangent step can finish a few floating-point hairs inside an inflated
+            // prop footprint. A normal free-ground order already repairs that state;
+            // combat used to keep asking A* to start from an illegal point forever.
+            if (RecoverCombatOverlap(target))
             {
-                ClearCombatWay();
-                TickStride(dt, target, stopWithin, hurry, run);
+                CombatStand(dt);
                 return;
             }
-
-            // Decide direct-vs-routed only before a corridor is chosen. Re-testing
-            // visibility every frame made a man abandon a sound route at the first
-            // sliver past a prop, then rebuild it as that sliver closed again.
-            if (_combatWay.Count == 0 && StaticChordClear(Tf.position, target))
+            if (!closing)
             {
+                ClearCombatWay();
                 TickStride(dt, target, stopWithin, hurry, run);
                 return;
             }
@@ -99,18 +280,37 @@ namespace RoadDemo
                          _combatWayVersion != WalkObstacles.Version ||
                          moved.sqrMagnitude > 2f * 2f ||
                          _combatWayAt >= _combatWay.Count;
-            if (stale && Time.time >= _combatReplanAt && !PlanCombatWay(target))
+            if (!stale && _combatWayEndsAtTarget)
+            {
+                // The final corner follows a living target rather than the old planned
+                // coordinate. Even a small move can put a prop across that replacement
+                // chord; redraw it instead of handing an unproved line to steering.
+                _combatWayEnd = target;
+                if (_combatWayAt == _combatWay.Count - 1 &&
+                    !StaticChordClear(Tf.position, _combatWayEnd)) stale = true;
+            }
+            else if (!stale)
+            {
+                var envelope = _combatWayEnd - target;
+                envelope.y = 0f;
+                if (envelope.magnitude > stopWithin ||
+                    (attackEnvelope && !WalkObstacles.Sees(_combatWayEnd, target)) ||
+                    (_combatWayAt == _combatWay.Count - 1 &&
+                     !StaticChordClear(Tf.position, _combatWayEnd))) stale = true;
+            }
+            if (stale && Time.time >= _combatReplanAt &&
+                !PlanCombatWay(target, stopWithin, attackEnvelope))
             {
                 // A temporary planning miss is not permission to cross a prop. Stand
                 // and retry shortly; dynamic people are still handled inside stride.
-                Loco(dt, false);
+                CombatStand(dt);
                 _blockedFor += dt;
                 return;
             }
 
             if (_combatWay.Count == 0)
             {
-                Loco(dt, false);
+                CombatStand(dt);
                 return;
             }
 
@@ -118,26 +318,35 @@ namespace RoadDemo
             {
                 var gap = _combatWay[_combatWayAt] - Tf.position;
                 gap.y = 0f;
-                if (gap.sqrMagnitude > 0.35f * 0.35f) break;
+                bool nextClear = StaticChordClear(
+                    Tf.position, _combatWay[_combatWayAt + 1]);
+                if (!CombatCornerCanAdvanceModel(gap.magnitude, nextClear)) break;
                 _combatWayAt++;
-                _blockedFor = 0f;
-                _steerSide = 0;
+                BeginCombatCorner();
             }
 
             bool last = _combatWayAt >= _combatWay.Count - 1;
-            var waypoint = last ? target : _combatWay[_combatWayAt];
-            TickStride(dt, waypoint, last ? stopWithin : 0.12f,
-                hurry, run, terminal: last);
+            var waypoint = last ? _combatWayEnd : _combatWay[_combatWayAt];
+            float cornerStop = last && _combatWayEndsAtTarget
+                ? stopWithin : last ? CombatCornerReach : 0.12f;
+            TickStride(dt, waypoint, cornerStop,
+                hurry, run, terminal: last, routed: true);
+
+            var left = waypoint - Tf.position;
+            left.y = 0f;
+            bool circling = CombatCornerStalledModel(left.magnitude, dt,
+                ref _combatBestGap, ref _combatNoProgress);
 
             // Something dynamic may have closed a once-valid chord. Give local
-            // steering a short chance, then redraw from the feet instead of orbiting.
-            if (_blockedFor > 0.8f)
+            // steering a short chance, then redraw from the feet. A man can also keep
+            // taking full steps in a circle, so lack of forward progress is the second
+            // half of this test rather than `_blockedFor` alone.
+            if (_blockedFor > 0.8f || circling)
             {
                 _combatWay.Clear();
                 _combatWayAt = 0;
                 _combatReplanAt = Time.time;
-                _steerSide = 0;
-                _blockedFor = 0f;
+                BeginCombatCorner();
             }
         }
 
@@ -147,6 +356,12 @@ namespace RoadDemo
         /// when keeping the arm on the mark reads as looking and firing the other way.</summary>
         bool StrideAllowsAim(Vector3 toMark)
         {
+            // These wardrobes have an authored clip for travel relative to the mark:
+            // forward arcs, strafes and backwards steps. Their purpose is to keep the
+            // sights up while the route is not straight at the target. The legacy
+            // forward-only gait below retains its sixty-degree safety cone.
+            if (State == Mode.Engaging &&
+                (ShowsAuthoredLongGun || ShowsAuthoredSidearm)) return true;
             // TickEngage asks before this frame's TickStride, while AimGun asks after
             // it in LateUpdate. Accept both the current and immediately previous frame
             // so the trigger and the rendered arm judge the same completed stride.
@@ -212,7 +427,7 @@ namespace RoadDemo
         const float CrowdFloor = 0.25f;
 
         void TickStride(float dt, Vector3 to, float stopWithin, bool hurry = false, bool run = false,
-            bool keepOffRoad = false, bool terminal = true)
+            bool keepOffRoad = false, bool terminal = true, bool routed = false)
         {
             var delta = to - Tf.position;
             delta.y = 0f;
@@ -241,6 +456,10 @@ namespace RoadDemo
                 : (hurry ? Speed * HurryFactor : Speed) * PaceScale *
                   (_keepingLow ? CrouchFactor : 1f);
             var want = delta / dist;
+            float fixedRadius = routed
+                ? WalkRoute.ClearanceRadius
+                : WalkObstacles.Radius;
+            const float trafficRadius = WalkObstacles.Radius;
 
             // THE PEOPLE ARE PART OF THE GROUND. WalkObstacles knows the walls, the
             // furniture and the traffic, and nothing whatever about anybody on foot -
@@ -306,8 +525,9 @@ namespace RoadDemo
             }
             else if (terminal && WalkObstacles.Occupied(to, WalkObstacles.Radius))
             {
-                dir = line;
-                clear = WalkObstacles.Clear(Tf.position, line, WalkObstacles.Radius, dist);
+                dir = routed ? want : line;
+                clear = WalkObstacles.Clear(
+                    Tf.position, dir, fixedRadius, trafficRadius, dist);
             }
             else
             {
@@ -316,9 +536,29 @@ namespace RoadDemo
                 // WalkObstacles clears its committed side whenever the line is open.
                 // A crew preference is passed as an equal-angle tie-break only; it is
                 // never installed as an already-committed obstacle side.
-                dir = WalkObstacles.Steer(Tf.position, line, _strideDir, WalkObstacles.Radius,
-                    Mathf.Min(jog ? Lookahead * 2f : Lookahead, dist), ref _steerSide,
-                    out clear, _preferredSteerSide);
+                float probe = Mathf.Min(jog ? Lookahead * 2f : Lookahead, dist);
+                // A route corner is authoritative. The route has already solved the
+                // fixed furniture; letting the crowd rewrite its desired line before
+                // obstacle steering made that solver pick a second, contradictory way
+                // around the same prop. Steer from the corner and forbid reverse
+                // fallbacks. A lateral crowd lean is accepted afterwards only when its
+                // whole look-ahead remains clear and it still gains on the corner.
+                var steerLine = routed ? want : line;
+                dir = WalkObstacles.Steer(Tf.position, steerLine, _strideDir,
+                    fixedRadius, probe, ref _steerSide, out clear,
+                    _preferredSteerSide, trafficRadius,
+                    routed ? RoutedForwardDot : -1f);
+                if (routed && Mathf.Abs(CrowdPush) > 0.001f &&
+                    Vector3.Dot(line, want) >= RoutedForwardDot)
+                {
+                    float crowdClear = WalkObstacles.Clear(
+                        Tf.position, line, fixedRadius, trafficRadius, probe);
+                    if (crowdClear >= probe - 1e-3f)
+                    {
+                        dir = line;
+                        clear = crowdClear;
+                    }
+                }
             }
             if (keepOffRoad && CrewBike.AnyPassOn && dist > CrossWithin)
                 dir = KeepToPavement(Tf.position, dir, Mathf.Max(pace * dt, 1.2f));
@@ -362,7 +602,7 @@ namespace RoadDemo
             // crossings intentionally own their authored straight line through a wall.
             if (!Crossing && step > 1e-4f)
                 step = Mathf.Min(step, WalkObstacles.Clear(
-                    Tf.position, dir, WalkObstacles.Radius, step));
+                    Tf.position, dir, fixedRadius, trafficRadius, step));
 
             if (step > 1e-4f)
             {
@@ -373,25 +613,43 @@ namespace RoadDemo
             }
             else _blockedFor += dt;
 
-            // he turns to the line he is walking; boxed in, he at least faces the spot.
+            bool moving = step > 1e-4f;
+            bool tacticalFacing = TryTacticalFacing(out var faceTarget);
+
+            // With a weapon up, a directional pack keeps the sights on the mark and
+            // lets its forward/arc/strafe/backward clip describe the actual travel.
+            // Holstered movement still turns to the route line exactly as before.
             // A join owns his heading while it runs - the 90 and 180 starts ARE the
             // turn, and a man swung round to the new line before the clip has played
             // its first step is a man who stumbles on the spot.
-            if (!Joining)
+            if (tacticalFacing)
+            {
+                if (Joining) CancelJoin();
+                TurnCombat(faceTarget, 360f, dt);
+            }
+            else if (!Joining)
+            {
                 Tf.rotation = Quaternion.Slerp(Tf.rotation,
-                    Quaternion.LookRotation(step > 1e-4f ? dir : want), 8f * dt);
+                    Quaternion.LookRotation(moving ? dir : want), 8f * dt);
+            }
+            if (!tacticalFacing) _weaponStepKnown = false;
 
-            bool moving = step > 1e-4f;
             if (jog && moving)
             {
-                LocomotionPose = sprint ? VisibleSprintPose : VisibleJogPose;
-                BlendLocomotion(dt, true);
+                if (!TryWeaponGait(true, sprint, dir, pace, out var weaponPose))
+                    LocomotionPose = sprint ? VisibleSprintPose : VisibleJogPose;
+                else LocomotionPose = weaponPose;
+                BlendLocomotion(dt, true, joins: !tacticalFacing);
                 // the run keeps step with the ground he actually covers: the crowd
                 // takes pace off him, and a jog played at its own rate over a
                 // shortened step is a man skating. Held inside the rates a run clip
                 // reads at (RunRateMin/Max) - past those it is a moon-walk - and his
                 // own hair off the beat kept, so a crew never runs in lockstep.
-                if (LocomotionPose == PoseRifleSprint || LocomotionPose == PoseRifleJog)
+                if (LocomotionPose == PoseWeaponGaitA || LocomotionPose == PoseWeaponGaitB)
+                {
+                    // DirectionalGaitPose already keyed this exact clip to the ground.
+                }
+                else if (LocomotionPose == PoseRifleSprint || LocomotionPose == PoseRifleJog)
                     GearVisibleRifleGait(LocomotionPose, pace,
                         sprint ? SprintClipPace : JogClipPace, _runJitter);
                 else
@@ -399,13 +657,29 @@ namespace RoadDemo
                         pace / (sprint ? sprintClip : ClipPace(PoseJog, JogClipPace)),
                         sprint ? SprintRateMin : RunRateMin, RunRateMax) * _runJitter);
             }
-            else if (!moving) Loco(dt, false);
+            else if (!moving)
+            {
+                if (tacticalFacing)
+                {
+                    SetPose(VisibleAimPose);
+                    TickBlend(dt);
+                }
+                else Loco(dt, false);
+            }
             else
             {
-                Loco(dt, true);
+                if (!TryWeaponGait(false, false, dir, pace, out var weaponPose))
+                    LocomotionPose = _keepingLow && HasPose(PoseCrouchWalk)
+                        ? VisibleCrouchWalkPose : VisibleWalkPose;
+                else LocomotionPose = weaponPose;
+                BlendLocomotion(dt, true, joins: !tacticalFacing);
                 // the gait clip keeps step with the pace: quicker feet for the hurried
                 // walk, and the crouched shuffle keyed to its own much shorter stride
-                if (LocomotionPose == PoseCrouchWalk)
+                if (LocomotionPose == PoseWeaponGaitA || LocomotionPose == PoseWeaponGaitB)
+                {
+                    // DirectionalGaitPose already keyed this exact clip to the ground.
+                }
+                else if (LocomotionPose == PoseCrouchWalk)
                     SetPoseSpeed(PoseCrouchWalk,
                         Mathf.Clamp(pace / ClipPace(PoseCrouchWalk, 1.3f), 0.7f, 1.4f));
                 else if (LocomotionPose == PoseRifleWalk)

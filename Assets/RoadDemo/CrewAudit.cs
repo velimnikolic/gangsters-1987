@@ -164,6 +164,9 @@ namespace RoadDemo
             public Vector3 Step;
             public float PrevGap = float.MaxValue;
             public bool SaidOff;
+            public bool RouteWatching, RouteStallSaid, RouteOrbitSaid, RouteOverlapSaid;
+            public Vector3 RouteStart, RouteGoal, RouteLastDir;
+            public float RouteStartGap, RouteFor, RouteTravel, RouteTurn;
         }
 
         sealed class FormationWatch
@@ -343,6 +346,8 @@ namespace RoadDemo
                     w.PropFor = -20f;
                 }
 
+                TickRoutedMotion(man, w, pos, dt);
+
                 // THE LIGHT. Waiting is legal; waiting longer than any light holds
                 // is not - and the tether crosses a straggler long before this.
                 if (man.AtLight && man.State == CrewWalker.Mode.Walking)
@@ -428,6 +433,105 @@ namespace RoadDemo
                 }
                 else w.ChaseFor = 0f;
             }
+        }
+
+        /// <summary>A route can be broken while the man is moving: the old stall
+        /// clock saw distance covered and therefore passed an orbit. Judge useful
+        /// progress to the route's terminal errand (stable across A* corner replans), and keep
+        /// fixed overlap on the same footprint the planner and feet share.</summary>
+        static void TickRoutedMotion(CrewWalker man, Watch w, Vector3 pos, float dt)
+        {
+            if (!man.TryRoutedStrideIntent(out var goal))
+            {
+                ResetRouteWatch(w);
+                return;
+            }
+
+            goal.y = pos.y;
+            var toGoal = goal - pos;
+            toGoal.y = 0f;
+            float gap = toGoal.magnitude;
+            var goalShift = goal - w.RouteGoal;
+            goalShift.y = 0f;
+            // A live combat mark can shuffle while the route remains the same errand.
+            // Only a material four-metre move starts a new watch; one-to-two metre
+            // replans must not launder a stall/orbit into a fresh clean window.
+            if (!w.RouteWatching || goalShift.sqrMagnitude > 4f * 4f)
+                BeginRouteWindow(w, pos, goal, gap);
+
+            float step = w.Step.magnitude;
+            if (step > 0.002f)
+            {
+                var dir = w.Step / step;
+                if (w.RouteLastDir.sqrMagnitude > 0.5f)
+                    w.RouteTurn += Vector3.Angle(w.RouteLastDir, dir);
+                w.RouteLastDir = dir;
+                w.RouteTravel += step;
+            }
+            w.RouteGoal = goal;
+            w.RouteFor += Mathf.Max(0f, dt);
+
+            float gain = w.RouteStartGap - gap;
+            if (gain >= 0.4f)
+            {
+                BeginRouteWindow(w, pos, goal, gap);
+                return;
+            }
+
+            if (!w.RouteStallSaid && w.RouteFor >= 1.5f && w.RouteTravel < 0.1f)
+            {
+                Fault(man, "routestall",
+                    $"no route progress for {w.RouteFor:F1}s, {gap:F1} m from terminal ({man.State})");
+                w.RouteStallSaid = true;
+            }
+
+            var net = pos - w.RouteStart;
+            net.y = 0f;
+            bool cameBack = net.magnitude <= 0.75f;
+            bool turnedRound = w.RouteTurn >= 330f;
+            if (!w.RouteOrbitSaid && w.RouteTravel >= 2.5f &&
+                (cameBack || turnedRound))
+            {
+                Fault(man, "routeorbit",
+                    $"walked {w.RouteTravel:F1} m / turned {w.RouteTurn:F0} deg " +
+                    $"without gaining on terminal {gap:F1} m away ({man.State})");
+                w.RouteOrbitSaid = true;
+            }
+
+            float overlapRadius = Mathf.Max(0.01f, WalkRoute.ClearanceRadius - 0.01f);
+            if (!w.RouteOverlapSaid && WalkObstacles.Standing(pos, overlapRadius))
+            {
+                Fault(man, "routeoverlap",
+                    $"routed footprint overlaps fixed geometry ({man.State})");
+                w.RouteOverlapSaid = true;
+            }
+        }
+
+        static void BeginRouteWindow(Watch w, Vector3 pos, Vector3 goal, float gap)
+        {
+            w.RouteWatching = true;
+            w.RouteStart = pos;
+            w.RouteGoal = goal;
+            w.RouteStartGap = gap;
+            w.RouteFor = 0f;
+            w.RouteTravel = 0f;
+            w.RouteTurn = 0f;
+            w.RouteLastDir = Vector3.zero;
+            w.RouteStallSaid = false;
+            w.RouteOrbitSaid = false;
+            w.RouteOverlapSaid = false;
+        }
+
+        static void ResetRouteWatch(Watch w)
+        {
+            w.RouteWatching = false;
+            w.RouteFor = 0f;
+            w.RouteTravel = 0f;
+            w.RouteTurn = 0f;
+            w.RouteLastDir = Vector3.zero;
+            w.RouteStallSaid = false;
+            w.RouteOrbitSaid = false;
+            w.RouteOverlapSaid = false;
         }
 
         static bool FighterInSight(DemoCrews.Unit enemy, Vector3 from)

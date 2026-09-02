@@ -255,7 +255,7 @@ namespace RoadDemo
         /// ground he actually covers. The sprint counts because it is the same fault
         /// one storey worse: a man whose legs are flat out and who is crossing the
         /// ground at a walk is skating harder, not less.</summary>
-        public bool JoggingPose => CurrentPose == PoseJog || CurrentPose == PoseSprint;
+        public bool JoggingPose => CurrentMotionIsRunning;
 
         /// <summary>Is he running this frame? Only under a hurried order, only with a
         /// real distance left of it, and only if his body has a run to play - a man
@@ -1064,7 +1064,10 @@ namespace RoadDemo
             }
             if (_legs.Count == 0 || _replans >= 3) { _legs.Clear(); return false; }
             _replans++;
-            if (!BuildRemainingWay(Tf.position) || _legs.Count == 0)
+            bool rebuilt = BuildRemainingWay(Tf.position) && _legs.Count > 0;
+            if (!rebuilt && TryRecoverRouteStart(_legEnd, "route replan"))
+                rebuilt = BuildRemainingWay(Tf.position) && _legs.Count > 0;
+            if (!rebuilt)
             { _legs.Clear(); return false; }
             _legAt = 0;
             _legTo = _legs[0];
@@ -1098,14 +1101,16 @@ namespace RoadDemo
         bool RecoverFixedOverlap()
         {
             const float MaxRecoveryStep = 2.5f;
-            if (Crossing || !WalkObstacles.Standing(Tf.position, WalkObstacles.Radius))
+            if (Crossing || !WalkObstacles.Standing(
+                    Tf.position, WalkObstacles.OverlapProbeRadius))
                 return false;
             var from = Tf.position;
             var toward = _sharedAt < _sharedCorridor.Count
                 ? _sharedCorridor[_sharedAt]
                 : _legEnd;
             if (!WalkObstacles.TryClearStandingSpot(
-                    from, WalkObstacles.Radius, toward, out var free, MaxRecoveryStep))
+                    from, WalkRoute.ClearanceRadius, toward,
+                    out var free, MaxRecoveryStep))
             {
                 RefuseUnsafeAcross();
                 return true;
@@ -1283,6 +1288,9 @@ namespace RoadDemo
                 _supportThumb = inv * Vector3.forward;
             }
             _longGunGripBlend = 0f;
+            _idleGripBlend = 0f;
+            _idleGripKnown = false;
+            if (Weapon != null) _weaponGripBase = Weapon.localPosition;
         }
 
         /// <summary>Away it goes; he still carries it. The model is destroyed rather
@@ -1312,6 +1320,8 @@ namespace RoadDemo
             _supportHand = null;
             _aimBlend = 0f;
             _longGunGripBlend = 0f;
+            _idleGripBlend = 0f;
+            _idleGripKnown = false;
         }
 
         /// <summary>How long the gun stays out after the last reason for it has gone.
@@ -1393,6 +1403,9 @@ namespace RoadDemo
         Vector3 _aimDir;
         Transform _supportArm, _supportForearm, _supportHand;
         Vector3 _supportFingers, _supportThumb;
+        Vector3 _weaponGripBase, _idleGripOffset;
+        float _idleGripBlend;
+        bool _idleGripKnown;
         float _longGunGripBlend;
 
         /// <summary>The Mixamo rifle wardrobe is deliberately opt-in. CoverDemo is
@@ -1401,10 +1414,15 @@ namespace RoadDemo
         bool UsesAuthoredLongGun =>
             AuthoredLongGunWardrobe && CrewArms.TwoHanded(WeaponKind);
 
+        bool UsesAuthoredSidearm =>
+            AuthoredSidearmWardrobe && CrewArms.IsFirearm(WeaponKind) &&
+            !CrewArms.TwoHanded(WeaponKind);
+
         // The prop in the hand is the switch. Before DrawGun succeeds this man uses
         // the ordinary Synty movement wardrobe; after it succeeds the rifle gait may
         // be shown, but all pace and routing decisions still read the Synty slots.
         bool ShowsAuthoredLongGun => Armed && UsesAuthoredLongGun;
+        bool ShowsAuthoredSidearm => Armed && UsesAuthoredSidearm;
         int VisibleWalkPose => ShowsAuthoredLongGun && HasPose(PoseRifleWalk)
             ? PoseRifleWalk : PoseWalk;
         int VisibleJogPose => ShowsAuthoredLongGun && HasPose(PoseRifleJog)
@@ -1414,12 +1432,136 @@ namespace RoadDemo
         int VisibleCrouchWalkPose => ShowsAuthoredLongGun && HasPose(PoseRifleCrouchWalk)
             ? PoseRifleCrouchWalk : PoseCrouchWalk;
 
+        int VisibleArmedIdlePose => ShowsAuthoredLongGun && HasPose(PoseRifleIdle)
+            ? PoseRifleIdle
+            : Armed && HasPose(PosePistolIdle) ? PosePistolIdle : PoseIdle;
+
+        int VisibleAimPose => ShowsAuthoredLongGun && HasPose(PoseRifleAim)
+            ? PoseRifleAim : HasPose(PoseAim) ? PoseAim : VisibleArmedIdlePose;
+
+        int VisibleCrouchPose => ShowsAuthoredLongGun && HasPose(PoseRifleCrouch)
+            ? PoseRifleCrouch
+            : ShowsAuthoredSidearm && HasPose(PosePistolCrouch)
+                ? PosePistolCrouch
+                : HasPose(PoseCrouch) ? PoseCrouch : VisibleArmedIdlePose;
+
         void GearVisibleRifleGait(int pose, float pace, float fallback, float jitter = 1f)
         {
             if (pose != PoseRifleWalk && pose != PoseRifleJog &&
                 pose != PoseRifleSprint && pose != PoseRifleCrouchWalk) return;
             SetPoseSpeed(pose,
                 Mathf.Clamp(pace / ClipPace(pose, fallback), 0.45f, 1.5f) * jitter);
+        }
+
+        bool TryWeaponGait(bool jog, bool sprint, Vector3 travel, float pace, out int pose)
+        {
+            pose = -1;
+            AnimationClip[] set = null;
+            AnimationClip fallback = null;
+            float natural = jog ? (sprint ? SprintClipPace : JogClipPace) : WalkClipPace;
+
+            if (ShowsAuthoredLongGun)
+            {
+                if (_keepingLow)
+                {
+                    set = RifleCrouchWalkGaits;
+                    fallback = ForwardGait(RifleCrouchWalkGaits);
+                    natural = 1.3f;
+                }
+                else if (sprint)
+                {
+                    set = RifleSprintGaits;
+                    fallback = ForwardGait(RifleSprintGaits);
+                }
+                else if (jog)
+                {
+                    set = RifleRunGaits;
+                    fallback = ForwardGait(RifleRunGaits);
+                }
+                else
+                {
+                    set = RifleWalkGaits;
+                    fallback = ForwardGait(RifleWalkGaits);
+                }
+            }
+            else if (ShowsAuthoredSidearm && !_keepingLow)
+            {
+                set = jog ? PistolRunGaits : PistolWalkGaits;
+                fallback = ForwardGait(set);
+            }
+            if (set == null || set.Length < 8) return false;
+
+            var step = WeaponStepFor(travel);
+            var clip = set[(int)step] ?? fallback;
+            if (clip == null) return false;
+            pose = DirectionalGaitPose(clip, jog, pace, natural,
+                jog ? _runJitter : WalkCadence);
+            return pose >= 0;
+        }
+
+        static AnimationClip ForwardGait(AnimationClip[] set) =>
+            set != null && set.Length > (int)RifleStep.Forward
+                ? set[(int)RifleStep.Forward] : null;
+
+        RifleStep _weaponStep;
+        bool _weaponStepKnown;
+
+        RifleStep WeaponStepFor(Vector3 worldTravel)
+        {
+            worldTravel.y = 0f;
+            if (worldTravel.sqrMagnitude < 1e-5f)
+                return _weaponStepKnown ? _weaponStep : RifleStep.Forward;
+
+            var local = Tf.InverseTransformDirection(worldTravel.normalized);
+            float angle = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
+            if (_weaponStepKnown && Mathf.Abs(Mathf.DeltaAngle(
+                    StepAngle(_weaponStep), angle)) <= 30f)
+                return _weaponStep;
+
+            _weaponStep = StepAt(angle);
+            _weaponStepKnown = true;
+            return _weaponStep;
+        }
+
+        static RifleStep StepAt(float angle)
+        {
+            int sector = Mathf.RoundToInt(Mathf.DeltaAngle(0f, angle) / 45f);
+            return sector switch
+            {
+                0 => RifleStep.Forward,
+                1 => RifleStep.ForwardRight,
+                2 => RifleStep.Right,
+                3 => RifleStep.BackwardRight,
+                4 or -4 => RifleStep.Backward,
+                -3 => RifleStep.BackwardLeft,
+                -2 => RifleStep.Left,
+                _ => RifleStep.ForwardLeft,
+            };
+        }
+
+        static float StepAngle(RifleStep step) => step switch
+        {
+            RifleStep.Forward => 0f,
+            RifleStep.ForwardRight => 45f,
+            RifleStep.Right => 90f,
+            RifleStep.BackwardRight => 135f,
+            RifleStep.Backward => 180f,
+            RifleStep.BackwardLeft => -135f,
+            RifleStep.Left => -90f,
+            _ => -45f,
+        };
+
+        bool TryTacticalFacing(out Vector3 toward)
+        {
+            toward = Vector3.zero;
+            if (!Armed || State != Mode.Engaging ||
+                (!ShowsAuthoredLongGun && !ShowsAuthoredSidearm)) return false;
+            if (Target != null && Target.Tf && !Target.Dead)
+                toward = Target.Tf.position - Tf.position;
+            else if (CarMark != null && CarMark.Tf != null && !CarMark.Wrecked)
+                toward = CarMark.Tf.position - Tf.position;
+            toward.y = 0f;
+            return toward.sqrMagnitude > 1e-4f;
         }
 
         /// <summary>How far off a man will still put his gun up at somebody riding past
@@ -1482,6 +1624,7 @@ namespace RoadDemo
             _aimBlend = Mathf.MoveTowards(_aimBlend, aiming ? 1f : 0f, 6f * dt);
             if (UsesAuthoredLongGun)
             {
+                ApplyAuthoredIdleGrip(dt);
                 AimAuthoredLongGun(aiming, markAim);
                 _longGunGripBlend = 0f;
                 return;
@@ -1512,6 +1655,54 @@ namespace RoadDemo
                 if (aim.sqrMagnitude < 0.04f) return;
                 CrewArms.FitToAim(_armsAnimator, Weapon, aim.normalized, Vector3.up);
             }
+            TurnAuthoredHeadTo(markAim);
+        }
+
+        /// <summary>The rifle bench's idle-only three-centimetre grip correction,
+        /// applied to the production walker too. It advances the handle from the wrist
+        /// into this avatar's fist and blends completely out for every other pose.</summary>
+        void ApplyAuthoredIdleGrip(float dt)
+        {
+            if (Weapon == null || _armsAnimator == null || Weapon.parent == null) return;
+            if (!_idleGripKnown)
+            {
+                var wrist = _armsAnimator.GetBoneTransform(HumanBodyBones.RightHand);
+                if (wrist != null)
+                {
+                    var toward = CrewArms.GripPoint(_armsAnimator, false) - wrist.position;
+                    if (toward.sqrMagnitude > 1e-6f)
+                    {
+                        _idleGripOffset = Weapon.parent.InverseTransformDirection(
+                            toward.normalized) * 0.03f;
+                        _idleGripKnown = true;
+                    }
+                }
+            }
+            float wanted = CurrentPose == PoseRifleIdle && _idleGripKnown ? 1f : 0f;
+            _idleGripBlend = Mathf.MoveTowards(
+                _idleGripBlend, wanted, 9f * Mathf.Max(0f, dt));
+            Weapon.localPosition = _weaponGripBase + _idleGripOffset * _idleGripBlend;
+        }
+
+        /// <summary>Only sustained aiming states turn the skull. Shot and gunplay
+        /// takes retain their authored head movement, as do idle, turn, jump and fall.</summary>
+        void TurnAuthoredHeadTo(Vector3 markAim)
+        {
+            bool tracks = CurrentPose == PoseRifleAim ||
+                          CurrentPose == PoseRifleWalk || CurrentPose == PoseRifleJog ||
+                          CurrentPose == PoseRifleSprint ||
+                          CurrentPose == PoseRifleCrouchWalk ||
+                          CurrentPose == PoseWeaponGaitA || CurrentPose == PoseWeaponGaitB;
+            if (!tracks || _armsAnimator == null) return;
+            var head = _armsAnimator.GetBoneTransform(HumanBodyBones.Head);
+            if (head == null) return;
+            var wanted = markAim - head.position;
+            if (wanted.sqrMagnitude < 0.04f) return;
+            var look = CrewArms.LookDirection(_armsAnimator);
+            if (look.sqrMagnitude < 1e-4f) return;
+            var turn = Quaternion.FromToRotation(look, wanted.normalized);
+            head.rotation = Quaternion.RotateTowards(
+                head.rotation, turn * head.rotation, 32f);
         }
 
         /// <summary>Desired fighting yaw. Ordinary crews still square their chest at
@@ -1522,9 +1713,12 @@ namespace RoadDemo
             toward.y = 0f;
             if (toward.sqrMagnitude < 1e-5f) return Tf.rotation;
             float bearing = Mathf.Atan2(toward.x, toward.z) * Mathf.Rad2Deg;
-            // A forward locomotion clip must keep facing its actual travel or its feet
-            // skate sideways. Once it stops, the hand line is free to blade the body.
-            if (UsesAuthoredLongGun && !LegsMoving && _armsAnimator != null)
+            // The tactical wardrobe is directional: forward, arcs, strafes and
+            // backwards steps all describe travel relative to a body whose two-hand
+            // axis stays on the mark. Therefore the same bladed solve is valid while
+            // moving as while standing; forcing body-forward onto travel here would
+            // undo the directional gait and point the rifle away from its target.
+            if (UsesAuthoredLongGun && _armsAnimator != null)
             {
                 var hands = CrewArms.HandAimAxis(_armsAnimator);
                 hands.y = 0f;
@@ -1816,7 +2010,13 @@ namespace RoadDemo
                     {
                         if (HoldingBeat(dt)) return;
                         _pendingAcrossPlan = false;
-                        if (!BuildIndividualWay(Tf.position, _legEnd, _legsOffRoad))
+                        bool planned = BuildIndividualWay(
+                            Tf.position, _legEnd, _legsOffRoad);
+                        if (!planned && TryRecoverRouteStart(
+                                _legEnd, "deferred route plan"))
+                            planned = BuildIndividualWay(
+                                Tf.position, _legEnd, _legsOffRoad);
+                        if (!planned)
                         {
                             RefuseUnsafeAcross();
                             return;
@@ -1847,8 +2047,12 @@ namespace RoadDemo
                     bool earlyCorner = !last &&
                         StaticChordClear(Tf.position, _legs[_legAt + 1]);
                     float stopWithin = CornerStopDistance(last, earlyCorner);
+                    var toTerminal = _legEnd - Tf.position;
+                    toTerminal.y = 0f;
+                    NoteRoutedStrideIntent(
+                        _legEnd, toTerminal.magnitude > CornerStopDistance(true, false));
                     TickStride(dt, _legTo, stopWithin, hurry: Hustle, run: Running(),
-                        terminal: last);
+                        terminal: last, routed: true);
                     var gap = _legTo - Tf.position;
                     gap.y = 0f;
                     float left = gap.magnitude;
@@ -2255,7 +2459,7 @@ namespace RoadDemo
                     : Tf.eulerAngles.y + Random.Range(-70f, 70f);
             }
             SpendLook(150f, dt);
-            SetPose(Armed && HasPose(PosePistolIdle) ? PosePistolIdle : PoseIdle);
+            SetPose(Armed ? VisibleArmedIdlePose : PoseIdle);
             TickBlend(dt);
         }
 
@@ -2288,7 +2492,7 @@ namespace RoadDemo
             var to = _alertAt - Tf.position;
             to.y = 0f;
             TurnToward(to, 200f, dt);
-            SetPose(HasPose(PoseShout) ? PoseShout : Armed && HasPose(PosePistolIdle) ? PosePistolIdle : PoseIdle);
+            SetPose(HasPose(PoseShout) ? PoseShout : Armed ? VisibleArmedIdlePose : PoseIdle);
             TickBlend(dt);
         }
 
@@ -2430,10 +2634,10 @@ namespace RoadDemo
             if (_shootHold > 0f)
             {
                 _shootHold -= dt;
-                SetPose(HasPose(_firePose) ? _firePose : PoseAim);
+                SetPose(HasPose(_firePose) ? _firePose : VisibleAimPose);
             }
             else
-                SetPose(HasPose(PoseAim) ? PoseAim : PosePistolIdle);
+                SetPose(VisibleAimPose);
             TickBlend(dt);
 
             // squared up, and the arm actually up: the same two gates a man gets, for
@@ -2556,7 +2760,7 @@ namespace RoadDemo
                                   gap.magnitude <= CrouchWithin;
                     // a bin two streets' width off with rounds in the air is got to at
                     // a run; one at his elbow is stepped behind
-                    TickStride(dt, spot, 0.4f, hurry: true,
+                    TickCombatStride(dt, spot, 0.4f, hurry: true,
                         run: RunWhile(!_keepingLow && gap.magnitude > RunToCover));
                     // no way through to it (the car has rolled on, something else
                     // stands in the way): he fights from where he is instead
@@ -2583,8 +2787,7 @@ namespace RoadDemo
                         {
                             // turned at the fight even while down, so the rise reads
                             if (dist > 1e-3f) TurnCombat(toTarget, 240f, dt);
-                            SetPose(HasPose(PoseCrouch) ? PoseCrouch
-                                    : HasPose(PosePistolIdle) ? PosePistolIdle : PoseIdle);
+                            SetPose(VisibleCrouchPose);
                             TickBlend(dt);
                             return;                                    // no round goes off down there
                         }
@@ -2634,7 +2837,8 @@ namespace RoadDemo
                 // steering choose the real direction inside TickStride; judging first
                 // would let one last round leave on the frame the step turns sideways.
                 TickCombatStride(dt, Target.Tf.position, range * RangeFactor, hurry: true,
-                    run: RunWhile(dist > range * (_runningLeg ? RunOffFight : RunToFight)));
+                    run: RunWhile(dist > range * (_runningLeg ? RunOffFight : RunToFight)),
+                    attackEnvelope: true);
                 if (dist <= range && !_runningLeg && _fireTimer <= 0f && _flinch <= 0f &&
                     _aimBlend >= 0.5f &&
                     CombatAimError(toTarget) < 40f &&
@@ -2666,10 +2870,10 @@ namespace RoadDemo
             if (_shootHold > 0f)
             {
                 _shootHold -= dt;
-                SetPose(HasPose(_firePose) ? _firePose : PoseAim);
+                SetPose(HasPose(_firePose) ? _firePose : VisibleAimPose);
             }
             else
-                SetPose(HasPose(PoseAim) ? PoseAim : PosePistolIdle);
+                SetPose(VisibleAimPose);
             TickBlend(dt);
 
             // shoot only once squared up - a man firing over his shoulder reads wrong -
@@ -2704,8 +2908,9 @@ namespace RoadDemo
                     return PoseRifleGunplay; // fallback if the automatic take is absent
                 // The shotgun gets the separate, single-shot rifle take: unlike the
                 // two gunplay loops it carries one complete recoil and recovery.
-                if (WeaponKind == EquipmentKind.Shotgun && HasPose(PoseShoot))
-                    return PoseShoot;
+                if (WeaponKind == EquipmentKind.Shotgun && HasPose(PoseRifleShoot))
+                    return PoseRifleShoot;
+                if (HasPose(PoseRifleShoot)) return PoseRifleShoot;
             }
             return HasPose(PoseShoot) ? PoseShoot : -1;
         }

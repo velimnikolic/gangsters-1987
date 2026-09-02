@@ -499,7 +499,8 @@ def freeway(dirpath):
 CREW_FAULTS = ("teleport", "offcity", "strayman", "singlefile",
                "aimlow", "zebrastuck", "runnerchase", "roadwalk",
                "skate", "leftbehind", "noaim", "firewalk",
-               "formationheading", "formationspread", "proppenetration")
+               "formationheading", "formationspread", "proppenetration",
+               "routestall", "routeorbit", "routeoverlap")
 
 
 def crew(dirpath):
@@ -563,6 +564,84 @@ def crew(dirpath):
     return 0 if ok else 1
 
 
+def cover_route(dirpath):
+    """Strict furnished-street gate: one direct attack on Falcone, then Santoro,
+    every original attacker proving contact/progress on both legs, with no tagged
+    route/crew fault, no tolerated stall, and a clean completed harness summary."""
+    trace = os.path.join(dirpath, "trace.jsonl")
+    summary_path = os.path.join(dirpath, "summary.json")
+    if not os.path.exists(trace) or not os.path.exists(summary_path):
+        print(f"== {dirpath}")
+        print("   NO RUN - trace or summary is missing")
+        return 3
+    rows = load(trace)
+    if not rows:
+        print(f"== {dirpath}\n   NO RUN - trace is empty")
+        return 3
+    try:
+        summary = json.load(open(summary_path, encoding="utf-8"))
+    except Exception as exc:
+        print(f"== {dirpath}\n   NO RUN - unreadable summary: {exc}")
+        return 3
+
+    events = [r for r in rows if r.get("k") == "coverroute"]
+    ordered = [r.get("who") for r in events
+               if r.get("what") == "ordered direct attack"]
+    down = [r.get("who") for r in events if r.get("what") == "down"]
+    complete = any(r.get("who") == "complete" and r.get("what") == "2 mobs down"
+                   for r in events)
+    faults = [r for r in rows if r.get("k") == "fault"]
+    # This gate must follow ownership, not a frozen name whitelist. A newly added
+    # CrewAudit or CoverRouteMission fault is a failure on its first run too.
+    scoped_faults = [r for r in faults
+                     if r.get("tag") in ("crew", "coverroute")]
+
+    snapshots = {r.get("id") for r in events
+                 if r.get("what") == "member snapshot" and r.get("id") is not None}
+    proved = defaultdict(set)
+    for row in events:
+        if row.get("what") == "member proved" and row.get("id") is not None:
+            proved[row.get("id")].add(row.get("leg"))
+    missing_proof = [(member, leg) for member in sorted(snapshots)
+                     for leg in (1, 2) if leg not in proved.get(member, set())]
+
+    defects = []
+    if ordered != ["Falcone", "Santoro"]:
+        defects.append("orders were " + repr(ordered))
+    if down != ["Falcone", "Santoro"]:
+        defects.append("downs were " + repr(down))
+    if not complete:
+        defects.append("no 2-mob completion")
+    if not snapshots:
+        defects.append("no original-attacker snapshot")
+    if missing_proof:
+        defects.append("missing member proof " + repr(missing_proof))
+    if scoped_faults:
+        by = Counter(r.get("fault") for r in scoped_faults)
+        defects.append(", ".join(f"{n} {kind}" for kind, n in by.most_common()))
+    if summary.get("why") != "done":
+        defects.append("run ended " + repr(summary.get("why")))
+    if summary.get("errors", 0):
+        defects.append(f"{summary.get('errors')} errors")
+    if summary.get("exceptions", 0):
+        defects.append(f"{summary.get('exceptions')} exceptions")
+    ok = not defects
+
+    print(f"== {dirpath}")
+    print("   " + ("PASSED" if ok else "FAULTS: " + "; ".join(defects)))
+    print(f"   direct orders: {ordered}")
+    print(f"   crews down   : {down}; complete={complete}")
+    print(f"   member proof : {len(snapshots)} original, "
+          f"{sum(len(proved.get(member, set()) & {1, 2}) for member in snapshots)}/"
+          f"{len(snapshots) * 2} leg proofs")
+    print(f"   route faults : {len(scoped_faults)}, summary={summary.get('why')!r}, "
+          f"errors={summary.get('errors', 0)}/{summary.get('exceptions', 0)}")
+    for fault in scoped_faults[:10]:
+        print(f"   FAULT {secs(fault.get('t', 0))} {fault.get('who', '')} "
+              f"{fault.get('fault')}: {fault.get('what')}")
+    return 0 if ok else 1
+
+
 def story(dirpath, every=2.0):
     """The run as a story: what the lab ordered, what the crew car did, who shot whom."""
     import os
@@ -607,6 +686,8 @@ if __name__ == "__main__":
         sys.exit(verdict(path))
     if "--crew" in args:
         sys.exit(crew(path))
+    if "--cover-route" in args:
+        sys.exit(cover_route(path))
     if "--freeway" in args:
         sys.exit(freeway(path))
     if "--story" in args:

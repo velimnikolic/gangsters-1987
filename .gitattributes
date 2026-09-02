@@ -5,3 +5,4 @@
 /Assets/Animations/Mixamo/Shooting/*.fbx filter=lfs diff=lfs merge=lfs -text
 /Assets/Animations/Mixamo/Rifle/Ch15_nonPBR.fbx filter=lfs diff=lfs merge=lfs -text
 "/Assets/Animations/Mixamo/Rifle/Ch15 Textures/*.png" filter=lfs diff=lfs merge=lfs -text
+"/Assets/Animations/Mixamo/Locomotion/**/*.fbx" filter=lfs diff=lfs merge=lfs -text

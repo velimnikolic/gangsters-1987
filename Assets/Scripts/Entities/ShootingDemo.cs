@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using LivingCity.Ambient;
 
 namespace LivingCity.Entities
 {
@@ -48,6 +49,8 @@ namespace LivingCity.Entities
         [SerializeField] Color flashColour = new(1f, 0.85f, 0.55f);
 
         Light flash;
+        GameObject muzzleFxPrefab;
+        GameObject muzzleSmokePrefab;
         Vector3 victimStart;
         Quaternion victimStartRotation;
 
@@ -70,6 +73,8 @@ namespace LivingCity.Entities
             flash.intensity = flashIntensity;
             flash.range = flashRange;
             flash.enabled = false;
+            muzzleFxPrefab = FireSmokeFx.Load(FireSmokeFx.MuzzleFlash);
+            muzzleSmokePrefab = FireSmokeFx.Load(FireSmokeFx.Smoke);
 
             while (enabled)
             {
@@ -118,7 +123,27 @@ namespace LivingCity.Entities
             // Read at the moment of firing, not cached: the muzzle rides the hand bone, so
             // where it is depends on the pose the aim clip has the arm in right now.
             flash.transform.position = weapon ? weapon.Muzzle : gunman.transform.position;
+            SpawnParticleFlash();
             StartCoroutine(FlashOnce());
+        }
+
+        void SpawnParticleFlash()
+        {
+            var at = weapon ? weapon.Muzzle : gunman.transform.position;
+            var forward = weapon ? weapon.BarrelDirection : gunman.transform.forward;
+            var rotation = Quaternion.LookRotation(forward, Vector3.up);
+            if (muzzleFxPrefab)
+            {
+                var fx = Instantiate(muzzleFxPrefab, at, rotation);
+                var live = FireSmokeFx.TuneMuzzleFlash(fx, 0.13f);
+                Destroy(fx, Mathf.Max(0.2f, live));
+            }
+            if (muzzleSmokePrefab)
+            {
+                var smoke = Instantiate(muzzleSmokePrefab, at, rotation);
+                var live = FireSmokeFx.TuneGunSmoke(smoke, 0.18f, rapid: false);
+                Destroy(smoke, Mathf.Max(0.6f, live));
+            }
         }
 
         IEnumerator FlashOnce()

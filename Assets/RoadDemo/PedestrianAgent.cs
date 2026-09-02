@@ -162,15 +162,31 @@ namespace RoadDemo
     {
         public AnimationClip Walk, Idle, SitDown, SitLoop, StandUp, Talk, Shout;
 
+        // Optional body-specific joins. CoverDemo deals these from the masculine or
+        // feminine Mixamo basic pack after it knows which prefab the walker wears.
+        // The city leaves them null and keeps CrewKit's shared Synty turns.
+        public AnimationClip TurnLeft, TurnRight;
+        public bool AuthoredBasicLocomotion;
+        public string BasicLocomotionLabel;
+
         // The gun wardrobe (the outfit's men): gun held low, gun up, the shot, the
         // flinch, the fall. Optional like the rest - an unarmed walker never asks.
         public AnimationClip PistolIdle, Aim, Shoot, Hit, Death;
+
+        // A sidearm has a locomotion wardrobe of its own. The arrays are indexed by
+        // RifleStep so the same direction resolver can drive pistol and long-gun
+        // motion; they are presentation only and never decide where a walker moves.
+        public AnimationClip[] PistolWalks, PistolRuns;
+        public AnimationClip PistolCrouch;
+        public bool AuthoredSidearmLocomotion;
 
         // An authored long-gun wardrobe can carry its own visible gaits and firing
         // takes without replacing the city's movement wardrobe. The base Walk/Jog/
         // Sprint remain the authority for pace, routing and joins; these gaits are
         // selected only while the weapon is actually in the man's hand.
         public AnimationClip RifleWalk, RifleJog, RifleSprint, RifleCrouchWalk;
+        public AnimationClip RifleIdle, RifleAim, RifleShoot, RifleCrouch;
+        public AnimationClip[] RifleWalks, RifleRuns, RifleSprints, RifleCrouchWalks;
         public AnimationClip RifleGunplay, AutomaticShoot, CoverShoot;
         public bool AuthoredLongGun;
 
@@ -283,13 +299,20 @@ namespace RoadDemo
             PoseRifleWalk = 17, PoseRifleJog = 18, PoseRifleSprint = 19,
             PoseRifleCrouchWalk = 20,
             PoseRifleGunplay = 21, PoseAutomaticShoot = 22, PoseCoverShoot = 23,
+            PoseRifleIdle = 24, PoseRifleAim = 25, PoseRifleShoot = 26,
+            PoseRifleCrouch = 27,
+            PosePistolCrouch = 28,
+            // Two swappable LOOP ports. Directional pistol/rifle gaits use the quiet
+            // port while the visible one blends out, so a route turning a corner does
+            // not hard-cut both feet to another take.
+            PoseWeaponGaitA = 29, PoseWeaponGaitB = 30,
             // The two SWAPPABLE slots. Every pose above is one clip wired once and
             // kept; these two hold whatever clip was last put in them (PutClip) - the
             // join between gaits, and the little life a man spends standing about.
             // There are dozens of candidate clips for each and no body needs more
             // than one at a time, so they are ports, not a wardrobe.
-            PoseJoin = 24, PoseAct = 25;
-        const int PoseCount = 26;
+            PoseJoin = 31, PoseAct = 32;
+        const int PoseCount = 33;
 
         // Clips cut straight out of an FBX (the pistol set) carry no loop flag, so
         // a loop pose is wrapped by hand in TickBlend; the .anim files loop themselves.
@@ -317,6 +340,12 @@ namespace RoadDemo
             table[PoseRifleCrouchWalk] = true;
             table[PoseRifleGunplay] = true;
             table[PoseAutomaticShoot] = true;
+            table[PoseRifleIdle] = true;
+            table[PoseRifleAim] = true;
+            table[PoseRifleCrouch] = true;
+            table[PosePistolCrouch] = true;
+            table[PoseWeaponGaitA] = true;
+            table[PoseWeaponGaitB] = true;
             // PoseJoin is a one-shot by definition. PoseAct is either - a fidget runs
             // once, a lean or a drunk sway loops - so it is wrapped per man (_actLoop)
             // rather than by this table.
@@ -326,6 +355,16 @@ namespace RoadDemo
         public Transform Tf;
         public float Speed = 1.5f;
         protected bool AuthoredLongGunWardrobe { get; private set; }
+        protected bool AuthoredSidearmWardrobe { get; private set; }
+        protected bool AuthoredBasicWardrobe { get; private set; }
+        protected AnimationClip[] PistolWalkGaits { get; private set; }
+        protected AnimationClip[] PistolRunGaits { get; private set; }
+        protected AnimationClip[] RifleWalkGaits { get; private set; }
+        protected AnimationClip[] RifleRunGaits { get; private set; }
+        protected AnimationClip[] RifleSprintGaits { get; private set; }
+        protected AnimationClip[] RifleCrouchWalkGaits { get; private set; }
+        AnimationClip _bodyTurnLeft, _bodyTurnRight;
+        string _locomotionLabel;
 
         // ---- the black box (DriveTrace): who he is, and whether he is getting anywhere
         static int _ids;
@@ -394,6 +433,17 @@ namespace RoadDemo
         {
             Tf = tf;
             AuthoredLongGunWardrobe = clips.AuthoredLongGun;
+            AuthoredSidearmWardrobe = clips.AuthoredSidearmLocomotion;
+            AuthoredBasicWardrobe = clips.AuthoredBasicLocomotion;
+            PistolWalkGaits = clips.PistolWalks;
+            PistolRunGaits = clips.PistolRuns;
+            RifleWalkGaits = clips.RifleWalks;
+            RifleRunGaits = clips.RifleRuns;
+            RifleSprintGaits = clips.RifleSprints;
+            RifleCrouchWalkGaits = clips.RifleCrouchWalks;
+            _bodyTurnLeft = clips.TurnLeft;
+            _bodyTurnRight = clips.TurnRight;
+            _locomotionLabel = clips.BasicLocomotionLabel;
             // 1987, America: everybody keeps right. Two flows down one pavement
             // that share a centre line walk through each other; two flows that
             // each hold their own side pass each other, which is what they do.
@@ -429,6 +479,21 @@ namespace RoadDemo
                 // the field is about to stop pointing at the old graph - unreachable by
                 // the sweep or anything else. Let go of it while the handle is in hand.
                 if (_graph.IsValid()) _graph.Destroy();
+                // Every playable handle belongs to the graph just destroyed. Setup can
+                // run twice on one agent when a streamed body is re-dealt; retaining a
+                // valid-looking slot/weight from the first graph makes the new wardrobe
+                // skip its wire or crossfade against a clip it does not own.
+                System.Array.Clear(_poses, 0, _poses.Length);
+                System.Array.Clear(_weights, 0, _weights.Length);
+                System.Array.Clear(_clipLength, 0, _clipLength.Length);
+                System.Array.Clear(_clipPace, 0, _clipPace.Length);
+                System.Array.Clear(_slotClip, 0, _slotClip.Length);
+                System.Array.Clear(_slotRunning, 0, _slotRunning.Length);
+                _pose = PoseWalk;
+                _walkRateSet = -1f;
+                _longGunRunWeight = 0f;
+                _layers = default;
+                _mixer = default;
                 _graph = PlayableGraph.Create("Pedestrian");
                 _graph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
                 var output = AnimationPlayableOutput.Create(_graph, "anim", animator);
@@ -484,6 +549,11 @@ namespace RoadDemo
                 Wire(PoseRifleGunplay, clips.RifleGunplay);
                 Wire(PoseAutomaticShoot, clips.AutomaticShoot);
                 Wire(PoseCoverShoot, clips.CoverShoot);
+                Wire(PoseRifleIdle, clips.RifleIdle);
+                Wire(PoseRifleAim, clips.RifleAim);
+                Wire(PoseRifleShoot, clips.RifleShoot);
+                Wire(PoseRifleCrouch, clips.RifleCrouch);
+                Wire(PosePistolCrouch, clips.PistolCrouch);
                 // PoseJoin and PoseAct are left empty: their clip arrives when the
                 // man first needs one (PutClip), and a walker who never gets near
                 // the camera never pays for either.
@@ -655,6 +725,8 @@ namespace RoadDemo
             // from a man sliding along in a stand - or to tell whether the join layer
             // ran at all in a given scene (it is gated on the eye, PedDetail).
             DriveTrace.Str(sb, "pose", PoseName(_pose));
+            if (!string.IsNullOrEmpty(_locomotionLabel))
+                DriveTrace.Str(sb, "loco", _locomotionLabel);
             // and how fast the clip playing on him says his FEET are covering ground.
             // A slide is this against "pace": a man whose feet claim half a metre a
             // second while the graph carries him at two is gliding down the street,
@@ -1170,6 +1242,7 @@ namespace RoadDemo
         // thousand costing what it costs today.
 
         readonly AnimationClip[] _slotClip = new AnimationClip[PoseCount];
+        readonly bool[] _slotRunning = new bool[PoseCount];
 
         /// <summary>Put a clip in one of the swappable slots, ready to be posed.
         /// False when it could not be done - no graph, no clip, or the slot is still
@@ -1200,6 +1273,41 @@ namespace RoadDemo
             _clipPace[pose] = clip.averageSpeed.magnitude;
             _slotClip[pose] = clip;
             return true;
+        }
+
+        /// <summary>Put a directional weapon gait into one of two loop ports and keep
+        /// its stride phase across a change of direction. The other port carries the
+        /// visible clip while this one is replaced, so changing at a route corner is a
+        /// normal crossfade rather than a hard cut.</summary>
+        protected int DirectionalGaitPose(AnimationClip clip, bool running,
+            float pace, float fallbackPace, float cadence = 1f)
+        {
+            if (clip == null) return -1;
+
+            int slot = _slotClip[PoseWeaponGaitA] == clip ? PoseWeaponGaitA
+                     : _slotClip[PoseWeaponGaitB] == clip ? PoseWeaponGaitB
+                     : -1;
+            if (slot < 0)
+            {
+                // Prefer the port that is already quiet. On a rapid second turn both
+                // may still be fading; replacing the lighter one is the least visible
+                // and prevents an old direction from becoming permanently unswappable.
+                slot = _weights[PoseWeaponGaitA] <= _weights[PoseWeaponGaitB]
+                    ? PoseWeaponGaitA : PoseWeaponGaitB;
+
+                double phase = 0d;
+                if (_pose >= 0 && _pose < PoseCount && _poses[_pose].IsValid() &&
+                    _clipLength[_pose] > 0.01f)
+                    phase = _poses[_pose].GetTime() / _clipLength[_pose];
+
+                if (!PutClip(slot, clip, force: true)) return -1;
+                if (_poses[slot].IsValid() && _clipLength[slot] > 0.01f)
+                    _poses[slot].SetTime((phase - System.Math.Floor(phase)) * _clipLength[slot]);
+            }
+            _slotRunning[slot] = running;
+            float natural = ClipPace(slot, fallbackPace);
+            SetPoseSpeed(slot, Mathf.Clamp(pace / natural, 0.45f, 1.5f) * cadence);
+            return slot;
         }
 
         /// <summary>Seconds this body has been ticking. NOTHING IN THIS LAYER FIRES ON
@@ -1290,14 +1398,17 @@ namespace RoadDemo
         /// have to be paid for with a step.</summary>
         public bool LegsMoving => IsMotion(_pose);
 
-        static bool IsMotion(int pose) =>
+        protected bool CurrentMotionIsRunning => IsRunningMotion(_pose);
+
+        bool IsMotion(int pose) =>
             pose == PoseWalk || pose == PoseJog || pose == PoseSprint || pose == PoseCrouchWalk ||
             pose == PoseRifleWalk || pose == PoseRifleJog || pose == PoseRifleSprint ||
-            pose == PoseRifleCrouchWalk;
+            pose == PoseRifleCrouchWalk || pose == PoseWeaponGaitA || pose == PoseWeaponGaitB;
 
-        static bool IsRunningMotion(int pose) =>
+        bool IsRunningMotion(int pose) =>
             pose == PoseJog || pose == PoseSprint ||
-            pose == PoseRifleJog || pose == PoseRifleSprint;
+            pose == PoseRifleJog || pose == PoseRifleSprint ||
+            ((pose == PoseWeaponGaitA || pose == PoseWeaponGaitB) && _slotRunning[pose]);
 
         /// <summary>A pose that cuts a join dead wherever it is: the flinch, the fall,
         /// the shot, the raised gun, going down behind something, a seat. Nobody
@@ -1308,7 +1419,8 @@ namespace RoadDemo
         static bool BreaksJoin(int pose) =>
             pose == PoseHit || pose == PoseDeath || pose == PoseShoot || pose == PoseAim ||
             pose == PoseRifleGunplay || pose == PoseAutomaticShoot ||
-            pose == PoseCoverShoot || pose == PoseCrouch ||
+            pose == PoseCoverShoot || pose == PoseRifleAim || pose == PoseRifleShoot ||
+            pose == PoseCrouch || pose == PoseRifleCrouch || pose == PosePistolCrouch ||
             pose == PoseSitDown || pose == PoseSit || pose == PoseStandUp || pose == PoseRide;
 
         /// <summary>The heading a start clip is chosen against - where he is about to
@@ -1347,6 +1459,12 @@ namespace RoadDemo
         {
             if (_join != Join.None || IsMotion(_pose) || !Detailed) return false;
             if (Mathf.Abs(signedDegrees) < TurnStepAbove) return false;
+            var bodyTurn = signedDegrees < 0f ? _bodyTurnLeft : _bodyTurnRight;
+            // The delivered masculine/feminine basics contain quarter turns only.
+            // A reversal still uses CrewKit's authored 180: stretching a 90-degree
+            // body take over 180 turns the transform twice as far as the hips expect.
+            if (NearestAuthored(signedDegrees) == 90f && bodyTurn != null &&
+                Begin(Join.Turning, bodyTurn, _pose, signedDegrees)) return true;
             return Begin(Join.Turning, CrewKit.TurnOnSpot(signedDegrees), _pose, signedDegrees);
         }
 
@@ -1723,6 +1841,8 @@ namespace RoadDemo
         /// bug the overlay shows rather than hides.</summary>
         public string DebugGait => PoseName(_pose);
 
+        public string DebugLocomotion => _locomotionLabel ?? string.Empty;
+
         // ------------------------------------------------------------ the foot slip
         //
         // THE ONE HONEST MEASURE OF A SLIDE. Everything else on the row is what the
@@ -1806,7 +1926,7 @@ namespace RoadDemo
 
         /// <summary>The trace's word for a pose. Short on purpose - it rides on every
         /// walker's row, and the trace is read a hundred thousand rows at a time.</summary>
-        static string PoseName(int pose) => pose switch
+        string PoseName(int pose) => pose switch
         {
             PoseWalk => "walk", PoseIdle => "idle", PoseSitDown => "sitdown",
             PoseSit => "sit", PoseStandUp => "standup", PoseTalk => "talk",
@@ -1817,7 +1937,11 @@ namespace RoadDemo
             PoseRifleWalk => "riflewalk", PoseRifleJog => "riflejog",
             PoseRifleSprint => "riflesprint", PoseRifleCrouchWalk => "riflecrouchwalk",
             PoseRifleGunplay => "riflefire", PoseAutomaticShoot => "autofire",
-            PoseCoverShoot => "coverfire",
+            PoseCoverShoot => "coverfire", PoseRifleIdle => "rifleidle",
+            PoseRifleAim => "rifleaim", PoseRifleShoot => "rifleshoot",
+            PoseRifleCrouch => "riflecrouch", PosePistolCrouch => "pistolcrouch",
+            PoseWeaponGaitA or PoseWeaponGaitB =>
+                _slotClip[pose] != null ? _slotClip[pose].name : "weapongait",
             PoseJoin => "join", PoseAct => "act", _ => "?",
         };
 
@@ -1900,9 +2024,10 @@ namespace RoadDemo
 
         // The walk/idle crossfade, callable by derived agents that hand-animate
         // legs off the graph (the foot patrol's door walk) without running Tick.
-        protected void BlendLocomotion(float dt, bool walking)
+        protected void BlendLocomotion(float dt, bool walking, bool joins = true)
         {
-            WantJoin(walking);
+            if (joins) WantJoin(walking);
+            else if (Joining) CancelJoin();
             SetPose(walking ? LocomotionPose : PoseIdle);
             TickBlend(dt);
         }

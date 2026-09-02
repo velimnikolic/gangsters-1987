@@ -88,3 +88,7 @@ Tools/ledger-ds/.design-sync/node_modules
 # byte-for-byte duplicate of the Ch15 Textures folder next to it
 /Assets/Animations/Mixamo/Rifle/*.fbm/
 /Assets/Animations/Mixamo/Rifle/*.fbm.meta
+
+# Python bytecode from the play-harness tools
+__pycache__/
+*.pyc

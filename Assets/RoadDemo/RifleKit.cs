@@ -48,19 +48,27 @@ namespace RoadDemo
         /// dedicated rifle slots for presentation only.</summary>
         public static PedClips ForCover(PedClips clips)
         {
-            clips.PistolIdle = Idle ?? clips.PistolIdle;
-            clips.Aim = IdleAiming ?? clips.Aim;
-            clips.Shoot = ShootRifle ?? clips.Shoot;
+            // Do not overwrite the sidearm slots: CoverDemo carries pistols as well
+            // as rifles, and a pistol must never inherit a two-handed rifle stand or
+            // recoil merely because both weapons share one crew.
+            clips.RifleIdle = Idle;
+            clips.RifleAim = IdleAiming;
+            clips.RifleShoot = ShootRifle;
+            clips.RifleCrouch = IdleCrouching;
             clips.RifleWalk = Walk(RifleStep.Forward);
             clips.RifleJog = Run(RifleStep.Forward);
             clips.RifleSprint = Sprint(RifleStep.Forward);
             clips.RifleCrouchWalk = CrouchWalk(RifleStep.Forward);
+            clips.RifleWalks = Walks;
+            clips.RifleRuns = Runs;
+            clips.RifleSprints = Sprints;
+            clips.RifleCrouchWalks = CrouchWalks;
             clips.RifleGunplay = GunplayRifle;
             clips.AutomaticShoot = GunplayMachineGun;
             clips.CoverShoot = ShootFromCover;
-            clips.Crouch = IdleCrouching ?? clips.Crouch;
             clips.LongGunRunUpper = null; // full-body rifle gait already owns both arms
-            clips.AuthoredLongGun = true;
+            clips.AuthoredLongGun = clips.RifleIdle != null && clips.RifleAim != null &&
+                                    clips.RifleWalk != null && clips.RifleJog != null;
             return clips;
         }
 
@@ -87,6 +95,12 @@ namespace RoadDemo
         public static AnimationClip Run(RifleStep step) => Gait("run", step);
         public static AnimationClip Sprint(RifleStep step) => Gait("sprint", step);
         public static AnimationClip CrouchWalk(RifleStep step) => Gait("walk crouching", step);
+
+        public static AnimationClip[] Walks => walks ??= Gaits("walk");
+        public static AnimationClip[] Runs => runs ??= Gaits("run");
+        public static AnimationClip[] Sprints => sprints ??= Gaits("sprint");
+        public static AnimationClip[] CrouchWalks => crouchWalks ??= Gaits("walk crouching");
+        static AnimationClip[] walks, runs, sprints, crouchWalks;
 
         // ------------------------------------------------- the turns and the jump
 
@@ -208,6 +222,14 @@ namespace RoadDemo
             new Dictionary<string, AnimationClip>();
 
         static AnimationClip Gait(string gait, RifleStep step) => Clip(gait + " " + Suffix(step));
+
+        static AnimationClip[] Gaits(string gait)
+        {
+            var clips = new AnimationClip[8];
+            for (int i = 0; i < clips.Length; i++)
+                clips[i] = Gait(gait, (RifleStep)i);
+            return clips;
+        }
 
         /// <summary>The pack's own file names. "walk left" is the strafe; "walk forward
         /// left" is the diagonal - two different takes, and the pack means both.</summary>

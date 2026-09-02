@@ -29,6 +29,16 @@ namespace RoadDemo
         /// <summary>Half a man, shoulder to shoulder - what must clear a thing.</summary>
         public const float Radius = SidewalkDressing.WalkRadius;
 
+        /// <summary>The outfit's footprint while a free-ground route is planned and
+        /// walked. The pavement graph still keeps the ordinary shoulder berth above;
+        /// this narrower profile is what lets a crew use the real gaps between street
+        /// furniture instead of declaring a clear passage closed.</summary>
+        public const float CrewTravelRadius = Radius * 0.5f;
+
+        /// <summary>A centre probe for exceptional recovery. A man merely brushing the
+        /// edge of his travel berth is not inside the prop and must not be teleported.</summary>
+        public const float OverlapProbeRadius = 0.1f;
+
         static readonly List<SidewalkPlan> _props = new List<SidewalkPlan>();
         static readonly IReadOnlyList<SidewalkPlan> PropsView = _props.AsReadOnly();
         static readonly string[] DecorativeGenericTokens =
@@ -599,6 +609,14 @@ namespace RoadDemo
                 var c = new Vector2(p.x, p.z);
                 float span = reach + Mathf.Max(u.HalfLength, u.HalfWidth);
                 if ((c - around).sqrMagnitude > span * span) continue;
+                // StoodCar is entered in StreetTraffic so DRIVERS keep clear, but both
+                // of its current producers also enter its measured body in the fixed
+                // walking ledger. Counting that same parked body here a second time at
+                // the wider live-traffic berth makes a route proved at CrewTravelRadius
+                // impossible for the feet to traverse. Moving/temporarily stopped road
+                // users retain the full traffic berth; only a StoodCar whose fixed body
+                // is actually present is already answered by OnGround.
+                if (u is StoodCar && OnGround(c, 0f)) continue;
                 var f = u.RoadForward;
                 f.y = 0f;
                 var fwd = f.sqrMagnitude > 1e-4f ? new Vector2(f.x, f.z).normalized : Vector2.right;
@@ -861,6 +879,60 @@ namespace RoadDemo
             TryClearStandingSpot(wanted, radius, connectedTo, true,
                 connectedTo, true, out spot, reach);
 
+        /// <summary>Repair the narrow numerical shell in which a route endpoint rejects
+        /// a walker's full travel footprint although his centre is not inside the prop.
+        /// This is deliberately fallible and is intended only after route construction
+        /// has failed: ordinary near-wall walking is not relocated. The replacement must
+        /// be clear at the route radius and joined to the old centre by a chord clear at
+        /// the physical-overlap probe, so the correction cannot jump through a wall.</summary>
+        internal static bool TryClearRouteStart(Vector3 wanted, float radius,
+            Vector3 toward, out Vector3 spot, float reach = 2.5f)
+        {
+            spot = wanted;
+            radius = Mathf.Max(OverlapProbeRadius, radius);
+            reach = Mathf.Max(0f, reach);
+            if (!InCity(wanted) || !Standing(wanted, radius) ||
+                Standing(wanted, OverlapProbeRadius)) return false;
+
+            var forward = toward - wanted;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 1e-5f) forward = Vector3.forward;
+            else forward.Normalize();
+
+            const int Headings = 16;
+            const float RingStep = 0.125f;
+            for (float ring = RingStep; ring <= reach + 1e-4f; ring += RingStep)
+            {
+                // Search toward the errand first, then alternate left and right. The
+                // last spoke is the exact retreat direction, so a prop on the target
+                // side cannot prevent a same-side recovery when that is the only one.
+                for (int slot = 0; slot < Headings; slot++)
+                {
+                    int spoke = slot == 0 ? 0 : ((slot + 1) / 2) *
+                        ((slot & 1) == 1 ? 1 : -1);
+                    var dir = Quaternion.AngleAxis(
+                        spoke * (360f / Headings), Vector3.up) * forward;
+                    var candidate = wanted + dir * ring;
+                    candidate.y = wanted.y;
+                    if (!InCity(candidate) || Standing(candidate, radius) ||
+                        BlocksStanding(wanted, candidate, OverlapProbeRadius)) continue;
+
+                    var chord = candidate - wanted;
+                    chord.y = 0f;
+                    int samples = Mathf.CeilToInt(chord.magnitude / 0.25f);
+                    bool inCity = true;
+                    for (int i = 1; i < samples; i++)
+                        if (!InCity(wanted + chord * (i / (float)samples)))
+                        { inCity = false; break; }
+                    if (!inCity) continue;
+
+                    spot = candidate;
+                    return true;
+                }
+            }
+            return false;
+        }
+
         static bool TryClearStandingSpot(Vector3 wanted, float radius,
             Vector3 connectedTo, bool requireConnection,
             Vector3 approachFrom, bool preferApproach, out Vector3 spot, float reach)
@@ -1023,7 +1095,7 @@ namespace RoadDemo
             if (h.sqrMagnitude < 1e-6f) return 0f;
             h.Normalize();
             Near.Clear();          // the road is nobody's business here
-            return Run(p, h, radius, ahead);
+            return Run(p, h, radius, radius, ahead);
         }
 
         /// <summary>Is a complete straight walk blocked by anything fixed? Uses each
@@ -1044,25 +1116,34 @@ namespace RoadDemo
         /// along <paramref name="dir"/> before he is into something, up to
         /// <paramref name="ahead"/> metres.</summary>
         public static float Clear(Vector3 from, Vector3 dir, float radius, float ahead)
+            => Clear(from, dir, radius, radius, ahead);
+
+        /// <summary>The same live step with separate berths for fixed furniture and
+        /// traffic. Routed crews use a narrow prop footprint without putting their
+        /// shoulders through the flank of a car.</summary>
+        public static float Clear(Vector3 from, Vector3 dir, float fixedRadius,
+            float trafficRadius, float ahead)
         {
             var p = new Vector2(from.x, from.z);
             var h = new Vector2(dir.x, dir.z);
             if (h.sqrMagnitude < 1e-6f) return 0f;
             h.Normalize();
-            GatherRoad(p, ahead + radius + 0.5f);
-            float sampled = Run(p, h, radius, ahead);
+            fixedRadius = Mathf.Max(0f, fixedRadius);
+            trafficRadius = Mathf.Max(0f, trafficRadius);
+            GatherRoad(p, ahead + trafficRadius + 0.5f);
+            float sampled = Run(p, h, fixedRadius, trafficRadius, ahead);
             if (sampled <= 0f) return 0f;
 
             // Point samples overlap, but their swept lateral coverage still leaves a
             // few centimetres at the midpoint. Prove the actual fixed-geometry capsule
             // before a transform write, then bisect to the longest exact prefix.
             var heading = new Vector3(h.x, 0f, h.y);
-            if (!BlocksStanding(from, from + heading * sampled, radius)) return sampled;
+            if (!BlocksStanding(from, from + heading * sampled, fixedRadius)) return sampled;
             float lo = 0f, hi = sampled;
             for (int i = 0; i < 7; i++)
             {
                 float mid = (lo + hi) * 0.5f;
-                if (BlocksStanding(from, from + heading * mid, radius)) hi = mid;
+                if (BlocksStanding(from, from + heading * mid, fixedRadius)) hi = mid;
                 else lo = mid;
             }
             return lo;
@@ -1074,23 +1155,29 @@ namespace RoadDemo
 
         // Metres along h from p that are free, to ahead. Refines the last pitch
         // by halves so a man stopped short of a car stops AT it, not a stride off.
-        static float Run(Vector2 p, Vector2 h, float radius, float ahead)
+        static float Run(Vector2 p, Vector2 h, float fixedRadius,
+            float trafficRadius, float ahead)
         {
             float u = Step;
             for (; u < ahead; u += Step)
-                if (OnGround(p + h * u, radius) || InRoad(p + h * u, radius))
-                    return Refine(p, h, radius, u - Step, u);
-            if (OnGround(p + h * ahead, radius) || InRoad(p + h * ahead, radius))
-                return Refine(p, h, radius, Mathf.Max(0f, ahead - Step), ahead);
+                if (OnGround(p + h * u, fixedRadius) ||
+                    InRoad(p + h * u, trafficRadius))
+                    return Refine(p, h, fixedRadius, trafficRadius, u - Step, u);
+            if (OnGround(p + h * ahead, fixedRadius) ||
+                InRoad(p + h * ahead, trafficRadius))
+                return Refine(p, h, fixedRadius, trafficRadius,
+                    Mathf.Max(0f, ahead - Step), ahead);
             return ahead;
         }
 
-        static float Refine(Vector2 p, Vector2 h, float radius, float free, float hit)
+        static float Refine(Vector2 p, Vector2 h, float fixedRadius,
+            float trafficRadius, float free, float hit)
         {
             for (int i = 0; i < 3; i++)
             {
                 float mid = (free + hit) * 0.5f;
-                if (OnGround(p + h * mid, radius) || InRoad(p + h * mid, radius)) hit = mid;
+                if (OnGround(p + h * mid, fixedRadius) ||
+                    InRoad(p + h * mid, trafficRadius)) hit = mid;
                 else free = mid;
             }
             return free;
@@ -1118,18 +1205,23 @@ namespace RoadDemo
         /// frame. A man stood inside something already (dealt there, shoved there)
         /// is let walk straight out of it.</summary>
         public static Vector3 Steer(Vector3 from, Vector3 want, Vector3 going, float radius, float ahead,
-            ref int side, out float clear, int preferredSide = 0)
+            ref int side, out float clear, int preferredSide = 0,
+            float trafficRadius = -1f, float minForwardDot = -1f)
         {
             var p = new Vector2(from.x, from.z);
             var w = new Vector2(want.x, want.z);
             if (w.sqrMagnitude < 1e-6f) { clear = 0f; return want; }
             w.Normalize();
-            GatherRoad(p, ahead + radius + 0.5f);
+            radius = Mathf.Max(0f, radius);
+            if (trafficRadius < 0f) trafficRadius = radius;
+            trafficRadius = Mathf.Max(0f, trafficRadius);
+            minForwardDot = Mathf.Clamp(minForwardDot, -1f, 1f);
+            GatherRoad(p, ahead + trafficRadius + 0.5f);
 
             // A moving car can overlap a walker between frames. Push him toward the
             // nearest flank/end until his shoulders are outside it; continuing along
             // the wanted line here used to let him traverse the whole car.
-            if (RoadEscape(p, w, radius, ahead, out var escape, out clear))
+            if (RoadEscape(p, w, trafficRadius, ahead, out var escape, out clear))
             {
                 side = 0;
                 return new Vector3(escape.x, 0f, escape.y);
@@ -1144,7 +1236,7 @@ namespace RoadDemo
             }
 
             // the line he wants
-            float straight = Run(p, w, radius, ahead);
+            float straight = Run(p, w, radius, trafficRadius, ahead);
             if (straight >= ahead - 1e-3f)
             {
                 side = 0;
@@ -1208,8 +1300,9 @@ namespace RoadDemo
             bool Try(float a, int sign, bool carryOn)
             {
                 var line = Turn(w, a * sign);
+                if (Vector2.Dot(line, w) < minForwardDot) return false;
                 if (carryOn && Vector2.Dot(line, g) < -0.25f) return false;
-                float c = Run(p, line, radius, ahead);
+                float c = Run(p, line, radius, trafficRadius, ahead);
                 if (c >= ahead - 1e-3f) { best = line; bestClear = c; bestSide = sign; return true; }
                 if (c > bestClear) { bestClear = c; best = line; bestSide = sign; }
                 return false;

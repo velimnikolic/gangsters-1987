@@ -148,14 +148,16 @@ namespace RoadDemo
         readonly List<Block> _blocks = new List<Block>();
         readonly List<DemoCrews.Unit> _shown = new List<DemoCrews.Unit>();
         float _topInset;
+        bool _show;
         bool _fonts;
         int _turn;
 
-        public void Init(DemoCrews crews, float topInset)
+        public void Init(DemoCrews crews, float topInset, bool show = false)
         {
             Instance = this;
             _crews = crews;
             _topInset = topInset;
+            _show = show;
             _fonts = TMP_Settings.instance != null && TMP_Settings.defaultFontAsset != null;
 
             var root = new GameObject("Crew Bar", typeof(RectTransform));
@@ -480,9 +482,9 @@ namespace RoadDemo
         void LateUpdate()
         {
             if (_crews == null || _row == null) return;
-            // The old wide CrewBar is retired. Its one useful subsystem is still the
-            // rotating street camera, now printed in the permanent paper roster.
-            bool show = false;
+            // The old wide CrewBar is retired in the city. A focused test scene can
+            // opt it back in as the shared clickable crew selector.
+            bool show = _show;
             if (_row.gameObject.activeSelf != show) _row.gameObject.SetActive(show);
 
             // the outfit's crews, in book order; blocks pooled and re-bound

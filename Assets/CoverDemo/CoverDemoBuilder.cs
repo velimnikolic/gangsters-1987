@@ -70,6 +70,9 @@ namespace CoverDemo
         [Tooltip("Metres between neighbouring crews on the outfit's line.")]
         public float crewSpread = 11f;
         public int nameSeed = 1987;
+        [Tooltip("Deterministic furniture/parked-car layout for the route soak. 0 keeps " +
+                 "the ordinary fresh Play layout.")]
+        public int layoutSeed;
 
         [Header("The outfit")]
         [Tooltip("How many crews of five the outfit takes the street with. The books' own " +
@@ -87,6 +90,9 @@ namespace CoverDemo
         [Min(0)] public float missionAfter = 0f;
         [Tooltip("How near the mark a crew has to be before it is told to open up.")]
         [Min(5)] public float missionEngageWithin = 30f;
+        [Tooltip("Navigation soak: order one outfit crew directly at Falcone, then Santoro. " +
+                 "This uses the player's normal attack path, not BlockDemo's march.")]
+        public bool routeSoak;
 
         [Header("Watch")]
         [Tooltip("Draw what the cover code sees: the boxes it counts as cover, and a line " +
@@ -133,10 +139,14 @@ namespace CoverDemo
             gameObject.AddComponent<CoverDemoVision>().Init(
                 new Rect(StreetXMin - 4f, -StreetKit.OuterHalf - 4f,
                          StreetXMax - StreetXMin + 8f, StreetKit.OuterHalf * 2f + 8f));
-            // the arena's clock (Space holds it, , and . step it): watching a man duck
-            // is watching a second and a half of a fight, and the Editor's own pause
-            // stops the camera with it
-            gameObject.AddComponent<CrewDemo.CrewDemoPace>();
+            // The same clickable time strip as the city. Its day clock is frozen -
+            // this bench has no campaign day to advance - while its one speed ladder
+            // still owns Time.timeScale for 0.5x/1x/2x/4x/Hold.
+            var clockGo = new GameObject("Clock");
+            var clock = clockGo.AddComponent<LivingCity.Ambient.CityClock>();
+            clock.Configure(12f, 600f);
+            clock.Running = false;
+            new GameObject("Clock HUD").AddComponent<DemoClockHud>().Init(clock);
 
             // This bench deliberately wears the authored Mixamo rifle wardrobe. The
             // flag inside it is opt-in: RoadDemo, CrewDemo and the live city keep their
@@ -148,6 +158,8 @@ namespace CoverDemo
 
             _crews = gameObject.AddComponent<DemoCrews>();
             _crews.EveryoneArmed = true;
+            _crews.ShowCrewBar = true;
+            _crews.UseMixamoLocomotion = true;
             _crews.MuzzleFlashPrefab = CrewKit.MuzzleFlash;
             _crews.BloodPrefab = CrewKit.Blood;
             _crews.ImpactPrefab = CrewKit.Impact;
@@ -172,16 +184,27 @@ namespace CoverDemo
             // reservation, so nothing is scattered into a car - and a reservation is
             // skipped by the cover query, which knows cars by another road entirely
             // (StreetTraffic.Users), so no flank is offered twice
+            // A soak needs to name the exact furnished street it replayed without
+            // re-seeding the crews, guns or combat. Borrow Unity's random stream only
+            // while this scene lays its inert set, then put it back untouched.
+            var randomState = Random.state;
+            if (layoutSeed != 0) Random.InitState(layoutSeed);
             BuildParkedCars();
             ReserveMusters();
             Furnish();
+            if (layoutSeed != 0) Random.state = randomState;
             SpawnRivals();
 
             _watch = gameObject.AddComponent<CoverWatch>();
             _crews.IntentOverlay.SetVisible(coverLines);
             _watch.Init(_crews, _camera);
 
-            if (missionAfter > 0f)
+            if (routeSoak)
+            {
+                var mission = gameObject.AddComponent<CoverRouteMission>();
+                mission.Init(_crews, Mathf.Max(0.25f, missionAfter));
+            }
+            else if (missionAfter > 0f)
             {
                 var mission = gameObject.AddComponent<BlockDemo.BlockDemoMission>();
                 mission.startAfter = missionAfter;
@@ -330,7 +353,8 @@ namespace CoverDemo
             {
                 // the kerb strip: between the marked lane and the kerb, where the parked
                 // cars are, at the asphalt's own level
-                laid += Scatter(root, _kerbBag, kerbProps, side, Lane + 0.5f, Half - 0.4f, RoadY, park: true);
+                laid += Scatter(root, _kerbBag, kerbProps, side,
+                    Lane + 0.5f, Half - 0.4f, RoadY);
                 // the pavement, in two strips with a lane left clear between them: props
                 // wall to wall would be a street nobody can walk down, and a crew that
                 // cannot reach the fight never gets behind anything either
@@ -388,8 +412,8 @@ namespace CoverDemo
         /// (props, the dressing's own furniture, the reserved car bays), and taking the
         /// box is what puts the prop into the walkers' way and into the cover query at
         /// once - the kit entered its plan in WalkObstacles when it was made.</summary>
-        int Scatter(Transform root, List<GameObject> bag, int count, int side, float zNear, float zFar, float y,
-            bool park = false)
+        int Scatter(Transform root, List<GameObject> bag, int count, int side,
+            float zNear, float zFar, float y)
         {
 #if UNITY_EDITOR
             if (bag.Count == 0 || count <= 0) return 0;
@@ -414,11 +438,10 @@ namespace CoverDemo
                     var go = Instantiate(prefab, at, Quaternion.Euler(0f, yaw, 0f), root);
                     go.name = go.name.Replace("(Clone)", "");
                     plan.Take(box);
-                    // a prop on the carriageway edge is not just cover for men on foot -
-                    // it is a body in a driven car's lane, so it goes among the road's
-                    // users too and the traffic plans round it (StoodCar), the same as a
-                    // parked car. Off on the far pavement it is left out: no car goes there.
-                    if (park) StoodCar.Park(go);
+                    // It is already registered at its measured size in the fixed walking
+                    // plan. Registering it as StoodCar as well used to add an invisible
+                    // minimum 2.0 x 1.4 m car box around a barrel: A* chose the visible
+                    // gap, then live steering refused a different, larger obstacle.
                     laid++;
                     break;
                 }
@@ -456,10 +479,8 @@ namespace CoverDemo
                         var go = Instantiate(prefab, at, Quaternion.Euler(0f, yaw, 0f), root);
                         go.name = go.name.Replace("(Clone)", "");
                         plan.Take(box);
-                        // a heap left in the carriageway is squarely in a driven car's
-                        // path: put it among the road's users so the traffic goes round
-                        // it instead of through it (StoodCar).
-                        StoodCar.Park(go);
+                        // The CoverDemo has no moving traffic. Its exact measured box is
+                        // already in the fixed plan used by both A* and the crew's feet.
                         laid++;
                         break;
                     }
@@ -635,6 +656,16 @@ namespace CoverDemo
         void ReserveMusters()
         {
             if (_kit == null) return;
+            // The two prop strips are meant to leave one continuous pavement passage.
+            // Long rotated props can otherwise project across the nominal 2.1 m gap
+            // even though their centres are in the correct strip. Keep the actual
+            // corridor clear; reservations reject props but never block walkers.
+            float laneZ = Half + (2.3f + 4.4f) * 0.5f;
+            float laneHalfX = Mathf.Max(1f, (StreetXMax - StreetXMin) * 0.5f - 6f);
+            _kit.Plan.Reserve(new Vector3(0f, WalkY, laneZ), 0f,
+                new Vector2(laneHalfX, 0.8f));
+            _kit.Plan.Reserve(new Vector3(0f, WalkY, -laneZ), 0f,
+                new Vector2(laneHalfX, 0.8f));
             // Five crews wide (crewSpread apart) and deep enough for the hoods, who fall
             // in BEHIND their boss - FormationOffset puts the second rank 3 m back, and
             // the boss faces the street, so "behind" is the back of the pavement. Half

@@ -222,6 +222,7 @@ namespace CrewDemo
             _crews = gameObject.AddComponent<DemoCrews>();
             _crews.EveryoneArmed = true;
             _crews.MuzzleFlashPrefab = CrewKit.MuzzleFlash;
+            _crews.GunSmokePrefab = CrewKit.GunSmoke;
             _crews.BloodPrefab = CrewKit.Blood;
             _crews.ImpactPrefab = CrewKit.Impact;
             _crews.GunshotSets = CrewKit.GunshotSets();

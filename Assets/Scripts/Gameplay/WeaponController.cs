@@ -1,5 +1,6 @@
 using System.Collections;
 using UnityEngine;
+using LivingCity.Ambient;
 using LivingCity.Entities;
 
 namespace LivingCity.Gameplay
@@ -37,6 +38,8 @@ namespace LivingCity.Gameplay
 
         WeaponSocket socket;
         Light flash;
+        GameObject muzzleFxPrefab;
+        GameObject muzzleSmokePrefab;
 
         /// <summary>The player's bought-weapon numbers; stays null on every police rig,
         /// which is what keeps a purchase from arming the whole force. Resolved lazily,
@@ -77,6 +80,8 @@ namespace LivingCity.Gameplay
         void Awake()
         {
             socket = GetComponent<WeaponSocket>();
+            muzzleFxPrefab = FireSmokeFx.Load(FireSmokeFx.MuzzleFlash);
+            muzzleSmokePrefab = FireSmokeFx.Load(FireSmokeFx.Smoke);
             BuildFlash();
         }
 
@@ -142,6 +147,7 @@ namespace LivingCity.Gameplay
             var combat = Combat;
             var arms = Arsenal;
 
+            SpawnParticleFlash();
             StartCoroutine(FlashOnce(combat));
 
             yield return HitWait(combat);
@@ -170,6 +176,24 @@ namespace LivingCity.Gameplay
             if (target.IsDead)
                 CrimeFeed.Report(new CrimeEvent(
                     CrimeKind.Murder, target.transform.position, transform, target.transform));
+        }
+
+        void SpawnParticleFlash()
+        {
+            var direction = socket ? socket.BarrelDirection : transform.forward;
+            var rotation = Quaternion.LookRotation(direction, Vector3.up);
+            if (muzzleFxPrefab)
+            {
+                var fx = Instantiate(muzzleFxPrefab, MuzzleWorld, rotation);
+                var live = FireSmokeFx.TuneMuzzleFlash(fx, 0.13f);
+                Destroy(fx, Mathf.Max(0.2f, live));
+            }
+            if (muzzleSmokePrefab)
+            {
+                var smoke = Instantiate(muzzleSmokePrefab, MuzzleWorld, rotation);
+                var live = FireSmokeFx.TuneGunSmoke(smoke, 0.18f, rapid: false);
+                Destroy(smoke, Mathf.Max(0.6f, live));
+            }
         }
 
 

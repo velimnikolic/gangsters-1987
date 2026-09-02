@@ -22,7 +22,32 @@ namespace LivingCity.Tests
             ClearingABreachResetsTheClock(failures);
             ComposedCafeFurnitureIsPhysical(failures);
             ComposedVenueShellsArePhysical(failures);
+            CombatCornerHandoffDoesNotOrbit(failures);
+            MovingWithoutProgressReplans(failures);
             return failures;
+        }
+
+        static void CombatCornerHandoffDoesNotOrbit(List<string> failures)
+        {
+            if (!CrewWalker.CombatCornerCanAdvanceModel(0.2f, false) ||
+                CrewWalker.CombatCornerCanAdvanceModel(0.8f, false) ||
+                !CrewWalker.CombatCornerCanAdvanceModel(3f, true))
+                failures.Add("Combat route: a safely visible next corner cannot release a missed waypoint.");
+        }
+
+        static void MovingWithoutProgressReplans(List<string> failures)
+        {
+            float best = float.MaxValue, stalled = 0f;
+            if (CrewWalker.CombatCornerStalledModel(5f, 0.5f, ref best, ref stalled) ||
+                CrewWalker.CombatCornerStalledModel(4.7f, 0.5f, ref best, ref stalled))
+                failures.Add("Combat route: real waypoint progress was read as a stall.");
+
+            // Full movement with alternating 135-degree headings is still a stall when
+            // none of it beats the closest point already reached.
+            if (CrewWalker.CombatCornerStalledModel(5.2f, 0.5f, ref best, ref stalled) ||
+                CrewWalker.CombatCornerStalledModel(4.9f, 0.5f, ref best, ref stalled) ||
+                !CrewWalker.CombatCornerStalledModel(5.1f, 0.25f, ref best, ref stalled))
+                failures.Add("Combat route: a moving orbit never forces a replan.");
         }
 
         /// <summary>The streamed residential collector sees prefab roots by these names,
