@@ -147,6 +147,19 @@ namespace RoadDemo
         public bool HasOrder => State == Mode.Walking || State == Mode.Homing || State == Mode.Striding || State == Mode.Fleeing;
         public bool OnGraph => _link != null;
 
+        // A cohesion order is not a fresh player march. It closes the space left by a
+        // fight or a funnel by bringing one hood back to his formation slot. The audit
+        // needs that narrow distinction while the order is live: a stopped lieutenant
+        // can be standing in the carriageway after combat, and the shortest honest way
+        // back to him may briefly run along it; the different slots also make the men
+        // fan inward on different headings. No other order inherits the licence.
+        bool _fallingIn;
+        public bool FallingIn => _fallingIn &&
+            (State == Mode.Walking || State == Mode.Homing || State == Mode.Striding);
+
+        internal void MarkFallingIn() => _fallingIn = HasOrder && State != Mode.Fleeing;
+        void ClearFallingIn() => _fallingIn = false;
+
         /// <summary>Is the SIDEWALK GRAPH placing his feet this frame? A man walking a
         /// stretch has his position rebuilt every frame out of metre-plus-lateral, so
         /// anything that writes his transform from outside - the elbow pass - is undone
@@ -536,6 +549,7 @@ namespace RoadDemo
         {
             if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
             if (Dead || Riding || link == null || link.Length <= 0.01f || _link == null) return;
+            ClearFallingIn();
             ClearSharedCorridor();
             _throughWall = false;
             _watching = false;
@@ -589,6 +603,7 @@ namespace RoadDemo
         {
             if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
             if (Dead) return;
+            ClearFallingIn();
             ClearSharedCorridor();
             LeaveGraphOrder();
             Target = null;
@@ -742,6 +757,7 @@ namespace RoadDemo
         {
             if (Spilling) return false;   // in the air off a machine: he is the spill's until he lands
             if (Dead) return false;
+            ClearFallingIn();
             Target = null;
             _coverSpot = null;
             InCover = false;
@@ -1137,6 +1153,7 @@ namespace RoadDemo
         public void Engage(CrewWalker target)
         {
             if (Dead || Riding || !Carrying || Panicked || target == null || target.Dead || target == this) return;
+            ClearFallingIn();
             if (Target != target)
             {
                 _coverLooked = false;
@@ -1174,6 +1191,7 @@ namespace RoadDemo
         {
             if (Dead || Riding || !Carrying || Panicked) return;
             if (car == null || car.Tf == null || car.Wrecked) return;
+            ClearFallingIn();
             DrawGun();
             Target = null;            // clears any car mark too, and then we set ours
             CarMark = car;
@@ -1207,6 +1225,7 @@ namespace RoadDemo
         public void Disengage()
         {
             if (Dead) return;
+            ClearFallingIn();
             Target = null;
             ClearCombatWay();
             _coverSpot = null;
@@ -1917,6 +1936,7 @@ namespace RoadDemo
         public void Kill()
         {
             if (Dead) return;
+            ClearFallingIn();
             Health = 0;
             Target = null;
             // shot in the seat: the window pose stops writing his arm at once, or it
@@ -2228,7 +2248,11 @@ namespace RoadDemo
 
         /// <summary>What he is shooting at out of the window (or nothing) - the arena's
         /// call while he rides; the seat, not the man, decides what he can see.</summary>
-        public void AimAt(CrewWalker mark) => Target = mark != null && !mark.Dead ? mark : null;
+        public void AimAt(CrewWalker mark)
+        {
+            ClearFallingIn();
+            Target = mark != null && !mark.Dead ? mark : null;
+        }
 
         /// <summary>Astride something rather than sat in it - a motorcycle. His legs
         /// stay where everyone can see them and BikePose puts them on the pegs.</summary>
@@ -2298,6 +2322,7 @@ namespace RoadDemo
         /// which is the only thing that knows he was on one.</summary>
         public void BeginSpill()
         {
+            ClearFallingIn();
             Spilling = true;
             RidingAim = false;
             Target = null;
@@ -2323,6 +2348,7 @@ namespace RoadDemo
         /// and folding them would leave a man riding side-saddle on his own stumps.</summary>
         public void SetRiding(bool on, bool astride)
         {
+            ClearFallingIn();
             Astride = on && astride;
             // the legs go with the seat either way - a dead man is lifted out whole
             HideLegs(on && !astride);
@@ -2539,6 +2565,7 @@ namespace RoadDemo
             // fleeing and shooting at once. His nerve is asked again the moment he is
             // back on his feet (DemoCrews.Rejoin, and the car's DriverLost).
             if (Dead || Spilling || Riding) return;
+            ClearFallingIn();
             Target = null;
             _coverSpot = null;
             InCover = false;
@@ -2746,7 +2773,18 @@ namespace RoadDemo
                 var spot = _coverSpot.Value;
                 var gap = spot - Tf.position;
                 gap.y = 0f;
-                if (dist > range * 1.3f) { _coverSpot = null; InCover = false; } // out of reach from here: leave it
+                var coverShot = Target.Tf.position - spot;
+                coverShot.y = 0f;
+                // The cover contract is about the shot FROM the flank, not where he
+                // happens to be while walking to it. A stale/legacy flank beyond the
+                // gun's real reach must be dropped; an in-range flank may be approached
+                // from further away and the ordinary draw threshold still decides when
+                // the rifle comes out.
+                if (coverShot.magnitude > range)
+                {
+                    _coverSpot = null;
+                    InCover = false;
+                }
                 else if (gap.magnitude > 0.5f)
                 {
                     InCover = false;
@@ -2760,11 +2798,11 @@ namespace RoadDemo
                                   gap.magnitude <= CrouchWithin;
                     // a bin two streets' width off with rounds in the air is got to at
                     // a run; one at his elbow is stepped behind
-                    TickCombatStride(dt, spot, 0.4f, hurry: true,
+                    bool coverRouteFailed = TickCombatStride(dt, spot, 0.4f, hurry: true,
                         run: RunWhile(!_keepingLow && gap.magnitude > RunToCover));
                     // no way through to it (the car has rolled on, something else
                     // stands in the way): he fights from where he is instead
-                    if (_blockedFor > 0.8f) { _coverSpot = null; _blockedFor = 0f; }
+                    if (coverRouteFailed) { _coverSpot = null; _blockedFor = 0f; }
                     return;
                 }
                 else
@@ -2811,7 +2849,7 @@ namespace RoadDemo
             // back into his reach.
             bool mounted = Target.Riding || Target.Astride;
             bool closing = !mounted && !_coverSpot.HasValue &&
-                           (_wasClosing ? dist > range * RangeFactor : dist > range * 1.15f);
+                           (_wasClosing ? dist > range * RangeFactor : dist > range);
             _wasClosing = closing;
             if (closing)
             {
@@ -2881,7 +2919,7 @@ namespace RoadDemo
             // duck, or fresh out of a flinch, the barrel spends a beat coming up, and a
             // round let off during it goes into the ground the clip was authored at
             float off = CombatAimError(toTarget);
-            if (_fireTimer <= 0f && off < 25f && StrideAllowsAim(toTarget) &&
+            if (_fireTimer <= 0f && dist <= range && off < 25f && StrideAllowsAim(toTarget) &&
                 _aimBlend >= 0.5f && BarrelOn(Target))
             {
                 _fireTimer = Ballistics.Interval;

@@ -111,6 +111,7 @@ namespace CoverDemo
         const float Cell = StreetKit.Cell;            // the 5 m tile
         const float RoadY = -0.08f;                   // the asphalt, which is sunk a tenth
         const float WalkY = 0f;                       // the pavement top, where the men stand
+        const int StreetDressingSeedSalt = 0x31A4C7D;
 
         float StreetXMin => -Mathf.Round(streetLength * 0.5f / Cell) * Cell;
         float StreetXMax => Mathf.Round(streetLength * 0.5f / Cell) * Cell;
@@ -124,7 +125,7 @@ namespace CoverDemo
         {
 #if UNITY_EDITOR
             BuildFloor();
-            BuildStreet();
+            BuildSeededStreet();
             // the town's fence, the same rule every scene lays (the city's FenceCity,
             // CrewDemo's rect): the SET is the street and its pavements - the bare
             // slabs round it are backdrop, and nobody strolls, flees or is stood out
@@ -287,6 +288,30 @@ namespace CoverDemo
             if (!_kit.Load()) return;
             _kit.LayAlongX(0f, StreetXMin, StreetXMax, true, true, kitDressing);
 #endif
+        }
+
+        /// <summary>The named soak layout includes StreetKit's own palms, cages,
+        /// lamps and manholes as well as this scene's extra furniture. Give that
+        /// dressing an isolated derived random stream: a replay gets the same whole
+        /// street without seeding roster creation, gunplay or the live city.</summary>
+        void BuildSeededStreet()
+        {
+            if (layoutSeed == 0)
+            {
+                BuildStreet();
+                return;
+            }
+
+            var randomState = Random.state;
+            try
+            {
+                Random.InitState(layoutSeed ^ StreetDressingSeedSalt);
+                BuildStreet();
+            }
+            finally
+            {
+                Random.state = randomState;
+            }
         }
 
         // A street a car may drive from end to end, so the ledger's car has somewhere
@@ -591,7 +616,7 @@ namespace CoverDemo
         readonly List<CivilianAgent> _noWalkers = new List<CivilianAgent>();
         const string _hint =
             "WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom   " +
-            "left-click one of ours: select his crew   right-click the road: walk there   " +
+            "left-click one of ours: select his crew   right-click: walk   double right-click: run   " +
             "right-click a rival: attack   I: combat indicators   Space: hold   P: ledger";
 
         void BuildCamera()

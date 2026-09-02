@@ -151,6 +151,11 @@ namespace RoadDemo
         /// The small probe matches WalkObstacles' own "already inside" test.</summary>
         const float PropProbeRadius = 0.1f, PropInsideAfter = 0.6f;
 
+        /// <summary>A routed man must make at least this much recent ground before
+        /// receiving a fresh stall grace. Lifetime travel remains separate so a
+        /// circling walker still accumulates enough evidence for the orbit check.</summary>
+        const float RouteStallTravel = 0.1f, RouteStallAfter = 1.5f;
+
         // -------------------------------------------------------------- the ledger
 
         class Watch
@@ -166,7 +171,7 @@ namespace RoadDemo
             public bool SaidOff;
             public bool RouteWatching, RouteStallSaid, RouteOrbitSaid, RouteOverlapSaid;
             public Vector3 RouteStart, RouteGoal, RouteLastDir;
-            public float RouteStartGap, RouteFor, RouteTravel, RouteTurn;
+            public float RouteStartGap, RouteFor, RouteRecentTravel, RouteTravel, RouteTurn;
         }
 
         sealed class FormationWatch
@@ -178,7 +183,13 @@ namespace RoadDemo
         static readonly Dictionary<DemoCrews.Unit, float> FileFor = new Dictionary<DemoCrews.Unit, float>();
         static readonly Dictionary<DemoCrews.Unit, FormationWatch> Formations =
             new Dictionary<DemoCrews.Unit, FormationWatch>();
-        static readonly List<CrewWalker> FiredThisFrame = new List<CrewWalker>();
+        struct FiredShot
+        {
+            public CrewWalker Man;
+            public CrewWalker Mark;
+        }
+
+        static readonly List<FiredShot> FiredThisFrame = new List<FiredShot>();
         static readonly List<CrewWalker> Walkers = new List<CrewWalker>();
         static readonly List<CrewWalker> Stretch = new List<CrewWalker>();
         static readonly List<CrewWalker> Sweep = new List<CrewWalker>();
@@ -217,7 +228,8 @@ namespace RoadDemo
         /// AimGun has run, and measured before it this would read the raw clip.</summary>
         public static void ShotFired(CrewWalker man)
         {
-            if (man != null) FiredThisFrame.Add(man);
+            if (man != null)
+                FiredThisFrame.Add(new FiredShot { Man = man, Mark = man.Target });
         }
 
         /// <summary>After the frame's arms are posed: every shot fired this frame
@@ -226,9 +238,13 @@ namespace RoadDemo
         {
             for (int i = 0; i < FiredThisFrame.Count; i++)
             {
-                var man = FiredThisFrame[i];
+                var fired = FiredThisFrame[i];
+                var man = fired.Man;
                 if (man == null || man.Tf == null || man.Riding) continue;
-                var mark = man.Target;
+                // A lethal round can make TickCombat select the next enemy before
+                // LateUpdate poses and audits the arms. Judge the mark captured when
+                // this round left, never the next living target inherited afterward.
+                var mark = fired.Mark;
 
                 // A ROUND AT NOBODY IS ITS OWN FAULT, and this rule used to be blind to
                 // it: "no mark" was folded in with "the mark went down to this very
@@ -245,12 +261,14 @@ namespace RoadDemo
                 }
                 if (mark.Dead || !mark.Tf) continue;   // dropped by this very round: the aim was good enough
 
-                // AND A ROUND FROM MOVING LEGS. The player's standing rule is that a man
-                // who is running does not fire; a man WALKING out of a fight and firing
-                // as he goes is the same fault one notch quieter, and it is invisible
-                // unless it is named.
-                if (man.LegsMoving)
-                    Fault(man, "firewalk", "fired with his legs in a gait (" + man.State + ")");
+                // AND A ROUND AT A RUN. The authored weapon wardrobes own directional
+                // walking takes specifically so a man can keep the sights on his mark
+                // during the last hurried strides. A run still throws the gun arm and
+                // must never fire. JoggingPose includes both the legacy run and the
+                // dynamic weapon-running slots, so this watches the rule rather than
+                // rejecting the valid walk-and-aim blend.
+                if (man.JoggingPose)
+                    Fault(man, "firewalk", "fired while running (" + man.State + ")");
 
                 var to = mark.ChestPosition - man.MuzzlePosition;
                 if (to.magnitude < 2f) continue;                       // muzzle at his chest: the angle means nothing
@@ -397,7 +415,8 @@ namespace RoadDemo
                 // WALK to a car parked across the quarter is routed like any other
                 // (DemoCrews.SendToDoor) and is judged like any other.
                 bool fighting = man.Target != null || (unit != null && unit.TargetUnit != null) ||
-                                man.Panicked || man.Retreating || AtHisDoor(unit, man, pos);
+                                man.Panicked || man.Retreating || AtHisDoor(unit, man, pos) ||
+                                man.FallingIn;
                 var roadAxis = fighting ? Vector3.zero : RoadAxisAt(pos);
                 if (roadAxis.sqrMagnitude > 1e-6f)
                 {
@@ -469,7 +488,9 @@ namespace RoadDemo
                 w.RouteTravel += step;
             }
             w.RouteGoal = goal;
-            w.RouteFor += Mathf.Max(0f, dt);
+            bool stalled = AdvanceRouteStall(
+                ref w.RouteFor, ref w.RouteRecentTravel,
+                step > 0.002f ? step : 0f, dt);
 
             float gain = w.RouteStartGap - gap;
             if (gain >= 0.4f)
@@ -478,7 +499,7 @@ namespace RoadDemo
                 return;
             }
 
-            if (!w.RouteStallSaid && w.RouteFor >= 1.5f && w.RouteTravel < 0.1f)
+            if (!w.RouteStallSaid && stalled)
             {
                 Fault(man, "routestall",
                     $"no route progress for {w.RouteFor:F1}s, {gap:F1} m from terminal ({man.State})");
@@ -487,10 +508,8 @@ namespace RoadDemo
 
             var net = pos - w.RouteStart;
             net.y = 0f;
-            bool cameBack = net.magnitude <= 0.75f;
-            bool turnedRound = w.RouteTurn >= 330f;
-            if (!w.RouteOrbitSaid && w.RouteTravel >= 2.5f &&
-                (cameBack || turnedRound))
+            if (!w.RouteOrbitSaid && RouteOrbitModel(
+                    w.RouteTravel, w.RouteTurn, net.magnitude))
             {
                 Fault(man, "routeorbit",
                     $"walked {w.RouteTravel:F1} m / turned {w.RouteTurn:F0} deg " +
@@ -507,6 +526,17 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>A loop must lose most of the ground it paid for. Summed steering
+        /// angles alone are not enough: a clean thirty-metre chase can accumulate a
+        /// full turn from tiny left/right corrections while its live mark outruns it.
+        /// A real prop orbit either returns near its start or has poor net efficiency.</summary>
+        internal static bool RouteOrbitModel(float travel, float turn, float net)
+        {
+            if (travel < 2.5f) return false;
+            if (net <= 0.75f) return true;
+            return turn >= 330f && net <= travel * 0.65f;
+        }
+
         static void BeginRouteWindow(Watch w, Vector3 pos, Vector3 goal, float gap)
         {
             w.RouteWatching = true;
@@ -514,6 +544,7 @@ namespace RoadDemo
             w.RouteGoal = goal;
             w.RouteStartGap = gap;
             w.RouteFor = 0f;
+            w.RouteRecentTravel = 0f;
             w.RouteTravel = 0f;
             w.RouteTurn = 0f;
             w.RouteLastDir = Vector3.zero;
@@ -526,12 +557,29 @@ namespace RoadDemo
         {
             w.RouteWatching = false;
             w.RouteFor = 0f;
+            w.RouteRecentTravel = 0f;
             w.RouteTravel = 0f;
             w.RouteTurn = 0f;
             w.RouteLastDir = Vector3.zero;
             w.RouteStallSaid = false;
             w.RouteOrbitSaid = false;
             w.RouteOverlapSaid = false;
+        }
+
+        /// <summary>Advance the rolling no-movement window without erasing lifetime
+        /// route travel used by the independent orbit detector.</summary>
+        internal static bool AdvanceRouteStall(ref float elapsed,
+            ref float recentTravel, float step, float dt)
+        {
+            recentTravel += Mathf.Max(0f, step);
+            elapsed += Mathf.Max(0f, dt);
+            if (recentTravel >= RouteStallTravel)
+            {
+                recentTravel = 0f;
+                elapsed = 0f;
+                return false;
+            }
+            return elapsed >= RouteStallAfter;
         }
 
         static bool FighterInSight(DemoCrews.Unit enemy, Vector3 from)
@@ -563,7 +611,8 @@ namespace RoadDemo
             foreach (var man in unit.All())
             {
                 if (man == null || man.Dead || man.Tf == null || man.Riding ||
-                    man.Panicked || man.Retreating || man.State != CrewWalker.Mode.Striding)
+                    man.Panicked || man.Retreating || man.FallingIn ||
+                    man.State != CrewWalker.Mode.Striding)
                     continue;
                 FormationPositions.Add(man.Tf.position);
                 if (Men.TryGetValue(man, out var watch) &&

@@ -24,15 +24,121 @@ namespace LivingCity.Tests
             ComposedVenueShellsArePhysical(failures);
             CombatCornerHandoffDoesNotOrbit(failures);
             MovingWithoutProgressReplans(failures);
+            RoutedCombatStrideIsASeparationMover(failures);
+            TwoRoutedMoversDoNotCancelOneAnother(failures);
+            RejectedRouteStartCanRecover(failures);
+            RouteStallUsesRecentTravel(failures);
+            RouteOrbitRequiresLostGround(failures);
+            CombatRouteFailureReachesCoverCaller(failures);
+            RoutedSteerMayStepSidewaysButNotBack(failures);
+            NearRouteCornerIsRetained(failures);
             return failures;
+        }
+
+        static void NearRouteCornerIsRetained(List<string> failures)
+        {
+            if (!WalkRoute.RetainPulledCornerModel(0.005f * 0.005f) ||
+                WalkRoute.RetainPulledCornerModel(0f))
+                failures.Add("WalkRoute: a required near tangent was silently omitted.");
+        }
+
+        static void RouteOrbitRequiresLostGround(List<string> failures)
+        {
+            if (CrewAudit.RouteOrbitModel(30f, 332f, 29f) ||
+                !CrewAudit.RouteOrbitModel(8f, 360f, 2f) ||
+                !CrewAudit.RouteOrbitModel(3f, 20f, 0.5f) ||
+                CrewAudit.RouteOrbitModel(2f, 360f, 0f))
+                failures.Add("CrewAudit: straight pursuit is an orbit or a real loop is missed.");
+        }
+
+        static void RoutedSteerMayStepSidewaysButNotBack(List<string> failures)
+        {
+            float perpendicular = Mathf.Cos(90f * Mathf.Deg2Rad);
+            float backwards = Mathf.Cos(110f * Mathf.Deg2Rad);
+            if (!CrewWalker.RoutedHeadingAllowedModel(perpendicular) ||
+                CrewWalker.RoutedHeadingAllowedModel(backwards))
+                failures.Add("Combat route: tangent escape is blocked or reverse fallback is allowed.");
+        }
+
+        static void CombatRouteFailureReachesCoverCaller(List<string> failures)
+        {
+            if (CrewWalker.CombatRouteFailedModel(0.8f, false) ||
+                !CrewWalker.CombatRouteFailedModel(0.81f, false) ||
+                !CrewWalker.CombatRouteFailedModel(0f, true))
+                failures.Add("Combat route: a failed cover approach is hidden by corner reset.");
+        }
+
+        static void RouteStallUsesRecentTravel(List<string> failures)
+        {
+            float elapsed = 0f, recent = 0f;
+            if (CrewAudit.AdvanceRouteStall(ref elapsed, ref recent, 0.11f, 0.5f) ||
+                CrewAudit.AdvanceRouteStall(ref elapsed, ref recent, 0f, 0.5f) ||
+                CrewAudit.AdvanceRouteStall(ref elapsed, ref recent, 0f, 0.5f) ||
+                !CrewAudit.AdvanceRouteStall(ref elapsed, ref recent, 0f, 0.5f))
+                failures.Add("CrewAudit: an early route nudge grants permanent stall immunity.");
+
+            elapsed = 0f;
+            recent = 0f;
+            if (CrewAudit.AdvanceRouteStall(ref elapsed, ref recent, 0.04f, 0.5f) ||
+                CrewAudit.AdvanceRouteStall(ref elapsed, ref recent, 0.04f, 0.5f) ||
+                CrewAudit.AdvanceRouteStall(ref elapsed, ref recent, 0.04f, 0.5f) ||
+                elapsed != 0f || recent != 0f)
+                failures.Add("CrewAudit: real recent route movement does not renew stall grace.");
+
+            elapsed = 0f;
+            recent = 0f;
+            if (CrewAudit.AdvanceRouteStall(ref elapsed, ref recent, 0.03f, 0.5f) ||
+                CrewAudit.AdvanceRouteStall(ref elapsed, ref recent, 0.03f, 0.5f) ||
+                !CrewAudit.AdvanceRouteStall(ref elapsed, ref recent, 0.03f, 0.5f))
+                failures.Add("CrewAudit: sub-threshold shuffling hides a routed stall.");
+        }
+
+        static void RejectedRouteStartCanRecover(List<string> failures)
+        {
+            if (!WalkObstacles.RouteStartNeedsRecoveryModel(
+                    clearanceBlocked: true, centreOverlapping: false,
+                    hasValidator: false, validatorAccepts: true) ||
+                !WalkObstacles.RouteStartNeedsRecoveryModel(
+                    clearanceBlocked: false, centreOverlapping: false,
+                    hasValidator: true, validatorAccepts: false) ||
+                WalkObstacles.RouteStartNeedsRecoveryModel(
+                    clearanceBlocked: false, centreOverlapping: false,
+                    hasValidator: true, validatorAccepts: true) ||
+                WalkObstacles.RouteStartNeedsRecoveryModel(
+                    clearanceBlocked: true, centreOverlapping: true,
+                    hasValidator: true, validatorAccepts: false))
+                failures.Add("Combat route: a clear but lattice-isolated start cannot recover safely.");
+        }
+
+        static void TwoRoutedMoversDoNotCancelOneAnother(List<string> failures)
+        {
+            if (DemoCrews.SeparationPairNeedsEaseModel(true, true) ||
+                !DemoCrews.SeparationPairNeedsEaseModel(true, false) ||
+                !DemoCrews.SeparationPairNeedsEaseModel(false, true) ||
+                !DemoCrews.SeparationPairNeedsEaseModel(false, false))
+                failures.Add("Crew separation: two active routes can cancel each other's stride.");
+        }
+
+        static void RoutedCombatStrideIsASeparationMover(List<string> failures)
+        {
+            if (!DemoCrews.SeparationMoverModel(false, true) ||
+                !DemoCrews.SeparationMoverModel(true, false) ||
+                DemoCrews.SeparationMoverModel(false, false))
+                failures.Add("Crew separation: routed combat movement was treated as a standing body.");
         }
 
         static void CombatCornerHandoffDoesNotOrbit(List<string> failures)
         {
-            if (!CrewWalker.CombatCornerCanAdvanceModel(0.2f, false) ||
+            if (CrewWalker.CombatCornerCanAdvanceModel(0.001f, false) ||
+                CrewWalker.CombatCornerCanAdvanceModel(0.02f, false) ||
+                CrewWalker.CombatCornerCanAdvanceModel(0.2f, false) ||
                 CrewWalker.CombatCornerCanAdvanceModel(0.8f, false) ||
-                !CrewWalker.CombatCornerCanAdvanceModel(3f, true))
-                failures.Add("Combat route: a safely visible next corner cannot release a missed waypoint.");
+                !CrewWalker.CombatCornerCanAdvanceModel(3f, true) ||
+                !Mathf.Approximately(CrewWalker.CombatCornerStopModel(
+                    last: false, endsAtTarget: false, terminalStop: 7f), 0f) ||
+                !Mathf.Approximately(CrewWalker.CombatCornerStopModel(
+                    last: true, endsAtTarget: true, terminalStop: 7f), 7f))
+                failures.Add("Combat route: corner handoff ignored the proved next chord.");
         }
 
         static void MovingWithoutProgressReplans(List<string> failures)

@@ -902,6 +902,7 @@ namespace RoadDemo
         // near enough.
         static readonly List<SidewalkPlan.Box> _coverBoxes = new List<SidewalkPlan.Box>();
         static readonly List<Vector3> _claimed = new List<Vector3>();
+        readonly List<Vector3> _coverRoute = new List<Vector3>();
 
         Vector3? CoverNear(CrewWalker man, Vector3 target)
         {
@@ -944,8 +945,9 @@ namespace RoadDemo
                 // watches a man take cover in a tree and put his gun through it.
                 if (WalkObstacles.Occupied(spot, WalkObstacles.Radius, WalkObstacles.CanopyBerth)) continue;
                 float toTarget = Vector3.Distance(spot, target);
-                if (toTarget < 3f || toTarget > man.Ballistics.Range * 1.2f) continue;
+                if (toTarget < 3f || toTarget > man.Ballistics.Range) continue;
                 if (Claimed(spot)) continue;
+                if (!CoverReachable(p, spot)) continue;
                 bestD = d;
                 best = spot;
             }
@@ -986,12 +988,24 @@ namespace RoadDemo
                 if (d > bestD) continue;
                 if (WalkObstacles.Occupied(spot, WalkObstacles.Radius, WalkObstacles.CanopyBerth)) continue;
                 float toTarget = Vector3.Distance(spot, target);
-                if (toTarget < 3f || toTarget > man.Ballistics.Range * 1.2f) continue;
+                if (toTarget < 3f || toTarget > man.Ballistics.Range) continue;
                 if (Claimed(spot)) continue;
+                if (!CoverReachable(p, spot)) continue;
                 bestD = d;
                 best = spot;
             }
             return best;
+        }
+
+        /// <summary>A free flank is not useful if the man cannot reach it. Cover is
+        /// selected only every few seconds, so pay for the same fixed-ground route
+        /// proof his feet will use before replacing a valid fighting position with an
+        /// unreachable one.</summary>
+        bool CoverReachable(Vector3 from, Vector3 spot)
+        {
+            _coverRoute.Clear();
+            return WalkRoute.Plan(from, spot, _coverRoute, false) &&
+                   _coverRoute.Count > 0;
         }
 
         /// <summary>Is another man already behind this very flank?</summary>
@@ -2471,6 +2485,8 @@ namespace RoadDemo
             }
             if (!walked)
                 OrderFallInAcross(unit, lead, man, k, 0f);
+            else
+                man.MarkFallingIn();
             // A RUN BELONGS TO THE CREW. Every order clears the last one's urgency, and
             // this is an order - so a hood hauled back into place while his crew was
             // running dropped to a walk on the spot and never caught it again. He
@@ -2502,15 +2518,34 @@ namespace RoadDemo
 
             _cohesionRoute.Clear();
             bool shared = man.CopyRemainingSharedWay(_cohesionRoute);
-            return shared
+            bool ordered = shared
                 ? man.OrderAcrossVia(spot, _cohesionRoute, beat)
                 : man.OrderAcross(spot, beat);
+            if (ordered) man.MarkFallingIn();
+            return ordered;
         }
 
         /// <summary>Metres two men keep between them on open ground - shoulder room.</summary>
         const float Elbow = 1.0f;
 
         readonly List<CrewWalker> _standing = new List<CrewWalker>();
+
+        /// <summary>Whether the elbow pass must treat this body as the passer. Combat
+        /// approaches are Mode.Engaging rather than a normal HasOrder state, but their
+        /// routed intent is published by TickCombatStride before Separate runs.</summary>
+        internal static bool SeparationMoverModel(bool hasOrder, bool routedStrideIntent) =>
+            hasOrder || routedStrideIntent;
+
+        /// <summary>Two active strides already see and steer around one another through
+        /// the crowd reader. Easing that pair a second time can put an equal reverse
+        /// step on the rear man and cancel his route forever. The elbow pass therefore
+        /// owns only standing/standing spacing and active/standing right of way.</summary>
+        internal static bool SeparationPairNeedsEaseModel(bool aMoving, bool bMoving) =>
+            !(aMoving && bMoving);
+
+        static bool SeparationMover(CrewWalker man) =>
+            man != null && SeparationMoverModel(
+                man.HasOrder, man.TryRoutedStrideIntent(out _));
 
         // Nobody stands inside anybody else: men who converge on the same spot -
         // a crew closing on one target, hoods falling in on a boss who has stopped
@@ -2585,10 +2620,11 @@ namespace RoadDemo
             for (int i = 0; i < _standing.Count; i++)
             {
                 var a = _at[i];
-                bool aOn = _standing[i].HasOrder;
+                bool aOn = SeparationMover(_standing[i]);
                 for (int j = i + 1; j < _standing.Count; j++)
                 {
-                    bool bOn = _standing[j].HasOrder;
+                    bool bOn = SeparationMover(_standing[j]);
+                    if (!SeparationPairNeedsEaseModel(aOn, bOn)) continue;
                     // ONE OF THEM WALKING IS A DIFFERENT QUESTION. Two men standing
                     // want shoulder room and nothing more. A man walking THROUGH a
                     // knot of men who are stood about needs them to open up before he
@@ -3066,6 +3102,7 @@ namespace RoadDemo
                 var destination = boss.DestinationLink;
                 hood.OrderTo(destination,
                     FormationT(destination, boss.DestinationT, unit.CrewId, k), beat);
+                hood.MarkFallingIn();
                 return;
             }
 
@@ -3074,6 +3111,7 @@ namespace RoadDemo
             // freshly dealt in on his spot already - no need to shuffle
             if (hood.CurrentLink == link && Mathf.Abs(hood.CurrentT - t) < 0.35f) return;
             hood.OrderTo(link, t, beat);
+            hood.MarkFallingIn();
         }
 
         /// <summary>Fall in on a leader who is genuinely off the sidewalk graph. A
@@ -3089,7 +3127,11 @@ namespace RoadDemo
             var spot = WalkObstacles.ClearSpot(
                 anchor + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius);
             if ((hood.Tf.position - spot).sqrMagnitude <= 0.35f * 0.35f) return;
-            if (FreeRoam) hood.OrderToPoint(spot, beat);
+            if (FreeRoam)
+            {
+                hood.OrderToPoint(spot, beat);
+                hood.MarkFallingIn();
+            }
             else OrderFallInAcross(unit, boss, hood, k, beat);
         }
 
