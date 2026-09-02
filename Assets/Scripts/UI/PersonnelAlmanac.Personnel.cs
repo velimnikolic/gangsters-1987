@@ -197,7 +197,25 @@ namespace LivingCity.UI
         TMP_Text hoverNoteText;
         GameObject sortMenu;
 
-        ViewOptions options;
+        /// <summary>
+        /// The roll opens on NOTABILITY, not on the roster's own order (NOTE-001): the
+        /// men something has happened to stand at the top of their group and the corner
+        /// boy waits at the bottom until he earns a look. Roster order is still one key
+        /// away on the SORT slip - it is the order the book is FILED in, and the reader
+        /// wants it back the moment he is looking for a particular man rather than for
+        /// news.
+        /// </summary>
+        ViewOptions options = new ViewOptions { Sort = SortKey.Notability };
+
+        /// <summary>Today's notability figures, or null in a scene with no campaign
+        /// running behind the book. Read, never written - the runner owns it and
+        /// rebuilds it at the day tick.</summary>
+        NotabilityBoard Board => outfit ? outfit.Runner.Notability : null;
+
+        /// <summary>Today, on the campaign's calendar - the day every fade on this
+        /// page is measured from. Day one in a scene with no campaign, which is the
+        /// day everything that has ever happened in it happened on.</summary>
+        int Today => outfit ? outfit.Campaign.Day : 1;
 
         /// <summary>Nobody picked. The file still stands open at the FRONT - the
         /// boss's own card, because an empty pane with one sentence in the middle of it
@@ -337,6 +355,7 @@ namespace LivingCity.UI
             SortKey.Attribute => "SORT · " +
                 LedgerText.AttributeLabel(options.SortAttribute).ToUpperInvariant(),
             SortKey.Loyalty => "SORT · LOYALTY",
+            SortKey.Notability => "SORT · WHAT HAPPENED",
             _ => "SORT · ROSTER ORDER",
         };
 
@@ -388,13 +407,14 @@ namespace LivingCity.UI
             }
         }
 
-        /// <summary>A slip of card that drops from the SORT key: thirteen typed
+        /// <summary>A slip of card that drops from the SORT key: fourteen typed
         /// entries, the current one highlighted. Built once; it toggles rather than
-        /// rebuilds because its contents never change.</summary>
+        /// rebuilds because its contents never change. WHAT HAPPENED heads the slip
+        /// because it is the sheet's own default; ROSTER ORDER sits under it.</summary>
         void BuildSortMenu(RectTransform root)
         {
             const float rowH = 24f;
-            var entries = 2 + AttributeScale.Count;
+            var entries = 3 + AttributeScale.Count;
 
             var slip = LedgerV2.Card("SortMenu", root, PageLeft, PageTop - 30f, 260f,
                 entries * rowH + 12f, LedgerV2.Head);
@@ -408,9 +428,11 @@ namespace LivingCity.UI
                 var index = i;
                 string label;
                 if (i == 0)
+                    label = "WHAT HAPPENED";
+                else if (i == 1)
                     label = "ROSTER ORDER";
-                else if (i <= AttributeScale.Count)
-                    label = LedgerText.AttributeLabel((CharacterAttribute)(i - 1))
+                else if (i <= AttributeScale.Count + 1)
+                    label = LedgerText.AttributeLabel((CharacterAttribute)(i - 2))
                         .ToUpperInvariant();
                 else
                     label = "LOYALTY";
@@ -421,11 +443,13 @@ namespace LivingCity.UI
                 RowButton(row, surface, () =>
                 {
                     if (index == 0)
+                        options.Sort = SortKey.Notability;
+                    else if (index == 1)
                         options.Sort = SortKey.Roster;
-                    else if (index <= AttributeScale.Count)
+                    else if (index <= AttributeScale.Count + 1)
                     {
                         options.Sort = SortKey.Attribute;
-                        options.SortAttribute = (CharacterAttribute)(index - 1);
+                        options.SortAttribute = (CharacterAttribute)(index - 2);
                     }
                     else
                         options.Sort = SortKey.Loyalty;
@@ -453,6 +477,10 @@ namespace LivingCity.UI
             if (roster == null)
                 return;
 
+            // Today's figures, handed to the view rather than read by it: the sim owns
+            // the board and rebuilds it at the day tick, and a page with no campaign
+            // behind it (every demo scene) hands null and gets roster order.
+            options.Board = Board;
             RosterView.Build(roster, options, rows);
 
             var y = 0f;
@@ -683,20 +711,90 @@ namespace LivingCity.UI
             // men under him; everybody else with the post he stands on - and a sorted
             // roll answers with the figure it was sorted BY, because that is the
             // question the reader just asked.
-            var aside = lieutenantRow && options.Sort == SortKey.Roster
-                ? MenUnderLine(roster, member)
-                : AsideFor(roster, member);
-            var asideText = LedgerV2.Mono(rect, ColName, -32f, NameW, aside, 10f,
+            // What happened to him beats everything else the line could say; failing
+            // that a lieutenant answers with his men, and everybody else with the post
+            // he stands on or the figure the roll was sorted by.
+            var aside = NewsAside(member);
+            if (aside.Length == 0)
+                aside = lieutenantRow && (options.Sort == SortKey.Roster ||
+                                          options.Sort == SortKey.Notability)
+                    ? MenUnderLine(roster, member)
+                    : AsideFor(roster, member);
+            // The marks stand at the right of the name column, on the aside's own
+            // line, and the aside is measured to what is left - never over the top of
+            // it. A man with nothing said about him gives the whole width back.
+            var marks = ManFlags.Of(member);
+            var asideW = marks == ManFlag.None
+                ? NameW
+                : Mathf.Max(90f, NameW - FlagW - ColGap);
+            var asideText = LedgerV2.Mono(rect, ColName, -32f, asideW, aside, 10f,
                 lieutenantRow ? LedgerV2.Label : LedgerV2.Muted,
                 lieutenantRow ? 5f : 1f);
+            asideText.overflowMode = TextOverflowModes.Ellipsis;
             if (lieutenantRow)
                 asideText.text = aside.ToUpperInvariant();
+            if (marks != ManFlag.None && !dead)
+                BuildRowMarks(rect, marks);
+
+            // NOTE-001's tick: something happened to him inside the week. A rule in the
+            // gutter rather than a word - it is a "look here", and it expires on its
+            // own as the days pass under it.
+            if (!dead && Board != null && Board.Fresh(id))
+                Block("New", rect, IdxW - 4f, -12f, 3f, 18f, LedgerV2.Red);
 
             BuildRowCells(roster, rect, member, dead);
 
             // The dead are struck through in pen - the record keeps their line.
             if (dead)
                 Block("Struck", rect, ColName - 2f, -26f, NameW - 4f, 1.5f, LedgerV2.Red);
+        }
+
+        /// <summary>The room the ledger's three marks are set in, at the right end of
+        /// the name column. MEASURED against the longest of them - "LT · GUN · !" at
+        /// 9.5pt mono, letter-spaced - and the aside beside it is cut to whatever is
+        /// left, so neither can ever print over the other.</summary>
+        const float FlagW = 92f;
+
+        /// <summary>
+        /// LOY-004's marks, as the roll prints them: what he could be, and what he is a
+        /// danger of. The red flag takes the whole line's ink when it is up - it is the
+        /// one of the three the reader must not scan past - and the other two share the
+        /// lieutenant's blue.
+        ///
+        /// A mark is a STATEMENT and never an action: nothing on this page or under it
+        /// behaves differently because a man carries one.
+        /// </summary>
+        void BuildRowMarks(RectTransform rect, ManFlag marks)
+        {
+            var line = "";
+            for (var i = 0; i < ManFlags.All.Length; i++)
+            {
+                if ((marks & ManFlags.All[i]) == 0)
+                    continue;
+                if (line.Length > 0)
+                    line += " · ";
+                line += ManFlags.Mark(ManFlags.All[i]);
+            }
+
+            var mark = LedgerV2.Mono(rect, ColName + NameW - FlagW, -32f, FlagW, line,
+                9.5f,
+                (marks & ManFlag.RedFlag) != 0 ? LedgerV2.Red : LedgerV2.Lieutenant,
+                2f, TextAlignmentOptions.MidlineRight);
+            mark.font = LedgerStyle.MonoBold;
+        }
+
+        /// <summary>
+        /// The last thing that happened to him, for the roll that is sorted by exactly
+        /// that - and only while it is still this week's news. Empty otherwise: a man
+        /// nothing has happened to answers with his post as he always did, because
+        /// "nothing happened" is not a line worth printing sixty times down a page.
+        /// </summary>
+        string NewsAside(Character member)
+        {
+            if (options.Sort != SortKey.Notability || Board == null ||
+                !Board.Fresh(member.Id) || member.Career.Count == 0)
+                return "";
+            return member.Career[member.Career.Count - 1].Line;
         }
 
         /// <summary>How many men stand under a lieutenant - the line his own row
@@ -1103,11 +1201,18 @@ namespace LivingCity.UI
                 y = Particular("CURRENT BLOCK", currentBlock, textX, textW, y);
             }
             y = Particular("LOYALTY", member.Loyalty + " of 100", textX, textW, y,
-                member.Loyalty < 35 ? LedgerV2.Red : LedgerV2.Ink);
+                member.Loyalty < Loyalty.WatchBand ? LedgerV2.Red : LedgerV2.Ink);
             // What he is LIKE, in words. The numbers behind these are never shown: the
             // player is meant to learn a man's character from what the man does, and a
             // column of five more figures would let him skip that entirely.
             y = Particular("CHARACTER", CharacterWords(member), textX, textW, y);
+            // LOY-004. The book's own verdict, so the player is never asked to read
+            // eleven numbers to find the man worth promoting or the man worth watching.
+            // The red flag prints in red; the two he could BE print in ink.
+            var marks = ManFlags.Of(member);
+            if (marks != ManFlag.None)
+                y = Particular("THE BOOK SAYS", ManFlags.Line(marks), textX, textW, y,
+                    (marks & ManFlag.RedFlag) != 0 ? LedgerV2.Red : LedgerV2.Ink);
             // ECON-006. His NAME, quarter by quarter - earned at doors he has leaned on
             // and forgotten wherever he stops going. It already scales what he is worth
             // standing on a street and what a shop does when he asks; a mechanic the
@@ -1157,6 +1262,9 @@ namespace LivingCity.UI
 
             // ---- what the city has on him ----
             y = BuildRapSheet(member, y);
+
+            // ---- and what WE have on him ----
+            y = BuildCareer(member, y);
 
             // ---- the gear the outfit keeps, and his crew's share of it ----
             y = BuildEquipmentSection(roster, member, y);
@@ -1217,6 +1325,90 @@ namespace LivingCity.UI
 
             return y - 10f;
         }
+
+        /// <summary>
+        /// WITH THE OUTFIT: the story the rap sheet cannot tell. The city knows what he
+        /// was charged with; this is what he actually did for us - who brought him in,
+        /// the crews he stood in, the nights he came out of, the ranks he held.
+        ///
+        /// Built exactly like the rap sheet above it and set in the same type, because
+        /// it IS the same document continued: oldest line first, a life read forward.
+        /// The copy WRAPS rather than truncates - an incident is a sentence, and a
+        /// sentence cut off at the panel edge by TMP's ellipsis is a line the player
+        /// cannot finish - so each entry is measured for the height it really needs.
+        /// </summary>
+        float BuildCareer(Character member, float y)
+        {
+            const float dayW = 96f;
+            const float lineH = 17f;
+
+            Caps(cardContent, 0f, y, CardInner - 150f, "WITH THE OUTFIT", 11f,
+                LedgerV2.Body, 5f);
+            Caps(cardContent, CardInner - 150f, y, 150f,
+                member.Career.Count == 1 ? "1 ENTRY" : member.Career.Count + " ENTRIES",
+                9f, LedgerV2.Label, 3f, TextAlignmentOptions.MidlineRight);
+            y -= 20f;
+            Rule(cardContent, 0f, y + 4f, CardInner, LedgerV2.Rule);
+
+            if (member.Career.Count == 0)
+            {
+                Line(cardContent, LedgerStyle.MonoItalic, 12f, LedgerV2.Muted,
+                    0f, y - 2f, CardInner, lineH, "Nothing yet. He has only just come on.");
+                return y - lineH - 10f;
+            }
+
+            var copyW = CardInner - dayW;
+            for (var i = 0; i < member.Career.Count; i++)
+            {
+                var entry = member.Career[i];
+
+                Line(cardContent, LedgerStyle.Mono, 11f, LedgerV2.Label,
+                    0f, y - 2f, dayW, lineH, LedgerText.DayStamp(entry.Day));
+
+                var copy = Paragraph(cardContent, LedgerStyle.Mono, 12f,
+                    InkFor(entry.Kind), dayW, y - 3f, copyW, lineH, entry.Line,
+                    lineSpacing: 0f);
+                var tall = Mathf.Max(lineH,
+                    Mathf.Ceil(copy.GetPreferredValues(entry.Line, copyW, 0f).y));
+
+                // The street it happened on, under the date, and ONLY when the
+                // sentence has not already named it: most of the feed's own lines read
+                // "... at Pearl Street" and set it twice would be the file arguing with
+                // itself. A place with nowhere to print was the field quietly going to
+                // waste - it is stored on every entry and was read by nothing.
+                var where = entry.Where;
+                if (where.Length > 0 &&
+                    entry.Line.IndexOf(where, System.StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    tall = Mathf.Max(tall, lineH * 2f);
+                    var place = LedgerV2.Mono(cardContent, 0f, y - lineH - 1f, dayW,
+                        where, 9.5f, LedgerV2.Muted, 1f);
+                    place.overflowMode = TextOverflowModes.Ellipsis;
+                }
+
+                copy.rectTransform.sizeDelta = new Vector2(copyW, tall);
+
+                y -= tall;
+                if (i < member.Career.Count - 1)
+                    LedgerV2.Leader(cardContent, 0f, y + 3f, CardInner);
+            }
+
+            return y - 10f;
+        }
+
+        /// <summary>The pen one line of a man's history is set in - the book's own
+        /// rule that a record is read by colour before it is read by word. A rank
+        /// change is the spine of the file and prints in the lieutenant's blue;
+        /// anything that put him off his feet or off the books prints in red.</summary>
+        static Color InkFor(CareerKind kind) => kind switch
+        {
+            CareerKind.Rank => LedgerV2.Lieutenant,
+            CareerKind.Condition => LedgerV2.Red,
+            CareerKind.Struck => LedgerV2.Red,
+            CareerKind.Improved => LedgerV2.Green,
+            CareerKind.Posting => LedgerV2.Muted,
+            _ => LedgerV2.Body,
+        };
 
         /// <summary>
         /// The clerk's line on what a man is LIKE, in words - never the numbers behind
@@ -1781,7 +1973,8 @@ namespace LivingCity.UI
                 var crew = roster.CrewOf(member.Id);
                 Caps(cardFoot, 0f, -8f, CardInner,
                     LedgerText.DemoteConfirm(member.FirstName,
-                        crew != null ? crew.HoodIds.Count : 0), 9.5f, LedgerV2.Red, 2f);
+                        crew != null ? crew.HoodIds.Count : 0) + " " +
+                    LedgerText.DemoteCost, 9.5f, LedgerV2.Red, 2f);
                 LedgerV2.Button(cardFoot, "DISBAND HIS CREW", 0f, -22f, half, buttonH, () =>
                 {
                     pendingConfirm = Confirm.None;
@@ -1821,6 +2014,16 @@ namespace LivingCity.UI
                     DoPromote(member.Id);
                 dirty = true;
             });
+
+            // LOY-003. The choice is made on the man's HISTORY, so what the book has
+            // already decided about him stands beside the key that acts on it - the
+            // player should never have to scroll back up the file to find out whether
+            // this is the man he thought it was.
+            var marks = ManFlags.Of(member);
+            if (marks != ManFlag.None)
+                Caps(cardFoot, half + 12f, -22f, half, ManFlags.Line(marks), 9.5f,
+                    (marks & ManFlag.RedFlag) != 0 ? LedgerV2.Red : LedgerV2.Lieutenant,
+                    2f, TextAlignmentOptions.MidlineRight);
         }
 
         void DoPromote(int id)

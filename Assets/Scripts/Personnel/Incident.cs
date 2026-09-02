@@ -42,6 +42,18 @@ namespace LivingCity.Personnel
 
         /// <summary>He was made a lieutenant.</summary>
         Promoted,
+
+        /// <summary>He was taken back down to a hood.</summary>
+        Demoted,
+
+        /// <summary>His command trades crossed the line: he could run a crew.</summary>
+        ReadyForACrew,
+
+        /// <summary>He can shoot, he will go, and he does as he is told.</summary>
+        AGunForHire,
+
+        /// <summary>Ambition over the line and loyalty under it - the red flag.</summary>
+        NotToBeTrusted,
     }
 
     /// <summary>
@@ -89,6 +101,15 @@ namespace LivingCity.Personnel
                     return name + " has gone over, and he did not go alone.";
                 case IncidentKind.Promoted:
                     return name + " has a crew of his own.";
+                case IncidentKind.Demoted:
+                    return name + " has been taken back down, and his crew broken up.";
+                case IncidentKind.ReadyForACrew:
+                    return name + " is ready for a crew of his own.";
+                case IncidentKind.AGunForHire:
+                    return name + " can shoot, and he does not lose his head.";
+                case IncidentKind.NotToBeTrusted:
+                    return name + " wants more than he has, and he no longer thinks " +
+                           "it is coming from us.";
                 default:
                     return name + " is slowing down.";
             }
@@ -98,6 +119,19 @@ namespace LivingCity.Personnel
         /// losing a step reads differently at forty-six and at sixty.</summary>
         public static string SlowingLine(string name, int age, string trade) =>
             name + ", " + age + ", is losing his " + trade + ".";
+
+        /// <summary>
+        /// The defection line, the other one that wants a number. A lieutenant going
+        /// over is expensive in proportion to how many men went with him, and that
+        /// figure is his Leadership - the thing he was promoted FOR. A page that only
+        /// said "he did not go alone" left the player to notice four missing names on
+        /// his own.
+        /// </summary>
+        public static string DefectedLine(string name, int menTaken) => menTaken <= 0
+            ? name + " has gone over. Nobody would follow him."
+            : menTaken == 1
+                ? name + " has gone over, and took one of his men with him."
+                : name + " has gone over, and took " + menTaken + " of his men with him.";
     }
 
     /// <summary>

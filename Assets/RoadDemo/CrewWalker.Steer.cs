@@ -22,6 +22,125 @@ namespace RoadDemo
         bool _detouring;     // this frame's step was off the line to the spot, round something
         bool _strideJog;     // was he jogging the stride last frame (the gait's own hysteresis)
 
+        // A combat approach is a route too. Local steering is for the moving last
+        // metre around a person or car; asked to solve a whole furnished street it
+        // can choose a side of one prop and immediately be contradicted by the next,
+        // which is the orbit/stall the player sees. WalkRoute owns the static part and
+        // TickStride still owns every actual step along its handful of taut corners.
+        readonly List<Vector3> _combatWay = new List<Vector3>();
+        int _combatWayAt;
+        int _combatWayVersion = -1;
+        Vector3 _combatWayTarget;
+        float _combatReplanAt;
+
+        void ClearCombatWay()
+        {
+            _combatWay.Clear();
+            _combatWayAt = 0;
+            _combatWayVersion = -1;
+            _combatReplanAt = 0f;
+        }
+
+        bool PlanCombatWay(Vector3 target)
+        {
+            _combatWay.Clear();
+            _combatWayAt = 0;
+            _combatWayTarget = target;
+            _combatWayVersion = WalkObstacles.Version;
+            _combatReplanAt = Time.time + 0.4f;
+            if (!WalkRoute.Plan(Tf.position, target, _combatWay, false) ||
+                _combatWay.Count == 0)
+            {
+                _combatWay.Clear();
+                return false;
+            }
+            // The planner may retain a near start anchor. It is already under his
+            // feet, not a corner worth braking and turning back for.
+            while (_combatWayAt < _combatWay.Count - 1)
+            {
+                var gap = _combatWay[_combatWayAt] - Tf.position;
+                gap.y = 0f;
+                if (gap.sqrMagnitude > 0.35f * 0.35f) break;
+                _combatWayAt++;
+            }
+            _blockedFor = 0f;
+            _steerSide = 0;
+            return true;
+        }
+
+        /// <summary>Close on a live mark over routed static ground. The target may
+        /// move, so the final corner is refreshed when it has shifted materially;
+        /// props do not move, so a stable target pays for the route only once.</summary>
+        void TickCombatStride(float dt, Vector3 target, float stopWithin,
+            bool hurry, bool run)
+        {
+            target.y = Tf.position.y;
+            var toTarget = target - Tf.position;
+            toTarget.y = 0f;
+            if (toTarget.magnitude <= stopWithin)
+            {
+                ClearCombatWay();
+                TickStride(dt, target, stopWithin, hurry, run);
+                return;
+            }
+
+            // Decide direct-vs-routed only before a corridor is chosen. Re-testing
+            // visibility every frame made a man abandon a sound route at the first
+            // sliver past a prop, then rebuild it as that sliver closed again.
+            if (_combatWay.Count == 0 && StaticChordClear(Tf.position, target))
+            {
+                TickStride(dt, target, stopWithin, hurry, run);
+                return;
+            }
+
+            var moved = target - _combatWayTarget;
+            moved.y = 0f;
+            bool stale = _combatWay.Count == 0 ||
+                         _combatWayVersion != WalkObstacles.Version ||
+                         moved.sqrMagnitude > 2f * 2f ||
+                         _combatWayAt >= _combatWay.Count;
+            if (stale && Time.time >= _combatReplanAt && !PlanCombatWay(target))
+            {
+                // A temporary planning miss is not permission to cross a prop. Stand
+                // and retry shortly; dynamic people are still handled inside stride.
+                Loco(dt, false);
+                _blockedFor += dt;
+                return;
+            }
+
+            if (_combatWay.Count == 0)
+            {
+                Loco(dt, false);
+                return;
+            }
+
+            while (_combatWayAt < _combatWay.Count - 1)
+            {
+                var gap = _combatWay[_combatWayAt] - Tf.position;
+                gap.y = 0f;
+                if (gap.sqrMagnitude > 0.35f * 0.35f) break;
+                _combatWayAt++;
+                _blockedFor = 0f;
+                _steerSide = 0;
+            }
+
+            bool last = _combatWayAt >= _combatWay.Count - 1;
+            var waypoint = last ? target : _combatWay[_combatWayAt];
+            TickStride(dt, waypoint, last ? stopWithin : 0.12f,
+                hurry, run, terminal: last);
+
+            // Something dynamic may have closed a once-valid chord. Give local
+            // steering a short chance, then redraw from the feet instead of orbiting.
+            if (_blockedFor > 0.8f)
+            {
+                _combatWay.Clear();
+                _combatWayAt = 0;
+                _combatReplanAt = Time.time;
+                _steerSide = 0;
+                _blockedFor = 0f;
+            }
+        }
+
         /// <summary>A moving shooter may aim only into the forward sixty-degree cone
         /// of his actual stride. His body can still be facing the mark for a frame while
         /// obstacle steering carries him sideways or back round a car; that is precisely
@@ -265,16 +384,20 @@ namespace RoadDemo
             bool moving = step > 1e-4f;
             if (jog && moving)
             {
-                LocomotionPose = sprint ? PoseSprint : PoseJog;
+                LocomotionPose = sprint ? VisibleSprintPose : VisibleJogPose;
                 BlendLocomotion(dt, true);
                 // the run keeps step with the ground he actually covers: the crowd
                 // takes pace off him, and a jog played at its own rate over a
                 // shortened step is a man skating. Held inside the rates a run clip
                 // reads at (RunRateMin/Max) - past those it is a moon-walk - and his
                 // own hair off the beat kept, so a crew never runs in lockstep.
-                SetPoseSpeed(LocomotionPose, Mathf.Clamp(
-                    pace / (sprint ? sprintClip : ClipPace(PoseJog, JogClipPace)),
-                    sprint ? SprintRateMin : RunRateMin, RunRateMax) * _runJitter);
+                if (LocomotionPose == PoseRifleSprint || LocomotionPose == PoseRifleJog)
+                    GearVisibleRifleGait(LocomotionPose, pace,
+                        sprint ? SprintClipPace : JogClipPace, _runJitter);
+                else
+                    SetPoseSpeed(LocomotionPose, Mathf.Clamp(
+                        pace / (sprint ? sprintClip : ClipPace(PoseJog, JogClipPace)),
+                        sprint ? SprintRateMin : RunRateMin, RunRateMax) * _runJitter);
             }
             else if (!moving) Loco(dt, false);
             else
@@ -285,6 +408,10 @@ namespace RoadDemo
                 if (LocomotionPose == PoseCrouchWalk)
                     SetPoseSpeed(PoseCrouchWalk,
                         Mathf.Clamp(pace / ClipPace(PoseCrouchWalk, 1.3f), 0.7f, 1.4f));
+                else if (LocomotionPose == PoseRifleWalk)
+                    GearVisibleRifleGait(LocomotionPose, pace, WalkClipPace);
+                else if (LocomotionPose == PoseRifleCrouchWalk)
+                    GearVisibleRifleGait(LocomotionPose, pace, 1.3f);
                 else HoldWalkRate(pace);
             }
         }

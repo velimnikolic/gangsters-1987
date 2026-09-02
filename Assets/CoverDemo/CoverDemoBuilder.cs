@@ -79,13 +79,7 @@ namespace CoverDemo
                  "of which five are crewed. 0: leave the starting three alone.")]
         [Range(0, 5)] public int outfitCrews = 3;
 
-        [Header("Arms")]
-        [Tooltip("Arm the outfit out of the armory when the scene opens - one gun per man. " +
-                 "Off: every man carries the .38 in his coat.")]
-        public bool armTheOutfit = true;
-        [Tooltip("The gun the outfit opens with. Vehicle is not a gun and is ignored.")]
-        public EquipmentKind outfitArms = EquipmentKind.Rifle;
-
+        // CoverDemo always issues one rifle to every deployed man on both sides.
         [Header("Mission (headless)")]
         [Tooltip("Send the outfit at the rivals this many seconds into Play, with no click. " +
                  "0: only by hand. The block's own driver runs it - it reads DemoCrews and " +
@@ -133,12 +127,21 @@ namespace CoverDemo
                                                    StreetXMax, StreetKit.OuterHalf));
             BuildLight();
             BuildCamera();
+            // A review bench must show both sides before the player walks eighty metres
+            // down the street. The shared city fog correctly hid the distant rivals;
+            // this scene-local source reveals only this demo's bounded street.
+            gameObject.AddComponent<CoverDemoVision>().Init(
+                new Rect(StreetXMin - 4f, -StreetKit.OuterHalf - 4f,
+                         StreetXMax - StreetXMin + 8f, StreetKit.OuterHalf * 2f + 8f));
             // the arena's clock (Space holds it, , and . step it): watching a man duck
             // is watching a second and a half of a fight, and the Editor's own pause
             // stops the camera with it
             gameObject.AddComponent<CrewDemo.CrewDemoPace>();
 
-            var clips = CrewKit.Clips();
+            // This bench deliberately wears the authored Mixamo rifle wardrobe. The
+            // flag inside it is opt-in: RoadDemo, CrewDemo and the live city keep their
+            // existing crew clips and procedural long-gun posing.
+            var clips = RifleKit.ForCover(CrewKit.Clips());
             if (clips.Walk == null || clips.Idle == null)
                 Debug.LogWarning("[CoverDemo] Walk/idle clips missing under Assets/Animations/People - " +
                                  "the men will slide.");
@@ -598,10 +601,7 @@ namespace CoverDemo
 
         static readonly (string, EquipmentKind)[] RivalArms =
         {
-            ("SM_Wep_Machine_Pistol_01", EquipmentKind.MachinePistol),
-            ("SM_Wep_Shotgun_01", EquipmentKind.Shotgun),
-            ("SM_Wep_SubMachineGun_01", EquipmentKind.TommyGun),
-            ("SM_Wep_Pistol_Revolver_01", EquipmentKind.Pistol),
+            ("SM_Wep_Rifle_01", EquipmentKind.Rifle),
         };
 
         // one crew per pavement, turn and turn about, so the fight is fought ACROSS
@@ -652,8 +652,25 @@ namespace CoverDemo
 
         void ArmTheOutfit()
         {
-            if (_armsGiven || !armTheOutfit) return;
-            _armsGiven = TestBench.ArmTheOutfit(outfitArms, "[CoverDemo]");
+            if (_armsGiven) return;
+            _armsGiven = TestBench.ArmTheOutfit(EquipmentKind.Rifle, "[CoverDemo]");
         }
+    }
+
+    /// <summary>Fog exemption for the bounded review street. It is owned by the
+    /// CoverDemo bootstrap and therefore never exists in the live city.</summary>
+    sealed class CoverDemoVision : MonoBehaviour, LivingCity.Gameplay.IMapVisionAreaSource
+    {
+        Rect _street;
+
+        public void Init(Rect street) => _street = street;
+
+        public bool VisionActive => isActiveAndEnabled;
+
+        public bool IsVisible(Vector3 worldPosition) =>
+            _street.Contains(new Vector2(worldPosition.x, worldPosition.z));
+
+        void OnEnable() => LivingCity.Gameplay.MapVisionRegistry.RegisterArea(this);
+        void OnDisable() => LivingCity.Gameplay.MapVisionRegistry.UnregisterArea(this);
     }
 }

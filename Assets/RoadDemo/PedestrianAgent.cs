@@ -166,6 +166,14 @@ namespace RoadDemo
         // flinch, the fall. Optional like the rest - an unarmed walker never asks.
         public AnimationClip PistolIdle, Aim, Shoot, Hit, Death;
 
+        // An authored long-gun wardrobe can carry its own visible gaits and firing
+        // takes without replacing the city's movement wardrobe. The base Walk/Jog/
+        // Sprint remain the authority for pace, routing and joins; these gaits are
+        // selected only while the weapon is actually in the man's hand.
+        public AnimationClip RifleWalk, RifleJog, RifleSprint, RifleCrouchWalk;
+        public AnimationClip RifleGunplay, AutomaticShoot, CoverShoot;
+        public bool AuthoredLongGun;
+
         // The run a man breaks into closing on a fight. Optional: without it he walks.
         public AnimationClip Jog;
 
@@ -272,13 +280,16 @@ namespace RoadDemo
             PosePistolIdle = 7, PoseAim = 8, PoseShoot = 9, PoseHit = 10, PoseDeath = 11,
             PoseJog = 12, PoseCrouch = 13, PoseRide = 14, PoseSprint = 15,
             PoseCrouchWalk = 16,
+            PoseRifleWalk = 17, PoseRifleJog = 18, PoseRifleSprint = 19,
+            PoseRifleCrouchWalk = 20,
+            PoseRifleGunplay = 21, PoseAutomaticShoot = 22, PoseCoverShoot = 23,
             // The two SWAPPABLE slots. Every pose above is one clip wired once and
             // kept; these two hold whatever clip was last put in them (PutClip) - the
             // join between gaits, and the little life a man spends standing about.
             // There are dozens of candidate clips for each and no body needs more
             // than one at a time, so they are ports, not a wardrobe.
-            PoseJoin = 17, PoseAct = 18;
-        const int PoseCount = 19;
+            PoseJoin = 24, PoseAct = 25;
+        const int PoseCount = 26;
 
         // Clips cut straight out of an FBX (the pistol set) carry no loop flag, so
         // a loop pose is wrapped by hand in TickBlend; the .anim files loop themselves.
@@ -300,6 +311,12 @@ namespace RoadDemo
             table[PoseCrouch] = true;
             table[PoseCrouchWalk] = true;
             table[PoseRide] = true;
+            table[PoseRifleWalk] = true;
+            table[PoseRifleJog] = true;
+            table[PoseRifleSprint] = true;
+            table[PoseRifleCrouchWalk] = true;
+            table[PoseRifleGunplay] = true;
+            table[PoseAutomaticShoot] = true;
             // PoseJoin is a one-shot by definition. PoseAct is either - a fidget runs
             // once, a lean or a drunk sway loops - so it is wrapped per man (_actLoop)
             // rather than by this table.
@@ -308,6 +325,7 @@ namespace RoadDemo
 
         public Transform Tf;
         public float Speed = 1.5f;
+        protected bool AuthoredLongGunWardrobe { get; private set; }
 
         // ---- the black box (DriveTrace): who he is, and whether he is getting anywhere
         static int _ids;
@@ -375,6 +393,7 @@ namespace RoadDemo
         void Setup(Transform tf, PedClips clips)
         {
             Tf = tf;
+            AuthoredLongGunWardrobe = clips.AuthoredLongGun;
             // 1987, America: everybody keeps right. Two flows down one pavement
             // that share a centre line walk through each other; two flows that
             // each hold their own side pass each other, which is what they do.
@@ -458,6 +477,13 @@ namespace RoadDemo
                 Wire(PoseCrouch, clips.Crouch);
                 Wire(PoseCrouchWalk, clips.CrouchWalk);
                 Wire(PoseRide, clips.Ride);
+                Wire(PoseRifleWalk, clips.RifleWalk);
+                Wire(PoseRifleJog, clips.RifleJog);
+                Wire(PoseRifleSprint, clips.RifleSprint);
+                Wire(PoseRifleCrouchWalk, clips.RifleCrouchWalk);
+                Wire(PoseRifleGunplay, clips.RifleGunplay);
+                Wire(PoseAutomaticShoot, clips.AutomaticShoot);
+                Wire(PoseCoverShoot, clips.CoverShoot);
                 // PoseJoin and PoseAct are left empty: their clip arrives when the
                 // man first needs one (PutClip), and a walker who never gets near
                 // the camera never pays for either.
@@ -1265,7 +1291,13 @@ namespace RoadDemo
         public bool LegsMoving => IsMotion(_pose);
 
         static bool IsMotion(int pose) =>
-            pose == PoseWalk || pose == PoseJog || pose == PoseSprint || pose == PoseCrouchWalk;
+            pose == PoseWalk || pose == PoseJog || pose == PoseSprint || pose == PoseCrouchWalk ||
+            pose == PoseRifleWalk || pose == PoseRifleJog || pose == PoseRifleSprint ||
+            pose == PoseRifleCrouchWalk;
+
+        static bool IsRunningMotion(int pose) =>
+            pose == PoseJog || pose == PoseSprint ||
+            pose == PoseRifleJog || pose == PoseRifleSprint;
 
         /// <summary>A pose that cuts a join dead wherever it is: the flinch, the fall,
         /// the shot, the raised gun, going down behind something, a seat. Nobody
@@ -1275,7 +1307,8 @@ namespace RoadDemo
         /// the same rotation.</summary>
         static bool BreaksJoin(int pose) =>
             pose == PoseHit || pose == PoseDeath || pose == PoseShoot || pose == PoseAim ||
-            pose == PoseCrouch ||
+            pose == PoseRifleGunplay || pose == PoseAutomaticShoot ||
+            pose == PoseCoverShoot || pose == PoseCrouch ||
             pose == PoseSitDown || pose == PoseSit || pose == PoseStandUp || pose == PoseRide;
 
         /// <summary>The heading a start clip is chosen against - where he is about to
@@ -1291,9 +1324,7 @@ namespace RoadDemo
             bool moving = IsMotion(_pose);
             if (walking == moving) return false;
 
-            bool running = walking
-                ? LocomotionPose == PoseJog || LocomotionPose == PoseSprint
-                : _pose == PoseJog || _pose == PoseSprint;
+            bool running = walking ? IsRunningMotion(LocomotionPose) : IsRunningMotion(_pose);
 
             if (walking)
             {
@@ -1783,6 +1814,10 @@ namespace RoadDemo
             PoseShoot => "shoot", PoseHit => "hit", PoseDeath => "death",
             PoseJog => "jog", PoseCrouch => "crouch", PoseRide => "ride",
             PoseSprint => "sprint", PoseCrouchWalk => "crouchwalk",
+            PoseRifleWalk => "riflewalk", PoseRifleJog => "riflejog",
+            PoseRifleSprint => "riflesprint", PoseRifleCrouchWalk => "riflecrouchwalk",
+            PoseRifleGunplay => "riflefire", PoseAutomaticShoot => "autofire",
+            PoseCoverShoot => "coverfire",
             PoseJoin => "join", PoseAct => "act", _ => "?",
         };
 

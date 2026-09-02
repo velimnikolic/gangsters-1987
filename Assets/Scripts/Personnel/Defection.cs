@@ -118,13 +118,22 @@ namespace LivingCity.Personnel
 
             // Struck off after the list is built, not during: the list being walked is
             // the crew's own membership.
+            //
+            // Each of them takes his OWN line out with him. The desertion door is the
+            // right door - gear, wages and posts settle the way they always did - but
+            // the clerk's sentence about it is not the right sentence: these men did
+            // not run from a fight, they followed somebody, and a file that said
+            // otherwise would be the ledger lying about the one night it most matters.
+            var followed = CareerText.WalkedOutWith(lieutenant.FullName);
+            var loudness = Notability.WeightOf(IncidentKind.Defected);
             for (var i = 0; i < taken.Length; i++)
-                RosterOps.Desert(roster, taken[i]);
-            RosterOps.Desert(roster, lieutenant.Id);
+                RosterOps.Desert(roster, taken[i], followed, loudness);
+            RosterOps.Desert(roster, lieutenant.Id, CareerText.WentOver(taken.Length),
+                loudness);
 
             incidents?.Add(new Incident(lieutenant.Id, lieutenant.FullName,
                 IncidentKind.Defected, day, "", 0,
-                IncidentText.Line(IncidentKind.Defected, lieutenant.FullName, "")));
+                IncidentText.DefectedLine(lieutenant.FullName, taken.Length)));
 
             Followers.Clear();
             return new DefectionReport(lieutenant.Id, lieutenant.FullName, taken);

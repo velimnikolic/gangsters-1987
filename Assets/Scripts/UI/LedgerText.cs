@@ -98,6 +98,10 @@ namespace LivingCity.UI
                 case IncidentKind.BearsWatching: return "Watch him";
                 case IncidentKind.Defected: return "Gone over";
                 case IncidentKind.Promoted: return "Made";
+                case IncidentKind.Demoted: return "Broken";
+                case IncidentKind.ReadyForACrew: return "Ready";
+                case IncidentKind.AGunForHire: return "A gun";
+                case IncidentKind.NotToBeTrusted: return "Watch him";
                 default: return "Wire";
             }
         }
@@ -386,6 +390,19 @@ namespace LivingCity.UI
         public static string DueInPlain(int dueDay, int today, float hourNow) =>
             DueIn(dueDay, today, hourNow).ToLowerInvariant();
 
+        /// <summary>
+        /// A campaign day as the file types it - "14 MAR 1987", the same shape the rap
+        /// sheet's dates are set in, so a man's two records read as one document rather
+        /// than two systems printed under each other.
+        /// </summary>
+        public static string DayStamp(int day)
+        {
+            // Stamped() sets the weekday first - "MON 5 JAN 1987" - and a file's date
+            // column has no room for it and no use for it.
+            var stamped = News.NewsDate.FromClockDay(day - 1).Stamped();
+            return stamped.Length > 4 ? stamped.Substring(4) : stamped;
+        }
+
         /// <summary>How long a stretch of days lasts, said as a stretch rather than a
         /// date - what a CONDITION note under a hurt or a held man reads.</summary>
         public static string DaysLeft(int backOnDay, int today)
@@ -423,6 +440,11 @@ namespace LivingCity.UI
             1 => "Disband " + name + "'s crew? One man returns to the pool.",
             _ => "Disband " + name + "'s crew? " + hoodCount + " men return to the pool.",
         };
+
+        /// <summary>The second half of the demote confirm: what it costs. A demotion
+        /// is allowed and it is BRUTAL - he does not forgive it, and an ambitious man
+        /// who does not forgive it is where LOY-002's arithmetic starts.</summary>
+        public const string DemoteCost = "He will not forgive it.";
 
         // -------------------------------------------------------------- op refusals
 

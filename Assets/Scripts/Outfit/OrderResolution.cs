@@ -385,7 +385,11 @@ namespace LivingCity.Outfit
             if (roster == null || rng == null)
                 return -1;
 
-            var member = RosterSeeder.Recruit(roster, rng, stat);
+            // Who went looking goes on the new man's file: "brought in by Rossi" is
+            // half of what makes a corner boy somebody's man rather than a number.
+            var recruiter = crew != null ? roster.Find(crew.LieutenantId) : null;
+            var member = RosterSeeder.Recruit(roster, rng, stat,
+                recruiter != null ? recruiter.FullName : "");
             // A refusal here is allowed to stand: he then waits in the Boss's pool,
             // where Recruit dealt him - the same place a refused ledger hire waits.
             if (crew != null)

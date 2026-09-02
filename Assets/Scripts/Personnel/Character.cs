@@ -145,10 +145,24 @@ namespace LivingCity.Personnel
         /// </summary>
         public string ConditionNote = "";
 
+        /// <summary>Which of the ledger's three marks have already been said out loud
+        /// about him. NOT the marks themselves - those are worked out from him every
+        /// time they are asked for (<see cref="ManFlags.Of"/>) - only the record of
+        /// what the feed has already printed, so crossing a threshold is news once
+        /// rather than every midnight afterwards.</summary>
+        public ManFlag FlagsAnnounced;
+
         /// <summary>His record with the city, oldest line first. Dealt with him (every
         /// man on this payroll has a past) and added to as the outfit earns him more.
         /// See <see cref="RapSheet"/>; the personal file prints it.</summary>
         public readonly List<RapEntry> RapSheet = new List<RapEntry>();
+
+        /// <summary>His record with the OUTFIT, oldest line first - jobs he ran, fights
+        /// he came out of, the men he answered to, the ranks he held. The rap sheet is
+        /// what the city has on him; this is what we have on him, and the two are
+        /// printed one under the other on his file. Written only through
+        /// <see cref="Career"/>, off events that really happened.</summary>
+        public readonly List<CareerEntry> Career = new List<CareerEntry>();
 
         readonly int[] halfSteps = new int[AttributeScale.Count];
 

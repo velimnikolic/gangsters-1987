@@ -73,6 +73,14 @@ namespace LivingCity.Outfit
         public readonly List<Incident> IncidentBook = new List<Incident>();
 
         /// <summary>
+        /// Today's notability figures for the whole roster, worked out once at the day
+        /// tick and read many times by the ledger. Thrown away and rebuilt rather than
+        /// maintained - see <see cref="NotabilityBoard"/> - so no counter here can drift
+        /// away from what <see cref="Notability.Of"/> would say.
+        /// </summary>
+        public readonly NotabilityBoard Notability = new NotabilityBoard();
+
+        /// <summary>
         /// How far back the incident book reaches. Still a rolling window rather than an
         /// unbounded one, but a window a campaign is unlikely to reach the far side of:
         /// the ledger's rail stands the whole book on end and lets the boss scroll back
@@ -406,6 +414,10 @@ namespace LivingCity.Outfit
 
             Campaign.Day++;
 
+            // Whatever the crews did between the two midnights goes onto their files
+            // BEFORE the desk is cleared - it is the last chance to see it.
+            WriteIncidentHistory(roster);
+
             // Last night's page is set before the new day clears the desk, and the
             // book keeps what the score will want to read next week.
             LastNight.Clear();
@@ -417,6 +429,7 @@ namespace LivingCity.Outfit
             Rises.Clear();
             Declines.Clear();
             Incidents.Clear();
+            historyWritten = 0;
             CharacterChanges.Clear();
             if (roster != null)
             {
@@ -493,12 +506,68 @@ namespace LivingCity.Outfit
                 var back = RosterOps.Discharge(roster, Campaign.Day);
                 if (back > 0 || Rises.Count > 0 || Declines.Count > 0)
                     RosterMoved?.Invoke();
+
+                // LOY-004. What the book has to say about each man, said once, on the
+                // day it becomes true. Last, so the marks read against everything the
+                // day did to him - a man promoted this morning is judged on the rank
+                // he holds tonight.
+                for (var i = 0; i < roster.Members.Count; i++)
+                    ManFlags.Announce(roster.Members[i], Campaign.Day, Incidents);
+
+                // NOTE-001/002. Every event of the day goes onto the man's own file,
+                // through the one door, carrying the sentence the paper will print -
+                // and the day's scores are then folded off those files.
+                WriteHistory(roster);
+                Notability.Rebuild(roster, Campaign.Day);
             }
 
             var paid = Campaign.Settles(Campaign.Day) ? TurnTheBooks(roster) : 0;
             CollectTribute();
             Relations.ApplyPending();
             return paid;
+        }
+
+        /// <summary>
+        /// The day, written into the men's own files. One more subscriber on streams
+        /// that already exist - the incident feed and the morning's rises - rather than
+        /// a second set of event plumbing: nothing here invents a fact, and every line
+        /// it writes came off a record something else produced.
+        ///
+        /// Rises are filtered to WHOLE stars inside <see cref="Career.Improved"/>: a
+        /// half-step lands most weeks and would fill a file with lines nobody reads.
+        /// </summary>
+        void WriteHistory(Roster roster)
+        {
+            for (var i = 0; i < Rises.Count; i++)
+            {
+                var rise = Rises[i];
+                Career.Improved(roster.Find(rise.CharacterId), Campaign.Day, rise);
+            }
+            WriteIncidentHistory(roster);
+        }
+
+        /// <summary>
+        /// How many of <see cref="Incidents"/> have already been copied onto the men's
+        /// files. The feed is filled from two directions - crews coming home during the
+        /// day, and the midnight pass itself - and a file must carry each event exactly
+        /// once, so the mark travels with the list rather than the clock.
+        /// </summary>
+        int historyWritten;
+
+        void WriteIncidentHistory(Roster roster)
+        {
+            if (roster == null)
+            {
+                historyWritten = Incidents.Count;
+                return;
+            }
+
+            for (var i = historyWritten; i < Incidents.Count; i++)
+            {
+                var incident = Incidents[i];
+                Career.FromIncident(roster.Find(incident.CharacterId), incident);
+            }
+            historyWritten = Incidents.Count;
         }
 
         /// <summary>

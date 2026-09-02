@@ -271,6 +271,10 @@ namespace GangstersTools
                 .Select(failure => "Personality regression: " + failure));
             failures.AddRange(LivingCity.Tests.CommandTests.Run()
                 .Select(failure => "Command regression: " + failure));
+            failures.AddRange(LivingCity.Tests.LoyaltyTests.Run()
+                .Select(failure => "Loyalty regression: " + failure));
+            failures.AddRange(LivingCity.Tests.NotabilityTests.Run()
+                .Select(failure => "Notability regression: " + failure));
             return new
             {
                 passed = failures.Count == 0,
@@ -339,6 +343,36 @@ namespace GangstersTools
                 passed = failures.Count == 0,
                 failures = failures.ToArray(),
                 contracts = LivingCity.Tests.CommandTests.ContractNames(),
+            };
+        }
+
+        [CliCommand("gangsters_loyalty_tests",
+                    "Run EPIC 15 contracts for loyalty, promotion and betrayal: who a " +
+                    "man answers to, what moves it, who walks and who goes with him.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "skill", "tests" })]
+        public static object LoyaltyTests()
+        {
+            var failures = LivingCity.Tests.LoyaltyTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                contracts = LivingCity.Tests.LoyaltyTests.ContractNames(),
+            };
+        }
+
+        [CliCommand("gangsters_notability_tests",
+                    "Run EPIC 16 contracts for the ledger's notability and a man's " +
+                    "history with the outfit: the fold, the fade, the sort and the cull.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "skill", "tests" })]
+        public static object NotabilityTests()
+        {
+            var failures = LivingCity.Tests.NotabilityTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                contracts = LivingCity.Tests.NotabilityTests.ContractNames(),
             };
         }
 

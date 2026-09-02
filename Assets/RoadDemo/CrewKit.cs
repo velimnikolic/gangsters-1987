@@ -495,11 +495,14 @@ namespace RoadDemo
         public static PedClips Draw(PedClips shared, System.Random rng)
         {
             var clips = shared;
+            // These are the movement-authoritative city clips even when the wardrobe
+            // also carries an authored rifle set. Rifle gaits live in separate slots
+            // and cannot change pace, route thresholds or obstacle lookahead.
             if (Walks.Count > 0) clips.Walk = Walks[rng.Next(Walks.Count)];
             if (Idles.Count > 0) clips.Idle = Idles[rng.Next(Idles.Count)];
+            if (Runs.Count > 0) clips.Jog = Runs[rng.Next(Runs.Count)];
             if (Deaths.Count > 0) clips.Death = Deaths[rng.Next(Deaths.Count)];
             if (Hits.Count > 0) clips.Hit = Hits[rng.Next(Hits.Count)];
-            if (Runs.Count > 0) clips.Jog = Runs[rng.Next(Runs.Count)];
             return clips;
         }
 

@@ -4,10 +4,16 @@ namespace LivingCity.Personnel
 {
     public enum SortKey
     {
-        /// <summary>The ledger's default: crews in formation order, men as entered.</summary>
+        /// <summary>Crews in formation order, men as entered.</summary>
         Roster,
         Attribute,
         Loyalty,
+
+        /// <summary>The ledger's default: the men something has happened to, first.
+        /// Needs a <see cref="ViewOptions.Board"/> to sort by; without one it falls
+        /// back to the roster's own order, which is what the page did before the
+        /// notability layer existed.</summary>
+        Notability,
     }
 
     public enum RankFilter
@@ -47,6 +53,13 @@ namespace LivingCity.Personnel
         /// <summary>Assign mode's flag: emit the FRONT and POOL headers even when empty,
         /// because in that mode a header is a drop target, not a summary.</summary>
         public bool IncludeEmptySections;
+
+        /// <summary>Today's notability figures, when there are any. A reference and not
+        /// a value: it is rebuilt at every day tick and read here, never written, and it
+        /// stays OUT of <see cref="Hash()"/> - the almanac repaints on the roster's own
+        /// version, and a board that changed identity every midnight would make the
+        /// dirty key fire on a day nothing else moved.</summary>
+        public NotabilityBoard Board;
 
         /// <summary>Cheap dirty key for the almanac's repaint check.</summary>
         public int Hash() =>
@@ -245,21 +258,23 @@ namespace LivingCity.Personnel
         {
             if (options.Sort == SortKey.Roster)
                 return;
-
-            var attribute = options.SortAttribute;
-            var byLoyalty = options.Sort == SortKey.Loyalty;
+            // Notability with nothing to read it from is the roster's own order. A page
+            // painted before the first day tick - and every demo scene with no campaign
+            // in it - lands here.
+            if (options.Sort == SortKey.Notability && options.Board == null)
+                return;
 
             // Insertion sort: the list is a group, groups are small, and List.Sort's
             // comparison delegate would allocate per rebuild.
             for (var i = 1; i < Scratch.Count; i++)
             {
                 var current = Scratch[i];
-                var key = byLoyalty ? current.Loyalty : current.GetHalfSteps(attribute);
+                var key = KeyOf(current, options);
                 var j = i - 1;
                 while (j >= 0)
                 {
                     var other = Scratch[j];
-                    var otherKey = byLoyalty ? other.Loyalty : other.GetHalfSteps(attribute);
+                    var otherKey = KeyOf(other, options);
                     if (otherKey > key || (otherKey == key && other.Id < current.Id))
                         break;
                     Scratch[j + 1] = other;
@@ -268,5 +283,14 @@ namespace LivingCity.Personnel
                 Scratch[j + 1] = current;
             }
         }
+
+        /// <summary>The one figure a sorted roll is ordered by, whichever sort it
+        /// is.</summary>
+        static int KeyOf(Character man, in ViewOptions options) => options.Sort switch
+        {
+            SortKey.Loyalty => man.Loyalty,
+            SortKey.Notability => options.Board.ScoreOf(man.Id),
+            _ => man.GetHalfSteps(options.SortAttribute),
+        };
     }
 }

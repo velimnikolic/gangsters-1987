@@ -204,11 +204,15 @@ namespace LivingCity.UI
                 case IncidentKind.TookRivalMoney:
                 case IncidentKind.Defected:
                 case IncidentKind.BearsWatching:
+                case IncidentKind.NotToBeTrusted:
+                case IncidentKind.Demoted:
                 case IncidentKind.CaughtSkimming:
                     return LedgerStyle.Ballpoint;
                 case IncidentKind.DemandedARaise:
                     return LedgerStyle.PenAmber;
                 case IncidentKind.Promoted:
+                case IncidentKind.ReadyForACrew:
+                case IncidentKind.AGunForHire:
                     return LedgerStyle.GreenOk;
                 default:
                     return LedgerStyle.TelexPlain;

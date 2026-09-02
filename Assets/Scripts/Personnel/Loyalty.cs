@@ -53,9 +53,27 @@ namespace LivingCity.Personnel
         /// does not buy loyalty, it only stops the bleeding.</summary>
         public const int PaidOnTimeGain = 1;
 
-        /// <summary>Crossing DOWN through this is news. A man under it is a man the
-        /// player ought to be looking at.</summary>
-        public const int WatchBand = 40;
+        /// <summary>
+        /// Crossing DOWN through this is news. A man under it is a man the player
+        /// ought to be looking at.
+        ///
+        /// THE number for "we are losing him", and the only one: the ledger's red flag
+        /// reads it (<see cref="ManFlags.LoyaltyForRedFlag"/>) and the personal file
+        /// prints his loyalty in red beneath it. Three pages once carried three
+        /// different figures, so a man at 38 was named in the paper and printed in
+        /// black ink on his own file.
+        /// </summary>
+        public const int WatchBand = 35;
+
+        /// <summary>What being taken back down costs a man on top of the reset, before
+        /// his own ambition is counted. A promotion he was given can be taken away; the
+        /// insult cannot.</summary>
+        public const int TakenDownSting = 15;
+
+        /// <summary>How much of his Ambition is added to the sting. A settled man
+        /// shrugs and goes back to a corner; a hungry one starts counting what he is
+        /// owed - at Ambition 100 that is another twenty points off.</summary>
+        public const int StingFromAmbitionPercent = 20;
 
         /// <summary>
         /// He answers to somebody new. Loyalty resets toward neutral, carrying only a
@@ -73,6 +91,23 @@ namespace LivingCity.Personnel
             var target = Neutral + (steadiness - Neutral) * CarryFromDisciplinePercent / 100;
             RosterOps.NudgePersonality(man, PersonalityTrait.Loyalty,
                 target - man.Loyalty, reason ?? "answers to somebody new", into);
+        }
+
+        /// <summary>
+        /// The cut a demotion leaves after the reset. Separate from
+        /// <see cref="Reaim"/> on purpose: every transfer resets a man, but only one
+        /// kind of transfer is an insult, and the insult is what makes taking a crew
+        /// off a man a decision rather than a menu item.
+        /// </summary>
+        public static void Sting(Character man, List<PersonalityChange> into = null)
+        {
+            if (man == null || man.Gone)
+                return;
+
+            var hunger = Personality.Get(man, PersonalityTrait.Ambition);
+            var cut = TakenDownSting + hunger * StingFromAmbitionPercent / 100;
+            RosterOps.NudgePersonality(man, PersonalityTrait.Loyalty, -cut,
+                "had a crew, and had it taken off him", into);
         }
 
         /// <summary>

@@ -431,7 +431,7 @@ namespace RifleDemo
 
             var wrist = _animator.GetBoneTransform(HumanBodyBones.RightHand);
             if (wrist == null || _gun.parent == null) return;
-            var towardFist = GripPoint(false) - wrist.position;
+            var towardFist = CrewArms.GripPoint(_animator, false) - wrist.position;
             if (towardFist.sqrMagnitude < 1e-6f) return;
             _idleGripOffset = _gun.parent.InverseTransformDirection(towardFist.normalized) *
                               IdleGripAdvance;
@@ -935,56 +935,6 @@ namespace RifleDemo
             _aimLine.sharedMaterial = thread;
         }
 
-        /// <summary>Where a hand actually holds something: the middle of the fist, not
-        /// the wrist.
-        ///
-        /// GetBoneTransform(Hand) is the WRIST JOINT, and a line laid between two wrists
-        /// is not the line a rifle lies on - it runs a few centimetres short and behind
-        /// at both ends, which is enough to see. The grip is the middle of the closed
-        /// fist, so it is taken as the mean of the finger roots the rig maps - index,
-        /// middle and thumb - and falls back to the wrist on a rig that maps none.</summary>
-        Vector3 GripPoint(bool left)
-        {
-            var wrist = _animator.GetBoneTransform(
-                left ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
-            if (wrist == null) return Vector3.zero;
-
-            var sum = Vector3.zero;
-            int n = 0;
-            foreach (var bone in left ? LeftGripBones : RightGripBones)
-            {
-                var finger = _animator.GetBoneTransform(bone);
-                if (finger == null) continue;
-                sum += finger.position;
-                n++;
-            }
-
-            if (n == 0) return wrist.position;
-
-            // ...and a shade past them, out toward the edge of the hand: a rifle is not
-            // held at the knuckles either. Taken as a fraction of the wrist-to-knuckle
-            // reach so it scales with the man rather than being a number in centimetres
-            // that is right for one body and wrong for the next.
-            var knuckles = sum / n;
-            return knuckles + (knuckles - wrist.position) * GripReach;
-        }
-
-        /// <summary>How far past the knuckles the hold sits, as a fraction of the
-        /// wrist-to-knuckle reach.</summary>
-        const float GripReach = 0.6f;
-
-        static readonly HumanBodyBones[] LeftGripBones =
-        {
-            HumanBodyBones.LeftIndexProximal, HumanBodyBones.LeftMiddleProximal,
-            HumanBodyBones.LeftThumbProximal
-        };
-
-        static readonly HumanBodyBones[] RightGripBones =
-        {
-            HumanBodyBones.RightIndexProximal, HumanBodyBones.RightMiddleProximal,
-            HumanBodyBones.RightThumbProximal
-        };
-
         /// <summary>The line between his two hands, in the world, flattened. This is
         /// where the weapon lies in every two-handed take the pack ships.</summary>
         Vector3 HandLine()
@@ -999,14 +949,7 @@ namespace RifleDemo
         /// pointing at the pavement while the two hands are aiming ahead.</summary>
         Vector3 HandAxis()
         {
-            if (_animator == null) return Vector3.zero;
-            var right = _animator.GetBoneTransform(HumanBodyBones.RightHand);
-            var left = _animator.GetBoneTransform(HumanBodyBones.LeftHand);
-            if (right == null || left == null) return Vector3.zero;
-            var axis = GripPoint(true) - GripPoint(false);
-            // Hands together are not holding a long gun between them - a one-handed
-            // frame, a spill, a death - and there is no weapon line to read.
-            return axis.sqrMagnitude < 0.08f * 0.08f ? Vector3.zero : axis.normalized;
+            return CrewArms.HandAimAxis(_animator);
         }
 
         /// <summary>Swing him onto the mark by his HANDS, not by his chest.

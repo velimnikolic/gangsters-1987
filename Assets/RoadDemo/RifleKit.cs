@@ -42,6 +42,28 @@ namespace RoadDemo
 
         public static bool Installed => Idle != null;
 
+        /// <summary>Add the coherent Mixamo rifle set without replacing the city gait.
+        /// The ordinary Synty Walk/Jog/Sprint remain the movement authority and stay
+        /// visible until the weapon is really drawn; CrewWalker then selects these
+        /// dedicated rifle slots for presentation only.</summary>
+        public static PedClips ForCover(PedClips clips)
+        {
+            clips.PistolIdle = Idle ?? clips.PistolIdle;
+            clips.Aim = IdleAiming ?? clips.Aim;
+            clips.Shoot = ShootRifle ?? clips.Shoot;
+            clips.RifleWalk = Walk(RifleStep.Forward);
+            clips.RifleJog = Run(RifleStep.Forward);
+            clips.RifleSprint = Sprint(RifleStep.Forward);
+            clips.RifleCrouchWalk = CrouchWalk(RifleStep.Forward);
+            clips.RifleGunplay = GunplayRifle;
+            clips.AutomaticShoot = GunplayMachineGun;
+            clips.CoverShoot = ShootFromCover;
+            clips.Crouch = IdleCrouching ?? clips.Crouch;
+            clips.LongGunRunUpper = null; // full-body rifle gait already owns both arms
+            clips.AuthoredLongGun = true;
+            return clips;
+        }
+
         // ------------------------------------------------------------- the stands
 
         /// <summary>Long gun held ready across the body, at ease.</summary>

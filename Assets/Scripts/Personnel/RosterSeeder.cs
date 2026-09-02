@@ -307,7 +307,7 @@ namespace LivingCity.Personnel
         /// walk-in, which is what the street bar's chip is.
         /// </summary>
         public static Character Recruit(Roster roster, System.Random rng,
-            int recruiterHalfSteps = 0)
+            int recruiterHalfSteps = 0, string broughtBy = "")
         {
             var member = new Character
             {
@@ -347,6 +347,9 @@ namespace LivingCity.Personnel
             // here, inside the personnel authority, rather than letting whichever UI or
             // physical projection sees him first become the writer of appearance state.
             GangLooks.LookFor(member, roster);
+            // The first line of his file with us: the day he came on, and who found
+            // him. Everything else on it he has to earn.
+            Career.Joined(member, roster.Day, broughtBy);
             return member;
         }
 

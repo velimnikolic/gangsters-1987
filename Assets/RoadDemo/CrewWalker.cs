@@ -129,6 +129,7 @@ namespace RoadDemo
 
         float _fireTimer;
         float _shootHold;
+        int _firePose = PoseShoot;
         float _flinch;
 
         /// <summary>The sidewalk stretch this walker is on right now (may be a
@@ -322,7 +323,7 @@ namespace RoadDemo
             if (run && JogSpeed * _gaitBrake < RunRateMin * ClipPace(PoseJog, JogClipPace) *
                 (_runningLeg ? GaitDrop : GaitBack))
                 run = false;
-            LocomotionPose = RunWhile(run) ? PoseJog : PoseWalk;
+            LocomotionPose = RunWhile(run) ? VisibleJogPose : VisibleWalkPose;
             // What he actually covers, which is not what he was dealt: the dawdle and
             // the man in front of him both gear the graph's pace. The crowd's brake is
             // last frame's - Tick reads it after this - and one frame of lag on a clip
@@ -331,8 +332,14 @@ namespace RoadDemo
             // the walk's own rate is Move's business, for every walker in the city at
             // once (HoldWalkRate); only the run is this class's to keep in step
             if (run)
-                SetPoseSpeed(PoseJog, Mathf.Clamp(
-                    pace / ClipPace(PoseJog, JogClipPace), RunRateMin, RunRateMax) * _runJitter);
+            {
+                if (LocomotionPose == PoseRifleJog)
+                    GearVisibleRifleGait(LocomotionPose, pace, JogClipPace, _runJitter);
+                else
+                    SetPoseSpeed(PoseJog, Mathf.Clamp(
+                        pace / ClipPace(PoseJog, JogClipPace), RunRateMin, RunRateMax) * _runJitter);
+            }
+            else GearVisibleRifleGait(LocomotionPose, pace, WalkClipPace);
         }
 
         /// <summary>Metres a second the sidewalk carries him at. A crossing's hustle is
@@ -1125,7 +1132,16 @@ namespace RoadDemo
         public void Engage(CrewWalker target)
         {
             if (Dead || Riding || !Carrying || Panicked || target == null || target.Dead || target == this) return;
-            if (Target != target) { _coverLooked = false; _underFire = 0; _coverRecheckAt = 0f; }
+            if (Target != target)
+            {
+                _coverLooked = false;
+                _underFire = 0;
+                _coverRecheckAt = 0f;
+                _coverSpot = null;
+                InCover = false;
+                _wasClosing = false;
+                ClearCombatWay();
+            }
             Target = target;
             EndChat();
             _watching = false;   // a doorman with a gun out is not on the door any more
@@ -1187,6 +1203,7 @@ namespace RoadDemo
         {
             if (Dead) return;
             Target = null;
+            ClearCombatWay();
             _coverSpot = null;
             InCover = false;
             if (State == Mode.Engaging) State = Mode.Standing;
@@ -1212,7 +1229,20 @@ namespace RoadDemo
             Holster();
             WeaponPrefab = prefab;
             WeaponKind = kind;
-            Ballistics = CrewArms.StatsFor(kind);
+            var ballistics = CrewArms.StatsFor(kind);
+            // CoverDemo's authored rifle is the automatic rifle shown by the Mixamo
+            // machine-gun take. Keep this inside the opt-in wardrobe: a rifle in the
+            // live city retains the deliberate rifle stats above. Range and report
+            // stay rifle-like; cadence, per-round damage and spread become automatic.
+            if (AuthoredLongGunWardrobe && kind == EquipmentKind.Rifle &&
+                HasPose(PoseAutomaticShoot))
+            {
+                var automatic = CrewArms.StatsFor(EquipmentKind.TommyGun);
+                ballistics.Interval = automatic.Interval;
+                ballistics.Damage = automatic.Damage;
+                ballistics.Accuracy = automatic.Accuracy;
+            }
+            Ballistics = ballistics;
             // a swap made on a man who is ON HIS WAY DOWN still goes into the hand:
             // he is shot off a pillion holding the saddle's machine pistol, the
             // dismount hands him his own gun back, and what has to fall out of his
@@ -1238,6 +1268,7 @@ namespace RoadDemo
         {
             if (WeaponPrefab == null || Tf == null) return;
             var animator = Tf.GetComponentInChildren<Animator>();
+            _armsAnimator = animator;
             Weapon = CrewArms.Attach(animator, WeaponPrefab);
             _aimArm = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightUpperArm) : null;
             _aimForearm = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightLowerArm) : null;
@@ -1265,9 +1296,14 @@ namespace RoadDemo
         /// it here would take that prop with it.</summary>
         public void Holster()
         {
-            if (Weapon == null) return;
+            if (Weapon == null)
+            {
+                _armsAnimator = null;
+                return;
+            }
             Object.Destroy(Weapon.gameObject);
             Weapon = null;
+            _armsAnimator = null;
             _aimArm = null;
             _aimForearm = null;
             _aimHand = null;
@@ -1352,11 +1388,39 @@ namespace RoadDemo
         // made on - and on the pack bodies that lands the barrel in the pavement a
         // few strides out. The clip cannot know where the other man stands; this does.
         Transform _aimArm, _aimForearm, _aimHand;
+        Animator _armsAnimator;
         float _aimBlend;
         Vector3 _aimDir;
         Transform _supportArm, _supportForearm, _supportHand;
         Vector3 _supportFingers, _supportThumb;
         float _longGunGripBlend;
+
+        /// <summary>The Mixamo rifle wardrobe is deliberately opt-in. CoverDemo is
+        /// the only builder that supplies it; every live-city walker stays on the old
+        /// procedural arm solve even though both paths share this class.</summary>
+        bool UsesAuthoredLongGun =>
+            AuthoredLongGunWardrobe && CrewArms.TwoHanded(WeaponKind);
+
+        // The prop in the hand is the switch. Before DrawGun succeeds this man uses
+        // the ordinary Synty movement wardrobe; after it succeeds the rifle gait may
+        // be shown, but all pace and routing decisions still read the Synty slots.
+        bool ShowsAuthoredLongGun => Armed && UsesAuthoredLongGun;
+        int VisibleWalkPose => ShowsAuthoredLongGun && HasPose(PoseRifleWalk)
+            ? PoseRifleWalk : PoseWalk;
+        int VisibleJogPose => ShowsAuthoredLongGun && HasPose(PoseRifleJog)
+            ? PoseRifleJog : PoseJog;
+        int VisibleSprintPose => ShowsAuthoredLongGun && HasPose(PoseRifleSprint)
+            ? PoseRifleSprint : PoseSprint;
+        int VisibleCrouchWalkPose => ShowsAuthoredLongGun && HasPose(PoseRifleCrouchWalk)
+            ? PoseRifleCrouchWalk : PoseCrouchWalk;
+
+        void GearVisibleRifleGait(int pose, float pace, float fallback, float jitter = 1f)
+        {
+            if (pose != PoseRifleWalk && pose != PoseRifleJog &&
+                pose != PoseRifleSprint && pose != PoseRifleCrouchWalk) return;
+            SetPoseSpeed(pose,
+                Mathf.Clamp(pace / ClipPace(pose, fallback), 0.45f, 1.5f) * jitter);
+        }
 
         /// <summary>How far off a man will still put his gun up at somebody riding past
         /// - on a saddle or behind a windscreen. Further than any gun in the town shoots
@@ -1374,7 +1438,10 @@ namespace RoadDemo
         public void AimGun(float dt)
         {
             bool onCar = Target == null && CarMark != null && CarMark.Tf != null && !CarMark.Wrecked;
-            bool carryingLongGunAtRun = _runningLeg && CrewArms.TwoHanded(WeaponKind);
+            // The old crowd run needs its procedural rifle overlay suppressed. The
+            // authored rifle run already owns both arms, so only its prop is corrected.
+            bool carryingLongGunAtRun = _runningLeg && CrewArms.TwoHanded(WeaponKind) &&
+                                        !UsesAuthoredLongGun;
             bool aiming = !Dead && Armed && State == Mode.Engaging && _flinch <= 0f &&
                           !carryingLongGunAtRun &&
                           (onCar || (Target != null && Target.Tf && !Target.Dead)) &&
@@ -1409,10 +1476,16 @@ namespace RoadDemo
                     ? Mathf.Max(Ballistics.Range * 1.35f, PassingShot)
                     : Ballistics.Range * 1.35f;
                 aiming = flat.magnitude <= reach &&
-                         Vector3.Angle(Tf.forward, flat) < 70f &&
+                         CombatAimError(flat) < 70f &&
                          StrideAllowsAim(flat);
             }
             _aimBlend = Mathf.MoveTowards(_aimBlend, aiming ? 1f : 0f, 6f * dt);
+            if (UsesAuthoredLongGun)
+            {
+                AimAuthoredLongGun(aiming, markAim);
+                _longGunGripBlend = 0f;
+                return;
+            }
             if (CrewArms.TwoHanded(WeaponKind))
                 PoseLongGunFire(aiming ? markAim : MuzzlePosition + _aimDir * 10f,
                     _aimBlend);
@@ -1421,6 +1494,70 @@ namespace RoadDemo
             if (!aiming && CurrentPose == PosePistolIdle)
                 PoseGunLow(1f - _aimBlend);
             PoseLongGun(dt);
+        }
+
+        /// <summary>The rifle take already places both arms. Moving either bone again
+        /// destroys that authored hold, so the only correction is the prop: its bore is
+        /// laid exactly from the muzzle to the mark while its trigger hand stays put.</summary>
+        void AimAuthoredLongGun(bool aiming, Vector3 markAim)
+        {
+            if (!aiming || Weapon == null || _armsAnimator == null) return;
+            var muzzle = CrewArms.MuzzleOf(Weapon);
+            if (muzzle == null) return;
+            // Rotating around the trigger fist moves the muzzle slightly. The second
+            // pass removes that small parallax, as on the rifle review bench.
+            for (int pass = 0; pass < 2; pass++)
+            {
+                var aim = markAim - muzzle.position;
+                if (aim.sqrMagnitude < 0.04f) return;
+                CrewArms.FitToAim(_armsAnimator, Weapon, aim.normalized, Vector3.up);
+            }
+        }
+
+        /// <summary>Desired fighting yaw. Ordinary crews still square their chest at
+        /// the mark. An opted-in rifle take is turned by its two-hand axis instead,
+        /// producing the authored bladed stance without rotating any limb.</summary>
+        Quaternion CombatAimRotation(Vector3 toward)
+        {
+            toward.y = 0f;
+            if (toward.sqrMagnitude < 1e-5f) return Tf.rotation;
+            float bearing = Mathf.Atan2(toward.x, toward.z) * Mathf.Rad2Deg;
+            // A forward locomotion clip must keep facing its actual travel or its feet
+            // skate sideways. Once it stops, the hand line is free to blade the body.
+            if (UsesAuthoredLongGun && !LegsMoving && _armsAnimator != null)
+            {
+                var hands = CrewArms.HandAimAxis(_armsAnimator);
+                hands.y = 0f;
+                if (hands.sqrMagnitude > 0.01f)
+                {
+                    var local = Quaternion.Inverse(Tf.rotation) * hands.normalized;
+                    bearing -= Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
+                }
+            }
+            return Quaternion.Euler(0f, bearing, 0f);
+        }
+
+        void TurnCombat(Vector3 toward, float degreesPerSecond, float dt)
+        {
+            if (toward.sqrMagnitude < 1e-5f) return;
+            Tf.rotation = Quaternion.RotateTowards(
+                Tf.rotation, CombatAimRotation(toward), degreesPerSecond * dt);
+        }
+
+        /// <summary>The old trigger gate judges chest-forward. A bladed rifleman must
+        /// instead be judged by the line between his hands or he can never legally fire.</summary>
+        float CombatAimError(Vector3 toward)
+        {
+            toward.y = 0f;
+            if (toward.sqrMagnitude < 1e-5f) return 0f;
+            if (UsesAuthoredLongGun && _armsAnimator != null)
+            {
+                var hands = CrewArms.HandAimAxis(_armsAnimator);
+                hands.y = 0f;
+                if (hands.sqrMagnitude > 0.01f)
+                    return Vector3.Angle(hands, toward);
+            }
+            return Vector3.Angle(Tf.forward, toward);
         }
 
         void AimRightArm(bool aiming, Vector3 markAim)
@@ -2279,9 +2416,7 @@ namespace RoadDemo
                 return;
             }
 
-            if (dist > 1e-3f)
-                Tf.rotation = Quaternion.RotateTowards(Tf.rotation,
-                    Quaternion.LookRotation(to / dist), 360f * dt);
+            if (dist > 1e-3f) TurnCombat(to, 360f, dt);
 
             if (_flinch > 0f)
             {
@@ -2295,7 +2430,7 @@ namespace RoadDemo
             if (_shootHold > 0f)
             {
                 _shootHold -= dt;
-                SetPose(HasPose(PoseShoot) ? PoseShoot : PoseAim);
+                SetPose(HasPose(_firePose) ? _firePose : PoseAim);
             }
             else
                 SetPose(HasPose(PoseAim) ? PoseAim : PosePistolIdle);
@@ -2304,15 +2439,11 @@ namespace RoadDemo
             // squared up, and the arm actually up: the same two gates a man gets, for
             // the same reason - a round let off while the gun is still coming up goes
             // into the pavement
-            if (_fireTimer <= 0f && dist <= range && Vector3.Angle(Tf.forward, to) < 25f &&
+            if (_fireTimer <= 0f && dist <= range && CombatAimError(to) < 25f &&
                 StrideAllowsAim(to) && _aimBlend >= 0.5f && BarrelOn(CarAim(car)))
             {
                 _fireTimer = Ballistics.Interval;
-                if (HasPose(PoseShoot))
-                {
-                    RestartPose(PoseShoot);
-                    _shootHold = Mathf.Min(PoseLength(PoseShoot), 0.45f);
-                }
+                StartFirePose();
                 Fired?.Invoke(this);
             }
         }
@@ -2451,9 +2582,7 @@ namespace RoadDemo
                         else
                         {
                             // turned at the fight even while down, so the rise reads
-                            if (dist > 1e-3f)
-                                Tf.rotation = Quaternion.RotateTowards(Tf.rotation,
-                                    Quaternion.LookRotation(toTarget / dist), 240f * dt);
+                            if (dist > 1e-3f) TurnCombat(toTarget, 240f, dt);
                             SetPose(HasPose(PoseCrouch) ? PoseCrouch
                                     : HasPose(PosePistolIdle) ? PosePistolIdle : PoseIdle);
                             TickBlend(dt);
@@ -2504,25 +2633,17 @@ namespace RoadDemo
                 // Take this frame's step BEFORE judging the trigger. Obstacle and crowd
                 // steering choose the real direction inside TickStride; judging first
                 // would let one last round leave on the frame the step turns sideways.
-                TickStride(dt, Target.Tf.position, range * RangeFactor, hurry: true,
-                    run: RunWhile(dist > range * (_runningLeg ? RunOffFight : RunToFight)),
-                    keepOffRoad: !OnCarriageway(Target.Tf.position));
+                TickCombatStride(dt, Target.Tf.position, range * RangeFactor, hurry: true,
+                    run: RunWhile(dist > range * (_runningLeg ? RunOffFight : RunToFight)));
                 if (dist <= range && !_runningLeg && _fireTimer <= 0f && _flinch <= 0f &&
                     _aimBlend >= 0.5f &&
-                    Vector3.Angle(Tf.forward, toTarget) < 40f &&
+                    CombatAimError(toTarget) < 40f &&
                     StrideAllowsAim(toTarget) && BarrelOn(Target))
                 {
                     _fireTimer = Ballistics.Interval * OnTheMove;
-                    if (HasPose(PoseShoot))
-                    {
-                        RestartPose(PoseShoot);
-                        _shootHold = Mathf.Min(PoseLength(PoseShoot), 0.45f);
-                    }
+                    StartFirePose();
                     Fired?.Invoke(this);
                 }
-                // the chase keeps to the pavement unless the man he is after is out on
-                // the road himself, in which case that is where the fight is.
-                //
                 // WELL out of his reach he runs it in; inside a stride or two of it he
                 // walks the rest, because a man who sprints to the line and stops dead
                 // reads as a puppet being placed. The two figures are apart on purpose,
@@ -2531,9 +2652,7 @@ namespace RoadDemo
                 return;
             }
 
-            if (dist > 1e-3f)
-                Tf.rotation = Quaternion.RotateTowards(Tf.rotation,
-                    Quaternion.LookRotation(toTarget / dist), 360f * dt);
+            if (dist > 1e-3f) TurnCombat(toTarget, 360f, dt);
 
             if (_flinch > 0f)
             {
@@ -2547,7 +2666,7 @@ namespace RoadDemo
             if (_shootHold > 0f)
             {
                 _shootHold -= dt;
-                SetPose(HasPose(PoseShoot) ? PoseShoot : PoseAim);
+                SetPose(HasPose(_firePose) ? _firePose : PoseAim);
             }
             else
                 SetPose(HasPose(PoseAim) ? PoseAim : PosePistolIdle);
@@ -2557,17 +2676,73 @@ namespace RoadDemo
             // and once the gun is actually raised on him (the aim blend): rising from a
             // duck, or fresh out of a flinch, the barrel spends a beat coming up, and a
             // round let off during it goes into the ground the clip was authored at
-            float off = Vector3.Angle(Tf.forward, toTarget);
+            float off = CombatAimError(toTarget);
             if (_fireTimer <= 0f && off < 25f && StrideAllowsAim(toTarget) &&
                 _aimBlend >= 0.5f && BarrelOn(Target))
             {
                 _fireTimer = Ballistics.Interval;
-                if (HasPose(PoseShoot))
-                {
-                    RestartPose(PoseShoot);
-                    _shootHold = Mathf.Min(PoseLength(PoseShoot), 0.45f);
-                }
+                StartFirePose();
                 Fired?.Invoke(this);
+            }
+        }
+
+        /// <summary>Choose the take that belongs to this long gun. This table is only
+        /// reachable through the CoverDemo wardrobe; the city's existing PoseShoot is
+        /// returned byte-for-byte as before.</summary>
+        int FirePose()
+        {
+            if (UsesAuthoredLongGun)
+            {
+                // The authored rifle is automatic in this wardrobe and keeps the
+                // same fast take even from cover.
+                if (WeaponKind == EquipmentKind.Rifle && HasPose(PoseAutomaticShoot))
+                    return PoseAutomaticShoot;
+                if (InCover && HasPose(PoseCoverShoot)) return PoseCoverShoot;
+                if (WeaponKind == EquipmentKind.TommyGun && HasPose(PoseAutomaticShoot))
+                    return PoseAutomaticShoot;
+                if (WeaponKind == EquipmentKind.Rifle && HasPose(PoseRifleGunplay))
+                    return PoseRifleGunplay; // fallback if the automatic take is absent
+                // The shotgun gets the separate, single-shot rifle take: unlike the
+                // two gunplay loops it carries one complete recoil and recovery.
+                if (WeaponKind == EquipmentKind.Shotgun && HasPose(PoseShoot))
+                    return PoseShoot;
+            }
+            return HasPose(PoseShoot) ? PoseShoot : -1;
+        }
+
+        void StartFirePose()
+        {
+            int pose = FirePose();
+            if (pose < 0) return;
+            bool rapid = UsesAuthoredLongGun && pose == PoseAutomaticShoot;
+            bool startingRapidCycle = rapid && (_firePose != pose || _shootHold <= 0f);
+            _firePose = pose;
+
+            if (rapid)
+            {
+                // The take is 0.2 s long and the automatic ballistic beat is 0.14 s.
+                // Speed the loop to one recoil per beat, keep it running between
+                // rounds, and let each cadence tick make its own shot/flash/report.
+                float rate = Mathf.Max(1f, PoseLength(pose) /
+                    Mathf.Max(0.05f, Ballistics.Interval));
+                if (startingRapidCycle) RestartPose(pose, 0f, rate);
+                else SetPoseSpeed(pose, rate);
+                _shootHold = Mathf.Max(_shootHold, Ballistics.Interval + 0.08f);
+                return;
+            }
+
+            RestartPose(pose);
+            _shootHold = UsesAuthoredLongGun
+                ? PoseLength(pose)
+                : Mathf.Min(PoseLength(pose), 0.45f);
+            // An authored take finishes its recoil before another one starts. This is
+            // demo-only through the wardrobe flag; ordinary city fire cadence is intact.
+            if (UsesAuthoredLongGun)
+            {
+                _fireTimer = Mathf.Max(_fireTimer,
+                    _shootHold + (pose == PoseCoverShoot ? 0.25f : 0f));
+                if (pose == PoseCoverShoot)
+                    _coverCycle = Mathf.Max(_coverCycle, _shootHold + 0.1f);
             }
         }
 
@@ -2662,7 +2837,8 @@ namespace RoadDemo
         // low, the gait he walks in is the crouched one.
         void Loco(float dt, bool walking)
         {
-            LocomotionPose = _keepingLow && HasPose(PoseCrouchWalk) ? PoseCrouchWalk : PoseWalk;
+            LocomotionPose = _keepingLow && HasPose(PoseCrouchWalk)
+                ? VisibleCrouchWalkPose : VisibleWalkPose;
             BlendLocomotion(dt, walking);
         }
 

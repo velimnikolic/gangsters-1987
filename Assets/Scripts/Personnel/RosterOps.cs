@@ -160,15 +160,37 @@ namespace LivingCity.Personnel
             return new PromoteCheck(true, low, "");
         }
 
-        /// <summary>Promotes a hood: he leaves crew, pool or front, and a new empty crew
-        /// forms under him. The warning is advisory - callers show it, this method does not
-        /// re-refuse over it.</summary>
-        public static OpResult Promote(Roster roster, int id, out int newCrewId)
+        /// <summary>
+        /// Promotes a hood: he leaves crew, pool or front, and a new empty crew forms
+        /// under him. The warning is advisory - callers show it, this method does not
+        /// re-refuse over it.
+        ///
+        /// A promotion changes his RANK and what is expected of him, and NOTHING ELSE.
+        /// Not one skill moves here, and the headless suite asserts it: the whole point
+        /// of choosing a man on his history is that the choice is real, and a promotion
+        /// that quietly made him better at leading men would make every choice the same
+        /// choice. His wage changes because the house scale is read off his rank
+        /// (Wages.WageFor) - not because anything was written on him.
+        ///
+        /// What it does move is the men around him. His old crewmates watch one of
+        /// their own rise, and an ambitious man passed over feels it exactly as much as
+        /// a contented one is pleased by it.
+        /// </summary>
+        public static OpResult Promote(Roster roster, int id, out int newCrewId,
+            System.Collections.Generic.List<Incident> incidents = null,
+            System.Collections.Generic.List<PersonalityChange> changes = null)
         {
             newCrewId = -1;
             var check = CheckPromote(roster, id);
             if (!check.CanPromote)
                 return OpResult.Fail(check.Reason);
+
+            // The men he stood beside, taken BEFORE he is detached from them - after
+            // Detach there is nothing left to say who they were.
+            var oldCrew = roster.CrewOf(id);
+            var witnesses = oldCrew != null
+                ? new System.Collections.Generic.List<int>(oldCrew.HoodIds)
+                : null;
 
             Detach(roster, id);
             var member = roster.Find(id);
@@ -176,18 +198,70 @@ namespace LivingCity.Personnel
             member.RankSince = roster.Day;
             // He answers to the Boss now, and a new relationship starts near zero
             // history - what he felt about his old lieutenant does not come with him.
-            Loyalty.Reaim(member, "made a lieutenant, and answers to the Boss now");
+            Loyalty.Reaim(member, "made a lieutenant, and answers to the Boss now", changes);
 
             var crew = new Crew { Id = roster.NextCrewId(), LieutenantId = id };
             roster.Crews.Add(crew);
             newCrewId = crew.Id;
+
+            Career.RankChanged(member, roster.Day, Rank.Lieutenant, "given a crew");
+            incidents?.Add(new Incident(member.Id, member.FullName, IncidentKind.Promoted,
+                roster.Day, "", 0,
+                IncidentText.Line(IncidentKind.Promoted, member.FullName, "")));
+
+            if (witnesses != null)
+                Ripple(roster, witnesses, id, member.FullName, changes);
             return OpResult.Success;
         }
 
-        /// <summary>Disbands the lieutenant's crew: everyone, him included, reverts to the
-        /// pool (derived - removing the crew IS the reversion). Equipment stays with its
-        /// holders; a demotion is a personnel event, not a shakedown.</summary>
-        public static OpResult Demote(Roster roster, int lieutenantId)
+        /// <summary>What a promotion costs a hood who is not being promoted. Small on
+        /// purpose - it is a mood, not an event - but real, and it is what makes a
+        /// crew full of hungry men a crew the player has to keep feeding.</summary>
+        public const int PassedOverLoss = 3;
+
+        /// <summary>And what it is worth to a man with no designs of his own: one of
+        /// ours went up, so there is somewhere to go.</summary>
+        public const int OneOfOursGain = 1;
+
+        /// <summary>The old crew watching one of their own rise.</summary>
+        static void Ripple(Roster roster,
+            System.Collections.Generic.List<int> crewmates, int promotedId, string name,
+            System.Collections.Generic.List<PersonalityChange> changes)
+        {
+            for (var i = 0; i < crewmates.Count; i++)
+            {
+                if (crewmates[i] == promotedId)
+                    continue;
+                var mate = roster.Find(crewmates[i]);
+                if (mate == null || mate.Gone)
+                    continue;
+
+                if (Personality.Get(mate, PersonalityTrait.Ambition) >= Loyalty.AmbitionFloor)
+                    NudgePersonality(mate, PersonalityTrait.Loyalty, -PassedOverLoss,
+                        name + " was made, and he was not", changes);
+                else
+                    NudgePersonality(mate, PersonalityTrait.Loyalty, OneOfOursGain,
+                        "one of theirs was made", changes);
+            }
+        }
+
+        /// <summary>
+        /// Disbands the lieutenant's crew: everyone, him included, reverts to the pool
+        /// (derived - removing the crew IS the reversion). Equipment stays with its
+        /// holders; a demotion is a personnel event, not a shakedown.
+        ///
+        /// Kept in the design, and kept BRUTAL. The player may take a man's crew off
+        /// him, and the man will not forgive it: his loyalty resets to a new
+        /// relationship like any transfer and is then cut again, harder the more
+        /// ambitious he is (<see cref="Loyalty.TakenDownSting"/>). An ambitious man
+        /// demoted is very often a red flag by the end of the same afternoon, and from
+        /// there the defection arithmetic is already looking at him - which is the
+        /// intended shape: firing a lieutenant should be a decision with a man in it,
+        /// not a menu item.
+        /// </summary>
+        public static OpResult Demote(Roster roster, int lieutenantId,
+            System.Collections.Generic.List<Incident> incidents = null,
+            System.Collections.Generic.List<PersonalityChange> changes = null)
         {
             var member = roster.Find(lieutenantId);
             if (member == null)
@@ -204,15 +278,22 @@ namespace LivingCity.Personnel
 
             member.Rank = Rank.Hood;
             member.RankSince = roster.Day;
-            Loyalty.Reaim(member, "taken back down to a hood");
+            Loyalty.Reaim(member, "taken back down to a hood", changes);
+            Loyalty.Sting(member, changes);
             PutUnderBossIfPresent(roster, member.Id);
             if (formerHoods != null)
                 for (var i = 0; i < formerHoods.Count; i++)
                     PutUnderBossIfPresent(roster, formerHoods[i]);
+
+            Career.RankChanged(member, roster.Day, Rank.Hood, "his crew broken up");
+            incidents?.Add(new Incident(member.Id, member.FullName, IncidentKind.Demoted,
+                roster.Day, "", 0,
+                IncidentText.Line(IncidentKind.Demoted, member.FullName, "")));
             return OpResult.Success;
         }
 
-        public static OpResult AssignToCrew(Roster roster, int id, int crewId)
+        public static OpResult AssignToCrew(Roster roster, int id, int crewId,
+            System.Collections.Generic.List<PersonalityChange> changes = null)
         {
             var refusal = CheckAssignable(roster, id);
             if (refusal != null)
@@ -238,7 +319,10 @@ namespace LivingCity.Personnel
             Detach(roster, id);
             crew.HoodIds.Add(id);
             // A new superior is a new relationship: loyalty starts near neutral again.
-            Loyalty.Reaim(roster.Find(id), "put under a new lieutenant");
+            var moved = roster.Find(id);
+            Loyalty.Reaim(moved, "put under a new lieutenant", changes);
+            Career.Posted(moved, roster.Day,
+                lieutenant != null ? lieutenant.FullName : "");
             return OpResult.Success;
         }
 
@@ -270,6 +354,7 @@ namespace LivingCity.Personnel
 
             Detach(roster, id);
             roster.Organization.BossHoodIds.Add(id);
+            Career.Posted(roster.Find(id), roster.Day, boss.FullName);
             return OpResult.Success;
         }
 
@@ -766,14 +851,24 @@ namespace LivingCity.Personnel
         /// most loyal living hood - the outfit does not lose a crew to one bullet - or,
         /// with nobody left to take it, folds.
         /// </summary>
-        public static OpResult Kill(Roster roster, int id) => StrikeOff(roster, id, CharacterStatus.Dead);
+        public static OpResult Kill(Roster roster, int id,
+            System.Collections.Generic.List<PersonalityChange> changes = null) =>
+            StrikeOff(roster, id, CharacterStatus.Dead, "", 0, changes);
 
         /// <summary>
         /// A man who ran from a fight and kept running. Struck off the same way as the
         /// dead - his line kept, his gear pooled, his post passed on - but marked as
         /// what he is: a deserter, not a casualty.
+        ///
+        /// <paramref name="story"/> is the one line his own file will carry instead of
+        /// the clerk's stock sentence about a runner. A defection comes out through
+        /// this door too - one door, so gear, wages and posts settle identically - and
+        /// a man who walked out behind his lieutenant did not run from anything.
         /// </summary>
-        public static OpResult Desert(Roster roster, int id) => StrikeOff(roster, id, CharacterStatus.Deserted);
+        public static OpResult Desert(Roster roster, int id, string story = "",
+            int weight = 0,
+            System.Collections.Generic.List<PersonalityChange> changes = null) =>
+            StrikeOff(roster, id, CharacterStatus.Deserted, story, weight, changes);
 
         /// <summary>
         /// A man laid up - his own charge went off early, or the other side got the
@@ -793,6 +888,9 @@ namespace LivingCity.Personnel
             member.Status = CharacterStatus.Hospitalized;
             member.BackOnDay = backOnDay;
             member.ConditionNote = note ?? "";
+            // The note is cleared the day he stands up; the history is not. A file has
+            // to be able to say he was shot in the spring after the spring is over.
+            Career.WentDown(member, roster.Day, CharacterStatus.Hospitalized, member.ConditionNote);
             return OpResult.Success;
         }
 
@@ -820,6 +918,8 @@ namespace LivingCity.Personnel
             if (!string.IsNullOrEmpty(charge))
                 RapSheet.Add(member, dateStamp, charge,
                     backOnDay > 0 ? "Held — out day " + backOnDay : "Held");
+            Career.WentDown(member, roster.Day, CharacterStatus.Jailed,
+                string.IsNullOrEmpty(charge) ? member.ConditionNote : charge);
             return OpResult.Success;
         }
 
@@ -855,7 +955,9 @@ namespace LivingCity.Personnel
             return back;
         }
 
-        static OpResult StrikeOff(Roster roster, int id, CharacterStatus status)
+        static OpResult StrikeOff(Roster roster, int id, CharacterStatus status,
+            string story = "", int weight = 0,
+            System.Collections.Generic.List<PersonalityChange> changes = null)
         {
             var member = roster.Find(id);
             if (member == null)
@@ -865,6 +967,7 @@ namespace LivingCity.Personnel
 
             member.Status = status;
             member.Wanted = false;
+            Career.StruckOff(member, roster.Day, status, story, weight);
             for (var i = 0; i < roster.Equipment.Count; i++)
                 if (roster.Equipment[i].HolderId == id)
                     roster.Equipment[i].HolderId = RosterEquipment.Unheld;
@@ -891,7 +994,10 @@ namespace LivingCity.Personnel
                     // "parked" against a date from his corner days.
                     heir.RankSince = roster.Day;
                     Loyalty.Reaim(heir,
-                        "stepped up when his lieutenant went down, and answers to the Boss now");
+                        "stepped up when his lieutenant went down, and answers to the Boss now",
+                        changes);
+                    Career.RankChanged(heir, roster.Day, Rank.Lieutenant,
+                        "stepped up when " + member.Surname + " went down");
                 }
                 else
                 {
@@ -933,6 +1039,9 @@ namespace LivingCity.Personnel
                 roster.Organization.BossHoodIds.Contains(id))
                 return;
             roster.Organization.BossHoodIds.Add(id);
+            // Where a man went when his crew broke up under him is part of his story,
+            // and it is the relationship his loyalty is measured against from now on.
+            Career.Posted(member, roster.Day, boss.FullName);
         }
 
         static RosterEquipment FindItem(Roster roster, int itemId)

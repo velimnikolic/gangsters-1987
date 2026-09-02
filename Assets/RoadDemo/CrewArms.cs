@@ -303,6 +303,53 @@ namespace RoadDemo
             return (head.rotation * look).normalized;
         }
 
+        /// <summary>The centre of a closed fist, not the wrist joint Unity exposes as
+        /// HumanBodyBones.Hand. Derived from the mapped finger roots so it scales and
+        /// retargets with every Humanoid body.</summary>
+        public static Vector3 GripPoint(Animator animator, bool left)
+        {
+            if (!animator) return Vector3.zero;
+            var wrist = animator.GetBoneTransform(
+                left ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
+            if (!wrist) return Vector3.zero;
+
+            var sum = Vector3.zero;
+            int count = 0;
+            foreach (var bone in left ? LeftGripBones : RightGripBones)
+            {
+                var finger = animator.GetBoneTransform(bone);
+                if (!finger) continue;
+                sum += finger.position;
+                count++;
+            }
+            if (count == 0) return wrist.position;
+            var knuckles = sum / count;
+            return knuckles + (knuckles - wrist.position) * GripReach;
+        }
+
+        /// <summary>The authored long-gun axis from trigger fist to support fist. Zero
+        /// means the pose has not put two usable hands on a piece.</summary>
+        public static Vector3 HandAimAxis(Animator animator)
+        {
+            if (!animator) return Vector3.zero;
+            var axis = GripPoint(animator, true) - GripPoint(animator, false);
+            return axis.sqrMagnitude < 0.08f * 0.08f ? Vector3.zero : axis.normalized;
+        }
+
+        const float GripReach = 0.6f;
+
+        static readonly HumanBodyBones[] LeftGripBones =
+        {
+            HumanBodyBones.LeftIndexProximal, HumanBodyBones.LeftMiddleProximal,
+            HumanBodyBones.LeftThumbProximal
+        };
+
+        static readonly HumanBodyBones[] RightGripBones =
+        {
+            HumanBodyBones.RightIndexProximal, HumanBodyBones.RightMiddleProximal,
+            HumanBodyBones.RightThumbProximal
+        };
+
         /// <summary>Where the supporting hand actually goes: the UNDERSIDE of the
         /// fore-end - the wooden handguard on the pack's kalashnikov - measured off the
         /// mesh rather than guessed at.

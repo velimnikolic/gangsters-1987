@@ -224,8 +224,9 @@ namespace LivingCity.Gameplay
             man.Id = Roster.NextCharacterId();
             man.Rank = Rank.Hood;
             Roster.Members.Add(man);
+            Career.Joined(man, Roster.Day, "the classified column");
 
-            var result = RosterOps.Promote(Roster, man.Id, out _);
+            var result = RosterOps.Promote(Roster, man.Id, out _, Feed);
             if (!result.Ok)
             {
                 // The roster refused him after the safe paid: the man goes back on the
@@ -256,26 +257,53 @@ namespace LivingCity.Gameplay
                 ? new PromoteCheck(false, false, LivingCity.UI.LedgerText.ReasonNoSuchMember)
                 : RosterOps.CheckPromote(Roster, id);
 
+        /// <summary>
+        /// The day's feed, when there is a campaign running. A promotion and a
+        /// demotion are both events the paper carries and both go on the man's own
+        /// file, and neither has anywhere to be written in a demo scene with no
+        /// campaign in it - hence the null, which the roster rules accept.
+        /// </summary>
+        static List<Incident> Feed => OutfitDirector.Instance != null
+            ? OutfitDirector.Instance.Incidents
+            : null;
+
+        /// <summary>
+        /// The day's record of every trait that moved and why. Same reasoning as
+        /// <see cref="Feed"/>: a nudge made from a click is a fact about the man, and
+        /// it belongs on the campaign's own list beside the ones the midnight pass
+        /// makes - a succession, a transfer and a demotion must not be the three
+        /// movements nobody can account for.
+        /// </summary>
+        static List<PersonalityChange> Changes => OutfitDirector.Instance != null
+            ? OutfitDirector.Instance.Runner.CharacterChanges
+            : null;
+
         public OpResult Promote(int id, out int newCrewId)
         {
             newCrewId = -1;
             return Roster == null
                 ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
-                : Commit(RosterOps.Promote(Roster, id, out newCrewId), "promoted", id);
+                : Commit(RosterOps.Promote(Roster, id, out newCrewId, Feed), "promoted", id);
         }
 
         public OpResult Demote(int id) =>
-            Apply(RosterOps.Demote, id, "demoted");
+            Roster == null
+                ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
+                : Commit(RosterOps.Demote(Roster, id, Feed), "demoted", id);
 
         /// <summary>The street reports a man shot dead: struck through, his gear pooled,
         /// his crew passed on. Version moves so every book and bar re-deals.</summary>
         public OpResult Kill(int id) =>
-            Apply(RosterOps.Kill, id, "shot dead");
+            Roster == null
+                ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
+                : Commit(RosterOps.Kill(Roster, id, Changes), "shot dead", id);
 
         /// <summary>The street reports a man who ran from the fight and kept running:
         /// struck off as a deserter, his gear pooled, his post passed on.</summary>
         public OpResult Desert(int id) =>
-            Apply(RosterOps.Desert, id, "deserted");
+            Roster == null
+                ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
+                : Commit(RosterOps.Desert(Roster, id, "", 0, Changes), "deserted", id);
 
         public OpResult AssignToPool(int id) =>
             Apply(RosterOps.AssignToPool, id, "sent to the pool");
@@ -287,7 +315,8 @@ namespace LivingCity.Gameplay
         {
             if (Roster == null)
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
-            return Commit(RosterOps.AssignToCrew(Roster, id, crewId), "reassigned", id);
+            return Commit(RosterOps.AssignToCrew(Roster, id, crewId, Changes),
+                "reassigned", id);
         }
 
         /// <summary>How a crew runs its rounds (ECON-005) - the player's one lever
@@ -361,10 +390,7 @@ namespace LivingCity.Gameplay
             // The nudge is a fact about the man, and the feed prints facts: route it
             // onto the campaign's own change list so the ledger and the wire say the
             // same thing about why his loyalty moved.
-            var changes = OutfitDirector.Instance != null
-                ? OutfitDirector.Instance.Runner.CharacterChanges
-                : null;
-            return Commit(RosterOps.RefuseRaise(Roster, id, changes),
+            return Commit(RosterOps.RefuseRaise(Roster, id, Changes),
                 "was refused the rate", id);
         }
 
