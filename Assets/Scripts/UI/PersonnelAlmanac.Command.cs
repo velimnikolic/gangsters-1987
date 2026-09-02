@@ -107,13 +107,17 @@ namespace LivingCity.UI
         const float RailStub = 18f;
         const float LeafMargin = 3f;
 
-        /// <summary>The leaf's own grid: a 20-unit portrait, a 9-unit gutter, a middle
+        /// <summary>The leaf's own grid: the photograph, a 9-unit gutter, a middle
         /// column that never goes under 120, and the figures on the end of the line.
+        ///
+        /// The photograph stands the FULL height of the line, top edge to bottom edge,
+        /// in the portrait proportion the studio's plates keep everywhere else - a
+        /// stamp floating in the middle of a 53-unit line read as an afterthought, and
+        /// a face is the first thing this roll is scanned by.
         /// </summary>
         const float LeafPad = 10f;
         const float LeafGap = 9f;
-        const float LeafPortraitW = 20f;
-        const float LeafPortraitH = 26f;
+        const float LeafPortraitAspect = 20f / 26f;
         const float LeafNameMin = 120f;
         const float LeafWageW = 44f;
         const float LeafTailW = 40f;
@@ -259,27 +263,32 @@ namespace LivingCity.UI
             // THE DETAIL first: the men standing in front of the Don. It carries no
             // capacity meter of its own - a guard is counted against the BOSS's
             // manpower, and his own card is where that figure is printed.
+            //
+            // It stands on the sheet EMPTY as well as full. The detail is the only
+            // node the Boss commands himself, so it is the only place a man can be put
+            // under him - and it used to be drawn only once somebody was already on
+            // it, which left the first guard with nowhere to be posted to. A branch
+            // with nobody on it reads perfectly well; a branch that is not there
+            // cannot be filed to.
             var detail = director.BodyguardDetail();
-            if (detail != null && detail.HoodIds.Count > 0)
+            var guards = new CommandBranch
             {
-                var guards = new CommandBranch
-                {
-                    LeaderId = boss.Id,
-                    Rank = "THE BOSS'S OWN",
-                    Name = "THE DETAIL",
-                    Ink = LedgerV2.Boss,
-                    IsDetail = true,
-                    WageLine = "full wages · no earnings",
-                };
+                LeaderId = boss.Id,
+                Rank = "THE BOSS'S OWN",
+                Name = "THE DETAIL",
+                Ink = LedgerV2.Boss,
+                IsDetail = true,
+                WageLine = "full wages · no earnings",
+            };
+            if (detail != null)
                 for (var i = 0; i < detail.HoodIds.Count; i++)
                 {
                     var guard = Person(detail.HoodIds[i]);
                     if (guard.IsValid && CommandShows(guard))
                         guards.Roster.Add(guard);
                 }
-                SortCommandMen(guards.Roster);
-                commandBranches.Add(guards);
-            }
+            SortCommandMen(guards.Roster);
+            commandBranches.Add(guards);
 
             for (var i = 1; i < organizationLeaders.Count; i++)
             {
@@ -640,7 +649,10 @@ namespace LivingCity.UI
                 var cx = BossPadSide + i % columns * (cell + 20f);
                 var cy = y + i / columns * 22f;
                 var figureW = MonoWidth(facts[i].Value, 11.5f, 0f) + 6f;
-                var label = Caps(card, cx, -cy, Mathf.Max(20f, cell - figureW - 8f),
+                // Centred on the figure's line, not dropped at its top edge.
+                var label = Caps(card, cx,
+                    LedgerV2.MarkY(-cy, LineBox(11.5f), 9f + 6f),
+                    Mathf.Max(20f, cell - figureW - 8f),
                     facts[i].Label, 9f, LedgerV2.HeadDim, 8f);
                 label.font = LedgerStyle.Mono;
                 label.overflowMode = TextOverflowModes.Ellipsis;
@@ -697,8 +709,11 @@ namespace LivingCity.UI
             var hireW = 0f;
             if (!branch.IsDetail)
             {
-                var hireLabel = "HIRE · " +
-                                LedgerText.Cash(director.HoodRecruitmentCost);
+                // No sum on the key. What a man costs to sign is not one flat
+                // figure - the recruiting money is only the first of it, and quoting
+                // it beside the word HIRE reads as the price of the man, which it is
+                // not. The filed order still says exactly what was committed.
+                const string hireLabel = "HIRE";
                 hireW = MonoWidth(hireLabel, 9.5f, 2f) + 18f;
                 var hire = LedgerV2.Button(card, hireLabel, w - BranchPad - hireW, -y,
                     hireW, 21f, () => FileRecruit(leaderId), LedgerV2.Key.Outline, 9.5f);
@@ -724,9 +739,11 @@ namespace LivingCity.UI
 
             LedgerV2.Mono(card, BranchPad, -y, w - BranchPad * 2f,
                     branch.IsDetail
-                        ? branch.Roster.Count + (branch.Roster.Count == 1
-                              ? " man in front of him · " : " men in front of him · ") +
-                          branch.WageLine
+                        ? (branch.Roster.Count == 0
+                              ? "nobody in front of him · "
+                              : branch.Roster.Count + (branch.Roster.Count == 1
+                                  ? " man in front of him · "
+                                  : " men in front of him · ")) + branch.WageLine
                         : branch.WageLine,
                     10f, LedgerV2.Muted, 1f)
                 .overflowMode = TextOverflowModes.Ellipsis;
@@ -810,9 +827,11 @@ namespace LivingCity.UI
                 DashDown(commandContent, x + RailX, railTop, 11f);
                 Line(commandContent, LedgerStyle.MonoItalic, 10.5f, LedgerV2.Red,
                     leafX + 6f, -cursor, Mathf.Max(40f, leafW - 6f), 22f,
-                    options.Availability == AvailabilityFilter.All
-                        ? "no men on this branch"
-                        : "no man on this branch answers to this filter");
+                    options.Availability != AvailabilityFilter.All
+                        ? "no man on this branch answers to this filter"
+                        : branch.IsDetail
+                            ? "nobody stands in front of the Don"
+                            : "no men on this branch");
                 cursor += 24f;
             }
             else
@@ -890,14 +909,16 @@ namespace LivingCity.UI
             var dead = member == null || member.Gone;
             var posted = HasPost(person);
 
-            // The photograph, standing on the bar that says whether he is earning.
-            var plateY = (rowH - LeafPortraitH) * 0.5f;
-            var plate = LedgerV2.PortraitPlate(row, pad, -plateY, LeafPortraitW,
-                LeafPortraitH, "", LedgerV2.Thumb, LedgerV2.Muted);
+            // The photograph, the full depth of the line, standing on the bar that
+            // says whether he is earning.
+            var portraitH = rowH;
+            var portraitW = portraitH * LeafPortraitAspect;
+            var plate = LedgerV2.PortraitPlate(row, pad, 0f, portraitW,
+                portraitH, "", LedgerV2.Thumb, LedgerV2.Muted);
             if (member != null)
                 PortraitStudio.Request(MemberModel(member), PortraitStudio.Framing.Bust,
                     plate);
-            Block("Duty", row, pad, -(plateY + LeafPortraitH - 2f), LeafPortraitW, 2f,
+            Block("Duty", row, pad, -(portraitH - 3f), portraitW, 3f,
                 posted ? LedgerV2.Green : LedgerV2.Red);
 
             // The end of the line, laid right to left: the word that moves him, what he
@@ -935,7 +956,7 @@ namespace LivingCity.UI
 
             // The middle column: never under 120, and the carry takes what is left of
             // the line after it - printed only when there is room to read it.
-            var nameX = pad + LeafPortraitW + gap;
+            var nameX = pad + portraitW + gap;
             var room = condX - gap - nameX;
             var carryW = Mathf.Max(0f, room - LeafNameMin - gap);
             if (carryW < LeafCarryMin)
@@ -987,7 +1008,7 @@ namespace LivingCity.UI
             var inner = w - pad * 2f;
 
             DottedRule(host, 0f, -top, w, LedgerV2.Dotted);
-            var y = top + 10f;
+            var y = top + 9f;
 
             // ---- what he stands on, and the file's own reference ----
             var reference = "FILE P-" + (1100 + member.Id).ToString("0000");
@@ -1001,15 +1022,15 @@ namespace LivingCity.UI
             post.overflowMode = TextOverflowModes.Ellipsis;
             Caps(host, pad + inner - referenceW, -y, referenceW, reference, 9f,
                 LedgerV2.Faint, 8f, TextAlignmentOptions.MidlineRight);
-            y += LineBox(10f) + 8f;
+            y += LineBox(10f) + 6f;
 
             y = FileFacts(host, member, person, isLieutenant, pad, y, inner);
-            y = FileTrades(host, member, pad, y + 11f, inner);
-            y = TraitChips(host, member, pad, y + 10f, inner, "", LedgerV2.Body,
+            y = FileTrades(host, member, pad, y + 8f, inner);
+            y = TraitChips(host, member, pad, y + 8f, inner, "", LedgerV2.Body,
                 LedgerV2.PanelDark, LedgerV2.Rule);
 
             var remark = Paragraph(host, LedgerStyle.SerifItalic, 12.5f, LedgerV2.Copy,
-                pad, -(y + 9f), Mathf.Min(inner, 64f * 6.4f), 40f,
+                pad, -(y + 7f), Mathf.Min(inner, 64f * 6.4f), 40f,
                 isLieutenant
                     ? "Runs his own branch. Every man under him answers to him first " +
                       "and to you second."
@@ -1018,16 +1039,26 @@ namespace LivingCity.UI
                         : "Drawing pay and doing nothing. Put him on a branch or on a " +
                           "corner.", lineSpacing: 3f);
             remark.overflowMode = TextOverflowModes.Ellipsis;
-            y += 9f + Mathf.Min(40f, remark.preferredHeight);
+            y += 7f + Mathf.Min(40f, remark.preferredHeight);
 
-            y = FileArms(host, member, pad, y + 12f, inner);
-            y = FileActions(host, member, person, isLieutenant, pad, y + 12f, inner);
-            return y + 12f;
+            y = FileArms(host, member, pad, y + 9f, inner);
+            y = FileActions(host, member, person, isLieutenant, pad, y + 9f, inner);
+            return y + 10f;
         }
 
-        /// <summary>The facts, FLOWING across the measure at the design's 22-unit
-        /// gutter - label and figure side by side, wrapping when the line is full. Not
-        /// a table: a file is read, not audited.</summary>
+        /// <summary>
+        /// The facts, on a GRID and not a flow: one column of labels, one column of
+        /// figures, and both of them starting at the same place on every line. The
+        /// label column is measured off the longest label there is, so ANSWERS TO and
+        /// WAGE hand their figures over at the same margin.
+        ///
+        /// A card wide enough carries two pairs to a line; a fact whose figure will not
+        /// stand in half the measure takes the whole line rather than being cut short -
+        /// a man's own name is not a thing to print as an ellipsis. And the label and
+        /// the figure are centred on ONE midline: they are set at different sizes, so
+        /// laid at the same top edge they sit three units apart, which is exactly the
+        /// stagger the page was showing.
+        /// </summary>
         float FileFacts(Transform host, Character member, OrganizationPerson person,
             bool isLieutenant, float x, float y, float w)
         {
@@ -1050,40 +1081,70 @@ namespace LivingCity.UI
                     member.Loyalty < 35 ? LedgerV2.Red : LedgerV2.Ink),
             };
 
-            var cx = x;
+            // One margin for every figure on the sheet: the longest label sets it.
+            var labelW = 0f;
+            for (var i = 0; i < facts.Count; i++)
+                labelW = Mathf.Max(labelW, MonoWidth(facts[i].Label, 9f, 10f) + 10f);
+
+            const float gutter = 18f;
+            // A cell has to carry the label and a figure worth reading; under that the
+            // file runs one pair to the line.
+            var columns = w >= (labelW + 96f) * 2f + gutter ? 2 : 1;
+            var cell = (w - gutter * (columns - 1)) / columns;
+
+            var line = LineBox(11.5f);
+            var rowH = line + 3f;
+
+            var column = 0;
             var cy = y;
-            var rowH = LineBox(11.5f) + 6f;
             for (var i = 0; i < facts.Count; i++)
             {
-                var labelW = MonoWidth(facts[i].Label, 9f, 10f) + 4f;
                 var valueW = MonoWidth(facts[i].Value, 11.5f, 0f) + 4f;
-                var itemW = labelW + 7f + valueW;
-                if (cx > x && cx + itemW > x + w)
+                var wide = valueW > cell - labelW;
+                if (wide && column > 0)
                 {
-                    cx = x;
+                    column = 0;
                     cy += rowH;
                 }
-                var label = Caps(host, cx, -cy, labelW, facts[i].Label, 9f,
-                    LedgerV2.Label, 10f);
+
+                var cx = x + column * (cell + gutter);
+                var room = (wide ? x + w - cx : cell) - labelW;
+                // The label is set in a shorter box than the figure; centred on the
+                // figure's own line, the pair reads as one line and not two.
+                var label = Caps(host, cx, LedgerV2.MarkY(-cy, line, 9f + 6f),
+                    labelW, facts[i].Label, 9f, LedgerV2.Label, 10f);
                 label.font = LedgerStyle.Mono;
-                LedgerV2.Figure(host, cx + labelW + 7f, -cy,
-                    Mathf.Min(valueW, Mathf.Max(20f, x + w - cx - labelW - 7f)),
+                LedgerV2.Figure(host, cx + labelW, -cy, Mathf.Max(20f, room),
                     facts[i].Value, 11.5f, facts[i].Ink,
                     TextAlignmentOptions.MidlineLeft);
-                cx += itemW + 22f;
+
+                column += wide ? columns : 1;
+                if (column >= columns)
+                {
+                    column = 0;
+                    cy += rowH;
+                }
             }
-            return cy + rowH;
+            return column > 0 ? cy + rowH : cy;
         }
 
         /// <summary>
-        /// The four trades he is best at, in the design's auto-fit grid of 170-unit
-        /// columns: the label, a stepped meter, and the reading beside it.
+        /// The four trades he is best at, two to a line: the label on the left, the
+        /// reading held to the right of the cell, and the stepped meter between them.
         ///
         /// The design draws five blocks and prints "n / 5". This roster counts in HALF
-        /// steps, so the meter is ten blocks at half the pitch - the same 67-unit run,
-        /// read the same way - and the figure beside it is the exact half-star the man
-        /// actually has. Rounding his practice away to fit five blocks would be the one
-        /// place on this sheet where the picture lied about the book.
+        /// steps, so the meter is ten blocks at half the pitch - read the same way -
+        /// and the figure beside it is the exact half-star the man actually has.
+        /// Rounding his practice away to fit five blocks would be the one place on this
+        /// sheet where the picture lied about the book.
+        ///
+        /// EVERYTHING in a cell is measured off the cell. The meter used to stand at a
+        /// fixed 97 units with a fixed run behind it, which is fine on a wide card and
+        /// on a narrow one printed one man's reading over the next man's name and ran
+        /// the last column off the edge of the paper. Now the label and the reading
+        /// take what they need, the meter takes what is left, and when what is left
+        /// will not carry ten legible blocks the meter is not drawn at all - a trade
+        /// with no meter still reads; a trade printed over its neighbour does not.
         /// </summary>
         float FileTrades(Transform host, Character member, float x, float y, float w)
         {
@@ -1093,30 +1154,58 @@ namespace LivingCity.UI
                     member.GetHalfSteps((CharacterAttribute)a)));
             commandTrades.Sort((l, r) => r.Steps.CompareTo(l.Steps));
 
-            var columns = Mathf.Max(1, Mathf.FloorToInt((w + 22f) / 192f));
-            var cell = (w - 22f * (columns - 1)) / columns;
-            var pips = LedgerV2.PipsWidth(AttributeScale.MaxHalfSteps, 5f, 7f);
+            const float gutter = 16f;
+            const float minCell = 150f;
+            var columns = Mathf.Max(1,
+                Mathf.FloorToInt((w + gutter) / (minCell + gutter)));
+            var cell = (w - gutter * (columns - 1)) / columns;
+
+            var labelW = Mathf.Clamp(cell * 0.40f, 56f, 96f);
+
+            // The reading is "2.5 / 5" while the cell can carry it and the meter both.
+            // Where it cannot, the "/ 5" is what goes: ten blocks ARE the scale, and a
+            // meter with a bare figure beside it reads better than a figure alone.
+            var figureW = MonoWidth("2.5 / 5", 10f, 0f) + 4f;
+            var scale = true;
+            var pitch = (cell - labelW - 16f - figureW) / AttributeScale.MaxHalfSteps;
+            if (pitch < 4f)
+            {
+                scale = false;
+                figureW = MonoWidth("2.5", 10f, 0f) + 4f;
+                pitch = (cell - labelW - 16f - figureW) / AttributeScale.MaxHalfSteps;
+            }
+            var meter = pitch >= 4f;
+            if (!meter)
+            {
+                scale = true;
+                figureW = MonoWidth("2.5 / 5", 10f, 0f) + 4f;
+            }
+            pitch = Mathf.Min(pitch, 7f);
+
             var shown = Mathf.Min(4, commandTrades.Count);
-            var rowH = LineBox(9.5f) + 5f;
+            var rowH = LineBox(9.5f) + 4f;
 
             for (var i = 0; i < shown; i++)
             {
-                var cx = x + i % columns * (cell + 22f);
+                var cx = x + i % columns * (cell + gutter);
                 var cy = y + i / columns * rowH;
                 var steps = commandTrades[i].Steps;
 
-                LedgerV2.Mono(host, cx, -cy, 88f,
+                LedgerV2.Mono(host, cx, -cy, labelW,
                         LedgerText.AttributeLabel(commandTrades[i].Attribute), 9.5f,
                         LedgerV2.Label, 8f)
                     .overflowMode = TextOverflowModes.Ellipsis;
-                LedgerV2.Pips(host, cx + 97f, -(cy + LineBox(9.5f) * 0.5f),
-                    AttributeScale.MaxHalfSteps, steps,
-                    steps >= 8 ? LedgerV2.Green : steps <= 3 ? LedgerV2.Red : LedgerV2.Ink,
-                    5f, 7f, 7f, LedgerV2.Rule);
-                LedgerV2.Mono(host, cx + 97f + pips + 9f, -cy,
-                        Mathf.Max(30f, cell - 106f - pips),
-                        AttributeScale.Stars(steps).ToString("0.#") + " / 5", 10f,
-                        LedgerV2.Muted, 0f)
+                if (meter)
+                    LedgerV2.Pips(host, cx + labelW + 8f,
+                        -(cy + LineBox(9.5f) * 0.5f),
+                        AttributeScale.MaxHalfSteps, steps,
+                        steps >= 8 ? LedgerV2.Green
+                            : steps <= 3 ? LedgerV2.Red : LedgerV2.Ink,
+                        Mathf.Max(2.5f, pitch - 2f), 7f, pitch, LedgerV2.Rule);
+                LedgerV2.Mono(host, cx + cell - figureW, -cy, figureW,
+                        AttributeScale.Stars(steps).ToString("0.#") +
+                        (scale ? " / 5" : ""), 10f,
+                        LedgerV2.Muted, 0f, TextAlignmentOptions.MidlineRight)
                     .font = LedgerStyle.MonoBold;
             }
             return y + (shown + columns - 1) / columns * rowH;
@@ -1133,7 +1222,7 @@ namespace LivingCity.UI
 
             var cx = x;
             var cy = y;
-            var h = LineBox(9.5f) + 8f;
+            var h = LineBox(9.5f) + 6f;
 
             void Chip(string word)
             {
@@ -1141,7 +1230,7 @@ namespace LivingCity.UI
                 if (cx > x && cx + chipW > x + w)
                 {
                     cx = x;
-                    cy += h + 6f;
+                    cy += h + 5f;
                 }
                 var chip = NewRect("Trait", host);
                 PlaceTopLeft(chip, cx, -cy, chipW, h);
@@ -1182,7 +1271,7 @@ namespace LivingCity.UI
             if (w > captionW + 20f)
                 Rule(host, x + captionW, -(y + LineBox(9f) * 0.5f), w - captionW,
                     LedgerV2.Rule);
-            y += LineBox(9f) + 8f;
+            y += LineBox(9f) + 6f;
 
             if (roster == null || !RosterOps.CanBeIssuedGear(roster, member.Id))
             {
@@ -1202,7 +1291,7 @@ namespace LivingCity.UI
 
             var cx = x;
             var cy = y;
-            var h = LineBox(12.5f) + 12f;
+            var h = LineBox(12.5f) + 9f;
             var memberId = member.Id;
             var memberName = member.FullName;
 
@@ -1295,7 +1384,7 @@ namespace LivingCity.UI
         {
             var cx = x;
             var cy = y;
-            var h = LineBox(10f) + 14f;
+            var h = LineBox(10f) + 11f;
             var id = member.Id;
 
             void Key(string label, LedgerV2.Key face, UnityAction onDo, bool live)
@@ -1353,8 +1442,7 @@ namespace LivingCity.UI
                           ? " man idle" : " men idle"),
                 commandReserve.Count == 0 ? "" : LedgerText.Cash(wage) + " / day",
                 commandReserve.Count == 0 ? LedgerV2.Muted : LedgerV2.Red,
-                "HIRE A MAN · " + LedgerText.Cash(
-                    director != null ? director.HoodRecruitmentCost : 0),
+                "HIRE A MAN",
                 () => FileRecruit(-1));
 
             if (commandReserve.Count == 0)
@@ -1618,14 +1706,16 @@ namespace LivingCity.UI
             PlaceTopLeft(ringRect, x - wall, lift + wall, diameter + wall * 2f,
                 diameter + wall * 2f);
             var ring = ringRect.gameObject.AddComponent<Image>();
-            ring.sprite = LedgerStyle.Disc;
+            ring.sprite = LedgerStyle.FaceDisc;
             ring.color = rim;
             ring.raycastTarget = false;
 
             var slot = NewRect("Round face", parent);
             PlaceTopLeft(slot, x, lift, diameter, diameter);
             var disc = slot.gameObject.AddComponent<Image>();
-            disc.sprite = LedgerStyle.Disc;
+            // The FINE disc, not the dot: this one is the stencil the photograph is
+            // cut with, and a mask cuts as coarsely as the circle it was given.
+            disc.sprite = LedgerStyle.FaceDisc;
             disc.color = ground;
             disc.raycastTarget = false;
 

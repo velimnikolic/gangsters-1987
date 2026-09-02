@@ -357,7 +357,7 @@ namespace LivingCity.UI
             under.characterSpacing = 3f;
             under.overflowMode = TextOverflowModes.Ellipsis;
 
-            var hire = DarkTape(card, "HIRE · " + LedgerText.Cash(director.HoodRecruitmentCost),
+            var hire = DarkTape(card, "HIRE A MAN",
                 textX, -98f, Mathf.Min(150f, textW), 22f, () => FileRecruit(-1));
             SetActionEnabled(hire, director != null);
 
@@ -649,9 +649,7 @@ namespace LivingCity.UI
             var rosterLabel = open
                 ? "HIDE ROSTER"
                 : "OPEN ROSTER · " + men.Count + " →";
-            var hireLabel = onHire != null
-                ? "HIRE · " + LedgerText.Cash(director.HoodRecruitmentCost)
-                : "";
+            var hireLabel = onHire != null ? "HIRE" : "";
             var rosterW = LedgerV2.ButtonWidth(rosterLabel, 10f);
             var hireW = onHire != null ? LedgerV2.ButtonWidth(hireLabel, 10f) : 0f;
             var keysW = rosterW + (onHire != null ? hireW + 8f : 0f);

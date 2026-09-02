@@ -546,7 +546,7 @@ namespace LivingCity.UI
 
         // ------------------------------------------------------------------ sprites
 
-        static Sprite rounded, softShadow, roundedSmall, disc, ring;
+        static Sprite rounded, softShadow, roundedSmall, disc, faceDisc, ring;
         static Texture2D paperGrain, radialLight, hatch, deskFall, sheetFall, deskStripe;
         static Texture2D dotRule, dotRuleDown, fadeUp;
         static Texture2D halftone, foxing, crease, vignette, speckle;
@@ -561,8 +561,16 @@ namespace LivingCity.UI
         /// <summary>A soft drop shadow, 9-sliced - lay it under a card 4 units off.</summary>
         public static Sprite SoftShadow => softShadow ??= MakeShadow();
 
-        /// <summary>A hard-edged filled circle - a punched hole, a torn perforation.</summary>
-        public static Sprite Disc => disc ??= MakeDisc();
+        /// <summary>A hard-edged filled circle - a punched hole, a torn perforation.
+        /// Small: every one of its jobs is a dot of a dozen units or so.</summary>
+        public static Sprite Disc => disc ??= MakeDisc(32);
+
+        /// <summary>The same circle drawn eight times finer, for the one job the little
+        /// one cannot do: standing as a MASK. A UI mask does not blend its edge - it
+        /// clips, hard, wherever the mask graphic's alpha crosses nothing - so the cut
+        /// is only ever as round as the texture behind it, and a 32-pixel circle blown
+        /// up to a 76-unit portrait cuts the photograph in visible steps.</summary>
+        public static Sprite FaceDisc => faceDisc ??= MakeDisc(256);
 
         /// <summary>A circle drawn as an outline - the coffee ring.</summary>
         public static Sprite Ring => ring ??= MakeRing();
@@ -637,7 +645,7 @@ namespace LivingCity.UI
             // the static that held it does
             pixel = pixelBold = null;
             missing.Clear();
-            rounded = roundedSmall = softShadow = disc = ring = null;
+            rounded = roundedSmall = softShadow = disc = faceDisc = ring = null;
             paperGrain = radialLight = hatch = deskFall = sheetFall = deskStripe = null;
             dotRule = dotRuleDown = fadeUp = null;
             halftone = foxing = crease = vignette = speckle = null;
@@ -702,11 +710,10 @@ namespace LivingCity.UI
             return sprite;
         }
 
-        static Sprite MakeDisc()
+        static Sprite MakeDisc(int size)
         {
-            const int size = 32;
             var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            tex.name = "Ledger Disc";
+            tex.name = "Ledger Disc " + size;
             tex.wrapMode = TextureWrapMode.Clamp;
             tex.filterMode = FilterMode.Bilinear;
             var pixels = new Color32[size * size];
