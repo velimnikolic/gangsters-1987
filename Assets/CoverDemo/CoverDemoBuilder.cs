@@ -93,6 +93,11 @@ namespace CoverDemo
         [Tooltip("Navigation soak: order one outfit crew directly at Falcone, then Santoro. " +
                  "This uses the player's normal attack path, not BlockDemo's march.")]
         public bool routeSoak;
+        [Tooltip("THE AMBUSH (EPIC 28). Instead of marching at the mob, the crew is put " +
+                 "behind a bin or a parked car between itself and one - the player's own " +
+                 "right click (DemoCrews.OrderAmbush) - and the mob is then walked into " +
+                 "it. Needs missionAfter above 0, like every other headless run here.")]
+        public bool ambushRun;
 
         [Header("Watch")]
         [Tooltip("Draw what the cover code sees: the boxes it counts as cover, and a line " +
@@ -209,7 +214,8 @@ namespace CoverDemo
             {
                 var mission = gameObject.AddComponent<BlockDemo.BlockDemoMission>();
                 mission.startAfter = missionAfter;
-                mission.onFoot = true;
+                mission.onFoot = !ambushRun;
+                mission.ambush = ambushRun;
                 mission.engageWithin = missionEngageWithin;
             }
 #else

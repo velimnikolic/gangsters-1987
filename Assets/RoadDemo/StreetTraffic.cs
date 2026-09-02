@@ -23,6 +23,19 @@ namespace RoadDemo
         /// law's, the props stood at the kerb.</summary>
         public static readonly List<IRoadUser> Users = new List<IRoadUser>();
 
+        /// <summary>Is this one still on the road, and still stood still? Two questions
+        /// in one because a flank behind a car depends on both: a car that pulled away
+        /// took its cover with it, and so did one that was despawned altogether
+        /// (DemoCrews cover, COVER-005). Asked a couple of times a second by the few men
+        /// actually behind a car, never in a loop over the street.</summary>
+        public static bool StoodStill(IRoadUser who, float limit)
+        {
+            if (who == null) return false;
+            for (int i = 0; i < Users.Count; i++)
+                if (ReferenceEquals(Users[i], who)) return who.RoadSpeed <= limit;
+            return false;
+        }
+
         /// <summary>One man on foot in the road, and WHOSE he is.
         ///
         /// It used to be a bare position, and that was enough while the only question a

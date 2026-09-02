@@ -116,12 +116,25 @@ namespace RoadDemo
         /// every frame, so anything past a beat of it is the rule not holding.</summary>
         const float ChaseAfter = 2.5f;
 
+        /// <summary>COVER FIRST (EPIC 28). Seconds a man may go on firing FROM THE OPEN
+        /// with a flank standing free on his own fire line before it is a fault. Longer
+        /// than the cover look's own ceiling (TickEngage re-asks every 2-3 s) on
+        /// purpose: what is being watched for is the rule not holding, not the beat
+        /// between a street changing and a man noticing. The street is asked at most
+        /// this often per man, because asking it is an A* each time.</summary>
+        const float OpenFireAfter = 4f, OpenFireProbeEvery = 1.5f;
+
         /// <summary>Ground pace below which a playing jog is a skate, and seconds of
         /// it before the fault is called. The gait gates drop a braked runner to the
         /// walk at RunRateMin x the clip's own pace (~2.7 m/s), so anything held a
         /// while under this is a gate not holding - the crossfade out of the jog and
         /// one man squeezing a car's flank both pass well inside the grace.</summary>
         const float SkatePace = 1.8f, SkateAfter = 1.5f;
+
+        /// <summary>Seconds after a crew last had an enemy in sight before its formation
+        /// is judged again. Long enough for men scattered over a street's flanks to
+        /// converge onto one corridor, and no longer.</summary>
+        const float FormingUpAfterFight = 8f;
 
         /// <summary>Seconds a man may stand on the pavement, with no order and nothing
         /// to shoot at, while HIS OWN CREW rides past in a car. A crew that drives off
@@ -170,6 +183,10 @@ namespace RoadDemo
             public float PrevGap = float.MaxValue;
             public bool SaidOff;
             public bool RouteWatching, RouteStallSaid, RouteOrbitSaid, RouteOverlapSaid;
+            /// <summary>Since when he has been putting rounds down FROM THE OPEN, and
+            /// whether the street has already been asked about it (the openfire rule).</summary>
+            public float OpenFireSince, OpenProbeAt;
+            public bool OpenFireSaid;
             public Vector3 RouteStart, RouteGoal, RouteLastDir;
             public float RouteStartGap, RouteFor, RouteRecentTravel, RouteTravel, RouteTurn;
         }
@@ -270,6 +287,15 @@ namespace RoadDemo
                 if (man.JoggingPose)
                     Fault(man, "firewalk", "fired while running (" + man.State + ")");
 
+                // AND A ROUND FROM THE OPEN WITH A BIN GOING SPARE. The whole of EPIC
+                // 28 is that a man gets behind something and THEN fires; the one way to
+                // measure it from outside is to ask the same oracle he asks, at the
+                // moment he pulls the trigger, and see whether it had an answer he did
+                // not take. A flank another man has claimed, or one his feet cannot
+                // reach, is not an answer - the oracle refuses both, so this reads
+                // exactly the rule and not an ideal.
+                OpenFire(man, mark);
+
                 var to = mark.ChestPosition - man.MuzzlePosition;
                 if (to.magnitude < 2f) continue;                       // muzzle at his chest: the angle means nothing
                 float off = Vector3.Angle(man.MuzzleForward, to);
@@ -278,6 +304,31 @@ namespace RoadDemo
                         $"fired {off:F0} deg off {mark.DisplayName}, {to.magnitude:F1} m out");
             }
             FiredThisFrame.Clear();
+        }
+
+        /// <summary>Did this round leave a man stood in the open while the street had
+        /// something for him to get behind?</summary>
+        static void OpenFire(CrewWalker man, CrewWalker mark)
+        {
+            if (!Men.TryGetValue(man, out var w)) Men[man] = w = new Watch();
+            if (man.InCover || man.CoverSpot.HasValue)
+            {
+                // behind it, or on his way to it: the rule is holding
+                w.OpenFireSince = 0f;
+                w.OpenFireSaid = false;
+                return;
+            }
+            if (w.OpenFireSince <= 0f) { w.OpenFireSince = Time.time; return; }
+            if (w.OpenFireSaid || Time.time - w.OpenFireSince < OpenFireAfter) return;
+            if (Time.time < w.OpenProbeAt) return;
+            w.OpenProbeAt = Time.time + OpenFireProbeEvery;
+            if (CrewWalker.FindCover == null || mark == null || mark.Tf == null) return;
+            var flank = CrewWalker.FindCover(man, mark.Tf.position);
+            if (!flank.HasValue) return;   // an empty street: the closing shot is allowed
+            w.OpenFireSaid = true;
+            Fault(man, "openfire",
+                $"fired from the open at {mark.DisplayName} with a free flank " +
+                $"{Vector3.Distance(man.Tf.position, flank.Value):F1} m off");
         }
 
         // -------------------------------------------------------------- per man
@@ -297,7 +348,14 @@ namespace RoadDemo
                 // further than the fastest step is a teleport, which is what the
                 // player calls a respawn. The frame he is put down out of a seat is
                 // the seat's business and excused.
-                if (afoot && w.Seen && !w.WasCarried)
+                // AND NOT THE FRAME HE WAS PUT SOMEWHERE. A man whose route left him
+                // inside fixed geometry is lifted onto the nearest clear ground and his
+                // way redrawn (CrewWalker.RecoverFixedOverlap) - a body being placed,
+                // exactly like the frame he is set down out of a car seat, and not a
+                // step. Furnished streets reach it often enough to matter now that men
+                // walk to flanks across them (EPIC 28).
+                if (afoot && w.Seen && !w.WasCarried &&
+                    Time.frameCount - man.RelocatedAt > 1)
                 {
                     var moved = pos - w.Last;
                     moved.y = 0f;
@@ -600,7 +658,13 @@ namespace RoadDemo
         /// falling in have their own rules and are deliberately outside this one.</summary>
         static void TickFormation(DemoCrews.Unit unit, float dt)
         {
-            if (unit == null || unit.Wiped || unit.TargetUnit != null || unit.Boarding != null)
+            if (unit == null || unit.Wiped || unit.TargetUnit != null || unit.Boarding != null ||
+                // AND WHILE IT IS RE-FORMING OUT OF ONE. A crew that fought from cover
+                // ends the fight spread over every flank on the street (EPIC 28), so the
+                // first seconds of its next order are five men converging on one
+                // corridor from five places - which is a crew forming up, not a crew
+                // that set off in unrelated directions.
+                Time.time - unit.SawEnemyAt < FormingUpAfterFight)
             {
                 ResetFormation(unit);
                 return;
@@ -612,6 +676,11 @@ namespace RoadDemo
             {
                 if (man == null || man.Dead || man.Tf == null || man.Riding ||
                     man.Panicked || man.Retreating || man.FallingIn ||
+                    // AND THE MAN ON HIS WAY TO A FLANK OF HIS OWN. An ambush is five
+                    // men dealt five different places round one bin (EPIC 28) - a
+                    // deliberate spread, not one order badly kept - so it is outside
+                    // this rule for the same reason a man falling in is.
+                    man.HeldCover.HasValue ||
                     man.State != CrewWalker.Mode.Striding)
                     continue;
                 FormationPositions.Add(man.Tf.position);

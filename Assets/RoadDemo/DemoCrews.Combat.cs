@@ -258,6 +258,7 @@ namespace RoadDemo
             {
                 if (a.Dead || a.Tf == null) continue;
                 if ((a.Tf.position - man.Tf.position).sqrMagnitude > SightRange * SightRange) continue;
+                if (Concealed(man, a.Tf.position)) continue;   // he is down behind a bin waiting for them
                 if (InSight(a.Tf.position, man.Tf.position)) return true;
             }
             return false;
@@ -285,6 +286,7 @@ namespace RoadDemo
                     if (b.Dead || b.Tf == null || IsAboard(b)) continue;
                     float d = (b.Tf.position - man.Tf.position).sqrMagnitude;
                     if (d >= bestD) continue;
+                    if (Concealed(b, man.Tf.position)) continue;   // lying in wait: not there yet
                     if (!InSight(man.Tf.position, b.Tf.position)) continue;
                     bestD = d;
                     best = other;
@@ -345,6 +347,18 @@ namespace RoadDemo
                         if (!man.Dead && !IsAboard(man)) man.Retreat(threat);
                 }
                 if (unit.Retreated) { TakeOffRetreated(unit); continue; }
+
+                // THE AMBUSH SPRINGS ITSELF (COVER-004). The outfit starts nothing
+                // (below) - except a crew the player put behind a bin and told to wait,
+                // which is the one fight he asked it to start. A rival family's man
+                // inside the crew's best gun reach and in sight of one of the waiting
+                // men, and they open up from where they are lying. Never the law and
+                // never a civilian; ordered, because the player ordered the wait.
+                if (unit.TargetUnit == null && AnyLurking(unit))
+                {
+                    var sprung = LurkQuarry(unit);
+                    if (sprung != null) SetTarget(unit, sprung, ordered: true);
+                }
 
                 // a rival crew watches for the OUTFIT only - the mobs are not at war with
                 // each other here, and two rival crews stood a street apart must not
@@ -802,9 +816,11 @@ namespace RoadDemo
                     // a man in a car is just a car going by until somebody shoots
                     foreach (var b in other.All())
                         // close enough AND in view: a crew on the far side of a block of
-                        // flats has not "seen the outfit walk up", whatever the tape says
+                        // flats has not "seen the outfit walk up", whatever the tape says -
+                        // and a man LYING IN WAIT is not walking up at all (COVER-004)
                         if (!b.Dead && !IsAboard(b) &&
                             (a.Tf.position - b.Tf.position).sqrMagnitude < r2 &&
+                            !Concealed(b, a.Tf.position) &&
                             InSight(a.Tf.position, b.Tf.position))
                             return other;
                 }
@@ -818,6 +834,8 @@ namespace RoadDemo
         void OnFired(CrewWalker shooter)
         {
             if (DriveTrace.On) CrewAudit.ShotFired(shooter);
+            // the round is what springs an ambush, not the order that gave him the mark
+            SpringAmbush(shooter);
             Resolve(shooter, shooter.Target, shooter.MuzzlePosition, shooter.Tf.position,
                 CrewArms.MuzzleOf(shooter.Weapon) ?? shooter.Tf);
         }
@@ -941,6 +959,10 @@ namespace RoadDemo
                 DriveTrace.Bool(sb, "aboard", IsAboard(target));
                 DriveTrace.Bool(sb, "cover", target.InCover);
                 DriveTrace.Bool(sb, "ducked", target.Ducked);
+                // and the SHOOTER's own: `cover` above has always been about the man
+                // being shot at, and EPIC 28's whole question is about the man pulling
+                // the trigger - did this round leave from behind something
+                DriveTrace.Bool(sb, "fromcover", shooter.InCover);
                 DriveTrace.Str(sb, "state", shooter.State.ToString());
                 DriveTrace.Vec(sb, "muzzle", muzzle);
                 DriveTrace.Row("shot", sb.ToString());

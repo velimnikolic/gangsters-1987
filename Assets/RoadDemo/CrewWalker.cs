@@ -576,6 +576,7 @@ namespace RoadDemo
             ClearSharedCorridor();
             _throughWall = false;
             _watching = false;
+            DropHeldCover();   // a man sent somewhere else is not lying in wait any more
             Target = null;
             _coverSpot = null;
             InCover = false;
@@ -629,6 +630,7 @@ namespace RoadDemo
             ClearFallingIn();
             ClearSharedCorridor();
             LeaveGraphOrder();
+            DropHeldCover();   // a man sent somewhere else is not lying in wait any more
             Target = null;
             _coverSpot = null;
             InCover = false;
@@ -781,6 +783,7 @@ namespace RoadDemo
             if (Spilling) return false;   // in the air off a machine: he is the spill's until he lands
             if (Dead) return false;
             ClearFallingIn();
+            DropHeldCover();   // a man sent somewhere else is not lying in wait any more
             Target = null;
             _coverSpot = null;
             InCover = false;
@@ -1137,6 +1140,20 @@ namespace RoadDemo
         /// an old numerical overlap. Relocate once to the nearest genuinely clear spot
         /// and redraw the whole remaining route; ordinary steering never receives a
         /// licence to walk through the containing wall.</summary>
+        /// <summary>The frame this walker was PUT somewhere rather than walked there -
+        /// the wedge recovery below, the one step in the class that writes his transform
+        /// outright. The audit's snap rule excuses that frame the way it excuses the
+        /// frame a man is set down out of a car seat: both are a body being placed, and
+        /// neither is a step (CrewAudit.teleport).</summary>
+        public int RelocatedAt { get; private set; } = -1000;
+
+        /// <summary>Somebody else has just PUT this man somewhere - the arena lifting him
+        /// off ground he was standing inside before it sends him anywhere
+        /// (DemoCrews.Unwedge). Stamped so the snap rule can tell a body being placed
+        /// from a body taking a step; it is the same excuse a man set down out of a car
+        /// seat already has.</summary>
+        internal void NoteRelocated() => RelocatedAt = Time.frameCount;
+
         bool RecoverFixedOverlap()
         {
             const float MaxRecoveryStep = 2.5f;
@@ -1156,6 +1173,7 @@ namespace RoadDemo
             }
             free.y = from.y;
             Tf.position = free;
+            RelocatedAt = Time.frameCount;
             _replans = 0;
             if (!BuildRemainingWay(free) || _legs.Count == 0)
             {
@@ -1185,7 +1203,29 @@ namespace RoadDemo
                 _coverSpot = null;
                 InCover = false;
                 _wasClosing = false;
+                _firedThisFight = false;
                 ClearCombatWay();
+                // LYING IN WAIT: THE FLANK HE WAS PUT ON IS THE FLANK HE FIGHTS FROM
+                // (COVER-004). This is the one seam the ambush needed - a new mark used
+                // to null the spot outright, so the men the player had set behind a bin
+                // stood up and walked at whoever sprang it. He keeps it while the mark
+                // is worth shooting at from there; out of reach, the leapfrog in
+                // TickEngage finds him the next flank toward the man.
+                if (_heldCover.HasValue)
+                {
+                    var shot = target.Tf.position - _heldCover.Value;
+                    shot.y = 0f;
+                    float from = shot.magnitude;
+                    if (from >= 3f && from <= Ballistics.Range)
+                    {
+                        _coverSpot = _heldCover;
+                        _coverFrom = target.Tf.position;
+                        _coverLooked = true;
+                        _coverRecheckAt = Time.time + Random.Range(2f, 3f);
+                        _ducked = false;                          // already down: he comes UP
+                        _coverCycle = Random.Range(1.6f, 2.4f);
+                    }
+                }
             }
             Target = target;
             EndChat();
@@ -1415,6 +1455,7 @@ namespace RoadDemo
              State == Mode.Fleeing ||    // running from one, which is still one
              Alert ||                    // shooting within earshot, twelve seconds of it
              RidingAim ||                // out of a window, or off the back of a machine
+             Lurking ||                  // down behind a bin waiting for them: the whole point
              _shoutLeft > 0f);           // the law's warning, shouted with the gun up
 
         /// <summary>The piece comes out when the street calls for it and goes away when
@@ -1989,6 +2030,7 @@ namespace RoadDemo
         public void TickCrew(float dt)
         {
             if (DriveTrace.On) TracePed(dt);
+            TickHeldCover();
             TickArms(dt);
             BlendLongGunRun(!Dead && !Spilling && Armed && _runningLeg &&
                             CrewArms.TwoHanded(WeaponKind), dt);
@@ -2041,6 +2083,11 @@ namespace RoadDemo
                         OrderToPoint(back, Random.Range(0.2f, 1f));
                         return;
                     }
+                    // LYING IN WAIT comes before the shout and before the alert: a man
+                    // put behind a bin to wait does not stand up and look about because
+                    // somebody let a round off two streets away. That is what he is
+                    // there for.
+                    if (Lurking) { TickLurk(dt); return; }
                     if (_shoutLeft > 0f) { TickShout(dt); return; }
                     if (Alert) { TickAlert(dt); return; }
                     TickLoiter(dt);
@@ -2470,6 +2517,177 @@ namespace RoadDemo
         /// pavement's furniture.</summary>
         public static System.Func<CrewWalker, Vector3, Vector3?> FindCover;
 
+        /// <summary>The same oracle asked the ambush's way: a flank round THERE, facing
+        /// a threat from THAT way, with no gun range asked of it (man, centre, threat
+        /// point, reach). What a man whose car pulled out from under him asks for
+        /// himself - the arena is not watching him, he is holding a place
+        /// (DemoCrews.FlankAround).</summary>
+        public static System.Func<CrewWalker, Vector3, Vector3, float, Vector3?> FindFlankAround;
+
+        // ------------------------------------------------------------ lying in wait
+
+        /// <summary>The flank the player put him behind and told him to hold - the
+        /// ambush (COVER-004). Unlike <see cref="CoverSpot"/> it OUTLIVES a fight: a man
+        /// who is handed a mark keeps this flank and fights from it (see
+        /// <see cref="Engage"/>), and only a fresh order takes it off him.</summary>
+        public Vector3? HeldCover => _heldCover;
+
+        /// <summary>Down behind the held flank, waiting: gun out, crouched, turned at
+        /// where they will come from, silent, and left alone by his crew's tether. He
+        /// stops lurking the instant he has a fight - which is also the instant he can
+        /// be seen again (DemoCrews.Concealed).</summary>
+        public bool Lurking =>
+            _heldCover.HasValue && !Dead && !Spilling && !Riding && Target == null &&
+            CarMark == null && State == Mode.Standing && Time.time <= _lurkUntil &&
+            AtHeldCover;
+
+        /// <summary>NOT SEEN YET - the sight half of lying in wait, and deliberately NOT
+        /// the same question as <see cref="Lurking"/>.
+        ///
+        /// Concealment used to be read off `Lurking`, which goes false the moment a man
+        /// is HANDED A MARK. Handing him a mark is not a man showing himself: the crew
+        /// acquires, turns, brings the gun up and only then fires, and for that whole
+        /// beat the mob it was laid for could already see it, square up and get the
+        /// first round away - the ambush losing the one thing it exists for. What ends
+        /// the concealment is A ROUND LEAVING THE CREW (DemoCrews.SpringAmbush, off the
+        /// first Fired), and nothing else.</summary>
+        public bool Hidden =>
+            _heldCover.HasValue && !_ambushSprung && !Dead && !Spilling && !Riding &&
+            CarMark == null && Time.time <= _lurkUntil && AtHeldCover;
+
+        /// <summary>Standing at the flank he was put on, rather than still walking to
+        /// it. A man on his way to a bin is a man crossing a street.</summary>
+        bool AtHeldCover =>
+            _heldCover.HasValue && Tf != null &&
+            (Tf.position - _heldCover.Value).sqrMagnitude <= LurkAtSpot * LurkAtSpot;
+
+        /// <summary>The ambush has been sprung - a round has left this crew, so the men
+        /// behind their flanks are ordinary men to anybody's eyes again. Set from the
+        /// FIRST ROUND, never from the order that gives them a mark.</summary>
+        public void SpringAmbush() => _ambushSprung = true;
+
+        bool _ambushSprung;
+
+        /// <summary>How near the flank he has to be standing before he counts as
+        /// waiting behind it rather than walking to it.</summary>
+        const float LurkAtSpot = 1.2f;
+
+        Vector3? _heldCover;
+        Vector3 _lurkThreat = Vector3.forward;
+        Vector3 _ambushAt;
+        float _lurkUntil = -1000f;
+        float _anchorCheckAt;
+
+        /// <summary>Whose tin the flank he is holding belongs to, or null when it is a
+        /// bin. A CAR THAT DRIVES OFF TAKES ITS FLANK WITH IT (COVER-005): nobody stands
+        /// in the road guarding the space where a car was.</summary>
+        IRoadUser _coverAnchor;
+
+        /// <summary>Is the thing he is behind somebody's CAR rather than a bin? The one
+        /// bit of the flank that can drive away, so it is the one the bench and the
+        /// indicators ask about (gangsters_ambush_probe).</summary>
+        public bool BehindTin => _coverAnchor != null;
+
+        /// <summary>Has a round left this man since he was given his current mark? What
+        /// the trace's cover row answers with `first` - whether the flank he has just
+        /// been dealt is the one his FIRST round will leave from, which is the whole of
+        /// the ask (EPIC 28).</summary>
+        bool _firedThisFight;
+
+        /// <summary>Put him behind this flank and leave him there: he walks (or runs, on
+        /// the double click) to it, arrives, goes down behind it and watches
+        /// <paramref name="threat"/>. Ordered FIRST and held afterwards, exactly as a
+        /// posted doorman's heading is - every fresh order drops both.</summary>
+        public bool HoldCover(Vector3 spot, Vector3 threat, Vector3 anchorAt,
+            IRoadUser anchor, bool run)
+        {
+            if (Dead || Spilling || Riding) return false;
+            threat.y = 0f;
+            if (threat.sqrMagnitude < 1e-4f) threat = Tf.forward;
+            spot.y = Tf.position.y;
+            // THE WALK TO AN AMBUSH IS A WALK, NOT A CHARGE. He is not in a fight, so
+            // he goes the way a crew goes anywhere - down the pavement, over the road at
+            // a crossing - and only the last strides onto a flank take him off it. Told
+            // to cut straight there he walks the length of the carriageway to reach a
+            // heap in the middle of the road, which is the scene MarchTo's keepOffRoad
+            // exists to stop (CrewAudit.roadwalk raised five of them in one run of it).
+            // The direct way is still the fallback: a flank the pavements cannot reach
+            // is better taken than refused.
+            if (!OrderAcross(spot, 0f, keepOffRoad: true) && !OrderAcross(spot)) return false;
+            Urgent = run;
+            _heldCover = spot;
+            _lurkThreat = threat.normalized;
+            _ambushAt = anchorAt;
+            _coverAnchor = anchor;
+            _lurkUntil = Time.time + DemoCrews.AmbushLease;
+            _anchorCheckAt = Time.time + AnchorEvery;
+            _ambushSprung = false;   // a fresh flank is a fresh wait, unseen again
+            WatchToward(_lurkThreat);
+            return true;
+        }
+
+        /// <summary>Up, and his crew's again: the lease ran out, or he was told to be
+        /// somewhere else.</summary>
+        void DropHeldCover()
+        {
+            if (!_heldCover.HasValue) return;
+            _heldCover = null;
+            _coverAnchor = null;
+            _lurkUntil = -1000f;
+            StopWatching();
+            if (Target == null) InCover = false;
+        }
+
+        /// <summary>How often the tin he is behind is asked whether it is still
+        /// there.</summary>
+        const float AnchorEvery = 0.5f;
+
+        /// <summary>The two things that end a flank without anybody telling him: the
+        /// lease running out on an ambush nobody sprang, and the car he was behind
+        /// driving off. Run every frame, whatever he is doing - a car pulls out from
+        /// under a man in a fight just as readily as from under one waiting.</summary>
+        void TickHeldCover()
+        {
+            if (Dead) return;
+            // no flank of any kind: whatever tin he was behind is nobody's business now.
+            // Every place that drops a spot goes through here rather than each of them
+            // having to remember there is an anchor as well (Disengage, every order).
+            if (!_coverSpot.HasValue && !_heldCover.HasValue) _coverAnchor = null;
+            if (_heldCover.HasValue && Time.time > _lurkUntil) DropHeldCover();
+            // WALKING TO IT IS NOT BEING BEHIND IT. TickLurk sets the cover flags while
+            // he is down at the spot; anything that puts him back on his feet without an
+            // order - a flinch, a shove, the spot moving - has to take them off him
+            // again, or he walks the rest of the street counting as covered.
+            if (_heldCover.HasValue && Target == null && !Lurking) InCover = false;
+            if (_coverAnchor == null || Time.time < _anchorCheckAt) return;
+            _anchorCheckAt = Time.time + AnchorEvery;
+            if (StreetTraffic.StoodStill(_coverAnchor, DemoCrews.StoodStill)) return;
+
+            // IT DROVE OFF. In a fight he re-asks the oracle from where he stands (the
+            // recheck below, forced); lying in wait he re-asks round the thing the
+            // player pointed at, so an ambush survives its car leaving.
+            _coverAnchor = null;
+            _coverSpot = null;
+            InCover = false;
+            _coverRecheckAt = 0f;
+            if (!_heldCover.HasValue) return;
+            var next = FindFlankAround?.Invoke(this, _ambushAt,
+                _ambushAt + _lurkThreat * 30f, DemoCrews.AmbushSpread);
+            if (next.HasValue)
+            {
+                var threat = _lurkThreat;
+                var at = _ambushAt;
+                var user = DemoCrews.LastCoverAnchor;
+                float until = _lurkUntil;
+                if (HoldCover(next.Value, threat, at, user, run: false))
+                {
+                    _lurkUntil = until;   // the same lease: a new flank is not a new order
+                    return;
+                }
+            }
+            DropHeldCover();
+        }
+
         /// <summary>A shot went off within earshot: a man with nothing on draws and
         /// turns toward it - and stays that way a while after the last one. Nothing
         /// while he fights, runs or rides.</summary>
@@ -2485,6 +2703,26 @@ namespace RoadDemo
                 // the beat of taking it in, only for the first shot he hears
                 if (!wasAlert) _alertBeat = Random.Range(0.2f, 0.8f);
             }
+        }
+
+        /// <summary>Down behind the flank he was put on, waiting for them (COVER-004).
+        ///
+        /// It is deliberately the quietest tick in the class: no glance round, no
+        /// fidget, no word with the man beside him, no roam. He is crouched, his piece
+        /// is in his hand (WantsGunOut reads Lurking) and he is turned at where they
+        /// will come from. The cover flags are set here rather than in the fight,
+        /// because a round that comes at a man lying in wait finds him behind a bin
+        /// with his head in - which is what DuckedCover is (DemoCrews.Resolve).</summary>
+        void TickLurk(float dt)
+        {
+            InCover = true;
+            _ducked = true;
+            // the door post's lease is shorter than the ambush's, so the heading is
+            // re-armed rather than left to run out under him
+            if (!Watching) WatchToward(_lurkThreat);
+            TurnToward(_lurkThreat, 160f, dt);
+            SetPose(VisibleCrouchPose);
+            TickBlend(dt);
         }
 
         // Ready: gun low in the hand, turned to where the shooting was, a look about now
@@ -2697,6 +2935,7 @@ namespace RoadDemo
                 StrideAllowsAim(to) && _aimBlend >= 0.5f && BarrelOn(CarAim(car)))
             {
                 _fireTimer = Ballistics.Interval;
+                _firedThisFight = true;
                 StartFirePose();
                 Fired?.Invoke(this);
             }
@@ -2758,37 +2997,73 @@ namespace RoadDemo
             // flank is only a flank against one direction.
             if (FindCover != null)
             {
-                if (!_coverSpot.HasValue && (!_coverLooked || Time.time >= _coverRecheckAt))
+                bool have = _coverSpot.HasValue;
+                bool due = Time.time >= _coverRecheckAt;
+                // A FLANK THE MARK HAS BACKED OUT OF IS NOT A FLANK - but out of reach
+                // he no longer drops it for the open. He holds it and asks for the next
+                // one toward the man (COVER-002).
+                float shotFromSpot = 0f;
+                if (have)
+                {
+                    var fromSpot = Target.Tf.position - _coverSpot.Value;
+                    fromSpot.y = 0f;
+                    shotFromSpot = fromSpot.magnitude;
+                }
+                bool outOfReach = have && shotFromSpot > range;
+                bool walkedRound = have && (Target.Tf.position - _coverFrom).sqrMagnitude > 4f * 4f;
+
+                if ((!have && (!_coverLooked || due)) || (have && due && (walkedRound || outOfReach)))
                 {
                     _coverLooked = true;
-                    _coverRecheckAt = Time.time + Random.Range(2f, 3f);
-                    _coverSpot = FindCover(this, Target.Tf.position);
-                    if (_coverSpot.HasValue)
+                    _coverFrom = Target.Tf.position;
+                    var found = FindCover(this, Target.Tf.position);
+                    // A MAN WITH NOTHING TO GET BEHIND LOOKS HARDER THAN ONE ALREADY
+                    // BEHIND SOMETHING. The ordinary two-to-three seconds is the beat a
+                    // man in cover keeps; stood in the open with rounds coming at him he
+                    // asks the street again inside a second and a half, which is what
+                    // shuts the window a freed flank used to sit in unclaimed while he
+                    // went on firing from the pavement (CrewAudit.openfire).
+                    _coverRecheckAt = Time.time +
+                        (found.HasValue ? Random.Range(2f, 3f) : Random.Range(1f, 1.6f));
+                    bool moved = found.HasValue &&
+                                 (!have || (found.Value - _coverSpot.Value).sqrMagnitude > 0.01f);
+                    if (found.HasValue)
                     {
-                        _coverFrom = Target.Tf.position;
-                        _ducked = true;                       // he arrives low
-                        _coverCycle = Random.Range(0.6f, 1.1f);
+                        _coverSpot = found;
+                        _coverAnchor = DemoCrews.LastCoverAnchor;
+                        if (moved)
+                        {
+                            _ducked = true;                       // he arrives low
+                            _coverCycle = Random.Range(0.6f, 1.1f);
+                        }
                     }
+                    // LEAPFROG, NEVER THE OPEN - but never a man welded to a useless
+                    // flank either. He holds the one he has from the moment the mark
+                    // steps out of its reach until the throttle lets him look again
+                    // (COVER-002); when that look comes back with nothing, the street
+                    // really has nothing, and he closes in the open as he always did.
+                    else
+                    {
+                        _coverSpot = null;
+                        _coverAnchor = null;
+                        InCover = false;
+                    }
+
                     // what the street had to offer, asked and answered - the only way
-                    // to tell "he never looked" from "there was nothing to get behind"
+                    // to tell "he never looked" from "there was nothing to get behind" -
+                    // and whether his FIRST round of this fight will leave from it,
+                    // which is the whole of the ask (EPIC 28)
                     if (DriveTrace.On)
                     {
                         var sb = DriveTrace.Take();
                         DriveTrace.Str(sb, "who", DisplayName);
-                        DriveTrace.Bool(sb, "found", _coverSpot.HasValue);
+                        DriveTrace.Bool(sb, "found", found.HasValue);
+                        DriveTrace.Bool(sb, "first", !_firedThisFight);
                         DriveTrace.Num(sb, "range", dist);
-                        if (_coverSpot.HasValue)
-                            DriveTrace.Num(sb, "walk", Vector3.Distance(Tf.position, _coverSpot.Value));
+                        if (found.HasValue)
+                            DriveTrace.Num(sb, "walk", Vector3.Distance(Tf.position, found.Value));
                         DriveTrace.Row("cover", sb.ToString());
                     }
-                }
-                else if (_coverSpot.HasValue && Time.time >= _coverRecheckAt &&
-                         (Target.Tf.position - _coverFrom).sqrMagnitude > 4f * 4f)
-                {
-                    _coverRecheckAt = Time.time + Random.Range(2f, 3f);
-                    _coverFrom = Target.Tf.position;
-                    _coverSpot = FindCover(this, Target.Tf.position);
-                    if (!_coverSpot.HasValue) InCover = false;   // walked round: out in the open, then
                 }
             }
             if (_coverSpot.HasValue)
@@ -2796,19 +3071,14 @@ namespace RoadDemo
                 var spot = _coverSpot.Value;
                 var gap = spot - Tf.position;
                 gap.y = 0f;
-                var coverShot = Target.Tf.position - spot;
-                coverShot.y = 0f;
                 // The cover contract is about the shot FROM the flank, not where he
-                // happens to be while walking to it. A stale/legacy flank beyond the
-                // gun's real reach must be dropped; an in-range flank may be approached
-                // from further away and the ordinary draw threshold still decides when
-                // the rifle comes out.
-                if (coverShot.magnitude > range)
-                {
-                    _coverSpot = null;
-                    InCover = false;
-                }
-                else if (gap.magnitude > 0.5f)
+                // happens to be while walking to it - and a flank the mark has backed
+                // out of the reach of is no longer DROPPED here. He walks to it, holds
+                // it, and the look above hands him the next one toward the man on the
+                // ordinary throttle; the fire gate below (dist <= range) is what keeps
+                // his finger off the trigger in the meantime, so the leapfrog costs him
+                // a beat of the fight and never a step into the open (COVER-002).
+                if (gap.magnitude > 0.5f)
                 {
                     InCover = false;
                     // THE LAST FEW METRES ARE MADE LOW. A man who has had rounds round
@@ -2906,6 +3176,7 @@ namespace RoadDemo
                     StrideAllowsAim(toTarget) && BarrelOn(Target))
                 {
                     _fireTimer = Ballistics.Interval * OnTheMove;
+                    _firedThisFight = true;
                     StartFirePose();
                     Fired?.Invoke(this);
                 }
@@ -2946,6 +3217,7 @@ namespace RoadDemo
                 _aimBlend >= 0.5f && BarrelOn(Target))
             {
                 _fireTimer = Ballistics.Interval;
+                _firedThisFight = true;
                 StartFirePose();
                 Fired?.Invoke(this);
             }

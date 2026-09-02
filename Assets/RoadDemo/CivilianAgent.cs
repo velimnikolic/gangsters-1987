@@ -1214,6 +1214,105 @@ namespace RoadDemo
             }
         }
 
+        // ---------------------------------------------------------------- witnesses
+
+        /// <summary>Metres a bystander has to be inside to have SEEN it rather than
+        /// merely heard something (GAN-245). A street's width and a little more: past
+        /// this he is a man who was in the neighbourhood, which is not evidence.</summary>
+        public const float SightRadius = 25f;
+
+        /// <summary>The most names a prosecutor puts on one docket. A third man who saw
+        /// the same thing is not a third case (Police.Verdict counts two), and a list
+        /// that grew with the crowd would be a list the player could never shorten.</summary>
+        public const int MaxEyewitnesses = 3;
+
+        /// <summary>What blocks a line of sight: the Default layer, which is where the
+        /// walls and the street furniture are. Pedestrians (layer 8) deliberately do
+        /// not - a man does not stop being a witness because somebody walked past.</summary>
+        const int SightMask = 1;
+
+        /// <summary>
+        /// WHO SAW IT. Run ONCE when an incident opens - the shot, or the officer
+        /// arriving at a complaint - and never again: a witness list that could grow
+        /// afterwards would mean leaning on one bought the crew nothing, because
+        /// another would simply appear (GAN-245's own rule).
+        ///
+        /// Only the people who REACTED: a man walking past with his hat down noticed
+        /// nothing worth a court's time. One raycast each, nearest first, capped.
+        /// </summary>
+        public static int SnapshotWitnesses(Vector3 at, float radius, int max,
+            List<CivilianAgent> into)
+        {
+            if (into == null) return 0;
+            into.Clear();
+            if (max <= 0) return 0;
+
+            var eye = at + Vector3.up * 1.5f;
+            var r2 = radius * radius;
+            for (int i = 0; i < All.Count; i++)
+            {
+                var c = All[i];
+                if (c == null || c.Dead || c.Tf == null) continue;
+                if (c.State != Mode.Gawk && c.State != Mode.Startle &&
+                    c.State != Mode.Flee && c.State != Mode.Cower) continue;
+
+                var to = c.Tf.position;
+                float d2 = (to - at).sqrMagnitude;
+                if (d2 > r2) continue;
+                if (Physics.Linecast(eye, to + Vector3.up * 1.5f, SightMask,
+                        QueryTriggerInteraction.Ignore)) continue;
+
+                // nearest first, so a cap keeps the people who were closest to it
+                int slot = into.Count;
+                while (slot > 0 &&
+                       (into[slot - 1].Tf.position - at).sqrMagnitude > d2) slot--;
+                if (slot >= max) continue;
+                into.Insert(slot, c);
+                if (into.Count > max) into.RemoveAt(into.Count - 1);
+            }
+            return into.Count;
+        }
+
+        /// <summary>
+        /// The stream this bystander's NAME is dealt off. The demo's crowd is not the
+        /// city's identity-carrying pedestrians (Entities.PedestrianAgent) - it has
+        /// only a runtime number - so the seed is that number avalanched, and it is
+        /// stable for as long as the body is.
+        ///
+        /// That is enough for what it is for: a witness is SNAPSHOTTED onto a case when
+        /// the incident opens (GAN-245), name and seed both, and the docket never asks
+        /// the street about him again. He can despawn; his line on the charge sheet
+        /// cannot change under it.
+        /// </summary>
+        public int WitnessSeed
+        {
+            get
+            {
+                unchecked
+                {
+                    var h = (uint)Id * 2654435761u;
+                    h ^= h >> 16;
+                    h *= 0x85EBCA6Bu;
+                    h ^= h >> 13;
+                    return (int)h;
+                }
+            }
+        }
+
+        /// <summary>What the charge sheet calls him: a first name and a surname off his
+        /// own seed, in the same tables the city's own people are named from.</summary>
+        public string PersonName
+        {
+            get
+            {
+                var seed = WitnessSeed;
+                var female = Tf != null &&
+                             LivingCity.Entities.PedestrianIdentity.IsFemale(Tf.name);
+                return LivingCity.Entities.PedestrianIdentity.FirstName(seed, female) +
+                       " " + LivingCity.Entities.PedestrianIdentity.Surname(seed);
+            }
+        }
+
         /// <summary>The overlay's word for what he is doing.</summary>
         protected override string TraceState() => State.ToString();
 

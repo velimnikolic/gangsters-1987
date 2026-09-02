@@ -49,6 +49,42 @@ namespace RoadDemo
         /// does not reach - must end the beat, never leave him walking at a wall.</summary>
         public const float WalkPatience = 25f;
 
+        /// <summary>Real seconds of getting no nearer the doorstep before the man is
+        /// taken to have arrived where he stands. He is not walking any more - the
+        /// pavement in front of that door is dressed, or the lattice will not draw the
+        /// last few metres - and standing him there for the whole of WalkPatience is the
+        /// freeze a player reads as an order the game ignored. The crossing starts from
+        /// where he is instead: the doorway passage walks through what is in the way,
+        /// which is exactly what it is for.</summary>
+        public const float StallPatience = 4.5f;
+
+        /// <summary>How much closer counts as still walking, and how near the doorstep he
+        /// must already be for a stall to count as arrival rather than as a walk that
+        /// never began.</summary>
+        public const float StallProgress = 0.6f;
+        public const float StallReach = 9f;
+
+        /// <summary>How far to one side of a doorstep a standing spot may be looked
+        /// for.</summary>
+        const float StandableReach = 4f;
+
+        /// <summary>The nearest spot beside a doorstep on which a man can actually STAND.
+        /// A doorstep is a point on the plan's line and the pavement in front of it is
+        /// dressed: the cafe terrace whose tables and umbrellas stand across the gym's
+        /// door is the seed the player is on. A man ordered at a point inside that
+        /// furniture stops short of it, never comes within a stride, and the visit gives
+        /// up at the end of its patience with him standing in the street. Half a metre to
+        /// the side is the same doorstep as far as the beat is concerned.</summary>
+        static Vector3 Standable(Vector3 point)
+        {
+            if (!WalkObstacles.Standing(point, WalkObstacles.CrewTravelRadius))
+                return point;
+            var spot = WalkObstacles.ClearSpot(
+                point, WalkObstacles.CrewTravelRadius, StandableReach);
+            spot.y = point.y;
+            return spot;
+        }
+
         /// <summary>The visible stages of a visit. The viewer reads this shared state;
         /// it does not guess from a hidden body or run its own doorway timer.</summary>
         public enum VisitPhase
@@ -125,6 +161,11 @@ namespace RoadDemo
 
             public bool Told;
             public bool Left;
+
+            /// <summary>The closest he has come to the doorstep on this walk, and when.
+            /// A walk that stops closing has stopped, whatever its patience says.</summary>
+            public float Nearest;
+            public float NearestAt;
 
             public VisitPhase Phase;
             public Vector3 Outside;
@@ -288,6 +329,9 @@ namespace RoadDemo
             if (!hold)
                 Escort(man, door, man.Tf.position - door);
 
+            // The doorstep he is sent to is one he can stand on.
+            door = Standable(door);
+
             var call = new Call
             {
                 Man = man, Door = door, Home = man.Tf.position, WhenInside = whenInside,
@@ -302,6 +346,8 @@ namespace RoadDemo
                 call.Talk = talk;
                 call.Phase = VisitPhase.Approaching;
                 call.RealNextAt = Time.unscaledTime + WalkPatience;
+                call.Nearest = Vector3.Distance(man.Tf.position, door);
+                call.NearestAt = Time.unscaledTime;
                 instance.calls.Add(call);
                 return;
             }
@@ -354,6 +400,27 @@ namespace RoadDemo
         /// allows it (OrderAcross), because a man sent to a door on the far side of a
         /// building walks a straight line into its back wall and stops there; the plain
         /// stride is the fallback for ground no route can be drawn over.</summary>
+        /// <summary>Has this walk stopped? A man still covering ground gets all the
+        /// patience there is; one who has been no nearer his doorstep for StallPatience,
+        /// and is already within a few metres of it, is standing there - so the beat gets
+        /// on with the passage from where he is rather than leaving him planted in the
+        /// street until the whole walk is given up.</summary>
+        static bool Stalled(Call call, Vector3 doorstep)
+        {
+            if (call.Man == null || call.Man.Tf == null)
+                return false;
+            var gap = Vector3.Distance(call.Man.Tf.position, doorstep);
+            if (gap < call.Nearest - StallProgress)
+            {
+                call.Nearest = gap;
+                call.NearestAt = Time.unscaledTime;
+                return false;
+            }
+
+            return gap <= StallReach &&
+                   Time.unscaledTime - call.NearestAt >= StallPatience;
+        }
+
         static void WalkTo(CrewWalker man, Vector3 point)
         {
             if (man == null)
@@ -410,6 +477,9 @@ namespace RoadDemo
                 }
 
             outside.y = threshold.y = inside.y = man.Tf.position.y;
+            // The pavement he waits on and comes back out to has to be pavement he can
+            // stand on; the threshold and the room behind it are geometry and stay put.
+            outside = Standable(outside);
             // The crew walks to the same doorstep and stands off it facing the street,
             // whether he is already on it or has the length of the block to cover. A
             // crew MOVING IN needs no guard on the door it is going through.
@@ -442,6 +512,8 @@ namespace RoadDemo
                 Phase = atDoor ? VisitPhase.OpeningEntry : VisitPhase.Approaching,
                 PhaseAt = Time.time,
                 RealNextAt = Time.unscaledTime + WalkPatience,
+                Nearest = Vector3.Distance(man.Tf.position, outside),
+                NearestAt = Time.unscaledTime,
                 Swing = swing,
                 WhenInside = whenInside,
                 WhenOut = whenOut,
@@ -460,30 +532,46 @@ namespace RoadDemo
             System.Action whenOut = null,
             bool hold = false)
         {
-            if (!BusinessViewBindings.TryGet(businessId, out var marker) || marker == null)
-            {
-                // No marker to hang a swinging door on - and in the streamed city there
-                // never is one. The SHOP still has a front wall, out of its own ground
-                // (ShopDoors.TryStreetFront), so he walks up to it and steps through it
-                // rather than being put on a pavement point and switched off.
-                if (ShopDoors.TryStreetFront(
-                        businessId, out var wall, out var outward, out _))
-                {
-                    VisitThrough(
-                        man, wall + outward * DoorstepOut, wall,
-                        wall - outward * RoomDepth(businessId, outward),
-                        null, whenInside, whenOut, hold);
-                    return;
-                }
+            if (!BusinessViewBindings.TryGet(businessId, out var marker))
+                marker = null;
 
+            // THE SHOP'S OWN FRONT, WHETHER OR NOT A VIEW STANDS THERE. The measured
+            // facade (FacadeFinder, through ShopDoors.Of) answers for the BUILDING, and
+            // the building is not the shop: a residential shell wears one measured door
+            // for every unit inside it, and an amenity lot's authored front can be the
+            // side the block plan deliberately turned its back on - the gym whose east
+            // face stands behind a cafe terrace, so the plan walks men to its south gate.
+            // Half the bound shops in a dealt quarter measure that door on a DIFFERENT
+            // side from the doorstep every order walks to, and a man sent to one side and
+            // let in through the other walks the diagonal of the building, into its wall,
+            // until the passage's patience gives up and puts him inside anyway - which is
+            // the man who stands outside a gym for ten seconds before he goes in. The
+            // doorstep the plan chose is the side with the pavement on it, so the whole
+            // passage is laid against that side and the leaves, when there are any, swing
+            // on the view standing there.
+            if (ShopDoors.TryStreetFront(
+                    businessId, out var wall, out var outward, out _))
+            {
+                VisitThrough(
+                    man, wall + outward * DoorstepOut, wall,
+                    wall - outward * RoomDepth(businessId, outward),
+                    marker != null ? marker.transform : null,
+                    whenInside, whenOut, hold);
+                return;
+            }
+
+            if (marker == null)
+            {
+                // No plan ground and no view to measure: the doorstep beat is all there
+                // is, and he says his piece where he stands.
                 Visit(man, fallbackOutside, talk: 0f,
                     whenInside: whenInside, whenOut: whenOut, hold: hold);
                 return;
             }
 
-            // Every shop in the streamed city gets a real door, measured off its own
-            // building the first time somebody stands at it (ShopDoors) - the old city
-            // stamped these at build time and the new one had none at all.
+            // A view with no simulated ground under it - the bench rigs and the older
+            // generated city. The door is measured off its own building, the way every
+            // streamed shop's was before the plan could answer for it.
             var entrance = ShopDoors.Of(marker);
             var facing = entrance != null ? entrance.Facing : marker.transform.forward;
             facing.y = 0f;
@@ -699,7 +787,11 @@ namespace RoadDemo
 
                 if (call.Phase == VisitPhase.Approaching)
                 {
-                    if (Near(call.Man.Tf.position, call.Door, AtTheDoor))
+                    // A walk that has stopped closing on the door has stopped. He is
+                    // taken to be at it - the last couple of metres are the terrace, the
+                    // kerb or the lattice, not a man still on his way.
+                    if (Near(call.Man.Tf.position, call.Door, AtTheDoor) ||
+                        Stalled(call, call.Door))
                     {
                         // He walked it. From here it is the beat it always was - and
                         // the pavement he goes back out to is where he is NOW, not
@@ -876,7 +968,11 @@ namespace RoadDemo
             switch (call.Phase)
             {
                 case VisitPhase.Approaching:
-                    if (Near(call.Man.Tf.position, call.Outside, AtTheDoor))
+                    // Either he got there, or he has stopped getting there: a doorstep
+                    // behind a cafe's tables is one no route reaches, and the passage
+                    // itself walks through what is in the way.
+                    if (Near(call.Man.Tf.position, call.Outside, AtTheDoor) ||
+                        Stalled(call, call.Outside))
                     {
                         call.Swing?.Open();
                         Face(call.Man, call.Inner);
