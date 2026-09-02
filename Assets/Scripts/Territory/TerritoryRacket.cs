@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace LivingCity.Territory
@@ -340,6 +340,24 @@ namespace LivingCity.Territory
 
         /// <summary>Another family is being paid now.</summary>
         ChangedHands,
+
+        // ---- money, not answers. What happened when somebody came to collect. ----
+
+        /// <summary>He paid, and it was less than he owed.</summary>
+        PaidShort,
+
+        /// <summary>He did not pay at all this round.</summary>
+        Missed,
+
+        /// <summary>A round reached the front and the take went into the safe.</summary>
+        RoundBanked,
+
+        /// <summary>A round did not come home. The money went with the men.</summary>
+        RoundLost,
+
+        /// <summary>A standing round left on its own - the block's day came round and a
+        /// man on the bag walked out to it without being told.</summary>
+        RoundOut,
     }
 
     /// <summary>One line of door news, filed the hour it happened.</summary>
@@ -348,12 +366,46 @@ namespace LivingCity.Territory
         public TerritoryDoorDispatch(
             TerritoryBusinessId businessId, TerritoryGangId gangId,
             TerritoryDoorNews news, double gameHour)
+            : this(businessId, gangId, news, gameHour, 0,
+                TerritoryPaymentExcuse.None, default, 0, 0)
+        {
+        }
+
+        /// <summary>The same slip with MONEY on it - what was paid or owed or carried,
+        /// the story the owner told, and for a round the block it walked.</summary>
+        public TerritoryDoorDispatch(
+            TerritoryBusinessId businessId, TerritoryGangId gangId,
+            TerritoryDoorNews news, double gameHour, int amount,
+            TerritoryPaymentExcuse excuse, TerritoryBlockId blockId, int stops,
+            int shortCount)
         {
             BusinessId = businessId;
             GangId = gangId;
             News = news;
             GameHour = gameHour;
+            Amount = amount;
+            Excuse = excuse;
+            BlockId = blockId;
+            Stops = stops;
+            Short = shortCount;
         }
+
+        /// <summary>Dollars: what he paid on a Short, what he owes on a Missed, what the
+        /// round carried on the pair of Round slips. 0 on an answer.</summary>
+        public int Amount { get; }
+
+        /// <summary>The story the owner told, where he told one.</summary>
+        public TerritoryPaymentExcuse Excuse { get; }
+
+        /// <summary>The block a ROUND slip belongs to. Invalid on a door slip - a door
+        /// knows its own block, and the wire looks it up.</summary>
+        public TerritoryBlockId BlockId { get; }
+
+        /// <summary>Doors on the round (Round slips), or what he owed (Short).</summary>
+        public int Stops { get; }
+
+        /// <summary>How many doors came up short or missed on the round.</summary>
+        public int Short { get; }
 
         public TerritoryBusinessId BusinessId { get; }
 
@@ -363,8 +415,22 @@ namespace LivingCity.Territory
         public TerritoryDoorNews News { get; }
         public double GameHour { get; }
 
-        /// <summary>The campaign day, counted the way the block file counts it.</summary>
-        public int Day => (int)(GameHour / 24.0);
+        /// <summary>
+        /// The campaign day, counted the way the CAMPAIGN counts it.
+        ///
+        /// TWO CLOCKS, and they do not agree. GameHour is built off the city clock,
+        /// whose Day is 0-BASED (TerritoryRuntime: clock.Day * 24 + clock.Hour), while
+        /// an incident carries Campaign.Day, which is 1-BASED (OutfitDirector: today =
+        /// clock.Day + 1). Without the +1 a door slip filed this afternoon prints
+        /// yesterday's number and the wire files it UNDER yesterday's incidents, which
+        /// is what it did until 2026-09-02.
+        /// </summary>
+        public int Day => (int)(GameHour / 24.0) + 1;
+
+        /// <summary>The hour of that day, for a stamp that says WHEN as well as which
+        /// day - a door answers at a time, and two slips on one day read in order.
+        /// </summary>
+        public double HourOfDay => GameHour - (int)(GameHour / 24.0) * 24.0;
     }
 
     /// <summary>One thing that happened between a family and a business.</summary>
@@ -523,6 +589,40 @@ namespace LivingCity.Territory
         }
 
         /// <summary>
+        /// MONEY AT ONE DOOR. What a man came away with when he went to collect - short,
+        /// or nothing at all - with the sum and the story the owner told.
+        ///
+        /// A door that pays in full files NOTHING: it is the arrangement working, and one
+        /// slip per paying door per week would bury the wire in good news.
+        /// </summary>
+        public void FileMoney(
+            TerritoryBusinessId businessId, TerritoryGangId gangId,
+            TerritoryDoorNews news, double gameHour, int amount, int owed,
+            TerritoryPaymentExcuse excuse)
+        {
+            if (dispatches.Count >= DispatchesKept)
+                dispatches.RemoveAt(0);
+            dispatches.Add(new TerritoryDoorDispatch(
+                businessId, gangId, news, gameHour, amount, excuse, default, owed, 0));
+            Version++;
+        }
+
+        /// <summary>MONEY OFF A WHOLE BLOCK: a round banked at the front, or lost with
+        /// the men who were carrying it.</summary>
+        public void FileRound(
+            TerritoryBlockId blockId, TerritoryGangId gangId,
+            TerritoryDoorNews news, double gameHour, int amount, int stops,
+            int shortCount)
+        {
+            if (dispatches.Count >= DispatchesKept)
+                dispatches.RemoveAt(0);
+            dispatches.Add(new TerritoryDoorDispatch(
+                default, gangId, news, gameHour, amount,
+                TerritoryPaymentExcuse.None, blockId, stops, shortCount));
+            Version++;
+        }
+
+        /// <summary>
         /// Moves on every interaction the ledger records. A SURFACE reads this to know
         /// its painted sheet is stale: the block's compliance figures do not move when a
         /// shop goes from wavering to shaken (both count as the same fraction of a yes),
@@ -532,11 +632,17 @@ namespace LivingCity.Territory
         public int Version { get; private set; }
 
         /// <summary>Men stood at the door. Nothing has been asked, and nothing is owed.</summary>
+        /// <param name="announce">Whether the standing itself is worth a slip. FALSE
+        /// for a walk that carries a question: the men arriving and the owner's answer
+        /// are ONE thing that happened at that door, and filing both put two lines on
+        /// the wire seconds apart for one visit. The state still moves either way.
+        /// </param>
         public bool Approach(
             TerritoryBusinessId businessId,
             TerritoryGangId gangId,
             double gameHour,
-            List<TerritoryProtectionChange> changes = null)
+            List<TerritoryProtectionChange> changes = null,
+            bool announce = true)
         {
             if (!businessId.IsValid || !gangId.IsValid)
                 return false;
@@ -550,7 +656,8 @@ namespace LivingCity.Territory
                 return false;
 
             row.Move(entry, TerritoryProtectionState.Approached, gameHour, "approached", 0f, Config, changes);
-            File(businessId, gangId, TerritoryDoorNews.Approached, gameHour);
+            if (announce)
+                File(businessId, gangId, TerritoryDoorNews.Approached, gameHour);
             return true;
         }
 

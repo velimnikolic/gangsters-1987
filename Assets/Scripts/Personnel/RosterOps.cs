@@ -194,6 +194,7 @@ namespace LivingCity.Personnel
 
             Detach(roster, id);
             var member = roster.Find(id);
+            member.Duty = Duty.None;   // he runs the branch now; he does not walk it
             member.Rank = Rank.Lieutenant;
             member.RankSince = roster.Day;
             // He answers to the Boss now, and a new relationship starts near zero
@@ -278,6 +279,7 @@ namespace LivingCity.Personnel
 
             member.Rank = Rank.Hood;
             member.RankSince = roster.Day;
+            member.Duty = Duty.None;
             Loyalty.Reaim(member, "taken back down to a hood", changes);
             Loyalty.Sting(member, changes);
             PutUnderBossIfPresent(roster, member.Id);
@@ -290,6 +292,54 @@ namespace LivingCity.Personnel
                 roster.Day, "", 0,
                 IncidentText.Line(IncidentKind.Demoted, member.FullName, "")));
             return OpResult.Success;
+        }
+
+        /// <summary>
+        /// Marks a man for a standing duty, or takes it off him.
+        ///
+        /// Only a HOOD IN A CREW carries one. A lieutenant runs the branch and does not
+        /// walk its doors; a man in the pool, on the front desk or straight under the
+        /// Boss is on nobody's round. Taking a duty OFF is always allowed - a man whose
+        /// footing has changed under him must never be stuck holding a job the books no
+        /// longer let him do.
+        /// </summary>
+        public static OpResult SetDuty(Roster roster, int id, Duty duty)
+        {
+            var member = roster?.Find(id);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+
+            if (duty == Duty.None)
+            {
+                member.Duty = Duty.None;
+                return OpResult.Success;
+            }
+
+            if (member.Rank != Rank.Hood)
+                return OpResult.Fail("only a hood carries the bag");
+            if (roster.AssignmentOf(id).Kind != AssignmentKind.Crew)
+                return OpResult.Fail("he has to be in a crew");
+
+            member.Duty = duty;
+            return OpResult.Success;
+        }
+
+        /// <summary>The men of one crew who are marked for the bag and able to walk it.
+        /// A man in a bed or a cell is on the books and not on the round.</summary>
+        public static void CollectorsOf(
+            Roster roster, int crewId, System.Collections.Generic.List<Character> into)
+        {
+            into?.Clear();
+            var crew = roster?.FindCrew(crewId);
+            if (crew == null || into == null)
+                return;
+            for (var i = 0; i < crew.HoodIds.Count; i++)
+            {
+                var man = roster.Find(crew.HoodIds[i]);
+                if (man != null && !man.Gone && man.Status == CharacterStatus.Active &&
+                    man.Duty == Duty.Collector)
+                    into.Add(man);
+            }
         }
 
         public static OpResult AssignToCrew(Roster roster, int id, int crewId,
@@ -353,6 +403,7 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(LedgerText.ReasonAlreadyUnderBoss);
 
             Detach(roster, id);
+            ClearDuty(roster, id);
             roster.Organization.BossHoodIds.Add(id);
             Career.Posted(roster.Find(id), roster.Day, boss.FullName);
             return OpResult.Success;
@@ -365,8 +416,18 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(refusal);
 
             Detach(roster, id);
+            ClearDuty(roster, id);
             PutUnderBossIfPresent(roster, id);
             return OpResult.Success;
+        }
+
+        /// <summary>A man moved off a crew is off its round with it - the duty belongs
+        /// to the branch he was walking for, not to him.</summary>
+        static void ClearDuty(Roster roster, int id)
+        {
+            var member = roster.Find(id);
+            if (member != null)
+                member.Duty = Duty.None;
         }
 
         /// <summary>The previous manager, if any, simply stops being the front - which by
@@ -380,6 +441,7 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(LedgerText.ReasonAlreadyFront);
 
             Detach(roster, id);
+            ClearDuty(roster, id);
             roster.FrontId = id;
             PutUnderBossIfPresent(roster, id);
             return OpResult.Success;

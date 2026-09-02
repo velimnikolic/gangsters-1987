@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Gameplay;
 using LivingCity.Personnel;
 using LivingCity.UI;
@@ -94,11 +94,17 @@ namespace RoadDemo
         /// the two-to-six range it lets a boss set.</summary>
         const int WireLines = 4;
 
-        /// <summary>How many of the strip's slots the doorstep news is guaranteed. The
-        /// racket is the thing the player is DOING, and the wire is the four NEWEST
-        /// things: new door news pushes the old off, and what his men got up to
-        /// yesterday fills whatever is left.</summary>
-        const int DoorLinesKept = WireLines;
+        /// <summary>
+        /// How many of the strip's slots the doorstep news is guaranteed - HALF, and
+        /// never all of them.
+        ///
+        /// The racket is the thing the player is doing, so the door slips lead. But the
+        /// strip used to guarantee them every slot, and four dispatches is one afternoon
+        /// of asking: past that no incident - a man losing his temper, skimming, walking
+        /// out - ever reached the street again. Half each, and the books cannot starve
+        /// one another.
+        /// </summary>
+        const int DoorLinesKept = WireLines / 2;
 
         // ---- the ledger key ----
         /// <summary>The width of the left column TurfMapPanel keeps for the crews and

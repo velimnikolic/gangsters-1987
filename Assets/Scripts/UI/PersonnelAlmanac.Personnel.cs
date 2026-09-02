@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -741,6 +741,13 @@ namespace LivingCity.UI
             // own as the days pass under it.
             if (!dead && Board != null && Board.Fresh(id))
                 Block("New", rect, IdxW - 4f, -12f, 3f, 18f, LedgerV2.Red);
+
+            // The bag is a DUTY, not a rank, so it is marked beside the name rather than
+            // in a column of its own: the roll's columns are what every man has, and
+            // only some men carry this.
+            if (!dead && BlockRacketSeam.SourceOrStub.IsCollector(id))
+                LedgerV2.Mono(rect, ColName, -12f, NameW, "COLLECTOR", 8.5f,
+                    DoorMenu.TenurePaying, 6f, TextAlignmentOptions.MidlineRight);
 
             BuildRowCells(roster, rect, member, dead);
 
@@ -2000,9 +2007,9 @@ namespace LivingCity.UI
                 return;
             }
 
-            // PROMOTE and OFF THE BOOKS are the file's ONLY two actions. Where a man
-            // reports is the Organization file's business and this dossier only reports
-            // it - keeping the two views on the same Character without duplicating authority.
+            // PROMOTE and the BAG are the file's only two actions. Where a man reports is
+            // the Organization file's business and this dossier only reports it - keeping
+            // the two views on the same Character without duplicating authority.
             LedgerV2.Button(cardFoot, "PROMOTE", 0f, -14f, half, buttonH, () =>
             {
                 var check = director.CheckPromote(member.Id);
@@ -2015,16 +2022,91 @@ namespace LivingCity.UI
                 dirty = true;
             });
 
-            // LOY-003. The choice is made on the man's HISTORY, so what the book has
-            // already decided about him stands beside the key that acts on it - the
-            // player should never have to scroll back up the file to find out whether
-            // this is the man he thought it was.
+            // THE BAG. Only a hood who is actually in a crew can carry it: a man in the
+            // pool walks nobody's doors, and the duty is the crew's round, not a rank.
+            var canCarry = member.Rank == Rank.Hood && roster.CrewOf(member.Id) != null;
+            var carries = canCarry && BlockRacketSeam.SourceOrStub.IsCollector(member.Id);
+            if (canCarry)
+            {
+                var manId = member.Id;
+                var onBag = carries;
+                LedgerV2.Button(cardFoot,
+                    onBag ? "TAKE HIM OFF THE BAG" : "MAKE HIM A COLLECTOR",
+                    half + 12f, -14f, half, buttonH,
+                    () =>
+                    {
+                        var refusal =
+                            BlockRacketSeam.ActionsOrStub.SetCollector(manId, !onBag);
+                        lastRefusal = refusal ?? "";
+                        dirty = true;
+                    },
+                    red: false, outline: !onBag);
+            }
+
+            // THE BOTTOM LINE, split in two. LOY-003's marks on the left - the choice is
+            // made on the man's history, and what the book has already decided about him
+            // must stand beside the keys that act on it - and on the right what the bag
+            // actually means for him: whose doors, and on what day. Neither may sit in
+            // the right half of the key row any more; the bag's own key is there.
             var marks = ManFlags.Of(member);
             if (marks != ManFlag.None)
-                Caps(cardFoot, half + 12f, -22f, half, ManFlags.Line(marks), 9.5f,
+                Caps(cardFoot, 0f, -(14f + buttonH + 4f), half, ManFlags.Line(marks), 9.5f,
                     (marks & ManFlag.RedFlag) != 0 ? LedgerV2.Red : LedgerV2.Lieutenant,
-                    2f, TextAlignmentOptions.MidlineRight);
+                    2f, TextAlignmentOptions.MidlineLeft);
+
+            if (carries)
+                LedgerV2.Mono(cardFoot, half + 12f, -(14f + buttonH + 4f), half,
+                    RoundWord(roster, member.Id), 9.5f, LedgerV2.Muted, 0.5f,
+                    TextAlignmentOptions.MidlineRight);
         }
+
+        /// <summary>
+        /// The round a marked man actually walks: the blocks his lieutenant answers for
+        /// and the days they are collected on. A collector on a branch with no ground is
+        /// a man carrying a bag to nowhere, and the card says that rather than leaving
+        /// the mark to imply work that does not exist.
+        /// </summary>
+        static string RoundWord(Roster roster, int id)
+        {
+            var crew = roster?.CrewOf(id);
+            if (crew == null)
+                return "in no crew " + DOT_ + " he walks nothing";
+
+            var blocks = roster.Organization.BlockResponsibilities;
+            var walked = 0;
+            var first = "";
+            var day = "";
+            for (var i = 0; i < blocks.Count; i++)
+            {
+                if (blocks[i].LeaderId != crew.LieutenantId || !blocks[i].BlockId.IsValid)
+                    continue;
+                walked++;
+                if (walked > 1)
+                    continue;
+                first = BlockNameOf(blocks[i].BlockId);
+                day = LivingCity.Territory.TerritoryCollectionSchedule
+                    .WordOf(blocks[i].BlockId);
+            }
+
+            if (walked == 0)
+                return "his lieutenant answers for no ground " + DOT_ + " nothing to walk";
+            if (walked == 1)
+                return "walks " + first + " " + DOT_ + " " + day.ToLowerInvariant();
+            return "walks " + first + " and " + (walked - 1) +
+                   (walked == 2 ? " other block" : " others");
+        }
+
+        static string BlockNameOf(LivingCity.Territory.TerritoryBlockId blockId)
+        {
+            var query = RoadDemo.TerritoryRuntime.Instance?.PlayerQuery;
+            return query != null && query.TryGetBlock(blockId, out var view) &&
+                   view != null && view.BlockName.Length > 0
+                ? view.BlockName
+                : blockId.Value;
+        }
+
+        /// <summary>The wire's own separator, so a line here reads like every other.</summary>
+        const string DOT_ = "·";
 
         void DoPromote(int id)
         {

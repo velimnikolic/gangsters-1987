@@ -275,10 +275,31 @@ namespace GangstersTools
                 .Select(failure => "Loyalty regression: " + failure));
             failures.AddRange(LivingCity.Tests.NotabilityTests.Run()
                 .Select(failure => "Notability regression: " + failure));
+            // The law & order track rides along with the rest: the roster is what an
+            // arrest, a sentence and a wanted level all write into, so a police change
+            // that broke the books would otherwise only be found in Play.
+            failures.AddRange(LivingCity.Tests.PoliceTests.Run()
+                .Select(failure => "Police regression: " + failure));
             return new
             {
                 passed = failures.Count == 0,
                 failures = failures.ToArray(),
+            };
+        }
+
+        [CliCommand("gangsters_police_tests",
+                    "Run the law & order contracts (EPICs 17-21): the fight-or-surrender " +
+                    "roll, the precinct roster and its watch, the sentence table, the " +
+                    "station-court-prison pipe, wanted levels and the deputy.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "police", "tests" })]
+        public static object PoliceTests()
+        {
+            var failures = LivingCity.Tests.PoliceTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                contracts = LivingCity.Tests.PoliceTests.ContractNames(),
             };
         }
 

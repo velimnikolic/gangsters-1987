@@ -248,7 +248,6 @@ namespace LivingCity.UI
         int paintedOutfitVersion = -1;
         bool visionUnrestricted;
 
-        readonly List<Tracked> policeDots = new List<Tracked>();
         readonly List<Tracked> extraDots = new List<Tracked>();
         int overlayVersion = -1;
         DockWorkerAgent[] dockWorkers = System.Array.Empty<DockWorkerAgent>();
@@ -1183,9 +1182,10 @@ namespace LivingCity.UI
             // The outfit's base, before police - the MaxDots cap must never swallow it.
             PaintHeadquarters();
 
-            // Police before civilians: the MaxDots cap swallows from the tail, and a lost
-            // blue dot is information lost - a lost white one is crowd texture.
-            EmitTracked(policeDots, PoliceBlue);
+            // A blue police rank used to be painted here off the generator's own beat
+            // officers. They went with that layer on 2026-09-02 (GAN-226, ROSTER-005);
+            // the Game scene draws its police from PolicePatrolOverlay and the turf map,
+            // which read the force that actually exists (PoliceDispatch/PoliceForce).
 
             // Civilians: the one list that is exactly "every ordinary pedestrian".
             var agents = PedestrianAgent.Agents;
@@ -1273,16 +1273,12 @@ namespace LivingCity.UI
                 return;
 
             overlayVersion = OverlayRegistry.Version;
-            policeDots.Clear();
             extraDots.Clear();
 
             foreach (var subject in OverlayRegistry.Subjects)
             {
                 switch (subject)
                 {
-                    case PoliceOfficerAgent officer:
-                        policeDots.Add(new Tracked { Subject = subject, Body = officer });
-                        break;
                     case SchoolChildAgent child:
                         extraDots.Add(new Tracked { Subject = subject, Body = child });
                         break;

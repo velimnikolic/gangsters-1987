@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace LivingCity.Territory
@@ -452,6 +452,100 @@ namespace LivingCity.Territory
         public string Id { get; }
         public float X { get; }
         public float Z { get; }
+    }
+
+    /// <summary>
+    /// WHEN A BLOCK IS COLLECTED, and whether a round is owed today.
+    ///
+    /// The player will not send a man to every door by hand. A lieutenant's blocks each
+    /// get a weekday of their own, and on that day a man of his who is marked for the
+    /// bag walks the paying doors and banks what they owe. The manual COLLECT THE TAKE
+    /// order stays as the override; this is only the standing arrangement.
+    ///
+    /// Pure and total: every input is a plain value, so the headless suite drives the
+    /// whole rule without a city standing.
+    /// </summary>
+    public static class TerritoryCollectionSchedule
+    {
+        /// <summary>Rounds go out from nine in the morning. A collector knocking at four
+        /// is a man waking a shopkeeper, which is a different act.</summary>
+        public const int OpeningHour = 9;
+
+        public const int DaysInWeek = 7;
+
+        /// <summary>0 is Monday, the way <c>Campaign.DayOfWeek</c> counts.</summary>
+        static readonly string[] DayWords =
+        {
+            "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays",
+            "Sundays",
+        };
+
+        /// <summary>
+        /// The weekday this block is walked on. Derived from the block's own id and
+        /// nothing else, so the arrangement is the same in every session of one city and
+        /// the player can learn it.
+        ///
+        /// FNV-1a over the id's characters, never <c>string.GetHashCode()</c>: that is
+        /// not stable across runs, and a collection day that moved between sessions
+        /// would be an arrangement nobody could plan around.
+        /// </summary>
+        public static int DayOf(TerritoryBlockId blockId)
+        {
+            var text = blockId.Value;
+            unchecked
+            {
+                var hash = 2166136261u;
+                for (var i = 0; i < (text?.Length ?? 0); i++)
+                {
+                    hash ^= text[i];
+                    hash *= 16777619u;
+                }
+                return (int)(hash % DaysInWeek);
+            }
+        }
+
+        /// <summary>The day in the word the ledger prints - "Thursdays".</summary>
+        public static string WordOf(TerritoryBlockId blockId) => WordOfDay(DayOf(blockId));
+
+        public static string WordOfDay(int dayOfWeek) =>
+            dayOfWeek >= 0 && dayOfWeek < DayWords.Length ? DayWords[dayOfWeek] : "";
+
+        /// <summary>
+        /// Whether a round is owed on this block right now. Every condition has to hold:
+        /// it is the block's day, the shops are open, something is actually owed, a man
+        /// of the crew carries the bag, no round is already out, and one has not gone
+        /// today already.
+        /// </summary>
+        public static bool ShouldSend(
+            int dayOfWeek, int hourOfDay, TerritoryBlockId blockId,
+            int owed, bool hasCollector, bool roundRunning, bool sentToday) =>
+            blockId.IsValid &&
+            DayOf(blockId) == dayOfWeek &&
+            hourOfDay >= OpeningHour &&
+            owed > 0 &&
+            hasCollector &&
+            !roundRunning &&
+            !sentToday;
+
+        /// <summary>
+        /// Whether a paying door is LATE with us. Either it has run up a full week's
+        /// money without anybody carrying it home, or nobody has been to see it in over
+        /// a week - both are a door the collection has stopped reaching.
+        /// </summary>
+        public static bool IsLate(int owed, int weeklyRate, int day, int lastCollectedDay)
+        {
+            if (weeklyRate > 0 && owed >= weeklyRate)
+                return true;
+            // Never collected is not late until a week has passed since day one.
+            return lastCollectedDay >= 0 && day - lastCollectedDay > 7;
+        }
+
+        /// <summary>How many days a door has been late, or 0. Counted off the last
+        /// collection, because that is the day the clock started.</summary>
+        public static int DaysLate(int day, int lastCollectedDay) =>
+            lastCollectedDay < 0 || day - lastCollectedDay <= 7
+                ? 0
+                : day - lastCollectedDay - 7;
     }
 
     /// <summary>

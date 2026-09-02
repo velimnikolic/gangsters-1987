@@ -96,19 +96,13 @@ namespace LivingCity.Gameplay
                 Perpetrator = crime.Perpetrator,
             };
 
-            // Killing an officer skips the witness lottery entirely - the force knows its
-            // own. The case is born delivered so civilian calls do not stack a second
-            // murder's heat on top; they still panic below.
-            if (crime.Kind == CrimeKind.Murder && crime.Victim &&
-                crime.Victim.GetComponentInParent<PoliceOfficerAgent>())
-            {
-                openCase.Delivered = true;
-                if (WantedSystem.Instance && crime.Perpetrator)
-                    WantedSystem.Instance.ReportCrime(
-                        CrimeKind.AssaultingOfficer, crime.Position, 1,
-                        knowsPerpetrator: true, crime.Perpetrator.position);
-            }
-
+            // KILLING AN OFFICER used to skip the witness lottery here - the force knows
+            // its own. That branch went with the generator's police brain on 2026-09-02
+            // (GAN-226, ROSTER-005): there are no PoliceOfficerAgents in any scene any
+            // more, so the test could never be true. The live game answers a dead
+            // policeman far harder than a delivered case ever did - PoliceDispatch raises
+            // the swarm off StreetAlarm (GAN-220) - and when the player-mafioso mode comes
+            // back off the shelf this is where it hooks into whatever bodies it brings.
             var radius = crime.Kind == CrimeKind.BodyDiscovered ? sight : sound;
             var count = Physics.OverlapSphereNonAlloc(
                 crime.Position, radius, Overlaps, 1 << PedestrianSpawner.PedestrianLayer,
@@ -124,30 +118,10 @@ namespace LivingCity.Gameplay
                 if (!collider)
                     continue;
 
-                // A beat officer who SEES it radios it in on the spot.
-                var beatOfficer = collider.GetComponentInParent<PoliceOfficerAgent>();
-                if (beatOfficer)
-                {
-                    if (!policeReported &&
-                        WithinSight(beatOfficer.transform, crime.Position, sight, coneDot: -1f))
-                    {
-                        policeReported = true;
-                        openCase.Delivered = true;
-                        if (WantedSystem.Instance)
-                            WantedSystem.Instance.ReportCrime(
-                                crime.Kind, crime.Position, 1,
-                                knowsPerpetrator: crime.Perpetrator,
-                                crime.Perpetrator ? crime.Perpetrator.position : crime.Position);
-                    }
-                    continue;
-                }
-
+                // (A beat officer who SEES it used to radio it in here. His body no longer
+                // exists in any scene - see the note above ProcessCrime's radius.)
                 var npc = collider.GetComponentInParent<InteractableNpc>();
                 if (!npc || npc.IsDead || seenThisCrime.Contains(npc))
-                    continue;
-
-                // An officer answers a crime through his own duty, not by panicking at it.
-                if (npc.GetComponent<PoliceOfficerAgent>())
                     continue;
 
                 // Hidden means inside a shop or building - and hidden does NOT mean the
@@ -238,7 +212,7 @@ namespace LivingCity.Gameplay
                 for (var i = 0; i < count; i++)
                 {
                     var npc = Overlaps[i] ? Overlaps[i].GetComponentInParent<InteractableNpc>() : null;
-                    if (!npc || npc.IsDead || npc.GetComponent<PoliceOfficerAgent>())
+                    if (!npc || npc.IsDead)
                         continue;
                     if (npc.GetComponent<NpcWitness>())
                         continue;

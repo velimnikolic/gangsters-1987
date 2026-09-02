@@ -149,6 +149,36 @@ namespace RoadDemo
             _ringDir = Random.value < 0.5f ? 1 : -1;
         }
 
+        /// <summary>Which precinct's man this is. One station in the city today, so it
+        /// is nought everywhere - it exists because a loss has to land on the right
+        /// roster the day the city has several (GAN-226, ROSTER-004).</summary>
+        public int Precinct { get; set; }
+
+        /// <summary>Off the watch. A pair whose shift is over finishes the leg it is
+        /// walking, goes in at its own door and stays in; a pair with no door (a block
+        /// beat) holds its corner instead. Either way it is off the dispatcher's books,
+        /// which is what "fewer men by night" has to mean if it is to mean anything.</summary>
+        public bool OffWatch { get; private set; }
+
+        /// <summary>Shift over: no more corners after this one.</summary>
+        public void StandDown()
+        {
+            if (OffWatch) return;
+            OffWatch = true;
+            _waypointsLeft = 0;
+            if (Partner != null) Partner.OffWatch = true;
+        }
+
+        /// <summary>Shift on: out of the door at the handover.</summary>
+        public void StandTo(float firstRest = 0f)
+        {
+            if (!OffWatch) return;
+            OffWatch = false;
+            if (Partner != null) Partner.OffWatch = false;
+            if (State == Mode.Inside) _restTimer = Mathf.Min(_restTimer, firstRest);
+            if (State == Mode.Ritual) _ritualUntil = Mathf.Min(_ritualUntil, Time.time + 1f);
+        }
+
         public void TickPatrol(float dt)
         {
             if (Lead != null) { TickWing(dt); return; }
@@ -156,6 +186,7 @@ namespace RoadDemo
             {
                 case Mode.Inside:
                     BlendLocomotion(dt, false);
+                    if (OffWatch && !_sceneWanted) break;   // off the watch: he stays in
                     _restTimer -= dt;
                     if (_restTimer <= 0f || _sceneWanted)
                     {
@@ -224,7 +255,11 @@ namespace RoadDemo
                         _chatAt = Random.Range(4f, 9f);
                         PlayAction(Random.value < 0.6f ? CrewKit.SpeakGestures : CrewKit.Waves);
                     }
-                    if (Time.time >= _ritualUntil)
+                    // A PAIR WITH NO DOOR STANDS ITS SHIFT DOWN AT THE CORNER. The block
+                    // beats have no station to go into, and the long stand at a corner
+                    // is already what their round's end looks like - so off the watch it
+                    // simply does not end.
+                    if (Time.time >= _ritualUntil && !OffWatch)
                     {
                         State = Mode.Patrolling;
                         Reroute(_ritualNode);
@@ -273,7 +308,7 @@ namespace RoadDemo
 
         Transform IPoliceUnit.Tf => Tf;
         Vector3 IPoliceUnit.Position => Tf.position;
-        bool IPoliceUnit.Available => Lead == null && !_sceneWanted &&
+        bool IPoliceUnit.Available => Lead == null && !_sceneWanted && !OffWatch &&
             (State == Mode.Inside || State == Mode.Patrolling || State == Mode.Returning ||
              State == Mode.Homing || State == Mode.Ritual);
         bool IPoliceUnit.OnScene => State == Mode.OnScene;

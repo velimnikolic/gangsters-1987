@@ -272,7 +272,10 @@ namespace LivingCity.Outfit
                 OrderTable.ActivityOf(spec.Type) != Activity.RacketCollection)
                 return payout;
 
-            var lieutenant = roster.Find(crew.LieutenantId);
+            // Whose eye is actually on the money: a commander in a cell is not counting
+            // anything, and his deputy's paper is what the skimmers are up against
+            // (Command.EffectiveLieutenant, PIPE-004).
+            var lieutenant = Command.EffectiveLieutenant(roster, crew);
             var awareness = lieutenant != null
                 ? lieutenant.GetHalfSteps(CharacterAttribute.Awareness) : 0;
             var organization = lieutenant != null

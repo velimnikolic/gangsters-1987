@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using LivingCity.Territory;
 
@@ -39,6 +39,10 @@ namespace LivingCity.Tests
             EverySurfaceOffersTheSameOrders(failures);
             NobodyRobsADoorThatPaysUs(failures);
             TheLadderTerminates(failures);
+            ASlipIsStampedTheDayItHappened(failures);
+            OneVisitFilesOneSlip(failures);
+            MoneyReachesTheWireWithItsSum(failures);
+            AShakedownWalksTheDoorsThatHaveNotAnswered(failures);
 
             return failures;
         }
@@ -833,6 +837,198 @@ namespace LivingCity.Tests
                 Shop, Gang(0), TerritoryEscalationKind.PropertyDamage, 12.0);
             if (wrecked.StateOf(Shop, Gang(0)) == TerritoryProtectionState.Compliant)
                 failures.Add("RACK-013: a shop started paying without ever being asked.");
+        }
+
+        // ------------------------------------------------------------------- the wire
+
+        /// <summary>
+        /// A slip is stamped with the day the CAMPAIGN is on, not the day the city clock
+        /// is on. The two are one apart - the clock counts from zero and the campaign
+        /// from one - and while the dispatch used the clock's, every door slip filed
+        /// today sorted under yesterday's incidents on the wire.
+        /// </summary>
+        static void ASlipIsStampedTheDayItHappened(List<string> failures)
+        {
+            var ledger = new TerritoryRacketLedger();
+            ledger.Approach(Shop, Gang(0), 30.5);
+
+            if (ledger.Dispatches.Count != 1)
+            {
+                failures.Add("WIRE: standing at a door filed no slip.");
+                return;
+            }
+
+            var slip = ledger.Dispatches[0];
+            if (slip.Day != 2)
+                failures.Add("WIRE: a slip filed at hour 30.5 is stamped day " +
+                             slip.Day + ", not day 2.");
+            if (Off((float)slip.HourOfDay, 6.5f))
+                failures.Add("WIRE: the slip's hour is " + slip.HourOfDay + ", not 06:30.");
+        }
+
+        /// <summary>
+        /// One walk to a door is one line on the wire. The men arriving and the answer
+        /// they got are the same visit; filing both put two slips seconds apart for one
+        /// thing that happened, which is what a bare walk is for and a demand is not.
+        /// </summary>
+        static void OneVisitFilesOneSlip(List<string> failures)
+        {
+            var ledger = new TerritoryRacketLedger();
+            ledger.Approach(Shop, Gang(0), 10.0, null, announce: false);
+
+            if (ledger.Dispatches.Count != 0)
+                failures.Add("WIRE: a silent approach still put a slip on the wire.");
+            if (ledger.StateOf(Shop, Gang(0)) != TerritoryProtectionState.Approached)
+                failures.Add("WIRE: a silent approach did not move the standing.");
+
+            ledger.Demand(Shop, Gang(0), Strong(), 11.0, out _);
+            if (ledger.Dispatches.Count != 1)
+                failures.Add("WIRE: one demand walk filed " + ledger.Dispatches.Count +
+                             " slips, not one.");
+
+            // And a bare walk still announces itself: it is the whole of the news.
+            ledger.Approach(Bar, Gang(0), 12.0);
+            if (ledger.Dispatches.Count != 2)
+                failures.Add("WIRE: a bare walk to a door said nothing.");
+        }
+
+        // ---------------------------------------------------------------- the money
+
+        /// <summary>
+        /// A short and a miss are the two collection results a boss has to be able to
+        /// react to, so each reaches the wire with the SUM and the story the owner told.
+        /// A door that pays in full says nothing: the round's own slip covers it.
+        /// </summary>
+        static void MoneyReachesTheWireWithItsSum(List<string> failures)
+        {
+            var ledger = new TerritoryRacketLedger();
+            var before = ledger.Version;
+
+            ledger.FileMoney(Shop, Gang(0), TerritoryDoorNews.PaidShort, 26.0,
+                90, 240, TerritoryPaymentExcuse.BadWeek);
+            if (ledger.Dispatches.Count != 1 || ledger.Version == before)
+                failures.Add("MONEY: a short did not reach the wire.");
+
+            var slip = ledger.Dispatches[0];
+            if (slip.Amount != 90 || slip.Stops != 240 ||
+                slip.Excuse != TerritoryPaymentExcuse.BadWeek)
+                failures.Add("MONEY: the short lost its figures on the way.");
+
+            var words = TerritoryStandingVocabulary.Default.Describe(slip, "The Grill", "");
+            if (words != "THE GRILL CAME UP SHORT - $90 OF $240 · \"A BAD WEEK\"")
+                failures.Add("MONEY: the short reads \"" + words + "\".");
+
+            ledger.FileRound(new TerritoryBlockId("block-9"), Gang(0),
+                TerritoryDoorNews.RoundBanked, 27.0, 410, 7, 2);
+            var round = ledger.Dispatches[ledger.Dispatches.Count - 1];
+            if (round.BlockId.Value != "block-9" || round.Amount != 410 ||
+                round.Stops != 7 || round.Short != 2)
+                failures.Add("MONEY: the round slip lost its figures.");
+            var roundWords = TerritoryStandingVocabulary.Default.Describe(
+                round, "", "Dock Street");
+            if (roundWords != "THE ROUND ON DOCK STREET BANKED $410 · 7 DOORS, 2 SHORT")
+                failures.Add("MONEY: the banked round reads \"" + roundWords + "\".");
+
+            // And a money slip is stamped on the campaign's clock like every other.
+            if (round.Day != 2)
+                failures.Add("MONEY: a round slip filed at hour 27 is stamped day " +
+                             round.Day + ".");
+        }
+
+        /// <summary>
+        /// A shakedown walks the doors that have NOT answered us - never one that pays
+        /// and never one that has already said no. Holding out is the other list: the
+        /// men who said no, and the ones who have not said yes.
+        /// </summary>
+        static void AShakedownWalksTheDoorsThatHaveNotAnswered(List<string> failures)
+        {
+            if (!TerritoryShakedown.WorthAsking(TerritoryProtectionState.Unaffiliated, false) ||
+                !TerritoryShakedown.WorthAsking(TerritoryProtectionState.Approached, false) ||
+                !TerritoryShakedown.WorthAsking(TerritoryProtectionState.Hesitant, false) ||
+                !TerritoryShakedown.WorthAsking(TerritoryProtectionState.Intimidated, false))
+                failures.Add("SHAKEDOWN: a door that has not answered was passed over.");
+            if (TerritoryShakedown.WorthAsking(TerritoryProtectionState.Compliant, false) ||
+                TerritoryShakedown.WorthAsking(TerritoryProtectionState.Defiant, false))
+                failures.Add("SHAKEDOWN: a door that has answered was asked again.");
+
+            if (!TerritoryShakedown.IsHoldout(TerritoryProtectionState.Defiant, false) ||
+                !TerritoryShakedown.IsHoldout(TerritoryProtectionState.Hesitant, false))
+                failures.Add("SHAKEDOWN: a holdout was not counted as one.");
+            if (TerritoryShakedown.IsHoldout(TerritoryProtectionState.Compliant, false))
+                failures.Add("SHAKEDOWN: a paying door was leaned on.");
+
+            // OUR OWN DOOR IS NEVER ON EITHER LIST. It has no protection to be sold and
+            // it is not holding out on anybody: a sweep of the block the headquarters
+            // stands on must walk past it.
+            for (var s = 0; s < 6; s++)
+            {
+                var state = (TerritoryProtectionState)s;
+                if (TerritoryShakedown.WorthAsking(state, true))
+                    failures.Add("SHAKEDOWN: our own premises was shaken down (" +
+                                 state + ").");
+                if (TerritoryShakedown.IsHoldout(state, true))
+                    failures.Add("SHAKEDOWN: our own premises was leaned on (" +
+                                 state + ").");
+            }
+
+            // And the policy that decides whether the men lean on the spot.
+            for (var policy = 0; policy <= 3; policy++)
+            {
+                var strict = policy >= (int)LivingCity.Personnel.CrewPolicy.Strict;
+                if (TerritoryShakedown.ThreatenAfter(
+                        TerritoryComplianceVerdict.Accept, policy))
+                    failures.Add("SHAKEDOWN: a yes was leaned on at policy " + policy + ".");
+                if (TerritoryShakedown.ThreatenAfter(
+                        TerritoryComplianceVerdict.Refuse, policy) != strict)
+                    failures.Add("SHAKEDOWN: policy " + policy +
+                                 " handled a refusal wrongly.");
+                if (TerritoryShakedown.ThreatenAfter(
+                        TerritoryComplianceVerdict.Hesitate, policy) != strict)
+                    failures.Add("SHAKEDOWN: policy " + policy +
+                                 " handled a waverer wrongly.");
+            }
+
+            // And the standings the block file prints: first match wins, in order.
+            TerritoryDoorStandings.Of(
+                TerritoryProtectionState.Compliant, false, false, "", "", null,
+                true, 240, 240, 3, 0, 12, "Thursdays",
+                out var kind, out var line, out var owed, out var daysLate, out _);
+            if (kind != TerritoryDoorStandings.Late || owed != 240 || daysLate != 2)
+                failures.Add("STANDING: a door a week behind did not read as late (" +
+                             line + ").");
+
+            TerritoryDoorStandings.Of(
+                TerritoryProtectionState.Compliant, false, false, "", "", null,
+                true, 40, 240, 11, 0, 12, "Thursdays",
+                out kind, out line, out _, out _, out _);
+            if (kind != TerritoryDoorStandings.Paying)
+                failures.Add("STANDING: a door square with us did not read as paying.");
+            if (line != "pays us · $40 owed · collects thursdays")
+                failures.Add("STANDING: a paying door reads \"" + line + "\".");
+
+            TerritoryDoorStandings.Of(
+                TerritoryProtectionState.Compliant, false, true,
+                "shut · reopens day 9", "",
+                null, true, 240, 240, 3, 0, 12, "Thursdays",
+                out kind, out _, out _, out _, out _);
+            if (kind != TerritoryDoorStandings.Shut)
+                failures.Add("STANDING: a shut door read as something else.");
+
+            TerritoryDoorStandings.Of(
+                TerritoryProtectionState.Unaffiliated, false, false, "", "", null,
+                false, 0, 0, -1, 0, 12, "",
+                out kind, out _, out _, out _, out _);
+            if (kind != TerritoryDoorStandings.Unvisited)
+                failures.Add("STANDING: a door nobody has called on read as something else.");
+
+            // And our own premises reads as nothing at all, so the page prints the
+            // tenure phrase that says whose it is.
+            TerritoryDoorStandings.Of(
+                TerritoryProtectionState.Unaffiliated, true, false, "", "", null,
+                false, 0, 0, -1, 0, 12, "",
+                out kind, out line, out _, out _, out _);
+            if (kind != TerritoryDoorStandings.Other || line.Length != 0)
+                failures.Add("STANDING: our own door was given a racket standing.");
         }
 
         // ------------------------------------------------------------------- fixtures

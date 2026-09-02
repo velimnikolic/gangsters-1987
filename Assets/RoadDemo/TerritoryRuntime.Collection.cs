@@ -29,8 +29,23 @@ namespace RoadDemo
             HeadingHome,
         }
 
+        /// <summary>What a walk down a block's doors is FOR. The route, the arrival and
+        /// the abandon are one machine; only what happens at the counter differs.</summary>
+        internal enum RoundKind
+        {
+            /// <summary>Money: the paying doors, the bag, the front.</summary>
+            Collect,
+
+            /// <summary>The ask: every door that does not pay us yet.</summary>
+            ShakeDown,
+
+            /// <summary>The threat: every door holding out on us.</summary>
+            Lean,
+        }
+
         sealed class CollectionRound
         {
+            public RoundKind Kind = RoundKind.Collect;
             public int CrewId;
             public TerritoryGangId GangId;
             public TerritoryBlockId BlockId;
@@ -242,6 +257,7 @@ namespace RoadDemo
             // One errand at a time: the old doorstep order and any old round go.
             DropPendingApproaches(unit.CrewId);
             rounds.Add(round);
+            BumpRacketSeam();
             // The duffel is the collection job's equipment, not loot spawned by the
             // first shop. This exact hood carries it from departure until the round
             // banks, is abandoned, or he can no longer continue.
@@ -288,10 +304,37 @@ namespace RoadDemo
             return unit.Root != null ? unit.Root.position : Vector3.zero;
         }
 
+        /// <summary>
+        /// WHO CARRIES THE BAG. A man his lieutenant marked for it first - the duty is a
+        /// standing instruction on the books (Character.Duty), and the whole point of
+        /// marking a man is that the sim then picks him without being told again.
+        ///
+        /// Failing that, the old rule: the lieutenant himself, then the first hood on
+        /// his feet. A crew with nobody marked still collects - the mark is an
+        /// arrangement, not a requirement.
+        /// </summary>
         static CrewWalker CollectorOf(DemoCrews.Unit unit)
         {
             if (unit == null)
                 return null;
+
+            var roster = LivingCity.Gameplay.PersonnelDirector.Instance != null
+                ? LivingCity.Gameplay.PersonnelDirector.Instance.Roster
+                : null;
+            if (roster != null)
+                for (var i = 0; i < unit.Hoods.Count; i++)
+                {
+                    var hood = unit.Hoods[i];
+                    if (hood == null || hood.Dead || hood.Tf == null)
+                        continue;
+                    // A character id of 0 is a REAL id in this project; a man the roster
+                    // does not know is a null lookup, never a zero.
+                    var man = roster.Find(hood.CharacterId);
+                    if (man != null && !man.Gone &&
+                        man.Duty == LivingCity.Personnel.Duty.Collector)
+                        return hood;
+                }
+
             // Match DemoCrews.MarchTo's lead choice exactly. A boarded hood may be
             // temporarily hidden before MarchTo unboards him, but he is still the man
             // assigned to this job and the bag appears with him when he steps out.
@@ -304,6 +347,142 @@ namespace RoadDemo
                     return hood;
             }
             return null;
+        }
+
+        // ------------------------------------------------------- the standing round
+
+        /// <summary>Which crew has already been sent to which block on which day, so a
+        /// Business tick every four hours does not send the same round three times.
+        /// </summary>
+        readonly HashSet<(int crewId, string blockId, int day)> roundsSentToday =
+            new HashSet<(int, string, int)>();
+
+        readonly List<LivingCity.Personnel.Character> collectorScratch =
+            new List<LivingCity.Personnel.Character>();
+
+        /// <summary>
+        /// THE ROUNDS THAT GO OUT BY THEMSELVES.
+        ///
+        /// Every block on a lieutenant's paper has a collection weekday of its own
+        /// (TerritoryCollectionSchedule). On that day, once the shops are open, a crew of
+        /// his that has a man on the bag walks the block's paying doors without being
+        /// told. Nothing else is automatic: a DEMAND is still an order the player gives,
+        /// which is the rule DriveRivalDemands is built on as well.
+        ///
+        /// Everything goes through the command gateway rather than straight into the
+        /// executor - the gateway is the mutation boundary and it records the command.
+        /// </summary>
+        void TendScheduledRounds(double gameHour)
+        {
+            if (crews == null || geography == null || dues == null || Commands == null)
+                return;
+
+            var director = LivingCity.Gameplay.PersonnelDirector.Instance;
+            var roster = director != null ? director.Roster : null;
+            if (roster == null)
+                return;
+
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            var day = outfit != null ? outfit.Campaign.Day : 1;
+            var dayOfWeek = outfit != null
+                ? outfit.Campaign.DayOfWeek
+                : (day > 1 ? day - 1 : 0) % 7;
+            var hourOfDay = (int)(gameHour - (int)(gameHour / 24.0) * 24.0);
+
+            var paper = roster.Organization.BlockResponsibilities;
+            for (var i = 0; i < paper.Count; i++)
+            {
+                var blockId = paper[i].BlockId;
+                if (!blockId.IsValid)
+                    continue;
+
+                // The crew whose lieutenant answers for this block. No crew, no round -
+                // paper alone does not collect anything.
+                LivingCity.Personnel.Crew crew = null;
+                for (var c = 0; c < roster.Crews.Count && crew == null; c++)
+                    if (roster.Crews[c].LieutenantId == paper[i].LeaderId)
+                        crew = roster.Crews[c];
+                if (crew == null)
+                    continue;
+
+                var key = (crew.Id, blockId.Value, day);
+                if (roundsSentToday.Contains(key))
+                    continue;
+
+                LivingCity.Personnel.RosterOps.CollectorsOf(
+                    roster, crew.Id, collectorScratch);
+                if (!TryGetCollectibleDues(blockId, out var owed))
+                    owed = 0;
+
+                if (!TerritoryCollectionSchedule.ShouldSend(
+                        dayOfWeek, hourOfDay, blockId, owed,
+                        collectorScratch.Count > 0, RoundRunning(crew.Id), false))
+                    continue;
+
+                var result = Commands.Submit(new CollectDuesCommand(
+                    TerritoryCommandNodeId.Crew(crew.Id), blockId));
+                // Only a round that was TAKEN counts as sent. A crew in a fight or in a
+                // car is refused, and the next Business tick asks again the same day.
+                if (result.Status != TerritoryCommandStatus.Accepted &&
+                    result.Status != TerritoryCommandStatus.Pending &&
+                    result.Status != TerritoryCommandStatus.Succeeded)
+                    continue;
+
+                roundsSentToday.Add(key);
+
+                // A ROUND THAT GOES OUT BY ITSELF HAS TO SAY SO. It is the one thing in
+                // the racket the player did not order, and without a line on the wire he
+                // learns it happened only when the money arrives - or never, if it does
+                // not. The street gets a word too: his men just walked off.
+                racket?.FileRound(blockId, new TerritoryGangId(
+                        LivingCity.Gangs.GangCatalog.PlayerGangId),
+                    TerritoryDoorNews.RoundOut, gameHour, owed,
+                    StopsOwing(blockId), 0);
+                var lieutenant = roster.Find(paper[i].LeaderId);
+                CrewOverlay.Announce(
+                    (lieutenant != null ? lieutenant.Surname.ToUpperInvariant() + "'S" : "OUR") +
+                    " ROUND IS OUT ON " + BlockWord(blockId), 4f,
+                    new Color(0.85f, 0.9f, 1f));
+            }
+
+            // The book only has to remember today; anything older can never match again.
+            if (roundsSentToday.Count > 64)
+                roundsSentToday.RemoveWhere(entry => entry.day != day);
+        }
+
+        /// <summary>How many of the block's doors owe us anything - what the round's own
+        /// slip prints as its stop count.</summary>
+        int StopsOwing(TerritoryBlockId blockId)
+        {
+            if (geography == null || racket == null || dues == null)
+                return 0;
+            var gang = new TerritoryGangId(LivingCity.Gangs.GangCatalog.PlayerGangId);
+            var stops = 0;
+            var here = geography.BusinessesOf(blockId);
+            for (var i = 0; i < here.Count; i++)
+                if (racket.StateOf(here[i].BusinessId, gang) ==
+                        TerritoryProtectionState.Compliant &&
+                    dues.OwedOf(here[i].BusinessId, gang) > 0)
+                    stops++;
+            return stops;
+        }
+
+        /// <summary>The block's own name for a line the player reads, or its id where
+        /// the city cannot name it.</summary>
+        string BlockWord(TerritoryBlockId blockId) =>
+            PlayerQuery != null && PlayerQuery.TryGetBlock(blockId, out var view) &&
+            view != null
+                ? view.BlockName.ToUpperInvariant()
+                : blockId.Value.ToUpperInvariant();
+
+        /// <summary>Whether this crew already has a round out - manual or standing.
+        /// </summary>
+        bool RoundRunning(int crewId)
+        {
+            for (var i = 0; i < rounds.Count; i++)
+                if (rounds[i].CrewId == crewId)
+                    return true;
+            return false;
         }
 
         static CrewWalker EnsureCollector(CollectionRound round, DemoCrews.Unit unit)
@@ -430,7 +609,7 @@ namespace RoadDemo
                     var seen = observation;
                     DoorBeat.VisitBusiness(
                         actor, stop.BusinessId, stop.Door,
-                        whenInside: () => SettleStop(
+                        whenInside: () => SettleDoor(
                             walking, here, who, seen, lastGameHour),
                         whenOut: () => NextStop(walking, who));
                 }
@@ -507,7 +686,21 @@ namespace RoadDemo
             if (missed)
                 round.Missed++;
 
+            // MONEY ON THE WIRE. A door that pays in full says nothing - the round's
+            // own slip covers it, and one line per paying door per week would bury the
+            // book in good news. A short and a miss are the two the player has to be
+            // able to react to, so each files with the sum and the owner's story.
+            if (missed)
+                racket.FileMoney(businessId, round.GangId, TerritoryDoorNews.Missed,
+                    gameHour, owed, owed, result.Excuse);
+            else if (paid < owed)
+                racket.FileMoney(businessId, round.GangId, TerritoryDoorNews.PaidShort,
+                    gameHour, paid, owed, result.Excuse);
+
             var runs = dues.Settle(businessId, round.GangId, day, paid, missed);
+            // A door that paid in full files nothing, so the racket's version does not
+            // move - but what it owes just changed, and the block file reads that.
+            BumpRacketSeam();
             if (runs >= 2)
             {
                 // Twice running and nobody answered it: the arrangement lapses back
@@ -574,6 +767,18 @@ namespace RoadDemo
                 return;
             }
 
+            // A SHAKEDOWN HAS NOTHING TO CARRY HOME. Only a collection walks to the
+            // front: the men who have just been down a block asking for money stay on
+            // the block they asked on. Marching them across the city would take the
+            // presence off the ground the asking was for, and Bank would file a round
+            // slip for a bag that was never picked up.
+            if (round.Kind != RoundKind.Collect)
+            {
+                rounds.Remove(round);
+                BumpRacketSeam();
+                return;
+            }
+
             round.Stage = RoundStage.HeadingHome;
             if (HasHome())
             {
@@ -617,18 +822,11 @@ namespace RoadDemo
             }
         }
 
-        /// <summary>The story, as the owner tells it. Whether it is true is never
-        /// printed - a crew that knows its street knows.</summary>
-        static string ExcuseWord(TerritoryPaymentExcuse excuse)
-        {
-            switch (excuse)
-            {
-                case TerritoryPaymentExcuse.BadWeek: return "\"A BAD WEEK\"";
-                case TerritoryPaymentExcuse.WasRobbed: return "\"WE WERE ROBBED\"";
-                case TerritoryPaymentExcuse.PoliceWereRound: return "\"THE POLICE WERE ROUND\"";
-                default: return "";
-            }
-        }
+        /// <summary>The story, as the owner tells it - the wire's own words, so the
+        /// toast over the street and the slip in the book cannot differ about what the
+        /// man said (TerritoryStandingVocabulary.ExcuseWord).</summary>
+        static string ExcuseWord(TerritoryPaymentExcuse excuse) =>
+            TerritoryStandingVocabulary.ExcuseWord(excuse);
 
         void PolicyAndArchetype(DemoCrews.Unit unit, out int policyLevel, out int archetype)
         {
@@ -655,10 +853,19 @@ namespace RoadDemo
         void Bank(CollectionRound round, double gameHour)
         {
             rounds.Remove(round);
+            BumpRacketSeam();
             BagCarry.Drop(round.CrewId, banked: true);
             var director = LivingCity.Gameplay.OutfitDirector.Instance;
             if (round.Carried > 0 && director != null)
                 director.BankCollection(round.Carried);
+
+            racket?.FileRound(round.BlockId, round.GangId,
+                TerritoryDoorNews.RoundBanked, gameHour, round.Carried,
+                round.Stops.Count, round.Missed);
+            NoteRoundBanked(round.BlockId, round.Carried, round.Missed,
+                LivingCity.Gameplay.OutfitDirector.Instance != null
+                    ? LivingCity.Gameplay.OutfitDirector.Instance.Campaign.Day
+                    : 1);
 
             events.Publish(new CollectionRoundSettled(
                 round.BlockId, round.GangId, round.CrewId, round.Carried,
@@ -676,7 +883,23 @@ namespace RoadDemo
                     continue;
                 var round = rounds[i];
                 rounds.RemoveAt(i);
+                BumpRacketSeam();
                 BagCarry.Drop(round.CrewId, banked: false);
+                // Only a round that was CARRYING something is worth a line: a crew
+                // called off before its first door lost nothing.
+                if (round.Carried > 0)
+                {
+                    racket?.FileRound(round.BlockId, round.GangId,
+                        TerritoryDoorNews.RoundLost, lastGameHour, round.Carried,
+                        round.Cursor, round.Missed);
+                    // The loudest money event on the wire was the quietest one on the
+                    // street: every ordinary stop calls itself over the door and a bag
+                    // going missing said nothing at all.
+                    CrewOverlay.Announce(
+                        "THE BAG IS GONE · $" + round.Carried +
+                        " OFF " + BlockWord(round.BlockId), 4f,
+                        new Color(1f, 0.55f, 0.45f));
+                }
                 events.Publish(new CollectionRoundSettled(
                     round.BlockId, round.GangId, round.CrewId, round.Carried,
                     round.Cursor, round.Missed, TerritoryRoundEnd.Lost, lastGameHour));

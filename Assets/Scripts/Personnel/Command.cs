@@ -156,11 +156,60 @@ namespace LivingCity.Personnel
                 return PresenceFactor(man);
 
             var crew = roster.CrewOf(characterId);
-            var commander = crew != null ? roster.Find(crew.LieutenantId) : null;
+            // Whoever is RUNNING the crew today, not whose name is on it: a branch whose
+            // lieutenant is inside is held together by his deputy, and holds ground like
+            // the deputy (PIPE-004).
+            var commander = EffectiveLieutenant(roster, crew);
             if (commander == null && roster.Organization.BossHoodIds.Contains(characterId))
                 commander = roster.FindBoss();
 
             return commander != null ? PresenceFactor(commander) : 1f;
+        }
+
+        /// <summary>
+        /// WHO IS ACTUALLY RUNNING THIS CREW TODAY (GAN-219, PIPE-004).
+        ///
+        /// A lieutenant in a cell is still the lieutenant: <see cref="Crew.LieutenantId"/>
+        /// does not change, his name stays on the branch, his men stay his, and the day
+        /// he is released he simply has them back. What DOES change is whose numbers the
+        /// bonuses read - a crew whose commander is inside is run by his best man, and
+        /// runs like his best man.
+        ///
+        /// Every read of a commander's ATTRIBUTES goes through here. Reads of his
+        /// IDENTITY - who signs for the gear, whose name is on the record, who the
+        /// branch belongs to - deliberately do not: a deputy does not inherit the branch,
+        /// he holds it.
+        ///
+        /// The deputy is the crew's highest-Leadership active hood, and nobody at all
+        /// when the crew has none - a branch of jailed men is a branch that is not
+        /// working, and a null here is the honest answer rather than a stand-in.
+        /// </summary>
+        public static Character EffectiveLieutenant(Roster roster, Crew crew)
+        {
+            if (roster == null || crew == null)
+                return null;
+
+            var leader = roster.Find(crew.LieutenantId);
+            if (leader != null && leader.Status == CharacterStatus.Active)
+                return leader;
+
+            Character deputy = null;
+            var best = int.MinValue;
+            for (var i = 0; i < crew.HoodIds.Count; i++)
+            {
+                var hood = roster.Find(crew.HoodIds[i]);
+                if (hood == null || hood.Status != CharacterStatus.Active)
+                    continue;
+                var leadership = hood.GetHalfSteps(CharacterAttribute.Leadership);
+                // A tie goes to the lower id: the same crew must name the same deputy on
+                // two runs of the same seed, and list order is not a promise.
+                if (leadership > best || (leadership == best && deputy != null && hood.Id < deputy.Id))
+                {
+                    best = leadership;
+                    deputy = hood;
+                }
+            }
+            return deputy;
         }
 
         /// <summary>Lieutenants on the books who are still on their feet.</summary>

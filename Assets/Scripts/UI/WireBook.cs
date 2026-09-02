@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Gameplay;
 using LivingCity.Personnel;
 using LivingCity.Territory;
@@ -23,8 +23,24 @@ namespace LivingCity.UI
         /// <summary>The campaign day it belongs to, for ordering a whole book of them.</summary>
         public readonly int Day;
 
+        /// <summary>The door this slip is about, where it is about one. Invalid on an
+        /// incident, which happened to MEN and not at an address - a surface that offers
+        /// to open the door beside the line has to be able to tell the two apart.</summary>
+        public readonly TerritoryBusinessId BusinessId;
+
+        /// <summary>The block the slip belongs to, where it belongs to one. Invalid on
+        /// an incident, which is why THIS BLOCK drops them.</summary>
+        public readonly TerritoryBlockId BlockId;
+
         public WireLine(string source, string stamp, string body, string tag,
             string figure, Color ink, int day)
+            : this(source, stamp, body, tag, figure, ink, day, default, default)
+        {
+        }
+
+        public WireLine(string source, string stamp, string body, string tag,
+            string figure, Color ink, int day,
+            TerritoryBusinessId businessId, TerritoryBlockId blockId)
         {
             Source = source;
             Stamp = stamp;
@@ -33,6 +49,8 @@ namespace LivingCity.UI
             Figure = figure;
             Ink = ink;
             Day = day;
+            BusinessId = businessId;
+            BlockId = blockId;
         }
     }
 
@@ -164,24 +182,50 @@ namespace LivingCity.UI
         public static WireLine Of(TerritoryDoorDispatch dispatch)
         {
             var name = "";
+            var blockName = "";
+            var block = dispatch.BlockId;
             var rows = Business.CityBusinesses.All;
             for (var i = 0; i < rows.Count; i++)
                 if (rows[i].Id == dispatch.BusinessId)
                 {
                     name = rows[i].Name;
+                    if (!block.IsValid)
+                        block = rows[i].CanonicalBlockId;
                     break;
                 }
 
+            // A ROUND slip is about a block, not a door, and it carries its own. The
+            // name is looked up the same way the shop's is.
+            if (block.IsValid)
+            {
+                var query = RoadDemo.TerritoryRuntime.Instance?.PlayerQuery;
+                if (query != null && query.TryGetBlock(block, out var view) && view != null)
+                    blockName = view.BlockName;
+            }
+
             var ours = dispatch.GangId ==
                 new TerritoryGangId(Gangs.GangCatalog.PlayerGangId);
+            // A door slip carries its address: the ledger's rail can be narrowed to one
+            // block by it, and a click on the line opens that door's own menu.
             return new WireLine(
                 ours ? "WIRE - THE RACKET" : "WIRE - ANOTHER HOUSE",
-                "DAY " + dispatch.Day,
-                TerritoryStandingVocabulary.Default.Describe(dispatch.News, name),
+                "DAY " + dispatch.Day + " · " + Clock(dispatch.HourOfDay),
+                TerritoryStandingVocabulary.Default.Describe(dispatch, name, blockName),
                 LedgerText.DoorNewsLabel(dispatch.News),
-                "",
+                dispatch.Amount > 0 ? "$" + dispatch.Amount : "",
                 DoorInk(dispatch.News),
-                dispatch.Day);
+                dispatch.Day,
+                dispatch.BusinessId,
+                block);
+        }
+
+        /// <summary>The hour of a slip, as a clock face. A door answers at a time, and
+        /// two slips filed on one day have to read in the order they happened.</summary>
+        static string Clock(double hourOfDay)
+        {
+            var hour = (int)hourOfDay;
+            var minute = (int)((hourOfDay - hour) * 60.0);
+            return hour.ToString("00") + ":" + minute.ToString("00");
         }
 
         /// <summary>
@@ -228,7 +272,15 @@ namespace LivingCity.UI
                 case TerritoryDoorNews.Refused:
                 case TerritoryDoorNews.StoppedPaying:
                 case TerritoryDoorNews.ChangedHands:
+                case TerritoryDoorNews.Missed:
+                case TerritoryDoorNews.RoundLost:
                     return LedgerStyle.RedPen;
+                case TerritoryDoorNews.PaidShort:
+                    return LedgerStyle.PenAmber;
+                case TerritoryDoorNews.RoundBanked:
+                    return LedgerStyle.GreenOk;
+                case TerritoryDoorNews.RoundOut:
+                    return LedgerStyle.TelexPlain;
                 case TerritoryDoorNews.Wrecked:
                 case TerritoryDoorNews.Beaten:
                 case TerritoryDoorNews.Threatened:

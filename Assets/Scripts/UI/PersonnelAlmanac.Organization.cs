@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
@@ -46,11 +46,6 @@ namespace LivingCity.UI
         /// <summary>How many faces stand on a branch before the rest become "+n".</summary>
         const int ThumbLimit = 10;
 
-        /// <summary>The block ledger is a reading, not a census: past this many rows the
-        /// sheet says so and sends the reader to the map rather than printing the city.
-        /// </summary>
-        const int BlockRowLimit = 12;
-
         RectTransform organizationFixed;
         internal RectTransform organizationViewport;
         internal RectTransform organizationContent;
@@ -88,11 +83,6 @@ namespace LivingCity.UI
         /// run on the page: a 190-unit name beside two 150-unit meters and a plate.</summary>
         const float NarrowColumn = 640f;
 
-        /// <summary>Under this the block ledger stops being a five-column table. Its five
-        /// headings and a 230-unit key need about nine hundred units; less than that and
-        /// every column is narrower than the words standing in it.</summary>
-        const float LedgerTableWidth = 900f;
-
         /// <summary>The line the sheet writes when an order goes in. It is cleared the
         /// moment the office has nothing left to answer, so a stale "not answered yet"
         /// never stands over a page where everything has been ruled on.</summary>
@@ -107,21 +97,6 @@ namespace LivingCity.UI
         readonly HashSet<int> organizationOpenBranches = new HashSet<int>();
         bool organizationPoolOpen = true;
         bool organizationDetailOpen;
-
-        /// <summary>The block whose "who answers" menu is down, if any.</summary>
-        TerritoryBlockId organizationBlockMenu;
-
-        /// <summary>True while the ledger is too narrow for its five columns, so every
-        /// block row is drawn as a card that reads downward. Set once per repaint, in
-        /// BuildBlockLedger, and read by the row builder under it.</summary>
-        bool organizationStackedRows;
-
-        // Map targeting is intentionally transient: the reader picks a block anywhere in
-        // the city, and the sheet brings it back with its menu already down. Nothing is
-        // filed until a name is chosen out of that menu.
-        bool organizationTargetingBlock;
-        TerritoryBlockId organizationPendingBlock;
-        string organizationPendingBlockName = "";
 
         readonly List<OrganizationPerson> organizationLeaders =
             new List<OrganizationPerson>();
@@ -141,18 +116,7 @@ namespace LivingCity.UI
         readonly Dictionary<TerritoryBlockId, BlockControl> organizationControl =
             new Dictionary<TerritoryBlockId, BlockControl>();
 
-        readonly List<TerritoryBlockId> organizationBlockRows = new List<TerritoryBlockId>();
-
-        /// <summary>Blocks one of our men is standing on right now. A block earns a line
-        /// on this sheet by being on our paper, being ours on the street, or having our
-        /// men on it - the third is how ground the outfit is working shows up before a
-        /// single deed changes hands.</summary>
-        readonly HashSet<TerritoryBlockId> organizationOurStreets =
-            new HashSet<TerritoryBlockId>();
-
         RectTransform organizationHoverNote;
-
-        bool OrganizationTargetingActive => organizationTargetingBlock;
 
         // ------------------------------------------------------------------ the page
 
@@ -187,21 +151,15 @@ namespace LivingCity.UI
             if (organizationNote == FiledNote && outfit && outfit.Filings.AwaitingCount == 0)
                 organizationNote = "";
 
-            // The live plate is not page furniture. Park it directly under the scrolling
-            // content while the old columns are torn down, then BuildBlockModel puts that
-            // SAME view into the new plate. The camera and RenderTexture therefore survive
-            // ordinary observation/roster repaints instead of being recreated with them.
-            ParkBlockModelForRebuild();
             foreach (Transform old in organizationFixed)
                 Destroy(old.gameObject);
             foreach (Transform old in organizationContent)
-                if (blockCardModel == null || old != blockCardModel.transform)
-                    Destroy(old.gameObject);
+                Destroy(old.gameObject);
             organizationHoverNote = null;
 
             LedgerV2.PageHead(organizationFixed, PageLeft, PageTop, PageWidth,
                 "ORGANIZATION",
-                "CHAIN OF COMMAND, CAPACITY, AND WHO ANSWERS FOR WHICH BLOCK");
+                "CHAIN OF COMMAND, CAPACITY, AND WHO ANSWERS TO WHOM");
             if (!string.IsNullOrEmpty(organizationNote))
                 LedgerV2.Mono(organizationFixed, PageRight - 700f, PageTop - 34f, 700f,
                     organizationNote, 10f, LedgerV2.PaperBlue, 2f,
@@ -214,22 +172,10 @@ namespace LivingCity.UI
                     LedgerV2.Red, 0f, 0f, PageWidth, 24f,
                     "The command file has no authoritative Boss Character.");
                 CloseOrganization(24f);
-                FinishBlockModelRebuild();
                 return;
             }
 
-            organizationLeaders.Clear();
-            organizationLeaders.Add(boss);
-            query.CollectLieutenants(organizationScratch);
-            organizationLeaders.AddRange(organizationScratch);
-            query.CollectHoods(organizationPeople);
-            ReadOrganizationPaper(query);
-            ReadOrganizationControl();
-            if (TerritoryRuntime.Instance != null)
-                TerritoryRuntime.Instance.CollectOccupiedBlocks(
-                    GangCatalog.PlayerGangId, organizationOurStreets);
-            else
-                organizationOurStreets.Clear();
+            ReadOrganizationRoll(query);
 
             if (organizationPickedHoodId >= 0 && !IsPooled(organizationPickedHoodId))
                 organizationPickedHoodId = -1;
@@ -237,10 +183,9 @@ namespace LivingCity.UI
             var cursor = 0f;
 
             // The sheet is read in two columns. The chain of command goes down the left
-            // because it is the thing a reader scans; the ledger takes the right, with
-            // the orders the sheet has filed under it. The block file is no longer a
-            // section of its own - it opens inside the ledger, under the row it belongs
-            // to, so the reader never has to look away from the block he clicked.
+            // because it is the thing a reader scans; the orders the sheet has filed take
+            // the right. The blocks themselves are a sheet of their own now (BLOCKS) -
+            // this one is about MEN, and who answers to whom.
             if (PageWidth >= TwoColumnSheet)
             {
                 var span = PageWidth - ColumnGutter;
@@ -251,8 +196,7 @@ namespace LivingCity.UI
                 var chain = BuildChainOfCommand(query, boss, cursor);
 
                 InColumn(chainW + ColumnGutter, ledgerW);
-                var ledger = BuildBlockLedger(cursor);
-                ledger = BuildFiledOrders(ledger);
+                var ledger = BuildFiledOrders(cursor);
 
                 cursor = Mathf.Max(chain, ledger);
             }
@@ -260,11 +204,35 @@ namespace LivingCity.UI
             {
                 InColumn(0f, PageWidth);
                 cursor = BuildChainOfCommand(query, boss, cursor);
-                cursor = BuildBlockLedger(cursor);
                 cursor = BuildFiledOrders(cursor);
             }
             CloseOrganization(cursor);
-            FinishBlockModelRebuild();
+        }
+
+        /// <summary>
+        /// Who is on the books and what is written against their names: the leaders in
+        /// rank order, the pool, the paper each block is on and what the street says
+        /// about it. Read once at the head of a repaint - BOTH sheets that print any of
+        /// it (ORGANIZATION and BLOCKS) start here, because the player query projects a
+        /// fresh object on every call and each figure is asked for from several places.
+        /// </summary>
+        void ReadOrganizationRoll(IOrganizationQuery query)
+        {
+            if (query == null || !query.TryGetBoss(out var boss))
+                return;
+
+            organizationLeaders.Clear();
+            organizationLeaders.Add(boss);
+            query.CollectLieutenants(organizationScratch);
+            organizationLeaders.AddRange(organizationScratch);
+            query.CollectHoods(organizationPeople);
+            ReadOrganizationPaper(query);
+            ReadOrganizationControl();
+            if (TerritoryRuntime.Instance != null)
+                TerritoryRuntime.Instance.CollectOccupiedBlocks(
+                    GangCatalog.PlayerGangId, blocksOurStreets);
+            else
+                blocksOurStreets.Clear();
         }
 
         /// <summary>Opens a column inside the page and points every section builder at
@@ -838,320 +806,11 @@ namespace LivingCity.UI
             return cursor + lines * rowH + 8f;
         }
 
-        // -------------------------------------------------------------- block ledger
-
-        float BuildBlockLedger(float cursor)
-        {
-            cursor = Section(cursor, "II. BLOCK LEDGER", "");
-            var mapReady = MapTargeting.Available &&
-                           TerritoryRuntime.Instance?.Commands != null;
-            var seeAllW = Mathf.Min(300f, organizationW * 0.5f);
-            var seeAll = LedgerV2.Button(organizationColumn,
-                seeAllW < 220f ? "ALL BLOCKS" : "SEE ALL BLOCKS IN THE CITY",
-                organizationW - seeAllW, -(cursor - 46f), seeAllW, 28f,
-                BeginBlockTargeting, red: false, outline: true, size: 9.5f);
-            SetActionEnabled(seeAll, mapReady);
-
-            CollectBlockRows();
-
-            // The file stands under a ROW. Lose the row - the name was struck off and the
-            // street took the ground back - and the file closes with it rather than
-            // hanging under a ledger that no longer mentions the block.
-            if (blockCardId.IsValid && !organizationBlockRows.Contains(blockCardId))
-            {
-                blockCardId = default;
-                StopBlockFilm();
-            }
-
-            // Five headings and a 230-unit key need about nine hundred units. Under that
-            // the table stops being a table: each block becomes a small card that reads
-            // down instead of across, and the head band goes with the columns it named.
-            organizationStackedRows = organizationW < LedgerTableWidth;
-            float[] columns = null;
-            if (!organizationStackedRows)
-            {
-                var action = 230f;
-                var span = organizationW - action;
-                var c0 = span * 1.5f / 5.3f;
-                var c1 = span * 1.2f / 5.3f;
-                var c2 = c1;
-                var c3 = span - c0 - c1 - c2;
-                columns = new[] { c0, c1, c2, c3, action };
-
-                var head = NewRect("Ledger head", organizationColumn);
-                PlaceTopLeft(head, 0f, -cursor, organizationW, 32f);
-                Fill(head, LedgerV2.Head);
-                var headings = new[]
-                {
-                    "BLOCK", "RESPONSIBLE · PAPER", "CONTROL · STREET",
-                    "READING", "CHANGE THE PAPER",
-                };
-                var headColours = new[]
-                {
-                    LedgerV2.HeadInk, LedgerV2.HeadPaper, LedgerV2.HeadStreet,
-                    LedgerV2.HeadInk, LedgerV2.HeadInk,
-                };
-                var x = 0f;
-                for (var i = 0; i < headings.Length; i++)
-                {
-                    Caps(head, x + 14f, -9f, columns[i] - 20f, headings[i], 9.5f,
-                        headColours[i], 4f);
-                    x += columns[i];
-                }
-                cursor += 32f;
-            }
-
-            if (organizationBlockRows.Count == 0)
-            {
-                var empty = NewRect("Ledger empty", organizationColumn);
-                PlaceTopLeft(empty, 0f, -cursor, organizationW, 44f);
-                Fill(empty, LedgerV2.Panel);
-                Frame(empty, 1f, LedgerV2.Rule);
-                Line(empty, LedgerStyle.MonoItalic, 12f, LedgerV2.Muted,
-                    14f, -12f, organizationW - 28f, 20f,
-                    "No block is on our paper and none is ours on the street.");
-                return cursor + 56f;
-            }
-
-            var frame = NewRect("Ledger", organizationColumn);
-            PlaceTopLeft(frame, 0f, -cursor, organizationW, 1f);
-            Frame(frame, 1f, LedgerV2.Rule);
-
-            var rows = Mathf.Min(organizationBlockRows.Count, BlockRowLimit);
-            var height = 0f;
-            for (var i = 0; i < rows; i++)
-            {
-                var blockId = organizationBlockRows[i];
-                height = BuildBlockRow(blockId, columns, cursor, height);
-                if (blockCardId == blockId)
-                    height = BuildBlockFile(cursor + height) - cursor;
-            }
-
-            // The open block reads its file even when the ledger has stopped printing
-            // rows: a list cut at twelve must not swallow the one block the reader is
-            // actually looking at.
-            if (blockCardId.IsValid &&
-                organizationBlockRows.IndexOf(blockCardId) >= rows)
-            {
-                height = BuildBlockRow(blockCardId, columns, cursor, height);
-                height = BuildBlockFile(cursor + height) - cursor;
-            }
-            frame.sizeDelta = new Vector2(organizationW, height);
-            cursor += height;
-
-            if (organizationBlockRows.Count > rows)
-            {
-                Caps(organizationColumn, 0f, -(cursor + 6f), organizationW,
-                    "AND " + (organizationBlockRows.Count - rows) +
-                    " MORE ON THE BOOKS · OPEN THE MAP TO READ THE WHOLE CITY",
-                    9f, LedgerV2.Label, 3f);
-                cursor += 24f;
-            }
-            return cursor + 16f;
-        }
-
-        float BuildBlockRow(
-            TerritoryBlockId blockId, float[] columns, float top, float offset)
-        {
-            if (organizationStackedRows)
-                return BuildStackedBlockRow(blockId, top, offset);
-
-            const float rowH = 54f;
-            var leaderId = organizationPaper.TryGetValue(blockId, out var id) ? id : -1;
-            var leader = Leader(leaderId);
-            var control = ControlOf(blockId);
-            var mismatch = leader.IsValid && control == BlockControl.NotOurs;
-            var orphan = !leader.IsValid && control == BlockControl.Held;
-            var menuOpen = organizationBlockMenu == blockId;
-
-            var open = blockCardId == blockId;
-
-            var row = NewRect("Block " + blockId.Value, organizationColumn);
-            PlaceTopLeft(row, 0f, -(top + offset), organizationW, rowH);
-            Fill(row, menuOpen
-                ? LedgerV2.Money
-                : mismatch || orphan ? LedgerV2.Carbon : LedgerV2.Panel);
-            // The row itself opens the block's file. The key at the right end still only
-            // changes the paper, so a reader after one thing never gets the other.
-            RowButton(row, ClickSurface(row), () => OpenBlockCard(blockId));
-            if (open)
-                Block("Open mark", row, 0f, 0f, 3f, rowH, LedgerV2.Red);
-            Rule(row, 0f, 0f, organizationW, LedgerV2.Rule);
-
-            var x = 0f;
-            Line(row, LedgerStyle.Condensed, 17f, LedgerV2.Ink,
-                x + 14f, -10f, columns[0] - 24f, 22f, BlockName(blockId));
-            Line(row, LedgerStyle.Mono, 10f, LedgerV2.Label,
-                x + 14f, -31f, columns[0] - 24f, 16f, NeighborhoodOf(blockId));
-            x += columns[0];
-
-            var paperColour = leader.IsValid ? LedgerV2.PaperBlue : LedgerV2.Red;
-            // Hatched, not solid: the design draws what is written on PAPER as a
-            // ruled square and what is true on the STREET as a filled one, so the two
-            // columns can never be read for each other at a glance.
-            LedgerV2.PaperMark(row, x + 14f, -21f, paperColour);
-            Line(row, LedgerStyle.MonoBold, 12f, paperColour,
-                x + 32f, -20f, columns[1] - 42f, 18f,
-                leader.IsValid ? leader.Name : "NOBODY NAMED");
-            x += columns[1];
-
-            var streetColour = ControlColour(control);
-            LedgerV2.StreetMark(row, x + 14f, -21f, streetColour);
-            Line(row, LedgerStyle.MonoBold, 12f, streetColour,
-                x + 32f, -20f, columns[2] - 42f, 18f, ControlWord(control));
-            x += columns[2];
-
-            var reading = Reading(
-                leader, control, organizationOurStreets.Contains(blockId),
-                out var readingColour);
-            Paragraph(row, LedgerStyle.Mono, 11f, readingColour,
-                x + 14f, -12f, columns[3] - 24f, 34f, reading, lineSpacing: 1f);
-            x += columns[3];
-
-            var label = menuOpen ? "CLOSE"
-                : leader.IsValid ? "CHANGE WHO ANSWERS" : "NAME SOMEONE";
-            LedgerV2.Button(row, label, x + 14f, -13f, columns[4] - 28f, 28f,
-                () => ToggleBlockMenu(blockId), red: false, outline: !menuOpen, size: 9f);
-
-            offset += rowH;
-            return menuOpen
-                ? offset + BuildBlockMenu(blockId, leaderId, top + offset, columns)
-                : offset;
-        }
-
-        /// <summary>
-        /// The same block, read down instead of across. A column has no room for five
-        /// headings, so the name and its ward take the first line, the paper and the
-        /// street stand side by side on the second, and the reading runs under both with
-        /// the key that changes the paper held to the top right. Everything the wide row
-        /// says, in the order a reader takes it.
-        /// </summary>
-        float BuildStackedBlockRow(TerritoryBlockId blockId, float top, float offset)
-        {
-            const float rowH = 104f;
-            const float pad = 14f;
-            var leaderId = organizationPaper.TryGetValue(blockId, out var id) ? id : -1;
-            var leader = Leader(leaderId);
-            var control = ControlOf(blockId);
-            var mismatch = leader.IsValid && control == BlockControl.NotOurs;
-            var orphan = !leader.IsValid && control == BlockControl.Held;
-            var menuOpen = organizationBlockMenu == blockId;
-            var open = blockCardId == blockId;
-
-            var row = NewRect("Block " + blockId.Value, organizationColumn);
-            PlaceTopLeft(row, 0f, -(top + offset), organizationW, rowH);
-            Fill(row, menuOpen
-                ? LedgerV2.Money
-                : mismatch || orphan ? LedgerV2.Carbon : LedgerV2.Panel);
-            // The card itself opens the block's file. The key still only changes the
-            // paper, so a reader after one thing never gets the other.
-            RowButton(row, ClickSurface(row), () => OpenBlockCard(blockId));
-            if (open)
-                Block("Open mark", row, 0f, 0f, 3f, rowH, LedgerV2.Red);
-            Rule(row, 0f, 0f, organizationW, LedgerV2.Rule);
-
-            var keyW = Mathf.Min(190f, organizationW * 0.42f);
-            var label = menuOpen ? "CLOSE"
-                : leader.IsValid ? "CHANGE WHO ANSWERS" : "NAME SOMEONE";
-            LedgerV2.Button(row, label, organizationW - pad - keyW, -10f, keyW, 26f,
-                () => ToggleBlockMenu(blockId), red: false, outline: !menuOpen, size: 9f);
-
-            var titleW = Mathf.Max(60f, organizationW - pad * 2f - keyW - 12f);
-            Line(row, LedgerStyle.Condensed, 17f, LedgerV2.Ink,
-                pad, -9f, titleW, 22f, BlockName(blockId))
-                .overflowMode = TextOverflowModes.Ellipsis;
-            Line(row, LedgerStyle.Mono, 10f, LedgerV2.Label,
-                pad, -30f, titleW, 16f, NeighborhoodOf(blockId))
-                .overflowMode = TextOverflowModes.Ellipsis;
-
-            // Hatched, not solid: what is written on PAPER is a ruled square and what is
-            // true on the STREET is a filled one, so the two can never be read for each
-            // other at a glance - the marks carry that here, without the headings.
-            var half = (organizationW - pad * 2f) * 0.5f;
-            var paperColour = leader.IsValid ? LedgerV2.PaperBlue : LedgerV2.Red;
-            LedgerV2.PaperMark(row, pad, -54f, paperColour);
-            Line(row, LedgerStyle.MonoBold, 12f, paperColour,
-                pad + 18f, -53f, half - 24f, 18f,
-                leader.IsValid ? leader.Name : "NOBODY NAMED")
-                .overflowMode = TextOverflowModes.Ellipsis;
-
-            var streetColour = ControlColour(control);
-            LedgerV2.StreetMark(row, pad + half, -54f, streetColour);
-            Line(row, LedgerStyle.MonoBold, 12f, streetColour,
-                pad + half + 18f, -53f, half - 24f, 18f, ControlWord(control))
-                .overflowMode = TextOverflowModes.Ellipsis;
-
-            var reading = Reading(
-                leader, control, organizationOurStreets.Contains(blockId),
-                out var readingColour);
-            Paragraph(row, LedgerStyle.Mono, 10.5f, readingColour,
-                pad, -74f, organizationW - pad * 2f, 28f, reading, lineSpacing: 1f);
-
-            offset += rowH;
-            return menuOpen
-                ? offset + BuildBlockMenu(blockId, leaderId, top + offset, null)
-                : offset;
-        }
-
-        float BuildBlockMenu(
-            TerritoryBlockId blockId, int leaderId, float top, float[] columns)
-        {
-            var options = organizationLeaders.Count + (leaderId >= 0 ? 1 : 0);
-            var height = 30f + options * 30f;
-            var width = Mathf.Min(340f, organizationW - 28f);
-            var menu = NewRect("Menu " + blockId.Value, organizationColumn);
-            PlaceTopLeft(menu, organizationW - width - 14f, -top, width, height);
-            Fill(menu, LedgerV2.Head);
-            Frame(menu, 1f, LedgerV2.Head);
-            Caps(menu, 12f, -9f, width - 24f,
-                "WHO ANSWERS FOR " + BlockName(blockId).ToUpperInvariant(),
-                9f, LedgerV2.HeadDim, 3f);
-
-            var y = 30f;
-            for (var i = 0; i < organizationLeaders.Count; i++)
-            {
-                var leader = organizationLeaders[i];
-                var capacity = director.Organization.CapacityOf(leader.Id).Blocks;
-                var full = capacity.Current >= capacity.Maximum;
-                var isBoss = leader.Rank == Rank.Boss;
-                var target = leader.Id;
-
-                var option = NewRect("Option " + leader.Name, menu);
-                PlaceTopLeft(option, 0f, -y, width, 30f);
-                Rule(option, 0f, 0f, width, LedgerV2.HeadDim);
-                Line(option, LedgerStyle.Condensed, 13f,
-                    isBoss ? LedgerV2.Amber : LedgerV2.HeadCream,
-                    12f, -6f, width - 150f, 18f,
-                    isBoss ? leader.Name + " · YOU" : leader.Name)
-                    .overflowMode = TextOverflowModes.Ellipsis;
-                Caps(option, width - 138f, -7f, 126f,
-                    capacity.Current + " / " + capacity.Maximum + (full ? " · FULL" : ""),
-                    9f, full ? LedgerV2.Red : LedgerV2.HeadDim, 2f,
-                    TextAlignmentOptions.MidlineRight);
-                RowButton(option, ClickSurface(option),
-                    () => FileBlockResponsibility(blockId, target));
-                y += 30f;
-            }
-
-            if (leaderId >= 0)
-            {
-                var strike = NewRect("Option strike", menu);
-                PlaceTopLeft(strike, 0f, -y, width, 30f);
-                Rule(strike, 0f, 0f, width, LedgerV2.HeadDim);
-                Line(strike, LedgerStyle.Condensed, 13f, LedgerV2.Red,
-                    12f, -6f, width - 24f, 18f, "Nobody · strike the name off");
-                RowButton(strike, ClickSurface(strike),
-                    () => FileBlockRemoval(blockId, leaderId));
-            }
-
-            return height + 8f;
-        }
-
         // --------------------------------------------------------------- filed orders
 
         float BuildFiledOrders(float cursor)
         {
-            cursor = Section(cursor, "III. ORDERS FILED WITH THE OUTFIT",
+            cursor = Section(cursor, "II. ORDERS FILED WITH THE OUTFIT",
                 "THIS SHEET ASKS · THE OUTFIT ANSWERS");
 
             var filings = outfit ? outfit.Filings : null;
@@ -1497,7 +1156,7 @@ namespace LivingCity.UI
 
         void ToggleBlockMenu(TerritoryBlockId blockId)
         {
-            organizationBlockMenu = organizationBlockMenu == blockId
+            blocksMenu = blocksMenu == blockId
                 ? default
                 : blockId;
             dirty = true;
@@ -1513,14 +1172,26 @@ namespace LivingCity.UI
             if (!outfit)
             {
                 var immediate = resolver();
-                organizationNote = immediate.Ruling;
+                SayOnThisSheet(immediate.Ruling);
                 dirty = true;
                 return;
             }
 
             outfit.Filings.File(FilingStamp(), text, resolver);
-            organizationNote = FiledNote;
+            SayOnThisSheet(FiledNote);
             dirty = true;
+        }
+
+        /// <summary>The sheet the reader is on is the sheet the office's answer belongs
+        /// on. ORGANIZATION and BLOCKS file with the same office and each keeps its own
+        /// line, so a ruling never appears on a page the reader was not looking at.
+        /// </summary>
+        void SayOnThisSheet(string note)
+        {
+            if (currentPage == LedgerPage.Blocks)
+                blocksNote = note;
+            else
+                organizationNote = note;
         }
 
         string FilingStamp()
@@ -1663,8 +1334,8 @@ namespace LivingCity.UI
             if (!leader.IsValid || !blockId.IsValid)
                 return;
 
-            organizationBlockMenu = default;
-            ClearOrganizationPendingBlock();
+            blocksMenu = default;
+            ClearBlocksPendingBlock();
             var blockName = BlockName(blockId);
             FileOrder("Responsibility for " + blockName + " struck against " +
                       leader.Name + ".", () =>
@@ -1714,7 +1385,7 @@ namespace LivingCity.UI
             if (!blockId.IsValid)
                 return;
 
-            organizationBlockMenu = default;
+            blocksMenu = default;
             var blockName = BlockName(blockId);
             FileOrder("The name struck off " + blockName + ".", () =>
             {
@@ -1728,7 +1399,7 @@ namespace LivingCity.UI
                     : Outfit.FilingRuling.Refuse(result.Reason);
             });
             if (!leader.IsValid)
-                organizationNote = "the block had no valid name on it";
+                SayOnThisSheet("the block had no valid name on it");
         }
 
         OpResult SubmitHoodAssignment(int hoodId, OrganizationPerson leader)
@@ -1753,88 +1424,9 @@ namespace LivingCity.UI
                     : result.Reason);
         }
 
-        // ------------------------------------------------------------- map targeting
-
-        /// <summary>The whole city, on the map, so a block that is on nobody's paper and
-        /// nobody's street can still be named. The pick comes back as a row at the head
-        /// of the block ledger with its menu already down.</summary>
-        void BeginBlockTargeting()
-        {
-            var map = MapTargeting.Surface;
-            if (map == null || TerritoryRuntime.Instance?.Commands == null)
-            {
-                organizationNote = "canonical map targeting is unavailable";
-                dirty = true;
-                return;
-            }
-
-            organizationTargetingBlock = true;
-            ClearOrganizationPendingBlock();
-            organizationNote = "select one canonical block on the map";
-            Close();
-
-            // The book takes the player to the map itself - the turf plate by running
-            // the boom out past the map line, the generated city's map by opening it -
-            // and the map hands the view back when the pick lands.
-            if (!map.CanSummon || !map.Summon())
-            {
-                organizationTargetingBlock = false;
-                organizationNote = map.CanSummon ? "the map could not open" : map.SummonHint;
-                OpenAtPage(LedgerPage.Organization);
-                return;
-            }
-
-            RefreshTargeting();
-        }
-
-        /// <summary>Called by the shared IMapTargetingConsumer dispatch.</summary>
-        void CaptureOrganizationBlock(int legacyBlockId)
-        {
-            var runtime = TerritoryRuntime.Instance;
-            if (!OrganizationTargetingActive || runtime == null ||
-                !runtime.TryGetBlock(legacyBlockId, out var blockId))
-                return;
-
-            organizationPendingBlock = blockId;
-            organizationPendingBlockName = BlockName(blockId);
-            organizationBlockMenu = blockId;
-            organizationTargetingBlock = false;
-            MapTargeting.Clear(this);
-            MapTargeting.Surface?.Dismiss();
-            organizationNote = organizationPendingBlockName +
-                               " picked · name someone for it below";
-            organizationScroll = 0f;
-            OpenAtPage(LedgerPage.Organization);
-        }
-
-        void ClearOrganizationPendingBlock()
-        {
-            organizationPendingBlock = default;
-            organizationPendingBlockName = "";
-        }
-
-        /// <summary>Drops the map pick the sheet was waiting for, without opening
-        /// anything - the shell calls this when the book turns a page or dies.</summary>
-        void StopOrganizationTargeting() => organizationTargetingBlock = false;
-
-        /// <summary>Map Esc has no callback, so the closed Ledger notices the map is gone.</summary>
-        void CancelOrganizationTargetingAndReturn()
-        {
-            organizationTargetingBlock = false;
-            MapTargeting.Clear(this);
-            organizationNote = "block selection cancelled";
-            OpenAtPage(LedgerPage.Organization);
-        }
 
         bool CloseOrganizationTransient()
         {
-            if (organizationBlockMenu.IsValid)
-            {
-                organizationBlockMenu = default;
-                ClearOrganizationPendingBlock();
-                dirty = true;
-                return true;
-            }
             if (organizationPickedHoodId >= 0)
             {
                 organizationPickedHoodId = -1;
@@ -1847,13 +1439,8 @@ namespace LivingCity.UI
 
         void DismissOrganizationTransient()
         {
-            organizationBlockMenu = default;
             organizationPickedHoodId = -1;
-            ClearOrganizationPendingBlock();
             HideThumbNote();
-            // A shut book films nothing and holds no ground up: the second lens and the
-            // streamer's hold on the block both belong to an OPEN file.
-            StopBlockFilm();
         }
 
         // ---------------------------------------------------------------- the reading
@@ -1880,42 +1467,6 @@ namespace LivingCity.UI
                 query.CollectBlockResponsibilities(leaderId, organizationResponsibilities);
                 for (var b = 0; b < organizationResponsibilities.Count; b++)
                     organizationPaper[organizationResponsibilities[b].BlockId] = leaderId;
-            }
-        }
-
-        /// <summary>The blocks this sheet answers for: everything on our paper, and
-        /// everything the street says is ours whether it is named or not. The block the
-        /// reader has just picked off the map heads the list even when it is neither.
-        /// </summary>
-        void CollectBlockRows()
-        {
-            organizationBlockRows.Clear();
-            if (organizationPendingBlock.IsValid)
-                organizationBlockRows.Add(organizationPendingBlock);
-
-            var query = TerritoryRuntime.Instance?.PlayerQuery;
-            if (query == null)
-            {
-                foreach (var pair in organizationPaper)
-                    if (pair.Key != organizationPendingBlock)
-                        organizationBlockRows.Add(pair.Key);
-                return;
-            }
-
-            // Ordered by the geography's own block list, so the sheet reads the same way
-            // twice for the same city.
-
-            var ids = query.BlockIds;
-            for (var i = 0; i < ids.Count; i++)
-            {
-                var blockId = ids[i];
-                if (blockId == organizationPendingBlock)
-                    continue;
-                if (!organizationPaper.ContainsKey(blockId) &&
-                    !IsOurStreet(ControlOf(blockId)) &&
-                    !organizationOurStreets.Contains(blockId))
-                    continue;
-                organizationBlockRows.Add(blockId);
             }
         }
 

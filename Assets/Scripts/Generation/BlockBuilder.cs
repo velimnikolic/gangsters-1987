@@ -99,7 +99,7 @@ namespace LivingCity.Generation
         const string SalonPrefabName = "building-carwash";
 
         /// <summary>Pavement between the forecourt bays and the recessed landmark's door.
-        /// Public for PoliceDirector, which reconstructs the forecourt band's depth to aim
+        /// Public for whatever reconstructs the forecourt band's depth to aim
         /// its kerb-point search past it.</summary>
         public const float LandmarkForecourtWalkway = 1f;
 
@@ -1177,7 +1177,7 @@ namespace LivingCity.Generation
                 // forecourt is the patrol fleet's parking, and a baked car would be a car
                 // the real fleet can never move. maxCars 0 still paints the lines and still
                 // reserves every bay - only the bakes are withheld - and the stall and door
-                // geometry ride out on a PoliceStation marker for PoliceDirector to find.
+                // geometry ride out on a PoliceStation marker for the scene to find.
                 //
                 // The bank KEEPS its bakes and gets a marker as well, over the bays those bakes
                 // did not take, so its customers have somewhere to park. Both markers are still

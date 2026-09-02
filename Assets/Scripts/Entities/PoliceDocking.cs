@@ -7,9 +7,11 @@ namespace LivingCity.Entities
     /// street into a forecourt stall and back out to the kerb. Pure maths over structs - no
     /// UnityEngine.Object anywhere - so the headless suite can prove the properties that
     /// matter (the car monotonically approaches its target and never moves faster than the
-    /// cap) without an Editor. PolicePatrolAgent owns the clock and the transform; this
-    /// class only answers "where is t along the curve, how far does one step advance it,
-    /// and which way is the car pointing there".
+    /// cap) without an Editor. The CALLER owns the clock and the transform; this class only
+    /// answers "where is t along the curve, how far does one step advance it, and which way
+    /// is the car pointing there". Named for the patrol car it was written for, and kept
+    /// under that name after the generator's police went (GAN-226, ROSTER-005) because the
+    /// forecourt visitors and the school bus drive the same curve.
     ///
     /// A cubic Bezier is the whole model, and the two legs use it differently.
     ///

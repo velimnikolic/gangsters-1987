@@ -613,7 +613,6 @@ namespace LivingCity.UI
                 return false;
 
             return component.GetComponentInParent<PedestrianAgent>() ||
-                   component.GetComponentInParent<PoliceOfficerAgent>() ||
                    component.GetComponentInParent<SchoolChildAgent>() ||
                    component.GetComponentInParent<GangMemberAgent>() ||
                    component.GetComponentInParent<NpcWitness>() ||

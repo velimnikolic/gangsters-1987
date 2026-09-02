@@ -42,6 +42,14 @@ namespace LivingCity.Outfit
             if (member == null || member.Gone)
                 return 0;
 
+            // A man sent out of the city draws nothing while he is away (GAN-222,
+            // FLEE-006). Deliberately not the same as jailed or hurt: those two DO draw
+            // their day, because the outfit looks after its own - and a man the player
+            // chose to put on a bus to get him off a wanted sheet is a cost avoided, not
+            // a man being looked after.
+            if (member.OutOfTown)
+                return 0;
+
             // A man hired out of the paper is paid what he advertised. The scale below
             // is what the outfit pays the men it raised itself; the ad was a bargain
             // struck once, and it follows him for as long as he is on the books.

@@ -64,6 +64,7 @@ make it call the shared service/model.
 | the city's districts | `Docs/city-districts-plan.md` |
 | the canonical blocks, neighborhoods and the block graph | `Docs/territory-geography.md` |
 | every source of a business, and which provider owns it | `Docs/business-inventory.md` |
+| the racket: collector duty, the schedule, money on the wire | `Docs/racket-collections.md` |
 | what everything costs (1987 dollars, Miami-anchored) | `Docs/economy-prices.md` |
 | what the port is made of | `Docs/harbor-detail.md` |
 | the period | `Docs/1987-period-reference.md` |

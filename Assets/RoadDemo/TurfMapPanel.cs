@@ -167,6 +167,53 @@ namespace RoadDemo
                 TipHeight - TipPad * 2f, "", 6f);
             _tipText.raycastTarget = false;
             _tipRect.gameObject.SetActive(false);
+
+            BuildPrecinct(root);
+        }
+
+        // -------------------------------------------------------------- the precinct
+
+        RectTransform _precinctRect;
+        TextMeshProUGUI _precinctLine;
+        string _precinctShown = "";
+
+        /// <summary>
+        /// HOW MUCH LAW THIS END OF TOWN HAS (GAN-226, ROSTER-006). A station's strength
+        /// used to be invisible: a player who had shot the precinct's crews to pieces
+        /// found out by noticing that nobody came any more, which is indistinguishable
+        /// from a bug. So the map says it - cars, men on duty, what is missing and the
+        /// day it is back - and says NO LAW outright when the house is empty.
+        ///
+        /// Same paper and the same ink as the key strip opposite it; no raycaster, and
+        /// the words are pushed at the label only when they have actually changed.
+        /// </summary>
+        void BuildPrecinct(RectTransform root)
+        {
+            _precinctRect = DemoUi.NewRect("Precinct", root);
+            _precinctRect.anchorMin = _precinctRect.anchorMax = new Vector2(0f, 0f);
+            _precinctRect.pivot = new Vector2(0f, 0f);
+            _precinctRect.anchoredPosition = Vector2.zero;
+            _precinctRect.sizeDelta = new Vector2(300f, 24f);
+            LedgerKit.Fill(_precinctRect, new Color32(247, 240, 218, 230));
+            LedgerKit.Rule(_precinctRect, 0f, 0f, 300f, Hairline, 1f);
+
+            _precinctLine = LedgerKit.Line(_precinctRect, LedgerStyle.Condensed, 9f, Slate,
+                10f, Mid(24f, LedgerKit.LineBox(9f)), 280f, LedgerKit.LineBox(9f), "");
+            _precinctLine.characterSpacing = 10f;
+            _precinctLine.raycastTarget = false;
+            _precinctRect.gameObject.SetActive(false);
+        }
+
+        void PaintPrecinct()
+        {
+            if (_precinctLine == null) return;
+            var force = _hud != null ? _hud.Force : null;
+            var station = force != null ? force.Station : null;
+            var line = station != null ? station.Roster.Plaque().ToUpperInvariant() : "";
+            if (line == _precinctShown) return;
+            _precinctShown = line;
+            _precinctLine.SetText(line);
+            _precinctRect.gameObject.SetActive(line.Length > 0);
         }
 
         // ----------------------------------------------------------------- the ruler
@@ -396,6 +443,7 @@ namespace RoadDemo
                 }
                 if (_door.Stale)
                     _door.Paint();
+                PaintPrecinct();
                 Places();
             }
         }

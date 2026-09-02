@@ -343,7 +343,7 @@ namespace LivingCity.Generation
         /// A mark only marks; the build can still come up empty on a block whose every street
         /// run is shorter than the prefab (PlaceLandmark returns unchanged and that copy is
         /// dropped). The city then has fewer stations, and in the pathological limit none -
-        /// PoliceDirector logs and stands down when that happens.
+        /// A scene that wanted a station and got none stands its police down.
         /// </summary>
         static void FulfilGuaranteedLandmarks(
             CityGrid grid,

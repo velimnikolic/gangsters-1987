@@ -9,7 +9,7 @@ namespace LivingCity.UI
     /// state the bus, a child or the school itself can be in HAS a colour and a sentence. A
     /// missing entry here would not throw anywhere; it would ship as a white marker with an
     /// empty popup, which is exactly the kind of defect only an exhaustiveness test catches.
-    /// PoliceIntention's rule, and its test.
+    /// the overlay's rule, and the traffic suite's test.
     ///
     /// English, as the police layer is (the user's choice there), and phrased as INTENTION
     /// rather than mechanism - "Driving to stop 2 of 3 to collect", not "Driving(1)". The

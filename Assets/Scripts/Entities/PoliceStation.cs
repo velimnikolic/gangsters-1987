@@ -6,8 +6,13 @@ namespace LivingCity.Entities
     /// Data marker on the placed police station: the forecourt stalls the patrol fleet parks
     /// in and the door the beat officers use. Attached by BlockBuilder when it places the
     /// station landmark - the station is the one landmark whose forecourt is deliberately
-    /// left EMPTY of static cars, because the bays belong to the four real patrol cars that
-    /// PoliceDirector spawns and owns.
+    /// left EMPTY of static cars, because the bays belong to the real patrol fleet.
+    ///
+    /// A MARKER AND NOTHING ELSE since 2026-09-02 (GAN-226, ROSTER-005). The generator's own
+    /// police brain that used to read it was deleted; what still reads this component is the
+    /// strategic map (which draws the station) and BlockBuilder (which attaches it). The
+    /// force that actually patrols is the Game scene's - RoadDemoBuilder, PoliceDispatch,
+    /// PoliceForce and the rosters in Assets/Scripts/Police.
     ///
     /// The stalls and their claim discipline live in StallHost, shared with the bank's
     /// forecourt; what stays here is the part that is actually about a police station. See

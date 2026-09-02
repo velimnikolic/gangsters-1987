@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace LivingCity.Territory
@@ -351,6 +351,56 @@ namespace LivingCity.Territory
                     return name + " HAS STOPPED PAYING US";
                 default:
                     return name + " PAYS SOMEBODY ELSE NOW";
+            }
+        }
+
+        /// <summary>
+        /// The same wire, for a slip that carries MONEY. The money kinds need the sum
+        /// and the story with them, which the news alone cannot say - everything else
+        /// falls through to the plain reading above.
+        /// </summary>
+        public string Describe(TerritoryDoorDispatch dispatch, string shop, string block)
+        {
+            var name = string.IsNullOrWhiteSpace(shop) ? "A SHOP" : shop.ToUpperInvariant();
+            var where = string.IsNullOrWhiteSpace(block)
+                ? "THE BLOCK"
+                : block.ToUpperInvariant();
+            var excuse = ExcuseWord(dispatch.Excuse);
+            switch (dispatch.News)
+            {
+                case TerritoryDoorNews.PaidShort:
+                    return name + " CAME UP SHORT - $" + dispatch.Amount + " OF $" +
+                           dispatch.Stops + (excuse.Length > 0 ? " \u00b7 " + excuse : "");
+                case TerritoryDoorNews.Missed:
+                    return name + " DID NOT PAY - $" + dispatch.Amount + " OWED" +
+                           (excuse.Length > 0 ? " \u00b7 " + excuse : "");
+                case TerritoryDoorNews.RoundBanked:
+                    return "THE ROUND ON " + where + " BANKED $" + dispatch.Amount +
+                           " \u00b7 " + dispatch.Stops + " DOORS, " + dispatch.Short + " SHORT";
+                case TerritoryDoorNews.RoundLost:
+                    return "THE ROUND ON " + where + " IS GONE - $" + dispatch.Amount +
+                           " LOST WITH THE MEN";
+                case TerritoryDoorNews.RoundOut:
+                    return "THE ROUND ON " + where + " IS OUT - " + dispatch.Stops +
+                           " DOORS, $" + dispatch.Amount + " OWED";
+                default:
+                    return Describe(dispatch.News, shop);
+            }
+        }
+
+        /// <summary>
+        /// The story, as the owner tells it. Whether it is true is never printed - a crew
+        /// that knows its street knows. ONE copy, so the toast the street shows and the
+        /// slip the wire files cannot word the same excuse differently.
+        /// </summary>
+        public static string ExcuseWord(TerritoryPaymentExcuse excuse)
+        {
+            switch (excuse)
+            {
+                case TerritoryPaymentExcuse.BadWeek: return "\"A BAD WEEK\"";
+                case TerritoryPaymentExcuse.WasRobbed: return "\"WE WERE ROBBED\"";
+                case TerritoryPaymentExcuse.PoliceWereRound: return "\"THE POLICE WERE ROUND\"";
+                default: return "";
             }
         }
     }

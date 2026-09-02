@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace LivingCity.Territory
@@ -134,6 +134,41 @@ namespace LivingCity.Territory
         public TerritoryBlockId BlockId { get; }
     }
 
+    /// <summary>
+    /// SHAKE DOWN A WHOLE BLOCK: the crew walks every shop on it that does not pay us
+    /// yet and puts it to each owner in turn. What happens on a no is the crew's policy,
+    /// not this command's - the order is the same order whoever carries it.
+    /// </summary>
+    public readonly struct ShakeDownBlockCommand
+    {
+        public ShakeDownBlockCommand(
+            TerritoryCommandNodeId groupId, TerritoryBlockId blockId)
+        {
+            GroupId = groupId;
+            BlockId = blockId;
+        }
+
+        public TerritoryCommandNodeId GroupId { get; }
+        public TerritoryBlockId BlockId { get; }
+    }
+
+    /// <summary>
+    /// LEAN ON THE HOLDOUTS: the same walk against the doors that refused us or are
+    /// wavering, and a threat at each rather than a question. Fear up, heat up.
+    /// </summary>
+    public readonly struct LeanOnHoldoutsCommand
+    {
+        public LeanOnHoldoutsCommand(
+            TerritoryCommandNodeId groupId, TerritoryBlockId blockId)
+        {
+            GroupId = groupId;
+            BlockId = blockId;
+        }
+
+        public TerritoryCommandNodeId GroupId { get; }
+        public TerritoryBlockId BlockId { get; }
+    }
+
     public readonly struct DemandProtectionCommand
     {
         public DemandProtectionCommand(
@@ -231,6 +266,8 @@ namespace LivingCity.Territory
         TerritoryCommandExecution Execute(DemandProtectionCommand command);
         TerritoryCommandExecution Execute(ThreatenBusinessOwnerCommand command);
         TerritoryCommandExecution Execute(CollectDuesCommand command);
+        TerritoryCommandExecution Execute(ShakeDownBlockCommand command);
+        TerritoryCommandExecution Execute(LeanOnHoldoutsCommand command);
     }
 
     /// <summary>
@@ -278,6 +315,12 @@ namespace LivingCity.Territory
             Record(executor.Execute(command));
 
         public TerritoryCommandResult Submit(CollectDuesCommand command) =>
+            Record(executor.Execute(command));
+
+        public TerritoryCommandResult Submit(ShakeDownBlockCommand command) =>
+            Record(executor.Execute(command));
+
+        public TerritoryCommandResult Submit(LeanOnHoldoutsCommand command) =>
             Record(executor.Execute(command));
 
         public bool TryGet(long commandId, out TerritoryCommandResult result) =>

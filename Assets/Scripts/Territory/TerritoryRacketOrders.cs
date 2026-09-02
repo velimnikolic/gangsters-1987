@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Business;
 using LivingCity.Outfit;
 
@@ -181,6 +181,27 @@ namespace LivingCity.Territory
         public const string RepairLabel = "PAY FOR REPAIRS";
         public const string MoveInLabel = "TAKE THEM INSIDE";
         public const string MoveOutLabel = "BRING THEM OUT";
+        public const string ShakeDownLabel = "SHAKE DOWN THE BLOCK";
+        public const string LeanLabel = "LEAN ON THE HOLDOUTS";
+
+        /// <summary>
+        /// WHAT EACH BLOCK ORDER ACTUALLY DOES, in one line of the crew's own words.
+        ///
+        /// The user, 2026-09-02: "nije mi jasno sta koja akcija radi." A key with a verb
+        /// on it and nothing under it is a key nobody presses twice. These are the words
+        /// - the door menu's rows and the block file's keys both print THEM, so the two
+        /// surfaces cannot describe one order differently.
+        /// </summary>
+        public const string ShakeDownNote =
+            "every door that does not pay yet · the crew asks at each · a no is " +
+            "handled by the crew's policy";
+
+        public const string LeanNote =
+            "threaten every door that refused or is wavering · fear up, heat up";
+
+        public const string RoundNote =
+            "collect what the paying doors owe · the take walks home to the front" +
+            " · skips the schedule";
 
         /// <summary>
         /// The rows for this shop, given where it stands with the asking family, who holds
@@ -256,7 +277,7 @@ namespace LivingCity.Territory
                     ? closure.Note
                     : paying && !collectionDue
                     ? collectionNote ?? "nothing owed yet · dues accrue daily at midnight"
-                    : paying ? collectionNote ?? "walk the round and carry it home"
+                    : paying ? collectionNote ?? RoundNote
                     : "he pays us nothing yet"),
                 open && paying && collectionDue && !closure.Shut));
 

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -39,6 +39,19 @@ namespace LivingCity.UI
         TerritoryBusinessId blockCardPick;
 
         bool blockCardAssignOpen;
+
+        /// <summary>The man NAMED to walk this block's doors, and through him the crew
+        /// that walks them. The design names men rather than crews because that is what
+        /// a boss points at; the orders take the crew he belongs to.</summary>
+        int blockCardWalkerId = -1;
+
+        /// <summary>How many chips the band offers before it stops.</summary>
+        const int BlockCardWalkersShown = 8;
+
+        /// <summary>Whether the six orders under the block are open. Closed by default:
+        /// the design shuts them behind one bar so the block and its figures are not
+        /// three hundred units apart.</summary>
+        bool blockCardOrdersOpen;
         bool blockCardMenOpen;
         bool blockCardTradesOpen;
 
@@ -57,10 +70,6 @@ namespace LivingCity.UI
 
         /// <summary>How many premises are listed before the column offers the rest.</summary>
         const int BlockCardTradeShown = 8;
-
-        /// <summary>A key never stretches past this, so a column left alone on a row does
-        /// not hand the reader a button the width of the sheet.</summary>
-        const float BlockCardKeyMax = 300f;
 
         /// <summary>How far off the list the door's menu stands when it opens beside a
         /// row. How WIDE it opens is the menu's own business.</summary>
@@ -131,6 +140,29 @@ namespace LivingCity.UI
         readonly List<BlockFilmView.Door> blockCardDoors =
             new List<BlockFilmView.Door>();
 
+        /// <summary>The racket's own reading of this block, off the seam - the round,
+        /// the money and the collector. Read once per repaint like everything else on
+        /// this card; <see cref="blockRacketOk"/> is false where the seam has nothing to
+        /// say about the block at all.</summary>
+        BlockRacketView blockRacket;
+        bool blockRacketOk;
+
+        /// <summary>Where each door stands with us, by BusinessId. A door with no entry
+        /// falls back to today's tenure line, which is what a scene with no racket
+        /// behind it has always printed.</summary>
+        readonly Dictionary<TerritoryBusinessId, DoorStanding> blockStandings =
+            new Dictionary<TerritoryBusinessId, DoorStanding>();
+        readonly List<DoorStanding> blockStandingScratch = new List<DoorStanding>();
+
+        /// <summary>The key that is OUT and what the office said when it went - the one
+        /// order key that has fired and not yet come back to idle.</summary>
+        string blockRacketOutKey = "";
+        string blockRacketOutLine = "";
+
+        /// <summary>What the last refused order said, and how long it stands.</summary>
+        string blockRacketSaid = "";
+        float blockRacketSaidUntil;
+
         /// <summary>The block's own rectangle in WORLD metres - where the lens goes.</summary>
         Rect blockCardGround;
         float blockCardGroundY;
@@ -156,8 +188,9 @@ namespace LivingCity.UI
             blockCardAssignOpen = false;
             blockCardMenOpen = false;
             blockCardTradesOpen = false;
+            blockCardWalkerId = -1;
             DoorMenu.Forget();
-            organizationBlockMenu = default;
+            blocksMenu = default;
             dirty = true;
         }
 
@@ -205,6 +238,72 @@ namespace LivingCity.UI
             ReadBlockTrades(runtime);
             ReadBlockHands(runtime);
             ReadBlockPressure(runtime);
+            ReadBlockRacket();
+        }
+
+        /// <summary>
+        /// What the racket makes of this block, off the seam and nowhere else. The page
+        /// composes none of it: the standings arrive as finished lines in the
+        /// simulation's own vocabulary, and the figures arrive derived.
+        ///
+        /// The doors are then SORTED by what needs answering - red, then amber, then the
+        /// rest, and by name inside each - because a column of thirty doors in whatever
+        /// order the geography happened to hand them over is a column nobody reads.
+        /// </summary>
+        void ReadBlockRacket()
+        {
+            blockStandings.Clear();
+            blockRacketOk = false;
+            blockRacket = default;
+            if (!blockCardId.IsValid)
+                return;
+
+            var source = BlockRacketSeam.SourceOrStub;
+            blockRacketOk = source.TryGetBlock(blockCardId, out blockRacket);
+
+            // A key stands OUT until the seam says the world has moved under it. That is
+            // the seam's own version and nothing else: a repaint is not an answer.
+            if (blockRacketOutKey.Length > 0 && source.Version != blockRacketOutVersion)
+            {
+                blockRacketOutKey = "";
+                blockRacketOutLine = "";
+            }
+
+            source.CollectDoorStandings(blockCardId, blockStandingScratch);
+            for (var i = 0; i < blockStandingScratch.Count; i++)
+                blockStandings[blockStandingScratch[i].BusinessId] = blockStandingScratch[i];
+
+            // The stub keeps no door list of its own - it cannot, it has never seen this
+            // city - so it answers per door instead, in a rotation that puts every state
+            // on any block with nine doors or more.
+            if (BlockRacketSeam.IsStub)
+                for (var i = 0; i < blockCardTrades.Count; i++)
+                    blockStandings[blockCardTrades[i].Id] =
+                        StubBlockRacket.Instance.StandingFor(blockCardTrades[i].Id, i);
+
+            blockCardTrades.Sort((a, b) =>
+            {
+                var sa = SeverityOf(a.Id);
+                var sb = SeverityOf(b.Id);
+                return sa != sb
+                    ? sb.CompareTo(sa)
+                    : string.CompareOrdinal(a.Name, b.Name);
+            });
+        }
+
+        int SeverityOf(TerritoryBusinessId id) =>
+            blockStandings.TryGetValue(id, out var standing) ? standing.Severity : 0;
+
+        /// <summary>How many of this block's doors are asking for an answer. Counted off
+        /// the standings the page actually has, so it can never disagree with the column
+        /// under it.</summary>
+        int DoorsNeedingAnswer()
+        {
+            var needing = 0;
+            for (var i = 0; i < blockCardTrades.Count; i++)
+                if (SeverityOf(blockCardTrades[i].Id) > 0)
+                    needing++;
+            return needing;
         }
 
         void ReadBlockTrades(TerritoryRuntime runtime)
@@ -395,20 +494,70 @@ namespace LivingCity.UI
 
             ReadBlockFile();
 
-            var card = NewRect("Block file", organizationColumn);
-            PlaceTopLeft(card, 0f, -cursor, organizationW, 1f);
+            var card = NewRect("Block file", blocksColumn);
+            PlaceTopLeft(card, 0f, -cursor, blocksW, 1f);
             Fill(card, LedgerV2.Panel);
 
-            var y = -6f;
+            var y = 0f;
+            y -= BuildBlockHeader(card, -y);
             y -= BuildBlockModel(card, -y);
+            y -= BuildBlockOrders(card, -y);
             y -= BuildBlockColumns(card, -y);
 
-            var height = -y + 14f;
-            card.sizeDelta = new Vector2(organizationW, height);
-            // The open row carries a red mark down its left edge; the file continues it,
-            // so the sheet shows at a glance which row this ground belongs to.
-            Block("Open mark", card, 0f, 0f, 3f, height, LedgerV2.Red);
+            var height = -y;
+            card.sizeDelta = new Vector2(blocksW, height);
             return cursor + height + 10f;
+        }
+
+        // ------------------------------------------------------------------ the head
+
+        /// <summary>The dark band the file opens with: what the sheet is (BLOCK FILE),
+        /// which block, its ward, what the street says about it, and the way out. The
+        /// design's own head, and the reason the card reads as a document rather than as
+        /// a photograph with figures under it.</summary>
+        const float BlockHeadH = 67f;
+
+        /// <summary>The filmed block's own height, from the design. Fixed, not a share
+        /// of the column.</summary>
+        const float BlockPlateH = 330f;
+
+        float BuildBlockHeader(RectTransform card, float top)
+        {
+            var band = NewRect("Block head", card);
+            PlaceTopLeft(band, 0f, -top, blocksW, BlockHeadH);
+            Fill(band, LedgerV2.Head);
+
+            var control = ControlOf(blockCardId);
+            var word = ControlWord(control);
+            var ink = ControlColour(control);
+            var stateW = word.Length * 7.2f + 30f;
+            var titleW = blocksW - 32f - stateW - 24f - 12f;
+
+            Caps(band, 16f, -10f, titleW, "BLOCK FILE", 8.5f, LedgerV2.HeadDim, 16f)
+                .font = LedgerStyle.Mono;
+            Line(band, LedgerStyle.Condensed, 19f, LedgerV2.HeadCream,
+                16f, -21f, titleW, 24f, BlockName(blockCardId))
+                .overflowMode = TextOverflowModes.Ellipsis;
+            LedgerV2.Mono(band, 16f, -45f, titleW, NeighborhoodOf(blockCardId), 10f,
+                LedgerV2.HeadDim, 1f).overflowMode = TextOverflowModes.Ellipsis;
+
+            var stateX = blocksW - 16f - 24f - 12f - stateW;
+            Block("Street", band, stateX, -14f, 9f, 9f, ink);
+            Caps(band, stateX + 16f, -13f, stateW - 16f, word, 11f, ink, 4f)
+                .font = LedgerStyle.MonoBold;
+
+            // The way out is the same click the row is: a file is shut by the block it
+            // belongs to, and this is that block.
+            var shut = NewRect("Shut", band);
+            PlaceTopLeft(shut, blocksW - 16f - 24f, -11f, 24f, 24f);
+            Fill(shut, new Color(0f, 0f, 0f, 0f));
+            Frame(shut, 1f, LedgerV2.HeadDim);
+            var open = blockCardId;
+            RowButton(shut, ClickSurface(shut), () => OpenBlockCard(open));
+            Caps(shut, 0f, -7f, 24f, "X", 10f, LedgerV2.HeadCream, 0f,
+                TextAlignmentOptions.Center).font = LedgerStyle.MonoBold;
+
+            return BlockHeadH;
         }
 
         // ------------------------------------------------------------------- the model
@@ -424,18 +573,18 @@ namespace LivingCity.UI
         /// </summary>
         float BuildBlockModel(RectTransform card, float top)
         {
-            // The block is the thing the file is FOR, so it gets the room: near half the
-            // column's width in height rather than a quarter of it. At the sheet's own
-            // floor that is a 430-unit plate instead of a 224-unit strip.
-            var plateH = Mathf.Clamp(organizationW * 0.46f, 260f, 460f);
+            // The design's own plate: 330 units, fixed. It is not a share of the column
+            // - a block filmed taller on a wide window and shorter on a narrow one is a
+            // different picture of the same ground on two screens.
+            const float plateH = BlockPlateH;
             var plate = NewRect("Block model", card);
-            PlaceTopLeft(plate, 0f, -top, organizationW, plateH);
+            PlaceTopLeft(plate, 0f, -top, blocksW, plateH);
             Fill(plate, ModelPlate);
 
             if (blockCardGround.width <= 0f)
             {
                 Line(plate, LedgerStyle.MonoItalic, 12f, ModelCaption,
-                    18f, -(plateH * 0.5f - 10f), organizationW - 36f, 20f,
+                    18f, -(plateH * 0.5f - 10f), blocksW - 36f, 20f,
                     "This block is not on the canonical geography. Nothing to film.");
                 return plateH;
             }
@@ -464,7 +613,7 @@ namespace LivingCity.UI
                 blockCardModel.raycastTarget = true;
                 blockCardModel.color = Color.white;
             }
-            PlaceTopLeft(view, 0f, 0f, organizationW, plateH);
+            PlaceTopLeft(view, 0f, 0f, blocksW, plateH);
             view.SetAsFirstSibling();
 
             // Render exactly as many pixels as this rectangle shows on screen. The film
@@ -513,16 +662,16 @@ namespace LivingCity.UI
             blockCardModel.Hovered = ShowBlockModelNote;
 
             var marked = blockCardDoors.Count;
-            Caps(plate, 18f, -14f, organizationW * 0.5f,
+            Caps(plate, 16f, -14f, blocksW * 0.5f,
                 "THE BLOCK · " + blockCardTrades.Count + " PREMISES",
-                9f, ModelCaption, 12f).font = LedgerStyle.Mono;
-            LedgerV2.Mono(plate, 18f, -30f, organizationW * 0.5f,
+                9.5f, ModelCaption, 14f).font = LedgerStyle.Mono;
+            LedgerV2.Mono(plate, 16f, -31f, blocksW * 0.5f,
                 marked == 0
                     ? "the city has no door on this ground to point at"
                     : blockCardRisen == 0
                         ? "drag to turn it · click a door · the street is coming up"
                         : "drag to turn it · click a door",
-                9f, ModelHint, 1f);
+                9.5f, ModelHint, 1f);
 
             BuildBlockModelTurn(plate);
             BuildBlockModelNote(plate, plateH);
@@ -551,10 +700,10 @@ namespace LivingCity.UI
         /// before Organization destroys and rebuilds that hierarchy.</summary>
         void ParkBlockModelForRebuild()
         {
-            if (blockCardModel == null || organizationContent == null)
+            if (blockCardModel == null || blocksContent == null)
                 return;
             var view = blockCardModel.rectTransform;
-            view.SetParent(organizationContent, false);
+            view.SetParent(blocksContent, false);
             view.SetAsFirstSibling();
         }
 
@@ -563,7 +712,7 @@ namespace LivingCity.UI
         void FinishBlockModelRebuild()
         {
             if (blockCardModel != null &&
-                blockCardModel.transform.parent == organizationContent)
+                blockCardModel.transform.parent == blocksContent)
                 StopBlockFilm();
         }
 
@@ -576,14 +725,14 @@ namespace LivingCity.UI
             var words = new[] { "<< TURN", "TURN >>" };
             var steps = new[] { -45f, 45f };
             const float chipW = 74f;
-            const float gap = 6f;
-            var x = organizationW - 18f - chipW * words.Length - gap * (words.Length - 1);
+            const float gap = 7f;
+            var x = blocksW - 16f - chipW * words.Length - gap * (words.Length - 1);
 
             for (var i = 0; i < words.Length; i++)
             {
                 var step = steps[i];
                 var chip = NewRect("Turn " + i, plate);
-                PlaceTopLeft(chip, x, -14f, chipW, 24f);
+                PlaceTopLeft(chip, x, -14f, chipW, 23f);
                 Fill(chip, new Color(0f, 0f, 0f, 0f));
                 Frame(chip, 1f, ModelChip);
                 var chipFace = ClickSurface(chip);
@@ -647,7 +796,7 @@ namespace LivingCity.UI
             var words = new[] { "OURS", "PAYS US", "ANOTHER HOUSE", "NOBODY LEANS" };
             var inks = new[] { TenureOurs, TenurePaying, TenureRival, TenureOpen };
             const float margin = 18f;
-            var cellW = (organizationW - margin * 2f) / words.Length;
+            var cellW = (blocksW - margin * 2f) / words.Length;
             for (var i = 0; i < words.Length; i++)
             {
                 var x = margin + i * cellW;
@@ -660,51 +809,52 @@ namespace LivingCity.UI
         // ----------------------------------------------------------------- the columns
 
         /// <summary>
-        /// The three readings, side by side where the sheet is wide enough and stacked
-        /// where it is not. Nothing is cut off and no column is left as a stub: the sheet
-        /// takes three columns over 1000 units, two over 660 and one below that.
+        /// TWO columns under the block, and always the same two: the ARRANGEMENT on the
+        /// left - what it is worth, what it costs, and the sentence that says what that
+        /// comes to - and on the right the DOORS with the MEN under them. They are the
+        /// two questions a boss asks of a block, and they never swap sides.
+        ///
+        /// A column narrower than the design's own minimum drops the pair into one
+        /// measure rather than cutting either of them in half.
         /// </summary>
         float BuildBlockColumns(RectTransform card, float top)
         {
-            var columns = organizationW >= 1000f ? 3 : organizationW >= 660f ? 2 : 1;
-            const float gutter = 22f;
-            var width = (organizationW - 28f - gutter * (columns - 1)) / columns;
+            const float pad = 18f;
+            const float lip = 16f;
+            var split = blocksW - pad * 2f >= 620f;
+            var width = split ? (blocksW - pad * 3f) * 0.5f : blocksW - pad * 2f;
 
-            var heights = new float[3];
-            var x = new float[3];
-            var y = new float[3];
-            for (var i = 0; i < 3; i++)
-            {
-                var column = i % columns;
-                var row = i / columns;
-                x[i] = 14f + column * (width + gutter);
-                y[i] = top + 14f;
-                for (var back = i - columns; back >= 0; back -= columns)
-                    y[i] += heights[back] + 20f;
-                heights[i] = i == 0
-                    ? BuildBlockReading(card, x[i], y[i], width)
-                    : i == 1
-                        ? BuildBlockTrades(card, x[i], y[i], width)
-                        : BuildBlockHands(card, x[i], y[i], width);
-            }
+            var leftX = pad;
+            var rightX = split ? pad * 2f + width : pad;
+            var leftY = top + lip;
+            var rightY = split ? top + lip : 0f;
 
-            // The card closes under the deepest column of the LAST row, whichever that
-            // is - a two-column sheet ends under the pair, not under the first of them.
-            var deepest = 0f;
-            for (var i = 0; i < 3; i++)
-                deepest = Mathf.Max(deepest, y[i] - top + heights[i]);
+            var left = BuildBlockReading(card, leftX, leftY, width);
+            if (!split)
+                rightY = leftY + left + 20f;
 
-            // The picked door's menu is laid over the sheet LAST, so it stands over every
-            // column rather than under one of them. The card only grows for it where the
+            var right = BuildBlockTrades(card, rightX, rightY, width);
+            right += 18f;
+            right += BuildBlockHands(card, rightX, rightY + right, width);
+
+            // The hairline between the pair, drawn to the deeper of the two so it closes
+            // the block rather than stopping in the middle of it.
+            var deepest = Mathf.Max(leftY - top + left, rightY - top + right);
+            if (split)
+                Block("Column rule", card, pad + width + pad * 0.5f, -(top + lip),
+                    1f, deepest - lip, LedgerV2.Hair);
+
+            // The picked door's menu is laid over the sheet LAST, so it stands over both
+            // columns rather than under one of them. The card only grows for it where the
             // menu is deeper than the whole spread.
             var pick = PickedTrade();
             if (pick >= 0)
             {
-                var bottom = BuildTradePopup(card, x[1], width, top + 14f, top + deepest,
+                var bottom = BuildTradePopup(card, rightX, width, top + lip, top + deepest,
                     blockCardTrades[pick]);
                 deepest = Mathf.Max(deepest, bottom - top);
             }
-            return deepest + 14f;
+            return deepest + lip;
         }
 
         /// <summary>What the block is worth and what it costs, and then the one sentence
@@ -712,7 +862,34 @@ namespace LivingCity.UI
         float BuildBlockReading(RectTransform card, float x, float top, float width)
         {
             var y = top;
-            y += Head(card, x, y, width, "WHAT IT COMES TO");
+            y += Head(card, x, y, width, "THE ARRANGEMENT");
+
+            // The arrangement itself, first and in one line: who answers for this ground,
+            // the day his men walk it and how he runs them. Everything under it is the
+            // arithmetic of that sentence.
+            var paperId = organizationPaper.TryGetValue(blockCardId, out var paper)
+                ? paper
+                : -1;
+            var responsible = Leader(paperId);
+            LedgerV2.Mono(card, x, -y, width, ResponsibleLine(responsible), 11.5f,
+                responsible.IsValid ? LedgerV2.Ink : LedgerV2.Red, 1f);
+            y += 18f;
+            if (blockRacketOk && responsible.IsValid && blockRacket.CollectsWeekday < 0)
+            {
+                LedgerV2.Mono(card, x, -y, width,
+                    "nobody here carries the bag - a door's take is not money until a " +
+                    "man walks it home", 10f, LedgerV2.Red, 0.5f);
+                y += 16f;
+            }
+            if (blockRacketOk && blockRacket.LastRoundDay > 0)
+            {
+                LedgerV2.Mono(card, x, -y, width,
+                    "last round day " + blockRacket.LastRoundDay + " · banked " +
+                    LedgerText.Cash(blockRacket.LastRoundBanked) + " · " +
+                    blockRacket.LastRoundShort + " short", 10f, LedgerV2.Muted, 0.5f);
+                y += 16f;
+            }
+            y += 6f;
 
             var standing = blockCardHands.Count;
             var wanted = standing + blockCardShort;
@@ -728,15 +905,22 @@ namespace LivingCity.UI
                         : "heavy enough for the shops to listen");
 
             var takeCap = Mathf.Max(1, blockCardTake, blockCardWages);
-            // True since the daily settlement (OutfitDirector.SettleBusinessDay): these
-            // dollars land in the safe at midnight, on the same price table.
             y += Gauge(card, x, y, width, "TAKE A DAY",
                 LedgerText.Cash(blockCardTake),
                 (float)blockCardTake / takeCap,
                 blockCardTake > 0 ? LedgerV2.Green : LedgerV2.Red,
                 blockCardTake > 0
-                    ? "deeds settle at midnight · dues bank when a round walks"
+                    ? "what the doors here are worth a day, standing"
                     : "no door here pays us · it earns nothing");
+
+            if (blockRacketOk && blockRacket.RoundOut && blockRacket.RoundStops > 0)
+                y += Gauge(card, x, y, width, "ROUND OUT",
+                    blockRacket.RoundCursor + " / " + blockRacket.RoundStops,
+                    (float)blockRacket.RoundCursor / blockRacket.RoundStops,
+                    LedgerV2.Amber,
+                    blockRacket.RoundCursor + " of " + blockRacket.RoundStops +
+                    " doors · " + LedgerText.Cash(blockRacket.RoundCarried) +
+                    " in the bag · " + blockRacket.RoundCollectorName);
 
             if (blockCardHeatCap > 0f)
             {
@@ -753,26 +937,81 @@ namespace LivingCity.UI
             Rule(card, x, -y, width, LedgerV2.Hair);
             y += 8f;
 
-            var leaderId = organizationPaper.TryGetValue(blockCardId, out var id) ? id : -1;
-            var leader = Leader(leaderId);
-            y += Fact(card, x, y, width, "RESPONSIBLE · PAPER",
-                leader.IsValid ? leader.Name : "NOBODY NAMED",
-                leader.IsValid ? LedgerV2.PaperBlue : LedgerV2.Red);
+            // MONEY WALKS, and the three figures are set in the order it travels so
+            // nobody can read a door's take as money in the safe: owed at the doors,
+            // carried in the bag, banked. IN THE BAG is a dash unless there is a bag.
+            if (blockRacketOk)
+            {
+                y += Fact(card, x, y, width, "OWED AT THE DOORS",
+                    LedgerText.Cash(blockRacket.Owed),
+                    blockRacket.Owed > 0 ? LedgerV2.Red : LedgerV2.Muted);
+                y += Fact(card, x, y, width, "IN THE BAG",
+                    blockRacket.RoundOut ? LedgerText.Cash(blockRacket.InTheBag) : "—",
+                    blockRacket.RoundOut ? LedgerV2.Amber : LedgerV2.Muted);
+                y += Fact(card, x, y, width, "BANKED THIS WEEK",
+                    LedgerText.Cash(blockRacket.BankedThisWeek),
+                    blockRacket.BankedThisWeek > 0 ? LedgerV2.Green : LedgerV2.Muted);
+
+                // A block with a lieutenant on it and nobody carrying the bag earns
+                // nothing at all, and the sheet says so in red rather than printing a
+                // blank where a weekday should be.
+                var noCollector = responsible.IsValid && blockRacket.CollectsWeekday < 0;
+                y += Fact(card, x, y, width, "COLLECTS",
+                    noCollector ? "NOBODY ON THE BAG"
+                        : blockRacket.CollectsWord.Length > 0
+                            ? blockRacket.CollectsWord
+                            : "nothing to collect yet",
+                    noCollector ? LedgerV2.Red : LedgerV2.Ink);
+            }
+
             y += Fact(card, x, y, width, "PREMISES ON IT",
                 blockCardTrades.Count.ToString(), LedgerV2.Ink);
             y += Fact(card, x, y, width, "WAGES STANDING HERE",
                 LedgerText.Cash(blockCardWages) + " / day", LedgerV2.Ink);
-            var net = blockCardTake - blockCardWages;
+
+            // NET is banked against wages, both over the SAME week - not a day's take
+            // against a day's wages, because the take is not money until it is banked.
+            var wagesWeek = blockCardWages * 7;
+            var net = (blockRacketOk ? blockRacket.BankedThisWeek : 0) - wagesWeek;
             y += Fact(card, x, y, width, "NET OFF THIS BLOCK",
-                LedgerText.Cash(net) + " / day",
+                LedgerText.Cash(net) + " / week",
                 net < 0 ? LedgerV2.Red : LedgerV2.Green);
 
             y += 8f;
-            var verdict = BlockVerdict(leader, out var ink);
-            var copy = LedgerV2.Copytext(card, x, -y, width, 66f, verdict, 13f, ink,
+            var verdict = BlockVerdict(responsible, out var ink);
+            var needing = DoorsNeedingAnswer();
+            if (needing == 1)
+                verdict += " One door needs an answer.";
+            else if (needing > 1)
+                verdict += " " + needing + " doors need an answer.";
+            var copy = LedgerV2.Copytext(card, x, -y, width, 80f, verdict, 13f, ink,
                 italic: true);
             y += Mathf.Max(24f, copy.preferredHeight) + 4f;
+
+            // Invented money must never be read as the city's. The stub says so on the
+            // card itself, in the same breath as the sentence above it.
+            if (BlockRacketSeam.IsStub)
+            {
+                LedgerV2.Mono(card, x, -y, width,
+                    "(stub figures · no racket is running in this scene)", 9.5f,
+                    LedgerV2.Muted, 0.5f);
+                y += 16f;
+            }
             return y - top;
+        }
+
+        /// <summary>Who answers for the block, and on what terms - the name, the day his
+        /// men walk it and how he runs them. One line, because it is one fact.</summary>
+        string ResponsibleLine(OrganizationPerson leader)
+        {
+            if (!leader.IsValid)
+                return "NOBODY NAMED";
+            if (!blockRacketOk)
+                return leader.Name;
+            if (blockRacket.CollectsWeekday < 0)
+                return leader.Name + " · nobody on the bag";
+            return leader.Name + " · " + blockRacket.CollectsWord.ToLowerInvariant() +
+                   " · " + blockRacket.Policy.ToString().ToUpperInvariant();
         }
 
         /// <summary>The block in one sentence a man can act on. Paper against street
@@ -823,7 +1062,13 @@ namespace LivingCity.UI
         float BuildBlockTrades(RectTransform card, float x, float top, float width)
         {
             var y = top;
-            y += Head(card, x, y, width, "WHAT TRADES HERE");
+            var needing = DoorsNeedingAnswer();
+            y += Head(card, x, y, width, "WHAT TRADES HERE",
+                needing > 0
+                    ? needing + (needing == 1 ? " DOOR NEEDS AN ANSWER"
+                        : " DOORS NEED AN ANSWER")
+                    : "",
+                LedgerV2.Red);
 
             if (blockCardTrades.Count == 0)
             {
@@ -869,7 +1114,7 @@ namespace LivingCity.UI
 
         float TradeRow(RectTransform card, float x, float top, float width, BlockTrade trade)
         {
-            const float rowH = 38f;
+            const float rowH = 39f;
             var picked = blockCardPick.IsValid && trade.Id == blockCardPick;
             var id = trade.Id;
 
@@ -881,31 +1126,79 @@ namespace LivingCity.UI
                 Highlight(row, LedgerV2.Picked);
             Rule(row, 0f, -(rowH - 1f), width, LedgerV2.Hair);
 
-            var ink = TenureColour(trade.Tenure);
-            LedgerV2.StreetMark(row, 0f, -14f, ink, 10f);
+            // The square takes the STANDING's ink where the racket has one, and the
+            // tenure's where it does not: a door that refused us is red whoever holds
+            // the deed, because the refusal is the thing the reader has to act on.
+            var hasStanding = blockStandings.TryGetValue(trade.Id, out var standing);
+            var ink = hasStanding
+                ? StandingInk(standing.Kind)
+                : TenureColour(trade.Tenure);
+            LedgerV2.StreetMark(row, 0f, -15f, ink, 10f);
 
             const float figureW = 92f;
+            const float chevronW = 14f;
             var badgeW = BadgeWidth(trade.Role);
-            var textW = width - 16f - figureW - 8f - (badgeW > 0f ? badgeW + 6f : 0f);
-            var name = LedgerV2.Name(row, 16f, -6f, textW, trade.Name, 13.5f, LedgerV2.Ink);
+            var textW = width - 19f - figureW - chevronW - 9f -
+                        (badgeW > 0f ? badgeW + 6f : 0f);
+            var name = LedgerV2.Name(row, 19f, -6f, textW, trade.Name, 13.5f, LedgerV2.Ink);
             name.overflowMode = TextOverflowModes.Ellipsis;
             if (badgeW > 0f)
-                RoleBadge(row, 16f + textW + 6f, -5f, badgeW, trade);
-            var under = LedgerV2.Mono(row, 16f, -22f, textW,
-                trade.Trade.ToLowerInvariant() + " · " + TenureLine(trade) +
-                (trade.Menu.Closure.Shut
-                    ? " · " + trade.Menu.Closure.Note
-                    : ""), 9f,
-                LedgerV2.Label, 1f);
+                RoleBadge(row, 19f + textW + 6f, -5f, badgeW, trade);
+
+            // The second line is WHERE THIS DOOR STANDS WITH US, in the simulation's own
+            // words. Only where the racket has nothing to say about it does the row fall
+            // back to the tenure sentence it printed before there was a racket at all.
+            var under = LedgerV2.Mono(row, 19f, -23f, textW,
+                hasStanding
+                    ? standing.Line +
+                      (trade.Menu.Closure.Shut ? " · " + trade.Menu.Closure.Note : "")
+                    : trade.Trade.ToLowerInvariant() + " · " + TenureLine(trade) +
+                      (trade.Menu.Closure.Shut ? " · " + trade.Menu.Closure.Note : ""),
+                9f, hasStanding && standing.Severity > 0 ? ink : LedgerV2.Label, 1f);
             under.overflowMode = TextOverflowModes.Ellipsis;
 
-            LedgerV2.Figure(row, width - figureW, -6f, figureW,
+            LedgerV2.Figure(row, width - figureW - chevronW, -5f, figureW,
                 trade.TakePerDay > 0 ? LedgerText.Cash(trade.TakePerDay) : "—", 12.5f,
                 trade.TakePerDay > 0 ? LedgerV2.Ink : LedgerV2.Muted);
-            LedgerV2.Mono(row, width - figureW, -23f, figureW, TenureWord(trade.Tenure),
-                9f, ink, 3f, TextAlignmentOptions.MidlineRight);
+            LedgerV2.Mono(row, width - figureW - chevronW, -23f, figureW,
+                hasStanding ? StandingWord(standing.Kind) : TenureWord(trade.Tenure),
+                9f, ink, 6f, TextAlignmentOptions.MidlineRight);
+
+            // The row is a control and has to look like one: the door's menu opens beside
+            // it, and nothing else on this card says so.
+            LedgerV2.Mono(row, width - chevronW, -13f, chevronW, "›", 11f,
+                picked ? LedgerV2.Ink : LedgerV2.Label, 0f,
+                TextAlignmentOptions.MidlineRight);
             return rowH;
         }
+
+        /// <summary>The ink a standing is read by, before a word of it is read. Red is
+        /// what has to be answered today, amber what will have to be answered soon.
+        /// </summary>
+        static Color StandingInk(DoorStandingKind kind) => kind switch
+        {
+            DoorStandingKind.Refused => LedgerV2.Red,
+            DoorStandingKind.Late => LedgerV2.Red,
+            DoorStandingKind.Wavering => LedgerV2.Amber,
+            DoorStandingKind.Short => LedgerV2.Amber,
+            DoorStandingKind.Paying => TenurePaying,
+            DoorStandingKind.Rival => TenureRival,
+            _ => LedgerV2.Label,
+        };
+
+        /// <summary>The standing in the one word that stands under the figure.</summary>
+        static string StandingWord(DoorStandingKind kind) => kind switch
+        {
+            DoorStandingKind.Refused => "REFUSED",
+            DoorStandingKind.Late => "LATE",
+            DoorStandingKind.Wavering => "WAVERING",
+            DoorStandingKind.Short => "SHORT",
+            DoorStandingKind.Paying => "PAYS US",
+            DoorStandingKind.Rival => "THEIRS",
+            DoorStandingKind.Unvisited => "UNVISITED",
+            DoorStandingKind.Shut => "SHUT",
+            _ => "ON THE BOOKS",
+        };
 
         /// <summary>How wide the badge needs to be for its word. Two letters ("HQ") is
         /// a chip; a longer word gets the room it needs and no more, because the name
@@ -963,7 +1256,7 @@ namespace LivingCity.UI
             if (x < 14f)
             {
                 var right = columnX + columnW + BlockCardPopupGap;
-                x = right + width <= organizationW - 14f ? right : 14f;
+                x = right + width <= blocksW - 14f ? right : 14f;
             }
 
             var panel = DoorMenu.Open(card, trade.Menu, width,
@@ -993,12 +1286,24 @@ namespace LivingCity.UI
         float BuildBlockHands(RectTransform card, float x, float top, float width)
         {
             var y = top;
-            y += Head(card, x, y, width, "WHO STANDS HERE");
+            var source = BlockRacketSeam.SourceOrStub;
+            var carrying = 0;
+            for (var i = 0; i < blockCardHands.Count; i++)
+                if (source.IsCollector(blockCardHands[i].Id))
+                    carrying++;
+            // ONE line, the design's: the heading, the headcount and how many of them
+            // carry the bag, all in the same mono caps.
+            y += Head(card, x, y, width,
+                "WHO STANDS HERE · " + blockCardHands.Count +
+                (blockCardHands.Count == 1 ? " MAN · " : " MEN · ") +
+                (carrying == 0 ? "NO COLLECTOR"
+                    : carrying == 1 ? "1 COLLECTOR"
+                    : carrying + " COLLECTORS"));
 
             if (blockCardHands.Count == 0)
             {
-                Line(card, LedgerStyle.MonoItalic, 11.5f, LedgerV2.Red, x, -y, width, 20f,
-                    "Nobody stands on this block.");
+                LedgerV2.Mono(card, x, -(y + 6f), width, "Nobody stands on this block.",
+                    11.5f, LedgerV2.Red, 0.5f);
                 y += 26f;
             }
             else
@@ -1006,81 +1311,481 @@ namespace LivingCity.UI
                 var shown = blockCardMenOpen
                     ? blockCardHands.Count
                     : Mathf.Min(blockCardHands.Count, BlockCardMenShown);
+
+                // Two men to a line where the column can hold them, which is the design's
+                // own grid: a roll of six down one measure is a column of air beside it.
+                const float gutter = 16f;
+                var men = width >= 376f ? 2 : 1;
+                var cell = (width - gutter * (men - 1)) / men;
                 for (var i = 0; i < shown; i++)
-                    y += HandRow(card, x, y, width, blockCardHands[i]);
+                    HandRow(card, x + i % men * (cell + gutter),
+                        y + i / men * HandRowH, cell, blockCardHands[i]);
+                y += (shown + men - 1) / men * HandRowH;
 
                 if (blockCardHands.Count > shown)
                 {
                     LedgerV2.Button(card,
-                        "SHOW ALL " + blockCardHands.Count + " MEN",
-                        x, -y, Mathf.Min(width, 200f), 24f,
+                        "SHOW ALL " + blockCardHands.Count + " MEN →",
+                        x, -(y + 7f), Mathf.Min(width, 200f), 22f,
                         () => { blockCardMenOpen = true; dirty = true; },
-                        LedgerV2.Key.Ghost, 9f);
-                    y += 30f;
+                        LedgerV2.Key.Ghost, 10f);
+                    y += 29f;
                 }
             }
-
-            y += 10f;
-            y += Head(card, x, y, width, "WHAT YOU CAN DO");
-
-            var leaderId = organizationPaper.TryGetValue(blockCardId, out var id) ? id : -1;
-            var leader = Leader(leaderId);
-            var keyW = Mathf.Min(BlockCardKeyMax, width);
-
-            LedgerV2.Button(card, "PUT MEN ON IT", x, -y, keyW, 28f,
-                FileMenOntoBlock, LedgerV2.Key.Outline, 9.5f);
-            y += 34f;
-
-            LedgerV2.Button(card,
-                leader.IsValid ? "CHANGE WHO ANSWERS" : "NAME SOMEONE",
-                x, -y, keyW, 28f,
-                () => { blockCardAssignOpen = !blockCardAssignOpen; dirty = true; },
-                blockCardAssignOpen ? LedgerV2.Key.Dark : LedgerV2.Key.Outline, 9.5f);
-            y += 34f;
-
-            // Honest label: this opens the city-wide block PICKER (the same one the
-            // ledger's own key opens) - it does not fly the camera to this block.
-            var seeAll = LedgerV2.Button(card, "FIND A BLOCK ON THE MAP", x, -y, keyW, 28f,
-                BeginBlockTargeting, LedgerV2.Key.Outline, 9.5f);
-            SetActionEnabled(seeAll,
-                MapTargeting.Available && TerritoryRuntime.Instance?.Commands != null);
-            y += 34f;
-
-            if (blockCardAssignOpen)
-                y += BuildBlockCardAssign(card, x, y, Mathf.Min(width, 340f), leaderId);
 
             return y - top;
         }
 
+        // ------------------------------------------------------- what you can do
+
+        /// <summary>
+        /// THE ORDERS BAND, straight under the filmed block: one dark bar that opens the
+        /// six things that can be done to this ground, the policy his crew runs them by,
+        /// and the menu that changes whose paper it is.
+        ///
+        /// It is a DROPDOWN and not six keys down the column because six keys with a line
+        /// of explanation each is three hundred units of page between the block and the
+        /// figures about it - the design closes it and says how many orders are inside.
+        /// </summary>
+        float BuildBlockOrders(RectTransform card, float top)
+        {
+            const float x = 18f;
+            var width = blocksW - 36f;
+            var y = top + 14f;
+            var barW = Mathf.Min(width, 470f);
+
+            var bar = NewRect("Orders bar", card);
+            PlaceTopLeft(bar, x, -y, barW, 31f);
+            Fill(bar, LedgerV2.Head);
+            RowButton(bar, ClickSurface(bar),
+                () => { blockCardOrdersOpen = !blockCardOrdersOpen; dirty = true; });
+            Caps(bar, 13f, -10f, barW * 0.6f,
+                blockCardOrdersOpen ? "WHAT YOU CAN DO ▴" : "WHAT YOU CAN DO ▾",
+                10.5f, LedgerV2.HeadCream, 8f).font = LedgerStyle.MonoBold;
+            if (!blockCardOrdersOpen)
+                Caps(bar, barW * 0.4f, -11f, barW * 0.6f - 13f,
+                    "SIX ORDERS ON THIS BLOCK", 9f, LedgerV2.HeadDim, 4f,
+                    TextAlignmentOptions.MidlineRight).font = LedgerStyle.Mono;
+            y += 31f;
+
+            var leaderId = organizationPaper.TryGetValue(blockCardId, out var id) ? id : -1;
+            var leader = Leader(leaderId);
+            // The crew that walks these doors: the man the boss named, or failing that
+            // the lieutenant whose paper the block is on.
+            var crewId = WalkingCrewId();
+            var block = blockCardId;
+            var source = BlockRacketSeam.SourceOrStub;
+            var actions = BlockRacketSeam.ActionsOrStub;
+
+            if (blockCardOrdersOpen)
+            {
+                var panel = NewRect("Orders", card);
+                PlaceTopLeft(panel, x, -y, barW, 1f);
+                Fill(panel, LedgerV2.Money);
+                var inner = 0f;
+
+                // The LABEL and the NOTE come off the shared order table, never a
+                // literal here: the door menu prints the same rows, and two surfaces
+                // that word one order differently are two surfaces describing two
+                // different orders (TerritoryRacketOrders).
+                inner += OrderRow(panel, barW, inner,
+                    LivingCity.Territory.TerritoryRacketOrders.ShakeDownLabel,
+                    LivingCity.Territory.TerritoryRacketOrders.ShakeDownNote,
+                    source.Refusal("shakedown", crewId, block),
+                    () => FireRacketOrder("shakedown",
+                        () => actions.ShakeDown(crewId, block)));
+
+                inner += OrderRow(panel, barW, inner, "SEND THE ROUND NOW",
+                    LivingCity.Territory.TerritoryRacketOrders.RoundNote,
+                    source.Refusal("round", crewId, block),
+                    () => FireRacketOrder("round",
+                        () => actions.SendRound(crewId, block)));
+
+                inner += OrderRow(panel, barW, inner,
+                    LivingCity.Territory.TerritoryRacketOrders.LeanLabel,
+                    LivingCity.Territory.TerritoryRacketOrders.LeanNote,
+                    source.Refusal("lean", crewId, block),
+                    () => FireRacketOrder("lean",
+                        () => actions.LeanOnHoldouts(crewId, block)));
+
+                inner += OrderRow(panel, barW, inner, "PUT A MAN ON IT",
+                    "one more of ours stands on this block · presence, not paper",
+                    "", FileMenOntoBlock);
+
+                inner += OrderRow(panel, barW, inner,
+                    leader.IsValid ? "CHANGE WHO ANSWERS" : "NAME SOMEONE",
+                    "name the lieutenant whose paper this block is on · he collects and " +
+                    "answers for it",
+                    "",
+                    () => { blockCardAssignOpen = !blockCardAssignOpen; dirty = true; });
+
+                // Honest label: this opens the city-wide block PICKER (the same one the
+                // ledger's own key opens) - it does not fly the camera to this block.
+                inner += OrderRow(panel, barW, inner, "MARK IT ON THE MAP",
+                    "find this block on the turf map",
+                    MapTargeting.Available && TerritoryRuntime.Instance?.Commands != null
+                        ? ""
+                        : "no map in this scene to pick one off",
+                    BeginBlockTargeting);
+
+                panel.sizeDelta = new Vector2(barW, inner);
+                y += inner;
+            }
+
+            if (blockRacketOk && blockRacket.HasResponsible)
+                y += BuildPolicyBar(card, x, y + 16f, Mathf.Min(width, 400f), crewId) + 16f;
+
+            y += BuildWalkers(card, x, y + 16f, width) + 16f;
+
+            if (blockCardAssignOpen)
+                y += BuildBlockCardAssign(card, x, y + 8f, Mathf.Min(width, 400f),
+                    leaderId) + 8f;
+
+            var saying = BlockCardSaying;
+            if (saying.Length > 0)
+            {
+                LedgerV2.Mono(card, x, -(y + 8f), width, saying, 10.5f, LedgerV2.Red, 0.5f);
+                y += 24f;
+            }
+
+            y += 18f;
+            Rule(card, 0f, -y, blocksW, LedgerV2.Rule);
+            return y - top;
+        }
+
+        /// <summary>The crew this block's orders are given to: the crew of the man the
+        /// boss named on the chips, or the lieutenant's whose paper it is on.</summary>
+        int WalkingCrewId()
+        {
+            var roster = director != null ? director.Roster : null;
+            if (roster != null && blockCardWalkerId >= 0)
+            {
+                var crew = roster.CrewOf(blockCardWalkerId);
+                if (crew != null)
+                    return crew.Id;
+                for (var i = 0; i < roster.Crews.Count; i++)
+                    if (roster.Crews[i].LieutenantId == blockCardWalkerId)
+                        return roster.Crews[i].Id;
+            }
+            return blockRacketOk ? blockRacket.ResponsibleCrewId : -1;
+        }
+
+        /// <summary>
+        /// WHO WALKS THE DOORS. The men who could be sent at this block, nearest first:
+        /// the ones standing on it, then the lieutenant's own branch, then whoever is
+        /// spare. Naming one names his CREW - the orders above are given to a crew, and
+        /// a boss points at a man.
+        /// </summary>
+        float BuildWalkers(RectTransform card, float x, float top, float width)
+        {
+            var roster = director != null ? director.Roster : null;
+            if (roster == null)
+                return 0f;
+
+            blockCardWalkers.Clear();
+            for (var i = 0; i < blockCardHands.Count &&
+                            blockCardWalkers.Count < BlockCardWalkersShown; i++)
+                blockCardWalkers.Add(blockCardHands[i].Id);
+
+            var responsible = organizationPaper.TryGetValue(blockCardId, out var paper)
+                ? paper
+                : -1;
+            var branch = responsible >= 0 ? roster.CrewOf(responsible) : null;
+            if (branch == null && responsible >= 0)
+                for (var i = 0; i < roster.Crews.Count && branch == null; i++)
+                    if (roster.Crews[i].LieutenantId == responsible)
+                        branch = roster.Crews[i];
+            if (branch != null)
+            {
+                if (!blockCardWalkers.Contains(branch.LieutenantId) &&
+                    blockCardWalkers.Count < BlockCardWalkersShown)
+                    blockCardWalkers.Add(branch.LieutenantId);
+                for (var i = 0; i < branch.HoodIds.Count &&
+                                blockCardWalkers.Count < BlockCardWalkersShown; i++)
+                    if (!blockCardWalkers.Contains(branch.HoodIds[i]))
+                        blockCardWalkers.Add(branch.HoodIds[i]);
+            }
+            for (var i = 0; i < roster.Crews.Count &&
+                            blockCardWalkers.Count < BlockCardWalkersShown; i++)
+                if (!blockCardWalkers.Contains(roster.Crews[i].LieutenantId))
+                    blockCardWalkers.Add(roster.Crews[i].LieutenantId);
+
+            if (blockCardWalkers.Count == 0)
+                return 0f;
+
+            var named = blockCardWalkerId >= 0 &&
+                        blockCardWalkers.Contains(blockCardWalkerId);
+            Caps(card, x, -top, width,
+                    "WHO WALKS THE DOORS · " +
+                    (named ? "1 MAN NAMED" : "NAME THE MEN WHO WALK THE DOORS"),
+                    9.5f, LedgerV2.Label, 14f)
+                .font = LedgerStyle.Mono;
+
+            var y = top + 19f;
+            var chipX = 0f;
+            var line = 0;
+            for (var i = 0; i < blockCardWalkers.Count; i++)
+            {
+                var manId = blockCardWalkers[i];
+                var man = roster.Find(manId);
+                if (man == null)
+                    continue;
+
+                var word = ShortName(man);
+                var chipW = word.Length * 6.6f + 34f;
+                if (chipX + chipW > width && chipX > 0f)
+                {
+                    chipX = 0f;
+                    line++;
+                }
+
+                var picked = manId == blockCardWalkerId;
+                var chip = NewRect("Walker " + manId, card);
+                PlaceTopLeft(chip, x + chipX, -(y + line * 28f), chipW, 22f);
+                Fill(chip, picked ? LedgerV2.Red : LedgerV2.PanelDark);
+                if (!picked)
+                    Frame(chip, 1f, LedgerV2.Rule);
+                RowButton(chip, ClickSurface(chip), () =>
+                {
+                    blockCardWalkerId = blockCardWalkerId == manId ? -1 : manId;
+                    dirty = true;
+                });
+                Block("Armed", chip, 10f, -8f, 6f, 6f,
+                    man.Gone ? LedgerV2.Red : TenurePaying);
+                LedgerV2.Mono(chip, 22f, -5f, chipW - 30f, word, 10.5f,
+                    picked ? LedgerV2.HeadCream : LedgerV2.Ink, 1f)
+                    .font = LedgerStyle.MonoBold;
+                chipX += chipW + 6f;
+            }
+
+            return y - top + line * 28f + 22f;
+        }
+
+        readonly List<int> blockCardWalkers = new List<int>();
+
+        /// <summary>"Dutch K." - the chips have room for a first name and an initial.
+        /// </summary>
+        static string ShortName(Character man) =>
+            string.IsNullOrEmpty(man.Surname)
+                ? man.FirstName
+                : man.FirstName + " " + man.Surname.Substring(0, 1) + ".";
+
+        /// <summary>
+        /// One order inside the band: what it is, the mark that says whether it can fire,
+        /// and the line under it that says what it actually DOES. Every order carries one
+        /// (the user, 2026-09-02: "nije mi jasno šta koja akcija radi"), and an order that
+        /// cannot fire REPLACES that line with the reason, so the reader is never told
+        /// what a dead key would have done without being told why it is dead.
+        ///
+        /// An order that HAS fired stands as a status line until the seam's version moves
+        /// and it can be given again.
+        /// </summary>
+        float OrderRow(RectTransform panel, float width, float top, string label,
+            string note, string refusal, UnityEngine.Events.UnityAction run)
+        {
+            var key = label.ToLowerInvariant();
+            if (blockRacketOutKey == key)
+            {
+                var strip = NewRect("Order out", panel);
+                PlaceTopLeft(strip, 0f, -top, width, 34f);
+                Rule(strip, 0f, 0f, width, LedgerV2.Rule);
+                Caps(strip, 13f, -11f, width - 26f,
+                    "OUT · " + blockRacketOutLine, 10f, LedgerV2.Amber, 4f)
+                    .font = LedgerStyle.Mono;
+                return 34f;
+            }
+
+            var can = string.IsNullOrEmpty(refusal);
+
+            var row = NewRect("Order " + label, panel);
+            PlaceTopLeft(row, 0f, -top, width, 1f);
+            Rule(row, 0f, 0f, width, LedgerV2.Hair);
+            if (can)
+                RowButton(row, ClickSurface(row), run);
+
+            Caps(row, 13f, -9f, width - 50f, label, 10.5f,
+                can ? LedgerV2.Ink : LedgerV2.Muted, 5f).font = LedgerStyle.MonoBold;
+            LedgerV2.Mono(row, width - 26f, -9f, 13f, can ? "›" : "—", 10f,
+                LedgerV2.Label, 0f, TextAlignmentOptions.MidlineRight);
+
+            // The note says what the order DOES and stands whether the order can fire or
+            // not; the reason stands UNDER it in red. The design keeps both, because a
+            // reader who cannot fire a key still has to learn what it was for.
+            var copy = LedgerV2.Copytext(row, 13f, -24f, width - 26f, 40f, note, 9.5f,
+                LedgerV2.Muted);
+            var height = 24f + Mathf.Max(13f, copy.preferredHeight) + 3f;
+            if (!can)
+            {
+                LedgerV2.Mono(row, 13f, -height, width - 26f, refusal, 9.5f,
+                    LedgerV2.Red, 0.5f).font = LedgerStyle.MonoBold;
+                height += 14f;
+            }
+            height += 6f;
+            row.sizeDelta = new Vector2(width, height);
+            return height;
+        }
+
+        /// <summary>Fires one racket order through the seam and keeps the key OUT while
+        /// the office has it. An order that was never accepted says why instead.</summary>
+        void FireRacketOrder(string key, System.Func<TerritoryCommandResult> run)
+        {
+            var result = run();
+            if (result.Status == TerritoryCommandStatus.Rejected ||
+                result.Status == TerritoryCommandStatus.Failed)
+            {
+                SayOnTheBlockCard(string.IsNullOrEmpty(result.Reason)
+                    ? "the order was not taken"
+                    : result.Reason);
+                dirty = true;
+                return;
+            }
+
+            blockRacketOutKey = key;
+            blockRacketOutLine = string.IsNullOrEmpty(result.Reason)
+                ? "the men are on their way"
+                : result.Reason;
+            blockRacketOutVersion = BlockRacketSeam.SourceOrStub.Version;
+            dirty = true;
+        }
+
+        /// <summary>What the seam read when a key went out. The key comes back to idle
+        /// when this moves - which is the seam saying the world has changed since.
+        /// </summary>
+        int blockRacketOutVersion = -1;
+
+        /// <summary>
+        /// LENIENT / NORMAL / STRICT / BRUTAL - how the lieutenant's crew handles a short
+        /// or a no. One segmented bar, the same family the clock's speed rungs are, and
+        /// the setting is the crew's, not the block's: a man runs his doors one way.
+        /// </summary>
+        float BuildPolicyBar(RectTransform card, float x, float top, float width,
+            int crewId)
+        {
+            Caps(card, x, -top, width * 1.6f,
+                    "POLICY · HOW HIS CREW HANDLES A SHORT OR A NO", 9.5f,
+                    LedgerV2.Label, 14f)
+                .font = LedgerStyle.Mono;
+
+            var y = top + 19f;
+            var values = System.Enum.GetValues(typeof(CrewPolicy));
+            var cell = width / values.Length;
+            for (var i = 0; i < values.Length; i++)
+            {
+                var policy = (CrewPolicy)values.GetValue(i);
+                var picked = blockRacket.Policy == policy;
+                var rung = LedgerV2.Button(card, policy.ToString().ToUpperInvariant(),
+                    x + i * cell, -y, cell, 25f,
+                    () =>
+                    {
+                        var refusal =
+                            BlockRacketSeam.ActionsOrStub.SetPolicy(crewId, policy);
+                        if (!string.IsNullOrEmpty(refusal))
+                            SayOnTheBlockCard(refusal);
+                        dirty = true;
+                    },
+                    picked ? LedgerV2.Key.Dark : LedgerV2.Key.Ghost, 9f);
+                SetActionEnabled(rung, crewId >= 0);
+            }
+            return y - top + 25f;
+        }
+
+        /// <summary>The design's own man row: a 22x28 portrait, his name and duty, and
+        /// the two words that move him. 5 units of air either side of the plate.</summary>
+        const float HandRowH = 38f;
+
         float HandRow(RectTransform card, float x, float top, float width, BlockHand hand)
         {
-            const float rowH = 34f;
+            const float rowH = HandRowH;
             var row = NewRect("Hand " + hand.Name, card);
             PlaceTopLeft(row, x, -top, width, rowH);
             Rule(row, 0f, -(rowH - 1f), width, LedgerV2.Hair);
 
             var roster = director != null ? director.Roster : null;
             var member = roster != null ? roster.Find(hand.Id) : null;
-            Face(row, 0f, -3f, 22f, 28f, member,
+            Face(row, 0f, -5f, 22f, 28f, member,
                 member != null ? Initials(member.FirstName, member.Surname) : "");
-            Block("Arm", row, 0f, -31f, 22f, 2f,
-                hand.Armed ? TenurePaying : LedgerV2.Red);
 
-            const float pullW = 44f;
-            var textW = width - 30f - pullW - 8f;
-            var name = LedgerV2.Name(row, 30f, -4f, textW, hand.Name, 13f, LedgerV2.Ink);
+            var source = BlockRacketSeam.SourceOrStub;
+            var carries = source.IsCollector(hand.Id);
+            var onARound = source.TryGetRoundOf(hand.Id, out var roundBlock);
+            // The stripe under the plate is the design's dot: blue for a man on the bag,
+            // green for a man with a post, red for a man with neither.
+            Block("Arm", row, 0f, -31f, 22f, 2f,
+                carries ? LedgerV2.PaperBlue : hand.Armed ? TenurePaying : LedgerV2.Red);
+
+            const float pullW = 36f;
+            var bagW = 58f;
+            var textW = width - 30f - pullW - bagW - 18f;
+            var tagW = carries ? 60f : 0f;
+            var name = LedgerV2.Name(row, 30f, -5f, textW - tagW, hand.Name, 13f,
+                LedgerV2.Ink);
             name.overflowMode = TextOverflowModes.Ellipsis;
-            var duty = LedgerV2.Mono(row, 30f, -20f, textW,
-                hand.Duty + (hand.Wage > 0 ? " · " + LedgerText.Cash(hand.Wage) + "/day" : "") +
-                (hand.Known.Length > 0 ? " · " + hand.Known + " here" : ""),
-                9f, LedgerV2.Label, 1f);
+            if (carries)
+                LedgerV2.Mono(row, 30f + textW - tagW + 4f, -7f, tagW - 4f, "COLLECTOR",
+                    8f, LedgerV2.PaperBlue, 10f);
+
+            // A man on a round is not standing here in any sense the reader can use him
+            // in - he is walking somebody's doors. That is what his line says, and it is
+            // greyed, because there is nothing to be done with him until he is back.
+            var duty = LedgerV2.Mono(row, 30f, -21f, textW,
+                onARound
+                    ? "on the round · " + BlockName(roundBlock)
+                    : hand.Duty +
+                      (hand.Wage > 0 ? " · " + LedgerText.Cash(hand.Wage) + "/day" : "") +
+                      (hand.Known.Length > 0 ? " · " + hand.Known + " here" : ""),
+                9f, onARound ? LedgerV2.Muted : LedgerV2.Label, 1f);
             duty.overflowMode = TextOverflowModes.Ellipsis;
 
+            // Two words, not two keys: the design sets them as plain type on the row,
+            // because a man's row is a line of a roll and not a strip of buttons.
             var manId = hand.Id;
-            LedgerV2.Button(row, "PULL", width - pullW, -5f, pullW, 24f,
-                () => FileHoodRecall(manId), LedgerV2.Key.Ghost, 9f);
+            var bag = LedgerV2.Mono(row, width - pullW - bagW - 9f, -12f, bagW,
+                carries ? "OFF THE BAG" : "ON THE BAG", 9f,
+                carries ? LedgerV2.Muted : LedgerV2.PaperBlue, 1f,
+                TextAlignmentOptions.MidlineRight);
+            bag.font = LedgerStyle.MonoBold;
+            WordButton(row, bag, () => SetCollector(manId, !carries));
+
+            var pull = LedgerV2.Mono(row, width - pullW, -12f, pullW, "PULL", 9.5f,
+                LedgerV2.Red, 1f, TextAlignmentOptions.MidlineRight);
+            pull.font = LedgerStyle.MonoBold;
+            WordButton(row, pull, () => FileHoodRecall(manId));
             return rowH;
         }
+
+        /// <summary>A WORD that is a control - the design's own way of putting a verb on
+        /// a roll's row: no border, no fill, just the type, with a click target the size
+        /// of the word.</summary>
+        void WordButton(RectTransform row, TMP_Text word, UnityEngine.Events.UnityAction run)
+        {
+            var target = NewRect("Hit", row);
+            var rect = word.rectTransform;
+            PlaceTopLeft(target, rect.anchoredPosition.x, rect.anchoredPosition.y,
+                rect.sizeDelta.x, rect.sizeDelta.y);
+            RowButton(target, ClickSurface(target), run);
+        }
+
+        /// <summary>Puts a man on the bag or takes him off it. The seam does the whole
+        /// of it; a refusal comes back as words and stands on the card for a moment,
+        /// which is the same way every other refusal on this page is printed.</summary>
+        void SetCollector(int characterId, bool on)
+        {
+            var refusal = BlockRacketSeam.ActionsOrStub.SetCollector(characterId, on);
+            if (!string.IsNullOrEmpty(refusal))
+                SayOnTheBlockCard(refusal);
+            dirty = true;
+        }
+
+        /// <summary>A word the block card holds up for a couple of seconds - a refused
+        /// order, in the words the system that refused it used.</summary>
+        void SayOnTheBlockCard(string words)
+        {
+            blockRacketSaid = words ?? "";
+            blockRacketSaidUntil = Time.unscaledTime + 2.5f;
+        }
+
+        string BlockCardSaying =>
+            Time.unscaledTime < blockRacketSaidUntil ? blockRacketSaid : "";
 
         /// <summary>What this quarter makes of one man, in words, or nothing where it
         /// has never heard of him (ECON-006).</summary>
@@ -1209,13 +1914,21 @@ namespace LivingCity.UI
 
         // --------------------------------------------------------------------- pieces
 
-        /// <summary>A column head: mono caps over a hairline.</summary>
-        float Head(RectTransform card, float x, float top, float width, string label)
+        /// <summary>A column head: mono caps over a hairline, with an optional count
+        /// held to the right margin of the same line - the design's "3 DOORS NEED AN
+        /// ANSWER" beside the heading it belongs to.</summary>
+        float Head(RectTransform card, float x, float top, float width, string label,
+            string aside = "", Color? asideInk = null)
         {
-            Caps(card, x, -top, width, label, 9f, LedgerV2.Label, 12f)
+            Caps(card, x, -top, aside.Length > 0 ? width * 0.58f : width, label, 9.5f,
+                    LedgerV2.Label, 14f)
                 .font = LedgerStyle.Mono;
-            Rule(card, x, -(top + 14f), width, LedgerV2.Hair);
-            return 24f;
+            if (aside.Length > 0)
+                Caps(card, x + width * 0.42f, -top, width * 0.58f, aside, 9f,
+                        asideInk ?? LedgerV2.Label, 8f,
+                        TextAlignmentOptions.MidlineRight)
+                    .font = LedgerStyle.Mono;
+            return 20f;
         }
 
         /// <summary>A reading with a bar under it and the plain sentence that says what

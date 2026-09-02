@@ -306,48 +306,11 @@ namespace LivingCity.Data
                  "the whole city on one frame.")]
         [Range(0f, 6f)] public float commuteStaggerHours = 1.5f;
 
-        [Header("Police")]
-        [Tooltip("Patrol cars in EACH station's fleet - the city has one station per ~40 " +
-                 "blocks now (guaranteedLandmarkEvery on the residential palette), and every " +
-                 "precinct runs a fleet of this size. Persistent GameObjects - the same cars " +
-                 "drive out, patrol, park in the forecourt and drive out again; none of the " +
-                 "traffic system's spawn/exit churn applies to them. 0 disables car patrols. " +
-                 "A forecourt has floor(width/2.7) stalls, so counts above that simply keep " +
-                 "more of the fleet out on the street at once.")]
-        [Min(0)] public int policeCarCount = 4;
-
-        [Tooltip("Officers walking the beat, per station like the cars. Persistent: they " +
-                 "patrol the pavements and periodically return to their own station through " +
-                 "its door. Not counted in pedestrianCount. 0 disables foot patrols.")]
-        [Min(0)] public int policeOfficerCount = 4;
-
-        [Tooltip("Random routes a patrol car serves before it heads back to the station, " +
-                 "drawn per patrol, inclusive at both ends. The same dial as " +
-                 "wanderRoutesBeforeExit, but the destination is home, not the map edge.")]
-        public Vector2Int policeCarPatrolRoutes = new Vector2Int(2, 4);
-
-        [Tooltip("Seconds a car rests in its forecourt stall between patrols, drawn per " +
-                 "visit. Also staggers the fleet - each car draws independently, so they " +
-                 "never pull out in convoy.")]
-        public Vector2 policeCarRestRange = new Vector2(20f, 60f);
-
-        [Tooltip("Sidewalk routes an officer walks before returning to the station, drawn " +
-                 "per patrol, inclusive at both ends.")]
-        public Vector2Int policeOfficerPatrolRoutes = new Vector2Int(2, 4);
-
-        [Tooltip("Seconds an officer stays inside the station between beats, drawn per " +
-                 "visit. Same hide-and-reappear machinery as civilian building visits.")]
-        public Vector2 policeOfficerStationStayRange = new Vector2(20f, 90f);
-
-        [Tooltip("How many of the fleet begin a session parked at the station; the rest " +
-                 "start already out on the road mid-patrol, so the city opens looking like " +
-                 "the shift has been running for a while. Clamped to the fleet size and to " +
-                 "the stalls actually available.")]
-        [Min(0)] public int policeCarsStartAtStation = 1;
-
-        [Tooltip("How many officers begin a session inside the station; the rest start " +
-                 "mid-beat on random pavements. Clamped to the officer count.")]
-        [Min(0)] public int policeOfficersStartAtStation = 1;
+        // The Police header was removed on 2026-09-02 (GAN-226, ROSTER-005) with the
+        // generator's own police brain. There is ONE police force in this project now
+        // and it is the Game scene's (RoadDemoBuilder's Police header, PoliceDispatch,
+        // PoliceForce and the rosters in Assets/Scripts/Police) - two sets of dials for
+        // one thing is what this deletion was for.
 
         [Header("Bank visitors")]
         [Tooltip("Customers driving to the bank at once. They arrive through the map edge, " +
@@ -544,9 +507,6 @@ namespace LivingCity.Data
             maxArterialSpacing = Mathf.Max(minArterialSpacing, maxArterialSpacing);
             featureStripMax = Mathf.Max(featureStripMin, featureStripMax);
             pedestrianLodFarOrtho = Mathf.Max(pedestrianLodMidOrtho, pedestrianLodFarOrtho);
-            policeCarsStartAtStation = Mathf.Clamp(policeCarsStartAtStation, 0, policeCarCount);
-            policeOfficersStartAtStation =
-                Mathf.Clamp(policeOfficersStartAtStation, 0, policeOfficerCount);
         }
     }
 }

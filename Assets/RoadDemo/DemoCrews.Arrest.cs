@@ -66,8 +66,16 @@ namespace RoadDemo
 
         /// <summary>TAKEN IN. The men are led off the street and onto the books as held,
         /// with the charge on their record - which is the whole point of an arrest being
-        /// a thing the ledger knows about rather than a body being deleted.</summary>
-        public void TakeIn(Unit unit, string charge = "")
+        /// a thing the ledger knows about rather than a body being deleted.
+        ///
+        /// WHAT THEY GET is no longer three days flat for everything (GAN-219). Handed a
+        /// pipeline, the men go in as HELD with no release date at all and wait for a
+        /// judge: the sentence is rolled when the transfer reaches court, off the deed
+        /// and off the man's own record, and a transfer that never arrives is a man who
+        /// was never sentenced. A scene with no pipeline behind it (the crew demo) keeps
+        /// the flat hold, so the arrest still means something there.</summary>
+        public void TakeIn(Unit unit, Deed deed = Deed.Affray,
+            LivingCity.Police.PrisonPipeline pipeline = null)
         {
             if (unit == null) return;
             if (unit.Faction != 0)
@@ -85,12 +93,24 @@ namespace RoadDemo
             int today = outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0;
             int backOn = today > 0 ? today + HeldDays : 0;
             string stamp = today > 0 ? "DAY " + today : "";
+            string charge = Sentencing.ChargeFor(deed);
 
             int taken = 0;
             foreach (var man in unit.All())
             {
-                if (man == null || man.Dead || man.CharacterId <= 0) continue;
-                if (RosterOps.Jail(roster, man.CharacterId, backOn,
+                // NEGATIVE is "not on the books", not "not positive". Every walker with
+                // no character carries a NEGATIVE id (DemoCrews' anonymous and rival
+                // counters both run downwards), and the roster's FIRST man is id 0 - who,
+                // in the opening books, is Don Salvatore himself (RosterSeeder). Written
+                // as <= 0 this loop quietly made the Don the one man in the city the
+                // police could never take, in the one campaign where he is the only man
+                // there is.
+                if (man == null || man.Dead || man.CharacterId < 0) continue;
+                if (pipeline != null)
+                {
+                    if (pipeline.Book(roster, man.CharacterId, deed, today) != null) taken++;
+                }
+                else if (RosterOps.Jail(roster, man.CharacterId, backOn,
                         "Held at the station", charge, stamp).Ok) taken++;
             }
             if (taken == 0) return;

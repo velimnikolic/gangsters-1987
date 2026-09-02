@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Personnel;
 using LivingCity.Territory;
 
@@ -32,7 +32,92 @@ namespace LivingCity.Tests
             TheRoundFollowsTheStreetNotTheIdList(failures);
             PolicyTableIsMonotone(failures);
             ArchetypeIsStableAndTotal(failures);
+            EveryBlockHasItsOwnCollectionDay(failures);
+            ARoundGoesOutOnlyWhenEveryConditionHolds(failures);
+            ADoorIsLateOnAWeeksMoneyOrAWeeksSilence(failures);
             return failures;
+        }
+
+        // ------------------------------------------------------------- the schedule
+
+        /// <summary>
+        /// A block's collection day is its own and never moves: the same city deals the
+        /// same weekday every session, or the arrangement is one nobody can plan around.
+        /// And the week is used, not one favourite day - a hash that piles half the city
+        /// onto Tuesday is not a schedule.
+        /// </summary>
+        static void EveryBlockHasItsOwnCollectionDay(List<string> failures)
+        {
+            var counts = new int[TerritoryCollectionSchedule.DaysInWeek];
+            for (var i = 0; i < 200; i++)
+            {
+                var block = new TerritoryBlockId("block-" + i);
+                var day = TerritoryCollectionSchedule.DayOf(block);
+                if (day < 0 || day >= TerritoryCollectionSchedule.DaysInWeek)
+                {
+                    failures.Add("SCHEDULE: block " + i + " fell on day " + day + ".");
+                    return;
+                }
+                if (TerritoryCollectionSchedule.DayOf(block) != day)
+                {
+                    failures.Add("SCHEDULE: the same block dealt two days.");
+                    return;
+                }
+                counts[day]++;
+            }
+
+            for (var d = 0; d < counts.Length; d++)
+                if (counts[d] > 100)
+                    failures.Add("SCHEDULE: " + counts[d] + " of 200 blocks fell on one " +
+                                 "day - the hash is not spreading them.");
+
+            if (TerritoryCollectionSchedule.WordOfDay(3) != "Thursdays")
+                failures.Add("SCHEDULE: day 3 is not Thursday.");
+        }
+
+        /// <summary>Six conditions, and a round goes out only when every one of them
+        /// holds. Each on its own is enough to keep the men where they are.</summary>
+        static void ARoundGoesOutOnlyWhenEveryConditionHolds(List<string> failures)
+        {
+            var block = new TerritoryBlockId("collection-day");
+            var day = TerritoryCollectionSchedule.DayOf(block);
+            const int open = TerritoryCollectionSchedule.OpeningHour;
+
+            if (!TerritoryCollectionSchedule.ShouldSend(day, open, block, 40, true, false, false))
+                failures.Add("SCHEDULE: everything held and nobody went.");
+
+            if (TerritoryCollectionSchedule.ShouldSend((day + 1) % 7, open, block, 40, true, false, false))
+                failures.Add("SCHEDULE: a round went out on the wrong day.");
+            if (TerritoryCollectionSchedule.ShouldSend(day, open - 1, block, 40, true, false, false))
+                failures.Add("SCHEDULE: a collector knocked before the shops opened.");
+            if (TerritoryCollectionSchedule.ShouldSend(day, open, block, 0, true, false, false))
+                failures.Add("SCHEDULE: a round went out for nothing owed.");
+            if (TerritoryCollectionSchedule.ShouldSend(day, open, block, 40, false, false, false))
+                failures.Add("SCHEDULE: a round went out with nobody on the bag.");
+            if (TerritoryCollectionSchedule.ShouldSend(day, open, block, 40, true, true, false))
+                failures.Add("SCHEDULE: a second round went out over the first.");
+            if (TerritoryCollectionSchedule.ShouldSend(day, open, block, 40, true, false, true))
+                failures.Add("SCHEDULE: the same block was collected twice in a day.");
+            if (TerritoryCollectionSchedule.ShouldSend(day, open, default, 40, true, false, false))
+                failures.Add("SCHEDULE: a round went out to no block at all.");
+        }
+
+        /// <summary>A door is late on a week's money OR a week's silence, and on neither
+        /// otherwise. The boundaries are the whole rule.</summary>
+        static void ADoorIsLateOnAWeeksMoneyOrAWeeksSilence(List<string> failures)
+        {
+            if (TerritoryCollectionSchedule.IsLate(39, 40, 10, 9))
+                failures.Add("LATE: a door short of a week's money read as late.");
+            if (!TerritoryCollectionSchedule.IsLate(40, 40, 10, 9))
+                failures.Add("LATE: a full week's money owed did not read as late.");
+            if (TerritoryCollectionSchedule.IsLate(10, 40, 17, 10))
+                failures.Add("LATE: exactly seven days of silence read as late.");
+            if (!TerritoryCollectionSchedule.IsLate(10, 40, 18, 10))
+                failures.Add("LATE: eight days of silence did not read as late.");
+            if (TerritoryCollectionSchedule.IsLate(10, 40, 30, -1))
+                failures.Add("LATE: a door nobody has ever collected read as late.");
+            if (TerritoryCollectionSchedule.DaysLate(18, 10) != 1)
+                failures.Add("LATE: the days-late count is wrong at the boundary.");
         }
 
         // ------------------------------------------------------------------ ECON-001

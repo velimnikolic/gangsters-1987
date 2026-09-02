@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Gameplay;
 using LivingCity.Gangs;
 using LivingCity.Outfit;
@@ -25,7 +25,56 @@ namespace LivingCity.Tests
             ValidationReportsCorruptionWithoutRepairingIt(failures);
             FilingOfficeAnswersOnlyAfterItsDelay(failures);
             FilingOfficeIsWhereCapacityIsHard(failures);
+            OnlyAHoodInACrewCarriesTheBag(failures);
             return failures;
+        }
+
+        /// <summary>
+        /// The bag is a standing job given to a HOOD IN A CREW and to nobody else. A
+        /// lieutenant runs the branch, a man in the pool walks nobody's doors, and any
+        /// move that changes who a man answers to takes the job off him with it -
+        /// otherwise a promoted collector would still be on somebody's round.
+        /// </summary>
+        static void OnlyAHoodInACrewCarriesTheBag(List<string> failures)
+        {
+            var roster = RosterSeeder.GenerateStaffed(31);
+            var crew = roster.Crews[0];
+            var hood = crew.HoodIds[0];
+
+            if (!RosterOps.SetDuty(roster, hood, Duty.Collector).Ok)
+                failures.Add("DUTY: a hood in a crew was refused the bag.");
+            if (roster.Find(hood).Duty != Duty.Collector)
+                failures.Add("DUTY: the mark did not stick.");
+
+            if (RosterOps.SetDuty(roster, crew.LieutenantId, Duty.Collector).Ok)
+                failures.Add("DUTY: a lieutenant was put on the bag.");
+
+            var pool = new List<int>();
+            roster.PoolIds(pool);
+            if (pool.Count > 0 && RosterOps.SetDuty(roster, pool[0], Duty.Collector).Ok)
+                failures.Add("DUTY: a man in the pool was put on the bag.");
+
+            var carried = new List<Character>();
+            RosterOps.CollectorsOf(roster, crew.Id, carried);
+            if (carried.Count != 1 || carried[0].Id != hood)
+                failures.Add("DUTY: the crew's collectors are " + carried.Count +
+                             ", not the one man marked.");
+
+            // A man in a bed is on the books and not on the round.
+            roster.Find(hood).Status = CharacterStatus.Hospitalized;
+            RosterOps.CollectorsOf(roster, crew.Id, carried);
+            if (carried.Count != 0)
+                failures.Add("DUTY: a man in a hospital bed was counted onto the round.");
+            roster.Find(hood).Status = CharacterStatus.Active;
+
+            // And promotion takes the bag off him: he runs a branch now.
+            RosterOps.Promote(roster, hood, out _);
+            if (roster.Find(hood).Duty != Duty.None)
+                failures.Add("DUTY: a promoted man kept the bag.");
+
+            // Taking a duty off is always allowed, whatever his footing.
+            if (!RosterOps.SetDuty(roster, crew.LieutenantId, Duty.None).Ok)
+                failures.Add("DUTY: taking a man off the bag was refused.");
         }
 
         /// <summary>The sheet ASKS and the outfit ANSWERS: nothing the resolver does may

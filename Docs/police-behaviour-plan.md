@@ -145,3 +145,88 @@ Tanak, nedeljni agregat — sim šalje brojke, tabla odlučuje:
 - Koliko jedinica po stanici na punoj mapi (perf: 3 kola + 2 pozornika po stanici?).
 - Da li CaseHeat vidi igrač (UI) ili se samo oseća kroz ponašanje patrola.
 - Detektivsko vozilo: koji model iz VehicleCatalog (neobeležena kola perioda).
+
+---
+
+## 7. Šta je urađeno 2026-09-02 (EPIC 17-21)
+
+Linear: GAN-216 (hapšenje), GAN-226 (roster/smene), GAN-219 (sud i transport),
+GAN-220 (roj), GAN-222 (bekstvo i poternica). Otkazani: GAN-217, GAN-218, GAN-221.
+
+**Čist model, bez UnityEngine (`Assets/Scripts/Police`, `Assets/Scripts/Personnel`)**
+— sve pokriveno headless suite-om `gangsters_police_tests` (22 ugovora):
+
+- `SurrenderRoll` — da li ekipa puca ili diže ruke: hrabrost poručnika, temperament
+  i lojalnost ljudi; težine na jednom mestu, deterministički stream po (ekipa, incident).
+- `PoliceRoster` / `PoliceRosterConfig` / `PoliceShifts` — snaga stanice, gubici sa
+  APSOLUTNIM danom zamene, dnevna i noćna smena (danju više peške, noću više kola).
+- `Sentencing` — kazna po delu: tuča 3-5 dana, ubistvo 6-10, mrtav policajac = doživotno
+  (eksplicitna sentinel vrednost, ne overflow); +2 dana za onoga ko je već bežao.
+- `PrisonPipeline` — stanica → sud → kazna kao papir; ko je oslobođen sa transporta
+  izlazi bez oružja, poternica W2, i sledeći sudija mu doda kaznu.
+- `WantedLevels` — poternica 0-3, hladi se SAMO skrivenim danima (W1 tri, W2 sedam,
+  W3 nikad); viđen na ulici = brojač na nulu. `Character.Wanted` ostaje kao bool-property.
+- `Command.EffectiveLieutenant` — poručnik u ćeliji ostaje poručnik NA PAPIRU, ali
+  bonusi čitaju zamenika (najbolji aktivni hood po Leadership).
+
+**Ulica (`Assets/RoadDemo`)**
+
+- Hapšenje: Y/N tasteri izbačeni. Odgovor kotrlja `SurrenderRoll`; jedini igračev
+  potez je OBIČNA naredba — napad na policiju dok pitanje stoji = borba. Ekipa sa
+  rukama u vis ne prima naredbe (`DemoCrews.OrderRefusal`).
+- I posada iz kola prilazi na nišan, ne samo pozornik (ranije je hapšenje postojalo
+  samo tamo gde slučajno prolazi pešačka patrola).
+- `ArrestHud` — baner ARREST IN PROGRESS dok prozor traje, sa naznakom kuda ide.
+- `PoliceForce` — stanica ima roster; mrtav policajac i uništena kola skidaju snagu,
+  zamena stiže na dnevni tick (kroz vrata, nikad na ulicu), smena se menja po satu grada.
+- Transport: kola SA rostera voze osuđenika van grada na dan suda; nema slobodnih
+  kola — čeka sutra. Uništiš kola → pratnja mrtva (dva policajca preko `StreetAlarm`),
+  čovek slobodan, nenaoružan, poternica.
+- Roj: mrtav policajac diže poslednju prečku — kola sa SVIH stanica bez obzira na
+  daljinu (jedini izuzetak od lokalnog odgovora), lov po sećanju a ne po transformu,
+  tri završetka (mrtav / uhapšen / pobegao), stajanje po tišini od 2 minuta.
+- Bekstvo: naredba RUN FOR IT na kartici svoje ekipe; skrivanje TEK kad je potera
+  prekinuta (12 s van očiju), kroz vrata koja porodica drži (`CrewQuarters`).
+  SEND HIM OUT OF TOWN za W3 — 14 dana van table, bez plate.
+- Turf mapa: pločica snage stanice, i "NO LAW — precinct empty" kad je prazna.
+
+**Odluke i odstupanja** (za korisnikovu reč):
+
+1. **Jedna stanica** (ROSTER-004 fallback, koji sam epic dozvoljava). Roster je
+   napisan po stanici i svaka jedinica nosi `Precinct`, pa je više stanica podatak,
+   ne prepravka. Zato je i kapacitet roja "koliko rosteri daju", ne "8-12 kola".
+2. **Svi pozornici su na rosteru** (korisnikova odluka 2026-09-02). Roster pokriva
+   sva kola, sve posade, par na vratima I sve blok-patrole po gradu. Posledica je
+   namerna: smena noću proređuje pešačke patrole po CELOJ mapi, ne samo ispred
+   stanice. Par sa vratima ulazi unutra, par bez vrata drži ugao.
+3. **`PoliceDirector` sloj je OBRISAN** (ROSTER-005, korisnikova odluka 2026-09-02):
+   `PoliceDirector`, `PolicePatrolAgent`, `PoliceOfficerAgent`, `PoliceIntention` i
+   ceo Police blok iz `CityConfig`. Nijedna scena ih nije referencirala (provereno po
+   GUID-u). Očišćeni pozivi: `WitnessSystem`, `CityOverlayHud`, `StrategicMapHud`
+   (plavi policijski dotovi), `TrafficModelTests`. `PoliceStation` (marker) i
+   `PoliceDocking` (krivina za parkiranje) OSTAJU — imaju druge korisnike.
+4. **Sud i zatvor nisu na mapi.** Transport vozi do kraja mreže puteva ("van grada").
+   Nema izmišljene zgrade suda ni zatvora.
+5. **Hideout kao kupljen i označen stan nije urađen** (FLEE-003). Skrivanje koristi
+   vrata koja porodica već drži. Meni nad vratima trenutno prepravlja druga sesija
+   (GAN-224/225), pa nije diran.
+6. Kazna za ubistvo (6-10 dana) je IZVEDENA (duplo od tuče), nije iz epica — čeka reč.
+
+### 7.1 Audit 2026-09-02 — nađeno i popravljeno u istom prolazu
+
+- `CharacterId <= 0` je isključivao **Don-a** iz celog policijskog sistema (on je
+  karakter 0 u knjigama; anonimni i rivalski likovi nose NEGATIVNE id-eve). Bilo je
+  tako i pre, u `TakeIn`. Sada `< 0` na svih 7 mesta.
+- Potera po prepoznavanju nije imala hlađenje → beskonačna petlja policajaca koji
+  prilaze istom čoveku. Dodat razmak od 30 s.
+- Ista potera je vukla nasumični stream iz `Time.time` → nije bilo determinističko.
+  Sada iz dana kampanje.
+- Uništen (a ne razbijen) transport je oslobađao zatvorenike i prijavljivao dva
+  mrtva policajca. Sada: nestala kola = čovek nazad u ćeliju.
+- Skriveni dani su počinjali samo ako je ekipa BEŽALA. Sada počinju čim su ljudi
+  unutra, kako god da su ušli.
+- Policajac unutar stanice i kola u boksu su se računali kao "oči" → čovek nije mogao
+  da se sakrije u blizini stanice.
+- Odbijeno hapšenje je moglo da natera ekipu na odred na drugom kraju grada.
+- `PoliceForce` se sada pravi i kad scena nema stanicu, da papirni sloj (sud, kazne,
+  poternica) ne bude tiho isključen.

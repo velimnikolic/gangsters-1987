@@ -19,6 +19,10 @@ namespace RoadDemo
         bool OnScene { get; }
         /// <summary>A car with men in it (true) or a man on foot (false).</summary>
         bool Carries { get; }
+        /// <summary>Which precinct this unit belongs to - whose roster it comes off and
+        /// whose roster its loss lands on (GAN-226). Nought while the city has one
+        /// station, which is every scene today.</summary>
+        int Precinct { get; }
         /// <summary>Go to the scene: stop about <paramref name="standOff"/> metres short of it.</summary>
         void RouteTo(Vector3 scene, float standOff);
         /// <summary>Done here: back to whatever it was doing.</summary>
@@ -165,8 +169,20 @@ namespace RoadDemo
                 _ => GangDeathHeat,
             };
             Heat = Mathf.Min(120f, Heat + add);
-            if (who == StreetAlarm.DeathOf.Officer) _officerDied = true;
+            if (who != StreetAlarm.DeathOf.Officer) return;
+            _officerDied = true;
+            // and the radio call that is not an escalation but a different kind of day
+            // (GAN-220): every car in the city, and a hunt that outlives the shooting
+            RaiseSwarm(where);
+            // and the precinct is a man short until the department fills the hole
+            // (GAN-226). Through here rather than through a second listener: StreetAlarm
+            // is the one channel for a death, and this is already listening to it.
+            if (Force != null) Force.OfficerDown(where);
         }
+
+        /// <summary>The institution behind the units - who is on the roster, who is on
+        /// the watch, and when a hole is filled. Null in a scene that has no station.</summary>
+        public PoliceForce Force;
 
         void Update()
         {
@@ -198,6 +214,8 @@ namespace RoadDemo
 
             for (int i = _squads.Count - 1; i >= 0; i--) TickSquad(_squads[i], dt); // Done() removes
             TickFoot();
+            TickSwarm(dt);
+            TickWanted(dt);
             TickArrest(dt);
             foreach (var kv in _lights) kv.Value.Tick(dt);
         }
@@ -257,10 +275,15 @@ namespace RoadDemo
             if (any) CrewOverlay.Announce("POLICE RESPONDING", 5f, new Color(0.55f, 0.78f, 1f));
         }
 
-        IPoliceUnit Nearest(Vector3 to, bool carries)
+        /// <summary><paramref name="anyDistance"/> is the swarm and nothing else
+        /// (GAN-220): response is station-LOCAL by a deliberate rule, and a dead officer
+        /// is the one sanctioned exception to it.</summary>
+        IPoliceUnit Nearest(Vector3 to, bool carries, bool anyDistance = false)
         {
             IPoliceUnit best = null;
-            float bestD = ResponseRange * ResponseRange;   // out of this reach, nobody answers
+            float bestD = anyDistance
+                ? float.MaxValue
+                : ResponseRange * ResponseRange;   // out of this reach, nobody answers
             foreach (var u in _units)
             {
                 if (u.Carries != carries || !u.Available || u.Tf == null) continue;
@@ -350,6 +373,12 @@ namespace RoadDemo
                     float dist = Vector3.Distance(boss.Tf.position, squad.Scene);
                     bool there = dist <= WarnRange || !boss.HasOrder;
                     if (!there) return;
+                    // THE HUNTED ARE NOT WARNED AGAIN (GAN-220). They were warned when
+                    // the first squad arrived, and a squad shouting DROP THE GUNS at the
+                    // man who has just shot a policeman is the city being polite about
+                    // the one thing it is not polite about. Everybody ELSE on the street
+                    // still gets the warning first, which is the rule this does not touch.
+                    if (_swarm && PickFight(squad)) return;
                     if (StreetAlarm.QuietFor < 4f) BeginWarning(squad);
                     else BeginSecuring(squad);
                     return;
@@ -491,6 +520,7 @@ namespace RoadDemo
             DemoCrews.Unit target = null;
             float bestD = float.MaxValue;
             bool bestTaken = true;
+            bool bestHunted = false;
             foreach (var s in _shooters)
             {
                 if (s.Faction == StreetAlarm.PoliceFaction || s.Dead) continue;
@@ -501,7 +531,26 @@ namespace RoadDemo
                 bool better = target == null
                     || (bestTaken && !taken)
                     || (taken == bestTaken && d < bestD);
-                if (better) { bestD = d; target = unit; bestTaken = taken; }
+                if (better) { bestD = d; target = unit; bestTaken = taken; bestHunted = Hunted(unit); }
+            }
+
+            // AND THE MEN THE CITY IS LOOKING FOR, whether or not they have fired in the
+            // last four seconds (GAN-220). A crew that shot a policeman and then stopped
+            // shooting and ran used to fall off this list the moment it stopped - which
+            // is the moment the hunt is supposed to begin.
+            if (_swarm)
+            {
+                foreach (var unit in _hunted)
+                {
+                    if (unit == null || unit.Wiped || unit.Retreated || unit.Surrendered) continue;
+                    bool taken = TakenByAnother(squad, unit);
+                    float d = (unit.Position - from).sqrMagnitude;
+                    bool better = target == null
+                        || (!bestHunted)
+                        || (bestTaken && !taken)
+                        || (taken == bestTaken && d < bestD);
+                    if (better) { bestD = d; target = unit; bestTaken = taken; bestHunted = true; }
+                }
             }
             if (target == null) return false;
             if (squad.Men.TargetUnit != target) _crews.Sic(squad.Men, target);
@@ -701,6 +750,7 @@ namespace RoadDemo
         public Vector3 Position => Car.Position;
         public bool Available => !_sent && Men != null && !Men.Wiped;
         public bool Carries => true;
+        public int Precinct { get; set; }
         public bool OnScene => _sent && !Car.Moving && Flat(Car.Position - _target).sqrMagnitude < 8f * 8f;
 
         /// <summary>Short of the scene ALONG THE STREET it is on, on the car's side of

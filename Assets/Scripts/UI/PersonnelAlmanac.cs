@@ -135,9 +135,11 @@ namespace LivingCity.UI
             MeasureNewspaperLayout();
             MeasurePersonnelLayout();
             MeasureOrganizationLayout();
+            MeasureBlocksLayout();
             MeasureFinancesLayout();
             MeasureArmoryLayout();
             MeasureDiplomacyLayout();
+            MeasureCommandLayout();
             MeasureOrdersLayout();
         }
 
@@ -182,6 +184,8 @@ namespace LivingCity.UI
             Newspaper,
             Personnel,
             Organization,
+            Command,
+            Blocks,
             Finances,
             Armory,
             Diplomacy,
@@ -192,11 +196,14 @@ namespace LivingCity.UI
         /// last page of the enum and deliberately has no tab: the orders panel is off
         /// the book. Its page root still builds, so SetPage can reach it in code.</summary>
         static readonly string[] TabNames =
-            { "THE PAPER", "PERSONNEL", "ORGANIZATION", "FINANCES", "ARMORY", "FAMILIES" };
+        {
+            "THE PAPER", "PERSONNEL", "ORGANIZATION", "CHAIN OF COMMAND", "BLOCKS",
+            "FINANCES", "ARMORY", "FAMILIES",
+        };
 
         /// <summary>What a real file's tabs say: the sheet is one leaf of a numbered
         /// file, and the ticker prints which one. Pure furniture, and the design's.</summary>
-        static readonly int[] TabFolios = { 1, 4, 7, 10, 13, 16, 18 };
+        static readonly int[] TabFolios = { 1, 4, 7, 8, 10, 12, 14, 16, 18 };
         const int Folios = 18;
 
         Canvas canvas;
@@ -246,6 +253,17 @@ namespace LivingCity.UI
 
         readonly List<WireLine> railWireLines = new List<WireLine>();
 
+        /// <summary>Whether the rail is showing only the picked block's slips. Held
+        /// while the book is open, because a boss reading one block's night wants the
+        /// next repaint to still be about that block.</summary>
+        bool railWireThisBlock;
+
+        /// <summary>The block the rail was last narrowed to. A different block picked
+        /// under a narrowed rail is a different rail, so it repaints.</summary>
+        TerritoryBlockId railWireBlock;
+
+        RectTransform railWireScopeThis, railWireScopeAll;
+
         // ---- the telex strip ----
         RectTransform telexRoot;
         RectTransform telexRun;
@@ -260,10 +278,10 @@ namespace LivingCity.UI
         TMP_Text footerRight;
 
         LedgerPage currentPage = LedgerPage.Newspaper;
-        readonly GameObject[] pageRoots = new GameObject[7];
-        readonly Image[] tabFaces = new Image[6];
-        readonly TMP_Text[] tabLabels = new TMP_Text[6];
-        readonly RectTransform[] tabRects = new RectTransform[6];
+        readonly GameObject[] pageRoots = new GameObject[9];
+        readonly Image[] tabFaces = new Image[TabNames.Length];
+        readonly TMP_Text[] tabLabels = new TMP_Text[TabNames.Length];
+        readonly RectTransform[] tabRects = new RectTransform[TabNames.Length];
 
         PersonnelDirector director;
         OutfitDirector outfit;
@@ -338,11 +356,11 @@ namespace LivingCity.UI
                 return;
 
             if (!IsOpen && keyboard.pKey.wasPressedThisFrame &&
-                (OrganizationTargetingActive || OrdersTargetingActive))
+                (BlocksTargetingActive || OrdersTargetingActive))
             {
                 MapTargeting.Surface?.Dismiss();
-                if (OrganizationTargetingActive)
-                    CancelOrganizationTargetingAndReturn();
+                if (BlocksTargetingActive)
+                    CancelBlocksTargetingAndReturn();
                 else
                     CancelOrderTargetingAndReturn();
                 return;
@@ -365,8 +383,8 @@ namespace LivingCity.UI
                 // design, so the pick waits there instead of cancelling itself.
                 var surface = MapTargeting.Surface;
                 var mapGone = surface != null && surface.CanSummon && !surface.IsShowing;
-                if (OrganizationTargetingActive && mapGone)
-                    CancelOrganizationTargetingAndReturn();
+                if (BlocksTargetingActive && mapGone)
+                    CancelBlocksTargetingAndReturn();
                 else if (OrdersTargetingActive && mapGone)
                     CancelOrderTargetingAndReturn();
                 return;
@@ -397,6 +415,14 @@ namespace LivingCity.UI
                     CloseOrganizationTransient())
                 {
                     // The organization page consumed this Esc.
+                }
+                else if (currentPage == LedgerPage.Blocks && CloseBlocksTransient())
+                {
+                    // The blocks page consumed this Esc.
+                }
+                else if (currentPage == LedgerPage.Command && CloseCommandTransient())
+                {
+                    // The chain of command consumed this Esc.
                 }
                 else if (pendingConfirm != Confirm.None)
                 {
@@ -499,6 +525,12 @@ namespace LivingCity.UI
                 case LedgerPage.Organization:
                     RebuildOrganization();
                     break;
+                case LedgerPage.Command:
+                    RebuildCommand();
+                    break;
+                case LedgerPage.Blocks:
+                    RebuildBlocks();
+                    break;
                 case LedgerPage.Finances:
                     RebuildFinances();
                     break;
@@ -547,9 +579,9 @@ namespace LivingCity.UI
             if (!IsOpen)
                 AcquireLedgerPause();
 
-            if (pageKind != LedgerPage.Organization && OrganizationTargetingActive)
+            if (pageKind != LedgerPage.Blocks && BlocksTargetingActive)
             {
-                StopOrganizationTargeting();
+                StopBlocksTargeting();
                 MapTargeting.Clear(this);
             }
             if (pageKind != LedgerPage.Orders && OrdersTargetingActive)
@@ -572,6 +604,7 @@ namespace LivingCity.UI
             ReleaseLedgerPause();
             RestoreOtherCanvases();
             DismissOrganizationTransient();
+            DismissBlocksTransient();
             RefreshTargeting();
             MapTargeting.Surface?.SetTargetHighlights(null, Color.clear);
             lastCloseFrame = Time.frameCount;
@@ -592,9 +625,10 @@ namespace LivingCity.UI
             ReleaseLedgerPause();
             RestoreOtherCanvases();
             IsOpen = false;
-            StopOrganizationTargeting();
+            StopBlocksTargeting();
             StopOrderTargeting();
             DismissOrganizationTransient();
+            DismissBlocksTransient();
             RefreshTargeting();
         }
 
@@ -671,8 +705,12 @@ namespace LivingCity.UI
                 givePickerItemId = -1;
                 armoryNote = "";
             }
-            if (pageKind != LedgerPage.Organization)
+            // The picked man is shared by the two command sheets - stepping from
+            // one to the other must not drop him.
+            if (pageKind != LedgerPage.Organization && pageKind != LedgerPage.Command)
                 DismissOrganizationTransient();
+            if (pageKind != LedgerPage.Blocks)
+                DismissBlocksTransient();
 
             RefreshTabs();
             dirty = true;
@@ -733,6 +771,14 @@ namespace LivingCity.UI
                 case LedgerPage.Organization:
                     viewport = organizationViewport;
                     content = organizationContent;
+                    break;
+                case LedgerPage.Command:
+                    viewport = commandViewport;
+                    content = commandContent;
+                    break;
+                case LedgerPage.Blocks:
+                    viewport = blocksViewport;
+                    content = blocksContent;
                     break;
                 case LedgerPage.Armory:
                     if (catalogueViewport && RectTransformUtility
@@ -813,6 +859,18 @@ namespace LivingCity.UI
                 organizationScroll = Mathf.Clamp(
                     organizationScroll - wheel * WheelStep, 0f, maxScroll);
                 content.anchoredPosition = new Vector2(0f, organizationScroll);
+            }
+            else if (viewport == commandViewport)
+            {
+                commandScroll = Mathf.Clamp(
+                    commandScroll - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, commandScroll);
+            }
+            else if (viewport == blocksViewport)
+            {
+                blocksScroll = Mathf.Clamp(
+                    blocksScroll - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, blocksScroll);
             }
             else
             {
@@ -930,9 +988,11 @@ namespace LivingCity.UI
             BuildNewspaperPage(paper);
             BuildPersonnelPage(paper);
             BuildOrganizationPage(paper);
+            BuildBlocksPage(paper);
             BuildFinancesPage(paper);
             BuildArmoryPage(paper);
             BuildDiplomacyPage(paper);
+            BuildCommandPage(paper);
             BuildOrdersPage(paper);
 
             SetPage(currentPage);
@@ -1426,9 +1486,24 @@ namespace LivingCity.UI
             PlaceTopLeft(head, 0f, 0f, RailW, RailWireHeadH);
             Caps(head, RailPad, -7f, RailInner, "THE WIRE", RailKickerSize,
                 LedgerStyle.RailKicker, 16f);
-            railWireCount = Caps(head, RailPad, -7f, RailInner, "", 11f,
+            railWireCount = Caps(head, RailPad, -7f, RailInner - 132f, "", 11f,
                 LedgerStyle.RailLabel, 6f, TextAlignmentOptions.MidlineRight);
             railWireCount.font = LedgerStyle.Mono;
+
+            // THIS BLOCK / ALL. The pair only means anything while a block file is open,
+            // so it only stands then - and an incident, which happened to men and not at
+            // an address, has no block and drops out under THIS BLOCK by having none.
+            railWireScopeThis = NewRect("Scope this", head);
+            PlaceTopLeft(railWireScopeThis, RailPad + RailInner - 128f, -5f, 66f, 17f);
+            LedgerV2.Button(railWireScopeThis, "THIS BLOCK", 0f, 0f, 66f, 17f,
+                () => { railWireThisBlock = true; railWirePainted = -1; },
+                LedgerV2.Key.Ghost, 8f);
+            railWireScopeAll = NewRect("Scope all", head);
+            PlaceTopLeft(railWireScopeAll, RailPad + RailInner - 58f, -5f, 58f, 17f);
+            LedgerV2.Button(railWireScopeAll, "ALL", 0f, 0f, 58f, 17f,
+                () => { railWireThisBlock = false; railWirePainted = -1; },
+                LedgerV2.Key.Ghost, 8f);
+
             Rule(head, RailPad, -(RailWireHeadH - 1f), RailInner, LedgerStyle.RailHair);
 
             railWireViewport = NewRect("Viewport", railWire);
@@ -1623,18 +1698,39 @@ namespace LivingCity.UI
             if (railWireCount)
                 railWireCount.text = filed == 0 ? "QUIET" : filed + " FILED";
 
+            // The pair only stands while there is a block to narrow to.
+            var scoped = blockCardId.IsValid;
+            if (railWireScopeThis)
+                railWireScopeThis.gameObject.SetActive(scoped);
+            if (railWireScopeAll)
+                railWireScopeAll.gameObject.SetActive(scoped);
+            if (!scoped)
+                railWireThisBlock = false;
+
             var version = WireBook.Version(outfit);
-            if (version == railWirePainted)
+            if (version == railWirePainted && blockCardId == railWireBlock)
                 return;
             railWirePainted = version;
+            railWireBlock = blockCardId;
 
             for (var i = railWireRun.childCount - 1; i >= 0; i--)
                 Destroy(railWireRun.GetChild(i).gameObject);
 
             WireBook.Collect(outfit, railWireLines);
+            if (railWireThisBlock && scoped)
+                for (var i = railWireLines.Count - 1; i >= 0; i--)
+                    if (railWireLines[i].BlockId != blockCardId)
+                        railWireLines.RemoveAt(i);
 
             var y = 0f;
-            if (railWireLines.Count == 0)
+            if (railWireLines.Count == 0 && railWireThisBlock && scoped)
+            {
+                y = LayWireSlip(y, new WireLine("WIRE",
+                    "DAY " + (outfit ? outfit.Campaign.Day : 1),
+                    "Nothing has come off this block.", "", "",
+                    LedgerStyle.TelexPlain, outfit ? outfit.Campaign.Day : 1));
+            }
+            else if (railWireLines.Count == 0)
             {
                 // A wire with nothing on it reads as a machine that has failed, not a
                 // quiet night - the strip over the sheet says the same thing in the same
@@ -1697,8 +1793,32 @@ namespace LivingCity.UI
                 Caps(railWireRun, CopyX, y - 1f, copyW, line.Figure, 11f,
                     LedgerStyle.RailAmber, 6f, TextAlignmentOptions.MidlineRight);
 
+            // A slip WITH AN ADDRESS is a way into that door: the block file opens on
+            // its block and the door's own menu with it. An incident has no address and
+            // stays what it is - a line of the record.
+            if (line.BusinessId.IsValid)
+            {
+                var surface = NewRect("Slip", railWireRun);
+                PlaceTopLeft(surface, RailPad, y, RailInner, height);
+                surface.SetAsFirstSibling();
+                var door = line.BusinessId;
+                var block = line.BlockId;
+                RowButton(surface, ClickSurface(surface), () => OpenWireDoor(block, door));
+            }
+
             Rule(railWireRun, RailPad, y - height + 3f, RailInner, LedgerStyle.RailHair);
             return y - height;
+        }
+
+        /// <summary>A door named on the wire, opened where a door is read - the BLOCKS
+        /// sheet, on that door's own block, with its menu already beside the row.
+        /// </summary>
+        void OpenWireDoor(TerritoryBlockId blockId, TerritoryBusinessId businessId)
+        {
+            if (blockId.IsValid && blockCardId != blockId)
+                OpenBlockCard(blockId);
+            SetPage(LedgerPage.Blocks);
+            PickTrade(businessId);
         }
 
         void SetRailMeter(int index, string label, int current, int maximum, Color ink)
@@ -2153,6 +2273,22 @@ namespace LivingCity.UI
                 case LedgerPage.Organization:
                     telexMessages.Add(("Each man answers to exactly one man above him",
                         TelexVoice.Plain));
+                    telexMessages.Add(("A block is answered for by exactly one " +
+                        "lieutenant · the paper is on the BLOCKS sheet", TelexVoice.Plain));
+                    telexMessages.Add(("Nothing on this sheet happens at the click · " +
+                        "the order is FILED and the outfit answers it", TelexVoice.Plain));
+                    break;
+
+                case LedgerPage.Command:
+                    telexMessages.Add(("Each man answers to exactly one man above him",
+                        TelexVoice.Plain));
+                    telexMessages.Add(("Click a name and his file opens where he " +
+                        "stands · several at once", TelexVoice.Plain));
+                    telexMessages.Add(("Nothing on this sheet happens at the click · " +
+                        "the order is FILED and the outfit answers it", TelexVoice.Plain));
+                    break;
+
+                case LedgerPage.Blocks:
                     telexMessages.Add((railHeld > 0
                         ? railHeld + (railHeld == 1 ? " block held" : " blocks held") + " on the street"
                         : "The outfit holds no ground at all",
@@ -2162,6 +2298,8 @@ namespace LivingCity.UI
                           " contested — another house is pushing on it"
                         : "Nobody is pushing on our ground today",
                         railContested > 0 ? TelexVoice.Warn : TelexVoice.Plain));
+                    telexMessages.Add(("What is on our PAPER and what is ours on the " +
+                        "STREET are two different columns", TelexVoice.Plain));
                     break;
 
                 case LedgerPage.Finances:

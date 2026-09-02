@@ -14,7 +14,7 @@ namespace LivingCity.UI
     /// <summary>
     /// The words and colours of a landmark forecourt: the drivers using it, and the bank's own
     /// report on itself. Pure, with no UnityEngine.Object, so the headless suite can prove that
-    /// every state has a colour and a sentence - PoliceIntention's rule and its test.
+    /// every state has a colour and a sentence, asserted by the traffic suite.
     ///
     /// English, phrased as intention, as the rest of the overlay is.
     /// </summary>

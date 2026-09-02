@@ -159,6 +159,29 @@ namespace RoadDemo
             /// until it is taken in (DemoCrews.TakeIn) or the arrest falls through.</summary>
             public bool Surrendered;
 
+            /// <summary>RUNNING. The player told this crew to break off and get away
+            /// from the law (GAN-222). It is a state and not just an order because two
+            /// other things read it: a running man never fires (the existing rule), and
+            /// a crew is only allowed to go to ground once the pursuit is BROKEN, which
+            /// is a thing that has to be watched over seconds.</summary>
+            public bool Fleeing;
+
+            /// <summary>When the run began, and when the law was last near enough to see
+            /// them. Nobody vanishes in front of a patrol: the clock to going to ground
+            /// starts at the last sighting, not at the order.</summary>
+            public float FledAt = -1000f;
+            public float SeenByLawAt = -1000f;
+
+            /// <summary>When the PLAYER last told this crew to shoot at the law.
+            ///
+            /// The arrest reads it and nothing else does (PoliceDispatch.Arrest,
+            /// CONF-003): while an officer stands over the crew with the question put,
+            /// an explicit attack order on a police unit is the player overruling the
+            /// men's own answer. It is a stamp rather than a flag because the arrest has
+            /// to tell an order given DURING its window from one given before it - a
+            /// crew that was already at war with a squad has not answered anything.</summary>
+            public float PoliceFightOrderedAt = -1000f;
+
             /// <summary>The tether's waiting ledger: seconds the boss has stood for a
             /// strung-out man without the gap improving, and the worst gap when he
             /// last checked. A wait that helps is free; one that does not is paid
@@ -740,6 +763,22 @@ namespace RoadDemo
         public CombatIntentOverlay IntentOverlay { get; private set; }
 
         // ------------------------------------------------------------------ setup
+
+        /// <summary>The seed the whole city was dealt from. Anything that has to roll
+        /// the same answer twice for the same street - the arrest's fight-or-surrender
+        /// among them - mixes its own stream off this rather than reaching for
+        /// UnityEngine.Random.</summary>
+        public int CitySeed => _anthropometrySeed;
+
+        /// <summary>Why the crew would not take the order just given it. Null when it
+        /// took it. Read by whoever offered the order (CrewOverlay.Refuse) so the reason
+        /// reads in the words of the system that refused, exactly as CarRefusal does.</summary>
+        public string OrderRefusal { get; private set; }
+
+        /// <summary>A crew at gunpoint with its hands up takes no orders at all - not a
+        /// move, not a fight. It is the one state where the player has genuinely lost
+        /// the men until the officer is done with them (or somebody shoots him).</summary>
+        const string HandsUpRefusal = "Hands up at gunpoint - he takes no orders";
 
         /// <summary>The city: crews dealt onto the sidewalk graph.</summary>
         public void Init(List<PedLink> links, PedClips clips, List<GameObject> fallbackPrefabs,
@@ -1475,7 +1514,12 @@ namespace RoadDemo
         public bool OrderUnit(Unit unit, Vector3 world, out Vector3 destination, bool run = false)
         {
             destination = world;
+            OrderRefusal = null;
             if (unit == null || unit.Boss == null || unit.Boss.Dead) return false;
+            if (unit.Surrendered) { OrderRefusal = HandsUpRefusal; return false; }
+            // an ordinary move order ends a run: the player has told them to go
+            // somewhere, which is not the same as telling them to get away
+            unit.Fleeing = false;
             CallOffRaids(unit, "a move order");
             NoteRetask(unit);
             unit.TargetUnit = null;
@@ -1750,7 +1794,14 @@ namespace RoadDemo
         /// <summary>Send the selected crew at that one: every man closes and shoots.</summary>
         public bool OrderAttack(Unit target)
         {
+            OrderRefusal = null;
             if (Selected == null || target == null || target == Selected || target.Wiped) return false;
+            if (Selected.Surrendered) { OrderRefusal = HandsUpRefusal; return false; }
+
+            // CONF-003: an attack on the LAW is also the player's answer to an arrest.
+            // Stamped here rather than read out of the dispatcher, so the arrest keeps
+            // its own counsel and nothing in the crews has to know it exists.
+            if (target.IsPolice) Selected.PoliceFightOrderedAt = Time.time;
 
             // half in the car - the first men in their seats, the rest still walking to
             // their doors: the job waits for them, exactly as a drive order does. The
@@ -1787,6 +1838,57 @@ namespace RoadDemo
             }
             SetTarget(Selected, target, ordered: true);
             return true;
+        }
+
+        /// <summary>
+        /// RUN (GAN-222, FLEE-001). The crew breaks off whatever it is doing and gets
+        /// away from <paramref name="from"/> - the law, normally - on its feet or in its
+        /// car, at a run.
+        ///
+        /// Running is a sanctioned run case (the crews' own rule: a crew runs on a
+        /// double right click, when it is closing, or when it is fleeing), and it is the
+        /// player's alternative to watching his lieutenant taken. What it costs is on the
+        /// other side of it: a man who ran is a marked man (WantedLevels), and the only
+        /// cure is time spent off the street.
+        /// </summary>
+        public bool OrderFlee(Unit unit, Vector3 from)
+        {
+            OrderRefusal = null;
+            if (unit == null || unit.Wiped) return false;
+            if (unit.Surrendered) { OrderRefusal = HandsUpRefusal; return false; }
+
+            var away = unit.Position - from;
+            away.y = 0f;
+            away = away.sqrMagnitude > 1f ? away.normalized : Vector3.forward;
+            var run = unit.Position + away * FleeDistance;
+
+            // a man running is a man with his gun down (CrewWalker's own rule); the
+            // disengage is what takes the fight off him, and OrderUnit does the rest
+            foreach (var man in unit.All())
+                if (man != null && !man.Dead) man.Disengage();
+
+            // the walk order FIRST: an ordinary move ends a flight (below), so the flags
+            // are set on the far side of it or they would be cleared by the very order
+            // that starts the run
+            if (!OrderUnit(unit, run, out _, run: true)) return false;
+            unit.Fleeing = true;
+            unit.FledAt = Time.time;
+            unit.SeenByLawAt = Time.time;
+            CrewOverlay.Announce(unit.GangName.ToUpperInvariant() + " ARE RUNNING FOR IT",
+                4f, new Color(0.95f, 0.9f, 0.6f));
+            return true;
+        }
+
+        /// <summary>How far a break-off run is laid, in metres. Far enough to leave the
+        /// street the trouble is on rather than to cross the town: what actually ends
+        /// the run is the pursuit being broken, not the distance.</summary>
+        const float FleeDistance = 70f;
+
+        /// <summary>The run is over - they went inside, they were caught, or the player
+        /// gave them something else to do.</summary>
+        public void EndFlight(Unit unit)
+        {
+            if (unit != null) unit.Fleeing = false;
         }
 
         /// <summary>Why the crew will not shoot up that car, for the row that offers

@@ -58,9 +58,9 @@ namespace LivingCity.Generation
         public const int PedestrianLife = 14_000;
 
         /// <summary>
-        /// Read by PoliceDirector for the patrol fleet and foot-patrol officers: initial
-        /// mid-shift distribution, per-unit patrol budgets and rest timers. Its own offset so
-        /// that tuning police counts cannot shift what traffic or civilians draw.
+        /// The law's own stream: the fight-or-surrender roll at an arrest, a sentence, a
+        /// replacement officer's name. Its own offset so that tuning police numbers cannot
+        /// shift what traffic or civilians draw.
         /// </summary>
         public const int Police = 15_000;
 

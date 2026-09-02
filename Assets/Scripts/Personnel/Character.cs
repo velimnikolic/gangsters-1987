@@ -23,6 +23,21 @@ namespace LivingCity.Personnel
         Lawyer,
     }
 
+    /// <summary>
+    /// STANDING WORK a man is marked for, over and above the crew he is in.
+    ///
+    /// A duty is not a rank and not a specialty: he is an ordinary hood who has been
+    /// given a standing job, and the sim reads the mark rather than being told each
+    /// time. COLLECTOR is the one that exists - a man on the bag walks his lieutenant's
+    /// blocks on their collection day and banks the take. The others in the design
+    /// (Enforcer, Driver, Guard) are not here because nothing would read them yet.
+    /// </summary>
+    public enum Duty
+    {
+        None,
+        Collector,
+    }
+
     public enum CharacterStatus
     {
         Active,
@@ -53,6 +68,12 @@ namespace LivingCity.Personnel
         public string Surname = "";
         public Rank Rank = Rank.Hood;
         public Specialty Specialty = Specialty.None;
+
+        /// <summary>The standing job he is marked for, if any. Set through
+        /// RosterOps.SetDuty, which is where the rules about who may carry one live;
+        /// every move that changes who he answers to clears it.</summary>
+        public Duty Duty = Duty.None;
+
         public CharacterStatus Status = CharacterStatus.Active;
 
         /// <summary>The body he wears - in his ledger photograph and on the street both.
@@ -87,9 +108,56 @@ namespace LivingCity.Personnel
         /// <summary>Whether a job that needed no shooting ends in shooting anyway.</summary>
         public int Temper = 50;
 
-        /// <summary>Flagged men are shot on sight by unbribed police - the ledger only
-        /// displays it; the police layer will own setting it.</summary>
-        public bool Wanted;
+        /// <summary>
+        /// HOW BADLY THE CITY WANTS HIM, 0-3 (GAN-222).
+        ///
+        /// The old doc comment on this field said "shot on sight by unbribed police",
+        /// which was never true and is not the design: the police CHASE a wanted man and
+        /// try to take him, and they shoot only if he fights. Three grades, and the
+        /// grade is a fact about what he did:
+        ///
+        ///   1 - he ran rather than be arrested,
+        ///   2 - he came out of the back of a wrecked prisoner transfer,
+        ///   3 - he killed a policeman, and THAT one never cools.
+        ///
+        /// Cooling is hidden time and nothing else: no disguise, no bribe, no lawyer.
+        /// See <see cref="HidingSince"/> and LivingCity.Police.WantedLevels.
+        /// </summary>
+        public int WantedLevel;
+
+        /// <summary>Wanted at all. Kept as a property so every older read of the flag
+        /// survives the change to a grade; setting it true grades a clean man at 1 and
+        /// never demotes a worse one.</summary>
+        public bool Wanted
+        {
+            get => WantedLevel > 0;
+            set
+            {
+                if (!value) WantedLevel = 0;
+                else if (WantedLevel < 1) WantedLevel = 1;
+            }
+        }
+
+        /// <summary>
+        /// The absolute campaign day he went to ground with nobody having laid eyes on
+        /// him since; 0 when he is on the street or has just been seen on it.
+        ///
+        /// A DAY rather than a count of hidden days, for the reason every other clock in
+        /// this class is one: a counter drifts across a long soak or a save. A street
+        /// sighting sets it back to 0, which is the reset the design asks for - a man who
+        /// was spotted on day two has not spent two days hidden, he has spent none.
+        /// </summary>
+        public int HidingSince;
+
+        /// <summary>
+        /// SENT AWAY (GAN-222, FLEE-006). Out of the city until <see cref="BackOnDay"/>:
+        /// off the street, off the board and OFF THE PAYROLL - a man in Cleveland is not
+        /// drawing an envelope in this one (Wages.WageFor reads this and nothing else).
+        ///
+        /// The player's third option beside living in a back room and doing his time. It
+        /// does not clear anything: he comes back exactly as wanted as he left.
+        /// </summary>
+        public bool OutOfTown;
 
         /// <summary>The year he was born, on the campaign's calendar. A year rather
         /// than an age for the same reason <see cref="BackOnDay"/> is a day rather than

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using LivingCity.Ambient;
 using LivingCity.Gameplay;
@@ -383,6 +383,10 @@ namespace RoadDemo
                 TerritoryTickChannel.DerivedControl,
                 Math.Max(0.01f, controlHours));
             scheduler.Ticked += OnTerritoryTick;
+
+            // The block file reads the racket through the seam from here on; a bench
+            // scene with no territory keeps the stub and says so on its own face.
+            InstallRacketSeam();
         }
 
         /// <summary>
@@ -1590,6 +1594,7 @@ namespace RoadDemo
             SweepProtectionSwitches();
             DriveRivalDemands();
             AccrueDues(gameHour);
+            TendScheduledRounds(gameHour);
             WatchRounds(gameHour);
         }
 
@@ -1718,7 +1723,13 @@ namespace RoadDemo
 
                 pendingApproaches.RemoveAt(i);
                 racketChanges.Clear();
-                racket.Approach(pending.BusinessId, observation.GangId, gameHour, racketChanges);
+                // ONE VISIT, ONE SLIP. A bare GO TO THE DOOR is worth a line of its own -
+                // the men standing there IS the news. A walk that carries a demand or a
+                // threat is not: the answer, seconds later, is what happened at that door,
+                // and the pair read as two visits on the wire.
+                racket.Approach(pending.BusinessId, observation.GangId, gameHour,
+                    racketChanges,
+                    announce: pending.FollowUp == TerritoryRacketIntent.Approach);
                 if (geography != null &&
                     geography.TryGetBusinessBlock(pending.BusinessId, out var blockId))
                     PublishRacket(blockId);
@@ -2638,6 +2649,7 @@ namespace RoadDemo
             StreetAlarm.OnDeath -= OnStreetDeath;
             if (scheduler != null)
                 scheduler.Ticked -= OnTerritoryTick;
+            RemoveRacketSeam();
             if (Instance == this)
                 Instance = null;
         }

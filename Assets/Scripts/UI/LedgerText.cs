@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using LivingCity.Personnel;
 
 namespace LivingCity.UI
@@ -180,6 +180,11 @@ namespace LivingCity.UI
             Territory.TerritoryDoorNews.Wrecked => "Wrecked",
             Territory.TerritoryDoorNews.Beaten => "Assault",
             Territory.TerritoryDoorNews.StoppedPaying => "Lapsed",
+            Territory.TerritoryDoorNews.PaidShort => "Short",
+            Territory.TerritoryDoorNews.Missed => "Missed",
+            Territory.TerritoryDoorNews.RoundBanked => "Banked",
+            Territory.TerritoryDoorNews.RoundLost => "Lost",
+            Territory.TerritoryDoorNews.RoundOut => "Round out",
             _ => "Lost the door",
         };
 

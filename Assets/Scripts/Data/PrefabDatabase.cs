@@ -846,8 +846,8 @@ namespace LivingCity.Data
 
         [Header("Police")]
         [Tooltip("car-police_AI. Removed from the generic traffic buckets - the only police " +
-                 "cars in the city are the station's own patrol fleet, spawned and owned by " +
-                 "PoliceDirector.")]
+                 "cars in the city are the station's own patrol fleet, which the Game scene " +
+                 "(RoadDemoBuilder) spawns and PoliceForce keeps on a roster.")]
         public GameObject policeCarPrefab;
 
         [Tooltip("man-police_AI - authored by the bootstrap from the Animated People pack's " +

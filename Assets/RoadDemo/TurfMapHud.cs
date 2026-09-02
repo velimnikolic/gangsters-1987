@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -248,6 +248,17 @@ namespace RoadDemo
         public bool TurfOn { get; private set; } = true;
 
         public TurfMapSurvey Survey => _survey;
+
+        /// <summary>The precinct behind the police (GAN-226) - what the map's strength
+        /// plaque reads. Found off the crews' own object, where the builder hangs every
+        /// street system, rather than threaded through Init: the map has no other
+        /// business with the force and should not have to be handed it.</summary>
+        public PoliceForce Force =>
+            _force != null ? _force
+                           : _force = _crews != null ? _crews.GetComponent<PoliceForce>() : null;
+
+        PoliceForce _force;
+
         public TurfMapBuildingLayer BuildingLayer => _buildingLayer;
         public IReadOnlyList<TurfCrew> Units => _units;
         public IReadOnlyList<int> Selected => _selected;
@@ -1883,6 +1894,12 @@ namespace RoadDemo
                 if (TryOpenRacketMenu(screen, plan))
                     return;
 
+                // And the BLOCK answers with the orders that take a whole street at
+                // once. It comes after the door: a right click on a shopfront is about
+                // that shop, and only ground with no door under it is the block itself.
+                if (TryOpenBlockMenu(screen))
+                    return;
+
                 // CrewOverlay's gesture is authored on a 1080-line canvas. TurfMap's
                 // furniture uses a 720-line canvas, so using its scale factor here would
                 // make the same double click fifty percent looser on the map.
@@ -2232,6 +2249,87 @@ namespace RoadDemo
         /// <summary>How far from a door a pick on the plate still means that door. Wider
         /// than the street's, because a finger on paper is a coarser instrument.</summary>
         const float MapBusinessPickRange = 22f;
+
+        readonly List<CrewEnemyAction> _blockActions = new List<CrewEnemyAction>();
+
+        /// <summary>
+        /// THE BLOCK'S OWN MENU: the orders that take a whole street at once, over the
+        /// block the plate is naming under the pointer.
+        ///
+        /// It opens on the block the map has a LABEL up for - the one HoverBlock named -
+        /// so the reader is always ordering the block he can read the name of, never one
+        /// the pointer happened to be a metre inside.
+        ///
+        /// The rows are the shared order table's words and the seam's own refusals, so
+        /// this menu and the block file's keys cannot offer different things or explain
+        /// them differently. A row the racket refuses stands with no action on it, which
+        /// is how every faded row on this map is drawn.
+        /// </summary>
+        bool TryOpenBlockMenu(Vector2 screen)
+        {
+            if (!_hoverBlock.IsValid || _crews == null || _crews.Selected == null)
+                return false;
+
+            var runtime = TerritoryRuntime.Instance;
+            var source = LivingCity.UI.BlockRacketSeam.Source;
+            var actions = LivingCity.UI.BlockRacketSeam.Actions;
+            // No seam means no racket running in this scene: the map must not offer an
+            // order the stub would only pretend to carry out.
+            if (runtime == null || source == null || actions == null)
+                return false;
+
+            var block = _hoverBlock;
+            var crewId = _crews.Selected.CrewId;
+
+            _blockActions.Clear();
+            AddBlockRow(_blockActions, source, "shakedown", crewId, block,
+                LivingCity.Territory.TerritoryRacketOrders.ShakeDownLabel,
+                LivingCity.Territory.TerritoryRacketOrders.ShakeDownNote,
+                () => actions.ShakeDown(crewId, block));
+            AddBlockRow(_blockActions, source, "round", crewId, block,
+                LivingCity.Territory.TerritoryRacketOrders.CollectLabel,
+                LivingCity.Territory.TerritoryRacketOrders.RoundNote,
+                () => actions.SendRound(crewId, block));
+            AddBlockRow(_blockActions, source, "lean", crewId, block,
+                LivingCity.Territory.TerritoryRacketOrders.LeanLabel,
+                LivingCity.Territory.TerritoryRacketOrders.LeanNote,
+                () => actions.LeanOnHoldouts(crewId, block));
+
+            if (_blockActions.Count == 0)
+                return false;
+
+            var title = runtime.PlayerQuery != null &&
+                        runtime.PlayerQuery.TryGetBlock(block, out var view) && view != null
+                ? view.BlockName.ToUpperInvariant() + " · " +
+                  view.Control.ToUpperInvariant()
+                : block.Value.ToUpperInvariant();
+
+            _mapChrome.OpenActionMenu(screen, _crews.Selected, null, title, _blockActions);
+            return true;
+        }
+
+        /// <summary>One row of the block's menu. A refused order keeps its place with the
+        /// reason in place of its note - never hidden, because a key that disappears
+        /// teaches the reader nothing about why.</summary>
+        void AddBlockRow(
+            List<CrewEnemyAction> into, LivingCity.UI.IBlockRacketSource source,
+            string key, int crewId, TerritoryBlockId block, string label, string note,
+            System.Func<TerritoryCommandResult> run)
+        {
+            var refusal = source.Refusal(key, crewId, block);
+            if (string.IsNullOrEmpty(refusal))
+            {
+                into.Add(new CrewEnemyAction(label, note, () =>
+                {
+                    var result = run();
+                    if (!string.IsNullOrEmpty(result.Reason))
+                        CrewOverlay.Announce(result.Reason.ToUpperInvariant(), 3f,
+                            new Color(0.9f, 0.9f, 0.95f));
+                }));
+                return;
+            }
+            into.Add(new CrewEnemyAction(label, refusal, null));
+        }
 
         /// <summary>The premises under a LEFT click, found by the same reach the right
         /// click uses, and answered with the shared door menu.</summary>

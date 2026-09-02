@@ -89,12 +89,42 @@ namespace RoadDemo
         /// squad that climbed out (PoliceDispatch) is him.</summary>
         public CarOccupant Officer;
 
+        /// <summary>Which precinct's car this is. One station in the city today, so it
+        /// is nought everywhere - it exists because a loss has to land on the right
+        /// roster the day the city has several (GAN-226, ROSTER-004).</summary>
+        public int Precinct { get; set; }
+
+        /// <summary>Parked for the watch. A car of a shift that is not on is docked and
+        /// stays docked: it answers no call, because the whole meaning of a night shift
+        /// with more cars on it is that the day shift's cars are NOT on it.</summary>
+        public bool OffWatch { get; private set; }
+
+        /// <summary>Off duty: the round it is on is its last, then it docks and stays.
+        /// Never yanked off the road mid-leg - a car that vanished from the street at
+        /// seven o'clock would read as the car having been deleted.</summary>
+        public void StandDown()
+        {
+            if (OffWatch) return;
+            OffWatch = true;
+            _waypointsLeft = 0;   // the next corner it reaches sends it home
+        }
+
+        /// <summary>On duty: out of the stall at the handover, or as soon as the kerb
+        /// is clear.</summary>
+        public void StandTo(float firstRest = 0f)
+        {
+            if (!OffWatch) return;
+            OffWatch = false;
+            if (State == Mode.Resting) _restTimer = Mathf.Min(_restTimer, firstRest);
+        }
+
         public void TickPatrol(float dt)
         {
             if (Officer != null) Officer.Show(State != Mode.Resting && State != Mode.OnScene);
             switch (State)
             {
                 case Mode.Resting:
+                    if (OffWatch && !_sceneWanted) break;   // off the watch: it stays in
                     _restTimer -= dt;
                     if ((_restTimer <= 0f || _sceneWanted) && KerbClear()) BeginUndock();
                     break;
@@ -153,7 +183,8 @@ namespace RoadDemo
 
         Transform IPoliceUnit.Tf => Tf;
         Vector3 IPoliceUnit.Position => Tf.position;
-        bool IPoliceUnit.Available => !_sceneWanted && (State == Mode.Resting || State == Mode.Patrolling || State == Mode.Returning);
+        bool IPoliceUnit.Available => !_sceneWanted && !OffWatch && !Wrecked &&
+            (State == Mode.Resting || State == Mode.Patrolling || State == Mode.Returning);
         bool IPoliceUnit.OnScene => State == Mode.OnScene;
         bool IPoliceUnit.Carries => true;
 

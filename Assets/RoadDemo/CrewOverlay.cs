@@ -735,6 +735,19 @@ namespace RoadDemo
                 return;
             }
 
+            // OUR OWN SELECTED MEN, and only when there is something to say to them that
+            // a walk order cannot say (GAN-222). A right click on one's own crew is a
+            // MOVE and stays one - the card opens over the selected crew only while the
+            // law is on top of them or one of them is a wanted man, which is exactly when
+            // RUN FOR IT and SEND HIM OUT OF TOWN are the orders the player wants and
+            // walking two metres is not.
+            if (picked != null && picked == _crews.Selected &&
+                TryGetOwnActions(picked, _enemyActions))
+            {
+                OpenOwnCrewOrders(picked, up);
+                return;
+            }
+
             // a rival family's premises under the click: nothing to fight, but a
             // grenade to throw at the door. (A building in front of it blocks it, the
             // way the front card's own pick does.)
@@ -774,6 +787,8 @@ namespace RoadDemo
 
             if (_crews.OrderSelected(world, out var destination, run))
                 ShowMark(destination, MarkTint);
+            else
+                Refuse(_crews.OrderRefusal);
         }
 
         // ------------------------------------------------------------------ order card
@@ -821,7 +836,12 @@ namespace RoadDemo
         {
             var crew = _crews.Selected;
             if (crew == null || target == null || target.Wiped) return;
-            if (!BuildCard()) { if (_crews.OrderAttack(target)) ShowMark(target.Position + Vector3.up * 1.2f, AttackTint); return; }
+            if (!BuildCard())
+            {
+                if (_crews.OrderAttack(target)) ShowMark(target.Position + Vector3.up * 1.2f, AttackTint);
+                else Refuse(_crews.OrderRefusal);
+                return;
+            }
             if (!TryGetEnemyActions(target, _enemyActions)) return;
 
             _cardTarget = target;
@@ -854,6 +874,8 @@ namespace RoadDemo
                 if (!EnemyContextCurrent(crew, target)) return;
                 if (_crews.OrderAttack(target))
                     ShowMark(target.Position + Vector3.up * 1.2f, AttackTint);
+                else
+                    Refuse(_crews.OrderRefusal);
             }));
 
             // The machine the ledger sold this crew. The rule for whether it can go is
@@ -1016,6 +1038,103 @@ namespace RoadDemo
         /// pavement outside it, so a demo scene offers the family's own house the same
         /// thing the city does.
         /// </summary>
+        /// <summary>
+        /// WHAT A CREW OF OURS CAN BE TOLD WHEN THE LAW IS THE PROBLEM (GAN-222).
+        ///
+        /// Two rows and no more: RUN FOR IT, which is the alternative to standing there
+        /// and being taken, and SEND HIM OUT OF TOWN, which is what is left for a man the
+        /// city will never stop looking for. Empty - and so no card at all - whenever
+        /// neither applies, because a right click on one's own crew is a move order and
+        /// must go on being one.
+        ///
+        /// The list is built here, the way the rival card's is, so the street and the
+        /// paper map cannot come to offer different things.
+        /// </summary>
+        internal bool TryGetOwnActions(DemoCrews.Unit crew, List<CrewEnemyAction> actions)
+        {
+            actions.Clear();
+            if (crew == null || crew.Faction != 0 || crew.Wiped || crew.Surrendered)
+                return false;
+
+            var law = NearestLaw(crew.Position);
+            bool lawClose = law != null;
+
+            if (lawClose && !crew.Fleeing)
+            {
+                var from = law.Position;
+                actions.Add(new CrewEnemyAction("RUN FOR IT",
+                    "break off and get away · they go to ground once nobody is on them",
+                    () =>
+                    {
+                        if (!_crews.OrderFlee(crew, from)) Refuse(_crews.OrderRefusal);
+                    }));
+            }
+
+            var director = LivingCity.Gameplay.PersonnelDirector.Instance;
+            var roster = director != null ? director.Roster : null;
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            int today = outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0;
+            if (roster != null && today > 0)
+            {
+                foreach (var man in crew.All())
+                {
+                    if (man == null || man.Dead || man.CharacterId < 0) continue;
+                    var member = roster.Find(man.CharacterId);
+                    if (!LivingCity.Police.WantedLevels.CanSendAway(member)) continue;
+                    var away = member;
+                    actions.Add(new CrewEnemyAction(
+                        "SEND " + away.Surname.ToUpperInvariant() + " OUT OF TOWN",
+                        LivingCity.Police.WantedLevels.OutOfTownDays +
+                        " days off the board · no wage while he is gone",
+                        () =>
+                        {
+                            if (!LivingCity.Police.WantedLevels.SendAway(away, today)) return;
+                            director.Touch();
+                            Announce(away.FullName.ToUpperInvariant() + " IS ON A BUS OUT OF THE CITY",
+                                5f, new Color(0.95f, 0.9f, 0.6f));
+                        }));
+                }
+            }
+
+            return actions.Count > 0;
+        }
+
+        /// <summary>The nearest unit of the law on the street, or null - a police crew,
+        /// which is what a beat officer's squad and a car's men both are.</summary>
+        DemoCrews.Unit NearestLaw(Vector3 at)
+        {
+            const float near = 90f;
+            DemoCrews.Unit best = null;
+            float bestD = near * near;
+            foreach (var unit in _crews.Units)
+            {
+                if (unit == null || !unit.IsPolice || unit.Wiped) continue;
+                float d = (unit.Position - at).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = unit; }
+            }
+            return best;
+        }
+
+        void OpenOwnCrewOrders(DemoCrews.Unit crew, Vector2 screen)
+        {
+            if (!BuildCard()) return;
+            if (!TryGetOwnActions(crew, _enemyActions)) return;
+
+            _cardTarget = null;
+            _cardFront = null;
+            _cardPlantCar = null;
+            _cardBusiness = default;
+            _cardCrew = crew;
+            _cardShown = 0;
+            _cardTitle.text = crew.GangName.ToUpperInvariant() + " · " +
+                              crew.Standing() + " MEN";
+
+            foreach (var action in _enemyActions)
+                Row(action.Label, action.Note, action.Run, action.Run != null);
+
+            LayoutAndShow(screen);
+        }
+
         void OpenOwnFrontOrders(GangFront front, DemoCrews.Unit crew, Vector2 screen)
         {
             if (!BuildCard()) return;

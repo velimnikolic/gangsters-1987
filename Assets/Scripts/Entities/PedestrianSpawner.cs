@@ -211,7 +211,7 @@ namespace LivingCity.Entities
         /// everything here is in the tile's own frame, which is exactly the frame the measured
         /// branch below reads with InverseTransformPoint.
         ///
-        /// Public and static for PoliceDirector, which places its mid-shift officers on the
+        /// Public and static for any director that places persistent walkers on the
         /// pavements exactly the way civilians are placed - one pavement-point rule, not two.
         /// </summary>
         public static Vector3 SidewalkPoint(Tile tile, float side, float alongStreet)

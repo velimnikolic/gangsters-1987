@@ -48,7 +48,6 @@ namespace LivingCity.Tests
             DockingFinalApproachIsMonotone(failures);
             UndockingCurveRunsStallToKerb(failures);
             UndockingCarPointsWhereItIsGoing(failures);
-            PoliceIntentionCoversEveryState(failures);
             SchoolIntentionCoversEveryState(failures);
             ForecourtIntentionCoversEveryState(failures);
             BusinessIntentionCoversEveryCase(failures);
@@ -470,35 +469,6 @@ namespace LivingCity.Tests
             // ever claimed carries stall -1 - and must not throw.
             host.ReleaseStall(-1);
             host.ReleaseStall(Bays + 5);
-        }
-
-        /// <summary>
-        /// Every state a police unit can be in has a sentence and a colour. Nothing at
-        /// runtime would complain about a gap - a state missing from PoliceIntention ships
-        /// as a white diamond over an empty popup - so exhaustiveness is asserted here,
-        /// where adding a state to either enum fails the build's tests instead of the
-        /// player's eye. White is the map's own "unmapped" fallback, which is what makes it
-        /// assertable.
-        /// </summary>
-        static void PoliceIntentionCoversEveryState(List<string> failures)
-        {
-            foreach (Entities.PolicePatrolAgent.State state in
-                     System.Enum.GetValues(typeof(Entities.PolicePatrolAgent.State)))
-            {
-                if (string.IsNullOrEmpty(UI.PoliceIntention.CarIntention(state, 2)))
-                    failures.Add($"PoliceIntention: car state {state} has no sentence.");
-                if (UI.PoliceIntention.CarColor(state) == Color.white)
-                    failures.Add($"PoliceIntention: car state {state} has no colour.");
-            }
-
-            foreach (Entities.PoliceOfficerAgent.State state in
-                     System.Enum.GetValues(typeof(Entities.PoliceOfficerAgent.State)))
-            {
-                if (string.IsNullOrEmpty(UI.PoliceIntention.OfficerIntention(state, 2)))
-                    failures.Add($"PoliceIntention: officer state {state} has no sentence.");
-                if (UI.PoliceIntention.OfficerColor(state) == Color.white)
-                    failures.Add($"PoliceIntention: officer state {state} has no colour.");
-            }
         }
 
         /// <summary>

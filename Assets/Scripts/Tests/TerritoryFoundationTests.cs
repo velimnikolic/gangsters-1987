@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Territory;
 
 namespace LivingCity.Tests
@@ -348,6 +348,14 @@ namespace LivingCity.Tests
                 TerritoryCommandExecution.Reject("Not in fixture.");
             public TerritoryCommandExecution Execute(CollectDuesCommand command) =>
                 TerritoryCommandExecution.Reject("Not in fixture.");
+            public TerritoryCommandExecution Execute(ShakeDownBlockCommand command) =>
+                command.GroupId.IsValid && command.BlockId.IsValid
+                    ? TerritoryCommandExecution.Pending()
+                    : TerritoryCommandExecution.Reject("Invalid shakedown.");
+            public TerritoryCommandExecution Execute(LeanOnHoldoutsCommand command) =>
+                command.GroupId.IsValid && command.BlockId.IsValid
+                    ? TerritoryCommandExecution.Pending()
+                    : TerritoryCommandExecution.Reject("Invalid lean.");
         }
     }
 }
