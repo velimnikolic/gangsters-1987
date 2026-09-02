@@ -68,9 +68,18 @@ namespace LivingCity.UI
         /// <summary>The chrome bar across the top - the title, the tabs and the way out.</summary>
         const float ChromeH = 44f;
 
-        /// <summary>The status rail down the left. The design's 236, and fixed: it holds
-        /// figures, and a figure column that reflows is a figure column nobody learns.</summary>
-        const float RailW = 236f;
+        /// <summary>The status rail down the left. Fixed: it holds figures, and a figure
+        /// column that reflows is a figure column nobody learns.
+        ///
+        /// The design's 236 held type at 9 and 10 point, which is unreadable on the
+        /// screens this is played on. Every face on the rail is set 30% up from that
+        /// drawing, and the column widens with them - by MORE than the type, 236 to 330,
+        /// so a note that ran to one line at the old measure still runs to one line at
+        /// the new one. The rail's own HEIGHT could not follow: the window is 1080 and
+        /// the rail was already 97% full at it, so the air between the rows was spent on
+        /// the letters instead. Every rect below is cut to the line box the face actually
+        /// prints - Plex Mono 1.080 x its point size, Oswald 1.281 - and not a unit more.</summary>
+        const float RailW = 330f;
 
         /// <summary>The telex strip over the sheet.</summary>
         const float TelexH = 30f;
@@ -207,13 +216,35 @@ namespace LivingCity.UI
         // ---- the chrome bar ----
         RectTransform chromeRoot;
         RectTransform tabStrip;
+        readonly Image[] timeControlFaces = new Image[5];
+        readonly TMP_Text[] timeControlLabels = new TMP_Text[5];
+        readonly Button[] timeControlButtons = new Button[5];
+        TMP_Text chromeClock;
+
+        // Opening the ledger takes a temporary hold on the clock. If the player does
+        // not touch a time control, closing restores the state from before the book;
+        // an explicit speed/HOLD choice is kept.
+        bool ownsLedgerPause;
+        bool clockWasPaused;
+        bool clockChangedInLedger;
 
         // ---- the status rail ----
         RectTransform railRoot;
-        RectTransform railFlags;
         TMP_Text railClock;
         TMP_Text railPayroll;
         TMP_Text railPayrollNote;
+
+        // ---- the wire down the rail ----
+        RectTransform railWire, railWireViewport, railWireRun;
+        TMP_Text railWireCount;
+        float railWireScroll;
+
+        /// <summary>What the wire read when it was last laid out - WireBook's own figure,
+        /// which moves on a filing and not on a repaint. The run is rebuilt when this
+        /// moves and on no other account.</summary>
+        int railWirePainted = -1;
+
+        readonly List<WireLine> railWireLines = new List<WireLine>();
 
         // ---- the telex strip ----
         RectTransform telexRoot;
@@ -401,6 +432,7 @@ namespace LivingCity.UI
 
             UpdateScroll();
             RefreshClock();
+            RefreshTimeControls();
             RunTelex();
 
             var outfitVersion = outfit ? outfit.Version : 0;
@@ -512,6 +544,9 @@ namespace LivingCity.UI
             if (!page || director.Roster == null)
                 return;
 
+            if (!IsOpen)
+                AcquireLedgerPause();
+
             if (pageKind != LedgerPage.Organization && OrganizationTargetingActive)
             {
                 StopOrganizationTargeting();
@@ -534,6 +569,7 @@ namespace LivingCity.UI
             if (page)
                 page.SetActive(false);
             IsOpen = false;
+            ReleaseLedgerPause();
             RestoreOtherCanvases();
             DismissOrganizationTransient();
             RefreshTargeting();
@@ -553,6 +589,7 @@ namespace LivingCity.UI
         {
             if (Instance == this)
                 Instance = null;
+            ReleaseLedgerPause();
             RestoreOtherCanvases();
             IsOpen = false;
             StopOrganizationTargeting();
@@ -658,6 +695,18 @@ namespace LivingCity.UI
                 return;
 
             var point = mouse.position.ReadValue();
+
+            // The rail stands on EVERY page, so its wire is asked first: the pointer over
+            // the wire is reading the wire, whichever page is open behind it.
+            if (railWireViewport && railWireRun && RectTransformUtility
+                    .RectangleContainsScreenPoint(railWireViewport, point))
+            {
+                var run = Mathf.Max(0f,
+                    railWireRun.sizeDelta.y - railWireViewport.rect.height);
+                railWireScroll = Mathf.Clamp(railWireScroll - wheel * WheelStep, 0f, run);
+                railWireRun.anchoredPosition = new Vector2(0f, railWireScroll);
+                return;
+            }
 
             // A page nominates its scrolling regions; the wheel means nothing anywhere
             // else on the sheet. The armory nominates two - the merchandise board and the
@@ -931,6 +980,13 @@ namespace LivingCity.UI
         /// <summary>The way out, held to the far end of the bar.</summary>
         const float CloseW = 88f;
 
+        /// <summary>Four speed rungs and HOLD, immediately beside CLOSE.</summary>
+        const float ClockReadoutW = 76f;
+        const float TimeControlW = 52f;
+        const int TimeControlCount = 5;
+        const float TimeControlsW = TimeControlW * TimeControlCount;
+        const float TimeStripW = ClockReadoutW + TimeControlsW;
+
         /// <summary>The width a chrome tab needs: the design's 20 units of padding
         /// either side over letter-spaced mono caps. IBM Plex Mono is monospaced at
         /// 0.6 em (LedgerStyle documents the ratio), and TMP's characterSpacing is in
@@ -964,6 +1020,7 @@ namespace LivingCity.UI
             VRule(chromeRoot, RailW, 0f, ChromeH, LedgerStyle.ChromeRule);
 
             BuildTabs(chromeRoot);
+            BuildTimeControls(chromeRoot);
             BuildClose(chromeRoot);
         }
 
@@ -973,7 +1030,8 @@ namespace LivingCity.UI
         void BuildTabs(RectTransform chrome)
         {
             tabStrip = NewRect("Tabs", chrome);
-            PlaceTopLeft(tabStrip, RailW, 0f, Mathf.Max(0f, FrameW - RailW - CloseW), ChromeH);
+            PlaceTopLeft(tabStrip, RailW, 0f,
+                Mathf.Max(0f, FrameW - RailW - CloseW - TimeStripW), ChromeH);
             tabStrip.gameObject.AddComponent<RectMask2D>();
 
             var x = 0f;
@@ -1012,6 +1070,131 @@ namespace LivingCity.UI
                 tabFaces[i] = face;
                 tabLabels[i] = label;
                 x += w;
+            }
+        }
+
+        void BuildTimeControls(RectTransform chrome)
+        {
+            var labels = new[] { "0.5x", "1x", "2x", "4x", "HOLD" };
+            var group = NewRect("Time Controls", chrome);
+            PlaceTopLeft(group, FrameW - CloseW - TimeStripW, 0f,
+                TimeStripW, ChromeH);
+            VRule(group, 0f, 0f, ChromeH, LedgerStyle.ChromeRule);
+
+            chromeClock = Text("Clock", group, LedgerStyle.MonoBold, 12f,
+                LedgerStyle.RailGold, TextAlignmentOptions.Center);
+            PlaceTopLeft(chromeClock.rectTransform, 0f, 0f, ClockReadoutW, ChromeH);
+            chromeClock.characterSpacing = 5f;
+            chromeClock.text = "--:--";
+            VRule(group, ClockReadoutW, 0f, ChromeH, LedgerStyle.ChromeRule);
+
+            for (var i = 0; i < TimeControlCount; i++)
+            {
+                var rung = i;
+                var rect = NewRect("Time " + labels[i], group);
+                PlaceTopLeft(rect, ClockReadoutW + i * TimeControlW, 0f,
+                    TimeControlW, ChromeH);
+
+                var face = rect.gameObject.AddComponent<Image>();
+                face.sprite = null;
+                face.color = LedgerStyle.Chrome;
+                face.raycastTarget = true;
+
+                var button = rect.gameObject.AddComponent<Button>();
+                button.targetGraphic = face;
+                var colours = button.colors;
+                colours.normalColor = Color.white;
+                colours.highlightedColor = new Color(1.35f, 1.35f, 1.35f);
+                colours.selectedColor = colours.highlightedColor;
+                colours.pressedColor = new Color(0.78f, 0.78f, 0.78f);
+                button.colors = colours;
+                button.onClick.AddListener(() => PickTimeControl(rung));
+
+                var label = Text("Label", rect, LedgerStyle.Mono, 10f,
+                    LedgerStyle.TabIdle, TextAlignmentOptions.Center);
+                Stretch(label.rectTransform);
+                label.characterSpacing = 5f;
+                label.text = labels[i];
+
+                timeControlFaces[i] = face;
+                timeControlLabels[i] = label;
+                timeControlButtons[i] = button;
+            }
+
+            RefreshTimeControls();
+        }
+
+        void AcquireLedgerPause()
+        {
+            if (!cityClock)
+                cityClock = FindAnyObjectByType<Ambient.CityClock>();
+            if (!cityClock)
+                return;
+
+            clockWasPaused = cityClock.Paused;
+            clockChangedInLedger = false;
+            ownsLedgerPause = true;
+            cityClock.Paused = true;
+            RefreshTimeControls();
+        }
+
+        void ReleaseLedgerPause()
+        {
+            if (!ownsLedgerPause)
+                return;
+
+            if (cityClock && !clockChangedInLedger)
+                cityClock.Paused = clockWasPaused;
+            ownsLedgerPause = false;
+        }
+
+        void PickTimeControl(int rung)
+        {
+            if (!cityClock)
+                return;
+
+            clockChangedInLedger = true;
+            if (rung >= cityClock.SpeedCount)
+            {
+                cityClock.Paused = true;
+            }
+            else
+            {
+                cityClock.SetSpeed(rung);
+                cityClock.Paused = false;
+            }
+            RefreshTimeControls();
+        }
+
+        void RefreshTimeControls()
+        {
+            if (!cityClock)
+                cityClock = FindAnyObjectByType<Ambient.CityClock>();
+
+            if (chromeClock)
+                chromeClock.text = cityClock ? cityClock.Display : "--:--";
+
+            if (!cityClock)
+            {
+                for (var i = 0; i < timeControlButtons.Length; i++)
+                    if (timeControlButtons[i])
+                        timeControlButtons[i].interactable = false;
+                return;
+            }
+
+            var selected = cityClock.Paused ? cityClock.SpeedCount : cityClock.SpeedIndex;
+            for (var i = 0; i < timeControlFaces.Length; i++)
+            {
+                if (!timeControlFaces[i])
+                    continue;
+                timeControlButtons[i].interactable = true;
+                var active = i == selected;
+                timeControlFaces[i].color = active
+                    ? LedgerStyle.TabRed
+                    : LedgerStyle.Chrome;
+                timeControlLabels[i].color = active
+                    ? LedgerStyle.TabActiveText
+                    : LedgerStyle.TabIdle;
             }
         }
 
@@ -1061,21 +1244,41 @@ namespace LivingCity.UI
         /// <summary>How many readouts head the rail. The design's five.</summary>
         const int RailTiles = 5;
 
-        /// <summary>The two capacity meters and the five rows under THE OUTFIT.</summary>
+        /// <summary>The two capacity meters under THE OUTFIT.</summary>
         const int RailMeters = 2;
-        const int RailRows = 5;
 
-        /// <summary>The four rows under THIS WEEK.</summary>
-        const int RailWeekRows = 4;
-
-        /// <summary>At most three things can be waiting on an answer at once.</summary>
-        const int RailFlagSlots = 3;
-
-        const float RailPad = 16f;
+        const float RailPad = 20f;
         const float RailInner = RailW - RailPad * 2f;
-        const float RailTileH = 96f;
-        const float RailFigureW = 74f;
-        const float RailPayrollH = 68f;
+        const float RailTileH = 90f;
+        const float RailFigureW = 96f;
+        const float RailPayrollH = 74f;
+
+        // The rail's own type, all of it 30% up from the design's drawing. Named here
+        // rather than typed at forty call sites, because the one thing that must stay
+        // true of this column is that a label is a label wherever it appears on it.
+        const float RailKickerSize = 11.7f;   // the panel heads and the tile labels
+        const float RailValueSize = 23f;      // the five figures at the head of the rail
+        const float RailNoteSize = 12.35f;    // the line of plain English under a figure
+        const float RailRowSize = 13f;        // a named row inside a panel
+        const float RailRowValueSize = 16.25f;
+        const float RailMeterSize = 16.9f;    // the figure over a capacity trough
+        const float RailPayrollSize = 22.1f;
+
+        /// <summary>The pitch of one slip on the wire's head - a line box and the
+        /// stamp over it.</summary>
+        const float RailStampStep = 17f;
+
+        /// <summary>The capacity trough under a rail meter.</summary>
+        const float RailTroughH = 7f;
+
+        /// <summary>The band that heads the wire and carries its count.</summary>
+        const float RailWireHeadH = 26f;
+
+        /// <summary>One pip of a tile's meter, and the pitch of the run. The run is held
+        /// to the right margin of the figure's own line, so it grows with the type or it
+        /// reads as a strip of dust beside a 27 point figure.</summary>
+        const float RailPipW = 6.5f;
+        const float RailPipPitch = 9f;
 
         readonly TMP_Text[] hudValue = new TMP_Text[RailTiles];
         readonly TMP_Text[] hudNote = new TMP_Text[RailTiles];
@@ -1085,15 +1288,6 @@ namespace LivingCity.UI
         readonly TMP_Text[] railMeterText = new TMP_Text[RailMeters];
         readonly RectTransform[] railMeterFill = new RectTransform[RailMeters];
         readonly Image[] railMeterInk = new Image[RailMeters];
-
-        readonly TMP_Text[] railRowLabel = new TMP_Text[RailRows];
-        readonly TMP_Text[] railRowValue = new TMP_Text[RailRows];
-        readonly TMP_Text[] railWeekLabel = new TMP_Text[RailWeekRows];
-        readonly TMP_Text[] railWeekValue = new TMP_Text[RailWeekRows];
-
-        readonly RectTransform[] railFlagSlot = new RectTransform[RailFlagSlots];
-        readonly Image[] railFlagMark = new Image[RailFlagSlots];
-        readonly TMP_Text[] railFlagText = new TMP_Text[RailFlagSlots];
 
         static readonly string[] RailLabels =
         {
@@ -1110,6 +1304,13 @@ namespace LivingCity.UI
         ///
         /// Built once with fixed slots. Only the pip strips, the meter fills and the
         /// flags panel move on a repaint - the rest is written in place.
+        ///
+        /// The column is laid against a budget. At the 1080 the canvas is never smaller
+        /// than, the rail is 1036 tall: 5 tiles at 90 = 450 and the outfit 100 are laid
+        /// at a cursor, the payroll is pinned to the foot at 74, and the wire takes
+        /// everything between them - 412 at 1080 and more on a taller screen. Only the
+        /// wire stretches, so anything else added up here comes out of the boss's reading
+        /// of his own campaign.
         /// </summary>
         void BuildRail(RectTransform frame)
         {
@@ -1125,25 +1326,27 @@ namespace LivingCity.UI
                 PlaceTopLeft(tile, 0f, -cursor, RailW, RailTileH);
                 Rule(tile, 0f, -(RailTileH - 1f), RailW, LedgerStyle.ChromeRule);
 
-                var label = Caps(tile, RailPad, -12f, RailInner, RailLabels[i], 9f,
-                    LedgerStyle.RailLabel, 13f);
+                var label = Caps(tile, RailPad, -6f, RailInner, RailLabels[i],
+                    RailKickerSize, LedgerStyle.RailLabel, 13f);
                 label.overflowMode = TextOverflowModes.Ellipsis;
 
-                hudValue[i] = Line(tile, LedgerStyle.Condensed, 21f, LedgerStyle.RailValue,
-                    RailPad, -28f, RailInner - RailFigureW, 30f, "");
+                hudValue[i] = Line(tile, LedgerStyle.Condensed, RailValueSize,
+                    LedgerStyle.RailValue, RailPad, -24f, RailInner - RailFigureW, 32f, "");
                 hudValue[i].characterSpacing = 1f;
                 hudValue[i].overflowMode = TextOverflowModes.Ellipsis;
 
                 // The pips sit on the figure's own line, held to the right margin -
                 // the design's meter is a reading OF the figure, not a bar under it.
                 var meter = NewRect("Meter", tile);
-                PlaceTopLeft(meter, RailPad, -28f, RailInner, 30f);
+                PlaceTopLeft(meter, RailPad, -24f, RailInner, 32f);
                 hudMeter[i] = meter;
 
-                // Two lines of room: "no business in the city answers to you" does not
-                // fit on one at this measure, and a note that clips is not a note.
-                hudNote[i] = Paragraph(tile, LedgerStyle.Mono, 9.5f, LedgerStyle.RailNote,
-                    RailPad, -60f, RailInner, 32f, "", lineSpacing: 0f);
+                // Two lines of room. The wider column takes every note but the tribute
+                // man's on one, and that one is the reason the second line stays: a
+                // note that clips is not a note.
+                hudNote[i] = Paragraph(tile, LedgerStyle.Mono, RailNoteSize,
+                    LedgerStyle.RailNote, RailPad, -57f, RailInner, 30f, "",
+                    lineSpacing: 0f);
                 hudNote[i].overflowMode = TextOverflowModes.Ellipsis;
 
                 cursor += RailTileH;
@@ -1151,105 +1354,107 @@ namespace LivingCity.UI
 
             railClock = hudNote[0];
             cursor = BuildRailOutfit(cursor);
-            cursor = BuildRailWeek(cursor);
-            BuildRailFlags(cursor);
+            BuildRailWire(cursor);
             BuildRailPayroll();
         }
 
         float BuildRailOutfit(float cursor)
         {
-            var height = 100f + RailRows * 21f + 8f;
+            var height = 28f + RailMeters * 34f + 4f;
             var panel = NewRect("The Outfit", railRoot);
             PlaceTopLeft(panel, 0f, -cursor, RailW, height);
             Rule(panel, 0f, -(height - 1f), RailW, LedgerStyle.ChromeRule);
-            Caps(panel, RailPad, -12f, RailInner, "THE OUTFIT", 9f,
+            Caps(panel, RailPad, -7f, RailInner, "THE OUTFIT", RailKickerSize,
                 LedgerStyle.RailKicker, 16f);
 
             for (var i = 0; i < RailMeters; i++)
             {
-                var y = -(32f + i * 34f);
-                railMeterLabel[i] = Line(panel, LedgerStyle.Mono, 9.5f,
-                    LedgerStyle.RailLabel, RailPad, y, RailInner - RailFigureW, 14f, "");
+                var y = -(28f + i * 34f);
+                railMeterLabel[i] = Line(panel, LedgerStyle.Mono, RailNoteSize,
+                    LedgerStyle.RailLabel, RailPad, y, RailInner - RailFigureW, 16f, "");
                 railMeterLabel[i].characterSpacing = 5f;
                 railMeterLabel[i].overflowMode = TextOverflowModes.Ellipsis;
 
-                railMeterText[i] = Line(panel, LedgerStyle.MonoBold, 13f,
+                railMeterText[i] = Line(panel, LedgerStyle.MonoBold, RailMeterSize,
                     LedgerStyle.RailValue, RailPad + RailInner - RailFigureW, y - 1f,
-                    RailFigureW, 16f, "", TextAlignmentOptions.MidlineRight);
+                    RailFigureW, 19f, "", TextAlignmentOptions.MidlineRight);
 
                 var trough = NewRect("Trough", panel);
-                PlaceTopLeft(trough, RailPad, y - 18f, RailInner, 6f);
+                PlaceTopLeft(trough, RailPad, y - 21f, RailInner, RailTroughH);
                 Fill(trough, LedgerStyle.RailTrough);
 
                 var ink = NewRect("Fill", trough);
-                PlaceTopLeft(ink, 0f, 0f, 0f, 6f);
+                PlaceTopLeft(ink, 0f, 0f, 0f, RailTroughH);
                 railMeterInk[i] = Fill(ink, LedgerStyle.RailValue);
                 railMeterFill[i] = ink;
             }
 
-            for (var i = 0; i < RailRows; i++)
-            {
-                var y = -(100f + i * 21f);
-                Rule(panel, RailPad, y, RailInner, LedgerStyle.RailHair);
-                railRowLabel[i] = Line(panel, LedgerStyle.Mono, 10f, LedgerStyle.RailLabel,
-                    RailPad, y - 3f, RailInner - RailFigureW, 16f, "");
-                railRowLabel[i].overflowMode = TextOverflowModes.Ellipsis;
-                railRowValue[i] = Line(panel, LedgerStyle.MonoBold, 12.5f,
-                    LedgerStyle.RailBright, RailPad + RailInner - RailFigureW, y - 3f,
-                    RailFigureW, 16f, "", TextAlignmentOptions.MidlineRight);
-            }
-
             return cursor + height;
         }
 
-        float BuildRailWeek(float cursor)
+        /// <summary>
+        /// The wire, and all of it.
+        ///
+        /// The strip over the sheet runs the night's traffic past once and is gone; this
+        /// is the book that strip reads from, stood on its end in the rail with the whole
+        /// campaign still in it - every incident our men wrote and every answer given at
+        /// a door, newest first, back to the first morning. It is the one thing on the
+        /// rail that scrolls, because it is the one thing on the rail that GROWS: the
+        /// five readouts and the two capacities are as long today as they will be on the
+        /// last night, and this is longer every time somebody does something.
+        ///
+        /// It takes the room the outfit's five counts, the week's four and the three
+        /// flags used to hold, and it takes it by STRETCH rather than by a height: the
+        /// wire runs from the foot of the outfit panel to the top of the payroll block,
+        /// whatever the window's height, so a taller screen reads further back instead
+        /// of leaving a strip of empty rail under the last slip.
+        ///
+        /// Nothing here composes a sentence. WireBook dresses both books and the street
+        /// strip prints out of the same one, so the boss cannot be told two accounts of
+        /// one night depending on which screen he read it on.
+        /// </summary>
+        void BuildRailWire(float cursor)
         {
-            var height = 30f + RailWeekRows * 21f + 8f;
-            var panel = NewRect("This Week", railRoot);
-            PlaceTopLeft(panel, 0f, -cursor, RailW, height);
-            Rule(panel, 0f, -(height - 1f), RailW, LedgerStyle.ChromeRule);
-            Caps(panel, RailPad, -12f, RailInner, "THIS WEEK", 9f,
+            railWire = NewRect("The Wire", railRoot);
+            railWire.anchorMin = new Vector2(0f, 0f);
+            railWire.anchorMax = new Vector2(1f, 1f);
+            railWire.pivot = new Vector2(0.5f, 1f);
+            railWire.offsetMin = new Vector2(0f, RailPayrollH);
+            railWire.offsetMax = new Vector2(0f, -cursor);
+
+            var head = NewRect("Head", railWire);
+            PlaceTopLeft(head, 0f, 0f, RailW, RailWireHeadH);
+            Caps(head, RailPad, -7f, RailInner, "THE WIRE", RailKickerSize,
                 LedgerStyle.RailKicker, 16f);
+            railWireCount = Caps(head, RailPad, -7f, RailInner, "", 11f,
+                LedgerStyle.RailLabel, 6f, TextAlignmentOptions.MidlineRight);
+            railWireCount.font = LedgerStyle.Mono;
+            Rule(head, RailPad, -(RailWireHeadH - 1f), RailInner, LedgerStyle.RailHair);
 
-            for (var i = 0; i < RailWeekRows; i++)
-            {
-                var y = -(30f + i * 21f);
-                Rule(panel, RailPad, y, RailInner, LedgerStyle.RailHair);
-                railWeekLabel[i] = Line(panel, LedgerStyle.Mono, 10f, LedgerStyle.RailLabel,
-                    RailPad, y - 3f, RailInner - RailFigureW, 16f, "");
-                railWeekLabel[i].overflowMode = TextOverflowModes.Ellipsis;
-                railWeekValue[i] = Line(panel, LedgerStyle.MonoBold, 12.5f,
-                    LedgerStyle.RailBright, RailPad + RailInner - RailFigureW, y - 3f,
-                    RailFigureW, 16f, "", TextAlignmentOptions.MidlineRight);
-            }
+            railWireViewport = NewRect("Viewport", railWire);
+            railWireViewport.anchorMin = new Vector2(0f, 0f);
+            railWireViewport.anchorMax = new Vector2(1f, 1f);
+            railWireViewport.pivot = new Vector2(0.5f, 1f);
+            railWireViewport.offsetMin = Vector2.zero;
+            railWireViewport.offsetMax = new Vector2(0f, -RailWireHeadH);
+            railWireViewport.gameObject.AddComponent<RectMask2D>();
 
-            return cursor + height;
-        }
+            // The wire's own floor, in rail stock: the run scrolls under the payroll
+            // block and the outfit panel, and a slip sliding out of the viewport has to
+            // meet the column rather than whatever is behind the mask.
+            var floor = railWireViewport.gameObject.AddComponent<Image>();
+            floor.color = LedgerStyle.Rail;
+            floor.raycastTarget = false;
 
-        void BuildRailFlags(float cursor)
-        {
-            var height = 28f + RailFlagSlots * 30f + 6f;
-            railFlags = NewRect("Needs An Answer", railRoot);
-            PlaceTopLeft(railFlags, 0f, -cursor, RailW, height);
-            Rule(railFlags, 0f, -(height - 1f), RailW, LedgerStyle.ChromeRule);
-            Caps(railFlags, RailPad, -11f, RailInner, "NEEDS AN ANSWER", 9f,
-                LedgerStyle.RailKicker, 16f);
+            railWireRun = NewRect("Run", railWireViewport);
+            railWireRun.anchorMin = new Vector2(0f, 1f);
+            railWireRun.anchorMax = new Vector2(1f, 1f);
+            railWireRun.pivot = new Vector2(0.5f, 1f);
+            railWireRun.anchoredPosition = Vector2.zero;
+            railWireRun.sizeDelta = Vector2.zero;
 
-            for (var i = 0; i < RailFlagSlots; i++)
-            {
-                var slot = NewRect("Flag " + i, railFlags);
-                PlaceTopLeft(slot, 0f, -(28f + i * 30f), RailW, 30f);
-                railFlagSlot[i] = slot;
-
-                var mark = NewRect("Mark", slot);
-                PlaceTopLeft(mark, RailPad, -5f, 6f, 6f);
-                railFlagMark[i] = Fill(mark, LedgerStyle.RailRed);
-
-                railFlagText[i] = Paragraph(slot, LedgerStyle.Mono, 10f,
-                    LedgerStyle.RailBright, RailPad + 14f, -1f, RailInner - 14f, 30f, "",
-                    lineSpacing: 0f);
-                railFlagText[i].overflowMode = TextOverflowModes.Ellipsis;
-            }
+            railWireScroll = 0f;
+            railWirePainted = -1;
         }
 
         /// <summary>The one figure that is true on every page, held to the rail's foot
@@ -1266,12 +1471,13 @@ namespace LivingCity.UI
             Fill(pay, LedgerStyle.Rail);
             Rule(pay, 0f, 0f, RailW, LedgerStyle.ChromeRule);
 
-            Caps(pay, RailPad, -12f, RailInner, "PAYROLL RUNNING", 9f,
+            Caps(pay, RailPad, -7f, RailInner, "PAYROLL RUNNING", RailKickerSize,
                 LedgerStyle.RailLabel, 13f);
-            railPayroll = Line(pay, LedgerStyle.Condensed, 17f, LedgerStyle.RailRed,
-                RailPad, -26f, RailInner, 24f, "");
-            railPayrollNote = Line(pay, LedgerStyle.Mono, 9.5f, LedgerStyle.RailNote,
-                RailPad, -50f, RailInner, 14f, "paid at midnight, worked or not");
+            railPayroll = Line(pay, LedgerStyle.Condensed, RailPayrollSize,
+                LedgerStyle.RailRed, RailPad, -25f, RailInner, 30f, "");
+            railPayrollNote = Line(pay, LedgerStyle.Mono, RailNoteSize,
+                LedgerStyle.RailNote, RailPad, -56f, RailInner, 16f,
+                "paid at midnight, worked or not");
         }
 
         /// <summary>The heat scale, in the words a precinct would use.</summary>
@@ -1298,8 +1504,7 @@ namespace LivingCity.UI
             TallyOutfit();
             RefreshRailTiles();
             RefreshRailOutfit();
-            RefreshRailWeek();
-            RefreshRailFlags();
+            RefreshRailWire();
 
             var perDay = Outfit.Wages.DailyPayroll(director.Roster);
             if (railPayroll)
@@ -1401,70 +1606,99 @@ namespace LivingCity.UI
             // stock, ground is green - and both turn red only at the ceiling.
             SetRailMeter(0, "MEN ON THE BOOKS", railMen, railManCap, LedgerStyle.RailBright);
             SetRailMeter(1, "BLOCKS HELD", railHeld, railBlockCap, LedgerStyle.RailGreen);
-
-            SetRailRow(railRowLabel, railRowValue, 0, "lieutenants",
-                railLieutenants.ToString(), LedgerStyle.RailBright);
-            SetRailRow(railRowLabel, railRowValue, 1, "posted, earning",
-                railPosted.ToString(),
-                railPosted > 0 ? LedgerStyle.RailGreen : LedgerStyle.RailLabel);
-            SetRailRow(railRowLabel, railRowValue, 2, "idle, drawing pay",
-                railIdle.ToString(),
-                railIdle > 0 ? LedgerStyle.RailRed : LedgerStyle.RailLabel);
-            SetRailRow(railRowLabel, railRowValue, 3, "hurt or jailed",
-                railHurt.ToString(),
-                railHurt > 0 ? LedgerStyle.RailGold : LedgerStyle.RailLabel);
-            SetRailRow(railRowLabel, railRowValue, 4, "carrying a piece",
-                railArmed + " / " + railMen, LedgerStyle.RailBright);
         }
 
-        void RefreshRailWeek()
+        /// <summary>
+        /// Lays the wire out again - and only when there is something new on it. The rail
+        /// repaints on every tick of a city running at 4x, and a column that tore down
+        /// two hundred slips and built them again for a night when nothing happened is a
+        /// column that costs more than everything else in the book put together.
+        /// </summary>
+        void RefreshRailWire()
         {
-            SetRailRow(railWeekLabel, railWeekValue, 0, "blocks contested",
-                railContested.ToString(),
-                railContested > 0 ? LedgerStyle.RailGold : LedgerStyle.RailLabel);
-            SetRailRow(railWeekLabel, railWeekValue, 1, "houses at war",
-                railAtWar.ToString(),
-                railAtWar > 0 ? LedgerStyle.RailRed : LedgerStyle.RailLabel);
-            SetRailRow(railWeekLabel, railWeekValue, 2, "stock signed out",
-                railIssued + " / " + railStock, LedgerStyle.RailBright);
-            SetRailRow(railWeekLabel, railWeekValue, 3, "profit this week",
-                LedgerText.Cash(railProfit),
-                railProfit < 0 ? LedgerStyle.RailRed : LedgerStyle.RailGreen);
-        }
-
-        void RefreshRailFlags()
-        {
-            var slot = 0;
-            if (railOverCapacity > 0)
-                SetRailFlag(slot++, LedgerStyle.RailRed,
-                    railOverCapacity == 1
-                        ? "a lieutenant is over capacity — he refuses the next man"
-                        : railOverCapacity + " lieutenants are over capacity — they refuse the next man");
-            if (railIdle > 0)
-                SetRailFlag(slot++, LedgerStyle.RailRed,
-                    railIdle == 1
-                        ? "one man idle under you, paid at midnight for nothing"
-                        : railIdle + " men idle under you, paid at midnight for nothing");
-            if (railPaperOnly > 0)
-                SetRailFlag(slot++, LedgerStyle.RailGold,
-                    railPaperOnly == 1
-                        ? "one block on paper we do not hold on the street"
-                        : railPaperOnly + " blocks on paper we do not hold on the street");
-
-            for (var i = slot; i < RailFlagSlots; i++)
-                if (railFlagSlot[i])
-                    railFlagSlot[i].gameObject.SetActive(false);
-            if (railFlags)
-                railFlags.gameObject.SetActive(slot > 0);
-        }
-
-        void SetRailFlag(int index, Color mark, string text)
-        {
-            if (index >= RailFlagSlots || !railFlagSlot[index])
+            if (railWireRun == null)
                 return;
-            railFlagSlot[index].gameObject.SetActive(true);
-            railFlagMark[index].color = mark;
-            railFlagText[index].text = text;
+
+            var filed = WireBook.Count(outfit);
+            if (railWireCount)
+                railWireCount.text = filed == 0 ? "QUIET" : filed + " FILED";
+
+            var version = WireBook.Version(outfit);
+            if (version == railWirePainted)
+                return;
+            railWirePainted = version;
+
+            for (var i = railWireRun.childCount - 1; i >= 0; i--)
+                Destroy(railWireRun.GetChild(i).gameObject);
+
+            WireBook.Collect(outfit, railWireLines);
+
+            var y = 0f;
+            if (railWireLines.Count == 0)
+            {
+                // A wire with nothing on it reads as a machine that has failed, not a
+                // quiet night - the strip over the sheet says the same thing in the same
+                // words on the same night.
+                y = LayWireSlip(y, new WireLine("WIRE",
+                    "DAY " + (outfit ? outfit.Campaign.Day : 1),
+                    "Nothing on the wire. Nobody of ours has done a thing he was not " +
+                    "told to.", "", "", LedgerStyle.TelexPlain,
+                    outfit ? outfit.Campaign.Day : 1));
+            }
+            else
+            {
+                for (var i = 0; i < railWireLines.Count; i++)
+                    y = LayWireSlip(y, railWireLines[i]);
+            }
+
+            railWireRun.sizeDelta = new Vector2(0f, -y);
+
+            // A slip landing while the boss is reading day one must not throw him back
+            // to the top, but the run he is scrolled into may have got shorter.
+            var max = Mathf.Max(0f, -y - railWireViewport.rect.height);
+            railWireScroll = Mathf.Clamp(railWireScroll, 0f, max);
+            railWireRun.anchoredPosition = new Vector2(0f, railWireScroll);
+        }
+
+        /// <summary>
+        /// One slip on the rail's wire: the kind's ink down its left edge, the day and
+        /// what it was over the copy, whatever it cost on the right, and the sentence
+        /// itself set to as many lines as it takes. Answers the y under it.
+        ///
+        /// The height is MEASURED off the face rather than assumed, because these are
+        /// the only lines in the book whose length nobody chose - a door in a long
+        /// street name runs to three where the one under it runs to one.
+        /// </summary>
+        float LayWireSlip(float y, WireLine line)
+        {
+            const float EdgeW = 3f;
+            const float CopyX = RailPad + EdgeW + 8f;
+            var copyW = RailInner - EdgeW - 8f;
+
+            var body = Paragraph(railWireRun, LedgerStyle.Mono, RailNoteSize,
+                LedgerStyle.RailNote, CopyX, y - RailStampStep, copyW, 0f, line.Body,
+                lineSpacing: 0f);
+            var tall = Mathf.Ceil(body.GetPreferredValues(line.Body, copyW, 0f).y);
+            body.rectTransform.sizeDelta = new Vector2(copyW, tall);
+
+            var height = RailStampStep + tall + 9f;
+
+            var edge = NewRect("Edge", railWireRun);
+            PlaceTopLeft(edge, RailPad, y - 3f, EdgeW, height - 6f);
+            Fill(edge, line.Ink);
+
+            var stamp = Caps(railWireRun, CopyX, y - 1f, copyW,
+                line.Tag.Length > 0 ? line.Stamp + " · " + line.Tag : line.Stamp,
+                11f, line.Ink, 8f);
+            stamp.font = LedgerStyle.MonoBold;
+            stamp.overflowMode = TextOverflowModes.Ellipsis;
+
+            if (line.Figure.Length > 0)
+                Caps(railWireRun, CopyX, y - 1f, copyW, line.Figure, 11f,
+                    LedgerStyle.RailAmber, 6f, TextAlignmentOptions.MidlineRight);
+
+            Rule(railWireRun, RailPad, y - height + 3f, RailInner, LedgerStyle.RailHair);
+            return y - height;
         }
 
         void SetRailMeter(int index, string label, int current, int maximum, Color ink)
@@ -1479,17 +1713,7 @@ namespace LivingCity.UI
             railMeterText[index].color = colour;
             railMeterInk[index].color = colour;
             var fraction = maximum > 0 ? Mathf.Clamp01((float)current / maximum) : 0f;
-            railMeterFill[index].sizeDelta = new Vector2(RailInner * fraction, 6f);
-        }
-
-        static void SetRailRow(TMP_Text[] labels, TMP_Text[] values, int index,
-            string label, string value, Color colour)
-        {
-            if (!labels[index])
-                return;
-            labels[index].text = label;
-            values[index].text = value;
-            values[index].color = colour;
+            railMeterFill[index].sizeDelta = new Vector2(RailInner * fraction, RailTroughH);
         }
 
         /// <summary>Redraws one rail tile's pips, held to the right margin. The strip is
@@ -1505,8 +1729,8 @@ namespace LivingCity.UI
                 Destroy(meter.GetChild(i).gameObject);
             if (steps <= 0)
                 return;
-            var x = RailInner - LedgerV2.PipsWidth(steps, 5f, 7f);
-            LedgerV2.Pips(meter, x, -15f, steps, filled, colour, 5f, 10f, 7f);
+            var x = RailInner - LedgerV2.PipsWidth(steps, RailPipW, RailPipPitch);
+            LedgerV2.Pips(meter, x, -16f, steps, filled, colour, RailPipW, 12f, RailPipPitch);
         }
 
         // -------------------------------------------------------------- what is true
@@ -1514,19 +1738,16 @@ namespace LivingCity.UI
         // The figures the rail and the telex strip both read. Tallied once a repaint,
         // from the same authorities the pages use - never from a page's own scratch,
         // because the rail is on every page and the pages are not.
-        int railMen, railManCap, railHeld, railBlockCap, railLieutenants;
-        int railPosted, railIdle, railHurt, railArmed;
+        int railMen, railManCap, railHeld, railBlockCap;
+        int railPosted, railIdle, railHurt;
         int railContested, railAtWar, railIssued, railStock, railProfit;
         int railOverCapacity, railPaperOnly, railAwaiting;
         string railFirstIdle = "";
 
-        /// <summary>Scratch for the armed tally - a man, not a gun, per entry.</summary>
-        readonly HashSet<int> railArmedMen = new HashSet<int>();
-
         void TallyOutfit()
         {
-            railMen = railManCap = railHeld = railBlockCap = railLieutenants = 0;
-            railPosted = railIdle = railHurt = railArmed = 0;
+            railMen = railManCap = railHeld = railBlockCap = 0;
+            railPosted = railIdle = railHurt = 0;
             railContested = railAtWar = railIssued = railStock = railProfit = 0;
             railOverCapacity = railPaperOnly = railAwaiting = 0;
             railFirstIdle = "";
@@ -1540,8 +1761,6 @@ namespace LivingCity.UI
                     if (member.Gone)
                         continue;
                     railMen++;
-                    if (member.Rank == Rank.Lieutenant)
-                        railLieutenants++;
                     if (member.Status != CharacterStatus.Active)
                         railHurt++;
                     if (roster.AssignmentOf(member.Id).Kind == AssignmentKind.Pool &&
@@ -1557,21 +1776,13 @@ namespace LivingCity.UI
                     }
                 }
 
-                // The stock book counts ITEMS signed out; "carrying a piece" counts
-                // MEN. A man holding two guns is one armed man, and the rail must not
-                // read as though he were two.
-                railArmedMen.Clear();
+                // The stock book counts ITEMS signed out, not men: the wire says how
+                // much of the armory is in hands, and a man holding two guns has two of
+                // them out.
                 railStock = roster.Equipment.Count;
                 for (var i = 0; i < roster.Equipment.Count; i++)
-                {
-                    var item = roster.Equipment[i];
-                    if (item.OwnerId == RosterEquipment.Unheld)
-                        continue;
-                    railIssued++;
-                    if (RosterOps.IsWeapon(item.Kind))
-                        railArmedMen.Add(item.OwnerId);
-                }
-                railArmed = railArmedMen.Count;
+                    if (roster.Equipment[i].OwnerId != RosterEquipment.Unheld)
+                        railIssued++;
             }
 
             // The command file: capacity, and what is named on our paper. Read here

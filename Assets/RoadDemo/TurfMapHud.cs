@@ -1937,7 +1937,7 @@ namespace RoadDemo
                 return;
             }
 
-            Click(ToPlan(screen));
+            Click(ToPlan(screen), screen);
         }
 
         /// <summary>A dragged box takes every crew of OURS inside it and nobody
@@ -1975,8 +1975,12 @@ namespace RoadDemo
         /// else's, then a footprint, then the ground it stands on. A pick armed by the
         /// ledger comes FIRST and takes the whole click - the book asked for ground and
         /// must not be answered with a dossier.</summary>
-        void Click(Vector2 plan)
+        void Click(Vector2 plan, Vector2 screen)
         {
+            // Any click that is not on the open shop's own menu answers the question the
+            // menu was asking; the panel goes with it unless this click reopens it.
+            _mapChrome.CloseDoorMenu();
+
             if (TargetClick(plan))
                 return;
 
@@ -1994,6 +1998,22 @@ namespace RoadDemo
             {
                 _selected.Clear();
                 Inspect(other);
+                return;
+            }
+
+            // A shop answers with the SAME menu the ledger opens beside a row of its
+            // block file. It is picked the way the RIGHT-click menu picks one - by
+            // distance from the doorstep - and not by which footprint the survey has
+            // composed: the survey builds a mesh only where the city is standing, so a
+            // footprint test loses every shop on a streamed-out street, which is most of
+            // the plate at map height.
+            if (TryOpenDoorMenu(screen, plan))
+            {
+                _inspectedCrew = null;
+                _crewFileRequested = false;
+                _inspectedDistrict = null;
+                _inspectedBuilding = _survey.BuildingAt(plan);
+                Changed();
                 return;
             }
 
@@ -2202,7 +2222,8 @@ namespace RoadDemo
                 return false;
 
             var title = runtime.TryGetBusinessView(businessId, out var view)
-                ? view.BusinessName + " · " + view.Standing
+                ? view.BusinessName + " · " + view.Standing +
+                  (view.StatusLine.Length > 0 ? " · " + view.StatusLine : "")
                 : businessId.Value;
             _mapChrome.OpenActionMenu(screen, _crews.Selected, null, title, _enemyActions);
             return true;
@@ -2211,6 +2232,19 @@ namespace RoadDemo
         /// <summary>How far from a door a pick on the plate still means that door. Wider
         /// than the street's, because a finger on paper is a coarser instrument.</summary>
         const float MapBusinessPickRange = 22f;
+
+        /// <summary>The premises under a LEFT click, found by the same reach the right
+        /// click uses, and answered with the shared door menu.</summary>
+        bool TryOpenDoorMenu(Vector2 screen, Vector2 plan)
+        {
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime == null || _survey?.Plan == null)
+                return false;
+
+            var at = _survey.Plan.ToWorld(plan);
+            return runtime.TryGetBusinessNear(at, MapBusinessPickRange, out var businessId) &&
+                   _mapChrome.OpenDoorMenu(screen, businessId);
+        }
 
         void MoveHere(Vector2 plan, bool run)
         {

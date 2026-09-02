@@ -478,6 +478,17 @@ namespace LivingCity.Tests
             if (Offers(rows, TerritoryRacketIntent.Approach, true) ||
                 Offers(rows, TerritoryRacketIntent.Demand, true))
                 failures.Add("ORDER: men were sent with no crew picked.");
+            // The work FILED with the office fades on the same fact. The wrecking, the
+            // torch and the robbery are men walking somewhere too, and a key taken with
+            // nobody behind it is refused a second later on a line the block file never
+            // showed - which is exactly how the ledger's keys read dead while the street
+            // card's worked.
+            if (Offers(rows, Outfit.OrderType.SmashUp, true) ||
+                Offers(rows, Outfit.OrderType.Torch, true) ||
+                Offers(rows, Outfit.OrderType.Raid, true) ||
+                Offers(rows, Outfit.OrderType.Guard, true) ||
+                Offers(rows, Outfit.OrderType.BuyPremises, true))
+                failures.Add("ORDER: a door was wrecked or watched with no crew picked.");
             for (var i = 0; i < rows.Count; i++)
                 if (rows[i].Note.Length == 0)
                     failures.Add("ORDER: a faded row does not say why.");
@@ -527,6 +538,20 @@ namespace LivingCity.Tests
                 Offers(rows, Outfit.OrderType.Torch, true) ||
                 Offers(rows, Outfit.OrderType.Raid, true))
                 failures.Add("ORDER: the family was offered its own takings to wreck.");
+
+            // A new arrangement has no money on its meter until midnight. The row
+            // remains visible to explain the wait, but cannot send an empty round.
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Compliant, Outfit.DoorTenure.Paying,
+                true, true, true, 4000, rows, collectionDue: false,
+                collectionNote: "nothing owed yet · dues accrue daily at midnight");
+            if (Offers(rows, TerritoryRacketIntent.Collect, true))
+                failures.Add("ORDER: an empty collection round was available before midnight.");
+            var collect = rows.Find(row =>
+                row.Kind == TerritoryDoorRowKind.Racket &&
+                row.Intent == TerritoryRacketIntent.Collect);
+            if (!collect.Note.Contains("midnight"))
+                failures.Add("ORDER: the first collection wait did not name midnight.");
 
             // Our own paper: nothing hostile stands, but a guard on the door does.
             TerritoryRacketOrders.For(

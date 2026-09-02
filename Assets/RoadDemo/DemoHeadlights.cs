@@ -9,7 +9,7 @@ namespace RoadDemo
     // additional lights per frame on desktop, most of which the street lamps take.
     public class DemoHeadlights : MonoBehaviour
     {
-        public DemoClock clock;
+        public LivingCity.Ambient.CityClock clock;
 
         // 24 cars' worth. Counted in beams, cut between cars (a pair shares one
         // sort key); sized so lamps (192) + beams (48) stay under URP's 256.

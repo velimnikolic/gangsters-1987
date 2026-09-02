@@ -218,7 +218,7 @@ namespace RoadDemo
 
         static float DemoClockHour()
         {
-            var clock = FindAnyObjectByType<DemoClock>();
+            var clock = FindAnyObjectByType<LivingCity.Ambient.CityClock>();
             return clock ? clock.Hour : -1f;
         }
 

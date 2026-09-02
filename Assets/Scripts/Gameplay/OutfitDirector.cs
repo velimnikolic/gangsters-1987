@@ -362,17 +362,23 @@ namespace LivingCity.Gameplay
                     break;
 
                 case OrderType.SmashUp:
+                    if (!ShutBusiness(
+                            businessId, Business.BusinessShutdownCause.SmashUp))
+                        break;
                     RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
                         new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
                         businessId, Territory.TerritoryEscalationKind.PropertyDamage,
                         DoorOrders.ViolenceSeverity(job.Type));
-                    // The wreck is VISIBLE: the ground floor nailed shut, the same
-                    // boards a bombed front gets - a smashed shop must look smashed.
+                    // The wreck is VISIBLE: punched-out panes in the ground floor and
+                    // their glass across the pavement. Fire damage remains the distinct
+                    // burn-then-board presentation below.
                     RoadDemo.ShopDamage.SmashBusiness(businessId);
                     break;
 
                 case OrderType.Torch:
-                case OrderType.Bomb:
+                    if (!ShutBusiness(
+                            businessId, Business.BusinessShutdownCause.Arson))
+                        break;
                     RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
                         new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
                         businessId, Territory.TerritoryEscalationKind.PropertyDamage,
@@ -380,7 +386,52 @@ namespace LivingCity.Gameplay
                     // And a torched one burns: the full ShopFire, then the boards.
                     RoadDemo.ShopDamage.ScorchBusiness(businessId);
                     break;
+
+                case OrderType.Bomb:
+                    RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
+                        new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId),
+                        businessId, Territory.TerritoryEscalationKind.PropertyDamage,
+                        DoorOrders.ViolenceSeverity(job.Type));
+                    RoadDemo.ShopDamage.ScorchBusiness(businessId);
+                    break;
             }
+        }
+
+        bool ShutBusiness(
+            Territory.TerritoryBusinessId businessId,
+            Business.BusinessShutdownCause cause)
+        {
+            var business = Business.BusinessRuntime.Instance;
+            if (business?.Shutdowns == null)
+                return false;
+            return business.Shutdowns.Shut(
+                businessId, cause, business.CurrentGameHour);
+        }
+
+        /// <summary>Pay an early repair through the same accounts purchase seam used by
+        /// every other asset. Only the gang on the deed may spend this money.</summary>
+        public OpResult RepairBusiness(Territory.TerritoryBusinessId businessId)
+        {
+            var business = Business.BusinessRuntime.Instance;
+            if (business?.Shutdowns == null)
+                return OpResult.Fail("the business simulation is not running");
+
+            var refusal = Business.BusinessRepair.Try(
+                business.Shutdowns,
+                businessId,
+                Gangs.GangCatalog.PlayerGangId,
+                Business.BusinessDeeds.GangOf(businessId),
+                business.CurrentGameHour,
+                Accounts,
+                out var charged);
+            if (refusal != null)
+                return OpResult.Fail(refusal);
+
+            Version++;
+            Debug.Log("[Outfit] Repaired " + businessId.Value + " for " +
+                      UI.LedgerText.Cash(charged) + "; safe at " +
+                      UI.LedgerText.Cash(Accounts.Safe) + ".");
+            return OpResult.Success;
         }
 
         /// <summary>

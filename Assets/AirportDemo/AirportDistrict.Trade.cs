@@ -85,7 +85,8 @@ namespace AirportDemo
             }
 
             _freight = new AirportFreight();
-            _freight.Build(van, _lawSedan, bags, Object.FindAnyObjectByType<RoadDemo.DemoClock>());
+            _freight.Build(van, _lawSedan, bags,
+                Object.FindAnyObjectByType<LivingCity.Ambient.CityClock>());
             Debug.Log("[Airport] the night run is on the field" + (_lawSedan != null ? ", and the law is watching it" : ""));
         }
     }

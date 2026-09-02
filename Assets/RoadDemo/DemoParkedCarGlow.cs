@@ -11,7 +11,7 @@ namespace RoadDemo
     /// </summary>
     public sealed class DemoParkedCarGlow : MonoBehaviour
     {
-        public DemoClock clock;
+        public LivingCity.Ambient.CityClock clock;
 
         const int Groups = 4;
         const float LitShare = 0.16f;

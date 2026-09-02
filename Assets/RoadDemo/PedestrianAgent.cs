@@ -314,6 +314,11 @@ namespace RoadDemo
         public readonly int Id = ++_ids;
         /// <summary>What he is in the trace: crowd, crew, police.</summary>
         public string Tag = "crowd";
+        /// <summary>The physical group this walker belongs to for close-range crowd
+        /// steering. Zero means no group. Members of one crew share a non-zero id so
+        /// they recognise only one another as mates and make the same dead-ahead
+        /// passing decision.</summary>
+        public int CrowdGroupId;
         int _traceFrame;
         float _traceNext, _traceStill, _traceSaid;
         Vector3 _tracePrev;
@@ -886,11 +891,11 @@ namespace RoadDemo
                         // CREWMATES: the herd's same-way bias marched a bunched crew
                         // onto one line (the dawdle packs them close, every push
                         // says "right", the dealt lanes collapse into single file) -
-                        // mates split both ways instead, and lean on each other only
-                        // half as hard, so the pack stays a pack.
-                        bool mate = Tag == "crew" && other.Tag == "crew";
+                        // a physical crew chooses one shared side and leans on its own
+                        // members only half as hard, so the pack stays a pack.
+                        bool mate = CrowdGroupId != 0 && CrowdGroupId == other.CrowdGroupId;
                         float steer = Mathf.Abs(side) < 0.12f
-                            ? (mate ? ((Id & 1) == 0 ? 1f : -1f) : 1f)
+                            ? (mate ? CrowdPassingSide : 1f)
                             : -Mathf.Sign(side);
                         want += steer * weight * (mate ? 0.4f : 0.8f);
 
@@ -928,11 +933,20 @@ namespace RoadDemo
                 _hold = Mathf.Max(_hold, 0.5f);
                 // the deadlock break is not eased: it exists because nothing else has
                 // moved for three seconds, and a gentle one is no break at all
-                _push = (Id & 1) == 0 ? 0.9f : -0.9f;
+                _push = CrowdPassingSide * 0.9f;
             }
         }
 
         float _crowdStuck;   // seconds stood still by the people in front of him
+
+        /// <summary>A crew passes a dead-ahead obstruction on one shared side. Walkers
+        /// without a group keep the old per-person split, which is what breaks a
+        /// head-on deadlock between unrelated pedestrians.</summary>
+        protected int CrowdPreferredSide => CrowdGroupId != 0
+            ? ((CrowdGroupId & 1) == 0 ? 1 : -1)
+            : ((Id & 1) == 0 ? 1 : -1);
+
+        float CrowdPassingSide => CrowdPreferredSide;
 
         /// A knot of people held at a red light shuffles apart instead of standing
         /// inside one another - a little way along the kerb, never off it.
@@ -1234,7 +1248,7 @@ namespace RoadDemo
         /// and is deliberately refused by the live walker.</summary>
         internal static bool CanCarryTurn(AnimationClip clip, float degrees) =>
             clip != null && clip.length >= 0.05f &&
-            clip.averageAngularSpeed * clip.length * Mathf.Rad2Deg >=
+            Mathf.Abs(clip.averageAngularSpeed) * clip.length * Mathf.Rad2Deg >=
                 NearestAuthored(degrees) * 0.4f;
 
         /// <summary>Is a join holding the body this frame? A derived agent that
@@ -1382,7 +1396,7 @@ namespace RoadDemo
             // nothing, never a town of men spinning through two right angles.
             if (kind != Join.Stopping && Mathf.Abs(degrees) >= TurnStepAbove)
             {
-                float baked = clip.averageAngularSpeed * clip.length * Mathf.Rad2Deg;
+                float baked = Mathf.Abs(clip.averageAngularSpeed) * clip.length * Mathf.Rad2Deg;
                 if (!CanCarryTurn(clip, degrees))
                 {
                     if (!_saidInPlace)
@@ -1900,15 +1914,55 @@ namespace RoadDemo
         /// walk it.</summary>
         protected virtual float GraphPace(bool gated) => gated ? Speed * CrossHustle : Speed;
 
+        /// <summary>
+        /// Last-moment proof for a graph step. The ordinary crowd keeps its sampled
+        /// PedLink clearance and therefore returns true at no per-frame cost. A derived
+        /// ordered walker can opt into the live obstacle ledger, which matters for
+        /// streamed blocks that did not exist when PedLink.Free was baked.
+        /// </summary>
+        protected virtual bool GraphStepClear(Vector3 from, Vector3 to) => true;
+
+        /// <summary>Called without committing metre, lateral or transform when the
+        /// live proof rejects a graph step. A derived ordered walker may hand the
+        /// remaining trip to another route system.</summary>
+        protected virtual void GraphStepBlocked(Vector3 wanted) { }
+
+        /// <summary>Pure commit gate used by Move: rejected geometry cannot advance a
+        /// link metre or report arrival. Kept as a model seam so the endpoint regression
+        /// is testable without constructing a walker or a Unity scene.</summary>
+        internal static bool TryGraphAdvance(float currentT, float proposedT, float length,
+                                             bool clear, out float committedT,
+                                             out bool arrived)
+        {
+            committedT = currentT;
+            arrived = false;
+            if (!clear) return false;
+            committedT = proposedT;
+            arrived = proposedT >= length;
+            return true;
+        }
+
         void Move(float dt)
         {
             // GaitGain is the join's: 1 for a man simply walking, ramping up under a
             // start, ramping off under a stop, nothing at all while he takes a turn.
             float speed = GraphPace(_link.Gated) * _hold * PaceScale * GaitGain;
             GearLocomotion(speed);
-            _t += speed * dt;
-            if (_t >= _link.Length)
+            float nextT = _t + speed * dt;
+            if (nextT >= _link.Length)
             {
+                var nodePosition = _link.To.Pos;
+                // dt=0 is Init's one intentional seating snap onto the graph. It is
+                // placement, not a walked step, and must not hand a half-initialised
+                // derived agent to its runtime reroute hook.
+                bool clear = dt <= 0f || GraphStepClear(Tf.position, nodePosition);
+                if (!TryGraphAdvance(_t, nextT, _link.Length, clear,
+                                     out float committedT, out _))
+                {
+                    GraphStepBlocked(nodePosition);
+                    return;
+                }
+                _t = committedT;
                 var arrived = _link.To;
                 _cameFrom = _link.From;
                 if (OnArrived(arrived))
@@ -1916,7 +1970,7 @@ namespace RoadDemo
                 return;
             }
 
-            float f = _t / _link.Length;
+            float f = nextT / _link.Length;
             Vector3 pos = Vector3.Lerp(_link.From.Pos, _link.To.Pos, f);
             if (_link.Gated) pos.y -= 0.08f * Mathf.Sin(Mathf.PI * f); // dip onto the asphalt
 
@@ -1932,22 +1986,41 @@ namespace RoadDemo
                 float limit = _link.Gated ? 0.9f : 1.9f;
                 float want = Mathf.Clamp(_lane + _push * PushGain, -limit, limit);
                 if (!_link.Gated)
-                    want = Mathf.Clamp(_link.FreeLine(_t, FreeLineAhead, want), -limit, limit);
-                _lateral = Mathf.MoveTowards(_lateral, want, 2.4f * dt);
+                    want = Mathf.Clamp(_link.FreeLine(nextT, FreeLineAhead, want), -limit, limit);
+                float nextLateral = Mathf.MoveTowards(_lateral, want, 2.4f * dt);
 
-                pos += new Vector3(dirN.z, 0f, -dirN.x) * _lateral;
+                pos += new Vector3(dirN.z, 0f, -dirN.x) * nextLateral;
+                var step = HoldStep(pos, dt, speed);
+                bool clear = dt <= 0f || GraphStepClear(Tf.position, step);
+                if (!TryGraphAdvance(_t, nextT, _link.Length, clear,
+                                     out float committedT, out _))
+                {
+                    GraphStepBlocked(step);
+                    return;
+                }
+                _t = committedT;
+                _lateral = nextLateral;
                 // a join owns his heading while it runs (SpendJoin); the rest of the
                 // time he eases onto the line of the stretch as he always has
-                if (Joining) Tf.position = HoldStep(pos, dt, speed);
+                if (Joining) Tf.position = step;
                 else
                 {
                     var rot = Quaternion.Slerp(
                         Tf.rotation, Quaternion.LookRotation(dirN), dt <= 0f ? 1f : 8f * dt);
-                    Tf.SetPositionAndRotation(HoldStep(pos, dt, speed), rot);
+                    Tf.SetPositionAndRotation(step, rot);
                 }
                 return;
             }
-            Tf.position = HoldStep(pos, dt, speed);
+            var held = HoldStep(pos, dt, speed);
+            bool heldClear = dt <= 0f || GraphStepClear(Tf.position, held);
+            if (!TryGraphAdvance(_t, nextT, _link.Length, heldClear,
+                                 out float heldT, out _))
+            {
+                GraphStepBlocked(held);
+                return;
+            }
+            _t = heldT;
+            Tf.position = held;
         }
 
         /// <summary>A hard ceiling on how far any one frame may move a person, whatever

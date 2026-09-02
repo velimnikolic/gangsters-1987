@@ -246,12 +246,15 @@ namespace RoadDemo
         {
             var gap = door - man.Tf.position;
             gap.y = 0f;
-            if ((graph || gap.sqrMagnitude > 8f * 8f) && !FreeRoam && man.OnGraph &&
+            if ((graph || gap.sqrMagnitude > 8f * 8f) && (man.OnGraph || graph) && !FreeRoam &&
                 gap.sqrMagnitude > 3f * 3f && NearestSidewalk(door, out var link, out float t))
             {
                 Reseat(man);
-                man.OrderTo(link, t, delay);
-                return;
+                if (man.OnGraph)
+                {
+                    man.OrderTo(link, t, delay);
+                    return;
+                }
             }
             // OFF THE GRAPH, a long walk to a door used to be ONE STRAIGHT LEG. A mob
             // dealt at a shopfront never had a link (CrewWalker.OnGraph is false for
@@ -389,15 +392,19 @@ namespace RoadDemo
         /// stretch where he stands. On the free floor there is no graph: nothing to do.</summary>
         void Reseat(CrewWalker man)
         {
-            if (FreeRoam || man == null || man.Tf == null || !man.OnGraph || man.Dead || man.Riding) return;
+            if (FreeRoam || man == null || man.Tf == null || man.Dead || man.Riding) return;
             // walking the graph he IS where it has him; and a man within a pavement's
             // width of his metre is only on his own side of the walk
-            if (man.State == CrewWalker.Mode.Walking || man.State == CrewWalker.Mode.Homing) return;
-            var cur = man.CurrentLink;
-            var here = Vector3.Lerp(cur.From.Pos, cur.To.Pos, Mathf.Clamp01(man.CurrentT / Mathf.Max(cur.Length, 0.01f)));
-            var gap = man.Tf.position - here;
-            gap.y = 0f;
-            if (gap.sqrMagnitude < 2f * 2f) return;
+            if (man.GraphDriven) return;
+            if (man.OnGraph && man.CurrentLink != null)
+            {
+                var cur = man.CurrentLink;
+                var here = Vector3.Lerp(cur.From.Pos, cur.To.Pos,
+                    Mathf.Clamp01(man.CurrentT / Mathf.Max(cur.Length, 0.01f)));
+                var gap = man.Tf.position - here;
+                gap.y = 0f;
+                if (gap.sqrMagnitude < 2f * 2f) return;
+            }
             if (!NearestSidewalk(man.Tf.position, out var link, out float t)) return;
             man.Reseat(link, t);
         }

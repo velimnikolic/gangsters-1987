@@ -91,10 +91,17 @@ namespace RoadDemo
                 text.Append("  ").Append(record.DisplayName)
                     .Append(" - ").Append(record.Archetype)
                     .Append(" - ").Append(owner)
+                    .Append(" - ").Append(record.State)
                     .Append(" - $").Append(record.EstimatedWeeklyTurnover).Append("/wk [")
                     .Append(site.Role).Append(", ")
                     .Append(string.IsNullOrEmpty(site.ArchetypeHint) ? "no sign" : site.ArchetypeHint)
                     .Append(", ").Append(bound).Append(']');
+                if (business.TryGetShutdown(record.Id, out var shutdown))
+                    text.Append("  ")
+                        .Append(BusinessShutdownText.Line(shutdown))
+                        .Append("  repair $").Append(shutdown.RepairPrice)
+                        .Append("  deadline ").Append(shutdown.RecoveryAt.ToString("0.0"))
+                        .Append('h');
             }
 
             if (shown == 0)

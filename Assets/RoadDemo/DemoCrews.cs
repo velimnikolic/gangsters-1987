@@ -31,6 +31,13 @@ namespace RoadDemo
         /// <summary>One lieutenant, his root object, and his men.</summary>
         public class Unit
         {
+            static int _nextCrowdGroupId;
+
+            /// <summary>Runtime-only identity shared by exactly the walkers in this
+            /// physical unit. CrewId is organization data and can overlap across
+            /// factions; this token cannot, so close-range crowd steering never treats
+            /// another gang or a police detail as a crewmate.</summary>
+            public readonly int CrowdGroupId = ++_nextCrowdGroupId;
             public int CrewId;
             /// <summary>The real Lieutenant Character this temporary physical group
             /// answers to. Moving figures never rewrites this organization parent.</summary>
@@ -766,6 +773,11 @@ namespace RoadDemo
 
         void Common()
         {
+            // The scene's crews, for whoever is handed one MAN and needs the rest of his
+            // (DemoCrews.Active - the doorway beat brings a crew to the door with its
+            // lieutenant).
+            Active = this;
+
             // the fence is a scene's duty, and forgetting it must be loud: with
             // WalkObstacles.City empty, "anywhere" is legal ground and men wander,
             // flee and are stood out on the bare backdrop. The behaviour is one
@@ -975,6 +987,7 @@ namespace RoadDemo
             {
                 boss.IsLieutenant = true;
                 boss.Faction = faction;
+                boss.CrowdGroupId = unit.CrowdGroupId;
                 boss.MaxHealth = boss.Health = BossHealth;
                 boss.RoamsAlone = false;   // a crew holds its ground - its boss too
                 boss.RoamReach = 14f;
@@ -994,6 +1007,7 @@ namespace RoadDemo
                     anthropometrySalt: anthropometrySalt);
                 if (hood == null) continue;
                 hood.Faction = faction;
+                hood.CrowdGroupId = unit.CrowdGroupId;
                 hood.MaxHealth = hood.Health = HoodHealth;
                 hood.RoamsAlone = false;
                 hood.HoldLane(FormationLane(unit.CrewId, k));
@@ -1094,6 +1108,91 @@ namespace RoadDemo
             // alive and answers the next scene's walkers with this one's floor
             if (CrewWalker.FindCover != null && ReferenceEquals(CrewWalker.FindCover.Target, this))
                 CrewWalker.FindCover = null;
+            if (Active == this) Active = null;
+        }
+
+        /// <summary>The crews standing in this scene, for the systems that are handed a
+        /// MAN and have to find the men around him - the doorway beat, which sends a
+        /// lieutenant into a shop and has to bring his crew to the door with him. Set in
+        /// Init and dropped with the scene, the way every other runtime here does it.</summary>
+        public static DemoCrews Active { get; private set; }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetActiveForPlay() => Active = null;
+
+        // ------------------------------------------------------------------ the door
+
+        /// <summary>How far out from the doorstep the nearest pair of guards stand, and
+        /// how much further out each pair behind them. Close enough to be HIS men and
+        /// not a queue; far enough off the door that the man going in walks through a
+        /// gap and not through them.</summary>
+        const float GuardSpread = 1.7f;
+        const float GuardStandOff = 0.7f;
+
+        /// <summary>
+        /// THE CREW COMES TO THE DOOR. One man of a crew is sent into a shop - to lean on
+        /// the owner, to take the week's money, to turn the place over - and until this
+        /// existed he walked there alone: the lieutenant crossing a street on his own
+        /// while three hoods stood where the last order left them, which is not a family
+        /// calling on a shopkeeper, it is a man running an errand.
+        ///
+        /// So the rest of the crew walks to the same doorstep and stands off it in pairs,
+        /// EYES ON THE STREET - the doorway is his business and the pavement is theirs.
+        /// They keep that heading while they wait (CrewWalker.WatchToward), so a crew
+        /// waiting at a door reads as a crew waiting at a door and not as four men who
+        /// happen to be standing near one.
+        /// </summary>
+        /// <param name="man">The one going in. He is left alone - the beat owns his walk.</param>
+        /// <param name="doorstep">Where he will stand to go in.</param>
+        /// <param name="outward">Which way is out to the street, from the shop's front.</param>
+        public bool GuardDoor(CrewWalker man, Vector3 doorstep, Vector3 outward)
+        {
+            var unit = UnitOf(man);
+            if (unit == null || unit.Faction != 0 || unit.Wiped)
+                return false;
+
+            outward.y = 0f;
+            if (outward.sqrMagnitude < 1e-4f)
+            {
+                outward = man != null && man.Tf != null
+                    ? man.Tf.position - doorstep
+                    : Vector3.forward;
+                outward.y = 0f;
+                if (outward.sqrMagnitude < 1e-4f) outward = Vector3.forward;
+            }
+            outward.Normalize();
+            var lateral = Vector3.Cross(Vector3.up, outward);
+
+            var posted = 0;
+            var k = 0;
+            foreach (var other in unit.All())
+            {
+                if (other == null || other == man || other.Dead || other.Tf == null) continue;
+                if (other.Riding || IsAboard(other) || other.Panicked) continue;
+                // A man in a fight is not a doorman. The beat itself refuses a visit
+                // under fire, and a hood already shooting is left to it.
+                if (other.Target != null) continue;
+
+                var side = (k % 2 == 0) ? 1f : -1f;
+                var rank = k / 2;
+                var want = doorstep
+                           + lateral * (side * (GuardSpread + rank * 1.1f))
+                           + outward * (GuardStandOff + rank * 0.5f);
+                var spot = WalkObstacles.ClearSpot(want, WalkObstacles.Radius, 4f);
+                Unwedge(other);
+                // A rejected collision-aware route is a real refusal. Falling back to
+                // the raw point order here let a doorman cut through the very cafe or
+                // furniture which made OrderAcross fail.
+                if (!other.OrderAcross(spot)) continue;
+                // The order clears the last watch; the new one is set behind it, so it
+                // survives the walk and takes hold when he stops.
+                other.WatchToward(outward);
+                other.Post = doorstep;
+                k++;
+                posted++;
+            }
+
+            return posted > 0;
         }
 
         // ---------------------------------------------------------- map visibility
@@ -1329,8 +1428,8 @@ namespace RoadDemo
             return null;
         }
 
-        /// <summary>Send the selected lieutenant toward a world point over any open
-        /// city ground. Returns where he will stand, or false when nothing is selected.
+        /// <summary>Send the selected lieutenant toward a world point over open ground.
+        /// Returns where he will stand, or false when nothing is selected.
         ///
         /// <paramref name="run"/> is the player asking for it twice (CrewOverlay's
         /// double right click) and is the ONLY thing that puts a crew into a run over
@@ -1382,24 +1481,19 @@ namespace RoadDemo
             }
 
             world = WalkObstacles.ClampToCity(world);
+            if (!WalkObstacles.TryClearStandingSpot(
+                    world, WalkObstacles.Radius, unit.Boss.Tf.position,
+                    out world, 30f)) return false;
             world.y = GroundY;
-            DispatchAcross(unit, unit.Boss, world, run, keepOffRoad: false);
+            if (!DispatchAcross(unit, unit.Boss, world, run, keepOffRoad: false))
+                return false;
             destination = world;
             return true;
         }
 
-        /// <summary>Be over there - ON FOOT, and never mind the pavements.
-        ///
-        /// The crowd keeps to the sidewalk graph, goes round the blocks and waits at the
-        /// lights, because that is what a city looks like from the outside. A crew told
-        /// to be somewhere does not: it cuts over the lot, across the road against the
-        /// light, down the gap between two buildings, and it walks the length of the
-        /// quarter to do it. The only ground it will not cross is ground a man cannot
-        /// stand on - a wall, a lot, a parked car - and the fields outside the city,
-        /// which are not the city (WalkRoute).
-        ///
-        /// This is the order behind a march; the walking itself, the corners and the
-        /// steering past whatever has moved into the way since, is CrewWalker's.</summary>
+        /// <summary>March a crew on foot over physical ground. Static obstacles shape
+        /// the route through WalkRoute; <paramref name="keepOffRoad"/> optionally makes
+        /// that direct route prefer crossings over walking along the carriageway.</summary>
         public bool MarchTo(Unit unit, Vector3 world, bool run = false, bool keepOffRoad = false)
         {
             if (unit == null) return false;
@@ -1420,30 +1514,39 @@ namespace RoadDemo
             // doorway, a wall or a parked car gave the man who leads the crew nowhere to
             // put his feet - and a crew whose leader cannot move homes back to where it
             // came from while the order that sent it reports success.
-            world = WalkObstacles.ClearSpot(world, WalkObstacles.Radius);
+            if (!WalkObstacles.TryClearStandingSpot(
+                    world, WalkObstacles.Radius, boss.Tf.position,
+                    out world, 30f)) return false;
             world.y = GroundY;
 
-            DispatchAcross(unit, boss, world, run, keepOffRoad);
-            return true;
+            return DispatchAcross(unit, boss, world, run, keepOffRoad);
         }
 
         /// <summary>Move a whole crew across physical ground instead of the pedestrian
         /// graph. Static obstacles shape the planned route; traffic is avoided live by
         /// each walker.</summary>
-        void DispatchAcross(Unit unit, CrewWalker boss, Vector3 world, bool run, bool keepOffRoad)
+        bool DispatchAcross(Unit unit, CrewWalker boss, Vector3 world, bool run, bool keepOffRoad)
         {
+            Unwedge(boss);
             var dir = world - boss.Tf.position;
             dir.y = 0f;
-            var rot = Quaternion.LookRotation(dir.sqrMagnitude > 0.25f ? dir.normalized : boss.Tf.forward);
-            Reseat(boss);
-            Unwedge(boss);
-            boss.OrderAcross(world, keepOffRoad: keepOffRoad);
-            // A walk unless the player asked for it twice. The run exists (CrewWalker.
-            // Running) but nothing reaches for it on its own: men who break into a jog
-            // because some rule inside the game decided they should read as a town in
-            // a panic, and the player who wants them there quicker can say so.
-            boss.Urgent = run;
-            boss.Post = world;
+            // ONE CREW, ONE WAY. Independent A* searches can choose opposite sides of
+            // the same block, which makes men given one order set off in unrelated
+            // directions. Plan the leader's corridor once; each member copies its
+            // corners and replaces only the final marker with his formation slot.
+            bool hasSharedWay = WalkRoute.Plan(
+                boss.Tf.position, world, _dispatchRoute, keepOffRoad);
+            CopyMemberCorridor(hasSharedWay ? _dispatchRoute : null,
+                _dispatchMemberRoute);
+            if (hasSharedWay && _dispatchRoute.Count > 1)
+            {
+                var arrival = _dispatchRoute[_dispatchRoute.Count - 1] -
+                              _dispatchRoute[_dispatchRoute.Count - 2];
+                arrival.y = 0f;
+                if (arrival.sqrMagnitude > 0.25f) dir = arrival;
+            }
+            var rot = Quaternion.LookRotation(
+                dir.sqrMagnitude > 0.25f ? dir.normalized : boss.Tf.forward);
 
             // WHO STANDS WHERE IS DECIDED BY WHO IS NEAREST IT, not by the order the
             // hoods happen to sit in the list. Handing a man the place his index names
@@ -1456,12 +1559,25 @@ namespace RoadDemo
             {
                 var man = unit.Hoods[k];
                 if (man == null || man.Dead || man == boss || man.Riding) continue;
+                Unwedge(man);
                 _dispatchMen.Add(man);
                 // spread behind him, so three men arrive as a crew and not as a column
-                _dispatchSpots.Add(WalkObstacles.ClearSpot(
-                    world + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius));
+                var wanted = world + rot * FormationOffset(unit.CrewId, k);
+                if (!WalkObstacles.TryConnectedStandingSpot(
+                        wanted, world, WalkObstacles.Radius, out var spot, 6f))
+                {
+                    // Keep the fallback on the leader's connected side and compact the
+                    // wedge; never ring-search a slot through the wall to its far side.
+                    var compact = world + (wanted - world) * 0.5f;
+                    if (!WalkObstacles.TryConnectedStandingSpot(
+                            compact, world, WalkObstacles.Radius, out spot, 4f))
+                        spot = world;
+                }
+                _dispatchSpots.Add(spot);
             }
 
+            _dispatchAssignedMen.Clear();
+            _dispatchAssignedSpots.Clear();
             while (_dispatchMen.Count > 0)
             {
                 var bestMan = 0;
@@ -1479,17 +1595,52 @@ namespace RoadDemo
                     bestSpot = spot;
                 }
 
-                var taking = _dispatchMen[bestMan];
-                Reseat(taking);
-                Unwedge(taking);
-                // AND THEY GO WHEN HE GOES. The hoods used to be handed a stagger of up
-                // to nine tenths of a second each, so a crew told to move set off in
-                // dribs while the lieutenant walked away from it.
-                taking.OrderAcross(_dispatchSpots[bestSpot], 0f, keepOffRoad);
-                taking.Urgent = run;
+                _dispatchAssignedMen.Add(_dispatchMen[bestMan]);
+                _dispatchAssignedSpots.Add(_dispatchSpots[bestSpot]);
                 _dispatchMen.RemoveAt(bestMan);
                 _dispatchSpots.RemoveAt(bestSpot);
             }
+
+            // ALL OR NONE. Validate every connector before changing anybody's order.
+            // Previously the boss and early hoods were already walking when a later
+            // hood discovered that its side of the formation was unreachable.
+            var bossWay = hasSharedWay ? _dispatchRoute : null;
+            var memberWay = hasSharedWay ? _dispatchMemberRoute : null;
+            if (!boss.CanOrderAcrossVia(world, bossWay, keepOffRoad)) return false;
+            for (int i = 0; i < _dispatchAssignedMen.Count; i++)
+            {
+                var taking = _dispatchAssignedMen[i];
+                var spot = _dispatchAssignedSpots[i];
+                if (!taking.CanOrderAcrossVia(spot, memberWay, keepOffRoad))
+                {
+                    // A locally impossible slot may compact to the leader's proved
+                    // destination, but it may not make only this hood choose a private
+                    // route around the other side of the block.
+                    if (!taking.CanOrderAcrossVia(world, memberWay, keepOffRoad))
+                        return false;
+                    _dispatchAssignedSpots[i] = world;
+                }
+            }
+
+            bool bossAccepted = hasSharedWay
+                ? boss.OrderAcrossVia(world, _dispatchRoute, keepOffRoad: keepOffRoad)
+                : boss.OrderAcross(world, keepOffRoad: keepOffRoad);
+            if (!bossAccepted) return false; // same-frame commit of a proved route
+            boss.Urgent = run;
+            boss.Post = world;
+
+            bool allAccepted = true;
+            for (int i = 0; i < _dispatchAssignedMen.Count; i++)
+            {
+                var taking = _dispatchAssignedMen[i];
+                bool accepted = hasSharedWay
+                    ? taking.OrderAcrossVia(_dispatchAssignedSpots[i],
+                        _dispatchMemberRoute, 0f, keepOffRoad)
+                    : taking.OrderAcross(_dispatchAssignedSpots[i], 0f, keepOffRoad);
+                if (accepted) taking.Urgent = run;
+                else allAccepted = false;
+            }
+            return allAccepted;
         }
 
         /// <summary>Scratch for the formation hand-out: the men still without a place and
@@ -1497,6 +1648,22 @@ namespace RoadDemo
         /// allocation, the way every other per-order list here is kept.</summary>
         readonly List<CrewWalker> _dispatchMen = new List<CrewWalker>();
         readonly List<Vector3> _dispatchSpots = new List<Vector3>();
+        readonly List<Vector3> _dispatchRoute = new List<Vector3>();
+        readonly List<Vector3> _dispatchMemberRoute = new List<Vector3>();
+        readonly List<CrewWalker> _dispatchAssignedMen = new List<CrewWalker>();
+        readonly List<Vector3> _dispatchAssignedSpots = new List<Vector3>();
+
+        /// <summary>The exact last point belongs to the lieutenant. Hoods retain every
+        /// obstacle-clearing interior corner and append their own formation slot.
+        /// Keeping both endpoints made every hood overshoot the boss by up to four
+        /// metres and turn back at the end of even a short order.</summary>
+        internal static void CopyMemberCorridor(IReadOnlyList<Vector3> leaderWay,
+            List<Vector3> into)
+        {
+            into.Clear();
+            int count = leaderWay != null ? leaderWay.Count : 0;
+            for (int i = 0; i + 1 < count; i++) into.Add(leaderWay[i]);
+        }
 
         /// <summary>The fallback for a man who is standing INSIDE something - a wall, a
         /// doorway, a car that parked on him. He cannot take a step from there, so every
@@ -1504,19 +1671,22 @@ namespace RoadDemo
         /// waits on him goes nowhere either. Lift him onto the nearest ground he can
         /// stand on before he is sent anywhere.
         ///
-        /// A fallback, not a habit: a man on clear ground is never touched, and the move
-        /// is the shortest one ClearSpot can find, so a man who is merely close to a wall
-        /// stays where the player last saw him.</summary>
-        static void Unwedge(CrewWalker man)
+        /// A fallback, not a habit: a man on clear ground is never touched, and recovery
+        /// is deliberately local. If streamed geometry encloses him by more than a small
+        /// step, fail closed instead of teleporting him through a cafe or a building.</summary>
+        static bool Unwedge(CrewWalker man)
         {
-            if (man == null || man.Tf == null || man.Dead) return;
+            const float MaxRecoveryStep = 2.5f;
+            if (man == null || man.Tf == null || man.Dead) return false;
             var at = man.Tf.position;
-            if (!WalkObstacles.Occupied(at, WalkObstacles.Radius)) return;
+            if (!WalkObstacles.Occupied(at, WalkObstacles.Radius)) return false;
 
-            var free = WalkObstacles.ClearSpot(at, WalkObstacles.Radius);
-            if ((free - at).sqrMagnitude < 0.0001f) return;
+            if (!WalkObstacles.TryClearSpot(
+                    at, WalkObstacles.Radius, out var free, MaxRecoveryStep)) return false;
+            if ((free - at).sqrMagnitude < 0.0001f) return false;
             free.y = at.y;
             man.Tf.position = free;
+            return true;
         }
 
         /// <summary>A direct order to one of the outfit's crews countermands its
@@ -1903,6 +2073,11 @@ namespace RoadDemo
                 {
                     if (man.Dead || man.Tf == null || IsAboard(man) || man.Riding) continue;
                     if (OnRaid(man) || Chasing(man)) continue;   // the raid's man, and the chaser, are their own business
+                    // AND THE MAN IN A DOORWAY. He is walking THROUGH a shopfront
+                    // on the beat's own order (DoorBeat), so of course the ground
+                    // under him reads as occupied - stepping him back out of it is
+                    // stepping him out of the shop he was sent into.
+                    if (DoorBeat.Active(man)) continue;
                     if (man.State != CrewWalker.Mode.Standing) continue;
                     // INSIDE SOMETHING, and only that. The asphalt used to count as a
                     // fault too, and it is what tore a crew apart: told to stand in the
@@ -1916,24 +2091,24 @@ namespace RoadDemo
                     // lieutenant wherever he is. The one thing that is nobody's order is
                     // a man with his shoulders in a bin, and he still steps out of it.
                     if (!WalkObstacles.Occupied(man.Tf.position, WalkObstacles.Radius)) continue;
-                    var free = WalkObstacles.ClearSpot(man.Tf.position, WalkObstacles.Radius, 6f);
-                    if ((free - man.Tf.position).sqrMagnitude < 0.3f * 0.3f) continue;
+                    var from = man.Tf.position;
+                    if (!Unwedge(man)) continue;
+                    var free = man.Tf.position;
                     if (DriveTrace.On)
                     {
                         var sb = DriveTrace.Take();
                         DriveTrace.Str(sb, "who", man.DisplayName);
-                        DriveTrace.Num(sb, "moved", Vector3.Distance(free, man.Tf.position));
-                        DriveTrace.Vec(sb, "from", man.Tf.position);
+                        DriveTrace.Num(sb, "moved", Vector3.Distance(free, from));
+                        DriveTrace.Vec(sb, "from", from);
                         DriveTrace.Row("unstuck", sb.ToString());
                     }
-                    man.OrderToPoint(free);
                     _unsticking.Add(man);
                 }
 
                 if (unit.Wiped || unit.IsPolice || unit.TargetUnit != null || unit.Boarding != null) continue;
                 var lead = unit.Boss != null && !unit.Boss.Dead ? unit.Boss : Standing(unit);
                 if (lead == null || lead.Tf == null || IsAboard(lead) || lead.Riding || lead.Panicked) continue;
-                var leadAnchor = lead.HasOrder ? lead.Destination : lead.Tf.position;
+                var leadAnchor = lead.HasOrder ? lead.OrderDestination : lead.Tf.position;
                 float worst = 0f;
                 for (int k = 0; k < unit.Hoods.Count; k++)
                 {
@@ -1942,6 +2117,12 @@ namespace RoadDemo
                     if (IsAboard(man) || man.Riding || man.Panicked || man.Target != null) continue;
                     man.SetPace(1f);   // yesterday's dawdle does not outlive its reason
                     if (OnRaid(man)) continue;   // walking to the machine, or home from it: the raid drives him
+                    if (DoorBeat.Active(man)) continue;   // in a doorway: the visit drives him
+                    // POSTED ON A DOOR, and standing where he was put. The tether reads
+                    // a doorman two metres off a shopfront as a straggler the moment his
+                    // lieutenant walks INTO it - the boss's body ends up three or four
+                    // metres inside the wall - and hauls the whole guard in after him.
+                    if (man.Watching) continue;
                     if (Chasing(man)) continue;   // running after somebody: the chase drives him
                     if (_unsticking.Contains(man)) continue;   // let him step out of the bin first
                     var gap = man.Tf.position - lead.Tf.position;
@@ -2006,9 +2187,9 @@ namespace RoadDemo
                         // condemned every haul-back and every cut-across-the-light -
                         // both aim at the LEAD - as a stray, and re-ordered it each
                         // scan: the man spent the leg being corrected in place.
-                        var stray = man.Destination - leadAnchor;
+                        var stray = man.OrderDestination - leadAnchor;
                         stray.y = 0f;
-                        var atLead = man.Destination - lead.Tf.position;
+                        var atLead = man.OrderDestination - lead.Tf.position;
                         atLead.y = 0f;
                         if (stray.sqrMagnitude > 12f * 12f && atLead.sqrMagnitude > 12f * 12f)
                             Tether(unit, lead, man, k, hustle: true);
@@ -2032,9 +2213,7 @@ namespace RoadDemo
                             DriveTrace.Str(sb, "what", "left at a light: crossing after the crew");
                             DriveTrace.Row("tether", sb.ToString());
                         }
-                        man.OrderAcross(WalkObstacles.ClearSpot(
-                            lead.Tf.position + lead.Tf.rotation * FormationOffset(unit.CrewId, k),
-                            WalkObstacles.Radius));
+                        OrderFallInAcross(unit, lead, man, k, 0f);
                         man.Urgent = lead.Urgent;   // a run is the crew's, not one man's
                         man.Hustle = d > TetherFar;
                     }
@@ -2049,12 +2228,12 @@ namespace RoadDemo
                         // On the shared errand and merely BEHIND: quicker feet
                         // (Hustle only gears the free stride - the graph walk
                         // hurries through PaceScale, reset every scan).
-                        var strayW = man.Destination - lead.Tf.position;
+                        var strayW = man.OrderDestination - lead.Tf.position;
                         strayW.y = 0f;
                         bool foreign = strayW.sqrMagnitude > 12f * 12f;
                         if (foreign && lead.HasOrder)
                         {
-                            var errand = man.Destination - leadAnchor;
+                            var errand = man.OrderDestination - leadAnchor;
                             errand.y = 0f;
                             foreign = errand.sqrMagnitude > 12f * 12f;
                         }
@@ -2108,32 +2287,67 @@ namespace RoadDemo
             // re-tethered every 0.7 s for a whole run, measured). If the slot would
             // not actually move him, he cuts across the open ground instead.
             bool walked = false;
-            if (!FreeRoam && man.OnGraph && lead.OnGraph && lead.CurrentLink != null && !lead.CurrentLink.Gated)
+            bool leadHasGraphSeat = lead.GraphDriven ||
+                (lead.State == CrewWalker.Mode.Standing && lead.OnGraph);
+            if (!FreeRoam && leadHasGraphSeat && lead.CurrentLink != null &&
+                !lead.CurrentLink.Gated)
             {
-                var link = lead.CurrentLink;
-                float t = FormationT(link, lead.CurrentT, unit.CrewId, k);
-                var slot = Vector3.Lerp(link.From.Pos, link.To.Pos, t / Mathf.Max(link.Length, 0.01f));
-                var pull = slot - man.Tf.position;
-                pull.y = 0f;
-                if (pull.sqrMagnitude > 2f * 2f)
+                // OrderAcross deliberately detached the old graph link. Attach the man
+                // where he actually stands before trying to return him to a leader who
+                // is genuinely graph-driven; otherwise OnGraph can never become true
+                // again and every later scan repeats another cut-across.
+                Reseat(man);
+                if (man.OnGraph && man.CurrentLink != null)
                 {
-                    Reseat(man);
-                    man.OrderTo(link, t);
-                    walked = true;
+                    var link = lead.CurrentLink;
+                    float t = FormationT(link, lead.CurrentT, unit.CrewId, k);
+                    var slot = Vector3.Lerp(link.From.Pos, link.To.Pos,
+                        t / Mathf.Max(link.Length, 0.01f));
+                    var pull = slot - man.Tf.position;
+                    pull.y = 0f;
+                    if (pull.sqrMagnitude > 2f * 2f)
+                    {
+                        man.OrderTo(link, t);
+                        walked = true;
+                    }
                 }
             }
             if (!walked)
-            {
-                var spot = WalkObstacles.ClearSpot(
-                    lead.Tf.position + lead.Tf.rotation * FormationOffset(unit.CrewId, k), WalkObstacles.Radius);
-                man.OrderAcross(spot);
-            }
+                OrderFallInAcross(unit, lead, man, k, 0f);
             // A RUN BELONGS TO THE CREW. Every order clears the last one's urgency, and
             // this is an order - so a hood hauled back into place while his crew was
             // running dropped to a walk on the spot and never caught it again. He
             // inherits the lead's: running crew, running man; walking crew, walking man.
             man.Urgent = lead.Urgent;
             man.Hustle = hustle;
+        }
+
+        readonly List<Vector3> _cohesionRoute = new List<Vector3>();
+
+        /// <summary>Return a separated hood to his own remaining common way. Progress is
+        /// per walker: the leader may already have cleared a corner which this hood has
+        /// not reached. It never invents a second cross-block route while the member
+        /// still owns a shared one.</summary>
+        bool OrderFallInAcross(Unit unit, CrewWalker lead, CrewWalker man, int k,
+            float beat)
+        {
+            if (unit == null || lead == null || man == null || lead.Tf == null ||
+                man.Tf == null) return false;
+            var anchor = lead.HasOrder ? lead.OrderDestination : lead.Tf.position;
+            var facing = lead.HasOrder ? anchor - lead.Tf.position : lead.Tf.forward;
+            facing.y = 0f;
+            var rot = Quaternion.LookRotation(
+                facing.sqrMagnitude > 1e-3f ? facing.normalized : lead.Tf.forward);
+            var wanted = anchor + rot * FormationOffset(unit.CrewId, k);
+            if (!WalkObstacles.TryConnectedStandingSpot(
+                    wanted, anchor, WalkObstacles.Radius, out var spot, 6f))
+                spot = anchor;
+
+            _cohesionRoute.Clear();
+            bool shared = man.CopyRemainingSharedWay(_cohesionRoute);
+            return shared
+                ? man.OrderAcrossVia(spot, _cohesionRoute, beat)
+                : man.OrderAcross(spot, beat);
         }
 
         /// <summary>Metres two men keep between them on open ground - shoulder room.</summary>
@@ -2433,6 +2647,7 @@ namespace RoadDemo
             // stays on the ground and takes no part in the crew's business
             if (!fresh && man.Dead)
             {
+                man.CrowdGroupId = unit.CrowdGroupId;
                 if (boss) unit.Boss = man; else unit.Hoods.Add(man);
                 return;
             }
@@ -2447,10 +2662,13 @@ namespace RoadDemo
                 float t = man.CurrentT;
                 var pos = man.Tf.position;
                 var rot = man.Tf.rotation;
+                bool hadGraphSeat = !FreeRoam && man.OnGraph && link != null &&
+                    (man.GraphDriven || man.State == CrewWalker.Mode.Standing);
                 var seatCar = CarAboard(man, out int seatHad); // recast in his seat: he keeps it
                 RemoveMan(id);
                 float pace = boss ? BossPace : HoodPace();
-                man = FreeRoam ? SpawnMember(member, pos, rot, pace) : SpawnMember(member, link, t, pace);
+                man = hadGraphSeat ? SpawnMember(member, link, t, pace)
+                                   : SpawnMember(member, pos, rot, pace);
                 if (man == null) return;
                 _byCharacter[id] = man;
                 if (seatCar != null && seatHad >= 0)
@@ -2466,9 +2684,13 @@ namespace RoadDemo
                 // a new man walks in beside his boss - beside the car, on the kerb side,
                 // when the boss is sat in it; a new crew opens up on ground of its own,
                 // apart from the others
-                if (FreeRoam)
+                bool bossHasGraphSeat = unit.Boss != null && unit.Boss.OnGraph &&
+                    unit.Boss.CurrentLink != null &&
+                    (unit.Boss.GraphDriven || unit.Boss.State == CrewWalker.Mode.Standing);
+                if (FreeRoam || (unit.Boss != null && !bossHasGraphSeat))
                 {
-                    var rot = Quaternion.LookRotation(_outfitFacing);
+                    var rot = unit.Boss != null && unit.Boss.Tf != null
+                        ? unit.Boss.Tf.rotation : Quaternion.LookRotation(_outfitFacing);
                     Vector3 pos;
                     if (unit.Car != null && unit.Car.Tf != null)
                         pos = KerbSideOf(unit.Car);
@@ -2476,6 +2698,7 @@ namespace RoadDemo
                         pos = unit.Boss.Tf.position + unit.Boss.Tf.rotation * FormationOffset(unit.CrewId, unit.Hoods.Count);
                     else
                         pos = OutfitSpawnPoint(unit);
+                    pos = WalkObstacles.ClearSpot(pos, WalkObstacles.Radius);
                     man = SpawnMember(member, pos, rot, boss ? BossPace : HoodPace());
                 }
                 else
@@ -2508,6 +2731,7 @@ namespace RoadDemo
             man.IsLieutenant = boss;
             man.DisplayName = member.FullName;
             man.Faction = 0;
+            man.CrowdGroupId = unit.CrowdGroupId;
             // a crew HOLDS its ground: nobody wanders, the lieutenant included. The
             // boss used to take a short anchored stroll for life's sake, but from
             // the player's chair that is one man walking off and leaving the crew
@@ -2655,29 +2879,53 @@ namespace RoadDemo
         {
             var boss = unit.Boss;
             const float beat = HoodBeatSeconds;
-            if (FreeRoam)
+            bool movingOnGraph = !FreeRoam && boss.GraphDriven &&
+                boss.CurrentLink != null && boss.DestinationLink != null;
+            bool standingOnGraph = !FreeRoam && boss.State == CrewWalker.Mode.Standing &&
+                boss.OnGraph && boss.CurrentLink != null && !boss.CurrentLink.Gated;
+            if (!movingOnGraph && !standingOnGraph)
             {
-                var facing = boss.HasOrder ? (boss.Destination - boss.Tf.position) : boss.Tf.forward;
-                facing.y = 0f;
-                var rot = Quaternion.LookRotation(facing.sqrMagnitude > 1e-3f ? facing.normalized : Vector3.forward);
-                var spot = WalkObstacles.ClearSpot(
-                    boss.Destination + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius);
-                if ((hood.Tf.position - spot).sqrMagnitude > 0.35f * 0.35f)
-                    hood.OrderToPoint(spot, beat);
+                FallInAcross(unit, boss, hood, k, beat);
                 return;
             }
+
             Reseat(hood);
-            if (boss.HasOrder)
+            if (!hood.OnGraph || hood.CurrentLink == null)
             {
-                hood.OrderTo(boss.DestinationLink, FormationT(boss.DestinationLink, boss.DestinationT, unit.CrewId, k), beat);
+                FallInAcross(unit, boss, hood, k, beat);
                 return;
             }
+
+            if (movingOnGraph)
+            {
+                var destination = boss.DestinationLink;
+                hood.OrderTo(destination,
+                    FormationT(destination, boss.DestinationT, unit.CrewId, k), beat);
+                return;
+            }
+
             var link = boss.CurrentLink;
-            if (link == null || link.Gated) return;
             float t = FormationT(link, boss.CurrentT, unit.CrewId, k);
             // freshly dealt in on his spot already - no need to shuffle
             if (hood.CurrentLink == link && Mathf.Abs(hood.CurrentT - t) < 0.35f) return;
             hood.OrderTo(link, t, beat);
+        }
+
+        /// <summary>Fall in on a leader who is genuinely off the sidewalk graph. A
+        /// moving leader's final order target is the anchor, not whichever A* corner he
+        /// happens to be approaching this frame.</summary>
+        void FallInAcross(Unit unit, CrewWalker boss, CrewWalker hood, int k, float beat)
+        {
+            var anchor = boss.HasOrder ? boss.OrderDestination : boss.Tf.position;
+            var facing = boss.HasOrder ? anchor - boss.Tf.position : boss.Tf.forward;
+            facing.y = 0f;
+            var rot = Quaternion.LookRotation(
+                facing.sqrMagnitude > 1e-3f ? facing.normalized : boss.Tf.forward);
+            var spot = WalkObstacles.ClearSpot(
+                anchor + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius);
+            if ((hood.Tf.position - spot).sqrMagnitude <= 0.35f * 0.35f) return;
+            if (FreeRoam) hood.OrderToPoint(spot, beat);
+            else OrderFallInAcross(unit, boss, hood, k, beat);
         }
 
         void RemoveMan(int id)

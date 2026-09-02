@@ -29,8 +29,19 @@ namespace RoadDemo
         /// <summary>Half a man, shoulder to shoulder - what must clear a thing.</summary>
         public const float Radius = SidewalkDressing.WalkRadius;
 
-        /// <summary>The pavement plans in the scene: each prop's footprint, as laid.</summary>
-        public static readonly List<SidewalkPlan> Props = new List<SidewalkPlan>();
+        static readonly List<SidewalkPlan> _props = new List<SidewalkPlan>();
+        static readonly IReadOnlyList<SidewalkPlan> PropsView = _props.AsReadOnly();
+        static readonly string[] DecorativeGenericTokens =
+        {
+            "Bottle_", "Button_", "Chain_", "Clock_", "Coin_", "Food_",
+            "Hook_", "Key_", "Keypad_", "Lever_", "Light_", "Manhole_",
+            "Medkit_", "Mug_", "Papers_", "Plate_", "Pot_", "Potion_", "Rope_",
+            "Screen_", "Skull_", "Switch_",
+        };
+
+        /// <summary>The registered pavement plans in the scene, exposed read-only so a
+        /// caller cannot add one without also invalidating the route lattice.</summary>
+        public static IReadOnlyList<SidewalkPlan> Props => PropsView;
 
         // Props that arrive already composed inside a block prefab, rather than through
         // StreetKit/SidewalkDressing. They are still furniture, not walls: walkers and
@@ -95,17 +106,91 @@ namespace RoadDemo
             return best;
         }
 
-        static void Grew(float xMin, float xMax, float zMin, float zMax)
+        static void Include(float xMin, float xMax, float zMin, float zMax)
         {
             Min.x = Mathf.Min(Min.x, xMin); Min.y = Mathf.Min(Min.y, zMin);
             Max.x = Mathf.Max(Max.x, xMax); Max.y = Mathf.Max(Max.y, zMax);
+        }
+
+        static void Grew(float xMin, float xMax, float zMin, float zMax)
+        {
+            Include(xMin, xMax, zMin, zMax);
             Version++;
+        }
+
+        /// <summary>
+        /// Put a mutable pavement plan into the walking ledger. Existing solid boxes
+        /// establish the route lattice bounds now; later Take/Pop/Reframe operations
+        /// invalidate it through the plan's change signal.
+        /// </summary>
+        public static bool RegisterPlan(SidewalkPlan plan)
+        {
+            // A dressing plan is deliberately registered before it is populated. Its
+            // later Take/Pop calls are how the walking ledger learns that furniture
+            // appeared; rejecting an empty mutable plan loses that subscription and
+            // makes every subsequently placed table/chair invisible to the crew.
+            if (plan == null || _props.Contains(plan)) return false;
+            _props.Add(plan);
+            plan.Changed += PlanChanged;
+            Include(plan);
+            Version++;
+            return true;
+        }
+
+        /// <summary>Remove a plan whose owning scene/root is going away.</summary>
+        public static bool UnregisterPlan(SidewalkPlan plan)
+        {
+            if (plan == null || !_props.Remove(plan)) return false;
+            plan.Changed -= PlanChanged;
+            // Bounds are deliberately a high-water mark for this play session. They
+            // need not shrink to answer occupancy correctly, and retaining them avoids
+            // a full-city rescan plus a navigation-grid address change every time a
+            // cached residential view leaves the camera window.
+            Version++;
+            return true;
+        }
+
+        static void PlanChanged(SidewalkPlan plan, SidewalkPlan.Box box, SidewalkPlan.Change change)
+        {
+            if (change == SidewalkPlan.Change.Added) Include(box);
+            // Reframe reports one aggregate change rather than one event per box, so
+            // its payload is intentionally default. Include the moved plan itself.
+            else if (change == SidewalkPlan.Change.Reframed) Include(plan);
+            // A removal can leave conservative bounds behind, which is harmless and
+            // avoids rescanning a city while SidewalkDressing tries and rejects props.
+            Version++;
+        }
+
+        static void Include(SidewalkPlan plan)
+        {
+            if (plan == null) return;
+            var boxes = plan.Boxes;
+            for (int i = 0; i < boxes.Count; i++) Include(boxes[i]);
+        }
+
+        static void Include(in SidewalkPlan.Box box)
+        {
+            if (!box.Solid || box.KeepClear || box.H.x <= 0f || box.H.y <= 0f) return;
+            float rx = Mathf.Abs(box.Ax.x) * box.H.x + Mathf.Abs(box.Az.x) * box.H.y;
+            float rz = Mathf.Abs(box.Ax.y) * box.H.x + Mathf.Abs(box.Az.y) * box.H.y;
+            Include(box.C.x - rx, box.C.x + rx, box.C.y - rz, box.C.y + rz);
+        }
+
+        static void RebuildBounds()
+        {
+            Min = new Vector2(float.MaxValue, float.MaxValue);
+            Max = new Vector2(float.MinValue, float.MinValue);
+            Include(_solids);
+            Include(_composedProps);
+            for (int i = 0; i < _props.Count; i++) Include(_props[i]);
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void Forget()
         {
-            Props.Clear();
+            for (int i = 0; i < _props.Count; i++)
+                if (_props[i] != null) _props[i].Changed -= PlanChanged;
+            _props.Clear();
             _solids = new SidewalkPlan();
             _composedProps = new SidewalkPlan();
             Near.Clear();
@@ -152,9 +237,8 @@ namespace RoadDemo
         public static void BlockProp(in SidewalkPlan.Box box)
         {
             if (!box.Solid || box.H.x <= 0f || box.H.y <= 0f) return;
-            float rx = Mathf.Abs(box.Ax.x) * box.H.x + Mathf.Abs(box.Az.x) * box.H.y;
-            float rz = Mathf.Abs(box.Ax.y) * box.H.x + Mathf.Abs(box.Az.y) * box.H.y;
-            Grew(box.C.x - rx, box.C.x + rx, box.C.y - rz, box.C.y + rz);
+            Include(box);
+            Version++;
             _composedProps.Take(box);
         }
 
@@ -162,40 +246,291 @@ namespace RoadDemo
         /// Ground slabs are deliberately excluded by name; rooftop attachments are
         /// excluded by the walk-height slice. Returns the number registered.</summary>
         public static int BlockComposedProps(Transform root, float groundY)
+            => BlockComposedProps(root, _ => groundY);
+
+        /// <summary>Finalize several static prop roots in one pass.</summary>
+        public static int BlockComposedProps(float groundY, params Transform[] roots)
+            => BlockComposedProps(_ => groundY, roots);
+
+        /// <summary>Terrain-aware finalization for several static prop roots.</summary>
+        public static int BlockComposedProps(System.Func<Vector3, float> groundAt,
+                                             params Transform[] roots)
         {
-            if (root == null) return 0;
+            if (groundAt == null || roots == null) return 0;
+            int taken = 0;
+            for (int i = 0; i < roots.Length; i++)
+                taken += BlockComposedProps(roots[i], groundAt);
+            return taken;
+        }
+
+        /// <summary>Terrain-aware form of <see cref="BlockComposedProps(Transform,float)"/>.</summary>
+        public static int BlockComposedProps(Transform root, System.Func<Vector3, float> groundAt)
+        {
+            if (root == null || groundAt == null) return 0;
+            return CollectComposedProps(root, groundAt, null);
+        }
+
+        /// <summary>
+        /// Measure furniture owned by a streamed visual root without publishing it as
+        /// permanent city state. The caller registers the returned plan while the visual
+        /// is standing and unregisters it before that visual is cached or recycled.
+        /// </summary>
+        public static SidewalkPlan ComposedPropPlan(Transform root, float groundY) =>
+            ComposedPropPlan(root, _ => groundY);
+
+        /// <summary>Terrain-aware form of <see cref="ComposedPropPlan(Transform,float)"/>.</summary>
+        public static SidewalkPlan ComposedPropPlan(Transform root,
+                                                     System.Func<Vector3, float> groundAt)
+        {
+            var plan = new SidewalkPlan();
+            if (root != null && groundAt != null) CollectComposedProps(root, groundAt, plan);
+            return plan;
+        }
+
+        // A null destination means the old, permanent composed-prop ledger. A supplied
+        // destination belongs to a streamed view and is deliberately not registered until
+        // its complete payload has been measured.
+        static int CollectComposedProps(Transform root, System.Func<Vector3, float> groundAt,
+                                        SidewalkPlan destination)
+        {
             int taken = 0;
             var all = root.GetComponentsInChildren<Transform>(true);
             for (int i = 0; i < all.Length; i++)
             {
                 var t = all[i];
-                if (t == null || t == root || !PhysicalPropName(t.name) || HasPhysicalPropParent(t, root))
+                if (t == null) continue;
+                float groundY = groundAt(t.position);
+                // Harvested residential roots already carry a compact, baked outline of
+                // their STRUCTURE. Their root BoxCollider is deliberately the complete
+                // lot (terrace, yards and holes included), so it is the wrong answer for
+                // walking. The same proxy the TurfMap reads gives us the actual walls
+                // without inspecting meshes at runtime. Child furniture is still visited
+                // by later iterations and remains independently walk-blocking.
+                if (ResidentialStructureFootprints(t, groundY, destination,
+                                                    out int structures))
+                {
+                    taken += structures;
                     continue;
-                if (!TouchesWalkHeight(t, groundY)) continue;
-                if (!SidewalkPlan.Footprint(t.gameObject, t.position, t.eulerAngles.y, out var box) ||
-                    !box.Solid)
-                    continue;
-                BlockProp(box);
+                }
+                // CityKit cafes are deliberately single-mesh prefabs named
+                // `building-diner` / `building-coffeeshop`. They are not SM_Prop_* and
+                // carry no harvested structural proxy, so the furniture-only pass used
+                // to register every outside chair and leave the venue shell walkable.
+                // Their authored root BoxCollider is the exact shell footprint.
+                bool venue = VenueFootprint(t, groundY, out var box);
+                if (!venue)
+                {
+                    if (!PhysicalProp(t) || HasPhysicalPropParent(t, root)) continue;
+                    if (!TouchesWalkHeight(t, groundY)) continue;
+                    if (!SidewalkPlan.Footprint(t.gameObject, t.position,
+                                                t.eulerAngles.y, out box) || !box.Solid)
+                        continue;
+                }
+                // Buildings, hand-authored yards and StreetKit plans are published first.
+                // Do not add their child meshes again as furniture: apart from wasting
+                // buckets, that would turn building pieces into prop cover.
+                if (CoveredByObstacle(box, destination)) continue;
+                if (destination != null) destination.Take(box);
+                else BlockProp(box);
                 taken++;
             }
             return taken;
         }
 
-        static bool PhysicalPropName(string name)
+        /// <summary>Names of composed restaurant shells whose authored collider is a
+        /// walking footprint. Kept narrow: parks, courts and car yards are complete
+        /// amenity lots too, but their open ground must remain walkable.</summary>
+        internal static bool PhysicalVenueName(string name)
         {
             if (string.IsNullOrEmpty(name)) return false;
+            return ColliderVenueName(name) ||
+                   name.EndsWith(" (cafe)", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.Equals("dinner", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("dinner (", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.Equals("dinner2", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("dinner2 (", System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        static bool ColliderVenueName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            return name.StartsWith("building-cafe", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("building-coffeeshop", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("building-diner", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("building-burger-joint", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("building-restaurant", System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        static bool PhysicalVenue(Transform t)
+        {
+            if (t == null) return false;
+            // Only CityKit's single-mesh venues have a collider baked from the actual
+            // shell. Harvested dinner/pizza/radnja roots use a whole-LOT collider and
+            // are deliberately accepted only by ResidentialStructureFootprints.
+            if (ColliderVenueName(t.name)) return true;
+            // Quay's authored restoran1/restoran2 roots rename building-restaurant and
+            // building-cafe. The mesh keeps its source identity on the same transform.
+            var filter = t.GetComponent<MeshFilter>();
+            return filter != null && filter.sharedMesh != null &&
+                   ColliderVenueName(filter.sharedMesh.name);
+        }
+
+        static bool VenueFootprint(Transform t, float groundY, out SidewalkPlan.Box box)
+        {
+            box = default;
+            if (t == null || !PhysicalVenue(t)) return false;
+            var collider = t.GetComponent<BoxCollider>();
+            if (collider == null || collider.isTrigger) return false;
+            // FinishBuild measures a streamed holder while that holder is inactive.
+            // Collider.bounds is a zero box then, so derive the world slice from authored
+            // centre/size and the transform instead; this is valid active or inactive.
+            var centre = t.TransformPoint(collider.center);
+            var scale = t.lossyScale;
+            float verticalHalf = Mathf.Abs(collider.size.y * scale.y) * 0.5f;
+            const float ankle = 0.06f;
+            const float shoulder = 1.9f;
+            if (centre.y + verticalHalf < groundY + ankle ||
+                centre.y - verticalHalf > groundY + shoulder)
+                return false;
+
+            var half = new Vector2(
+                Mathf.Abs(collider.size.x * scale.x) * 0.5f,
+                Mathf.Abs(collider.size.z * scale.z) * 0.5f);
+            // A nested chair or till can inherit the harvested venue's display name.
+            // Only the shell-sized collider takes this path; ordinary furniture keeps
+            // its measured SM_Prop footprint below.
+            if (half.x < 1.25f && half.y < 1.25f) return false;
+            box = SidewalkPlan.Make(new Vector2(centre.x, centre.z),
+                                    t.eulerAngles.y, half, solid: true);
+            box.Rise = verticalHalf * 2f;
+            return true;
+        }
+
+        // True means this transform owns a structural proxy, even when every one of its
+        // masses was already covered by a permanent obstacle. That distinction prevents
+        // a covered harvested venue falling through to its deliberately broad lot box.
+        static bool ResidentialStructureFootprints(Transform t, float groundY,
+                                                    SidewalkPlan destination,
+                                                    out int taken)
+        {
+            taken = 0;
+            if (t == null) return false;
+            var proxy = t.GetComponent<ResidentialTurfPrefab>();
+            // A TurfMap proxy exists on every harvested residential/amenity prefab,
+            // including open courts and car yards. It is suitable here only for the
+            // named restaurant shells; broad use would turn a roof or grandstand over
+            // otherwise open ground into an invisible walking wall.
+            if (proxy == null || proxy.MassCount == 0 || !PhysicalVenueName(t.name))
+                return false;
+
+            var scale = t.lossyScale;
+            for (int i = 0; i < proxy.MassCount; i++)
+            {
+                var mass = proxy.MassAt(i);
+                var footprint = mass.Footprint;
+                if (footprint.width <= 0.02f || footprint.height <= 0.02f) continue;
+
+                float localY = (mass.Bottom + mass.Top) * 0.5f;
+                var centre = t.TransformPoint(new Vector3(
+                    footprint.center.x, localY, footprint.center.y));
+                float verticalHalf = Mathf.Abs((mass.Top - mass.Bottom) * scale.y) * 0.5f;
+                const float ankle = 0.06f;
+                const float shoulder = 1.9f;
+                if (centre.y + verticalHalf < groundY + ankle ||
+                    centre.y - verticalHalf > groundY + shoulder) continue;
+
+                var half = new Vector2(
+                    Mathf.Abs(footprint.width * scale.x) * 0.5f,
+                    Mathf.Abs(footprint.height * scale.z) * 0.5f);
+                var box = SidewalkPlan.Make(new Vector2(centre.x, centre.z),
+                                            t.eulerAngles.y, half, solid: true);
+                box.Rise = verticalHalf * 2f;
+                if (CoveredByObstacle(box, destination)) continue;
+                if (destination != null) destination.Take(box);
+                else BlockProp(box);
+                taken++;
+            }
+            return true;
+        }
+
+        internal static bool PhysicalPropName(string name)
+        {
+            if (string.IsNullOrEmpty(name) || DecorativePropName(name)) return false;
             return name.StartsWith("SM_Prop_", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("SM_Gen_Prop_", System.StringComparison.OrdinalIgnoreCase) ||
                    name.StartsWith("SM_Veh_", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("SM_Gen_Veh_", System.StringComparison.OrdinalIgnoreCase) ||
                    name.StartsWith("SM_Env_Tree_", System.StringComparison.OrdinalIgnoreCase) ||
                    name.StartsWith("SM_Env_Fence_", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("SM_Env_Hedge_", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("SM_Bld_Fence", System.StringComparison.OrdinalIgnoreCase) ||
                    name.StartsWith("SM_Env_SubwayEntrance_", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("container-20", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("Garage ", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.StartsWith("Parked ", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.Equals("Container", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.Equals("Sealed Container", System.StringComparison.OrdinalIgnoreCase) ||
+                   name.Equals("tank", System.StringComparison.OrdinalIgnoreCase) ||
                    name.IndexOf("wall", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // Polygon Generic's prop family also contains table dressing and wall controls.
+        // They may stand over FlatTop, but a crew should not route around a bottle, coin
+        // or light switch as though it were street furniture.
+        static bool DecorativePropName(string name)
+        {
+            if (!name.StartsWith("SM_Gen_Prop_", System.StringComparison.OrdinalIgnoreCase))
+                return false;
+            for (int i = 0; i < DecorativeGenericTokens.Length; i++)
+                if (name.IndexOf(DecorativeGenericTokens[i],
+                                 System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            return false;
+        }
+
+        // District composers give useful scene names to props ("Pallet", "Bench",
+        // "Bollard"), replacing the prefab root name. The shared mesh retains its
+        // source-family name, so it is a conservative way to recognise that renamed
+        // root without treating every renderer in a prop-oriented root as an obstacle.
+        static bool PhysicalProp(Transform t)
+        {
+            if (t == null) return false;
+            if (PhysicalPropName(t.name)) return true;
+            var filter = t.GetComponent<MeshFilter>();
+            if (filter != null && filter.sharedMesh != null &&
+                PhysicalPropName(filter.sharedMesh.name)) return true;
+            var skinned = t.GetComponent<SkinnedMeshRenderer>();
+            return skinned != null && skinned.sharedMesh != null &&
+                   PhysicalPropName(skinned.sharedMesh.name);
         }
 
         static bool HasPhysicalPropParent(Transform t, Transform root)
         {
+            if (t == root) return false;
             for (var p = t.parent; p != null && p != root; p = p.parent)
-                if (PhysicalPropName(p.name)) return true;
+                if (PhysicalProp(p)) return true;
+            return false;
+        }
+
+        static bool CoveredByObstacle(in SidewalkPlan.Box box, SidewalkPlan destination = null)
+        {
+            if (!StaticOccupied(box.C, destination)) return false;
+            for (int x = -1; x <= 1; x += 2)
+                for (int z = -1; z <= 1; z += 2)
+                    if (!StaticOccupied(box.C + box.Ax * (box.H.x * x) +
+                                        box.Az * (box.H.y * z), destination))
+                        return false;
+            return true;
+        }
+
+        static bool StaticOccupied(Vector2 point, SidewalkPlan destination = null)
+        {
+            const float seam = 0.02f;
+            if (destination != null && destination.Occupied(point, seam)) return true;
+            if (_solids.Occupied(point, seam) || _composedProps.Occupied(point, seam))
+                return true;
+            for (int i = 0; i < _props.Count; i++)
+                if (_props[i].Occupied(point, seam)) return true;
             return false;
         }
 
@@ -233,6 +568,7 @@ namespace RoadDemo
             if (link == null) return;
             _against.Clear();
             _against.Add(_solids);
+            _against.Add(_composedProps);
             _against.AddRange(Props);
             link.SampleClearance(_against, radius);
         }
@@ -295,8 +631,8 @@ namespace RoadDemo
         {
             if (_solids.Occupied(q, radius, tallBerth)) return true;
             if (_composedProps.Occupied(q, radius, tallBerth)) return true;
-            for (int i = 0; i < Props.Count; i++)
-                if (Props[i].Occupied(q, radius, tallBerth)) return true;
+            for (int i = 0; i < _props.Count; i++)
+                if (_props[i].Occupied(q, radius, tallBerth)) return true;
             return false;
         }
 
@@ -435,8 +771,22 @@ namespace RoadDemo
         /// within reach: the point comes back as it went in.</summary>
         public static Vector3 ClearSpot(Vector3 wanted, float radius, float reach = 4f)
         {
+            TryClearSpot(wanted, radius, out var spot, reach);
+            return spot;
+        }
+
+        /// <summary>The fallible form of <see cref="ClearSpot"/>. False means the
+        /// returned point is still the original occupied request; recovery code must
+        /// not mistake that unchanged value for a valid place.</summary>
+        public static bool TryClearSpot(Vector3 wanted, float radius, out Vector3 spot,
+            float reach = 4f)
+        {
             bool here = InCity(wanted);
-            if (here && !Occupied(wanted, radius, CanopyBerth)) return wanted;
+            if (here && !Occupied(wanted, radius, CanopyBerth))
+            {
+                spot = wanted;
+                return true;
+            }
             // clear of the solids but under a canopy: kept as second best, so a man is
             // never walked half a street for the sake of a palm's fronds
             var loose = wanted;
@@ -448,10 +798,166 @@ namespace RoadDemo
                     float a = (i * (360f / Headings) + r * 23f) * Mathf.Deg2Rad;
                     var p = wanted + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * r;
                     if (!InCity(p) || Occupied(p, radius)) continue;
-                    if (!Occupied(p, radius, CanopyBerth)) return p;
+                    if (!Occupied(p, radius, CanopyBerth))
+                    {
+                        spot = p;
+                        return true;
+                    }
                     if (!haveLoose) { loose = p; haveLoose = true; }
                 }
-            return loose;
+            spot = loose;
+            return haveLoose;
+        }
+
+        /// <summary>A deterministic command/formation spot against fixed geometry
+        /// only. Passing traffic is avoided while walking; it must not permanently
+        /// move the destination merely because a car crossed the mouse this frame.</summary>
+        public static bool TryClearStandingSpot(Vector3 wanted, float radius,
+            out Vector3 spot, float reach = 4f) =>
+            TryClearStandingSpot(wanted, radius, default, false,
+                default, false, out spot, reach);
+
+        /// <summary>Resolve an occupied command point on the side facing
+        /// <paramref name="approachFrom"/>. A diner's short end can be nearer to the
+        /// click than its entrance-side wall while still requiring a lap of the whole
+        /// building. Search the approach-facing cone across successive rings before
+        /// accepting that radially-nearer far face.</summary>
+        public static bool TryClearStandingSpot(Vector3 wanted, float radius,
+            Vector3 approachFrom, out Vector3 spot, float reach = 4f)
+        {
+            // A clear requested point is the order; the route planner may legitimately
+            // need to go round something to reach it. When the request is occupied,
+            // first look for an approach-side replacement joined by a real clear chord.
+            // Merely ranking candidates by distance to the crew could still select a
+            // near-looking pocket behind another structural mass.
+            if (StandingSpot(wanted, radius, default, false))
+            {
+                spot = wanted;
+                return true;
+            }
+            if (TryClearStandingSpot(wanted, radius, approachFrom, true,
+                    approachFrom, true, out spot, reach))
+                return true;
+            // A distant order may have other buildings between it and the crew. In that
+            // case retain the approach-facing choice and let WalkRoute prove the trip.
+            return TryClearStandingSpot(wanted, radius, default, false,
+                approachFrom, true, out spot, reach);
+        }
+
+        /// <summary>A fixed-geometry spot which is also joined to
+        /// <paramref name="connectedTo"/> by one clear chord. Formation slots use this
+        /// so a blocked offset cannot be silently moved to the far side of a wall.</summary>
+        public static bool TryConnectedStandingSpot(Vector3 wanted, Vector3 connectedTo,
+            float radius, out Vector3 spot, float reach = 4f) =>
+            TryClearStandingSpot(wanted, radius, connectedTo, true,
+                connectedTo, true, out spot, reach);
+
+        static bool TryClearStandingSpot(Vector3 wanted, float radius,
+            Vector3 connectedTo, bool requireConnection,
+            Vector3 approachFrom, bool preferApproach, out Vector3 spot, float reach)
+        {
+            if (StandingSpot(wanted, radius, connectedTo, requireConnection))
+            {
+                spot = wanted;
+                return true;
+            }
+            const int Headings = 12;
+            const float FacingCone = 0.5f; // within 60 degrees of the side we came from
+            var approach = approachFrom - wanted;
+            approach.y = 0f;
+            bool haveApproach = preferApproach && approach.sqrMagnitude > 0.01f;
+            if (haveApproach) approach.Normalize();
+            bool haveFallback = false;
+            float fallbackRing = float.MaxValue;
+            float fallbackDistance = float.MaxValue;
+            var fallback = wanted;
+            for (float r = 0.5f; r <= reach + 1e-3f; r += 0.5f)
+            {
+                bool foundFacing = false;
+                float bestFacing = float.MaxValue;
+                var facingSpot = wanted;
+
+                // Do not make the twelve angular samples approximate the one direction
+                // which matters most. This ray reaches the face looking at the crew;
+                // for a click inside a long cafe it is normally the locally correct
+                // exit even when an end wall is radially closer to the click.
+                if (haveApproach)
+                {
+                    var toward = wanted + approach * r;
+                    if (StandingSpot(toward, radius, connectedTo, requireConnection))
+                    {
+                        spot = toward;
+                        return true;
+                    }
+                }
+
+                for (int i = 0; i < Headings; i++)
+                {
+                    float a = (i * (360f / Headings) + r * 23f) * Mathf.Deg2Rad;
+                    var p = wanted + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * r;
+                    if (!StandingSpot(p, radius, connectedTo, requireConnection)) continue;
+                    if (!preferApproach)
+                    {
+                        spot = p;
+                        return true;
+                    }
+
+                    var fromApproach = p - approachFrom;
+                    fromApproach.y = 0f;
+                    float square = fromApproach.sqrMagnitude;
+                    // Preserve the old nearest-ring answer as a last resort. What we
+                    // no longer do is return it before looking for the face toward the
+                    // crew on the next few rings.
+                    if (!haveFallback || r < fallbackRing - 1e-4f ||
+                        (Mathf.Abs(r - fallbackRing) <= 1e-4f &&
+                         square < fallbackDistance - 1e-4f))
+                    {
+                        haveFallback = true;
+                        fallbackRing = r;
+                        fallbackDistance = square;
+                        fallback = p;
+                    }
+
+                    if (!haveApproach) continue;
+                    var radial = p - wanted;
+                    radial.y = 0f;
+                    float alignment = radial.sqrMagnitude > 1e-4f
+                        ? Vector3.Dot(radial.normalized, approach)
+                        : 1f;
+                    if (alignment < FacingCone ||
+                        (foundFacing && square >= bestFacing - 1e-4f)) continue;
+                    foundFacing = true;
+                    bestFacing = square;
+                    facingSpot = p;
+                }
+                if (foundFacing)
+                {
+                    spot = facingSpot;
+                    return true;
+                }
+            }
+            if (haveFallback)
+            {
+                spot = fallback;
+                return true;
+            }
+            spot = wanted;
+            return false;
+        }
+
+        static bool StandingSpot(Vector3 p, float radius, Vector3 connectedTo,
+            bool requireConnection)
+        {
+            if (!InCity(p) || Standing(p, radius)) return false;
+            if (!requireConnection) return true;
+            if (!InCity(connectedTo) || Standing(connectedTo, radius) ||
+                BlocksStanding(connectedTo, p, radius)) return false;
+            var d = p - connectedTo;
+            d.y = 0f;
+            int samples = Mathf.CeilToInt(d.magnitude / 0.5f);
+            for (int i = 1; i < samples; i++)
+                if (!InCity(connectedTo + d * (i / (float)samples))) return false;
+            return true;
         }
 
         // How good a spot is to be left standing on, best first:
@@ -494,7 +1000,7 @@ namespace RoadDemo
             into.Clear();
             var q = new Vector2(p.x, p.z);
             _composedProps.SolidNear(q, reach, into);
-            for (int i = 0; i < Props.Count; i++) Props[i].SolidNear(q, reach, into);
+            for (int i = 0; i < _props.Count; i++) _props[i].SolidNear(q, reach, into);
         }
 
         /// <summary>The same run as <see cref="Clear"/>, but past the FIXED things only -
@@ -520,8 +1026,8 @@ namespace RoadDemo
             var b = new Vector2(to.x, to.z);
             if (_solids.Obstructs(a, b, radius) || _composedProps.Obstructs(a, b, radius))
                 return true;
-            for (int i = 0; i < Props.Count; i++)
-                if (Props[i].Obstructs(a, b, radius)) return true;
+            for (int i = 0; i < _props.Count; i++)
+                if (_props[i].Obstructs(a, b, radius)) return true;
             return false;
         }
 
@@ -535,7 +1041,22 @@ namespace RoadDemo
             if (h.sqrMagnitude < 1e-6f) return 0f;
             h.Normalize();
             GatherRoad(p, ahead + radius + 0.5f);
-            return Run(p, h, radius, ahead);
+            float sampled = Run(p, h, radius, ahead);
+            if (sampled <= 0f) return 0f;
+
+            // Point samples overlap, but their swept lateral coverage still leaves a
+            // few centimetres at the midpoint. Prove the actual fixed-geometry capsule
+            // before a transform write, then bisect to the longest exact prefix.
+            var heading = new Vector3(h.x, 0f, h.y);
+            if (!BlocksStanding(from, from + heading * sampled, radius)) return sampled;
+            float lo = 0f, hi = sampled;
+            for (int i = 0; i < 7; i++)
+            {
+                float mid = (lo + hi) * 0.5f;
+                if (BlocksStanding(from, from + heading * mid, radius)) hi = mid;
+                else lo = mid;
+            }
+            return lo;
         }
 
         // the probe's pitch: circles of the walker's radius a third of a metre
@@ -588,7 +1109,7 @@ namespace RoadDemo
         /// frame. A man stood inside something already (dealt there, shoved there)
         /// is let walk straight out of it.</summary>
         public static Vector3 Steer(Vector3 from, Vector3 want, Vector3 going, float radius, float ahead,
-            ref int side, out float clear)
+            ref int side, out float clear, int preferredSide = 0)
         {
             var p = new Vector2(from.x, from.z);
             var w = new Vector2(want.x, want.z);
@@ -646,9 +1167,13 @@ namespace RoadDemo
                 }
                 else
                 {
-                    // no side yet: the nearer line either way, right first
+                    // no committed side yet: a crew may share a TIE-BREAK, but a
+                    // preference is not permission to try a ninety-degree detour before
+                    // an eleven-degree opening on the other side.
+                    int first = preferredSide != 0 ? (preferredSide > 0 ? 1 : -1) : 1;
                     for (int i = 0; i < Angles.Length; i++)
-                        if (Try(Angles[i], 1, carryOn) || Try(Angles[i], -1, carryOn)) goto Found;
+                        if (Try(Angles[i], first, carryOn) ||
+                            Try(Angles[i], -first, carryOn)) goto Found;
                 }
                 // nothing ahead runs clear to the horizon, but a good step of it does:
                 // he takes that before he turns round - through the gap between two

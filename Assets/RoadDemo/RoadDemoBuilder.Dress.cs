@@ -164,7 +164,7 @@ namespace RoadDemo
             // and the same plan to whoever leaves the graph - a crew crossing the road
             // to a fight, the police walking up from the car - so they walk round the
             // furniture too, and not through it
-            if (!WalkObstacles.Props.Contains(_plan)) WalkObstacles.Props.Add(_plan);
+            WalkObstacles.RegisterPlan(_plan);
         }
     }
 }

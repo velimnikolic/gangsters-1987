@@ -493,8 +493,13 @@ def freeway(dirpath):
     return 0 if ok else 1
 
 
+# Every fault kind emitted by CrewAudit. Keep this explicit so a report remains
+# readable without importing/parsing game source; walkstall is emitted by the trace
+# watchdog and has its own three-strike rule below.
 CREW_FAULTS = ("teleport", "offcity", "strayman", "singlefile",
-               "aimlow", "zebrastuck", "runnerchase")
+               "aimlow", "zebrastuck", "runnerchase", "roadwalk",
+               "skate", "leftbehind", "noaim", "firewalk",
+               "formationheading", "formationspread", "proppenetration")
 
 
 def crew(dirpath):

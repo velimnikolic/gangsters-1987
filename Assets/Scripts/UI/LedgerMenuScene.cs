@@ -30,6 +30,8 @@ namespace LivingCity.UI
         {
             // Scene-wide checks, not host-local - the GameplayBootstrap discipline: a
             // scene someone already wired must not get a second director.
+            if (!FindAnyObjectByType<Ambient.CityClock>())
+                gameObject.AddComponent<Ambient.CityClock>();
             if (!FindAnyObjectByType<PersonnelDirector>())
                 gameObject.AddComponent<PersonnelDirector>();
             if (!FindAnyObjectByType<OutfitDirector>())

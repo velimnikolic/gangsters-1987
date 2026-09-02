@@ -94,6 +94,6 @@ namespace RoadDemo
 
         public void Tick(float dt) { }
 
-        public void Dispose() { }
+        public void Dispose() => _kit?.UnregisterWalkPlan();
     }
 }

@@ -72,9 +72,16 @@ namespace LivingCity.Outfit
         /// parses the sentence back into facts.</summary>
         public readonly List<Incident> IncidentBook = new List<Incident>();
 
-        /// <summary>How far back the incident book reaches. A rolling window rather
-        /// than the whole campaign, for the reason <see cref="RecordsKept"/> is one.</summary>
-        public const int IncidentsKept = 120;
+        /// <summary>
+        /// How far back the incident book reaches. Still a rolling window rather than an
+        /// unbounded one, but a window a campaign is unlikely to reach the far side of:
+        /// the ledger's rail stands the whole book on end and lets the boss scroll back
+        /// through it, so the wire is an ARCHIVE now and 120 lines was three weeks of a
+        /// busy outfit - the first months of his own campaign fell off the back of it
+        /// while he was reading the last one. Raised from 120 on the user's word,
+        /// 2026-09-02.
+        /// </summary>
+        public const int IncidentsKept = 1000;
 
         /// <summary>Scratch for the day's defections - the roster is walked to find
         /// them and then walked again to strike them off, because a lieutenant going

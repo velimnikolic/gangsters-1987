@@ -2010,12 +2010,27 @@ namespace RoadDemo
                 : "";
             var trouble = fear != null && fear.BlockFear(blockId, lastGameHour) > 0.5f;
 
+            var statusLine = "";
+            LivingCity.Business.BusinessShutdownStatus shutdown = default;
+            var shut = business != null &&
+                       business.TryGetShutdown(businessId, out shutdown);
+            if (shut)
+                statusLine = LivingCity.Business.BusinessShutdownText.Line(shutdown);
+
             // The dues meter, in words (ECON-008): what it pays, what it owes, when it
             // last paid. Only for a shop paying US - a rival's books are his own.
             var paysLine = "";
-            if (TryGetDues(businessId, out var owed, out var lastPaid))
-                paysLine = "pays $" + WeeklyRateOf(businessId) + " a week · owes $" + owed +
-                           (lastPaid >= 0 ? " · last paid day " + lastPaid : " · never collected");
+            if (protectorGang == playerGang &&
+                racket.StateOf(businessId, playerGang) == TerritoryProtectionState.Compliant)
+            {
+                if (shut)
+                    paysLine = "racket suspended while closed · no new debt accrues";
+                else if (TryGetDues(businessId, out var owed, out var lastPaid) && owed > 0)
+                    paysLine = "pays $" + WeeklyRateOf(businessId) + " a week · owes $" + owed +
+                               (lastPaid >= 0 ? " · last paid day " + lastPaid : " · never collected");
+                else
+                    paysLine = "nothing owed yet · dues accrue daily at midnight";
+            }
 
             view = new TerritoryBusinessPresentation(
                 businessId,
@@ -2027,7 +2042,8 @@ namespace RoadDemo
                 situation,
                 tone,
                 trouble,
-                paysLine);
+                paysLine,
+                statusLine);
             return true;
         }
 
@@ -2418,15 +2434,30 @@ namespace RoadDemo
                     out var gangId, out var refusal))
                 return TerritoryCommandExecution.Reject(refusal);
 
+            // HE GOES IN FIRST. This is the path a player takes every time his men are
+            // already standing at the door - after a smash they always are - and it used
+            // to settle the demand and put the answer over the street BEFORE the visit
+            // was even started, so the wire knew what the owner had said while the man
+            // was still outside. The visit carries the question; the answer comes from
+            // inside. A visit that cannot be played answers at once, so nothing is lost.
+            var speaking = command.BusinessId;
+            var house = gangId;
+            var mouth = command.ActorId;
+            if (TryGetBusinessApproach(speaking, out var door))
+            {
+                DoorBeat.VisitBusiness(FindWalker(mouth), speaking, door, () =>
+                {
+                    if (ResolveDemand(house, speaking, out var answered, out _))
+                        AnnounceVerdict(speaking, threat: false, answered, mouth);
+                });
+                return TerritoryCommandExecution.Pending(
+                    "He goes in; the owner answers at the counter.");
+            }
+
             if (!ResolveDemand(gangId, command.BusinessId, out var verdict, out _))
                 return TerritoryCommandExecution.Reject("The demand could not be resolved.");
 
-            // The same beat and the same banner the walked-in demand gets: the man at
-            // the door steps inside, and what the owner said is put over the street.
             AnnounceVerdict(command.BusinessId, threat: false, verdict, command.ActorId);
-            if (TryGetBusinessApproach(command.BusinessId, out var door))
-                DoorBeat.VisitBusiness(
-                    FindWalker(command.ActorId), command.BusinessId, door);
 
             switch (verdict)
             {
@@ -2449,14 +2480,27 @@ namespace RoadDemo
                     out var gangId, out var refusal))
                 return TerritoryCommandExecution.Reject(refusal);
 
+            // The lean is a conversation too: he goes in, and what it got out of the
+            // owner comes back from inside.
+            var leaned = command.BusinessId;
+            var leaning = gangId;
+            var man = command.ActorId;
+            if (TryGetBusinessApproach(leaned, out var doorstep))
+            {
+                DoorBeat.VisitBusiness(FindWalker(man), leaned, doorstep, () =>
+                {
+                    if (ResolveThreat(leaning, leaned, man, out var answered, out _))
+                        AnnounceVerdict(leaned, threat: true, answered, man);
+                });
+                return TerritoryCommandExecution.Pending(
+                    "He goes in; the owner is leaned on at the counter.");
+            }
+
             if (!ResolveThreat(gangId, command.BusinessId, command.ActorId,
                     out var verdict, out _))
                 return TerritoryCommandExecution.Reject("The threat could not be resolved.");
 
             AnnounceVerdict(command.BusinessId, threat: true, verdict, command.ActorId);
-            if (TryGetBusinessApproach(command.BusinessId, out var door))
-                DoorBeat.VisitBusiness(
-                    FindWalker(command.ActorId), command.BusinessId, door);
 
             switch (verdict)
             {

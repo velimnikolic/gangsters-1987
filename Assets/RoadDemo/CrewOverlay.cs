@@ -61,7 +61,6 @@ namespace RoadDemo
 
         const float ClickSlackPx = 8f; // a right-drag beyond this is the camera's
         const float ClickHold = 0.45f;
-        const float MarkLife = 0.9f;   // the order mark's fade on the ground
 
         static readonly Color BossOn = new Color(1f, 0.78f, 0.32f, 1f);
         static readonly Color HoodOn = new Color(1f, 0.78f, 0.32f, 0.6f);
@@ -125,7 +124,6 @@ namespace RoadDemo
         TMP_Text _popupTitle, _popupLine;
         string _shownTitle, _shownLine;
 
-        Image _mark;
         (string text, float until) _refusal;
         List<Image> _carDots = new List<Image>();
         List<TMP_Text> _carTags = new List<TMP_Text>();
@@ -140,9 +138,6 @@ namespace RoadDemo
         Image _carHintIcon;
         TMP_Text _carHintText;
         string _carHintShown;
-        Color _markTint = MarkTint;
-        Vector3 _markWorld;
-        float _markAge = MarkLife;
 
         System.Func<Vector2, bool> _previousVeto;
         bool _claimedThisFrame;
@@ -208,13 +203,6 @@ namespace RoadDemo
             dotRootRect.offsetMin = Vector2.zero;
             dotRootRect.offsetMax = Vector2.zero;
             _dotRoot = dotRootRect;
-
-            _mark = new GameObject("Order Mark", typeof(RectTransform)).AddComponent<Image>();
-            _mark.transform.SetParent(root.transform, false);
-            _mark.sprite = dot;
-            _mark.raycastTarget = false;
-            _mark.rectTransform.sizeDelta = new Vector2(22f, 22f);
-            _mark.enabled = false;
 
             BuildPopup();
             BuildBanner(root.transform);
@@ -500,9 +488,26 @@ namespace RoadDemo
             }
             // a click on a rival is a look, not a choice: the outfit's selection stands
             if (unit != null && unit.Faction != 0) return true;
+
+            // A shop under a LEFT click is inspection only. Commands belong to the
+            // right-click card; showing them here made a look at a shop double as a
+            // second order surface.
+            if (unit == null)
+            {
+                var shop = BusinessAt(screen);
+                if (shop.IsValid && _door.ShowInfo(shop, screen))
+                    return true;
+            }
+            _door.Close();
+
             _crews.Select(unit);
             return unit != null;
         }
+
+        /// <summary>The shop's information over the street. The shared door panel still
+        /// supplies the deed, owner and standing, but left click deliberately omits its
+        /// crew and command sections.</summary>
+        readonly LivingCity.UI.DoorMenu.Host _door = new LivingCity.UI.DoorMenu.Host();
 
         DemoCrews.Unit PickAt(Vector2 screen)
         {
@@ -1156,7 +1161,10 @@ namespace RoadDemo
             _cardTitle.text = runtime != null &&
                               runtime.TryGetBusinessView(businessId, out var view)
                 ? view.BusinessName.ToUpperInvariant() + " · " +
-                  view.Standing.ToUpperInvariant() + Price(businessId)
+                  view.Standing.ToUpperInvariant() +
+                  (view.StatusLine.Length > 0
+                      ? " · " + view.StatusLine.ToUpperInvariant()
+                      : "") + Price(businessId)
                 : businessId.Value.ToUpperInvariant();
 
             foreach (var action in _enemyActions)
@@ -1215,12 +1223,23 @@ namespace RoadDemo
                          runtime.TryGetBusinessApproach(businessId, out var door) &&
                          runtime.HasManAt(gang, door, ApproachSlack(runtime));
 
+            var blockOwed = 0;
+            var collectionDue = runtime.Geography != null &&
+                                runtime.Geography.TryGetBusinessBlock(
+                                    businessId, out var collectionBlock) &&
+                                runtime.TryGetCollectibleDues(collectionBlock, out blockOwed);
             LivingCity.Territory.TerritoryRacketOrders.For(
                 standing,
                 LivingCity.Gameplay.DoorHolder.Read(businessId),
                 runtime.IsRacketable(businessId), crew != null, atDoor,
                 LivingCity.Gameplay.DoorJobs.AskingPrice(businessId),
-                _racketOrders);
+                _racketOrders,
+                collectionDue,
+                collectionDue
+                    ? LivingCity.UI.LedgerText.Cash(blockOwed) +
+                      " owed on this block · walk the round"
+                    : "nothing owed yet · dues accrue daily at midnight",
+                LivingCity.UI.DoorMenu.ClosureOf(businessId));
 
             for (var i = 0; i < _racketOrders.Count; i++)
             {
@@ -1236,6 +1255,16 @@ namespace RoadDemo
                     {
                         var intent = order.Intent;
                         run = () => Submit(intent, businessId);
+                    }
+                    else if (order.Kind ==
+                             LivingCity.Territory.TerritoryDoorRowKind.Repair)
+                    {
+                        var repairId = businessId;
+                        run = () =>
+                        {
+                            if (LivingCity.UI.DoorMenu.TryRead(repairId, out var door))
+                                LivingCity.UI.DoorMenu.Repair(door);
+                        };
                     }
                     else
                     {
@@ -1637,26 +1666,10 @@ namespace RoadDemo
             return new OrderRow { Rect = rect, Face = face, Label = label, Note = note };
         }
 
-        void PulseApproachMark()
-        {
-            if (_markAge < MarkLife)
-                return;
-
-            var runtime = TerritoryRuntime.Instance;
-            var crew = _crews != null ? _crews.Selected : null;
-            if (runtime == null || crew == null ||
-                !runtime.TryGetPendingApproach(crew.CrewId, out var door))
-                return;
-
-            ShowMark(door + Vector3.up * 1.0f, MarkTint);
-        }
-
-        void ShowMark(Vector3 world, Color tint)
-        {
-            _markWorld = world;
-            _markTint = tint;
-            _markAge = 0f;
-        }
+        // The order mark - a gold glow pulsed onto the ground where a command landed -
+        // read as a stray dot under the crew, so it is off; every call site above still
+        // reports its order this way, so none of them needs to change.
+        void ShowMark(Vector3 world, Color tint) { }
 
         // ------------------------------------------------------------------ frame
 
@@ -1824,6 +1837,10 @@ namespace RoadDemo
                 else _crews.Select(null);
             }
             TickOrders();
+            // The shop's menu is a live sheet: when the racket, the safe or a filing moves
+            // under it, it is repainted where it stands.
+            if (_door.Stale)
+                _door.Paint();
 
             float w = Screen.width, h = Screen.height;
             float scale = _canvas.scaleFactor;
@@ -1937,7 +1954,6 @@ namespace RoadDemo
 
             DrawCars(w, h, scale);
             UpdateCarHint(scale);
-            UpdateMark();
             UpdatePopup(w, h, scale);
             UpdateBanner();
         }
@@ -2228,30 +2244,6 @@ namespace RoadDemo
             _groundSquareMaterial.renderQueue = 3000;
             _groundSquareMaterial.enableInstancing = true;
             return _groundSquareMaterial;
-        }
-
-        void UpdateMark()
-        {
-            // The men are on their way to somebody's door: the doorstep keeps its mark
-            // while they walk, re-lit as the old one dies. Order given, order visible -
-            // and it is only a mark, never a claim on anything.
-            PulseApproachMark();
-
-            if (_markAge >= MarkLife)
-            {
-                if (_mark.enabled) _mark.enabled = false;
-                return;
-            }
-            _markAge += Time.unscaledDeltaTime;
-            float f = Mathf.Clamp01(_markAge / MarkLife);
-            var screen = _cam.WorldToScreenPoint(_markWorld);
-            if (screen.z <= 0f) { _mark.enabled = false; return; }
-            _mark.enabled = true;
-            _mark.transform.position = new Vector3(screen.x, screen.y, 0f);
-            _mark.rectTransform.localScale = Vector3.one * (1f + f * 1.6f);
-            var c = _markTint;
-            c.a *= 1f - f;
-            _mark.color = c;
         }
 
         void UpdatePopup(float w, float h, float scale)

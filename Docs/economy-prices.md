@@ -71,6 +71,10 @@ in-store, gas station $17,000/wk with fuel, hot Miami nightclub $30,000–60,000
 `RunBusiness` income for an owned business = its net, roughly **10–15% of turnover** (a
 tier-1 radnja nets ~$100/day, a nightclub ~$700/day).
 
+Temporary property-damage repairs (GAN-223): **$1,000** after a Smash Up and **$5,000**
+after arson. These are owner-only early-reopening costs; waiting for the 3-day / 7-day
+shutdown costs no cash, but the skipped protection take is never recovered.
+
 ## 4. Vehicles (street prices, no paperwork)
 
 | Armory item | $ | Real anchor | Code today (`ArmoryCatalog.cs`) |

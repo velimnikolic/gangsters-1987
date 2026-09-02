@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LivingCity.Business;
 using LivingCity.Outfit;
 
 namespace LivingCity.Territory
@@ -30,6 +31,32 @@ namespace LivingCity.Territory
     {
         Racket,
         Job,
+        Repair,
+    }
+
+    /// <summary>The closure facts the shared menu needs, already projected from the
+    /// business simulation. Default means the place is trading.</summary>
+    public readonly struct TerritoryDoorClosure
+    {
+        public TerritoryDoorClosure(
+            bool shut, string note, bool repairVisible,
+            bool repairAvailable, int repairPrice,
+            BusinessShutdownCause cause = BusinessShutdownCause.None)
+        {
+            Shut = shut;
+            Note = note ?? "";
+            RepairVisible = repairVisible;
+            RepairAvailable = repairAvailable;
+            RepairPrice = repairPrice;
+            Cause = cause;
+        }
+
+        public bool Shut { get; }
+        public string Note { get; }
+        public bool RepairVisible { get; }
+        public bool RepairAvailable { get; }
+        public int RepairPrice { get; }
+        public BusinessShutdownCause Cause { get; }
     }
 
     /// <summary>
@@ -51,6 +78,12 @@ namespace LivingCity.Territory
                 note, available, cash)
         {
         }
+
+        public static TerritoryRacketOrder Repair(
+            string label, string note, bool available, int cash) =>
+            new TerritoryRacketOrder(
+                TerritoryDoorRowKind.Repair, TerritoryRacketIntent.Approach, default,
+                label, note, available, cash);
 
         TerritoryRacketOrder(
             TerritoryDoorRowKind kind, TerritoryRacketIntent intent, OrderType job,
@@ -108,6 +141,7 @@ namespace LivingCity.Territory
         public const string RobLabel = "ROB IT";
         public const string GuardLabel = "SIT ON IT";
         public const string BuyLabel = "BUY IT OUTRIGHT";
+        public const string RepairLabel = "PAY FOR REPAIRS";
 
         /// <summary>
         /// The rows for this shop, given where it stands with the asking family, who holds
@@ -126,7 +160,10 @@ namespace LivingCity.Territory
             bool hasCrew,
             bool atDoor,
             int askingPrice,
-            List<TerritoryRacketOrder> into)
+            List<TerritoryRacketOrder> into,
+            bool collectionDue = true,
+            string collectionNote = null,
+            TerritoryDoorClosure closure = default)
         {
             if (into == null)
                 return;
@@ -172,9 +209,25 @@ namespace LivingCity.Territory
             // the block's paying doors and carries the take home (ECON-004).
             into.Add(new TerritoryRacketOrder(
                 TerritoryRacketIntent.Collect, CollectLabel,
-                shut ?? (paying ? "walk the round and carry it home"
+                shut ?? (closure.Shut
+                    ? closure.Note
+                    : paying && !collectionDue
+                    ? collectionNote ?? "nothing owed yet · dues accrue daily at midnight"
+                    : paying ? collectionNote ?? "walk the round and carry it home"
                     : "he pays us nothing yet"),
-                open && paying));
+                open && paying && collectionDue && !closure.Shut));
+
+            // Repair is an owner's cash decision, not a crew job. It appears only on a
+            // damaged premises that is actually on our deed; protecting somebody else's
+            // door never grants authority to spend on his building.
+            if (closure.Shut && closure.RepairVisible)
+                into.Add(TerritoryRacketOrder.Repair(
+                    RepairLabel,
+                    closure.RepairAvailable
+                        ? "reopen it now · skipped racket income is not recovered"
+                        : "not enough cash in the safe",
+                    closure.RepairAvailable,
+                    closure.RepairPrice));
 
             // What may be done TO the door is the shared table's call, never a tenure
             // test written out a second time - the map's planner reads the same one.
@@ -187,19 +240,41 @@ namespace LivingCity.Territory
             Door(OrderType.Guard, GuardLabel, "our men stand on his door");
 
             var deed = DoorOrders.Refusal(OrderType.BuyPremises, tenure);
+            var buyRefusal = deed ?? (hasCrew ? null : "nobody is picked to send");
             into.Add(new TerritoryRacketOrder(
                 OrderType.BuyPremises, BuyLabel,
-                deed ?? (askingPrice > 0
+                buyRefusal ?? (askingPrice > 0
                     ? "the deed, bought outright"
                     : "these premises carry no asking price on the book"),
-                deed == null && askingPrice > 0, askingPrice));
+                buyRefusal == null && askingPrice > 0, askingPrice));
 
             void Door(OrderType type, string label, string note)
             {
-                var refusal = DoorOrders.Refusal(type, tenure);
+                // The deed's rule first - it is the one that explains the door - then the
+                // damage already done to it, and last the plain fact that there is nobody
+                // to send. Work FILED with the office is still men walking somewhere, so
+                // a key with no crew behind it must fade here rather than be taken, sat
+                // on for a second and refused where the reader never looks.
+                var refusal = DoorOrders.Refusal(type, tenure)
+                              ?? DamageRefusal(type, closure)
+                              ?? (hasCrew ? null : "nobody is picked to send");
                 into.Add(new TerritoryRacketOrder(
                     type, label, refusal ?? note, refusal == null));
             }
+        }
+
+        static string DamageRefusal(OrderType type, TerritoryDoorClosure closure)
+        {
+            if (!closure.Shut)
+                return null;
+            if (type == OrderType.SmashUp)
+                return closure.Cause == BusinessShutdownCause.Arson
+                    ? "the premises are burned out"
+                    : "the premises are already smashed up";
+            if (type == OrderType.Torch &&
+                closure.Cause == BusinessShutdownCause.Arson)
+                return "the premises are already torched";
+            return null;
         }
 
         static string Ask(TerritoryProtectionState standing)

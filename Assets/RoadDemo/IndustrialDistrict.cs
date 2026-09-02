@@ -158,6 +158,10 @@ namespace RoadDemo
             host.RegisterRoads(_edges);
             for (int i = 0; i < _vehicles.Count; i++) host.RegisterVehicle(_vehicles[i]);
             BlockTheBuildings(host);
+            // IndustrialQuarter composes its yard furniture directly rather than
+            // through StreetKit, so hand the measured props and fences to the same
+            // off-graph ledger after the quarter has reached world coordinates.
+            WalkObstacles.BlockComposedProps(quarter, Frame.origin.y);
 
             Debug.Log($"[Industry] {_plan.Name}: {_plan.Islands.Count} islands, {_plan.Parcels.Count} parcels " +
                       $"({IndustrialQuarter.Cast(_plan)}), {_raster.Junctions.Count} junctions, " +

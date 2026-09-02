@@ -672,8 +672,10 @@ namespace RoadDemo
             host.RegisterPavement(_walks);
             for (int i = 0; i < _vehicles.Count; i++) host.RegisterVehicle(_vehicles[i]);
             BlockTheStaticGeometry(host);
-            WalkObstacles.BlockComposedProps(quarter, Frame.origin.y);
             BlockTheResidential(host);
+            // Finalize after every building solid is known, so interior/child meshes
+            // are not entered again as street furniture.
+            WalkObstacles.BlockComposedProps(quarter, Frame.origin.y);
 
             Debug.Log($"[Core] {_plan.Name}: {_blocks.Count} blocks, {_raster.Junctions.Count} junctions, " +
                       $"{_raster.Stretches.Count} stretches of road, {_edges.Count} lanes, " +
@@ -970,22 +972,82 @@ namespace RoadDemo
         {
             foreach (var recipe in _homes.Blocks)
             {
+                var masses = recipe.TurfMasses;
+                for (int i = 0; i < masses.Count; i++)
+                {
+                    var mass = masses[i];
+                    bool lot = mass.SourceKind == ResidentialKind.Park ||
+                               mass.SourceKind == ResidentialKind.Amenity;
+                    // Ordinary residential buildings retain their authored 5 m wall
+                    // masks below. Their turf proxy includes roof/canopy overhangs which
+                    // are useful to the map but can cover walkable ground at foot level.
+                    if (!lot) continue;
+                    // Open amenity proxies describe things visible on the map, not a
+                    // solid lot. Closed diners are the exception, and only their baked
+                    // one-metre structural proxy is exact enough for a permanent wall;
+                    // a missing bake must fail back to the streamed shell, never to the
+                    // old broad 5 m mask which swallowed the terrace.
+                    if (lot && (!WalkObstacles.PhysicalVenueName(mass.SourceName) ||
+                                !mass.PrefabDerived))
+                        continue;
+
+                    float bottom = Frame.origin.y + mass.Bottom;
+                    float top = Frame.origin.y + mass.Top;
+                    const float ankle = 0.06f;
+                    const float shoulder = 1.9f;
+                    if (top < Frame.origin.y + ankle ||
+                        bottom > Frame.origin.y + shoulder)
+                        continue;
+
+                    var world = Frame.ToWorldRect(mass.Local);
+                    float height = Mathf.Max(0.05f, top - bottom);
+                    var box = new Bounds(
+                        new Vector3(world.center.x, bottom + height * 0.5f,
+                                    world.center.y),
+                        new Vector3(world.width, height, world.height));
+                    host.Blocked(box, $"{recipe.Name}: {mass.SourceName}");
+                }
+
                 foreach (var spot in recipe.Plan.Spots)
                 {
                     var unit = spot?.Unit;
                     if (unit == null || ResidentialUnits.IsLot(unit)) continue;
-                    float cell = ResidentialLot.Cell;
-                    var local = new Rect(
-                        recipe.LocalBounds.xMin + spot.I * cell,
-                        recipe.LocalBounds.yMin + spot.J * cell,
-                        Mathf.Max(1, spot.CW) * cell,
-                        Mathf.Max(1, spot.CD) * cell);
-                    var world = Frame.ToWorldRect(local);
-                    float height = Mathf.Max(2f, unit.MaxH);
-                    var box = new Bounds(
-                        new Vector3(world.center.x, Frame.origin.y + height * 0.5f, world.center.y),
-                        new Vector3(world.width, height, world.height));
-                    host.Blocked(box, $"{recipe.Name}: {unit.Name}");
+                    var turn = ResidentialLot.Turn.Of(unit, spot.Yaw);
+                    var used = new bool[turn.CW, turn.CD];
+                    for (int j = 0; j < turn.CD; j++)
+                    for (int x0 = 0; x0 < turn.CW; x0++)
+                    {
+                        if (used[x0, j] || !turn.Wall(x0, j)) continue;
+                        int wide = 1;
+                        while (x0 + wide < turn.CW && !used[x0 + wide, j] &&
+                               turn.Wall(x0 + wide, j)) wide++;
+                        int deep = 1;
+                        bool grow = true;
+                        while (j + deep < turn.CD && grow)
+                        {
+                            for (int x = 0; x < wide; x++)
+                                if (used[x0 + x, j + deep] ||
+                                    !turn.Wall(x0 + x, j + deep))
+                                { grow = false; break; }
+                            if (grow) deep++;
+                        }
+                        for (int x = 0; x < wide; x++)
+                            for (int z = 0; z < deep; z++) used[x0 + x, j + z] = true;
+
+                        float cell = ResidentialLot.Cell;
+                        var local = new Rect(
+                            recipe.LocalBounds.xMin + (spot.I + x0) * cell,
+                            recipe.LocalBounds.yMin + (spot.J + j) * cell,
+                            wide * cell, deep * cell);
+                        var world = Frame.ToWorldRect(local);
+                        float bottom = Mathf.Min(0f, unit.Floor);
+                        float height = Mathf.Max(2f, unit.MaxH - bottom);
+                        var box = new Bounds(
+                            new Vector3(world.center.x,
+                                Frame.origin.y + bottom + height * 0.5f, world.center.y),
+                            new Vector3(world.width, height, world.height));
+                        host.Blocked(box, $"{recipe.Name}: {unit.Name}");
+                    }
                 }
             }
         }

@@ -78,7 +78,7 @@ namespace RoadDemo
         /// being wired to it (a civilian's door, the top bar's click).</summary>
         public static DemoAudio Active { get; private set; }
 
-        public DemoClock clock;
+        public LivingCity.Ambient.CityClock clock;
         public DemoCamera rig;
 
         List<DemoVehicle> _cars;
@@ -108,10 +108,10 @@ namespace RoadDemo
         /// <summary>Wired by the builder once the city, the crowd and the clock all
         /// exist. The lists are the builder's own and are read live, so anything it
         /// spawns later is heard without re-registering.</summary>
-        public void Init(DemoClock demoClock, DemoCamera camera, List<DemoVehicle> cars,
+        public void Init(LivingCity.Ambient.CityClock cityClock, DemoCamera camera, List<DemoVehicle> cars,
             List<PolicePatrolCar> police, List<CivilianAgent> walkers)
         {
-            clock = demoClock;
+            clock = cityClock;
             rig = camera;
             _cars = cars;
             _police = police;

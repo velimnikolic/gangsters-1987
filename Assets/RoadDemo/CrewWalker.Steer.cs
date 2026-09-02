@@ -15,6 +15,7 @@ namespace RoadDemo
         const float Lookahead = 3f;
 
         int _steerSide;      // which way round the last thing in his way he went (WalkObstacles)
+        int _preferredSteerSide; // a shared crew route's stable first choice, even between obstacles
         Vector3 _strideDir;  // the line he stepped along last frame; zero at the start of a leg
         int _strideMoveFrame = -1000; // last frame on which that line actually carried him
         float _blockedFor;   // seconds stood on this leg with nowhere to step
@@ -92,7 +93,7 @@ namespace RoadDemo
         const float CrowdFloor = 0.25f;
 
         void TickStride(float dt, Vector3 to, float stopWithin, bool hurry = false, bool run = false,
-            bool keepOffRoad = false)
+            bool keepOffRoad = false, bool terminal = true)
         {
             var delta = to - Tf.position;
             delta.y = 0f;
@@ -144,7 +145,11 @@ namespace RoadDemo
                 // buys the same clearance over the extra metres his pace covers
                 line = (want + across * (CrowdPush * CrowdLean * (jog ? 0.5f : 1f))).normalized;
             }
-            float held = Mathf.Max(CrowdHold, CrowdFloor);
+            // A DOORWAY IS NOT A CROWDED PAVEMENT EITHER. The people braking him at a
+            // shop door are his own crew standing round it; braked to the crowd floor,
+            // a three-metre passage takes a dozen seconds and the beat has to finish it
+            // for him. Through the door he walks at his own pace.
+            float held = Crossing ? 1f : Mathf.Max(CrowdHold, CrowdFloor);
             pace *= held;
             // THE CROWD'S BRAKE OUTRANKS THE RUN here too: braked under the band the
             // run clip reads at (RunRateMin), his feet cannot follow the ground - he
@@ -170,16 +175,32 @@ namespace RoadDemo
 
             Vector3 dir;
             float clear;
-            if (WalkObstacles.Occupied(to, WalkObstacles.Radius))
+            if (Crossing)
+            {
+                // A DOORWAY IS NOT AN OBSTACLE. He is going through the front of a shop
+                // on the doorway's own order: the way is the line, the whole line, and
+                // the walls are not asked (OrderThroughDoorway). Everything else about
+                // the step is the ordinary walk - the pace, the clip, the turn - so what
+                // is seen is a man walking in, not a man sliding through a wall.
+                dir = want;
+                clear = dist;
+            }
+            else if (terminal && WalkObstacles.Occupied(to, WalkObstacles.Radius))
             {
                 dir = line;
                 clear = WalkObstacles.Clear(Tf.position, line, WalkObstacles.Radius, dist);
             }
             else
-                // a runner reads the ground further out - at the walk's three metres
-                // his corrections come late and hard and he zig-zags thing to thing
+            {
+                // A runner reads the ground further out - at the walk's three metres
+                // his corrections come late and hard and he zig-zags thing to thing.
+                // WalkObstacles clears its committed side whenever the line is open.
+                // A crew preference is passed as an equal-angle tie-break only; it is
+                // never installed as an already-committed obstacle side.
                 dir = WalkObstacles.Steer(Tf.position, line, _strideDir, WalkObstacles.Radius,
-                    Mathf.Min(jog ? Lookahead * 2f : Lookahead, dist), ref _steerSide, out clear);
+                    Mathf.Min(jog ? Lookahead * 2f : Lookahead, dist), ref _steerSide,
+                    out clear, _preferredSteerSide);
+            }
             if (keepOffRoad && CrewBike.AnyPassOn && dist > CrossWithin)
                 dir = KeepToPavement(Tf.position, dir, Mathf.Max(pace * dt, 1.2f));
             // stepping round somebody counts as going round something: the leg's stall
@@ -214,6 +235,15 @@ namespace RoadDemo
                     dir = az.normalized;
                 else step = 0f;
             }
+
+            // The pavement keeper and city-edge slide above may replace `dir` after
+            // the longer look-ahead was measured. The final write gets its own short
+            // proof on the ACTUAL heading, so neither rewrite can spend clearance that
+            // belonged to a different line and step into a cafe, table or car. Doorway
+            // crossings intentionally own their authored straight line through a wall.
+            if (!Crossing && step > 1e-4f)
+                step = Mathf.Min(step, WalkObstacles.Clear(
+                    Tf.position, dir, WalkObstacles.Radius, step));
 
             if (step > 1e-4f)
             {
@@ -338,7 +368,7 @@ namespace RoadDemo
             }
             _wander += dt;
             if (!_detouring || _blockedFor > 0f) _stall += dt;
-            return _stall > 0.7f || _wander > 8f;
+            return _stall > 0.7f || _wander > 20f;
         }
     }
 }

@@ -87,7 +87,7 @@ namespace AirportDemo
             }
 
             // a walker crossing the strip goes round the building and the forecourt kit
-            WalkObstacles.Block(anchor.x - 12f, anchor.x + 12f, anchor.z - 20f, anchor.z + 4f);
+            BlockLocal(anchor.x - 12f, anchor.x + 12f, anchor.z - 20f, anchor.z + 4f);
             Debug.Log($"[Airport] {name} on the approach road, {stood} pieces");
         }
 
@@ -126,7 +126,7 @@ namespace AirportDemo
             if (booth != null)
             {
                 AirportKit.Prop(booth, new Vector3(x - 4f, AirportSpec.PaveY, z), 90f, _landsideRoot, "Hire desk");
-                WalkObstacles.Block(x - 8f, x, z - 3f, z + 3f);
+                BlockLocal(x - 8f, x, z - 3f, z + 3f);
             }
             var sign = AirportKit.TryLoad(AirportKit.SignInfo) ?? AirportKit.TryLoad(AirportKit.SignParking);
             if (sign != null) AirportKit.Sit(sign, new Vector3(x - 4f, AirportSpec.PaveY, z + 6f), 90f, _landsideRoot, "Hire sign");

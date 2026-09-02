@@ -369,7 +369,7 @@ namespace RoadDemo
 
         void AwaitBurn()
         {
-            // The boards are already up from the smash, so the fire has no NEW visual to
+            // The shop is already wrecked by the smash, so the fire has no NEW visual to
             // wait on: what is waited on is the ORDER closing, which is the moment the
             // racket is told (OutfitDirector.OnJobResolved).
             var outfit = LivingCity.Gameplay.OutfitDirector.Instance;

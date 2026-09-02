@@ -92,6 +92,8 @@ namespace RoadDemo
         readonly SidewalkPlan _plan = new SidewalkPlan();
         SidewalkDressing _dressing;
         StreetProps _props;
+        bool _walkPlanRegistered;
+        bool _walkPlanReframed;
 
         /// <summary>What every prop laid has claimed. The kit puts it into
         /// WalkObstacles itself (see the constructor), so people walk round this
@@ -115,7 +117,7 @@ namespace RoadDemo
         /// <param name="root">Parent for everything laid.</param>
         /// <param name="y">Ground offset: the road demo lays tiles at 0 and walks its
         /// people at 0.1 (the pavement top); a scene whose floor is at 0 lays at -0.1.</param>
-        public StreetKit(Transform root, float y = 0f)
+        public StreetKit(Transform root, float y = 0f, bool registerWalkPlan = true)
         {
             _geometry = new GameObject("Street").transform;
             _geometry.SetParent(root, false);
@@ -124,7 +126,36 @@ namespace RoadDemo
             _flora = new GameObject("Street Flora").transform;
             _flora.SetParent(root, false);
             _y = y;
-            if (!WalkObstacles.Props.Contains(_plan)) WalkObstacles.Props.Add(_plan);
+            if (registerWalkPlan)
+            {
+                WalkObstacles.RegisterPlan(_plan);
+                _walkPlanRegistered = true;
+            }
+        }
+
+        /// <summary>
+        /// Register a kit deliberately composed at the origin and carried into place
+        /// later. The plan is carried by the same translation/yaw before it becomes
+        /// visible to walkers, so it never leaves ghost furniture at the origin.
+        /// </summary>
+        public void RegisterWalkPlan(Vector3 origin, float yaw)
+        {
+            if (_walkPlanRegistered) return;
+            if (!_walkPlanReframed)
+            {
+                _plan.Reframe(origin, yaw);
+                _walkPlanReframed = true;
+            }
+            WalkObstacles.RegisterPlan(_plan);
+            _walkPlanRegistered = true;
+        }
+
+        /// <summary>Remove this kit's plan when its owning district is retired.</summary>
+        public void UnregisterWalkPlan()
+        {
+            if (!_walkPlanRegistered) return;
+            WalkObstacles.UnregisterPlan(_plan);
+            _walkPlanRegistered = false;
         }
 
         public bool Load()

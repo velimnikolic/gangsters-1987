@@ -13,7 +13,7 @@ namespace RoadDemo
     // headlights need their share of that too (DemoHeadlights).
     public class DemoStreetLamps : MonoBehaviour
     {
-        public DemoClock clock;
+        public LivingCity.Ambient.CityClock clock;
 
         // Bulb points are in the lamp's local space and FIXED, measured off the
         // Synty prefabs, not off the instance's mesh: the lamp geometry is under

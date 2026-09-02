@@ -21,6 +21,7 @@ namespace LivingCity.Business
         public static BusinessRuntime Instance { get; private set; }
 
         BusinessDirectory directory;
+        BusinessShutdownLedger shutdowns;
         BusinessSiteCatalog catalog;
         BusinessPopulationReport report;
         int citySeed;
@@ -30,6 +31,7 @@ namespace LivingCity.Business
 
         public IBusinessQuery Query => directory;
         public BusinessDirectory Directory => directory;
+        public BusinessShutdownLedger Shutdowns => shutdowns;
         public BusinessSiteCatalog Catalog => catalog;
         public BusinessPopulationReport Report => report;
         public int CitySeed => citySeed;
@@ -48,8 +50,19 @@ namespace LivingCity.Business
 
         void OnDestroy()
         {
+            if (shutdowns != null)
+                shutdowns.Changed -= OnShutdownChanged;
             if (Instance == this)
                 Instance = null;
+        }
+
+        void Update()
+        {
+            if (shutdowns == null)
+                return;
+            var clock = LivingCity.Ambient.DayClock.Current;
+            if (clock != null)
+                shutdowns.AdvanceTo(clock.Day * 24d + clock.Hour);
         }
 
         /// <summary>
@@ -64,6 +77,8 @@ namespace LivingCity.Business
 
             citySeed = seed;
             directory = new BusinessDirectory();
+            shutdowns = new BusinessShutdownLedger(directory);
+            shutdowns.Changed += OnShutdownChanged;
             catalog = new BusinessSiteCatalog();
 
             var core = builder != null ? builder.PrimaryCore : null;
@@ -81,6 +96,33 @@ namespace LivingCity.Business
             Debug.Log("[Business] " + report.Summary() + $" (seed {citySeed}).");
             foreach (var problem in report.Problems)
                 Debug.LogWarning("[Business] " + problem, this);
+        }
+
+        /// <summary>The active closure at the live campaign hour. Presentation callers
+        /// use this rather than maintaining their own countdown.</summary>
+        public bool TryGetShutdown(
+            TerritoryBusinessId businessId, out BusinessShutdownStatus status)
+        {
+            status = default;
+            var clock = LivingCity.Ambient.DayClock.Current;
+            var gameHour = clock != null ? clock.Day * 24d + clock.Hour : 0d;
+            return shutdowns != null && shutdowns.TryGet(businessId, gameHour, out status);
+        }
+
+        public double CurrentGameHour
+        {
+            get
+            {
+                var clock = LivingCity.Ambient.DayClock.Current;
+                return clock != null ? clock.Day * 24d + clock.Hour : 0d;
+            }
+        }
+
+        void OnShutdownChanged(BusinessShutdownChange change)
+        {
+            if (change.Kind == BusinessShutdownChangeKind.Repaired ||
+                change.Kind == BusinessShutdownChangeKind.Expired)
+                ShopDamage.RepairBusiness(change.BusinessId);
         }
 
         void IndexByPlan()

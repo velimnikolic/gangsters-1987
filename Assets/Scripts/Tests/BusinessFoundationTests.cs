@@ -31,6 +31,7 @@ namespace LivingCity.Tests
             AddingOneSiteLeavesTheRestAlone(failures);
             CompoundsAreOneBusinessWithAGate(failures);
             ResidentialPlanDataPublishesStableSites(failures);
+            failures.AddRange(BusinessShutdownTests.Run());
 
             return failures;
         }

@@ -187,6 +187,16 @@ namespace RoadDemo
                 return;
 
             Entered[unit.CrewId] = job.Id;
+
+            // HE WENT IN, AND THEN IT WAS ROBBED. That is the robbery, and the book is
+            // told so from INSIDE - the same rule the demand and the collection keep. It
+            // used to be reported in the same breath as the order to walk in, so a shop
+            // was turned over while the man was still on the pavement outside it. (A
+            // raid used to report nothing at all unless a rival crew happened to be
+            // standing there and got wiped, which left the order - and every order behind
+            // it - open for its whole span.)
+            var told = outfit;
+            var done = job;
             // No word at this door - a robbery goes straight in. When the canonical
             // premises is known, resolve its real streamed entrance and use the full
             // physical passage instead of the old hide-at-the-pavement fallback.
@@ -195,20 +205,13 @@ namespace RoadDemo
                 DoorBeat.VisitBusiness(
                     lead,
                     new LivingCity.Territory.TerritoryBusinessId(job.TargetBusinessId),
-                    door);
+                    door,
+                    whenInside: () => Done(told, done));
             }
             else
             {
-                DoorBeat.Visit(lead, door, talk: 0f);
+                DoorBeat.Visit(lead, door, talk: 0f, whenInside: () => Done(told, done));
             }
-
-            // HE WENT IN. That is the robbery, and the book is told so - the same rule
-            // the bat and the bottle answer by. A raid used to report nothing unless a
-            // rival crew happened to be standing there and got wiped, so robbing an
-            // ordinary shop left the order open for its whole span: the men standing at
-            // the door they had just gone through, and EVERY order behind it - the next
-            // smash, the next torch - waiting on a job that was already done.
-            Done(outfit, job);
         }
 
         /// <summary>
@@ -223,7 +226,7 @@ namespace RoadDemo
             outfit.ReportStreetOutcome(job.Id, OrderOutcome.Completed);
         }
 
-        /// <summary>A smash-up is two clear blows, then the frontage is visibly shut.
+        /// <summary>A smash-up is two clear blows, then the frontage is visibly broken.
         /// Keeping this just over two seconds makes it read as an action rather than a man
         /// mechanically beating the same pane for half the job.</summary>
         public const int PremisesSmashRounds = 2;
@@ -239,7 +242,7 @@ namespace RoadDemo
             // He swings at the SHOPFRONT, not at the pavement he was marched to. The
             // job's target is the doorstep - a walkable spot on the kerb - and a bat
             // aimed there is a man beating the air a couple of metres short of the glass
-            // that is about to be boarded. The torch has always thrown at the real
+            // that is about to be shattered. The torch has always thrown at the real
             // frontage; the bat now goes to the same place.
             var door = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
             var businessId = new LivingCity.Territory.TerritoryBusinessId(

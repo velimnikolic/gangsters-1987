@@ -52,7 +52,6 @@ namespace AirportDemo
             if (go == null) return;
             var b = AirportKit.BoundsOf(go);
             _footprints.Add((name, b));
-            WalkObstacles.Block(b.min.x - 0.4f, b.max.x + 0.4f, b.min.z - 0.4f, b.max.z + 0.4f);
         }
 
         void PlaceHangars()
@@ -168,9 +167,8 @@ namespace AirportDemo
                 var wb = b + Vector3.up * (AirportSpec.FenceHeight - 0.55f);
                 AirportKit.LayRun(wire, wa, wb, _fenceRoot, "Razor wire");
             }
-            // the wire is a wall to anybody on foot
-            var min = Vector3.Min(a, b); var max = Vector3.Max(a, b);
-            WalkObstacles.Block(min.x - 0.3f, max.x + 0.3f, min.z - 0.3f, max.z + 0.3f);
+            // BlockTheField measures the completed run after the airport root has
+            // reached world space; publishing this local line here leaves a ghost wire.
         }
 
         /// <summary>A gate: the boom, the gatehouse beside it, the authorised-vehicles

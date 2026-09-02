@@ -130,13 +130,34 @@ namespace RoadDemo
         /// his unit counted as riding, so no fight, no tether, no order of any kind.</summary>
         const float LeftBehindAfter = 10f;
 
+        /// <summary>A moving crew may fan briefly while two men round a corner, but a
+        /// sustained difference this wide means they are no longer taking the same
+        /// line. The grace is longer than an ordinary steering correction and shorter
+        /// than the time it takes the divergence to read as three unrelated walkers.</summary>
+        const float FormationHeadingLimit = 50f, FormationHeadingAfter = 1.5f;
+
+        /// <summary>The dealt formation fits inside eight metres even with all four
+        /// tactical hoods. Ten metres therefore leaves room for a prop/corner funnel;
+        /// held beyond it for four seconds is a crew that has come apart.</summary>
+        const float FormationSpreadLimit = 10f, FormationSpreadAfter = 4f;
+
+        /// <summary>Only actual ground made contributes a heading. At the harness's
+        /// normal 50 ms step this is well below half a walking step, while still
+        /// rejecting animation/root jitter from a man who is effectively stopped.</summary>
+        const float FormationStepMin = 0.025f;
+
+        /// <summary>A centre may brush a registered prop for a frame while steering.
+        /// Twelve 50 ms frames with his centre inside it is penetration, not contact.
+        /// The small probe matches WalkObstacles' own "already inside" test.</summary>
+        const float PropProbeRadius = 0.1f, PropInsideAfter = 0.6f;
+
         // -------------------------------------------------------------- the ledger
 
         class Watch
         {
             public Vector3 Last;
             public bool Seen, WasCarried;
-            public float OffFor, StrayFor, LightFor, ZebraFor, ChaseFor, SkateFor, LeftFor;
+            public float OffFor, StrayFor, LightFor, ZebraFor, ChaseFor, SkateFor, LeftFor, PropFor;
             public float RoadFor;
             /// <summary>The ground he made last frame, kept because w.Last is rolled
             /// forward before the later checks get to look at it.</summary>
@@ -145,12 +166,21 @@ namespace RoadDemo
             public bool SaidOff;
         }
 
+        sealed class FormationWatch
+        {
+            public float HeadingFor, SpreadFor;
+        }
+
         static readonly Dictionary<CrewWalker, Watch> Men = new Dictionary<CrewWalker, Watch>();
         static readonly Dictionary<DemoCrews.Unit, float> FileFor = new Dictionary<DemoCrews.Unit, float>();
+        static readonly Dictionary<DemoCrews.Unit, FormationWatch> Formations =
+            new Dictionary<DemoCrews.Unit, FormationWatch>();
         static readonly List<CrewWalker> FiredThisFrame = new List<CrewWalker>();
         static readonly List<CrewWalker> Walkers = new List<CrewWalker>();
         static readonly List<CrewWalker> Stretch = new List<CrewWalker>();
         static readonly List<CrewWalker> Sweep = new List<CrewWalker>();
+        static readonly List<Vector3> FormationSteps = new List<Vector3>();
+        static readonly List<Vector3> FormationPositions = new List<Vector3>();
         static float _sweepIn = 5f;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -158,6 +188,7 @@ namespace RoadDemo
         {
             Men.Clear();
             FileFor.Clear();
+            Formations.Clear();
             FiredThisFrame.Clear();
             _sweepIn = 5f;
         }
@@ -170,6 +201,7 @@ namespace RoadDemo
             foreach (var unit in arena.Units)
             {
                 TickMen(arena, unit, dt);
+                TickFormation(unit, dt);
                 TickStray(arena, unit, dt);
                 TickLeftBehind(arena, unit, dt);
                 TickFile(unit, dt);
@@ -277,6 +309,7 @@ namespace RoadDemo
                 {
                     w.OffFor = 0f; w.SaidOff = false;
                     w.LightFor = 0f; w.ZebraFor = 0f; w.ChaseFor = 0f; w.RoadFor = 0f;
+                    w.PropFor = 0f;
                     continue;
                 }
 
@@ -294,6 +327,20 @@ namespace RoadDemo
                         }
                     }
                     else { w.OffFor = 0f; w.SaidOff = false; }
+                }
+
+                // THE PROP. Standing() is the fixed walking map: solids and every
+                // registered furniture plan, but no traffic. WallAt() removes the
+                // solids again, leaving exactly registered props. A tenth-metre probe
+                // asks whether his centre is inside one rather than whether his normal
+                // shoulder radius is merely touching it.
+                bool insideProp = WalkObstacles.Standing(pos, PropProbeRadius) &&
+                                  !WalkObstacles.WallAt(pos, PropProbeRadius);
+                if (AdvanceSustained(ref w.PropFor, insideProp, dt, PropInsideAfter))
+                {
+                    Fault(man, "proppenetration",
+                        $"inside a fixed prop for {w.PropFor:F1}s ({man.State})");
+                    w.PropFor = -20f;
                 }
 
                 // THE LIGHT. Waiting is legal; waiting longer than any light holds
@@ -392,6 +439,126 @@ namespace RoadDemo
                     return true;
             }
             return false;
+        }
+
+        // -------------------------------------------------------------- formation
+
+        /// <summary>A crew on one open-ground order makes one visible body. Measure
+        /// only simultaneous Striding men: fights, boarding, panic and a hood merely
+        /// falling in have their own rules and are deliberately outside this one.</summary>
+        static void TickFormation(DemoCrews.Unit unit, float dt)
+        {
+            if (unit == null || unit.Wiped || unit.TargetUnit != null || unit.Boarding != null)
+            {
+                ResetFormation(unit);
+                return;
+            }
+
+            FormationSteps.Clear();
+            FormationPositions.Clear();
+            foreach (var man in unit.All())
+            {
+                if (man == null || man.Dead || man.Tf == null || man.Riding ||
+                    man.Panicked || man.Retreating || man.State != CrewWalker.Mode.Striding)
+                    continue;
+                FormationPositions.Add(man.Tf.position);
+                if (Men.TryGetValue(man, out var watch) &&
+                    watch.Step.sqrMagnitude >= FormationStepMin * FormationStepMin)
+                    FormationSteps.Add(watch.Step);
+            }
+
+            if (FormationPositions.Count < 2)
+            {
+                ResetFormation(unit);
+                return;
+            }
+
+            if (!Formations.TryGetValue(unit, out var formed))
+                Formations[unit] = formed = new FormationWatch();
+            var lead = unit.Boss != null && !unit.Boss.Dead && unit.Boss.Tf != null
+                ? unit.Boss : FirstStanding(unit);
+
+            float heading = FormationHeadingSpread(FormationSteps, FormationStepMin);
+            bool headingApart = FormationSteps.Count >= 2 && heading > FormationHeadingLimit;
+            if (AdvanceSustained(ref formed.HeadingFor, headingApart, dt, FormationHeadingAfter))
+            {
+                if (lead != null)
+                    Fault(lead, "formationheading",
+                        $"{FormationSteps.Count} moving men differed by {heading:F0} deg " +
+                        $"for {formed.HeadingFor:F1}s");
+                formed.HeadingFor = -20f;
+            }
+
+            float spread = FormationPositionSpread(FormationPositions);
+            if (AdvanceSustained(ref formed.SpreadFor, spread > FormationSpreadLimit,
+                                 dt, FormationSpreadAfter))
+            {
+                if (lead != null)
+                    Fault(lead, "formationspread",
+                        $"{FormationPositions.Count} striding men spread {spread:F1} m " +
+                        $"for {formed.SpreadFor:F1}s");
+                formed.SpreadFor = -20f;
+            }
+        }
+
+        static void ResetFormation(DemoCrews.Unit unit)
+        {
+            if (unit == null || !Formations.TryGetValue(unit, out var formed)) return;
+            formed.HeadingFor = 0f;
+            formed.SpreadFor = 0f;
+        }
+
+        /// <summary>Largest pairwise ground-heading difference, ignoring steps too
+        /// small to establish a direction. Pure so the contract can run outside Play.</summary>
+        internal static float FormationHeadingSpread(IList<Vector3> steps, float minimumStep)
+        {
+            if (steps == null || steps.Count < 2) return 0f;
+            float minimum = Mathf.Max(0f, minimumStep);
+            float minimum2 = minimum * minimum;
+            float widest = 0f;
+            for (int i = 0; i < steps.Count; i++)
+            {
+                var a = steps[i];
+                a.y = 0f;
+                if (a.sqrMagnitude < minimum2) continue;
+                for (int j = i + 1; j < steps.Count; j++)
+                {
+                    var b = steps[j];
+                    b.y = 0f;
+                    if (b.sqrMagnitude < minimum2) continue;
+                    widest = Mathf.Max(widest, Vector3.Angle(a, b));
+                }
+            }
+            return widest;
+        }
+
+        /// <summary>Largest pairwise ground separation. Pure counterpart of the live
+        /// formation-spread measurement.</summary>
+        internal static float FormationPositionSpread(IList<Vector3> positions)
+        {
+            if (positions == null || positions.Count < 2) return 0f;
+            float widest2 = 0f;
+            for (int i = 0; i < positions.Count; i++)
+            for (int j = i + 1; j < positions.Count; j++)
+            {
+                var gap = positions[i] - positions[j];
+                gap.y = 0f;
+                widest2 = Mathf.Max(widest2, gap.sqrMagnitude);
+            }
+            return Mathf.Sqrt(widest2);
+        }
+
+        /// <summary>One sustained-condition clock. Clearing the condition clears the
+        /// clock; a negative value deliberately acts as the existing audit cooldown.</summary>
+        internal static bool AdvanceSustained(ref float held, bool breached, float dt, float grace)
+        {
+            if (!breached)
+            {
+                held = 0f;
+                return false;
+            }
+            held += Mathf.Max(0f, dt);
+            return held > Mathf.Max(0f, grace);
         }
 
         // -------------------------------------------------------------- the crew

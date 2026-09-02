@@ -344,9 +344,8 @@ namespace SyntyCity
             sunGo.transform.rotation = Quaternion.Euler(sunAngles.x, sunAngles.y, sunAngles.z);
 
             var day = new GameObject("DayNight");
-            var clock = day.AddComponent<DemoClock>();
-            clock.secondsPerGameHour = Mathf.Max(0.02f, realSecondsPerGameHour);
-            clock.startHour = startHour;
+            var clock = day.AddComponent<LivingCity.Ambient.CityClock>();
+            clock.Configure(startHour, realSecondsPerGameHour);
             var sky = day.AddComponent<DemoSky>();
             sky.clock = clock;
             sky.sun = sun;

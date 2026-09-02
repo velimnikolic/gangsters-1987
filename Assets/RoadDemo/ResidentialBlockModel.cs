@@ -47,7 +47,6 @@ namespace RoadDemo
         /// <summary>Lightweight map geometry generated beside this block recipe. It is
         /// independent of every recycled 3D holder and contains no live GameObjects.</summary>
         public IReadOnlyList<ResidentialTurfMass> TurfMasses => _turfMasses;
-
         public ulong ContentKey
         {
             get

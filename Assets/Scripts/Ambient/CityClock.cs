@@ -64,6 +64,19 @@ namespace LivingCity.Ambient
         /// <summary>Current step on the speed ladder - what the HUD prints as "2x".</summary>
         public float SpeedMultiplier => Speeds[speedIndex];
 
+        /// <summary>Which rung of the speed ladder is selected.</summary>
+        public int SpeedIndex => speedIndex;
+
+        public int SpeedCount => Speeds.Length;
+
+        public float SpeedAt(int index) => Speeds[Mathf.Clamp(index, 0, Speeds.Length - 1)];
+
+        public void SetSpeed(int index)
+        {
+            speedIndex = Mathf.Clamp(index, 0, Speeds.Length - 1);
+            ApplySpeed();
+        }
+
         public void SpeedUp()
         {
             if (speedIndex < Speeds.Length - 1)
@@ -105,6 +118,20 @@ namespace LivingCity.Ambient
 
             // The campaign calendar walks on whichever clock a scene runs.
             DayClock.Register(this);
+        }
+
+        /// <summary>
+        /// Configures a clock created by a runtime-built scene. AddComponent invokes
+        /// Awake before the builder can assign values, so this also moves the live hour
+        /// immediately. An explicit runtime configuration takes precedence over any
+        /// CityBuilder that happened to be present in the scene.
+        /// </summary>
+        public void Configure(float initialHour, float realSecondsPerHour)
+        {
+            config = null;
+            startHour = Mathf.Repeat(initialHour, HoursPerDay);
+            this.realSecondsPerGameHour = Mathf.Max(0.02f, realSecondsPerHour);
+            SetHour(startHour);
         }
 
         void Update()

@@ -57,6 +57,9 @@ namespace LivingCity.UI
 
         TMP_Text pauseLabel;
         TMP_Text speedLabel;
+        int shownSpeedIndex = -1;
+        bool shownPaused;
+        bool shownControls;
 
         RectTransform lieutenantRows;
         TMP_Text lieutenantHeader;
@@ -109,6 +112,8 @@ namespace LivingCity.UI
         // reading it late means the HUD and the sky are showing the same frame's hour.
         void LateUpdate()
         {
+            RefreshControls();
+
             var hour = clock.Hour;
             var minute = Mathf.FloorToInt(hour * 60f);
 
@@ -189,6 +194,14 @@ namespace LivingCity.UI
 
         void RefreshControls()
         {
+            if (shownControls && shownPaused == clock.Paused &&
+                shownSpeedIndex == clock.SpeedIndex)
+                return;
+
+            shownControls = true;
+            shownPaused = clock.Paused;
+            shownSpeedIndex = clock.SpeedIndex;
+
             // "II" is the universal pause glyph LiberationSans actually has; the real
             // ⏸/▶ symbols are outside the default TMP atlas and would render as boxes.
             if (pauseLabel)

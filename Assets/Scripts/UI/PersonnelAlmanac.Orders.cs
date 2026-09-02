@@ -951,7 +951,8 @@ namespace LivingCity.UI
                             : Territory.TerritoryProtectionState.Unaffiliated,
                         Gameplay.DoorHolder.Read(businessId),
                         racketable: true, hasCrew: true, atDoor: false,
-                        Gameplay.DoorJobs.AskingPrice(businessId), racketRows);
+                        Gameplay.DoorJobs.AskingPrice(businessId), racketRows,
+                        closure: DoorMenu.ClosureOf(businessId));
 
                     // EVERY available row, not the first: since the approach carries the
                     // intent, a demand or a threat given from the desk is one order too -

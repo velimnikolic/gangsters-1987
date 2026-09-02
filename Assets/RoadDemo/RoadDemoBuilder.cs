@@ -676,6 +676,8 @@ namespace RoadDemo
 
         void OnDestroy()
         {
+            WalkObstacles.UnregisterPlan(_plan);
+            _connectorKit?.UnregisterWalkPlan();
             for (int i = 0; i < _pedestrians.Count; i++) _pedestrians[i].Dispose();
             for (int i = 0; i < _policeOfficers.Count; i++) _policeOfficers[i].Dispose();
             DisposeStreaming();
@@ -4251,10 +4253,9 @@ namespace RoadDemo
 
         Light _sun;
         DemoCamera _rig;
-        DemoClock _clock;
+        LivingCity.Ambient.CityClock _clock;
 
-        // The demo's own day/night stack, self-contained in this folder: DemoClock
-        // advances the hour and owns pause/speed, DemoSky swings the sun and moon
+        // The demo's day/night presentation reads the shared CityClock. DemoSky swings the sun and moon
         // under a procedural skybox with the PalmCity cloud ring, DemoStreetLamps
         // and DemoHeadlights light the street after dark, DemoNightWindows lights
         // the window panes and signage on the facades, and DemoClockHud keeps the
@@ -4263,7 +4264,7 @@ namespace RoadDemo
         {
             var go = new GameObject("DayNight");
 
-            var clock = go.AddComponent<DemoClock>();
+            var clock = go.AddComponent<LivingCity.Ambient.CityClock>();
             clock.Configure(startHour, realSecondsPerGameHour);
 
             var sky = go.AddComponent<DemoSky>();

@@ -654,7 +654,8 @@ namespace HarborDemo
         {
             float half = QuayHalf, gW = _gateWestX, gE = _gateEastX;
             // the loop, a hair over the concrete like the asphalt strips
-            _yardStreet = new StreetKit(_apronRoot, y: TileTop + 0.012f) { Palms = false };
+            _yardStreet = new StreetKit(_apronRoot, y: TileTop + 0.012f,
+                registerWalkPlan: false) { Palms = false };
             bool laid = _yardStreet.LayRoadAlongX(YardLaneZ, gW + 5f, gE - 5f)
                         && _yardStreet.LayRoadAlongX(ServiceLaneZ, gW + 5f, gE - 5f);
             foreach (float gx in new[] { gW, gE })
@@ -724,7 +725,8 @@ namespace HarborDemo
         {
             // a hair above the land: the kit's carriageway lies at its own y and the
             // heightfield at LandY, and a road laid level with the grass is under it
-            _street = new StreetKit(_streetRoot, y: LandY + 0.03f) { Palms = false };
+            _street = new StreetKit(_streetRoot, y: LandY + 0.03f,
+                registerWalkPlan: false) { Palms = false };
             float gW = _gateWestX, gE = _gateEastX;
             var gates = new[] { gW, gE };
             int linked = _links != null ? _links.Length : 0;

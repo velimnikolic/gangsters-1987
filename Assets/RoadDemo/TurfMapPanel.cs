@@ -5,6 +5,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using LivingCity.Gameplay;
+using LivingCity.Territory;
 using LivingCity.UI;
 
 namespace RoadDemo
@@ -393,6 +394,8 @@ namespace RoadDemo
                     _paintedKey = key;
                     BuildKey((RectTransform)transform);
                 }
+                if (_door.Stale)
+                    _door.Paint();
                 Places();
             }
         }
@@ -544,6 +547,21 @@ namespace RoadDemo
 
         public bool MenuOpen => _menuRect != null && _menuRect.gameObject.activeSelf;
 
+        // ------------------------------------------------------------ the door's menu
+
+        /// <summary>The shop's own menu, floating over the plate. Not a menu of the map's
+        /// - it is <see cref="DoorMenu"/>, the same panel the ledger opens beside a row of
+        /// its block file and the street opens over a facade, with the same men picked and
+        /// the same keys.</summary>
+        readonly DoorMenu.Host _door = new DoorMenu.Host();
+
+        public bool DoorMenuOpen => _door.IsOpen;
+
+        public bool OpenDoorMenu(Vector2 screen, TerritoryBusinessId id) =>
+            _door.Show(id, screen);
+
+        public void CloseDoorMenu() => _door.Close();
+
         /// <summary>Whether the pointer is on the map's own chrome rather than on the
         /// map. The map's picks are polled from the mouse, so they have to stand aside
         /// for the order menu and the key the way the street's picker stands aside for
@@ -552,6 +570,8 @@ namespace RoadDemo
         {
             if (_menuRect != null && _menuRect.gameObject.activeSelf &&
                 RectTransformUtility.RectangleContainsScreenPoint(_menuRect, screen))
+                return true;
+            if (_door.Contains(screen))
                 return true;
             return _keyRect != null &&
                    RectTransformUtility.RectangleContainsScreenPoint(_keyRect, screen);

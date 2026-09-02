@@ -188,6 +188,62 @@ namespace LivingCity.UI
         }
 
         /// <summary>
+        /// A face for a subject the city never spawned - a shop's gazda, whose deed is a
+        /// name, an age band and a seed and never an actor on the street. Dealt off that
+        /// seed out of the city's OWN crowd, so the same city hands the same shopkeeper
+        /// the same face every time, and matched to the sex his deed's name implies.
+        ///
+        /// Gang bodies are stepped over: the two cast tables are the rule (GangLooks),
+        /// and a grocer wearing a wiseguy's suit reads as a made man behind the counter.
+        /// Null when the scene has neither a crowd nor the ledger's own cast, which
+        /// leaves the caller's initials standing.
+        /// </summary>
+        public static GameObject CivilianPrefab(int seed, bool female)
+        {
+            civilianScratch.Clear();
+
+            var prefabs = Database();
+            if (prefabs != null && prefabs.pedestrianGroups != null)
+                foreach (var group in prefabs.pedestrianGroups)
+                {
+                    if (group?.prefabs == null)
+                        continue;
+                    foreach (var prefab in group.prefabs)
+                        Consider(prefab, female);
+                }
+
+            // The book's own Synty cast answers where the crowd slots are not dealt -
+            // the same bridge every other portrait on the page falls back to.
+            if (civilianScratch.Count == 0)
+            {
+                var set = LedgerModelSet.Instance;
+                if (set != null && set.people != null)
+                    foreach (var prefab in set.people)
+                        Consider(prefab, female);
+            }
+
+            if (civilianScratch.Count == 0)
+                return null;
+
+            // Sorted by name before the draw: a group's array order is authoring order,
+            // and a re-save of the database would otherwise deal every gazda a new face.
+            civilianScratch.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
+            var index = (int)((uint)seed % (uint)civilianScratch.Count);
+            return civilianScratch[index];
+        }
+
+        static readonly List<GameObject> civilianScratch = new List<GameObject>();
+
+        static void Consider(GameObject prefab, bool female)
+        {
+            if (!prefab || Gangs.GangLooks.IsGangBody(prefab.name) ||
+                Entities.PedestrianIdentity.IsFemale(prefab.name) != female ||
+                civilianScratch.Contains(prefab))
+                return;
+            civilianScratch.Add(prefab);
+        }
+
+        /// <summary>
         /// The dev-time safety net under both scans: when the PrefabDatabase cannot
         /// answer (its people and car slots are being re-dealt - the working tree has
         /// had them empty), photograph the pack's own prefab of that name, or of the

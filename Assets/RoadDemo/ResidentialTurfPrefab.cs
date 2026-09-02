@@ -258,9 +258,12 @@ namespace RoadDemo
         public readonly TurfType Type;
         public readonly bool StartsBuilding;
         public readonly bool PrefabDerived;
+        public readonly string SourceName;
+        public readonly ResidentialKind SourceKind;
 
         public ResidentialTurfMass(Rect local, float bottom, float top, TurfType type,
-                                   bool startsBuilding, bool prefabDerived)
+                                   bool startsBuilding, bool prefabDerived,
+                                   string sourceName, ResidentialKind sourceKind)
         {
             Local = local;
             Bottom = bottom;
@@ -268,6 +271,8 @@ namespace RoadDemo
             Type = type;
             StartsBuilding = startsBuilding;
             PrefabDerived = prefabDerived;
+            SourceName = sourceName;
+            SourceKind = sourceKind;
         }
     }
 
@@ -311,7 +316,8 @@ namespace RoadDemo
                         TransformRect(source.Footprint, placed),
                         source.Bottom, source.Top, type,
                         startsBuilding: m == 0,
-                        prefabDerived: proxy.PrefabDerived));
+                        prefabDerived: proxy.PrefabDerived,
+                        sourceName: unit.Name, sourceKind: unit.Kind));
                 }
             }
         }

@@ -484,10 +484,16 @@ namespace LivingCity.Territory
                 row.CollectHistory(into);
         }
 
-        /// <summary>How many lines of door news the ledger keeps. A wire is a strip of
-        /// the last few hours, not an archive - the per-business history is the archive.
+        /// <summary>
+        /// How many lines of door news the ledger keeps.
+        ///
+        /// It WAS 24 - a wire being a strip of the last few hours and the per-business
+        /// history being the archive. The ledger's rail now stands the whole wire on end
+        /// and scrolls it, so the strip is the archive as far as a boss is concerned, and
+        /// 24 lines was an afternoon of a working racket. Raised on the user's word,
+        /// 2026-09-02. The strip over the street still shows the newest few of them.
         /// </summary>
-        public const int DispatchesKept = 24;
+        public const int DispatchesKept = 1000;
 
         readonly List<TerritoryDoorDispatch> dispatches = new List<TerritoryDoorDispatch>();
 

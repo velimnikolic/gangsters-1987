@@ -30,7 +30,7 @@ namespace HarborDemo
         float _breakIn = 12f;
 
         readonly List<Light> _floods = new List<Light>();
-        DemoClock _clock;
+        LivingCity.Ambient.CityClock _clock;
         float _litHour = -99f;
 
         ParticleSystem _welderSparks;
@@ -43,7 +43,7 @@ namespace HarborDemo
 
         void BuildRoutine()
         {
-            _clock = Object.FindAnyObjectByType<DemoClock>();
+            _clock = Object.FindAnyObjectByType<LivingCity.Ambient.CityClock>();
             SmokeTheBarrels();
             BuildWelder();
             PostTheGate();

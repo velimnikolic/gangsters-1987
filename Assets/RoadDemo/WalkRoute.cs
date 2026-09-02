@@ -26,9 +26,9 @@ namespace RoadDemo
     public static class WalkRoute
     {
         /// <summary>The lattice pitch. Small enough to find the gap between two
-        /// buildings, big enough that a quarter of a mile square is thousands of
-        /// squares rather than millions.</summary>
-        public const float Cell = 2.5f;
+        /// buildings and to go locally around a cafe table group, big enough that a
+        /// quarter of a mile square remains well below the lattice safety cap.</summary>
+        public const float Cell = 1.25f;
 
         /// <summary>Ground kept beyond everything blocked, so a route may go round the
         /// outside of the outermost building.</summary>
@@ -57,7 +57,26 @@ namespace RoadDemo
         static float[] _cost;
         static int[] _from;
         static int[] _stamp;
+        static int[] _closedAt, _goalAt;
+        static float[] _goalExit;
         static int _visit;
+
+        struct EndpointAnchor
+        {
+            public int Square;
+            public float Distance;
+            public float ConnectorCost;
+        }
+
+        // An endpoint is continuous ground, while A* walks cell centres. Keeping only
+        // its metrically nearest centre makes that arbitrary snap choose which side of
+        // the first/last corner the whole route uses. Give the search a small fan of
+        // proved connectors instead; it will pay their real lengths when choosing the
+        // cheapest complete way.
+        const float AnchorSlack = 2f * Cell;
+        const int MaxAnchorRing = 24;
+        static readonly List<EndpointAnchor> _startAnchors = new List<EndpointAnchor>(32);
+        static readonly List<EndpointAnchor> _goalAnchors = new List<EndpointAnchor>(32);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void Forget()
@@ -67,6 +86,7 @@ namespace RoadDemo
             _roadAx = _roadAz = null;
             _freeAt = _passXAt = _passZAt = _roadAt = null;
             _cost = null; _from = null; _stamp = null;
+            _closedAt = _goalAt = null; _goalExit = null;
             _w = _h = 0; _builtAt = -1; _cacheAt = 0; _visit = 0;
             _open.Clear();
         }
@@ -76,22 +96,50 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ the map
 
-        static bool Ready()
+        static bool Ready(Vector3 from, Vector3 to)
         {
-            if (_free != null && _builtAt == WalkObstacles.Version) return true;
+            if (_free != null && _builtAt == WalkObstacles.Version &&
+                InAddressSpace(from) && InAddressSpace(to)) return true;
             if (WalkObstacles.Max.x <= WalkObstacles.Min.x) return false;   // nothing blocked yet
-            PrepareLattice();
+            PrepareLattice(from, to);
             return _free != null;
         }
 
+        static bool InAddressSpace(Vector3 p) =>
+            p.x >= _x0 && p.z >= _z0 &&
+            p.x <= _x0 + (_w - 1) * Cell && p.z <= _z0 + (_h - 1) * Cell;
+
+        /// <summary>World-aligned origin for a lattice boundary. Obstacle streaming may
+        /// grow or shrink the ledger bounds, but it must never slide every navigation
+        /// square by an arbitrary fraction of a cell.</summary>
+        internal static float AlignedOrigin(float lower) =>
+            Mathf.Floor(lower / Cell) * Cell;
+
         /// <summary>Prepare the lattice's address space, not its contents. Occupancy,
         /// passages and road axes are memoised on demand by Free, Passable and Along.</summary>
-        static void PrepareLattice()
+        static void PrepareLattice(Vector3 from, Vector3 to)
         {
-            float x0 = WalkObstacles.Min.x - Margin;
-            float z0 = WalkObstacles.Min.y - Margin;
-            int w = Mathf.CeilToInt((WalkObstacles.Max.x + Margin - x0) / Cell) + 1;
-            int h = Mathf.CeilToInt((WalkObstacles.Max.y + Margin - z0) / Cell) + 1;
+            float minX = Mathf.Min(WalkObstacles.Min.x, Mathf.Min(from.x, to.x));
+            float minZ = Mathf.Min(WalkObstacles.Min.y, Mathf.Min(from.z, to.z));
+            float maxX = Mathf.Max(WalkObstacles.Max.x, Mathf.Max(from.x, to.x));
+            float maxZ = Mathf.Max(WalkObstacles.Max.y, Mathf.Max(from.z, to.z));
+            float x0 = AlignedOrigin(minX - Margin);
+            float z0 = AlignedOrigin(minZ - Margin);
+            float x1 = Mathf.Ceil((maxX + Margin) / Cell) * Cell;
+            float z1 = Mathf.Ceil((maxZ + Margin) / Cell) * Cell;
+
+            // The address space is a high-water mark for this run. A streamed plan
+            // disappearing may invalidate occupancy, but it may not phase-shift or
+            // shrink the grid underneath an identical later order.
+            if (_free != null)
+            {
+                x0 = Mathf.Min(x0, _x0);
+                z0 = Mathf.Min(z0, _z0);
+                x1 = Mathf.Max(x1, _x0 + (_w - 1) * Cell);
+                z1 = Mathf.Max(z1, _z0 + (_h - 1) * Cell);
+            }
+            int w = Mathf.RoundToInt((x1 - x0) / Cell) + 1;
+            int h = Mathf.RoundToInt((z1 - z0) / Cell) + 1;
             if (w <= 1 || h <= 1 || (long)w * h > 4_000_000L)
             {
                 _free = null;
@@ -117,6 +165,9 @@ namespace RoadDemo
                 _cost = new float[n];
                 _from = new int[n];
                 _stamp = new int[n];
+                _closedAt = new int[n];
+                _goalAt = new int[n];
+                _goalExit = new float[n];
                 _visit = 0;
                 _cacheAt = 1;
             }
@@ -220,27 +271,8 @@ namespace RoadDemo
         static Vector3 Middle(int i) =>
             new Vector3(_x0 + (i % _w) * Cell, 0f, _z0 + (i / _w) * Cell);
 
-        /// <summary>The free square nearest this one, searched outward. A man dealt
-        /// inside a wall, or a mark stood against one, still has to be walked to.</summary>
-        static int Nearest(int i)
-        {
-            if (Free(i)) return i;
-            int x0 = i % _w, z0 = i / _w;
-            for (int ring = 1; ring <= 24; ring++)
-                for (int dz = -ring; dz <= ring; dz++)
-                    for (int dx = -ring; dx <= ring; dx++)
-                    {
-                        if (Mathf.Abs(dx) != ring && Mathf.Abs(dz) != ring) continue;
-                        int x = x0 + dx, z = z0 + dz;
-                        if (x < 0 || z < 0 || x >= _w || z >= _h) continue;
-                        int j = z * _w + x;
-                        if (Free(j)) return j;
-                    }
-            return -1;
-        }
-
-        /// <summary>The square a man at <paramref name="p"/> can actually SET OFF FROM:
-        /// free, and with nothing between him and the middle of it.
+        /// <summary>The squares a man at <paramref name="p"/> can actually SET OFF FROM:
+        /// free, and with nothing between him and their middles.
         ///
         /// The nearest free square is not good enough to start a way from. A man stood
         /// on clear ground a metre from a wall is nearest to a square on the far side of
@@ -248,11 +280,15 @@ namespace RoadDemo
         /// three metres to it, one metre of air, and a crew stood in front of a building
         /// for the rest of the run. Which side of the wall he is on is the whole
         /// question, so it is asked outright.</summary>
-        static int Reachable(Vector3 p)
+        static bool Reachable(Vector3 p, bool keepOffRoad, List<EndpointAnchor> into)
         {
-            int i = Index(p, out int x0, out int z0);
-            if (Free(i) && Walkable(p, Middle(i))) return i;
-            for (int ring = 1; ring <= 8; ring++)
+            into.Clear();
+            if (!WalkObstacles.InCity(p) ||
+                WalkObstacles.Standing(p, WalkObstacles.Radius)) return false;
+            Index(p, out int x0, out int z0);
+            float nearest = float.MaxValue;
+            for (int ring = 0; ring <= MaxAnchorRing; ring++)
+            {
                 for (int dz = -ring; dz <= ring; dz++)
                     for (int dx = -ring; dx <= ring; dx++)
                     {
@@ -260,9 +296,40 @@ namespace RoadDemo
                         int x = x0 + dx, z = z0 + dz;
                         if (x < 0 || z < 0 || x >= _w || z >= _h) continue;
                         int j = z * _w + x;
-                        if (Free(j) && Walkable(p, Middle(j))) return j;
+                        if (!Free(j)) continue;
+                        var q = Middle(j);
+                        float sx = q.x - p.x, sz = q.z - p.z;
+                        float distance = Mathf.Sqrt(sx * sx + sz * sz);
+                        // Once a nearer connector has been proved, points outside its
+                        // useful fan need not make an obstacle query. Candidates kept
+                        // before an even nearer one is found are pruned below.
+                        if (distance > nearest + AnchorSlack + 1e-4f) continue;
+                        if (!Walkable(p, q)) continue;
+                        float along = keepOffRoad ? AlongRun(p, q) : 0f;
+                        if (keepOffRoad && along > AlongLimit) continue;
+                        nearest = Mathf.Min(nearest, distance);
+                        into.Add(new EndpointAnchor
+                        {
+                            Square = j,
+                            Distance = distance,
+                            ConnectorCost = distance + AlongToll * along
+                        });
                     }
-            return -1;
+
+                // Every later Chebyshev ring is at least this far away along one world
+                // axis. Finish the whole fan: a farther directly-visible centre can
+                // avoid a much dearer first lattice turn, which is precisely why one
+                // greedy anchor was wrong.
+                float nextMinimum = (ring + 0.5f) * Cell;
+                if (into.Count > 0 && nextMinimum > nearest + AnchorSlack + 1e-4f)
+                    break;
+            }
+
+            if (into.Count == 0) return false;
+            float farthest = nearest + AnchorSlack + 1e-4f;
+            for (int i = into.Count - 1; i >= 0; i--)
+                if (into[i].Distance > farthest) into.RemoveAt(i);
+            return into.Count > 0;
         }
 
         // ------------------------------------------------------------------ the way
@@ -285,16 +352,13 @@ namespace RoadDemo
                 into.Add(to);
                 return true;
             }
-            if (!Ready()) return false;
+            if (!Ready(from, to)) return false;
 
-            // Where he can SET OFF from; and if there is nowhere - he is in a pocket the
-            // lattice cannot see out of - the nearest square will do, because a way with
-            // an awkward first metre beats no way at all. The steering covers that metre.
-            int a = Reachable(from);
-            if (a < 0) a = Nearest(Index(from, out _, out _));
-            int b = Nearest(Index(to, out _, out _));
-            if (a < 0 || b < 0) return false;
-            if (a == b) { into.Add(to); return true; }
+            // Both exact endpoints must see their lattice anchors. Picking merely the
+            // first free cell can put the anchor on the far side of a wall; runtime
+            // steering cannot make an invalid first or last connector valid.
+            if (!Reachable(from, keepOffRoad, _startAnchors) ||
+                !Reachable(to, keepOffRoad, _goalAnchors)) return false;
 
             // Near enough to see it: no lattice needed, and no lattice STAIRCASE either.
             // Unless the line lies down a street - the whole point of keeping off the
@@ -302,7 +366,8 @@ namespace RoadDemo
             if (Walkable(from, to) && (!keepOffRoad || AlongRun(from, to) <= AlongLimit))
             { into.Add(to); return true; }
 
-            if (!Search(a, b, keepOffRoad)) return false;
+            if (!Search(_startAnchors, _goalAnchors, to, keepOffRoad,
+                        out int a, out int b)) return false;
 
             // back from the mark to the man, then round the right way
             _crumbs.Clear();
@@ -312,9 +377,17 @@ namespace RoadDemo
                 if (_crumbs.Count > _free.Length) return false;   // a loop: give it up
             }
             _crumbs.Reverse();
-            if (_crumbs.Count > 0) _crumbs[_crumbs.Count - 1] = to; else _crumbs.Add(to);
+            // Keep BOTH proved connectors. Replacing b by the exact destination, or
+            // omitting a, turns a valid lattice route into an unproved shortcut at the
+            // very two places most likely to sit beside a wall.
+            _crumbs.Insert(0, Middle(a));
+            _crumbs.Add(to);
 
-            Pull(from, _crumbs, into, keepOffRoad);
+            if (!Pull(from, _crumbs, into, keepOffRoad))
+            {
+                into.Clear();
+                return false;
+            }
             return into.Count > 0;
         }
 
@@ -351,25 +424,68 @@ namespace RoadDemo
             return values[from];
         }
 
-        static bool Search(int a, int b, bool keepOffRoad = false)
+        /// <summary>A* with virtual continuous endpoints. Every proved start connector
+        /// seeds its real cost, and reaching a goal anchor pays that connector too. The
+        /// Euclidean distance to the exact mark is a lower bound on every such finish,
+        /// so the first completed route is not accepted until no open route can beat it.</summary>
+        static bool Search(List<EndpointAnchor> starts, List<EndpointAnchor> goals,
+            Vector3 exactGoal, bool keepOffRoad, out int chosenStart, out int chosenGoal)
         {
+            chosenStart = chosenGoal = -1;
+            // Every route cost in this ground planner is horizontal. Including a
+            // character/terrain Y offset in the heuristic could overestimate that cost
+            // and make the best-completion early-out accept a longer route.
+            exactGoal.y = 0f;
             _visit++;
             _open.Clear();
-            _cost[a] = 0f;
-            _from[a] = a;
-            _stamp[a] = _visit;
-            var goal = Middle(b);
-            _open.Push(a, (Middle(a) - goal).magnitude);
+
+            for (int i = 0; i < goals.Count; i++)
+            {
+                var anchor = goals[i];
+                if (_goalAt[anchor.Square] != _visit ||
+                    anchor.ConnectorCost < _goalExit[anchor.Square])
+                {
+                    _goalAt[anchor.Square] = _visit;
+                    _goalExit[anchor.Square] = anchor.ConnectorCost;
+                }
+            }
+            for (int i = 0; i < starts.Count; i++)
+            {
+                var anchor = starts[i];
+                if (_stamp[anchor.Square] == _visit &&
+                    anchor.ConnectorCost >= _cost[anchor.Square]) continue;
+                _cost[anchor.Square] = anchor.ConnectorCost;
+                _from[anchor.Square] = anchor.Square;
+                _stamp[anchor.Square] = _visit;
+                _open.Push(anchor.Square, anchor.ConnectorCost +
+                           (Middle(anchor.Square) - exactGoal).magnitude);
+            }
 
             int guard = 0;
+            float best = float.MaxValue;
             while (_open.Count > 0)
             {
                 // the cheapest open square, guessed distance included. A square reached
                 // again by a cheaper way sits in the heap twice; the dearer copy comes
                 // up later, finds nothing it can better, and costs eight looks
                 int cur = _open.Pop();
-                if (cur == b) return true;
+                if (_closedAt[cur] == _visit) continue;
+                _closedAt[cur] = _visit;
+                float lowerBound = _cost[cur] + (Middle(cur) - exactGoal).magnitude;
+                if (lowerBound > best + 1e-4f) break;
                 if (++guard > 200000) return false;
+
+                if (_goalAt[cur] == _visit)
+                {
+                    float total = _cost[cur] + _goalExit[cur];
+                    if (total < best - 1e-4f ||
+                        (Mathf.Abs(total - best) <= 1e-4f &&
+                         (chosenGoal < 0 || cur < chosenGoal)))
+                    {
+                        best = total;
+                        chosenGoal = cur;
+                    }
+                }
 
                 int cx = cur % _w, cz = cur / _w;
                 for (int d = 0; d < 8; d++)
@@ -377,6 +493,7 @@ namespace RoadDemo
                     int x = cx + _dx[d], z = cz + _dz[d];
                     if (x < 0 || z < 0 || x >= _w || z >= _h) continue;
                     int nb = z * _w + x;
+                    if (_closedAt[nb] == _visit) continue;
                     if (!Free(nb)) continue;
                     // and there has to be a way from here to there, not just ground at
                     // both ends; a corner is turned only when both of its sides are ways
@@ -386,11 +503,13 @@ namespace RoadDemo
                     }
                     else
                     {
-                        if (!Free(cz * _w + x) || !Free(z * _w + cx)) continue;
-                        if (!Passable(cx, cz, _dx[d], 0) || !Passable(x, cz, 0, _dz[d])) continue;
-                        if (!Passable(cx, cz, 0, _dz[d]) || !Passable(cx, z, _dx[d], 0)) continue;
+                        // The diagonal itself is the edge a shoulder-circle traverses.
+                        // Two clear L-shaped alternatives neither prove that diagonal
+                        // (a table may sit in its middle) nor are required when the
+                        // diagonal gap itself is genuinely wide enough.
+                        if (!Walkable(Middle(cur), Middle(nb))) continue;
                     }
-                    float step = d >= 4 ? Cell * 1.41421f : Cell;
+                    float step = d >= 4 ? Cell * 1.41421356f : Cell;
                     // A CROSSING IS FREE; WALKING DOWN THE ROAD IS NOT. The toll is on
                     // the part of the step that lies along the carriageway, so a way
                     // over a street costs what a street is wide and a way down one costs
@@ -403,10 +522,17 @@ namespace RoadDemo
                     _stamp[nb] = _visit;
                     _cost[nb] = cost;
                     _from[nb] = cur;
-                    _open.Push(nb, cost + (Middle(nb) - goal).magnitude);
+                    _open.Push(nb, cost + (Middle(nb) - exactGoal).magnitude);
                 }
             }
-            return false;
+            if (chosenGoal < 0) return false;
+            chosenStart = chosenGoal;
+            for (int n = 0; _from[chosenStart] != chosenStart; n++)
+            {
+                chosenStart = _from[chosenStart];
+                if (n > _free.Length) return false;
+            }
+            return true;
         }
 
         // ------------------------------------------------------------------ taut
@@ -414,40 +540,40 @@ namespace RoadDemo
         /// <summary>The crumbs pulled into a line: from where he stands, keep the
         /// furthest crumb he can walk STRAIGHT to, stand there, and go again. What is
         /// left is the corners he actually has to get round.</summary>
-        static void Pull(Vector3 from, List<Vector3> crumbs, List<Vector3> into,
+        static bool Pull(Vector3 from, List<Vector3> crumbs, List<Vector3> into,
             bool keepOffRoad = false)
         {
             var at = from;
             int i = 0;
             while (i < crumbs.Count)
             {
-                // Grow the visible run FORWARD and keep its last point. The former
-                // backwards scan asked about every long, blocked chord before finding
-                // the same corner; on a cross-city order that made string-pulling dearer
-                // than A* itself. A connected lattice path guarantees the next crumb is
-                // reachable, so the first failed chord is exactly where this run ends.
+                // Visibility along a bent crumb path is not monotone: a near crumb just
+                // behind a convex corner may be hidden while a later one above its
+                // tangent is clear again. Ask from the end and take the first proved
+                // chord; that is the actual furthest visible crumb.
                 int keep = i;
                 bool found = false;
-                for (int j = i; j < crumbs.Count; j++)
+                for (int j = crumbs.Count - 1; j >= i; j--)
                 {
                     bool clear = Walkable(at, crumbs[j]);
                     if (clear && (!keepOffRoad || AlongRun(at, crumbs[j]) <= AlongLimit))
                     {
                         keep = j;
                         found = true;
-                        continue;
+                        break;
                     }
-                    if (found) break;
-                    // The exact spawn point can be an awkward first half-metre outside
-                    // the lattice. Preserve the old escape hatch and hand that first
-                    // square to the runtime steering.
-                    break;
                 }
-                into.Add(crumbs[keep]);
+                // A connected lattice path guarantees its immediate next point. If
+                // that invariant is ever broken, fail closed; never emit a segment and
+                // hope the live steer somehow crosses the wall for the planner.
+                if (!found) return false;
+                if ((crumbs[keep] - at).sqrMagnitude > 0.01f * 0.01f)
+                    into.Add(crumbs[keep]);
                 at = crumbs[keep];
                 i = keep + 1;
-                if (into.Count > 64) { into.Add(crumbs[crumbs.Count - 1]); return; }
+                if (into.Count > 256) return false;
             }
+            return true;
         }
 
         /// <summary>Is the straight line between these two clear of everything fixed?
@@ -463,14 +589,21 @@ namespace RoadDemo
             var d = b - a;
             d.y = 0f;
             float len = d.magnitude;
-            if (len < 0.01f) return true;
             if (!WalkObstacles.InCity(a) || !WalkObstacles.InCity(b)) return false;
-            int citySamples = Mathf.CeilToInt(len / Cell);
+            float r = WalkObstacles.Radius;
+            // Reject bad endpoints before sampling the interior. Apart from being the
+            // right contract for a zero-length chord, this avoids hundreds of city
+            // probes when an old streamed shell has appeared around an endpoint.
+            if (WalkObstacles.Standing(a, r) || WalkObstacles.Standing(b, r)) return false;
+            if (len < 0.01f) return true;
+            int citySamples = Mathf.CeilToInt(len / 0.5f);
             for (int i = 1; i < citySamples; i++)
                 if (!WalkObstacles.InCity(a + d * (i / (float)citySamples))) return false;
-            float r = WalkObstacles.Radius;
-            if (WalkObstacles.Standing(a, r) || WalkObstacles.Standing(b, r)) return false;
             return !WalkObstacles.BlocksStanding(a, b, r);
         }
+
+        /// <summary>The exact geometric contract used by both the planner and the
+        /// crew's shared-corridor validator.</summary>
+        internal static bool ChordClear(Vector3 a, Vector3 b) => Walkable(a, b);
     }
 }

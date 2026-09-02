@@ -52,7 +52,7 @@ namespace AirportDemo
                         AirportKit.Sit(bollard, new Vector3(x + i * 6.4f, AirportSpec.PaveY + 0.14f, z + j * 1.9f), 0f, _detailRoot, "Bollard");
             var sign = AirportKit.TryLoad(AirportKit.SignFuel);
             if (sign != null) AirportKit.Sit(sign, new Vector3(x - 9f, AirportSpec.PaveY, z + 2f), 180f, _detailRoot, "Fuel sign");
-            WalkObstacles.Block(x - 7f, x + 7f, z - 2.5f, z + 2.5f);
+            BlockLocal(x - 7f, x + 7f, z - 2.5f, z + 2.5f);
         }
 
         /// <summary>Cones down the tie-down rows and a fire extinguisher stand or two -
@@ -95,7 +95,7 @@ namespace AirportDemo
                 for (int i = 0; i < 6; i++)
                     AirportKit.Sit(drum, new Vector3(x + 15f + (i % 3) * 0.9f, AirportSpec.PaveY, front - 2f + (i / 3) * 0.9f),
                                    Rnd(0f, 360f), _detailRoot, "Drum");
-            WalkObstacles.Block(x - 14f, x + 18f, front - 4f, front + 3f);
+            BlockLocal(x - 14f, x + 18f, front - 4f, front + 3f);
         }
 
         /// <summary>The maintenance shop's yard: ladders, boxes, a drum of something,
@@ -230,7 +230,7 @@ namespace AirportDemo
                 AirportKit.Sit(danger, new Vector3(x - 15f, AirportSpec.PaveY, z - 12f), 200f, _detailRoot, "Danger sign");
                 AirportKit.Sit(danger, new Vector3(x + 15f, AirportSpec.PaveY, z - 12f), 160f, _detailRoot, "Danger sign");
             }
-            WalkObstacles.Block(x - 16f, x + 16f, z - 12f, z + 6f);
+            BlockLocal(x - 16f, x + 16f, z - 12f, z + 6f);
         }
 
         // ------------------------------------------------------------ the boneyard
@@ -282,7 +282,7 @@ namespace AirportDemo
                                                 Quaternion.Euler(pitch, yaw, roll));
             AirportKit.SetLayerDeep(go, MidLayer);
             var world = AirportKit.BoundsOf(go);
-            WalkObstacles.Block(world.min.x, world.max.x, world.min.z, world.max.z);
+            BlockLocal(world.min.x, world.max.x, world.min.z, world.max.z);
         }
 
         // ------------------------------------------------------------ the fence line

@@ -444,6 +444,51 @@ namespace LivingCity.UI
                 red ? (outline ? Key.Ghost : Key.Red) : outline ? Key.Outline : Key.Dark,
                 size);
 
+        /// <summary>
+        /// Greys a key that cannot be pressed rather than taking it off the panel: a row
+        /// that has vanished tells the reader nothing about why.
+        ///
+        /// <paramref name="dead"/> is the word's colour when it cannot be pressed and
+        /// <paramref name="deadFrame"/> its hairline's. A panel painted DARK has to name
+        /// both: the paper greys are BRIGHT over a near-black fill, so a dead key left in
+        /// them reads exactly as live as the one beside it, and the whole row of keys
+        /// then reads as neither.
+        /// </summary>
+        public static void KeyEnabled(TMP_Text label, bool enabled, Color? dead = null,
+            Color? deadFrame = null)
+        {
+            if (!label)
+                return;
+            var key = label.GetComponentInParent<Button>();
+            if (key)
+                key.interactable = enabled;
+            if (enabled)
+                return;
+            label.color = dead ?? Rule;
+            if (deadFrame.HasValue)
+                KeyFrame(label, deadFrame.Value);
+        }
+
+        /// <summary>
+        /// Recolours a key's hairline box. The outline key is drawn for PAPER - warm grey
+        /// rule round dark ink on a cream sheet - and that same hairline over the dark
+        /// head fill is all but gone, which leaves a live key looking like a word somebody
+        /// left lying on the panel. A surface painted dark says what colour its boxes are
+        /// drawn in; nothing else about the key changes.
+        /// </summary>
+        public static void KeyFrame(TMP_Text label, Color colour)
+        {
+            if (!label)
+                return;
+            var key = label.GetComponentInParent<Button>();
+            if (!key)
+                return;
+            var edges = key.GetComponentsInChildren<Image>(true);
+            for (var i = 0; i < edges.Length; i++)
+                if (edges[i].gameObject.name == "Edge")
+                    edges[i].color = colour;
+        }
+
         /// <summary>The width a key needs for its word at the design's padding.</summary>
         public static float ButtonWidth(string label, float size = 10.5f,
             float spacing = 7f, float pad = 15f) =>

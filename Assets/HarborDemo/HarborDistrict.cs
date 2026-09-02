@@ -276,6 +276,8 @@ namespace HarborDemo
             // through the frame (WorldPoints, HarborCargo.Frame, HarborCrane.Frame) or
             // in its own local ones under a root that has moved (the ships).
             MoveIntoPlace();
+            _yardStreet?.RegisterWalkPlan(_inner.origin, _inner.yaw);
+            _street?.RegisterWalkPlan(_inner.origin, _inner.yaw);
             BuildPortals();
 
             // The dock hands are ticked HERE, off a list typed as HarborWorker.
@@ -289,6 +291,9 @@ namespace HarborDemo
             // breaks were all written and none of them ever ran.
             host.RegisterRoads(_roads);
             BlockTheYard(host);
+            float walkY = _inner.origin.y + TileTop;
+            WalkObstacles.BlockComposedProps(walkY, _yardRoot, _quayRoot, _berthRoot,
+                _worksRoot, _detailRoot, _waterlineRoot, _crimeRoot);
         }
 
         Transform Root(string name)
@@ -314,6 +319,8 @@ namespace HarborDemo
 
         public void Dispose()
         {
+            _yardStreet?.UnregisterWalkPlan();
+            _street?.UnregisterWalkPlan();
             for (int i = 0; i < _workers.Count; i++) _workers[i].Dispose();
             _shipping?.Dispose();
             TestBench.DestroyAll(_mats);

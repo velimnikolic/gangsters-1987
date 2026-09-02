@@ -142,6 +142,15 @@ namespace RoadDemo
     /// nothing to query.</summary>
     public sealed class SidewalkPlan
     {
+        internal enum Change
+        {
+            Added,
+            Removed,
+            Reframed,
+        }
+
+        internal delegate void ChangeHandler(SidewalkPlan plan, Box box, Change change);
+
         public struct Box
         {
             public Vector2 C;        // centre, world XZ
@@ -171,6 +180,13 @@ namespace RoadDemo
 
         readonly List<Box> _boxes = new List<Box>();
         readonly Dictionary<long, List<int>> _grid = new Dictionary<long, List<int>>();
+
+        /// <summary>
+        /// The obstacle ledger subscribes only while this plan is registered. Keeping the
+        /// signal on the plan makes a later Take impossible to hide behind a stale route
+        /// lattice, while plans used only for build-time layout pay no global cost.
+        /// </summary>
+        internal event ChangeHandler Changed;
 
         // ------------------------------------------------------------- making boxes
 
@@ -238,6 +254,7 @@ namespace RoadDemo
             int id = _boxes.Count;
             _boxes.Add(box);
             Index(box, id, true);
+            Changed?.Invoke(this, box, Change.Added);
         }
 
         /// <summary>Ground props may not stand on at all - a crossing's mouth, the
@@ -255,9 +272,39 @@ namespace RoadDemo
         {
             int id = _boxes.Count - 1;
             if (id < 0) return;
-            Index(_boxes[id], id, false);
+            var box = _boxes[id];
+            Index(box, id, false);
             _boxes.RemoveAt(id);
+            Changed?.Invoke(this, box, Change.Removed);
         }
+
+        /// <summary>
+        /// Carry an origin-space plan with the district root that owns its geometry.
+        /// District kits compose at world identity and move their roots only after every
+        /// road and prop exists; without carrying the plan too, off-graph walkers avoid a
+        /// second, invisible copy of the furniture at the origin.
+        /// </summary>
+        public void Reframe(Vector3 origin, float yaw)
+        {
+            float r = yaw * Mathf.Deg2Rad;
+            float cos = Mathf.Cos(r), sin = Mathf.Sin(r);
+            var shift = new Vector2(origin.x, origin.z);
+
+            _grid.Clear();
+            for (int i = 0; i < _boxes.Count; i++)
+            {
+                var box = _boxes[i];
+                box.C = shift + Turn(box.C, cos, sin);
+                box.Ax = Turn(box.Ax, cos, sin);
+                box.Az = Turn(box.Az, cos, sin);
+                _boxes[i] = box;
+                Index(box, i, true);
+            }
+            Changed?.Invoke(this, default, Change.Reframed);
+        }
+
+        static Vector2 Turn(Vector2 v, float cos, float sin) =>
+            new Vector2(v.x * cos + v.y * sin, -v.x * sin + v.y * cos);
 
         /// <summary>Is this box's ground still free (props and reservations alike)?</summary>
         public bool Free(in Box box, float pad)

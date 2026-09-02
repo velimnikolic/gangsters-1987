@@ -48,7 +48,7 @@ namespace AirportDemo
         readonly List<Vector3> _tailOut = new List<Vector3>();
         Vector3 _vanHome, _tailHome;
 
-        RoadDemo.DemoClock _clock;
+        LivingCity.Ambient.CityClock _clock;
         Phase _phase = Phase.Waiting;
         float _timer;
         float _tailTimer = -1f;
@@ -64,7 +64,8 @@ namespace AirportDemo
         /// <summary>Stands the run up. The van and the sedan are already-made bodies -
         /// the district builds them the way it builds every other vehicle - and the bags
         /// are switched off until there is a reason for them to be on the concrete.</summary>
-        public void Build(GameObject van, GameObject tailCar, IList<GameObject> bags, RoadDemo.DemoClock clock)
+        public void Build(GameObject van, GameObject tailCar, IList<GameObject> bags,
+            LivingCity.Ambient.CityClock clock)
         {
             _clock = clock;
             BuildRoutes();

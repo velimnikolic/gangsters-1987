@@ -33,7 +33,7 @@ namespace RoadDemo
         public enum Look { PalmCity, PolygonCity }
         public Look look = Look.PalmCity;
 
-        public DemoClock clock;
+        public LivingCity.Ambient.CityClock clock;
 
         VolumeProfile _profile;
         ColorAdjustments _colour;

@@ -63,8 +63,236 @@ namespace LivingCity.Tests
             OffRoadPushLandsOnPavedGround(failures);
             CurveNavBandsAreNotACarriageway(failures);
             OffRoadPushHandlesTheDeadEndAndTheArrivalRadius(failures);
+            SharedCrewWayKeepsCorridorAndReplacesEndpoint(failures);
+            SharedCrewReplanRejoinsRemainingCorridor(failures);
+            CrewRouteAnchorsAndCornersAreDeterministic(failures);
+            SweptCornerCannotHideBetweenStrideSamples(failures);
+            BlockedGraphStepsCommitNeitherProgressNorArrival(failures);
 
             return failures;
+        }
+
+        static void BlockedGraphStepsCommitNeitherProgressNorArrival(List<string> failures)
+        {
+            bool accepted = RoadDemo.PedestrianAgent.TryGraphAdvance(
+                4f, 4.2f, 10f, clear: false, out float committed, out bool arrived);
+            if (accepted || committed != 4f || arrived)
+                failures.Add("Crew graph: a blocked mid-link step committed progress or arrival.");
+
+            accepted = RoadDemo.PedestrianAgent.TryGraphAdvance(
+                9.9f, 10.1f, 10f, clear: false, out committed, out arrived);
+            if (accepted || committed != 9.9f || arrived)
+                failures.Add("Crew graph: a blocked endpoint step committed a false arrival.");
+
+            accepted = RoadDemo.PedestrianAgent.TryGraphAdvance(
+                9.9f, 10.1f, 10f, clear: true, out committed, out arrived);
+            if (!accepted || committed != 10.1f || !arrived)
+                failures.Add("Crew graph: a clear endpoint step did not commit its arrival.");
+        }
+
+        /// <summary>A dispatched crew copies the leader's interior corridor, but every
+        /// man owns his first connector and formation endpoint. The exact leader end
+        /// must be removed or each hood overshoots it and turns back. Blocked connectors
+        /// must be planned; failure must never degrade into a blocked direct chord.</summary>
+        static void SharedCrewWayKeepsCorridorAndReplacesEndpoint(List<string> failures)
+        {
+            var memberStart = new Vector3(0f, 3f, 0f);
+            var first = new Vector3(5f, 3f, 0f);
+            var last = new Vector3(10f, 3f, 5f);
+            var memberEnd = new Vector3(21f, 3f, 12f);
+            var shared = new List<Vector3>
+            {
+                new Vector3(0f, 8f, 0f),       // the member already stands here
+                new Vector3(5f, 8f, 0f),
+                new Vector3(5f, 8f, 0f),       // repeated corner
+                new Vector3(10f, 8f, 5f),
+            };
+            var copied = new List<Vector3>();
+            var scratch = new List<Vector3>();
+            int planned = 0;
+
+            bool Same(Vector3 a, Vector3 b) => (a - b).sqrMagnitude < 0.0001f;
+            bool Clear(Vector3 from, Vector3 to) =>
+                !(Same(from, memberStart) && (Same(to, first) || Same(to, last))) &&
+                !(Same(from, last) && Same(to, memberEnd));
+            bool Plan(Vector3 from, Vector3 to, List<Vector3> route, bool keepOffRoad)
+            {
+                planned++;
+                route.Clear();
+                if (Same(to, first)) route.Add(new Vector3(1f, 3f, 3f));
+                else if (Same(to, memberEnd)) route.Add(new Vector3(14f, 3f, 9f));
+                else return false;
+                route.Add(to);
+                return true;
+            }
+
+            bool built = RoadDemo.CrewWalker.CopySharedWayModel(shared, memberStart,
+                memberEnd, copied, scratch, false, Clear, Plan);
+
+            var expected = new[]
+            {
+                new Vector3(1f, 3f, 3f),
+                first,
+                last,
+                new Vector3(14f, 3f, 9f),
+                memberEnd,
+            };
+            if (!built || planned != 2 || copied.Count != expected.Length)
+            {
+                failures.Add($"Crew route: expected planned join/arrival and {expected.Length} " +
+                    $"clean legs, got built={built}, plans={planned}, legs={copied.Count}.");
+                return;
+            }
+            for (int i = 0; i < expected.Length; i++)
+                if ((copied[i] - expected[i]).sqrMagnitude > 0.0001f)
+                    failures.Add($"Crew route: leg {i} was {copied[i]}, expected {expected[i]}.");
+
+            planned = 0;
+            built = RoadDemo.CrewWalker.CopySharedWayModel(
+                shared, memberStart, memberEnd,
+                copied, scratch, true, Clear, Plan);
+            if (!built || planned != 2)
+                failures.Add("Crew route: keep-off-road did not plan exactly its join and peel-off.");
+
+            var leaderWay = new List<Vector3>
+            {
+                first, last, new Vector3(20f, 3f, 10f),
+            };
+            RoadDemo.DemoCrews.CopyMemberCorridor(leaderWay, copied);
+            if (copied.Count != 2 || !Same(copied[0], first) ||
+                !Same(copied[1], last))
+                failures.Add("Crew route: hood corridor retained the leader-only endpoint.");
+
+            built = RoadDemo.CrewWalker.CopySharedWayModel(
+                new[] { new Vector3(9f, 0f, 9f) }, memberEnd, memberEnd,
+                copied, scratch, false, Clear, Plan);
+            if (!built || copied.Count != 0)
+                failures.Add("Crew route: a member already at his slot received a zero-length leg.");
+
+            built = RoadDemo.CrewWalker.CopySharedWayModel(
+                new[] { new Vector3(9f, 0f, 9f) }, memberStart, memberEnd,
+                copied, scratch, false, (from, to) => false,
+                (from, to, route, keepOffRoad) => false);
+            if (built || copied.Count != 0)
+                failures.Add("Crew route: failed A* degraded into a blocked direct leg.");
+        }
+
+        /// <summary>A live obstruction or stall may redraw the member's connector, but
+        /// it must still target the next unpassed common corner. Planning straight to
+        /// the private formation slot is the split-around-the-block regression.</summary>
+        static void SharedCrewReplanRejoinsRemainingCorridor(List<string> failures)
+        {
+            var shared = new List<Vector3>
+            {
+                new Vector3(0f, 0f, 0f),
+                new Vector3(5f, 0f, 0f),
+                new Vector3(10f, 0f, 0f),
+                new Vector3(15f, 0f, 4f),
+            };
+            var from = new Vector3(7f, 0f, 1f);
+            var end = new Vector3(18f, 0f, 6f);
+            var route = new List<Vector3>();
+            var scratch = new List<Vector3>();
+            var plannedTo = new Vector3(float.NaN, float.NaN, float.NaN);
+
+            bool Same(Vector3 a, Vector3 b) => (a - b).sqrMagnitude < 0.0001f;
+            bool Clear(Vector3 a, Vector3 b) =>
+                !(Same(a, from) && Same(b, shared[2]));
+            bool Plan(Vector3 a, Vector3 b, List<Vector3> into, bool keepOffRoad)
+            {
+                plannedTo = b;
+                into.Clear();
+                into.Add(new Vector3(8f, 0f, 3f));
+                into.Add(b);
+                return true;
+            }
+
+            bool built = RoadDemo.CrewWalker.CopySharedWayModel(
+                shared, 2, from, end, route, scratch, false, Clear, Plan);
+            if (!built || !Same(plannedTo, shared[2]) || route.Count != 4 ||
+                !Same(route[1], shared[2]) || !Same(route[2], shared[3]) ||
+                !Same(route[3], end))
+                failures.Add("Crew route: a stalled hood did not rejoin the next shared corner.");
+
+            int cursor = RoadDemo.CrewWalker.SharedCursorAfter(shared, 1, shared[1]);
+            if (cursor != 2 || RoadDemo.CrewWalker.SharedCursorAfter(
+                    shared, cursor, new Vector3(12f, 0f, 2f)) != cursor)
+                failures.Add("Crew route: shared progress skipped a common corner without reaching it.");
+
+            var memberShared = new List<Vector3>();
+            RoadDemo.DemoCrews.CopyMemberCorridor(shared, memberShared);
+            RoadDemo.CrewWalker.CopyRemainingSharedWayModel(
+                memberShared, 2, route);
+            if (route.Count != 1 || !Same(route[0], shared[2]))
+                failures.Add("Crew route: cohesion recovery lost the hood's last common corner or retained a passed one.");
+
+            RoadDemo.CrewWalker.CopyRemainingSharedWayModel(
+                memberShared, memberShared.Count - 1, route);
+            if (route.Count != 1 || !Same(route[0], memberShared[memberShared.Count - 1]))
+                failures.Add("Crew route: a lagging hood discarded his only remaining common corner.");
+
+            built = RoadDemo.CrewWalker.CopySharedWayModel(
+                shared, 2, from, end, route, scratch, false,
+                (a, b) => false, (a, b, into, keepOffRoad) => false);
+            if (built || route.Count != 0)
+                failures.Add("Crew route: failed shared rejoin degraded into a private route.");
+        }
+
+        static void CrewRouteAnchorsAndCornersAreDeterministic(List<string> failures)
+        {
+            // Pick two negative bounds in the same lattice cell without baking in the
+            // current pitch. The old literals straddled a boundary when Cell changed
+            // from 2.5 m to 1.25 m, so they were testing two different cells.
+            float cellBase = -25f * RoadDemo.WalkRoute.Cell;
+            float a = RoadDemo.WalkRoute.AlignedOrigin(
+                cellBase + 0.2f * RoadDemo.WalkRoute.Cell);
+            float b = RoadDemo.WalkRoute.AlignedOrigin(
+                cellBase + 0.7f * RoadDemo.WalkRoute.Cell);
+            if (Mathf.Abs(a - b) > 0.0001f ||
+                Mathf.Abs(a / RoadDemo.WalkRoute.Cell -
+                          Mathf.Round(a / RoadDemo.WalkRoute.Cell)) > 0.0001f)
+                failures.Add("Crew route: a sub-cell streamed bound shifted the world lattice.");
+
+            // The exact reproduced corner case is 0.4 m from its waypoint. It may turn
+            // early only when the real current-to-next chord is clear.
+            if (RoadDemo.CrewWalker.CornerReachedModel(0.4f, false, false) ||
+                !RoadDemo.CrewWalker.CornerReachedModel(0.4f, false, true) ||
+                !RoadDemo.CrewWalker.CornerReachedModel(0.03f, false, false))
+                failures.Add("Crew route: corner hand-off can still cut an unproved 0.5 m shortcut.");
+
+            var shared = new List<Vector3>
+            {
+                new Vector3(2f, 0f, 0f),
+                new Vector3(8f, 0f, 0f),
+                new Vector3(14f, 0f, 0f),
+                new Vector3(20f, 0f, 0f),
+            };
+            var copied = new List<Vector3>();
+            var scratch = new List<Vector3>();
+            bool built = RoadDemo.CrewWalker.CopySharedWayModel(
+                shared, new Vector3(13f, 0f, 1f), new Vector3(21f, 0f, 1f),
+                copied, scratch, false, (from, to) => true,
+                (from, to, route, keepOffRoad) => false);
+            if (!built || copied.Count != shared.Count + 1)
+                failures.Add("Crew route: a hood did not retain the crew's complete shared corridor.");
+            else
+                for (int i = 0; i < shared.Count; i++)
+                    if (copied[i] != shared[i])
+                        failures.Add($"Crew route: member skipped shared corner {i}.");
+        }
+
+        static void SweptCornerCannotHideBetweenStrideSamples(List<string> failures)
+        {
+            var plan = new RoadDemo.SidewalkPlan();
+            plan.Take(RoadDemo.SidewalkPlan.Make(
+                new Vector2(0.175f, 0.435f), 0f,
+                new Vector2(0.005f, 0.005f), solid: true));
+            var a = new Vector2(0f, 0f);
+            var b = new Vector2(0.35f, 0f);
+            const float radius = 0.45f;
+            if (plan.Occupied(a, radius) || plan.Occupied(b, radius) ||
+                !plan.Obstructs(a, b, radius))
+                failures.Add("Crew stride: the exact swept query missed a corner between clear samples.");
         }
 
         /// <summary>

@@ -29,6 +29,19 @@ namespace GangstersTools
     /// </summary>
     public static class PipelineCommands
     {
+        [CliCommand("gangsters_crew_audit_tests",
+                    "Run pure contracts for crew formation, sustained audit grace, and walk-prop classification.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "crew", "tests" })]
+        public static object CrewAuditTests()
+        {
+            var failures = LivingCity.Tests.CrewAuditModelTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
         [CliCommand("gangsters_core_vacancy_tests",
                     "Run seed-1987 contracts for stand-alone amenity blocks, empty remainders, " +
                     "and residential no-water fallback.",

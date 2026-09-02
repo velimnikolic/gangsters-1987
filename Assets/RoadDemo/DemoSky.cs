@@ -24,7 +24,7 @@ namespace RoadDemo
     // as it approaches the horizon, so the sunset lives at sunset.
     public class DemoSky : MonoBehaviour
     {
-        public DemoClock clock;
+        public LivingCity.Ambient.CityClock clock;
         public Light sun;
         public Transform cloudRing;    // slow drift
         public Renderer cloudRenderer; // night tint
@@ -237,8 +237,8 @@ namespace RoadDemo
             }
             else
             {
-                float sinceSunset = Mathf.Repeat(hour - SunsetHour, DemoClock.HoursPerDay);
-                float nightLength = DemoClock.HoursPerDay - (SunsetHour - SunriseHour);
+                float sinceSunset = Mathf.Repeat(hour - SunsetHour, LivingCity.Ambient.CityClock.HoursPerDay);
+                float nightLength = LivingCity.Ambient.CityClock.HoursPerDay - (SunsetHour - SunriseHour);
                 float t = sinceSunset / nightLength;
                 elevation = -Mathf.Sin(t * Mathf.PI) * NoonElevation * 0.6f;
                 azimuth = Mathf.Lerp(DuskAzimuth, DawnAzimuth + 360f, t);
@@ -260,8 +260,8 @@ namespace RoadDemo
             if (!_moon)
                 return;
 
-            float sinceSunset = Mathf.Repeat(hour - SunsetHour, DemoClock.HoursPerDay);
-            float nightLength = DemoClock.HoursPerDay - (SunsetHour - SunriseHour);
+            float sinceSunset = Mathf.Repeat(hour - SunsetHour, LivingCity.Ambient.CityClock.HoursPerDay);
+            float nightLength = LivingCity.Ambient.CityClock.HoursPerDay - (SunsetHour - SunriseHour);
             float t = Mathf.Clamp01(sinceSunset / nightLength);
 
             _moon.transform.rotation = Quaternion.Euler(

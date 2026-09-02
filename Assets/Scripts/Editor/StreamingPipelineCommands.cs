@@ -330,6 +330,68 @@ namespace GangstersTools
                 driveBy = ours.Car != null };
         }
 
+        [CliCommand("gangsters_door_audit",
+                    "For the businesses nearest the player crew: whether the shop has a " +
+                    "view, a door, leaves that can swing, and how far its boards would " +
+                    "stand from the door and from the job's approach point.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "gameplay" })]
+        public static object DoorAudit(
+            [CliArg("count", "How many of the nearest shops to report.")] int count = 6)
+        {
+            if (!Application.isPlaying)
+                return new { ok = false, reason = "Play Mode is not running." };
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            if (runtime == null)
+                return new { ok = false, reason = "No territory runtime." };
+
+            TryOutfit(out _, out var ours, out _);
+            var here = ours != null ? ours.Position : Vector3.zero;
+            var rows = LivingCity.Business.CityBusinesses.All
+                .Select(row =>
+                {
+                    Vector3 approach;
+                    var hasApproach = runtime.TryGetBusinessApproach(row.Id, out approach);
+                    return new { row, approach, hasApproach };
+                })
+                .Where(one => one.hasApproach)
+                .OrderBy(one => (one.approach - here).sqrMagnitude)
+                .Take(Mathf.Clamp(count, 1, 40))
+                .Select(one =>
+                {
+                    LivingCity.Entities.BusinessMarker marker;
+                    var bound = LivingCity.Business.BusinessViewBindings.TryGet(
+                        one.row.Id, out marker) && marker != null;
+                    float frontage = 0f;
+                    var entrance = bound ? RoadDemo.ShopDoors.Of(marker, out frontage) : null;
+
+                    var leaves = 0;
+                    if (marker != null)
+                        foreach (var tf in marker.GetComponentsInChildren<Transform>(true))
+                            if (tf.name.EndsWith("_Door_L") || tf.name.EndsWith("_Door_R"))
+                                leaves++;
+
+                    return new
+                    {
+                        shop = one.row.Name,
+                        hasView = bound,
+                        hasDoor = entrance != null,
+                        doorLeaves = leaves,
+                        measuredFrontage = frontage,
+                        doorToApproach = entrance != null
+                            ? Vector3.Distance(entrance.DoorWorld, one.approach)
+                            : -1f,
+                        approach = Point(one.approach),
+                        door = Point(entrance != null ? entrance.DoorWorld : Vector3.zero),
+                        boardsAt = Point(entrance != null
+                            ? entrance.DoorWorld + entrance.Facing * 0.1f
+                            : Vector3.zero),
+                    };
+                })
+                .ToArray();
+
+            return new { ok = true, rows };
+        }
+
         [CliCommand("gangsters_racket_probe",
                     "Drive the doorstep chain with nobody at the keyboard: two SMASH IT UP " +
                     "orders and a DEMAND PROTECTION, watching whether the fronts go in, " +

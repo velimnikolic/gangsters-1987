@@ -115,6 +115,7 @@ namespace RoadDemo
             public ulong ContentKey;
             public ResidentialBlocks.IncrementalComposition Compose;
             public IEnumerator Merge;
+            public StreamedWalkObstaclePlan WalkProps;
             public bool Active;
             public bool Attached;
             public bool Attaching;
@@ -646,6 +647,13 @@ namespace RoadDemo
             holder.localPosition = new Vector3(recipe.LocalBounds.xMin, 0f, recipe.LocalBounds.yMin);
             holder.localRotation = Quaternion.identity;
             holder.localScale = Vector3.one;
+            // Residential cafe tables, chairs, bins and parked props are born inside this
+            // recyclable payload, after Core's permanent obstacle pass has finished. Keep
+            // their measured footprints with the resident holder. Camera visibility may
+            // disable its renderers, but the logical venue remains in the city until the
+            // payload is actually evicted or rebound.
+            view.WalkProps = view.Content.gameObject.AddComponent<StreamedWalkObstaclePlan>();
+            view.WalkProps.Bind(transform.position.y);
             // Begin attaching just outside the picture. At the configured fast-WASD
             // speed this lead covers the lower renderer budget before the kerb reaches
             // screen, so spreading graphics registration does not become visual pop-in.
@@ -750,6 +758,7 @@ namespace RoadDemo
             view.LastUsed = Time.frameCount;
             if (view.Active) return;
             view.Active = true;
+            RegisterWalkProps(view);
             Streamed();
             BeginAttachment(view);
             _lamps?.Register(view.Content);
@@ -783,6 +792,8 @@ namespace RoadDemo
             {
                 view.Holder.SetActive(true);
                 if (view.Recipe != null) _fallbacks?.HideFallback(view.Recipe.Id);
+                if (view.Merge == null && view.Recipe != null)
+                    ShopDamage.RefreshPlanView(view.Recipe.Id);
                 return;
             }
             if (view.Recipe != null) _fallbacks?.ShowFallback(view.Recipe.Id);
@@ -798,6 +809,8 @@ namespace RoadDemo
                 view.Attached = true;
                 Streamed();
                 if (view.Recipe != null) _fallbacks?.HideFallback(view.Recipe.Id);
+                if (view.Merge == null && view.Recipe != null)
+                    ShopDamage.RefreshPlanView(view.Recipe.Id);
                 return;
             }
             view.Attaching = true;
@@ -831,6 +844,8 @@ namespace RoadDemo
                     Streamed();
                     if (view.Active && view.Recipe != null)
                         _fallbacks?.HideFallback(view.Recipe.Id);
+                    if (view.Merge == null && view.Recipe != null)
+                        ShopDamage.RefreshPlanView(view.Recipe.Id);
                     _attachments.RemoveAt(index);
                     continue;
                 }
@@ -868,6 +883,8 @@ namespace RoadDemo
                 (view.Merge as IDisposable)?.Dispose();
                 view.Merge = null;
                 _merged++;
+                if (view.Attached && view.Recipe != null)
+                    ShopDamage.RefreshPlanView(view.Recipe.Id);
                 idle++;
             }
         }
@@ -971,6 +988,7 @@ namespace RoadDemo
         void DestroyPayload(View view, bool countEviction)
         {
             if (view?.Recipe != null) _fallbacks?.ShowFallback(view.Recipe.Id);
+            UnregisterWalkProps(view);
             CancelAttachment(view);
             // Disable one common ancestor before returning hundreds of nested prefab
             // roots. This turns renderer detachment into one hierarchy transition and
@@ -1012,6 +1030,7 @@ namespace RoadDemo
             if (countEviction) _evicted++;
             view.Content = null;
             view.Merged = null;
+            view.WalkProps = null;
             view.Recipe = null;
             view.ContentKey = 0UL;
             view.Objects = 0;
@@ -1020,6 +1039,16 @@ namespace RoadDemo
             view.Attached = false;
             view.AttachRenderers.Clear();
             view.Parts.Clear();
+        }
+
+        static void RegisterWalkProps(View view)
+        {
+            view?.WalkProps?.Register();
+        }
+
+        static void UnregisterWalkProps(View view)
+        {
+            view?.WalkProps?.Unregister();
         }
 
         void ReturnHolder(View view)

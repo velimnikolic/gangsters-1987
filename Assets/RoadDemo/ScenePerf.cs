@@ -305,7 +305,8 @@ namespace RoadDemo
                     // be restored from the merge and cut as one.
                     ChunkObject(chunk).Adopt(mr,
                         BuildingCutaway.Owns(mr) ||
-                        mr.bounds.size.y >= CutawayHeight && mr.TryGetComponent<Collider>(out _));
+                        mr.bounds.size.y >= CutawayHeight && mr.TryGetComponent<Collider>(out _) ||
+                        ShopDamage.HasStoreGlass(mr));
 
                     var mats = mr.sharedMaterials;
                     // CombineMeshes writes vertices in the receiving mesh's local space.

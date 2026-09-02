@@ -60,7 +60,7 @@ namespace RoadDemo
     // inhabited after dark.
     public class DemoNightWindows : MonoBehaviour
     {
-        public DemoClock clock;
+        public LivingCity.Ambient.CityClock clock;
 
         // The city blocks. Panes are only lit under here, which is what keeps the
         // traffic's windscreens out of it; the atlas emissives are picked up

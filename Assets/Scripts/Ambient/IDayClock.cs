@@ -2,11 +2,8 @@ namespace LivingCity.Ambient
 {
     /// <summary>
     /// What the strategy layer needs from whichever clock a scene happens to run: the
-    /// day and the hour, and nothing else. Two clocks exist for historical reasons -
-    /// <see cref="CityClock"/> in the city scenes and RoadDemo's DemoClock in the demo
-    /// stack - and both already held exactly these two numbers; this interface only
-    /// says so out loud, so OutfitDirector can read the time without knowing which
-    /// stack it is standing in and without a scene-specific branch.
+    /// day and the hour, and nothing else. The registry keeps callers from hunting the
+    /// scene for the one CityClock that owns those values.
     ///
     /// Deliberately read-only: the campaign follows the clock, never sets it. A layer
     /// that could push the hour around would let a strategy bug desync every routine

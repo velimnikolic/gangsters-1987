@@ -9,7 +9,8 @@ using LivingCity.UI;
 namespace RoadDemo
 {
     /// <summary>
-    /// The city's permanent time strip. It is a view of <see cref="DemoClock"/>, not
+    /// The city's permanent time strip. It is a view of the shared
+    /// <see cref="LivingCity.Ambient.CityClock"/>, not
     /// a map control: the same date, pause and speed ladder remain available while
     /// the player is on the street, looking at the turf plan, or using the ledger.
     /// </summary>
@@ -45,7 +46,7 @@ namespace RoadDemo
         /// </summary>
         readonly HudNight _night = new HudNight();
 
-        DemoClock _clock;
+        LivingCity.Ambient.CityClock _clock;
         Canvas _canvas;
         RectTransform _plate, _band, _dateRect, _timeRect, _speedBar;
         TMP_Text _dateText, _timeText;
@@ -58,7 +59,7 @@ namespace RoadDemo
         TMP_Text _scrubTime;
         int _scrubMinute = -1;
 
-        public void Init(DemoClock clock)
+        public void Init(LivingCity.Ambient.CityClock clock)
         {
             _clock = clock;
             _rig = FindAnyObjectByType<DemoCamera>();
@@ -121,7 +122,7 @@ namespace RoadDemo
 
         /// <summary>The T readout's interactive half. It lives on the permanent clock
         /// canvas, above both the 3D city and TurfMap, so one slider controls the one
-        /// shared DemoClock in either representation.</summary>
+        /// shared CityClock in either representation.</summary>
         void BuildTimeScrubber()
         {
             const float width = 460f, height = 46f;
@@ -156,7 +157,7 @@ namespace RoadDemo
 
             _timeSlider = track.gameObject.AddComponent<Slider>();
             _timeSlider.minValue = 0f;
-            _timeSlider.maxValue = DemoClock.HoursPerDay;
+            _timeSlider.maxValue = LivingCity.Ambient.CityClock.HoursPerDay;
             _timeSlider.wholeNumbers = false;
             _timeSlider.fillRect = fill;
             _timeSlider.handleRect = handle;

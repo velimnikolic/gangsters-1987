@@ -50,6 +50,21 @@ namespace LivingCity.Gameplay
             if (refusal != null)
                 return false;
 
+            var damageCause = type == OrderType.SmashUp
+                ? Business.BusinessShutdownCause.SmashUp
+                : type == OrderType.Torch
+                    ? Business.BusinessShutdownCause.Arson
+                    : Business.BusinessShutdownCause.None;
+            var business = Business.BusinessRuntime.Instance;
+            if (damageCause != Business.BusinessShutdownCause.None &&
+                business?.Shutdowns != null)
+            {
+                refusal = business.Shutdowns.DamageRefusal(
+                    id, damageCause, business.CurrentGameHour);
+                if (refusal != null)
+                    return false;
+            }
+
             var worth = type == OrderType.BuyPremises ? AskingPrice(id) : 0;
             if (type == OrderType.BuyPremises && worth <= 0)
             {

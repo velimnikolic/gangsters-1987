@@ -129,6 +129,7 @@ namespace AirportDemo
         Rect _bounds;
         readonly List<DistrictPortal> _portals = new List<DistrictPortal>();
         readonly List<RoadEdge> _roads = new List<RoadEdge>();
+        readonly List<Rect> _localWalkBlocks = new List<Rect>();
         bool _placed;
 
         /// <summary>Where the district ends toward the city, in the field's own z: the
@@ -250,8 +251,11 @@ namespace AirportDemo
             // flies, drives or walks after this works in the Live root's own coordinates,
             // which moved with it.
             MoveIntoPlace();
+            _street?.RegisterWalkPlan(_inner.origin, _inner.yaw);
             BuildPortals();
             BlockTheField(host);
+            float walkY = _inner.origin.y + AirportSpec.LandY;
+            WalkObstacles.BlockComposedProps(walkY, _landsideRoot, _detailRoot);
             host.RegisterRoads(_roads);
         }
 
@@ -260,6 +264,18 @@ namespace AirportDemo
             var t = _host.StaticRoot(name);
             _roots.Add(t);
             return t;
+        }
+
+        /// <summary>
+        /// Remember an obstacle while the airport still exists in its authored frame.
+        /// The field is translated/quarter-turned only after composition, so publishing
+        /// these rectangles immediately would leave invisible obstacles at the origin.
+        /// BlockTheField carries them into world space with the geometry.
+        /// </summary>
+        void BlockLocal(float xMin, float xMax, float zMin, float zMax)
+        {
+            if (xMax <= xMin || zMax <= zMin) return;
+            _localWalkBlocks.Add(Rect.MinMaxRect(xMin, zMin, xMax, zMax));
         }
 
         public void Tick(float dt)
@@ -276,6 +292,7 @@ namespace AirportDemo
 
         public void Dispose()
         {
+            _street?.UnregisterWalkPlan();
             _people?.Dispose();
             _boarding?.Dispose();
             _ground?.Dispose();

@@ -704,7 +704,7 @@ namespace RacketeeringDemo
 
             _damageVisual = ShopDamage.SmashAt(
                 DoorThreshold, Vector3.forward, "RACKET DEMO", FloorY);
-            CompleteDamageAction("SHOPDAMAGE.SMASHAT · EXTERIOR BOARDS UP");
+            CompleteDamageAction("SHOPDAMAGE.SMASHAT · GLASS ACROSS PAVEMENT");
         }
 
         void OnTorchIgnited(Transform damage)

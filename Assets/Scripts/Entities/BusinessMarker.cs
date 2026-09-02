@@ -178,6 +178,8 @@ namespace LivingCity.Entities
                 {
                     var line = UI.BusinessIntention.Line(
                         owner, WeeklyIncome, view.Standing, view.Protector);
+                    if (view.StatusLine.Length > 0)
+                        line += "\n" + view.StatusLine;
                     // The dues meter on the card itself (ECON-008): what it owes us
                     // and when it last paid, straight off the ledger.
                     if (view.PaysLine.Length > 0)
@@ -212,6 +214,13 @@ namespace LivingCity.Entities
                             Gangs.GangCatalog.PlayerGangId)) << 24;
                     if (runtime.TryGetDues(BusinessId, out var owedNow, out var paidDay))
                         key ^= ((long)owedNow << 16) ^ ((long)(paidDay + 2) << 44);
+                }
+                var business = BusinessRuntime.Instance;
+                if (business?.Shutdowns != null)
+                {
+                    key ^= (long)business.Shutdowns.Version << 8;
+                    if (business.TryGetShutdown(BusinessId, out var shutdown))
+                        key ^= (long)shutdown.RemainingDays << 20;
                 }
                 return key;
             }

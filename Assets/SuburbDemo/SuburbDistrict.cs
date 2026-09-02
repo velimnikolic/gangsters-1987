@@ -239,6 +239,14 @@ namespace SuburbDemo
             for (int i = 0; i < _civilians.Count; i++) host.RegisterCivilian(_civilians[i]);
             for (int i = 0; i < _idlers.Count; i++) host.RegisterWalker(_idlers[i]);
             BlockTheBuildings(host);
+
+            // The suburb does not use StreetKit for its yards or street furniture.
+            // Read only physical prefab names here (not whole lot roots), and ask the
+            // relief for each prop's own ground height so hilltop furniture is retained
+            // without mistaking roof attachments for ground obstacles.
+            float WalkGround(Vector3 p) => _inner.origin.y + GroundWorld(p.x, p.z);
+            WalkObstacles.BlockComposedProps(WalkGround,
+                _streetRoot, _lotRoot, _placeRoot, _floraRoot);
         }
 
         Transform Root(string name)

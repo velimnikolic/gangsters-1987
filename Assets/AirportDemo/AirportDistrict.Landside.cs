@@ -219,7 +219,7 @@ namespace AirportDemo
             float h = AirportSpec.LoopHalfX;
             var edges = new List<float> { -h, CrossX[0] - 3f, CrossX[0] + 3f, CrossX[1] - 3f, CrossX[1] + 3f, h };
             for (int i = 0; i + 1 < edges.Count; i += 2)
-                WalkObstacles.Block(edges[i], edges[i + 1], mid - rIn, mid + rIn);
+                BlockLocal(edges[i], edges[i + 1], mid - rIn, mid + rIn);
         }
 
         /// <summary>The forecourt between the terminal's doors and the kerb, with the
@@ -424,7 +424,8 @@ namespace AirportDemo
             // the kit's road top is at its own y (the city drives its cars at the tile
             // height), so the road is laid at the field's paving level, a step up off
             // the grass like every other surface here
-            _street = new StreetKit(_landsideRoot, AirportSpec.PaveY) { Palms = false };
+            _street = new StreetKit(_landsideRoot, AirportSpec.PaveY,
+                registerWalkPlan: false) { Palms = false };
             if (!_street.Load()) return;
             float z = AirportSpec.StreetZ;
 

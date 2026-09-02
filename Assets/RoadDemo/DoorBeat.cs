@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Business;
 using LivingCity.Entities;
 using LivingCity.Territory;
@@ -19,8 +19,22 @@ namespace RoadDemo
     /// </summary>
     public sealed class DoorBeat : MonoBehaviour
     {
-        /// <summary>How long the doorstep call takes inside, wall-clock seconds.</summary>
-        public const float InsideSeconds = 2.6f;
+        /// <summary>How long the man is INSIDE before what he came for happens, and how
+        /// long he stays after it. The conversation is the wait: the demand, the lean and
+        /// the collection are all settled at the end of this, never at the threshold, so
+        /// the wire cannot say what the owner answered while the door is still swinging.
+        /// </summary>
+        public const float InsideSeconds = 3.5f;
+
+        /// <summary>How much of the stay is over BEFORE the act - the rest of it is him
+        /// finishing up and turning for the door.</summary>
+        public const float BeforeTheActShare = 0.7f;
+
+        /// <summary>Sim seconds one threshold crossing is given. He is walking two or
+        /// three metres through an open front on a straight line, so this is generous -
+        /// but a passage that cannot finish must not leave a man switched off inside a
+        /// wall for the rest of the game.</summary>
+        public const float CrossPatience = 8f;
 
         /// <summary>How long the word at the door runs before he goes in.</summary>
         public const float TalkSeconds = 1.7f;
@@ -74,6 +88,11 @@ namespace RoadDemo
 
             public float NextAt;
 
+            /// <summary>When what he came in for actually happens. Not the moment he
+            /// crosses the threshold: the conversation takes its seconds first.</summary>
+            public float ActAt;
+            public float ActRealAt;
+
             /// <summary>The wall-clock backstop. Sim time can crawl (a low timescale,
             /// a hitch) and a man the sim forgot indoors is a man lost to the player -
             /// whatever happens, he is back on the street inside a few real seconds.</summary>
@@ -84,12 +103,21 @@ namespace RoadDemo
             /// <summary>What the word at the door is worth, held while he walks to it.</summary>
             public float Talk;
 
-            /// <summary>What happens WHEN HE IS IN. The demand used to be settled the
-            /// moment the men came within reach of the door, so the wire announced what
-            /// the owner had said before anybody had opened it.</summary>
+            /// <summary>What happens WHEN HE IS IN, AND HAS BEEN A WHILE. The demand used
+            /// to be settled the moment the men came within reach of the door, so the wire
+            /// announced what the owner had said before anybody had opened it; then it was
+            /// settled on the threshold, which is a man answering his own question as he
+            /// steps through. It happens at the counter now, after the conversation has
+            /// had its seconds.</summary>
             public System.Action WhenInside;
 
+            /// <summary>And what waits for him to be back on the pavement - the round's
+            /// next door, the walk home. Never fired while he is switched off inside.
+            /// </summary>
+            public System.Action WhenOut;
+
             public bool Told;
+            public bool Left;
 
             public VisitPhase Phase;
             public Vector3 Outside;
@@ -207,7 +235,7 @@ namespace RoadDemo
 
         public static void Visit(
             CrewWalker man, Vector3 door, float talk = TalkSeconds,
-            System.Action whenInside = null)
+            System.Action whenInside = null, System.Action whenOut = null)
         {
             // A visit that cannot be played still owes its caller the thing the visit was
             // FOR: the demand is the order, the walk through the door is the show of it.
@@ -215,12 +243,14 @@ namespace RoadDemo
                 !man.Tf.gameObject.activeInHierarchy)
             {
                 whenInside?.Invoke();
+                whenOut?.Invoke();
                 return;
             }
             // A man under fire does not pop indoors for a chat.
             if (UnderFire(man))
             {
                 whenInside?.Invoke();
+                whenOut?.Invoke();
                 return;
             }
 
@@ -230,24 +260,33 @@ namespace RoadDemo
                 instance = go.AddComponent<DoorBeat>();
             }
 
-            // one visit per man at a time - the second caller's beat is already playing
+            // One visit per man at a time - and a second order given while the first is
+            // still playing RIDES it rather than answering out of the blue. Answering it
+            // on the spot is how a player got a threat settled while his man was still
+            // walking up to the door he had been sent to.
             for (var i = 0; i < instance.calls.Count; i++)
                 if (instance.calls[i].Man == man)
                 {
-                    whenInside?.Invoke();
+                    Chain(instance.calls[i], whenInside, whenOut);
                     return;
                 }
+
+            // AND HIS CREW COMES WITH HIM. One man walking off alone to call on a
+            // shopkeeper is an errand; the family calling is the lieutenant at the door
+            // and his hoods stood off it with their eyes on the street.
+            Escort(man, door, man.Tf.position - door);
 
             var call = new Call
             {
                 Man = man, Door = door, Home = man.Tf.position, WhenInside = whenInside,
+                WhenOut = whenOut,
             };
             if (!Near(man.Tf.position, door, AtTheDoor))
             {
                 // He is not at the door yet. He WALKS there - the beat used to put him
                 // on it from wherever he stood, which is the teleport a player sees when
                 // a man thirty metres up the street suddenly steps inside a shop.
-                man.OrderToPoint(door);
+                WalkTo(man, door);
                 call.Talk = talk;
                 call.Phase = VisitPhase.Approaching;
                 call.RealNextAt = Time.unscaledTime + WalkPatience;
@@ -257,6 +296,68 @@ namespace RoadDemo
 
             Arrive(call, talk);
             instance.calls.Add(call);
+        }
+
+        /// <summary>A second order for a man who is already on a visit. It waits for the
+        /// same doorway: settled from inside if he has not got there yet, settled at once
+        /// only when the first one has already been answered.</summary>
+        static void Chain(Call call, System.Action whenInside, System.Action whenOut)
+        {
+            if (whenInside != null)
+            {
+                if (!call.Told)
+                {
+                    call.WhenInside += whenInside;
+                }
+                else if (!call.Left)
+                {
+                    // He is still in there, and the player has asked for something else
+                    // at the same counter - a demand after a threat, most often. It is
+                    // another word, not an answer shouted through the window: he stays
+                    // a little longer and this one is settled inside as well.
+                    call.WhenInside += whenInside;
+                    call.Told = false;
+                    call.ActAt = Time.time + InsideSeconds * BeforeTheActShare;
+                    call.ActRealAt =
+                        Time.unscaledTime + InsideSeconds * BeforeTheActShare * 4f;
+                    call.NextAt = Mathf.Max(call.NextAt, Time.time + InsideSeconds);
+                    call.RealNextAt = Mathf.Max(
+                        call.RealNextAt, Time.unscaledTime + InsideSeconds * 4f);
+                }
+                else
+                {
+                    whenInside();
+                }
+            }
+
+            if (whenOut == null)
+                return;
+            if (call.Left)
+                whenOut();
+            else
+                call.WhenOut += whenOut;
+        }
+
+        /// <summary>The walk up to a doorstep. Drawn ROUND the walls when the ground
+        /// allows it (OrderAcross), because a man sent to a door on the far side of a
+        /// building walks a straight line into its back wall and stops there; the plain
+        /// stride is the fallback for ground no route can be drawn over.</summary>
+        static void WalkTo(CrewWalker man, Vector3 point)
+        {
+            if (man == null)
+                return;
+            if (!man.OrderAcross(point))
+                man.OrderToPoint(point);
+        }
+
+        /// <summary>The rest of his crew, brought to the same doorstep and posted round
+        /// it looking out. Silently nothing in a scene with no crews behind it (the
+        /// bench rigs), which is why the beat asks and never requires.</summary>
+        static void Escort(CrewWalker man, Vector3 doorstep, Vector3 outward)
+        {
+            var crews = DemoCrews.Active;
+            if (crews != null)
+                crews.GuardDoor(man, doorstep, outward);
         }
 
         /// <summary>Open a real doorway and use the crew man's ordinary locomotion to
@@ -269,12 +370,14 @@ namespace RoadDemo
             Vector3 threshold,
             Vector3 inside,
             Transform doorway,
-            System.Action whenInside = null)
+            System.Action whenInside = null,
+            System.Action whenOut = null)
         {
             if (man == null || man.Dead || man.Tf == null ||
                 !man.Tf.gameObject.activeInHierarchy || UnderFire(man))
             {
                 whenInside?.Invoke();
+                whenOut?.Invoke();
                 return;
             }
 
@@ -289,11 +392,14 @@ namespace RoadDemo
                     (doorway != null && instance.calls[i].Swing != null &&
                      instance.calls[i].Door == threshold))
                 {
-                    whenInside?.Invoke();
+                    Chain(instance.calls[i], whenInside, whenOut);
                     return;
                 }
 
             outside.y = threshold.y = inside.y = man.Tf.position.y;
+            // The crew walks to the same doorstep and stands off it facing the street,
+            // whether he is already on it or has the length of the block to cover.
+            Escort(man, outside, outside - threshold);
             var swing = new DoorSwing(doorway);
             // The passage starts AT the doorstep. Ordering a man at the inside point
             // from across the street walks him in a straight line through the shopfront,
@@ -306,7 +412,7 @@ namespace RoadDemo
             }
             else
             {
-                man.OrderToPoint(outside);
+                WalkTo(man, outside);
             }
 
             instance.calls.Add(new Call
@@ -323,6 +429,7 @@ namespace RoadDemo
                 RealNextAt = Time.unscaledTime + WalkPatience,
                 Swing = swing,
                 WhenInside = whenInside,
+                WhenOut = whenOut,
             });
         }
 
@@ -333,13 +440,27 @@ namespace RoadDemo
             CrewWalker man,
             TerritoryBusinessId businessId,
             Vector3 fallbackOutside,
-            System.Action whenInside = null)
+            System.Action whenInside = null,
+            System.Action whenOut = null)
         {
             if (!BusinessViewBindings.TryGet(businessId, out var marker) || marker == null)
             {
-                // No visible building can show a passage. Still skip the old threshold
-                // wave: this fallback is intentionally the cheap hidden visit.
-                Visit(man, fallbackOutside, talk: 0f, whenInside: whenInside);
+                // No marker to hang a swinging door on - and in the streamed city there
+                // never is one. The SHOP still has a front wall, out of its own ground
+                // (ShopDoors.TryStreetFront), so he walks up to it and steps through it
+                // rather than being put on a pavement point and switched off.
+                if (ShopDoors.TryStreetFront(
+                        businessId, out var wall, out var outward, out _))
+                {
+                    VisitThrough(
+                        man, wall + outward * DoorstepOut, wall,
+                        wall - outward * RoomDepth(businessId, outward),
+                        null, whenInside, whenOut);
+                    return;
+                }
+
+                Visit(man, fallbackOutside, talk: 0f,
+                    whenInside: whenInside, whenOut: whenOut);
                 return;
             }
 
@@ -356,9 +477,44 @@ namespace RoadDemo
             var threshold = entrance != null
                 ? entrance.DoorWorld
                 : fallbackOutside - facing * 1.05f;
-            var inside = threshold - facing * 1.15f;
+            var inside = threshold - facing * RoomDepth(businessId, facing);
             VisitThrough(
-                man, fallbackOutside, threshold, inside, marker.transform, whenInside);
+                man, fallbackOutside, threshold, inside, marker.transform,
+                whenInside, whenOut);
+        }
+
+        /// <summary>Where he stands to knock: a stride off the front, clear of the wall
+        /// and off the shopfront itself.</summary>
+        const float DoorstepOut = 1.2f;
+
+        /// <summary>Furthest into a shop the beat will ever take a man, and the least it
+        /// will settle for. A metre past the glass is not "inside" - it is a man standing
+        /// in the window - and it was what the player saw when the passage ended on the
+        /// threshold; five metres is a shop floor, and past that he would be out through
+        /// somebody's back wall.</summary>
+        const float DeepestRoom = 4.5f;
+        const float ShallowestRoom = 1.6f;
+
+        /// <summary>How far past the front this shop's own ground runs, so a deep
+        /// warehouse is walked into properly and a two-metre kiosk is not walked through
+        /// and out the back. Measured off the SIMULATION's site, which every business has
+        /// whether or not its block is standing.</summary>
+        static float RoomDepth(TerritoryBusinessId businessId, Vector3 outward)
+        {
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            if (business == null || !businessId.IsValid ||
+                !business.TryGetSite(businessId, out var site) || site == null)
+                return ShallowestRoom;
+
+            var ground = site.Footprint;
+            if (ground.IsEmpty)
+                return ShallowestRoom;
+
+            // The run inward is the site's own extent along the way he is walking.
+            var across = Mathf.Abs(outward.x) > Mathf.Abs(outward.z)
+                ? ground.Width
+                : ground.Depth;
+            return Mathf.Clamp(across * 0.4f, ShallowestRoom, DeepestRoom);
         }
 
         public static VisitPhase PhaseOf(CrewWalker man)
@@ -410,6 +566,7 @@ namespace RoadDemo
                     // that could not start at all - tells the caller; a man lost on the
                     // way is not the one exception that quietly swallows a demand.
                     Tell(call);
+                    Left(call);
                     continue;
                 }
 
@@ -432,15 +589,20 @@ namespace RoadDemo
                     {
                         calls.RemoveAt(i);
                         Tell(call);
+                        Left(call);
                     }
                     continue;
                 }
 
+                // He is in. What he came for happens PART WAY THROUGH the stay, not on
+                // the threshold - the rest of the seconds are him finishing up.
+                if (call.Inside && !call.Told && Due(call.ActAt, call.ActRealAt))
+                    Tell(call);
+
                 // Sim time says this phase is over - or the wall clock does, while the
                 // game is not paused. A pause holds the beat: bodies changing in a
                 // frozen city read as a glitch, and unpausing moves it on at once.
-                if (Time.time < call.NextAt &&
-                    (Time.unscaledTime < call.RealNextAt || Time.timeScale <= 0.001f))
+                if (!Due(call.NextAt, call.RealNextAt))
                     continue;
 
                 if (!call.Inside)
@@ -451,18 +613,37 @@ namespace RoadDemo
                     if (UnderFire(call.Man))
                     {
                         Tell(call);
+                        Left(call);
                         continue;
                     }
                     StepInside(call);
-                    call.NextAt = Time.time + InsideSeconds;
-                    call.RealNextAt = Time.unscaledTime + InsideSeconds * 4f;
+                    Stay(call);
                     calls.Add(call);
                     continue;
                 }
 
                 calls.RemoveAt(i);
+                // A stay cut short by nothing at all still owes the caller its answer.
+                Tell(call);
                 StepOut(call);
+                Left(call);
             }
+        }
+
+        /// <summary>The clock for one step of the beat: sim time, or the wall clock when
+        /// sim time crawls - and neither while the game is paused.</summary>
+        static bool Due(float simAt, float realAt) =>
+            Time.time >= simAt ||
+            (Time.unscaledTime >= realAt && Time.timeScale > 0.001f);
+
+        /// <summary>He is in: how long he is in for, and when the act lands inside it.
+        /// </summary>
+        static void Stay(Call call)
+        {
+            call.ActAt = Time.time + InsideSeconds * BeforeTheActShare;
+            call.ActRealAt = Time.unscaledTime + InsideSeconds * BeforeTheActShare * 4f;
+            call.NextAt = Time.time + InsideSeconds;
+            call.RealNextAt = Time.unscaledTime + InsideSeconds * 4f;
         }
 
         /// <summary>He is at the door: the word, or straight in when there is no word.
@@ -482,8 +663,7 @@ namespace RoadDemo
             }
 
             StepInside(call);
-            call.NextAt = Time.time + InsideSeconds;
-            call.RealNextAt = Time.unscaledTime + InsideSeconds * 4f;
+            Stay(call);
         }
 
         /// <summary>All the way in: the body goes off at the door, and while it is off it
@@ -498,16 +678,31 @@ namespace RoadDemo
             call.Man.Tf.gameObject.SetActive(false);
             call.Inside = true;
             call.Phase = VisitPhase.Inside;
-            Tell(call);
         }
 
-        /// <summary>He is in. Whatever the visit was for happens now, once.</summary>
+        /// <summary>He has been in there long enough. Whatever the visit was for happens
+        /// now, once - the demand answered, the money handed over, the place turned over.
+        /// </summary>
         static void Tell(Call call)
         {
             if (call == null || call.Told)
                 return;
             call.Told = true;
-            call.WhenInside?.Invoke();
+            var payload = call.WhenInside;
+            call.WhenInside = null;
+            payload?.Invoke();
+        }
+
+        /// <summary>And he is back on the pavement: whatever was waiting for a man who
+        /// can walk again - the round's next door, the way home - goes now.</summary>
+        static void Left(Call call)
+        {
+            if (call == null || call.Left)
+                return;
+            call.Left = true;
+            var payload = call.WhenOut;
+            call.WhenOut = null;
+            payload?.Invoke();
         }
 
         /// <summary>And back out onto the pavement he called from - never onto the door
@@ -529,6 +724,10 @@ namespace RoadDemo
             {
                 call.Swing?.SnapClosed();
                 calls.RemoveAt(index);
+                // A man killed on his way in still owes the order an answer - the same
+                // rule the doorstep beat has always kept.
+                Tell(call);
+                Left(call);
                 return;
             }
 
@@ -549,6 +748,7 @@ namespace RoadDemo
                         call.Swing?.SnapClosed();
                         calls.RemoveAt(index);
                         Tell(call);
+                        Left(call);
                     }
                     break;
 
@@ -556,29 +756,42 @@ namespace RoadDemo
                     Face(call.Man, call.Inner);
                     if (call.Swing == null || call.Swing.IsOpen)
                     {
-                        call.Man.OrderToPoint(call.Inner);
+                        // THROUGH the front, not round it. A shop's interior is not
+                        // walkable ground - the building is one solid box on the walk
+                        // map - so an ordinary order at a point inside it is steered
+                        // along the wall and stops short, which is the man standing two
+                        // metres from a shop he was supposed to have gone into.
+                        call.Man.OrderThroughDoorway(call.Inner);
                         call.Phase = VisitPhase.Entering;
                         call.PhaseAt = Time.time;
                     }
                     break;
 
                 case VisitPhase.Entering:
-                    if (Near(call.Man.Tf.position, call.Inner, 0.28f))
-                    {
-                        call.Man.Tf.position = call.Inner;
-                        call.Man.Tf.gameObject.SetActive(false);
-                        call.Swing?.Close();
-                        call.Phase = VisitPhase.Inside;
-                        Tell(call);
-                        call.NextAt = Time.time + InsideSeconds;
-                        call.RealNextAt = Time.unscaledTime + InsideSeconds * 4f;
-                    }
+                    // He has to WALK it, but he must never be left walking it. A passage
+                    // that has not finished in CrossPatience is finished for him rather
+                    // than hung: an order carried out beats a man wedged in a shopfront.
+                    if (!Near(call.Man.Tf.position, call.Inner, 0.28f) &&
+                        Time.time - call.PhaseAt < CrossPatience)
+                        break;
+                    call.Man.EndDoorway();
+                    call.Man.Tf.position = call.Inner;
+                    call.Man.Tf.gameObject.SetActive(false);
+                    call.Swing?.Close();
+                    call.Phase = VisitPhase.Inside;
+                    call.PhaseAt = Time.time;
+                    Stay(call);
                     break;
 
                 case VisitPhase.Inside:
-                    if (Time.time < call.NextAt &&
-                        (Time.unscaledTime < call.RealNextAt || Time.timeScale <= 0.001f))
+                    // The conversation happens IN HERE, and it takes its seconds. The
+                    // owner used to answer on the threshold, so the wire spoke while the
+                    // man was still in the doorway.
+                    if (!call.Told && Due(call.ActAt, call.ActRealAt))
+                        Tell(call);
+                    if (!Due(call.NextAt, call.RealNextAt))
                         break;
+                    Tell(call);
                     call.Swing?.Open();
                     call.Phase = VisitPhase.OpeningExit;
                     call.PhaseAt = Time.time;
@@ -590,18 +803,22 @@ namespace RoadDemo
                     call.Man.Tf.position = call.Inner;
                     call.Man.Tf.gameObject.SetActive(true);
                     Face(call.Man, call.Outside);
-                    call.Man.OrderToPoint(call.Outside);
+                    call.Man.OrderThroughDoorway(call.Outside);
                     call.Phase = VisitPhase.Exiting;
                     call.PhaseAt = Time.time;
                     break;
 
                 case VisitPhase.Exiting:
-                    if (!Near(call.Man.Tf.position, call.Outside, 0.28f))
+                    if (!Near(call.Man.Tf.position, call.Outside, 0.28f) &&
+                        Time.time - call.PhaseAt < CrossPatience)
                         break;
+                    call.Man.EndDoorway();
                     call.Man.Tf.position = call.Outside;
                     call.Swing?.Close();
                     call.Phase = VisitPhase.Closing;
                     call.PhaseAt = Time.time;
+                    // He is out and can walk again: whatever was waiting on that goes now.
+                    Left(call);
                     break;
 
                 case VisitPhase.Closing:
@@ -632,12 +849,28 @@ namespace RoadDemo
         {
             // Never strand an invisible man: whatever ends the beat runner ends the
             // beats, bodies first - and on the pavement, not in the wall.
+            //
+            // A runner going down WITH THE SCENE is a different thing from one going
+            // down mid-game: there is nobody left to tell, and calling a demand's
+            // resolution into a half-torn-down city is how a clean stop turns into a
+            // page of null errors. The orders are answered only while the scene stands.
+            var answering = gameObject.scene.isLoaded;
             for (var i = 0; i < calls.Count; i++)
             {
                 var call = calls[i];
                 call.Swing?.SnapClosed();
+                // And never swallow the order either. The act happens at the counter
+                // now, part way through the stay, so a beat torn down mid-conversation
+                // would lose a demand the player gave; the answer is owed whatever
+                // happens to the runner.
+                if (answering)
+                {
+                    Tell(call);
+                    Left(call);
+                }
                 if (call.Man?.Tf == null)
                     continue;
+                call.Man.EndDoorway();
                 if (call.Through)
                     call.Man.Tf.position = call.Outside;
                 if (call.Inside || call.Phase == VisitPhase.Inside ||

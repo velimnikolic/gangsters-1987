@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Territory;
 using UnityEngine;
 
@@ -40,6 +40,12 @@ namespace RoadDemo
             public int Carried;
             public int Missed;
             public RoundStage Stage;
+
+            /// <summary>He is inside this stop's shop. The arrival sampling runs several
+            /// times a second and the conversation takes seconds, so without this the
+            /// same door would be entered again and again while he stood at its counter.
+            /// </summary>
+            public bool InTheDoor;
         }
 
         readonly struct RoundStop
@@ -158,6 +164,7 @@ namespace RoadDemo
             }
             if (day <= lastAccruedDay)
                 return;
+            var previousDay = lastAccruedDay;
             var days = Mathf.Min(day - lastAccruedDay, 14);
             lastAccruedDay = day;
 
@@ -169,7 +176,11 @@ namespace RoadDemo
                 {
                     var rate = WeeklyRateOf(businessId);
                     for (var d = 0; d < days; d++)
-                        dues.AccrueDay(businessId, protector, rate);
+                    {
+                        var boundaryHour = (previousDay + d + 1) * 24d;
+                        if (RacketCanAccrueAt(businessId, boundaryHour))
+                            dues.AccrueDay(businessId, protector, rate);
+                    }
                 }
                 else if (dues.TryGet(businessId, out _))
                 {
@@ -202,6 +213,8 @@ namespace RoadDemo
             {
                 var businessId = here[i].BusinessId;
                 if (racket.StateOf(businessId, gang) != TerritoryProtectionState.Compliant)
+                    continue;
+                if (!RacketCanAccrueAt(businessId, lastGameHour))
                     continue;
                 if (dues.OwedOf(businessId, gang) <= 0)
                     continue;
@@ -348,6 +361,29 @@ namespace RoadDemo
             return true;
         }
 
+        /// <summary>What the player's paying doors on a block can yield right now.
+        /// Every order surface reads this so collection stays closed until the first
+        /// daily dues tick has actually put money on the ledger.</summary>
+        public bool TryGetCollectibleDues(TerritoryBlockId blockId, out int owed)
+        {
+            owed = 0;
+            if (!blockId.IsValid || geography == null || racket == null)
+                return false;
+
+            var gang = new TerritoryGangId(
+                LivingCity.Gangs.GangCatalog.PlayerGangId);
+            var here = geography.BusinessesOf(blockId);
+            for (var i = 0; i < here.Count; i++)
+            {
+                var businessId = here[i].BusinessId;
+                if (racket.StateOf(businessId, gang) ==
+                    TerritoryProtectionState.Compliant &&
+                    RacketCanAccrueAt(businessId, lastGameHour))
+                    owed += dues.OwedOf(businessId, gang);
+            }
+            return owed > 0;
+        }
+
         /// <summary>Men on a round who have reached the door they were walking to. The
         /// same sampling pass that notices an approach notices a stop.</summary>
         void NoteRoundArrival(
@@ -371,11 +407,32 @@ namespace RoadDemo
 
                 if (round.Stage == RoundStage.Walking)
                 {
+                    // He is already through this door; the sampling pass runs on its own
+                    // cadence and would otherwise open the same stop again every tick of
+                    // the conversation.
+                    if (round.InTheDoor)
+                        return;
+
                     var stop = round.Stops[round.Cursor];
                     if ((actor.Tf.position - stop.Door).sqrMagnitude >
                         approachRadiusMetres * approachRadiusMetres)
                         return;
-                    SettleStop(round, stop, unit, actor, observation, gameHour);
+
+                    // THE HAND GOES OUT AT THE COUNTER. The money used to be settled and
+                    // called over the street the instant the men came within reach of the
+                    // door - the visit that followed was a mime of a stop that had
+                    // already happened. He goes in, the shop pays him inside, and the
+                    // round only moves on when he is back on the pavement with the bag.
+                    round.InTheDoor = true;
+                    var walking = round;
+                    var here = stop;
+                    var who = unit;
+                    var seen = observation;
+                    DoorBeat.VisitBusiness(
+                        actor, stop.BusinessId, stop.Door,
+                        whenInside: () => SettleStop(
+                            walking, here, who, seen, lastGameHour),
+                        whenOut: () => NextStop(walking, who));
                 }
                 else
                 {
@@ -411,9 +468,19 @@ namespace RoadDemo
         /// </summary>
         void SettleStop(
             CollectionRound round, RoundStop stop, DemoCrews.Unit unit,
-            CrewWalker actor, TerritoryActorObservation observation, double gameHour)
+            TerritoryActorObservation observation, double gameHour)
         {
             var businessId = stop.BusinessId;
+            if (!RacketCanAccrueAt(businessId, gameHour))
+            {
+                var name = businessId.Value;
+                if (TryGetBusinessView(businessId, out var closed))
+                    name = closed.BusinessName;
+                CrewOverlay.Announce(
+                    name.ToUpperInvariant() + " IS CLOSED - NOTHING TO COLLECT", 3f,
+                    new Color(1f, 0.75f, 0.45f));
+                return;
+            }
             var day = (int)(gameHour / 24.0);
             var owed = dues.OwedOf(businessId, round.GangId);
 
@@ -477,26 +544,49 @@ namespace RoadDemo
             if (observation.CharacterId.IsValid)
                 CrewSkill.Collected(observation.CharacterId.Value, paid > 0);
 
-            // The world's side of the stop: the man steps inside, and what he came out
-            // with (or didn't) is said over the door.
-            DoorBeat.VisitBusiness(actor, businessId, stop.Door);
+            // What he came out with (or didn't), said over the door. This whole method
+            // runs FROM INSIDE the shop now, once the conversation has had its seconds
+            // (DoorBeat), so the wire can no longer call a stop that nobody has been
+            // through the door for.
             AnnounceStop(businessId, result, paid);
+        }
 
+        bool RacketCanAccrueAt(TerritoryBusinessId businessId, double gameHour)
+        {
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            return business?.Shutdowns == null ||
+                   business.Shutdowns.ShouldAccrueRacketAt(businessId, gameHour);
+        }
+
+        /// <summary>He is back on the pavement with the bag: on to the next door, or
+        /// home. Never while he is switched off inside a shop - a crew marched off
+        /// mid-visit leaves its collector standing in somebody's back room.</summary>
+        void NextStop(CollectionRound round, DemoCrews.Unit unit)
+        {
+            if (round == null || !rounds.Contains(round))
+                return;
+            round.InTheDoor = false;
             round.Cursor++;
             if (round.Cursor < round.Stops.Count)
             {
-                crews.MarchTo(unit, round.Stops[round.Cursor].Door);
+                if (unit != null && !unit.Wiped)
+                    crews.MarchTo(unit, round.Stops[round.Cursor].Door);
                 return;
             }
 
             round.Stage = RoundStage.HeadingHome;
             if (HasHome())
-                crews.MarchTo(unit, HomeDoor());
+            {
+                if (unit != null && !unit.Wiped)
+                    crews.MarchTo(unit, HomeDoor());
+            }
             else
+            {
                 // A scene with no front to walk to banks on the spot - the bench rigs
                 // have no city and no home, and a round that can never finish is worse
                 // than one that skips the walk there.
-                Bank(round, gameHour);
+                Bank(round, lastGameHour);
+            }
         }
 
         void AnnounceStop(

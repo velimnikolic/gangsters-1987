@@ -75,13 +75,20 @@ namespace RoadDemo
         /// height and the air over it.</summary>
         const float FileBottomGap = 46f;
         const float FilePad = 8f;
+        /// <summary>Whether the PERSONAL FILE is put up under the chips at all.</summary>
+        const bool FileShown = false;
         const float PlateWide = 124f, PlateTall = 84f;
         const int Meter = 10;   // the ledger's half-step scale, and the map's
 
         // ---- the wire ----
         const float WireWide = 326f;
         const float WireHeadTall = 26f;
-        const float SlipTall = 56f;
+        /// <summary>One line per slip (2026-09-01, the user's word): the sentence
+        /// on the left, the day on the right, the kind's ink down the edge, and
+        /// nothing else. The source, the tag and the figure came off the street -
+        /// the four-line telex was the ledger's, and out here it stood taller than
+        /// the chips it sat beside.</summary>
+        const float SlipTall = 20f;
         const float WireGap = 4f;
         /// <summary>How many slips the strip carries. The design's own default, inside
         /// the two-to-six range it lets a boss set.</summary>
@@ -246,6 +253,11 @@ namespace RoadDemo
         {
             if (_canvas == null)
                 return;
+
+            // These two pieces belong to the street, not to the open book. Hide them
+            // explicitly as well as suspending the HUD canvas, so they cannot remain
+            // over the ledger for a frame if canvas update order changes.
+            SetLedgerFurnitureVisible(!PersonnelAlmanac.IsOpen);
 
             var want = !ModalUp;
             if (_canvas.enabled != want)
@@ -514,6 +526,13 @@ namespace RoadDemo
             if (crew == null)
                 return;
 
+            // The file is withdrawn from the street (2026-09-01, the user's word): the
+            // chip at the top names the man and his order, and the dossier under it
+            // stayed shut. The picker still runs so the chips and the plate agree on
+            // who is picked; only the paper is not put up.
+            if (!FileShown)
+                return;
+
             _paintedStanding = crew.MenStanding;
 
             var card = LedgerV2.Card("Personal file", _canvas.transform, 0f, -FileTop,
@@ -735,80 +754,35 @@ namespace RoadDemo
 
         // -------------------------------------------------------------------- wire
 
-        readonly struct WireLine
+        // The slip itself, the ink it is ruled in and the words on it are WireBook's -
+        // the ledger's rail prints the same run out of the same book, and two strips
+        // that composed their own sentences would be two accounts of one night.
+
+        /// <summary>A slip cut to one line: stock, the kind's ink at full strength
+        /// down the left edge, the sentence in the mono face cut off with an ellipsis
+        /// where it runs out of room, and the day stamp on the right.</summary>
+        static RectTransform OneLineSlip(RectTransform parent, float y, WireLine line)
         {
-            public readonly string Source, Stamp, Body, Tag, Figure;
-            public readonly Color Ink;
+            const float StampWide = 44f;
+            var rect = NewRect("Slip", parent);
+            PlaceTopLeft(rect, 0f, y, WireWide, SlipTall);
+            Stock(rect, LedgerStyle.Slip, LedgerStyle.SlipLow);
 
-            public WireLine(string source, string stamp, string body, string tag,
-                string figure, Color ink)
-            {
-                Source = source;
-                Stamp = stamp;
-                Body = body;
-                Tag = tag;
-                Figure = figure;
-                Ink = ink;
-            }
-        }
+            var edge = NewRect("Edge", rect);
+            PlaceTopLeft(edge, 0f, 0f, 3f, SlipTall);
+            Fill(edge, line.Ink);
 
-        /// <summary>The height the tag row adds to a slip that carries one.</summary>
-        const float TagTall = 18f;
+            var copy = Line(rect, LedgerStyle.Mono, 11f, LedgerStyle.InkSoft,
+                9f, 0f, WireWide - 9f - StampWide - 12f, SlipTall, line.Body);
+            copy.enableWordWrapping = false;
+            copy.overflowMode = TextOverflowModes.Ellipsis;
+            copy.raycastTarget = false;
 
-        /// <summary>
-        /// The design's tag row: what KIND of thing came in, set in the slip's own stock
-        /// on a block of its ink, and beside it what it cost. It reads before the
-        /// sentence does, which is the point of it - a boss scanning the wire sees MAN
-        /// DOWN and a heat figure without reading a word of the report.
-        /// </summary>
-        static void Tag(RectTransform slip, WireLine line)
-        {
-            var wide = LedgerV2.ButtonWidth(line.Tag, 10.8f, 18f, 5f);
-            var block = NewRect("Tag", slip);
-            PlaceTopLeft(block, 12f, -22f, wide, 15f);
-            Fill(block, line.Ink);
-
-            var word = Caps(block, 0f, -1f, wide, line.Tag, 10.8f, LedgerStyle.Slip, 18f,
-                TextAlignmentOptions.Center);
-            word.font = LedgerStyle.MonoBold;
-
-            if (line.Figure.Length == 0)
-                return;
-
-            var figure = Line(slip, LedgerStyle.MonoBold, 13.2f, line.Ink,
-                12f + wide + 6f, -22f, WireWide - wide - 36f, 15f, line.Figure);
-            figure.characterSpacing = 4f;
-        }
-
-        /// <summary>
-        /// The ink a slip's edge is ruled in - the design's rule that a wire is read by
-        /// colour before it is read by word. Every one of these is a pen the book
-        /// already writes in: the red for blood, the blue ballpoint for a man of ours
-        /// who is no longer ours, amber for money being asked for, green for a promotion,
-        /// and plain for the rest.
-        /// </summary>
-        static Color InkOf(IncidentKind kind)
-        {
-            switch (kind)
-            {
-                case IncidentKind.Froze:
-                case IncidentKind.Fled:
-                case IncidentKind.Escalated:
-                case IncidentKind.DiedOnTheDetail:
-                case IncidentKind.StoppedIt:
-                    return LedgerStyle.RedPen;
-                case IncidentKind.TookRivalMoney:
-                case IncidentKind.Defected:
-                case IncidentKind.BearsWatching:
-                case IncidentKind.CaughtSkimming:
-                    return LedgerStyle.Ballpoint;
-                case IncidentKind.DemandedARaise:
-                    return LedgerStyle.PenAmber;
-                case IncidentKind.Promoted:
-                    return LedgerStyle.GreenOk;
-                default:
-                    return LedgerStyle.TelexPlain;
-            }
+            var stamp = Caps(rect, WireWide - StampWide - 6f, -(SlipTall - 15f) * 0.5f,
+                StampWide, line.Stamp, 9f, LedgerStyle.InkLabel, 2f,
+                TextAlignmentOptions.MidlineRight);
+            stamp.raycastTarget = false;
+            return rect;
         }
 
         void PaintWire(OutfitDirector outfit)
@@ -863,23 +837,8 @@ namespace RoadDemo
             for (var i = 0; i < lines.Count; i++)
             {
                 var line = lines[i];
-                var tall = line.Tag.Length > 0 ? SlipTall + TagTall : SlipTall;
-                var slip = Slip(root, 0f, y, WireWide, tall,
-                    line.Source, line.Stamp, line.Body, line.Ink, line.Tag.Length > 0);
-                if (line.Tag.Length > 0)
-                    Tag(slip, line);
-
-                // The design rules the slip's edge in the kind's own ink at FULL
-                // strength - the wire is read by colour before it is read by word, and
-                // the kit's own edge is laid at three fifths, which on a slip already
-                // stepped back by age comes out as no colour at all.
-                var edge = slip.Find("Edge");
-                if (edge != null)
-                {
-                    var ink = edge.GetComponent<Image>();
-                    if (ink != null)
-                        ink.color = line.Ink;
-                }
+                var tall = SlipTall;
+                var slip = OneLineSlip(root, y, line);
 
                 // Newest at full strength and the ones behind it stepping back: the wire
                 // is read from the top, and the tail is only there for context. It steps
@@ -933,17 +892,17 @@ namespace RoadDemo
 
             for (var kept = 0; kept < DoorLinesKept && door >= 0 && _lines.Count < WireLines;
                  kept++, door--)
-                _lines.Add(DoorSlip(doors[door]));
+                _lines.Add(WireBook.Of(doors[door]));
 
             while (incident >= 0 && _lines.Count < WireLines)
             {
-                _lines.Add(IncidentSlip(book[incident]));
+                _lines.Add(WireBook.Of(book[incident]));
                 incident--;
             }
 
             while (door >= 0 && _lines.Count < WireLines)
             {
-                _lines.Add(DoorSlip(doors[door]));
+                _lines.Add(WireBook.Of(doors[door]));
                 door--;
             }
 
@@ -952,65 +911,8 @@ namespace RoadDemo
             if (_lines.Count == 0)
                 _lines.Add(new WireLine("WIRE", "DAY " + outfit.Campaign.Day,
                     "Nothing on the wire. Nobody of ours has done a thing he was not told to.",
-                    "", "", LedgerStyle.TelexPlain));
+                    "", "", LedgerStyle.TelexPlain, outfit.Campaign.Day));
             return _lines;
-        }
-
-        static WireLine IncidentSlip(LivingCity.Personnel.Incident incident) =>
-            new WireLine(
-                incident.Where.Length > 0
-                    ? "WIRE - " + incident.Where.ToUpperInvariant()
-                    : "WIRE",
-                "DAY " + incident.Day,
-                incident.Line,
-                LedgerText.IncidentLabel(incident.Kind),
-                // The figure the design puts beside the tag is whatever this one cost.
-                // For an incident that is the police attention it drew, and an incident
-                // that drew none says nothing rather than nothing-shaped.
-                incident.Heat > 0 ? "+" + incident.Heat + " HEAT" : "",
-                InkOf(incident.Kind));
-
-        /// <summary>One line of door news, in the racket's own words - the vocabulary
-        /// the ledger's telex prints from too, so the two strips never differ.</summary>
-        static WireLine DoorSlip(LivingCity.Territory.TerritoryDoorDispatch dispatch)
-        {
-            var name = "";
-            var rows = LivingCity.Business.CityBusinesses.All;
-            for (var i = 0; i < rows.Count; i++)
-                if (rows[i].Id == dispatch.BusinessId)
-                {
-                    name = rows[i].Name;
-                    break;
-                }
-
-            var ours = dispatch.GangId ==
-                new LivingCity.Territory.TerritoryGangId(
-                    LivingCity.Gangs.GangCatalog.PlayerGangId);
-            return new WireLine(
-                ours ? "WIRE - THE RACKET" : "WIRE - ANOTHER HOUSE",
-                "DAY " + dispatch.Day,
-                LivingCity.Territory.TerritoryStandingVocabulary.Default.Describe(
-                    dispatch.News, name),
-                LedgerText.DoorNewsLabel(dispatch.News),
-                "",
-                DoorInk(dispatch.News));
-        }
-
-        static Color DoorInk(LivingCity.Territory.TerritoryDoorNews news)
-        {
-            switch (news)
-            {
-                case LivingCity.Territory.TerritoryDoorNews.Refused:
-                case LivingCity.Territory.TerritoryDoorNews.StoppedPaying:
-                case LivingCity.Territory.TerritoryDoorNews.ChangedHands:
-                    return LedgerStyle.RedPen;
-                case LivingCity.Territory.TerritoryDoorNews.Wrecked:
-                case LivingCity.Territory.TerritoryDoorNews.Beaten:
-                case LivingCity.Territory.TerritoryDoorNews.Threatened:
-                    return LedgerStyle.Ballpoint;
-                default:
-                    return LedgerStyle.TelexPlain;
-            }
         }
 
         // --------------------------------------------------------------- ledger key
@@ -1046,11 +948,25 @@ namespace RoadDemo
             hint.raycastTarget = false;
         }
 
-        static void OpenLedger()
+        void OpenLedger()
         {
             var book = PersonnelAlmanac.Instance;
             if (book)
+            {
+                // The click happens before the book's next visual update. Put the key
+                // and the wire away immediately instead of leaving either over it for
+                // the remainder of this frame.
+                SetLedgerFurnitureVisible(false);
                 book.Open();
+            }
+        }
+
+        void SetLedgerFurnitureVisible(bool visible)
+        {
+            if (_keyRoot && _keyRoot.gameObject.activeSelf != visible)
+                _keyRoot.gameObject.SetActive(visible);
+            if (_wireRoot && _wireRoot.gameObject.activeSelf != visible)
+                _wireRoot.gameObject.SetActive(visible);
         }
     }
 

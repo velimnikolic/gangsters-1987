@@ -2181,15 +2181,7 @@ namespace LivingCity.UI
             return "THE " + surname.ToUpperInvariant() + " OUTFIT";
         }
 
-        static void SetActionEnabled(TMP_Text label, bool enabled)
-        {
-            if (!label)
-                return;
-            var button = label.GetComponentInParent<Button>();
-            if (button)
-                button.interactable = enabled;
-            if (!enabled)
-                label.color = LedgerV2.Rule;
-        }
+        static void SetActionEnabled(TMP_Text label, bool enabled) =>
+            LedgerV2.KeyEnabled(label, enabled);
     }
 }

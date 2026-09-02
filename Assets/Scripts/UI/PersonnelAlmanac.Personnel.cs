@@ -637,9 +637,9 @@ namespace LivingCity.UI
         /// what he carries, how he is, whether he is earning, and what he costs. The
         /// wage most of all, because payroll is the pressure the whole game turns on.
         ///
-        /// A lieutenant's line is the same line, weighted: bolder name, its own ground,
-        /// a rule over it, and the count of his men where his post would be. That is
-        /// the whole of the roll's hierarchy - no dark banner, no indent, no bracket.
+        /// A lieutenant's line is the same line, weighted: bolder name, a rule over
+        /// it, and the count of his men where his post would be. The ground is the
+        /// same as any hood's - no dark banner, no indent, no bracket.
         /// </summary>
         void BuildCharacterRow(Roster roster, int id, float y, int index,
             bool lieutenantRow = false, bool poolRow = false)
@@ -658,7 +658,6 @@ namespace LivingCity.UI
             // graphic. A second AddComponent<Image> on the same object silently answers
             // null in Unity, and a null target graphic takes the whole row down with it.
             var face = Fill(rect, chosen ? LedgerV2.Picked
-                : lieutenantRow ? LedgerV2.PanelDark
                 : new Color(LedgerV2.Panel.r, LedgerV2.Panel.g, LedgerV2.Panel.b, 0f));
             face.raycastTarget = true;
             Block("Row rule", rect, 0f, 0f, RollInner, 1f, LedgerV2.Hair);

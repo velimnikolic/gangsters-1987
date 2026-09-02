@@ -111,6 +111,82 @@ namespace RoadDemo
         static float FrontageOf(ShopEntrance entrance) =>
             entrance != null ? entrance.Frontage : 0f;
 
+        /// <summary>
+        /// WHERE THIS SHOP'S FRONT WALL IS, needing no view at all: the business's own
+        /// ground and the doorstep the crew walks to are enough.
+        ///
+        /// This exists because in the streamed city there IS no view to measure - not one
+        /// business in the quarter is bound to a marker, so everything that wanted a
+        /// shopfront fell back on the job's approach point, which is a spot on the
+        /// PAVEMENT. That is why the boards and the fire stood in the road.
+        ///
+        /// The site is an axis-aligned footprint. The doorstep lies off one of its four
+        /// sides; that side is the front, its outward normal is the way out to the
+        /// street, and the door is the point on it level with the doorstep. The width is
+        /// that side's own length, so the boards are cut to this shop and no other.
+        /// </summary>
+        public static bool TryStreetFront(
+            LivingCity.Territory.TerritoryBusinessId id,
+            out Vector3 door, out Vector3 outward, out float frontage)
+        {
+            door = default;
+            outward = Vector3.forward;
+            frontage = 0f;
+
+            var runtime = TerritoryRuntime.Instance;
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            if (runtime == null || business == null || !id.IsValid ||
+                !runtime.TryGetBusinessApproach(id, out var approach) ||
+                !business.TryGetSite(id, out var site) || site == null)
+                return false;
+
+            var ground = site.Footprint;
+            if (ground.IsEmpty)
+                return false;
+
+            // Which side the doorstep is off. Measured from the footprint's own edges, so
+            // a shop whose door is on the short side is not given the long one.
+            var west = approach.x - ground.XMin;
+            var east = ground.XMax - approach.x;
+            var south = approach.z - ground.ZMin;
+            var north = ground.ZMax - approach.z;
+            var nearest = Mathf.Min(Mathf.Min(west, east), Mathf.Min(south, north));
+
+            if (nearest == west)
+            {
+                outward = Vector3.left;
+                door = new Vector3(ground.XMin, approach.y,
+                    Mathf.Clamp(approach.z, ground.ZMin, ground.ZMax));
+                frontage = ground.Depth;
+            }
+            else if (nearest == east)
+            {
+                outward = Vector3.right;
+                door = new Vector3(ground.XMax, approach.y,
+                    Mathf.Clamp(approach.z, ground.ZMin, ground.ZMax));
+                frontage = ground.Depth;
+            }
+            else if (nearest == south)
+            {
+                outward = Vector3.back;
+                door = new Vector3(
+                    Mathf.Clamp(approach.x, ground.XMin, ground.XMax), approach.y,
+                    ground.ZMin);
+                frontage = ground.Width;
+            }
+            else
+            {
+                outward = Vector3.forward;
+                door = new Vector3(
+                    Mathf.Clamp(approach.x, ground.XMin, ground.XMax), approach.y,
+                    ground.ZMax);
+                frontage = ground.Width;
+            }
+
+            frontage = Mathf.Max(NarrowestFront, frontage - FrontageMargin * 2f);
+            return true;
+        }
+
         /// <summary>The same door by business id, for callers that hold the simulation's
         /// id rather than the view.</summary>
         public static ShopEntrance Of(LivingCity.Territory.TerritoryBusinessId id) =>

@@ -346,6 +346,80 @@ namespace RoadDemo
         protected override float FreeLineAhead => _runningLeg ? 4f : base.FreeLineAhead;
         protected override float PushGain => _runningLeg ? 0.5f : base.PushGain;
 
+        /// <summary>
+        /// PedLink.Free was sampled before residential views stream in. Prove the
+        /// outfit's actual graph step against the live ledger; civilians retain the
+        /// cheap sampled path, while an ordered crew member may never spend a stale
+        /// link line through a newly arrived cafe or its furniture.
+        /// </summary>
+        protected override bool GraphStepClear(Vector3 from, Vector3 to)
+        {
+            if (State != Mode.Walking && State != Mode.Homing) return true;
+            return !WalkObstacles.Standing(to, WalkObstacles.Radius) &&
+                   !WalkObstacles.BlocksStanding(from, to, WalkObstacles.Radius);
+        }
+
+        /// <summary>A stale graph link is abandoned before any movement is committed.
+        /// Continue to the same order destination through the live A* ground map; if
+        /// no safe route exists, BeginAcross refuses it and leaves the man standing.</summary>
+        protected override void GraphStepBlocked(Vector3 wanted)
+        {
+            if (State != Mode.Walking && State != Mode.Homing) return;
+            var destination = OrderDestination;
+            // Do not replace one member's common sidewalk trip with a private route
+            // straight to its destination. Preserve the route the graph had already
+            // chosen and use A* only to detour back onto that same corridor.
+            _graphCorridor.Clear();
+            if (!CopyPlannedRoute(_graphCorridor) || _graphCorridor.Count < 2)
+            {
+                RefuseUnsafeAcross();
+                return;
+            }
+            // CopyPlannedRoute begins with the walker's feet for preview drawing. That
+            // is not a corridor anchor. In particular, if a streamed prop appeared
+            // around him, retaining it would make the recovery connector walk back
+            // into the occupied point it had just escaped.
+            int passed = SharedCursorAfter(_graphCorridor, 0, Tf.position);
+            if (passed > 0) _graphCorridor.RemoveRange(0, passed);
+            // A streamed table or venue can cover the graph node itself. Routing to
+            // that occupied node is impossible and used to stop the walker even when
+            // the next node on the same graph corridor was clear. Skip only occupied
+            // anchors; A* still has to prove the detour to the first usable one.
+            while (_graphCorridor.Count > 0 &&
+                   WalkObstacles.Standing(_graphCorridor[0], WalkObstacles.Radius))
+                _graphCorridor.RemoveAt(0);
+            if (_graphCorridor.Count == 0)
+            {
+                RefuseUnsafeAcross();
+                return;
+            }
+            bool relocated = false;
+            if (WalkObstacles.Standing(Tf.position, WalkObstacles.Radius))
+            {
+                const float MaxRecoveryStep = 2.5f;
+                var from = Tf.position;
+                if (!WalkObstacles.TryClearStandingSpot(from, WalkObstacles.Radius,
+                        _graphCorridor[0], out var free, MaxRecoveryStep))
+                {
+                    RefuseUnsafeAcross();
+                    return;
+                }
+                free.y = from.y;
+                Tf.position = free;
+                relocated = true;
+            }
+            bool accepted = BeginAcross(
+                destination, _graphCorridor, 0f, keepOffRoad: false);
+            _graphCorridor.Clear();
+            if (accepted)
+                _preferredSteerSide = CrowdPreferredSide;
+            else if (relocated)
+                // RefuseUnsafeAcross normally retains a valid graph seat. Relocation
+                // made this seat stale, so leave it and let DemoCrews reseat the real
+                // feet before a future graph order.
+                LeaveGraphOrder();
+        }
+
         /// <summary>Start the run somewhere along its own clip and at a rate of his own -
         /// so a crew that sets off together is a crew of runners, not one runner
         /// copied five times.</summary>
@@ -455,6 +529,9 @@ namespace RoadDemo
         {
             if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
             if (Dead || Riding || link == null || link.Length <= 0.01f || _link == null) return;
+            ClearSharedCorridor();
+            _throughWall = false;
+            _watching = false;
             Target = null;
             _coverSpot = null;
             InCover = false;
@@ -505,6 +582,8 @@ namespace RoadDemo
         {
             if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
             if (Dead) return;
+            ClearSharedCorridor();
+            LeaveGraphOrder();
             Target = null;
             _coverSpot = null;
             InCover = false;
@@ -522,13 +601,69 @@ namespace RoadDemo
             // one leg, so its corner IS its far end - and the run reads the far end
             _legEnd = point;
             _pendingAcrossPlan = false;
+            _preferredSteerSide = 0;
             BeginLeg();
             State = Mode.Striding;
         }
 
+        /// <summary>
+        /// THROUGH THE DOOR. The one walk in the game that is allowed past the ground's
+        /// solids, and it exists because a shop's interior is not walkable ground: a
+        /// building is registered whole as a box (WalkObstacles.Block), so a man ordered
+        /// to a point inside one is steered along its wall for ever and stops a couple of
+        /// metres short of the glass. That is what a player watched every time he sent men
+        /// to lean on a shopkeeper - the crew standing on the pavement while the wire said
+        /// the owner had answered.
+        ///
+        /// So the passage is walked, not pathed: the same stride, the same clip, the same
+        /// pace, with the obstacle map left out for its length. It is the doorway's own
+        /// order and nothing else's - <see cref="DoorBeat"/> issues it for the step in and
+        /// the step back out, over a couple of metres, and it lapses by itself
+        /// (<see cref="ThroughGrace"/>) so no later order can inherit a man who walks
+        /// through walls.
+        /// </summary>
+        public void OrderThroughDoorway(Vector3 point, float delay = 0f)
+        {
+            OrderToPoint(point, delay);
+            if (State != Mode.Striding)
+                return;
+            _throughWall = true;
+            _throughUntil = Time.time + ThroughGrace;
+        }
+
+        /// <summary>The passage is over: the walls are his again. Called the moment the
+        /// threshold is crossed, so the licence lasts the doorway and not a second of
+        /// the walk after it.</summary>
+        public void EndDoorway() => _throughWall = false;
+
+        /// <summary>The most a doorway passage may last before the man walks by the
+        /// ordinary rules again. A threshold is two or three metres; anything past this
+        /// is not a passage any more.</summary>
+        public const float ThroughGrace = 12f;
+
+        /// <summary>Whether the stride currently ignores the walls - true only inside a
+        /// doorway passage, and only until its grace runs out.</summary>
+        bool Crossing => _throughWall && Time.time <= _throughUntil;
+
+        bool _throughWall;
+        float _throughUntil;
+
         // the corners of a way across the city, and which one he is walking at
         readonly List<Vector3> _legs = new List<Vector3>();
+        readonly List<Vector3> _connectorLegs = new List<Vector3>();
+        // Dispatch preflight is deliberately separate from the live legs. DemoCrews
+        // validates every member before it starts any of them, so one impossible hood
+        // cannot leave half a crew already walking away.
+        readonly List<Vector3> _preflightLegs = new List<Vector3>();
+        readonly List<Vector3> _preflightScratch = new List<Vector3>();
+        // A dispatched member owns a copy: DemoCrews reuses its scratch route as soon
+        // as the order is dealt. _sharedAt is the next common corner he must rejoin;
+        // connector corners in _legs are deliberately not part of this progress.
+        readonly List<Vector3> _sharedCorridor = new List<Vector3>();
+        readonly List<Vector3> _graphCorridor = new List<Vector3>();
+        int _sharedAt;
         int _legAt, _replans;
+        int _legsVersion;
         Vector3 _legEnd;
         bool _pendingAcrossPlan;
 
@@ -541,12 +676,65 @@ namespace RoadDemo
         /// is drawn round the walls first (WalkRoute) and he walks its corners; the
         /// cars and the crowd he steers past as he goes, like any other stride.
         ///
-        /// No way at all - walled in, or a mark stood inside something - and he simply
-        /// walks at it and gets as near as the ground lets him.</summary>
-        public void OrderAcross(Vector3 point, float delay = 0f, bool keepOffRoad = false)
+        /// No safe way at all - walled in, or a mark stood inside something - and the
+        /// order is refused; a failed A* is never treated as permission to cross it.</summary>
+        public bool OrderAcross(Vector3 point, float delay = 0f, bool keepOffRoad = false) =>
+            BeginAcross(point, null, delay, keepOffRoad);
+
+        /// <summary>Walk the same already-planned corner corridor as the rest of this
+        /// crew, then peel off to this man's own final formation spot. Dispatch passes
+        /// the common interior only (not the leader-only final point), and this method
+        /// appends <paramref name="point"/> after it. Every shared point is copied into
+        /// this walker's private route, so the caller may immediately reuse its scratch
+        /// list.</summary>
+        public bool OrderAcrossVia(Vector3 point, IReadOnlyList<Vector3> sharedWay,
+            float delay = 0f, bool keepOffRoad = false)
         {
-            if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
-            if (Dead) return;
+            if (sharedWay == null || sharedWay.Count == 0)
+                return OrderAcross(point, delay, keepOffRoad);
+            return BeginAcross(point, sharedWay, delay, keepOffRoad);
+        }
+
+        /// <summary>Prove this member's complete join/corridor/arrival route without
+        /// changing his current order. Whole-crew dispatch uses this as a transaction
+        /// preflight, then commits every already-proved member in the same frame.</summary>
+        internal bool CanOrderAcrossVia(Vector3 point, IReadOnlyList<Vector3> sharedWay,
+            bool keepOffRoad = false)
+        {
+            if (Spilling || Dead || Tf == null) return false;
+            point.y = Tf.position.y;
+            return CopySharedWayModel(sharedWay, Tf.position, point,
+                _preflightLegs, _preflightScratch, keepOffRoad,
+                StaticChordClear, WalkRoute.Plan);
+        }
+
+        /// <summary>Copy every common corner still ahead of this walker. A hood's owned
+        /// corridor was already trimmed before dispatch, so its final entry is a real
+        /// common corner and must not be discarded during cohesion recovery.</summary>
+        internal bool CopyRemainingSharedWay(List<Vector3> into)
+        {
+            if (into == null) return false;
+            into.Clear();
+            if (State != Mode.Striding || _sharedCorridor.Count == 0) return false;
+            return CopyRemainingSharedWayModel(_sharedCorridor, _sharedAt, into);
+        }
+
+        internal static bool CopyRemainingSharedWayModel(
+            IReadOnlyList<Vector3> sharedWay, int sharedAt, List<Vector3> into)
+        {
+            if (into == null) return false;
+            into.Clear();
+            int count = sharedWay != null ? sharedWay.Count : 0;
+            for (int i = Mathf.Clamp(sharedAt, 0, count); i < count; i++)
+                into.Add(sharedWay[i]);
+            return into.Count > 0;
+        }
+
+        bool BeginAcross(Vector3 point, IReadOnlyList<Vector3> sharedWay,
+            float delay, bool keepOffRoad)
+        {
+            if (Spilling) return false;   // in the air off a machine: he is the spill's until he lands
+            if (Dead) return false;
             Target = null;
             _coverSpot = null;
             InCover = false;
@@ -562,41 +750,290 @@ namespace RoadDemo
             _legEnd = point;
             _replans = 0;
             _legsOffRoad = keepOffRoad;
+            _preferredSteerSide = sharedWay != null ? CrowdPreferredSide : 0;
             _legs.Clear();
-            // Hoods already have a deliberate beat before they follow their boss. Plan
-            // during that beat, on their own frames, instead of making one mouse-down
-            // synchronously solve the same cross-city route three times. The boss (delay
-            // zero) still receives his complete route immediately.
-            _pendingAcrossPlan = delay > 0.001f;
-            if (!_pendingAcrossPlan)
+            if (sharedWay != null)
             {
-                if (!WalkRoute.Plan(Tf.position, point, _legs, keepOffRoad)) _legs.Clear();
+                RememberSharedCorridor(sharedWay, point.y);
+                // A leader corridor proves only the leader's own first and last
+                // chords. Each member may plan a connector TO that corridor, but a
+                // failed join is not permission to choose an unrelated route around
+                // the other side of the block.
+                if (!BuildRemainingWay(Tf.position))
+                {
+                    RefuseUnsafeAcross();
+                    return false;
+                }
+                _pendingAcrossPlan = false;
                 _legAt = 0;
                 _legTo = _legs.Count > 0 ? _legs[0] : point;
             }
             else
             {
-                _legAt = 0;
-                _legTo = point;
+                ClearSharedCorridor();
+                // Hoods already have a deliberate beat before they follow their boss.
+                // Plan during that beat, on their own frames, instead of blocking one
+                // mouse-down. Whole-crew dispatch normally supplies a shared way, so
+                // this individual plan is for standalone orders and recovery fallback.
+                _pendingAcrossPlan = delay > 0.001f;
+                if (!_pendingAcrossPlan)
+                {
+                    if (!BuildIndividualWay(Tf.position, point, keepOffRoad))
+                    {
+                        RefuseUnsafeAcross();
+                        return false;
+                    }
+                    _legAt = 0;
+                    _legTo = _legs.Count > 0 ? _legs[0] : point;
+                }
+                else
+                {
+                    _legAt = 0;
+                    _legTo = point;
+                }
             }
+            // Keep a valid pavement seat until the off-graph route has actually been
+            // proved. A rejected route leaves the man standing where he was, still
+            // reseatable from that real link rather than detached by a failed order.
+            if (!_pendingAcrossPlan) LeaveGraphOrder();
             var far = point - Tf.position;
             far.y = 0f;
             _acrossBest = far.magnitude;
-            _acrossFor = 0f;
+            _legsVersion = WalkObstacles.Version;
             if (DriveTrace.On)
                 DriveTrace.Event("walk", DisplayName, _legs.Count > 0
                     ? $"a way across: {_legs.Count} corners, {_acrossBest:F0} m"
-                    : $"NO WAY across the {_acrossBest:F0} m - walking straight at it");
+                    : "already at the open-ground destination");
             BeginLeg();
             State = Mode.Striding;
+            return true;
         }
 
-        // How near the far end he has ever been on this order, and how long since he
-        // was nearer. A leg of its own can be walked perfectly while the WALK gets
-        // nowhere - a man who reaches a corner, is turned back by something the map
-        // does not know about, reaches it again, and paces that metre until the scene
-        // closes. Getting there is measured against the far end, not the next corner.
-        float _acrossBest, _acrossFor;
+        internal delegate bool ChordProbe(Vector3 from, Vector3 to);
+        internal delegate bool ConnectorPlanner(Vector3 from, Vector3 to,
+            List<Vector3> into, bool keepOffRoad);
+
+        /// <summary>Join a leader's corridor from this member's actual start, follow all
+        /// of it (including the common arrival point), and only then peel off to his own
+        /// formation slot. Every chord is proved before it is accepted; a blocked join
+        /// receives its own A* connector. The probes are parameters so this contract can
+        /// be tested without a live Unity scene.</summary>
+        internal static bool CopySharedWayModel(IReadOnlyList<Vector3> sharedWay,
+            Vector3 from, Vector3 memberEnd, List<Vector3> into,
+            List<Vector3> scratch, bool keepOffRoad, ChordProbe clear,
+            ConnectorPlanner plan) =>
+            CopySharedWayModel(sharedWay, 0, from, memberEnd, into, scratch,
+                keepOffRoad, clear, plan);
+
+        /// <summary>The same corridor contract resumed after the common corners before
+        /// <paramref name="sharedFrom"/> have already been passed. A stalled member may
+        /// plan only a connector to the next common corner, never a new whole trip to
+        /// his private endpoint.</summary>
+        internal static bool CopySharedWayModel(IReadOnlyList<Vector3> sharedWay,
+            int sharedFrom, Vector3 from, Vector3 memberEnd, List<Vector3> into,
+            List<Vector3> scratch, bool keepOffRoad, ChordProbe clear,
+            ConnectorPlanner plan)
+        {
+            if (into == null || scratch == null || clear == null || plan == null)
+                return false;
+            into.Clear();
+            scratch.Clear();
+            const float same = 0.05f * 0.05f;
+            from.y = memberEnd.y;
+            if ((memberEnd - from).sqrMagnitude <= same)
+                return true;
+            var at = from;
+            bool joined = false;
+            int sharedCount = sharedWay != null ? sharedWay.Count : 0;
+            // The group was given one route, so every member joins its beginning and
+            // retains every corner. Letting each man skip to his own latest-visible
+            // corner made one order split around both sides of the same block.
+            for (int i = Mathf.Clamp(sharedFrom, 0, sharedCount); i < sharedCount; i++)
+            {
+                var corner = sharedWay[i];
+                corner.y = memberEnd.y;
+                if ((corner - at).sqrMagnitude <= same) continue;
+                if (!AppendSafeConnector(at, corner, into, scratch,
+                        keepOffRoad && !joined, keepOffRoad, clear, plan))
+                {
+                    into.Clear();
+                    scratch.Clear();
+                    return false;
+                }
+                at = corner;
+                joined = true;
+            }
+
+            if ((memberEnd - at).sqrMagnitude > same &&
+                !AppendSafeConnector(at, memberEnd, into, scratch,
+                    keepOffRoad, keepOffRoad, clear, plan))
+            {
+                into.Clear();
+                scratch.Clear();
+                return false;
+            }
+            scratch.Clear();
+            return true;
+        }
+
+        static bool AppendSafeConnector(Vector3 from, Vector3 to,
+            List<Vector3> into, List<Vector3> scratch, bool enforceRoadPolicy,
+            bool keepOffRoad, ChordProbe clear, ConnectorPlanner plan)
+        {
+            const float same = 0.05f * 0.05f;
+            // keepOffRoad is more than collision clearance: WalkRoute also prices a
+            // chord that runs along the carriageway. The member-only join and peel-off
+            // therefore go through the planner even when statically clear. Shared
+            // interior chords already carry the leader's road policy and are replanned
+            // only if a new static obstacle has actually blocked one.
+            if (!enforceRoadPolicy && clear(from, to))
+            {
+                AddRoutePoint(into, to, same);
+                return true;
+            }
+
+            scratch.Clear();
+            if (!plan(from, to, scratch, keepOffRoad) || scratch.Count == 0)
+                return false;
+
+            var at = from;
+            for (int i = 0; i < scratch.Count; i++)
+            {
+                var point = scratch[i];
+                point.y = to.y;
+                if ((point - at).sqrMagnitude <= same) continue;
+                // Do not trust a nominally successful plan blindly: its endpoint may
+                // have been substituted after the lattice search, and this is exactly
+                // the boundary where an unsafe direct chord used to enter the route.
+                if (!clear(at, point)) return false;
+                AddRoutePoint(into, point, same);
+                at = point;
+            }
+            if ((to - at).sqrMagnitude > same)
+            {
+                if (!clear(at, to)) return false;
+                AddRoutePoint(into, to, same);
+            }
+            return true;
+        }
+
+        static void AddRoutePoint(List<Vector3> into, Vector3 point, float same)
+        {
+            if (into.Count == 0 || (point - into[into.Count - 1]).sqrMagnitude > same)
+                into.Add(point);
+        }
+
+        static bool StaticChordClear(Vector3 from, Vector3 to)
+            => WalkRoute.ChordClear(from, to);
+
+        void RememberSharedCorridor(IReadOnlyList<Vector3> sharedWay, float y)
+        {
+            ClearSharedCorridor();
+            if (sharedWay == null) return;
+            const float same = 0.05f * 0.05f;
+            for (int i = 0; i < sharedWay.Count; i++)
+            {
+                var point = sharedWay[i];
+                point.y = y;
+                if (_sharedCorridor.Count == 0 ||
+                    (point - _sharedCorridor[_sharedCorridor.Count - 1]).sqrMagnitude > same)
+                    _sharedCorridor.Add(point);
+            }
+            _sharedAt = SharedCursorAfter(_sharedCorridor, 0, Tf.position);
+        }
+
+        void ClearSharedCorridor()
+        {
+            _sharedCorridor.Clear();
+            _sharedAt = 0;
+        }
+
+        /// <summary>Advance only over the exact common corner just reached. Visibility
+        /// to a later corner is intentionally irrelevant: it was that shortcut which
+        /// let different members select opposite sides of a block.</summary>
+        internal static int SharedCursorAfter(IReadOnlyList<Vector3> sharedWay,
+            int sharedAt, Vector3 reached)
+        {
+            const float same = 0.05f * 0.05f;
+            int count = sharedWay != null ? sharedWay.Count : 0;
+            int at = Mathf.Clamp(sharedAt, 0, count);
+            for (; at < count; at++)
+            {
+                var gap = sharedWay[at] - reached;
+                gap.y = 0f;
+                if (gap.sqrMagnitude > same) break;
+            }
+            return at;
+        }
+
+        void MarkSharedCornerReached(Vector3 reached) =>
+            _sharedAt = SharedCursorAfter(_sharedCorridor, _sharedAt, reached);
+
+        bool BuildRemainingWay(Vector3 from)
+        {
+            _sharedAt = SharedCursorAfter(_sharedCorridor, _sharedAt, from);
+            if (_sharedAt < _sharedCorridor.Count)
+                return CopySharedWayModel(_sharedCorridor, _sharedAt, from, _legEnd,
+                    _legs, _connectorLegs, _legsOffRoad, StaticChordClear,
+                    WalkRoute.Plan);
+            return BuildIndividualWay(from, _legEnd, _legsOffRoad);
+        }
+
+        bool BuildIndividualWay(Vector3 from, Vector3 to, bool keepOffRoad)
+        {
+            // With no shared interior, the same connector contract is the complete
+            // route. A clear chord stays cheap; a blocked one must come back from A*.
+            return CopySharedWayModel(null, from, to, _legs, _connectorLegs,
+                keepOffRoad, StaticChordClear, WalkRoute.Plan);
+        }
+
+        void RefuseUnsafeAcross()
+        {
+            _legs.Clear();
+            _connectorLegs.Clear();
+            ClearSharedCorridor();
+            _pendingAcrossPlan = false;
+            _legAt = 0;
+            _legsVersion = WalkObstacles.Version;
+            _legTo = _legEnd = Tf.position;
+            _hold = 0f;
+            _preferredSteerSide = 0;
+            // A deferred order can still own the valid link it was standing on. Drop
+            // only its old graph destination; retaining the seat lets a later graph
+            // order reseat/route normally and makes OrderDestination the current spot.
+            _route = null;
+            _destFwd = _destBack = null;
+            _destT = _targetT = 0f;
+            Waiting = false;
+            BeginLeg();
+            State = Mode.Standing;
+        }
+
+        /// <summary>A direct cross-city order has no current or destination sidewalk.
+        /// Clear both explicitly: retaining the last link made a striding man look as if
+        /// he were still graph-driven, so later formation code sent him back to the
+        /// pavement where the stride began. DemoCrews.Reseat can attach him to the
+        /// nearest real link before a future graph order.</summary>
+        void LeaveGraphOrder()
+        {
+            // Every fresh order starts a man who walks by the walls again. The doorway
+            // order re-arms it immediately afterwards; nothing else can. Same for the
+            // posted heading: a man sent somewhere else is off that door.
+            _throughWall = false;
+            _watching = false;
+            _link = null;
+            _cameFrom = null;
+            _t = 0f;
+            _route = null;
+            _destFwd = _destBack = null;
+            _destT = _targetT = 0f;
+            Waiting = false;
+        }
+
+        // Original straight-line distance, retained only for the order trace. Progress
+        // is judged on the current proved leg; distance to the final mark is not
+        // monotone while a correct route goes round a building.
+        float _acrossBest;
 
         /// <summary>Whether this walk is keeping off the carriageway - held for the
         /// replans, which must be drawn under the same rule as the first way or the man
@@ -612,17 +1049,75 @@ namespace RoadDemo
             if (arrived)
             {
                 _replans = 0;
+                MarkSharedCornerReached(_legTo);
                 if (++_legAt < _legs.Count) { _legTo = _legs[_legAt]; BeginLeg(); return true; }
                 _legs.Clear();
+                ClearSharedCorridor();
                 return false;
             }
             if (_legs.Count == 0 || _replans >= 3) { _legs.Clear(); return false; }
             _replans++;
-            if (!WalkRoute.Plan(Tf.position, _legEnd, _legs, _legsOffRoad) || _legs.Count == 0)
+            if (!BuildRemainingWay(Tf.position) || _legs.Count == 0)
             { _legs.Clear(); return false; }
             _legAt = 0;
             _legTo = _legs[0];
+            _legsVersion = WalkObstacles.Version;
             BeginLeg();
+            return true;
+        }
+
+        bool RouteRemainderClear()
+        {
+            var at = Tf.position;
+            for (int i = _legAt; i < _legs.Count; i++)
+            {
+                if (!StaticChordClear(at, _legs[i])) return false;
+                at = _legs[i];
+            }
+            return true;
+        }
+
+        internal static float CornerStopDistance(bool last, bool nextChordClear) =>
+            last ? 0.15f : nextChordClear ? 0.5f : 0.04f;
+
+        internal static bool CornerReachedModel(float left, bool last,
+                                                bool nextChordClear) =>
+            left <= CornerStopDistance(last, nextChordClear);
+
+        /// <summary>Exceptional recovery for geometry which appeared around a man, or
+        /// an old numerical overlap. Relocate once to the nearest genuinely clear spot
+        /// and redraw the whole remaining route; ordinary steering never receives a
+        /// licence to walk through the containing wall.</summary>
+        bool RecoverFixedOverlap()
+        {
+            const float MaxRecoveryStep = 2.5f;
+            if (Crossing || !WalkObstacles.Standing(Tf.position, WalkObstacles.Radius))
+                return false;
+            var from = Tf.position;
+            var toward = _sharedAt < _sharedCorridor.Count
+                ? _sharedCorridor[_sharedAt]
+                : _legEnd;
+            if (!WalkObstacles.TryClearStandingSpot(
+                    from, WalkObstacles.Radius, toward, out var free, MaxRecoveryStep))
+            {
+                RefuseUnsafeAcross();
+                return true;
+            }
+            free.y = from.y;
+            Tf.position = free;
+            _replans = 0;
+            if (!BuildRemainingWay(free) || _legs.Count == 0)
+            {
+                RefuseUnsafeAcross();
+                return true;
+            }
+            _legAt = 0;
+            _legTo = _legs[0];
+            _legsVersion = WalkObstacles.Version;
+            BeginLeg();
+            if (DriveTrace.On)
+                DriveTrace.Event("walk", DisplayName,
+                    $"recovered {Vector3.Distance(from, free):F1} m from fixed geometry");
             return true;
         }
 
@@ -633,8 +1128,10 @@ namespace RoadDemo
             if (Target != target) { _coverLooked = false; _underFire = 0; _coverRecheckAt = 0f; }
             Target = target;
             EndChat();
+            _watching = false;   // a doorman with a gun out is not on the door any more
             _blockedFor = 0f;
             _steerSide = 0;
+            _preferredSteerSide = 0;
             _strideDir = Vector3.zero;
             _runningLeg = false;
             _sprinting = false;
@@ -662,6 +1159,7 @@ namespace RoadDemo
             EndChat();
             _blockedFor = 0f;
             _steerSide = 0;
+            _preferredSteerSide = 0;
             _strideDir = Vector3.zero;
             _runningLeg = false;
             _sprinting = false;
@@ -1176,17 +1674,44 @@ namespace RoadDemo
 
                 case Mode.Striding:
                 {
+                    if (RecoverFixedOverlap()) return;
                     if (_pendingAcrossPlan)
                     {
                         if (HoldingBeat(dt)) return;
                         _pendingAcrossPlan = false;
-                        if (!WalkRoute.Plan(Tf.position, _legEnd, _legs, _legsOffRoad)) _legs.Clear();
+                        if (!BuildIndividualWay(Tf.position, _legEnd, _legsOffRoad))
+                        {
+                            RefuseUnsafeAcross();
+                            return;
+                        }
                         _legAt = 0;
                         _legTo = _legs.Count > 0 ? _legs[0] : _legEnd;
+                        _legsVersion = WalkObstacles.Version;
+                        LeaveGraphOrder();
                         BeginLeg();
                     }
                     else if (HoldingBeat(dt)) return;
-                    TickStride(dt, _legTo, 0.15f, hurry: Hustle, run: Running());
+
+                    // A streamed/static ledger change invalidates only a route whose
+                    // remaining chords it actually touched. Clear routes keep walking;
+                    // stale ones are redrawn before live steering reaches the new wall.
+                    if (_legsVersion != WalkObstacles.Version)
+                    {
+                        _legsVersion = WalkObstacles.Version;
+                        if (!RouteRemainderClear())
+                        {
+                            if (NextLeg(false)) return;
+                            RefuseUnsafeAcross();
+                            return;
+                        }
+                    }
+
+                    bool last = _legAt >= _legs.Count - 1;
+                    bool earlyCorner = !last &&
+                        StaticChordClear(Tf.position, _legs[_legAt + 1]);
+                    float stopWithin = CornerStopDistance(last, earlyCorner);
+                    TickStride(dt, _legTo, stopWithin, hurry: Hustle, run: Running(),
+                        terminal: last);
                     var gap = _legTo - Tf.position;
                     gap.y = 0f;
                     float left = gap.magnitude;
@@ -1194,48 +1719,24 @@ namespace RoadDemo
                     // stood on, or a car is parked on, is not reached, it is stopped
                     // short of - no marching in place. A corner on the way somewhere
                     // else is not a spot to stand on either: near enough IS round it.
-                    bool last = _legAt >= _legs.Count - 1;
-                    // A CORNER IS ROUNDED CLOSELY. Counting it reached from a stride and a
-                    // half away starts the next line up to that much off the corner, and
-                    // the line to the corner after it was drawn from the corner itself -
-                    // so it can clip the very wall the corner was there to get round.
-                    bool there = left <= (last ? 0.15f : 0.5f);
-
-                    // pacing a metre back and forth is not walking anywhere
-                    if (!there && _legs.Count > 0)
+                    // Smooth early hand-off is allowed only when the ACTUAL current
+                    // point sees the next corner. Otherwise close to the proved corner;
+                    // the old unconditional 0.5 m cut is enough to cross an inflated
+                    // building corner in a reproducible case.
+                    bool nextClear = !last &&
+                        StaticChordClear(Tf.position, _legs[_legAt + 1]);
+                    bool there = CornerReachedModel(left, last, nextClear);
+                    if (!last && !nextClear && left <= 0.04f)
                     {
-                        var toEnd = _legEnd - Tf.position;
-                        toEnd.y = 0f;
-                        float end = toEnd.magnitude;
-                        if (end < _acrossBest - 1f) { _acrossBest = end; _acrossFor = 0f; }
-                        else if ((_acrossFor += dt) > 5f)
-                        {
-                            _acrossFor = 0f;
-                            if (DriveTrace.On)
-                            {
-                                var want = _legTo - Tf.position;
-                                want.y = 0f;
-                                float ahead = WalkObstacles.Clear(Tf.position, want, WalkObstacles.Radius, 6f);
-                                var sb = DriveTrace.Take();
-                                DriveTrace.Str(sb, "who", DisplayName);
-                                DriveTrace.Str(sb, "what", $"no nearer than {end:F0} m for five seconds");
-                                DriveTrace.Vec(sb, "p", Tf.position);
-                                DriveTrace.Vec(sb, "leg", _legTo);
-                                DriveTrace.Int(sb, "corner", _legAt);
-                                DriveTrace.Int(sb, "corners", _legs.Count);
-                                DriveTrace.Num(sb, "clear", ahead);
-                                DriveTrace.Bool(sb, "inside", WalkObstacles.Standing(Tf.position, WalkObstacles.Radius));
-                                DriveTrace.Row("walk", sb.ToString());
-                            }
-                            if (NextLeg(false)) return;
-                            State = Mode.Standing;
-                            return;
-                        }
+                        if (NextLeg(false)) return;
+                        RefuseUnsafeAcross();
+                        return;
                     }
 
                     if (!there && !LegStalled(left, dt)) return;
                     if (NextLeg(there)) return;
-                    State = Mode.Standing;
+                    if (there) State = Mode.Standing;
+                    else RefuseUnsafeAcross();
                     return;
                 }
 
@@ -1719,6 +2220,7 @@ namespace RoadDemo
                     !WalkObstacles.Occupied(_fleeTo, WalkObstacles.Radius)) break;
             }
             _fleeTo = WalkObstacles.ClampToCity(_fleeTo);
+            _preferredSteerSide = 0;
             BeginLeg();
             // a beat of nerve failing before the legs go, and the run picked up at a
             // random stride, at a rate of his own - not the crew's one run, in step.
@@ -2205,8 +2707,11 @@ namespace RoadDemo
 
         public bool Chatting => _chatPartner != null;
 
-        /// <summary>Stood with nothing to do, free to be drawn into a word.</summary>
-        public bool Loitering => State == Mode.Standing && _chatPartner == null && ChatCooldown <= 0f && !Alert && _shoutLeft <= 0f && !Retreating;
+        /// <summary>Stood with nothing to do, free to be drawn into a word. A man POSTED
+        /// on a door is not: two hoods covering a shopfront who turn to face each other
+        /// for a chat are two hoods with their backs to the street, which is the one
+        /// thing the post was for.</summary>
+        public bool Loitering => State == Mode.Standing && _chatPartner == null && ChatCooldown <= 0f && !Alert && _shoutLeft <= 0f && !Retreating && !Watching;
 
         /// <summary>Two men stop for a word: face each other, one talks, the other
         /// listens, and the floor changes hands every few seconds.</summary>
@@ -2394,13 +2899,63 @@ namespace RoadDemo
                 // on watch: a man on a corner keeps turning his head - a look this
                 // way, a look that way, back to where he was
                 _idleTimer = Random.Range(2f, 5.5f);
-                if (Random.value < 0.7f)
+                // A MAN POSTED ON A DOOR KEEPS HIS EYES WHERE HE WAS PUT. He still looks
+                // about - a doorman who never moves his head is a statue - but either
+                // side of the street, not right round to the shopfront his lieutenant
+                // went into. Without this the glance is measured off whatever heading
+                // his last stride happened to end on and the crew drifts round to face
+                // the wall within a few seconds.
+                if (Watching)
+                    _lookYaw = _watchYaw + Random.Range(-32f, 32f);
+                else if (Random.value < 0.7f)
                     _lookYaw = Tf.eulerAngles.y + Random.Range(-110f, 110f);
             }
             SpendLook(45f, dt);
             TickIdleLife(dt);
             Loco(dt, false);
         }
+
+        /// <summary>
+        /// Watch THIS way while he stands here. The one heading a standing man is given
+        /// from outside: a crew posted at a shop door faces the street while its
+        /// lieutenant is inside, and the idle glances play either side of it instead of
+        /// wandering off it.
+        ///
+        /// Set AFTER the order that walks him to his place - every fresh order drops the
+        /// watch, because a man sent somewhere else is not on that door any more.
+        /// </summary>
+        public void WatchToward(Vector3 way)
+        {
+            way.y = 0f;
+            if (way.sqrMagnitude < 1e-4f)
+                return;
+            _watchYaw = Quaternion.LookRotation(way.normalized, Vector3.up).eulerAngles.y;
+            _watching = true;
+            _watchUntil = Time.time + WatchLease;
+            // he turns onto it as soon as he is standing; the walk owns his heading
+            // until then
+            _lookYaw = _watchYaw;
+        }
+
+        /// <summary>Off the door: his head is his own again.</summary>
+        public void StopWatching()
+        {
+            _watching = false;
+            _watchYaw = 0f;
+        }
+
+        /// <summary>How long a posted man holds his door before he is one of the crew
+        /// again. A post outlives the visit by design - men who covered a door go on
+        /// covering it until they are told otherwise - but it must not outlive the game:
+        /// while he is posted his crew's tether leaves him alone, and a man left posted
+        /// for ever by an order nobody finished would never rejoin them.</summary>
+        public const float WatchLease = 120f;
+
+        /// <summary>Whether he is holding a heading somebody posted him on.</summary>
+        public bool Watching => _watching && Time.time <= _watchUntil;
+
+        bool _watching;
+        float _watchYaw, _watchUntil;
 
         /// <summary>What a man does with the minutes he spends holding a corner: puts
         /// his back against the wall when there is one behind him, and otherwise fills
@@ -2535,13 +3090,13 @@ namespace RoadDemo
 
         /// <summary>Put back on the graph where he actually stands - set down out of a
         /// car at a kerb streets away from the stretch he boarded on, or walked off his
-        /// stretch to a door. His link and metre are changed to the nearest sidewalk
-        /// the arena found; his feet stay where they are, the sideways gap kept as his
-        /// lateral so the first step of the next order is a step, not a jump. Off the
-        /// graph (the free floor) nothing changes.</summary>
+        /// stretch to a door. A direct cross-city order deliberately has no old link;
+        /// this attaches it again before a later pavement order. His feet stay where
+        /// they are, the sideways gap kept as his lateral so the first step of the next
+        /// order is a step, not a jump.</summary>
         public void Reseat(PedLink link, float t)
         {
-            if (_link == null || link == null || link.Length <= 0.01f || Dead || Riding) return;
+            if (link == null || link.Length <= 0.01f || Dead || Riding) return;
             _link = link;
             _t = Mathf.Clamp(t, 0f, link.Length);
             _cameFrom = link.From;

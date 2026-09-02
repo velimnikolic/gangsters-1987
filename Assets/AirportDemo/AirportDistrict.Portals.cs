@@ -106,6 +106,12 @@ namespace AirportDemo
                 host.Blocked(AirportKit.BoundsOf(go));
                 n++;
             }
+            for (int i = 0; i < _localWalkBlocks.Count; i++)
+            {
+                var world = _inner.ToWorldRect(_localWalkBlocks[i]);
+                WalkObstacles.Block(world.xMin, world.xMax, world.yMin, world.yMax);
+                n++;
+            }
             if (n > 0) Debug.Log($"[Airport] {n} buildings, fences and parked cars walkers go round");
         }
     }
