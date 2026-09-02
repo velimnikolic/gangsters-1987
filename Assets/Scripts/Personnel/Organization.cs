@@ -434,7 +434,13 @@ namespace LivingCity.Personnel
                 }
                 if (!memberIds.Add(member.Id))
                     into.Add("ORG: duplicate Character ID " + member.Id + ".");
-                if (member.Rank == Rank.Boss)
+                // A DEAD DON IS NOT A SECOND BOSS. His line is kept and his rank with
+                // it - the record does not rewrite a man's history when he is struck
+                // off - so the count is of Bosses the house still HAS. Without this,
+                // every succession left two Boss ranks on the books and the validator
+                // called the house corrupt from the hour the heir took the chair
+                // (Codex adversarial review, 2026-09-03).
+                if (member.Rank == Rank.Boss && !member.Gone)
                     bossCount++;
             }
 

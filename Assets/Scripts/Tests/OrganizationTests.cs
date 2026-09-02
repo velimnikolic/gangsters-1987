@@ -27,7 +27,158 @@ namespace LivingCity.Tests
             FilingOfficeIsWhereCapacityIsHard(failures);
             OnlyAHoodInACrewCarriesTheBag(failures);
             TheBagIsOneMansAndTheLieutenantHandsIt(failures);
+            TheChairPassesToTheMostLoyalLieutenant(failures);
+            AHouseWithNoLieutenantHasNobodyToTakeTheChair(failures);
             return failures;
+        }
+
+        static Character Stand(Roster roster, Rank rank, int loyalty, string surname)
+        {
+            var man = new Character
+            {
+                Id = roster.NextCharacterId(),
+                FirstName = "T",
+                Surname = surname,
+                Rank = rank,
+                Loyalty = loyalty,
+            };
+            roster.Members.Add(man);
+            return man;
+        }
+
+        /// <summary>
+        /// EPIC 25, Q3 - the user's word of 2026-09-03: one of the lieutenants takes the
+        /// chair. Nothing used to move <c>Organization.BossId</c> when the man it named
+        /// went down, so the books went on naming a corpse and the house latched Fallen
+        /// (ours) or read Extinct (a family's) with every other man still standing.
+        ///
+        /// The rule is the crews' own, one rank up: the MOST LOYAL lieutenant still on
+        /// his feet. He leaves his own crew to his own most loyal man, takes the dead
+        /// Don's detail, and his bargain is torn up because a new rank is a new bargain.
+        /// </summary>
+        static void TheChairPassesToTheMostLoyalLieutenant(List<string> failures)
+        {
+            var roster = Roster.Create(GangCatalog.PlayerGangId);
+            var don = Stand(roster, Rank.Boss, 50, "Don");
+            roster.Organization.BossId = don.Id;
+
+            var loyal = Stand(roster, Rank.Lieutenant, 90, "Loyal");
+            var his = new Crew { Id = roster.NextCrewId(), LieutenantId = loyal.Id };
+            roster.Crews.Add(his);
+            var second = Stand(roster, Rank.Hood, 30, "Second");
+            var favourite = Stand(roster, Rank.Hood, 70, "Favourite");
+            his.HoodIds.Add(second.Id);
+            his.HoodIds.Add(favourite.Id);
+            // A lieutenant the Don trusted less, to prove the pick is the loyalty and
+            // not the order of the book.
+            var cooler = Stand(roster, Rank.Lieutenant, 40, "Cooler");
+            roster.Crews.Add(new Crew { Id = roster.NextCrewId(), LieutenantId = cooler.Id });
+
+            // The Don's own crew IS his detail (Bodyguards), and it has to end up under
+            // the man who takes his chair rather than promoting a bodyguard over him.
+            var detail = Bodyguards.FormDetail(roster);
+            var guard = Stand(roster, Rank.Hood, 95, "Guard");
+            detail.HoodIds.Add(guard.Id);
+
+            // He was a lieutenant on a lieutenant's bargain when the shooting started.
+            loyal.WageAsked = 220;
+
+            // GROUND ON BOTH SIDES OF THE SUCCESSION. The Don answers for a block
+            // himself, and so does the lieutenant who is about to take his chair: one
+            // has to follow the man into the chair, the other has to stay with the crew
+            // he leaves behind. A row left naming the dead man is a block no crew
+            // answers for, and the collector rota skips it in silence.
+            if (!RosterOps.AssignBlockResponsibility(roster, BlockA, don.Id, true).Ok)
+                failures.Add("CHAIR: the fixture could not give the Don a block.");
+            if (!RosterOps.AssignBlockResponsibility(roster, BlockB, loyal.Id, true).Ok)
+                failures.Add("CHAIR: the fixture could not give the heir a block.");
+
+            RosterOps.Kill(roster, don.Id);
+
+            if (roster.Organization.BossId != loyal.Id)
+                failures.Add("CHAIR: the books still name " + roster.Organization.BossId +
+                             " as the Boss after he was killed.");
+            if (roster.FindBoss() == null || roster.FindBoss().Status != CharacterStatus.Active)
+                failures.Add("CHAIR: the house has no living Boss.");
+            if (loyal.Rank != Rank.Boss)
+                failures.Add("CHAIR: the heir took the chair without the rank.");
+            if (loyal.WageAsked != 0)
+                failures.Add("CHAIR: the new Don kept a lieutenant's bargain (" +
+                             loyal.WageAsked + ") - a new rank is a new bargain.");
+            if (loyal.RankSince != roster.Day)
+                failures.Add("CHAIR: the new Don's rank clock was not restarted.");
+            if (detail.LieutenantId != loyal.Id)
+                failures.Add("CHAIR: the detail did not pass to the man who took the chair.");
+            if (his.LieutenantId != favourite.Id || favourite.Rank != Rank.Lieutenant)
+                failures.Add("CHAIR: his own crew was not left to his most loyal man.");
+            if (guard.Rank != Rank.Hood)
+                failures.Add("CHAIR: a bodyguard was promoted over the new Don.");
+            // The most loyal LIEUTENANT, not the most loyal man in the book: the guard
+            // at 95 is loyaler than the heir at 90 and is not in the running.
+            if (roster.Organization.BossId == guard.Id)
+                failures.Add("CHAIR: a hood took the chair.");
+
+            // The dead Don's ground answers to the man in his chair; the ground his own
+            // old crew held stayed with that crew, under its new lieutenant. Nothing
+            // anywhere still names the corpse.
+            var paper = roster.Organization.BlockResponsibilities;
+            var dons = -1;
+            var crews = -1;
+            for (var i = 0; i < paper.Count; i++)
+            {
+                if (paper[i].BlockId == BlockA) dons = paper[i].LeaderId;
+                if (paper[i].BlockId == BlockB) crews = paper[i].LeaderId;
+                if (paper[i].LeaderId == don.Id)
+                    failures.Add("CHAIR: a block still answers to the dead Don.");
+            }
+            if (dons != loyal.Id)
+                failures.Add("CHAIR: the Don's own block did not follow the chair.");
+            if (crews != favourite.Id)
+                failures.Add("CHAIR: the crew's block did not stay with the crew.");
+
+            // AND THE BOOKS ARE STILL A LEGAL ORGANIZATION. The fallen man keeps his
+            // rank on the record - his line is never rewritten - so the one-Boss rule
+            // has to count the Bosses the house still HAS, not the ones it ever had.
+            var blocks = new HashSet<TerritoryBlockId> { BlockA, BlockB };
+            var validation = new List<string>();
+            OrganizationValidator.Validate(roster, blocks, null, validation);
+            if (validation.Count != 0)
+                failures.Add("CHAIR: the books after a succession report " + validation[0]);
+
+            // And it survives being written down and read back: a save taken the day
+            // after the Don was shot has to restore the same legal house.
+            var restored = Roster.Create(GangCatalog.PlayerGangId);
+            RosterSnapshot.Restore(restored, RosterSnapshot.Snapshot(roster));
+            if (restored.BossId != loyal.Id)
+                failures.Add("CHAIR: the saved campaign forgot who took the chair.");
+            validation.Clear();
+            OrganizationValidator.Validate(restored, blocks, null, validation);
+            if (validation.Count != 0)
+                failures.Add("CHAIR: the books after a save/load report " + validation[0]);
+        }
+
+        /// <summary>
+        /// And the other half: a Don with nobody of rank behind him leaves nobody to
+        /// take the chair. What that means for a whole HOUSE - no turn of mind, no
+        /// order, no midnight, no hours, even with men still on its books - is
+        /// UnderworldTests.AHeadlessHouseIsSkipped; this is the roster half of it.
+        /// </summary>
+        static void AHouseWithNoLieutenantHasNobodyToTakeTheChair(List<string> failures)
+        {
+            var roster = Roster.Create(GangCatalog.PlayerGangId);
+            var don = Stand(roster, Rank.Boss, 50, "Alone");
+            roster.Organization.BossId = don.Id;
+            var hood = Stand(roster, Rank.Hood, 99, "Faithful");
+            var detail = Bodyguards.FormDetail(roster);
+            detail.HoodIds.Add(hood.Id);
+
+            RosterOps.Kill(roster, don.Id);
+
+            var boss = roster.FindBoss();
+            if (boss != null && boss.Status == CharacterStatus.Active)
+                failures.Add("CHAIR: a house with no lieutenant found a Boss anyway.");
+            if (hood.Rank == Rank.Boss)
+                failures.Add("CHAIR: a bodyguard was made Don for want of a lieutenant.");
         }
 
         /// <summary>

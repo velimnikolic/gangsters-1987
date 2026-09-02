@@ -106,7 +106,7 @@ namespace RoadDemo
                 // EVERY house's book is worked, off the crew's own house. The order was
                 // filed in one family's book and the men who carry it are that family's.
                 var house = underworld.Of(unit.Faction);
-                if (house == null || house.Extinct)
+                if (house == null || house.Finished)
                     continue;
 
                 var job = house.Runner.Book.CurrentFor(unit.CrewId);

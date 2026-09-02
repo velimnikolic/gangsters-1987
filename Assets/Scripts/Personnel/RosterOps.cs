@@ -1229,7 +1229,9 @@ namespace LivingCity.Personnel
         /// record keeps his line), his gear goes back to the pool unheld, and his post
         /// is his no longer: a hood leaves his crew; a lieutenant's crew passes to his
         /// most loyal living hood - the outfit does not lose a crew to one bullet - or,
-        /// with nobody left to take it, folds.
+        /// with nobody left to take it, folds. And the Don's chair passes the same way,
+        /// to his most loyal lieutenant (<see cref="SucceedTheBoss"/>): a house is not
+        /// lost to one bullet either.
         /// </summary>
         public static OpResult Kill(Roster roster, int id,
             System.Collections.Generic.List<PersonalityChange> changes = null) =>
@@ -1498,6 +1500,30 @@ namespace LivingCity.Personnel
         }
 
         /// <summary>
+        /// THE GROUND GOES WITH THE CHAIR. A leader who is struck off leaves rows in
+        /// <see cref="OrganizationState.BlockResponsibilities"/> naming him, and nothing
+        /// ever rewrote them: the block went on answering to a corpse, no crew matched
+        /// that leader, and the collector rota (<see cref="TendCollectors"/>) quietly
+        /// skipped every block he held while the house played on (Codex adversarial
+        /// review, 2026-09-03).
+        ///
+        /// Written straight onto the paper rather than through
+        /// <see cref="AssignBlockResponsibility"/>: succession is not a new assignment,
+        /// and ground that no longer fits under one man is FLAGGED by the validator,
+        /// never quietly dropped (ORG: OverCapacityIsFlaggedNeverFixed).
+        /// </summary>
+        static void PassTheGroundOn(Roster roster, int fromLeaderId, int toLeaderId)
+        {
+            if (roster == null || fromLeaderId == toLeaderId)
+                return;
+            var paper = roster.Organization.BlockResponsibilities;
+            for (var i = 0; i < paper.Count; i++)
+                if (paper[i].LeaderId == fromLeaderId)
+                    paper[i] = new OrganizationBlockResponsibility(
+                        paper[i].BlockId, toLeaderId);
+        }
+
+        /// <summary>
         /// The crew of a lieutenant who is going: his most loyal man on his feet steps
         /// up into the chair, and a crew with nobody left to take it is dissolved under
         /// the Boss. Succession is still a promotion - the rank clock restarts and his
@@ -1527,6 +1553,8 @@ namespace LivingCity.Personnel
                     changes);
                 Career.RankChanged(heir, roster.Day, Rank.Lieutenant,
                     "stepped up when " + leaving.Surname + " went down");
+                // What his crew answered for is his crew's, and it goes with it.
+                PassTheGroundOn(roster, leaving.Id, heir.Id);
             }
             else
             {
@@ -1534,6 +1562,8 @@ namespace LivingCity.Personnel
                 roster.Crews.Remove(crew);
                 for (var i = 0; i < formerHoods.Count; i++)
                     PutUnderBossIfPresent(roster, formerHoods[i]);
+                // The men went under the Boss; so does the ground they were holding.
+                PassTheGroundOn(roster, leaving.Id, roster.Organization.BossId);
             }
         }
 
@@ -1583,6 +1613,10 @@ namespace LivingCity.Personnel
             heir.WageAsked = 0;
             roster.Organization.BossId = heir.Id;
             roster.Organization.BossHoodIds.Remove(heir.Id);
+            // Whatever the Don answered for himself is answered for by the man in his
+            // chair - read AFTER the crews above, so his own old crew's ground has
+            // already gone to his own successor and is not swept up with it.
+            PassTheGroundOn(roster, fallen.Id, heir.Id);
             Career.RankChanged(heir, roster.Day, Rank.Boss,
                 "took the chair when " + fallen.Surname + " went down");
         }

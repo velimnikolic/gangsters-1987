@@ -687,7 +687,7 @@ namespace LivingCity.Territory
             TerritoryRoundLedger ledger,
             System.Func<Outfit.House, Personnel.Crew, TerritoryBlockId, bool> submit)
         {
-            if (house == null || house.Extinct || house.Roster == null ||
+            if (house == null || house.Finished || house.Roster == null ||
                 ledger == null || submit == null)
                 return;
 

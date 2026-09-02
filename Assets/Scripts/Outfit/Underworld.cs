@@ -201,7 +201,7 @@ namespace LivingCity.Outfit
             for (var i = 0; i < houses.Length; i++)
             {
                 var house = houses[i];
-                if (house == null || house.Extinct)
+                if (house == null || house.Finished)
                     continue;
                 if (house.Runner.AdvanceHours(house.Roster, hours))
                 {
@@ -220,7 +220,7 @@ namespace LivingCity.Outfit
         public OpResult Issue(Job job)
         {
             var house = job != null ? Of(job.GangId) : null;
-            if (house == null || house.Extinct)
+            if (house == null || house.Finished)
                 return OpResult.Fail(UI.LedgerText.ReasonNoSuchCrew);
             return house.Runner.Issue(house.Roster, job);
         }
@@ -249,7 +249,7 @@ namespace LivingCity.Outfit
             for (var i = 0; i < houses.Length && thought < maxPerCall; i++)
             {
                 var house = houses[(i + thinkCursor) % houses.Length];
-                if (house == null || house.IsPlayer || house.Extinct)
+                if (house == null || house.IsPlayer || house.Finished)
                     continue;
                 if (house.NextThinkHour <= 0.0)
                     house.OpenTheRota(gameHour, everyHours, houses.Length);
@@ -287,7 +287,7 @@ namespace LivingCity.Outfit
             for (var i = 0; i < houses.Length; i++)
             {
                 var house = houses[i];
-                if (house == null || house.Extinct)
+                if (house == null || house.Finished)
                     continue;
                 var paid = house.Runner.DayTick(house.Roster, payTribute: house.IsPlayer);
                 house.Touch();

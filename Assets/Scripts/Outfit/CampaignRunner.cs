@@ -193,8 +193,14 @@ namespace LivingCity.Outfit
         /// an answer.
         /// </summary>
         /// <summary>
-        /// The Don is dead and the campaign is over. Set once, at the first tick that
-        /// observes it, and never cleared - there is nothing after this.
+        /// The house has no head left and the campaign is over. Set once, at the first
+        /// tick that observes it, and never cleared - there is nothing after this.
+        ///
+        /// A dead Don alone is no longer the end of it (EPIC 25, Q3, the user's word of
+        /// 2026-09-03): his most loyal lieutenant takes the chair the moment he is
+        /// struck off, and the house plays on under a new man. What ends a campaign is
+        /// a Don shot with NOBODY of rank behind him - the whole command gone, not one
+        /// bullet. The rule is the same for the player and for the twenty families.
         /// </summary>
         public bool Fallen { get; private set; }
 
@@ -206,9 +212,12 @@ namespace LivingCity.Outfit
         public event System.Action BossFell;
 
         /// <summary>
-        /// Has the outfit lost its head? Death reaches the roster through exactly one
-        /// path (RosterOps.Kill), so this is the only place that needs to notice, and
-        /// it notices before anything else in the tick moves.
+        /// Has the outfit lost its head FOR GOOD? Death reaches the roster through
+        /// exactly one path (RosterOps.Kill) and succession happens inside it, so by
+        /// the time this is asked the books already name whoever took the chair: a Boss
+        /// still reading Dead here is a house that had no lieutenant to give it one.
+        /// This is the only place that needs to notice, and it notices before anything
+        /// else in the tick moves.
         ///
         /// It is checked at both doors time comes through, so nothing resolves after
         /// the Don goes down - not a job finishing at ten to midnight, not the

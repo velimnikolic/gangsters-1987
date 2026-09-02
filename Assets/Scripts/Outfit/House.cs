@@ -120,6 +120,40 @@ namespace LivingCity.Outfit
             }
         }
 
+        /// <summary>
+        /// NO HEAD, AND NOBODY TO TAKE IT. Derived, never stored, like
+        /// <see cref="Extinct"/>: the man the books name as Boss is dead, deserted or
+        /// sold, and succession found no lieutenant to put in the chair
+        /// (RosterOps.StrikeOff). The men who are left keep drawing breath on the page
+        /// and the house does nothing ever again.
+        ///
+        /// A house whose Don is merely INSIDE is not headless - a Boss in a cell is not
+        /// Gone, and his family goes on running while he waits on a judge.
+        /// </summary>
+        public bool Headless
+        {
+            get
+            {
+                if (Roster == null)
+                    return true;
+                var boss = Roster.FindBoss();
+                return boss == null || boss.Gone;
+            }
+        }
+
+        /// <summary>
+        /// THE ONE GATE EVERY PASS ASKS. A family is finished when its last man is
+        /// (<see cref="Extinct"/>) OR when its head is gone and nobody could take the
+        /// chair (<see cref="Headless"/>) - and nothing runs for a finished house: no
+        /// day tick, no wages, no orders, no turn of mind, no round on paper.
+        ///
+        /// Extinct alone was the gate, and it let a headless family with men still on
+        /// its books go on thinking and filing orders for ever while its own runner had
+        /// latched Fallen and stopped the clock under it (Codex adversarial review,
+        /// 2026-09-03).
+        /// </summary>
+        public bool Finished => Extinct || Headless;
+
         /// <summary>How many men still answer the family's telephone.</summary>
         public int Standing
         {

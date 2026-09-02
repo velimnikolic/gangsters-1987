@@ -204,7 +204,7 @@ namespace RoadDemo
             for (var g = 0; underworld != null && g < underworld.Count; g++)
             {
                 var other = underworld.Of(g);
-                if (other == null || other.Extinct || other.GangId == house.GangId)
+                if (other == null || other.Finished || other.GangId == house.GangId)
                     continue;
                 rivalScratch.Add(new TerritoryGangId(other.GangId));
             }

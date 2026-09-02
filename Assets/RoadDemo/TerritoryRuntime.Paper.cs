@@ -202,7 +202,7 @@ namespace RoadDemo
             foreach (var posting in postings)
             {
                 var house = underworld.Of(posting.Value.House.Value);
-                if (house == null || house.Extinct || house.Roster == null)
+                if (house == null || house.Finished || house.Roster == null)
                     continue;
                 if (Stands(posting.Value.House))
                     continue;
@@ -225,7 +225,7 @@ namespace RoadDemo
             for (var g = 0; g < underworld.Count; g++)
             {
                 var house = underworld.Of(g);
-                if (house != null && !house.Extinct &&
+                if (house != null && !house.Finished &&
                     !Stands(new TerritoryGangId(house.GangId)))
                     PaperHouses++;
             }

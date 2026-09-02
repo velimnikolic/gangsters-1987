@@ -28,6 +28,7 @@ namespace LivingCity.Tests
             ("EachHousePaysItsOwnMenFromItsOwnSafe", EachHousePaysItsOwnMenFromItsOwnSafe),
             ("TheStreetMirrorsEveryBook", TheStreetMirrorsEveryBook),
             ("AnExtinctHouseIsSkipped", AnExtinctHouseIsSkipped),
+            ("AHeadlessHouseIsSkipped", AHeadlessHouseIsSkipped),
             ("OneDealPerCity", OneDealPerCity),
         };
 
@@ -280,6 +281,108 @@ namespace LivingCity.Tests
                 failures.Add("Extinct: a finished house still turned its books.");
             if (underworld.Player.Runner.Campaign.Day == day)
                 failures.Add("Extinct: the living houses stopped with the dead one.");
+        }
+
+        /// <summary>
+        /// A FAMILY WITH NO HEAD IS FINISHED, MEN OR NO MEN (Codex adversarial review,
+        /// 2026-09-03). Succession puts the most loyal lieutenant in the dead Don's
+        /// chair (RosterOps.StrikeOff); a house with nobody of rank left has nobody to
+        /// take it, its own runner latches Fallen and its clock stops - but its men are
+        /// still on the books, so it is NOT extinct, and every gate that asked only
+        /// about extinction went on letting it think, file orders and work the street
+        /// for the rest of the campaign.
+        ///
+        /// The gate is <see cref="Outfit.House.Finished"/>, and this asserts all four
+        /// doors of the underworld are shut against it.
+        /// </summary>
+        static void AHeadlessHouseIsSkipped(List<string> failures)
+        {
+            var underworld = Underworld.Deal(Seed);
+            var house = underworld.Of(5);
+
+            // A FAMILY DOWN TO ITS DON AND HIS BODYGUARDS. Not culled out of the dealt
+            // roster: striking a lieutenant off promotes his most loyal hood into the
+            // empty chair, so killing the men of rank one after another simply works
+            // through every man in the family and leaves an EXTINCT house - which is
+            // the case this contract is not about. The shape is stood up directly.
+            var book = Roster.Create(house.GangId);
+            var don = new Character
+            {
+                Id = book.NextCharacterId(), FirstName = "The", Surname = "Don",
+                Rank = Rank.Boss, Loyalty = 50,
+            };
+            book.Members.Add(don);
+            book.Organization.BossId = don.Id;
+            for (var i = 0; i < 3; i++)
+            {
+                var guard = new Character
+                {
+                    Id = book.NextCharacterId(), FirstName = "G", Surname = "uard" + i,
+                    Rank = Rank.Hood, Loyalty = 60 + i,
+                };
+                book.Members.Add(guard);
+                book.Organization.BossHoodIds.Add(guard.Id);
+            }
+            Bodyguards.FallIn(book);
+            house.Restock(book);
+
+            if (house.Finished)
+                failures.Add("Headless: a family with a living Don reads as finished.");
+
+            RosterOps.Kill(book, book.BossId);
+
+            var standing = 0;
+            for (var i = 0; i < book.Members.Count; i++)
+                if (!book.Members[i].Gone)
+                    standing++;
+            if (standing == 0)
+                failures.Add("Headless: the fixture killed the whole family - it proves " +
+                             "nothing about a house that still has men.");
+            if (house.Extinct)
+                failures.Add("Headless: a family with men left on its books reads extinct.");
+            if (!house.Headless)
+                failures.Add("Headless: a family whose Boss is struck off with no " +
+                             "successor is not read as headless.");
+            if (!house.Finished)
+                failures.Add("Headless: a headless family is not finished.");
+
+            // 1. no turn of mind
+            var thought = new List<int>();
+            underworld.Think(1000.0, 1f, h => thought.Add(h.GangId), maxPerCall: 64);
+            if (thought.Contains(house.GangId))
+                failures.Add("Headless: a headless family took a turn of mind.");
+
+            // 2. no order into its book
+            var before = house.Runner.Book.Jobs.Count;
+            var refused = underworld.Issue(new Job
+            {
+                GangId = house.GangId,
+                CrewId = 1,
+                Type = OrderType.Guard,
+            });
+            if (refused.Ok || house.Runner.Book.Jobs.Count != before)
+                failures.Add("Headless: a headless family accepted an order.");
+
+            // 3. no midnight
+            var safe = house.Runner.Accounts.Safe;
+            var day = house.Runner.Campaign.Day;
+            underworld.DayTick();
+            underworld.DayTick();
+            if (house.Runner.Accounts.Safe != safe)
+                failures.Add("Headless: a headless family still paid somebody.");
+            if (house.Runner.Campaign.Day != day)
+                failures.Add("Headless: a headless family still turned its books.");
+            if (underworld.Player.Runner.Campaign.Day == day)
+                failures.Add("Headless: the living houses stopped with the headless one.");
+
+            // 4. no hours. The runner stamps its house whenever an hour actually
+            // moves something (Underworld.AdvanceHours), so the house's own version is
+            // the reading: a finished family is never touched again.
+            var version = house.Version;
+            underworld.AdvanceHours(8f);
+            underworld.AdvanceHours(8f);
+            if (house.Version != version)
+                failures.Add("Headless: time passed for a headless family.");
         }
 
         // ----------------------------------------------------------------- the street
