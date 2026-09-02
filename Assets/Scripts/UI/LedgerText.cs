@@ -439,6 +439,12 @@ namespace LivingCity.UI
         public const string ReasonNoCrewSelected = "Pick a lieutenant first.";
         public const string ReasonJobUnderway = "They are already out on it.";
 
+        /// <summary>An order that is on the sheet and has nothing behind it yet. The row
+        /// keeps its place and says so rather than quietly taking the money: SET UP
+        /// BUSINESS charges the fit-out and opens nothing, so until it opens something
+        /// the counter refuses it.</summary>
+        public const string ReasonNotBuiltYet = "not built yet - nothing can be set up";
+
         public static string DemoteConfirm(string name, int hoodCount) => hoodCount switch
         {
             0 => "Disband " + name + "'s crew? It has no men.",

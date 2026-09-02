@@ -117,9 +117,18 @@ namespace LivingCity.Tests
                 runner.Accounts.Current.Bribes)
                 failures.Add("AJobRunsItsCourse: the safe and the sheet disagree.");
 
-            // And the men who did it learned the trade the job was made of.
+            // And the men who did it learned the trade the job was made of - which is
+            // the ACTIVITY's trade, not the order's own attribute. The two are not the
+            // same and were never meant to be: a donation is carried by the best
+            // Streetwise man on the crew and it teaches him to talk (Persuasion,
+            // Connections), because the improvement table knows nothing about order
+            // types and is the only authority on what a day's work teaches.
             var lieutenant = roster.Find(roster.Crews[0].LieutenantId);
-            if (lieutenant.GetPractice(donate.PrimaryAttribute) <= 0)
+            var taught = ActivityXp.RowOf(OrderTable.ActivityOf(donate.Type)).Trains;
+            var banked = 0;
+            for (var i = 0; i < taught.Length; i++)
+                banked += lieutenant.GetPractice(taught[i]);
+            if (banked <= 0)
                 failures.Add("AJobRunsItsCourse: nobody learned anything.");
         }
 
@@ -134,8 +143,28 @@ namespace LivingCity.Tests
                 failures.Add("AStandingWatchPaysDaily: they never got to work.");
 
             var before = runner.Accounts.Safe;
-            var lieutenant = roster.Find(roster.Crews[0].LieutenantId);
-            var learned = lieutenant.GetPractice(CharacterAttribute.Streetwise);
+
+            // What the watch teaches, and where the men who stand it still have room.
+            // A man at his ceiling in every one of those trades cannot rise and his
+            // points are thrown away by Practice.Convert - "he cannot pre-pay past his
+            // own ceiling" - so the contract is asked of the men who still have
+            // somewhere to go, and of nobody else.
+            var taught = ActivityXp.RowOf(
+                OrderTable.ActivityOf(OrderType.RunBusiness)).Trains;
+            var onJob = new List<int>();
+            CrewKit.MenOnJob(roster, roster.Crews[0], job.Men, onJob);
+            var room = new List<(int Id, CharacterAttribute Trade, int Standing, int Banked)>();
+            for (var i = 0; i < onJob.Count; i++)
+            {
+                var man = roster.Find(onJob[i]);
+                for (var t = 0; t < taught.Length; t++)
+                    if (Practice.NextCost(man, taught[t]) > 0)
+                        room.Add((man.Id, taught[t], man.GetHalfSteps(taught[t]),
+                            man.GetPractice(taught[t])));
+            }
+            if (room.Count == 0)
+                failures.Add("AStandingWatchPaysDaily: the day-one crew has nothing " +
+                             "left to learn, so the day proves nothing.");
 
             runner.DayTick(roster);
 
@@ -163,8 +192,16 @@ namespace LivingCity.Tests
                     failures.Add("AStandingWatchPaysDaily: the safe and the day disagree.");
             }
 
-            if (lieutenant.GetPractice(CharacterAttribute.Streetwise) <= learned)
-                failures.Add("AStandingWatchPaysDaily: a day's work taught nobody.");
+            for (var i = 0; i < room.Count; i++)
+            {
+                var man = roster.Find(room[i].Id);
+                var rose = man.GetHalfSteps(room[i].Trade) > room[i].Standing;
+                var banked = man.GetPractice(room[i].Trade) > room[i].Banked;
+                if (!rose && !banked)
+                    failures.Add("AStandingWatchPaysDaily: a day's work taught " +
+                                 man.FullName + " no " +
+                                 room[i].Trade + ", and he had room for it.");
+            }
 
             // Days later it is still standing - a watch is never finished, only called
             // off, and calling it off is the only thing that writes its line.

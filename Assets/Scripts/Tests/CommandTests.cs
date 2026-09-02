@@ -31,6 +31,7 @@ namespace LivingCity.Tests
             ("ADetailOfCowardsIsNoDetailAtAll", ADetailOfCowardsIsNoDetailAtAll),
             ("GuardsCostWagesAndLearnLittle", GuardsCostWagesAndLearnLittle),
             ("TheSameMenHoldMoreUnderABetterMan", TheSameMenHoldMoreUnderABetterMan),
+            ("NothingIsSetUpYet", NothingIsSetUpYet),
         };
 
         public static List<string> Run()
@@ -644,6 +645,55 @@ namespace LivingCity.Tests
             if (crew.HoodIds.Count != cap + 3)
                 failures.Add("OverCapacityIsFlaggedNeverFixed: somebody was quietly " +
                              "struck off to make the numbers work.");
+        }
+
+        /// <summary>
+        /// SET UP BUSINESS is on the sheet, charges the fit-out and opens nothing -
+        /// there is no case for it anywhere the world is written. Until there is, the
+        /// counter refuses it by name and the safe does not move. The row itself stays
+        /// where it is: a refused order keeps its place and says why.
+        /// </summary>
+        static void NothingIsSetUpYet(List<string> failures)
+        {
+            var roster = new Roster();
+            MakeLieutenant(roster, AttributeScale.HalfStepsFor(50), out var crew);
+            crew.HoodIds.Add(MakeHood(roster).Id);
+            crew.HoodIds.Add(MakeHood(roster).Id);
+
+            var runner = new Outfit.CampaignRunner { Seed = 1987, DistanceOf = _ => 400f };
+            runner.OpenFirstSheet();
+            var before = runner.Accounts.Safe;
+
+            var job = new Outfit.Job
+            {
+                CrewId = crew.Id,
+                Type = Outfit.OrderType.SetUpBusiness,
+                Men = 2,
+                TargetBlockId = 3,
+                TargetLabel = "an empty storefront on Kirby Street",
+            };
+
+            var result = runner.Issue(roster, job);
+            if (result.Ok)
+                failures.Add("NothingIsSetUpYet: the counter took the order.");
+            if (result.Reason != UI.LedgerText.ReasonNotBuiltYet)
+                failures.Add("NothingIsSetUpYet: the refusal reads \"" + result.Reason +
+                             "\", not the one reason there is.");
+            if (runner.Book.Jobs.Count != 0)
+                failures.Add("NothingIsSetUpYet: the refused order went on the book.");
+
+            // A month of hours over it: nothing to work, so nothing to pay for.
+            runner.AdvanceHours(roster, 200f);
+            if (runner.Accounts.Safe != before)
+                failures.Add($"NothingIsSetUpYet: the safe moved from {before} to " +
+                             $"{runner.Accounts.Safe} on an order that was refused.");
+            if (runner.Records.Count != 0)
+                failures.Add("NothingIsSetUpYet: a record was written for work nobody " +
+                             "was sent on.");
+
+            // The lieutenant is not busy afterwards - a refusal is not an errand.
+            if (runner.Book.CurrentFor(crew.Id) != null)
+                failures.Add("NothingIsSetUpYet: the crew came away busy.");
         }
     }
 }

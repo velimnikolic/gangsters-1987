@@ -141,7 +141,7 @@ why it must carry proportional heat/risk when the system lands.
 | Kidnap | 800 | **5,000** | ransom cut (§7) |
 | RunBusiness | 90/day flat | **per-type net** (§3) | flat constant dies |
 | BuyPremises | 2,500 | **per-type price** (§3) | — |
-| SetUpBusiness | 1,200 | **20,000** | fit-out, licences |
+| SetUpBusiness | 1,200 | **20,000** | fit-out, licences - **refused until RIVAL-009**: the order charges the fit-out and opens nothing, so the counter turns it away and the price waits |
 | Bribe | 400 | **500** | — |
 | EmployPolice | 600 | **800/mo** | Knapp pad |
 | Donate | 500 | **1,000** | — |

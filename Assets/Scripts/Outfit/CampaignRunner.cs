@@ -680,6 +680,13 @@ namespace LivingCity.Outfit
             if (crew == null)
                 return OpResult.Fail(UI.LedgerText.ReasonNoSuchCrew);
 
+            // NOTHING IS SET UP YET. The order charges the fit-out (20,000) and the
+            // scene has no case for it, so the money left the safe and no premises ever
+            // opened. Refused at the counter, before a single dollar moves, until the
+            // order actually opens a business.
+            if (job.Type == OrderType.SetUpBusiness)
+                return OpResult.Fail(UI.LedgerText.ReasonNotBuiltYet);
+
             var available = CrewKit.MenOf(crew);
             if (job.Men < 1)
                 job.Men = 1;

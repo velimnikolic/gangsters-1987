@@ -354,11 +354,18 @@ namespace GangstersTools
 
         [CliCommand("gangsters_command_tests",
                     "Run EPIC 14 contracts for hierarchy and command limits: what a man " +
-                    "can hold, what is refused him, and what overload looks like.",
+                    "can hold, what is refused him, what overload looks like, and the " +
+                    "ledger's own money contracts.",
                     MainThreadRequired = true, Tags = new[] { "gangsters", "skill", "tests" })]
         public static object CommandTests()
         {
             var failures = LivingCity.Tests.CommandTests.Run();
+            // The ledger's suite had no runner of its own: the calendar, the wages, the
+            // balance arithmetic and the order book were only ever checked by whoever
+            // remembered to call them. They ride here so every suite is reachable from
+            // the terminal.
+            failures.AddRange(LivingCity.Tests.LedgerTests.Run()
+                .Select(failure => "Ledger regression: " + failure));
             return new
             {
                 passed = failures.Count == 0,
