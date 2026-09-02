@@ -137,9 +137,13 @@ namespace LivingCity.EditorTools
             public int[] Front = new int[4];
             /// <summary>Which cells along each side carry a shopfront pane - S/N indexed
             /// by i, E/W by j. '0' is bare wall; every authored storefront piece writes
-            /// its own letter, so a run breaks BOTH at a wall and where one module ends
-            /// and the next begins - each module is a shop unit of its own (BIZ-004).</summary>
+            /// its own letter for visual diagnostics. Business generation treats each
+            /// occupied 5 m cell as one physical premises; a wide source mesh may supply
+            /// the glass for two adjacent shops and must not merge them (BIZ-004).</summary>
             public char[][] ShopCells;
+            /// <summary>Every physical ground-floor shop, including modules which face an
+            /// internal notch or the back of the building rather than the block edge.</summary>
+            public readonly List<ShopBay> ShopBays = new List<ShopBay>();
             public int Trees, Pieces;
             /// <summary>Chairs, tables, umbrellas and benches the unit brings with it. A
             /// diner that arrives with its own terrace is not given a second one.</summary>
@@ -169,6 +173,20 @@ namespace LivingCity.EditorTools
                     return n;
                 }
             }
+        }
+
+        public readonly struct ShopBay
+        {
+            public ShopBay(int side, float x, float z)
+            {
+                Side = side;
+                X = x;
+                Z = z;
+            }
+
+            public int Side { get; }
+            public float X { get; }
+            public float Z { get; }
         }
 
         // ------------------------------------------------------------------ the menu
@@ -307,6 +325,43 @@ namespace LivingCity.EditorTools
                 // in stays open, and nothing it holds is saved from here
                 foreach (var scene in opened)
                     if (scene.IsValid() && scene.isLoaded) EditorSceneManager.CloseScene(scene, true);
+            }
+        }
+
+        /// <summary>Refresh only the generated plan table. Physical shop metadata changes
+        /// do not alter a prefab, and rebaking every large prefab for a data-only correction
+        /// creates needless asset churn. Source scenes are opened read-only and never saved.</summary>
+        public static int RefreshTable(out List<Unit> units, out string report)
+        {
+            var opened = new List<Scene>();
+            var scenes = new List<Scene>();
+            foreach (string path in Sources)
+            {
+                var scene = SceneManager.GetSceneByPath(path);
+                if (!scene.IsValid() || !scene.isLoaded)
+                {
+                    scene = EditorSceneManager.OpenScene(path, OpenSceneMode.Additive);
+                    opened.Add(scene);
+                }
+                scenes.Add(scene);
+            }
+
+            try
+            {
+                units = Measure(scenes);
+                if (units.Count > 0)
+                {
+                    WriteTable(units);
+                    AssetDatabase.Refresh();
+                }
+                report = Report(units, 0);
+                return units.Count;
+            }
+            finally
+            {
+                foreach (var scene in opened)
+                    if (scene.IsValid() && scene.isLoaded)
+                        EditorSceneManager.CloseScene(scene, true);
             }
         }
 
@@ -548,11 +603,9 @@ namespace LivingCity.EditorTools
                 if (p.Shop)
                 {
                     unit.Shops[side]++;
-                    // WHERE the glass runs AND which authored module it belongs to: the
-                    // piece's cells along this side's axis, lettered per piece. The
-                    // pack's storefronts stand shoulder to shoulder - a wall almost
-                    // never takes a whole cell - so the module boundary is the wall the
-                    // business layer splits the facade at.
+                    // WHERE the glass runs and which authored VISUAL module supplied it.
+                    // Some wide modules cover two equal 5 m shop bays, so their shared
+                    // letter is not a business-grouping key.
                     var letter = (char)('a' + shopSeq % 26);
                     shopSeq++;
                     foreach (var c in Standing(p.Box, drift, family))
@@ -623,6 +676,7 @@ namespace LivingCity.EditorTools
             // what reaches out past the footprint, per side - the fire escapes and awnings
             // that will hang over the pavement once the unit stands at a kerb
             var origin = new Vector2(minI * Cell + drift.x, minJ * Cell + drift.y);
+            MeasurePhysicalShopBays(unit, shell, origin, floor);
             float w = unit.CW * Cell, d = unit.CD * Cell;
             foreach (var p in read)
             {
@@ -652,6 +706,75 @@ namespace LivingCity.EditorTools
             unit.Pivot = new Vector3(origin.x, family == Family.Amenity ? floor : 0f, origin.y);
             return unit;
         }
+
+        /// <summary>
+        /// Read businesses from the pieces themselves, without the street-visibility
+        /// filter used by Unit.Shops. A shop panel in an inner notch or on the rear facade
+        /// is still a physical premises. Straight source pieces are split by their 5 m
+        /// width; an authored Corner piece remains one business however many glass planes
+        /// its mesh uses.
+        /// </summary>
+        static void MeasurePhysicalShopBays(
+            Unit unit, List<Piece> shell, Vector2 origin, float floor)
+        {
+            unit.ShopBays.Clear();
+            float width = unit.CW * Cell;
+            float depth = unit.CD * Cell;
+
+            foreach (var piece in shell)
+            {
+                if (!piece.Shop || piece.Box.min.y - floor > 1.35f)
+                    continue;
+
+                int side = Side(piece.Yaw);
+                if (side < 0)
+                    continue;
+
+                bool corner = !string.IsNullOrEmpty(piece.Source) &&
+                              piece.Source.IndexOf(
+                                  "_Corner_", System.StringComparison.OrdinalIgnoreCase) >= 0;
+                float along0 = side == 0 || side == 2
+                    ? piece.Box.min.x - origin.x
+                    : piece.Box.min.z - origin.y;
+                float along1 = side == 0 || side == 2
+                    ? piece.Box.max.x - origin.x
+                    : piece.Box.max.z - origin.y;
+                float front = side switch
+                {
+                    0 => piece.Box.min.z - origin.y,
+                    1 => piece.Box.max.x - origin.x,
+                    2 => piece.Box.max.z - origin.y,
+                    _ => piece.Box.min.x - origin.x,
+                };
+
+                int count = corner
+                    ? 1
+                    : Mathf.Max(1, Mathf.RoundToInt((along1 - along0) / Cell));
+                for (var bay = 0; bay < count; bay++)
+                {
+                    float along = Mathf.Lerp(along0, along1, (bay + 0.5f) / count);
+                    float x = side == 0 || side == 2 ? along : front;
+                    float z = side == 0 || side == 2 ? front : along;
+                    x = Mathf.Clamp(x, 0f, width);
+                    z = Mathf.Clamp(z, 0f, depth);
+                    unit.ShopBays.Add(new ShopBay(
+                        side, Hundredth(x), Hundredth(z)));
+                }
+            }
+
+            unit.ShopBays.Sort((a, b) =>
+            {
+                int side = a.Side.CompareTo(b.Side);
+                if (side != 0) return side;
+                int front = (a.Side == 0 || a.Side == 2 ? a.Z : a.X)
+                    .CompareTo(b.Side == 0 || b.Side == 2 ? b.Z : b.X);
+                if (front != 0) return front;
+                return (a.Side == 0 || a.Side == 2 ? a.X : a.Z)
+                    .CompareTo(b.Side == 0 || b.Side == 2 ? b.X : b.Z);
+            });
+        }
+
+        static float Hundredth(float value) => Mathf.Round(value * 100f) * 0.01f;
 
         /// <summary>Every raster cell whose centre this box stands over, read in the frame
         /// the drift has been taken out of.</summary>
@@ -815,6 +938,7 @@ namespace LivingCity.EditorTools
         {
             public Transform Go;
             public PieceKind Kind;
+            public string Source;
             public int Yaw;             // snapped to a right angle
             public Bounds Box;
             public bool Door, Shop, Stoop, Tree, Seat;
@@ -827,6 +951,7 @@ namespace LivingCity.EditorTools
             piece.Box = box ?? new Bounds(t.position, Vector3.zero);
 
             string src = Source(t);
+            piece.Source = src;
             if (src == null) return piece;
             piece.Tree = src.StartsWith("SM_Env_Tree") || src.StartsWith("SM_Env_Palm");
             piece.Seat = src.StartsWith("SM_Prop_Chair") || src.StartsWith("SM_Prop_Table") ||
@@ -1035,6 +1160,23 @@ namespace LivingCity.EditorTools
             sb.AppendLine();
             sb.AppendLine("namespace RoadDemo");
             sb.AppendLine("{");
+            sb.AppendLine("    /// <summary>One physical 5 m ground-floor shop bay in an unturned harvested unit.");
+            sb.AppendLine("    /// X/Z is the centre of its glass line and Side is S/E/N/W. A corner-shop prefab");
+            sb.AppendLine("    /// emits one bay even when its glass wraps onto a second face.</summary>");
+            sb.AppendLine("    public readonly struct ResidentialShopBay");
+            sb.AppendLine("    {");
+            sb.AppendLine("        public ResidentialShopBay(int side, float x, float z)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            Side = side;");
+            sb.AppendLine("            X = x;");
+            sb.AppendLine("            Z = z;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        public int Side { get; }");
+            sb.AppendLine("        public float X { get; }");
+            sb.AppendLine("        public float Z { get; }");
+            sb.AppendLine("    }");
+            sb.AppendLine();
             sb.AppendLine("    /// <summary>What a residential unit is: its footprint on the 5 m raster, which");
             sb.AppendLine("    /// of its sides open onto a street, and what hangs over the pavement.</summary>");
             sb.AppendLine("    public sealed class ResidentialUnit");
@@ -1047,10 +1189,14 @@ namespace LivingCity.EditorTools
             sb.AppendLine("        public bool[] Face;");
             sb.AppendLine("        public int[] Doors, Shops, Stoops;");
             sb.AppendLine("        /// <summary>Per side (S,E,N,W): '0' where the frontage cell is bare wall;");
-            sb.AppendLine("        /// every other letter is a shopfront pane, lettered per authored module.");
-            sb.AppendLine("        /// A run breaks at a wall AND where the letter changes - each run is an");
-            sb.AppendLine("        /// individual shop. Null in a table older than the pane masks.</summary>");
+            sb.AppendLine("        /// every other letter is a shopfront pane, lettered per authored visual module.");
+            sb.AppendLine("        /// This remains the street-planning/fallback mask; ShopBays is the complete");
+            sb.AppendLine("        /// physical-business source. Null in older tables.</summary>");
             sb.AppendLine("        public string[] ShopCells;");
+            sb.AppendLine("        /// <summary>Every physical ground-floor shop, including inward-facing bays which");
+            sb.AppendLine("        /// are deliberately absent from Shops/ShopCells because those fields describe");
+            sb.AppendLine("        /// street frontage for the lot planner.</summary>");
+            sb.AppendLine("        public ResidentialShopBay[] ShopBays;");
             sb.AppendLine("        /// <summary>What reaches out past the footprint on each side, metres.</summary>");
             sb.AppendLine("        public float[] Over;");
             sb.AppendLine("        public int Trees, Pieces;");
@@ -1155,6 +1301,7 @@ namespace LivingCity.EditorTools
                 sb.AppendLine($"                Shops = new[] {{ {string.Join(", ", unit.Shops)} }},");
                 sb.AppendLine($"                Stoops = new[] {{ {string.Join(", ", unit.Stoops)} }},");
                 sb.AppendLine($"                ShopCells = new[] {{ {string.Join(", ", (unit.ShopCells ?? new char[4][]).Select(Lane))} }},");
+                sb.AppendLine($"                ShopBays = new ResidentialShopBay[] {{ {string.Join(", ", unit.ShopBays.Select(Bay))} }},");
                 sb.AppendLine($"                Over = new[] {{ {string.Join(", ", unit.Over.Select(o => Metres(o)))} }},");
                 sb.AppendLine("            },");
             }
@@ -1177,6 +1324,9 @@ namespace LivingCity.EditorTools
 
         static string Lane(char[] lane) =>
             "\"" + (lane == null ? "" : new string(lane)) + "\"";
+
+        static string Bay(ShopBay bay) =>
+            $"new ResidentialShopBay({bay.Side}, {Metres(bay.X)}, {Metres(bay.Z)})";
 
         static char Glyph(Unit unit, int i, int j)
         {

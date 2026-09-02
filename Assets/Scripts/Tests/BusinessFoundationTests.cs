@@ -30,6 +30,7 @@ namespace LivingCity.Tests
             PopulationIsDeterministicAndComplete(failures);
             AddingOneSiteLeavesTheRestAlone(failures);
             CompoundsAreOneBusinessWithAGate(failures);
+            HarvestedResidentialShopBaysMatchPhysicalFixtures(failures);
             ResidentialPlanDataPublishesStableSites(failures);
             failures.AddRange(BusinessShutdownTests.Run());
 
@@ -357,6 +358,49 @@ namespace LivingCity.Tests
         // ------------------------------------------------------------------ BIZ-004
 
         /// <summary>
+        /// The three fixtures cover the original misses directly: a wide row with adjacent
+        /// premises, a shop that exists only on an inward face, and a building containing
+        /// genuine corner shops plus unrelated straight shops. Counts come from the source
+        /// modules and deliberately fail if a later table refresh collapses them again.
+        /// </summary>
+        static void HarvestedResidentialShopBaysMatchPhysicalFixtures(List<string> failures)
+        {
+            ResidentialUnit row = null, inward = null, mixed = null;
+            foreach (var unit in ResidentialUnits.All)
+            {
+                if (unit.Name == "residential-02") row = unit;
+                else if (unit.Name == "residential-04") inward = unit;
+                else if (unit.Name == "residential-10") mixed = unit;
+
+                var seen = new HashSet<string>();
+                var bays = unit.ShopBays;
+                if (bays == null)
+                    continue;
+                foreach (var bay in bays)
+                {
+                    var key = bay.Side + ":" + Mathf.RoundToInt(bay.X * 100f) + ":" +
+                              Mathf.RoundToInt(bay.Z * 100f);
+                    if (!seen.Add(key))
+                        failures.Add("BIZ-004: duplicate physical shop bay " +
+                                     unit.Name + ":" + key + ".");
+                    if (bay.Side < 0 || bay.Side > 3 || bay.X < -0.01f || bay.Z < -0.01f ||
+                        bay.X > unit.CW * ResidentialLot.Cell + 0.01f ||
+                        bay.Z > unit.CD * ResidentialLot.Cell + 0.01f)
+                        failures.Add("BIZ-004: physical shop bay lies outside " +
+                                     unit.Name + ".");
+                }
+            }
+
+            if (row?.ShopBays == null || row.ShopBays.Length != 18)
+                failures.Add("BIZ-004: residential-02 no longer exposes its 18 physical bays.");
+            if (inward?.ShopBays == null || inward.ShopBays.Length != 1 ||
+                inward.Shops[0] + inward.Shops[1] + inward.Shops[2] + inward.Shops[3] != 0)
+                failures.Add("BIZ-004: residential-04 inward-only shop was lost.");
+            if (mixed?.ShopBays == null || mixed.ShopBays.Length != 7)
+                failures.Add("BIZ-004: residential-10 corner/straight shops were merged.");
+        }
+
+        /// <summary>
         /// Over REAL residential plan data, dealt the way CoreDistrict deals it. Nothing is
         /// composed: the provider must answer with no view standing anywhere, which is the
         /// whole contract.
@@ -404,25 +448,66 @@ namespace LivingCity.Tests
                 if (!seen.Add(site.SiteId.Value))
                     failures.Add("BIZ-004: duplicate site " + site.SiteId + ".");
 
-            // A corner unit's glass wraps one corner: one site, however many facades.
+            // Every physical 5 m shop bay is a site, on every side of the building. A
+            // corner BUILDING is not itself one business; only its actual corner-shop
+            // module is. This also catches a wide authored glass mesh ("aa") wrongly
+            // merging the two equal premises it spans.
+            var runs = new List<(int At, int Len)>();
             foreach (var recipe in model.Blocks)
             {
                 var plan = recipe.Plan;
                 for (var index = 0; index < plan.Spots.Count; index++)
                 {
                     var spot = plan.Spots[index];
-                    if (spot?.Unit == null || !spot.Shop ||
-                        spot.Unit.Kind != ResidentialKind.Corner)
+                    if (spot?.Unit == null)
                         continue;
 
-                    var count = 0;
+                    var expected = 0;
+                    if (spot.Unit.Kind == ResidentialKind.Storefront)
+                    {
+                        expected = 1;
+                    }
+                    else if (ResidentialUnits.IsLot(spot.Unit))
+                    {
+                        expected = 0;
+                    }
+                    else if (spot.Unit.ShopBays != null &&
+                             spot.Unit.ShopBays.Length > 0)
+                    {
+                        expected = spot.Unit.ShopBays.Length;
+                    }
+                    else if (spot.Shop)
+                    {
+                        var turn = ResidentialLot.Turn.Of(spot.Unit, spot.Yaw);
+                        for (var side = 0; side < 4; side++)
+                        {
+                            turn.ShopRuns(side, runs);
+                            for (var run = 0; run < runs.Count; run++)
+                                expected += runs[run].Len;
+                        }
+                    }
+
+                    var actual = 0;
+                    var primary = 0;
                     foreach (var site in first)
                         if (site.SourcePlanId == recipe.Id &&
                             site.GroupKey.StartsWith("spot:" + index + ":"))
-                            count++;
-                    if (count > 1)
-                        failures.Add("BIZ-004: corner unit " + spot.Unit.Name + " on " +
-                                     recipe.Id + " published " + count + " sites.");
+                        {
+                            actual++;
+                            if (site.Role == ResidentialBusinessSites.FrontageRole)
+                                primary++;
+                        }
+                    if (actual != expected)
+                        failures.Add("BIZ-004: " + spot.Unit.Name + " on " + recipe.Id +
+                                     " has " + expected + " physical shop bay(s), but " +
+                                     actual + " business site(s).");
+                    var expectedPrimary = spot.Shop && expected > 0 ? 1 : 0;
+                    if (spot.Unit.Kind != ResidentialKind.Storefront &&
+                        primary != expectedPrimary)
+                        failures.Add("BIZ-004: " + spot.Unit.Name + " on " + recipe.Id +
+                                     " published " + primary +
+                                     " primary outfit frontage(s), expected " +
+                                     expectedPrimary + ".");
                 }
             }
 
@@ -434,6 +519,17 @@ namespace LivingCity.Tests
                     site.Approach.Z < f.ZMin - 1.01f || site.Approach.Z > f.ZMin + f.Depth + 1.01f)
                 {
                     failures.Add("BIZ-004: " + site.SiteId + " has a doorstep off its own ground.");
+                    break;
+                }
+
+                if ((site.Role == ResidentialBusinessSites.FrontageRole ||
+                     site.Role == ResidentialBusinessSites.ExtraFrontageRole) &&
+                    (Mathf.Abs(f.Width - ResidentialLot.Cell) > 0.01f ||
+                     Mathf.Abs(f.Depth - ResidentialLot.Cell) > 0.01f))
+                {
+                    failures.Add("BIZ-004: physical shop bay " + site.SiteId + " is " +
+                                 f.Width + "x" + f.Depth + " m instead of " +
+                                 ResidentialLot.Cell + "x" + ResidentialLot.Cell + " m.");
                     break;
                 }
             }

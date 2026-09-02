@@ -40,6 +40,7 @@ namespace LivingCity.Tests
             GangBodiesAreNotCrowdBodies(failures);
             MarkedCarsAreNotCivilianTraffic(failures);
             CostumesAndAnachronismsStayOffTheStreet(failures);
+            NoPolicemanKeepsAShop(failures);
             IntentionFitsTheBudgets(failures);
 
             return failures;
@@ -690,6 +691,56 @@ namespace LivingCity.Tests
                 Gameplay.VehicleCatalog.IsBarred("SM_Veh_Pickup_01"))
                 failures.Add("Fleet: the bar caught a car it was only meant to sit " +
                              "beside - check the preset names.");
+        }
+
+        /// <summary>A deed names an ordinary citizen. The face dealt to a gazda comes off
+        /// whatever bodies the scene happens to hold (PortraitStudio.CivilianPrefab), and
+        /// the ledger's own cast carries the force with it - so the filter, not the
+        /// contents of a slot list, is what keeps a policeman from keeping a grocery.</summary>
+        static void NoPolicemanKeepsAShop(List<string> failures)
+        {
+            foreach (var look in Entities.CrowdLooks.Law)
+            {
+                if (!Entities.CrowdLooks.IsLawBody(look))
+                    failures.Add($"Deeds: '{look}' is on the force and the filter does " +
+                                 "not know it.");
+                if (Entities.CrowdLooks.IsCivilianAdult(look) ||
+                    Entities.CrowdLooks.IsCivilianAdult(look + "_AI"))
+                    failures.Add($"Deeds: '{look}' can be dealt a shop - a policeman " +
+                                 "behind the counter.");
+            }
+
+            foreach (var look in Entities.CrowdLooks.Children)
+                if (Entities.CrowdLooks.IsCivilianAdult(look) ||
+                    Entities.CrowdLooks.IsCivilianAdult(look + "_AI"))
+                    failures.Add($"Deeds: '{look}' is a child and can still be dealt a " +
+                                 "shop of his own.");
+
+            // whatever the crowd is barred from wearing is no proprietor either
+            foreach (var look in Entities.CrowdLooks.Barred)
+                if (Entities.CrowdLooks.IsCivilianAdult(look))
+                    failures.Add($"Deeds: '{look}' is off the pavement and still holds " +
+                                 "a deed.");
+
+            // and the people a shop IS kept by stay eligible
+            string[] proprietors =
+            {
+                "SM_Chr_City_Male_01", "SM_Chr_City_Female_02", "SM_Chr_Rich_Male_01",
+                "SM_Gen_Chr_Business_Female_01", "SM_Gen_Chr_Street_Male_02",
+                "SM_Gen_Chr_Jumpsuit_Male_01", "Character_Male_Jacket",
+                "SM_Chr_Bartender_Male_01", "SM_Chr_ShopKeeper_01",
+            };
+            foreach (var look in proprietors)
+                if (!Entities.CrowdLooks.IsCivilianAdult(look) ||
+                    !Entities.CrowdLooks.IsCivilianAdult(look + "_AI") ||
+                    !Entities.CrowdLooks.IsCivilianAdult(
+                        "Assets/Synty/PolygonCity/Prefabs/Characters/" + look + ".prefab"))
+                    failures.Add($"Deeds: '{look}' is an ordinary citizen the filter " +
+                                 "will not let hold a deed.");
+
+            if (Entities.CrowdLooks.IsCivilianAdult(null) ||
+                Entities.CrowdLooks.IsCivilianAdult(""))
+                failures.Add("Deeds: a body with no name can hold a deed.");
         }
 
         static IEnumerable<int> Members(Personnel.Roster roster, Personnel.Crew crew)

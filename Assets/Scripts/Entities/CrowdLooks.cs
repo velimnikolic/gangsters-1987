@@ -6,11 +6,13 @@ namespace LivingCity.Entities
     /// would rot the first time a pack was imported - but a folder scan takes the
     /// costumes with the people, and a costume in the crowd is read instantly.
     ///
-    /// Three separate questions decide who walks past the player, and they live apart
-    /// on purpose:
+    /// Four separate questions decide who walks past the player and who a record may
+    /// name, and they live apart on purpose:
     ///   - may this body be a gangster?  <see cref="Gangs.GangLooks.IsGangBody"/>
     ///   - is this body on the force?    the officer prefix, at the scan
     ///   - has this body any business on a 1987 city pavement at all?  HERE.
+    ///   - may this body be an ordinary grown citizen - a deed's gazda, a face in a
+    ///     civilian record?  HERE too: <see cref="IsCivilianAdult"/>.
     ///
     /// Engine-free like the rest of the Entities core, so the headless suite holds the
     /// table rather than the player meeting a man in a prison jumpsuit downtown.
@@ -62,6 +64,71 @@ namespace LivingCity.Entities
 
             foreach (var barred in Barred)
                 if (name == barred)
+                    return true;
+            return false;
+        }
+
+        /// <summary>Bodies the law wears: the police station's uniforms, the two coppers
+        /// the city pack ships, the detectives, the federal men in and out of uniform,
+        /// and the technician who works a scene. Some of them belong on a pavement (a
+        /// detective is a passer-by, and the crowd filter lets him walk) - but none of
+        /// them belongs behind a counter as the man whose name is on the deed. A city
+        /// where a third of the shops are kept by policemen reads as a joke.</summary>
+        public static readonly string[] Law =
+        {
+            "SM_Chr_Officer_Male_01",
+            "SM_Chr_Officer_Male_02",
+            "SM_Chr_Officer_Male_03",
+            "SM_Chr_Officer_Female_01",
+            "SM_Chr_Officer_Female_02",
+            "SM_Chr_Officer_Female_03",
+            "SM_Chr_Detective_Male_01",
+            "SM_Chr_Detective_Female_01",
+            "SM_Chr_DEA_Agent_Male_01",
+            "SM_Chr_DEA_Agent_Female_01",
+            "SM_Chr_DEA_Plainclothes_Male_01",
+            "SM_Chr_Forensic_01",
+            "Character_Male_Police",
+            "Character_Female_Police",
+        };
+
+        /// <summary>The bodies that are children. Nobody dealt one of these is an adult,
+        /// so no deed, no wage and no gun may land on one.</summary>
+        public static readonly string[] Children =
+        {
+            "SM_Chr_SchoolBoy_01",
+            "SM_Chr_SchoolGirl_01",
+            "SM_Chr_Son_01",
+            "SM_Chr_Daughter_01",
+        };
+
+        /// <summary>Whether this body is on the force (or works for it).</summary>
+        public static bool IsLawBody(string nameOrPath) => Listed(Law, nameOrPath);
+
+        /// <summary>Whether this body is a child.</summary>
+        public static bool IsChildBody(string nameOrPath) => Listed(Children, nameOrPath);
+
+        /// <summary>
+        /// Whether this body may stand as an ordinary grown citizen - the face a deed, a
+        /// classified or any other civilian record can be given. Says nothing about the
+        /// mob: whether a body may be a gangster is <see cref="Gangs.GangLooks.IsGangBody"/>,
+        /// which lives a layer up and is asked alongside this, not through it.
+        /// </summary>
+        public static bool IsCivilianAdult(string nameOrPath)
+        {
+            var name = Bare(FileName(nameOrPath));
+            return !string.IsNullOrEmpty(name) &&
+                   !IsBarred(name) && !IsLawBody(name) && !IsChildBody(name);
+        }
+
+        static bool Listed(string[] table, string nameOrPath)
+        {
+            var name = Bare(FileName(nameOrPath));
+            if (string.IsNullOrEmpty(name))
+                return false;
+
+            foreach (var listed in table)
+                if (name == listed)
                     return true;
             return false;
         }

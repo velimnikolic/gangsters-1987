@@ -8,7 +8,7 @@ namespace LivingCity.Business
     /// one as text and a saved ID must not depend on enum ordering.</summary>
     public static class BusinessProviders
     {
-        /// <summary>Ground-floor commerce inside residential plan data: shopfront groups,
+        /// <summary>Ground-floor commerce inside residential plan data: physical shop bays,
         /// the named kit storefronts, and the cafes standing in the gaps of a row.</summary>
         public const string Residential = "res";
 

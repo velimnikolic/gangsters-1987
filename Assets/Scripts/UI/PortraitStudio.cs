@@ -195,6 +195,9 @@ namespace LivingCity.UI
         ///
         /// Gang bodies are stepped over: the two cast tables are the rule (GangLooks),
         /// and a grocer wearing a wiseguy's suit reads as a made man behind the counter.
+        /// So is everyone who is not an ordinary grown citizen (CrowdLooks.IsCivilianAdult)
+        /// - a deed never puts a policeman, a federal agent or a schoolboy behind a
+        /// counter, however the crowd slots or the ledger's cast happen to be filled.
         /// Null when the scene has neither a crowd nor the ledger's own cast, which
         /// leaves the caller's initials standing.
         /// </summary>
@@ -237,6 +240,7 @@ namespace LivingCity.UI
         static void Consider(GameObject prefab, bool female)
         {
             if (!prefab || Gangs.GangLooks.IsGangBody(prefab.name) ||
+                !Entities.CrowdLooks.IsCivilianAdult(prefab.name) ||
                 Entities.PedestrianIdentity.IsFemale(prefab.name) != female ||
                 civilianScratch.Contains(prefab))
                 return;

@@ -25,7 +25,7 @@ is why they, and never a composed hierarchy, are the authority.
 
 | Source (data path) | Class | Grouping | Owner |
 |---|---|---|---|
-| `Plan.Spots[i].Shop` + `ResidentialUnit.Shops[side]` — ground-floor shopfronts | business | 1→N: one site per street facade the turned unit really opens onto; a `ResidentialKind.Corner` unit's glass wraps ONE corner and stays one site | **BIZ-004** |
+| `Plan.Spots[i].Unit.ShopBays` — every harvested ground-floor shop module | business | 1→N: one 5×5 m site per physical bay, including inward/rear faces; a genuine corner-shop module is one business, but a `ResidentialKind.Corner` building may contain many | **BIZ-004** |
 | `Plan.Cafes` — the kit storefront gaps the lot deals (`Use.Cafe`) | business | 1→1 per gap, sign `cafe` | **BIZ-004** |
 | `Plan.Spots[i].Unit.Kind == Storefront` (`pizzapub`, `pizzapub2`, `radnja1..3`) | business | 1→1, sign `pizza` for the pizzapubs | **BIZ-004** |
 | `Plan.Spots[i].Unit.Kind == Amenity`, unit `gym` | business | 1→1, sign `gym` | **BIZ-005** |
@@ -43,17 +43,19 @@ The plan can only say "a storefront fronts the street here", so the site carries
 sign. Moving that choice into `ResidentialLot` would let the sign be exact; it is a
 generator change, not a business change, and is deliberately out of EPIC 2.5.
 
-**Closed (2026-09-01).** The harvest now also measures WHERE the glass runs and which
-authored module each pane belongs to: `ResidentialUnit.ShopCells` carries a per-side mask
-('0' = bare wall, a letter per storefront module), and `ResidentialLot.Turn.ShopRuns` cuts
-it into runs - a run breaks at a wall AND at the seam between two modules, because the
-pack's storefronts stand shoulder to shoulder and the seam is the wall between two shops.
-BIZ-004 publishes one site per run with its own door and its own slice of the house; the
-run nearest the facade's middle keeps the pre-split site id (and on the primary face the
-`frontage` role), so no business, owner or outfit front dealt before the split moved. A
-corner unit stays ONE site - its authored glass wraps the corner. Tables older than the
-masks fall back to one run per facade, which is exactly the old behaviour. (Seed 1987:
-614 → 1055 businesses.)
+**Closed (corrected 2026-09-02).** The harvest now writes `ResidentialUnit.ShopBays` from
+every ground-floor shop source piece, without the street-visibility filter used by the lot
+planner's `Shops`/`ShopCells` fields. Straight source pieces are subdivided by their 5 m
+width, so one wide mesh no longer merges adjacent premises; a true `_Corner_` source piece
+stays one business even when its glass wraps onto two faces. BIZ-004 rotates and places
+every harvested bay on every exterior, rear or inward face, with its own 5×5 m footprint
+and door. Buildings which only expose an inward shop are included even when `Spot.Shop` is
+false; complete amenity lots remain owned by their one-site venue/compound providers rather
+than being split by decorative meshes. Where the old system had a street-front address,
+exactly one representative retains that stable ID and `frontage` role; other bays use
+position-stable IDs. Older generated tables fall back through `ShopCells`/`ShopRuns` and
+split visual runs into 5 m bays. Seed 1987 audit: 3,263 sites, 3,246 eligible/populated
+businesses, 3,213 from the residential provider, no failures.
 
 ---
 

@@ -204,11 +204,13 @@ namespace RoadDemo
             public float Over(int side) => Unit.Over[From(side)];
 
             /// <summary>
-            /// The turned side's shopfront runs: contiguous panes between walls, each run
-            /// one real shop (the measured answer to "gde idu zidovi"). Each entry is
-            /// (start cell, length) along the turned side's own axis. A table older than
-            /// the pane masks - or a mask that went unmeasured - falls back to ONE run the
-            /// width of the side, which is exactly the old one-business-per-facade deal.
+            /// The turned side's contiguous shopfront VISUAL runs. Each entry is
+            /// (start cell, length) along the turned side. A wide authored mesh can span
+            /// several equal 5 m premises; consumers must subdivide Len into physical bays
+            /// instead of treating one source mesh as one business. Keeping the source run
+            /// here lets stable IDs from the older site catalogue remain attached to one
+            /// representative bay when that subdivision happens.
+            /// A table older than the pane masks falls back to one full-facade run.
             /// (Plain tuples, no Unity types: Tools/CoreSim compiles this file too.)
             /// </summary>
             public void ShopRuns(int side, List<(int At, int Len)> into)
@@ -248,9 +250,6 @@ namespace RoadDemo
                         if (at >= 0 && at < lane.Length) pane = lane[at];
                     }
 
-                    // A run ends at bare wall AND where one authored module's letter
-                    // gives way to the next - the modules stand shoulder to shoulder,
-                    // and the seam between two of them IS the wall between two shops.
                     if (start >= 0 && (pane == '0' || pane != run))
                     {
                         into.Add((start, p - start));
@@ -263,9 +262,6 @@ namespace RoadDemo
                     }
                 }
 
-                // Panes were counted on this side but none landed on the mask (a piece
-                // whose box missed every cell centre): keep the old whole-facade reading
-                // rather than deal the side no shop at all.
                 if (into.Count == 0)
                     into.Add((0, extent));
             }

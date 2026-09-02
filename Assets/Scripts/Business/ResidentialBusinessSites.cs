@@ -13,11 +13,12 @@ namespace LivingCity.Business
     /// in full or composed incrementally.
     ///
     /// Three kinds of place come out of one plan:
-    ///   * a SHOPFRONT GROUP - a house carrying the block's shopfronts, one site per street
-    ///     facade it really opens onto. A corner unit is the exception the epic names: its
-    ///     glass wraps one corner and is one authored group, so it publishes one site on the
-    ///     facade its own recipe seed picks (CoreResidentialFronts' rule, kept verbatim so
-    ///     the outfit fronts do not move);
+    ///   * SHOP BAYS carried by a residential building - one site per physical 5 m bay on
+    ///     every side, including the facade facing into the block. A genuine corner-shop
+    ///     module is still one bay/business; merely standing in a corner BUILDING does not
+    ///     merge all of that building's other shops into it. One legacy primary bay keeps
+    ///     CoreResidentialFronts' deterministic address so existing outfit fronts do not
+    ///     move;
     ///   * a NAMED KIT STOREFRONT standing as a unit of its own - pizzapub, the radnja
     ///     shops - whose name is its sign;
     ///   * a CAFE in a gap in the row, which the lot deals explicitly.
@@ -33,9 +34,8 @@ namespace LivingCity.Business
         /// same set, in the same order, from the catalogue.</summary>
         public const string FrontageRole = "frontage";
 
-        /// <summary>A second shopfront round the corner of a non-corner unit: a real shop,
-        /// but never an outfit's front, because the legacy picker only ever saw one door per
-        /// building.</summary>
+        /// <summary>Every physical shop bay except the one legacy outfit-front candidate.
+        /// These include adjacent bays and bays on the building's other sides.</summary>
         public const string ExtraFrontageRole = "frontage-extra";
 
         public const string StorefrontRole = "storefront";
@@ -79,37 +79,43 @@ namespace LivingCity.Business
                         continue;
                     }
 
-                    if (!spot.Shop)
+                    // Complete amenity lots have their own provider and grouping rule:
+                    // e.g. all of a diner is one venue, not one business per decorative
+                    // shop mesh embedded in that authored lot.
+                    if (ResidentialUnits.IsLot(spot.Unit))
+                        continue;
+
+                    var hasPhysicalBays = spot.Unit.ShopBays != null &&
+                                          spot.Unit.ShopBays.Length > 0;
+                    if (!spot.Shop && !hasPhysicalBays)
                         continue;
 
                     var turn = ResidentialLot.Turn.Of(spot.Unit, spot.Yaw);
-                    var faces = ShopFaces(plan, spot, turn);
-                    if (faces.Count == 0)
-                        continue;
-
-                    // The one face CoreResidentialFronts would have chosen, by its own salt.
-                    var primary = faces[(FaceSalt(recipe, spot, index) & int.MaxValue) % faces.Count];
+                    var streetFaces = ShopFaces(plan, spot, turn);
+                    // The one face CoreResidentialFronts would have chosen, by its own
+                    // salt. A building whose only physical shop faces inward never had a
+                    // legacy outfit-front candidate, so it deliberately has no primary.
+                    var primary = streetFaces.Count > 0
+                        ? streetFaces[(FaceSalt(recipe, spot, index) & int.MaxValue) %
+                                      streetFaces.Count]
+                        : -1;
                     SpotRect(recipe, spot, out var whole);
 
-                    // A corner unit's shopfronts wrap ONE corner: one authored group, one
-                    // site, the whole house - never split.
-                    if (spot.Unit.Kind == ResidentialKind.Corner)
+                    if (hasPhysicalBays)
                     {
-                        sites.Add(FrontageSite(recipe, whole, primary,
-                            FaceSiteId(spot, index, primary),
-                            recipe.Name + " · " + spot.Unit.Name,
-                            block, order++, FrontageRole));
+                        AddPhysicalBays(
+                            sites, recipe, spot, index, whole, primary, block, ref order);
                         continue;
                     }
 
-                    // Every other face is split where its walls go (ECON/BIZ-004): each
-                    // run of contiguous shopfront panes is its own shop with its own
-                    // door. The run nearest the facade's middle keeps the legacy site id
-                    // - and on the primary face the frontage role with it - so every
-                    // business, owner and outfit front dealt before the split stays put.
-                    for (var f = 0; f < faces.Count; f++)
+                    if (streetFaces.Count == 0)
+                        continue;
+
+                    // Read the physical model, not only the sides by which the planner put
+                    // the building on the block edge. A rear/inner facade is still made of
+                    // real shops and participates in the same simulation.
+                    for (var side = 0; side < 4; side++)
                     {
-                        var side = faces[f];
                         turn.ShopRuns(side, shopRuns);
                         if (shopRuns.Count == 0)
                             continue;
@@ -130,18 +136,29 @@ namespace LivingCity.Business
                         for (var r = 0; r < shopRuns.Count; r++)
                         {
                             var run = shopRuns[r];
-                            var local = run.At == 0 && run.Len >= extent
-                                ? whole
-                                : RunRect(whole, side, run);
-                            var siteId = r == keep
+                            var legacySiteId = r == keep
                                 ? FaceSiteId(spot, index, side)
                                 : FaceSiteId(spot, index, side) + ":run:" + r;
-                            var role = side == primary && r == keep
-                                ? FrontageRole
-                                : ExtraFrontageRole;
-                            sites.Add(FrontageSite(recipe, local, side, siteId,
-                                recipe.Name + " · " + spot.Unit.Name,
-                                block, order++, role));
+                            // The old catalogue treated one wide source mesh as one
+                            // business. Keep its ID on the middle bay, then give every
+                            // other equal 5 m premises a position-keyed child ID. Adding a
+                            // missing bay therefore does not rename its neighbours.
+                            var representative = (run.Len - 1) / 2;
+                            for (var bay = 0; bay < run.Len; bay++)
+                            {
+                                var at = run.At + bay;
+                                var local = RunRect(whole, side, (at, 1));
+                                var siteId = bay == representative
+                                    ? legacySiteId
+                                    : legacySiteId + ":bay:" + at;
+                                var role = side == primary && r == keep &&
+                                           bay == representative
+                                    ? FrontageRole
+                                    : ExtraFrontageRole;
+                                sites.Add(FrontageSite(recipe, local, side, siteId,
+                                    recipe.Name + " · " + spot.Unit.Name,
+                                    block, order++, role));
+                            }
                         }
                     }
                 }
@@ -158,18 +175,157 @@ namespace LivingCity.Business
         // ------------------------------------------------------------------ the shapes
 
         readonly List<(int At, int Len)> shopRuns = new List<(int At, int Len)>();
+        readonly List<PlacedShopBay> placedBays = new List<PlacedShopBay>();
+
+        readonly struct PlacedShopBay
+        {
+            public PlacedShopBay(ResidentialShopBay source, Rect footprint, int side)
+            {
+                Source = source;
+                Footprint = footprint;
+                Side = side;
+            }
+
+            public ResidentialShopBay Source { get; }
+            public Rect Footprint { get; }
+            public int Side { get; }
+        }
 
         static string FaceSiteId(ResidentialLot.Spot spot, int index, int side) =>
             $"spot:{index}:{spot.Unit.Name}:face:{side}";
 
-        /// <summary>One run's slice of the house: the run's cells along the facade, the
-        /// house's full depth across it - a shop unit, not a floor plan.</summary>
+        static string PhysicalSiteId(
+            ResidentialLot.Spot spot, int index, ResidentialShopBay bay) =>
+            $"spot:{index}:{spot.Unit.Name}:shop:{bay.Side}:" +
+            $"{Mathf.RoundToInt(bay.X * 100f)}:{Mathf.RoundToInt(bay.Z * 100f)}";
+
+        void AddPhysicalBays(
+            List<BusinessSite> sites, ResidentialBlockRecipe recipe,
+            ResidentialLot.Spot spot, int index, Rect whole, int primary,
+            TerritoryBlockId block, ref int order)
+        {
+            placedBays.Clear();
+            var source = spot.Unit.ShopBays;
+            for (var i = 0; i < source.Length; i++)
+            {
+                PlaceBay(recipe, spot, whole, source[i], out var footprint, out var side);
+                placedBays.Add(new PlacedShopBay(source[i], footprint, side));
+            }
+
+            // Preserve the one address/outfit candidate the old frontage provider exposed:
+            // the physical bay on that face closest to the outside wall, then to its middle.
+            var primaryBay = -1;
+            var primaryScore = float.MaxValue;
+            for (var i = 0; i < placedBays.Count; i++)
+            {
+                var bay = placedBays[i];
+                if (bay.Side != primary)
+                    continue;
+                var door = DoorOnFacade(bay.Footprint, bay.Side);
+                var fromOutside = bay.Side switch
+                {
+                    0 => Mathf.Abs(door.z - whole.yMin),
+                    1 => Mathf.Abs(door.x - whole.xMax),
+                    2 => Mathf.Abs(door.z - whole.yMax),
+                    _ => Mathf.Abs(door.x - whole.xMin),
+                };
+                var fromMiddle = bay.Side == 0 || bay.Side == 2
+                    ? Mathf.Abs(door.x - whole.center.x)
+                    : Mathf.Abs(door.z - whole.center.y);
+                var score = fromOutside * 1000f + fromMiddle;
+                if (score >= primaryScore)
+                    continue;
+                primaryScore = score;
+                primaryBay = i;
+            }
+
+            for (var i = 0; i < placedBays.Count; i++)
+            {
+                var bay = placedBays[i];
+                var role = i == primaryBay ? FrontageRole : ExtraFrontageRole;
+                var siteId = i == primaryBay
+                    ? FaceSiteId(spot, index, primary)
+                    : PhysicalSiteId(spot, index, bay.Source);
+                sites.Add(FrontageSite(
+                    recipe, bay.Footprint, bay.Side, siteId,
+                    recipe.Name + " · " + spot.Unit.Name,
+                    block, order++, role));
+            }
+        }
+
+        static void PlaceBay(
+            ResidentialBlockRecipe recipe, ResidentialLot.Spot spot, Rect whole,
+            ResidentialShopBay bay, out Rect footprint, out int side)
+        {
+            float cell = ResidentialLot.Cell;
+            float width = spot.Unit.CW * cell;
+            float depth = spot.Unit.CD * cell;
+            var offset = spot.Yaw switch
+            {
+                90 => new Vector3(0f, 0f, width),
+                180 => new Vector3(width, 0f, depth),
+                270 => new Vector3(depth, 0f, 0f),
+                _ => Vector3.zero,
+            };
+            var rotation = Quaternion.Euler(0f, spot.Yaw, 0f);
+            var origin = new Vector3(
+                recipe.LocalBounds.xMin + spot.I * cell, 0f,
+                recipe.LocalBounds.yMin + spot.J * cell) + offset;
+            var door = origin + rotation * new Vector3(bay.X, 0f, bay.Z);
+            var outward = rotation * SideVector(bay.Side);
+            side = SideOf(outward);
+
+            float x = side switch
+            {
+                1 => door.x - cell,
+                3 => door.x,
+                _ => door.x - cell * 0.5f,
+            };
+            float z = side switch
+            {
+                0 => door.z,
+                2 => door.z - cell,
+                _ => door.z - cell * 0.5f,
+            };
+            x = Mathf.Clamp(x, whole.xMin, whole.xMax - cell);
+            z = Mathf.Clamp(z, whole.yMin, whole.yMax - cell);
+            footprint = new Rect(x, z, cell, cell);
+        }
+
+        static Vector3 SideVector(int side) => side switch
+        {
+            0 => Vector3.back,
+            1 => Vector3.right,
+            2 => Vector3.forward,
+            _ => Vector3.left,
+        };
+
+        static int SideOf(Vector3 outward)
+        {
+            if (Mathf.Abs(outward.x) > Mathf.Abs(outward.z))
+                return outward.x >= 0f ? 1 : 3;
+            return outward.z >= 0f ? 2 : 0;
+        }
+
+        /// <summary>One physical residential shop bay. These buildings use the same 5 m
+        /// width and depth for a premises; keeping only that shallow slice also prevents
+        /// shops on opposite facades from occupying the same plan footprint.</summary>
         static Rect RunRect(Rect whole, int side, (int At, int Len) run)
         {
             float cell = ResidentialLot.Cell;
-            return side == 0 || side == 2
-                ? new Rect(whole.xMin + run.At * cell, whole.yMin, run.Len * cell, whole.height)
-                : new Rect(whole.xMin, whole.yMin + run.At * cell, whole.width, run.Len * cell);
+            float depthX = Mathf.Min(cell, whole.width);
+            float depthZ = Mathf.Min(cell, whole.height);
+            return side switch
+            {
+                0 => new Rect(whole.xMin + run.At * cell, whole.yMin,
+                              run.Len * cell, depthZ),
+                1 => new Rect(whole.xMax - depthX, whole.yMin + run.At * cell,
+                              depthX, run.Len * cell),
+                2 => new Rect(whole.xMin + run.At * cell, whole.yMax - depthZ,
+                              run.Len * cell, depthZ),
+                _ => new Rect(whole.xMin, whole.yMin + run.At * cell,
+                              depthX, run.Len * cell),
+            };
         }
 
         BusinessSite FrontageSite(
@@ -343,8 +499,9 @@ namespace LivingCity.Business
 
         static TerritoryPoint Point(Vector3 world) => new TerritoryPoint(world.x, world.z);
 
-        /// <summary>How big the premises read. Bands in square metres off the 5 m raster: a
-        /// single shop unit is one or two cells, a whole corner house six or more.</summary>
+        /// <summary>How big a plan-owned premises reads from its square metres. Residential
+        /// shop bays are currently 5×5 m and therefore Small; the bands remain useful for
+        /// any larger plan slice published through this provider.</summary>
         internal static BusinessSiteSize SizeOf(Rect local)
         {
             var area = Mathf.Abs(local.width * local.height);
