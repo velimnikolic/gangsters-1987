@@ -317,7 +317,7 @@ namespace LivingCity.UI
                     continue;
 
                 var subject = hit.collider.GetComponentInParent<IOverlaySubject>();
-                if (subject == null || subject.OverlayHidden)
+                if (subject == null || subject.OverlayHidden || !VisionReveals(subject))
                     continue;
 
                 best = subject;
@@ -500,7 +500,7 @@ namespace LivingCity.UI
                 return;
             }
 
-            var hidden = marker.Subject.OverlayHidden;
+            var hidden = marker.Subject.OverlayHidden || !VisionReveals(marker.Subject);
             var screen = cam.WorldToScreenPoint(
                 marker.Target.position + Vector3.up * marker.Subject.OverlayHeight);
 
@@ -562,7 +562,7 @@ namespace LivingCity.UI
 
         void UpdateGroundBracket(Marker marker, float width, float height)
         {
-            if (marker.Subject.OverlayHidden)
+            if (marker.Subject.OverlayHidden || !VisionReveals(marker.Subject))
             {
                 DisableMarker(marker);
                 return;
@@ -586,6 +586,14 @@ namespace LivingCity.UI
                 HumanGroundBracket.ArmLength(selectedHuman, selectedHuman && own, Time.unscaledTime),
                 HumanGroundBracket.Thickness,
                 HumanGroundBracket.Tint(own));
+        }
+
+        static bool VisionReveals(IOverlaySubject subject)
+        {
+            if (subject == null || subject.MarkerShape == OverlayShape.Square)
+                return true;
+            var anchor = subject.OverlayAnchor;
+            return anchor == null || MapVisionRegistry.IsRevealed(anchor.position);
         }
 
         static bool IsOwnHuman(IOverlaySubject subject)

@@ -727,6 +727,9 @@ namespace RoadDemo
                 {
                     if (unit == null || unit.IsPolice || unit.Wiped)
                         continue;
+                    if (unit.Faction != 0 &&
+                        !LivingCity.Gameplay.MapVisionRegistry.IsVisible(unit.Position))
+                        continue;
                     if (!OnCard(new Vector2(unit.Position.x, unit.Position.z), out var at))
                         continue;
 

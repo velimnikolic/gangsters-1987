@@ -86,10 +86,12 @@ namespace RoadDemo
                 Register(_crews.Cars[i]);
         }
 
-        static bool WantsLights(Rig rig) => rig.Vehicle == null ||
-            (!rig.Vehicle.Parked && !rig.Vehicle.EngineOff &&
-             !rig.Vehicle.Derelict && !rig.Vehicle.Wrecked &&
-             (rig.Vehicle is not CrewCar crew || !crew.EngineDead));
+        static bool WantsLights(Rig rig) => rig.Car != null &&
+            LivingCity.Gameplay.MapVisionRegistry.IsRevealed(rig.Car.position) &&
+            (rig.Vehicle == null ||
+             (!rig.Vehicle.Parked && !rig.Vehicle.EngineOff &&
+              !rig.Vehicle.Derelict && !rig.Vehicle.Wrecked &&
+              (rig.Vehicle is not CrewCar crew || !crew.EngineDead)));
 
         static Light Attach(Transform car, Vector3 localPos)
         {

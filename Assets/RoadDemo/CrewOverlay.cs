@@ -519,7 +519,9 @@ namespace RoadDemo
             for (int i = 0; i < _men.Count; i++)
             {
                 var tf = _men[i].Tf;
-                if (tf == null || _men[i].Dead || _crews.IsAboard(_men[i])) continue;
+                if (tf == null || _men[i].Dead || _crews.IsAboard(_men[i]) ||
+                    !LivingCity.Gameplay.MapVisionRegistry.IsRevealed(tf.position))
+                    continue;
                 var body = _cam.WorldToScreenPoint(tf.position + Vector3.up * 0.9f);
                 var dotP = _cam.WorldToScreenPoint(tf.position + Vector3.up * _men[i].OverlayHeight);
                 foreach (var p in new[] { body, dotP })
@@ -641,7 +643,9 @@ namespace RoadDemo
             var ray = _cam.ScreenPointToRay(screen);
             foreach (var car in _crews.Cars)
             {
-                if (car.Tf == null) continue;
+                if (car.Tf == null ||
+                    !LivingCity.Gameplay.MapVisionRegistry.IsRevealed(car.Tf.position))
+                    continue;
                 var p = _cam.WorldToScreenPoint(car.Position + Vector3.up * 0.9f);
                 if (p.z <= 0f) continue;
                 float d = ((Vector2)p - screen).sqrMagnitude;
@@ -1833,7 +1837,9 @@ namespace RoadDemo
                 var tag = _tags[i];
                 var glyph = _glyphs[i];
                 var bracket = _brackets[i];
-                if (i >= _men.Count || _men[i].Tf == null || _men[i].Dead || _crews.IsAboard(_men[i]))
+                if (i >= _men.Count || _men[i].Tf == null || _men[i].Dead ||
+                    _crews.IsAboard(_men[i]) ||
+                    !LivingCity.Gameplay.MapVisionRegistry.IsRevealed(_men[i].Tf.position))
                 {
                     if (ground.enabled) ground.enabled = false;
                     if (groundShadow.enabled) groundShadow.enabled = false;
@@ -2024,7 +2030,8 @@ namespace RoadDemo
             {
                 var img = _carDots[i];
                 var tag = _carTags[i];
-                if (i >= cars.Count || cars[i].Tf == null)
+                if (i >= cars.Count || cars[i].Tf == null ||
+                    !LivingCity.Gameplay.MapVisionRegistry.IsRevealed(cars[i].Tf.position))
                 {
                     if (img.enabled) img.enabled = false;
                     if (tag != null && tag.enabled) tag.enabled = false;

@@ -17,6 +17,12 @@ namespace RoadDemo
     [DisallowMultipleComponent]
     public sealed class ResidentialBlockLife : MonoBehaviour
     {
+        static readonly List<ResidentialBlockLife> VisiblePopulations =
+            new List<ResidentialBlockLife>();
+
+        internal static IReadOnlyList<ResidentialBlockLife> ActivePopulations =>
+            VisiblePopulations;
+
         internal enum Routine
         {
             Pose,
@@ -120,6 +126,7 @@ namespace RoadDemo
         {
             PanicPrepareQueue.Clear();
             _panicPrepareFrame = -1;
+            VisiblePopulations.Clear();
         }
 
         internal void Configure(IReadOnlyList<Shelter> shelters, AnimationClip idle,
@@ -196,6 +203,8 @@ namespace RoadDemo
 
         void OnEnable()
         {
+            if (Application.isPlaying && !VisiblePopulations.Contains(this))
+                VisiblePopulations.Add(this);
             if (Application.isPlaying) StreetAlarm.OnShot += Shot;
             if (_panicking && !_panicPrepared) SchedulePanicPreparation();
             if (!_started) return;
@@ -204,6 +213,7 @@ namespace RoadDemo
 
         void OnDisable()
         {
+            VisiblePopulations.Remove(this);
             StreetAlarm.OnShot -= Shot;
             if (!_started) return;
             for (int i = 0; i < _actors.Count; i++) _actors[i]?.Motion?.Pause();
@@ -211,6 +221,7 @@ namespace RoadDemo
 
         void OnDestroy()
         {
+            VisiblePopulations.Remove(this);
             _panicQueued = false;
             for (int i = 0; i < _actors.Count; i++) _actors[i]?.Motion?.Dispose();
         }
@@ -278,6 +289,16 @@ namespace RoadDemo
 
         bool Owned(Actor actor) => actor?.Root != null && actor.Tf != null &&
                                    actor.Tf.parent == transform;
+
+        internal int VisionActorCount => _actors.Count;
+
+        internal Transform VisionActorAt(int index)
+        {
+            if (index < 0 || index >= _actors.Count)
+                return null;
+            var actor = _actors[index];
+            return Owned(actor) ? actor.Tf : null;
+        }
 
         void RepairSerializedState()
         {

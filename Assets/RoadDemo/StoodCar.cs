@@ -15,6 +15,11 @@ namespace RoadDemo
     /// </summary>
     public sealed class StoodCar : IRoadUser
     {
+        static readonly System.Collections.Generic.List<StoodCar> Registered =
+            new System.Collections.Generic.List<StoodCar>();
+
+        public static System.Collections.Generic.IReadOnlyList<StoodCar> All => Registered;
+
         readonly Transform _tf;
         readonly float _halfLength, _halfWidth;
 
@@ -23,7 +28,10 @@ namespace RoadDemo
             _tf = tf;
             _halfLength = halfLength;
             _halfWidth = halfWidth;
+            Registered.Add(this);
         }
+
+        public Transform Tf => _tf;
 
         /// <summary>Stand this body on the road, measured off its own renderers (it is
         /// laid down nose along the street, so the box its meshes fill is its size), and
@@ -51,8 +59,12 @@ namespace RoadDemo
         public void Forget()
         {
             StreetTraffic.Users.Remove(this);
+            Registered.Remove(this);
             if (_occupant != null) { LaneNet.Active?.Remove(_occupant); _occupant = null; }
         }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetRegistered() => Registered.Clear();
 
         public Vector3 RoadPosition => _tf ? _tf.position : Vector3.zero;
         public Vector3 RoadForward => _tf ? _tf.forward : Vector3.forward;

@@ -461,6 +461,8 @@ namespace RoadDemo
             if (want != IsOpen)
                 Show(want);
 
+            ForgetHiddenCrew();
+
             // The file is present in the 3D city as well as on the plan, and StreetHud
             // draws it in both. Only its contents are conditional on an explicit
             // lieutenant click.
@@ -2039,7 +2041,7 @@ namespace RoadDemo
             float bestSqr = PickRadius * PickRadius;
             foreach (var crew in _units)
             {
-                if (!crew.Alive || (oursOnly && !crew.Mine))
+                if (!MapCrewVisible(crew) || (oursOnly && !crew.Mine))
                     continue;
                 float sqr = (crew.Plan - plan).sqrMagnitude;
                 if (sqr >= bestSqr)
@@ -2050,9 +2052,29 @@ namespace RoadDemo
             return best;
         }
 
+        static bool MapCrewVisible(TurfCrew crew) =>
+            crew != null && crew.Alive && crew.Unit != null &&
+            (crew.Mine || MapVisionRegistry.IsVisible(crew.Unit.Position));
+
+        /// <summary>An enemy file is live intelligence, not a permanent tracker. Once
+        /// the last outfit member leaves its block, the dot and the open file disappear
+        /// together instead of the paperwork continuing to leak its movement.</summary>
+        void ForgetHiddenCrew()
+        {
+            if (_inspectedCrew == null || _inspectedCrew.Mine ||
+                MapCrewVisible(_inspectedCrew))
+                return;
+
+            _inspectedCrew = null;
+            _crewFileRequested = false;
+            CrewFileChanged();
+            _mapChrome?.SelectionChanged();
+        }
+
         internal bool EnemyContextValid(DemoCrews.Unit actor, DemoCrews.Unit target) =>
             _crews != null && _crews.Selected == actor && actor != null && !actor.Wiped &&
-            target != null && target.Faction != 0 && !target.Wiped;
+            target != null && target.Faction != 0 && !target.Wiped &&
+            MapVisionRegistry.IsVisible(target.Position);
 
         public void Inspect(TurfCrew crew)
         {
@@ -2501,20 +2523,25 @@ namespace RoadDemo
         {
             if (_traffic != null)
                 foreach (var car in _traffic)
-                    DrawCar(car, TurfInk.Civilian, false);
+                    if (MapVehicleVisible(car))
+                        DrawCar(car, TurfInk.Civilian, false);
 
             if (_policeCars != null)
                 foreach (var car in _policeCars)
-                    DrawCar(car, TurfInk.Ink, false);
+                    if (MapVehicleVisible(car))
+                        DrawCar(car, TurfInk.Ink, false);
 
             if (_crews != null)
                 foreach (var car in _crews.Cars)
                 {
-                    if (car == null || car.Owner == null)
+                    if (car == null || car.Owner == null || !MapVehicleVisible(car))
                         continue;
                     DrawCar(car, TurfHouses.For(car.Owner.Faction).Ink, false);
                 }
         }
+
+        static bool MapVehicleVisible(RoadCar car) =>
+            car != null && car.Tf != null && MapVisionRegistry.IsVisible(car.Tf.position);
 
         /// <summary>
         /// A vehicle: a body that narrows at both ends, a dark cabin, and one pale
@@ -2764,7 +2791,7 @@ namespace RoadDemo
 
             foreach (var crew in _units)
             {
-                if (!crew.Alive)
+                if (!MapCrewVisible(crew))
                     continue;
 
                 var house = TurfHouses.For(crew.GangId);

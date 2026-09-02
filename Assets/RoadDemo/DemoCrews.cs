@@ -25,7 +25,8 @@ namespace RoadDemo
     // a hood is moved between crews, a man goes to the pool or the front, a gun
     // changes hands) the figures are re-dealt to match - new men walk in, gone men
     // walk off, a hood handed to another lieutenant walks over to him.
-    public partial class DemoCrews : MonoBehaviour, IOrganizationPhysicalSource
+    public partial class DemoCrews : MonoBehaviour, IOrganizationPhysicalSource,
+                                     IMapVisionAreaSource
     {
         /// <summary>One lieutenant, his root object, and his men.</summary>
         public class Unit
@@ -688,6 +689,38 @@ namespace RoadDemo
         readonly Dictionary<int, CrewWalker> _byCharacter = new Dictionary<int, CrewWalker>();
         System.Random _rng;
         readonly System.Random _variety = new System.Random(4242); // gaits, falls, paces
+        // Fog of war is block-shaped, not a dark screen-space effect. Each living outfit
+        // member contributes the block he occupies; duplicate crew members in one block
+        // collapse into this small shared set once per frame.
+        // The widest Core road is its 35 m boulevard. A point inside another block is
+        // rejected before this reach is used, so widening the street does not reveal
+        // the neighbouring parcel.
+        const float MapStreetVisionDepth = 35f;
+        const float FreeRoamVisionRadius = 60f;
+        readonly List<CityBlocks.BlockInfo> _mapVisionBlocks =
+            new List<CityBlocks.BlockInfo>();
+        readonly HashSet<int> _mapVisionBlockIds = new HashSet<int>();
+        int _mapVisionFrame = -1;
+
+        sealed class FogRenderGroup
+        {
+            public readonly Renderer[] Renderers;
+            public readonly bool[] ForcedBeforeFog;
+            public bool Hidden;
+            public int SeenFrame;
+
+            public FogRenderGroup(Transform root)
+            {
+                Renderers = root.GetComponentsInChildren<Renderer>(true);
+                ForcedBeforeFog = new bool[Renderers.Length];
+            }
+        }
+
+        readonly Dictionary<Transform, FogRenderGroup> _worldFog =
+            new Dictionary<Transform, FogRenderGroup>();
+        readonly List<Transform> _worldFogPrune = new List<Transform>();
+        int _worldFogPruneAt;
+        DemoParkedCarGlow _worldFogParkedCars;
         Vector3 _outfitAnchor, _outfitFacing = Vector3.forward;
         float _outfitSpread = 9f;
         int _rivalIds = -1;
@@ -764,6 +797,7 @@ namespace RoadDemo
             gameObject.AddComponent<FrontDeeds>();
             IntentOverlay = gameObject.AddComponent<CombatIntentOverlay>();
             IntentOverlay.Init(this);
+            MapVisionRegistry.RegisterArea(this);
             PersonnelDirector.Instance?.SetOrganizationPhysicalSource(this);
             CrewWalker.FindCover = CoverNear;
             PrepareCombatPrewarm();
@@ -778,6 +812,7 @@ namespace RoadDemo
             foreach (var unit in Units)
                 foreach (var man in unit.All())
                     man.AimGun(dt);
+            ApplyWorldFog();
             // after the arms are posed: were this frame's shots actually ON their marks?
             if (DriveTrace.On) CrewAudit.LateTick();
         }
@@ -1050,6 +1085,8 @@ namespace RoadDemo
 
         void OnDestroy()
         {
+            MapVisionRegistry.UnregisterArea(this);
+            ClearWorldFog();
             foreach (var unit in Units)
                 foreach (var man in unit.All())
                     man.Dispose();
@@ -1057,6 +1094,227 @@ namespace RoadDemo
             // alive and answers the next scene's walkers with this one's floor
             if (CrewWalker.FindCover != null && ReferenceEquals(CrewWalker.FindCover.Target, this))
                 CrewWalker.FindCover = null;
+        }
+
+        // ---------------------------------------------------------- map visibility
+
+        /// <summary>
+        /// The same intelligence rule used by both paper maps, applied to 3D actors.
+        /// forceRenderingOff hides meshes and shadows without touching activity, physics,
+        /// animation time, traffic occupancy or streamed-holder lifetime.
+        /// </summary>
+        void ApplyWorldFog()
+        {
+            var walkers = PedestrianAgent.Everyone;
+            for (var i = 0; i < walkers.Count; i++)
+                TouchWorldFog(walkers[i]?.Tf);
+
+            var cars = RoadCar.All;
+            for (var i = 0; i < cars.Count; i++)
+                TouchWorldFog(cars[i]?.Tf);
+
+            var stoodCars = StoodCar.All;
+            for (var i = 0; i < stoodCars.Count; i++)
+                TouchWorldFog(stoodCars[i]?.Tf);
+
+            if (_worldFogParkedCars == null && Time.frameCount >= _worldFogPruneAt)
+                _worldFogParkedCars = FindFirstObjectByType<DemoParkedCarGlow>();
+            if (_worldFogParkedCars != null)
+                foreach (var car in _worldFogParkedCars.VisualCars)
+                    TouchWorldFog(car);
+
+            var cityWalkers = LivingCity.Entities.PedestrianAgent.Agents;
+            for (var i = 0; i < cityWalkers.Count; i++)
+                if (cityWalkers[i] != null)
+                    TouchWorldFog(cityWalkers[i].transform);
+
+            // The generated-city specialists (officers, gang members, school children,
+            // visitors and buses) deliberately stay outside both pedestrian lists but
+            // share the moving-subject overlay registry. Squares are places/buildings
+            // and remain visible; diamonds are people or vehicles.
+            var subjects = LivingCity.UI.OverlayRegistry.Subjects;
+            for (var i = 0; i < subjects.Count; i++)
+            {
+                var subject = subjects[i];
+                if (subject == null ||
+                    subject.MarkerShape != LivingCity.UI.OverlayShape.Diamond)
+                    continue;
+                TouchWorldFog(subject.OverlayAnchor);
+            }
+
+            var ambient = ResidentialBlockLife.ActivePopulations;
+            for (var i = 0; i < ambient.Count; i++)
+            {
+                var life = ambient[i];
+                if (life == null)
+                    continue;
+                for (var actor = 0; actor < life.VisionActorCount; actor++)
+                    TouchWorldFog(life.VisionActorAt(actor));
+            }
+
+            if (Time.frameCount < _worldFogPruneAt)
+                return;
+            _worldFogPruneAt = Time.frameCount + 60;
+            RoadCar.PruneRegistered();
+            _worldFogPrune.Clear();
+            foreach (var pair in _worldFog)
+                if (pair.Key == null || pair.Value.SeenFrame != Time.frameCount)
+                    _worldFogPrune.Add(pair.Key);
+            for (var i = 0; i < _worldFogPrune.Count; i++)
+            {
+                var root = _worldFogPrune[i];
+                if (_worldFog.TryGetValue(root, out var group))
+                    SetWorldFog(group, false);
+                _worldFog.Remove(root);
+            }
+        }
+
+        void TouchWorldFog(Transform root)
+        {
+            if (root == null || !root.gameObject.activeInHierarchy)
+                return;
+
+            if (!_worldFog.TryGetValue(root, out var group))
+            {
+                group = new FogRenderGroup(root);
+                _worldFog.Add(root, group);
+            }
+            group.SeenFrame = Time.frameCount;
+            SetWorldFog(group, !MapVisionRegistry.IsVisible(root.position));
+        }
+
+        static void SetWorldFog(FogRenderGroup group, bool hidden)
+        {
+            if (group == null)
+                return;
+
+            if (group.Hidden == hidden)
+            {
+                if (hidden)
+                    for (var i = 0; i < group.Renderers.Length; i++)
+                        if (group.Renderers[i] != null)
+                            group.Renderers[i].forceRenderingOff = true;
+                return;
+            }
+
+            for (var i = 0; i < group.Renderers.Length; i++)
+            {
+                var renderer = group.Renderers[i];
+                if (renderer == null)
+                    continue;
+                if (hidden)
+                    group.ForcedBeforeFog[i] = renderer.forceRenderingOff;
+                renderer.forceRenderingOff = hidden || group.ForcedBeforeFog[i];
+            }
+            group.Hidden = hidden;
+        }
+
+        void ClearWorldFog()
+        {
+            foreach (var group in _worldFog.Values)
+                SetWorldFog(group, false);
+            _worldFog.Clear();
+            _worldFogPrune.Clear();
+        }
+
+        bool IMapVisionAreaSource.VisionActive => isActiveAndEnabled;
+
+        bool IMapVisionAreaSource.IsVisible(Vector3 worldPosition)
+        {
+            RefreshMapVisionBlocks();
+
+            var target = new Vector2(worldPosition.x, worldPosition.z);
+            if (_mapVisionBlocks.Count == 0)
+                return FreeRoamMapVisible(target);
+
+            // Another block never leaks through an expanded rectangle. The expansion
+            // below is only for a person or car standing on the road around a revealed
+            // block, not for intelligence from inside the neighbouring block.
+            var occupied = CityBlocks.At(target);
+            if (occupied != null)
+                return _mapVisionBlockIds.Contains(occupied.Id);
+
+            float streetSqr = MapStreetVisionDepth * MapStreetVisionDepth;
+            for (var i = 0; i < _mapVisionBlocks.Count; i++)
+                if (SqrDistanceTo(_mapVisionBlocks[i].Union, target) <= streetSqr)
+                    return true;
+            return false;
+        }
+
+        void RefreshMapVisionBlocks()
+        {
+            if (_mapVisionFrame == Time.frameCount)
+                return;
+
+            _mapVisionFrame = Time.frameCount;
+            _mapVisionBlocks.Clear();
+            _mapVisionBlockIds.Clear();
+
+            var blocks = CityBlocks.Blocks;
+            if (blocks.Count == 0)
+                return;
+
+            foreach (var unit in Units)
+            {
+                if (unit == null || unit.Faction != 0)
+                    continue;
+                foreach (var man in unit.All())
+                {
+                    if (man == null || man.Dead || man.Tf == null ||
+                        !man.Tf.gameObject.activeInHierarchy)
+                        continue;
+
+                    var at = new Vector2(man.Tf.position.x, man.Tf.position.z);
+                    var block = CityBlocks.At(at) ?? ClosestBlock(at, blocks);
+                    if (block != null && _mapVisionBlockIds.Add(block.Id))
+                        _mapVisionBlocks.Add(block);
+                }
+            }
+        }
+
+        bool FreeRoamMapVisible(Vector2 target)
+        {
+            float radiusSqr = FreeRoamVisionRadius * FreeRoamVisionRadius;
+            foreach (var unit in Units)
+            {
+                if (unit == null || unit.Faction != 0)
+                    continue;
+                foreach (var man in unit.All())
+                {
+                    if (man == null || man.Dead || man.Tf == null ||
+                        !man.Tf.gameObject.activeInHierarchy)
+                        continue;
+                    var at = new Vector2(man.Tf.position.x, man.Tf.position.z);
+                    if ((target - at).sqrMagnitude <= radiusSqr)
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        static CityBlocks.BlockInfo ClosestBlock(
+            Vector2 point, IReadOnlyList<CityBlocks.BlockInfo> blocks)
+        {
+            CityBlocks.BlockInfo closest = null;
+            float closestSqr = float.MaxValue;
+            for (var i = 0; i < blocks.Count; i++)
+            {
+                float sqr = SqrDistanceTo(blocks[i].Union, point);
+                if (sqr >= closestSqr)
+                    continue;
+                closestSqr = sqr;
+                closest = blocks[i];
+            }
+            return closest;
+        }
+
+        static float SqrDistanceTo(Rect rect, Vector2 point)
+        {
+            float dx = point.x < rect.xMin ? rect.xMin - point.x
+                : point.x > rect.xMax ? point.x - rect.xMax : 0f;
+            float dy = point.y < rect.yMin ? rect.yMin - point.y
+                : point.y > rect.yMax ? point.y - rect.yMax : 0f;
+            return dx * dx + dy * dy;
         }
 
         // ------------------------------------------------------------------ orders

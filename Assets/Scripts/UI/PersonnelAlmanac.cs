@@ -435,7 +435,6 @@ namespace LivingCity.UI
                 paintedRacketVersion != racketVersion ||
                 paintedExposure != exposure)
             {
-                paintedExposure = exposure;
                 paintedVersion = director.Version;
                 paintedOutfitVersion = outfitVersion;
                 paintedGangVersion = Gangs.GangRegistry.Version;
@@ -444,6 +443,10 @@ namespace LivingCity.UI
                 paintedRacketVersion = racketVersion;
                 dirty = false;
                 Repaint();
+                // Read AFTER the paint: painting the block file exposes the plate, and a
+                // plate counted before that would send the sheet round again for a
+                // photograph it had just taken itself.
+                paintedExposure = blockCardId.IsValid ? BlockFilm.Get().Exposures : -1;
             }
         }
 

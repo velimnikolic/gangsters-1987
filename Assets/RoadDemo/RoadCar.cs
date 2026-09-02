@@ -31,6 +31,34 @@ namespace RoadDemo
     /// </summary>
     public partial class RoadCar : IRoadUser
     {
+        static readonly List<RoadCar> Registered = new List<RoadCar>();
+
+        /// <summary>Every simulated vehicle, including ones temporarily pulled off the
+        /// lane list at a pump or kerb. World fog reads this without changing traffic.</summary>
+        public static IReadOnlyList<RoadCar> All => Registered;
+
+        /// <summary>Drop the cars that are no longer on any street: the backstop clears
+        /// itself on Vanish, but a whole district streamed out destroys its bodies without
+        /// going through it, and a list that only ever grows would make every reader of
+        /// <see cref="All"/> slower for the rest of the session.</summary>
+        public static void PruneRegistered()
+        {
+            for (var i = Registered.Count - 1; i >= 0; i--)
+            {
+                var car = Registered[i];
+                if (car == null || car.Gone || car.Tf == null)
+                    Registered.RemoveAt(i);
+            }
+        }
+
+        public RoadCar()
+        {
+            Registered.Add(this);
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetRegisteredCars() => Registered.Clear();
+
         public enum Manoeuvre { None, Pass, Crown, UTurn, PullIn, PullOut, Reverse, Aside, LaneChange }
 
         // ------------------------------------------------------------------ body
@@ -376,6 +404,7 @@ namespace RoadDemo
         {
             if (Gone) return;
             Gone = true;
+            Registered.Remove(this);
             if (DriveTrace.On)
                 DriveTrace.Event("man", "car " + Id, "derelict cleared off the street", ManFields());
             Leave();

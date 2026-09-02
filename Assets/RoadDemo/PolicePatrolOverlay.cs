@@ -241,7 +241,9 @@ namespace RoadDemo
             for (int i = 0; i < _subjects.Count; i++)
             {
                 var tf = _subjects[i].MarkerTf;
-                if (tf == null) continue;
+                if (tf == null ||
+                    !LivingCity.Gameplay.MapVisionRegistry.IsRevealed(tf.position))
+                    continue;
 
                 // the dot or the body, whichever the click lands nearer
                 var body = _cam.WorldToScreenPoint(tf.position + Vector3.up * 0.9f);
@@ -306,7 +308,8 @@ namespace RoadDemo
                 var img = _images[i];
                 var bracket = _brackets[i];
                 var tf = subject.MarkerTf;
-                if (tf == null)
+                if (tf == null ||
+                    !LivingCity.Gameplay.MapVisionRegistry.IsRevealed(tf.position))
                 {
                     if (img.enabled) img.enabled = false;
                     if (bracket.enabled) bracket.enabled = false;

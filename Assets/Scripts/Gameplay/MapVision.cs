@@ -4,10 +4,9 @@ using UnityEngine;
 namespace LivingCity.Gameplay
 {
     /// <summary>
-    /// Something whose surroundings the player can see on the strategic map - the fog-of-war
-    /// side of an informant. The map itself shows the whole city (the player lives here; the
-    /// streets are not a secret), but a moving PERSON only earns a dot while inside some
-    /// source's radius.
+    /// A circular source whose surroundings the player can see on a map - the fog-of-war
+    /// side of a lone informant. The map itself still shows the whole city; this controls
+    /// which moving people and vehicles earn a live mark on top of it.
     /// </summary>
     public interface IMapVisionSource
     {
@@ -20,14 +19,27 @@ namespace LivingCity.Gameplay
     }
 
     /// <summary>
-    /// The extension seam for fog of war: today the player is the only registrant, but a crew
-    /// member on a job or a business paying protection registers the same way and the map asks
-    /// no questions. Deliberately a dumb list - a handful of sources against a few thousand
-    /// dots is a multiply per pair, nowhere near needing the pedestrian spatial hash.
+    /// A source whose visible ground is not a circle. Crews use this to reveal the exact
+    /// city blocks occupied by their living members plus the streets around those blocks.
+    /// Keeping the shape behind this interface lets every map ask one question without
+    /// learning how a crew, an informant network, or a future lookout defines its sight.
+    /// </summary>
+    public interface IMapVisionAreaSource
+    {
+        bool VisionActive { get; }
+        bool IsVisible(Vector3 worldPosition);
+    }
+
+    /// <summary>
+    /// The shared extension seam for map fog of war. Simple informants register circles;
+    /// crews register their block-shaped aggregate through IMapVisionAreaSource. Renderers
+    /// ask one question and do not fork the intelligence rule between full map and minimap.
     /// </summary>
     public static class MapVisionRegistry
     {
         static readonly List<IMapVisionSource> Registered = new List<IMapVisionSource>();
+        static readonly List<IMapVisionAreaSource> RegisteredAreas =
+            new List<IMapVisionAreaSource>();
 
         public static IReadOnlyList<IMapVisionSource> Sources => Registered;
 
@@ -42,6 +54,17 @@ namespace LivingCity.Gameplay
             Registered.Remove(source);
         }
 
+        public static void RegisterArea(IMapVisionAreaSource source)
+        {
+            if (source != null && !RegisteredAreas.Contains(source))
+                RegisteredAreas.Add(source);
+        }
+
+        public static void UnregisterArea(IMapVisionAreaSource source)
+        {
+            RegisteredAreas.Remove(source);
+        }
+
         /// <summary>
         /// False when nobody is providing eyes at all - the playable-mafioso layer is
         /// currently parked, so there may be no player to register. The map treats that
@@ -52,6 +75,9 @@ namespace LivingCity.Gameplay
         {
             get
             {
+                for (var i = 0; i < RegisteredAreas.Count; i++)
+                    if (RegisteredAreas[i].VisionActive)
+                        return true;
                 for (var i = 0; i < Registered.Count; i++)
                     if (Registered[i].VisionActive)
                         return true;
@@ -61,6 +87,13 @@ namespace LivingCity.Gameplay
 
         public static bool IsVisible(Vector3 worldPosition)
         {
+            for (var i = 0; i < RegisteredAreas.Count; i++)
+            {
+                var source = RegisteredAreas[i];
+                if (source.VisionActive && source.IsVisible(worldPosition))
+                    return true;
+            }
+
             for (var i = 0; i < Registered.Count; i++)
             {
                 var source = Registered[i];
@@ -77,9 +110,19 @@ namespace LivingCity.Gameplay
             return false;
         }
 
+        /// <summary>Presentation helper for layers that also run in scenes with no fog
+        /// provider. Such scenes retain their old unrestricted view; once any provider
+        /// is active, the shared visibility answer is authoritative.</summary>
+        public static bool IsRevealed(Vector3 worldPosition) =>
+            !HasActiveSources || IsVisible(worldPosition);
+
         // Static state outlives Play when domain reload is off - same fix as OverlayRegistry.
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetForPlay() => Registered.Clear();
+        static void ResetForPlay()
+        {
+            Registered.Clear();
+            RegisteredAreas.Clear();
+        }
     }
 
     /// <summary>

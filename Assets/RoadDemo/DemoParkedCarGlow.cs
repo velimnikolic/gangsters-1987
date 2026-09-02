@@ -59,6 +59,10 @@ namespace RoadDemo
         readonly Material[] _markers = new Material[Groups];
         readonly float[] _applied = { -1f, -1f, -1f, -1f };
 
+        /// <summary>Every decorative car root found by the shared scene/stream scan,
+        /// including the unlit majority. World fog uses the same classification.</summary>
+        internal IEnumerable<Transform> VisualCars => _seen;
+
         void Start() => Register((Transform)null);
 
         /// <summary>Register a moving/parking vehicle before the scene scan. Its exact
