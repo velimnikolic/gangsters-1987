@@ -707,6 +707,9 @@ namespace RoadDemo
             TendApproaches();
             sampledLocations.Clear();
             presence?.BeginSample();
+            // The families with no bodies hold their ground in the same sample, by the
+            // same weights (RIVAL-008). One presence rule, two kinds of men.
+            SamplePaperHouses(gameHour);
             var changed = false;
             var blockless = 0;
             VisitActors((unit, actor, observation, blockId) =>

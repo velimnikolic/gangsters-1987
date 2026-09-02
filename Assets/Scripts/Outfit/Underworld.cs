@@ -230,15 +230,19 @@ namespace LivingCity.Outfit
         /// THE PLAYER'S HOUSE HAS NO MIND. He is the mind.
         /// </summary>
         /// <returns>How many houses thought this call.</returns>
-        public int Think(double gameHour, float everyHours, System.Action<House> think)
+        /// <param name="maxPerCall">How many houses may think in ONE call. One, so a
+        /// single frame never carries twenty turns of mind; the rota is round-robin, so
+        /// nobody starves behind a busy neighbour (RIVAL-008).</param>
+        public int Think(double gameHour, float everyHours, System.Action<House> think,
+            int maxPerCall = 1)
         {
-            if (think == null || everyHours <= 0f)
+            if (think == null || everyHours <= 0f || maxPerCall < 1)
                 return 0;
 
             var thought = 0;
-            for (var i = 0; i < houses.Length; i++)
+            for (var i = 0; i < houses.Length && thought < maxPerCall; i++)
             {
-                var house = houses[i];
+                var house = houses[(i + thinkCursor) % houses.Length];
                 if (house == null || house.IsPlayer || house.Extinct)
                     continue;
                 if (house.NextThinkHour <= 0.0)
@@ -249,9 +253,14 @@ namespace LivingCity.Outfit
                 house.NextThinkHour = gameHour + everyHours;
                 think(house);
                 thought++;
+                thinkCursor = (house.GangId + 1) % houses.Length;
             }
             return thought;
         }
+
+        /// <summary>Where the rota is. Kept so one busy family cannot soak up every
+        /// turn the city ever takes.</summary>
+        int thinkCursor;
 
         /// <summary>
         /// Midnight for everybody: wages out of each house's own safe, its own men

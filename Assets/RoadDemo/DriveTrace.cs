@@ -96,8 +96,8 @@ namespace RoadDemo
         /// what it was reasoning from and what it can afford - the row the underworld
         /// tally reads to say whether twenty houses played the game or stood still.
         /// </summary>
-        public static void House(
-            int gang, int tier, string intent, string reason, int safe, int payroll)
+        public static void House(int gang, int tier, string intent, string reason,
+            int safe, int payroll, float milliseconds = 0f)
         {
             if (!On) return;
             var sb = Take();
@@ -107,6 +107,9 @@ namespace RoadDemo
             Str(sb, "why", reason);
             Int(sb, "safe", safe);
             Int(sb, "payroll", payroll);
+            // What the turn of mind COST. Twenty families thinking is a budget, and a
+            // budget nobody measures is a wish (RIVAL-008).
+            Num(sb, "ms", milliseconds, "F3");
             Row("house", sb.ToString());
         }
 

@@ -34,8 +34,53 @@ namespace LivingCity.Tests
             ThePlayerReadsWordsAndNeverRivalNumbers(failures);
             TheBreakdownReconcilesWithTheTotal(failures);
             PresenceAndTheDeedsDoNotWipeEachOther(failures);
+            AHouseWithNoBodiesHoldsTheSameGround(failures);
 
             return failures;
+        }
+
+        // ------------------------------------------------------------------ RIVAL-008
+
+        /// <summary>
+        /// A FAMILY THE CITY NEVER STOOD UP HOLDS THE SAME GROUND. The paper sample
+        /// contributes one observation per man of a posted crew, at the activity a man
+        /// standing on a corner has - the SAME weights the street's own bodies are
+        /// counted with. There is one presence rule, and the paper clock is not a
+        /// second one.
+        /// </summary>
+        static void AHouseWithNoBodiesHoldsTheSameGround(List<string> failures)
+        {
+            var config = Config();
+
+            // The same crew, twice: once as bodies the street walked over, once as the
+            // synthetic observations a paper house's posting builds.
+            var street = new TerritoryPresenceLedger(config);
+            Sample(street, Minute,
+                Man(0, 1, block: BlockA, rank: TerritoryRank.Lieutenant),
+                Man(0, 2, block: BlockA),
+                Man(0, 3, block: BlockA));
+
+            var paper = new TerritoryPresenceLedger(config);
+            Sample(paper, Minute,
+                Man(7, 11, block: BlockB, rank: TerritoryRank.Lieutenant),
+                Man(7, 12, block: BlockB),
+                Man(7, 13, block: BlockB));
+
+            if (Off(street.TotalOf(BlockA, Gang(0)), paper.TotalOf(BlockB, Gang(7))))
+                failures.Add("RIVAL-008: a crew on paper is worth " +
+                             paper.TotalOf(BlockB, Gang(7)) + " where the same crew on " +
+                             "the street is worth " + street.TotalOf(BlockA, Gang(0)) + ".");
+
+            // And it is remembered and forgotten by the same clock.
+            for (var i = 0; i < 20; i++)
+            {
+                Sample(street, Minute, Man(0, 1, block: BlockA));
+                Sample(paper, Minute, Man(7, 11, block: BlockB));
+            }
+            street.DecayResidual(3.0);
+            paper.DecayResidual(3.0);
+            if (Off(street.ResidualOf(BlockA, Gang(0)), paper.ResidualOf(BlockB, Gang(7))))
+                failures.Add("RIVAL-008: the street and the paper remember differently.");
         }
 
         // ------------------------------------------------------------------- PRES-001

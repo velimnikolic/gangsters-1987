@@ -36,6 +36,10 @@ namespace RoadDemo
         /// count, and what a test waits on.</summary>
         public int Thinks { get; private set; }
 
+        /// <summary>What the last turn of mind cost, in milliseconds. The measurement
+        /// RIVAL-008's physical count is decided from.</summary>
+        public float ThinkMilliseconds { get; private set; }
+
         /// <summary>
         /// THE FAMILIES TAKE THEIR TURN. Every four game hours a house reads the street
         /// and files what it wants; at most three of its intents are executed, in order.
@@ -50,6 +54,7 @@ namespace RoadDemo
             SweepWarnings(gameHour);
             underworld.Think(gameHour, mindConfig.ThinkEveryHours, house =>
             {
+                var clock = System.Diagnostics.Stopwatch.StartNew();
                 var view = Look(house, gameHour);
                 var tier = HouseMind.Think(
                     view, mindConfig, Relations?.Config, intents);
@@ -73,12 +78,15 @@ namespace RoadDemo
                         refused.Add(intent + ": " + refusal);
                     DriveTrace.House(house.GangId, intent.Tier, intent.ToString(),
                         string.IsNullOrEmpty(refusal) ? intent.Reason : refusal,
-                        house.Runner.Accounts.Safe, view.DailyPayroll);
+                        house.Runner.Accounts.Safe, view.DailyPayroll,
+                        (float)clock.Elapsed.TotalMilliseconds);
                 }
 
                 if (done == 0)
                     DriveTrace.House(house.GangId, tier, "-", "no candidate",
-                        house.Runner.Accounts.Safe, view.DailyPayroll);
+                        house.Runner.Accounts.Safe, view.DailyPayroll,
+                        (float)clock.Elapsed.TotalMilliseconds);
+                ThinkMilliseconds = (float)clock.Elapsed.TotalMilliseconds;
             });
         }
 
@@ -441,7 +449,7 @@ namespace RoadDemo
             switch (intent.Kind)
             {
                 case HouseIntentKind.Command:
-                    return Order(mine, intent);
+                    return Order(house, mine, intent);
 
                 case HouseIntentKind.Job:
                     if (intent.Job == null)
@@ -602,8 +610,14 @@ namespace RoadDemo
 
         /// <summary>A territory order, built here and submitted through the gateway - the
         /// mutation boundary every house's orders cross.</summary>
-        string Order(TerritoryGangId mine, HouseIntent intent)
+        string Order(House house, TerritoryGangId mine, HouseIntent intent)
         {
+            // A HOUSE THE CITY NEVER STOOD UP still works its orders (RIVAL-008). The
+            // gateway needs a unit to refuse or accept; a family with no bodies has
+            // none, so its orders are worked on paper by the same ledgers.
+            if (!Stands(mine))
+                return PaperOrder(house, mine, intent);
+
             var group = TerritoryCommandNodeId.Crew(intent.CrewId);
             TerritoryCommandResult result;
             switch (intent.Order)

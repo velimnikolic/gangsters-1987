@@ -249,6 +249,29 @@ attackers in a bed for `MisfireDays`, the same as a botched charge.
 The player may only name a man his own men have stood near: `TurfKnowledge.LearnMan`
 records a face at the same reach a door is learnt at.
 
+## The houses the city never stood up
+
+Every family is simulated always. How many have BODIES is a performance decision, and
+`TerritoryRuntime.Stands(house)` is the whole of the test: a family with nobody on the
+street runs on paper, and nothing else about it changes.
+
+* its orders go to `PaperOrder` instead of the command gateway, and call the SAME
+  resolutions — `ResolveDemand`, `ResolveThreat`, the racket, the round ledger;
+* `OperateInBlock` becomes a POSTING, and `SamplePaperHouses` contributes one observation
+  per man of that crew into the same presence sample, at the same weights
+  (`gangsters_presence_tests` asserts a paper crew is worth exactly what the same crew on
+  the street is worth, and is forgotten by the same clock);
+* its rounds walk on `TerritoryPaperClock` and bank through the same `OnRoundEnded`;
+* its jobs resolve by the paper roll, which is what a street-absent job has always done.
+
+Every think is timed and the milliseconds go on the `"house"` trace row, and
+`Underworld.Think` executes at most ONE house's turn of mind per call on a round-robin
+rota — a single frame never carries twenty of them.
+
+**The physical count is the user's to write** (D18). Until he has played a measurement
+build and put a number in the table, `CoreDemoBuilder.rivalCrews` stays at 6 and
+everything above that runs on paper by the rule above.
+
 ## See also
 
 * `Docs/racket-collections.md` — the round ledger and the two clocks
