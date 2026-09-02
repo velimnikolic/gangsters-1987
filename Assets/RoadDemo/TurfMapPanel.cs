@@ -175,7 +175,10 @@ namespace RoadDemo
 
         RectTransform _precinctRect;
         TextMeshProUGUI _precinctLine;
-        string _precinctShown = "";
+        RectTransform _hideoutRect;
+        TextMeshProUGUI _hideoutLine;
+        RectTransform _transferRect;
+        TextMeshProUGUI _transferLine;
 
         /// <summary>
         /// HOW MUCH LAW THIS END OF TOWN HAS (GAN-226, ROSTER-006). A station's strength
@@ -189,31 +192,183 @@ namespace RoadDemo
         /// </summary>
         void BuildPrecinct(RectTransform root)
         {
-            _precinctRect = DemoUi.NewRect("Precinct", root);
-            _precinctRect.anchorMin = _precinctRect.anchorMax = new Vector2(0f, 0f);
-            _precinctRect.pivot = new Vector2(0f, 0f);
-            _precinctRect.anchoredPosition = Vector2.zero;
-            _precinctRect.sizeDelta = new Vector2(300f, 24f);
-            LedgerKit.Fill(_precinctRect, new Color32(247, 240, 218, 230));
-            LedgerKit.Rule(_precinctRect, 0f, 0f, 300f, Hairline, 1f);
+            Plaque(root, "Precinct", out _precinctRect, out _precinctLine);
 
-            _precinctLine = LedgerKit.Line(_precinctRect, LedgerStyle.Condensed, 9f, Slate,
-                10f, Mid(24f, LedgerKit.LineBox(9f)), 280f, LedgerKit.LineBox(9f), "");
-            _precinctLine.characterSpacing = 10f;
-            _precinctLine.raycastTarget = false;
-            _precinctRect.gameObject.SetActive(false);
+            // THE HIDEOUT'S OWN PLATE, stacked over the precincts (GAN-235). It is a
+            // different fact about the same city and it must not be read as part of the
+            // law's strength, so it is a plate of its own rather than another line.
+            Plaque(root, "Hideout", out _hideoutRect, out _hideoutLine);
+
+            // and the transfer on the road over that (GAN-237): which leg is running,
+            // so the big mark on the plate has words to go with it.
+            Plaque(root, "Transfer", out _transferRect, out _transferLine);
         }
 
+        /// <summary>One plate on the bottom-left stack: the same paper, ink and hairline
+        /// as the key opposite, no raycaster, and pushed at only when the words change.
+        /// </summary>
+        void Plaque(RectTransform root, string name,
+            out RectTransform rect, out TextMeshProUGUI line)
+        {
+            rect = DemoUi.NewRect(name, root);
+            rect.anchorMin = rect.anchorMax = new Vector2(0f, 0f);
+            rect.pivot = new Vector2(0f, 0f);
+            rect.anchoredPosition = Vector2.zero;
+            rect.sizeDelta = new Vector2(300f, PlaqueLine);
+            LedgerKit.Fill(rect, new Color32(247, 240, 218, 230));
+            LedgerKit.Rule(rect, 0f, 0f, 300f, Hairline, 1f);
+
+            line = LedgerKit.Line(rect, LedgerStyle.Condensed, 9f, Slate,
+                10f, Mid(PlaqueLine, LedgerKit.LineBox(9f)), 280f, LedgerKit.LineBox(9f), "");
+            line.characterSpacing = 10f;
+            line.raycastTarget = false;
+            rect.gameObject.SetActive(false);
+        }
+
+        /// <summary>The height of one line on the bottom-left stack.</summary>
+        const float PlaqueLine = 24f;
+
+        static readonly System.Text.StringBuilder Words = new System.Text.StringBuilder();
+
+        /// <summary>
+        /// EVERY STATION SAYS ITS OWN STRENGTH (GAN-236). One house was one line; a city
+        /// with several precincts gets one line each, in the order the city founded them -
+        /// so a player who has emptied the station at one end of town reads NO LAW against
+        /// THAT name, and the other end still answers.
+        ///
+        /// Repainted off a STAMP rather than off the composed string: the plaque is
+        /// rebuilt when a roster actually moves and costs an integer compare the rest of
+        /// the time.
+        /// </summary>
         void PaintPrecinct()
         {
             if (_precinctLine == null) return;
             var force = _hud != null ? _hud.Force : null;
-            var station = force != null ? force.Station : null;
-            var line = station != null ? station.Roster.Plaque().ToUpperInvariant() : "";
-            if (line == _precinctShown) return;
-            _precinctShown = line;
-            _precinctLine.SetText(line);
-            _precinctRect.gameObject.SetActive(line.Length > 0);
+            var stamp = PrecinctStamp(force);
+            if (stamp != _precinctStamp)
+            {
+                _precinctStamp = stamp;
+                Words.Clear();
+                var lines = 0;
+                if (force != null)
+                    for (var i = 0; i < force.Precincts.Count; i++)
+                    {
+                        var roster = force.Precincts[i].Roster;
+                        if (roster == null) continue;
+                        if (lines++ > 0) Words.Append('\n');
+                        Words.Append(roster.Plaque().ToUpperInvariant());
+                    }
+                Resize(_precinctRect, _precinctLine, lines, Words.ToString());
+            }
+
+            PaintHideout();
+        }
+
+        int _precinctStamp = int.MinValue;
+
+        /// <summary>What the plaque is made of, as one integer: how many houses there
+        /// are, what each has left, and the day the next hole is filled.</summary>
+        static int PrecinctStamp(PoliceForce force)
+        {
+            if (force == null) return 0;
+            var stamp = 17;
+            for (var i = 0; i < force.Precincts.Count; i++)
+            {
+                var roster = force.Precincts[i].Roster;
+                if (roster == null) continue;
+                stamp = stamp * 31 + roster.Cars;
+                stamp = stamp * 31 + roster.Officers;
+                for (var l = 0; l < roster.Losses.Count; l++)
+                    stamp = stamp * 31 + roster.Losses[l].BackOnDay;
+            }
+            return stamp;
+        }
+
+        /// <summary>
+        /// WHICH BUILDING IS THE HIDEOUT (GAN-235), and whether our men are actually in
+        /// it. The plate sits over the precincts because the two are read together: how
+        /// much law this end of town has, and where a man of ours would run from it.
+        /// </summary>
+        void PaintHideout()
+        {
+            if (_hideoutLine == null) return;
+            var where = TerritoryHideout.Where;
+            var inside = where.IsValid && CrewQuarters.AnyoneInside(where);
+            var stamp = TerritoryHideout.Version * 2 + (inside ? 1 : 0);
+            if (stamp != _hideoutStamp)
+            {
+                _hideoutStamp = stamp;
+                var line = "";
+                if (where.IsValid)
+                {
+                    var name = DoorMenu.TryRead(where, out var door) && door.Name.Length > 0
+                        ? door.Name
+                        : "OUR OWN DOOR";
+                    line = ("HIDEOUT · " + name +
+                            (inside ? " · OUR MEN ARE IN IT" : "")).ToUpperInvariant();
+                }
+                Resize(_hideoutRect, _hideoutLine, line.Length > 0 ? 1 : 0, line);
+            }
+
+            // and it stands ON the precinct plate, however many houses that has grown to
+            var above = _precinctRect.gameObject.activeSelf ? _precinctRect.sizeDelta.y : 0f;
+            _hideoutRect.anchoredPosition = new Vector2(0f, above);
+            if (_hideoutRect.gameObject.activeSelf) above += _hideoutRect.sizeDelta.y;
+
+            PaintTransfer(above);
+        }
+
+        int _hideoutStamp = int.MinValue;
+
+        /// <summary>
+        /// A MAN OF OURS ON THE ROAD (GAN-237). Which leg is running, and where it is
+        /// going: the words beside the big mark the plate draws for the car, so a player
+        /// who means to take the road knows which road it is.
+        /// </summary>
+        void PaintTransfer(float above)
+        {
+            if (_transferLine == null) return;
+            var force = _hud != null ? _hud.Force : null;
+            var running = force != null ? force.Transfers : 0;
+            var leg = LivingCity.Police.PrisonLeg.None;
+            if (force != null && running > 0) force.TryGetTransfer(0, out _, out leg);
+            var stamp = (int)leg * 64 + (running > 3 ? 3 : running);
+            if (stamp != _transferShown)
+            {
+                _transferShown = stamp;
+                var line = leg switch
+                {
+                    LivingCity.Police.PrisonLeg.Court =>
+                        force != null && force.HasCourthouse
+                            ? ("A PRISONER TRANSFER · TO " +
+                               force.CourthouseName).ToUpperInvariant()
+                            : "A PRISONER TRANSFER · TO THE COURT",
+                    LivingCity.Police.PrisonLeg.Prison =>
+                        "A PRISONER TRANSFER · OUT OF TOWN",
+                    _ => "",
+                };
+                // and it says so when there is more than one car out, because the plate
+                // draws a big mark for each and one line under two marks reads as a bug
+                if (line.Length > 0 && running > 1)
+                    line += " · " + running + " ON THE ROAD";
+                Resize(_transferRect, _transferLine, line.Length > 0 ? 1 : 0, line);
+            }
+            _transferRect.anchoredPosition = new Vector2(0f, above);
+        }
+
+        int _transferShown = int.MinValue;
+
+        /// <summary>Fits a plate to the words it now carries; an empty plate goes away
+        /// rather than standing blank on the paper.</summary>
+        static void Resize(RectTransform rect, TextMeshProUGUI line, int lines, string words)
+        {
+            line.SetText(words);
+            var box = LedgerKit.LineBox(9f, lines < 1 ? 1 : lines);
+            var tall = box + 8f;
+            if (tall < PlaqueLine) tall = PlaqueLine;
+            rect.sizeDelta = new Vector2(300f, tall);
+            LedgerKit.PlaceTopLeft(line.rectTransform, 10f, Mid(tall, box), 280f, box);
+            rect.gameObject.SetActive(lines > 0);
         }
 
         // ----------------------------------------------------------------- the ruler

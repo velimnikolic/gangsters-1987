@@ -217,6 +217,11 @@ namespace RoadDemo
                     break;
                 case Mode.Patrolling:
                 case Mode.Returning:
+                // AND A CAR STOOD AT A SCENE CAN BE SENT ON TO THE NEXT ONE. Without this
+                // a transfer that pulled in to collect its man could never leave again:
+                // every other caller gates on Available, which OnScene is not, so nothing
+                // else reaches this case (GAN-237).
+                case Mode.OnScene:
                     BeginResponding();
                     break;
             }

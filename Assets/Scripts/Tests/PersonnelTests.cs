@@ -39,6 +39,7 @@ namespace LivingCity.Tests
             WheelsFlowThroughTheLieutenant(failures);
             APinnedGunIsNotDealtAway(failures);
             APinLapsesWhenTheManLeaves(failures);
+            TheDonKeepsHisOwnIron(failures);
             TheDonsDetailTakesTheKeys(failures);
             KeysMoveBetweenLieutenants(failures);
             LieutenantDealsArmsByOrganization(failures);
@@ -679,7 +680,7 @@ namespace LivingCity.Tests
             if (refused.Ok || refused.Reason != LedgerText.ReasonGearViaLieutenant)
                 failures.Add("WheelsFlowThroughTheLieutenant: the hood got his own " +
                              "car.");
-            if (!RosterOps.GiveEquipment(roster, pistol.Id, hood.Id).Ok)
+            if (!RosterOps.GiveEquipment(roster, pistol.Id, hood.Id, pin: true).Ok)
                 failures.Add("WheelsFlowThroughTheLieutenant: the boss could not put " +
                              "a gun in a hood's hand.");
             // The deed stays with the crew he stands in; the piece is his.
@@ -716,7 +717,7 @@ namespace LivingCity.Tests
             var pinned = MakeItem(roster, EquipmentKind.Shotgun);
             var stock = MakeItem(roster, EquipmentKind.Pistol);
 
-            if (!RosterOps.GiveEquipment(roster, pinned.Id, poor.Id).Ok ||
+            if (!RosterOps.GiveEquipment(roster, pinned.Id, poor.Id, pin: true).Ok ||
                 !RosterOps.GiveEquipment(roster, stock.Id, lieutenant.Id).Ok)
                 failures.Add("APinnedGunIsNotDealtAway: the issue was refused.");
 
@@ -742,6 +743,44 @@ namespace LivingCity.Tests
                 failures.Add("APinnedGunIsNotDealtAway: the returned gun kept its pin.");
         }
 
+        /// <summary>
+        /// The Don can be handed a gun on day one, before a detail is standing and with
+        /// no crew in the world to own the deed - his own iron goes on his own name,
+        /// belongs to no deck and is dealt by nobody. It stays his afterwards too, when
+        /// his detail is standing and a better shot is guarding him.
+        /// </summary>
+        static void TheDonKeepsHisOwnIron(List<string> failures)
+        {
+            var roster = new Roster();
+            var boss = Make(roster, "Don", "Head", Rank.Boss);
+            roster.Organization.BossId = boss.Id;
+            var gun = MakeItem(roster, EquipmentKind.Shotgun);
+
+            if (!RosterOps.GiveEquipment(roster, gun.Id, boss.Id, pin: true).Ok)
+                failures.Add("TheDonKeepsHisOwnIron: the Don could not be handed a " +
+                             "gun with no detail standing.");
+            RosterOps.NormalizeArms(roster);
+            if (gun.OwnerId != boss.Id || gun.HolderId != boss.Id ||
+                gun.PinnedTo != boss.Id)
+                failures.Add("TheDonKeepsHisOwnIron: his own iron did not stay on his " +
+                             "own name.");
+
+            // Now his detail stands, and the best shot in it is not him.
+            var guard = Make(roster, "Best", "Shot");
+            var detail = new Crew { Id = roster.NextCrewId(), LieutenantId = boss.Id };
+            detail.HoodIds.Add(guard.Id);
+            roster.Crews.Add(detail);
+            guard.SetHalfSteps(CharacterAttribute.Combat, AttributeScale.MaxHalfSteps);
+            boss.SetHalfSteps(CharacterAttribute.Combat, 1);
+            boss.SetHalfSteps(CharacterAttribute.Organization,
+                AttributeScale.MaxHalfSteps);
+
+            RosterOps.NormalizeArms(roster);
+            if (gun.HolderId != boss.Id)
+                failures.Add("TheDonKeepsHisOwnIron: his detail dealt the gun out of " +
+                             "his own hand.");
+        }
+
         /// <summary>A pin is his while he stands in that group and no longer: moved to
         /// another crew, the piece stays behind on the old deed and is dealt there.
         /// </summary>
@@ -755,7 +794,7 @@ namespace LivingCity.Tests
             MakeCrew(roster, second);
 
             var gun = MakeItem(roster, EquipmentKind.Shotgun);
-            RosterOps.GiveEquipment(roster, gun.Id, hood.Id);
+            RosterOps.GiveEquipment(roster, gun.Id, hood.Id, pin: true);
             RosterOps.NormalizeArms(roster);
             if (gun.HolderId != hood.Id)
                 failures.Add("APinLapsesWhenTheManLeaves: he never got it.");

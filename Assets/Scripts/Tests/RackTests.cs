@@ -45,6 +45,7 @@ namespace LivingCity.Tests
             OneVisitFilesOneSlip(failures);
             MoneyReachesTheWireWithItsSum(failures);
             AShakedownWalksTheDoorsThatHaveNotAnswered(failures);
+            TheHideoutIsNamedOverOurOwnDoor(failures);
 
             return failures;
         }
@@ -703,6 +704,73 @@ namespace LivingCity.Tests
                 !Named(rows, TerritoryRacketOrders.GuardLabel) ||
                 !Named(rows, TerritoryRacketOrders.BuyLabel))
                 failures.Add("ORDER: a door row the ledger has is missing from the list.");
+        }
+
+        /// <summary>
+        /// GAN-235. THE HIDEOUT IS NAMED OVER OUR OWN DOOR. Any premises on the family's
+        /// paper can be the one address a running man makes for - the headquarters, a shop
+        /// bought outright, whatever we hold - and there is only ever one: the row turns
+        /// round once it is named rather than being offered to itself again.
+        ///
+        /// Both halves are asserted, because a menu that refuses the wrong doors by
+        /// refusing every door would pass the first half and be useless.
+        /// </summary>
+        static void TheHideoutIsNamedOverOurOwnDoor(List<string> failures)
+        {
+            var rows = new List<TerritoryRacketOrder>();
+
+            // A door on somebody else's paper is never named: you cannot hide in a shop
+            // you do not own.
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Compliant, Outfit.DoorTenure.Paying,
+                true, true, false, 4_000, rows);
+            if (Named(rows, TerritoryRacketOrders.HideoutLabel))
+                failures.Add("HIDEOUT: a door we do not hold was offered as a hideout.");
+
+            // Ours: the men can move in, and it can be named.
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, Outfit.DoorTenure.Ours,
+                true, true, false, 4_000, rows);
+            if (!Named(rows, TerritoryRacketOrders.MoveInLabel))
+                failures.Add("HIDEOUT: our own door would not take our own men.");
+            if (!Offers(rows, TerritoryHideoutMove.Make, true))
+                failures.Add("HIDEOUT: a premises of ours could not be named the hideout.");
+
+            // And once it IS the hideout the row turns round rather than vanishing.
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, Outfit.DoorTenure.Ours,
+                true, true, false, 4_000, rows, isHideout: true);
+            if (Named(rows, TerritoryRacketOrders.HideoutLabel) ||
+                !Offers(rows, TerritoryHideoutMove.Give, true))
+                failures.Add("HIDEOUT: the hideout was offered to itself again.");
+
+            // A SHUT PREMISES IS NO HIDEOUT. Smashed in or burned out, nobody can walk
+            // through it, so it cannot be named one - and the row stands, faded, saying
+            // why. Giving one up stays open, which is how a player gets out of it.
+            var boarded = new TerritoryDoorClosure(
+                true, "closed - windows in - reopens in 3 days", false, false, 0);
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, Outfit.DoorTenure.Ours,
+                true, true, false, 4_000, rows, closure: boarded);
+            if (Offers(rows, TerritoryHideoutMove.Make, true))
+                failures.Add("HIDEOUT: a boarded-up premises was offered as a hideout.");
+            if (!Named(rows, TerritoryRacketOrders.HideoutLabel))
+                failures.Add("HIDEOUT: the row must stand, faded, and say why.");
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, Outfit.DoorTenure.Ours,
+                true, true, false, 4_000, rows, closure: boarded, isHideout: true);
+            if (!Offers(rows, TerritoryHideoutMove.Give, true))
+                failures.Add("HIDEOUT: a shut hideout could not be given up.");
+        }
+
+        static bool Offers(
+            List<TerritoryRacketOrder> rows, TerritoryHideoutMove move, bool available)
+        {
+            for (var i = 0; i < rows.Count; i++)
+                if (rows[i].Kind == TerritoryDoorRowKind.Hideout &&
+                    rows[i].HideoutMove == move && rows[i].Available == available)
+                    return true;
+            return false;
         }
 
         static bool Offers(

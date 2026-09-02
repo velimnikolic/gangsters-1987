@@ -76,9 +76,67 @@ namespace RoadDemo
         {
             public PolicePatrolCar Car;
             public Precinct From;
+
+            /// <summary>Which drive this is: the station to the court, or the court out
+            /// of town (GAN-237). Both are real roads and both can be taken.</summary>
+            public PrisonLeg Leg;
+
+            /// <summary>Where it is going - the courthouse forecourt or the county line.
+            /// </summary>
+            public Vector3 To;
+
+            /// <summary>Where it must call FIRST, to collect the man: the station that
+            /// sent it for a court run, the courthouse for a prison run. A car free to
+            /// take a transfer may be resting in its stall or half-way across the city,
+            /// so a drive that started at the car rather than at the prisoner would have
+            /// teleported him out of the cells (GAN-237).</summary>
+            public Vector3 Pickup;
+
+            /// <summary>He is actually in the back. Until then the escort can be killed
+            /// but nobody walks out of it - he was never in the car.</summary>
+            public bool Loaded;
+
             public readonly List<Prisoner> Riders = new List<Prisoner>();
             public float By;          // the backstop: a drive that never arrives
             public string WasCalled;  // the car's own name, put back when it docks
+        }
+
+        /// <summary>
+        /// THE COURTHOUSE FORECOURT, when the city stands one (GAN-237). Set by whoever
+        /// built the city; left invalid where no court was placed, and then the first leg
+        /// drives out of town like the second - because the project's rule is that a leg
+        /// does not pretend to drive to a building nobody put on the map.
+        /// </summary>
+        public Vector3 CourthouseDoor { get; private set; }
+
+        public bool HasCourthouse { get; private set; }
+
+        /// <summary>What the court is called on the ledger and the map.</summary>
+        public string CourthouseName { get; private set; } = "";
+
+        public void StandCourthouse(Vector3 door, string name)
+        {
+            CourthouseDoor = door;
+            CourthouseName = string.IsNullOrEmpty(name) ? "the County Courthouse" : name;
+            HasCourthouse = true;
+        }
+
+        /// <summary>How many transfers are on the road right now. Two men due on the
+        /// same day ride in two cars, and the map has to draw both of them.</summary>
+        public int Transfers => _convoys.Count;
+
+        /// <summary>One transfer on the road: the car to draw and the leg it is running.
+        /// False for an index past the end, so a caller can walk it without a lock.
+        /// </summary>
+        public bool TryGetTransfer(int index, out PolicePatrolCar car, out PrisonLeg leg)
+        {
+            car = null;
+            leg = PrisonLeg.None;
+            if (index < 0 || index >= _convoys.Count)
+                return false;
+            car = _convoys[index].Car;
+            leg = _convoys[index].Leg;
+            return true;
         }
 
         /// <summary>Every dial in one place (replacement days, the watch hours and the
@@ -148,7 +206,7 @@ namespace RoadDemo
         /// hears every death on StreetAlarm - no second channel for the same fact.</summary>
         public void OfficerDown(Vector3 where)
         {
-            var precinct = Nearest(where);
+            var precinct = WhoLost(where);
             if (precinct == null) return;
             var loss = precinct.Roster.Lose(PoliceLoss.Officer, Today(), Config);
             if (loss == null) return;
@@ -157,6 +215,34 @@ namespace RoadDemo
                     ? "NO LAW LEFT AT " + Plain(precinct.Roster.Name)
                     : "AN OFFICER DOWN — " + Plain(precinct.Roster.Name) + " IS A MAN SHORT",
                 5f, new Color(0.55f, 0.78f, 1f));
+        }
+
+        /// <summary>Metres within which a unit of the law standing near a body IS the man
+        /// who fell. A pair walks together and a car's crew gets out beside it, so the
+        /// answer is a few strides rather than a street.</summary>
+        const float OfficerReach = 30f;
+
+        /// <summary>The precinct the force itself knows it is about to lose a man from -
+        /// its own escort, killed by a wrecked transfer. Set for the length of the two
+        /// deaths it raises and cleared again, so the channel stays a place and a kind
+        /// for everybody else.</summary>
+        Precinct _losing;
+
+        /// <summary>
+        /// Whose roster this death comes off. The force's own escort first (it knows), then
+        /// the unit standing where the body is (it knows its precinct), and only then the
+        /// nearest station house - which is a guess, and the one the whole city used to
+        /// make (GAN-236).
+        /// </summary>
+        Precinct WhoLost(Vector3 where)
+        {
+            if (_losing != null) return _losing;
+            var id = _dispatch != null ? _dispatch.PrecinctNear(where, OfficerReach) : -1;
+            if (id >= 0)
+                for (var i = 0; i < _precincts.Count; i++)
+                    if (_precincts[i].Roster != null && _precincts[i].Roster.StationId == id)
+                        return _precincts[i];
+            return Nearest(where);
         }
 
         void Update()
@@ -186,43 +272,94 @@ namespace RoadDemo
             for (var i = 0; i < _forTransfer.Count; i++)
             {
                 var prisoner = _forTransfer[i];
-                var precinct = Station;
-                if (precinct == null) continue;
 
-                var car = FreeCar(precinct);
+                // ANY HOUSE CAN RUN THE VAN. With several precincts the city is not one
+                // station wide (GAN-236), so the transfer goes out of the first house
+                // with a car to spare rather than always out of the first on the list.
+                Precinct precinct = null;
+                PolicePatrolCar car = null;
+                for (var p = 0; p < _precincts.Count && car == null; p++)
+                {
+                    car = FreeCar(_precincts[p]);
+                    if (car != null) precinct = _precincts[p];
+                }
                 if (car == null)
                 {
-                    // no car on the roster today: he waits, and the pipeline gives him
+                    // no car on any roster today: he waits, and the pipeline gives him
                     // tomorrow rather than losing him
                     Pipeline.BackToTheCells(prisoner, Today());
                     continue;
                 }
 
-                var convoy = Riding(precinct, car);
+                var convoy = Riding(precinct, car, prisoner.Leg);
                 convoy.Riders.Add(prisoner);
-                Pipeline.Away(prisoner);
             }
             _forTransfer.Clear();
         }
 
-        Convoy Riding(Precinct precinct, PolicePatrolCar car)
+        Convoy Riding(Precinct precinct, PolicePatrolCar car, PrisonLeg leg)
         {
             for (var i = 0; i < _convoys.Count; i++)
-                if (_convoys[i].Car == car) return _convoys[i];
+                if (_convoys[i].Car == car && _convoys[i].Leg == leg && !_convoys[i].Loaded)
+                    return _convoys[i];
+
+            // WHERE IT IS ACTUALLY DRIVING. The first leg goes to the courthouse when the
+            // city stands one and out of town when it does not - nothing here invents a
+            // building. The second always leaves town: the state prison is not on this
+            // map, and the user's call (GAN-237, 2026-09-02) is that it stays off it.
+            var to = leg == PrisonLeg.Court && HasCourthouse
+                ? CourthouseDoor
+                : precinct.CountyLine;
+
+            // AND WHERE THE MAN ACTUALLY IS. A man waiting on a judge is in the cells of
+            // the house that runs the van; a man already sentenced is at the court. The
+            // car calls there first and only then carries anybody - which is also what
+            // makes the drive worth ambushing, because before it he is not in the car.
+            var pickup = leg == PrisonLeg.Prison && HasCourthouse
+                ? CourthouseDoor
+                : precinct.Door;
 
             var convoy = new Convoy
             {
                 Car = car,
                 From = precinct,
+                Leg = leg,
+                To = to,
+                Pickup = pickup,
                 By = Time.time + TransferPatience,
                 WasCalled = car.Tf != null ? car.Tf.name : "",
             };
             _convoys.Add(convoy);
-            car.RouteTo(precinct.CountyLine, 0f);
-            if (car.Tf != null) car.Tf.name = "Prisoner Transfer";
-            CrewOverlay.Announce("A PRISONER TRANSFER IS ON THE ROAD",
-                5f, new Color(0.55f, 0.78f, 1f));
+            car.RouteTo(pickup, 0f);
+            if (car.Tf != null) car.Tf.name = "Prisoner Transfer - going for him";
             return convoy;
+        }
+
+        /// <summary>
+        /// HE IS IN THE BACK NOW. The car reached the place he was being held, the men
+        /// whose transfer this is go on the road, and only from here is there anything in
+        /// the car for somebody to take. The patience clock starts again: the drive is a
+        /// journey of its own and must not inherit what the collection spent.
+        /// </summary>
+        void Load(Convoy convoy)
+        {
+            convoy.Loaded = true;
+            for (var r = 0; r < convoy.Riders.Count; r++)
+                Pipeline.Away(convoy.Riders[r]);
+            convoy.By = Time.time + TransferPatience;
+            convoy.Car.RouteTo(convoy.To, 0f);
+            if (convoy.Car.Tf != null)
+                convoy.Car.Tf.name = convoy.Leg == PrisonLeg.Prison
+                    ? "Prisoner Transfer - to the prison"
+                    : "Prisoner Transfer - to the court";
+            CrewOverlay.Announce(
+                convoy.Leg == PrisonLeg.Prison
+                    ? "A VAN IS TAKING HIM OUT OF TOWN"
+                    : HasCourthouse
+                        ? "A PRISONER TRANSFER IS ON THE ROAD TO " +
+                          CourthouseName.ToUpperInvariant()
+                        : "A PRISONER TRANSFER IS ON THE ROAD",
+                5f, new Color(0.55f, 0.78f, 1f));
         }
 
         /// <summary>Seconds a transfer is given to get out of town before the force
@@ -248,7 +385,14 @@ namespace RoadDemo
                     continue;
                 }
                 if (car.Wrecked) { Ended(convoy, wrecked: true); _convoys.RemoveAt(i); continue; }
-                if (((IPoliceUnit)car).OnScene) { Ended(convoy, wrecked: false); _convoys.RemoveAt(i); continue; }
+                if (((IPoliceUnit)car).OnScene)
+                {
+                    // the first arrival is the collection, the second is the destination
+                    if (!convoy.Loaded) { Load(convoy); continue; }
+                    Ended(convoy, wrecked: false);
+                    _convoys.RemoveAt(i);
+                    continue;
+                }
                 if (Time.time > convoy.By)
                 {
                     // it never got there: back to the cells, and the car goes home
@@ -271,8 +415,22 @@ namespace RoadDemo
                 // roster and the swarm all hear it exactly once and in the same way.
                 var where = convoy.Car != null && convoy.Car.Tf != null
                     ? convoy.Car.Tf.position : convoy.From.At;
+                // and they come off the books of the house that sent them, wherever on the
+                // map the car was when it was taken (GAN-236)
+                _losing = convoy.From;
                 StreetAlarm.Death(where, StreetAlarm.DeathOf.Officer);
                 StreetAlarm.Death(where, StreetAlarm.DeathOf.Officer);
+                _losing = null;
+
+                // AND NOBODY WALKS OUT OF AN EMPTY CAR. A car shot to pieces on its way
+                // to collect him kills its escort and nothing else: he is still in the
+                // cells, or still at the court, and he simply rides again tomorrow.
+                if (!convoy.Loaded)
+                {
+                    for (var r = 0; r < convoy.Riders.Count; r++)
+                        Pipeline.BackToTheCells(convoy.Riders[r], today);
+                    return;
+                }
 
                 var freed = 0;
                 for (var r = 0; r < convoy.Riders.Count; r++)
@@ -289,13 +447,21 @@ namespace RoadDemo
                 return;
             }
 
+            // IT GOT THERE. Which ending that is depends on which leg it was: the court
+            // passes sentence, the county line hands him over to the state.
             for (var r = 0; r < convoy.Riders.Count; r++)
-                Pipeline.Convicted(roster, convoy.Riders[r], today);
+            {
+                if (convoy.Leg == PrisonLeg.Prison) Pipeline.Delivered(convoy.Riders[r]);
+                else Pipeline.Convicted(roster, convoy.Riders[r], today);
+            }
             if (convoy.Riders.Count > 0)
             {
                 var director = LivingCity.Gameplay.PersonnelDirector.Instance;
                 if (director != null) director.Touch();
-                CrewOverlay.Announce("THE COURT HAS PASSED SENTENCE",
+                CrewOverlay.Announce(
+                    convoy.Leg == PrisonLeg.Prison
+                        ? "THE STATE HAS HIM NOW"
+                        : "THE COURT HAS PASSED SENTENCE",
                     5f, new Color(0.55f, 0.78f, 1f));
             }
             Release(convoy);

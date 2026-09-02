@@ -1417,7 +1417,8 @@ namespace RoadDemo
                       " owed on this block · walk the round"
                     : "nothing owed yet · dues accrue daily at midnight",
                 LivingCity.UI.DoorMenu.ClosureOf(businessId),
-                CrewQuarters.State(crew, businessId));
+                CrewQuarters.State(crew, businessId),
+                LivingCity.Territory.TerritoryHideout.Is(businessId));
 
             for (var i = 0; i < _racketOrders.Count; i++)
             {
@@ -1458,6 +1459,19 @@ namespace RoadDemo
                                 CrewQuarters.BringOut(housed);
                             else
                                 CrewQuarters.Station(_crews, housed, quartersId);
+                        };
+                    }
+                    else if (order.Kind ==
+                             LivingCity.Territory.TerritoryDoorRowKind.Hideout)
+                    {
+                        // Naming the hideout is a line in the family's book. The same act
+                        // the ledger and the paper map offer, through the same call.
+                        var move = order.HideoutMove;
+                        var hideoutId = businessId;
+                        run = () =>
+                        {
+                            if (LivingCity.UI.DoorMenu.TryRead(hideoutId, out var door))
+                                LivingCity.UI.DoorMenu.NameHideout(door, move);
                         };
                     }
                     else

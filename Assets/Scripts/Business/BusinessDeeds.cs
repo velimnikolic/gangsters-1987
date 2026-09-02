@@ -50,6 +50,11 @@ namespace LivingCity.Business
             Version++;
             if (BusinessViewBindings.TryGet(businessId, out var marker))
                 marker.GangId = gangId;
+            // THE HIDEOUT IS A DEED LIKE ANY OTHER, so it is lost with the paper: this is
+            // the one place a premises changes hands, and the designation is cleared here
+            // rather than by a listener somebody could forget to attach (GAN-235).
+            TerritoryHideout.DeedChanged(
+                businessId, gangId, LivingCity.Gangs.GangCatalog.PlayerGangId);
             Changed?.Invoke(businessId, gangId);
         }
 
@@ -82,6 +87,7 @@ namespace LivingCity.Business
             deeds.Clear();
             Changed = null;
             Version++;
+            TerritoryHideout.Reset();
         }
     }
 }

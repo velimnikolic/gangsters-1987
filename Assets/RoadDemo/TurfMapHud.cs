@@ -2675,6 +2675,17 @@ namespace RoadDemo
                     if (MapVehicleVisible(car))
                         DrawCar(car, TurfInk.Ink, false);
 
+            // A TRANSFER GETS A MARK OF ITS OWN (GAN-237). It is a police car like the
+            // rest and would read as one; a player who has been told a man of his is on
+            // the road has to be able to find the car without hunting over the whole
+            // plate, so it is drawn BIG over the ordinary mark it already has. Every one
+            // of them: two men due on the same day ride in two cars.
+            var force = Force;
+            for (var i = 0; force != null && i < force.Transfers; i++)
+                if (force.TryGetTransfer(i, out var transfer, out _) &&
+                    MapVehicleVisible(transfer))
+                    DrawCar(transfer, TurfInk.Ink, true);
+
             if (_crews != null)
                 foreach (var car in _crews.Cars)
                 {

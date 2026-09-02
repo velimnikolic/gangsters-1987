@@ -469,11 +469,11 @@ namespace LivingCity.Gameplay
                 Roster, knownOrganizationBlocks, physicalSource, failures);
         }
 
-        public OpResult GiveEquipment(int itemId, int id)
+        public OpResult GiveEquipment(int itemId, int id, bool pin = false)
         {
             if (Roster == null)
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
-            return Commit(RosterOps.GiveEquipment(Roster, itemId, id), "armed", id);
+            return Commit(RosterOps.GiveEquipment(Roster, itemId, id, pin), "armed", id);
         }
 
         /// <summary>The street's GIVE: this item to this lieutenant, whoever had it

@@ -1959,6 +1959,9 @@ namespace GangstersTools
                 var development = new List<CoreAmenityLayout.Site>();
                 CoreAmenityLayout.Select(raster, amenityCandidates, s, 3, 5,
                     parking, fuel, development);
+                // the same pick the city makes, so the verdict MEASURES the courthouse
+                // rather than describing an editor-only replica of it (GAN-237)
+                var court = CoreAmenityLayout.PickCourthouse(development, plan.Territory);
                 if (raster.Faults == 0) clean++;
                 if (plan.Attempt == 0) firstDeal++;
                 results.Add(new
@@ -1971,6 +1974,14 @@ namespace GangstersTools
                     roadM2 = raster.RoadArea,
                     parkingM2 = raster.ParkingArea,
                     fuelStations = fuel.Count,
+                    courthouse = court == null ? null : new
+                    {
+                        x = court.Box.xMin,
+                        z = court.Box.yMin,
+                        width = court.Box.width,
+                        depth = court.Box.height,
+                        entry = court.Entry.ToString(),
+                    },
                     fuelSites = fuel.Select(site => new
                     {
                         x = site.Box.xMin,

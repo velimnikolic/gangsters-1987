@@ -90,7 +90,7 @@ namespace LivingCity.EditorTools
         /// Version.txt beside the output so CreateAssets can skip reopening a 61 MB demo
         /// scene on every refresh. Delete the file (or bump this) to force a re-extract.
         /// </summary>
-        public const int Version = 7;
+        public const int Version = 8;
         const string VersionPath = BuildingsDir + "/Version.txt";
 
         /// <summary>demo group -> city role. yawOverride in degrees, NaN = trust the doors.</summary>
@@ -140,6 +140,48 @@ namespace LivingCity.EditorTools
             new(PalmDemo, "City/Toilet", "building-park-toilet"),
         };
 
+        /// <summary>
+        /// THE COURTHOUSE (GAN-237). The city needed a civic building the prisoner
+        /// transfer could actually drive to, and the packs hold exactly one thing that
+        /// reads as a court from the street: PolygonCity's city hall - a stone front with
+        /// a colonnade and a flight of steps. The user picked it on 2026-09-02.
+        ///
+        /// It is a single authored prefab rather than a demo-scene group, so there is
+        /// nothing to reassemble: it is copied into the catalogue as building-courthouse
+        /// like every other building the city stands (the catalogue rule - everything is
+        /// COPIED into CityKit as building-* first), with its front measured off its own
+        /// door pieces the same way the palm groups are.
+        /// </summary>
+        [MenuItem("Tools/City/Catalog/Extract Courthouse", priority = 2)]
+        public static void ExtractCourthouse()
+        {
+            EnsureFolders();
+            const string source =
+                "Assets/Synty/PolygonCity/Prefabs/Buildings/SM_Bld_CityHall_01.prefab";
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(source);
+            if (!prefab)
+            {
+                Debug.LogWarning("SyntyKitExtractor: " + source + " not found; no courthouse");
+                return;
+            }
+
+            var copy = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            PrefabUtility.UnpackPrefabInstance(
+                copy, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
+            copy.name = "building-courthouse";
+            copy.transform.position = Vector3.zero;
+            copy.transform.rotation = Quaternion.identity;
+            try
+            {
+                BakeGroup(copy, "building-courthouse", MeasureFrontYaw(copy));
+            }
+            finally
+            {
+                Object.DestroyImmediate(copy);
+            }
+            AssetDatabase.SaveAssets();
+        }
+
         [MenuItem("Tools/City/Catalog/Rebuild Synty City Kit (Buildings)", priority = 1)]
         public static void ForceExtract()
         {
@@ -158,6 +200,7 @@ namespace LivingCity.EditorTools
             SyntyBakeUtil.ClearCache();
             ExtractPalmGroups();
             ExtractPoliceStation();
+            ExtractCourthouse();
             ExtractGangWarehouse();
             ExtractCoffeeShop();
             SyntyBakeUtil.ClearCache();

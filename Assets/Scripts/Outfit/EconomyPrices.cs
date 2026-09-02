@@ -207,7 +207,7 @@ namespace LivingCity.Outfit
         /// and the fifty made the counter the only sane way to grow, for no reason
         /// anybody had decided. One signing, one price; the ORDER differs only by
         /// taking twelve hours and letting the recruiter's eye find a better man.
-        /// (Docs/economy-prices.md Â§8.)
+        /// (Docs/economy-prices.md §8.)
         /// </summary>
         public const int RecruitSigning = 500;
     }

@@ -93,6 +93,19 @@ namespace RoadDemo
             unit != null && door.IsValid &&
             Billets.TryGetValue(unit.CrewId, out var billet) && billet.Door == door;
 
+        /// <summary>Is anybody of ours actually behind THIS door, all the way in? The
+        /// map asks it of the hideout, so the plaque can say the men are in it rather
+        /// than only that it exists.</summary>
+        public static bool AnyoneInside(TerritoryBusinessId door)
+        {
+            if (!door.IsValid)
+                return false;
+            foreach (var billet in Billets.Values)
+                if (billet.In && billet.Door == door)
+                    return true;
+            return false;
+        }
+
         /// <summary>The same question for a door the business directory cannot name -
         /// an authored scene's front, which is known only by the pavement outside it.
         /// </summary>

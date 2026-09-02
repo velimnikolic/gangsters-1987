@@ -40,6 +40,11 @@ namespace LivingCity.Tests
             ("OutOfTownDrawsNoWage", OutOfTownDrawsNoWage),
             ("ADeputyRunsTheCrewWhileTheLeaderIsInside", ADeputyRunsTheCrewWhileTheLeaderIsInside),
             ("TheLeaderKeepsHisBranchOnPaper", TheLeaderKeepsHisBranchOnPaper),
+            ("TheHideoutIsOneAddressAndItMoves", TheHideoutIsOneAddressAndItMoves),
+            ("TheHideoutGoesWithItsDeed", TheHideoutGoesWithItsDeed),
+            ("TheSecondLegRunsOnItsOwnDay", TheSecondLegRunsOnItsOwnDay),
+            ("TheVanCanBeTakenLikeTheFirstCar", TheVanCanBeTakenLikeTheFirstCar),
+            ("NobodyWalksOutOfACarHeWasNeverIn", NobodyWalksOutOfACarHeWasNeverIn),
         };
 
         public static List<string> Run()
@@ -341,6 +346,8 @@ namespace LivingCity.Tests
             });
 
             var prisoner = pipe.Book(roster, man.Id, Deed.Murder, 10);
+            var riding = new List<Prisoner>();
+            pipe.DayTick(12, riding);
             pipe.Away(prisoner);
             pipe.Freed(roster, prisoner, 12);
 
@@ -359,12 +366,122 @@ namespace LivingCity.Tests
 
             // and the next judge adds it on
             var again = pipe.Book(roster, man.Id, Deed.Affray, 20);
+            pipe.DayTick(22, riding);
             pipe.Away(again);
             pipe.Convicted(roster, again, 22);
             var clean = Sentencing.Days(Deed.Affray,
                 new Random(Sentencing.StreamFor(roster.Seed, man.Id, 22)), false);
             Want(failures, again.SentenceDays == clean + Sentencing.EscapeSurcharge,
                 "PIPE: the surcharge reaches the sentence through the pipeline.");
+        }
+
+        /// <summary>
+        /// GAN-237, PIPE-002. TWO LEGS, TWO DAYS. The verdict lands at the court; the van
+        /// out of town is a second scheduled drive on a day of its own, and until it
+        /// arrives the state does not have him. Both stages are asserted, because a pipe
+        /// that jumped straight from the verdict to "serving" would leave the second road
+        /// with nothing on it to take.
+        /// </summary>
+        static void TheSecondLegRunsOnItsOwnDay(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var prisoner = pipe.Book(roster, man.Id, Deed.Murder, 10);
+            var wanted = new List<Prisoner>();
+
+            pipe.DayTick(12, wanted);
+            Want(failures, wanted.Count == 1 && prisoner.Leg == PrisonLeg.Court,
+                "PIPE: the first leg is the one to court.");
+            pipe.Away(prisoner);
+            pipe.Convicted(roster, prisoner, 12);
+
+            Want(failures, prisoner.Stage == PrisonStage.Sentenced,
+                "PIPE: sentenced is not delivered - he waits at the court for the van.");
+            Want(failures, prisoner.PrisonDay == 12 + Sentencing.DaysToPrison,
+                "PIPE: the van has an absolute day of its own.");
+
+            pipe.DayTick(12, wanted);
+            Want(failures, wanted.Count == 0,
+                "PIPE: nobody rides out of town before the van's day.");
+
+            pipe.DayTick(prisoner.PrisonDay, wanted);
+            Want(failures, wanted.Count == 1 && prisoner.Leg == PrisonLeg.Prison &&
+                           prisoner.Stage == PrisonStage.ForTransfer,
+                "PIPE: the van's day puts him up for the second transfer.");
+
+            // no car that day: he goes back to the COURT, not to the cells, and he is
+            // not sentenced a second time
+            pipe.BackToTheCells(prisoner, prisoner.PrisonDay);
+            Want(failures, prisoner.Stage == PrisonStage.Sentenced &&
+                           prisoner.PrisonDay == 13 + 1,
+                "PIPE: a van with no car leaves a sentenced man sentenced, riding tomorrow.");
+
+            pipe.DayTick(prisoner.PrisonDay, wanted);
+            pipe.Away(prisoner);
+            Want(failures, prisoner.Stage == PrisonStage.InTransit,
+                "PIPE: and he rides the next day.");
+            pipe.Delivered(prisoner);
+            Want(failures, prisoner.Stage == PrisonStage.Serving,
+                "PIPE: the state has him only once the van arrives.");
+            Want(failures, man.Status == CharacterStatus.Jailed &&
+                           man.BackOnDay == 12 + prisoner.SentenceDays,
+                "PIPE: delivery changes nothing on his sheet - the verdict set the date.");
+        }
+
+        /// <summary>
+        /// GAN-237. THE SECOND ROAD IS A ROAD. Wreck the van and the man walks away
+        /// exactly as he does off the first car: off the books, on his feet, wanted, and
+        /// with the escape on his sheet - a sentence already passed is not a cage.
+        /// </summary>
+        static void TheVanCanBeTakenLikeTheFirstCar(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var prisoner = pipe.Book(roster, man.Id, Deed.Murder, 10);
+            var wanted = new List<Prisoner>();
+
+            pipe.DayTick(12, wanted);
+            pipe.Away(prisoner);
+            pipe.Convicted(roster, prisoner, 12);
+            pipe.DayTick(prisoner.PrisonDay, wanted);
+            pipe.Away(prisoner);
+
+            var freed = pipe.Freed(roster, prisoner, prisoner.PrisonDay);
+            Want(failures, freed != null && prisoner.Stage == PrisonStage.Freed,
+                "PIPE: the van can be taken like the car to the court.");
+            Want(failures, man.Status == CharacterStatus.Active && man.BackOnDay == 0,
+                "PIPE: a man out of the back of the van is off the books entirely.");
+            Want(failures, man.WantedLevel == WantedLevels.FreedFromTransfer,
+                "PIPE: and he is wanted for it.");
+            Want(failures, pipe.EverEscaped(man.Id),
+                "PIPE: the city remembers a man taken off the second leg too.");
+        }
+
+        /// <summary>
+        /// GAN-237. THE CAR COLLECTS HIM FIRST. A transfer is dispatched to wherever the
+        /// man is being held and only carries him from there, so a car wrecked on its way
+        /// to fetch him kills its escort and frees nobody: he was never in it. The pipe
+        /// refuses the release rather than trusting the caller to remember.
+        /// </summary>
+        static void NobodyWalksOutOfACarHeWasNeverIn(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var prisoner = pipe.Book(roster, man.Id, Deed.Murder, 10);
+            var wanted = new List<Prisoner>();
+
+            pipe.DayTick(12, wanted);
+            Want(failures, prisoner.Stage == PrisonStage.ForTransfer,
+                "PIPE: a man due today is up for transfer, not yet on the road.");
+
+            Want(failures, pipe.Freed(roster, prisoner, 12) == null,
+                "PIPE: a car wrecked before it collected him frees nobody.");
+            Want(failures, man.Status == CharacterStatus.Jailed && man.WantedLevel == 0,
+                "PIPE: and he is still on the books, unwanted.");
+
+            // he rides tomorrow, and THAT car can be taken
+            pipe.BackToTheCells(prisoner, 12);
+            pipe.DayTick(13, wanted);
+            pipe.Away(prisoner);
+            Want(failures, pipe.Freed(roster, prisoner, 13) != null,
+                "PIPE: once he is in the back, wrecking the car frees him.");
         }
 
         static void NoCarNoConvoyAndHeWaitsADay(List<string> failures)
@@ -554,6 +671,92 @@ namespace LivingCity.Tests
             empty.Crews.Add(bare);
             Want(failures, Command.EffectiveLieutenant(empty, bare) == null,
                 "DEPUTY: a branch of nobody has no acting commander - null is the honest answer.");
+        }
+
+        // ------------------------------------------------------------------- the hideout
+
+        static readonly LivingCity.Territory.TerritoryBusinessId Flat =
+            new LivingCity.Territory.TerritoryBusinessId("res:block-04:flat:3:row-02");
+
+        static readonly LivingCity.Territory.TerritoryBusinessId OtherFlat =
+            new LivingCity.Territory.TerritoryBusinessId("res:block-11:flat:1:corner-01");
+
+        /// <summary>
+        /// GAN-235. ONE ADDRESS. Naming a second hideout MOVES the designation rather
+        /// than adding one - a player with three hideouts has none he can name - and
+        /// giving it up leaves the family with none, which is the state the flee code
+        /// falls back to the nearest door of ours from.
+        /// </summary>
+        static void TheHideoutIsOneAddressAndItMoves(List<string> failures)
+        {
+            LivingCity.Territory.TerritoryHideout.Reset();
+            Want(failures, !LivingCity.Territory.TerritoryHideout.Any,
+                "HIDEOUT: a family starts with no hideout named.");
+
+            Want(failures, LivingCity.Territory.TerritoryHideout.Designate(Flat),
+                "HIDEOUT: naming a flat must take.");
+            Want(failures,
+                LivingCity.Territory.TerritoryHideout.Is(Flat) &&
+                LivingCity.Territory.TerritoryHideout.Where == Flat,
+                "HIDEOUT: the named flat is the hideout.");
+
+            // naming it twice changes nothing, and says so
+            Want(failures, !LivingCity.Territory.TerritoryHideout.Designate(Flat),
+                "HIDEOUT: naming the same door twice is not a change.");
+
+            var version = LivingCity.Territory.TerritoryHideout.Version;
+            Want(failures, LivingCity.Territory.TerritoryHideout.Designate(OtherFlat),
+                "HIDEOUT: a second address must be allowed - it MOVES the hideout.");
+            Want(failures,
+                LivingCity.Territory.TerritoryHideout.Is(OtherFlat) &&
+                !LivingCity.Territory.TerritoryHideout.Is(Flat),
+                "HIDEOUT: naming a second address moves it rather than keeping both.");
+            Want(failures, LivingCity.Territory.TerritoryHideout.Version != version,
+                "HIDEOUT: a move must move the repaint key.");
+
+            Want(failures, LivingCity.Territory.TerritoryHideout.Clear(),
+                "HIDEOUT: giving it up must take.");
+            Want(failures,
+                !LivingCity.Territory.TerritoryHideout.Any &&
+                !LivingCity.Territory.TerritoryHideout.Where.IsValid,
+                "HIDEOUT: given up, the family has no hideout at all.");
+            Want(failures, !LivingCity.Territory.TerritoryHideout.Clear(),
+                "HIDEOUT: giving up nothing is not a change.");
+
+            // an id that names no premises is not an address
+            Want(failures,
+                !LivingCity.Territory.TerritoryHideout.Designate(default),
+                "HIDEOUT: an invalid id must not become the hideout.");
+            LivingCity.Territory.TerritoryHideout.Reset();
+        }
+
+        /// <summary>
+        /// GAN-235. IT GOES WITH THE PAPER. Sell the flat, lose it, have it taken - the
+        /// designation goes with the deed the moment it changes hands, because a map that
+        /// points at a building somebody else owns is worse than a map with nothing on it.
+        /// </summary>
+        static void TheHideoutGoesWithItsDeed(List<string> failures)
+        {
+            const int us = 0;
+            const int them = 2;
+
+            LivingCity.Territory.TerritoryHideout.Reset();
+            LivingCity.Territory.TerritoryHideout.Designate(Flat);
+
+            // somebody else's deed changing hands is not our business
+            LivingCity.Territory.TerritoryHideout.DeedChanged(OtherFlat, them, us);
+            Want(failures, LivingCity.Territory.TerritoryHideout.Is(Flat),
+                "HIDEOUT: another door changing hands must not move ours.");
+
+            // and ours being written to us again is not a loss either
+            LivingCity.Territory.TerritoryHideout.DeedChanged(Flat, us, us);
+            Want(failures, LivingCity.Territory.TerritoryHideout.Is(Flat),
+                "HIDEOUT: the deed staying ours must not clear the designation.");
+
+            LivingCity.Territory.TerritoryHideout.DeedChanged(Flat, them, us);
+            Want(failures, !LivingCity.Territory.TerritoryHideout.Any,
+                "HIDEOUT: the hideout is lost with its deed.");
+            LivingCity.Territory.TerritoryHideout.Reset();
         }
     }
 }

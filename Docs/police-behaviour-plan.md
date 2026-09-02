@@ -230,3 +230,159 @@ GAN-220 (roj), GAN-222 (bekstvo i poternica). Otkazani: GAN-217, GAN-218, GAN-22
 - Odbijeno hapšenje je moglo da natera ekipu na odred na drugom kraju grada.
 - `PoliceForce` se sada pravi i kad scena nema stanicu, da papirni sloj (sud, kazne,
   poternica) ne bude tiho isključen.
+
+
+---
+
+## 8. Šta je urađeno 2026-09-02 (EPIC 23: GAN-234 → GAN-235/236/237)
+
+### 8.1 Skrovište je adresa koju igrač bira (GAN-235)
+
+- **Skrovište je bilo koja vrata na našoj tapiji** — štab, kupljena radnja, šta god
+  držimo. Nema posebnog tipa placa: **stanovi su izbačeni** (korisnikova odluka
+  2026-09-02 — za njih je napisan zaseban epik koji će to rešiti kako treba). Sa njima su
+  otišli i `BusinessArchetypeId.Apartment`, `BusinessArchetypes.Trades`, podela
+  `IsRacketable`/`CarriesBusiness` i dvoprolazno vezivanje markera — sve je to postojalo
+  samo zbog placa bez kase.
+- **`TerritoryHideout`** (čist, bez UnityEngine, `Assets/Scripts/Territory/TerritoryHideout.cs`):
+  jedna adresa, druga oznaka je POMERA, tapija koja promeni vlasnika je BRIŠE
+  (`BusinessDeeds.SetGang` zove `DeedChanged`). Reset ide uz reset knjige tapija.
+- **Red na meniju vrata** je u zajedničkoj tabeli (`TerritoryRacketOrders`), pa se pojavljuje
+  na sve tri površine odjednom (ulična kartica, turf mapa, blok fajl) — pravilo
+  `door-menu-one-to-one`. Nudi se nad SVAKIM vratima na našoj tapiji, i bledi sa razlogom
+  kad je plac razbijen ili spaljen (kroz ta vrata niko ne može da uđe).
+- **Bekstvo bira skrovište**: `PoliceDispatch.ToTheHideout` — ako je adresa naša, ako ulica
+  zna gde su joj vrata i ako je bliže od **350 m**, ljudi idu tamo; inače ostaje stara
+  rezerva (najbliža naša vrata), jer čovek opkoljen osam blokova dalje mora da ima gde.
+- **Vidi se**: nova tabla na turf mapi (`HIDEOUT · <ime> · OUR MEN ARE IN IT`), i rečenica
+  u zaglavlju menija vrata. Bez alokacija u mirovanju (crta se po žigu, ne po stringu).
+- Testovi: `TheHideoutIsOneAddressAndItMoves`, `TheHideoutGoesWithItsDeed` (police suite),
+  `TheHideoutIsNamedOverOurOwnDoor` (rack suite).
+
+### 8.2 Više stanica (GAN-236) — mašinerija je gotova, grad stoji JEDNU kuću
+
+**Nađeno pri radu:** u `CoreDemo`/`MiniCoreDemo` — jedinim scenama koje stoje grad —
+`RoadDemoBuilder` NIJE nalazio nijednu stanicu. `_policeStation` se postavljao samo u
+rešetkastoj grani (`BuildBlocks` / `PackFeatureBlocks`), koju primarna (Core) grana nikad ne
+prolazi. Posledica: nijedan precinct, nijedna kola na forecourt-u, nijedna vrata stanice —
+samo blok-patrole i papirni sloj.
+
+Urađeno:
+
+- **Lista stanica.** `_policeStation`/`_forecourtPlanned` zamenjeni `StationHouse` listom:
+  svaka kuća ima svoj red boksova, svoja vrata, svoj kerb i svoju granicu grada.
+  `PlanForecourt`, `SpawnPatrolCars` i `SpawnFootPatrols` primaju stanicu koju rade.
+- **Pretraga cele scene** (`FindStationHouses`): posle izgradnje grada nađe SVAKU
+  `building-policestation`, svejedno ko ju je postavio — pa Core konačno dobija precinct.
+- **Boksovi su oni koje je neko nacrtao**: Core-ov `police-station-block` je pečen sa
+  parkiranim policijskim kolima (`CoreBuildingBlocks.Parks`). Ta kola se sada UKLANJAJU a
+  živa flota doka tačno u njihove poze — i grad ne pokazuje dva seta policijskih kola
+  ispred jedne stanice.
+- **Svaki par ide najbližoj kući** (`FoundPrecinct`), pa je snaga na pločici broj ljudi koji
+  stvarno hodaju tim krajem grada. Stanični par ostaje prvi na smeni.
+- **Pločica po precinct-u** na turf mapi: jedan red po kući, `NO LAW — precinct empty` na
+  svoju adresu.
+- **Zamena kola** ide u SVOJ boks svoje stanice (`MakeCar` po precinct-u).
+
+**Nije urađeno, i zašto:** grad danas stoji **jednu** stanicu. `CoreBlockCatalog` deli
+`police-station-block` tačno jednom, a rezidencijalni prstenovi i predgrađa nemaju nijednu.
+Postaviti još kuća znači menjati raspored grada (odluka korisnika) i rešiti da stanica NE sme
+da bude streamovana kao rezidencijalni blok — flota i vrata joj ne smeju nestati kad kamera
+ode. Mašinerija je spremna: stani drugu kuću bilo gde i sledeći build ima drugi precinct bez
+ijedne izmene u kodu.
+
+### 8.3 Sud na mapi, dve deonice (GAN-237)
+
+**Odluka korisnika 2026-09-02:** zatvor OSTAJE van mape — druga deonica vozi do granice
+grada. Sud se gradi, izvor: `SM_Bld_CityHall_01` iz PolygonCity.
+
+- **`building-courthouse`** se kopira u `Assets/CityKit/Buildings` kroz
+  `Tools/City/Catalog/Extract Courthouse` (pravilo kataloga: prvo kopija u CityKit).
+- **Jedan sud, downtown**: `CoreDistrict.PickCourthouse` uzima najveću slobodnu parcelu u
+  Downtown-u (min 45 × 35 m) iz iste liste iz koje se uzimaju benzinske pumpe, i skida je sa
+  liste za stanogradnju. Nema parcele → nema suda, i transport i dalje vozi van grada
+  (pravilo: deonica ne glumi da stiže tamo gde niko nije sagradio zgradu).
+- **Prilaz** čita `RoadDemoBuilder.FindCourthouse`: strana zgrade koja gleda na najbližu
+  ulicu, 6 m ispred lica. Predaje se sili (`PoliceForce.StandCourthouse`).
+- **Pipeline ima dve deonice**: `Held → ForTransfer(Court) → InTransit → Sentenced` (presuda
+  pada na SUDU, čovek čeka kombi) `→ ForTransfer(Prison) → InTransit → Serving`.
+  `Sentencing.DaysToPrison = 1`. Kombi bez slobodnih kola vraća čoveka NA SUD, ne u ćeliju,
+  i ne sudi mu se dvaput. Obe deonice se presreću isto: uništena kola = dva mrtva policajca
+  preko `StreetAlarm`, čovek slobodan, nenaoružan, poternica W2.
+- **Transport vozi iz bilo koje kuće** koja ima slobodna kola (ne više uvek iz prve).
+- **Čita se na mapi**: transport se crta VELIKOM oznakom na turf plate-u, a nova tabla kaže
+  koja deonica ide (`A PRISONER TRANSFER · TO THE COUNTY COURTHOUSE` / `· OUT OF TOWN`).
+- Testovi: `TheSecondLegRunsOnItsOwnDay`, `TheVanCanBeTakenLikeTheFirstCar`.
+
+**Nije urađeno:** sud nije upisan u `Docs/business-inventory.md` kao civic sajt „kao City
+Hall". Razlog: nijedan provider danas ne objavljuje City Hall — `BusinessOwners.CityHallKey`
+postoji, ali ga niko ne poziva. Sud zato nije ni u direktorijumu, pa mu nijedna površina ne
+nudi meni, što je i tačno ponašanje; upis je kozmetika za audit.
+
+
+### 8.4 Adversarijalni review 2026-09-02 — pet nalaza, svi popravljeni
+
+Codex je prošao ceo diff kao „da li je ovo uopšte pravi pristup". Pet nalaza, svih pet
+tačnih, svih pet popravljeno u istom prolazu:
+
+1. **Stan je krao marker prodavnici ispod sebe.** `BusinessRuntime.MeasurePieces` meri
+   samo DIREKTNU decu bloka, pa su zgrada i svaki izlog u njoj isti „komad" — a katalog je
+   sortiran po site id-u, gde `flat:` ide pre `spot:`. Rezultat: u celom rezidencijalnom
+   gradu stan bi uzeo marker, a radnja ostala simulirana ali **neklikabilna**. Sada se
+   vezivanje radi u DVA prolaza: prvo trgovine, pa tek onda ono bez kase. Stan bez markera
+   nije izgubljen — u direktorijumu je, na blok fajlu, na mapi, i skrovište mu prilazi
+   preko doorstep-a sopstvenog sajta.
+2. **Stanovi su ulazili u merodavno stanje reketa.** `IsRacketable` nije čitao `Trades`, pa
+   je rivalov sopstveni prolaz mogao da stavi reket na nečiji stan, a `WriteCompliance` je
+   brojao svaki stan u imenilac — potpuno plaćajući rezidencijalni blok čitao bi se kao
+   trećina plaćen, a taj broj ulazi u očitavanje kontrole i u traku na blok fajlu. Sada:
+   `IsRacketable = CarriesBusiness && Trades`, a površine pitaju `CarriesBusiness`
+   („ima li ičega tu") — jer „nema šta da se cedi" i „nema ničega" nisu isti odgovor.
+3. **Transport je teleportovao čoveka.** Kola su birana bilo gde po gradu i vozila pravo na
+   odredište, a čovek je odmah bio `InTransit`. Sada konvoj ima **preuzimanje**: kola prvo
+   dolaze tamo gde čovek jeste (ćelije kuće koja šalje / sud), tek tada ide `Pipeline.Away`
+   i tek tada vozi. Uništena kola PRE preuzimanja ubiju pratnju i ne oslobode nikoga — nije
+   ni bio u njima; sam pipe to sada odbija (`Freed` traži `InTransit`).
+   `PolicePatrolCar.RouteTo` dobija `OnScene` granu, jer kola koja stoje na sceni mogu da
+   budu poslata dalje.
+4. **Gubitak je padao na pogrešne knjige.** `OfficerDown` je zaduživao NAJBLIŽU kuću.
+   Sada: prvo sila sama (svoju pratnju zna tačno), pa **precinct jedinice koja stoji kraj
+   tela** (`PoliceDispatch.PrecinctNear`, 30 m — čovek pada pored svoje patrole), pa tek
+   onda najbliža kuća kao pogađanje.
+5. **Spaljena zgrada je i dalje bila skrovište.** Red `MAKE THIS THE HIDEOUT` je uvek bio
+   dostupan iako `TAKE THEM INSIDE` nije. Sada red bledi i kaže zašto, `NameHideout` odbija
+   zatvoren plac, a `ToTheHideout` pada na rezervu dok je zatvoren. Oznaka se NE briše —
+   popravi zgradu i skrovište je opet tu.
+
+Novi ugovori: `NobodyWalksOutOfACarHeWasNeverIn` (police, ukupno 27), zatvoreni plac u
+`AFlatIsBoughtAndHiddenInAndNothingElse` (rack). Popravljen i jedan stari ugovor koji je
+prečicom oslobađao čoveka iz ćelije (`Away` iz `Held` je bio no-op) — sada vozi pravim putem.
+
+**Nije pokriveno headless-om:** dvoprolazno vezivanje markera traži scenu koja stoji, pa
+to ostaje da se vidi u Play-u (klikni radnju u rezidencijalnoj zgradi — mora da otvori
+RADNJU, a stan se kupuje sa blok fajla ili sa mape).
+
+
+### 8.5 Stanovi izbačeni 2026-09-02
+
+Korisnikova odluka: *„izbaci jer sam tek napisao epik za to koji ce to detaljno da resi"*.
+Skrovište ostaje, stan kao vrsta placa ne. Sa njim su uklonjeni i svi seam-ovi koji su
+postojali samo zbog njega:
+
+| uklonjeno | zašto je postojalo |
+|---|---|
+| `BusinessArchetypeId.Apartment`, znak `apartment`, tabela imena | sam stan |
+| `ResidentialBusinessSites.ApartmentSite` (1704 placa u seed-u 1987) | sam stan |
+| `EconomyPrices` slučaj za stan i `NetPerDay` nula-grana | promet 0 |
+| `BusinessArchetypes.Trades`, `TerritoryRuntime.Trades`, podela `IsRacketable`/`CarriesBusiness` | plac bez kase |
+| filter u `WriteCompliance` i u blok-šejkdaunu | plac bez kase u imeniocu |
+| dvoprolazno vezivanje markera u `BusinessRuntime` | stan i radnja delili isti komad |
+| parametar `trades` u `TerritoryRacketOrders.For` | plac bez kase |
+
+Time padaju i nalazi 1 i 2 iz adversarijalnog review-a (§8.4) — bili su posledica stana, a
+ne uzrok za sebe. Nalazi 3, 4 i 5 (preuzimanje zatvorenika, knjige na koje pada gubitak,
+zatvoren plac kao skrovište) **ostaju popravljeni**: stoje sami za sebe.
+
+Knjiga biznisa se vraća na stanje pre ovog posla; `EconomyPrices.Apartment` ($55.000)
+ostaje u tabeli i u `Docs/economy-prices.md` — bio je tamo i pre, i epik koji dolazi će ga
+koristiti.

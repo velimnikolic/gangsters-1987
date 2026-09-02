@@ -119,7 +119,6 @@ namespace RoadDemo
             house.IsValid &&
             LivingCity.Business.BusinessDeeds.GangOf(businessId) == house.Value;
 
-
         /// <summary>
         /// What happens at ONE door, whichever walk brought the men to it. A collection
         /// settles money; a shakedown puts the question and, on a no, may put hands on

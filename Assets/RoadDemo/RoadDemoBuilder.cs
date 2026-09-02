@@ -405,23 +405,71 @@ namespace RoadDemo
         /// is a fleet rather than one car photocopied down the row.</summary>
         readonly List<GameObject> _policeCarPrefabs = new List<GameObject>();
         readonly List<GameObject> _officerPrefabs = new List<GameObject>();
-        GameObject _policeStation;     // the packed station instance, found at placement
-        bool _forecourtPlanned;
-        Vector3 _stallCentre, _stallOut, _stallAlong;
-        float _stallRowHalf, _stallLift;
+        /// <summary>
+        /// ONE STATION HOUSE and everything belonging to it: the stall row its fleet
+        /// docks in, the door its watch changes through, the kerb the cars undock onto,
+        /// and the far end of town its transfers drive to.
+        ///
+        /// There is a LIST of these because a city is not one station wide (GAN-236). A
+        /// loss lands on the books of the NEAREST house, each answers only its own ground
+        /// (PoliceDispatch.ResponseRange), and only a dead officer pulls cars off every
+        /// roster in the city at once.
+        /// </summary>
+        sealed class StationHouse
+        {
+            /// <summary>The building itself, wherever it came from.</summary>
+            public GameObject House;
+
+            /// <summary>Where the house stands - what "the nearest station" is measured
+            /// from, and what its plaque is about.</summary>
+            public Vector3 At;
+
+            public Vector3 StallCentre, StallOut, StallAlong;
+            public float StallRowHalf, StallLift;
+            public Vector3 Door;
+
+            /// <summary>The bays the yard was AUTHORED with, in world space, taken off
+            /// the cars the block bake parked in them. Empty where nobody drew a yard and
+            /// the row has to be laid against the lot instead.</summary>
+            public readonly List<Pose> Stalls = new List<Pose>();
+
+            public RoadEdge CarHome;
+            public float CarHomeS;
+            public Quaternion StallRot = Quaternion.identity;
+
+            public readonly List<PolicePatrolCar> Cars = new List<PolicePatrolCar>();
+
+            /// <summary>The house's OWN pair(s), as against the block beats. They stand
+            /// first on the precinct's watch, so thinning it thins the far blocks before
+            /// it thins the station's own door (GAN-226).</summary>
+            public readonly List<PoliceFootPatrol> Officers = new List<PoliceFootPatrol>();
+
+            /// <summary>The block beats that joined THIS house - the nearest one to each
+            /// pair's own corner (GAN-236).</summary>
+            public readonly List<PoliceFootPatrol> Beats = new List<PoliceFootPatrol>();
+
+            public PoliceForce.Precinct Precinct;
+
+            /// <summary>A stall row was worked out; without one nothing can dock here.</summary>
+            public bool Forecourt;
+        }
+
+        readonly List<StationHouse> _stations = new List<StationHouse>();
         readonly List<PolicePatrolCar> _policeCars = new List<PolicePatrolCar>();
         readonly List<PoliceFootPatrol> _policeOfficers = new List<PoliceFootPatrol>();
-        /// <summary>The station's OWN pair(s), as against the block beats. The precinct's
-        /// watch rotates these and nothing else (GAN-226).</summary>
-        readonly List<PoliceFootPatrol> _stationOfficers = new List<PoliceFootPatrol>();
         Transform _policeRoot;
         List<IPatrolMarker> _patrolMarkers;
-        Vector3 _policeDoor;
         // the fleet's kerb and the yaw a car sits in its stall at - kept past the build
         // so a replacement car (PoliceForce) docks exactly where the first ones did
-        RoadEdge _policeCarHome;
-        float _policeCarHomeS;
-        Quaternion _policeStallRot = Quaternion.identity;
+        /// <summary>
+        /// HOW MANY STATION HOUSES THIS CITY HAS is a question for whoever lays it out,
+        /// not for the force (GAN-236). Everything below carries a LIST of them: a loss
+        /// lands on the nearest house's books, each answers only its own ground, each
+        /// plaque reads its own strength, and a dead officer pulls cars off every roster
+        /// there is. Stand a second house anywhere in the city and it becomes a second
+        /// precinct on the next build with nothing here to change.
+        /// </summary>
+        const string StationsAreALayoutQuestion = StationName;
         DemoCrews _crews;
         GameObject _blockPrefab;
         // Blocks composed on a catalog lot pad, filed under that pad's code ("B2").
@@ -1202,6 +1250,18 @@ namespace RoadDemo
             foreach (Transform child in block.transform)
                 if (child.name.StartsWith(StationName)) return child.gameObject;
             return null;
+        }
+
+        /// <summary>EVERY station house a composed block carries, not only the first: a
+        /// city is not one station wide (GAN-236), and a block that stood two would have
+        /// had the second silently ignored.</summary>
+        static List<GameObject> StationsIn(GameObject block)
+        {
+            var found = new List<GameObject>();
+            if (block == null) return found;
+            foreach (Transform child in block.transform)
+                if (child.name.StartsWith(StationName)) found.Add(child.gameObject);
+            return found;
         }
 
         // ------------------------------------------------------------------ layout
@@ -2260,14 +2320,11 @@ namespace RoadDemo
                     // its forecourt, and it reaches the city inside a composed block
                     // (c2policestation) as readily as it does packed loose. So it is
                     // looked for here too, and the block's own lot is the forecourt's.
-                    if (_policeStation == null)
+                    foreach (var house in StationsIn(block))
                     {
-                        var station = StationIn(block);
-                        if (station != null)
-                        {
-                            _policeStation = station;
-                            PlanForecourt(xMin, xMax, zMin, zMax, FloorLevel());
-                        }
+                        var station = new StationHouse { House = house };
+                        PlanForecourt(station, xMin, xMax, zMin, zMax, FloorLevel());
+                        _stations.Add(station);
                     }
 
                     // street doors for the crowd: the bake's two terrace rows
@@ -2302,11 +2359,6 @@ namespace RoadDemo
                     PackFeatureBlocks(ref feature, xMin, xMax, zMin, zMax,
                         holes, floorTop, paved, northRow);
                     contents = FeatureContents(firstFeature, feature, paved);
-                    // the stall row and the driveway out to the street: geometry
-                    // the patrol cars dock against, so it is planned even though
-                    // nothing decorative is laid over the rest of the lot
-                    if (_policeStation != null && !_forecourtPlanned)
-                        PlanForecourt(xMin, xMax, zMin, zMax, floorTop);
                     BuildBlockFloor(xMin, xMax, zMin, zMax, holes, paved);
                 }
 
@@ -2465,7 +2517,15 @@ namespace RoadDemo
                 placed.Add(go);
                 ClaimLandmarks(prefab);
                 SpinFerrisWheels(go);
-                if (prefab.name.StartsWith(StationName)) _policeStation = go;
+                if (prefab.name.StartsWith(StationName))
+                {
+                    // the stall row and the driveway out to the street: geometry the
+                    // patrol cars dock against, planned against the lot this house
+                    // actually landed in rather than against the first lot that had one
+                    var station = new StationHouse { House = go };
+                    PlanForecourt(station, xMin, xMax, zMin, zMax, floorTop);
+                    _stations.Add(station);
+                }
                 // a civilian door on whichever face fronts this bake's street.
                 // The station keeps its own door (the beat officers'), and a
                 // sunken bake (skatepark) has no facade on the frontage line.
@@ -3775,13 +3835,16 @@ namespace RoadDemo
         const float StallSetback = 3.4f; // stall centre off the station face
         const float StallSpacing = 4f;   // bay pitch along the face
 
-        // Called by BuildBlocks the moment the station lands in an interior: pick
-        // the forecourt side (the widest strip of court between the building and
-        // its street) and lay the stall row against the face there, which is what
-        // the patrol cars dock against.
-        void PlanForecourt(float xMin, float xMax, float zMin, float zMax, float floorTop)
+        // Called by BuildBlocks the moment a station lands in an interior: pick the
+        // forecourt side (the widest strip of court between the building and its
+        // street) and lay the stall row against the face there, which is what the
+        // patrol cars dock against. One station house, one row - a city with several
+        // plans several (GAN-236).
+        void PlanForecourt(StationHouse station,
+            float xMin, float xMax, float zMin, float zMax, float floorTop)
         {
-            var b = BoundsOf(_policeStation);
+            if (station == null || station.House == null) return;
+            var b = BoundsOf(station.House);
             var sides = new (float gap, Vector3 outDir, float face, float edge)[]
             {
                 (xMax - b.max.x, Vector3.right, b.max.x, xMax),
@@ -3793,18 +3856,260 @@ namespace RoadDemo
             for (int k = 1; k < sides.Length; k++)
                 if (sides[k].gap > best.gap) best = sides[k];
 
-            _stallOut = best.outDir;
-            _stallAlong = Vector3.Cross(Vector3.up, best.outDir);
-            _stallLift = floorTop > 0f ? floorTop + 0.02f : 0.02f;
-            _stallRowHalf = Mathf.Max(1, policeCarCount) * StallSpacing * 0.5f;
+            station.At = b.center;
+            station.StallOut = best.outDir;
+            station.StallAlong = Vector3.Cross(Vector3.up, best.outDir);
+            station.StallLift = floorTop > 0f ? floorTop + 0.02f : 0.02f;
+            station.StallRowHalf = Mathf.Max(1, policeCarCount) * StallSpacing * 0.5f;
 
             var centre = b.center;
-            _stallCentre = new Vector3(
+            station.StallCentre = new Vector3(
                 best.outDir.x != 0f ? best.face + best.outDir.x * StallSetback : centre.x,
-                _stallLift,
+                station.StallLift,
                 best.outDir.z != 0f ? best.face + best.outDir.z * StallSetback : centre.z);
-            _forecourtPlanned = true;
+            station.StallRot = Quaternion.LookRotation(station.StallOut);
+            station.Forecourt = true;
         }
+
+        /// <summary>
+        /// A station house with no lot plan behind it: the one Core's own catalogue
+        /// stands, and any other a district lays. The row goes against the face that
+        /// looks at the nearest street, which is where a police yard's cars stand and
+        /// where its gate is - read off the city rather than guessed at.
+        /// </summary>
+        void PlanForecourtByRoad(StationHouse station)
+        {
+            if (station == null || station.House == null || _edges.Count == 0) return;
+            var b = BoundsOf(station.House);
+            station.At = b.center;
+
+            Vector3 nearest = b.center;
+            var bestD = float.MaxValue;
+            foreach (var e in _edges)
+            {
+                if (e.Length < 20f) continue;
+                float s = Mathf.Clamp(Vector3.Dot(b.center - e.Start, e.Dir), 0f, e.Length);
+                var p = e.Start + e.Dir * s;
+                float d = (p - b.center).sqrMagnitude;
+                if (d < bestD) { bestD = d; nearest = p; }
+            }
+
+            var away = nearest - b.center;
+            away.y = 0f;
+            var outDir = Mathf.Abs(away.x) > Mathf.Abs(away.z)
+                ? (away.x >= 0f ? Vector3.right : Vector3.left)
+                : (away.z >= 0f ? Vector3.forward : Vector3.back);
+            float face = outDir == Vector3.right ? b.max.x
+                : outDir == Vector3.left ? b.min.x
+                : outDir == Vector3.forward ? b.max.z : b.min.z;
+
+            station.StallOut = outDir;
+            station.StallAlong = Vector3.Cross(Vector3.up, outDir);
+            station.StallLift = b.min.y + 0.02f;
+            station.StallRowHalf = Mathf.Max(1, policeCarCount) * StallSpacing * 0.5f;
+            station.StallCentre = new Vector3(
+                outDir.x != 0f ? face + outDir.x * StallSetback : b.center.x,
+                station.StallLift,
+                outDir.z != 0f ? face + outDir.z * StallSetback : b.center.z);
+            station.StallRot = Quaternion.LookRotation(outDir);
+            station.Forecourt = true;
+        }
+
+        /// <summary>
+        /// THE BAYS SOMEBODY ALREADY DREW. Core's station block is baked with police cars
+        /// standing in its own car park (CoreBuildingBlocks.Parks) - dead geometry that
+        /// says exactly where the fleet belongs. So the fleet TAKES those places: the
+        /// parked bodies come out and the patrol cars dock in them, which both puts the
+        /// live cars where the yard was drawn for them and stops the city showing two sets
+        /// of police cars outside one station.
+        ///
+        /// A yard nobody drew leaves the list empty and the row is laid out instead.
+        /// </summary>
+        void ClaimAuthoredStalls(StationHouse station)
+        {
+            if (station == null || station.House == null) return;
+            var yard = station.House.transform.parent != null
+                ? station.House.transform.parent
+                : station.House.transform;
+
+            var b = BoundsOf(station.House);
+            var parked = new List<Transform>();
+            CollectParkedCruisers(yard, b.center, parked);
+            if (parked.Count == 0) return;
+
+            var centre = Vector3.zero;
+            for (int i = 0; i < parked.Count; i++)
+            {
+                station.Stalls.Add(new Pose(parked[i].position, parked[i].rotation));
+                centre += parked[i].position;
+                // OFF FIRST, THEN DESTROYED. Destroy is deferred to the end of the frame
+                // and the whole city is built inside one, so a body merely marked for
+                // destruction would still be standing when the merger walks the scene and
+                // would be welded into the static mesh for good.
+                parked[i].gameObject.SetActive(false);
+                Destroy(parked[i].gameObject);
+            }
+            centre /= parked.Count;
+
+            var away = centre - b.center;
+            away.y = 0f;
+            var outDir = Mathf.Abs(away.x) > Mathf.Abs(away.z)
+                ? (away.x >= 0f ? Vector3.right : Vector3.left)
+                : (away.z >= 0f ? Vector3.forward : Vector3.back);
+            var along = Vector3.Cross(Vector3.up, outDir);
+
+            float half = 0f;
+            for (int i = 0; i < station.Stalls.Count; i++)
+                half = Mathf.Max(half,
+                    Mathf.Abs(Vector3.Dot(station.Stalls[i].position - centre, along)));
+
+            station.At = b.center;
+            station.StallCentre = centre;
+            station.StallOut = outDir;
+            station.StallAlong = along;
+            station.StallLift = centre.y;
+            station.StallRowHalf = half + StallSpacing * 0.5f;
+            station.StallRot = station.Stalls[0].rotation;
+            station.Forecourt = true;
+        }
+
+        /// <summary>Metres from a station house within which a parked cruiser counts as
+        /// standing in ITS yard. Without it a house whose parent happens to be a whole
+        /// city root would claim every marked car on the map.</summary>
+        const float StationYardMetres = 60f;
+
+        /// <summary>The marked cars a block bake parked outside a station, by the names
+        /// of the approved fleet (VehicleCatalog.PoliceCars) - the same two presets the
+        /// live patrols drive, which is why standing both is a duplicate rather than a
+        /// busy yard.</summary>
+        static void CollectParkedCruisers(Transform root, Vector3 house, List<Transform> into)
+        {
+            foreach (Transform child in root)
+            {
+                var name = child.name;
+                bool cruiser = false;
+                var fleet = LivingCity.Gameplay.VehicleCatalog.PoliceCars;
+                for (int i = 0; i < fleet.Length && !cruiser; i++)
+                    cruiser = name.StartsWith(fleet[i], System.StringComparison.Ordinal);
+                if (cruiser)
+                {
+                    var gap = child.position - house;
+                    gap.y = 0f;
+                    if (gap.sqrMagnitude <= StationYardMetres * StationYardMetres)
+                        into.Add(child);
+                    continue;
+                }
+                CollectParkedCruisers(child, house, into);
+            }
+        }
+
+        /// <summary>
+        /// EVERY STATION HOUSE STANDING IN THE FINISHED CITY (GAN-236), however it got
+        /// there. The grid's placement registers the ones it packs and composes; this
+        /// catches the rest - above all Core's own police-station-block, which no pass of
+        /// this builder ever looked at, so the one city with a real station house in it
+        /// was the one city with no precinct at all.
+        ///
+        /// It runs once, after the city is built and before a policeman is dealt. A house
+        /// already registered is left alone; anything else has its yard read off the city.
+        /// </summary>
+        void FindStationHouses()
+        {
+            var found = new List<Transform>();
+            if (_blocks != null) CollectStationHouses(_blocks, found);
+            if (_districtRoot != null) CollectStationHouses(_districtRoot, found);
+
+            for (int i = 0; i < found.Count; i++)
+            {
+                var go = found[i].gameObject;
+                bool known = false;
+                for (int k = 0; k < _stations.Count && !known; k++)
+                    known = _stations[k].House == go;
+                if (known) continue;
+
+                var station = new StationHouse { House = go };
+                ClaimAuthoredStalls(station);
+                if (!station.Forecourt) PlanForecourtByRoad(station);
+                if (station.Forecourt) _stations.Add(station);
+            }
+        }
+
+        /// <summary>The station houses under a root, matched the same way the placement
+        /// matches them - by the catalogue name. A house is not descended into.</summary>
+        static void CollectStationHouses(Transform root, List<Transform> into) =>
+            CollectNamed(root, StationName, into);
+
+        /// <summary>Everything under a root whose name opens with a catalogue name. A
+        /// match is not descended into: a building's own pieces are not more buildings.
+        /// </summary>
+        static void CollectNamed(Transform root, string prefix, List<Transform> into)
+        {
+            foreach (Transform child in root)
+            {
+                if (child.name.StartsWith(prefix, System.StringComparison.Ordinal))
+                {
+                    into.Add(child);
+                    continue;
+                }
+                CollectNamed(child, prefix, into);
+            }
+        }
+
+        /// <summary>
+        /// THE COURTHOUSE (GAN-237), wherever the city stood one - Core keeps a downtown
+        /// parcel for it (CoreDistrict.StandCourthouse) and a grid city would pack it out
+        /// of the catalogue like any other building.
+        ///
+        /// What the force needs off it is one point: where a transfer pulls in. That is
+        /// the face looking at the nearest street, a car's length out from it, which is
+        /// the same reading a station's forecourt gets. Where no court stands, nothing is
+        /// handed over and the first leg drives out of town exactly as it did - a leg does
+        /// not pretend to arrive somewhere nobody built.
+        /// </summary>
+        void FindCourthouse(PoliceForce force)
+        {
+            if (force == null) return;
+            var found = new List<Transform>();
+            if (_blocks != null) CollectNamed(_blocks, CourthouseName, found);
+            if (_districtRoot != null) CollectNamed(_districtRoot, CourthouseName, found);
+            if (found.Count == 0 || _edges.Count == 0) return;
+
+            var b = BoundsOf(found[0].gameObject);
+            var nearest = b.center;
+            var bestD = float.MaxValue;
+            foreach (var e in _edges)
+            {
+                if (e.Length < 20f) continue;
+                float s = Mathf.Clamp(Vector3.Dot(b.center - e.Start, e.Dir), 0f, e.Length);
+                var p = e.Start + e.Dir * s;
+                float d = (p - b.center).sqrMagnitude;
+                if (d < bestD) { bestD = d; nearest = p; }
+            }
+
+            var away = nearest - b.center;
+            away.y = 0f;
+            var outDir = Mathf.Abs(away.x) > Mathf.Abs(away.z)
+                ? (away.x >= 0f ? Vector3.right : Vector3.left)
+                : (away.z >= 0f ? Vector3.forward : Vector3.back);
+            float face = outDir == Vector3.right ? b.max.x
+                : outDir == Vector3.left ? b.min.x
+                : outDir == Vector3.forward ? b.max.z : b.min.z;
+
+            var door = new Vector3(
+                outDir.x != 0f ? face + outDir.x * CourthouseSetback : b.center.x,
+                b.min.y + 0.02f,
+                outDir.z != 0f ? face + outDir.z * CourthouseSetback : b.center.z);
+            force.StandCourthouse(door, "the County Courthouse");
+            Debug.Log("[RoadDemo] the county courthouse stands at " +
+                      door.ToString("F0") + "; transfers drive to it");
+        }
+
+        /// <summary>The catalogue name of the court, matched the same way the station is.
+        /// </summary>
+        const string CourthouseName = CoreDistrict.CourthouseName;
+
+        /// <summary>Metres out from the court's face that a transfer pulls in.</summary>
+        const float CourthouseSetback = 6f;
 
         void SpawnPolice()
         {
@@ -3813,33 +4118,46 @@ namespace RoadDemo
             var markers = new List<IPatrolMarker>();
             _patrolMarkers = markers;
 
-            // the station's own layer - the cars docked at its forecourt and the
-            // pair that rests inside it - only where a station actually stands
-            if (_policeStation != null && _forecourtPlanned)
+            // every house in the city, not only the one the grid happened to pack
+            FindStationHouses();
+
+            // each station's own layer - the cars docked at its forecourt and the pair
+            // that rests inside it
+            for (int i = 0; i < _stations.Count; i++)
             {
-                SpawnPatrolCars(policeRoot, markers);
-                SpawnFootPatrols(policeRoot, markers);
+                var station = _stations[i];
+                if (!station.Forecourt) continue;
+                SpawnPatrolCars(policeRoot, markers, station);
+                SpawnFootPatrols(policeRoot, markers, station);
             }
 
             // and the beat pairs over the blocks, station or no station: the law
             // the player sees on the first frame, wherever he looks
             SpawnBlockBeats(policeRoot, markers);
 
+            if (_stations.Count > 0)
+                Debug.Log("[RoadDemo] " + _stations.Count +
+                          (_stations.Count == 1 ? " police station" : " police stations") +
+                          ", " + _policeCars.Count + " patrol cars, " +
+                          _policeOfficers.Count + " officers");
+
             if (markers.Count == 0) return;
             gameObject.AddComponent<PolicePatrolOverlay>().Init(markers);
         }
 
         /// <summary>
-        /// The precinct behind the bodies (GAN-226): what the city authorised this
-        /// station, what it has lost, and when the department fills it.
+        /// The precincts behind the bodies (GAN-226, GAN-236): what the city authorised
+        /// each station, what it has lost, and when the department fills it.
         ///
-        /// EVERY MAN OF THE LAW IS ON IT - the pair that rests behind the station door,
-        /// the pairs walking their own blocks all over the map, and a man for every seat
-        /// in every car. The block beats used to be off the books on the grounds that
-        /// they have no door and cannot be killed; the user's call (2026-09-02) is that a
-        /// precinct's strength should mean ALL the law this city has, so it does. The
-        /// consequence is deliberate: the watch thins the beat across the whole map at
-        /// night, not only outside the station.
+        /// EVERY MAN OF THE LAW IS ON ONE - the pair that rests behind a station door, the
+        /// pairs walking their own blocks all over the map, and a man for every seat in
+        /// every car. The block beats used to be off the books on the grounds that they
+        /// have no door and cannot be killed; the user's call (2026-09-02) is that a
+        /// precinct's strength should mean ALL the law this city has, so it does.
+        ///
+        /// With several houses each pair joins the NEAREST of them, so a station's plaque
+        /// counts the men who actually walk its end of town, and emptying one leaves that
+        /// end of town without law while the others still answer their own ground.
         /// </summary>
         void FoundPrecinct(PoliceDispatch dispatch)
         {
@@ -3864,47 +4182,145 @@ namespace RoadDemo
             force.Config.DayFootShare = policeDayFootShare;
             force.Config.NightFootShare = policeNightFootShare;
 
-            if (_policeStation == null || !_forecourtPlanned || _policeCars.Count == 0) return;
+            // where the day in court actually happens, when the city stood a court. The
+            // paper layer runs whether or not there is a precinct, so this is read before
+            // the rosters and not inside them (GAN-237).
+            FindCourthouse(force);
 
-            // the men actually dealt onto the pavement, plus two for every car's crew -
-            // measured rather than assumed, so a scene that could not place a pair does
-            // not carry a phantom on its roster
-            var precinct = force.Add(0, "Precinct 1", _stallCentre, _policeDoor,
-                CountyLine(_stallCentre),
-                _policeCars.Count, _policeOfficers.Count + 2 * _policeCars.Count);
+            // A HOUSE WITH NO CAR ON ITS FORECOURT IS NOT A PRECINCT. It is a building.
+            var houses = new List<StationHouse>();
+            for (int i = 0; i < _stations.Count; i++)
+                if (_stations[i].Forecourt && _stations[i].Cars.Count > 0)
+                    houses.Add(_stations[i]);
+            if (houses.Count == 0) return;
 
-            foreach (var car in _policeCars)
+            // EVERY BEAT JOINS THE NEAREST HOUSE, before a single roster is written -
+            // the strength a precinct is authorised has to be the men it actually has.
+            for (int i = 0; i < _policeOfficers.Count; i++)
             {
-                car.Precinct = 0;
-                precinct.Cars.Add(car);
+                var officer = _policeOfficers[i];
+                if (officer == null || officer.Lead != null) continue;   // leads only
+                var home = HouseOwning(officer);
+                if (home != null) continue;                              // a station's own
+                if (officer.Tf == null) continue;
+                var nearest = NearestHouse(houses, officer.Tf.position);
+                nearest?.Beats.Add(officer);
             }
-            // Only the LEADS: a pair is one unit of the watch, and the wingman follows.
-            // The STATION's own pair goes on first, so that when the watch thins the beat
-            // it thins the far blocks and never the house's own door.
-            foreach (var officer in _stationOfficers)
-                if (officer.Lead == null) { officer.Precinct = 0; precinct.Leads.Add(officer); }
-            foreach (var officer in _policeOfficers)
-                if (officer.Lead == null && !_stationOfficers.Contains(officer))
-                { officer.Precinct = 0; precinct.Leads.Add(officer); }
 
-            // A REPLACEMENT CAR COMES BACK INTO A STALL, never onto a kerb across town:
-            // a parked patrol is a registered obstacle and the spread of them gridlocked
-            // the ambient traffic (SpreadPatrolHomes). The forecourt is the only place a
-            // police car is allowed to stand still.
+            for (int i = 0; i < houses.Count; i++)
+            {
+                var station = houses[i];
+                // the men actually dealt onto the pavement, plus two for every car's crew -
+                // measured rather than assumed, so a scene that could not place a pair does
+                // not carry a phantom on its roster
+                var men = 0;
+                for (int k = 0; k < station.Officers.Count; k++)
+                    if (station.Officers[k] != null) men++;
+                for (int k = 0; k < station.Beats.Count; k++)
+                    men += MenBehind(station.Beats[k]);
+
+                // A house whose pair could not be dealt (no pavement link, no officer
+                // prefab) has no door of its own; the forecourt is then where anybody the
+                // department sends reaches the street, and never the world origin.
+                if (station.Door == Vector3.zero) station.Door = station.StallCentre;
+
+                var precinct = force.Add(i, "Precinct " + (i + 1), station.At, station.Door,
+                    CountyLine(station.At), station.Cars.Count,
+                    men + 2 * station.Cars.Count);
+                station.Precinct = precinct;
+
+                foreach (var car in station.Cars)
+                {
+                    car.Precinct = i;
+                    precinct.Cars.Add(car);
+                }
+                // Only the LEADS: a pair is one unit of the watch, and the wingman follows.
+                // The STATION's own pair goes on first, so that when the watch thins the
+                // beat it thins the far blocks and never the house's own door.
+                foreach (var officer in station.Officers)
+                    if (officer != null && officer.Lead == null)
+                    { officer.Precinct = i; precinct.Leads.Add(officer); }
+                foreach (var officer in station.Beats)
+                    if (officer != null)
+                    { officer.Precinct = i; precinct.Leads.Add(officer); }
+            }
+
+            // A REPLACEMENT CAR COMES BACK INTO ITS OWN STALL, never onto a kerb across
+            // town and never into another station's yard: a parked patrol is a registered
+            // obstacle and the spread of them gridlocked the ambient traffic
+            // (SpreadPatrolHomes). A forecourt is the only place a police car stands still.
             force.MakeCar = p =>
             {
-                if (_policeCarHome == null) return null;
+                var station = HouseOfPrecinct(p);
+                if (station == null || station.CarHome == null) return null;
                 var car = MakePatrolCar(_policeRoot, _policeCars.Count,
-                    _policeCarHome, _policeCarHomeS, _stallCentre, _policeStallRot);
+                    station.CarHome, station.CarHomeS,
+                    StallFor(station, station.Cars.Count), station.StallRot);
                 if (car == null) return null;
                 _policeCars.Add(car);
+                station.Cars.Add(car);
                 StreetTraffic.Users.Add(car);
                 _patrolMarkers?.Add(car);
                 return car;
             };
         }
 
-        void SpawnPatrolCars(Transform parent, List<IPatrolMarker> markers)
+        /// <summary>A beat pair, counted: the lead and whoever walks behind him. There is
+        /// no wingman field on a lead - a wingman knows his lead and not the other way
+        /// round - so the pair is counted from the men, which is also the honest answer
+        /// for the odd man left walking his round alone.</summary>
+        int MenBehind(PoliceFootPatrol lead)
+        {
+            if (lead == null) return 0;
+            var men = 1;
+            for (int i = 0; i < _policeOfficers.Count; i++)
+                if (_policeOfficers[i] != null && _policeOfficers[i].Lead == lead) men++;
+            return men;
+        }
+
+        /// <summary>The house this officer was dealt at, or null for a block beat.</summary>
+        StationHouse HouseOwning(PoliceFootPatrol officer)
+        {
+            for (int i = 0; i < _stations.Count; i++)
+                if (_stations[i].Officers.Contains(officer)) return _stations[i];
+            return null;
+        }
+
+        StationHouse HouseOfPrecinct(PoliceForce.Precinct precinct)
+        {
+            for (int i = 0; i < _stations.Count; i++)
+                if (_stations[i].Precinct == precinct) return _stations[i];
+            return null;
+        }
+
+        static StationHouse NearestHouse(List<StationHouse> houses, Vector3 where)
+        {
+            StationHouse best = null;
+            var bestD = float.MaxValue;
+            for (int i = 0; i < houses.Count; i++)
+            {
+                var d = (houses[i].At - where).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = houses[i]; }
+            }
+            return best;
+        }
+
+        /// <summary>Where the nth car of this house stands at rest: its own authored bay
+        /// where the yard has them, otherwise a place in the row laid against the face.
+        /// Never a kerb - that is the SpreadPatrolHomes lesson, and it holds per station.
+        /// </summary>
+        static Vector3 StallFor(StationHouse station, int index)
+        {
+            // One car to a bay: a fleet bigger than the yard was drawn for keeps the row
+            // centre, which is where every resting car stood before any of them had a bay
+            // of their own. Two cars welded into one authored bay reads as a bug.
+            if (index >= 0 && index < station.Stalls.Count)
+                return station.Stalls[index].position;
+            return station.StallCentre;
+        }
+
+        void SpawnPatrolCars(
+            Transform parent, List<IPatrolMarker> markers, StationHouse station)
         {
             if (_policeCarPrefabs.Count == 0 || policeCarCount <= 0) return;
 
@@ -3915,33 +4331,45 @@ namespace RoadDemo
             foreach (var e in _edges)
             {
                 if (e.Length < 26f) continue;
-                float s = Mathf.Clamp(Vector3.Dot(_stallCentre - e.Start, e.Dir), 10f, e.Length - 14f);
+                float s = Mathf.Clamp(
+                    Vector3.Dot(station.StallCentre - e.Start, e.Dir), 10f, e.Length - 14f);
                 var p = e.Start + e.Dir * s;
-                float d = (p - _stallCentre).sqrMagnitude;
+                float d = (p - station.StallCentre).sqrMagnitude;
                 if (d < bestD) { bestD = d; home = e; homeS = s; }
             }
             if (home == null)
             {
-                Debug.LogWarning("[RoadDemo] no lane near the police forecourt; fleet stays parked");
+                Debug.LogWarning("[RoadDemo] no lane near a police forecourt; that " +
+                                 "station's fleet stays parked");
                 return;
             }
 
-            var stallRot = Quaternion.LookRotation(_stallOut);
-            // where each car sits at rest: the first in the forecourt, the rest pushed
-            // out across the city so the force is spread, not poured out of one gate
-            var homes = SpreadPatrolHomes(policeCarCount, home, homeS, stallRot);
             // kept past the build: a car the department sends to replace a wreck docks
             // exactly where these did (PoliceForce.MakeCar)
-            _policeCarHome = home;
-            _policeCarHomeS = homeS;
-            _policeStallRot = stallRot;
+            station.CarHome = home;
+            station.CarHomeS = homeS;
+            if (station.Stalls.Count == 0)
+                station.StallRot = Quaternion.LookRotation(station.StallOut);
 
+            // WHERE THE FLEET RESTS. Scattering resting cars over the city jams the
+            // traffic: a patrol left at a kerb is a registered obstacle, and even set off
+            // the running lane it gridlocked the ambient cars in about a quarter of seeds
+            // (car soak: worst 14k+ belt refusals with the spread; 0 in every one of 12
+            // with the cars docked). So every car rests on ITS OWN station's forecourt -
+            // in the bays the yard was drawn with where there are any, and stacked on the
+            // one row-centre point where there are not. The farthest-point spread over the
+            // long lanes is in git history (before 2026-08-27) for the day a computed
+            // resting spot is provably traffic-safe.
             for (int i = 0; i < policeCarCount; i++)
             {
-                var hi = homes[i];
-                var car = MakePatrolCar(parent, i, hi.home, hi.homeS, hi.stall, hi.rot);
+                var rot = i < station.Stalls.Count
+                    ? station.Stalls[i].rotation
+                    : station.StallRot;
+                var car = MakePatrolCar(parent, _policeCars.Count, home, homeS,
+                    StallFor(station, i), rot);
                 if (car == null) continue;
                 _policeCars.Add(car);
+                station.Cars.Add(car);
                 StreetTraffic.Users.Add(car);
                 markers.Add(car);
             }
@@ -3949,9 +4377,9 @@ namespace RoadDemo
 
         /// <summary>Where a prisoner transfer is driven to (GAN-219): the lane point
         /// farthest from the station house, which on an island city is the far end of
-        /// town. The county court and the state prison are NOT on this map and nothing
-        /// here invents them - what the transfer reads as is a police car with a man in
-        /// the back leaving town, which is what a run to the county seat looked like.</summary>
+        /// town. The user's call on GAN-237 (2026-09-02) is that the state prison stays
+        /// off the map and the county line is what the prison leg drives to; the COURT is
+        /// on the map and the first leg drives to it (CourthouseDoor).</summary>
         Vector3 CountyLine(Vector3 from)
         {
             var far = from;
@@ -4007,47 +4435,21 @@ namespace RoadDemo
             return car;
         }
 
-        /// <summary>Where each patrol car stands at rest. The first keeps the station
-        /// forecourt, so the house is never empty; the rest are pushed OUT across the map
-        /// by farthest-point sampling over the long lanes - each rests at a kerb of its
-        /// own and patrols its own quarter, so at any moment the force is scattered over
-        /// the city instead of clustered against one station face. (Their patrol beats
-        /// already reached the whole map; only the standing start was in one place.)</summary>
-        List<(RoadEdge home, float homeS, Vector3 stall, Quaternion rot)> SpreadPatrolHomes(
-            int count, RoadEdge forecourtHome, float forecourtHomeS, Quaternion forecourtRot)
-        {
-            var homes = new List<(RoadEdge, float, Vector3, Quaternion)>(count);
-            homes.Add((forecourtHome, forecourtHomeS, _stallCentre, forecourtRot));
-            if (count <= 1) return homes;
-
-            // Scattering the RESTING cars over the city jams the traffic: a patrol left at
-            // a kerb is a registered obstacle, and even set off the running lane it
-            // gridlocked the ambient cars in ~a quarter of seeds (car soak: worst 14k+
-            // belt refusals with the spread; 0 in every one of 12 with the cars docked).
-            // So the spread is OFF until the resting spots are provably traffic-safe (a
-            // known parking bay, not a computed kerb point). The city still gets its police
-            // presence from the patrols, whose beats already cover the whole map, and the
-            // reaction to fights stays LOCAL (PoliceDispatch.ResponseRange), which is what
-            // the user actually asked for. Every car rests on the forecourt; the
-            // farthest-point spread over the long lanes, with its kerb-clearing walk-out,
-            // is in git history (before 2026-08-27) for the day placement is safe.
-            for (int i = 1; i < count; i++) homes.Add(homes[0]);
-            return homes;
-        }
-
-        void SpawnFootPatrols(Transform parent, List<IPatrolMarker> markers)
+        void SpawnFootPatrols(
+            Transform parent, List<IPatrolMarker> markers, StationHouse station)
         {
             if (_officerPrefabs.Count == 0 || policeOfficerCount <= 0 ||
                 _walkClip == null || _idleClip == null) return;
 
             // the station door: on the forecourt face, past the end of the stall
             // row so the walk out does not thread between parked cars
-            var faceCentre = _stallCentre - _stallOut * StallSetback;
-            var door = faceCentre + _stallAlong * (_stallRowHalf + 2.5f) + _stallOut * 0.8f;
-            door.y = _stallLift;
+            var faceCentre = station.StallCentre - station.StallOut * StallSetback;
+            var door = faceCentre + station.StallAlong * (station.StallRowHalf + 2.5f) +
+                       station.StallOut * 0.8f;
+            door.y = station.StallLift;
             // the precinct's own doorway: where the watch changes and where anybody the
             // department sends reaches the street from (GAN-226)
-            _policeDoor = door;
+            station.Door = door;
 
             // the home stretch: the nearest sidewalk link, joined mid-way exactly
             // like the cars join their kerb lane
@@ -4088,8 +4490,8 @@ namespace RoadDemo
             PoliceFootPatrol lead = null;
             for (int i = 0; i < policeOfficerCount; i++)
             {
-                var unitNumber = i + 1;
-                var prefab = _officerPrefabs[i % _officerPrefabs.Count];
+                var unitNumber = _policeOfficers.Count + 1;
+                var prefab = _officerPrefabs[unitNumber % _officerPrefabs.Count];
                 var go = Instantiate(prefab, door, Quaternion.identity, parent);
                 go.name = "Beat Officer " + unitNumber;
                 foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
@@ -4122,7 +4524,7 @@ namespace RoadDemo
                 _policeOfficers.Add(officer);
                 // the station's OWN men, as against the block beats: these are the pair
                 // the precinct's watch rotates through its door (GAN-226)
-                _stationOfficers.Add(officer);
+                station.Officers.Add(officer);
                 markers.Add(officer);
             }
         }

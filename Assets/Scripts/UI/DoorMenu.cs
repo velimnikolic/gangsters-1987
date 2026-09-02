@@ -67,6 +67,9 @@ namespace LivingCity.UI
 
             public string RivalName;
             public DoorTenure Tenure;
+
+            /// <summary>Is this the one address a running man makes for (GAN-235)?</summary>
+            public bool IsHideout;
             public TerritoryProtectionState Standing;
             public int TakePerDay;
             public int BuyPrice;
@@ -160,6 +163,7 @@ namespace LivingCity.UI
                     ? racket.StateOf(id, us)
                     : TerritoryProtectionState.Unaffiliated,
                 Closure = ClosureOf(id),
+                IsHideout = TerritoryHideout.Is(id),
             };
 
             var archetype = BusinessArchetypeId.Grocer;
@@ -820,9 +824,7 @@ namespace LivingCity.UI
         {
             var tenure = door.Tenure switch
             {
-                DoorTenure.Ours =>
-                    "Ours outright. " + LedgerText.Cash(door.TakePerDay) +
-                    " a day and it shows clean on the books.",
+                DoorTenure.Ours => OursLine(door),
                 DoorTenure.Paying => PayingLine(door),
                 DoorTenure.Rival =>
                     (door.RivalName ?? "Another house") +
@@ -830,6 +832,22 @@ namespace LivingCity.UI
                 _ => OpenLine(door),
             };
             return door.Closure.Shut ? door.Closure.Note + ". " + tenure : tenure;
+        }
+
+        /// <summary>
+        /// A door on our own paper: what it nets, and - first, because it is the fact the
+        /// reader came for - whether it is THE HIDEOUT.
+        /// </summary>
+        static string OursLine(Door door)
+        {
+            var line = "Ours outright. " + LedgerText.Cash(door.TakePerDay) +
+                       " a day and it shows clean on the books.";
+            if (!door.IsHideout)
+                return line;
+            return line + " THE HIDEOUT" +
+                   (RoadDemo.CrewQuarters.AnyoneInside(door.Id)
+                       ? " - our men are in it."
+                       : " - a man who shakes a pursuit runs here.");
         }
 
         /// <summary>
@@ -1082,7 +1100,8 @@ namespace LivingCity.UI
                 door.Standing, door.Tenure, racketable: true, hasCrew,
                 MenAtDoor(door.Id), door.BuyPrice, orders,
                 closure: door.Closure,
-                quarters: RoadDemo.CrewQuarters.State(StreetUnit(going), door.Id));
+                quarters: RoadDemo.CrewQuarters.State(StreetUnit(going), door.Id),
+                isHideout: door.IsHideout);
 
             for (var i = 0; i < orders.Count; i++)
             {
@@ -1147,10 +1166,54 @@ namespace LivingCity.UI
                 return () => { MoveQuarters(door, move, dispatch); changed?.Invoke(); };
             }
 
+            // Naming the hideout is a line in the family's book, not an errand: nobody
+            // walks anywhere, the safe is not touched, and it takes effect the moment it
+            // is pressed (GAN-235).
+            if (row.Kind == TerritoryDoorRowKind.Hideout)
+            {
+                var move = row.HideoutMove;
+                return () => { NameHideout(door, move); changed?.Invoke(); };
+            }
+
             var type = row.Job;
             if (type == Outfit.OrderType.BuyPremises)
                 return () => { FileBuyPremises(door, dispatch); changed?.Invoke(); };
             return () => { FileStreetJob(door, type, dispatch); changed?.Invoke(); };
+        }
+
+        /// <summary>
+        /// MAKE THIS THE HIDEOUT, or give it up. One address, so naming a second moves it
+        /// rather than adding one; and it is only offered against a door on our own paper,
+        /// which the shared row table has already tested.
+        /// </summary>
+        public static void NameHideout(Door door, TerritoryHideoutMove move)
+        {
+            if (move == TerritoryHideoutMove.Give)
+            {
+                TerritoryHideout.Clear();
+                Say("no hideout named · the men fall back on the nearest door we hold.");
+                return;
+            }
+
+            if (BusinessDeeds.GangOf(door.Id) != GangCatalog.PlayerGangId)
+            {
+                Say("the hideout has to be on our own paper");
+                return;
+            }
+
+            // and it has to be a door a man can actually get through
+            var closure = ClosureOf(door.Id);
+            if (closure.Shut)
+            {
+                Say(closure.Note);
+                return;
+            }
+
+            var moved = TerritoryHideout.Any && !TerritoryHideout.Is(door.Id);
+            TerritoryHideout.Designate(door.Id);
+            Say(moved
+                ? "the hideout moves to " + door.Name + "."
+                : door.Name + " is the hideout.");
         }
 
         /// <summary>Immediate owner repair shared by the street, map and ledger menus.</summary>

@@ -46,6 +46,12 @@ namespace LivingCity.Personnel
         /// until the verdict lands his sheet says HELD and nothing else.</summary>
         public const int DaysToCourt = 2;
 
+        /// <summary>Days between the verdict and the van to the prison - the SECOND leg
+        /// (GAN-237, PIPE-002). A man sentenced this afternoon is held at the court
+        /// overnight and driven out in the morning, which is both what happened and the
+        /// window the player has to take the road before he goes.</summary>
+        public const int DaysToPrison = 1;
+
         public static bool IsLife(int days) => days >= Life;
 
         /// <summary>

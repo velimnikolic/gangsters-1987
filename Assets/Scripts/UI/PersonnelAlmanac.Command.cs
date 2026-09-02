@@ -591,6 +591,16 @@ namespace LivingCity.UI
                     heat < 25 ? LedgerV2.HeadStreet : LedgerV2.Boss),
             };
 
+            // WHAT HE CARRIES is the last figure on his card and the only one that is
+            // also a drawer - the Don is armed at the counter like any other man, and
+            // his file was the one file on the sheet with nowhere to do it.
+            var carried = member != null ? CarriedGun(member) : "--";
+            var armsOpen = member != null && commandArmsOpenId == member.Id;
+            facts.Add(("CARRIES",
+                member != null ? carried + (armsOpen ? "  ▴" : "  ▾") : carried,
+                carried == "nothing" ? LedgerV2.Boss : LedgerV2.HeadCream));
+            var carryIndex = facts.Count - 1;
+
             // The design's auto-fit grid: columns of at least 150 with a 20-unit
             // gutter, and each cell reads label-left, figure-right.
             var columns = Mathf.Max(1, Mathf.FloorToInt((inner + 20f) / 170f));
@@ -609,8 +619,17 @@ namespace LivingCity.UI
                 label.overflowMode = TextOverflowModes.Ellipsis;
                 LedgerV2.Figure(card, cx + cell - figureW, -cy, figureW,
                     facts[i].Value, 11.5f, facts[i].Ink);
+                if (i == carryIndex && member != null)
+                {
+                    var bossId = member.Id;
+                    NameKey(card, cx, -cy, cell, 22f, () => ToggleCommandArms(bossId));
+                }
             }
             y += (facts.Count + columns - 1) / columns * 22f + 11f;
+
+            // The counter's own paper, pulled out of the dark folder.
+            if (member != null && commandArmsOpenId == member.Id)
+                y = FileArmsMenu(card, member, BossPadSide, y, inner) + 11f;
 
             // What he IS, in the clerk's words - Personality's own bands, plus the one
             // line no lieutenant's file can carry.
@@ -1266,7 +1285,8 @@ namespace LivingCity.UI
                 commandArms.Add((itemName, "OFF THE SHELF", LedgerV2.Green,
                     LedgerV2.Green, true, (UnityAction)(() =>
                     {
-                        var result = director.GiveEquipment(itemId, memberId);
+                        var result = director.GiveEquipment(itemId, memberId,
+                            pin: true);
                         commandNote = result.Ok
                             ? itemName + " signed out to " + memberName
                             : result.Reason;
@@ -1296,7 +1316,7 @@ namespace LivingCity.UI
                         var stock = director.AddEquipment(listing.Kind,
                             listing.DisplayName, listing.Price);
                         var given = stock != null
-                            ? director.GiveEquipment(stock.Id, memberId)
+                            ? director.GiveEquipment(stock.Id, memberId, pin: true)
                             : OpResult.Fail(LedgerText.ReasonNoSuchItem);
                         commandNote = given.Ok
                             ? listing.DisplayName + " bought and signed out to " +

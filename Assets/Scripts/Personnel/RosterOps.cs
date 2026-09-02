@@ -606,7 +606,16 @@ namespace LivingCity.Personnel
                    (member.Rank == Rank.Lieutenant || RunsABranch(roster, id));
         }
 
-        public static OpResult GiveEquipment(Roster roster, int itemId, int id)
+        /// <summary>
+        /// Sign a thing out. <paramref name="pin"/> is the difference between the two
+        /// ways this door is used: STOCK for a branch (the lieutenant signs, his crew
+        /// is dealt in by who can shoot) and a thing put in ONE named hand, which the
+        /// deal then steps over for as long as he stands where he stands. The ledger's
+        /// gun drawer pins - the boss clicked that man's file - and the street and the
+        /// demos do not.
+        /// </summary>
+        public static OpResult GiveEquipment(Roster roster, int itemId, int id,
+            bool pin = false)
         {
             var item = FindItem(roster, itemId);
             if (item == null)
@@ -638,7 +647,7 @@ namespace LivingCity.Personnel
                         ? "the front" : "another man"));
             }
 
-            if (runsIt)
+            if (!pin && runsIt)
             {
                 // Stock for his own deck. He deals it out himself, as he always has -
                 // nothing here is pinned, or a crew would go unarmed behind a
@@ -649,22 +658,47 @@ namespace LivingCity.Personnel
                 return OpResult.Success;
             }
 
-            // A named man. The deed stays with the group he stands in - he carries
-            // nothing out of it - but the piece is HIS while he stands there, and the
-            // deal does not take it off him (NormalizeArms).
+            // A named man. The deed goes where his gear belongs - he carries nothing
+            // out of the group he stands in - but the piece is HIS while he stands
+            // there, and the deal does not take it off him (NormalizeArms).
             item.OwnerId = DeedGroupOf(roster, id);
             item.HolderId = id;
             item.PinnedTo = id;
             return OpResult.Success;
         }
 
-        /// <summary>Whose deck a plain man's gear belongs to: his lieutenant's crew, or
-        /// the front's locker when he stands in the pool. Never the man himself - a
-        /// hood owns no deck, which is the whole of the parent rule.</summary>
+        /// <summary>
+        /// Whose deck a man's gear belongs to: the crew he stands in, or the front's
+        /// locker when he stands in the pool - the parent rule, so a man who moves
+        /// carries nothing out with him.
+        ///
+        /// The exception is a man who HAS a deck by rank and no crew around him: a
+        /// lieutenant between crews, and above all the Don before his detail is
+        /// standing. His own iron goes on his own name, or the outfit's head could not
+        /// be handed a gun at all - the front would take the deed and the desk's guards
+        /// would be dealt it out from under him.
+        /// </summary>
         static int DeedGroupOf(Roster roster, int id)
         {
             var crew = roster.CrewOf(id);
-            return crew != null ? crew.LieutenantId : RosterEquipment.FrontArmory;
+            if (crew != null)
+                return crew.LieutenantId;
+            var member = roster.Find(id);
+            return member != null &&
+                   (member.Rank == Rank.Boss || member.Rank == Rank.Lieutenant)
+                ? id
+                : RosterEquipment.FrontArmory;
+        }
+
+        /// <summary>A man's own iron: the deed and the pin name the same man, and he
+        /// is still on the books. It belongs to no deck and is dealt by nobody.</summary>
+        static bool IsOwnIron(Roster roster, RosterEquipment item)
+        {
+            if (item.PinnedTo == RosterEquipment.Unheld ||
+                item.PinnedTo != item.OwnerId)
+                return false;
+            var man = roster.Find(item.OwnerId);
+            return man != null && !man.Gone;
         }
 
         /// <summary>Whether a man stands in the group that owns a piece - the one
@@ -798,7 +832,12 @@ namespace LivingCity.Personnel
                 if (item.OwnerId == RosterEquipment.FrontArmory)
                     continue;
 
-                if (!RunsABranch(roster, item.OwnerId))
+                // A man's OWN iron - the deed and the pin naming the same man - is a
+                // valid holding whether or not he runs anything: the Don before his
+                // detail stands, a lieutenant whose crew was disbanded under him. It is
+                // in no deck, so no deal ever touches it; it goes back to the safe when
+                // he goes off the books, which the line below catches on the same pass.
+                if (!RunsABranch(roster, item.OwnerId) && !IsOwnIron(roster, item))
                 {
                     item.OwnerId = RosterEquipment.Unheld;
                     item.HolderId = RosterEquipment.Unheld;

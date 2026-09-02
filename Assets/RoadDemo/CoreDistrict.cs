@@ -348,6 +348,26 @@ namespace RoadDemo
                 _raster, candidates, _seed,
                 Mathf.Max(0, parkingLotCount), Mathf.Max(0, fuelStationCount),
                 _parkingSites, _fuelSites, _developmentSites);
+
+            PickCourthouse();
+        }
+
+        /// <summary>The parcel the courthouse takes, or null when nothing downtown is big
+        /// enough for it. Local plan coordinates, like every other amenity site.</summary>
+        CoreAmenityLayout.Site _courthouseSite;
+
+        /// <summary>
+        /// ONE COURTHOUSE, DOWNTOWN (GAN-237). The rule itself is in the shared layout so
+        /// that the seed verdict (gangsters_core) MEASURES the same pick the city makes,
+        /// rather than an editor-only replica of it.
+        /// </summary>
+        void PickCourthouse()
+        {
+            _courthouseSite = CoreAmenityLayout.PickCourthouse(
+                _developmentSites, _plan != null ? _plan.Territory : null);
+            if (_courthouseSite == null)
+                Debug.Log("[Core] no parcel downtown will hold a courthouse; transfers " +
+                          "drive out of town on both legs");
         }
 
         /// <summary>
@@ -664,6 +684,7 @@ namespace RoadDemo
 
             BuildLaneGraph();
             StandAmenities(quarter, host);
+            StandCourthouse(quarter, host);
             BuildPavementGraph();
             InstallBascules(host, river);
             SpawnCars(host.LiveRoot("Core Traffic"));
@@ -781,6 +802,59 @@ namespace RoadDemo
                 }
             }
         }
+
+        /// <summary>
+        /// The courthouse itself, stood on the parcel PickCourthouse kept for it. It is a
+        /// building and nothing else - no interior, no cells, no clerk (GAN-219's own
+        /// rule) - and what it is FOR is that the man in the back of a police car is
+        /// driven somewhere the player can see, follow and get in front of.
+        /// </summary>
+        void StandCourthouse(Transform quarter, IDistrictHost host)
+        {
+            if (_courthouseSite == null) return;
+            var prefab = DemoAssetLoad.Load<GameObject>(CourthousePrefab);
+            if (prefab == null)
+            {
+                host.ReportMissing(CourthousePrefab);
+                return;
+            }
+
+            var box = _courthouseSite.Box;
+            var go = Object.Instantiate(prefab, quarter, false);
+            go.name = CourthouseName;
+            go.transform.localPosition = new Vector3(box.center.x, 0f, box.center.y);
+
+            // The front looks at the street the parcel's entry side names, which is the
+            // side CoreAmenityLayout already read off the raster for a driveway. The bake
+            // faces +Z, so the yaw is that side's outward direction.
+            go.transform.localRotation = Quaternion.Euler(0f, YawFor(_courthouseSite.Entry), 0f);
+
+            var bounds = new Bounds(go.transform.position, Vector3.zero);
+            var seen = false;
+            foreach (var r in go.GetComponentsInChildren<Renderer>())
+            {
+                if (!seen) { bounds = r.bounds; seen = true; }
+                else bounds.Encapsulate(r.bounds);
+            }
+            if (seen) host.Blocked(bounds, CourthouseName);
+        }
+
+        const string CourthousePrefab = "Assets/CityKit/Buildings/building-courthouse.prefab";
+
+        /// <summary>What the court is called on the map, the ledger and the announcement.
+        /// The name the sweep matches on, too - so it is a constant and not a literal at
+        /// three call sites.</summary>
+        public const string CourthouseName = "building-courthouse";
+
+        /// <summary>The outward yaw of a parcel's entry side: which way a building on it
+        /// turns to face its street.</summary>
+        static float YawFor(ParkingEntrySide entry) => entry switch
+        {
+            ParkingEntrySide.North => 0f,
+            ParkingEntrySide.East => 90f,
+            ParkingEntrySide.South => 180f,
+            _ => 270f,
+        };
 
         void StandCoreBlocks(IDistrictHost host)
         {
@@ -1158,6 +1232,73 @@ namespace RoadDemo
                         CanCarryHousing(supplementalDevelopment[i]))
                         development.Add(supplementalDevelopment[i]);
             }
+        }
+
+        /// <summary>Metres of frontage and depth a courthouse and its forecourt want.
+        /// The building measures 20.1 x 17.6 m (SyntyKitExtractor's own bake report), so
+        /// this is it plus about five metres of court all round: the floor a parcel has
+        /// to clear before it is considered at all.</summary>
+        public const float CourthouseFrontage = 30f;
+        public const float CourthouseDepth = 28f;
+
+        /// <summary>
+        /// THE PARCEL THE COURTHOUSE TAKES (GAN-237), or null when nothing will hold one.
+        ///
+        /// The city needed a civic building the prisoner transfer could actually drive to,
+        /// and it takes a leftover parcel the same way the filling stations do: downtown
+        /// first, then the roomiest that clears the floor above - a court on the rim would
+        /// be a court nobody drives past. The parcel is REMOVED from the development list,
+        /// so it does not also become housing.
+        ///
+        /// Nothing big enough means no court, and the transfer keeps driving out of town
+        /// on both legs: a leg does not pretend to arrive somewhere nobody built.
+        /// </summary>
+        public static Site PickCourthouse(List<Site> development, CoreTerritoryPlan territory)
+        {
+            if (development == null || development.Count == 0) return null;
+
+            Site best = null;
+            var bestArea = 0f;
+            var bestDowntown = false;
+            for (int i = 0; i < development.Count; i++)
+            {
+                var site = development[i];
+                if (site.Box.width < CourthouseFrontage || site.Box.height < CourthouseDepth)
+                    continue;
+                var downtown = QuarterOf(territory, site.Box.center) == CoreQuarterId.Downtown;
+                var area = site.Box.width * site.Box.height;
+                if (best != null && bestDowntown && !downtown) continue;
+                if (best != null && downtown == bestDowntown && area <= bestArea) continue;
+                best = site;
+                bestArea = area;
+                bestDowntown = downtown;
+            }
+
+            if (best != null) development.Remove(best);
+            return best;
+        }
+
+        /// <summary>Which quarter a point falls in, or the nearest one's - the same
+        /// reading CanCarryHousing makes, lifted out so the courthouse pick can make it
+        /// too. Downtown is the answer where there is no territory to ask.</summary>
+        static CoreQuarterId QuarterOf(CoreTerritoryPlan territory, Vector2 at)
+        {
+            var direct = territory?.QuarterAt(at);
+            if (direct.HasValue) return direct.Value;
+            if (territory == null || territory.Quarters.Count == 0)
+                return CoreQuarterId.Downtown;
+
+            var best = CoreQuarterId.Downtown;
+            float nearest = float.MaxValue;
+            for (int i = 0; i < territory.Quarters.Count; i++)
+            {
+                var candidate = territory.Quarters[i];
+                float distance = (candidate.LocalAnchor - at).sqrMagnitude;
+                if (distance >= nearest) continue;
+                nearest = distance;
+                best = candidate.Id;
+            }
+            return best;
         }
 
         /// <summary>A development parcel must preserve the shared two-cell pavement ring.

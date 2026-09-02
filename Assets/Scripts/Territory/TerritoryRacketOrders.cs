@@ -37,6 +37,21 @@ namespace LivingCity.Territory
         /// racket act nor work filed with the office: the crew walks there and goes
         /// in, and the street is what carries it out (RoadDemo.CrewQuarters).</summary>
         Quarters,
+
+        /// <summary>Naming - or giving up - the one address a running man makes for
+        /// (GAN-235). Nobody walks anywhere: it writes a line in the family's book.
+        /// </summary>
+        Hideout,
+    }
+
+    /// <summary>Which way a hideout row moves the designation.</summary>
+    public enum TerritoryHideoutMove
+    {
+        /// <summary>Make this the hideout - moving it off wherever it was.</summary>
+        Make,
+
+        /// <summary>Give it up; the men fall back on the nearest door we hold.</summary>
+        Give,
     }
 
     /// <summary>Which way a quarters row moves the men.</summary>
@@ -117,10 +132,17 @@ namespace LivingCity.Territory
                 TerritoryDoorRowKind.Quarters, TerritoryRacketIntent.Approach, default,
                 label, note, available, 0, move);
 
+        public static TerritoryRacketOrder Hideout(
+            TerritoryHideoutMove move, string label, string note, bool available) =>
+            new TerritoryRacketOrder(
+                TerritoryDoorRowKind.Hideout, TerritoryRacketIntent.Approach, default,
+                label, note, available, 0, TerritoryQuartersMove.In, move);
+
         TerritoryRacketOrder(
             TerritoryDoorRowKind kind, TerritoryRacketIntent intent, OrderType job,
             string label, string note, bool available, int cash,
-            TerritoryQuartersMove move = TerritoryQuartersMove.In)
+            TerritoryQuartersMove move = TerritoryQuartersMove.In,
+            TerritoryHideoutMove hideout = TerritoryHideoutMove.Make)
         {
             Kind = kind;
             Intent = intent;
@@ -130,6 +152,7 @@ namespace LivingCity.Territory
             Available = available;
             Cash = cash;
             Move = move;
+            HideoutMove = hideout;
         }
 
         public TerritoryDoorRowKind Kind { get; }
@@ -142,6 +165,9 @@ namespace LivingCity.Territory
 
         /// <summary>Meaningful on a Quarters row: in through the door, or back out.</summary>
         public TerritoryQuartersMove Move { get; }
+
+        /// <summary>Meaningful on a Hideout row: name it, or give it up.</summary>
+        public TerritoryHideoutMove HideoutMove { get; }
 
         public string Label { get; }
 
@@ -183,6 +209,8 @@ namespace LivingCity.Territory
         public const string MoveOutLabel = "BRING THEM OUT";
         public const string ShakeDownLabel = "SHAKE DOWN THE BLOCK";
         public const string LeanLabel = "LEAN ON THE HOLDOUTS";
+        public const string HideoutLabel = "MAKE THIS THE HIDEOUT";
+        public const string NoHideoutLabel = "NO LONGER THE HIDEOUT";
 
         /// <summary>
         /// WHAT EACH BLOCK ORDER ACTUALLY DOES, in one line of the crew's own words.
@@ -216,6 +244,8 @@ namespace LivingCity.Territory
         /// <param name="quarters">Where the crew that would answer already stands with
         /// this door - out on the street, behind this one, or inside another of
         /// ours.</param>
+        /// <param name="isHideout">Whether this door is already the one address a running
+        /// man makes for (GAN-235).</param>
         public static void For(
             TerritoryProtectionState standing,
             DoorTenure tenure,
@@ -227,7 +257,8 @@ namespace LivingCity.Territory
             bool collectionDue = true,
             string collectionNote = null,
             TerritoryDoorClosure closure = default,
-            TerritoryQuartersState quarters = TerritoryQuartersState.None)
+            TerritoryQuartersState quarters = TerritoryQuartersState.None,
+            bool isHideout = false)
         {
             if (into == null)
                 return;
@@ -318,6 +349,23 @@ namespace LivingCity.Territory
                             : "the men wait inside · off the street"),
                         housing == null));
                 }
+
+                // THE HIDEOUT (GAN-235). One address in the city, named on our own paper:
+                // a man who breaks a pursuit makes for it instead of whichever shop of
+                // ours happens to be nearest. Naming a second MOVES it - there is no
+                // list, because a player with three hideouts has none he can name. A
+                // premises nobody can walk into is no hideout, so a smashed or burned-out
+                // front closes this row exactly as it closes the one above.
+                into.Add(isHideout
+                    ? TerritoryRacketOrder.Hideout(
+                        TerritoryHideoutMove.Give, NoHideoutLabel,
+                        "give it up · the men fall back on the nearest door we hold", true)
+                    : TerritoryRacketOrder.Hideout(
+                        TerritoryHideoutMove.Make, HideoutLabel,
+                        closure.Shut
+                            ? closure.Note
+                            : "a man who shakes a pursuit runs here · one address only",
+                        !closure.Shut));
             }
 
             // What may be done TO the door is the shared table's call, never a tenure

@@ -20,9 +20,10 @@ namespace RoadDemo
     ///  * BROKEN PURSUIT (FLEE-002). Hiding is not a button a running man may press
     ///    with a patrol behind him. He may go inside only after nobody of the law has
     ///    been able to see him for a stretch of seconds; seen going in, the pursuit
-    ///    simply follows him to the door and he is taken there. Where he goes is one of
-    ///    the outfit's own doors, through the passage that already exists for it
-    ///    (CrewQuarters) - no second way of being indoors.
+    ///    simply follows him to the door and he is taken there. Where he goes is THE
+    ///    HIDEOUT if the family has named one and he can reach it (GAN-235), and
+    ///    otherwise the nearest door the outfit holds - through the passage that already
+    ///    exists for it (CrewQuarters), with no second way of being indoors.
     ///
     /// And the sighting itself is what the wanted clock is made of: a man seen on the
     /// street has not been hidden, whatever he did yesterday, so the sighting resets his
@@ -214,12 +215,54 @@ namespace RoadDemo
             if (seen) return;
             if (Time.time - unit.SeenByLawAt < PursuitBroken) return;
 
+            // THE HIDEOUT FIRST (GAN-235). The one address the family named is what a
+            // man makes for; the nearest door we hold is the fallback and has to stay
+            // one, because a man cornered eight blocks from it must still have somewhere
+            // to go.
+            if (ToTheHideout(unit))
+            {
+                CrewOverlay.Announce("THEY ARE MAKING FOR THE HIDEOUT", 4f,
+                    new Color(0.95f, 0.9f, 0.6f));
+                return;
+            }
+
             var door = OurNearestDoor(unit.Position);
             if (door == null) return;
             if (CrewQuarters.Station(_crews, unit, door.BusinessId) ||
                 CrewQuarters.Station(_crews, unit, door.Outside, door.Role))
                 CrewOverlay.Announce("THEY HAVE GONE TO GROUND", 4f,
                     new Color(0.95f, 0.9f, 0.6f));
+        }
+
+        /// <summary>
+        /// The named hideout, when the men can actually get to it: it is still on our
+        /// paper, the street knows where its door is, and it is near enough to be worth
+        /// walking to. False on every other reading, and the caller falls back.
+        /// </summary>
+        bool ToTheHideout(DemoCrews.Unit unit)
+        {
+            var hideout = LivingCity.Territory.TerritoryHideout.Where;
+            if (!hideout.IsValid)
+                return false;
+            // The deed book clears the designation when a premises changes hands, so this
+            // is a second lock on the same door rather than a rule of its own - nothing
+            // sends our men into a building somebody else now owns.
+            if (LivingCity.Business.BusinessDeeds.GangOf(hideout) !=
+                LivingCity.Gameplay.PlayerCommands.House.Value)
+                return false;
+            // A SMASHED OR BURNED-OUT PREMISES IS SHUT. The designation stands - repair
+            // it and it is the hideout again - but nobody goes to ground behind boarded
+            // doors tonight, so the run falls back on the nearest door we hold.
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            if (business != null && business.TryGetShutdown(hideout, out _))
+                return false;
+            if (!CrewQuarters.TryDoorstep(hideout, out var doorstep, out _))
+                return false;
+            var gap = doorstep - unit.Position;
+            gap.y = 0f;
+            if (gap.sqrMagnitude > HideoutReach * HideoutReach)
+                return false;
+            return CrewQuarters.Station(_crews, unit, hideout);
         }
 
         static void GoneToGround(Roster roster, DemoCrews.Unit unit, int today)
@@ -234,10 +277,11 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// Where a man of ours can get off the street: the nearest door the outfit
-        /// holds, the headquarters among them. The epic asks for a bought and designated
-        /// HIDEOUT and this is deliberately not that - it is every door we already own,
-        /// which is what the city currently has to offer. See the report on GAN-222.
+        /// Where a man of ours can get off the street when the hideout is no use to him:
+        /// the nearest door the outfit holds, the headquarters among them. This is the
+        /// FALLBACK - the named hideout is tried first (<see cref="ToTheHideout"/>) - and
+        /// it stays here because a man cornered across town from the hideout still has to
+        /// have somewhere to go.
         /// </summary>
         static GangFront OurNearestDoor(Vector3 from)
         {

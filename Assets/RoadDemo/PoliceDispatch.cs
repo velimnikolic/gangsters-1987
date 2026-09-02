@@ -184,6 +184,38 @@ namespace RoadDemo
         /// the watch, and when a hole is filled. Null in a scene that has no station.</summary>
         public PoliceForce Force;
 
+        /// <summary>
+        /// WHOSE MAN THAT WAS. A death reaches the force as a place and a kind - StreetAlarm
+        /// is the one channel and stays one - but the man who went down was standing with
+        /// his own unit, and every unit knows its precinct. So the unit nearest the body
+        /// says whose books he was on, which is the answer a house-nearest guess gets wrong
+        /// the moment a car ranges across town into another precinct's ground (GAN-236).
+        ///
+        /// -1 when nothing of the law is near enough to have been him, and the force falls
+        /// back on the nearest station house.
+        /// </summary>
+        public int PrecinctNear(Vector3 where, float metres)
+        {
+            var best = -1;
+            var bestD = metres * metres;
+            foreach (var u in _units)
+            {
+                if (u == null || u.Tf == null) continue;
+                var d = (u.Position - where).sqrMagnitude;
+                if (d > bestD) continue;
+                var precinct = u switch
+                {
+                    PoliceFootPatrol foot => foot.Precinct,
+                    PolicePatrolCar car => car.Precinct,
+                    _ => -1,
+                };
+                if (precinct < 0) continue;
+                bestD = d;
+                best = precinct;
+            }
+            return best;
+        }
+
         void Update()
         {
             float dt = Time.deltaTime;
