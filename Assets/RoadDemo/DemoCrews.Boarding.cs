@@ -920,11 +920,18 @@ namespace RoadDemo
         /// <summary>The outfit's own door - the kerb every car on the books is parked
         /// at. Null before the families are seated, and in the demo scenes that stand no
         /// fronts at all; the caller then falls back to the man who holds the keys.</summary>
-        public static GangFront PlayerFront()
+        public static GangFront PlayerFront() =>
+            FrontOf(LivingCity.Gangs.GangCatalog.PlayerGangId);
+
+        /// <summary>One family's own door. Null before the families are seated, in the
+        /// demo scenes that stand no fronts at all, and for anybody who is not a family
+        /// (the law).</summary>
+        public static GangFront FrontOf(int gangId)
         {
+            if (gangId < 0) return null;
             var all = GangFront.All;
             for (int i = 0; i < all.Count; i++)
-                if (all[i] != null && all[i].GangId == LivingCity.Gangs.GangCatalog.PlayerGangId)
+                if (all[i] != null && all[i].GangId == gangId)
                     return all[i];
             return null;
         }

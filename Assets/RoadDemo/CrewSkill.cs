@@ -67,10 +67,10 @@ namespace RoadDemo
             if (characterId < 0)
                 return;
 
-            var director = LivingCity.Gameplay.PersonnelDirector.Instance;
-            var member = director != null && director.Roster != null
-                ? director.Roster.Find(characterId)
-                : null;
+            // EVERY house's men learn their trades. Ids are unique across all
+            // twenty-one books by construction, so the man is found by asking the
+            // houses in turn and nothing anywhere has to know whose he is.
+            var member = Man(characterId);
             if (member == null || member.Gone)
                 return;
 
@@ -81,6 +81,28 @@ namespace RoadDemo
                 return;
 
             ActivityXp.Award(member, activity, outcome);
+        }
+
+        /// <summary>The man behind a character id, in whichever family's book he
+        /// stands. Null for a body on nobody's books.</summary>
+        static LivingCity.Personnel.Character Man(int characterId)
+        {
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            if (underworld == null)
+            {
+                var director = LivingCity.Gameplay.PersonnelDirector.Instance;
+                return director != null && director.Roster != null
+                    ? director.Roster.Find(characterId)
+                    : null;
+            }
+
+            for (var gangId = 0; gangId < underworld.Count; gangId++)
+            {
+                var found = underworld.Of(gangId)?.Roster?.Find(characterId);
+                if (found != null)
+                    return found;
+            }
+            return null;
         }
 
         // Whose lessons have been counted, and for which day. Cleared wholesale the

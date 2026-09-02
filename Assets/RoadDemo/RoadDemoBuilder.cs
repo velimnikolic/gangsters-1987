@@ -236,12 +236,6 @@ namespace RoadDemo
                  "standing up first.")]
         public float monkeyStartAfter = 20f;
 
-        [Tooltip("Every man of a mob his own piece, drawn off the armory's ladder, " +
-                 "instead of a crew all carrying the same gun. A shotgun man walks in " +
-                 "close and a rifleman opens up from across the street, so a mixed mob " +
-                 "strings itself out by what it is holding.")]
-        public bool mixedArms = false;
-
         [Header("Reading the city")]
         [Tooltip("Click a building to open the catalog card - its name, its footprint " +
                  "and its height - and gold-tint it. Off leaves the click to the crew, " +
@@ -3407,58 +3401,62 @@ namespace RoadDemo
             var sidewalks = _pedLinks.FindAll(l => !l.Gated && l.Length >= 24f);
             var rng = new System.Random(BuiltFromSeed);
 
-            var arms = new[]
-            {
-                ("SM_Wep_Pistol_Revolver_01", LivingCity.Personnel.EquipmentKind.Pistol),
-                ("SM_Wep_Machine_Pistol_01", LivingCity.Personnel.EquipmentKind.MachinePistol),
-                ("SM_Wep_Shotgun_01", LivingCity.Personnel.EquipmentKind.Shotgun),
-            };
-
-            // The books, cut into crews: one entry per capo, with the soldiers standing
-            // behind him in the seeder's flat member list (a Lieutenant opens a crew).
-            // The outfit takes its own premises whether or not a single rival is dealt.
-            // A don with nowhere to be found is the one man in the city the player
-            // cannot point at, and the street mark outside his door is the first thing
-            // the city is read by - so the budget takes RIVAL families away, never ours.
+            // The outfit takes its own premises whether or not a single rival is
+            // dealt. A don with nowhere to be found is the one man in the city the
+            // player cannot point at, and the street mark outside his door is the first
+            // thing the city is read by - so the budget takes RIVAL families away,
+            // never ours.
             int families = rivalCrewsInCity <= 0
                 ? 0
                 : Mathf.Min(rivalCrewsInCity, gangs.Length - 1);
-            var byFamily = new List<List<(string boss, List<string> hoods)>>();
-            for (int i = 0; i < families; i++)
-            {
-                var crews = new List<(string, List<string>)>();
-                foreach (var man in gangs[1 + i].Members)
-                {
-                    if (man.Lieutenant) crews.Add((man.FullName, new List<string>()));
-                    else if (crews.Count > 0 &&
-                             crews[crews.Count - 1].Item2.Count < rivalHoodsInCity)
-                        crews[crews.Count - 1].Item2.Add(man.FullName);
-                }
-                byFamily.Add(crews);
-            }
 
             // Every family gets PREMISES first - the player's outfit included - and the
             // capo's own crew stands outside its door. The rest of a family's crews hold
             // corners, which is what the sidewalk pass below is for.
             var taken = new List<Vector3>();
-            var fronts = SeatFronts(gangs, families, byFamily, taken);
+            var fronts = SeatFronts(gangs, underworld, families, taken);
 
             if (families == 0 || sidewalks.Count == 0) return;
 
-            int placed = 0;
-            for (int round = 0; placed < rivalCrewCap; round++)
+            // NOBODY IS DEALT BY HAND HERE ANY MORE. A family's men are Characters on
+            // its own roster and the street stands them up off that book like the
+            // player's (DemoCrews.Sync); what this pass decides is WHERE each of its
+            // crews first opens up - the capo's outside his own door, the rest on
+            // corners of their own, spread across the city.
+            int posted = 0;
+            for (int round = 0; posted < rivalCrewCap; round++)
             {
                 bool any = false;
-                for (int i = 0; i < families && placed < rivalCrewCap; i++)
+                for (int i = 0; i < families && posted < rivalCrewCap; i++)
                 {
-                    if (round >= byFamily[i].Count) continue;
+                    var house = underworld.Of(1 + i);
+                    var capoCrews = CapoCrews(house);
+                    if (round >= capoCrews.Count) continue;
                     any = true;
-                    if (StandUpCrew(1 + i, round, byFamily[i][round], sidewalks, taken,
-                                    arms, rng, round == 0 ? fronts[1 + i] : null))
-                        placed++;
+                    if (PostCrew(1 + i, capoCrews[round].Id, sidewalks, taken, rng,
+                                 round == 0 ? fronts[1 + i] : null))
+                        posted++;
                 }
                 if (!any) break;
             }
+        }
+
+        /// <summary>A house's crews in book order, the Don's own detail left out - the
+        /// corners a family holds are its capos', and the Don keeps to his premises.
+        /// </summary>
+        static List<LivingCity.Personnel.Crew> CapoCrews(LivingCity.Outfit.House house)
+        {
+            var crews = new List<LivingCity.Personnel.Crew>();
+            if (house?.Roster == null)
+                return crews;
+            foreach (var crew in house.Roster.Crews)
+            {
+                var lieutenant = house.Roster.Find(crew.LieutenantId);
+                if (lieutenant != null &&
+                    lieutenant.Rank == LivingCity.Personnel.Rank.Lieutenant)
+                    crews.Add(crew);
+            }
+            return crews;
         }
 
         /// <summary>One door per family, spread across the city, with the family's books
@@ -3472,8 +3470,8 @@ namespace RoadDemo
         ///
         /// A building is claimed once. A composed block cuts four doors into one bake,
         /// and two families behind the same wall would open the same card.</summary>
-        DemoDoor[] SeatFronts(LivingCity.Gangs.Gang[] gangs, int families,
-            List<List<(string boss, List<string> hoods)>> byFamily, List<Vector3> taken)
+        DemoDoor[] SeatFronts(LivingCity.Gangs.Gang[] gangs,
+            LivingCity.Outfit.Underworld underworld, int families, List<Vector3> taken)
         {
             var fronts = new DemoDoor[gangs.Length];
             var doors = PrimaryCore != null ? CoreOutfitDoors() : new List<DemoDoor>();
@@ -3515,9 +3513,13 @@ namespace RoadDemo
                 if (id == 0)
                     _outfitDoor = new Vector3(door.EntryPos.x, 0f, door.EntryPos.z);
 
-                var crew = id > 0 && byFamily[id - 1].Count > 0 ? byFamily[id - 1][0] : default;
-                var capo = id == 0 ? LivingCity.Gangs.GangCatalog.BossName : crew.boss;
-                int men = id == 0 ? 0 : (crew.hoods?.Count ?? 0) + 1;
+                // WHO RUNS IT is the family's own Don, off that family's own book -
+                // the same answer the player's door gives, which is his own name.
+                var house = underworld?.Of(id);
+                var don = house?.Roster?.FindBoss();
+                var capo = don != null ? don.FullName
+                    : LivingCity.Gangs.GangCatalog.BossName;
+                int men = id == 0 ? 0 : house?.Standing ?? 0;
 
                 var books = LivingCity.Gangs.FrontBooks.Open(
                     gangs[id].Name, capo, men, gangs[id].MemberSeed);
@@ -3609,39 +3611,14 @@ namespace RoadDemo
             return number + " " + name;
         }
 
-        /// <summary>One capo and his men on a corner of their own - or, when
+        /// <summary>Where one capo's crew opens up - on a corner of its own, or, when
         /// <paramref name="front"/> is his family's premises, on the pavement outside its
-        /// door, facing the street. Returns whether they reached the pavement - a family
-        /// whose coat is missing from the baked cast is skipped, never
-        /// half-stood-up.</summary>
-        bool StandUpCrew(int gang, int crewIndex,
-            (string boss, List<string> hoods) crew, List<PedLink> sidewalks,
-            List<Vector3> taken,
-            (string, LivingCity.Personnel.EquipmentKind)[] arms, System.Random rng,
-            DemoDoor front = null)
+        /// door, facing the street. The MEN are not dealt here: they are Characters on
+        /// their family's own roster and the street stands them up off that book
+        /// (DemoCrews.Sync). This only chooses the ground.</summary>
+        bool PostCrew(int gang, int crewId, List<PedLink> sidewalks,
+            List<Vector3> taken, System.Random rng, DemoDoor front = null)
         {
-            // the family's own bodies: the catalog is as long as the city has mobs, so
-            // id 12 is Greco's coat and nobody else's
-            var bossModel = LivingCity.Gangs.GangCatalog.LieutenantModels[gang];
-            var staple = LivingCity.Gangs.GangCatalog.SoldierModels[gang];
-            var bossPrefab = Cast(bossModel);
-            if (bossPrefab == null) return false;
-
-            // A body per man, all different and none of them the lieutenant's - a rival
-            // crew is four men, not one man standing four times. A family's SECOND crew
-            // starts its walk further along the stock, so the two corners are not the
-            // same three coats twice over.
-            var hoods = LivingCity.Gangs.GangLooks.Hoods;
-            var from = hoods[(LivingCity.Gangs.GangLooks.IndexOf(staple) +
-                              3 * crewIndex) % hoods.Length];
-            var hoodPrefabs = new List<GameObject>();
-            foreach (var look in LivingCity.Gangs.GangLooks.HoodsFor(
-                         bossModel, from, crew.hoods.Count))
-            {
-                var body = Cast(look);
-                if (body) hoodPrefabs.Add(body);
-            }
-
             Vector3 anchor, facing;
             if (front != null)
             {
@@ -3677,42 +3654,15 @@ namespace RoadDemo
 
             taken.Add(anchor);
 
-            var (weaponName, kind) = arms[(gang + crewIndex) % arms.Length];
-            // mixed arms: the crew is not four copies of one gun - each man is asked for
-            // separately as he is stood up, and draws his own off the counter
-            System.Func<int, (GameObject, LivingCity.Personnel.EquipmentKind)> armsFor = null;
-            if (mixedArms)
-                armsFor = _ =>
-                {
-                    var (model, k) = MobArm(rng);
-                    return (CrewKit.Weapon(model), k);
-                };
-
-            _crews.AddRival(gang, LivingCity.Gangs.GangCatalog.Names[gang], crew.boss,
-                bossPrefab, crew.hoods, hoodPrefabs, anchor, facing,
-                CrewKit.Weapon(weaponName), kind, lineUp: true, armsFor: armsFor);
+            _crews.SeatHouse(gang);
+            _crews.PostCrew(crewId, anchor, facing);
             return true;
         }
 
-        /// <summary>What one man of a mob is holding when the arms are mixed: a piece off
-        /// the armory's own counter, or the .38 that is in every coat under it. One
-        /// table for the street and the ledger both - the counter is where guns come
-        /// from, here as on the armory page.</summary>
-        static (string model, LivingCity.Personnel.EquipmentKind kind) MobArm(System.Random rng)
-        {
-            var counter = LivingCity.Outfit.ArmoryCatalog.Weapons;
-            int pick = rng.Next(counter.Length + 1);
-            if (pick >= counter.Length)
-                return (CrewArms.DefaultSidearm, LivingCity.Personnel.EquipmentKind.Pistol);
-            var item = counter[pick];
-            return (item.ModelName ?? CrewArms.DefaultSidearm, item.Kind);
-        }
-
-        /// <summary>The plain pack body of this name - the ledger's baked cast first,
-        /// the picture desk's resolver behind it.</summary>
-        static GameObject Cast(string name) =>
-            LivingCity.UI.LedgerModelSet.PersonNamed(name) ??
-            LivingCity.UI.PortraitStudio.FindPeoplePrefab(name);
+        // A mob's guns are on its own family's books now (Underworld.ArmTheFamily) and
+        // the quartermaster's deal puts them in the best hands, so nothing here picks a
+        // weapon or a body any more: mixedArms, MobArm and Cast went with the hand-dealt
+        // mobs they served.
 
         // ------------------------------------------------------------------- cars
 

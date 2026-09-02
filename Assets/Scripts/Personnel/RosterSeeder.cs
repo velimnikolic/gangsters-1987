@@ -127,11 +127,15 @@ namespace LivingCity.Personnel
                 }
 
                 var hoods = rng.Next(GangSeeder.MinSoldiers, GangSeeder.MaxSoldiers + 1);
+                var crewHoods = new List<Character>(hoods);
                 for (var h = 0; h < hoods; h++)
                 {
                     var hood = DealMan(rng, roster);
                     RosterOps.AssignToCrew(roster, hood.Id, crewId);
+                    crewHoods.Add(hood);
                 }
+
+                DressTheCrew(gangId, c, capo, crewHoods);
             }
 
             roster.Equipment.Add(new RosterEquipment
@@ -371,11 +375,39 @@ namespace LivingCity.Personnel
                 FirstName = firsts[rng.Next(firsts.Count)],
                 Surname = GangCatalog.Names[gangId],
                 Rank = Rank.Boss,
+                // The boss-only suit, the same one Don Salvatore wears. A Don is a Don
+                // whichever family he heads, and the street reads the coat before it
+                // reads the name over the door.
+                Look = GangCatalog.BossModel,
                 Loyalty = 100,
             };
             DealInto(rng, roster, boss);
             roster.Members.Add(boss);
             roster.Organization.BossId = boss.Id;
+        }
+
+        /// <summary>
+        /// The coats one crew of a family wears. A family's colour is its BODIES - id 12
+        /// is Greco's coat and nobody else's - so the catalog's staple is dealt onto the
+        /// men here, at the one place a family is dealt, rather than being picked again
+        /// wherever somebody happens to stand them up.
+        ///
+        /// The capo wears his family's lieutenant coat; his men wear four different ones
+        /// off the hood table, none of them his, and a family's SECOND crew starts its
+        /// walk further along the stock so two corners are not the same three coats
+        /// twice over (the rule <see cref="GangLooks.HoodsFor"/> was written for).
+        /// </summary>
+        static void DressTheCrew(int gangId, int crewIndex, Character capo,
+            List<Character> hoods)
+        {
+            capo.Look = GangCatalog.LieutenantModels[gangId];
+
+            var table = GangLooks.Hoods;
+            var from = table[(GangLooks.IndexOf(GangCatalog.SoldierModels[gangId]) +
+                              3 * crewIndex) % table.Length];
+            var looks = GangLooks.HoodsFor(capo.Look, from, hoods.Count);
+            for (var i = 0; i < hoods.Count && i < looks.Count; i++)
+                hoods[i].Look = looks[i];
         }
 
         /// <summary>One more man on a family's books, dealt exactly as the founding six

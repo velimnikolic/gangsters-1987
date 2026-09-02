@@ -331,8 +331,13 @@ namespace RoadDemo
                     foreach (var man in unit.All()) man.Disengage();
                 }
 
-                // a beaten crew - boss down, one man left - gets off the street; the men
-                // who have run out of sight are taken off it
+                // A BEATEN CREW GOES HOME - boss down, one man left. It used to run
+                // sixty metres and be deleted where it stopped, which meant a family
+                // that lost a fight lost men nobody could account for. The survivor
+                // walks to his family's own door and goes inside it, the way the
+                // player's RUN FOR IT sends a crew of ours home, and he is still on his
+                // family's books when he gets there. Only where there is no door to
+                // reach does he still run out of sight and off the street.
                 if (unit.Faction != 0 && !unit.IsPolice && !unit.Retreated &&
                     (unit.Boss == null || unit.Boss.Dead) && unit.Standing() <= 1 && unit.Standing() > 0)
                 {
@@ -341,8 +346,9 @@ namespace RoadDemo
                     unit.TargetUnit = null;
                     unit.Searching = false;
                     unit.LookUntil = 0f;
-                    foreach (var man in unit.All())
-                        if (!man.Dead && !IsAboard(man)) man.Retreat(threat);
+                    if (!SendHome(unit))
+                        foreach (var man in unit.All())
+                            if (!man.Dead && !IsAboard(man)) man.Retreat(threat);
                 }
                 if (unit.Retreated) { TakeOffRetreated(unit); continue; }
 
@@ -702,8 +708,32 @@ namespace RoadDemo
         // retreated crew, and a fresh list each time was garbage for nothing.
         readonly List<CrewWalker> _gone = new List<CrewWalker>();
 
+        /// <summary>
+        /// Off the street the way a family's men are meant to leave it: home, through
+        /// their own door. The billet does the rest - the march, the file-in, and the
+        /// holding - and while they are held the crew is neither a target nor a threat.
+        /// Answers false when the family has no door to reach, which is the only case
+        /// left where a beaten crew simply runs.
+        /// </summary>
+        bool SendHome(Unit unit)
+        {
+            if (CrewQuarters.Billeted(unit))
+                return true;
+            var front = FrontOf(unit.Faction);
+            if (front == null)
+                return false;
+            return front.BusinessId.IsValid
+                ? CrewQuarters.Station(this, unit, front.BusinessId)
+                : CrewQuarters.Station(this, unit, front.Outside, front.Role);
+        }
+
         void TakeOffRetreated(Unit unit)
         {
+            // A man walking home is not gone - he is on his way to his own door, and
+            // the billet will take him in when he gets there.
+            if (CrewQuarters.Billeted(unit))
+                return;
+
             _gone.Clear();
             foreach (var man in unit.All())
                 if (!man.Dead && man.Retreating && man.State == CrewWalker.Mode.Standing) _gone.Add(man);

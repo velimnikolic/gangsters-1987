@@ -51,6 +51,12 @@ namespace RoadDemo
         /// loop of officers walking up to him for ever.</summary>
         const float ChaseAgain = 30f;
 
+        /// <summary>Metres a running man will cross to reach the named hideout. Past
+        /// this the walk is longer than a broken pursuit is likely to stay broken, so he
+        /// takes the nearest door of ours instead - which is what the running man had
+        /// before there was a hideout at all, and it has to stay a real fallback.</summary>
+        const float HideoutReach = 350f;
+
         float _watchAt;
         float _chaseAgainAt;
         static readonly List<GangFront> _doors = new List<GangFront>();
@@ -60,14 +66,18 @@ namespace RoadDemo
             if (_crews == null || Time.time < _watchAt) return;
             _watchAt = Time.time + WatchEvery;
 
-            var director = LivingCity.Gameplay.PersonnelDirector.Instance;
-            var roster = director != null ? director.Roster : null;
             var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
             int today = outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0;
+            var underworld = LivingCity.Outfit.Underworld.Current;
 
             foreach (var unit in _crews.Units)
             {
-                if (unit == null || unit.Faction != 0 || unit.Wiped) continue;
+                if (unit == null || unit.Wiped) continue;
+                // THE LAW LOOKS AT EVERY FAMILY. A wanted man is a wanted man whichever
+                // house he belongs to, and the sweep reads HIS house's book - ours only
+                // when he is ours.
+                var roster = underworld?.Of(unit.Faction)?.Roster;
+                if (roster == null) continue;
                 if (unit.Car != null) continue;   // in a car, and not on anybody's pavement
                 // and men who are actually INSIDE a building are off the street: nobody
                 // on the pavement can see them, and a patrol that "recognised" a man
@@ -96,7 +106,7 @@ namespace RoadDemo
                     MarkSeen(roster, unit);
                 }
 
-                if (roster != null && seen && WantedIn(roster, unit) &&
+                if (seen && WantedIn(roster, unit) &&
                     _collar == Collar.None && Time.time >= _chaseAgainAt &&
                     StreetAlarm.QuietFor > QuietBefore)
                     ChaseOnSight(unit, seenBy, today);

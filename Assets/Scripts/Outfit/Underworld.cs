@@ -39,6 +39,23 @@ namespace LivingCity.Outfit
 
         public int Count => houses.Length;
 
+        /// <summary>
+        /// One number that moves whenever ANY house's men or money do - the dirty key
+        /// the street re-deals on, so a man recruited by the Falcones and a man shot
+        /// dead in our own crew both reach the pavement the same way.
+        /// </summary>
+        public int Version
+        {
+            get
+            {
+                var moved = 0;
+                for (var i = 0; i < houses.Length; i++)
+                    if (houses[i] != null)
+                        moved += houses[i].Version;
+                return moved;
+            }
+        }
+
         public House Of(int gangId) =>
             gangId >= 0 && gangId < houses.Length ? houses[gangId] : null;
 
@@ -58,6 +75,7 @@ namespace LivingCity.Outfit
                 var roster = RosterSeeder.Generate(citySeed, gangId);
                 RosterOps.ConfigureOrganization(roster, OrganizationLimits.Default);
                 Bodyguards.FallIn(roster);
+                ArmTheFamily(roster);
                 RosterOps.NormalizeArms(roster);
 
                 var runner = new CampaignRunner { Seed = citySeed };
@@ -65,6 +83,66 @@ namespace LivingCity.Outfit
                 underworld.houses[gangId] = new House(gangId, roster, runner);
             }
             return underworld;
+        }
+
+        /// <summary>
+        /// What a family already has in its hands on day one. The mobs have carried
+        /// these three guns since the street first stood them up - the .38 every man
+        /// owns, a shotgun, a machine pistol, one to a crew and rotating by family - and
+        /// the guns were the STREET's, picked where the bodies were spawned. They are on
+        /// the family's own books now, so a rival's iron is a line in a ledger like the
+        /// player's: the quartermaster's deal puts it in the best hand, a dead man's
+        /// piece goes back to the safe, and a crew wiped out leaves its guns behind.
+        ///
+        /// The .38 is not stock anywhere (ArmoryCatalog: the counter sells what is
+        /// BETTER than the gun in his coat), so a crew on the first rotation carries
+        /// nothing on paper and the street arms it from the default sidearm exactly as
+        /// it always did.
+        /// </summary>
+        static void ArmTheFamily(Roster roster)
+        {
+            if (roster == null || roster.GangId == GangCatalog.PlayerGangId)
+                return;
+
+            var crewIndex = 0;
+            for (var i = 0; i < roster.Crews.Count; i++)
+            {
+                var crew = roster.Crews[i];
+                var lieutenant = roster.Find(crew.LieutenantId);
+                if (lieutenant == null || lieutenant.Rank != Rank.Lieutenant)
+                    continue;
+
+                var gun = MobArms[(roster.GangId + crewIndex) % MobArms.Length];
+                crewIndex++;
+                if (string.IsNullOrEmpty(gun))
+                    continue;
+
+                var listing = Armory(gun);
+                if (listing.DisplayName != gun)
+                    continue;
+
+                // One apiece, on the capo's own deck - his to hand out, which is what
+                // NormalizeArms then does by who can shoot.
+                for (var man = 0; man <= crew.HoodIds.Count; man++)
+                {
+                    var item = RosterOps.AddEquipment(
+                        roster, listing.Kind, listing.DisplayName, listing.Price);
+                    if (item != null)
+                        RosterOps.GiveEquipment(roster, item.Id, crew.LieutenantId);
+                }
+            }
+        }
+
+        /// <summary>The three the street has always dealt a mob, in the order it dealt
+        /// them. An empty name is the .38 in every man's own coat.</summary>
+        static readonly string[] MobArms = { "", "Machine Pistol", "Shotgun" };
+
+        static ArmoryItem Armory(string displayName)
+        {
+            for (var i = 0; i < ArmoryCatalog.Weapons.Length; i++)
+                if (ArmoryCatalog.Weapons[i].DisplayName == displayName)
+                    return ArmoryCatalog.Weapons[i];
+            return default;
         }
 
         /// <summary>

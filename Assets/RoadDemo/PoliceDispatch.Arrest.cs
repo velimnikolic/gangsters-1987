@@ -319,14 +319,17 @@ namespace RoadDemo
         ///
         /// The lieutenant answers for the crew when he is stood there; when he is not -
         /// jailed, dead, or simply somewhere else - the senior man present answers, and
-        /// senior means the best commander of the ones who are actually there. A rival
-        /// mob has no books at all, so its men stand at the middle of the band.
+        /// senior means the best commander of the ones who are actually there. EVERY
+        /// family's men are read off their own family's book; only a body on nobody's
+        /// books at all - the law, a bench scene's mob - stands at the middle of the
+        /// band.
         /// </summary>
         float FightOdds(DemoCrews.Unit crew)
         {
-            var director = PersonnelDirector.Instance;
-            var roster = director != null ? director.Roster : null;
-            if (crew == null || crew.Faction != 0 || roster == null)
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            var roster = crew != null && underworld != null
+                ? underworld.Of(crew.Faction)?.Roster : null;
+            if (crew == null || roster == null)
                 return SurrenderRoll.FightChance(
                     SurrenderRoll.NoBooks, SurrenderRoll.NoBooks, SurrenderRoll.NoBooks);
 
@@ -361,9 +364,10 @@ namespace RoadDemo
             crew == null ? 0 : crew.CrewId != 0 ? crew.CrewId : crew.CrowdGroupId;
 
         /// <summary>Whose shooting this was: of the crews that fired at this incident,
-        /// the nearest one still standing within reach - the outfit's first, because a
-        /// player watching his own men taken is the point of the thing and a rival mob
-        /// being led away in front of him is a bonus, not a substitute.</summary>
+        /// the NEAREST one still standing within reach, whoever's it is. The outfit used
+        /// to be preferred by a thousand metres of score, which meant a Falcone crew
+        /// shooting up a street in front of a patrol was taken in only when nobody of
+        /// ours was anywhere near it. The law arrests who it can reach.</summary>
         DemoCrews.Unit GuiltyNear(Vector3 from)
         {
             _shotBy.Clear();
@@ -378,9 +382,7 @@ namespace RoadDemo
                 if (unit.Retreated || unit.Car != null) continue;   // gone, or driving off
                 float d = Vector3.Distance(unit.Position, from);
                 if (d > ArrestReach) continue;
-                // the outfit's men come first whatever the metres say
-                float score = d + (unit.Faction == 0 ? 0f : 1000f);
-                if (score < bestScore) { bestScore = score; best = unit; }
+                if (d < bestScore) { bestScore = d; best = unit; }
             }
             return best;
         }

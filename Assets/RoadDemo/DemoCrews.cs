@@ -418,16 +418,30 @@ namespace RoadDemo
         /// rivals are not the books' business here: they run and stop, or come back.</summary>
         void OnFled(CrewWalker man, Vector3 from)
         {
-            if (man == null || man.Dead || man.Faction != 0 || man.IsLieutenant || man.Retreating) return;
+            if (man == null || man.Dead || man.IsLieutenant || man.Retreating) return;
+            var his = HouseOf(man.Faction);
+            if (his == null) return;
             var unit = UnitOf(man);
             if (unit != null) unit.Hoods.Remove(man);
             _byCharacter.Remove(man.CharacterId);
             _deserters.Add(man);
             if (man.Tf) man.Tf.SetParent(_root, true);
             man.Retreat(from);
-            CrewOverlay.Announce(Surname(man.DisplayName).ToUpperInvariant() + " DESERTED", 4f, new Color(1f, 0.7f, 0.4f));
-            var director = PersonnelDirector.Instance;
-            if (director != null && director.Roster != null) director.Desert(man.CharacterId);
+            // Only OUR deserters are news on our wire - a man walking out on the
+            // Falcones is their trouble, and it lands on their books all the same.
+            if (man.Faction == LivingCity.Gangs.GangCatalog.PlayerGangId)
+            {
+                CrewOverlay.Announce(
+                    Surname(man.DisplayName).ToUpperInvariant() + " DESERTED", 4f,
+                    new Color(1f, 0.7f, 0.4f));
+                var director = PersonnelDirector.Instance;
+                if (director != null && director.Roster != null)
+                    director.Desert(man.CharacterId);
+            }
+            else
+            {
+                LivingCity.Outfit.HouseOps.Desert(his, man.CharacterId);
+            }
         }
 
         // ------------------------------------------------------------------ the bikes
@@ -635,11 +649,23 @@ namespace RoadDemo
                     man.Tf.gameObject.SetActive(false);
                     foreach (var car in Cars) { car.Aboard.Remove(man); car.SeatOf.Remove(man); }
                 }
-                if (man.Faction == 0)
+                // Every house's book is told, not only ours. A rival shot dead is a
+                // man struck off HIS family's roster - his gun back in their safe, his
+                // crew passed to whoever was most loyal - and the FAMILIES page reads
+                // one man fewer.
+                var his = HouseOf(man.Faction);
+                if (his != null)
                 {
-                    var director = PersonnelDirector.Instance;
-                    if (director != null && director.Roster != null)
-                        director.Kill(man.CharacterId);
+                    if (man.Faction == 0)
+                    {
+                        var director = PersonnelDirector.Instance;
+                        if (director != null && director.Roster != null)
+                            director.Kill(man.CharacterId);
+                    }
+                    else
+                    {
+                        LivingCity.Outfit.HouseOps.Kill(his, man.CharacterId);
+                    }
                 }
                 else
                 {
@@ -763,8 +789,50 @@ namespace RoadDemo
         DemoParkedCarGlow _worldFogParkedCars;
         Vector3 _outfitAnchor, _outfitFacing = Vector3.forward;
         float _outfitSpread = 9f;
-        int _rivalIds = -1;
+        /// <summary>
+        /// Bodies on NOBODY'S BOOKS: the law's squads and the bench scenes' hand-dealt
+        /// mobs. Every FAMILY's man carries his own house's character id now - he is a
+        /// Character with a name, a temper and a wage - so the only negatives left on
+        /// the street belong to people no ledger anywhere knows about.
+        /// </summary>
+        int _streetIds = -1;
         int _anonymousCharacterId = -100000;
+
+        /// <summary>
+        /// The families that have BODIES in this city. The player's outfit always has;
+        /// a rival joins when the city seats him a front and posts his crews
+        /// (RoadDemoBuilder.SpawnRivals). A house nobody seated is still a house - its
+        /// books, its safe and its wage bill all run - it simply has nobody standing on
+        /// the pavement, which is what the paper clock is for (RIVAL-008).
+        /// </summary>
+        readonly List<int> _houses =
+            new List<int> { LivingCity.Gangs.GangCatalog.PlayerGangId };
+
+        /// <summary>Where a crew that has never stood on this street is put the first
+        /// time the books ask for it: outside its family's own door, or on a corner of
+        /// its own. Posted by whoever laid the city out; read once per crew and then
+        /// never again, because after that the men are simply where they are.</summary>
+        readonly Dictionary<int, (Vector3 anchor, Vector3 facing)> _postings =
+            new Dictionary<int, (Vector3, Vector3)>();
+
+        /// <summary>This family stands men in this city.</summary>
+        public void SeatHouse(int gangId)
+        {
+            if (gangId >= 0 && !_houses.Contains(gangId))
+                _houses.Add(gangId);
+        }
+
+        /// <summary>Where this crew opens up, the first time it is dealt.</summary>
+        public void PostCrew(int crewId, Vector3 anchor, Vector3 facing) =>
+            _postings[crewId] = (anchor, facing.sqrMagnitude > 1e-4f
+                ? facing.normalized : Vector3.forward);
+
+        bool Stands(int gangId) => _houses.Contains(gangId);
+
+        /// <summary>A unit that answers to a book: a family's crew, and not the law's
+        /// squad or a bench scene's hand-dealt mob.</summary>
+        bool OnTheBooks(Unit unit) =>
+            unit != null && unit.Faction >= 0 && Stands(unit.Faction);
         int _anthropometrySeed = 1987;
         AudioSource _shots, _cracks;
 
@@ -879,7 +947,9 @@ namespace RoadDemo
         /// away). Nothing for the outfit's own: the ledger owns those.</summary>
         public void RemoveUnit(Unit unit)
         {
-            if (unit == null || unit.Faction == 0) return;
+            // A crew on somebody's books is never simply deleted: its men are struck off
+            // through that house's own roster and the deal takes their bodies away.
+            if (unit == null || OnTheBooks(unit)) return;
             foreach (var man in unit.All())
             {
                 _chasers.Remove(man);
@@ -1002,7 +1072,11 @@ namespace RoadDemo
             return false;
         }
 
-        /// <summary>A rival crew, dealt by hand: its lieutenant and hoods stood at the
+        /// <summary>A crew on NOBODY'S BOOKS, dealt by hand - the law's squad, a bench
+        /// scene's mob. A family's crew is not dealt here any more: it comes off its own
+        /// house's roster through Sync, like the player's.
+        ///
+        /// The old doc, still true of what is left: its lieutenant and hoods stood at the
         /// anchor facing <paramref name="facing"/>, all carrying <paramref name="weapon"/> -
         /// unless <paramref name="armsFor"/> is given, which is asked man by man (0 the
         /// lieutenant, 1.. his hoods) and lets a mob carry a piece each rather than five
@@ -1014,7 +1088,7 @@ namespace RoadDemo
         {
             var unit = new Unit
             {
-                CrewId = _rivalIds--,
+                CrewId = _streetIds--,
                 Faction = faction,
                 GangName = gangName,
                 Name = bossName,
@@ -1027,7 +1101,7 @@ namespace RoadDemo
                 ? PedestrianAnthropometry.PoliceSalt
                 : PedestrianAnthropometry.GangSalt;
 
-            var boss = SpawnAt(bossPrefab, bossName, _rivalIds--, anchor, rot, BossPace,
+            var boss = SpawnAt(bossPrefab, bossName, _streetIds--, anchor, rot, BossPace,
                 anthropometrySalt: anthropometrySalt);
             if (boss != null)
             {
@@ -1049,7 +1123,7 @@ namespace RoadDemo
                 // a crew loafing on a pavement strings out along it rather than
                 // wedging back into the shopfront behind
                 var pos = anchor + rot * (lineUp ? LineOffset(unit.CrewId, k) : FormationOffset(unit.CrewId, k));
-                var hood = SpawnAt(prefab, hoodNames[k], _rivalIds--, pos, rot, HoodPace(),
+                var hood = SpawnAt(prefab, hoodNames[k], _streetIds--, pos, rot, HoodPace(),
                     anthropometrySalt: anthropometrySalt);
                 if (hood == null) continue;
                 hood.Faction = faction;
@@ -1071,13 +1145,20 @@ namespace RoadDemo
             TickCombatPrewarm();
             var director = PersonnelDirector.Instance;
             director?.SetOrganizationPhysicalSource(this);
-            if (director != null && director.Roster != null &&
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            // EVERY standing house is re-dealt off one key: the player's own dirty
+            // count plus the sum of the houses' own, so a man recruited, killed or
+            // struck off anywhere in the city re-deals the street once.
+            var books = underworld != null
+                ? (director != null ? director.Version : 0) + underworld.Version
+                : -1;
+            if (director != null && underworld != null && director.Roster != null &&
                 (FreeRoam || (_sidewalks != null && _sidewalks.Count > 0)) &&
-                director.Version != _seenVersion)
+                books != _seenVersion)
             {
-                _seenVersion = director.Version;
+                _seenVersion = books;
                 _rng ??= new System.Random(director.Seed * 7919 + 13);
-                Sync(director.Roster);
+                Sync(underworld);
             }
 
             float dt = Time.deltaTime;
@@ -1486,6 +1567,16 @@ namespace RoadDemo
 
         public void Select(Unit unit) => Selected = unit != null && unit.Faction == 0 ? unit : null;
 
+        /// <summary>The house a body belongs to, or null when it belongs to none -
+        /// the law, a bench scene's mob, a passer-by.</summary>
+        LivingCity.Outfit.House HouseOf(int faction)
+        {
+            if (faction < 0 || !Stands(faction))
+                return null;
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            return underworld?.Of(faction);
+        }
+
         /// <summary>The unit a screen pick landed on, by the man it hit.</summary>
         public Unit UnitOf(CrewWalker man)
         {
@@ -1502,7 +1593,7 @@ namespace RoadDemo
             for (int i = 0; i < Units.Count; i++)
             {
                 var unit = Units[i];
-                if (unit == null || unit.IsPolice || unit.Faction != 0) continue;
+                if (unit == null || !OnTheBooks(unit)) continue;
                 if (unit.CrewId == crewId) return unit;
             }
             return null;
@@ -2665,26 +2756,38 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ the deal
 
-        // Re-deals the outfit's figures to the books. Men are keyed by roster id so
-        // a hood moved between crews keeps his body and simply walks over. Rival
-        // crews are not on the books and are left alone.
-        void Sync(Roster roster)
+        // Re-deals EVERY standing house's figures to its own books. Men are keyed by
+        // roster id - unique across all twenty-one by construction - so a hood moved
+        // between crews keeps his body and simply walks over, and a family's man is
+        // never confused with ours. Only bodies on nobody's books at all (the law, a
+        // bench scene's mob) are left alone.
+        void Sync(LivingCity.Outfit.Underworld underworld)
         {
-            var wanted = new Dictionary<int, (Crew crew, bool boss)>();
-            foreach (var crew in roster.Crews)
+            // Every man every STANDING house wants on the street, whoever's he is. Ids
+            // are unique across all twenty-one books by construction, so one map holds
+            // the city.
+            var wanted = new Dictionary<int, (LivingCity.Outfit.House house, Crew crew, bool boss)>();
+            for (var h = 0; h < _houses.Count; h++)
             {
-                var lt = roster.Find(crew.LieutenantId);
-                if (lt == null || lt.Status != CharacterStatus.Active) continue;
-                wanted[lt.Id] = (crew, true);
-                var tacticalHoods = 0;
-                foreach (int id in crew.HoodIds)
+                var house = underworld.Of(_houses[h]);
+                if (house?.Roster == null)
+                    continue;
+                var book = house.Roster;
+                foreach (var crew in book.Crews)
                 {
-                    var hood = roster.Find(id);
-                    if (hood != null && hood.Status == CharacterStatus.Active &&
-                        tacticalHoods < Crew.MaxTacticalHoods)
+                    var lt = book.Find(crew.LieutenantId);
+                    if (lt == null || lt.Status != CharacterStatus.Active) continue;
+                    wanted[lt.Id] = (house, crew, true);
+                    var tacticalHoods = 0;
+                    foreach (int id in crew.HoodIds)
                     {
-                        wanted[id] = (crew, false);
-                        tacticalHoods++;
+                        var hood = book.Find(id);
+                        if (hood != null && hood.Status == CharacterStatus.Active &&
+                            tacticalHoods < Crew.MaxTacticalHoods)
+                        {
+                            wanted[id] = (house, crew, false);
+                            tacticalHoods++;
+                        }
                     }
                 }
             }
@@ -2698,32 +2801,46 @@ namespace RoadDemo
             // units follow the crews; membership is rebuilt from scratch below
             var previousUnitOf = new Dictionary<CrewWalker, Unit>();
             foreach (var unit in Units)
-                if (unit.Faction == 0)
+                if (OnTheBooks(unit))
                     foreach (var man in unit.All()) previousUnitOf[man] = unit;
 
             var liveUnits = new List<Unit>();
-            foreach (var crew in roster.Crews)
+            for (var h = 0; h < _houses.Count; h++)
             {
-                if (!wanted.TryGetValue(crew.LieutenantId, out var w) || w.crew != crew) continue;
-                var unit = Units.Find(u => u.Faction == 0 && u.CrewId == crew.Id)
-                           ?? new Unit { CrewId = crew.Id, Faction = 0, GangName = OutfitNames.Player, Bombs = BombsPerCrew };
-                unit.CommandParentId = crew.LieutenantId;
-                unit.Boss = null;
-                unit.Hoods.Clear();
-                liveUnits.Add(unit);
+                var house = underworld.Of(_houses[h]);
+                if (house?.Roster == null)
+                    continue;
+                var gangId = house.GangId;
+                var book = house.Roster;
+                var family = LivingCity.Gangs.GangCatalog.Names[gangId];
+                foreach (var crew in book.Crews)
+                {
+                    if (!wanted.TryGetValue(crew.LieutenantId, out var w) || w.crew != crew) continue;
+                    var id = crew.Id;
+                    var unit = Units.Find(u => u.Faction == gangId && u.CrewId == id)
+                               ?? new Unit { CrewId = id, Faction = gangId, GangName = family,
+                                             Bombs = gangId == 0 ? BombsPerCrew : 0 };
+                    unit.CommandParentId = crew.LieutenantId;
+                    unit.Boss = null;
+                    unit.Hoods.Clear();
+                    liveUnits.Add(unit);
 
-                var lt = roster.Find(crew.LieutenantId);
-                unit.Name = lt.FullName;
-                unit.Loyalty = lt.Loyalty;
-                if (unit.Root == null)
-                    unit.Root = new GameObject("Crew").transform;
-                unit.Root.name = "Crew · " + lt.FullName;
-                unit.Root.SetParent(_root, false);
+                    var lt = book.Find(crew.LieutenantId);
+                    unit.Name = lt.FullName;
+                    unit.Loyalty = lt.Loyalty;
+                    if (unit.Root == null)
+                        unit.Root = new GameObject("Crew").transform;
+                    unit.Root.name = (gangId == 0 ? "Crew · " : "Rival · " + family + " · ") +
+                                     lt.FullName;
+                    unit.Root.SetParent(_root, false);
+                }
             }
 
-            var rivals = Units.FindAll(u => u.Faction != 0);
+            // the law's squads and whatever a bench scene stood by hand: nobody's books,
+            // and none of this pass's business
+            var unbooked = Units.FindAll(u => !OnTheBooks(u));
             foreach (var unit in Units)
-                if (unit.Faction == 0 && !liveUnits.Contains(unit))
+                if (OnTheBooks(unit) && !liveUnits.Contains(unit))
                 {
                     if (Selected == unit) Selected = null;
                     // a crew off the books leaves no billet behind for the next crew to
@@ -2736,19 +2853,19 @@ namespace RoadDemo
                 }
             Units.Clear();
             Units.AddRange(liveUnits);
-            Units.AddRange(rivals);
+            Units.AddRange(unbooked);
 
             // lieutenants first, so a hood dealt in afterwards has a boss to stand behind
             foreach (var kv in wanted)
-                if (kv.Value.boss) Place(roster, kv.Key, kv.Value.crew, true, previousUnitOf);
+                if (kv.Value.boss) Place(kv.Value.house, kv.Key, kv.Value.crew, true, previousUnitOf);
             foreach (var kv in wanted)
-                if (!kv.Value.boss) Place(roster, kv.Key, kv.Value.crew, false, previousUnitOf);
+                if (!kv.Value.boss) Place(kv.Value.house, kv.Key, kv.Value.crew, false, previousUnitOf);
 
             if (!_initialPlayerSelectionMade)
             {
                 foreach (var unit in liveUnits)
                 {
-                    if (unit.Boss == null || unit.Boss.Dead)
+                    if (unit.Faction != 0 || unit.Boss == null || unit.Boss.Dead)
                         continue;
                     _initialPlayerSelectionMade = true;
                     if (Selected == null)
@@ -2757,9 +2874,41 @@ namespace RoadDemo
                 }
             }
 
-            BindCars(roster);
-            BindBikes(roster);
-            BindBombs(roster);
+            // D4: a family's Don keeps to his own premises. He is stood up at his front
+            // like anybody else and then goes inside it, which is exactly what the
+            // player's TAKE THEM INSIDE row does to a crew of ours.
+            for (var i = 0; i < liveUnits.Count; i++)
+                TakeTheDonInside(liveUnits[i]);
+
+            var player = underworld.Player;
+            if (player?.Roster != null)
+            {
+                BindCars(player.Roster);
+                BindBikes(player.Roster);
+                BindBombs(player.Roster);
+            }
+        }
+
+        /// <summary>
+        /// A rival Don is kept INSIDE his own front (D4) - the one man of a family the
+        /// street cannot simply walk up to. The same call the player's own TAKE THEM
+        /// INSIDE row makes, so there is one way in and one way out of a building.
+        /// </summary>
+        void TakeTheDonInside(Unit unit)
+        {
+            if (unit == null || unit.Faction <= 0 || unit.Wiped ||
+                CrewQuarters.Billeted(unit))
+                return;
+            var house = HouseOf(unit.Faction);
+            if (house?.Roster == null || unit.CommandParentId != house.Roster.BossId)
+                return;
+            var front = FrontOf(unit.Faction);
+            if (front == null)
+                return;
+            if (front.BusinessId.IsValid)
+                CrewQuarters.Station(this, unit, front.BusinessId);
+            else
+                CrewQuarters.Station(this, unit, front.Outside, front.Role);
         }
 
         /// <summary>
@@ -2794,10 +2943,13 @@ namespace RoadDemo
             }
         }
 
-        void Place(Roster roster, int id, Crew crew, bool boss,
+        void Place(LivingCity.Outfit.House house, int id, Crew crew, bool boss,
             Dictionary<CrewWalker, Unit> previousUnitOf)
         {
-            var unit = Units.Find(u => u.Faction == 0 && u.CrewId == crew.Id);
+            var roster = house.Roster;
+            var gangId = house.GangId;
+            var crewId = crew.Id;
+            var unit = Units.Find(u => u.Faction == gangId && u.CrewId == crewId);
             if (unit == null) return;
             var member = roster.Find(id);
 
@@ -2815,7 +2967,7 @@ namespace RoadDemo
             // the book recasts a man when his rank changes (a lieutenant sits for
             // his photograph in a suit) - the same face must walk the street, so
             // the body is swapped on the spot
-            var cast = LivingCity.UI.PersonnelAlmanac.MemberModel(member);
+            var cast = CastFor(member, roster);
             // NOT WHILE HE IS INSIDE ONE OF OUR BUILDINGS. The swap destroys the body and
             // stands a new one where it was - which for a man being held indoors
             // (CrewQuarters) is a body standing inside a wall, switched on, with the
@@ -2832,8 +2984,8 @@ namespace RoadDemo
                 var seatCar = CarAboard(man, out int seatHad); // recast in his seat: he keeps it
                 RemoveMan(id);
                 float pace = boss ? BossPace : HoodPace();
-                man = hadGraphSeat ? SpawnMember(member, link, t, pace)
-                                   : SpawnMember(member, pos, rot, pace);
+                man = hadGraphSeat ? SpawnMember(member, roster, link, t, pace)
+                                   : SpawnMember(member, roster, pos, rot, pace);
                 if (man == null) return;
                 _byCharacter[id] = man;
                 if (seatCar != null && seatHad >= 0)
@@ -2864,7 +3016,7 @@ namespace RoadDemo
                     else
                         pos = OutfitSpawnPoint(unit);
                     pos = WalkObstacles.ClearSpot(pos, WalkObstacles.Radius);
-                    man = SpawnMember(member, pos, rot, boss ? BossPace : HoodPace());
+                    man = SpawnMember(member, roster, pos, rot, boss ? BossPace : HoodPace());
                 }
                 else
                 {
@@ -2877,17 +3029,18 @@ namespace RoadDemo
                     }
                     else
                     {
-                        // outside the outfit's own door, like a rival capo's crew stands
-                        // outside his - only where the scene stands no fronts does a crew
-                        // still open up on a corner of its own
-                        link = FrontSpawnLink(unit, out t);
+                        // Where this crew was POSTED when the city was laid out - outside
+                        // its family's own door, or on a corner of its own - and, for a
+                        // crew nobody posted, outside the house's front, and failing that
+                        // any pavement far from everybody else.
+                        link = PostedSpawnLink(unit, out t);
                         if (link == null)
                         {
                             link = PickSpawnLink();
                             t = link.Length * 0.5f;
                         }
                     }
-                    man = SpawnMember(member, link, t, boss ? BossPace : HoodPace());
+                    man = SpawnMember(member, roster, link, t, boss ? BossPace : HoodPace());
                 }
                 if (man == null) return;
                 _byCharacter[id] = man;
@@ -2895,7 +3048,7 @@ namespace RoadDemo
 
             man.IsLieutenant = boss;
             man.DisplayName = member.FullName;
-            man.Faction = 0;
+            man.Faction = gangId;
             man.CrowdGroupId = unit.CrowdGroupId;
             // a crew HOLDS its ground: nobody wanders, the lieutenant included. The
             // boss used to take a short anchored stroll for life's sake, but from
@@ -2917,6 +3070,10 @@ namespace RoadDemo
             else unit.Hoods.Add(man);
 
             ArmFromLedger(roster, man);
+            // A body dealt onto a posting has used it; the crew stands where it stands
+            // from here on.
+            if (fresh && boss)
+                _postings.Remove(crewId);
 
             // a hood who changed crews - or just arrived - falls in on his boss; on a
             // crew that is sat in its car he gets in with them (a seat for him, and the
@@ -2978,7 +3135,56 @@ namespace RoadDemo
                 man.Arm(prefab, kind);
         }
 
-        /// <summary>The pavement outside the outfit's own door: the sidewalk link
+        /// <summary>
+        /// Where a crew opens up the first time the books ask for it. A crew POSTED
+        /// when the city was laid out (RoadDemoBuilder: a family's first crew outside
+        /// its own door, the rest on corners of their own) stands on its posting; every
+        /// other crew stands outside its family's front, in a row with the family's
+        /// other crews.
+        /// </summary>
+        PedLink PostedSpawnLink(Unit unit, out float t)
+        {
+            t = 0f;
+            if (_postings.TryGetValue(unit.CrewId, out var posting) &&
+                _sidewalks != null && _sidewalks.Count > 0)
+            {
+                var link = NearestSidewalk(posting.anchor, out t);
+                if (link != null)
+                    return link;
+            }
+            return FrontSpawnLink(unit, out t);
+        }
+
+        /// <summary>The sidewalk link nearest a spot, and the point along it closest to
+        /// that spot. Null when no pavement is within reach of it at all.</summary>
+        PedLink NearestSidewalk(Vector3 at, out float t)
+        {
+            t = 0f;
+            PedLink best = null;
+            float bestD = float.MaxValue, bestT = 0f;
+            for (int i = 0; i < _sidewalks.Count; i++)
+            {
+                var link = _sidewalks[i];
+                if (link == null || link.Gated) continue;
+                var from = link.From.Pos;
+                var along = link.To.Pos - from;
+                float len2 = along.sqrMagnitude;
+                if (len2 < 1e-4f) continue;
+                float u = Mathf.Clamp01(Vector3.Dot(at - from, along) / len2);
+                var on = from + along * u;
+                float d = (on - at).sqrMagnitude;
+                if (d >= bestD) continue;
+                bestD = d;
+                best = link;
+                bestT = u * link.Length;
+            }
+            if (best == null || bestD > 40f * 40f)
+                return null;
+            t = Mathf.Clamp(bestT, 0.3f, best.Length - 0.3f);
+            return best;
+        }
+
+        /// <summary>The pavement outside the crew's family's own door: the sidewalk link
         /// nearest the front, at the spot straight out from the doorstep - crews in
         /// a row along it, in book order, a spread apart, the same row the empty
         /// floor deals (OutfitSpawnPoint). Null when the scene stands no fronts (the
@@ -2986,7 +3192,7 @@ namespace RoadDemo
         PedLink FrontSpawnLink(Unit unit, out float t)
         {
             t = 0f;
-            var front = PlayerFront();
+            var front = FrontOf(unit.Faction);
             if (front == null || _sidewalks == null || _sidewalks.Count == 0) return null;
 
             PedLink best = front.EntryLink;
@@ -3011,10 +3217,12 @@ namespace RoadDemo
             // a door with no pavement near it is a badly seated front, not a spawn point
             if (best == null || bestD > 30f * 30f) return null;
 
+            // A row along the pavement, one crew of THIS family per place in it - two
+            // families seated on the same street stand their own men in their own rows.
             int index = 0, count = 0;
             foreach (var u in Units)
             {
-                if (u.Faction != 0) continue;
+                if (u.Faction != unit.Faction) continue;
                 if (u == unit) index = count;
                 count++;
             }
@@ -3119,13 +3327,17 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ bodies
 
-        GameObject CastFor(Character member)
+        GameObject CastFor(Character member, Roster roster)
         {
             // The very prefab the ledger photographs for his mugshot - same face on
-            // the street as in the book. Only when that cannot be resolved (the cast
-            // asset not baked, the pack missing) does a crowd body stand in, and it
-            // says so, so a stranger on the corner is never mistaken for the design.
-            var prefab = LivingCity.UI.PersonnelAlmanac.MemberModel(member);
+            // the street as in the book. Read against HIS OWN house's roster: a
+            // family's coat is dealt onto its men when the family is dealt
+            // (RosterSeeder), and asking our book about their man would have re-cast
+            // him out of the crowd. Only when that cannot be resolved (the cast asset
+            // not baked, the pack missing) does a crowd body stand in, and it says so,
+            // so a stranger on the corner is never mistaken for the design.
+            var prefab = LivingCity.UI.PortraitStudio.FindPeoplePrefab(
+                LivingCity.Gangs.GangLooks.LookFor(member, roster));
             if (prefab == null && _fallbackPrefabs != null && _fallbackPrefabs.Count > 0)
             {
                 prefab = _fallbackPrefabs[member.Id % _fallbackPrefabs.Count];
@@ -3164,9 +3376,10 @@ namespace RoadDemo
             return spot;
         }
 
-        CrewWalker SpawnMember(Character member, PedLink link, float t, float pace)
+        CrewWalker SpawnMember(Character member, Roster roster, PedLink link, float t,
+            float pace)
         {
-            var prefab = CastFor(member);
+            var prefab = CastFor(member, roster);
             if (prefab == null) return null;
             var go = Body(prefab, member.FullName, member.Id, PedestrianAnthropometry.GangSalt,
                 out var anthropometry);
@@ -3181,9 +3394,10 @@ namespace RoadDemo
             return man;
         }
 
-        CrewWalker SpawnMember(Character member, Vector3 pos, Quaternion rot, float pace)
+        CrewWalker SpawnMember(Character member, Roster roster, Vector3 pos,
+            Quaternion rot, float pace)
         {
-            var prefab = CastFor(member);
+            var prefab = CastFor(member, roster);
             if (prefab == null) return null;
             var go = Body(prefab, member.FullName, member.Id, PedestrianAnthropometry.GangSalt,
                 out var anthropometry);
@@ -3267,11 +3481,5 @@ namespace RoadDemo
             }
             return best;
         }
-    }
-
-    /// <summary>The names the arena prints - the outfit's from the gang catalogue.</summary>
-    static class OutfitNames
-    {
-        public static string Player => LivingCity.Gangs.GangCatalog.Names[LivingCity.Gangs.GangCatalog.PlayerGangId];
     }
 }

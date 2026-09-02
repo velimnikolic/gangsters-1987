@@ -231,7 +231,6 @@ namespace BlockDemo
             city.policeBeatPairs = police ? columns * rows : 0;
             city.rivalCrewsInCity = rivalCrews;
             city.rivalHoodsInCity = rivalHoods;
-            city.mixedArms = mixedArms;
             // the counts above are what this quarter wants; the city's scaling is for a city
             city.scaleLifeToCity = false;
             city.updateProfile = false;

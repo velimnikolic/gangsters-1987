@@ -28,6 +28,10 @@ namespace LivingCity.Tests
             PlayerGangMirrorsRoster(failures);
             EmptyRosterLeavesPlayerGangEmpty(failures);
             EveryFamilyIsARoster(failures);
+            EveryFamilyWearsItsOwnCoat(failures);
+            EveryFamilyCarriesItsOwnGuns(failures);
+            AStreetDeathStrikesHisOwnBook(failures);
+            AnArrestBooksHimInHisOwnHouse(failures);
             FrontsAreDistinct(failures);
             FrontsPreferDistinctBlocks(failures);
             FrontFallbackWhenFewCandidates(failures);
@@ -319,6 +323,166 @@ namespace LivingCity.Tests
                     failures.Add($"House {gangId}: {lieutenants} capos, outside " +
                                  $"{GangSeeder.MinLieutenants}-{GangSeeder.MaxLieutenants}.");
             }
+        }
+
+        // -------------------------------------------------------------- the street
+
+        /// <summary>
+        /// A FAMILY'S COLOUR IS ITS BODIES. Every man of a house is dealt his family's
+        /// own coat when the family is dealt, so the street casts him out of his own
+        /// book: the Don in the boss suit, the capo in his family's lieutenant coat,
+        /// and four different hoods behind him, none of them wearing his.
+        /// </summary>
+        static void EveryFamilyWearsItsOwnCoat(List<string> failures)
+        {
+            for (var gangId = 1; gangId < GangCatalog.GangCount; gangId++)
+            {
+                var roster = Family(1987, gangId);
+                var boss = roster.FindBoss();
+                if (boss == null || boss.Look != GangCatalog.BossModel)
+                    failures.Add($"Coat: house {gangId}'s Don is not in the boss suit.");
+
+                for (var c = 0; c < roster.Crews.Count; c++)
+                {
+                    var crew = roster.Crews[c];
+                    var capo = roster.Find(crew.LieutenantId);
+                    if (capo == null || capo.Rank != Rank.Lieutenant)
+                        continue;
+
+                    if (capo.Look != GangCatalog.LieutenantModels[gangId])
+                        failures.Add($"Coat: house {gangId}'s capo wears '{capo.Look}', " +
+                                     "not his family's.");
+
+                    var worn = new HashSet<string> { GangLooks.Bare(capo.Look) };
+                    for (var h = 0; h < crew.HoodIds.Count; h++)
+                    {
+                        var hood = roster.Find(crew.HoodIds[h]);
+                        if (hood == null)
+                            continue;
+                        if (string.IsNullOrEmpty(hood.Look))
+                            failures.Add($"Coat: house {gangId}'s " + hood.FullName +
+                                         " was dealt no body at all.");
+                        else if (!worn.Add(GangLooks.Bare(hood.Look)))
+                            failures.Add($"Coat: house {gangId} has two men in '" +
+                                         hood.Look + "'.");
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// A mob's iron is a line in its own ledger. It used to be picked where the
+        /// bodies were spawned and belonged to nobody, so a rival shot dead left no gun
+        /// behind and a rival could never be disarmed. Now the quartermaster's own deal
+        /// puts it in the best hand of the crew that owns it.
+        /// </summary>
+        static void EveryFamilyCarriesItsOwnGuns(List<string> failures)
+        {
+            for (var gangId = 1; gangId < GangCatalog.GangCount; gangId++)
+            {
+                var roster = Family(1987, gangId);
+                for (var i = 0; i < roster.Equipment.Count; i++)
+                {
+                    var item = roster.Equipment[i];
+                    if (!RosterOps.IsWeapon(item.Kind))
+                        continue;
+                    if (item.HolderId < 0)
+                    {
+                        failures.Add($"Arms: house {gangId}'s " + item.DisplayName +
+                                     " is in nobody's hand.");
+                        continue;
+                    }
+                    var man = roster.Find(item.HolderId);
+                    if (man == null)
+                        failures.Add($"Arms: house {gangId}'s " + item.DisplayName +
+                                     " is held by a man who is not on its books.");
+                }
+            }
+        }
+
+        /// <summary>
+        /// A man shot on the street is struck off HIS OWN family's book and nobody
+        /// else's, and his gun goes back to that family's safe. The street calls this
+        /// through HouseOps for every house, ours included.
+        /// </summary>
+        static void AStreetDeathStrikesHisOwnBook(List<string> failures)
+        {
+            var underworld = Outfit.Underworld.Deal(1987);
+            var theirs = underworld.Of(7);
+            var ours = underworld.Player;
+            var crew = FirstCapoCrew(theirs.Roster);
+            if (crew == null || crew.HoodIds.Count == 0)
+            {
+                failures.Add("Death: house 7 stood no crew to shoot at.");
+                return;
+            }
+
+            var victim = crew.HoodIds[0];
+            var before = ours.Roster.Members.Count;
+            var gun = HeldGun(theirs.Roster, victim);
+
+            if (!Outfit.HouseOps.Kill(theirs, victim).Ok)
+                failures.Add("Death: the house would not strike its own man off.");
+            var man = theirs.Roster.Find(victim);
+            if (man == null || !man.Gone)
+                failures.Add("Death: the man is still on his family's books as living.");
+            if (ours.Roster.Members.Count != before || ours.Roster.Find(victim) != null)
+                failures.Add("Death: a rival's death reached OUR books.");
+            if (gun != null && gun.HolderId == victim)
+                failures.Add("Death: a dead man is still holding his family's gun.");
+        }
+
+        /// <summary>
+        /// A rival taken off the street is a man in a cell on HIS family's roster - out
+        /// of their crew, still drawing their wage - rather than a body deleted. The
+        /// prison pipeline books him against that house's book.
+        /// </summary>
+        static void AnArrestBooksHimInHisOwnHouse(List<string> failures)
+        {
+            var underworld = Outfit.Underworld.Deal(1987);
+            var theirs = underworld.Of(4);
+            var ours = underworld.Player;
+            var crew = FirstCapoCrew(theirs.Roster);
+            if (crew == null)
+            {
+                failures.Add("Arrest: house 4 stood no crew to take in.");
+                return;
+            }
+
+            var taken = crew.LieutenantId;
+            var pipeline = new Police.PrisonPipeline();
+            var prisoner = pipeline.Book(theirs.Roster, taken, Deed.Affray, 3);
+
+            if (prisoner == null || prisoner.CharacterId != taken)
+                failures.Add("Arrest: the pipeline would not book a rival.");
+            var man = theirs.Roster.Find(taken);
+            if (man == null || man.Status != CharacterStatus.Jailed)
+                failures.Add("Arrest: he is not held on his own family's book.");
+            if (pipeline.Book(ours.Roster, taken, Deed.Affray, 3) != null)
+                failures.Add("Arrest: a rival was booked against OUR roster too.");
+            if (ours.Roster.Find(taken) != null)
+                failures.Add("Arrest: a rival's id resolves inside our books.");
+        }
+
+        static Crew FirstCapoCrew(Roster roster)
+        {
+            for (var i = 0; i < roster.Crews.Count; i++)
+            {
+                var crew = roster.Crews[i];
+                var lieutenant = roster.Find(crew.LieutenantId);
+                if (lieutenant != null && lieutenant.Rank == Rank.Lieutenant)
+                    return crew;
+            }
+            return null;
+        }
+
+        static RosterEquipment HeldGun(Roster roster, int characterId)
+        {
+            for (var i = 0; i < roster.Equipment.Count; i++)
+                if (roster.Equipment[i].HolderId == characterId &&
+                    RosterOps.IsWeapon(roster.Equipment[i].Kind))
+                    return roster.Equipment[i];
+            return null;
         }
 
         // ------------------------------------------------------------------ fronts

@@ -201,7 +201,10 @@ namespace RoadDemo
             DemoCrews crews, DemoCrews.Unit unit, TerritoryBusinessId door,
             Vector3 doorstep, string word)
         {
-            if (crews == null || unit == null || unit.Faction != 0 || unit.Wiped)
+            // ANY house's crew may be taken indoors - a family's Don keeps to his own
+            // premises (D4) by exactly the call the player's TAKE THEM INSIDE row makes.
+            // The law is the exception: a squad has no premises to be held in.
+            if (crews == null || unit == null || unit.Faction < 0 || unit.Wiped)
                 return false;
 
             // Another of our doors: they are not in two buildings at once. Out of that

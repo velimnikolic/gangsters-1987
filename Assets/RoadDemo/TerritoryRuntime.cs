@@ -733,9 +733,11 @@ namespace RoadDemo
                 // man is worth what his commander extracts from him (RANK-004) - the
                 // same five men hold more ground under a better lieutenant.
                 var ground = fear == null ? 1f : fear.PresenceScale(blockId, gameHour);
-                var roster = LivingCity.Gameplay.PersonnelDirector.Instance != null
-                    ? LivingCity.Gameplay.PersonnelDirector.Instance.Roster
-                    : null;
+                // HIS OWN commander, not ours: the man is worth what the lieutenant he
+                // actually answers to extracts from him, and asking our book about a
+                // Falcone soldier answered for nobody.
+                var roster = LivingCity.Outfit.Underworld.Current?
+                    .Of(observation.GangId.Value)?.Roster;
                 presence?.Contribute(
                     blockId, observation,
                     ground * LivingCity.Personnel.Command.PresenceFactorFor(
@@ -2196,26 +2198,26 @@ namespace RoadDemo
                 ActivityOf(unit, actor));
 
         /// <summary>
-        /// What this body is, from real personnel identity. The roster holds the outfit's
-        /// men and only theirs, so a rival's character id is not a roster id and would
-        /// name the wrong man - a rival's rank is read off the street instead, from who
-        /// is leading the crew. The RULE is the same for every family (PRES-008): only
-        /// what is physically here counts, and command responsibility for the block
-        /// counts for nothing.
+        /// What this body is, from real personnel identity - HIS OWN family's, whichever
+        /// family that is. Every house keeps a roster now and every body on the street
+        /// carries a character id off it, so a rival's rank is read out of a book like
+        /// ours; only a man on nobody's books at all (the law, a bench scene's mob)
+        /// still has his rank read off the street, from who is leading the crew.
+        ///
+        /// The RULE is the same for every family (PRES-008): only what is physically
+        /// here counts, and command responsibility for the block counts for nothing.
         /// </summary>
         static TerritoryRank RankOf(DemoCrews.Unit unit, CrewWalker actor)
         {
-            if (unit.Faction == GangCatalog.PlayerGangId)
+            var character = LivingCity.Outfit.Underworld.Current?
+                .Of(unit.Faction)?.Roster?.Find(actor.CharacterId);
+            if (character != null)
             {
-                var character = PersonnelDirector.Instance?.Roster?.Find(actor.CharacterId);
-                if (character != null)
+                switch (character.Rank)
                 {
-                    switch (character.Rank)
-                    {
-                        case Rank.Boss: return TerritoryRank.Boss;
-                        case Rank.Lieutenant: return TerritoryRank.Lieutenant;
-                        default: return TerritoryRank.Hood;
-                    }
+                    case Rank.Boss: return TerritoryRank.Boss;
+                    case Rank.Lieutenant: return TerritoryRank.Lieutenant;
+                    default: return TerritoryRank.Hood;
                 }
             }
 

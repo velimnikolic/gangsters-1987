@@ -174,16 +174,19 @@ namespace RoadDemo
         void StandDown()
         {
             _swarm = false;
-            var roster = LivingCity.Gameplay.PersonnelDirector.Instance != null
-                ? LivingCity.Gameplay.PersonnelDirector.Instance.Roster : null;
             var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
             int today = outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0;
+            var underworld = LivingCity.Outfit.Underworld.Current;
 
             int away = 0;
             foreach (var unit in _hunted)
             {
                 if (unit == null || unit.Wiped) continue;
                 away++;
+                // A cop-killer's grade lands on HIS OWN family's book. It used to land
+                // on ours whoever shot the officer, which was the player's men being
+                // marked for a Falcone gun.
+                var roster = underworld?.Of(unit.Faction)?.Roster;
                 if (roster == null) continue;
                 foreach (var man in unit.All())
                 {

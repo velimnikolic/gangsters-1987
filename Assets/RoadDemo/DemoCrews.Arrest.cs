@@ -78,16 +78,20 @@ namespace RoadDemo
             LivingCity.Police.PrisonPipeline pipeline = null)
         {
             if (unit == null) return;
-            if (unit.Faction != 0)
+
+            // EVERY house's men go on the books as held, not only ours. A Falcone
+            // soldier taken off the street is a man in a cell on the Falcones' own
+            // roster - out of their crew, off their street, still drawing their wage -
+            // rather than a body quietly deleted.
+            var house = HouseOf(unit.Faction);
+            var roster = house?.Roster;
+            if (roster == null)
             {
-                // no books behind a mob: its men leave with the officer and that is that
+                // Nobody's books behind them - a bench scene's mob, the law itself:
+                // its men leave with the officer and that is that.
                 RemoveUnit(unit);
                 return;
             }
-
-            var director = PersonnelDirector.Instance;
-            var roster = director != null ? director.Roster : null;
-            if (roster == null) return;   // no books at all: they stand there arrested
 
             var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
             int today = outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0;
@@ -110,14 +114,20 @@ namespace RoadDemo
                 {
                     if (pipeline.Book(roster, man.CharacterId, deed, today) != null) taken++;
                 }
-                else if (RosterOps.Jail(roster, man.CharacterId, backOn,
+                else if (LivingCity.Outfit.HouseOps.Jail(house, man.CharacterId, backOn,
                         "Held at the station", charge, stamp).Ok) taken++;
             }
             if (taken == 0) return;
 
             // and the street re-deals without them: Sync keeps only Active men, so the
             // bodies go the same way a discharged man's does, through the books
-            director.Touch();
+            house.Touch();
+            if (unit.Faction != LivingCity.Gangs.GangCatalog.PlayerGangId)
+                return;
+
+            var director = PersonnelDirector.Instance;
+            if (director != null)
+                director.Touch();
             CrewOverlay.Announce(
                 taken == 1 ? "ONE MAN TAKEN IN" : taken + " MEN TAKEN IN",
                 5f, new Color(0.55f, 0.78f, 1f));
