@@ -35,6 +35,9 @@ namespace LivingCity.Tests
             ("EveryLineCameOffARealRecord", EveryLineCameOffARealRecord),
             ("TheFileAndThePaperAgree", TheFileAndThePaperAgree),
             ("NothingHereWritesOnAnybody", NothingHereWritesOnAnybody),
+            ("TheMarkedManIsMarkedAtTheBand", TheMarkedManIsMarkedAtTheBand),
+            ("TheTopIsAPlainDescendingSort", TheTopIsAPlainDescendingSort),
+            ("AMarkAlwaysHasACauseBehindIt", AMarkAlwaysHasACauseBehindIt),
         };
 
         public static List<string> Run()
@@ -498,6 +501,172 @@ namespace LivingCity.Tests
                 man.Career.Count != lines)
                 failures.Add("NothingHereWritesOnAnybody: reading the score changed the " +
                              "man.");
+        }
+
+        // ------------------------------------------- FOLLOW-003, the standing mark
+
+        /// <summary>
+        /// The band is a band: a man one point under it is not marked and a man on it
+        /// is, and the board answers exactly what the fold would. NewsBand had no
+        /// reader at all before this - it was computed, tested, and painted nowhere.
+        /// </summary>
+        static void TheMarkedManIsMarkedAtTheBand(List<string> failures)
+        {
+            // A career entry stamped with a chosen weight, read on the day it happened,
+            // is worth exactly that weight - so the boundary can be struck on the nose.
+            var under = Man(1, "Under");
+            under.Career.Add(new CareerEntry
+            {
+                Day = 100, Kind = CareerKind.Incident, Line = "Something small.",
+                Weight = Notability.NewsBand - 1,
+            });
+            var on = Man(2, "OnTheBand");
+            on.Career.Add(new CareerEntry
+            {
+                Day = 100, Kind = CareerKind.Incident, Line = "Something worth a look.",
+                Weight = Notability.NewsBand,
+            });
+
+            if (Notability.Of(under, 100) != Notability.NewsBand - 1)
+                failures.Add("TheMarkedManIsMarkedAtTheBand: the fixture did not score " +
+                             "what it was stamped with.");
+            if (Notability.Marked(under, 100))
+                failures.Add("TheMarkedManIsMarkedAtTheBand: a man one point under the " +
+                             "band is marked.");
+            if (!Notability.Marked(on, 100))
+                failures.Add("TheMarkedManIsMarkedAtTheBand: a man exactly on the band " +
+                             "is not marked.");
+
+            // And the board - which is what the roll actually asks - agrees with it.
+            var roster = new Roster();
+            roster.Members.Add(under);
+            roster.Members.Add(on);
+            var board = new NotabilityBoard();
+            board.Rebuild(roster, 100);
+
+            if (board.Marked(under.Id) != Notability.Marked(under, 100) ||
+                board.Marked(on.Id) != Notability.Marked(on, 100))
+                failures.Add("TheMarkedManIsMarkedAtTheBand: the board and the fold " +
+                             "disagree about who is marked.");
+            if (!board.Marked(on.Id))
+                failures.Add("TheMarkedManIsMarkedAtTheBand: the board marks nobody at " +
+                             "the band.");
+        }
+
+        /// <summary>
+        /// A mark the player cannot account for is a mark he learns to ignore, so a
+        /// marked man's cause is his own file's last line - already written, never
+        /// re-worded here.
+        /// </summary>
+        static void AMarkAlwaysHasACauseBehindIt(List<string> failures)
+        {
+            var man = Man(1, "Loud");
+            Happened(man, IncidentKind.StoppedIt, 100);
+
+            if (!Notability.Marked(man, 100))
+                failures.Add("AMarkAlwaysHasACauseBehindIt: the fixture is not marked.");
+            var cause = Notability.Cause(man);
+            if (cause.Length == 0)
+                failures.Add("AMarkAlwaysHasACauseBehindIt: a marked man has no cause.");
+            if (cause != man.Career[man.Career.Count - 1].Line)
+                failures.Add("AMarkAlwaysHasACauseBehindIt: the cause is not his file's " +
+                             "own last line.");
+
+            // A month later he is still marked by the fold, and the same line still
+            // answers for it - which is exactly the man the roll used to say nothing
+            // about, because the fresh tick had expired under him.
+            if (Notability.Fresh(man, 100 + 30))
+                failures.Add("AMarkAlwaysHasACauseBehindIt: a month-old event is still " +
+                             "this week's news.");
+            if (Notability.Marked(man, 100 + 30) &&
+                Notability.Cause(man).Length == 0)
+                failures.Add("AMarkAlwaysHasACauseBehindIt: a man still marked a month " +
+                             "on has nothing to say for it.");
+
+            if (Notability.Cause(Man(2, "Nobody")).Length != 0)
+                failures.Add("AMarkAlwaysHasACauseBehindIt: a man nothing happened to " +
+                             "was given a cause anyway.");
+        }
+
+        // ------------------------------------------- FOLLOW-005, the figure itself
+
+        /// <summary>
+        /// The panel's men and their order are a plain descending sort by
+        /// <see cref="Notability.Of"/>, over a scripted month - no counter of its own,
+        /// nothing cached, and the id breaking a tie so the same roster answers the
+        /// same way twice.
+        /// </summary>
+        static void TheTopIsAPlainDescendingSort(List<string> failures)
+        {
+            var roster = new Roster();
+            for (var i = 1; i <= 12; i++)
+            {
+                var man = Man(i, "Number" + i);
+                roster.Members.Add(man);
+            }
+
+            // A month of things happening to some of them and not others.
+            for (var day = 100; day < 130; day++)
+                for (var i = 0; i < roster.Members.Count; i++)
+                    if ((day + i) % 5 == 0)
+                        Happened(roster.Members[i],
+                            (day + i) % 10 == 0
+                                ? IncidentKind.StoppedIt
+                                : IncidentKind.Deviated, day);
+
+            // Two of them off the books: the record keeps their line and the morning
+            // panel does not.
+            roster.Members[3].Status = CharacterStatus.Dead;
+            roster.Members[7].Status = CharacterStatus.Deserted;
+
+            var today = 130;
+            var top = new List<Character>();
+            Notability.Top(roster, today, 6, top);
+
+            var expected = new List<Character>();
+            for (var i = 0; i < roster.Members.Count; i++)
+                if (!roster.Members[i].Gone)
+                    expected.Add(roster.Members[i]);
+            expected.Sort((a, b) =>
+            {
+                var byScore = Notability.Of(b, today).CompareTo(Notability.Of(a, today));
+                return byScore != 0 ? byScore : a.Id.CompareTo(b.Id);
+            });
+
+            if (top.Count != 6)
+            {
+                failures.Add("TheTopIsAPlainDescendingSort: the panel named " +
+                             top.Count + " men and not six.");
+                return;
+            }
+
+            for (var i = 0; i < top.Count; i++)
+            {
+                if (top[i].Id != expected[i].Id)
+                    failures.Add("TheTopIsAPlainDescendingSort: place " + (i + 1) +
+                                 " went to " + top[i].FullName + " and not to " +
+                                 expected[i].FullName + ".");
+                if (top[i].Gone)
+                    failures.Add("TheTopIsAPlainDescendingSort: a man off the books is " +
+                                 "on the morning panel.");
+            }
+
+            var again = new List<Character>();
+            Notability.Top(roster, today, 6, again);
+            for (var i = 0; i < top.Count; i++)
+                if (again[i].Id != top[i].Id)
+                    failures.Add("TheTopIsAPlainDescendingSort: the same roster " +
+                                 "answered two different orders.");
+
+            // A day-one campaign, before anything has happened, still names men.
+            var fresh = new Roster();
+            for (var i = 1; i <= 3; i++)
+                fresh.Members.Add(Man(i, "New" + i));
+            var opening = new List<Character>();
+            Notability.Top(fresh, 1, 6, opening);
+            if (opening.Count != 3)
+                failures.Add("TheTopIsAPlainDescendingSort: a day-one campaign answered " +
+                             "with an empty panel.");
         }
     }
 }

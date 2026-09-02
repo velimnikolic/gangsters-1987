@@ -70,11 +70,23 @@ namespace LivingCity.Gameplay
             if (house != null)
                 return;
 
-            house = Underworld.Ensure(UnderworldHost.SeedForScene()).Player;
+            var underworld = Underworld.Ensure(UnderworldHost.SeedForScene());
+            house = underworld.Player;
             runner = house.Runner;
 
+            // The city sweep is CITY-WIDE - every gang's buildings, keyed by gang - so
+            // one reading serves all twenty-one books, and each runner reads it against
+            // its own GangId. Wiring it only to house zero left the rival runners
+            // looking at an empty city, which is how a defector from house seven ended
+            // up walking through the lowest id on the table.
+            for (var gangId = 0; gangId < underworld.Count; gangId++)
+            {
+                var other = underworld.Of(gangId);
+                if (other != null && other.Runner != null && other.Runner.HoldingsOf == null)
+                    other.Runner.HoldingsOf = CollectHoldings;
+            }
+
             runner.DistanceOf = DistanceFromHeadquarters;
-            runner.HoldingsOf = CollectHoldings;
             runner.JobResolved = OnJobResolved;
             runner.RosterMoved = () =>
             {
@@ -107,6 +119,14 @@ namespace LivingCity.Gameplay
         public List<Incident> Incidents => Runner.Incidents;
         public List<Incident> LastNight => Runner.LastNight;
         public List<Incident> IncidentBook => Runner.IncidentBook;
+
+        /// <summary>FOLLOW-001. What the crews have to say - every character movement
+        /// the sim made, folded by man and by day, newest day last.</summary>
+        public List<ReasonLine> ReasonBook => Runner.ReasonBook;
+
+        /// <summary>FOLLOW-002. Every lieutenant who went over and whose door he walked
+        /// through.</summary>
+        public List<DefectionRecord> Defections => Runner.Defections;
         public Tribute Tribute => Runner.Tribute;
         public int Heat => Runner.Heat;
 

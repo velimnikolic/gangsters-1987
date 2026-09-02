@@ -26,5 +26,21 @@ namespace LivingCity.Personnel
         /// over collection: what share of a short payment is taken without a word, the
         /// fear a round leaves, the heat it draws.</summary>
         public CrewPolicy Policy = CrewPolicy.Normal;
+
+        /// <summary>
+        /// Whether the BOSS has ruled on this crew's bag - named a man for it, or taken
+        /// it off the last man and left it with nobody. The lieutenant hands the bag
+        /// to one of his own only where the boss has not spoken (RosterOps.TendCrewBag);
+        /// LET HIM PICK clears the ruling and gives the job back to him.
+        /// </summary>
+        public bool BagNamedByBoss;
+
+        /// <summary>WHO the boss named, when he named anybody: -1 means he ruled that
+        /// NOBODY carries it. A ruling only outlives the man it names while that man is
+        /// still one of this crew's own and still on the books - otherwise it is spent,
+        /// and the lieutenant hands the bag out again (RosterOps.TendCrewBag). Without
+        /// this, a named man who was killed or moved away left the crew with a standing
+        /// order naming nobody, and it never collected again.</summary>
+        public int BagNamedId = -1;
     }
 }

@@ -99,7 +99,8 @@ namespace RoadDemo
                 for (var i = 0; i < _crews.Units.Count; i++)
                 {
                     var unit = _crews.Units[i];
-                    if (unit == null || unit.Wiped || unit.IsPolice || unit.Faction != 0)
+                    if (unit == null || unit.Wiped || unit.IsPolice || unit.Faction != 0 ||
+                        unit.IsDetachment)
                         continue;
                     _ours = unit;
                     break;
@@ -230,7 +231,7 @@ namespace RoadDemo
             var id = _doors[which];
             if (ShopDamage.IsBusinessDamaged(id))
             {
-                Say("the " + word + " front went in after " +
+                Say("the " + word + " shop was smashed up after " +
                     (_clock - _stepAt).ToString("0.0") + " s · " + StandingOf(id));
                 Advance();
                 return;
@@ -239,7 +240,7 @@ namespace RoadDemo
             if (_clock - _stepAt < patience)
                 return;
 
-            Say("THE " + word.ToUpperInvariant() + " FRONT NEVER WENT IN - " +
+            Say("THE " + word.ToUpperInvariant() + " SHOP WAS NEVER SMASHED UP - " +
                 patience.ToString("0") + " s and the shop is untouched · " +
                 BookLine() + " · " + StandingOf(id));
             Give("a filed smash never landed on the shop");

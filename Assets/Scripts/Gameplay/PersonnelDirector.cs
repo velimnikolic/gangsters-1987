@@ -237,6 +237,18 @@ namespace LivingCity.Gameplay
             Career.Joined(man, Roster.Day, "the classified column");
 
             var ask = ad.Daily;
+
+            // A SPECIALIST IS NOT PROMOTED (GAN-245). The lawyer takes no rank, no crew
+            // and no place in the chain of command - that is what Specialty MEANS here
+            // (RosterOps refuses every assignment to one), so he simply goes on the
+            // books at the price he printed and starts drawing it.
+            if (ad.Specialty != Specialty.None)
+            {
+                man.Specialty = ad.Specialty;
+                man.WageAsked = ask;
+                newId = man.Id;
+                return Commit(OpResult.Success, "signed out of the paper", man.Id);
+            }
             var result = RosterOps.Promote(Roster, man.Id, out _, Feed);
             if (!result.Ok)
             {
@@ -442,10 +454,78 @@ namespace LivingCity.Gameplay
         {
             if (Roster == null)
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
-            return Commit(
+            var result = Commit(
                 RosterOps.AssignBlockResponsibility(
                     Roster, blockId, leaderId, knownOrganizationBlocks.Contains(blockId)),
                 "made responsible for " + blockId, leaderId);
+            // A lieutenant given ground hands out the bag the same day (GAN-262) -
+            // paper that nobody collects on is paper, and the block file would print
+            // NOBODY ON THE BAG until midnight otherwise.
+            if (result.Ok)
+                TendBagOf(leaderId);
+            return result;
+        }
+
+        // ------------------------------------------------------------------ the bag
+
+        /// <summary>THE BOSS NAMES THE BAG MAN (GAN-262): one of that crew's own hoods,
+        /// from the block file or the man's card. One bag to a crew - the last man's
+        /// mark comes off. Version moves: the named man leaves the street line.</summary>
+        public OpResult NameCollector(int crewId, int hoodId) =>
+            Roster == null
+                ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
+                : Commit(RosterOps.NameCollector(Roster, crewId, hoodId),
+                    "named for the bag", hoodId);
+
+        /// <summary>The boss takes the bag off him and leaves it with nobody - a ruling
+        /// the lieutenant does not overrule at midnight.</summary>
+        public OpResult TakeOffTheBag(int hoodId) =>
+            Roster == null
+                ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
+                : Commit(RosterOps.TakeOffTheBag(Roster, hoodId), "taken off the bag", hoodId);
+
+        /// <summary>LET HIM PICK: the lieutenant hands the bag to one of his own, as
+        /// well as his Organization lets him (CollectorChoice), and keeps the job of
+        /// handing it out from here.</summary>
+        public OpResult LetLieutenantPick(int crewId, out int hoodId)
+        {
+            hoodId = -1;
+            if (Roster == null)
+                return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+            var result = RosterOps.LetLieutenantPick(Roster, crewId, out hoodId);
+            if (result.Ok)
+                FileBagHanded(crewId, hoodId);
+            return Commit(result, "handed the bag by his lieutenant", hoodId);
+        }
+
+        /// <summary>One crew's bag looked at now rather than at midnight
+        /// (RosterOps.TendCrewBag). Nothing moves where the boss has ruled.</summary>
+        void TendBagOf(int leaderId)
+        {
+            var crew = Roster.CrewOf(leaderId);
+            if (crew == null || crew.LieutenantId != leaderId)
+                return;
+            var handed = RosterOps.TendCrewBag(Roster, crew);
+            if (handed < 0)
+                return;
+            FileBagHanded(crew.Id, handed);
+            Commit(OpResult.Success, "handed the bag by his lieutenant", handed);
+        }
+
+        /// <summary>The line the paper prints when a lieutenant hands the bag out -
+        /// the same line the midnight pass files, so the two never disagree.</summary>
+        void FileBagHanded(int crewId, int hoodId)
+        {
+            var feed = Feed;
+            var crew = Roster.FindCrew(crewId);
+            var lieutenant = crew != null ? Roster.Find(crew.LieutenantId) : null;
+            var hood = Roster.Find(hoodId);
+            if (feed == null || hood == null)
+                return;
+            feed.Add(new Incident(hood.Id, hood.FullName, IncidentKind.BagHanded, Roster.Day,
+                "", 0,
+                IncidentText.BagHandedLine(
+                    lieutenant != null ? lieutenant.FullName : "", hood.FullName)));
         }
 
         public OpResult RemoveBlockResponsibility(

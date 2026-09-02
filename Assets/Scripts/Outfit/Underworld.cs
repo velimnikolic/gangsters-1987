@@ -60,7 +60,11 @@ namespace LivingCity.Outfit
                 Bodyguards.FallIn(roster);
                 RosterOps.NormalizeArms(roster);
 
-                var runner = new CampaignRunner { Seed = citySeed };
+                // The runner is told WHOSE books it keeps. Twenty-one of these tick
+                // every midnight and anything that asks "which family am I?" - where a
+                // defector's door opens, most of all - reads it from here rather than
+                // assuming house zero.
+                var runner = new CampaignRunner { Seed = citySeed, GangId = gangId };
                 runner.OpenFirstSheet();
                 underworld.houses[gangId] = new House(gangId, roster, runner);
             }

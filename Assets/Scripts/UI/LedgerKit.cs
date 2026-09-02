@@ -475,6 +475,12 @@ namespace LivingCity.UI
             var text = go.AddComponent<TextMeshProUGUI>();
             if (font)
                 text.font = font;
+            // The full-screen personnel ledger is read at a greater viewing distance
+            // than the smaller street/map cards that share this drawing kit. Lift only
+            // its small print; established display type (15pt and above) keeps the
+            // existing hierarchy and dimensions.
+            if (size < 15f && parent.GetComponentInParent<PersonnelAlmanac>(true))
+                size *= 1.15f;
             text.fontSize = size;
             text.color = color;
             text.alignment = alignment;

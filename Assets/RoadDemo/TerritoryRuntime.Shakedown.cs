@@ -80,6 +80,7 @@ namespace RoadDemo
                 CrewId = unit.CrewId,
                 GangId = gang,
                 BlockId = blockId,
+                Walkers = unit,
                 Collector = CollectorOf(unit),
             };
             if (round.Collector == null)

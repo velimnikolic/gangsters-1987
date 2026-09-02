@@ -54,10 +54,52 @@ namespace LivingCity.Outfit
         /// finish and cleared at the day tick, so the page carries today's.</summary>
         public readonly List<Incident> Incidents = new List<Incident>();
 
+        /// <summary>Scratch for the night's bag handings (GAN-262): (crew, hood).</summary>
+        readonly List<(int crewId, int hoodId)> bagsHanded = new List<(int, int)>();
+
         /// <summary>Every trait that moved today and the reason it moved - the same
         /// clear-and-refill cycle, and the record the paper's rumour lines read.</summary>
         public readonly List<PersonalityChange> CharacterChanges =
             new List<PersonalityChange>();
+
+        /// <summary>
+        /// FOLLOW-001. What the crews have to say, newest day last: the day's
+        /// <see cref="CharacterChanges"/> folded to one line per man per trait and
+        /// filed here as the desk is cleared, exactly the way <see cref="Incidents"/>
+        /// are swept into <see cref="IncidentBook"/>.
+        ///
+        /// It is a BOOK and not a night's list for the reason the wire is: the
+        /// Organization page has to say something on a quiet midnight, and the player
+        /// has to be able to look back a week and see the run of small movements that
+        /// ended in a man walking out.
+        /// </summary>
+        public readonly List<ReasonLine> ReasonBook = new List<ReasonLine>();
+
+        /// <summary>How far back the reason book reaches. Sixty men drifting weekly is
+        /// well under a hundred lines a week, so this is a couple of months of a busy
+        /// outfit - long enough to read the whole run-up to a defection.</summary>
+        public const int ReasonsKept = 600;
+
+        /// <summary>
+        /// FOLLOW-002. Every lieutenant who went over, whose door he walked through and
+        /// how many hands he took with him - newest last. The report used to be
+        /// discarded at its one call site; this is what reads it.
+        /// </summary>
+        public readonly List<DefectionRecord> Defections = new List<DefectionRecord>();
+
+        /// <summary>
+        /// How many men each house has taken off this one, all told.
+        ///
+        /// Kept SEPARATELY from <see cref="Defections"/>, which is a rolling window like
+        /// every other book here: a house that took a lieutenant and four men two years
+        /// ago took them, and a figure that fell as the record scrolled off the back
+        /// would be the page saying an irreversible loss had un-happened.
+        /// </summary>
+        readonly int[] menLostTo = new int[Gangs.GangCatalog.GangCount];
+
+        /// <summary>Rival houses read once when somebody walks, so the door can be
+        /// picked off the city as it stands that midnight.</summary>
+        readonly List<OpenDoor> scratchDoors = new List<OpenDoor>();
 
         /// <summary>
         /// What the morning paper prints: everything the outfit's own men did between
@@ -102,6 +144,17 @@ namespace LivingCity.Outfit
 
         /// <summary>The city seed the rolls are dealt from.</summary>
         public int Seed;
+
+        /// <summary>
+        /// WHOSE books these are, in <see cref="Gangs.GangCatalog"/>'s numbering.
+        ///
+        /// There is one of these per house and not one per game (<see cref="Underworld"/>
+        /// ticks all twenty-one), so anything that asks "which family am I?" has to read
+        /// it from here. It defaulted to the player before FOLLOW-002 needed the answer,
+        /// and a rival runner that believed it was house 0 sent its own defectors to a
+        /// door chosen out of a city it could not see.
+        /// </summary>
+        public int GangId = Gangs.GangCatalog.PlayerGangId;
 
         /// <summary>Metres from headquarters to a job's door. A function rather than a
         /// stored number because only the scene knows where anything is - and because
@@ -433,6 +486,13 @@ namespace LivingCity.Outfit
             if (IncidentBook.Count > IncidentsKept)
                 IncidentBook.RemoveRange(0, IncidentBook.Count - IncidentsKept);
 
+            // FOLLOW-001. Yesterday's movements, folded to one line a man, before the
+            // desk is cleared - the day has already turned over them, so they are
+            // stamped with the day they were written on and not with this morning.
+            ReasonFeed.Fold(CharacterChanges, Campaign.Day - 1, ReasonBook);
+            if (ReasonBook.Count > ReasonsKept)
+                ReasonBook.RemoveRange(0, ReasonBook.Count - ReasonsKept);
+
             Rises.Clear();
             Declines.Clear();
             Incidents.Clear();
@@ -498,9 +558,17 @@ namespace LivingCity.Outfit
                     var crowded = hasSuperior &&
                                   branch.CapacityOf(above.Id).IsOverCapacity;
                     var gap = worth - drew;
+                    // GAN-245: the men can see whether the boss carries a man the city
+                    // has taken. The superior himself is the test - a crew whose
+                    // lieutenant is inside and still drawing his envelope gains a point
+                    // a week, and one whose lieutenant is inside on nothing loses three.
+                    var leaderInside = hasSuperior &&
+                                       above.Status == CharacterStatus.Jailed;
+                    var superior = leaderInside ? roster.Find(above.Id) : null;
+                    var leaderPaid = superior == null || superior.UnpaidSince <= 0;
                     Loyalty.Drift(member, hasSuperior, crowded, gap > 0 ? gap : 0,
-                        Campaign.Day, Campaign.Day - member.RankSince,
-                        CharacterChanges, Incidents);
+                        Campaign.Day, Loyalty.TimeInRank(member, Campaign.Day),
+                        CharacterChanges, Incidents, leaderInside, leaderPaid);
                 }
 
                 // And then the men whose loyalty has run out entirely. Walked over a
@@ -512,12 +580,21 @@ namespace LivingCity.Outfit
                         !roster.Members[i].Gone &&
                         roster.Members[i].Loyalty <= Defection.BreakingPoint)
                         DefectedToday.Add(roster.Members[i]);
+                var doorsKnown = DefectedToday.Count > 0 && ReadOpenDoors();
+                var tonight = doorsKnown ? OpenDoors.Pick(scratchDoors) : default;
                 for (var i = 0; i < DefectedToday.Count; i++)
                 {
+                    // Every man who walks tonight walks through the door the city had
+                    // open at midnight - the reading is taken ONCE, so two lieutenants
+                    // breaking on the same night are not answered by a city that
+                    // changed between them.
                     var report = Defection.Tick(roster, DefectedToday[i], Campaign.Day,
-                        Incidents);
+                        Incidents, tonight);
                     if (report.Happened)
+                    {
+                        FileDefection(report);
                         RosterMoved?.Invoke();
+                    }
                 }
 
                 var back = RosterOps.Discharge(roster, Campaign.Day);
@@ -532,6 +609,31 @@ namespace LivingCity.Outfit
             // them left an empty envelope out of his file, his marks and his score
             // until the following midnight.
             var paid = Campaign.Settles(Campaign.Day) ? TurnTheBooks(roster) : 0;
+
+            // THE LIEUTENANTS HAND OUT THE BAG (GAN-262). Every crew with ground on the
+            // paper and nobody on his feet carrying its bag gets one handed out by its
+            // own lieutenant, as well as he can pick. After the books, so a man who
+            // walked over an empty envelope tonight is not the man handed the bag;
+            // before the closing passes, so the handing is on the hood's file the same
+            // night. The street re-deals on it: a bag man leaves the crew's line.
+            if (roster != null)
+            {
+                RosterOps.TendCollectors(roster, bagsHanded);
+                for (var i = 0; i < bagsHanded.Count; i++)
+                {
+                    var crew = roster.FindCrew(bagsHanded[i].crewId);
+                    var lieutenant = crew != null ? roster.Find(crew.LieutenantId) : null;
+                    var hood = roster.Find(bagsHanded[i].hoodId);
+                    if (hood == null)
+                        continue;
+                    Incidents.Add(new Incident(hood.Id, hood.FullName, IncidentKind.BagHanded,
+                        Campaign.Day, "", 0,
+                        IncidentText.BagHandedLine(
+                            lieutenant != null ? lieutenant.FullName : "", hood.FullName)));
+                }
+                if (bagsHanded.Count > 0)
+                    RosterMoved?.Invoke();
+            }
 
             if (roster != null)
             {
@@ -827,32 +929,112 @@ namespace LivingCity.Outfit
             : 1;
 
         /// <summary>
+        /// FOLLOW-002. Which houses have a door open tonight, read off the same
+        /// holdings sweep the tribute pass takes and the same stances the FAMILIES
+        /// sheet prints. Only run on a night somebody actually breaks: it walks the
+        /// whole city and nothing else here needs it.
+        ///
+        /// The reading is taken against <see cref="GangId"/> and not against the player:
+        /// this class keeps ONE house's books and twenty other copies of it are running
+        /// beside it, so a defector from house seven must not be offered house seven's
+        /// own door.
+        /// </summary>
+        /// <returns>False when nobody handed this house a city to read. A runner with no
+        /// holdings source - a rival before the street wires one, a headless fixture -
+        /// can see no ground and no neighbours, and every claim comes to nothing; the
+        /// tie-break would then invent a destination out of the lowest id on the table.
+        /// Answering "I do not know" is the honest reading, and the book prints the
+        /// words it printed before anybody worked out where a defector goes.</returns>
+        bool ReadOpenDoors()
+        {
+            scratchHoldings.Clear();
+            HoldingsOf?.Invoke(scratchHoldings);
+            var known = scratchHoldings.Count > 0;
+            if (known)
+                OpenDoors.Read(scratchHoldings, Relations, GangId, scratchDoors);
+            else
+                scratchDoors.Clear();
+            scratchHoldings.Clear();
+            return known;
+        }
+
+        /// <summary>
+        /// What a defection leaves behind. The book keeps it, because the paper's line
+        /// scrolls away in a week and "who has taken men off us" is a standing fact
+        /// about a house - and the running total is kept beside the book rather than
+        /// summed out of it, because the book is a rolling window and the loss is not.
+        ///
+        /// And the standing with them hardens one step, through the SAME seam an unpaid
+        /// levy uses: a house that has just absorbed a lieutenant and four of our men
+        /// is not at peace with us any more, whatever the sheet said this morning. It
+        /// is pending like every other stance change, so a page open on the families is
+        /// never rewritten under the reader's eyes.
+        /// </summary>
+        void FileDefection(in DefectionReport report)
+        {
+            Defections.Add(new DefectionRecord(Campaign.Day, report.LieutenantId,
+                report.Name, report.TookWithHim.Length, report.ToGangId,
+                report.Family));
+            if (Defections.Count > RecordsKept)
+                Defections.RemoveRange(0, Defections.Count - RecordsKept);
+
+            if (report.ToGangId <= 0 || report.ToGangId >= menLostTo.Length)
+                return;
+            menLostTo[report.ToGangId] += report.TookWithHim.Length + 1;
+            Sour(report.ToGangId);
+        }
+
+        /// <summary>
+        /// One step harder with a house, and never a step softer.
+        ///
+        /// The two stance changes the player does not choose - a levy left unpaid and a
+        /// house taking our men - both come through here, and both have to reckon with
+        /// what he HAS chosen. A pending change is an order he has already given that
+        /// has not landed yet, so the answer is the hardest of the three: what stands
+        /// today, what he asked for, and what tonight is worth. Reading only the current
+        /// stance quietly downgraded a declared war to a truce whenever a defection
+        /// landed in the same midnight.
+        /// </summary>
+        void Sour(int gangId)
+        {
+            var standing = Relations.StanceWith(gangId);
+            var hardest = standing == Stance.Peace ? Stance.Truce : Stance.War;
+            if (Relations.TryGetPending(gangId, out var asked) && asked > hardest)
+                hardest = asked;
+            // Written unconditionally: SetPending drops a pending change that matches
+            // what already stands, which is exactly what should happen to an order
+            // SOFTENING toward a house that has just cost us men.
+            Relations.SetPending(gangId, hardest);
+        }
+
+        /// <summary>How many men one house has taken off this one, all told - the figure
+        /// the FAMILIES card prints against its name. Read off the running tally, never
+        /// summed out of the rolling book.</summary>
+        public int MenLostTo(int gangId) =>
+            gangId >= 0 && gangId < menLostTo.Length ? menLostTo[gangId] : 0;
+
+        /// <summary>
         /// Re-prices what the houses above the outfit are owed against the city as it
         /// stands this morning, then hands over whatever has fallen due. A house that
-        /// went unpaid hardens one step - it is the only stance change in the game the
-        /// player does not choose, and it is the point of the mechanic: falling behind
-        /// on tribute is how a quiet city turns on you.
+        /// went unpaid hardens one step - one of the two stance changes in the game the
+        /// player does not choose (a house taking our men is the other), and it is the
+        /// point of the mechanic: falling behind on tribute is how a quiet city turns
+        /// on you.
         /// </summary>
         void CollectTribute()
         {
             scratchHoldings.Clear();
             HoldingsOf?.Invoke(scratchHoldings);
 
-            Tribute.Assess(Relations, scratchHoldings, Gangs.GangCatalog.PlayerGangId,
-                Campaign.Day);
+            Tribute.Assess(Relations, scratchHoldings, GangId, Campaign.Day);
             Tribute.Settle(Accounts, Campaign.Day, scratchSoured);
 
             for (var i = 0; i < scratchSoured.Count; i++)
-            {
-                var gangId = scratchSoured[i];
                 // Pending, like every other stance change: it lands with the next
                 // midnight, so a page open on the families is never rewritten under
-                // the reader's eyes.
-                var harder = Relations.StanceWith(gangId) == Stance.Peace
-                    ? Stance.Truce
-                    : Stance.War;
-                Relations.SetPending(gangId, harder);
-            }
+                // the reader's eyes - and never softer than what the player has
+                // already asked for.
+                Sour(scratchSoured[i]);
             scratchHoldings.Clear();
         }
 

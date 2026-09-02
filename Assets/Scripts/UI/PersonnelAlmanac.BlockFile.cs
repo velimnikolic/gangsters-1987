@@ -40,6 +40,13 @@ namespace LivingCity.UI
 
         bool blockCardAssignOpen;
 
+        /// <summary>The bag menu (GAN-262): the responsible crew's own men, listed so
+        /// the boss can put one of them on the bag or hand the choice back to the
+        /// lieutenant.</summary>
+        bool blockCardBagOpen;
+
+        readonly List<CrewHandView> blockCardCrewHands = new List<CrewHandView>();
+
         /// <summary>The man NAMED to walk this block's doors, and through him the crew
         /// that walks them. The design names men rather than crews because that is what
         /// a boss points at; the orders take the crew he belongs to.</summary>
@@ -186,6 +193,7 @@ namespace LivingCity.UI
                 StopBlockFilm();
             blockCardPick = default;
             blockCardAssignOpen = false;
+            blockCardBagOpen = false;
             blockCardMenOpen = false;
             blockCardTradesOpen = false;
             blockCardWalkerId = -1;
@@ -1422,6 +1430,25 @@ namespace LivingCity.UI
                     "one more of ours stands on this block · presence, not paper",
                     "", FileMenOntoBlock);
 
+                // WHO CARRIES THE BAG (GAN-262). One man of the responsible crew walks
+                // this block's doors; the row says who and on whose word, and opens
+                // the crew's own roll to change it.
+                var bagWord = !blockRacketOk || crewId < 0
+                    ? "NOBODY ON THE BAG"
+                    : blockRacket.CollectorId >= 0
+                        ? blockRacket.CollectorName.ToUpperInvariant() +
+                          (blockRacket.CollectorNamedByBoss
+                              ? " · NAMED BY YOU"
+                              : " · " + ShortLeaderWord(leader) + "'S PICK")
+                        : "NOBODY ON THE BAG";
+                inner += OrderRow(panel, barW, inner, "WHO CARRIES THE BAG · " + bagWord,
+                    crewId < 0
+                        ? "no crew answers for this block · name a lieutenant first"
+                        : "one of his men walks these doors alone and banks the take at " +
+                          "the front · he leaves the crew's line",
+                    crewId < 0 ? "nobody answers for this block" : "",
+                    () => { blockCardBagOpen = !blockCardBagOpen; dirty = true; });
+
                 inner += OrderRow(panel, barW, inner,
                     leader.IsValid ? "CHANGE WHO ANSWERS" : "NAME SOMEONE",
                     "name the lieutenant whose paper this block is on · he collects and " +
@@ -1450,6 +1477,10 @@ namespace LivingCity.UI
             if (blockCardAssignOpen)
                 y += BuildBlockCardAssign(card, x, y + 8f, Mathf.Min(width, 400f),
                     leaderId) + 8f;
+
+            if (blockCardBagOpen && crewId >= 0)
+                y += BuildBlockCardBag(card, x, y + 8f, Mathf.Min(width, 400f),
+                    crewId, leader) + 8f;
 
             var saying = BlockCardSaying;
             if (saying.Length > 0)
@@ -1756,6 +1787,9 @@ namespace LivingCity.UI
                 carries ? LedgerV2.Muted : LedgerV2.PaperBlue, 1f,
                 TextAlignmentOptions.MidlineRight);
             bag.font = LedgerStyle.MonoBold;
+            // ON THE BAG names him for HIS OWN crew's bag (GAN-262) - the men on this
+            // roll may belong to different crews, so the seam resolves the crew from
+            // the man rather than the block's own.
             WordButton(row, bag, () => SetCollector(manId, !carries));
 
             var pull = LedgerV2.Mono(row, width - pullW, -12f, pullW, "PULL", 9.5f,
@@ -1816,6 +1850,117 @@ namespace LivingCity.UI
             var a = string.IsNullOrEmpty(first) ? "" : first.Substring(0, 1);
             var b = string.IsNullOrEmpty(surname) ? "" : surname.Substring(0, 1);
             return (a + b).ToUpperInvariant();
+        }
+
+        /// <summary>The lieutenant's surname for a line about his own choice, or a
+        /// word that stands in where the block has no name on it.</summary>
+        static string ShortLeaderWord(OrganizationPerson leader) =>
+            leader.IsValid && !string.IsNullOrEmpty(leader.Name)
+                ? leader.Name.Substring(leader.Name.LastIndexOf(' ') + 1).ToUpperInvariant()
+                : "HIS LIEUTENANT";
+
+        /// <summary>
+        /// THE BAG MENU (GAN-262), built in the shape of WHO ANSWERS FOR IT: one row per
+        /// hood of the responsible crew, with what kind of bag man he would make in
+        /// stars and where he stands today, then the lieutenant's own choice, then
+        /// nobody. Naming a man takes him out of the crew's street line and stands him
+        /// at the front - the row says so rather than letting the boss find out by
+        /// watching four men become three.
+        /// </summary>
+        float BuildBlockCardBag(RectTransform card, float x, float top, float width,
+            int crewId, OrganizationPerson leader)
+        {
+            var source = BlockRacketSeam.SourceOrStub;
+            source.CollectCrewHoods(crewId, blockCardCrewHands);
+
+            var rows = blockCardCrewHands.Count;
+            var carried = blockRacketOk && blockRacket.CollectorId >= 0;
+            var options = rows + 1 + (carried ? 1 : 0);
+            var height = 28f + (rows == 0 ? 26f : options * 30f);
+            var menu = NewRect("Block file bag", card);
+            PlaceTopLeft(menu, x, -top, width, height);
+            Fill(menu, LedgerV2.Head);
+            Caps(menu, 12f, -8f, width - 24f, "WHO CARRIES THE BAG", 9f,
+                LedgerV2.HeadDim, 4f).font = LedgerStyle.Mono;
+
+            var y = 28f;
+            if (rows == 0)
+            {
+                LedgerV2.Mono(menu, 12f, -(y + 4f), width - 24f,
+                    "He has no men to give it to.", 10.5f, LedgerV2.Red, 0.5f);
+                return height;
+            }
+
+            for (var i = 0; i < rows; i++)
+            {
+                var hand = blockCardCrewHands[i];
+                var option = NewRect("Bag " + hand.Name, menu);
+                PlaceTopLeft(option, 0f, -y, width, 30f);
+                Rule(option, 0f, 0f, width, LedgerV2.HeadDim);
+                Line(option, LedgerStyle.Condensed, 13f,
+                    hand.Carries ? LedgerV2.PaperBlue : LedgerV2.HeadCream,
+                    12f, -6f, width - 150f, 18f, hand.Name);
+
+                // Fitness is three trades summed (6..30 half-steps); print it as the
+                // ledger prints every skill, in stars, so it reads against the man's
+                // own card without arithmetic.
+                var stars = hand.FitnessHalfSteps / 6f;
+                Caps(option, width - 138f, -7f, 126f,
+                    hand.Carries ? "CARRIES IT"
+                        : stars.ToString("0.0") + "★" +
+                          (hand.WalksTheStreet ? " · walks the street" : " · on the books"),
+                    9f, hand.Carries ? LedgerV2.PaperBlue : LedgerV2.HeadDim, 2f,
+                    TextAlignmentOptions.MidlineRight);
+
+                var manId = hand.Id;
+                var carries = hand.Carries;
+                RowButton(option, ClickSurface(option), () =>
+                {
+                    blockCardBagOpen = false;
+                    if (carries)
+                        return;
+                    var refusal = BlockRacketSeam.ActionsOrStub.NameCollector(crewId, manId);
+                    if (!string.IsNullOrEmpty(refusal))
+                        SayOnTheBlockCard(refusal);
+                    dirty = true;
+                });
+                y += 30f;
+            }
+
+            var pick = NewRect("Bag pick", menu);
+            PlaceTopLeft(pick, 0f, -y, width, 30f);
+            Rule(pick, 0f, 0f, width, LedgerV2.HeadDim);
+            Line(pick, LedgerStyle.Condensed, 13f, LedgerV2.Amber, 12f, -6f, width - 24f, 18f,
+                "Let " + ShortLeaderWord(leader).ToLowerInvariant() + " pick");
+            RowButton(pick, ClickSurface(pick), () =>
+            {
+                blockCardBagOpen = false;
+                var refusal = BlockRacketSeam.ActionsOrStub.LetLieutenantPick(crewId);
+                if (!string.IsNullOrEmpty(refusal))
+                    SayOnTheBlockCard(refusal);
+                dirty = true;
+            });
+            y += 30f;
+
+            if (carried)
+            {
+                var off = NewRect("Bag nobody", menu);
+                PlaceTopLeft(off, 0f, -y, width, 30f);
+                Rule(off, 0f, 0f, width, LedgerV2.HeadDim);
+                Line(off, LedgerStyle.Condensed, 13f, LedgerV2.Red, 12f, -6f, width - 24f, 18f,
+                    "Nobody · take the bag off him");
+                var holder = blockRacket.CollectorId;
+                RowButton(off, ClickSurface(off), () =>
+                {
+                    blockCardBagOpen = false;
+                    var refusal = BlockRacketSeam.ActionsOrStub.TakeOffTheBag(holder);
+                    if (!string.IsNullOrEmpty(refusal))
+                        SayOnTheBlockCard(refusal);
+                    dirty = true;
+                });
+            }
+
+            return height;
         }
 
         float BuildBlockCardAssign(RectTransform card, float x, float top, float width,

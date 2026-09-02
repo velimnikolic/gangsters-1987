@@ -311,19 +311,27 @@ namespace LivingCity.Personnel
             {
                 CharacterStatus.Dead => "Killed.",
                 CharacterStatus.Deserted => "Gone. Did not come back.",
+                CharacterStatus.CutLoose => "Cut loose by the boss while inside.",
                 _ => "Off the books.",
             };
         }
 
         /// <summary>The lieutenant's own line the day he goes over. It carries the
         /// COUNT, because how expensive losing him was is the whole point of the
-        /// Leadership arithmetic that decided it.</summary>
-        public static string WentOver(int menTaken) => menTaken <= 0
-            ? "Went over to another family, and went alone."
-            : menTaken == 1
-                ? "Went over to another family, and took one man with him."
-                : "Went over to another family, and took " + menTaken +
-                  " men with him.";
+        /// Leadership arithmetic that decided it, and the HOUSE when the caller knows
+        /// which one took him - a man who went somewhere is a different fact from a
+        /// man who simply went.</summary>
+        public static string WentOver(int menTaken, string family = "")
+        {
+            var to = string.IsNullOrEmpty(family)
+                ? "Went over to another family"
+                : "Went over to the " + family + " family";
+            return menTaken <= 0
+                ? to + ", and went alone."
+                : menTaken == 1
+                    ? to + ", and took one man with him."
+                    : to + ", and took " + menTaken + " men with him.";
+        }
 
         /// <summary>And the line on the file of each man who went out behind him. This
         /// is what stops a defection reading as a desertion on the men it actually
