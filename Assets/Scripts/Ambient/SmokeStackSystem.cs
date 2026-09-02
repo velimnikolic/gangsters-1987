@@ -22,22 +22,16 @@ namespace LivingCity.Ambient
     /// which only IndustrialDresser reads - but if the vent table ever grows a kind column, that is
     /// the reason to move the decision into it.
     ///
-    /// The particles are MESHES, not billboards, and that is a deliberate art call rather than a
-    /// shortcut. The pack ships no smoke texture at all - the only particle prefabs in the
-    /// project are the People pack's birds and confetti - so a soft plume would need a gradient
-    /// texture authored from scratch, and the result would be the one blurred thing in a city
-    /// built entirely from flat-shaded low poly. The pack's own cloud meshes, tumbling and
-    /// fading, sit in the same visual language as everything around them.
-    ///
-    /// Two URP notes worth keeping: Unity's Default-ParticleSystem material is a Built-in shader
-    /// and renders magenta here, so the material is authored by CityAssetBootstrap on
-    /// Universal Render Pipeline/Particles/Unlit; and the renderer's shadow casting is off,
-    /// because a mesh particle will otherwise throw a hard low-poly shadow across the yard.
+    /// The shared Particle Pack smoke supplies the textured flipbook, soft particles and
+    /// turbulence. The profile below still owns city-scale facts such as chimney density, rise,
+    /// wind and lifetime. If the external pack is stripped, the former mesh/material route stays
+    /// as a visible fallback.
     /// </summary>
     public sealed class SmokeStackSystem : MonoBehaviour
     {
         [SerializeField] CityConfig config;
         [SerializeField] PrefabDatabase prefabs;
+        GameObject smokePrefab;
 
         /// <summary>
         /// Everything that makes one family of chimney smoke the way it does. A works stack and a
@@ -142,7 +136,8 @@ namespace LivingCity.Ambient
                 return;
             }
 
-            if (!config.chimneySmoke || !prefabs.smokeMaterial)
+            smokePrefab = FireSmokeFx.Load(FireSmokeFx.Smoke);
+            if (!config.chimneySmoke || (smokePrefab == null && !prefabs.smokeMaterial))
             {
                 enabled = false;
                 return;
@@ -151,7 +146,7 @@ namespace LivingCity.Ambient
             // Max of x and z rather than x alone, so swapping the puff for another pack cloud
             // still reads in metres - cloud-long is 12.84 m wide against cloud-fluffy's 6.22.
             // Mesh.bounds is free here, it does not touch the vertex buffer.
-            if (prefabs.smokePuffMesh)
+            if (smokePrefab == null && prefabs.smokePuffMesh)
             {
                 var footprint = prefabs.smokePuffMesh.bounds.size;
                 puffMetresPerUnit = Mathf.Max(0.01f, Mathf.Max(footprint.x, footprint.z));
@@ -246,21 +241,44 @@ namespace LivingCity.Ambient
             host.transform.SetParent(transform, false);
             host.transform.position = mouth;
 
-            var system = host.AddComponent<ParticleSystem>();
+            ParticleSystem system = null;
+            var authored = smokePrefab != null;
+            if (authored)
+            {
+                var fx = Instantiate(smokePrefab, host.transform, false);
+                fx.name = "RealisticSmoke";
+                // The gallery prefab was saved from its showcase scene, so its authored root
+                // carries that scene's pose. Sources in the city always start at their mouth.
+                fx.transform.localPosition = Vector3.zero;
+                fx.transform.localRotation = Quaternion.identity;
+                fx.transform.localScale = Vector3.one;
+                system = fx.GetComponentInChildren<ParticleSystem>();
+            }
+            if (system == null)
+            {
+                authored = false;
+                system = host.AddComponent<ParticleSystem>();
+            }
 
             // Every module has to be assigned back - ParticleSystem's modules are structs, and
             // mutating the property in place is a no-op that compiles cleanly.
             var main = system.main;
             main.startLifetime = profile.lifetime;
             main.startSpeed = profile.riseSpeed;
-            main.startSize = profile.sizeRange.x / puffMetresPerUnit;
-            main.startRotation3D = true;
-            main.startRotationX = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
-            main.startRotationY = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
-            main.startRotationZ = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
-            main.startColor = new Color(0.72f, 0.72f, 0.70f, profile.alpha);
+            main.startSize = profile.sizeRange.x / (authored ? 1f : puffMetresPerUnit);
+            if (!authored)
+            {
+                main.startRotation3D = true;
+                main.startRotationX = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+                main.startRotationY = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+                main.startRotationZ = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            }
+            var smokeColour = FireSmokeFx.ChimneySmoke;
+            smokeColour.a = profile.alpha;
+            main.startColor = smokeColour;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
             main.maxParticles = Mathf.CeilToInt(profile.emissionRate * profile.lifetime) + 4;
+            main.loop = true;
             main.playOnAwake = true;
 
             var emission = system.emission;
@@ -312,19 +330,23 @@ namespace LivingCity.Ambient
             rotation.z = new ParticleSystem.MinMaxCurve(-0.4f, 0.4f);
 
             var renderer = system.GetComponent<ParticleSystemRenderer>();
-            renderer.sharedMaterial = prefabs.smokeMaterial;
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
 
-            if (prefabs.smokePuffMesh)
+            if (!authored && prefabs.smokePuffMesh)
             {
+                renderer.sharedMaterial = prefabs.smokeMaterial;
                 renderer.renderMode = ParticleSystemRenderMode.Mesh;
                 renderer.mesh = prefabs.smokePuffMesh;
             }
-            else
+            else if (!authored)
             {
+                renderer.sharedMaterial = prefabs.smokeMaterial;
                 renderer.renderMode = ParticleSystemRenderMode.Billboard;
             }
+
+            system.Clear();
+            system.Play();
         }
     }
 }

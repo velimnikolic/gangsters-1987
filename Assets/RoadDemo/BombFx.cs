@@ -4,10 +4,9 @@ using UnityEngine;
 namespace RoadDemo
 {
     /// <summary>
-    /// The bomb layer's window onto the project's own particle art. The blast fireball and
-    /// the fire that eats a bombed shopfront are no longer a handful of primitive quads -
-    /// they are the Synty PolygonParticleFX prefabs the project already ships (FX_Explosion,
-    /// FX_Fire_Big), spawned at the point that needs them.
+    /// The bomb layer's window onto the project's shared particle art. The blast fireball and
+    /// the fire that eats a bombed shopfront use the same realistic Particle Pack catalogue as
+    /// vehicles, chimneys and district ambience.
     ///
     /// Like the rest of this editor-only demo, the prefabs come straight out of the
     /// AssetDatabase (DemoAssetLoad), so the load is cached the first time each is asked
@@ -21,13 +20,13 @@ namespace RoadDemo
     public static class BombFx
     {
         /// <summary>The one-shot blast: a ball of fire, sparks and smoke that plays once.</summary>
-        public const string Explosion = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Explosion_01.prefab";
+        public const string Explosion = LivingCity.Ambient.FireSmokeFx.ExplosionLarge;
 
         /// <summary>The looping fire strung across a burning shopfront.</summary>
-        public const string Fire = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Fire_Big_01.prefab";
+        public const string Fire = LivingCity.Ambient.FireSmokeFx.FlamesLarge;
 
         /// <summary>The looping black smoke that rises off a burning shopfront.</summary>
-        public const string Smoke = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Smoke_Black_01.prefab";
+        public const string Smoke = LivingCity.Ambient.FireSmokeFx.Smoke;
 
         static readonly Dictionary<string, GameObject> Cache = new Dictionary<string, GameObject>();
 
@@ -53,13 +52,26 @@ namespace RoadDemo
             if (prefab == null) return null;
             var go = Object.Instantiate(prefab, pos, rot, parent);
             if (!Mathf.Approximately(scale, 1f)) go.transform.localScale *= scale;
-            if (autoKill > 0f) go.AddComponent<FxAutoKill>().Life = autoKill;
+            if (autoKill > 0f)
+            {
+                // The sample prefabs loop so they can be watched indefinitely in their gallery.
+                // An in-game blast is one ignition followed by its smoke tail.
+                foreach (var system in go.GetComponentsInChildren<ParticleSystem>(true))
+                {
+                    var main = system.main;
+                    main.loop = false;
+                    main.prewarm = false;
+                    system.Clear();
+                    system.Play();
+                }
+                go.AddComponent<FxAutoKill>().Life = autoKill;
+            }
             return go;
         }
     }
 
-    /// <summary>Clears a one-shot particle instance once it has had time to play. Synty's
-    /// bursts carry no stop action, so without this they would linger, spent, forever.</summary>
+    /// <summary>Clears a one-shot particle instance once it has had time to play. Authored
+    /// bursts carry no destroy stop action, so without this they would linger, spent, forever.</summary>
     public sealed class FxAutoKill : MonoBehaviour
     {
         public float Life = 3f;

@@ -148,12 +148,12 @@ namespace HarborDemo
         public const string Powerpole = GangProps + "SM_Prop_Light_Pole_01.prefab";
         public const string Dumpster = GangProps + "SM_Prop_Dumpster_01.prefab";
         public const string FxRipple = Fx + "FX_WaterRipple_01.prefab";
-        public const string FxSmoke = Fx + "FX_Smoke_Black_Small_01.prefab";
+        public const string FxSmoke = LivingCity.Ambient.FireSmokeFx.Smoke;
         public const string FxBirds = PalmFx + "FX_Birds_01.prefab";
         public const string FxSparks = Fx + "FX_Sparks_01.prefab";
         public const string FxDust = Fx + "FX_Dust_Small_01.prefab";
-        public const string FxSteam = Fx + "FX_Steam_01.prefab";
-        public const string FxSmokeWhite = Fx + "FX_Smoke_White_Small_01.prefab";
+        public const string FxSteam = LivingCity.Ambient.FireSmokeFx.Steam;
+        public const string FxSmokeWhite = LivingCity.Ambient.FireSmokeFx.Smoke;
 
         // ------------------------------------------------------------ the waterline
         //

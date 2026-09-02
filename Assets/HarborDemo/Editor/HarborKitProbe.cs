@@ -104,7 +104,7 @@ namespace HarborDemo.EditorTools
             HarborKit.SmallBoats[0],
             HarborKit.WaterPlane,
             HarborKit.Fx + "FX_WaterRipple_01.prefab",
-            HarborKit.Fx + "FX_Smoke_Black_Small_01.prefab",
+            HarborKit.FxSmoke,
             HarborKit.Ships + "ship-cargo-A.prefab",
             HarborKit.Ships + "ship-cargo-B.prefab",
             HarborKit.Ships + "ship-coaster.prefab",

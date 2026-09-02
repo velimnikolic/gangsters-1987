@@ -424,7 +424,7 @@ namespace AirportDemo
         public const string FxPropWash = Fx + "FX_Dust_Blowing_Soft_01.prefab";
         public const string FxTouchdown = Fx + "FX_Dust_Small_01.prefab";
         public const string FxExhaust = Fx + "FX_Trail_Exhaust_01.prefab";
-        public const string FxSmoke = Fx + "FX_Smoke_White_Small_01.prefab";
+        public const string FxSmoke = LivingCity.Ambient.FireSmokeFx.Smoke;
         public const string FxBirds = PalmFx + "FX_Birds_01.prefab";
 
         // ------------------------------------------------------------ loading

@@ -1328,9 +1328,9 @@ namespace RoadDemo
         }
     }
 
-    /// <summary>The fire on a bombed shopfront: a few flames that flicker and lean, a
-    /// glow on the street, and smoke drifting up - all on its own clock, no particle
-    /// system. When it has burnt BurnFor seconds it boards the front up and is gone.</summary>
+    /// <summary>The fire on a bombed shopfront: authored flames and embers, a warm street
+    /// glow, and textured smoke drifting up. When it has burnt BurnFor seconds it boards
+    /// the front up and is gone.</summary>
     public sealed class ShopFire : MonoBehaviour
     {
         GangFront _front;
@@ -1343,10 +1343,10 @@ namespace RoadDemo
         float _age;
         Light _glow;
         readonly List<Transform> _flames = new List<Transform>();          // procedural fallback
-        readonly List<Transform> _fireFx = new List<Transform>();          // Synty fire instances
+        readonly List<Transform> _fireFx = new List<Transform>();          // authored fire instances
         readonly List<Vector3> _fireBase = new List<Vector3>();            // their planted scale
         readonly List<(Transform tf, float born)> _smokes = new List<(Transform, float)>();   // procedural fallback
-        Transform _smokeFx;      // Synty smoke instance
+        Transform _smokeFx;      // authored smoke instance
         Material _smokeMat;
         float _nextSmoke;
 
@@ -1378,7 +1378,7 @@ namespace RoadDemo
             transform.position = baseAt;
             var facing = Quaternion.LookRotation(outward, Vector3.up);
 
-            // the fire itself: the project's Synty fire particle, a run of them strung
+            // the fire itself: the project's shared realistic fire, a run of it strung
             // across the ground-floor frontage
             var step = Mathf.Max(0.6f, _frontage / 3f);
             for (int i = -1; i <= 1; i++)
@@ -1410,10 +1410,14 @@ namespace RoadDemo
                 }
             }
 
-            // black smoke boiling up off the front - the project's Synty smoke, a column
+            // black smoke boiling up off the front - the shared textured smoke, a column
             // rising above the fire (procedural puffs below only if the pack is stripped)
             var smk = BombFx.Spawn(BombFx.Smoke, baseAt + Vector3.up * 1.2f, Quaternion.identity, 0.5f, 0f, transform);
             _smokeFx = smk != null ? smk.transform : null;
+            if (smk != null)
+                LivingCity.Ambient.FireSmokeFx.TintSmoke(
+                    smk.GetComponentInChildren<ParticleSystem>(),
+                    LivingCity.Ambient.FireSmokeFx.FireSmoke);
 
             _glow = gameObject.AddComponent<Light>();
             _glow.type = LightType.Point;
@@ -1445,7 +1449,7 @@ namespace RoadDemo
             float fade = Mathf.Clamp01((ShopDamage.BurnFor - _age) / 5f);
             var cam = Camera.main;
 
-            // Synty fire burns at full, then is shrunk away over the last few seconds as
+            // Authored fire burns at full, then is shrunk away over the last few seconds as
             // it dies down to the boarding-up
             for (int i = 0; i < _fireFx.Count; i++)
             {

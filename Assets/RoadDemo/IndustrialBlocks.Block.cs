@@ -550,8 +550,17 @@ namespace RoadDemo
                 var plume = Raise(Smoke, Root);
                 if (plume != null)
                 {
-                    plume.transform.position = new Vector3(x, mouth, z);
+                    plume.transform.SetPositionAndRotation(
+                        new Vector3(x, mouth, z), Quaternion.identity);
                     plume.transform.localScale *= 2.6f;
+                    var smoke = plume.GetComponentInChildren<ParticleSystem>();
+                    LivingCity.Ambient.FireSmokeFx.TintSmoke(
+                        smoke, LivingCity.Ambient.FireSmokeFx.ChimneySmoke);
+                    if (smoke != null)
+                    {
+                        var main = smoke.main;
+                        main.simulationSpace = ParticleSystemSimulationSpace.World;
+                    }
                 }
                 Claim(ground);
             }

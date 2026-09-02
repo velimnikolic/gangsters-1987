@@ -142,7 +142,11 @@ namespace HarborDemo
                 ship._bowWave = Fx(rippleFx, root, new Vector3(0f, 0.05f, bow), 1.6f);
             }
             if (smokeFx != null && spec != null)
+            {
                 ship._smoke = Fx(smokeFx, model.transform, spec.FunnelTop, 1.4f);
+                LivingCity.Ambient.FireSmokeFx.TintSmoke(
+                    ship._smoke, LivingCity.Ambient.FireSmokeFx.DieselSmoke);
+            }
             ship.SetFx(0f);
             return ship;
         }

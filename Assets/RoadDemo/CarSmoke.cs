@@ -4,14 +4,12 @@ namespace RoadDemo
 {
     /// <summary>
     /// What comes out of a car: the wisp off a tailpipe while the engine is turning, and
-    /// the plume off a bonnet once it has been shot through. Both are the particle pack's
-    /// smoke, re-tuned here, and the tuning is the whole of this class. Exhaust uses the
-    /// pack's soft billboard trail; bonnet smoke keeps the heavier low-poly smoke mesh.
+    /// the plume off a bonnet once it has been shot through. Both are the shared Particle
+    /// Pack's textured smoke, re-tuned here: a pale, sparse tailpipe wisp and a dark,
+    /// turbulent bonnet plume.
     ///
-    /// THE PACK'S MESH SIZES ARE NOT METRES. SM_Particle_Smoke_01 is 0.191m across and a
-    /// ParticleSystem's start size MULTIPLIES that mesh. Billboards, including the exhaust
-    /// trail, do use world units. Tuned() distinguishes the two renderer types so every
-    /// caller still asks for the width it wants in metres.
+    /// Tuned() still understands mesh renderers so a stripped project's fallback remains
+    /// correctly sized, while the shared billboard smoke reads directly in metres.
     /// </summary>
     public static class CarSmoke
     {
@@ -24,15 +22,15 @@ namespace RoadDemo
 
         /// <summary>Take the pack's smoke and make it the size, life and speed asked for.
         /// The prefab keeps everything the tuning does not name - its material, its colour
-        /// and size over life, its shape - so exhaust remains a soft fading trail while
-        /// bonnet smoke remains a heavier plume.
+        /// and size over life, its shape and turbulence - while the caller supplies the
+        /// physical scale, density and smoke colour.
         ///
         /// A puff belongs to the air it was left in, not to the car that left it, so the
         /// simulation space is made world-space even when the source prefab was authored
         /// locally.</summary>
         public static ParticleSystem Tuned(GameObject prefab, Transform under, Vector3 at,
                                            float wide, float grow, float lifeLo, float lifeHi,
-                                           float speed, float rate)
+                                           float speed, float rate, Color tint)
         {
             if (prefab == null) return null;
             var go = Object.Instantiate(prefab, under, worldPositionStays: false);
@@ -54,11 +52,13 @@ namespace RoadDemo
             main.startLifetime = new ParticleSystem.MinMaxCurve(lifeLo, lifeHi);
             main.startSpeed = speed;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.maxParticles = Mathf.CeilToInt(rate * lifeHi) + 8;
             // prewarm fills a system with a whole lifetime of smoke on its first frame,
             // which is a puff of exhaust appearing round a car that has only just started
             main.prewarm = false;
             var emission = ps.emission;
             emission.rateOverTime = rate;
+            LivingCity.Ambient.FireSmokeFx.TintSmoke(ps, tint);
             ps.Clear();
             return ps;
         }
@@ -76,7 +76,8 @@ namespace RoadDemo
             Tuned(CrewKit.EngineSmoke, car.Tf,
                   new Vector3(0f, BonnetHeight, car.HalfLen * BonnetAlong),
                   wide: BonnetWide, grow: 1.9f, lifeLo: 1.8f, lifeHi: 3.2f,
-                  speed: BonnetRise, rate: BonnetRate);
+                  speed: BonnetRise, rate: BonnetRate,
+                  tint: LivingCity.Ambient.FireSmokeFx.EngineSmoke);
         }
 
         /// <summary>Where on the car the plume stands, and how much of it there is: up out

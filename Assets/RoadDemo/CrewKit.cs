@@ -25,10 +25,10 @@ namespace RoadDemo
         const string FlashPath = "Assets/Synty/PolygonGangWarfare/Prefabs/FX/FX_Gunshot_01.prefab";
         const string BloodPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_BloodSplat_Small_01.prefab";
         const string ImpactPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Impact_Small_01.prefab";
-        const string FirePath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Fire_Big_01.prefab";
-        const string FireBurstPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Fire_Explosion_01.prefab";
-        const string ExhaustPath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Trail_Exhaust_01.prefab";
-        const string EngineSmokePath = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Smoke_Black_Small_01.prefab";
+        const string FirePath = LivingCity.Ambient.FireSmokeFx.FlamesMedium;
+        const string FireBurstPath = LivingCity.Ambient.FireSmokeFx.ExplosionSmall;
+        const string ExhaustPath = LivingCity.Ambient.FireSmokeFx.Smoke;
+        const string EngineSmokePath = LivingCity.Ambient.FireSmokeFx.Smoke;
         const string ShotDir = "Assets/Audio/Weapons/";
 
         /// <summary>The crowd's walk and idle plus the gun wardrobe. Missing pieces stay
@@ -458,9 +458,8 @@ namespace RoadDemo
         public static GameObject FireBurst => _fireBurst != null ? _fireBurst : _fireBurst = Load<GameObject>(FireBurstPath);
         static GameObject _fire, _fireBurst;
 
-        /// <summary>The two smokes a car makes. Exhaust is the pack's soft billboard trail;
-        /// engine damage uses its heavier smoke mesh. CarSmoke normalizes both renderer
-        /// types so their requested sizes are read in metres.
+        /// <summary>The two smokes a car makes. Both use the shared soft flipbook smoke;
+        /// CarSmoke gives tailpipe and engine damage their own scale, density and colour.
         ///
         /// White for what a running engine puts out of the back, black for what a shot
         /// one puts out of the front.</summary>

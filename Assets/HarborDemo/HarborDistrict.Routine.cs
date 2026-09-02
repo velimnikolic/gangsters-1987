@@ -56,13 +56,30 @@ namespace HarborDemo
         void SmokeTheBarrels()
         {
             var smoke = HarborKit.TryLoad(HarborKit.FxSmokeWhite);
-            if (smoke == null) return;
+            var flame = HarborKit.TryLoad(LivingCity.Ambient.FireSmokeFx.FlamesTiny);
+            if (smoke == null && flame == null) return;
             for (int i = 0; i < berths; i++)
             {
-                var go = Instantiate(smoke, _liveRoot);
-                go.name = "BarrelSmoke";
-                go.transform.localPosition = new Vector3(BerthX(i) - 30f, TileTop + 1.05f, QuayLaneZ + 4.4f);
-                go.transform.localScale = Vector3.one * 0.5f;
+                var at = new Vector3(BerthX(i) - 30f, TileTop + 1.05f, QuayLaneZ + 4.4f);
+                if (smoke != null)
+                {
+                    var go = Instantiate(smoke, _liveRoot);
+                    go.name = "BarrelSmoke";
+                    go.transform.localPosition = at + Vector3.up * 0.35f;
+                    go.transform.localRotation = Quaternion.identity;
+                    go.transform.localScale = Vector3.one * 0.32f;
+                    LivingCity.Ambient.FireSmokeFx.TintSmoke(
+                        go.GetComponentInChildren<ParticleSystem>(),
+                        LivingCity.Ambient.FireSmokeFx.FireSmoke);
+                }
+                if (flame != null)
+                {
+                    var go = Instantiate(flame, _liveRoot);
+                    go.name = "BarrelFire";
+                    go.transform.localPosition = at;
+                    go.transform.localRotation = Quaternion.identity;
+                    go.transform.localScale = Vector3.one * 0.42f;
+                }
             }
         }
 

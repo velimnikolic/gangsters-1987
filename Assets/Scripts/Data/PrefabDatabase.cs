@@ -757,16 +757,12 @@ namespace LivingCity.Data
                  "catches out.")]
         public ChimneyVent[] chimneyVents = Array.Empty<ChimneyVent>();
 
-        [Tooltip("Universal Render Pipeline/Particles/Unlit, transparent, untextured. The pack " +
-                 "ships no smoke texture at all, and the Built-in Default-ParticleSystem " +
-                 "material renders magenta under URP - so this is authored by the bootstrap. " +
-                 "Empty disables smoke however chimneySmoke is set.")]
+        [Tooltip("Fallback URP smoke material used only when the shared Particle Pack is not " +
+                 "installed. Empty is safe while the Particle Pack SmokeEffect prefab exists.")]
         public Material smokeMaterial;
 
-        [Tooltip("cloud-fluffy - the particles are MESHES, not billboards. A soft blurred quad " +
-                 "is the obvious choice and the wrong one here: every other surface in this city " +
-                 "is flat-shaded low poly, and a gaussian plume reads as borrowed from another " +
-                 "game. Empty falls back to billboards.")]
+        [Tooltip("Fallback low-poly puff mesh used only when the shared Particle Pack is not " +
+                 "installed. Empty falls back to the bootstrap billboard material.")]
         public Mesh smokePuffMesh;
 
         [Header("Props (Props_T/City_T, Nature_T/Trees_T)")]

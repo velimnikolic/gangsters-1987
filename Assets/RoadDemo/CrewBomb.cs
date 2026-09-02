@@ -83,10 +83,8 @@ namespace RoadDemo
         public const string ModelPath =
             "Assets/Synty/PolygonPalmCity/Prefabs/Weapons/SM_Wep_Molotov_02.prefab";
 
-        const string WickFirePath =
-            "Assets/Synty/PolygonParticleFX/Prefabs/FX_Fire_Small_01.prefab";
-        const string ImpactFirePath =
-            "Assets/Synty/PolygonParticleFX/Prefabs/FX_Fire_Explosion_01.prefab";
+        const string WickFirePath = LivingCity.Ambient.FireSmokeFx.FlamesTiny;
+        const string ImpactFirePath = LivingCity.Ambient.FireSmokeFx.ExplosionTiny;
         const float Windup = 0.22f;
         const float Gravity = 13f;
 

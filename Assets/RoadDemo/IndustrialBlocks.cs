@@ -91,8 +91,8 @@ namespace RoadDemo
         // the works
         const string StackMaterial = "Assets/Materials/IndustrialStack.mat";
         const string WaterTower = CityBld + "SM_Prop_Water_Tower_01.prefab";
-        const string Smoke = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Smoke_Black_Small_01.prefab";
-        const string Steam = "Assets/Synty/PolygonParticleFX/Prefabs/FX_Steam_01.prefab";
+        const string Smoke = LivingCity.Ambient.FireSmokeFx.Smoke;
+        const string Steam = LivingCity.Ambient.FireSmokeFx.Steam;
         const string PipeRiserTall = CityProps + "SM_Prop_Pipe_Preset_01.prefab";
         const string PipeRiserWide = CityProps + "SM_Prop_Pipe_Preset_02.prefab";
 

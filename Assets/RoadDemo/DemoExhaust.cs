@@ -161,7 +161,8 @@ namespace RoadDemo
             {
                 var fx = CarSmoke.Tuned(CrewKit.Exhaust, transform, Vector3.zero,
                                         PuffWide, PuffGrow, PuffLifeLo, PuffLifeHi,
-                                        PuffSpeed, IdleRate);
+                                        PuffSpeed, IdleRate,
+                                        LivingCity.Ambient.FireSmokeFx.ExhaustSmoke);
                 // no pack, no exhaust - and it is THIS layer that gives up, not the
                 // budget: Budget is a tuning knob a scene may set, and a play mode with
                 // the domain reload off carries a zeroed one into every later run

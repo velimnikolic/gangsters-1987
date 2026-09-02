@@ -90,7 +90,7 @@ namespace RoadDemo
 
         static void Flash(Vector3 at)
         {
-            // the fireball itself is the project's own Synty explosion particle
+            // the fireball, debris, embers, shockwave and smoke tail are one shared effect
             var fx = BombFx.Spawn(BombFx.Explosion, at + Vector3.up * 1.0f, Quaternion.identity, 1.3f, 3f);
 
             // and a punch of light on the street with it - thrown whether or not the
