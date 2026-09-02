@@ -32,6 +32,10 @@ namespace RoadDemo
         /// on. Keyed by crew id, so a crew that loses its lieutenant and reforms under
         /// an heir keeps its orders - the crew is the unit of command, not the man.</summary>
         static readonly Dictionary<int, int> Dispatched = new Dictionary<int, int>();
+        /// <summary>Which job a crew is currently driving toward. A premises job has
+        /// two distinct travel legs when the crew starts aboard: drive to the address,
+        /// park and get out, then walk from the kerb to the exact approach point.</summary>
+        static readonly Dictionary<int, int> Driving = new Dictionary<int, int>();
         static readonly Dictionary<int, int> Sicced = new Dictionary<int, int>();
         static readonly Dictionary<int, DemoCrews.Unit> Marks =
             new Dictionary<int, DemoCrews.Unit>();
@@ -94,30 +98,75 @@ namespace RoadDemo
 
         static bool AtPlace(DemoCrews crews, DemoCrews.Unit unit, Job job)
         {
-            if (!job.HasPlace)
+            // A rider passing the address has not arrived for a door job. The car must
+            // first finish its ordinary kerb-side parking/exit sequence; only a man on
+            // the pavement can advance the book to Working.
+            if (!job.HasPlace || unit == null || unit.Car != null || unit.Leaving)
                 return false;
             var door = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
             return LeadAt(unit, door, ArrivedWithin) != null;
         }
 
-        /// <summary>Sends them once, not every frame: MarchTo clears the crew's target
-        /// and unboards its car, so re-issuing it each tick would cancel the walk it
-        /// had just ordered and leave them shuffling on the spot forever.</summary>
+        /// <summary>Sends each travel leg once, not every frame. A crew already aboard
+        /// drives to the address, parks and gets out through the regular car plumbing;
+        /// after the last man is down, the crew walks from the kerb to the approach.</summary>
         static void March(DemoCrews crews, DemoCrews.Unit unit, Job job)
         {
-            if (Dispatched.TryGetValue(unit.CrewId, out var sent) && sent == job.Id)
+            if (!job.HasPlace)
                 return;
 
-            Dispatched[unit.CrewId] = job.Id;
-            Sicced.Remove(unit.CrewId);
-            Marks.Remove(unit.CrewId);
+            var crewId = unit.CrewId;
+            var destination = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
 
-            if (job.HasPlace)
-                crews.MarchTo(unit, new Vector3(job.TargetX, 0f, job.TargetZ));
+            if (unit.Car != null)
+            {
+                // Entering a car midway through a foot leg turns the remainder into a
+                // drive. Do not leave the old one-shot foot stamp armed behind it.
+                Dispatched.Remove(crewId);
+                if (!Driving.TryGetValue(crewId, out var driven) || driven != job.Id)
+                {
+                    if (!crews.OrderUnit(unit, destination, out _))
+                        return;
+
+                    Driving[crewId] = job.Id;
+                    Sicced.Remove(crewId);
+                    Marks.Remove(crewId);
+                }
+
+                // DriveTo already chooses the reachable kerb nearest the address. Once
+                // it has stopped, LeaveCar opens the doors and sets everybody down; a
+                // later tick will issue the short foot leg.
+                if (!unit.Leaving && unit.Car != null && !unit.Car.Moving)
+                    crews.LeaveCar(unit);
+                return;
+            }
+
+            Driving.Remove(crewId);
+            if (Dispatched.TryGetValue(crewId, out var sent) && sent == job.Id)
+                return;
+
+            // Stamp the leg only after a route was accepted. Stamping a rejected march
+            // made this job, and every job queued behind it, wait forever.
+            if (!crews.MarchTo(unit, destination))
+                return;
+
+            Dispatched[crewId] = job.Id;
+            Sicced.Remove(crewId);
+            Marks.Remove(crewId);
         }
 
         static void Work(DemoCrews crews, OutfitDirector outfit, DemoCrews.Unit unit, Job job)
         {
+            // The book's estimated travel hours can elapse before the physical car or
+            // men arrive. Working on paper must not strand them wherever the clock
+            // caught up: keep completing the drive, park/exit and foot leg until a man
+            // is genuinely at the approach.
+            if (!AtPlace(crews, unit, job))
+            {
+                March(crews, unit, job);
+                return;
+            }
+
             if (job.Type == OrderType.Raid)
                 EnterOnce(crews, outfit, unit, job);
             else if (job.Type == OrderType.SmashUp)
@@ -244,7 +293,8 @@ namespace RoadDemo
             // aimed there is a man beating the air a couple of metres short of the glass
             // that is about to be shattered. The torch has always thrown at the real
             // frontage; the bat now goes to the same place.
-            var door = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
+            var approach = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
+            var door = approach;
             var businessId = new LivingCity.Territory.TerritoryBusinessId(
                 job.TargetBusinessId);
             if (businessId.IsValid &&
@@ -255,7 +305,8 @@ namespace RoadDemo
             {
                 if (swung.Count >= PremisesSmashRounds)
                 {
-                    if (swung.Count > PremisesSmashRounds || ArmBeat.Acting(LeadAt(unit, door, 9f)))
+                    if (swung.Count > PremisesSmashRounds ||
+                        ArmBeat.Acting(LeadAt(unit, approach, ArrivedWithin)))
                         return;
 
                     if (businessId.IsValid)
@@ -284,7 +335,7 @@ namespace RoadDemo
                 swung = default;
             }
 
-            var lead = LeadAt(unit, door, 9f);
+            var lead = LeadAt(unit, approach, ArrivedWithin);
             if (lead == null)
                 return;
 
@@ -305,7 +356,8 @@ namespace RoadDemo
                 (thrown.Lit || thrown.Shot != null))
                 return;
 
-            var door = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
+            var approach = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
+            var door = approach;
             var outward = Vector3.forward;
             var businessId = new LivingCity.Territory.TerritoryBusinessId(
                 job.TargetBusinessId);
@@ -317,7 +369,10 @@ namespace RoadDemo
                 outward = frontageOutward;
             }
 
-            var lead = LeadAt(unit, door, 9f);
+            // The actor stands at the walkable approach; the projectile still strikes
+            // the separately resolved facade. Requiring the actor to stand on the wall
+            // made a bad facade guess deadlock this and every queued job behind it.
+            var lead = LeadAt(unit, approach, ArrivedWithin);
             if (lead == null)
                 return;
 
@@ -409,10 +464,11 @@ namespace RoadDemo
         /// walking home reads as an outfit.</summary>
         static void SendHome(DemoCrews crews, OutfitDirector outfit, DemoCrews.Unit unit)
         {
-            if (!Dispatched.ContainsKey(unit.CrewId))
+            if (!Dispatched.ContainsKey(unit.CrewId) && !Driving.ContainsKey(unit.CrewId))
                 return;
 
             Dispatched.Remove(unit.CrewId);
+            Driving.Remove(unit.CrewId);
             Sicced.Remove(unit.CrewId);
             Marks.Remove(unit.CrewId);
             Torched.Remove(unit.CrewId);
@@ -423,7 +479,12 @@ namespace RoadDemo
                 return;
 
             if (outfit.TryGetHeadquarters(out var hq, out _))
-                crews.MarchTo(unit, hq);
+            {
+                if (unit.Car != null)
+                    crews.OrderUnit(unit, hq, out _);
+                else
+                    crews.MarchTo(unit, hq);
+            }
         }
 
         // Static state outlives Play when domain reload is off - the same trap
@@ -433,6 +494,7 @@ namespace RoadDemo
         static void ResetForPlay()
         {
             Dispatched.Clear();
+            Driving.Clear();
             Sicced.Clear();
             Marks.Clear();
             Entered.Clear();

@@ -67,6 +67,16 @@ namespace LivingCity.UI
         const int StudioLayer = 31;
 
         const int PrintSize = 256;
+
+        /// <summary>The film is exposed at TWICE the print and box-filtered down to it.
+        /// Every plate on the page is smaller than the print - a man in the chain of
+        /// command stands 76 units across, one on a rail 40 - so what reaches the reader
+        /// is always a reduction, and a reduction of an unfiltered exposure is the
+        /// staircase the page was showing: hair, collar and eye all sampled off one
+        /// texel in four. Twice over and averaged down is the cheapest honest answer,
+        /// and it costs one extra render target, not one extra print.</summary>
+        const int ExposureSize = PrintSize * 2;
+
         const float Fov = 25f;
 
         static PortraitStudio instance;
@@ -430,7 +440,12 @@ namespace LivingCity.UI
         {
             gameObject.layer = StudioLayer;
 
-            film = new RenderTexture(PrintSize, PrintSize, 16, RenderTextureFormat.ARGB32);
+            film = new RenderTexture(ExposureSize, ExposureSize, 16,
+                RenderTextureFormat.ARGB32)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+            };
 
             var standGo = new GameObject("Stand");
             standGo.transform.SetParent(transform, false);
@@ -552,21 +567,42 @@ namespace LivingCity.UI
         {
             var job = queue[0];
 
-            var print = new Texture2D(PrintSize, PrintSize, TextureFormat.RGBA32, false)
+            // A mugshot in colour is the one print that carries mipmaps. It is opaque
+            // (the bust is shot against a wall) and it is the one the page reduces
+            // hardest, so the chain of a filtered reduction is exactly what it wants.
+            // The cut-outs must NOT have them - a gun floating on alpha would mip its
+            // colour into the transparent black around it and wear a dark fringe - and
+            // neither must newsprint, whose halftone screen IS the picture: blur the
+            // dots away and the paper prints flat grey.
+            var mips = job.Framing == Framing.Bust && job.Treatment == Treatment.Colour;
+
+            var print = new Texture2D(PrintSize, PrintSize, TextureFormat.RGBA32, mips)
             {
                 hideFlags = HideFlags.HideAndDontSave,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = mips ? FilterMode.Trilinear : FilterMode.Bilinear,
             };
+
+            // Down from the exposure to the print through one bilinear blit: at exactly
+            // two to one every destination texel lands on the corner of four source
+            // texels, so the filter IS a box average and the print is a true reduction
+            // rather than every other pixel of the render.
             var previous = RenderTexture.active;
-            RenderTexture.active = film;
+            var reduced = RenderTexture.GetTemporary(PrintSize, PrintSize, 0,
+                RenderTextureFormat.ARGB32);
+            reduced.filterMode = FilterMode.Bilinear;
+            Graphics.Blit(film, reduced);
+            RenderTexture.active = reduced;
             print.ReadPixels(new Rect(0f, 0f, PrintSize, PrintSize), 0, 0);
             RenderTexture.active = previous;
+            RenderTexture.ReleaseTemporary(reduced);
 
             if (job.Treatment == Treatment.Newsprint)
                 ScreenToNewsprint(print);
 
             // Apply LAST and non-readable: the newsprint pass needs the pixels on the
             // CPU, and uploading twice would cost a second copy of every print.
-            print.Apply(false, true);
+            print.Apply(mips, true);
 
             prints[job.Key] = print;
             foreach (var target in job.Targets)

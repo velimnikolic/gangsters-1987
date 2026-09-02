@@ -63,7 +63,9 @@ namespace RoadDemo
             {
                 var f = filters[k];
                 var mesh = f.sharedMesh;
-                if (!mesh) continue;
+                // Unity logs a native error rather than reliably throwing when vertices
+                // are requested from a non-readable imported mesh, so guard explicitly.
+                if (!mesh || !mesh.isReadable) continue;
                 Vector3[] verts;
                 try { verts = mesh.vertices; }
                 catch { continue; } // a mesh locked against reading: skip it, judge on the rest

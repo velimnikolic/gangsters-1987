@@ -287,7 +287,13 @@ namespace LivingCity.UI
                 return cursor + 32f;
             }
 
-            const float cardH = 41f;
+            // The name is a condensed gothic and TMP drops an ellipsised line WHOLE
+            // when its rect cannot hold the line box, so both lines are measured with
+            // LineBox and the card is made tall enough for the two of them. A card cut
+            // to the point size printed the ward and no name at all.
+            var nameH = LineBox(13f);
+            var wardH = LineBox(9f);
+            var cardH = nameH + wardH + 4f;
             const float gutter = 7f;
             var columns = Mathf.Max(1,
                 Mathf.FloorToInt((blocksW + gutter) / (210f + gutter)));
@@ -307,18 +313,19 @@ namespace LivingCity.UI
                 RowButton(card, ClickSurface(card), () => OpenBlockCard(blockId));
 
                 var ink = ControlColour(control);
-                Block("Dot", card, 10f, -16f, 9f, 9f, ink);
+                Block("Dot", card, 10f, -(cardH - 9f) * 0.5f, 9f, 9f, ink);
                 var holder = HolderOf(blockId);
                 var holderW = Mathf.Min(96f, holder.Length * 6.4f + 10f);
                 var textW = cardW - 28f - holderW - 9f;
                 Line(card, LedgerStyle.Condensed, 13f, LedgerV2.Ink,
-                    28f, -5f, textW, 16f, BlockName(blockId))
+                    28f, -3f, textW, nameH, BlockName(blockId))
                     .overflowMode = TextOverflowModes.Ellipsis;
                 Line(card, LedgerStyle.Mono, 9f, LedgerV2.Label,
-                    28f, -21f, textW, 13f, NeighborhoodOf(blockId))
+                    28f, -(nameH + 1f), textW, wardH, NeighborhoodOf(blockId))
                     .overflowMode = TextOverflowModes.Ellipsis;
-                Caps(card, cardW - 10f - holderW, -15f, holderW, holder, 9.5f, ink, 4f,
-                    TextAlignmentOptions.MidlineRight).font = LedgerStyle.MonoBold;
+                Caps(card, cardW - 10f - holderW, -(cardH - 15.5f) * 0.5f, holderW,
+                        holder, 9.5f, ink, 4f, TextAlignmentOptions.MidlineRight)
+                    .font = LedgerStyle.MonoBold;
             }
 
             var lines = (shown + columns - 1) / columns;
@@ -524,16 +531,10 @@ namespace LivingCity.UI
         /// </summary>
         float BuildBlockLedger(float cursor)
         {
-            var mapReady = MapTargeting.Available &&
-                           TerritoryRuntime.Instance?.Commands != null;
-            var keyW = Mathf.Min(214f, blocksW * 0.42f);
-
+            // No key over this head any more: ALL BLOCKS IN THE CITY stands under the
+            // ledger and prints every block the geography knows, so a second way into
+            // the same list was only a second thing to read.
             cursor = BlocksSection(cursor, "BLOCKS AROUND US", "");
-            var seeAll = LedgerV2.Button(blocksColumn,
-                keyW < 190f ? "ALL BLOCKS" : "SEE ALL BLOCKS IN THE CITY",
-                blocksW - keyW, -(cursor - 45f), keyW, 23f,
-                BeginBlockTargeting, LedgerV2.Key.Outline, 9.5f);
-            SetActionEnabled(seeAll, mapReady);
 
             // Five headings and the key need about six hundred units. Under that the
             // table stops being a table: each block becomes a small card that reads
@@ -639,12 +640,23 @@ namespace LivingCity.UI
                 Block("Open mark", row, 0f, 0f, 3f, rowH, LedgerV2.Red);
             Rule(row, 0f, 0f, blocksW, LedgerV2.Rule);
 
+            // ONE centre line down the whole row. A TMP line is centred on the geometry
+            // it actually draws, so two boxes that share a centre put their words on one
+            // line however tall the boxes are - the name and its ward stand on it as a
+            // pair, and every mark, word, the reading and the key take the same middle.
+            const float nameH = 18f;
+            const float wardH = 14f;
+            const float pairTop = -(rowH - nameH - wardH) * 0.5f;
+            const float wordH = 16f;
+            const float wordTop = -(rowH - wordH) * 0.5f;
+
             var x = 0f;
             Line(row, LedgerStyle.Condensed, 14f, LedgerV2.Ink,
-                x + 10f, -6f, columns[0] - 18f, 18f, BlockName(blockId))
+                x + 10f, pairTop, columns[0] - 18f, nameH, BlockName(blockId))
                 .overflowMode = TextOverflowModes.Ellipsis;
             Line(row, LedgerStyle.Mono, 9.5f, LedgerV2.Label,
-                x + 10f, -24f, columns[0] - 18f, 14f, NeighborhoodOf(blockId))
+                x + 10f, pairTop - nameH, columns[0] - 18f, wardH,
+                NeighborhoodOf(blockId))
                 .overflowMode = TextOverflowModes.Ellipsis;
             x += columns[0];
 
@@ -652,17 +664,17 @@ namespace LivingCity.UI
             // Hatched, not solid: the design draws what is written on PAPER as a
             // ruled square and what is true on the STREET as a filled one, so the two
             // columns can never be read for each other at a glance.
-            LedgerV2.PaperMark(row, x + 10f, -17f, paperColour);
+            LedgerV2.PaperMark(row, x + 10f, LedgerV2.MarkY(wordTop, wordH), paperColour);
             Line(row, LedgerStyle.MonoBold, 11f, paperColour,
-                x + 26f, -16f, columns[1] - 36f, 16f,
+                x + 26f, wordTop, columns[1] - 36f, wordH,
                 leader.IsValid ? leader.Name : "NOBODY NAMED")
                 .overflowMode = TextOverflowModes.Ellipsis;
             x += columns[1];
 
             var streetColour = ControlColour(control);
-            LedgerV2.StreetMark(row, x + 10f, -17f, streetColour);
+            LedgerV2.StreetMark(row, x + 10f, LedgerV2.MarkY(wordTop, wordH), streetColour);
             Line(row, LedgerStyle.MonoBold, 11f, streetColour,
-                x + 26f, -16f, columns[2] - 36f, 16f, ControlWord(control))
+                x + 26f, wordTop, columns[2] - 36f, wordH, ControlWord(control))
                 .overflowMode = TextOverflowModes.Ellipsis;
             x += columns[2];
 
@@ -671,7 +683,8 @@ namespace LivingCity.UI
             var reading = Reading(
                 leader, control, blocksOurStreets.Contains(blockId),
                 out var readingColour);
-            var readingText = LedgerV2.Mono(row, x + 10f, -16f, columns[3] - 18f,
+            var readingText = LedgerV2.Mono(row, x + 10f,
+                -(rowH - LineBox(10.5f)) * 0.5f, columns[3] - 18f,
                 reading, 10.5f, readingColour, 4f);
             readingText.overflowMode = TextOverflowModes.Ellipsis;
             x += columns[3];
@@ -738,14 +751,14 @@ namespace LivingCity.UI
             // other at a glance - the marks carry that here, without the headings.
             var half = (blocksW - pad * 2f) * 0.5f;
             var paperColour = leader.IsValid ? LedgerV2.PaperBlue : LedgerV2.Red;
-            LedgerV2.PaperMark(row, pad, -54f, paperColour);
+            LedgerV2.PaperMark(row, pad, LedgerV2.MarkY(-53f, 18f), paperColour);
             Line(row, LedgerStyle.MonoBold, 12f, paperColour,
                 pad + 18f, -53f, half - 24f, 18f,
                 leader.IsValid ? leader.Name : "NOBODY NAMED")
                 .overflowMode = TextOverflowModes.Ellipsis;
 
             var streetColour = ControlColour(control);
-            LedgerV2.StreetMark(row, pad + half, -54f, streetColour);
+            LedgerV2.StreetMark(row, pad + half, LedgerV2.MarkY(-53f, 18f), streetColour);
             Line(row, LedgerStyle.MonoBold, 12f, streetColour,
                 pad + half + 18f, -53f, half - 24f, 18f, ControlWord(control))
                 .overflowMode = TextOverflowModes.Ellipsis;

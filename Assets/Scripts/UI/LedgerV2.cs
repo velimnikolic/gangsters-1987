@@ -620,6 +620,17 @@ namespace LivingCity.UI
             return raw;
         }
 
+        /// <summary>
+        /// The y a mark of <paramref name="size"/> takes to stand on the centre line of
+        /// the word beside it - a text box put at <paramref name="y"/> and
+        /// <paramref name="h"/> high. TMP centres a line on the geometry it actually
+        /// draws, so the two agree only when their boxes share a centre; a square
+        /// dropped at the text's own y sits high by half the difference, which is
+        /// exactly the amount the eye catches.
+        /// </summary>
+        public static float MarkY(float y, float h, float size = 12f) =>
+            y - (h - size) * 0.5f;
+
         /// <summary>A hatched square - the mark the design puts beside a name that is
         /// on PAPER, as against the solid square beside one that is true on the
         /// street.</summary>
