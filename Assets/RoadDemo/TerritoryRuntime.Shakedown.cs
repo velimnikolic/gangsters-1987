@@ -27,10 +27,11 @@ namespace RoadDemo
     {
         public TerritoryCommandExecution Execute(ShakeDownBlockCommand command) =>
             WalkTheDoors(command.House, command.GroupId, command.BlockId,
-                RoundKind.ShakeDown);
+                TerritoryRoundKind.ShakeDown);
 
         public TerritoryCommandExecution Execute(LeanOnHoldoutsCommand command) =>
-            WalkTheDoors(command.House, command.GroupId, command.BlockId, RoundKind.Lean);
+            WalkTheDoors(command.House, command.GroupId, command.BlockId,
+                TerritoryRoundKind.Lean);
 
         /// <summary>
         /// The one walk both orders are. The stops are chosen by the pure rule for the
@@ -38,7 +39,8 @@ namespace RoadDemo
         /// marched at the first of them.
         /// </summary>
         TerritoryCommandExecution WalkTheDoors(TerritoryGangId gang,
-            TerritoryCommandNodeId groupId, TerritoryBlockId blockId, RoundKind kind)
+            TerritoryCommandNodeId groupId, TerritoryBlockId blockId,
+            TerritoryRoundKind kind)
         {
             if (!blockId.IsValid)
                 return TerritoryCommandExecution.Reject("Unknown territory block.");
@@ -56,7 +58,7 @@ namespace RoadDemo
             {
                 var businessId = here[i].BusinessId;
                 var state = racket.StateOf(businessId, gang);
-                var wanted = kind == RoundKind.Lean
+                var wanted = kind == TerritoryRoundKind.Lean
                     ? TerritoryShakedown.IsHoldout(state, HeldByDeed(businessId, gang))
                     : TerritoryShakedown.WorthAsking(state, HeldByDeed(businessId, gang));
                 if (!wanted)
@@ -70,36 +72,35 @@ namespace RoadDemo
             }
 
             if (candidates.Count == 0)
-                return TerritoryCommandExecution.Reject(kind == RoundKind.Lean
+                return TerritoryCommandExecution.Reject(kind == TerritoryRoundKind.Lean
                     ? LeanRefusal
                     : ShakedownRefusal);
 
-            var round = new CollectionRound
-            {
-                Kind = kind,
-                CrewId = unit.CrewId,
-                GangId = gang,
-                BlockId = blockId,
-                Collector = CollectorOf(unit),
-            };
-            if (round.Collector == null)
+            var mouth = CollectorOf(unit);
+            if (mouth == null)
                 return TerritoryCommandExecution.Reject(
                     "The crew has nobody on his feet to put at a door.");
-            OrderStops(candidates, UnitAnchor(unit), round.Stops);
+
+            var ordered = new List<RoundStop>();
+            OrderStops(candidates, UnitAnchor(unit), ordered);
 
             // One errand at a time, the same rule a round keeps.
             DropPendingApproaches(unit.CrewId);
-            rounds.Add(round);
-            BumpRacketSeam();
 
-            if (!crews.MarchTo(unit, round.Stops[0].Door))
-            {
-                rounds.Remove(round);
+            // The walk is taken before the round is opened, for the same reason a
+            // collection's is: a crew that refuses to march never had one.
+            if (!crews.MarchTo(unit, ordered[0].Door))
                 return TerritoryCommandExecution.Reject(
                     "The physical crew refused the walk.");
-            }
 
-            return TerritoryCommandExecution.Pending(kind == RoundKind.Lean
+            var round = OpenRound(unit, gang, blockId, kind, ordered, mouth);
+            if (round == null)
+                return TerritoryCommandExecution.Reject(kind == TerritoryRoundKind.Lean
+                    ? LeanRefusal
+                    : ShakedownRefusal);
+            BumpRacketSeam();
+
+            return TerritoryCommandExecution.Pending(kind == TerritoryRoundKind.Lean
                 ? "The men are walking the holdouts."
                 : "The men are walking the block, door to door.");
         }
@@ -125,20 +126,20 @@ namespace RoadDemo
         /// the door as well - the crew's policy decides that and nothing here does.
         /// </summary>
         void SettleDoor(
-            CollectionRound round, RoundStop stop, DemoCrews.Unit unit,
+            TerritoryRound round, TerritoryRoundStop stop, DemoCrews.Unit unit,
             TerritoryActorObservation observation, double gameHour)
         {
-            if (round.Kind == RoundKind.Collect)
+            if (round.Kind == TerritoryRoundKind.Collect)
             {
                 SettleStop(round, stop, unit, observation, gameHour);
                 return;
             }
 
             var businessId = stop.BusinessId;
-            var gang = round.GangId;
+            var gang = round.House;
             var mouth = observation.CharacterId;
 
-            if (round.Kind == RoundKind.Lean)
+            if (round.Kind == TerritoryRoundKind.Lean)
             {
                 ResolveThreat(gang, businessId, mouth, out var threatened, out _);
                 AnnounceVerdict(businessId, true, threatened, mouth);

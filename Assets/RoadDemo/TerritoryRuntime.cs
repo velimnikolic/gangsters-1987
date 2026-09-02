@@ -384,6 +384,10 @@ namespace RoadDemo
                 Math.Max(0.01f, controlHours));
             scheduler.Ticked += OnTerritoryTick;
 
+            // The round machine, and both clocks over it: the street moves a house
+            // that stands, the paper clock moves one that does not.
+            InstallRounds();
+
             // The block file reads the racket through the seam from here on; a bench
             // scene with no territory keeps the stub and says so on its own face.
             InstallRacketSeam();
@@ -1597,6 +1601,7 @@ namespace RoadDemo
             DriveRivalDemands();
             AccrueDues(gameHour);
             TendScheduledRounds(gameHour);
+            TickPaperRounds(gameHour);
             WatchRounds(gameHour);
         }
 

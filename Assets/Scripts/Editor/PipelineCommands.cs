@@ -391,6 +391,22 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_round_tests",
+                    "Run RIVAL-004's contracts: a collection round opened, settled, " +
+                    "banked and abandoned with no city at all - and the paper clock " +
+                    "worth the same money as the walk.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "racket", "tests" })]
+        public static object RoundTests()
+        {
+            var failures = LivingCity.Tests.RoundTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
         [CliCommand("gangsters_loyalty_tests",
                     "Run EPIC 15 contracts for loyalty, promotion and betrayal: who a " +
                     "man answers to, what moves it, who walks and who goes with him.",
@@ -919,6 +935,36 @@ namespace GangstersTools
                     if (lines[i].Contains("PlayerGangId"))
                         failures.Add(relative + ":" + (i + 1) +
                                      " asks the sim which house is the player's.");
+            }
+
+            // 1d. MONEY IS COMPUTED IN THE ROUND LEDGER ONLY (RIVAL-004). A round's
+            //     Carried is written in TerritoryRounds.cs and nowhere else; a clock
+            //     that could add to the bag would be a second economy.
+            foreach (var file in System.IO.Directory.GetFiles(root, "*.cs",
+                         System.IO.SearchOption.AllDirectories))
+            {
+                var relative = file.Substring(
+                    System.IO.Directory.GetCurrentDirectory().Length + 1)
+                    .Replace('\\', '/');
+                if (relative.EndsWith("Territory/TerritoryRounds.cs",
+                        StringComparison.Ordinal) ||
+                    relative == "Assets/Scripts/Editor/PipelineCommands.cs")
+                    continue;
+
+                var lines = System.IO.File.ReadAllLines(file);
+                for (var i = 0; i < lines.Length; i++)
+                {
+                    // The round's own field, reached through the round: ".Carried".
+                    // A local named carried or a display field called RoundCarried is
+                    // somebody reading it, which is nobody's business but their own.
+                    var line = lines[i];
+                    if (!line.Contains(".Carried"))
+                        continue;
+                    if (line.Contains(".Carried +=") || line.Contains(".Carried++") ||
+                        (line.Contains(".Carried =") && !line.Contains(".Carried ==")))
+                        failures.Add(relative + ":" + (i + 1) +
+                                     " writes a round's money; only the ledger may.");
+                }
             }
 
             // 2. No territory type carries a settable owner. The block model is geography

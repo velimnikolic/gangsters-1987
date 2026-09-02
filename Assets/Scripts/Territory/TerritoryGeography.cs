@@ -221,6 +221,14 @@ namespace LivingCity.Territory
         bool AreNeighbours(TerritoryBlockId one, TerritoryBlockId other);
 
         bool TryGetBusinessBlock(TerritoryBusinessId businessId, out TerritoryBlockId blockId);
+
+        /// <summary>
+        /// The pavement spot outside a shop's door - where a man knocking on it stands.
+        /// The paper clock walks its rounds on these (TerritoryPaperClock), so a house
+        /// nobody has stood up can still measure the walk between two doors.
+        /// False for a premises whose site never published an approach.
+        /// </summary>
+        bool TryGetDoorstep(TerritoryBusinessId businessId, out TerritoryPoint doorstep);
         IReadOnlyList<TerritoryBusinessPlacement> BusinessesOf(TerritoryBlockId blockId);
         IReadOnlyList<TerritoryBusinessPlacement> UnplacedBusinesses { get; }
         TerritoryGeographyReport Report { get; }
@@ -291,6 +299,8 @@ namespace LivingCity.Territory
             new Dictionary<TerritoryBlockId, List<TerritoryBusinessPlacement>>();
         readonly Dictionary<TerritoryBusinessId, TerritoryBlockId> businessBlocks =
             new Dictionary<TerritoryBusinessId, TerritoryBlockId>();
+        readonly Dictionary<TerritoryBusinessId, TerritoryPoint> doorsteps =
+            new Dictionary<TerritoryBusinessId, TerritoryPoint>();
         readonly List<TerritoryBusinessPlacement> unplaced =
             new List<TerritoryBusinessPlacement>();
         readonly List<TerritoryOffGridArea> offGrid = new List<TerritoryOffGridArea>();
@@ -450,6 +460,10 @@ namespace LivingCity.Territory
             TerritoryBusinessId businessId, out TerritoryBlockId blockId) =>
             businessBlocks.TryGetValue(businessId, out blockId);
 
+        public bool TryGetDoorstep(
+            TerritoryBusinessId businessId, out TerritoryPoint doorstep) =>
+            doorsteps.TryGetValue(businessId, out doorstep);
+
         public IReadOnlyList<TerritoryBusinessPlacement> BusinessesOf(TerritoryBlockId blockId) =>
             businesses.TryGetValue(blockId, out var list)
                 ? (IReadOnlyList<TerritoryBusinessPlacement>)list
@@ -467,6 +481,7 @@ namespace LivingCity.Territory
         {
             businesses.Clear();
             businessBlocks.Clear();
+            doorsteps.Clear();
             unplaced.Clear();
             report.PlacedBusinesses = 0;
             report.UnplacedBusinesses = 0;
@@ -505,7 +520,11 @@ namespace LivingCity.Territory
 
                 list.Add(placement);
                 if (site.BusinessId.IsValid)
+                {
                     businessBlocks[site.BusinessId] = blockId;
+                    if (site.Approach.IsFinite)
+                        doorsteps[site.BusinessId] = site.Approach;
+                }
                 report.PlacedBusinesses++;
             }
 

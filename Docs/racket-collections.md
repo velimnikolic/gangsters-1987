@@ -22,7 +22,53 @@ The second rule: **the sim never opens a demand in the player's name.** Automati
 behaviour here is COLLECTION only. Asking a man for money is an order the player gives.
 The comment on `TerritoryRuntime.DriveRivalDemands` is where that rule is written down.
 
-## Two clocks, one day
+## The round ledger
+
+`TerritoryRoundLedger` (pure, `Assets/Scripts/Territory/TerritoryRounds.cs`) owns what a
+round IS, for every house. It has exactly six verbs:
+
+| verb | what it does |
+|---|---|
+| `Open(house, crewId, collectorId, blockId, kind, stops, at)` | starts a walk over stops the caller chose |
+| `Arrive(round, at)` | the men are at this stop's door (false when they are already through it) |
+| `Settle(round, inputs, hour)` | the hand goes out: the roll, the policy and archetype scales, the wire slip, the dues, the two-misses lapse |
+| `Advance(round, at)` | on to the next door, or turn for home |
+| `Bank(round, hour)` | files `RoundBanked` and answers the sum — **the caller** puts it in the safe |
+| `Abandon(round, hour)` | files `RoundLost` if the bag had anything in it |
+
+`TerritoryStopInputs` is everything the ledger is allowed to know about a door: open,
+owed, the owner, the protector's fear, the block's fear, the crew's policy, the
+lieutenant's archetype, the city seed and the day. `TerritoryStopSettlement` is what
+comes back: paid, owed, missed, outcome, excuse, the fear left, the heat, and whether the
+arrangement lapsed.
+
+**Money is computed in the ledger only.** Nothing outside `TerritoryRounds.cs` may write
+a round's `Carried`; `gangsters_scenario_capture_audit` scans the whole tree for it.
+
+Two callbacks carry the world back out: `Settled` (the runtime files the fear, the heat,
+the reputation, the practice and the word over the street) and `Ended` (the bag is
+dropped, the money moves to that house's safe, the event is published).
+
+## The two clocks
+
+The same round moves under one of two clocks, and both call `Arrive` → `Settle` →
+`Advance` → `Bank` in that order, so a round is worth the same money either way
+(`gangsters_round_tests` asserts it to the penny).
+
+* **The street.** `TerritoryRuntime.Collection.cs`: `crews.MarchTo` the stop's doorstep,
+  `NoteRoundArrival` → `Arrive`, `DoorBeat.VisitBusiness(whenInside: Settle,
+  whenOut: Advance)`, `BagCarry.Give/Drop`, the front reached → `Bank`. The runtime keeps
+  a `RoundBody` beside each round: who carries the bag, and where each stop is on the
+  ground.
+* **Paper.** `TerritoryPaperClock`: travel between doorsteps priced by
+  `OrderMath.TravelHours` (on foot or by car per `CrewKit.HasVehicle`), a stop worth
+  `TerritoryRoundConfig.PaperStopMinutes` (2), then the same three calls and `Bank` at the
+  front. No bodies at all — this is how a house the city has not stood up still collects.
+
+Doorsteps come from `ITerritoryGeography.TryGetDoorstep(businessId, out TerritoryPoint)`,
+which the geography answers from the approach point each business site published.
+
+## Two clocks in a day, one day apart
 
 There are two day counters and they are one apart.
 
@@ -71,10 +117,13 @@ still collects when ordered by hand — the mark is an arrangement, not a requir
 * `IsLate(owed, weeklyRate, day, lastCollectedDay)` — a week's money owed, or over a week
   since anybody collected. `DaysLate` counts from the seventh day.
 
-`TerritoryRuntime.TendScheduledRounds` runs on the Business tick (every four game hours),
-walks the roster's `BlockResponsibilities`, and submits a `CollectDuesCommand` through the
-**gateway** for each block whose day it is. A refused command (the crew is fighting, in a
-car, wiped) is not recorded as sent, so the next tick asks again the same day.
+`TerritoryRoundScheduler.Tend(house, day, dayOfWeek, hourOfDay, ledger, submit)` (pure)
+walks one house's `BlockResponsibilities` and hands each block whose day it is to the
+caller's `submit`. `TerritoryRuntime.TendScheduledRounds` runs it on the Business tick
+(every four game hours) for **every** house and submits a `CollectDuesCommand` through the
+**gateway**. A refused command (the crew is fighting, in a car, wiped) is not recorded as
+sent, so the next tick asks again the same day. A round that IS taken files `RoundOut`;
+only the player's own is called over his wire.
 
 ## What the wire carries
 

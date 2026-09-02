@@ -215,16 +215,17 @@ namespace RoadDemo
                 var stops = 0;
                 var carried = 0;
                 var collectorName = "";
-                for (var i = 0; i < runtime.rounds.Count; i++)
+                for (var i = 0; i < runtime.bodies.Count; i++)
                 {
-                    var round = runtime.rounds[i];
-                    if (round.Kind != RoundKind.Collect || round.BlockId != blockId)
+                    var round = runtime.bodies[i].Round;
+                    if (round.Kind != TerritoryRoundKind.Collect ||
+                        round.BlockId != blockId)
                         continue;
                     roundOut = true;
-                    cursor = round.Cursor;
+                    cursor = round.StopIndex;
                     stops = round.Stops.Count;
                     carried = round.Carried;
-                    collectorName = NameOfWalker(roster, round.Collector);
+                    collectorName = NameOfWalker(roster, runtime.bodies[i].Collector);
                     break;
                 }
 
@@ -336,18 +337,18 @@ namespace RoadDemo
             public bool TryGetRoundOf(int characterId, out TerritoryBlockId blockId)
             {
                 blockId = default;
-                for (var i = 0; i < runtime.rounds.Count; i++)
+                for (var i = 0; i < runtime.bodies.Count; i++)
                 {
-                    var round = runtime.rounds[i];
-                    if (round.Kind != RoundKind.Collect)
+                    var round = runtime.bodies[i].Round;
+                    if (round.Kind != TerritoryRoundKind.Collect)
                         continue;
                     var unit = runtime.crews != null
                         ? runtime.crews.UnitOfCrew(round.CrewId)
                         : null;
                     if (unit == null)
                     {
-                        if (round.Collector != null &&
-                            round.Collector.CharacterId == characterId)
+                        if (runtime.bodies[i].Collector != null &&
+                            runtime.bodies[i].Collector.CharacterId == characterId)
                         {
                             blockId = round.BlockId;
                             return blockId.IsValid;
