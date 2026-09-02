@@ -9,8 +9,9 @@ namespace LivingCity.Outfit
     {
         public HouseDoor(TerritoryBusinessId businessId, int tier, int weeklyRate,
             TerritoryGangId protector, TerritoryProtectionState standing, int owed,
-            bool shut, bool trades, DoorTenure tenure)
+            bool shut, bool trades, DoorTenure tenure, bool late = false)
         {
+            Late = late;
             BusinessId = businessId;
             Tier = tier;
             WeeklyRate = weeklyRate;
@@ -47,7 +48,42 @@ namespace LivingCity.Outfit
         /// <summary>Whose paper the premises itself is on.</summary>
         public DoorTenure Tenure { get; }
 
+        /// <summary>A week's money owed, or a week since anybody collected. A street
+        /// with late doors is a street somebody has stopped walking.</summary>
+        public bool Late { get; }
+
         public bool Unprotected => !Protector.IsValid;
+    }
+
+    /// <summary>
+    /// Somebody put hands on this family, recently enough to still be about it: a shot,
+    /// a killing, a wrecked front. What a mind is told is what the street saw - where,
+    /// roughly when, whose men if anybody recognised them, and whether we have anyone
+    /// near enough to answer.
+    /// </summary>
+    public readonly struct HouseThreat
+    {
+        public HouseThreat(TerritoryGangId by, TerritoryBlockId blockId, double at,
+            bool inReach, bool atOurFront)
+        {
+            By = by;
+            BlockId = blockId;
+            At = at;
+            InReach = inReach;
+            AtOurFront = atOurFront;
+        }
+
+        /// <summary>Whose men, if the street knew them.</summary>
+        public TerritoryGangId By { get; }
+
+        public TerritoryBlockId BlockId { get; }
+        public double At { get; }
+
+        /// <summary>One of our crews is close enough to be sicced on them.</summary>
+        public bool InReach { get; }
+
+        /// <summary>They were at our own front door.</summary>
+        public bool AtOurFront { get; }
     }
 
     /// <summary>Trouble on ground we hold that nobody has answered for.</summary>
@@ -109,6 +145,7 @@ namespace LivingCity.Outfit
         static readonly TerritoryBlockId[] NoBlocks = new TerritoryBlockId[0];
         static readonly HouseDoor[] NoDoors = new HouseDoor[0];
         static readonly HouseIncident[] NoIncidents = new HouseIncident[0];
+        static readonly HouseThreat[] NoThreats = new HouseThreat[0];
         static readonly HouseDefiance[] NoDefiances = new HouseDefiance[0];
         static readonly string[] NoRefusals = new string[0];
 
@@ -135,6 +172,7 @@ namespace LivingCity.Outfit
         public System.Func<TerritoryGangId, Stance> StanceLook;
 
         public IReadOnlyList<HouseIncident> Incidents = NoIncidents;
+        public IReadOnlyList<HouseThreat> Threats = NoThreats;
         public IReadOnlyList<HouseDefiance> Defiances = NoDefiances;
 
         /// <summary>Intents the gateway refused since the last think, in its own words.
@@ -144,6 +182,11 @@ namespace LivingCity.Outfit
 
         public double GameHour;
         public int Day;
+
+        /// <summary>How many thinks running have found nothing louder to do than spend
+        /// money. A family buys cars when the street is quiet, not while it is being
+        /// shot at (D22).</summary>
+        public int QuietThinks;
 
         public IReadOnlyList<TerritoryBlockId> Neighbours(TerritoryBlockId blockId) =>
             NeighbourLook != null ? NeighbourLook(blockId) ?? NoBlocks : NoBlocks;

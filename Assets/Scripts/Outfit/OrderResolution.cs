@@ -209,10 +209,19 @@ namespace LivingCity.Outfit
         /// </summary>
         public static JobOutcome Resolve(in OrderSpec spec, Job job, Roster roster,
             Crew crew, System.Random rng, OrderOutcome? streetOutcome = null,
-            List<Incident> incidents = null)
+            List<Incident> incidents = null, int guardHalfSteps = 0)
         {
             var targets = job?.TargetCount ?? 1;
             var stat = CrewKit.BestAt(roster, crew, spec.PrimaryAttribute);
+
+            // MEN ON THE DOOR (D10). A door another family is sitting on is a harder
+            // door: the guard lieutenant's own hand is taken straight off the attacker's,
+            // which is the same thing as raising the order's floor by it. It is not the
+            // street's fight - that happens in front of the shop and reports its own
+            // outcome - it is what the BOOK says when nobody watched.
+            //
+            // ONLY THE CHANCE. What the job costs and what it pays are what the men are
+            // worth, and guards at the door do not make a crew cheaper to send.
             var cost = CostFor(spec, targets, stat, job.TargetWorth);
 
             OrderOutcome outcome;
@@ -224,7 +233,9 @@ namespace LivingCity.Outfit
             {
                 var depth = job != null ? job.BookDepth : 0;
                 var organization = CrewKit.BestAt(roster, crew, CharacterAttribute.Organization);
-                var chance = ChanceFor(spec, stat, depth, organization);
+                var chance = ChanceFor(
+                    spec, stat - (guardHalfSteps > 0 ? guardHalfSteps : 0), depth,
+                    organization);
                 outcome = rng != null && rng.NextDouble() < chance
                     ? OrderOutcome.Completed
                     : OrderOutcome.Failed;
@@ -255,6 +266,10 @@ namespace LivingCity.Outfit
                 : -1;
 
             var casualty = Misfire(spec, job, roster, crew, rng, completed);
+            // A man who walked into guards and came off worst goes to a bed for the same
+            // six days a botched charge costs (D10).
+            if (casualty < 0 && !completed && guardHalfSteps > 0)
+                casualty = GuardedCasualty(job, roster, crew, rng);
             heat += RunTheChecks(spec, job, roster, crew, rng, incidents);
             payout = LessWhatWentMissing(spec, job, roster, crew, rng, payout, incidents);
             return new JobOutcome(outcome, payout, cost, heat, casualty, recruited);
@@ -417,6 +432,17 @@ namespace LivingCity.Outfit
         /// torch and powder work are Combat like every other violent trade now, and a
         /// skill test would put a raid and a kidnapping on the same hook.
         /// </summary>
+        /// <summary>One of the men who went at a guarded door, picked the same way a
+        /// misfire picks its casualty.</summary>
+        static int GuardedCasualty(
+            Job job, Roster roster, Crew crew, System.Random rng)
+        {
+            if (rng == null || job == null)
+                return -1;
+            CrewKit.MenOnJob(roster, crew, job.Men, Scratch);
+            return Scratch.Count == 0 ? -1 : Scratch[rng.Next(Scratch.Count)];
+        }
+
         static int Misfire(in OrderSpec spec, Job job, Roster roster, Crew crew,
             System.Random rng, bool completed)
         {

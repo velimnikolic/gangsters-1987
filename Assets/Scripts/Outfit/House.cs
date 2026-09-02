@@ -83,6 +83,14 @@ namespace LivingCity.Outfit
         /// </summary>
         public void WakeNow(double gameHour) => NextThinkHour = gameHour;
 
+        /// <summary>How many thinks running have found nothing louder to do than spend
+        /// money. A family buys cars when the street is quiet (D22).</summary>
+        public int QuietThinks { get; private set; }
+
+        /// <summary>One turn of mind, remembered: a think that acted on a tier below
+        /// the buying one breaks the quiet.</summary>
+        public void NoteThink(bool busy) => QuietThinks = busy ? 0 : QuietThinks + 1;
+
         /// <summary>The family's own place in the four-hour rota, so the twenty-one are
         /// spread evenly across it rather than all thinking at nine o'clock.</summary>
         public void OpenTheRota(double gameHour, float everyHours, int houses)

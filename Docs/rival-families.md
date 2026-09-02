@@ -50,15 +50,19 @@ candidate — plus any due collection, because tier 4 never waits behind a war.
 
 | tier | what | built |
 |---|---|---|
-| 1 | survive | RIVAL-006 |
+| 1 | the front is threatened | ✔ |
 | 2 | money for wages | ✔ |
 | 3 | replace the fallen | ✔ |
 | 4 | collect | ✔ |
-| 5 | answer an incident | RIVAL-006 |
-| 6 | defend a door | RIVAL-006 |
+| 5 | answer an attack or a refusal | ✔ |
+| 6 | consolidate a loose street | ✔ |
 | 7 | expand | ✔ |
-| 8 | invest | RIVAL-006 |
+| 8 | buy | ✔ |
 | 9 | idle | — |
+
+**Tier 1.** Men who shot at ours were seen within `HqAlarmMetres` of the front inside
+`ThreatMemoryHours`, or the front's own block carries an incident: a crew sits on the
+front. Nothing else happens that think.
 
 **Tier 2.** Under three days of payroll, a family with two crews puts them together: the
 smaller lieutenant's hoods move across, then he is broken back to hood. One intent per
@@ -71,6 +75,25 @@ files only if the safe still holds a week's wages once the new man is on the pay
 **Tier 4.** The scheduler (`TerritoryRoundScheduler`) sends the rounds. The mind only
 makes sure the paper is there for it to read: a man on the bag in every crew that protects
 doors, and its lieutenant answering for the blocks those doors are on.
+
+**Tier 5.** An attack on a door the family is paid for has a window
+(`AnswerWindowHours`), and a house that lets the window close is worth less on that
+street for as long as the street remembers. Their men still about and one of ours near
+enough: `Assault`. Nobody to chase: `Guard` at the door — sitting on it is an answer too.
+
+The same tier works the ladder at a door that said no: one `Threaten`, then one
+`LeanOnHoldouts`, and then the crew's own policy decides — Strict or Brutal puts the
+shutters in (`SmashUp`), Normal takes the till (`Raid`), Lenient files the refusal and
+walks away. Never at our own doors and never at a door that pays us.
+
+**Tier 6.** A street we lead that is `Contested`, or whose doors have gone wavering or
+late, is walked before anybody looks at a new one: `OperateInBlock` while it is contested,
+`ShakeDownBlock` when the doors are loose.
+
+**Tier 8.** Only with a week's wages still in the safe after the price, and only after
+`QuietThinks` thinks running with nothing louder to do: a car for a crew on foot, then a
+gun for a hood with empty hands — through the same `HouseOps.Purchase` the ledger's shop
+uses.
 
 **Tier 7.** First it asks on ground it already stands on: the best unprotected door that
 `TerritoryRacketOrders.For` would offer DEMAND against — the same rule that lights the
@@ -100,6 +123,32 @@ They live in `HouseMindConfig` and nowhere else — never a literal in a method.
 | between a refusal and the threat | 24 hours | D17 |
 | doors paying before expanding | half | D17 |
 | a door on the paper clock | 2 minutes | D17 |
+| an attack stays worth answering | 12 hours | D10 |
+| how long the street remembers who shot | 24 hours | D22 |
+| close enough to alarm the front | 60 m | D22 |
+| quiet thinks before buying | 3 | D22 |
+
+## Men on the door
+
+`Guard` does something now (D10). A crew working a Guard order is registered against that
+address in `CrewJobs`, and:
+
+* **on the street** — a wrecking, torching or raiding beat by another house at that door
+  sics the guards on the attackers first, and the beat runs only once they are gone;
+* **on paper** — `CampaignRunner.GuardOnTheDoor` asks the street who is sitting there, and
+  the guard lieutenant's Combat half-steps come straight off the attacker's hand. A
+  failure at a guarded door puts one of the attackers in a bed for `MisfireDays`;
+* **either way** — the door's open incident counts `Answered` and the block gets a
+  `SuccessfulRetaliation`: the house came when it was called.
+
+The player's own SIT ON IT row gets all of it for free — it is the same code.
+
+## Wake-ups
+
+Four hours is a cadence for deciding what to do next, not a delay a family will sit
+through while its shops are wrecked. `House.WakeNow(hour)` brings the next think forward,
+and the runtime calls it when the power ledger files an incident against a house and when
+a defiance opens against one.
 
 The cadence is staggered: a house's first think is at `gangId × 4h / 21`, so twenty-one
 minds never land on one frame. `House.WakeNow(hour)` brings one forward (RIVAL-006 hooks
@@ -133,9 +182,9 @@ must, inside fourteen game days:
 5. ask a door there
 6. collect what it is owed and carry the bag home
 7. pay its men out of that money
+8. answer for a door it protects when somebody wrecks it
 
-The command answers `mvp`: days-to-complete and dollars banked, per seed. RIVAL-006 adds
-the eighth step — a door it protects is attacked and it answers.
+The command answers `mvp`: days-to-complete and dollars banked, per seed.
 
 ## See also
 

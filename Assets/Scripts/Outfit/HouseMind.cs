@@ -40,6 +40,23 @@ namespace LivingCity.Outfit
         public float DemandCooldownHours = 24f;
 
         public float StableDoorsShare = 0.5f;
+
+        /// <summary>D10 / D22. How long an attack stays worth answering, how close to
+        /// the front is close enough to alarm it, and how many quiet thinks a family
+        /// wants behind it before it starts spending on things.</summary>
+        public float AnswerWindowHours = 12f;
+
+        public float ThreatMemoryHours = 24f;
+
+        public float HqAlarmMetres = 60f;
+
+        public int QuietThinks = 3;
+
+        /// <summary>D9's reserve, applied to a purchase: the price on top of the week.
+        /// </summary>
+        public int MaxWeaponPrice = 2_000;
+
+        public int MaxVehiclePrice = 12_000;
     }
 
     /// <summary>
@@ -88,14 +105,275 @@ namespace LivingCity.Outfit
             Collect(view, config, into);
 
             // Then the first tier with something to do, in order.
+            if (Home(view, config, into))
+                return TierSurvive;
             if (Merge(view, config, into))
                 return TierWages;
             if (Replace(view, config, into))
                 return TierReplace;
+            if (Answer(view, config, into))
+                return TierAnswer;
+            if (Defend(view, config, into))
+                return TierDefend;
             if (Expand(view, config, into))
                 return TierExpand;
+            if (Buy(view, config, into))
+                return TierInvest;
 
             return into.Count > 0 ? TierCollect : 0;
+        }
+
+        // ------------------------------------------------------------------- tier 1
+
+        /// <summary>
+        /// THE FRONT. Men who shot at ours are near our own door, or there is trouble on
+        /// the street the front stands on: a crew sits on it. Everything else waits.
+        /// </summary>
+        static bool Home(HouseView view, HouseMindConfig config, List<HouseIntent> into)
+        {
+            if (!view.Front.IsValid)
+                return false;
+
+            var alarmed = false;
+            for (var i = 0; i < view.Threats.Count && !alarmed; i++)
+                alarmed = view.Threats[i].AtOurFront &&
+                          view.GameHour - view.Threats[i].At <= config.ThreatMemoryHours;
+            for (var i = 0; i < view.Incidents.Count && !alarmed; i++)
+                alarmed = view.Incidents[i].BlockId == view.FrontBlock;
+            if (!alarmed)
+                return false;
+
+            var crew = CrewOn(view, view.FrontBlock);
+            if (crew == null || Filed(view, OrderType.Guard, crew.Id))
+                return false;
+
+            into.Add(HouseIntent.Work(
+                Aimed(OrderType.Guard, crew.Id, view.Front, view.FrontBlock),
+                TierSurvive, "they came to our own door"));
+            return true;
+        }
+
+        // ------------------------------------------------------------------- tier 5
+
+        /// <summary>
+        /// ANSWER. Somebody hit a door we are paid to keep the peace at, or a shopkeeper
+        /// told us no. Both have a window, and a house that lets the window close is
+        /// worth less on that street for as long as the street remembers.
+        ///
+        /// Against an attack: sic a crew on them if we have one near enough, otherwise
+        /// sit on the door. Against a refusal: one threat, then one lean, then - and
+        /// only under a hard policy - the shutters.
+        /// </summary>
+        static bool Answer(HouseView view, HouseMindConfig config, List<HouseIntent> into)
+        {
+            for (var i = 0; i < view.Incidents.Count; i++)
+            {
+                var incident = view.Incidents[i];
+                if (incident.Unanswered <= 0)
+                    continue;
+                if (view.GameHour - incident.Since > config.AnswerWindowHours)
+                    continue;
+
+                var crew = CrewOn(view, incident.BlockId);
+                if (crew == null)
+                    continue;
+
+                // Their men are still on the street and we have somebody near: go at
+                // them. The street decides how that ends.
+                if (InReach(view, config, incident.BlockId) &&
+                    !Filed(view, OrderType.Assault, crew.Id))
+                {
+                    into.Add(HouseIntent.Work(
+                        Aimed(OrderType.Assault, crew.Id, default, incident.BlockId),
+                        TierAnswer, "somebody put hands on a door we are paid for"));
+                    return true;
+                }
+
+                // Nobody to chase: sit on the door instead. That is an answer too.
+                var door = OursOn(view, incident.BlockId);
+                if (door.IsValid && !Filed(view, OrderType.Guard, crew.Id))
+                {
+                    into.Add(HouseIntent.Work(
+                        Aimed(OrderType.Guard, crew.Id, door, incident.BlockId),
+                        TierAnswer, "the door gets men on it until this passes"));
+                    return true;
+                }
+            }
+
+            return Ladder(view, config, into);
+        }
+
+        /// <summary>
+        /// THE LADDER AT A DOOR THAT SAID NO. One threat, one lean, and then the crew's
+        /// own policy: a hard crew puts the shutters in, an ordinary one takes the till,
+        /// a lenient one files the refusal and walks away. Never at our own doors and
+        /// never at a door that pays us - the mind does not even propose it.
+        /// </summary>
+        static bool Ladder(HouseView view, HouseMindConfig config, List<HouseIntent> into)
+        {
+            for (var i = 0; i < view.Defiances.Count; i++)
+            {
+                var defiance = view.Defiances[i];
+                if (view.GameHour - defiance.OpenedAt < config.DemandCooldownHours)
+                    continue;
+
+                var crew = CrewOn(view, defiance.BlockId);
+                if (crew == null)
+                    continue;
+
+                var door = DoorOf(view, defiance.BlockId, defiance.BusinessId);
+                if (door.Tenure == DoorTenure.Ours ||
+                    door.Standing == TerritoryProtectionState.Compliant)
+                    continue;
+
+                if (defiance.Threats == 0 &&
+                    Offers(door, TerritoryRacketIntent.Threaten))
+                {
+                    into.Add(HouseIntent.Door(
+                        crew.Id, defiance.BusinessId, TerritoryRacketIntent.Threaten,
+                        TierAnswer, "he was asked and said no"));
+                    return true;
+                }
+
+                if (defiance.Threats == 1)
+                {
+                    into.Add(HouseIntent.Block(
+                        HouseOrder.LeanOnHoldouts, crew.Id, defiance.BlockId, TierAnswer,
+                        "the holdouts on that street get a visit"));
+                    return true;
+                }
+
+                if (defiance.Threats < 2)
+                    continue;
+
+                // The crew's own policy decides what comes after the leaning, exactly as
+                // it does when the player's men are the ones standing there.
+                var policy = PolicyOf(view, crew);
+                if (policy == CrewPolicy.Lenient)
+                    continue;
+
+                var work = policy == CrewPolicy.Normal ? OrderType.Raid : OrderType.SmashUp;
+                if (Filed(view, work, crew.Id))
+                    continue;
+
+                into.Add(HouseIntent.Work(
+                    Aimed(work, crew.Id, defiance.BusinessId, defiance.BlockId),
+                    TierAnswer, "he was leant on twice and still says no"));
+                return true;
+            }
+            return false;
+        }
+
+        // ------------------------------------------------------------------- tier 6
+
+        /// <summary>
+        /// CONSOLIDATE. A street we lead that is contested, or whose doors are wavering
+        /// or late, is walked door to door before anybody looks at a new one.
+        /// </summary>
+        static bool Defend(HouseView view, HouseMindConfig config, List<HouseIntent> into)
+        {
+            for (var b = 0; b < view.Blocks.Count; b++)
+            {
+                var blockId = view.Blocks[b];
+                if (view.Leader(blockId) != view.House)
+                    continue;
+
+                var contested = view.ControlState(blockId) == TerritoryControlState.Contested;
+                var loose = false;
+                var doors = view.Businesses(blockId);
+                for (var i = 0; i < doors.Count && !loose; i++)
+                    loose = doors[i].Trades && !doors[i].Shut &&
+                            (doors[i].Standing == TerritoryProtectionState.Hesitant ||
+                             doors[i].Late);
+                if (!contested && !loose)
+                    continue;
+
+                var crew = CrewOn(view, blockId);
+                if (crew == null)
+                    continue;
+
+                if (contested)
+                {
+                    into.Add(HouseIntent.Block(
+                        HouseOrder.OperateInBlock, crew.Id, blockId, TierDefend,
+                        "somebody else is trying that street"));
+                    return true;
+                }
+
+                into.Add(HouseIntent.Block(
+                    HouseOrder.ShakeDownBlock, crew.Id, blockId, TierDefend,
+                    "the doors there have gone loose"));
+                return true;
+            }
+            return false;
+        }
+
+        // ------------------------------------------------------------------- tier 8
+
+        /// <summary>
+        /// BUY. Only with a week's wages still in the safe after the price, and only
+        /// when nothing louder has needed doing for a while: a car for a crew on foot,
+        /// then a gun for a hood with empty hands.
+        /// </summary>
+        static bool Buy(HouseView view, HouseMindConfig config, List<HouseIntent> into)
+        {
+            if (view.QuietThinks < config.QuietThinks)
+                return false;
+
+            var roster = view.Roster;
+            var reserve = config.ReserveDays * view.DailyPayroll;
+
+            for (var i = 0; i < roster.Crews.Count; i++)
+            {
+                var crew = roster.Crews[i];
+                if (CrewKit.HasVehicle(roster, crew))
+                    continue;
+                var car = Cheapest(ArmoryCatalog.Vehicles, config.MaxVehiclePrice);
+                if (car.Price <= 0 || view.Safe - car.Price < reserve)
+                    break;
+                into.Add(HouseIntent.Buy(
+                    car.Kind, car.DisplayName, car.Price, crew.LieutenantId, crew.Id,
+                    TierInvest, "the crew is walking to work"));
+                return true;
+            }
+
+            for (var i = 0; i < roster.Crews.Count; i++)
+            {
+                var crew = roster.Crews[i];
+                for (var h = 0; h < crew.HoodIds.Count; h++)
+                {
+                    var man = roster.Find(crew.HoodIds[h]);
+                    if (man == null || man.Gone || Armed(roster, man.Id))
+                        continue;
+                    var gun = Cheapest(ArmoryCatalog.Weapons, config.MaxWeaponPrice);
+                    if (gun.Price <= 0 || view.Safe - gun.Price < reserve)
+                        return false;
+                    into.Add(HouseIntent.Buy(
+                        gun.Kind, gun.DisplayName, gun.Price, man.Id, crew.Id,
+                        TierInvest, "a man with empty hands"));
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        static ArmoryItem Cheapest(ArmoryItem[] stock, int ceiling)
+        {
+            var best = default(ArmoryItem);
+            for (var i = 0; i < stock.Length; i++)
+                if (stock[i].Price > 0 && stock[i].Price <= ceiling &&
+                    (best.Price <= 0 || stock[i].Price < best.Price))
+                    best = stock[i];
+            return best;
+        }
+
+        static bool Armed(Roster roster, int characterId)
+        {
+            for (var i = 0; i < roster.Equipment.Count; i++)
+                if (RosterOps.IsWeapon(roster.Equipment[i].Kind) &&
+                    roster.Equipment[i].HolderId == characterId)
+                    return true;
+            return false;
         }
 
         // ------------------------------------------------------------------- tier 2
@@ -339,36 +617,8 @@ namespace LivingCity.Outfit
                 return true;
             }
 
-            // Nothing left to ask. What refused us gets one threat and then one lean.
-            for (var i = 0; i < view.Defiances.Count; i++)
-            {
-                var defiance = view.Defiances[i];
-                if (defiance.BlockId != blockId)
-                    continue;
-                if (view.GameHour - defiance.OpenedAt < config.DemandCooldownHours)
-                    continue;
-
-                // ONE THREAT, THEN ONE LEAN, THEN LET HIM BE. Anything past that is a
-                // war with a shopkeeper, and RIVAL-006 decides whether to have one.
-                if (defiance.Threats >= 2)
-                    continue;
-
-                var door = DoorOf(view, blockId, defiance.BusinessId);
-                if (defiance.Threats == 0 &&
-                    Offers(door, TerritoryRacketIntent.Threaten))
-                {
-                    into.Add(HouseIntent.Door(
-                        crew.Id, defiance.BusinessId, TerritoryRacketIntent.Threaten,
-                        TierExpand, "he was asked and said no"));
-                    return true;
-                }
-
-                into.Add(HouseIntent.Block(
-                    HouseOrder.LeanOnHoldouts, crew.Id, blockId, TierExpand,
-                    "the holdouts on that street get a visit"));
-                return true;
-            }
-
+            // A door that said no is tier 5's business, not this one's: the ladder
+            // answers a refusal, and asking again is what a ladder is FOR not having.
             return false;
         }
 
@@ -461,6 +711,54 @@ namespace LivingCity.Outfit
                     return true;
             return false;
         }
+
+        /// <summary>A job aimed at a door and a block, in the shape the street reads:
+        /// the business it is against, the block it is on, and the crew that has it.
+        /// </summary>
+        static Job Aimed(OrderType type, int crewId, TerritoryBusinessId businessId,
+            TerritoryBlockId blockId)
+        {
+            var job = new Job
+            {
+                CrewId = crewId,
+                Type = type,
+                Men = 1,
+                TargetBusinessId = businessId.IsValid ? businessId.Value : "",
+                TargetLabel = blockId.IsValid ? blockId.Value : "",
+            };
+            if (blockId.IsValid)
+                job.BlockTargets.Add(0);
+            return job;
+        }
+
+        /// <summary>Their men are still about, and we have somebody near enough.</summary>
+        static bool InReach(
+            HouseView view, HouseMindConfig config, TerritoryBlockId blockId)
+        {
+            for (var i = 0; i < view.Threats.Count; i++)
+            {
+                var threat = view.Threats[i];
+                if (threat.BlockId != blockId || !threat.InReach)
+                    continue;
+                if (view.GameHour - threat.At <= config.ThreatMemoryHours)
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>A door on this block that pays US - somewhere worth sitting on.
+        /// </summary>
+        static TerritoryBusinessId OursOn(HouseView view, TerritoryBlockId blockId)
+        {
+            var doors = view.Businesses(blockId);
+            for (var i = 0; i < doors.Count; i++)
+                if (doors[i].Standing == TerritoryProtectionState.Compliant)
+                    return doors[i].BusinessId;
+            return default;
+        }
+
+        static CrewPolicy PolicyOf(HouseView view, Crew crew) =>
+            crew != null ? crew.Policy : CrewPolicy.Normal;
 
         static HouseDoor DoorOf(
             HouseView view, TerritoryBlockId blockId, TerritoryBusinessId businessId)

@@ -381,6 +381,7 @@ namespace RoadDemo
             // The round machine, and both clocks over it: the street moves a house
             // that stands, the paper clock moves one that does not.
             InstallRounds();
+            InstallMinds();
 
             // The block file reads the racket through the seam from here on; a bench
             // scene with no territory keeps the stub and says so on its own face.
@@ -886,6 +887,7 @@ namespace RoadDemo
 
             pendingIncidents.Add(new PendingIncident(
                 StreetAlarm.IncidentNumber, blockId, gangId, 1, lastGameHour));
+            NoteStreetThreat(gangId, blockId, shot.Pos, lastGameHour);
         }
 
         /// <summary>
@@ -902,6 +904,8 @@ namespace RoadDemo
             var severity = who == StreetAlarm.DeathOf.Officer ? 1.6f
                 : who == StreetAlarm.DeathOf.Civilian ? 1.3f
                 : 1f;
+            NoteStreetThreat(
+                AttributeRecentViolence(position), blockId, position, lastGameHour);
             RecordFear(new TerritoryFearEvent(
                 AttributeRecentViolence(position),
                 blockId,
@@ -1005,9 +1009,15 @@ namespace RoadDemo
                 if (!racket.TryGetProtector(blockBusinessScratch[i], out var protector))
                     continue;
                 if (protector == value.GangId)
+                {
                     power.Answered(value.BlockId, protector, value.GameHour);
-                else
-                    power.Incident(value.BlockId, protector, value.GameHour);
+                    continue;
+                }
+
+                power.Incident(value.BlockId, protector, value.GameHour);
+                // FOUR HOURS IS A CADENCE, NOT A DELAY (D7). A family hears about its
+                // own shop being wrecked when it happens, not at its next turn.
+                WakeHouse(protector, value.GameHour);
             }
         }
 
@@ -1106,6 +1116,7 @@ namespace RoadDemo
             {
                 var value = defianceEmitted[i];
                 fearDirty.Add(value.BlockId);
+                WakeHouse(value.GangId, value.GameHour);
                 events.Publish(new FearEventRecorded(
                     value.BlockId, value.GangId, value.SourceActorId,
                     fear.Config.ImpactOf(value), value.GameHour));

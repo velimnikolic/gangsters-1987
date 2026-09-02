@@ -266,8 +266,12 @@ namespace LivingCity.Outfit
                 Seed + Generation.SeedOffsets.Orders, job.IssuedDay, job.Id));
 
             var incidentsBefore = Incidents.Count;
+            // MEN ON THE DOOR (D10). The street answers whether anybody is sitting on
+            // this address; a scene with no street answers nothing and the order is
+            // resolved as it always was.
+            var guard = GuardOnTheDoor != null ? GuardOnTheDoor(job) : 0;
             var result = OrderResolution.Resolve(spec, job, roster, crew, rng,
-                job.StreetOutcome, Incidents);
+                job.StreetOutcome, Incidents, guard);
 
             BookMoney(spec, result.Payout, result.Cost);
             Heat += result.Heat;
@@ -341,6 +345,13 @@ namespace LivingCity.Outfit
         /// Illegal by definition: it is protection, and it wants laundering before it
         /// is anybody's clean money.
         /// </summary>
+        /// <summary>
+        /// WHO IS SITTING ON THE DOOR THIS ORDER IS AGAINST, in Combat half-steps, and
+        /// zero when nobody is. The street sets it; the book asks it. A bench with no
+        /// city leaves it null and every order resolves exactly as it did before.
+        /// </summary>
+        public static System.Func<Job, int> GuardOnTheDoor;
+
         public void BankCollection(int amount)
         {
             if (amount <= 0)

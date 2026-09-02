@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using LivingCity.Outfit;
 using LivingCity.Personnel;
 using LivingCity.Territory;
+using UnityEngine;
 
 namespace RoadDemo
 {
@@ -24,6 +25,8 @@ namespace RoadDemo
         readonly Dictionary<TerritoryBlockId, List<HouseDoor>> doorScratch =
             new Dictionary<TerritoryBlockId, List<HouseDoor>>();
         readonly List<HouseIncident> incidentScratch = new List<HouseIncident>();
+        readonly List<HouseThreat> threatScratch = new List<HouseThreat>();
+        readonly List<StreetThreat> streetThreats = new List<StreetThreat>();
         readonly List<HouseDefiance> defianceScratch = new List<HouseDefiance>();
         readonly List<TerritoryBlockId> viewBlocks = new List<TerritoryBlockId>();
 
@@ -53,6 +56,10 @@ namespace RoadDemo
                 var refused = Refusals(house.GangId);
                 refused.Clear();
 
+                // A think that only spent money, or found nothing at all, is a quiet
+                // one. Three of them running are what tier 8 waits for (D22).
+                house.NoteThink(tier > 0 && tier < HouseMind.TierInvest);
+
                 var done = 0;
                 for (var i = 0; i < intents.Count && done < mindConfig.MaxIntentsPerThink;
                      i++)
@@ -71,6 +78,78 @@ namespace RoadDemo
                     DriveTrace.House(house.GangId, tier, "-", "no candidate",
                         house.Runner.Accounts.Safe, view.DailyPayroll);
             });
+        }
+
+        /// <summary>
+        /// SOMEBODY PUT HANDS ON SOMEBODY, here, at this hour. Kept raw - who did it,
+        /// where and when - because what it MEANS depends on which family is asking:
+        /// the same shot is an attack to one house and an answer to another.
+        /// </summary>
+        readonly struct StreetThreat
+        {
+            public StreetThreat(
+                TerritoryGangId by, TerritoryBlockId blockId, Vector3 where, double at)
+            {
+                By = by;
+                BlockId = blockId;
+                Where = where;
+                At = at;
+            }
+
+            public TerritoryGangId By { get; }
+            public TerritoryBlockId BlockId { get; }
+            public Vector3 Where { get; }
+            public double At { get; }
+        }
+
+        /// <summary>A violent act on a street, remembered for as long as a mind is
+        /// allowed to be about it. The list is short by construction - anything past the
+        /// memory window is dropped as it is written.</summary>
+        void NoteStreetThreat(
+            TerritoryGangId by, TerritoryBlockId blockId, Vector3 where, double gameHour)
+        {
+            if (!blockId.IsValid)
+                return;
+            for (var i = streetThreats.Count - 1; i >= 0; i--)
+                if (gameHour - streetThreats[i].At > mindConfig.ThreatMemoryHours)
+                    streetThreats.RemoveAt(i);
+            streetThreats.Add(new StreetThreat(by, blockId, where, gameHour));
+        }
+
+        /// <summary>
+        /// A family is told at once that somebody has hit what it is paid to protect.
+        /// Four hours is a cadence for deciding what to do next; it is not a delay a
+        /// house is willing to sit through while its shops are being wrecked (D7).
+        /// </summary>
+        void WakeHouse(TerritoryGangId house, double gameHour) =>
+            LivingCity.Outfit.Underworld.Current?.Of(house.Value)?.WakeNow(gameHour);
+
+        /// <summary>
+        /// Hangs the book off the street. The only wire between them is one question -
+        /// "is anybody sitting on this door?" - and the answer is the guard lieutenant's
+        /// own hand (D10 iii). Called once, with the rest of the runtime's wake-up.
+        /// </summary>
+        void InstallMinds()
+        {
+            LivingCity.Outfit.CampaignRunner.GuardOnTheDoor = job =>
+            {
+                if (job == null || crews == null ||
+                    string.IsNullOrEmpty(job.TargetBusinessId))
+                    return 0;
+
+                var guards = CrewJobs.GuardsAt(
+                    crews, new TerritoryBusinessId(job.TargetBusinessId), job.GangId);
+                if (guards == null)
+                    return 0;
+
+                var roster = LivingCity.Outfit.Underworld.Current?
+                    .Of(guards.Faction)?.Roster;
+                var crew = roster?.FindCrew(guards.CrewId);
+                var lieutenant = crew != null ? roster.Find(crew.LieutenantId) : null;
+                return lieutenant != null
+                    ? lieutenant.GetHalfSteps(CharacterAttribute.Combat)
+                    : 0;
+            };
         }
 
         List<string> Refusals(int gangId)
@@ -122,6 +201,23 @@ namespace RoadDemo
 
             incidentScratch.Clear();
             defianceScratch.Clear();
+            threatScratch.Clear();
+
+            // What the street did to us lately, as this family would have heard it: an
+            // act by anybody but us, on ground we can see, recently enough to be about.
+            geography.TryGetDoorstep(house.Front, out var frontDoor);
+            for (var i = 0; i < streetThreats.Count; i++)
+            {
+                var threat = streetThreats[i];
+                if (threat.By == mine ||
+                    gameHour - threat.At > mindConfig.ThreatMemoryHours)
+                    continue;
+                threatScratch.Add(new HouseThreat(
+                    threat.By, threat.BlockId, threat.At,
+                    OursNear(mine, threat.Where),
+                    frontDoor.IsFinite && threat.BlockId == frontBlock &&
+                    Metres(frontDoor, threat.Where) <= mindConfig.HqAlarmMetres));
+            }
             for (var i = 0; i < viewBlocks.Count; i++)
             {
                 var blockId = viewBlocks[i];
@@ -159,11 +255,38 @@ namespace RoadDemo
                 LeaderLook = blockId => control != null ? control.LeaderOf(blockId) : default,
                 StanceLook = other => LivingCity.Outfit.Stance.Peace,
                 Incidents = incidentScratch,
+                Threats = threatScratch,
                 Defiances = defianceScratch,
+                QuietThinks = house.QuietThinks,
                 LastRefusals = Refusals(house.GangId),
                 GameHour = gameHour,
                 Day = (int)(gameHour / 24.0) + 1,
             };
+        }
+
+        /// <summary>One of this family's crews is close enough to be sicced on
+        /// whatever happened here (CrewJobs.MarkRadius).</summary>
+        bool OursNear(TerritoryGangId mine, Vector3 where)
+        {
+            if (crews == null)
+                return false;
+            for (var i = 0; i < crews.Units.Count; i++)
+            {
+                var unit = crews.Units[i];
+                if (unit == null || unit.Wiped || unit.Faction != mine.Value)
+                    continue;
+                var anchor = UnitAnchor(unit);
+                if ((anchor - where).sqrMagnitude <= CrewJobs.MarkRadius * CrewJobs.MarkRadius)
+                    return true;
+            }
+            return false;
+        }
+
+        static float Metres(TerritoryPoint from, Vector3 to)
+        {
+            var dx = to.x - from.X;
+            var dz = to.z - from.Z;
+            return Mathf.Sqrt(dx * dx + dz * dz);
         }
 
         IReadOnlyList<HouseDoor> Doors(
@@ -196,11 +319,17 @@ namespace RoadDemo
                             ? DoorTenure.Rival
                             : DoorTenure.Open;
 
+                var owed = dues.OwedOf(businessId, mine);
+                var rate = WeeklyRateOf(businessId);
+                var late = protector == mine && dues.TryGet(businessId, out var account) &&
+                           TerritoryCollectionSchedule.IsLate(
+                               owed, rate, (int)(gameHour / 24.0),
+                               account.LastCollectedDay);
                 built.Add(new HouseDoor(
-                    businessId, TierOf(businessId), WeeklyRateOf(businessId), protector,
-                    racket.StateOf(businessId, mine), dues.OwedOf(businessId, mine),
+                    businessId, TierOf(businessId), rate, protector,
+                    racket.StateOf(businessId, mine), owed,
                     !RacketCanAccrueAt(businessId, gameHour),
-                    IsRacketable(businessId), tenure));
+                    IsRacketable(businessId), tenure, late));
             }
             return built;
         }
@@ -267,8 +396,64 @@ namespace RoadDemo
                     return HouseOps.AssignBlock(
                         house, intent.BlockId, intent.CharacterId,
                         geography.TryGetBlock(intent.BlockId, out _)).Reason;
+
+                case HouseIntentKind.Buy:
+                    return Bought(house, intent);
             }
             return "nothing to do";
+        }
+
+        /// <summary>
+        /// THE GUARDS WENT AT THEM (D10 iv). A house that puts its men between an
+        /// attacker and a door it is paid for has answered for that street, whatever the
+        /// fight then decides.
+        /// </summary>
+        public void NoteGuardsEngaged(TerritoryBusinessId door, TerritoryGangId house)
+        {
+            if (power == null || geography == null || !house.IsValid)
+                return;
+            if (!geography.TryGetBusinessBlock(door, out var blockId))
+                return;
+            power.Answered(blockId, house, lastGameHour);
+            RecordRetaliation(blockId, house);
+        }
+
+        /// <summary>
+        /// A HOUSE CAME WHEN IT WAS CALLED. The street learns what that family is worth
+        /// on it - the one Fear act nobody files by hitting anybody (FEAR: successful
+        /// retaliation), and it is filed for every house, the player's included.
+        /// </summary>
+        public void RecordRetaliation(TerritoryBlockId blockId, TerritoryGangId house)
+        {
+            if (fear == null || !blockId.IsValid || !house.IsValid)
+                return;
+            RecordFear(new TerritoryFearEvent(
+                house, blockId, TerritoryFearCategory.SuccessfulRetaliation, 1f,
+                TerritoryFearVisibility.Public, lastGameHour));
+        }
+
+        /// <summary>
+        /// Money out of the safe and a thing into a man's hands, through the same two
+        /// calls the ledger's shop uses: HouseOps.Purchase, then the quartermaster.
+        /// </summary>
+        static string Bought(House house, HouseIntent intent)
+        {
+            var paid = HouseOps.Purchase(house, intent.Price);
+            if (!paid.Ok)
+                return paid.Reason;
+
+            var item = RosterOps.AddEquipment(
+                house.Roster, intent.Kit, intent.Listing, intent.Price);
+            if (item == null)
+            {
+                HouseOps.Refund(house, intent.Price);
+                return "the dealer had nothing";
+            }
+
+            var given = RosterOps.GiveEquipment(
+                house.Roster, item.Id, intent.CharacterId);
+            house.Touch();
+            return given.Ok ? "" : given.Reason;
         }
 
         /// <summary>A territory order, built here and submitted through the gateway - the

@@ -37,6 +37,11 @@ namespace LivingCity.Tests
             TheFamilyWalksOntoTheNextStreet(failures);
             ARefusalGetsOneThreatAndOneLean(failures);
             TheMindNeverAsksADoorAnotherHouseHolds(failures);
+            AnAttackOnOurDoorIsAnsweredInsideTheWindow(failures);
+            WithNobodyFreeThereIsNoPaperAnswer(failures);
+            TheMindNeverProposesViolenceAtItsOwnDoors(failures);
+            MenOnTheDoorMakeTheAttackHarder(failures);
+            NobodyBuysBelowTheReserve(failures);
             TheMindReadsNothingButItsView(failures);
             TheMvpRunsForEverySeed(failures);
 
@@ -88,6 +93,8 @@ namespace LivingCity.Tests
             readonly List<HouseIntent> intents = new List<HouseIntent>();
             readonly List<string> refused = new List<string>();
             readonly List<HouseDefiance> defiances = new List<HouseDefiance>();
+            readonly List<HouseIncident> incidents = new List<HouseIncident>();
+            readonly List<HouseThreat> threats = new List<HouseThreat>();
             readonly List<TerritoryBlockId> seen = new List<TerritoryBlockId>();
 
             /// <summary>The city's own seed, so the shopkeepers and their answers are
@@ -106,12 +113,22 @@ namespace LivingCity.Tests
             public bool Leant;
             public int Banked;
             public bool Paid;
+            public int Bought;
 
             /// <summary>What the run actually did, so a seed that fails says WHY rather
             /// than only that it did.</summary>
             public int RoundsOut;
             public int StopsWalked;
             public int Missed;
+
+            /// <summary>The house put men between an attacker and a door it is paid for,
+            /// and the hour it did.</summary>
+            public bool Answered;
+            public double AnsweredAt = -1.0;
+
+            /// <summary>Whether a crew of ours is near enough to be sicced on whoever
+            /// did it. The paper city has no bodies, so the test says.</summary>
+            public bool Reachable;
 
             public TerritoryGangId Mine => new TerritoryGangId(House.GangId);
             public int Day => (int)(Hour / 24.0);
@@ -184,6 +201,20 @@ namespace LivingCity.Tests
 
             static string Key(TerritoryBlockId blockId, TerritoryGangId gang) =>
                 blockId.Value + "/" + gang.Value;
+
+            /// <summary>
+            /// SOMEBODY WRECKED A DOOR WE ARE PAID FOR. The power ledger would file it
+            /// against us and the runtime would wake us at once; here the test does both,
+            /// because the point under examination is what the MIND does about it.
+            /// </summary>
+            public void Attack(TerritoryBlockId blockId, TerritoryGangId by)
+            {
+                incidents.Clear();
+                incidents.Add(new HouseIncident(blockId, 1, Hour));
+                threats.Clear();
+                threats.Add(new HouseThreat(by, blockId, Hour, Reachable, false));
+                House.WakeNow(Hour);
+            }
 
             public void Stand(TerritoryBlockId blockId, TerritoryGangId gang, float amount)
             {
@@ -275,6 +306,9 @@ namespace LivingCity.Tests
                     LeaderLook = blockId =>
                         Presence(blockId, Mine) >= 40f ? Mine : default,
                     Defiances = defiances,
+                    Incidents = incidents,
+                    Threats = threats,
+                    QuietThinks = House.QuietThinks,
                     LastRefusals = refused,
                     GameHour = Hour,
                     Day = Day + 1,
@@ -318,9 +352,23 @@ namespace LivingCity.Tests
                             return "no order";
                         intent.Job.GangId = House.GangId;
                         var issued = House.Runner.Issue(House.Roster, intent.Job);
-                        if (issued.Ok && intent.Job.Type == OrderType.Recruit)
+                        if (!issued.Ok)
+                            return issued.Reason;
+                        if (intent.Job.Type == OrderType.Recruit)
                             Signed = true;
-                        return issued.Ok ? "" : issued.Reason;
+                        // MEN ON THE DOOR IS THE ANSWER, whether the family sent them
+                        // because its front was threatened (tier 1) or because a street
+                        // it is paid for was (tier 5).
+                        if ((intent.Tier == HouseMind.TierAnswer ||
+                             intent.Tier == HouseMind.TierSurvive) &&
+                            (intent.Job.Type == OrderType.Guard ||
+                             intent.Job.Type == OrderType.Assault))
+                        {
+                            Answered = true;
+                            AnsweredAt = Hour;
+                            incidents.Clear();
+                        }
+                        return "";
 
                     case HouseIntentKind.SetDuty:
                         return HouseOps.SetDuty(
@@ -343,6 +391,16 @@ namespace LivingCity.Tests
                     case HouseIntentKind.AssignBlock:
                         return HouseOps.AssignBlock(
                             House, intent.BlockId, intent.CharacterId, true).Reason;
+
+                    case HouseIntentKind.Buy:
+                        var paid = HouseOps.Purchase(House, intent.Price);
+                        if (!paid.Ok)
+                            return paid.Reason;
+                        var item = RosterOps.AddEquipment(
+                            House.Roster, intent.Kit, intent.Listing, intent.Price);
+                        Bought++;
+                        return RosterOps.GiveEquipment(
+                            House.Roster, item.Id, intent.CharacterId).Reason;
                 }
                 return "nothing to do";
             }
@@ -524,6 +582,20 @@ namespace LivingCity.Tests
                 return paying;
             }
 
+            /// <summary>Every hood shot down - a family with nobody on his feet to
+            /// send anywhere.</summary>
+            public void EmptyEveryCrew()
+            {
+                var crews = House.Roster.Crews;
+                for (var c = 0; c < crews.Count; c++)
+                    for (var i = crews[c].HoodIds.Count - 1; i >= 0; i--)
+                    {
+                        var man = House.Roster.Find(crews[c].HoodIds[i]);
+                        if (man != null && !man.Gone)
+                            HouseOps.Kill(House, man.Id);
+                    }
+            }
+
             public int Hoods(Crew crew)
             {
                 var count = 0;
@@ -695,6 +767,145 @@ namespace LivingCity.Tests
             }
         }
 
+        /// <summary>
+        /// (a) An attack on a door we are paid for wakes the family at once, and it puts
+        /// men on it inside the window when it has anybody to send.
+        /// </summary>
+        static void AnAttackOnOurDoorIsAnsweredInsideTheWindow(List<string> failures)
+        {
+            var city = new RigCity(13, 2);
+            var config = HouseMindConfig.Default;
+
+            // A door on the NEXT street pays this family. The front's own block is tier
+            // 1's business (the Boss is behind that door); an attack away from home is
+            // what tier 5 exists for.
+            var theirs = city.DoorsOn(city.BlockIds[1])[0];
+            city.Racket.Demand(theirs, city.Mine, Strong(), 1.0, out _);
+            city.Stand(city.BlockIds[0], city.Mine, 60f);
+            city.Stand(city.BlockIds[1], city.Mine, 60f);
+            for (var hour = 0; hour < 12; hour++)
+                city.Tick(config);
+
+            city.Attack(city.BlockIds[1], new TerritoryGangId(9));
+            var struck = city.Hour;
+            for (var hour = 0; hour < 12 && !city.Answered; hour++)
+                city.Tick(config);
+
+            if (!city.Answered)
+                failures.Add("HOUSE-007: a door the family is paid for was wrecked and " +
+                             "nobody came.");
+            else if (city.AnsweredAt - struck > config.AnswerWindowHours)
+                failures.Add("HOUSE-007: the answer came " +
+                             (int)(city.AnsweredAt - struck) + " hours late.");
+        }
+
+        /// <summary>
+        /// (b) With nobody to send there is no paper answer at all. A family that could
+        /// not come does not get to pretend it did.
+        /// </summary>
+        static void WithNobodyFreeThereIsNoPaperAnswer(List<string> failures)
+        {
+            var city = new RigCity(19, 8);
+            var config = HouseMindConfig.Default;
+            var theirs = city.DoorsOn(city.BlockIds[1])[0];
+            city.Racket.Demand(theirs, city.Mine, Strong(), 1.0, out _);
+            city.Stand(city.BlockIds[1], city.Mine, 60f);
+            city.EmptyEveryCrew();
+            city.Attack(city.BlockIds[1], new TerritoryGangId(9));
+
+            for (var hour = 0; hour < 12; hour++)
+                city.Tick(config);
+
+            if (city.Answered)
+                failures.Add("HOUSE-008: a family with nobody on his feet still " +
+                             "answered for a street.");
+        }
+
+        /// <summary>
+        /// (d) A door on our own paper, and a door that pays us, are never proposed for
+        /// violence. The gateway would refuse it; the mind must not even ask.
+        /// </summary>
+        static void TheMindNeverProposesViolenceAtItsOwnDoors(List<string> failures)
+        {
+            var city = new RigCity(23, 4);
+            var config = HouseMindConfig.Default;
+            city.Stand(city.BlockIds[0], city.Mine, 60f);
+
+            var intents = new List<HouseIntent>();
+            for (var think = 0; think < 40; think++)
+            {
+                city.Hour += 4.0;
+                HouseMind.Think(city.Look(), config, intents);
+                for (var i = 0; i < intents.Count; i++)
+                {
+                    var intent = intents[i];
+                    if (intent.Kind != HouseIntentKind.Job || intent.Job == null)
+                        continue;
+                    if (intent.Job.Type != OrderType.SmashUp &&
+                        intent.Job.Type != OrderType.Raid &&
+                        intent.Job.Type != OrderType.Torch)
+                        continue;
+                    var target = new TerritoryBusinessId(intent.Job.TargetBusinessId);
+                    if (target == city.House.Front ||
+                        city.Racket.StateOf(target, city.Mine) ==
+                            TerritoryProtectionState.Compliant)
+                        failures.Add("HOUSE-009: the mind proposed " + intent.Job.Type +
+                                     " at a door of its own.");
+                }
+            }
+        }
+
+        /// <summary>
+        /// (e) Men on a door make the order against it harder by exactly the guard
+        /// lieutenant's own hand, and a failure at a guarded door puts somebody in a bed.
+        /// </summary>
+        static void MenOnTheDoorMakeTheAttackHarder(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(5, 2);
+            if (roster.Crews.Count == 0)
+            {
+                failures.Add("HOUSE-010: the fixture dealt no crew.");
+                return;
+            }
+            var crew = roster.Crews[0];
+            var spec = OrderTable.SpecOf(OrderType.SmashUp);
+            var stat = CrewKit.BestAt(roster, crew, spec.PrimaryAttribute);
+
+            var open = OrderResolution.ChanceFor(spec, stat, 0, 0);
+            var guarded = OrderResolution.ChanceFor(spec, stat - 6, 0, 0);
+            if (!(guarded < open))
+                failures.Add("HOUSE-010: men on the door did not make the job harder (" +
+                             open + " open, " + guarded + " guarded).");
+
+            var job = new Job { CrewId = crew.Id, Type = OrderType.SmashUp, Men = 2 };
+            var outcome = OrderResolution.Resolve(
+                spec, job, roster, crew, new System.Random(1), OrderOutcome.Failed, null,
+                12);
+            if (outcome.CasualtyId < 0)
+                failures.Add("HOUSE-010: a beating at a guarded door put nobody in a bed.");
+        }
+
+        /// <summary>(f) Nothing is bought while the safe is inside the reserve.</summary>
+        static void NobodyBuysBelowTheReserve(List<string> failures)
+        {
+            var city = new RigCity(29, 6);
+            var config = HouseMindConfig.Default;
+            city.House.Runner.Accounts.Safe = config.ReserveDays * city.Look().DailyPayroll;
+
+            var intents = new List<HouseIntent>();
+            for (var think = 0; think < 20; think++)
+            {
+                city.Hour += 4.0;
+                city.House.NoteThink(false);
+                HouseMind.Think(city.Look(), config, intents);
+                for (var i = 0; i < intents.Count; i++)
+                    if (intents[i].Kind == HouseIntentKind.Buy)
+                        failures.Add("HOUSE-011: a family bought a " +
+                                     intents[i].Listing + " with a week's wages in the " +
+                                     "safe and nothing over.");
+            }
+        }
+
         /// <summary>(g) The mind reads the view and nothing else. A compile-time rule
         /// cannot be written, so the source is scanned: no ledger, no runtime, no roll.
         /// </summary>
@@ -741,6 +952,12 @@ namespace LivingCity.Tests
                 for (var hour = 0; hour < 24 * MvpDays; hour++)
                 {
                     city.Tick(config);
+
+                    // STEP 7. On the third morning somebody wrecks a door this family is
+                    // paid to keep the peace at. It has to come.
+                    if (hour == 24 * 3 + 9)
+                        city.Attack(city.BlockIds[0], new TerritoryGangId(20));
+
                     if (Done(city))
                     {
                         days = city.Day + 1;
@@ -772,7 +989,7 @@ namespace LivingCity.Tests
 
         static bool Done(RigCity city) =>
             city.Signed && city.Deployed && city.Entered && city.Demanded &&
-            city.Banked > 0 && city.Paid;
+            city.Banked > 0 && city.Paid && city.Answered;
 
         static string Missing(RigCity city)
         {
@@ -786,6 +1003,7 @@ namespace LivingCity.Tests
                            city.StopsWalked + " doors, " + city.Missed + " missed, " +
                            city.Paying() + " paying); ";
             if (!city.Paid) missing += "wages never left the take; ";
+            if (!city.Answered) missing += "never answered for its own door; ";
             return missing;
         }
     }

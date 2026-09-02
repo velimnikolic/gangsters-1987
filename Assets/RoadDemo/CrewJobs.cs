@@ -57,6 +57,40 @@ namespace RoadDemo
         static readonly Dictionary<int, (int JobId, MolotovProjectile Shot, bool Lit)>
             Torched = new Dictionary<int, (int, MolotovProjectile, bool)>();
 
+        /// <summary>
+        /// WHO IS SITTING ON WHICH DOOR (D10). A crew working a Guard order is on that
+        /// address until the order is taken off it: an attack there is answered by these
+        /// men before it is answered by the arithmetic.
+        /// </summary>
+        static readonly Dictionary<int, (int JobId, LivingCity.Territory.TerritoryBusinessId Door)>
+            Guarding = new Dictionary<int, (int, LivingCity.Territory.TerritoryBusinessId)>();
+
+        /// <summary>Which attacking crew each guard crew has already been set on, so
+        /// the guards are sicced once per attack and not every frame. Its own book: a
+        /// job number is unique in ONE family's book, and these are two families.
+        /// </summary>
+        static readonly Dictionary<int, int> GuardSicced = new Dictionary<int, int>();
+
+        /// <summary>The crew of some OTHER house that is sitting on this door, or null.
+        /// The street asks it before a wrecking beat; the book asks it through
+        /// CampaignRunner.GuardOnTheDoor before a paper roll.</summary>
+        public static DemoCrews.Unit GuardsAt(
+            DemoCrews crews, LivingCity.Territory.TerritoryBusinessId door, int notFaction)
+        {
+            if (crews == null || !door.IsValid)
+                return null;
+            foreach (var pair in Guarding)
+            {
+                if (pair.Value.Door != door)
+                    continue;
+                var unit = crews.UnitOfCrew(pair.Key);
+                if (unit == null || unit.Wiped || unit.Faction == notFaction)
+                    continue;
+                return unit;
+            }
+            return null;
+        }
+
         public static void Tick(DemoCrews crews)
         {
             var outfit = OutfitDirector.Instance;
@@ -98,6 +132,36 @@ namespace RoadDemo
                 }
             }
         }
+
+        /// <summary>
+        /// The guards on this door are set on the men who came for it (D10 ii/iv), and
+        /// the beat waits. Answers true while there is anybody left to get past.
+        /// </summary>
+        static bool SetUpon(DemoCrews crews, DemoCrews.Unit unit, Job job)
+        {
+            var door = new LivingCity.Territory.TerritoryBusinessId(job.TargetBusinessId);
+            if (!door.IsValid)
+                return false;
+            var guards = GuardsAt(crews, door, unit.Faction);
+            if (guards == null)
+                return false;
+
+            if (!GuardSicced.TryGetValue(guards.CrewId, out var on) ||
+                on != unit.CrewId)
+            {
+                GuardSicced[guards.CrewId] = unit.CrewId;
+                crews.Sic(guards, unit);
+                // THE MEN CAME. Whatever the fight decides, the house that was paid to
+                // keep the peace here has answered for it.
+                TerritoryRuntime.Instance?.NoteGuardsEngaged(
+                    door, new LivingCity.Territory.TerritoryGangId(guards.Faction));
+            }
+            return true;
+        }
+
+        /// <summary>The watch is off: the order was finished, cancelled or the crew is
+        /// gone. Called wherever a job leaves a crew's hands.</summary>
+        public static void StandDown(int crewId) => Guarding.Remove(crewId);
 
         /// <summary>How near the address a man has to be for the crew to count as
         /// there: the same reach the door beats use to find the man who acts.</summary>
@@ -174,6 +238,21 @@ namespace RoadDemo
                 March(crews, unit, job);
                 return;
             }
+
+            if (job.Type == OrderType.Guard)
+            {
+                // MEN ON THE DOOR. They are there; the address is theirs until the order
+                // comes off. Nothing else happens on a Guard - a watch is stood.
+                Guarding[unit.CrewId] = (
+                    job.Id, new LivingCity.Territory.TerritoryBusinessId(
+                        job.TargetBusinessId));
+                return;
+            }
+
+            // A DOOR SOMEBODY IS SITTING ON IS NOT WALKED UP TO AND WRECKED. The guards
+            // go at the attackers first, and the beat runs only once they are gone.
+            if (SetUpon(crews, unit, job))
+                return;
 
             if (job.Type == OrderType.Raid)
                 EnterOnce(crews, house, unit, job);
@@ -484,6 +563,8 @@ namespace RoadDemo
             Sicced.Remove(unit.CrewId);
             Marks.Remove(unit.CrewId);
             Torched.Remove(unit.CrewId);
+            Guarding.Remove(unit.CrewId);
+            GuardSicced.Remove(unit.CrewId);
 
             // Men the player has put INSIDE one of our own buildings are already home,
             // and a march would only walk them back out of it (CrewQuarters).

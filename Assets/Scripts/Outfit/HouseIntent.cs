@@ -21,6 +21,10 @@ namespace LivingCity.Outfit
         Demote,
         SetPolicy,
         AssignBlock,
+
+        /// <summary>Buy a thing out of the safe, through HouseOps - a car for a crew, a
+        /// gun for a man.</summary>
+        Buy,
     }
 
     /// <summary>
@@ -51,8 +55,12 @@ namespace LivingCity.Outfit
         HouseIntent(HouseIntentKind kind, int tier, string reason, HouseOrder order,
             Job job, int characterId, int crewId, TerritoryBlockId blockId,
             TerritoryBusinessId businessId, TerritoryRacketIntent followUp, Duty duty,
-            CrewPolicy policy)
+            CrewPolicy policy, EquipmentKind kit = EquipmentKind.Pistol,
+            string listing = "", int price = 0)
         {
+            Kit = kit;
+            Listing = listing ?? "";
+            Price = price;
             Kind = kind;
             Tier = tier;
             Reason = reason ?? "";
@@ -85,6 +93,12 @@ namespace LivingCity.Outfit
         public TerritoryRacketIntent FollowUp { get; }
         public Duty Duty { get; }
         public CrewPolicy Policy { get; }
+
+        /// <summary>What is being bought, what the dealer calls it, and what it costs.
+        /// </summary>
+        public EquipmentKind Kit { get; }
+        public string Listing { get; }
+        public int Price { get; }
 
         public static HouseIntent Block(
             HouseOrder order, int crewId, TerritoryBlockId blockId, int tier,
@@ -138,6 +152,13 @@ namespace LivingCity.Outfit
             new HouseIntent(HouseIntentKind.AssignBlock, tier, reason, HouseOrder.None,
                 null, lieutenantId, -1, blockId, default,
                 TerritoryRacketIntent.Approach, Duty.None, CrewPolicy.Normal);
+
+        public static HouseIntent Buy(
+            EquipmentKind kind, string listing, int price, int characterId, int crewId,
+            int tier, string reason) =>
+            new HouseIntent(HouseIntentKind.Buy, tier, reason, HouseOrder.None, null,
+                characterId, crewId, default, default, TerritoryRacketIntent.Approach,
+                Duty.None, CrewPolicy.Normal, kind, listing, price);
 
         /// <summary>One line for the trace and the family's own book.</summary>
         public override string ToString() =>
