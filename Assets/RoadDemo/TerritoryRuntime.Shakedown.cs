@@ -26,17 +26,18 @@ namespace RoadDemo
     public sealed partial class TerritoryRuntime
     {
         public TerritoryCommandExecution Execute(ShakeDownBlockCommand command) =>
-            WalkTheDoors(command.GroupId, command.BlockId, RoundKind.ShakeDown);
+            WalkTheDoors(command.House, command.GroupId, command.BlockId,
+                RoundKind.ShakeDown);
 
         public TerritoryCommandExecution Execute(LeanOnHoldoutsCommand command) =>
-            WalkTheDoors(command.GroupId, command.BlockId, RoundKind.Lean);
+            WalkTheDoors(command.House, command.GroupId, command.BlockId, RoundKind.Lean);
 
         /// <summary>
         /// The one walk both orders are. The stops are chosen by the pure rule for the
         /// kind, ordered by the street the way a collection round is, and the crew is
         /// marched at the first of them.
         /// </summary>
-        TerritoryCommandExecution WalkTheDoors(
+        TerritoryCommandExecution WalkTheDoors(TerritoryGangId gang,
             TerritoryCommandNodeId groupId, TerritoryBlockId blockId, RoundKind kind)
         {
             if (!blockId.IsValid)
@@ -45,11 +46,10 @@ namespace RoadDemo
                 return TerritoryCommandExecution.Reject(
                     "The racket is not running in this scene.");
 
-            var unit = FindPlayerUnit(groupId, out var refusal);
+            var unit = FindUnit(gang, groupId, out var refusal);
             if (unit == null)
                 return TerritoryCommandExecution.Reject(refusal);
 
-            var gang = new TerritoryGangId(LivingCity.Gangs.GangCatalog.PlayerGangId);
             var candidates = new List<RoundStop>();
             var here = geography.BusinessesOf(blockId);
             for (var i = 0; i < here.Count; i++)
@@ -57,8 +57,8 @@ namespace RoadDemo
                 var businessId = here[i].BusinessId;
                 var state = racket.StateOf(businessId, gang);
                 var wanted = kind == RoundKind.Lean
-                    ? TerritoryShakedown.IsHoldout(state, OursByDeed(businessId))
-                    : TerritoryShakedown.WorthAsking(state, OursByDeed(businessId));
+                    ? TerritoryShakedown.IsHoldout(state, HeldByDeed(businessId, gang))
+                    : TerritoryShakedown.WorthAsking(state, HeldByDeed(businessId, gang));
                 if (!wanted)
                     continue;
                 // A shop with its shutters down cannot be asked anything.
@@ -110,12 +110,14 @@ namespace RoadDemo
         internal const string ShakedownRefusal = "every door here has answered us";
         internal const string LeanRefusal = "nobody is holding out";
 
-        /// <summary>Whether the family holds this door's deed - our own shop, our front,
-        /// the headquarters. The one place the two block orders ask it, so the key that
-        /// offers the order and the order itself count the same doors.</summary>
-        internal static bool OursByDeed(TerritoryBusinessId businessId) =>
-            LivingCity.Business.BusinessDeeds.GangOf(businessId) ==
-            LivingCity.Gangs.GangCatalog.PlayerGangId;
+        /// <summary>Whether THIS house holds this door's deed - its own shop, its
+        /// front, its headquarters. The one place the two block orders ask it, so the
+        /// key that offers the order and the order itself count the same doors.</summary>
+        internal static bool HeldByDeed(TerritoryBusinessId businessId,
+            TerritoryGangId house) =>
+            house.IsValid &&
+            LivingCity.Business.BusinessDeeds.GangOf(businessId) == house.Value;
+
 
         /// <summary>
         /// What happens at ONE door, whichever walk brought the men to it. A collection

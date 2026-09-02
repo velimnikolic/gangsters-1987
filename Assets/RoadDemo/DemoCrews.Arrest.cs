@@ -122,7 +122,7 @@ namespace RoadDemo
             // and the street re-deals without them: Sync keeps only Active men, so the
             // bodies go the same way a discharged man's does, through the books
             house.Touch();
-            if (unit.Faction != LivingCity.Gangs.GangCatalog.PlayerGangId)
+            if (unit.Faction != LivingCity.Gameplay.PlayerCommands.House.Value)
                 return;
 
             var director = PersonnelDirector.Instance;

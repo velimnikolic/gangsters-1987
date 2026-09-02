@@ -429,7 +429,7 @@ namespace RoadDemo
             man.Retreat(from);
             // Only OUR deserters are news on our wire - a man walking out on the
             // Falcones is their trouble, and it lands on their books all the same.
-            if (man.Faction == LivingCity.Gangs.GangCatalog.PlayerGangId)
+            if (man.Faction == LivingCity.Gameplay.PlayerCommands.House.Value)
             {
                 CrewOverlay.Announce(
                     Surname(man.DisplayName).ToUpperInvariant() + " DESERTED", 4f,
@@ -806,7 +806,7 @@ namespace RoadDemo
         /// the pavement, which is what the paper clock is for (RIVAL-008).
         /// </summary>
         readonly List<int> _houses =
-            new List<int> { LivingCity.Gangs.GangCatalog.PlayerGangId };
+            new List<int> { LivingCity.Gameplay.PlayerCommands.House.Value };
 
         /// <summary>Where a crew that has never stood on this street is put the first
         /// time the books ask for it: outside its family's own door, or on a corner of

@@ -1359,14 +1359,17 @@ namespace LivingCity.UI
                 var node = target.Rank == Rank.Boss
                     ? TerritoryCommandNodeId.Boss(target.Id)
                     : TerritoryCommandNodeId.Lieutenant(target.Id);
-                var result = runtime.Commands.Submit(new AssignBlockResponsibilityCommand(
-                    blockId,
-                    new TerritoryGangId(GangCatalog.PlayerGangId),
-                    node,
-                    target.Rank == Rank.Boss ? new TerritoryCharacterId(target.Id) : default,
-                    target.Rank == Rank.Lieutenant
-                        ? new TerritoryCharacterId(target.Id)
-                        : default));
+                var result = runtime.Commands.Submit(
+                    Gameplay.PlayerCommands.Stamp(
+                        new AssignBlockResponsibilityCommand(
+                            blockId,
+                            Gameplay.PlayerCommands.House,
+                            node,
+                            target.Rank == Rank.Boss
+                                ? new TerritoryCharacterId(target.Id) : default,
+                            target.Rank == Rank.Lieutenant
+                                ? new TerritoryCharacterId(target.Id)
+                                : default)));
                 if (!result.WasAccepted)
                     return Outfit.FilingRuling.Refuse(result.Reason);
 
@@ -1409,12 +1412,14 @@ namespace LivingCity.UI
                     : director.AssignToLieutenant(hoodId, leader.Id);
 
             var result = leader.Rank == Rank.Boss
-                ? commands.Submit(new AssignHoodToBossCommand(
-                    new TerritoryCharacterId(hoodId),
-                    new TerritoryCharacterId(leader.Id)))
-                : commands.Submit(new AssignHoodToLieutenantCommand(
-                    new TerritoryCharacterId(hoodId),
-                    new TerritoryCharacterId(leader.Id)));
+                ? commands.Submit(Gameplay.PlayerCommands.Stamp(
+                    new AssignHoodToBossCommand(
+                        new TerritoryCharacterId(hoodId),
+                        new TerritoryCharacterId(leader.Id))))
+                : commands.Submit(Gameplay.PlayerCommands.Stamp(
+                    new AssignHoodToLieutenantCommand(
+                        new TerritoryCharacterId(hoodId),
+                        new TerritoryCharacterId(leader.Id))));
             return result.Status == TerritoryCommandStatus.Succeeded
                 ? OpResult.Success
                 : OpResult.Fail(string.IsNullOrEmpty(result.Reason)

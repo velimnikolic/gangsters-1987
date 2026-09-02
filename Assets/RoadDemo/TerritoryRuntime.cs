@@ -1678,7 +1678,8 @@ namespace RoadDemo
                     // RIVAL demands only. The player's family asks when the player says
                     // so, through the command gateway and a man at the door - the sim
                     // must never open a defiance clock in his name off mere presence.
-                    if (gangId.Value == GangCatalog.PlayerGangId)
+                    // (This whole pass goes in RIVAL-005, when a mind asks instead.)
+                    if (gangId == LivingCity.Gameplay.PlayerCommands.House)
                         continue;
                     if (presenceGangs[g].Total < racket.Config.RivalDemandPresence)
                         continue;
@@ -1709,10 +1710,9 @@ namespace RoadDemo
         {
             if (racket == null || pendingApproaches.Count == 0 || actor?.Tf == null)
                 return;
-            // Doorstep errands are the player's; a rival unit that happens to share a
-            // crew number must not spring one walking past the door.
-            if (unit.Faction != 0)
-                return;
+            // The errand belongs to the crew that was sent on it. Crew numbers are
+            // unique across all twenty-one books now, so the number alone is enough -
+            // nobody springs somebody else's errand walking past the door.
 
             for (var i = pendingApproaches.Count - 1; i >= 0; i--)
             {
@@ -1867,7 +1867,7 @@ namespace RoadDemo
             for (var i = pendingApproaches.Count - 1; i >= 0; i--)
             {
                 var pending = pendingApproaches[i];
-                var unit = PlayerUnitOfCrew(pending.CrewId);
+                var unit = StandingUnitOfCrew(pending.CrewId);
                 if (unit == null)
                 {
                     // No crew left to walk it - the men are wiped or gone off the street.
@@ -1936,20 +1936,6 @@ namespace RoadDemo
 
         /// <summary>The outfit's crew that carries this crew number, if it is still on the
         /// street.</summary>
-        DemoCrews.Unit PlayerUnitOfCrew(int crewId)
-        {
-            for (var i = 0; i < crews.Units.Count; i++)
-            {
-                var unit = crews.Units[i];
-                if (unit == null || unit.IsPolice || unit.Faction != 0 || unit.Wiped)
-                    continue;
-                if (unit.CrewId == crewId)
-                    return unit;
-            }
-
-            return null;
-        }
-
         /// <summary>The crew's doorstep errand, dropped. Called whenever the crew is
         /// retasked - a pending approach must not outlive the order that made it. A
         /// collection round in hand is dropped the same way: the take it was carrying
@@ -1997,7 +1983,8 @@ namespace RoadDemo
                 !geography.TryGetBusinessBlock(businessId, out var blockId))
                 return false;
 
-            var playerGang = new TerritoryGangId(GangCatalog.PlayerGangId);
+            // What the PLAYER's page says about a door - the reader is his ledger.
+            var playerGang = LivingCity.Gameplay.PlayerCommands.House;
             var name = businessId.Value;
             var business = LivingCity.Business.BusinessRuntime.Instance;
             if (business != null && business.Populated &&
@@ -2261,11 +2248,16 @@ namespace RoadDemo
 
         public TerritoryCommandExecution Execute(AssignHoodToBossCommand command)
         {
-            var director = PersonnelDirector.Instance;
-            if (director?.Roster == null || !command.HoodId.IsValid || !command.BossId.IsValid)
+            var house = HouseOn(command.House);
+            if (house?.Roster == null || !command.HoodId.IsValid || !command.BossId.IsValid)
                 return TerritoryCommandExecution.Reject("Personnel identity is unavailable.");
+            if (command.BossId.Value != house.Roster.BossId)
+                return TerritoryCommandExecution.Reject(NotThisHouses);
 
-            var result = director.AssignToBoss(command.HoodId.Value, command.BossId.Value);
+            var result = house.IsPlayer && PersonnelDirector.Instance != null
+                ? PersonnelDirector.Instance.AssignToBoss(
+                    command.HoodId.Value, command.BossId.Value)
+                : LivingCity.Outfit.HouseOps.AssignToBoss(house, command.HoodId.Value);
             return result.Ok
                 ? TerritoryCommandExecution.Succeed()
                 : TerritoryCommandExecution.Reject(result.Reason);
@@ -2273,8 +2265,8 @@ namespace RoadDemo
 
         public TerritoryCommandExecution Execute(AssignHoodToLieutenantCommand command)
         {
-            var director = PersonnelDirector.Instance;
-            var roster = director?.Roster;
+            var house = HouseOn(command.House);
+            var roster = house?.Roster;
             if (roster == null || !command.HoodId.IsValid || !command.LieutenantId.IsValid)
                 return TerritoryCommandExecution.Reject("Personnel identity is unavailable.");
 
@@ -2289,11 +2281,20 @@ namespace RoadDemo
             if (crew == null || crew.LieutenantId != lieutenant.Id)
                 return TerritoryCommandExecution.Reject("The lieutenant has no command node.");
 
-            var result = director.AssignToLieutenant(hood.Id, lieutenant.Id);
+            var result = house.IsPlayer && PersonnelDirector.Instance != null
+                ? PersonnelDirector.Instance.AssignToLieutenant(hood.Id, lieutenant.Id)
+                : LivingCity.Outfit.HouseOps.AssignToCrew(house, hood.Id, crew.Id);
             return result.Ok
                 ? TerritoryCommandExecution.Succeed()
                 : TerritoryCommandExecution.Reject(result.Reason);
         }
+
+        /// <summary>The books an order names, or null when it names nobody the city
+        /// knows.</summary>
+        static LivingCity.Outfit.House HouseOn(TerritoryGangId house) =>
+            house.IsValid
+                ? LivingCity.Outfit.Underworld.Current?.Of(house.Value)
+                : null;
 
         public TerritoryCommandExecution Execute(AssignBlockResponsibilityCommand command)
         {
@@ -2313,11 +2314,13 @@ namespace RoadDemo
                         "The crew does not belong to the requested gang.");
             }
 
-            var director = PersonnelDirector.Instance;
-            var roster = director?.Roster;
-            if (command.GangId.Value != GangCatalog.PlayerGangId)
-                return TerritoryCommandExecution.Reject(
-                    "Only the player's organization can assign administrative responsibility.");
+            // ANY house assigns its OWN lieutenants, and nobody else's. The order
+            // names the house; the gang on the paper has to be the same house, or a
+            // family would be writing on somebody else's book.
+            if (command.GangId != command.House)
+                return TerritoryCommandExecution.Reject(NotThisHouses);
+            var house = LivingCity.Outfit.Underworld.Current?.Of(command.House.Value);
+            var roster = house?.Roster;
             if (roster == null)
                 return TerritoryCommandExecution.Reject("Personnel identity is unavailable.");
 
@@ -2336,7 +2339,14 @@ namespace RoadDemo
             if (leader == null || (leader.Rank != Rank.Boss && leader.Rank != Rank.Lieutenant))
                 return TerritoryCommandExecution.Reject("Unknown organization command parent.");
 
-            var assigned = director.AssignBlockResponsibility(command.BlockId, leaderId);
+            // The player's own director keeps the block book it already keeps - the
+            // known-block guard and the ledger's dirty key live on it. Every other
+            // house writes straight onto its own roster through HouseOps.
+            var assigned = house.IsPlayer && PersonnelDirector.Instance != null
+                ? PersonnelDirector.Instance.AssignBlockResponsibility(
+                    command.BlockId, leaderId)
+                : LivingCity.Outfit.HouseOps.AssignBlock(
+                    house, command.BlockId, leaderId, blockExists: true);
             if (!assigned.Ok)
                 return TerritoryCommandExecution.Reject(assigned.Reason);
 
@@ -2378,7 +2388,7 @@ namespace RoadDemo
                 (state == null || !state.TryGetDefinition(command.DestinationBlockId, out _)))
                 return TerritoryCommandExecution.Reject("The destination block is unknown.");
 
-            var unit = FindPlayerUnit(command.GroupId, out var refusal);
+            var unit = FindUnit(command.House, command.GroupId, out var refusal);
             if (unit == null)
                 return TerritoryCommandExecution.Reject(refusal);
 
@@ -2410,7 +2420,7 @@ namespace RoadDemo
                 !state.TryGetDefinition(command.BlockId, out var block))
                 return TerritoryCommandExecution.Reject("Unknown territory block.");
 
-            var unit = FindPlayerUnit(command.GroupId, out var refusal);
+            var unit = FindUnit(command.House, command.GroupId, out var refusal);
             if (unit == null)
                 return TerritoryCommandExecution.Reject(refusal);
 
@@ -2429,7 +2439,7 @@ namespace RoadDemo
             if (!command.BusinessId.IsValid)
                 return TerritoryCommandExecution.Reject("Unknown business.");
 
-            var unit = FindPlayerUnit(command.GroupId, out var refusal);
+            var unit = FindUnit(command.House, command.GroupId, out var refusal);
             if (unit == null)
                 return TerritoryCommandExecution.Reject(refusal);
 
@@ -2466,6 +2476,9 @@ namespace RoadDemo
             if (!TryResolveInteraction(command.ActorId, command.BusinessId,
                     out var gangId, out var refusal))
                 return TerritoryCommandExecution.Reject(refusal);
+            // The man at the door has to be the house's own man.
+            if (gangId != command.House)
+                return TerritoryCommandExecution.Reject(NotThisHouses);
 
             // HE GOES IN FIRST. This is the path a player takes every time his men are
             // already standing at the door - after a smash they always are - and it used
@@ -2512,6 +2525,8 @@ namespace RoadDemo
             if (!TryResolveInteraction(command.ActorId, command.BusinessId,
                     out var gangId, out var refusal))
                 return TerritoryCommandExecution.Reject(refusal);
+            if (gangId != command.House)
+                return TerritoryCommandExecution.Reject(NotThisHouses);
 
             // The lean is a conversation too: he goes in, and what it got out of the
             // owner comes back from inside.
@@ -2589,8 +2604,14 @@ namespace RoadDemo
             return true;
         }
 
-        DemoCrews.Unit FindPlayerUnit(
-            TerritoryCommandNodeId groupId, out string refusal)
+        /// <summary>
+        /// THE CREW THIS ORDER IS THIS HOUSE'S TO GIVE. Not "is this the player?" - the
+        /// question every rule below the gateway is forbidden to ask - but "does the
+        /// house that filed this order own this crew?", which is the same question for
+        /// all twenty-one families.
+        /// </summary>
+        DemoCrews.Unit FindUnit(
+            TerritoryGangId house, TerritoryCommandNodeId groupId, out string refusal)
         {
             refusal = "Unknown tactical group.";
             if (crews == null || groupId.Kind != TerritoryCommandNodeKind.Crew)
@@ -2599,9 +2620,9 @@ namespace RoadDemo
             var unit = FindUnit(groupId);
             if (unit == null)
                 return null;
-            if (unit.Faction != 0)
+            if (!house.IsValid || unit.Faction != house.Value)
             {
-                refusal = "The player cannot command a rival tactical group.";
+                refusal = NotThisHouses;
                 return null;
             }
             if (unit.Wiped)
@@ -2610,6 +2631,26 @@ namespace RoadDemo
                 return null;
             }
             return unit;
+        }
+
+        /// <summary>What a house is told when it orders somebody else's men.</summary>
+        internal const string NotThisHouses = "That crew is not this house's to command.";
+
+        /// <summary>The crew of this number that still has men standing, whichever
+        /// house it belongs to. Crew ids are unique across all twenty-one books by
+        /// construction, so the number alone names the crew.</summary>
+        DemoCrews.Unit StandingUnitOfCrew(int crewId)
+        {
+            for (var i = 0; i < crews.Units.Count; i++)
+            {
+                var unit = crews.Units[i];
+                if (unit == null || unit.IsPolice || unit.Faction < 0 || unit.Wiped)
+                    continue;
+                if (unit.CrewId == crewId)
+                    return unit;
+            }
+
+            return null;
         }
 
         DemoCrews.Unit FindUnit(TerritoryCommandNodeId nodeId)

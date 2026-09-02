@@ -845,7 +845,80 @@ namespace GangstersTools
                                      " writes a business deed directly.");
                     if (line.Contains("TAKE IT"))
                         failures.Add(relative + ":" + (i + 1) + " revives the TAKE IT claim.");
+
+                    // 1b. ONE HOUSE PER ORDER, ONE PLACE THE PLAYER'S NAME GOES ON ONE
+                    //     (RIVAL-003). A mind stamps its own house freely; the PLAYER's
+                    //     id may only reach a command through PlayerCommands.Stamp.
+                    if (line.Contains("House =") && !line.Contains("House ==") &&
+                        (line.Contains("PlayerGangId") ||
+                         line.Contains("PlayerCommands.House")))
+                        failures.Add(relative + ":" + (i + 1) +
+                                     " stamps the player's house outside PlayerCommands.");
                 }
+            }
+
+            // 1c. WHO THE PLAYER IS is a fact about identity, never a rule. The
+            //     constant may name house 0 and it may not decide anything, so the
+            //     files allowed to mention it at all are listed here by hand and
+            //     everything else in the sim is scanned against them.
+            //
+            //     The street's own HUDS are the player's surfaces and are on the list
+            //     for the same reason Assets/Scripts/UI is: a page painted FOR him is
+            //     entitled to ask which house is his.
+            var namesThePlayer = new[]
+            {
+                // the catalog that defines him, and the one levy that is his alone (D20)
+                "Assets/Scripts/Gangs/GangCatalog.cs",
+                "Assets/Scripts/Outfit/CampaignRunner.cs",
+                // identity: "which of the twenty-one is house 0"
+                "Assets/Scripts/Outfit/House.cs",
+                "Assets/Scripts/Outfit/Underworld.cs",
+                "Assets/Scripts/Personnel/RosterSeeder.cs",
+                "Assets/Scripts/Gangs/GangSeeder.cs",
+                "Assets/Scripts/Business/BusinessDeeds.cs",
+                // the one place the player's name goes on an order
+                "Assets/Scripts/Gameplay/PlayerCommands.cs",
+                // the audit's own patterns are not the thing it hunts
+                "Assets/Scripts/Editor/PipelineCommands.cs",
+            };
+            var simFolders = new[]
+            {
+                "Assets/RoadDemo/", "Assets/Scripts/Outfit/", "Assets/Scripts/Personnel/",
+                "Assets/Scripts/Territory/", "Assets/Scripts/Police/",
+                "Assets/Scripts/Business/", "Assets/Scripts/Gangs/",
+            };
+            var playerSurfaces = new[]
+            {
+                "Assets/RoadDemo/CityAudit.cs", "Assets/RoadDemo/CrewOverlay.cs",
+                "Assets/RoadDemo/FrontOverlay.cs", "Assets/RoadDemo/TerritoryNoticeHud.cs",
+                "Assets/RoadDemo/TerritoryPlaques.cs", "Assets/RoadDemo/TurfMinimap.cs",
+                "Assets/RoadDemo/TurfMapHud.cs", "Assets/RoadDemo/TurfKnowledge.cs",
+                "Assets/RoadDemo/StreetHud.cs", "Assets/RoadDemo/DemoClockHud.cs",
+            };
+            foreach (var file in System.IO.Directory.GetFiles(root, "*.cs",
+                         System.IO.SearchOption.AllDirectories))
+            {
+                var relative = file.Substring(
+                    System.IO.Directory.GetCurrentDirectory().Length + 1)
+                    .Replace('\\', '/');
+                var inSim = false;
+                for (var i = 0; i < simFolders.Length; i++)
+                    inSim |= relative.StartsWith(simFolders[i], StringComparison.Ordinal);
+                if (!inSim)
+                    continue;
+                var listed = false;
+                for (var i = 0; i < namesThePlayer.Length; i++)
+                    listed |= relative == namesThePlayer[i];
+                for (var i = 0; i < playerSurfaces.Length; i++)
+                    listed |= relative == playerSurfaces[i];
+                if (listed)
+                    continue;
+
+                var lines = System.IO.File.ReadAllLines(file);
+                for (var i = 0; i < lines.Length; i++)
+                    if (lines[i].Contains("PlayerGangId"))
+                        failures.Add(relative + ":" + (i + 1) +
+                                     " asks the sim which house is the player's.");
             }
 
             // 2. No territory type carries a settable owner. The block model is geography

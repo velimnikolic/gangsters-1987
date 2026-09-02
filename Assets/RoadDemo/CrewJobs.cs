@@ -60,18 +60,25 @@ namespace RoadDemo
         public static void Tick(DemoCrews crews)
         {
             var outfit = OutfitDirector.Instance;
-            if (crews == null || outfit == null)
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            if (crews == null || outfit == null || underworld == null)
                 return;
 
             foreach (var unit in crews.Units)
             {
-                if (unit == null || unit.Faction != 0 || unit.IsPolice || unit.Wiped)
+                if (unit == null || unit.IsPolice || unit.Wiped)
                     continue;
 
-                var job = outfit.Book.CurrentFor(unit.CrewId);
+                // EVERY house's book is worked, off the crew's own house. The order was
+                // filed in one family's book and the men who carry it are that family's.
+                var house = underworld.Of(unit.Faction);
+                if (house == null || house.Extinct)
+                    continue;
+
+                var job = house.Runner.Book.CurrentFor(unit.CrewId);
                 if (job == null)
                 {
-                    SendHome(crews, outfit, unit);
+                    SendHome(crews, house, unit);
                     continue;
                 }
 
@@ -83,10 +90,10 @@ namespace RoadDemo
                         // pavement does. A crew standing at the door with travel hours
                         // still on the book is a crew waiting for arithmetic.
                         if (AtPlace(crews, unit, job))
-                            outfit.ReportArrived(job.Id);
+                            house.Runner.ReportArrived(job.Id);
                         break;
                     case JobStage.Working:
-                        Work(crews, outfit, unit, job);
+                        Work(crews, house, unit, job);
                         break;
                 }
             }
@@ -155,7 +162,8 @@ namespace RoadDemo
             Marks.Remove(crewId);
         }
 
-        static void Work(DemoCrews crews, OutfitDirector outfit, DemoCrews.Unit unit, Job job)
+        static void Work(DemoCrews crews, LivingCity.Outfit.House house,
+            DemoCrews.Unit unit, Job job)
         {
             // The book's estimated travel hours can elapse before the physical car or
             // men arrive. Working on paper must not strand them wherever the clock
@@ -168,11 +176,11 @@ namespace RoadDemo
             }
 
             if (job.Type == OrderType.Raid)
-                EnterOnce(crews, outfit, unit, job);
+                EnterOnce(crews, house, unit, job);
             else if (job.Type == OrderType.SmashUp)
-                SwingBeat(crews, outfit, unit, job);
+                SwingBeat(crews, house, unit, job);
             else if (job.Type == OrderType.Torch)
-                TorchBeat(crews, outfit, unit, job);
+                TorchBeat(crews, house, unit, job);
 
             var spec = OrderTable.SpecOf(job.Type);
             if (spec.Resolution != JobResolution.Street || job.StreetOutcome.HasValue)
@@ -198,9 +206,9 @@ namespace RoadDemo
             // hours are still running, and the director's own roll is waiting behind
             // this if the fight never resolves either way.
             if (DemoCrews.Finished(target))
-                outfit.ReportStreetOutcome(job.Id, OrderOutcome.Completed);
+                house.Runner.ReportStreetOutcome(job.Id, OrderOutcome.Completed);
             else if (DemoCrews.Finished(unit))
-                outfit.ReportStreetOutcome(job.Id, OrderOutcome.Failed);
+                house.Runner.ReportStreetOutcome(job.Id, OrderOutcome.Failed);
         }
 
         /// <summary>The robbery's one visible beat: whichever man of the crew is at the
@@ -208,7 +216,8 @@ namespace RoadDemo
         /// DoorBeat refuses a man under fire, and then the fight at the door IS the
         /// scene, not a man popping calmly indoors in the middle of it.</summary>
         static void EnterOnce(
-            DemoCrews crews, OutfitDirector outfit, DemoCrews.Unit unit, Job job)
+            DemoCrews crews, LivingCity.Outfit.House house, DemoCrews.Unit unit,
+            Job job)
         {
             if (!job.HasPlace)
                 return;
@@ -244,7 +253,7 @@ namespace RoadDemo
             // raid used to report nothing at all unless a rival crew happened to be
             // standing there and got wiped, which left the order - and every order behind
             // it - open for its whole span.)
-            var told = outfit;
+            var told = house;
             var done = job;
             // No word at this door - a robbery goes straight in. When the canonical
             // premises is known, resolve its real streamed entrance and use the full
@@ -268,11 +277,11 @@ namespace RoadDemo
         /// in, the bottle thrown. Reported once: a second call while the same answer
         /// stands would be the same order finishing twice.
         /// </summary>
-        static void Done(OutfitDirector outfit, Job job)
+        static void Done(LivingCity.Outfit.House house, Job job)
         {
-            if (outfit == null || job == null || job.StreetOutcome.HasValue)
+            if (house == null || job == null || job.StreetOutcome.HasValue)
                 return;
-            outfit.ReportStreetOutcome(job.Id, OrderOutcome.Completed);
+            house.Runner.ReportStreetOutcome(job.Id, OrderOutcome.Completed);
         }
 
         /// <summary>A smash-up is two clear blows, then the frontage is visibly broken.
@@ -283,7 +292,8 @@ namespace RoadDemo
         public const float PremisesSmashFor = 0.9f;
 
         static void SwingBeat(
-            DemoCrews crews, OutfitDirector outfit, DemoCrews.Unit unit, Job job)
+            DemoCrews crews, LivingCity.Outfit.House house, DemoCrews.Unit unit,
+            Job job)
         {
             if (!job.HasPlace)
                 return;
@@ -324,7 +334,7 @@ namespace RoadDemo
                     // behind it, and the shop never told it had been wrecked (the racket
                     // only hears about a job that COMPLETES). The window is broken: that
                     // is the order carried out, and the book is told so now.
-                    Done(outfit, job);
+                    Done(house, job);
                     return;
                 }
                 if (Time.time < swung.NextAt)
@@ -348,7 +358,8 @@ namespace RoadDemo
         /// <summary>A torch is not a bat routine. The nearest hood at the premises throws
         /// one real Molotov model; the bottle's impact starts ShopDamage that same frame.</summary>
         static void TorchBeat(
-            DemoCrews crews, OutfitDirector outfit, DemoCrews.Unit unit, Job job)
+            DemoCrews crews, LivingCity.Outfit.House house, DemoCrews.Unit unit,
+            Job job)
         {
             if (!job.HasPlace)
                 return;
@@ -385,7 +396,7 @@ namespace RoadDemo
                 Torched[crewId] = (jobId, null, true);
                 // Same rule as the bat: the bottle landed and the front is alight, so
                 // the order was carried out - the book is not left waiting on a fight.
-                Done(outfit, job);
+                Done(house, job);
             }
 
             if (businessId.IsValid)
@@ -462,7 +473,8 @@ namespace RoadDemo
         /// <summary>Back to the front, once, when the book empties. A crew with nothing
         /// to do standing at the last address it was sent to reads as a bug; a crew
         /// walking home reads as an outfit.</summary>
-        static void SendHome(DemoCrews crews, OutfitDirector outfit, DemoCrews.Unit unit)
+        static void SendHome(DemoCrews crews, LivingCity.Outfit.House house,
+            DemoCrews.Unit unit)
         {
             if (!Dispatched.ContainsKey(unit.CrewId) && !Driving.ContainsKey(unit.CrewId))
                 return;
@@ -478,13 +490,34 @@ namespace RoadDemo
             if (CrewQuarters.Billeted(unit))
                 return;
 
-            if (outfit.TryGetHeadquarters(out var hq, out _))
+            if (Home(house, out var hq))
             {
                 if (unit.Car != null)
                     crews.OrderUnit(unit, hq, out _);
                 else
                     crews.MarchTo(unit, hq);
             }
+        }
+
+        /// <summary>A house's own door, to walk a finished crew back to: the player's
+        /// headquarters as his director answers it, and every other family's own
+        /// front.</summary>
+        static bool Home(LivingCity.Outfit.House house, out Vector3 door)
+        {
+            door = Vector3.zero;
+            if (house == null)
+                return false;
+            if (house.IsPlayer)
+            {
+                var outfit = OutfitDirector.Instance;
+                return outfit != null && outfit.TryGetHeadquarters(out door, out _);
+            }
+
+            var front = DemoCrews.FrontOf(house.GangId);
+            if (front == null)
+                return false;
+            door = front.Outside;
+            return true;
         }
 
         // Static state outlives Play when domain reload is off - the same trap

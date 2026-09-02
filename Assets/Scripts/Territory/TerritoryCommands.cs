@@ -3,11 +3,29 @@ using System.Collections.Generic;
 
 namespace LivingCity.Territory
 {
-    public readonly struct AssignHoodToBossCommand
+    /// <summary>
+    /// WHOSE ORDER THIS IS. Every command carries the house that filed it, because
+    /// twenty-one families run on this one gateway and "is this the player?" is not a
+    /// question any rule below it is allowed to ask.
+    ///
+    /// It is set in exactly one place for the player - PlayerCommands.Stamp, in the
+    /// Gameplay layer - and by a mind for everybody else. The gateway refuses an order
+    /// with no house named on it.
+    /// </summary>
+    public interface ITerritoryHouseCommand
     {
+        TerritoryGangId House { get; set; }
+    }
+
+    public struct AssignHoodToBossCommand : ITerritoryHouseCommand
+    {
+        /// <summary>The family that filed it (ITerritoryHouseCommand).</summary>
+        public TerritoryGangId House { get; set; }
+
         public AssignHoodToBossCommand(
             TerritoryCharacterId hoodId, TerritoryCharacterId bossId)
         {
+            House = default;
             HoodId = hoodId;
             BossId = bossId;
         }
@@ -16,11 +34,15 @@ namespace LivingCity.Territory
         public TerritoryCharacterId BossId { get; }
     }
 
-    public readonly struct AssignHoodToLieutenantCommand
+    public struct AssignHoodToLieutenantCommand : ITerritoryHouseCommand
     {
+        /// <summary>The family that filed it (ITerritoryHouseCommand).</summary>
+        public TerritoryGangId House { get; set; }
+
         public AssignHoodToLieutenantCommand(
             TerritoryCharacterId hoodId, TerritoryCharacterId lieutenantId)
         {
+            House = default;
             HoodId = hoodId;
             LieutenantId = lieutenantId;
         }
@@ -29,8 +51,11 @@ namespace LivingCity.Territory
         public TerritoryCharacterId LieutenantId { get; }
     }
 
-    public readonly struct AssignBlockResponsibilityCommand
+    public struct AssignBlockResponsibilityCommand : ITerritoryHouseCommand
     {
+        /// <summary>The family that filed it (ITerritoryHouseCommand).</summary>
+        public TerritoryGangId House { get; set; }
+
         public AssignBlockResponsibilityCommand(
             TerritoryBlockId blockId,
             TerritoryGangId gangId,
@@ -38,6 +63,7 @@ namespace LivingCity.Territory
             TerritoryCharacterId bossId = default,
             TerritoryCharacterId lieutenantId = default)
         {
+            House = default;
             BlockId = blockId;
             GangId = gangId;
             CommandNodeId = commandNodeId;
@@ -58,8 +84,11 @@ namespace LivingCity.Territory
         DirectMarch,
     }
 
-    public readonly struct MoveTacticalGroupCommand
+    public struct MoveTacticalGroupCommand : ITerritoryHouseCommand
     {
+        /// <summary>The family that filed it (ITerritoryHouseCommand).</summary>
+        public TerritoryGangId House { get; set; }
+
         public MoveTacticalGroupCommand(
             TerritoryCommandNodeId groupId,
             TerritoryPoint destination,
@@ -67,6 +96,7 @@ namespace LivingCity.Territory
             bool run = false,
             TacticalMovementMode mode = TacticalMovementMode.StreetOrder)
         {
+            House = default;
             GroupId = groupId;
             Destination = destination;
             DestinationBlockId = destinationBlockId;
@@ -81,11 +111,15 @@ namespace LivingCity.Territory
         public TacticalMovementMode Mode { get; }
     }
 
-    public readonly struct OperateInBlockCommand
+    public struct OperateInBlockCommand : ITerritoryHouseCommand
     {
+        /// <summary>The family that filed it (ITerritoryHouseCommand).</summary>
+        public TerritoryGangId House { get; set; }
+
         public OperateInBlockCommand(
             TerritoryCommandNodeId groupId, TerritoryBlockId blockId)
         {
+            House = default;
             GroupId = groupId;
             BlockId = blockId;
         }
@@ -94,8 +128,11 @@ namespace LivingCity.Territory
         public TerritoryBlockId BlockId { get; }
     }
 
-    public readonly struct ApproachBusinessCommand
+    public struct ApproachBusinessCommand : ITerritoryHouseCommand
     {
+        /// <summary>The family that filed it (ITerritoryHouseCommand).</summary>
+        public TerritoryGangId House { get; set; }
+
         public ApproachBusinessCommand(
             TerritoryCommandNodeId groupId, TerritoryBusinessId businessId)
             : this(groupId, businessId, TerritoryRacketIntent.Approach)
@@ -106,6 +143,7 @@ namespace LivingCity.Territory
             TerritoryCommandNodeId groupId, TerritoryBusinessId businessId,
             TerritoryRacketIntent followUp)
         {
+            House = default;
             GroupId = groupId;
             BusinessId = businessId;
             FollowUp = followUp;
@@ -122,10 +160,14 @@ namespace LivingCity.Territory
 
     /// <summary>Send a crew on a collection round (ECON-004): every shop on the block
     /// that pays this family, door to door, and the take carried home to the front.</summary>
-    public readonly struct CollectDuesCommand
+    public struct CollectDuesCommand : ITerritoryHouseCommand
     {
+        /// <summary>The family that filed it (ITerritoryHouseCommand).</summary>
+        public TerritoryGangId House { get; set; }
+
         public CollectDuesCommand(TerritoryCommandNodeId groupId, TerritoryBlockId blockId)
         {
+            House = default;
             GroupId = groupId;
             BlockId = blockId;
         }
@@ -139,11 +181,15 @@ namespace LivingCity.Territory
     /// yet and puts it to each owner in turn. What happens on a no is the crew's policy,
     /// not this command's - the order is the same order whoever carries it.
     /// </summary>
-    public readonly struct ShakeDownBlockCommand
+    public struct ShakeDownBlockCommand : ITerritoryHouseCommand
     {
+        /// <summary>The family that filed it (ITerritoryHouseCommand).</summary>
+        public TerritoryGangId House { get; set; }
+
         public ShakeDownBlockCommand(
             TerritoryCommandNodeId groupId, TerritoryBlockId blockId)
         {
+            House = default;
             GroupId = groupId;
             BlockId = blockId;
         }
@@ -156,11 +202,15 @@ namespace LivingCity.Territory
     /// LEAN ON THE HOLDOUTS: the same walk against the doors that refused us or are
     /// wavering, and a threat at each rather than a question. Fear up, heat up.
     /// </summary>
-    public readonly struct LeanOnHoldoutsCommand
+    public struct LeanOnHoldoutsCommand : ITerritoryHouseCommand
     {
+        /// <summary>The family that filed it (ITerritoryHouseCommand).</summary>
+        public TerritoryGangId House { get; set; }
+
         public LeanOnHoldoutsCommand(
             TerritoryCommandNodeId groupId, TerritoryBlockId blockId)
         {
+            House = default;
             GroupId = groupId;
             BlockId = blockId;
         }
@@ -169,11 +219,15 @@ namespace LivingCity.Territory
         public TerritoryBlockId BlockId { get; }
     }
 
-    public readonly struct DemandProtectionCommand
+    public struct DemandProtectionCommand : ITerritoryHouseCommand
     {
+        /// <summary>The family that filed it (ITerritoryHouseCommand).</summary>
+        public TerritoryGangId House { get; set; }
+
         public DemandProtectionCommand(
             TerritoryCharacterId actorId, TerritoryBusinessId businessId)
         {
+            House = default;
             ActorId = actorId;
             BusinessId = businessId;
         }
@@ -182,11 +236,15 @@ namespace LivingCity.Territory
         public TerritoryBusinessId BusinessId { get; }
     }
 
-    public readonly struct ThreatenBusinessOwnerCommand
+    public struct ThreatenBusinessOwnerCommand : ITerritoryHouseCommand
     {
+        /// <summary>The family that filed it (ITerritoryHouseCommand).</summary>
+        public TerritoryGangId House { get; set; }
+
         public ThreatenBusinessOwnerCommand(
             TerritoryCharacterId actorId, TerritoryBusinessId businessId)
         {
+            House = default;
             ActorId = actorId;
             BusinessId = businessId;
         }
@@ -279,6 +337,11 @@ namespace LivingCity.Territory
     {
         const int HistoryLimit = 512;
 
+        /// <summary>An order with nobody's name on it. The gateway is the one wall
+        /// every house's orders come through, so it is the one place this is
+        /// caught.</summary>
+        public const string NoHouse = "no house named on the order";
+
         readonly ITerritoryCommandExecutor executor;
         readonly Dictionary<long, TerritoryCommandResult> results =
             new Dictionary<long, TerritoryCommandResult>();
@@ -291,37 +354,37 @@ namespace LivingCity.Territory
         public event Action<TerritoryCommandResult> StatusChanged;
 
         public TerritoryCommandResult Submit(AssignHoodToBossCommand command) =>
-            Record(executor.Execute(command));
+            Named(command) ? Record(executor.Execute(command)) : Unnamed();
 
         public TerritoryCommandResult Submit(AssignHoodToLieutenantCommand command) =>
-            Record(executor.Execute(command));
+            Named(command) ? Record(executor.Execute(command)) : Unnamed();
 
         public TerritoryCommandResult Submit(AssignBlockResponsibilityCommand command) =>
-            Record(executor.Execute(command));
+            Named(command) ? Record(executor.Execute(command)) : Unnamed();
 
         public TerritoryCommandResult Submit(MoveTacticalGroupCommand command) =>
-            Record(executor.Execute(command));
+            Named(command) ? Record(executor.Execute(command)) : Unnamed();
 
         public TerritoryCommandResult Submit(OperateInBlockCommand command) =>
-            Record(executor.Execute(command));
+            Named(command) ? Record(executor.Execute(command)) : Unnamed();
 
         public TerritoryCommandResult Submit(ApproachBusinessCommand command) =>
-            Record(executor.Execute(command));
+            Named(command) ? Record(executor.Execute(command)) : Unnamed();
 
         public TerritoryCommandResult Submit(DemandProtectionCommand command) =>
-            Record(executor.Execute(command));
+            Named(command) ? Record(executor.Execute(command)) : Unnamed();
 
         public TerritoryCommandResult Submit(ThreatenBusinessOwnerCommand command) =>
-            Record(executor.Execute(command));
+            Named(command) ? Record(executor.Execute(command)) : Unnamed();
 
         public TerritoryCommandResult Submit(CollectDuesCommand command) =>
-            Record(executor.Execute(command));
+            Named(command) ? Record(executor.Execute(command)) : Unnamed();
 
         public TerritoryCommandResult Submit(ShakeDownBlockCommand command) =>
-            Record(executor.Execute(command));
+            Named(command) ? Record(executor.Execute(command)) : Unnamed();
 
         public TerritoryCommandResult Submit(LeanOnHoldoutsCommand command) =>
-            Record(executor.Execute(command));
+            Named(command) ? Record(executor.Execute(command)) : Unnamed();
 
         public bool TryGet(long commandId, out TerritoryCommandResult result) =>
             results.TryGetValue(commandId, out result);
@@ -337,6 +400,15 @@ namespace LivingCity.Territory
             StatusChanged?.Invoke(resolved);
             return true;
         }
+
+        /// <summary>Whether an order says whose it is. A struct constraint, so the
+        /// check costs no boxing on a path every order of every house goes through.
+        /// </summary>
+        static bool Named<T>(T command) where T : struct, ITerritoryHouseCommand =>
+            command.House.IsValid;
+
+        TerritoryCommandResult Unnamed() =>
+            Record(TerritoryCommandExecution.Reject(NoHouse));
 
         TerritoryCommandResult Record(TerritoryCommandExecution execution)
         {

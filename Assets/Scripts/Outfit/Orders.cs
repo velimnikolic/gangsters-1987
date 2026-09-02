@@ -303,6 +303,15 @@ namespace LivingCity.Outfit
         public int CrewId;
         public OrderType Type;
 
+        /// <summary>
+        /// WHOSE ORDER THIS IS. Twenty-one families file into one book apiece and work
+        /// them on one street, so a job carries the house that issued it: it is what
+        /// makes a finished BUY put the deed in the right family's name and a finished
+        /// SMASH answer to the right one. The player is house 0, which is also the
+        /// default, so a job built by a test or a bench is his.
+        /// </summary>
+        public int GangId;
+
         /// <summary>Area targets - block ids.</summary>
         public readonly List<int> BlockTargets = new List<int>();
 

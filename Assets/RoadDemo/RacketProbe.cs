@@ -257,9 +257,10 @@ namespace RoadDemo
             // The demand goes to the door we WRECKED. That is the whole chain the game
             // is about - ask, lean, wreck, ask again - and the run is worthless if it
             // never puts the last question to the man it spent the violence on.
-            var sent = runtime.Commands.Submit(new ApproachBusinessCommand(
-                TerritoryCommandNodeId.Crew(_ours.CrewId), _doors[0],
-                TerritoryRacketIntent.Demand));
+            var sent = runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
+                new ApproachBusinessCommand(
+                    TerritoryCommandNodeId.Crew(_ours.CrewId), _doors[0],
+                    TerritoryRacketIntent.Demand)));
             // What the ledger has ALREADY been asked, so the wait can tell a fresh answer
             // from the standing one. Reading the state alone said "answered" the instant
             // the order was given, because a wrecked shop is Intimidated before anybody
@@ -278,7 +279,7 @@ namespace RoadDemo
         void AwaitAnswer()
         {
             var runtime = TerritoryRuntime.Instance;
-            var us = new TerritoryGangId(LivingCity.Gangs.GangCatalog.PlayerGangId);
+            var us = LivingCity.Gameplay.PlayerCommands.House;
             var state = runtime?.Racket != null
                 ? runtime.Racket.StateOf(_doors[0], us)
                 : TerritoryProtectionState.Unaffiliated;
@@ -337,7 +338,7 @@ namespace RoadDemo
         static int Asked(TerritoryBusinessId id)
         {
             var racket = TerritoryRuntime.Instance?.Racket;
-            var us = new TerritoryGangId(LivingCity.Gangs.GangCatalog.PlayerGangId);
+            var us = LivingCity.Gameplay.PlayerCommands.House;
             return racket != null && racket.TryGetRelationship(id, us, out var word)
                 ? word.Demands
                 : 0;
@@ -578,7 +579,7 @@ namespace RoadDemo
             var racket = TerritoryRuntime.Instance?.Racket;
             if (racket == null)
                 return "no racket";
-            var us = new TerritoryGangId(LivingCity.Gangs.GangCatalog.PlayerGangId);
+            var us = LivingCity.Gameplay.PlayerCommands.House;
             var state = racket.StateOf(id, us);
             var line = NameOf(id) + " stands " +
                        TerritoryStandingVocabulary.Default.Describe(state);

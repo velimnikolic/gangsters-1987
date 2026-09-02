@@ -2489,12 +2489,13 @@ namespace RoadDemo
                 TerritoryBlockId destinationBlockId = default;
                 runtime.TryGetBlockAtWorld(
                     new Vector3(world.x, _crews.GroundY, world.y), out destinationBlockId);
-                var result = runtime.Commands.Submit(new MoveTacticalGroupCommand(
-                    TerritoryCommandNodeId.Crew(crew.Id),
-                    new TerritoryPoint(world.x, world.y),
-                    destinationBlockId,
-                    run,
-                    mode));
+                var result = runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
+                    new MoveTacticalGroupCommand(
+                        TerritoryCommandNodeId.Crew(crew.Id),
+                        new TerritoryPoint(world.x, world.y),
+                        destinationBlockId,
+                        run,
+                        mode)));
                 return result.WasAccepted;
             }
 

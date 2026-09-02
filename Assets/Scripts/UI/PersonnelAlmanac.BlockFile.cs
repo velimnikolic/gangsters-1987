@@ -1915,7 +1915,8 @@ namespace LivingCity.UI
                         "that crew is not on the street to be moved");
 
                 var result = runtime.Commands.Submit(
-                    new OperateInBlockCommand(node, blockId));
+                    Gameplay.PlayerCommands.Stamp(
+                        new OperateInBlockCommand(node, blockId)));
                 if (result.Status == TerritoryCommandStatus.Rejected)
                     return Outfit.FilingRuling.Refuse(result.Reason);
                 return Outfit.FilingRuling.Grant(

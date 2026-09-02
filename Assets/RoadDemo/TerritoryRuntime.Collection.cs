@@ -214,14 +214,14 @@ namespace RoadDemo
                 return TerritoryCommandExecution.Reject(
                     "The racket is not running in this scene.");
 
-            var unit = FindPlayerUnit(command.GroupId, out var refusal);
+            var unit = FindUnit(command.House, command.GroupId, out var refusal);
             if (unit == null)
                 return TerritoryCommandExecution.Reject(refusal);
 
             // The stops: every shop on the block that pays THIS family and owes
             // anything. The order follows the street - nearest first from where the
             // men stand, then nearest from each door - never the id list.
-            var gang = new TerritoryGangId(LivingCity.Gangs.GangCatalog.PlayerGangId);
+            var gang = command.House;
             var candidates = new List<RoundStop>();
             var here = geography.BusinessesOf(command.BlockId);
             for (var i = 0; i < here.Count; i++)
@@ -318,9 +318,8 @@ namespace RoadDemo
             if (unit == null)
                 return null;
 
-            var roster = LivingCity.Gameplay.PersonnelDirector.Instance != null
-                ? LivingCity.Gameplay.PersonnelDirector.Instance.Roster
-                : null;
+            var roster = LivingCity.Outfit.Underworld.Current?
+                .Of(unit.Faction)?.Roster;
             if (roster != null)
                 for (var i = 0; i < unit.Hoods.Count; i++)
                 {
@@ -377,9 +376,8 @@ namespace RoadDemo
             if (crews == null || geography == null || dues == null || Commands == null)
                 return;
 
-            var director = LivingCity.Gameplay.PersonnelDirector.Instance;
-            var roster = director != null ? director.Roster : null;
-            if (roster == null)
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            if (underworld == null)
                 return;
 
             var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
@@ -388,6 +386,24 @@ namespace RoadDemo
                 ? outfit.Campaign.DayOfWeek
                 : (day > 1 ? day - 1 : 0) % 7;
             var hourOfDay = (int)(gameHour - (int)(gameHour / 24.0) * 24.0);
+
+            // EVERY house's paper, not only ours. A family's rounds go out on their own
+            // days off their own lieutenants' blocks, and the money walks home to their
+            // own front - the same schedule, the same refusals, the same wire.
+            for (var g = 0; g < underworld.Count; g++)
+            {
+                var house = underworld.Of(g);
+                if (house == null || house.Extinct || house.Roster == null)
+                    continue;
+                TendHouseRounds(house, gameHour, day, dayOfWeek, hourOfDay);
+            }
+        }
+
+        void TendHouseRounds(LivingCity.Outfit.House house, double gameHour,
+            int day, int dayOfWeek, int hourOfDay)
+        {
+            var roster = house.Roster;
+            var mine = new TerritoryGangId(house.GangId);
 
             var paper = roster.Organization.BlockResponsibilities;
             for (var i = 0; i < paper.Count; i++)
@@ -411,7 +427,7 @@ namespace RoadDemo
 
                 LivingCity.Personnel.RosterOps.CollectorsOf(
                     roster, crew.Id, collectorScratch);
-                if (!TryGetCollectibleDues(blockId, out var owed))
+                if (!TryGetCollectibleDues(blockId, mine, out var owed))
                     owed = 0;
 
                 if (!TerritoryCollectionSchedule.ShouldSend(
@@ -420,7 +436,7 @@ namespace RoadDemo
                     continue;
 
                 var result = Commands.Submit(new CollectDuesCommand(
-                    TerritoryCommandNodeId.Crew(crew.Id), blockId));
+                    TerritoryCommandNodeId.Crew(crew.Id), blockId) { House = mine });
                 // Only a round that was TAKEN counts as sent. A crew in a fight or in a
                 // car is refused, and the next Business tick asks again the same day.
                 if (result.Status != TerritoryCommandStatus.Accepted &&
@@ -434,15 +450,20 @@ namespace RoadDemo
                 // the racket the player did not order, and without a line on the wire he
                 // learns it happened only when the money arrives - or never, if it does
                 // not. The street gets a word too: his men just walked off.
-                racket?.FileRound(blockId, new TerritoryGangId(
-                        LivingCity.Gangs.GangCatalog.PlayerGangId),
+                racket?.FileRound(blockId, mine,
                     TerritoryDoorNews.RoundOut, gameHour, owed,
-                    StopsOwing(blockId), 0);
-                var lieutenant = roster.Find(paper[i].LeaderId);
-                CrewOverlay.Announce(
-                    (lieutenant != null ? lieutenant.Surname.ToUpperInvariant() + "'S" : "OUR") +
-                    " ROUND IS OUT ON " + BlockWord(blockId), 4f,
-                    new Color(0.85f, 0.9f, 1f));
+                    StopsOwing(blockId, mine), 0);
+                // Only OUR rounds are news on our wire; a family's own round going
+                // out is their business, and the player learns of it by seeing it.
+                if (house.IsPlayer)
+                {
+                    var lieutenant = roster.Find(paper[i].LeaderId);
+                    CrewOverlay.Announce(
+                        (lieutenant != null
+                            ? lieutenant.Surname.ToUpperInvariant() + "'S" : "OUR") +
+                        " ROUND IS OUT ON " + BlockWord(blockId), 4f,
+                        new Color(0.85f, 0.9f, 1f));
+                }
             }
 
             // The book only has to remember today; anything older can never match again.
@@ -452,11 +473,13 @@ namespace RoadDemo
 
         /// <summary>How many of the block's doors owe us anything - what the round's own
         /// slip prints as its stop count.</summary>
-        int StopsOwing(TerritoryBlockId blockId)
+        int StopsOwing(TerritoryBlockId blockId) =>
+            StopsOwing(blockId, LivingCity.Gameplay.PlayerCommands.House);
+
+        int StopsOwing(TerritoryBlockId blockId, TerritoryGangId gang)
         {
             if (geography == null || racket == null || dues == null)
                 return 0;
-            var gang = new TerritoryGangId(LivingCity.Gangs.GangCatalog.PlayerGangId);
             var stops = 0;
             var here = geography.BusinessesOf(blockId);
             for (var i = 0; i < here.Count; i++)
@@ -518,7 +541,7 @@ namespace RoadDemo
                     : 0;
                 nextDoor = round.Stage == RoundStage.Walking
                     ? round.Stops[round.Cursor].Door
-                    : HomeDoor();
+                    : HomeDoor(round.GangId);
                 return true;
             }
 
@@ -532,8 +555,10 @@ namespace RoadDemo
         {
             owed = 0;
             lastPaidDay = -1;
+            // What the PLAYER's ledger surfaces read. A family's own dues are its
+            // own business and are read through its own house.
             if (!dues.TryGet(businessId, out var account) ||
-                account.GangId.Value != LivingCity.Gangs.GangCatalog.PlayerGangId)
+                account.GangId != LivingCity.Gameplay.PlayerCommands.House)
                 return false;
             owed = account.Owed;
             lastPaidDay = account.LastCollectedDay;
@@ -543,14 +568,19 @@ namespace RoadDemo
         /// <summary>What the player's paying doors on a block can yield right now.
         /// Every order surface reads this so collection stays closed until the first
         /// daily dues tick has actually put money on the ledger.</summary>
-        public bool TryGetCollectibleDues(TerritoryBlockId blockId, out int owed)
+        public bool TryGetCollectibleDues(TerritoryBlockId blockId, out int owed) =>
+            TryGetCollectibleDues(blockId, LivingCity.Gameplay.PlayerCommands.House,
+                out owed);
+
+        /// <summary>The same, for whichever house is asking - what ITS paying doors on
+        /// a block can yield right now.</summary>
+        public bool TryGetCollectibleDues(
+            TerritoryBlockId blockId, TerritoryGangId gang, out int owed)
         {
             owed = 0;
             if (!blockId.IsValid || geography == null || racket == null)
                 return false;
 
-            var gang = new TerritoryGangId(
-                LivingCity.Gangs.GangCatalog.PlayerGangId);
             var here = geography.BusinessesOf(blockId);
             for (var i = 0; i < here.Count; i++)
             {
@@ -569,7 +599,9 @@ namespace RoadDemo
             DemoCrews.Unit unit, CrewWalker actor,
             TerritoryActorObservation observation, double gameHour)
         {
-            if (rounds.Count == 0 || actor?.Tf == null || unit.Faction != 0)
+            // Any house's round, arriving at any house's door. The round names its own
+            // crew, and crew numbers are unique across all twenty-one books.
+            if (rounds.Count == 0 || actor?.Tf == null || unit.Faction < 0)
                 return;
 
             for (var i = rounds.Count - 1; i >= 0; i--)
@@ -615,7 +647,7 @@ namespace RoadDemo
                 }
                 else
                 {
-                    var home = HomeDoor();
+                    var home = HomeDoor(round.GangId);
                     if ((actor.Tf.position - home).sqrMagnitude > HomeRadius * HomeRadius)
                         return;
                     Bank(round, gameHour);
@@ -627,17 +659,24 @@ namespace RoadDemo
 
         const float HomeRadius = 18f;
 
-        Vector3 HomeDoor()
+        /// <summary>Where a house's round walks the bag to: that family's own door.
+        /// The player's is his headquarters, which the outfit director already
+        /// answers; everybody else's is the front the city seated them.</summary>
+        Vector3 HomeDoor(TerritoryGangId house)
         {
-            var director = LivingCity.Gameplay.OutfitDirector.Instance;
-            if (director != null && director.TryGetHeadquarters(out var hq, out _))
-                return hq;
-            return Vector3.zero;
+            if (house == LivingCity.Gameplay.PlayerCommands.House)
+            {
+                var director = LivingCity.Gameplay.OutfitDirector.Instance;
+                if (director != null && director.TryGetHeadquarters(out var hq, out _))
+                    return hq;
+            }
+
+            var front = house.IsValid ? DemoCrews.FrontOf(house.Value) : null;
+            return front != null ? front.Outside : Vector3.zero;
         }
 
-        bool HasHome() =>
-            LivingCity.Gameplay.OutfitDirector.Instance != null &&
-            LivingCity.Gameplay.OutfitDirector.Instance.TryGetHeadquarters(out _, out _);
+        bool HasHome(TerritoryGangId house) =>
+            HomeDoor(house) != Vector3.zero;
 
         /// <summary>
         /// The hand goes out (ECON-003/005/007). The owner pays, pays part with a
@@ -780,10 +819,10 @@ namespace RoadDemo
             }
 
             round.Stage = RoundStage.HeadingHome;
-            if (HasHome())
+            if (HasHome(round.GangId))
             {
                 if (unit != null && !unit.Wiped)
-                    crews.MarchTo(unit, HomeDoor());
+                    crews.MarchTo(unit, HomeDoor(round.GangId));
             }
             else
             {
@@ -832,9 +871,8 @@ namespace RoadDemo
         {
             policyLevel = (int)LivingCity.Personnel.CrewPolicy.Normal;
             archetype = (int)LivingCity.Personnel.LieutenantArchetype.Soldier;
-            var roster = LivingCity.Gameplay.PersonnelDirector.Instance != null
-                ? LivingCity.Gameplay.PersonnelDirector.Instance.Roster
-                : null;
+            var roster = LivingCity.Outfit.Underworld.Current?
+                .Of(unit.Faction)?.Roster;
             if (roster == null)
                 return;
             for (var i = 0; i < roster.Crews.Count; i++)
@@ -855,9 +893,20 @@ namespace RoadDemo
             rounds.Remove(round);
             BumpRacketSeam();
             BagCarry.Drop(round.CrewId, banked: true);
-            var director = LivingCity.Gameplay.OutfitDirector.Instance;
-            if (round.Carried > 0 && director != null)
-                director.BankCollection(round.Carried);
+            // THE ONLY PLACE ROUND MONEY BECOMES A HOUSE'S MONEY - and it is the house
+            // whose round it was, not ours.
+            var house = LivingCity.Outfit.Underworld.Current?.Of(round.GangId.Value);
+            if (round.Carried > 0 && house != null)
+            {
+                // Ours goes through the director, which prints the line on the wire and
+                // moves the ledger's dirty key; theirs goes straight onto their books.
+                var director = LivingCity.Gameplay.OutfitDirector.Instance;
+                if (house.IsPlayer && director != null)
+                    director.BankCollection(round.Carried);
+                else
+                    house.Runner.BankCollection(round.Carried);
+                house.Touch();
+            }
 
             racket?.FileRound(round.BlockId, round.GangId,
                 TerritoryDoorNews.RoundBanked, gameHour, round.Carried,

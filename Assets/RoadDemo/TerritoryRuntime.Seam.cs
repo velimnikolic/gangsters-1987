@@ -134,7 +134,8 @@ namespace RoadDemo
                     runtime.racket == null)
                     return standings;
 
-                var gang = new TerritoryGangId(LivingCity.Gangs.GangCatalog.PlayerGangId);
+                // The block file is the PLAYER's page: it reads the city as his house sees it.
+                var gang = LivingCity.Gameplay.PlayerCommands.House;
 
                 // One pass over the book, newest first: the FIRST slip seen for a door
                 // is that door's newest, so a door already in the map is left alone.
@@ -291,7 +292,7 @@ namespace RoadDemo
                 }
 
                 TerritoryDoorStandings.Of(
-                    state, OursByDeed(businessId), shut, "shut", rival, news, hasDues,
+                    state, HeldByDeed(businessId, gang), shut, "shut", rival, news, hasDues,
                     owed, rate, lastPaid, missed, day, word,
                     out var kind, out var line, out var outOwed, out var daysLate,
                     out var newsDay);
@@ -375,7 +376,8 @@ namespace RoadDemo
                 if (!blockId.IsValid || runtime.geography == null || runtime.racket == null)
                     return "this block is not on the geography";
 
-                var gang = new TerritoryGangId(LivingCity.Gangs.GangCatalog.PlayerGangId);
+                // The block file is the PLAYER's page: it reads the city as his house sees it.
+                var gang = LivingCity.Gameplay.PlayerCommands.House;
                 var here = runtime.geography.BusinessesOf(blockId);
 
                 switch (key)
@@ -384,7 +386,7 @@ namespace RoadDemo
                         for (var i = 0; i < here.Count; i++)
                             if (TerritoryShakedown.WorthAsking(
                                     runtime.racket.StateOf(here[i].BusinessId, gang),
-                                    OursByDeed(here[i].BusinessId)))
+                                    HeldByDeed(here[i].BusinessId, gang)))
                                 return "";
                         return ShakedownRefusal;
 
@@ -392,7 +394,7 @@ namespace RoadDemo
                         for (var i = 0; i < here.Count; i++)
                             if (TerritoryShakedown.IsHoldout(
                                     runtime.racket.StateOf(here[i].BusinessId, gang),
-                                    OursByDeed(here[i].BusinessId)))
+                                    HeldByDeed(here[i].BusinessId, gang)))
                                 return "";
                         return LeanRefusal;
 
@@ -409,18 +411,22 @@ namespace RoadDemo
 
             // --------------------------------------------------------------- the acts
 
+            // The block file is the PLAYER's page, so these three carry his name.
             public TerritoryCommandResult ShakeDown(int crewId, TerritoryBlockId blockId) =>
-                runtime.Commands.Submit(new ShakeDownBlockCommand(
-                    TerritoryCommandNodeId.Crew(crewId), blockId));
+                runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
+                    new ShakeDownBlockCommand(
+                        TerritoryCommandNodeId.Crew(crewId), blockId)));
 
             public TerritoryCommandResult SendRound(int crewId, TerritoryBlockId blockId) =>
-                runtime.Commands.Submit(new CollectDuesCommand(
-                    TerritoryCommandNodeId.Crew(crewId), blockId));
+                runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
+                    new CollectDuesCommand(
+                        TerritoryCommandNodeId.Crew(crewId), blockId)));
 
             public TerritoryCommandResult LeanOnHoldouts(
                 int crewId, TerritoryBlockId blockId) =>
-                runtime.Commands.Submit(new LeanOnHoldoutsCommand(
-                    TerritoryCommandNodeId.Crew(crewId), blockId));
+                runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
+                    new LeanOnHoldoutsCommand(
+                        TerritoryCommandNodeId.Crew(crewId), blockId)));
 
             public string SetPolicy(int crewId, CrewPolicy policy)
             {

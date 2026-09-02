@@ -195,6 +195,19 @@ namespace LivingCity.Outfit
         }
 
         /// <summary>
+        /// An order into the book of the house that filed it. The one door every
+        /// family's orders go through, the player's included - the ledger names his
+        /// house and a mind names its own.
+        /// </summary>
+        public OpResult Issue(Job job)
+        {
+            var house = job != null ? Of(job.GangId) : null;
+            if (house == null || house.Extinct)
+                return OpResult.Fail(UI.LedgerText.ReasonNoSuchCrew);
+            return house.Runner.Issue(house.Roster, job);
+        }
+
+        /// <summary>
         /// Midnight for everybody: wages out of each house's own safe, its own men
         /// aging, learning, souring and walking. Tribute is the player's alone - he is
         /// the one who pays the houses above him - and that is the whole of the

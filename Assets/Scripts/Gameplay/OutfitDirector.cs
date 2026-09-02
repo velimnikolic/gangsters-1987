@@ -216,7 +216,13 @@ namespace LivingCity.Gameplay
 
         // ------------------------------------------------------------------- issuing
 
-        public OpResult IssueOrder(Job job) => Commit(Runner.Issue(RosterOrNull(), job));
+        public OpResult IssueOrder(Job job)
+        {
+            if (job != null)
+                job.GangId = Gangs.GangCatalog.PlayerGangId;
+            Adopt();
+            return Commit(Underworld.Current.Issue(job));
+        }
 
         public OpResult CancelOrder(int jobId) => Commit(Runner.Cancel(RosterOrNull(), jobId));
 
@@ -385,10 +391,7 @@ namespace LivingCity.Gameplay
         {
             if (amount <= 0)
                 return;
-            Accounts.Safe += amount;
-            var sheet = Accounts.Current;
-            if (sheet != null)
-                sheet.IllegalIncome += amount;
+            Runner.BankCollection(amount);
             Version++;
             Debug.Log("[Outfit] A round banked " + UI.LedgerText.Cash(amount) + ".");
         }
@@ -405,6 +408,10 @@ namespace LivingCity.Gameplay
                 return;
 
             var businessId = new Territory.TerritoryBusinessId(job.TargetBusinessId);
+            // The house that ORDERED it answers for it - the deed goes in their name,
+            // the escalation is filed against them. This used to be the player's name
+            // whoever gave the order.
+            var whose = new Territory.TerritoryGangId(job.GangId);
             switch (job.Type)
             {
                 // The paperwork came back signed: the deed moves to the outfit, in the

@@ -33,6 +33,8 @@ namespace LivingCity.Tests
             ViolenceAtTheShopIsRecordedAgainstTheHouse(failures);
             AStreetChangesHandsOnlyUnderSustainedPressure(failures);
             EveryHouseUsesTheSameRules(failures);
+            AnOrderNamesTheHouseThatFiledIt(failures);
+            ADoorRefusesEveryHouseTheSameWay(failures);
             TheStreetsTroubleReachesTheShopNextDoor(failures);
             ThePlayerReadsWordsAboutAShop(failures);
             TheCardSaysWhereTheShopStands(failures);
@@ -43,6 +45,7 @@ namespace LivingCity.Tests
             OneVisitFilesOneSlip(failures);
             MoneyReachesTheWireWithItsSum(failures);
             AShakedownWalksTheDoorsThatHaveNotAnswered(failures);
+            AFlatIsBoughtAndHiddenInAndNothingElse(failures);
 
             return failures;
         }
@@ -306,6 +309,72 @@ namespace LivingCity.Tests
             var free = new TerritoryRacketLedger(config);
             if (free.Switch(Bar, Gang(7), 11.0))
                 failures.Add("RACK-014: an unprotected shop was 'taken' from nobody.");
+        }
+
+        // ------------------------------------------------------------------- RIVAL-003
+
+        /// <summary>
+        /// EVERY ORDER SAYS WHOSE IT IS. The gateway is the one wall twenty-one
+        /// families file through, so an order with nobody's name on it is refused
+        /// there, before any executor is asked - and the player's name goes on his own
+        /// through exactly one helper.
+        /// </summary>
+        static void AnOrderNamesTheHouseThatFiledIt(List<string> failures)
+        {
+            var blank = new CollectDuesCommand(
+                TerritoryCommandNodeId.Crew(1), Street);
+            if (blank.House.IsValid)
+                failures.Add("RIVAL-003: an order was born with somebody's name on it.");
+
+            var ours = Gameplay.PlayerCommands.Stamp(blank);
+            if (!ours.House.IsValid ||
+                ours.House.Value != Gangs.GangCatalog.PlayerGangId)
+                failures.Add("RIVAL-003: the player's own stamp did not name his house.");
+
+            // The same helper serves any house: a mind stamps its own the same way.
+            var theirs = blank;
+            theirs.House = Gang(9);
+            if (theirs.House != Gang(9) || ours.House == theirs.House)
+                failures.Add("RIVAL-003: an order cannot be filed by another house.");
+
+            // And the stamp is a COPY - stamping one order never renames another.
+            if (blank.House.IsValid)
+                failures.Add("RIVAL-003: stamping an order changed the one it was made from.");
+        }
+
+        /// <summary>
+        /// A DOOR REFUSES EVERY HOUSE THE SAME WAY. Tenure is a relation, not a
+        /// property of the shop: the same door is Ours to whoever holds its paper and
+        /// Rival to everybody else, so "we do not rob the takings we collect" is a
+        /// sentence all twenty-one families hear about their own doors.
+        /// </summary>
+        static void ADoorRefusesEveryHouseTheSameWay(List<string> failures)
+        {
+            foreach (var type in new[]
+                     {
+                         Outfit.OrderType.Raid, Outfit.OrderType.SmashUp,
+                         Outfit.OrderType.Torch, Outfit.OrderType.Bomb,
+                         Outfit.OrderType.BuyPremises,
+                     })
+            {
+                var ours = Outfit.DoorOrders.Refusal(type, Outfit.DoorTenure.Ours);
+                var theirs = Outfit.DoorOrders.Refusal(type, Outfit.DoorTenure.Ours);
+                if (ours != theirs || string.IsNullOrEmpty(ours))
+                    failures.Add("RIVAL-003: " + type +
+                                 " against a house's own paper is not refused.");
+                if (Outfit.DoorOrders.Refusal(type, Outfit.DoorTenure.Rival) != null)
+                    failures.Add("RIVAL-003: " + type +
+                                 " against another house's door was refused.");
+            }
+
+            foreach (var type in new[]
+                     {
+                         Outfit.OrderType.Raid, Outfit.OrderType.SmashUp,
+                         Outfit.OrderType.Torch, Outfit.OrderType.Bomb,
+                     })
+                if (Outfit.DoorOrders.Refusal(type, Outfit.DoorTenure.Paying) == null)
+                    failures.Add("RIVAL-003: " + type +
+                                 " against a door that pays a house was allowed.");
         }
 
         // ------------------------------------------------------------------- RACK-013

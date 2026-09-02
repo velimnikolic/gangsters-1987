@@ -1368,9 +1368,10 @@ namespace LivingCity.UI
             // COLLECT is the round: every paying door on this block, walked in order, the
             // take carried home (ECON-004). Everything else is the doorstep chain.
             var sent = intent == TerritoryRacketIntent.Collect
-                ? runtime.Commands.Submit(new CollectDuesCommand(node, door.Block))
-                : runtime.Commands.Submit(
-                    new ApproachBusinessCommand(node, door.Id, intent));
+                ? runtime.Commands.Submit(Gameplay.PlayerCommands.Stamp(
+                    new CollectDuesCommand(node, door.Block)))
+                : runtime.Commands.Submit(Gameplay.PlayerCommands.Stamp(
+                    new ApproachBusinessCommand(node, door.Id, intent)));
             if (sent.Status == TerritoryCommandStatus.Rejected)
             {
                 Say(sent.Reason);

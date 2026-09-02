@@ -86,6 +86,15 @@ namespace LivingCity.Tests
                 failures.Add("Control: a changed block would not be rewritten.");
         }
 
+        /// <summary>The fixture's own house on an order - the one thing every command
+        /// carries now (ITerritoryHouseCommand).</summary>
+        static T House<T>(T command, int gangId = 0)
+            where T : struct, ITerritoryHouseCommand
+        {
+            command.House = new TerritoryGangId(gangId);
+            return command;
+        }
+
         static TerritoryBlockDefinition Definition() =>
             new TerritoryBlockDefinition(
                 BlockId,
@@ -119,25 +128,35 @@ namespace LivingCity.Tests
             var commands = new TerritoryCommandGateway(executor);
 
             var before = state.Version;
-            var invalid = commands.Submit(new AssignBlockResponsibilityCommand(
+
+            // AN ORDER WITH NOBODY'S NAME ON IT is refused at the wall, before any
+            // executor is asked - twenty-one families file through this gateway and an
+            // unnamed order belongs to none of them.
+            var unnamed = commands.Submit(new MoveTacticalGroupCommand(
+                TerritoryCommandNodeId.Crew(4), new TerritoryPoint(1f, 1f)));
+            if (unnamed.Status != TerritoryCommandStatus.Rejected ||
+                unnamed.Reason != TerritoryCommandGateway.NoHouse)
+                failures.Add("Commands: an order naming no house was taken.");
+
+            var invalid = commands.Submit(House(new AssignBlockResponsibilityCommand(
                 new TerritoryBlockId("missing"),
                 new TerritoryGangId(0),
-                TerritoryCommandNodeId.Crew(4)));
+                TerritoryCommandNodeId.Crew(4))));
             if (invalid.Status != TerritoryCommandStatus.Rejected || state.Version != before)
                 failures.Add("Commands: an invalid assignment partially changed state.");
 
-            var move = commands.Submit(new MoveTacticalGroupCommand(
-                TerritoryCommandNodeId.Crew(4), new TerritoryPoint(100f, 200f)));
+            var move = commands.Submit(House(new MoveTacticalGroupCommand(
+                TerritoryCommandNodeId.Crew(4), new TerritoryPoint(100f, 200f))));
             if (move.Status != TerritoryCommandStatus.Pending || !move.WasAccepted)
                 failures.Add("Commands: an accepted physical order did not remain pending.");
             if (state.Version != before)
                 failures.Add("Commands: move acceptance fabricated a territory state change.");
 
-            var assigned = commands.Submit(new AssignBlockResponsibilityCommand(
+            var assigned = commands.Submit(House(new AssignBlockResponsibilityCommand(
                 BlockId,
                 new TerritoryGangId(0),
                 TerritoryCommandNodeId.Crew(4),
-                lieutenantId: new TerritoryCharacterId(9)));
+                lieutenantId: new TerritoryCharacterId(9))));
             if (assigned.Status != TerritoryCommandStatus.Succeeded)
                 failures.Add("Commands: valid block responsibility was not applied.");
 

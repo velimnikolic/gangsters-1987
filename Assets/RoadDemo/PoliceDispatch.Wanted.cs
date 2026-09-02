@@ -247,7 +247,7 @@ namespace RoadDemo
             {
                 var front = fronts[i];
                 if (front == null || front.Boarded) continue;
-                if (front.GangId != LivingCity.Gangs.GangCatalog.PlayerGangId) continue;
+                if (front.GangId != LivingCity.Gameplay.PlayerCommands.House.Value) continue;
                 _doors.Add(front);
             }
             GangFront best = null;

@@ -335,6 +335,22 @@ namespace LivingCity.Outfit
             JobResolved?.Invoke(job, result.Outcome);
         }
 
+        /// <summary>
+        /// A round's take reaching this house's safe. The ONE place round money becomes
+        /// a family's money - the walk decides how much and the ledger decides nothing.
+        /// Illegal by definition: it is protection, and it wants laundering before it
+        /// is anybody's clean money.
+        /// </summary>
+        public void BankCollection(int amount)
+        {
+            if (amount <= 0)
+                return;
+            Accounts.Safe += amount;
+            var sheet = Accounts.Current;
+            if (sheet != null)
+                sheet.IllegalIncome += amount;
+        }
+
         // ----------------------------------------------------------------- the money
 
         /// <summary>

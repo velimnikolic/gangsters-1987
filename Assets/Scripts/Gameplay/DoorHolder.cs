@@ -20,15 +20,23 @@ namespace LivingCity.Gameplay
     public static class DoorHolder
     {
         /// <summary>
-        /// Where this door stands with the player's family. <paramref name="holderGang"/>
-        /// comes back as the rival house that holds it, or -1 when no other house does.
+        /// Where this door stands with ONE HOUSE - the player's unless another is named.
+        /// <paramref name="holderGang"/> comes back as the other house that holds it, or
+        /// -1 when nobody else does.
+        ///
+        /// Tenure is a RELATION, not a property of the door: the same shop is Ours to
+        /// the family whose paper it is on and Rival to everybody else, and that is why
+        /// DoorOrders.Refusal can say "our own paper" for all twenty-one.
         /// </summary>
         /// <param name="marker">The live view when the caller already has one; null is
         /// fine and the binding is looked up here.</param>
         public static DoorTenure Read(
-            TerritoryBusinessId id, BusinessMarker marker, out int holderGang)
+            TerritoryBusinessId id, BusinessMarker marker, out int holderGang,
+            TerritoryGangId asking = default)
         {
             holderGang = -1;
+            if (!asking.IsValid)
+                asking = PlayerCommands.House;
             if (!id.IsValid)
                 return DoorTenure.Open;
 
@@ -50,7 +58,7 @@ namespace LivingCity.Gameplay
                 deedGang = -1;
 
             var tenure = DoorTenure.Open;
-            if (deedGang == GangCatalog.PlayerGangId)
+            if (deedGang == asking.Value)
             {
                 tenure = DoorTenure.Ours;
             }
@@ -64,7 +72,7 @@ namespace LivingCity.Gameplay
                 var racket = RoadDemo.TerritoryRuntime.Instance?.Racket;
                 if (racket != null && racket.TryGetProtector(id, out var protector))
                 {
-                    if (protector == new TerritoryGangId(GangCatalog.PlayerGangId))
+                    if (protector == asking)
                     {
                         tenure = DoorTenure.Paying;
                     }
@@ -83,7 +91,7 @@ namespace LivingCity.Gameplay
             var front = FrontOn(id);
             if (front != null)
             {
-                if (front.GangId == GangCatalog.PlayerGangId)
+                if (front.GangId == asking.Value)
                 {
                     tenure = DoorTenure.Ours;
                     holderGang = -1;
@@ -101,6 +109,10 @@ namespace LivingCity.Gameplay
         public static DoorTenure Read(TerritoryBusinessId id) =>
             Read(id, null, out _);
 
+        /// <summary>Where this door stands with a NAMED house.</summary>
+        public static DoorTenure Read(TerritoryBusinessId id, TerritoryGangId asking) =>
+            Read(id, null, out _, asking);
+
         /// <summary>
         /// Whether the player may be TOLD that this house holds this door. Our own is
         /// always ours to know; another family's is theirs to keep until one of our men
@@ -111,7 +123,7 @@ namespace LivingCity.Gameplay
         /// </summary>
         public static bool Learned(TerritoryBusinessId id, int gangId)
         {
-            if (gangId < 0 || gangId == GangCatalog.PlayerGangId)
+            if (gangId < 0 || gangId == PlayerCommands.House.Value)
                 return true;
 
             var all = RoadDemo.GangFront.All;

@@ -62,7 +62,7 @@ namespace RoadDemo
                 LivingCity.Business.BusinessDeeds.SetGang(
                     business, front.GangId, front.BlockId);
                 _written++;
-                if (front.GangId == LivingCity.Gangs.GangCatalog.PlayerGangId)
+                if (front.GangId == LivingCity.Gameplay.PlayerCommands.House.Value)
                     Debug.Log($"[Turf] The outfit holds the paper on {business.Value} - " +
                               (front.Books != null ? front.Books.Sign : front.name) + ".");
             }

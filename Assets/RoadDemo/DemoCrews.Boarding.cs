@@ -921,7 +921,7 @@ namespace RoadDemo
         /// at. Null before the families are seated, and in the demo scenes that stand no
         /// fronts at all; the caller then falls back to the man who holds the keys.</summary>
         public static GangFront PlayerFront() =>
-            FrontOf(LivingCity.Gangs.GangCatalog.PlayerGangId);
+            FrontOf(LivingCity.Gameplay.PlayerCommands.House.Value);
 
         /// <summary>One family's own door. Null before the families are seated, in the
         /// demo scenes that stand no fronts at all, and for anybody who is not a family
