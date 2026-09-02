@@ -23,9 +23,9 @@ namespace LivingCity.UI
         /// crew currently out on the street.</summary>
         PickedOrStreet,
 
-        /// <summary>The block file: its named lieutenant first, otherwise the one crew
-        /// physically standing on that block. It never borrows an unrelated selected
-        /// crew from the 3D view.</summary>
+        /// <summary>The block file: an explicit picker choice first, then its named
+        /// lieutenant, otherwise the one crew physically standing on that block. It
+        /// never borrows an unrelated selected crew from the 3D view.</summary>
         BlockResponsibility,
     }
 
@@ -470,6 +470,7 @@ namespace LivingCity.UI
             // The office first: a panel repainted because a ruling landed must be painted
             // with the ruling on it, not with the line it was filed under.
             Poll();
+            var infoOnly = !showCommands;
 
             var panel = LedgerV2.Card("Door menu", parent, 0f, 0f, width, 1f, LedgerV2.Head);
             // It is laid OVER whatever it opened on, so it must also stop the clicks the
@@ -493,18 +494,20 @@ namespace LivingCity.UI
 
             Caps(panel, 12f, -y, headW,
                 (string.IsNullOrEmpty(door.Role) ? "" : door.Role + " · ") +
-                door.Trade + " · " + TenureWord(door.Tenure), 9f, LedgerV2.HeadDim, 6f)
+                door.Trade + " · " + TenureWord(door.Tenure),
+                infoOnly ? 11f : 9f, LedgerV2.HeadDim, 6f)
                 .font = LedgerStyle.Mono;
-            y += 22f;
+            y += infoOnly ? 25f : 22f;
 
-            y += Gazda(panel, 12f, y, width - 24f, door);
+            y += Gazda(panel, 12f, y, width - 24f, door, infoOnly);
 
             // The door's own sentence WRAPS. It carries the demand's terms - what we are
             // worth to this man against what he wants - and a line cut off at the panel's
             // edge is exactly the half the reader needs.
-            var note = Paragraph(panel, LedgerStyle.Mono, 10f, LedgerV2.HeadDim, 12f, -y,
-                width - 24f, 48f, Sentence(door), 2f);
-            y += Mathf.Clamp(note.preferredHeight, 14f, 48f) + 6f;
+            var noteMax = infoOnly ? 72f : 48f;
+            var note = Paragraph(panel, LedgerStyle.Mono, infoOnly ? 12f : 10f,
+                LedgerV2.HeadDim, 12f, -y, width - 24f, noteMax, Sentence(door), 2f);
+            y += Mathf.Clamp(note.preferredHeight, infoOnly ? 18f : 14f, noteMax) + 6f;
 
             if (showCommands)
             {
@@ -719,7 +722,8 @@ namespace LivingCity.UI
         /// A firm and City Hall get no photograph, because neither is a man; their plate
         /// keeps its initials. Answers the height the block took.
         /// </summary>
-        static float Gazda(RectTransform panel, float x, float top, float width, Door door)
+        static float Gazda(RectTransform panel, float x, float top, float width, Door door,
+            bool largeCopy = false)
         {
             if (string.IsNullOrEmpty(door.OwnerName))
                 return 0f;
@@ -741,7 +745,7 @@ namespace LivingCity.UI
                     PortraitStudio.Framing.Bust, plate);
 
             var name = LedgerV2.Name(panel, textX, -(top + 4f), textW, door.OwnerName,
-                13.5f, LedgerV2.HeadCream);
+                largeCopy ? 15.5f : 13.5f, LedgerV2.HeadCream);
             name.overflowMode = TextOverflowModes.Ellipsis;
 
             // A house's man is read by his house, not by how easily he folds: nobody
@@ -750,13 +754,14 @@ namespace LivingCity.UI
                 house
                     ? "BOSS · " + GangName(door.RoleGang)
                     : KindWord(door.OwnerKind) + " · " + TraitWord(door.Trait),
-                9f, LedgerV2.HeadDim, 6f).font = LedgerStyle.Mono;
+                largeCopy ? 10.5f : 9f, LedgerV2.HeadDim, 6f).font = LedgerStyle.Mono;
 
-            LedgerV2.Mono(panel, textX, -(top + 36f), textW,
-                house ? "the house's own premises" : TraitLine(door.Trait), 9f,
+            LedgerV2.Mono(panel, textX, -(top + (largeCopy ? 37f : 36f)), textW,
+                house ? "the house's own premises" : TraitLine(door.Trait),
+                largeCopy ? 11f : 9f,
                 LedgerV2.HeadDim, 0.5f);
 
-            return plateH + 10f;
+            return plateH + (largeCopy ? 13f : 10f);
         }
 
         /// <summary>What the deed makes him.</summary>
@@ -1070,12 +1075,14 @@ namespace LivingCity.UI
             // order no crew can carry is refused by the office a second and a half
             // later, on a line nothing on this panel ever showed - so the row stands
             // faded instead, which is what the shared table's hasCrew is for.
-            var hasCrew = CrewToSend(door, dispatch, out _, out _, out _) != null;
+            var going = CrewToSend(door, dispatch, out _, out _, out _);
+            var hasCrew = going != null;
 
             TerritoryRacketOrders.For(
                 door.Standing, door.Tenure, racketable: true, hasCrew,
                 MenAtDoor(door.Id), door.BuyPrice, orders,
-                closure: door.Closure);
+                closure: door.Closure,
+                quarters: RoadDemo.CrewQuarters.State(StreetUnit(going), door.Id));
 
             for (var i = 0; i < orders.Count; i++)
             {
@@ -1131,6 +1138,15 @@ namespace LivingCity.UI
             if (row.Kind == TerritoryDoorRowKind.Repair)
                 return () => { Repair(door); changed?.Invoke(); };
 
+            // Men into one of our own buildings, or out of it. Not filed with the office:
+            // the crew walks there and goes in, and the street plays the whole of it
+            // (RoadDemo.CrewQuarters) - the same act the street card's row carries.
+            if (row.Kind == TerritoryDoorRowKind.Quarters)
+            {
+                var move = row.Move;
+                return () => { MoveQuarters(door, move, dispatch); changed?.Invoke(); };
+            }
+
             var type = row.Job;
             if (type == Outfit.OrderType.BuyPremises)
                 return () => { FileBuyPremises(door, dispatch); changed?.Invoke(); };
@@ -1151,6 +1167,44 @@ namespace LivingCity.UI
             Say(result.Ok
                 ? door.Name + " repaired and open for future collections"
                 : result.Reason);
+        }
+
+        /// <summary>The bodies on the street behind a crew on the books, or null when
+        /// that branch has nobody standing in this scene (the ledger opened on its
+        /// own).</summary>
+        static DemoCrews.Unit StreetUnit(Crew crew) =>
+            crew != null && DemoCrews.Active != null
+                ? DemoCrews.Active.UnitOfCrew(crew.Id)
+                : null;
+
+        /// <summary>
+        /// Men into one of our own premises, or back out of it. The crew is the one the
+        /// rest of this menu would send, and the act is the street's - it is carried out
+        /// where the player can watch it, not filed with the office.
+        /// </summary>
+        static void MoveQuarters(
+            Door door, TerritoryQuartersMove move, DoorDispatch dispatch)
+        {
+            var crew = CrewToSend(door, dispatch, out _, out var refusal, out _);
+            var unit = StreetUnit(crew);
+            if (unit == null)
+            {
+                Say(string.IsNullOrEmpty(refusal)
+                    ? "no crew of ours is on the street to send"
+                    : refusal);
+                return;
+            }
+
+            if (move == TerritoryQuartersMove.Out)
+            {
+                RoadDemo.CrewQuarters.BringOut(unit);
+                Say("out of " + door.Name + " and back on the street.");
+                return;
+            }
+
+            Say(RoadDemo.CrewQuarters.Station(DemoCrews.Active, unit, door.Id)
+                ? "the men are walking to " + door.Name + " to move in."
+                : "there is no way into " + door.Name + " from the street.");
         }
 
         /// <summary>Whether men of ours are already standing at this door - the same
@@ -1379,8 +1433,16 @@ namespace LivingCity.UI
             var runtime = TerritoryRuntime.Instance;
             Crew onStreet = null;
             var streetCrews = 0;
+            var detail = Bodyguards.DetailOf(roster);
             for (var i = 0; runtime != null && i < roster.Crews.Count; i++)
             {
+                // THE DON IS NOT THE MAN THE MENU PICKS FOR YOU. He stands on the street
+                // with his detail like any lieutenant now, and this fallback exists to
+                // save the player naming the obvious crew when only one is out - the
+                // Boss's own detail is never that obvious crew. He goes where he is sent
+                // by name, off the picker or off the street card.
+                if (detail != null && roster.Crews[i].Id == detail.Id)
+                    continue;
                 if (!runtime.TryGetCrewNode(roster.Crews[i].Id, out _))
                     continue;
                 streetCrews++;

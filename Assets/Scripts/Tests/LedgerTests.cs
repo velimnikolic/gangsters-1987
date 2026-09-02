@@ -56,7 +56,7 @@ namespace LivingCity.Tests
         /// distance away so travel is a known quantity rather than a scene's.</summary>
         static CampaignRunner Runner(out Roster roster, float metres = 800f)
         {
-            roster = RosterSeeder.Generate(42);
+            roster = RosterSeeder.GenerateStaffed(42);
             RosterOps.NormalizeArms(roster);
             var runner = new CampaignRunner { Seed = 42, DistanceOf = _ => metres };
             runner.OpenFirstSheet();
@@ -446,7 +446,7 @@ namespace LivingCity.Tests
 
         static void MoneyMovesEitherWay(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(42);
+            var roster = RosterSeeder.GenerateStaffed(42);
             var crew = roster.Crews[0];
             var bribe = OrderTable.SpecOf(OrderType.Bribe);
 
@@ -545,7 +545,7 @@ namespace LivingCity.Tests
 
         static void CrewKitReadsVehiclesAndSkill(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(42);
+            var roster = RosterSeeder.GenerateStaffed(42);
             var crew = roster.Crews[0];
 
             if (CrewKit.MenOf(crew) != 3)
@@ -804,7 +804,7 @@ namespace LivingCity.Tests
 
         static void NewStockEntersThePoolUnheld(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(42);
+            var roster = RosterSeeder.GenerateStaffed(42);
             var before = roster.Equipment.Count;
             var assetsBefore = BalanceMath.AssetsOf(roster);
 
@@ -872,7 +872,7 @@ namespace LivingCity.Tests
 
         static void WagesDeriveFromTheRoster(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(42);
+            var roster = RosterSeeder.GenerateStaffed(42);
             var expected = 0;
             foreach (var member in roster.Members)
                 expected += Wages.WageFor(member);
@@ -894,7 +894,7 @@ namespace LivingCity.Tests
 
         static void HiringMovesThePayroll(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(7);
+            var roster = RosterSeeder.GenerateStaffed(7);
             var before = Wages.DailyPayroll(roster);
 
             var recruit = new Character { Id = roster.NextCharacterId() };
@@ -956,7 +956,7 @@ namespace LivingCity.Tests
 
         static void AssetsAreBookValue(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(42);
+            var roster = RosterSeeder.GenerateStaffed(42);
             // Seeded stock: the $1,500 car - the men's .38s are their own, not stock.
             if (BalanceMath.AssetsOf(roster) != 1500)
                 failures.Add($"AssetsAreBookValue: {BalanceMath.AssetsOf(roster)}.");

@@ -58,8 +58,8 @@ namespace LivingCity.Tests
 
         static void SameSeedSameCharacters(List<string> failures)
         {
-            var first = RosterSeeder.Generate(1987);
-            var second = RosterSeeder.Generate(1987);
+            var first = RosterSeeder.GenerateStaffed(1987);
+            var second = RosterSeeder.GenerateStaffed(1987);
 
             for (var i = 0; i < first.Members.Count; i++)
                 for (var t = 0; t < Personality.All.Length; t++)
@@ -72,7 +72,7 @@ namespace LivingCity.Tests
                                      $"'s {trait} was {a} then {b}.");
                 }
 
-            var other = RosterSeeder.Generate(1988);
+            var other = RosterSeeder.GenerateStaffed(1988);
             var identical = true;
             for (var i = 0; i < first.Members.Count && identical; i++)
                 for (var t = 0; t < Personality.All.Length; t++)
@@ -152,7 +152,7 @@ namespace LivingCity.Tests
         {
             // The seeder dealt Loyalty in its own narrower band before this system
             // existed, and re-rolling it here would re-deal every campaign's six.
-            var roster = RosterSeeder.Generate(1987);
+            var roster = RosterSeeder.GenerateStaffed(1987);
             for (var i = 0; i < roster.Members.Count; i++)
             {
                 var member = roster.Members[i];

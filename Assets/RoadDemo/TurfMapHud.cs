@@ -2463,6 +2463,17 @@ namespace RoadDemo
                 if (!crew.Mine)
                     continue;
 
+                // A crew taken into one of our own buildings is not holding a street -
+                // it is indoors, and the plate says so rather than printing whatever it
+                // was last told (CrewQuarters).
+                if (CrewQuarters.Billeted(crew.Unit))
+                {
+                    crew.Order = TurfOrder.Inside;
+                    continue;
+                }
+                if (crew.Order == TurfOrder.Inside)
+                    crew.Order = TurfOrder.Holding;
+
                 switch (crew.Order)
                 {
                     case TurfOrder.Walking:

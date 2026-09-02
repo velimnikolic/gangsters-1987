@@ -20,6 +20,7 @@ namespace LivingCity.Tests
         {
             var failures = new List<string>();
 
+            OpeningBooksAreTheDonAlone(failures);
             SameSeedSameRoster(failures);
             DifferentSeedsDiffer(failures);
             SeedShapeInvariants(failures);
@@ -36,6 +37,7 @@ namespace LivingCity.Tests
             LieutenantCannotBeClickAssigned(failures);
             EquipmentIsExclusive(failures);
             GearFlowsThroughTheLieutenant(failures);
+            TheDonsDetailTakesTheKeys(failures);
             KeysMoveBetweenLieutenants(failures);
             LieutenantDealsArmsByOrganization(failures);
             MotorcycleIsWheelsAndNotAGun(failures);
@@ -241,10 +243,51 @@ namespace LivingCity.Tests
 
         // -------------------------------------------------------------- determinism
 
+        /// <summary>A campaign opens on ONE MAN. Every name after the Don is one the
+        /// player went and got, so the seeder must not deal him a lieutenant, a crew,
+        /// a man on the desk or a pool - only the car out back.</summary>
+        static void OpeningBooksAreTheDonAlone(List<string> failures)
+        {
+            for (var seed = 0; seed < 20; seed++)
+            {
+                var roster = RosterSeeder.Generate(seed);
+                var tag = $"OpeningBooksAreTheDonAlone(seed {seed})";
+
+                if (roster.Members.Count != 1)
+                {
+                    failures.Add($"{tag}: {roster.Members.Count} men on the books.");
+                    continue;
+                }
+
+                var boss = roster.FindBoss();
+                if (boss == null || boss.Rank != Rank.Boss ||
+                    boss.Id != roster.Members[0].Id || roster.BossId != boss.Id ||
+                    boss.FullName != Gangs.GangCatalog.BossName ||
+                    boss.Look != Gangs.GangCatalog.BossModel)
+                    failures.Add($"{tag}: the one man is not the canonical Don.");
+                if (roster.Crews.Count != 0)
+                    failures.Add($"{tag}: the books opened with a crew already standing.");
+                if (roster.FrontId != -1)
+                    failures.Add($"{tag}: somebody was already on the front desk.");
+
+                var vehicles = 0;
+                foreach (var item in roster.Equipment)
+                    if (item.Kind == EquipmentKind.Vehicle)
+                        vehicles++;
+                if (roster.Equipment.Count != 1 || vehicles != 1)
+                    failures.Add($"{tag}: the garage holds {roster.Equipment.Count} items, " +
+                                 "not the one car.");
+            }
+
+            if (RosterSeeder.Generate(42).Equipment[0].DisplayName !=
+                RosterSeeder.Generate(42).Equipment[0].DisplayName)
+                failures.Add("OpeningBooksAreTheDonAlone: the same seed dealt two cars.");
+        }
+
         static void SameSeedSameRoster(List<string> failures)
         {
-            var a = RosterSeeder.Generate(42);
-            var b = RosterSeeder.Generate(42);
+            var a = RosterSeeder.GenerateStaffed(42);
+            var b = RosterSeeder.GenerateStaffed(42);
 
             if (a.Members.Count != b.Members.Count)
             {
@@ -277,8 +320,8 @@ namespace LivingCity.Tests
 
         static void DifferentSeedsDiffer(List<string> failures)
         {
-            var a = RosterSeeder.Generate(1);
-            var b = RosterSeeder.Generate(2);
+            var a = RosterSeeder.GenerateStaffed(1);
+            var b = RosterSeeder.GenerateStaffed(2);
 
             var same = true;
             for (var i = 0; i < a.Members.Count; i++)
@@ -299,10 +342,10 @@ namespace LivingCity.Tests
         {
             for (var seed = 0; seed < 100; seed++)
             {
-                var roster = RosterSeeder.Generate(seed);
+                var roster = RosterSeeder.GenerateStaffed(seed);
                 var tag = $"SeedShapeInvariants(seed {seed})";
 
-                if (roster.Members.Count != RosterSeeder.MemberCount)
+                if (roster.Members.Count != RosterSeeder.FixtureMemberCount)
                 {
                     failures.Add($"{tag}: {roster.Members.Count} members.");
                     continue;
@@ -320,7 +363,7 @@ namespace LivingCity.Tests
                     if (member.Rank == Rank.Boss)
                     {
                         bosses++;
-                        if (member.Id != RosterSeeder.BossCharacterId ||
+                        if (member.Id != RosterSeeder.FixtureBossCharacterId ||
                             member.FullName != Gangs.GangCatalog.BossName ||
                             member.Look != Gangs.GangCatalog.BossModel ||
                             roster.BossId != member.Id)
@@ -390,7 +433,7 @@ namespace LivingCity.Tests
             var firsts = new HashSet<string>(PedestrianIdentity.AllMaleNames);
             var surnames = new HashSet<string>(PedestrianIdentity.AllSurnames);
 
-            var roster = RosterSeeder.Generate(7);
+            var roster = RosterSeeder.GenerateStaffed(7);
             foreach (var member in roster.Members)
             {
                 if (member.Rank == Rank.Boss)
@@ -422,7 +465,7 @@ namespace LivingCity.Tests
 
         static void AssignmentOfIsExclusive(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(11);
+            var roster = RosterSeeder.GenerateStaffed(11);
             foreach (var member in roster.Members)
             {
                 var assignment = roster.AssignmentOf(member.Id);
@@ -451,7 +494,7 @@ namespace LivingCity.Tests
 
         static void PromoteCreatesEmptyCrew(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(3);
+            var roster = RosterSeeder.GenerateStaffed(3);
             var pool = new List<int>();
             roster.PoolIds(pool);
             var id = pool[0];
@@ -508,7 +551,7 @@ namespace LivingCity.Tests
 
         static void PromoteFromCrewLeavesTheCrew(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(5);
+            var roster = RosterSeeder.GenerateStaffed(5);
             var oldCrew = roster.Crews[0];
             var id = oldCrew.HoodIds[0];
 
@@ -523,7 +566,7 @@ namespace LivingCity.Tests
 
         static void DemoteDisbandsToPool(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(9);
+            var roster = RosterSeeder.GenerateStaffed(9);
             var crew = roster.Crews[0];
             var lieutenantId = crew.LieutenantId;
             var hoods = new List<int>(crew.HoodIds);
@@ -640,6 +683,38 @@ namespace LivingCity.Tests
                 !RosterOps.GiveEquipment(roster, car.Id, lieutenant.Id).Ok)
                 failures.Add("GearFlowsThroughTheLieutenant: the lieutenant was " +
                              "refused.");
+        }
+
+        /// <summary>The Don runs a branch too - his detail - and on day one it is the
+        /// only one on the books. The opening car has to be able to reach it, or the
+        /// outfit starts with a vehicle nobody in the world is allowed to drive.</summary>
+        static void TheDonsDetailTakesTheKeys(List<string> failures)
+        {
+            var roster = RosterSeeder.Generate(1987);
+            var boss = roster.FindBoss();
+            var car = roster.Equipment[0];
+
+            if (RosterOps.GiveEquipment(roster, car.Id, boss.Id).Ok)
+                failures.Add("TheDonsDetailTakesTheKeys: a Don with no detail standing " +
+                             "was still handed the keys.");
+
+            Bodyguards.FallIn(roster);
+            var granted = RosterOps.GiveEquipment(roster, car.Id, boss.Id);
+            if (!granted.Ok)
+                failures.Add("TheDonsDetailTakesTheKeys: refused - " + granted.Reason);
+            if (car.OwnerId != boss.Id)
+                failures.Add("TheDonsDetailTakesTheKeys: the deed is not the Don's.");
+
+            // and the deal that runs after every mutation leaves it inside his detail
+            RosterOps.NormalizeArms(roster);
+            if (car.OwnerId != boss.Id || car.HolderId != boss.Id)
+                failures.Add("TheDonsDetailTakesTheKeys: the deal took the car back off " +
+                             "the only branch the outfit has.");
+
+            // a hood is still refused, detail or no detail
+            var hood = Make(roster, "Corner", "Hood");
+            if (RosterOps.MoveEquipment(roster, car.Id, hood.Id).Ok)
+                failures.Add("TheDonsDetailTakesTheKeys: a hood was given the keys.");
         }
 
         /// <summary>The street's hand-over: a car already dealt to one lieutenant goes
@@ -920,7 +995,7 @@ namespace LivingCity.Tests
 
         static void ViewGroupsInLedgerOrder(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(13);
+            var roster = RosterSeeder.GenerateStaffed(13);
             var rows = new List<LedgerRow>();
             RosterView.Build(roster, new ViewOptions(), rows);
 
@@ -944,7 +1019,7 @@ namespace LivingCity.Tests
 
         static void ViewSortsWithinGroups(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(17);
+            var roster = RosterSeeder.GenerateStaffed(17);
             var rows = new List<LedgerRow>();
             var options = new ViewOptions
             {
@@ -985,7 +1060,7 @@ namespace LivingCity.Tests
 
         static void ViewFiltersCompose(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(21);
+            var roster = RosterSeeder.GenerateStaffed(21);
             var pool = new List<int>();
             roster.PoolIds(pool);
 
@@ -1057,7 +1132,7 @@ namespace LivingCity.Tests
 
         static void LieutenantHasOwnRow(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(29);
+            var roster = RosterSeeder.GenerateStaffed(29);
             var rows = new List<LedgerRow>();
             RosterView.Build(roster, new ViewOptions(), rows);
 

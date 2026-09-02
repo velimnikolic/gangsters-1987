@@ -72,9 +72,7 @@ namespace LivingCity.Business
                         recipe.LocalBounds.xMin + spot.I * cell,
                         recipe.LocalBounds.yMin + spot.J * cell,
                         spot.CW * cell, spot.CD * cell);
-                    var side = spot.AccessSide >= 0 ? spot.AccessSide
-                        : spot.Side >= 0 ? spot.Side
-                        : plan.Artery >= 0 ? plan.Artery : 0;
+                    var side = BusinessCitySources.AmenityApproachSide(plan, spot);
 
                     sites.Add(new BusinessSite(
                         BusinessProviders.Standalone,

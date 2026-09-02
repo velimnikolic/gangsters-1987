@@ -123,6 +123,20 @@ namespace RoadDemo
         RectTransform _chipRoot;
         int _paintedChipRoster = -1;
 
+        /// <summary>One painted chip's live parts: the line that says what the crew is
+        /// doing, the mark and headcount under it, and the red reason a refused order
+        /// puts in their place.</summary>
+        sealed class ChipFace
+        {
+            public TurfCrew Crew;
+            public TextMeshProUGUI Note, Refusal;
+            public RectTransform Count;
+            public string Shown;
+            public bool Refused;
+        }
+
+        readonly List<ChipFace> _chips = new List<ChipFace>();
+
         // What the file is painted against. The plate bumps CrewFileVersion whenever the
         // pick moves; the two live figures under it move without it.
         int _paintedCrewFile = -1;
@@ -267,6 +281,7 @@ namespace RoadDemo
 
             _night.Relight();
             PaintFileIfMoved();
+            RefreshChips();
 
             var outfit = OutfitDirector.Instance;
             var incidents = outfit != null ? outfit.Incidents.Count : 0;
@@ -311,9 +326,9 @@ namespace RoadDemo
                     continue;
                 stamp = stamp * 31 + crew.Id;
                 stamp = stamp * 31 + crew.MenStanding;
-                // What he is doing is printed on the chip and nowhere else now, so an
-                // order landing has to redraw the row - the file it used to be written
-                // into a second time is the design's CREWS AFIELD column, gone.
+                // The order still decides which MARK the chip carries - solid for men
+                // afield, hatched for a crew walking home - so an order landing has to
+                // redraw the row. What he is DOING is written in place (RefreshChips).
                 stamp = stamp * 31 + (int)crew.Order;
             }
             return stamp;
@@ -335,6 +350,7 @@ namespace RoadDemo
         {
             if (_chipRoot != null)
                 Destroy(_chipRoot.gameObject);
+            _chips.Clear();
             _night.ForgetDead();
 
             var root = NewRect("Crew chips", _canvas.transform);
@@ -407,6 +423,9 @@ namespace RoadDemo
                 LedgerV2.DarkPlate);
             Picture(plate, crew);
 
+            var face = new ChipFace { Crew = crew };
+            _chips.Add(face);
+
             var textX = 3f + ChipPlate + 9f;
             var textW = ChipWide - textX - 12f;
             // Three lines in sixty-two units. TMP's line box is far taller than the
@@ -416,12 +435,23 @@ namespace RoadDemo
             var name = LedgerV2.Name(chip, textX, -2f, textW, crew.Name, 15f);
             name.raycastTarget = false;
 
+            // What he is DOING, not what he was last told: the card that floated over a
+            // selected lieutenant said it in a sentence and was withdrawn from the
+            // street (2026-09-02, the user's word), so the chip's line carries it in the
+            // two or three words it has room for. A crew with nobody on the street left
+            // to watch falls back to the standing order, which is all such a crew has.
             // Upper case, as every measured label on this HUD is: the design sets the
             // chip's status line in the mono face's caps.
-            var note = LedgerV2.Mono(chip, textX, -22f, textW,
-                TurfOrders.Label(crew.Order).ToUpperInvariant(), 10.8f, LedgerV2.Muted,
-                10f);
-            note.raycastTarget = false;
+            face.Note = LedgerV2.Mono(chip, textX, -22f, textW, StatusWord(crew), 10.8f,
+                LedgerV2.Muted, 10f);
+            face.Note.raycastTarget = false;
+            face.Shown = face.Note.text;
+
+            // The mark and the headcount ride together, because a refused order takes
+            // the pair of them off the chip for its couple of seconds.
+            var count = NewRect("Count", chip);
+            PlaceTopLeft(count, 0f, 0f, ChipWide, BarTall);
+            face.Count = count;
 
             // The design's two marks, and they say different things: a SOLID red square
             // for a lieutenant whose men are out on the street, and the hatched blue
@@ -429,13 +459,63 @@ namespace RoadDemo
             // in the house. A crew walking home or with nobody left standing is not
             // afield, and printing the street's own mark beside it would say it was.
             if (Afield(crew))
-                LedgerV2.StreetMark(chip, textX, -44f, LedgerV2.Red, 8f);
+                LedgerV2.StreetMark(count, textX, -44f, LedgerV2.Red, 8f);
             else
-                LedgerV2.PaperMark(chip, textX, -44f, LedgerV2.PaperBlue, 8f);
-            var men = LedgerV2.Figure(chip, textX + 13f, -36f, textW - 13f,
+                LedgerV2.PaperMark(count, textX, -44f, LedgerV2.PaperBlue, 8f);
+            var men = LedgerV2.Figure(count, textX + 13f, -36f, textW - 13f,
                 crew.MenStanding + " men", 13.2f, LedgerV2.Ink,
                 TextAlignmentOptions.MidlineLeft);
             men.raycastTarget = false;
+
+            // And why an order was refused, in the words the system that refused used -
+            // red, wrapped over the status and the count, for as long as CrewOverlay
+            // holds it. It is the only thing the withdrawn card said that no other
+            // panel says, and a boss who clicks and sees nothing happen is owed it.
+            face.Refusal = Paragraph(chip, LedgerStyle.Mono, 8.5f, LedgerV2.Red, textX,
+                -18f, textW, BarTall - 22f, "", lineSpacing: 1f);
+            face.Refusal.overflowMode = TextOverflowModes.Ellipsis;
+            face.Refusal.raycastTarget = false;
+            face.Refusal.gameObject.SetActive(false);
+        }
+
+        /// <summary>The chip's status line: what the crew is doing on the street, or the
+        /// standing order for a crew the street has no unit for.</summary>
+        static string StatusWord(TurfCrew crew) =>
+            CrewStatus.Short(crew.Unit) ?? TurfOrders.Label(crew.Order).ToUpperInvariant();
+
+        /// <summary>
+        /// The chips say two things that move without the row being rebuilt: what the
+        /// crew is doing, which changes every time a man starts walking, and the reason
+        /// an order was refused, which is up for a couple of seconds. Both are written
+        /// into the text that is already standing - a row of chips destroyed and rebuilt
+        /// at that rate would flicker for nothing.
+        /// </summary>
+        void RefreshChips()
+        {
+            for (var i = 0; i < _chips.Count; i++)
+            {
+                var face = _chips[i];
+                if (face.Crew == null || face.Note == null)
+                    continue;
+
+                var refusal = CrewOverlay.RefusalFor(face.Crew.Unit);
+                var refused = refusal != null;
+                if (refused != face.Refused)
+                {
+                    face.Refused = refused;
+                    face.Note.gameObject.SetActive(!refused);
+                    if (face.Count != null)
+                        face.Count.gameObject.SetActive(!refused);
+                    face.Refusal.gameObject.SetActive(refused);
+                }
+
+                var line = refused ? refusal : StatusWord(face.Crew);
+                if (line == face.Shown)
+                    continue;
+                face.Shown = line;
+                if (refused) face.Refusal.text = line;
+                else face.Note.text = line;
+            }
         }
 
         // ------------------------------------------------------------- personal file

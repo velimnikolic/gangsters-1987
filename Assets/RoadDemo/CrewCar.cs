@@ -438,27 +438,9 @@ namespace RoadDemo
             return Mathf.Min(target, pace);
         }
 
-        // the words and what they were cut for: the popup reads this every frame,
-        // and a drive-by concatenates the mark's name
-        string _statusLine;
-        (Mode state, Manoeuvre doing, bool hot, DemoCrews.Unit mark, bool occupied) _statusKey;
-
-        public string StatusLine
-        {
-            get
-            {
-                var state = State;
-                var key = (state, Doing, Hot, DriveByTarget, Occupant != null);
-                if (_statusLine != null && key.Equals(_statusKey)) return _statusLine;
-                _statusKey = key;
-                _statusLine = state switch
-                {
-                    Mode.Driving => Doing == Manoeuvre.PullOut ? "Waiting for a gap" : Hot ? "On the road, under fire" : "On the road",
-                    Mode.DriveBy => DriveByTarget != null ? "Drive-by on " + DriveByTarget.GangName : "Drive-by",
-                    _ => Occupant != null ? "In the car" : "Parked",
-                };
-                return _statusLine;
-            }
-        }
+        // The car's own sentence - "Waiting for a gap", "Drive-by on Falcone" - was cut
+        // for the card that floated over a selected lieutenant. That card was withdrawn
+        // (2026-09-02, the user's word) and his chip on the top bar has room for two
+        // words, which CrewStatus reads off State: nothing was left reading this.
     }
 }

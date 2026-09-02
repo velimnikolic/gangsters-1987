@@ -160,7 +160,7 @@ MonoBehaviour:
   policeBeatPairs: 1
   rivalCrews: 3
   rivalHoods: 2
-  startHour: 17
+  startHour: 6
   realSecondsPerGameHour: 60
   greenBelt: 140
   parkingLots: 1

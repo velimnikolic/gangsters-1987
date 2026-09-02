@@ -84,6 +84,7 @@ namespace LivingCity.Gameplay
             Roster = RosterSeeder.Generate(seed);
             RosterOps.ConfigureOrganization(Roster,
                 organizationCapacity?.Snapshot() ?? OrganizationLimits.Default);
+            StandTheBossUp();
             RosterOps.NormalizeArms(Roster);
             organizationQuery ??= new OrganizationQuery();
             organizationQuery.Bind(Roster);
@@ -92,6 +93,25 @@ namespace LivingCity.Gameplay
         }
 
         int seed = FallbackSeed;
+
+        /// <summary>
+        /// THE DON IS ON HIS OWN STREET. The street stands a body for every crew in the
+        /// books and the Boss led none, so the one man the whole game is about was the
+        /// one man not in the city. His detail is that crew (Bodyguards: the detail is a
+        /// Crew whose lieutenant IS the Boss), so standing it up on day one puts him
+        /// outside his own front with the lieutenants - selectable, orderable, and able
+        /// to be taken inside the headquarters like any other crew (CrewQuarters).
+        ///
+        /// And the men who already answer directly to him fall in behind him, so he does
+        /// not walk out of his own front alone (Bodyguards.FallIn). Who guards him after
+        /// that stays the player's decision - a thin detail is what lets a round reach
+        /// him (RANK-003) - and this only gives that decision somewhere to happen.
+        ///
+        /// Not in RosterSeeder: the seeded roster is a fixture the pure tests measure
+        /// (one crew, one lieutenant, six men), and the Don taking the field is the
+        /// GAME's arrangement rather than a change to the books he starts with.
+        /// </summary>
+        void StandTheBossUp() => Bodyguards.FallIn(Roster);
 
         /// <summary>
         /// Swaps in the sixty-man scale roster (F2 in the almanac). Debug-only by
@@ -104,6 +124,7 @@ namespace LivingCity.Gameplay
             Roster = RosterSeeder.GenerateLarge(seed, memberCount);
             RosterOps.ConfigureOrganization(Roster,
                 organizationCapacity?.Snapshot() ?? OrganizationLimits.Default);
+            StandTheBossUp();
             RosterOps.NormalizeArms(Roster);
             organizationQuery ??= new OrganizationQuery();
             organizationQuery.Bind(Roster);

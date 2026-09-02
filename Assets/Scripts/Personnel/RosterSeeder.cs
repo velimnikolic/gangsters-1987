@@ -6,18 +6,18 @@ using LivingCity.Gangs;
 namespace LivingCity.Personnel
 {
     /// <summary>
-    /// The outfit on day one: Don Salvatore as a stable, real Boss Character plus the
-    /// same six men rolled from one rng stream, a lieutenant with two hoods under him,
-    /// one man on the front desk, two directly under the Boss, and one car.
+    /// The outfit on day one: DON SALVATORE ALONE. One man, one car, and nobody else on
+    /// the books - no lieutenant, no crew, no man on the front desk. Every name after
+    /// his is one the player went out and got (RECRUIT off the corner, or a name out of
+    /// the morning classified), which is what makes the first hire a decision instead of
+    /// a formality.
+    ///
+    /// <see cref="GenerateStaffed"/> is the six-man fixture the pure tests measure and
+    /// the harnesses stand up; it is NOT what a campaign opens with.
     ///
     /// Deterministic for a given seed, on its own SeedOffsets band so retuning the roster
     /// can never re-lay the city. The draw order is FIXED and documented inline - insert a
-    /// draw mid-sequence and every campaign's starting six reshuffles.
-    ///
-    /// Roles draw NOTHING: the lieutenant is the best head (Awareness + Organization),
-    /// the front the best remaining Streetwise man, the crew the two best remaining
-    /// fighters (Combat). Derived roles keep the stream length constant and make the
-    /// starting assignment sensible for free - the player re-deals from the almanac.
+    /// draw mid-sequence and every fixture's six reshuffles.
     ///
     /// Names index into PedestrianIdentity's tables - already 1980s-flavoured, already
     /// length-budgeted for popups - so a gangster can share a name with some civilian
@@ -38,9 +38,17 @@ namespace LivingCity.Personnel
         /// taking his hands back and young enough to still be holding the outfit.</summary>
         public const int BossAge = 52;
 
-        public const int StartingStaffCount = 6;
-        public const int MemberCount = StartingStaffCount + 1;
-        public const int BossCharacterId = StartingStaffCount;
+        /// <summary>Men the STAFFED FIXTURE deals besides the Boss. The campaign opens
+        /// with none of them - see <see cref="Generate"/>.</summary>
+        public const int FixtureStaffCount = 6;
+        public const int FixtureMemberCount = FixtureStaffCount + 1;
+
+        /// <summary>The Don's Character id in the fixture, where he is added after the
+        /// six. In the opening books he is the first and only man dealt, so there he
+        /// carries id 0 - which is why this constant is named for the fixture rather
+        /// than read as "the Boss is always character six".</summary>
+        public const int FixtureBossCharacterId = FixtureStaffCount;
+
         /// <summary>None: the .38 every man carries is his own, not the outfit's
         /// stock - the armory holds what is BETTER than that. Kept as a named
         /// number because the stock test counts against it.</summary>
@@ -48,7 +56,41 @@ namespace LivingCity.Personnel
 
         static readonly string[] VehicleNames = { "Sedan", "Coupe", "Panel Van" };
 
+        /// <summary>
+        /// The books a campaign opens on: the Don, and the car out back. Nothing else.
+        /// The vehicle is drawn off the same Personnel band so the opening stays
+        /// deterministic in the city seed alone.
+        /// </summary>
         public static Roster Generate(int seed)
+        {
+            var rng = new System.Random(seed + SeedOffsets.Personnel);
+            var roster = new Roster { Seed = seed };
+
+            AddBoss(roster);
+
+            roster.Equipment.Add(new RosterEquipment
+            {
+                Id = roster.NextEquipmentId(),
+                Kind = EquipmentKind.Vehicle,
+                DisplayName = VehicleNames[rng.Next(VehicleNames.Length)],
+                Value = 1500,
+            });
+
+            return roster;
+        }
+
+        /// <summary>
+        /// The six-man fixture: Don Salvatore plus six men rolled from one rng stream, a
+        /// lieutenant with two hoods under him, one man on the front desk, two directly
+        /// under the Boss, and one car. What the pure tests measure and what a harness
+        /// stands up when it needs men on the street; a campaign does NOT open here.
+        ///
+        /// Roles draw NOTHING: the lieutenant is the best head (Awareness + Organization),
+        /// the front the best remaining Streetwise man, the crew the two best remaining
+        /// fighters (Combat). Derived roles keep the stream length constant and make the
+        /// assignment sensible for free.
+        /// </summary>
+        public static Roster GenerateStaffed(int seed)
         {
             var rng = new System.Random(seed + SeedOffsets.Personnel);
             var roster = new Roster { Seed = seed };
@@ -59,7 +101,7 @@ namespace LivingCity.Personnel
             // loyalty. The order is FIXED: inserting a draw mid-sequence re-deals every
             // seed's starting six, which is why the rap sheet went in beside the name
             // rather than anywhere more convenient.
-            for (var i = 0; i < StartingStaffCount; i++)
+            for (var i = 0; i < FixtureStaffCount; i++)
             {
                 var member = new Character { Id = roster.NextCharacterId() };
                 DrawName(rng, roster, member);
@@ -129,7 +171,7 @@ namespace LivingCity.Personnel
                 // Keep the canonical Boss identity on Character 6 in the scale fixture
                 // too. Adding him consumes no draw, and index 6 is deliberately outside
                 // every deterministic lieutenant/initial-Hood slot below.
-                if (i == StartingStaffCount && roster.FindBoss() == null)
+                if (i == FixtureStaffCount && roster.FindBoss() == null)
                     AddBoss(roster);
 
                 var member = new Character { Id = roster.NextCharacterId() };

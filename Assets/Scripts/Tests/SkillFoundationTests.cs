@@ -91,8 +91,8 @@ namespace LivingCity.Tests
         /// its own roster.</summary>
         static void SameSeedSameRoster(List<string> failures)
         {
-            var first = RosterSeeder.Generate(1987);
-            var second = RosterSeeder.Generate(1987);
+            var first = RosterSeeder.GenerateStaffed(1987);
+            var second = RosterSeeder.GenerateStaffed(1987);
 
             if (first.Members.Count != second.Members.Count)
             {
@@ -123,8 +123,8 @@ namespace LivingCity.Tests
 
         static void SameSeedSameCeilings(List<string> failures)
         {
-            var first = RosterSeeder.Generate(1987);
-            var second = RosterSeeder.Generate(1987);
+            var first = RosterSeeder.GenerateStaffed(1987);
+            var second = RosterSeeder.GenerateStaffed(1987);
 
             for (var i = 0; i < first.Members.Count; i++)
             {
@@ -148,7 +148,7 @@ namespace LivingCity.Tests
 
             // A constant seed inside the roll would pass everything above and still be
             // a bug, so a different campaign must deal different ceilings.
-            var other = RosterSeeder.Generate(1988);
+            var other = RosterSeeder.GenerateStaffed(1988);
             var identical = true;
             for (var i = 0; i < first.Members.Count && identical; i++)
                 for (var s = 0; s < AttributeScale.Count; s++)
@@ -501,7 +501,7 @@ namespace LivingCity.Tests
 
         static void EverybodyIsDealtADateOfBirth(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(1987);
+            var roster = RosterSeeder.GenerateStaffed(1987);
             for (var i = 0; i < roster.Members.Count; i++)
             {
                 var member = roster.Members[i];
@@ -519,7 +519,7 @@ namespace LivingCity.Tests
             }
 
             // Same seed, same dates.
-            var again = RosterSeeder.Generate(1987);
+            var again = RosterSeeder.GenerateStaffed(1987);
             for (var i = 0; i < roster.Members.Count; i++)
                 if (roster.Members[i].BirthYear != again.Members[i].BirthYear ||
                     roster.Members[i].BirthDayOfYear != again.Members[i].BirthDayOfYear)

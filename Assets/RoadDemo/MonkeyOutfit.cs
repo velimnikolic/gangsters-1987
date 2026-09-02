@@ -127,9 +127,13 @@ namespace RoadDemo
             var stock = director.AddEquipment(listing.Kind, listing.DisplayName, listing.Price);
             if (stock == null) return false;
 
+            // Whoever can sign for it - every lieutenant, and the Don while his own
+            // detail is standing. A soak that opens on the Don alone (the campaign's
+            // day one) has nobody else to hand a gun to (RosterOps.CanBeIssuedGear).
             var lieutenants = new List<int>();
             foreach (var member in director.Roster.Members)
-                if (!member.Gone && member.Rank == Rank.Lieutenant)
+                if (!member.Gone &&
+                    RosterOps.CanBeIssuedGear(director.Roster, member.Id))
                     lieutenants.Add(member.Id);
 
             if (lieutenants.Count > 0)

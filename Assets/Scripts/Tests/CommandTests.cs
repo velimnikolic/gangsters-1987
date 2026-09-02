@@ -27,6 +27,7 @@ namespace LivingCity.Tests
             ("TheDonsDeathEndsIt", TheDonsDeathEndsIt),
             ("DeathReachesTheRosterByOnePathOnly", DeathReachesTheRosterByOnePathOnly),
             ("ADetailStandsBetweenHimAndIt", ADetailStandsBetweenHimAndIt),
+            ("HisOwnMenFallInBehindHim", HisOwnMenFallInBehindHim),
             ("ADetailOfCowardsIsNoDetailAtAll", ADetailOfCowardsIsNoDetailAtAll),
             ("GuardsCostWagesAndLearnLittle", GuardsCostWagesAndLearnLittle),
             ("TheSameMenHoldMoreUnderABetterMan", TheSameMenHoldMoreUnderABetterMan),
@@ -421,6 +422,79 @@ namespace LivingCity.Tests
             if (incidents.Count == 0)
                 failures.Add("ADetailStandsBetweenHimAndIt: nothing was printed about a " +
                              "man taking a bullet for the Don.");
+        }
+
+        /// <summary>
+        /// The Don does not walk out of his own front alone: the men who already answer
+        /// directly to him stand with him, as many as a crew can stand. It is a MOVE and
+        /// not a new posting - he was their man before and after - so nothing about them
+        /// is re-aimed, and nobody is taken off a lieutenant's branch to do it.
+        /// </summary>
+        static void HisOwnMenFallInBehindHim(List<string> failures)
+        {
+            const int Steady = 71;
+            var roster = new Roster();
+            var boss = MakeBoss(roster, 8, 8);
+
+            var direct = new List<int>();
+            for (var i = 0; i < Crew.MaxTacticalHoods + 2; i++)
+            {
+                var man = MakeHood(roster);
+                man.Loyalty = Steady;
+                roster.Organization.BossHoodIds.Add(man.Id);
+                direct.Add(man.Id);
+            }
+
+            MakeLieutenant(roster, 8, out var branch);
+            var his = MakeHood(roster);
+            branch.HoodIds.Add(his.Id);
+
+            // And the man on the front desk, who the books also list under the Boss
+            // because he is on nobody's branch. He is posted, not free.
+            var desk = MakeHood(roster);
+            roster.Organization.BossHoodIds.Add(desk.Id);
+            roster.FrontId = desk.Id;
+
+            var fell = Bodyguards.FallIn(roster);
+            var detail = Bodyguards.DetailOf(roster);
+            if (detail == null || detail.LieutenantId != boss.Id)
+            {
+                failures.Add("HisOwnMenFallInBehindHim: the Don leads no detail.");
+                return;
+            }
+
+            if (fell != Crew.MaxTacticalHoods ||
+                detail.HoodIds.Count != Crew.MaxTacticalHoods)
+                failures.Add($"HisOwnMenFallInBehindHim: {detail.HoodIds.Count} men stand " +
+                             $"with him; a crew stands {Crew.MaxTacticalHoods}.");
+
+            for (var i = 0; i < detail.HoodIds.Count; i++)
+            {
+                var guard = roster.Find(detail.HoodIds[i]);
+                if (guard != null && guard.Loyalty != Steady)
+                    failures.Add("HisOwnMenFallInBehindHim: a man's loyalty was re-aimed " +
+                                 "by standing him in front of the man he already answered to.");
+                if (roster.Organization.BossHoodIds.Contains(detail.HoodIds[i]))
+                    failures.Add("HisOwnMenFallInBehindHim: a guard is on the books twice.");
+            }
+
+            if (!branch.HoodIds.Contains(his.Id))
+                failures.Add("HisOwnMenFallInBehindHim: a lieutenant's man was taken for " +
+                             "the detail.");
+            if (detail.HoodIds.Contains(desk.Id) || roster.FrontId != desk.Id)
+                failures.Add("HisOwnMenFallInBehindHim: the man on the front desk was " +
+                             "marched off it to stand with the Don.");
+
+            // The rest of them stay where they were, and asking twice changes nothing.
+            // (The desk man is still under the Boss on paper, so he counts here.)
+            if (roster.Organization.BossHoodIds.Count !=
+                direct.Count + 1 - Crew.MaxTacticalHoods)
+                failures.Add("HisOwnMenFallInBehindHim: the men who did not fit did not " +
+                             "stay under him.");
+            if (Bodyguards.FallIn(roster) != 0 ||
+                detail.HoodIds.Count != Crew.MaxTacticalHoods)
+                failures.Add("HisOwnMenFallInBehindHim: standing the detail up twice " +
+                             "doubled it.");
         }
 
         static void ADetailOfCowardsIsNoDetailAtAll(List<string> failures)

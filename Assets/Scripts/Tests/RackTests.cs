@@ -564,6 +564,31 @@ namespace LivingCity.Tests
             if (!Offers(rows, Outfit.OrderType.Guard, true))
                 failures.Add("ORDER: our own door could not be guarded.");
 
+            // Our own paper is also somewhere our own men can BE. The row that takes a
+            // crew inside stands on our doors and on no others, and once they are in it
+            // is the row that brings them out again - the same one list, so the street
+            // card, the paper map and the block file cannot differ about the family's
+            // own house.
+            if (!Named(rows, TerritoryRacketOrders.MoveInLabel))
+                failures.Add("ORDER: our own door would not take our own men.");
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, Outfit.DoorTenure.Ours,
+                true, false, false, 4000, rows);
+            if (Offers(rows, TerritoryQuartersMove.In, true))
+                failures.Add("ORDER: men were moved in with no crew picked.");
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, Outfit.DoorTenure.Ours,
+                true, true, false, 4000, rows,
+                quarters: TerritoryQuartersState.Here);
+            if (Named(rows, TerritoryRacketOrders.MoveInLabel) ||
+                !Offers(rows, TerritoryQuartersMove.Out, true))
+                failures.Add("ORDER: a crew already inside was offered the door again.");
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, open, true, true, false, 4000, rows);
+            if (Named(rows, TerritoryRacketOrders.MoveInLabel) ||
+                Named(rows, TerritoryRacketOrders.MoveOutLabel))
+                failures.Add("ORDER: our men were housed in somebody else's premises.");
+
             // The deed carries its price on the row itself, so every surface prints the
             // same sum beside the same word - and a door with no price does not offer it.
             TerritoryRacketOrders.For(
@@ -606,6 +631,16 @@ namespace LivingCity.Tests
                 !Named(rows, TerritoryRacketOrders.GuardLabel) ||
                 !Named(rows, TerritoryRacketOrders.BuyLabel))
                 failures.Add("ORDER: a door row the ledger has is missing from the list.");
+        }
+
+        static bool Offers(
+            List<TerritoryRacketOrder> rows, TerritoryQuartersMove move, bool available)
+        {
+            for (var i = 0; i < rows.Count; i++)
+                if (rows[i].Kind == TerritoryDoorRowKind.Quarters &&
+                    rows[i].Move == move && rows[i].Available == available)
+                    return true;
+            return false;
         }
 
         static bool Offers(

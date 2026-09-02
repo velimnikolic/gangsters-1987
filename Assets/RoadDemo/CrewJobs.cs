@@ -417,6 +417,11 @@ namespace RoadDemo
             Marks.Remove(unit.CrewId);
             Torched.Remove(unit.CrewId);
 
+            // Men the player has put INSIDE one of our own buildings are already home,
+            // and a march would only walk them back out of it (CrewQuarters).
+            if (CrewQuarters.Billeted(unit))
+                return;
+
             if (outfit.TryGetHeadquarters(out var hq, out _))
                 crews.MarchTo(unit, hq);
         }

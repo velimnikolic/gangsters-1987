@@ -36,7 +36,7 @@ namespace RoadDemo
         [Range(0, 4)] public int rivalHoods = 3;
 
         [Header("Day")]
-        [Range(0f, 24f)] public float startHour = 23f;
+        [Range(0f, 24f)] public float startHour = 6f;
         [Tooltip("Real seconds for one game hour. 60 means one game minute lasts one real second.")]
         public float realSecondsPerGameHour = 60f;
 
@@ -131,8 +131,10 @@ namespace RoadDemo
             var rig = FindFirstObjectByType<DemoCamera>();
             if (rig != null)
             {
-                var bounds = runtime.PrimaryWorldBounds;
-                rig.FrameSpan(Mathf.Max(bounds.width, bounds.height), 0.95f);
+                // No FrameSpan here any more: framing the whole quarter opened the game
+                // above the map line, looking at a plan of a city rather than at the man
+                // the game is about. The runtime already opens on the Don's own doorstep,
+                // in the street (RoadDemoBuilder.BuildEnvironment).
                 rig.yaw = 20f;
                 rig.pitch = 55f;
                 rig.showHint = false;

@@ -49,7 +49,7 @@ namespace LivingCity.Tests
         // ------------------------------------------------------------------ fixtures
 
         static Gang[] Deal(int seed) =>
-            GangSeeder.Generate(seed, RosterSeeder.Generate(seed));
+            GangSeeder.Generate(seed, RosterSeeder.GenerateStaffed(seed));
 
         static List<GangFronts.FrontCandidate> Grid(params (int block, float x, float z)[] spots)
         {
@@ -207,7 +207,7 @@ namespace LivingCity.Tests
 
         static void PlayerGangMirrorsRoster(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(99);
+            var roster = RosterSeeder.GenerateStaffed(99);
             var player = GangSeeder.Generate(99, roster)[GangCatalog.PlayerGangId];
 
             if (player.Members.Count != roster.Members.Count - 1)
@@ -245,7 +245,7 @@ namespace LivingCity.Tests
 
             // The AI crews must be unaffected by the roster's absence - their draws
             // precede the mirror entirely.
-            var with = GangSeeder.Generate(5, RosterSeeder.Generate(5));
+            var with = GangSeeder.Generate(5, RosterSeeder.GenerateStaffed(5));
             for (var i = 1; i < gangs.Length; i++)
                 if (gangs[i].Members.Count != with[i].Members.Count)
                     failures.Add($"Mirror: the roster's presence changed AI gang {i}.");
@@ -464,7 +464,7 @@ namespace LivingCity.Tests
         {
             for (var seed = 0; seed < 40; seed++)
             {
-                var roster = RosterSeeder.Generate(seed);
+                var roster = RosterSeeder.GenerateStaffed(seed);
                 foreach (var crew in roster.Crews)
                 {
                     var worn = new HashSet<string>();

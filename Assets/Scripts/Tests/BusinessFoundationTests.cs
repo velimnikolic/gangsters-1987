@@ -31,6 +31,7 @@ namespace LivingCity.Tests
             AddingOneSiteLeavesTheRestAlone(failures);
             CompoundsAreOneBusinessWithAGate(failures);
             HarvestedResidentialShopBaysMatchPhysicalFixtures(failures);
+            AmenityDoorAvoidsAnotherProgramme(failures);
             ResidentialPlanDataPublishesStableSites(failures);
             failures.AddRange(BusinessShutdownTests.Run());
 
@@ -398,6 +399,64 @@ namespace LivingCity.Tests
                 failures.Add("BIZ-004: residential-04 inward-only shop was lost.");
             if (mixed?.ShopBays == null || mixed.ShopBays.Length != 7)
                 failures.Add("BIZ-004: residential-10 corner/straight shops were merged.");
+        }
+
+        /// <summary>A mixed-block amenity may have no authored AccessSide. Its business
+        /// door must then use a real facade connected to pavement, not blindly inherit
+        /// the block artery through a cafe patio.</summary>
+        static void AmenityDoorAvoidsAnotherProgramme(List<string> failures)
+        {
+            ResidentialUnit gym = null;
+            foreach (var unit in ResidentialUnits.All)
+                if (unit.Name == "gym")
+                {
+                    gym = unit;
+                    break;
+                }
+            if (gym == null)
+            {
+                failures.Add("BIZ-004: the gym fixture is missing.");
+                return;
+            }
+
+            var plan = new ResidentialLot.Plan
+            {
+                W = 15,
+                D = 15,
+                Artery = 1,
+                Ground = new ResidentialLot.Use[15, 15],
+            };
+            for (var side = 0; side < 4; side++)
+                plan.Street[side] = true;
+            for (var i = 0; i < plan.W; i++)
+                for (var j = 0; j < plan.D; j++)
+                    plan.Ground[i, j] =
+                        i < ResidentialLot.Walk || j < ResidentialLot.Walk ||
+                        i >= plan.W - ResidentialLot.Walk ||
+                        j >= plan.D - ResidentialLot.Walk
+                            ? ResidentialLot.Use.Walkway
+                            : ResidentialLot.Use.Paved;
+
+            var turn = ResidentialLot.Turn.Of(gym, 0);
+            var spot = new ResidentialLot.Spot
+            {
+                Unit = gym,
+                Yaw = 0,
+                I = 6,
+                J = 6,
+                CW = turn.CW,
+                CD = turn.CD,
+            };
+            var middleX = spot.I + (spot.CW - 1) / 2;
+            var middleZ = spot.J + (spot.CD - 1) / 2;
+            for (var i = spot.I + spot.CW; i < plan.W - ResidentialLot.Walk; i++)
+                plan.Ground[i, middleZ] = ResidentialLot.Use.Cafe;
+            for (var j = spot.J - 1; j >= ResidentialLot.Walk; j--)
+                plan.Ground[middleX, j] = ResidentialLot.Use.Cafe;
+
+            var sidePicked = BusinessCitySources.AmenityApproachSide(plan, spot);
+            if (sidePicked != 3)
+                failures.Add("BIZ-004: the gym door still points through the cafe programme.");
         }
 
         /// <summary>

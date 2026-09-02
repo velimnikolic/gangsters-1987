@@ -3214,8 +3214,9 @@ namespace RoadDemo
             }
         }
 
-        // the words and what they were cut for: the popup reads this every frame,
-        // and a man on the move or in a fight concatenates a heading or a name
+        // the words and what they were cut for: the debug tag over a man reads this
+        // every frame, and a man on the move or in a fight concatenates a heading or a
+        // name (the crew's chip on the top bar takes the short word, CrewStatus)
         string _statusLine;
         (Mode state, bool retreating, bool alert, CrewWalker target, bool ducked, bool inCover,
             CrewCar carMark, string heading) _statusKey;

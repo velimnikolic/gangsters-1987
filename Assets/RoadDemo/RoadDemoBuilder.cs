@@ -153,8 +153,9 @@ namespace RoadDemo
         [Header("Day/night")]
         [Tooltip("Real seconds per game hour. 600 makes one game minute last 10 real seconds.")]
         public float realSecondsPerGameHour = 600f;
-        [Tooltip("Hour the demo starts at. 16 puts dusk about 40 seconds in.")]
-        [Range(0f, 24f)] public float startHour = 16f;
+        [Tooltip("Hour the city starts at. 6 is the campaign's opening hour - first light " +
+                 "over the street; 16 puts dusk about 40 seconds in.")]
+        [Range(0f, 24f)] public float startHour = 6f;
 
         [Header("Police patrol")]
         public int policeCarCount = 3;
@@ -3464,6 +3465,9 @@ namespace RoadDemo
 
                 taken.Add(door.EntryPos);
                 fronts[id] = door;
+                // Where the game opens: the player's own doorstep (BuildEnvironment).
+                if (id == 0)
+                    _outfitDoor = new Vector3(door.EntryPos.x, 0f, door.EntryPos.z);
 
                 var crew = id > 0 && byFamily[id - 1].Count > 0 ? byFamily[id - 1][0] : default;
                 var capo = id == 0 ? LivingCity.Gangs.GangCatalog.BossName : crew.boss;
@@ -4206,7 +4210,12 @@ namespace RoadDemo
             // whole street outside any sane rolloff. DemoAudio parks the scene's one
             // ear on the camera's FOCUS instead.
             var dc = camGo.AddComponent<DemoCamera>();
-            dc.pivot = centre;
+            // THE GAME OPENS ON THE DON, not on the middle of a map. The outfit's own
+            // door is already seated by now (SpawnCrews runs before this pass) and the
+            // Boss walks out of it a frame later (DemoCrews.FrontSpawnLink), so his
+            // doorstep is where the first frame looks. Without a front - a scene with no
+            // pavement to seat one on - the city's centre is all there is to look at.
+            dc.pivot = _outfitDoor ?? centre;
             dc.yaw = 33f;
             ConfigureCityView(dc);
             // In the street, not over it: past dc.mapAt the printed map takes the
@@ -4252,6 +4261,9 @@ namespace RoadDemo
         // ------------------------------------------------------------- day/night
 
         Light _sun;
+        /// <summary>The outfit's own doorstep, once the families are seated - what the
+        /// camera opens on. Null in a scene where no front could be seated.</summary>
+        Vector3? _outfitDoor;
         DemoCamera _rig;
         LivingCity.Ambient.CityClock _clock;
 

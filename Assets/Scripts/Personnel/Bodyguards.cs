@@ -81,6 +81,48 @@ namespace LivingCity.Personnel
             return detail;
         }
 
+        /// <summary>
+        /// THE DON DOES NOT WALK OUT ALONE. The men who already answer directly to him -
+        /// the ordinary hoods on no lieutenant's branch - fall in behind him, up to the
+        /// number that can physically stand with a crew.
+        ///
+        /// It is a MOVE, not a new posting: the man he answers to is the Boss before and
+        /// after, so his loyalty is not re-aimed the way it is when a hood changes
+        /// lieutenants. Nothing else about him moves either - his wage, his gun and his
+        /// place in the books are what they were.
+        /// </summary>
+        /// <returns>How many fell in.</returns>
+        public static int FallIn(Roster roster)
+        {
+            var detail = FormDetail(roster);
+            if (detail == null)
+                return 0;
+
+            var room = Crew.MaxTacticalHoods - detail.HoodIds.Count;
+            var fell = 0;
+            var direct = roster.Organization.BossHoodIds;
+            for (var i = 0; i < direct.Count && fell < room; )
+            {
+                var man = roster.Find(direct[i]);
+                // The man minding the FRONT is not a free man - he is on the desk, and
+                // the books list him under the Boss only because he is on nobody's
+                // branch. Taking him would leave the front unmanned and the roster
+                // naming him in two places at once.
+                if (man == null || man.Gone || man.Rank != Rank.Hood ||
+                    man.Specialty != Specialty.None || roster.FrontId == man.Id ||
+                    roster.CrewOf(man.Id) != null)
+                {
+                    i++;   // not a man who can stand with him; leave him where he is
+                    continue;
+                }
+                direct.RemoveAt(i);
+                detail.HoodIds.Add(man.Id);
+                fell++;
+            }
+
+            return fell;
+        }
+
         /// <summary>The guards on their feet, best first: the man most likely to stop
         /// something goes in front of the man least likely to.</summary>
         public static void Standing(Roster roster, List<Character> into)

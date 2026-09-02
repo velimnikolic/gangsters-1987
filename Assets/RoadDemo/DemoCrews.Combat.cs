@@ -170,6 +170,12 @@ namespace RoadDemo
 
         bool CanEngageOnFoot(CrewWalker man) =>
             man != null && man.Tf != null && !man.Dead && man.Carrying && !man.Panicked &&
+            // A MAN WHO IS NOT ON THE STREET IS NOT IN THE FIGHT. His body is switched
+            // off inside a building - a doorstep visit's few seconds, or a crew moved in
+            // and standing there (CrewQuarters) - and a shot fired from inside a wall is
+            // not a shot anybody could have taken. A man in a car IS on the street: he
+            // is sat in it, visible, and shoots from the window.
+            man.Tf.gameObject.activeInHierarchy &&
             !IsAboard(man) && !man.Riding && !OnRaid(man);
 
         /// <summary>Give this shooter an enemy nobody in the ordered crew has yet,
@@ -212,6 +218,10 @@ namespace RoadDemo
             foreach (var m in unit.All())
             {
                 if (m.Dead || !m.Tf) continue;
+                // Nor is a man INDOORS a mark. Nobody aims at a body that has gone
+                // through a door: the line would be drawn to a point inside the
+                // building (DoorBeat, CrewQuarters).
+                if (!m.Tf.gameObject.activeInHierarchy) continue;
                 float d = (m.Tf.position - from).sqrMagnitude;
                 bool runner = m.Panicked || m.Retreating;
                 // the range first and the walls after: a look down the sight line is
@@ -291,6 +301,7 @@ namespace RoadDemo
             foreach (var m in unit.All())
             {
                 if (m.Dead || !m.Tf) continue;
+                if (!m.Tf.gameObject.activeInHierarchy) continue;   // indoors: not there
                 float d = (m.Tf.position - from).sqrMagnitude;
                 if (d < bestD) { bestD = d; best = m; }
             }

@@ -420,6 +420,45 @@ namespace LivingCity.Personnel
             return false;
         }
 
+        /// <summary>
+        /// A man gear can be signed out to: one who RUNS A BRANCH. Every lieutenant with
+        /// a crew, and the Boss, whose detail is a crew of his own (<see cref="Bodyguards"/>).
+        ///
+        /// The Boss belongs here because a campaign opens with him alone on the books:
+        /// his detail is then the only branch there is, and a rule reading "lieutenants
+        /// only" left the outfit's one car in the safe with nobody in the world allowed
+        /// to take the keys. He deals his own detail in like any other branch parent
+        /// (<see cref="NormalizeArms"/>).
+        /// </summary>
+        public static bool RunsABranch(Roster roster, int id)
+        {
+            if (roster == null)
+                return false;
+            // Nothing about being GONE is asked here: a lieutenant in a hospital bed
+            // still runs his crew and still owns its guns. Whether a man is fit to be
+            // handed something is the giving rule's question, and it asks separately.
+            var member = roster.Find(id);
+            if (member == null ||
+                (member.Rank != Rank.Lieutenant && member.Rank != Rank.Boss))
+                return false;
+            for (var i = 0; i < roster.Crews.Count; i++)
+                if (roster.Crews[i].LieutenantId == id)
+                    return true;
+            return false;
+        }
+
+        /// <summary>Who the safe will sign a thing out to: any lieutenant - a man just
+        /// promoted has an empty crew and still draws its guns - and the Boss while his
+        /// detail is standing. Wider than <see cref="RunsABranch"/> on purpose: what the
+        /// deal keeps (a branch that still exists) and what the boss may hand over are
+        /// two questions.</summary>
+        public static bool CanBeIssuedGear(Roster roster, int id)
+        {
+            var member = roster?.Find(id);
+            return member != null &&
+                   (member.Rank == Rank.Lieutenant || RunsABranch(roster, id));
+        }
+
         public static OpResult GiveEquipment(Roster roster, int itemId, int id)
         {
             var item = FindItem(roster, itemId);
@@ -432,10 +471,11 @@ namespace LivingCity.Personnel
             if (member.Gone)
                 return OpResult.Fail(GoneReason(member));
 
-            // The boss hands gear to his lieutenants, nobody else - each lieutenant
-            // deals his crew in himself (NormalizeArms): guns by who can shoot,
-            // wheels by who can drive.
-            if (member.Rank != Rank.Lieutenant)
+            // Gear goes to a man who runs a branch and nobody else - he deals his own
+            // crew in himself (NormalizeArms): guns by who can shoot, wheels by who can
+            // drive. The Don's detail is such a branch, and on day one it is the only
+            // one (RunsABranch).
+            if (!CanBeIssuedGear(roster, id))
                 return OpResult.Fail(LedgerText.ReasonGearViaLieutenant);
 
             if (item.OwnerId == id)
@@ -474,7 +514,7 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(LedgerText.ReasonNoSuchMember);
             if (member.Gone)
                 return OpResult.Fail(GoneReason(member));
-            if (member.Rank != Rank.Lieutenant)
+            if (!CanBeIssuedGear(roster, id))
                 return OpResult.Fail(LedgerText.ReasonGearViaLieutenant);
             if (item.OwnerId == id)
                 return OpResult.Fail(LedgerText.ReasonAlreadyHolds);
@@ -554,7 +594,8 @@ namespace LivingCity.Personnel
         {
             // Ownership first: gear whose parent group no longer exists (the owner
             // demoted, dead, off the books) reverts to the safe. The FRONT is always
-            // a valid parent; a lieutenant is one while he still runs a crew.
+            // a valid parent; anyone else is one while he still runs a branch - a
+            // lieutenant with his crew, or the Don with his detail (RunsABranch).
             for (var i = 0; i < roster.Equipment.Count; i++)
             {
                 var item = roster.Equipment[i];
@@ -566,9 +607,7 @@ namespace LivingCity.Personnel
                 if (item.OwnerId == RosterEquipment.FrontArmory)
                     continue;
 
-                var owner = roster.Find(item.OwnerId);
-                if (owner == null || owner.Rank != Rank.Lieutenant ||
-                    roster.CrewOf(owner.Id) == null)
+                if (!RunsABranch(roster, item.OwnerId))
                 {
                     item.OwnerId = RosterEquipment.Unheld;
                     item.HolderId = RosterEquipment.Unheld;

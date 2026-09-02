@@ -100,6 +100,13 @@ namespace RoadDemo
 
             public bool Through;
 
+            /// <summary>HE IS NOT COMING STRAIGHT BACK OUT. A visit is a beat with a
+            /// clock on it - in, the word, out; a man MOVED IN stays where he was put
+            /// until somebody sends him out again (CrewQuarters). Nothing else about the
+            /// passage changes: he walks the same threshold, the same leaves open for
+            /// him, and the same reverse walk takes him back to the pavement.</summary>
+            public bool Hold;
+
             /// <summary>What the word at the door is worth, held while he walks to it.</summary>
             public float Talk;
 
@@ -235,7 +242,8 @@ namespace RoadDemo
 
         public static void Visit(
             CrewWalker man, Vector3 door, float talk = TalkSeconds,
-            System.Action whenInside = null, System.Action whenOut = null)
+            System.Action whenInside = null, System.Action whenOut = null,
+            bool hold = false)
         {
             // A visit that cannot be played still owes its caller the thing the visit was
             // FOR: the demand is the order, the walk through the door is the show of it.
@@ -273,13 +281,17 @@ namespace RoadDemo
 
             // AND HIS CREW COMES WITH HIM. One man walking off alone to call on a
             // shopkeeper is an errand; the family calling is the lieutenant at the door
-            // and his hoods stood off it with their eyes on the street.
-            Escort(man, door, man.Tf.position - door);
+            // and his hoods stood off it with their eyes on the street. Not when the
+            // whole crew is MOVING IN: every man of it is walking through this door
+            // himself, and posting them round it would be posting them against
+            // themselves.
+            if (!hold)
+                Escort(man, door, man.Tf.position - door);
 
             var call = new Call
             {
                 Man = man, Door = door, Home = man.Tf.position, WhenInside = whenInside,
-                WhenOut = whenOut,
+                WhenOut = whenOut, Hold = hold,
             };
             if (!Near(man.Tf.position, door, AtTheDoor))
             {
@@ -371,7 +383,8 @@ namespace RoadDemo
             Vector3 inside,
             Transform doorway,
             System.Action whenInside = null,
-            System.Action whenOut = null)
+            System.Action whenOut = null,
+            bool hold = false)
         {
             if (man == null || man.Dead || man.Tf == null ||
                 !man.Tf.gameObject.activeInHierarchy || UnderFire(man))
@@ -398,8 +411,10 @@ namespace RoadDemo
 
             outside.y = threshold.y = inside.y = man.Tf.position.y;
             // The crew walks to the same doorstep and stands off it facing the street,
-            // whether he is already on it or has the length of the block to cover.
-            Escort(man, outside, outside - threshold);
+            // whether he is already on it or has the length of the block to cover. A
+            // crew MOVING IN needs no guard on the door it is going through.
+            if (!hold)
+                Escort(man, outside, outside - threshold);
             var swing = new DoorSwing(doorway);
             // The passage starts AT the doorstep. Ordering a man at the inside point
             // from across the street walks him in a straight line through the shopfront,
@@ -430,6 +445,7 @@ namespace RoadDemo
                 Swing = swing,
                 WhenInside = whenInside,
                 WhenOut = whenOut,
+                Hold = hold,
             });
         }
 
@@ -441,7 +457,8 @@ namespace RoadDemo
             TerritoryBusinessId businessId,
             Vector3 fallbackOutside,
             System.Action whenInside = null,
-            System.Action whenOut = null)
+            System.Action whenOut = null,
+            bool hold = false)
         {
             if (!BusinessViewBindings.TryGet(businessId, out var marker) || marker == null)
             {
@@ -455,12 +472,12 @@ namespace RoadDemo
                     VisitThrough(
                         man, wall + outward * DoorstepOut, wall,
                         wall - outward * RoomDepth(businessId, outward),
-                        null, whenInside, whenOut);
+                        null, whenInside, whenOut, hold);
                     return;
                 }
 
                 Visit(man, fallbackOutside, talk: 0f,
-                    whenInside: whenInside, whenOut: whenOut);
+                    whenInside: whenInside, whenOut: whenOut, hold: hold);
                 return;
             }
 
@@ -480,7 +497,117 @@ namespace RoadDemo
             var inside = threshold - facing * RoomDepth(businessId, facing);
             VisitThrough(
                 man, fallbackOutside, threshold, inside, marker.transform,
-                whenInside, whenOut);
+                whenInside, whenOut, hold);
+        }
+
+        /// <summary>
+        /// HE GOES IN AND HE STAYS IN. The same passage as a visit - the walk to the
+        /// doorstep, the leaves, the threshold crossed on his own feet - with no clock
+        /// on the far side of it: the man is an occupant of that building until
+        /// <see cref="SendOut"/> or <see cref="Evict"/> puts him back on the pavement.
+        /// The crew-level order that uses it is CrewQuarters.
+        /// </summary>
+        public static void MoveIn(
+            CrewWalker man, TerritoryBusinessId businessId, Vector3 doorstep) =>
+            VisitBusiness(man, businessId, doorstep, hold: true);
+
+        /// <summary>The same, for a door the business directory cannot name - an
+        /// authored scene's front. He hides at the doorstep rather than walking a
+        /// measured threshold, which is all the plain beat has ever done there.</summary>
+        public static void MoveIn(CrewWalker man, Vector3 doorstep) =>
+            Visit(man, doorstep, talk: 0f, hold: true);
+
+        /// <summary>Is this man an occupant - PAST the threshold, and staying there? A
+        /// man still walking up to the door is under the same order and not yet in it,
+        /// which is the difference a crew's move-in waits on.</summary>
+        public static bool Held(CrewWalker man)
+        {
+            if (instance == null || man == null)
+                return false;
+            for (var i = 0; i < instance.calls.Count; i++)
+            {
+                var call = instance.calls[i];
+                if (call.Man == man)
+                    return call.Hold && Indoors(call);
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// OUT HE COMES, on his feet: the leaves open, he walks the threshold back and
+        /// the pavement he came in from is where he ends up. Nothing at all for a man
+        /// who is not being held.
+        /// </summary>
+        public static void SendOut(CrewWalker man)
+        {
+            if (instance == null || man == null)
+                return;
+            for (var i = 0; i < instance.calls.Count; i++)
+            {
+                var call = instance.calls[i];
+                if (call.Man != man || !call.Hold)
+                    continue;
+
+                // A man who never got in has nothing to walk back out of - he is on the
+                // pavement, on his way to a door he is no longer going to. The order is
+                // simply off (Evict leaves a man outside where he stands).
+                if (!Indoors(call))
+                {
+                    Evict(man);
+                    return;
+                }
+
+                // The hold is what was stopping the beat's own exit; letting it go and
+                // putting the clock at NOW hands him to the ordinary way out.
+                call.Hold = false;
+                call.NextAt = Time.time;
+                call.RealNextAt = Time.unscaledTime;
+                return;
+            }
+        }
+
+        /// <summary>Is his body past the threshold - inside, or in the middle of the
+        /// passage either way? What decides whether ending a beat has to put him back
+        /// on the pavement or can simply leave him standing where he is.</summary>
+        static bool Indoors(Call call) =>
+            call.Inside ||
+            call.Phase == VisitPhase.Entering ||
+            call.Phase == VisitPhase.Inside ||
+            call.Phase == VisitPhase.OpeningExit ||
+            call.Phase == VisitPhase.Exiting;
+
+        /// <summary>
+        /// OUT HE COMES, NOW. The blunt way out, for the moment an occupant is given
+        /// some other order: he is put back on the pavement and switched on in one
+        /// frame, because the reverse walk takes seconds and a man mid-passage cannot
+        /// also be marching somewhere - the beat would teleport him back to this door
+        /// while he was doing it.
+        /// </summary>
+        public static void Evict(CrewWalker man)
+        {
+            if (instance == null || man == null)
+                return;
+            for (var i = instance.calls.Count - 1; i >= 0; i--)
+            {
+                var call = instance.calls[i];
+                if (call.Man != man || !call.Hold)
+                    continue;
+                instance.calls.RemoveAt(i);
+                call.Swing?.SnapClosed();
+                Tell(call);
+                Left(call);
+                if (call.Man?.Tf == null || call.Man.Dead)
+                    return;   // his body is the death path's business, not this one
+                call.Man.EndDoorway();
+                // Only a man who is PAST THE THRESHOLD is put anywhere: one still
+                // walking up to the door is standing on ordinary pavement and stays
+                // exactly where the cancelled order left him.
+                if (Indoors(call))
+                    call.Man.Tf.position = call.Through ? call.Outside : call.Home;
+                if (!call.Man.Tf.gameObject.activeSelf)
+                    call.Man.Tf.gameObject.SetActive(true);
+                return;
+            }
         }
 
         /// <summary>Where he stands to knock: a stride off the front, clear of the wall
@@ -598,6 +725,21 @@ namespace RoadDemo
                 // the threshold - the rest of the seconds are him finishing up.
                 if (call.Inside && !call.Told && Due(call.ActAt, call.ActRealAt))
                     Tell(call);
+
+                // AN OCCUPANT HAS NO CLOCK. He was moved in, not sent in with a word to
+                // say, and he stands there until the crew is called out again. His body
+                // going with him - struck off the books while he was in there - ends the
+                // hold rather than leaving a call on a man who is gone.
+                if (call.Hold && call.Inside)
+                {
+                    if (call.Man == null || call.Man.Tf == null || call.Man.Dead)
+                    {
+                        calls.RemoveAt(i);
+                        Tell(call);
+                        Left(call);
+                    }
+                    continue;
+                }
 
                 // Sim time says this phase is over - or the wall clock does, while the
                 // game is not paused. A pause holds the beat: bodies changing in a
@@ -789,6 +931,10 @@ namespace RoadDemo
                     // man was still in the doorway.
                     if (!call.Told && Due(call.ActAt, call.ActRealAt))
                         Tell(call);
+                    // An occupant stays. He is not waiting on anything in here - the
+                    // crew was moved in, and only being sent out moves him.
+                    if (call.Hold)
+                        break;
                     if (!Due(call.NextAt, call.RealNextAt))
                         break;
                     Tell(call);

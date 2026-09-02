@@ -32,6 +32,32 @@ namespace LivingCity.Territory
         Racket,
         Job,
         Repair,
+
+        /// <summary>Men into one of our own buildings, or back out of it. Neither a
+        /// racket act nor work filed with the office: the crew walks there and goes
+        /// in, and the street is what carries it out (RoadDemo.CrewQuarters).</summary>
+        Quarters,
+    }
+
+    /// <summary>Which way a quarters row moves the men.</summary>
+    public enum TerritoryQuartersMove
+    {
+        In,
+        Out,
+    }
+
+    /// <summary>Where the crew that would answer this door already stands with it -
+    /// what the quarters rows are chosen by.</summary>
+    public enum TerritoryQuartersState
+    {
+        /// <summary>Out on the street like any other crew.</summary>
+        None,
+
+        /// <summary>Behind THIS door, or on its way in.</summary>
+        Here,
+
+        /// <summary>Inside some other premises of ours.</summary>
+        Elsewhere,
     }
 
     /// <summary>The closure facts the shared menu needs, already projected from the
@@ -85,9 +111,16 @@ namespace LivingCity.Territory
                 TerritoryDoorRowKind.Repair, TerritoryRacketIntent.Approach, default,
                 label, note, available, cash);
 
+        public static TerritoryRacketOrder Quarters(
+            TerritoryQuartersMove move, string label, string note, bool available) =>
+            new TerritoryRacketOrder(
+                TerritoryDoorRowKind.Quarters, TerritoryRacketIntent.Approach, default,
+                label, note, available, 0, move);
+
         TerritoryRacketOrder(
             TerritoryDoorRowKind kind, TerritoryRacketIntent intent, OrderType job,
-            string label, string note, bool available, int cash)
+            string label, string note, bool available, int cash,
+            TerritoryQuartersMove move = TerritoryQuartersMove.In)
         {
             Kind = kind;
             Intent = intent;
@@ -96,6 +129,7 @@ namespace LivingCity.Territory
             Note = note ?? "";
             Available = available;
             Cash = cash;
+            Move = move;
         }
 
         public TerritoryDoorRowKind Kind { get; }
@@ -105,6 +139,9 @@ namespace LivingCity.Territory
 
         /// <summary>Meaningful on a Job row.</summary>
         public OrderType Job { get; }
+
+        /// <summary>Meaningful on a Quarters row: in through the door, or back out.</summary>
+        public TerritoryQuartersMove Move { get; }
 
         public string Label { get; }
 
@@ -142,6 +179,8 @@ namespace LivingCity.Territory
         public const string GuardLabel = "SIT ON IT";
         public const string BuyLabel = "BUY IT OUTRIGHT";
         public const string RepairLabel = "PAY FOR REPAIRS";
+        public const string MoveInLabel = "TAKE THEM INSIDE";
+        public const string MoveOutLabel = "BRING THEM OUT";
 
         /// <summary>
         /// The rows for this shop, given where it stands with the asking family, who holds
@@ -153,6 +192,9 @@ namespace LivingCity.Territory
         /// <param name="atDoor">Whether that crew's men are actually standing there.</param>
         /// <param name="askingPrice">What the deed costs outright, or 0 when the door
         /// carries no price on the book.</param>
+        /// <param name="quarters">Where the crew that would answer already stands with
+        /// this door - out on the street, behind this one, or inside another of
+        /// ours.</param>
         public static void For(
             TerritoryProtectionState standing,
             DoorTenure tenure,
@@ -163,7 +205,8 @@ namespace LivingCity.Territory
             List<TerritoryRacketOrder> into,
             bool collectionDue = true,
             string collectionNote = null,
-            TerritoryDoorClosure closure = default)
+            TerritoryDoorClosure closure = default,
+            TerritoryQuartersState quarters = TerritoryQuartersState.None)
         {
             if (into == null)
                 return;
@@ -228,6 +271,33 @@ namespace LivingCity.Territory
                         : "not enough cash in the safe",
                     closure.RepairAvailable,
                     closure.RepairPrice));
+
+            // OUR OWN DOORS TAKE OUR OWN MEN. A premises on the family's paper - the
+            // headquarters first of all - is somewhere a crew can be put: the men walk
+            // there, go in, and are off the street until they are brought out again. It
+            // is not offered against anybody else's door, which is the whole of the
+            // rule: you house men in your own house.
+            if (tenure == DoorTenure.Ours)
+            {
+                if (quarters == TerritoryQuartersState.Here)
+                {
+                    into.Add(TerritoryRacketOrder.Quarters(
+                        TerritoryQuartersMove.Out, MoveOutLabel,
+                        "out of the door and back on the street", true));
+                }
+                else
+                {
+                    var housing = !hasCrew ? "nobody is picked to send"
+                        : closure.Shut ? closure.Note
+                        : null;
+                    into.Add(TerritoryRacketOrder.Quarters(
+                        TerritoryQuartersMove.In, MoveInLabel,
+                        housing ?? (quarters == TerritoryQuartersState.Elsewhere
+                            ? "they leave the place they are in and move in here"
+                            : "the men wait inside · off the street"),
+                        housing == null));
+                }
+            }
 
             // What may be done TO the door is the shared table's call, never a tenure
             // test written out a second time - the map's planner reads the same one.

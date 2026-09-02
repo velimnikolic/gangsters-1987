@@ -480,8 +480,9 @@ namespace LivingCity.Data
         [Tooltip("Real seconds for one hour of game time. 600 makes one game minute last 10 real seconds.")]
         [Min(0.02f)] public float realSecondsPerGameHour = 600f;
 
-        [Tooltip("Hour the clock starts at. 8 is mid-morning; 22 drops you straight into night.")]
-        [Range(0f, 24f)] public float startHour = 8f;
+        [Tooltip("Hour the clock starts at. 6 is the campaign's own opening hour - first light; " +
+                 "22 drops you straight into night.")]
+        [Range(0f, 24f)] public float startHour = 6f;
 
         [Tooltip("Lifts the whole night - moonlight, ambient and window glow together. 1 is the " +
                  "pack's own night demo, which is authored dark on the assumption that street " +

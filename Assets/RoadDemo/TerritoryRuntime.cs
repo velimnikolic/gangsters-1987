@@ -742,7 +742,7 @@ namespace RoadDemo
                     // on it - the PRES-003 rank weight, extended, and only while he is
                     // physically here.
                     ReputationScale(observation.CharacterId, blockId, gameHour));
-            });
+            }, includeDoorVisitors: true);
             BlocklessActors = blockless;
 
             foreach (var pair in actorLocations)
@@ -2125,7 +2125,8 @@ namespace RoadDemo
         /// units stay out: they are the city's, not a gang's.
         /// </summary>
         void VisitActors(
-            Action<DemoCrews.Unit, CrewWalker, TerritoryActorObservation, TerritoryBlockId> visit)
+            Action<DemoCrews.Unit, CrewWalker, TerritoryActorObservation, TerritoryBlockId> visit,
+            bool includeDoorVisitors = false)
         {
             if (crews == null || geography == null || visit == null)
                 return;
@@ -2138,8 +2139,19 @@ namespace RoadDemo
 
                 foreach (var actor in unit.All())
                 {
-                    if (actor == null || actor.Dead || actor.Tf == null ||
-                        !actor.Tf.gameObject.activeInHierarchy)
+                    if (actor == null || actor.Dead || actor.Tf == null)
+                        continue;
+
+                    // A man inside a shop has left the pavement, not the block. DoorBeat
+                    // hides his body while the conversation plays, and a Presence sample
+                    // used to erase him during those seconds. The door card could therefore
+                    // promise "41 against 38" and ResolveDemand would read less than 38
+                    // after the speaker stepped inside. Count an active door visit only in
+                    // the Presence pass; CollectActors must still see no selectable body in
+                    // a shop and cannot start a second conversation with him.
+                    var insideDoor = !actor.Tf.gameObject.activeInHierarchy &&
+                                     includeDoorVisitors && DoorBeat.Active(actor);
+                    if (!actor.Tf.gameObject.activeInHierarchy && !insideDoor)
                         continue;
 
                     var observation = Observation(unit, actor);
@@ -2147,7 +2159,15 @@ namespace RoadDemo
                     var previous = actorLocations.TryGetValue(key, out var last)
                         ? last.BlockId
                         : default;
-                    TryResolveStanding(actor.Tf.position, previous, out var blockId);
+                    // The frontage itself can lie on a block edge. While he is inside,
+                    // retain the block he entered from; on the first-ever sample fall back
+                    // to the recorded doorway rather than the hidden interior transform.
+                    var at = insideDoor ? DoorBeat.DoorOf(actor) : actor.Tf.position;
+                    var blockId = insideDoor && previous.IsValid
+                        ? previous
+                        : (TryResolveStanding(at, previous, out var resolved)
+                            ? resolved
+                            : default);
                     visit(unit, actor, observation, blockId);
                 }
             }

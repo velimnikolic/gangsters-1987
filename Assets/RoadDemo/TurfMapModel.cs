@@ -406,7 +406,11 @@ namespace RoadDemo
     /// under a lieutenant's name and what the marker at the target means.</summary>
     public enum TurfOrder
     {
-        Holding, Moving, WalkingIn, Walking, PullingBack, Taking, ToTheOutfit, InTheCar
+        Holding, Moving, WalkingIn, Walking, PullingBack, Taking, ToTheOutfit, InTheCar,
+
+        /// <summary>Off the street altogether: the crew was taken into one of our own
+        /// buildings and is standing in it (CrewQuarters).</summary>
+        Inside,
     }
 
     public static class TurfOrders
@@ -422,6 +426,7 @@ namespace RoadDemo
                 case TurfOrder.Taking: return "TAKING";
                 case TurfOrder.ToTheOutfit: return "TO THE OUTFIT";
                 case TurfOrder.InTheCar: return "IN THE CAR";
+                case TurfOrder.Inside: return "INSIDE";
                 default: return "HOLDING";
             }
         }

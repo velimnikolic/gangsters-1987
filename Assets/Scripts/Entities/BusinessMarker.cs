@@ -103,12 +103,46 @@ namespace LivingCity.Entities
             // the answer is read here rather than left at whatever the pool remembered.
             GangId = BusinessDeeds.GangOf(BusinessId);
 
+            // Prefab instances are pooled. BindBlockView disables a marker before a
+            // pooled piece is assigned its next role; turn it back into a live view only
+            // after every field above names the new business. On an active object this
+            // invokes OnEnable and publishes the new binding, while the recycler's usual
+            // inactive build path publishes it when the holder is activated.
+            if (!enabled)
+                enabled = true;
+
             if (isActiveAndEnabled)
             {
                 if (wasBound.IsValid && wasBound != BusinessId)
                     BusinessViewBindings.Unbind(wasBound, this);
                 BusinessViewBindings.Bind(BusinessId, this);
             }
+        }
+
+        /// <summary>
+        /// Return this pooled component to "not a business view" before its prefab is
+        /// used in another block. The component itself is retained because destroying a
+        /// component is deferred at runtime and the same bind pass may immediately need
+        /// it again; a disabled, identity-less marker is inert and can be rebound in
+        /// place.
+        /// </summary>
+        public void ClearViewBinding()
+        {
+            // Explicitly remove the dictionary entry because the recycler normally
+            // performs this while the holder is already inactive, where disabling the
+            // component does not invoke OnDisable again.
+            BusinessViewBindings.Unbind(BusinessId, this);
+            enabled = false;
+            BusinessId = default;
+            CanonicalBlockId = default;
+            BusinessName = "";
+            OwnerName = "";
+            Owner = null;
+            BlockId = -1;
+            WeeklyIncome = 0;
+            ApproachPoint = transform.position;
+            Protected = false;
+            GangId = -1;
         }
 
         /// <summary>The archetype's overlay category. Three words, because the popup and the

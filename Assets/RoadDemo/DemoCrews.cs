@@ -803,9 +803,6 @@ namespace RoadDemo
             // rival door a crew of ours has found. It polls the fronts rather than being
             // handed them: the families are seated after the crews are stood up.
             gameObject.AddComponent<TurfMarks>().Init(this);
-            // And what our own crews are AT, on the ground they are at it on (UI-008):
-            // a round being walked, an errand on its way, or men holding a street.
-            gameObject.AddComponent<CrewWorkMark>().Init(this);
             gameObject.AddComponent<FrontDeeds>();
             IntentOverlay = gameObject.AddComponent<CombatIntentOverlay>();
             IntentOverlay.Init(this);
@@ -1040,6 +1037,9 @@ namespace RoadDemo
             // what sets it on somebody, so a job that starts this frame must have its
             // march and its mark in hand before TickCombat reads either.
             CrewJobs.Tick(this);
+            // And the crews that were told to go indoors: the walk to the door, the men
+            // filing through it, and the street left without them (CrewQuarters).
+            CrewQuarters.Tick(this);
             TickCombat();
             // AFTER the fight is settled for the frame: TickCombat is what starts a
             // chase and what ends one by seeing the man again, so asking this first
@@ -1357,6 +1357,19 @@ namespace RoadDemo
             {
                 if (unit == null || unit.Faction != 0)
                     continue;
+
+                // MEN INDOORS STILL HOLD THE STREET THEY ARE ON. A crew moved into one
+                // of our own buildings is switched off where it stands (CrewQuarters),
+                // and reading the fog off standing bodies alone would put the block the
+                // outfit is actually sitting in back into the dark.
+                if (CrewQuarters.TryGetDoorstep(unit, out var billet))
+                {
+                    var doorstep = new Vector2(billet.x, billet.z);
+                    var held = CityBlocks.At(doorstep) ?? ClosestBlock(doorstep, blocks);
+                    if (held != null && _mapVisionBlockIds.Add(held.Id))
+                        _mapVisionBlocks.Add(held);
+                }
+
                 foreach (var man in unit.All())
                 {
                     if (man == null || man.Dead || man.Tf == null ||
@@ -1378,6 +1391,10 @@ namespace RoadDemo
             {
                 if (unit == null || unit.Faction != 0)
                     continue;
+                // The same for the open-floor scenes: a crew indoors still sees out.
+                if (CrewQuarters.TryGetDoorstep(unit, out var billet) &&
+                    (target - new Vector2(billet.x, billet.z)).sqrMagnitude <= radiusSqr)
+                    return true;
                 foreach (var man in unit.All())
                 {
                     if (man == null || man.Dead || man.Tf == null ||
@@ -1425,6 +1442,20 @@ namespace RoadDemo
         {
             foreach (var unit in Units)
                 if (unit.Boss == man || unit.Hoods.Contains(man)) return unit;
+            return null;
+        }
+
+        /// <summary>The outfit's crew carrying this crew number, if it is still standing
+        /// on the street. The books name a crew and the surfaces that order one about -
+        /// the block file, the paper map, the billet - have to find its men.</summary>
+        public Unit UnitOfCrew(int crewId)
+        {
+            for (int i = 0; i < Units.Count; i++)
+            {
+                var unit = Units[i];
+                if (unit == null || unit.IsPolice || unit.Faction != 0) continue;
+                if (unit.CrewId == crewId) return unit;
+            }
             return null;
         }
 
@@ -1501,6 +1532,10 @@ namespace RoadDemo
             // feet and they can still be sent - somebody at the front picks up the walk.
             // Refusing the order because the man who used to give it is dead left three
             // hoods standing in the street for the rest of the run.
+            // Out of the building first, if that is where they are: a march is the one
+            // order every system gives (the book's jobs, the collection round, the paper
+            // map), and it has to find men on the pavement (CrewQuarters).
+            CrewQuarters.Retasked(unit);
             var boss = unit.Boss != null && !unit.Boss.Dead ? unit.Boss : Standing(unit);
             if (boss == null || boss.Tf == null) return false;
             CallOffRaids(unit, "a march order");
@@ -1698,6 +1733,9 @@ namespace RoadDemo
             if (unit == null || unit.Faction != 0)
                 return;
             TerritoryRuntime.Instance?.CallOffErrands(unit.CrewId);
+            // And a crew sitting in one of our own buildings comes out for it: an order
+            // given to men who are indoors has to reach men who can walk.
+            CrewQuarters.Retasked(unit);
         }
 
         /// <summary>The first man of this crew still on his feet - who leads it when the
@@ -2108,6 +2146,13 @@ namespace RoadDemo
                 if (unit.Wiped || unit.IsPolice || unit.TargetUnit != null || unit.Boarding != null) continue;
                 var lead = unit.Boss != null && !unit.Boss.Dead ? unit.Boss : Standing(unit);
                 if (lead == null || lead.Tf == null || IsAboard(lead) || lead.Riding || lead.Panicked) continue;
+                // AND NOT WHILE THE MAN AT THE FRONT IS IN A DOORWAY. His body is being
+                // walked through a shopfront, or switched off inside one (DoorBeat,
+                // CrewQuarters): a tether measured against it hauls his whole crew into
+                // the wall after him. The posted doorman had this exemption already
+                // (man.Watching below); the men filing in behind their lieutenant need
+                // the same one.
+                if (DoorBeat.Active(lead)) continue;
                 var leadAnchor = lead.HasOrder ? lead.OrderDestination : lead.Tf.position;
                 float worst = 0f;
                 for (int k = 0; k < unit.Hoods.Count; k++)
@@ -2569,6 +2614,9 @@ namespace RoadDemo
                 if (unit.Faction == 0 && !liveUnits.Contains(unit))
                 {
                     if (Selected == unit) Selected = null;
+                    // a crew off the books leaves no billet behind for the next crew to
+                    // inherit its number and its hallway
+                    CrewQuarters.Forget(unit.CrewId);
                     // whoever is still under it moves crews below; get them out first
                     foreach (var man in unit.All())
                         if (man.Tf) man.Tf.SetParent(_root, true);
@@ -2656,7 +2704,12 @@ namespace RoadDemo
             // his photograph in a suit) - the same face must walk the street, so
             // the body is swapped on the spot
             var cast = LivingCity.UI.PersonnelAlmanac.MemberModel(member);
-            if (!fresh && cast != null && man.SourcePrefab != cast)
+            // NOT WHILE HE IS INSIDE ONE OF OUR BUILDINGS. The swap destroys the body and
+            // stands a new one where it was - which for a man being held indoors
+            // (CrewQuarters) is a body standing inside a wall, switched on, with the
+            // door beat still holding the one that was destroyed. His new suit waits
+            // until he is back on the pavement.
+            if (!fresh && cast != null && man.SourcePrefab != cast && !DoorBeat.Active(man))
             {
                 var link = man.CurrentLink;
                 float t = man.CurrentT;

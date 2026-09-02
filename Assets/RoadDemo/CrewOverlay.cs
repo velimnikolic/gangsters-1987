@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.CameraRig;
 using LivingCity.UI;
 using TMPro;
@@ -27,8 +27,10 @@ namespace RoadDemo
     // The indicators for the crews' men: equal-sized state-coloured square corners sit on
     // the ground around their feet, while hover and selection add ground brackets and status dots ride
     // above unselected men. The two clicks that command them: a left click within PickRadius of any
-    // man of the outfit selects his crew (the popup names the lieutenant and words
-    // what the crew is doing); a right click - a click, not the camera's right-drag
+    // man of the outfit selects his crew (his chip on the top bar names him and words
+    // what the crew is doing - the card that used to float over his head was
+    // withdrawn on 2026-09-02 at the user's word, and the chip says it instead);
+    // a right click - a click, not the camera's right-drag
     // orbit - sends the selected lieutenant to the point (the sidewalk nearest it
     // in the city) with his hoods after him, or, on a rival's man, sends the crew
     // at that rival. Same ScreenSpaceOverlay trick as the police overlay: a UI
@@ -55,9 +57,9 @@ namespace RoadDemo
         const float SelectedCornerPulsePeriod = 1.4f;
 
         const float PickRadius = 30f;
-        const float PopupWidth = 360f;
-        const float PopupHeight = 74f;
-        const float PopupLift = 44f;
+
+        /// <summary>How long a refused order's reason stands on the crew's chip.</summary>
+        const float RefusalSeconds = 2.5f;
 
         const float ClickSlackPx = 8f; // a right-drag beyond this is the camera's
         const float ClickHold = 0.45f;
@@ -119,21 +121,16 @@ namespace RoadDemo
         int _selectedGroundMeshFrame = -1;
         Material _groundSquareMaterial;
 
-        GameObject _popup;
-        RectTransform _popupRect;
-        TMP_Text _popupTitle, _popupLine;
-        string _shownTitle, _shownLine;
+        /// <summary>Whether TMP has a font to set the name tags in. Without one the
+        /// dots and the ground squares still stand; the words do not.</summary>
+        bool _textReady;
 
-        (string text, float until) _refusal;
         List<Image> _carDots = new List<Image>();
         List<TMP_Text> _carTags = new List<TMP_Text>();
         // tag text per marker slot, kept until the thing in the slot changes: cut and
         // upper-cased afresh it was a string or three per visible marker per frame
         List<(CrewWalker man, string name, DemoCrews.Unit unit, string gang, string text)> _menTag = new();
         List<(CrewCar car, bool civic, string name, DemoCrews.Unit owner, string ownerName, string text)> _carTag = new();
-        // what the popup last said and everything it said it about
-        (CrewWalker boss, string name, int standing, int size, string status, bool boarding, bool orderHint,
-            (bool carHint, bool exitHint, bool bail, string refusal) hints) _popupKey;
         RectTransform _carHint;        // "GET OUT" / "GET IN" over a car under the pointer
         Image _carHintIcon;
         TMP_Text _carHintText;
@@ -204,7 +201,11 @@ namespace RoadDemo
             dotRootRect.offsetMax = Vector2.zero;
             _dotRoot = dotRootRect;
 
-            BuildPopup();
+            _textReady = TMP_Settings.instance != null && TMP_Settings.defaultFontAsset != null;
+            if (!_textReady)
+                Debug.LogWarning("[RoadDemo] No TMP default font - crew dots still show, " +
+                                 "but the name tags are disabled.");
+
             BuildBanner(root.transform);
             BuildCarHint(root.transform);
 
@@ -326,55 +327,41 @@ namespace RoadDemo
             _carHint.position = new Vector3(screen.x, screen.y + (BossSize * 0.5f + TagLift + 22f) * scale, 0f);
         }
 
-        void BuildPopup()
+        // ---------------------------------------------------------------- refusals
+
+        // Why the last order was refused, and whose it was. The card over the man's
+        // head used to print it; that card is gone (2026-09-02, the user's word) and
+        // the crew's own chip on the top bar says it in red for a moment - StreetHud
+        // reads these. Static like the banner beside it, and emptied when Play starts:
+        // with domain reload off a crew from the last run would otherwise be held here.
+        static string refusalText;
+        static float refusalUntil;
+        static DemoCrews.Unit refusalUnit;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ForgetRefusal()
         {
-            if (TMP_Settings.instance == null || TMP_Settings.defaultFontAsset == null)
-            {
-                Debug.LogWarning("[RoadDemo] No TMP default font - crew dots still show, " +
-                                 "but the name tags and click popup are disabled.");
-                return;
-            }
-
-            _popupRect = DemoUi.NewRect("Popup", _canvas.transform);
-            _popup = _popupRect.gameObject;
-            _popupRect.sizeDelta = new Vector2(PopupWidth, PopupHeight);
-            _popupRect.pivot = new Vector2(0.5f, 0f);
-
-            // the block that opens over a man is a SHADE of the street, not a lid on
-            // it: it multiplies with what is behind (Photoshop's multiply layer), so
-            // the road, the car and the men read straight through it. Without the
-            // shader in the project it falls back to the flat panel.
-            var background = _popup.AddComponent<Image>();
-            background.raycastTarget = false;
-            var shade = DemoUi.Multiply;
-            DemoUi.Dress(background, DemoUi.Box, 15f, shade != null ? DemoUi.PanelShade : DemoUi.Panel);
-            if (shade != null) background.material = shade;
-
-            var stripe = DemoUi.Block(_popupRect, "Accent", DemoUi.Gold);
-            var stripeRect = stripe.rectTransform;
-            stripeRect.anchorMin = new Vector2(0f, 0f);
-            stripeRect.anchorMax = new Vector2(0f, 1f);
-            stripeRect.pivot = new Vector2(0f, 0.5f);
-            stripeRect.anchoredPosition = new Vector2(14f, 0f);
-            stripeRect.sizeDelta = new Vector2(3f, -24f);
-
-            _popupTitle = BuildPopupText("Title", 15f, DemoUi.Ink, top: true);
-            _popupTitle.characterSpacing = 2f;
-            _popupLine = BuildPopupText("Line", 13f, DemoUi.InkDim, top: false);
-
-            _popup.SetActive(false);
+            refusalText = null;
+            refusalUntil = 0f;
+            refusalUnit = null;
         }
 
-        TMP_Text BuildPopupText(string name, float size, Color colour, bool top)
+        /// <summary>What this crew was last told it could not do, while the word is
+        /// still up. Null for every other crew and once it has faded.</summary>
+        public static string RefusalFor(DemoCrews.Unit unit) =>
+            unit != null && unit == refusalUnit && Time.unscaledTime < refusalUntil
+                ? refusalText
+                : null;
+
+        /// <summary>The selected crew cannot do the thing just asked of it, and this is
+        /// why. One line, in the words the system that refused used.</summary>
+        void Refuse(string reason)
         {
-            var text = DemoUi.Text(_popupRect, name, size, colour,
-                TextAlignmentOptions.MidlineLeft, display: top);
-            var rect = text.rectTransform;
-            rect.anchorMin = new Vector2(0f, top ? 0.5f : 0f);
-            rect.anchorMax = new Vector2(1f, top ? 1f : 0.5f);
-            rect.offsetMin = new Vector2(26f, top ? 0f : 10f);
-            rect.offsetMax = new Vector2(-16f, top ? -10f : 0f);
-            return text;
+            if (string.IsNullOrEmpty(reason))
+                return;
+            refusalText = reason;
+            refusalUntil = Time.unscaledTime + RefusalSeconds;
+            refusalUnit = _crews != null ? _crews.Selected : null;
         }
 
         // one status dot (and one tag, used only over lieutenants) per man, grown on demand
@@ -417,7 +404,7 @@ namespace RoadDemo
                 _dots.Add(img);
 
                 TMP_Text tag = null;
-                if (_popup != null)
+                if (_textReady)
                 {
                     tag = DemoUi.Text(_dotRoot, "tag", 11f, BossOn, TextAlignmentOptions.Bottom,
                         display: true);
@@ -720,7 +707,7 @@ namespace RoadDemo
                     if (_crews.OrderCar(car))
                         ShowMark(car.Position + Vector3.up * 1.0f, MarkTint);
                     else if (_crews.CarRefusal != null)
-                        _refusal = (_crews.CarRefusal, Time.unscaledTime + 2.5f);
+                        Refuse(_crews.CarRefusal);
                 }
                 // any OTHER car of the outfit's: the keys change hands. The boss is
                 // pointing at a lieutenant and at a car, which is the whole order -
@@ -730,7 +717,7 @@ namespace RoadDemo
                     if (_crews.AssignCar(car))
                         ShowMark(car.Position + Vector3.up * 1.0f, MarkTint);
                     else if (_crews.CarRefusal != null)
-                        _refusal = (_crews.CarRefusal, Time.unscaledTime + 2.5f);
+                        Refuse(_crews.CarRefusal);
                 }
                 else OpenCarOrders(car, up);
                 return;
@@ -902,7 +889,7 @@ namespace RoadDemo
                     if (_crews.OrderDriveBy(target))
                         ShowMark(target.Position + Vector3.up * 1.2f, AttackTint);
                     else if (_crews.DriveByRefusal != null)
-                        _refusal = (_crews.DriveByRefusal, Time.unscaledTime + 2.5f);
+                        Refuse(_crews.DriveByRefusal);
                 }
                 : (System.Action)null));
 
@@ -919,7 +906,7 @@ namespace RoadDemo
                     if (_crews.OrderBombThrow(target))
                         ShowMark(target.Position + Vector3.up * 1.2f, AttackTint);
                     else if (_crews.BombRefusal != null)
-                        _refusal = (_crews.BombRefusal, Time.unscaledTime + 2.5f);
+                        Refuse(_crews.BombRefusal);
                 }
                 : (System.Action)null));
 
@@ -977,6 +964,24 @@ namespace RoadDemo
         {
             var crew = _crews.Selected;
             if (crew == null || front == null) return;
+
+            // OUR OWN PREMISES IS NOT A TARGET. A click on the family's own door is a
+            // click on the family's own house: it opens the door's ordinary menu, where
+            // the one thing worth doing to it stands - taking the men inside. The
+            // grenade below is for somebody else's doorstep.
+            if (front.GangId == LivingCity.Gangs.GangCatalog.PlayerGangId)
+            {
+                // The city's own premises answer through the shared door menu. A front
+                // the business directory cannot name - or one whose menu comes back
+                // empty, which is a scene with no racket at all - still opens the two
+                // rows the family's own house has: the men go in, the men come out.
+                if (front.BusinessId.IsValid &&
+                    OpenBusinessOrders(front.BusinessId, screen))
+                    return;
+                OpenOwnFrontOrders(front, crew, screen);
+                return;
+            }
+
             if (!BuildCard()) { if (_crews.OrderBombFront(front)) ShowMark(front.Door + Vector3.up * 1.2f, AttackTint); return; }
 
             _cardTarget = null;
@@ -996,10 +1001,45 @@ namespace RoadDemo
                     if (_crews.OrderBombFront(front))
                         ShowMark(front.Door + Vector3.up * 1.2f, AttackTint);
                     else if (_crews.BombRefusal != null)
-                        _refusal = (_crews.BombRefusal, Time.unscaledTime + 2.5f);
+                        Refuse(_crews.BombRefusal);
                 }
                 : (System.Action)null,
                 lit: canBomb);
+
+            LayoutAndShow(screen);
+        }
+
+        /// <summary>
+        /// The card over one of OUR OWN doors in a scene whose business directory cannot
+        /// name it - the authored demo streets. The city's own premises go through the
+        /// shared door menu; this is the same two rows against a door known only by the
+        /// pavement outside it, so a demo scene offers the family's own house the same
+        /// thing the city does.
+        /// </summary>
+        void OpenOwnFrontOrders(GangFront front, DemoCrews.Unit crew, Vector2 screen)
+        {
+            if (!BuildCard()) return;
+
+            _cardTarget = null;
+            _cardFront = front;
+            _cardPlantCar = null;
+            _cardBusiness = default;
+            _cardCrew = crew;
+            _cardShown = 0;
+            _cardTitle.text = (string.IsNullOrEmpty(front.Role) ? "OUR PREMISES"
+                : front.Role.ToUpperInvariant()) + " · " +
+                front.GangName.ToUpperInvariant();
+
+            var doorstep = front.Outside;
+            if (CrewQuarters.AtDoorstep(crew, doorstep))
+                Row(LivingCity.Territory.TerritoryRacketOrders.MoveOutLabel,
+                    "out of the door and back on the street",
+                    () => CrewQuarters.BringOut(crew), lit: true);
+            else
+                Row(LivingCity.Territory.TerritoryRacketOrders.MoveInLabel,
+                    "the men wait inside · off the street",
+                    () => CrewQuarters.Station(_crews, crew, doorstep, front.Role),
+                    lit: true);
 
             LayoutAndShow(screen);
         }
@@ -1035,12 +1075,14 @@ namespace RoadDemo
                     continue;
                 var marker = collider
                     .GetComponentInParent<LivingCity.Entities.BusinessMarker>();
+                var markerLive = marker != null && marker.isActiveAndEnabled &&
+                                 marker.BusinessId.IsValid;
 
                 // Every run uses this same physical answer. BusinessViewBindings.Count
                 // is deliberately irrelevant: streamed views arrive in a different order
                 // as the camera and composition budget change, and a global count must not
                 // switch the whole city between a collider picker and a ground-plane picker.
-                var building = marker != null ||
+                var building = markerLive ||
                                collider.GetComponentInParent<BuildingCutaway>() != null;
                 if (!building)
                     return default;
@@ -1049,8 +1091,22 @@ namespace RoadDemo
                 // point says which unit was pointed at - the nearest authored door
                 // to where the ray landed, asked at ground height.
                 var territory = TerritoryRuntime.Instance;
+                var businesses = LivingCity.Business.BusinessRuntime.Instance;
                 var at = hit.point;
                 at.y = _crews.GroundY;
+                var point = new LivingCity.Territory.TerritoryPoint(at.x, at.z);
+
+                // A marker whose own site's ground contains the hit is authoritative.
+                // The nearest-door slicing below exists for ONE residential shell that
+                // carries several 5 m shops; applying it first to a standalone venue
+                // made a click on the gym's near corner select a neighbouring shop whose
+                // door happened to be closer. DEMAND then honestly sent the crew to that
+                // other door, which looked like a random march to the edge of the block.
+                if (markerLive && businesses != null &&
+                    businesses.TryGetSite(marker.BusinessId, out var markedSite) &&
+                    markedSite.Footprint.DistanceTo(point) <= BusinessFootprintSlack)
+                    return marker.BusinessId;
+
                 if (territory != null &&
                     territory.TryGetBusinessNear(at, SliceSlack, out var sliced))
                 {
@@ -1058,14 +1114,12 @@ namespace RoadDemo
                     // persistent site's own footprint must contain the hit; this recovers
                     // a not-yet-bound streamed shop without making the neighbouring house
                     // or pavement answer for it.
-                    var businesses = LivingCity.Business.BusinessRuntime.Instance;
-                    var point = new LivingCity.Territory.TerritoryPoint(at.x, at.z);
-                    if (marker != null ||
+                    if (markerLive ||
                         (businesses != null && businesses.TryGetSite(sliced, out var site) &&
                          site.Footprint.DistanceTo(point) <= BusinessFootprintSlack))
                         return sliced;
                 }
-                return marker != null ? marker.BusinessId : default;
+                return markerLive ? marker.BusinessId : default;
             }
 
             return default;
@@ -1139,16 +1193,19 @@ namespace RoadDemo
 
         /// <summary>The card over a shop: what the picked crew can put to its owner - or,
         /// with nobody picked, which crew is to go.</summary>
-        void OpenBusinessOrders(
+        /// <returns>Whether a card actually opened. False for a door this scene has
+        /// nothing to offer against, which is what lets a caller fall back to a card of
+        /// its own - our own front in a scene with no racket behind it.</returns>
+        bool OpenBusinessOrders(
             LivingCity.Territory.TerritoryBusinessId businessId, Vector2 screen)
         {
             if (!businessId.IsValid)
-                return;
+                return false;
             _cardScreen = screen;
             if (!TryGetRacketActions(businessId, _enemyActions) || _enemyActions.Count == 0)
-                return;
+                return false;
             if (!BuildCard())
-                return;
+                return false;
 
             _cardTarget = null;
             _cardFront = null;
@@ -1171,6 +1228,7 @@ namespace RoadDemo
                 Row(action.Label, action.Note, action.Run, action.Run != null);
 
             LayoutAndShow(screen);
+            return true;
         }
 
         /// <summary>What this owner's yes costs, beside where he stands - the same
@@ -1239,7 +1297,8 @@ namespace RoadDemo
                     ? LivingCity.UI.LedgerText.Cash(blockOwed) +
                       " owed on this block · walk the round"
                     : "nothing owed yet · dues accrue daily at midnight",
-                LivingCity.UI.DoorMenu.ClosureOf(businessId));
+                LivingCity.UI.DoorMenu.ClosureOf(businessId),
+                CrewQuarters.State(crew, businessId));
 
             for (var i = 0; i < _racketOrders.Count; i++)
             {
@@ -1264,6 +1323,22 @@ namespace RoadDemo
                         {
                             if (LivingCity.UI.DoorMenu.TryRead(repairId, out var door))
                                 LivingCity.UI.DoorMenu.Repair(door);
+                        };
+                    }
+                    else if (order.Kind ==
+                             LivingCity.Territory.TerritoryDoorRowKind.Quarters)
+                    {
+                        // Men into one of our own buildings, or back out of it. The
+                        // street carries it out; nothing is filed with the office.
+                        var move = order.Move;
+                        var housed = crew;
+                        var quartersId = businessId;
+                        run = () =>
+                        {
+                            if (move == LivingCity.Territory.TerritoryQuartersMove.Out)
+                                CrewQuarters.BringOut(housed);
+                            else
+                                CrewQuarters.Station(_crews, housed, quartersId);
                         };
                     }
                     else
@@ -1345,7 +1420,7 @@ namespace RoadDemo
                 if (roundResult.Status == LivingCity.Territory.TerritoryCommandStatus.Rejected)
                 {
                     if (!string.IsNullOrEmpty(roundResult.Reason))
-                        _refusal = (roundResult.Reason, Time.unscaledTime + 2.5f);
+                        Refuse(roundResult.Reason);
                 }
                 else if (runtime.TryGetBusinessApproach(businessId, out var firstDoor))
                     ShowMark(firstDoor + Vector3.up * 1.0f, MarkTint);
@@ -1383,7 +1458,7 @@ namespace RoadDemo
                 result.Status == LivingCity.Territory.TerritoryCommandStatus.Failed)
             {
                 if (!string.IsNullOrEmpty(result.Reason))
-                    _refusal = (result.Reason, Time.unscaledTime + 2.5f);
+                    Refuse(result.Reason);
                 return;
             }
 
@@ -1411,8 +1486,7 @@ namespace RoadDemo
             var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
             if (outfit == null)
             {
-                _refusal = ("the outfit's order book is not open in this scene",
-                    Time.unscaledTime + 2.5f);
+                Refuse("the outfit's order book is not open in this scene");
                 return;
             }
 
@@ -1420,7 +1494,7 @@ namespace RoadDemo
                     businessId, type, crew.CrewId, crew.Standing(),
                     out var job, out var refusal))
             {
-                _refusal = (refusal, Time.unscaledTime + 2.5f);
+                Refuse(refusal);
                 return;
             }
 
@@ -1429,17 +1503,15 @@ namespace RoadDemo
             if (type == LivingCity.Outfit.OrderType.BuyPremises &&
                 outfit.Accounts.Safe < job.TargetWorth)
             {
-                _refusal = (
-                    "the safe does not cover " +
-                    LivingCity.UI.LedgerText.Cash(job.TargetWorth),
-                    Time.unscaledTime + 2.5f);
+                Refuse("the safe does not cover " +
+                       LivingCity.UI.LedgerText.Cash(job.TargetWorth));
                 return;
             }
 
             var result = outfit.IssueOrder(job);
             if (!result.Ok)
             {
-                _refusal = (result.Reason, Time.unscaledTime + 2.5f);
+                Refuse(result.Reason);
                 return;
             }
 
@@ -1490,7 +1562,7 @@ namespace RoadDemo
                     if (_crews.OrderPlantBomb(car))
                         ShowMark(car.Position + Vector3.up * 1.2f, AttackTint);
                     else if (_crews.BombRefusal != null)
-                        _refusal = (_crews.BombRefusal, Time.unscaledTime + 2.5f);
+                        Refuse(_crews.BombRefusal);
                 }
                 : (System.Action)null,
                 lit: canPlant);
@@ -1507,7 +1579,7 @@ namespace RoadDemo
                     if (_crews.OrderShootCar(car))
                         ShowMark(car.Position + Vector3.up * 1.2f, AttackTint);
                     else if (_crews.ShootCarRefusal != null)
-                        _refusal = (_crews.ShootCarRefusal, Time.unscaledTime + 2.5f);
+                        Refuse(_crews.ShootCarRefusal);
                 }
                 : (System.Action)null,
                 lit: canShoot);
@@ -1618,8 +1690,8 @@ namespace RoadDemo
         }
 
         /// <summary>The card's chrome, made once. False without a TMP font, which is the
-        /// same condition the name tags and the hover popup stand down under - and the
-        /// caller then falls back to the one-click attack rather than to nothing.</summary>
+        /// same condition the name tags stand down under - and the caller then falls
+        /// back to the one-click attack rather than to nothing.</summary>
         bool BuildCard()
         {
             if (_cardRect != null && _cardTitle != null) return true;
@@ -1855,6 +1927,7 @@ namespace RoadDemo
                 var glyph = _glyphs[i];
                 var bracket = _brackets[i];
                 if (i >= _men.Count || _men[i].Tf == null || _men[i].Dead ||
+                    !_men[i].Tf.gameObject.activeInHierarchy ||
                     _crews.IsAboard(_men[i]) ||
                     !LivingCity.Gameplay.MapVisionRegistry.IsRevealed(_men[i].Tf.position))
                 {
@@ -1886,11 +1959,11 @@ namespace RoadDemo
                                 UpdateGroundBracket(bracket, man, selected: lit, own: own);
                 if (!bracketOn && bracket.enabled)
                     bracket.enabled = false;
-                // The dot over the head is the outfit's own. Every family's men wearing
-                // one put a coloured dot over every head in the view at once, all day,
-                // for men the player gives no orders to - a rival is shown by the square
-                // under his feet, and answers the pointer with a bracket and his name.
-                var dotOn = on && !bracketOn && own;
+                // The dot that used to float over every own man's head read as a stray
+                // yellow circle under the crew; the ground square and the hover/select
+                // bracket already say whose man he is and what state he is in, so the
+                // dot stays off for good.
+                var dotOn = false;
                 if (img.enabled != dotOn) img.enabled = dotOn;
 
                 // Who carries his name over his head. A tag on every lieutenant in the
@@ -1954,7 +2027,6 @@ namespace RoadDemo
 
             DrawCars(w, h, scale);
             UpdateCarHint(scale);
-            UpdatePopup(w, h, scale);
             UpdateBanner();
         }
 
@@ -2032,7 +2104,7 @@ namespace RoadDemo
                 img.enabled = false;
                 _carDots.Add(img);
                 TMP_Text tag = null;
-                if (_popup != null)
+                if (_textReady)
                 {
                     tag = DemoUi.Text(_dotRoot, "car tag", 11f, BossOn, TextAlignmentOptions.Bottom, display: true);
                     tag.characterSpacing = 3f;
@@ -2244,60 +2316,6 @@ namespace RoadDemo
             _groundSquareMaterial.renderQueue = 3000;
             _groundSquareMaterial.enableInstancing = true;
             return _groundSquareMaterial;
-        }
-
-        void UpdatePopup(float w, float h, float scale)
-        {
-            var unit = _crews.Selected;
-            if (_popup == null) return;
-            if (unit == null || unit.Boss == null || unit.Boss.Tf == null)
-            {
-                if (_popup.activeSelf) _popup.SetActive(false);
-                _shownTitle = _shownLine = null;
-                return;
-            }
-
-            var boss = unit.Boss;
-            // the words are cut again only when something they say has changed: the
-            // line is half a dozen concatenations, and it ran every frame a crew was
-            // selected
-            int standing = unit.Standing(), size = unit.Size();
-            var car = unit.Car;
-            bool boarding = unit.Boarding != null;
-            string status = car != null ? car.StatusLine : boarding ? null : boss.StatusLine;
-            bool orderHint = car == null && !boarding && !boss.HasOrder && boss.Target == null && !boss.Dead;
-            bool carHint = orderHint && _crews.CarOf(unit) != null;
-            bool exitHint = car != null && !unit.Leaving;
-            bool bail = exitHint && (car.Hot || car.State == CrewCar.Mode.DriveBy);
-            string refusal = _refusal.until > Time.unscaledTime ? _refusal.text : null;
-            var key = (boss, boss.DisplayName, standing, size, status, boarding, orderHint,
-                       (carHint, exitHint, bail, refusal));
-            if (_shownLine == null || !key.Equals(_popupKey))
-            {
-                _popupKey = key;
-                string title = boss.DisplayName + "  ·  Lieutenant";
-                string line = (standing == size ? size + (size == 1 ? " man" : " men")
-                                                : standing + " of " + size + " standing") +
-                              "  ·  " + (status ?? "Getting in the car");
-                if (orderHint) line += "  ·  right-click: move / attack" + (carHint ? " / car" : "");
-                else if (exitHint) line += bail ? "  ·  middle-click: bail out" : "  ·  middle-click: get out";
-                if (refusal != null) line = refusal;
-                if (title != _shownTitle) { _shownTitle = title; _popupTitle.text = title; }
-                if (line != _shownLine) { _shownLine = line; _popupLine.text = line; }
-            }
-
-            // The card belongs to the man, not to the screen: pan him out of the view and
-            // it goes with him rather than sliding along the edge in front of the player.
-            if (!LivingCity.UI.OverlayCard.TryPlace(
-                    _cam, boss.Tf.position + Vector3.up * boss.OverlayHeight,
-                    PopupLift * scale, new Vector2(PopupWidth * scale, PopupHeight * scale),
-                    w, h, out var where))
-            {
-                if (_popup.activeSelf) _popup.SetActive(false);
-                return;
-            }
-            if (!_popup.activeSelf) _popup.SetActive(true);
-            _popupRect.position = where;
         }
     }
 }

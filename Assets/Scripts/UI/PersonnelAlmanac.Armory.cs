@@ -464,7 +464,10 @@ namespace LivingCity.UI
             for (var i = 0; i < roster.Members.Count; i++)
             {
                 var member = roster.Members[i];
-                if (member.Gone || member.Rank != Rank.Lieutenant)
+                // Every lieutenant, and the Don when he runs his own detail - on day
+                // one his is the only branch on the books, so leaving him off this list
+                // left the outfit's one car with nowhere to go (RosterOps.RunsABranch).
+                if (member.Gone || !RosterOps.CanBeIssuedGear(roster, member.Id))
                     continue;
 
                 var memberId = member.Id;

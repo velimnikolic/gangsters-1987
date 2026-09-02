@@ -835,8 +835,17 @@ namespace RoadDemo
                 spot = wanted;
                 return true;
             }
+            // A straight connector is useful only for a LOCAL adjustment around the
+            // requested mark. Searching the entire recovery radius for one can turn a
+            // doorstep order into an order for the near side of the intervening block:
+            // the first point visible from a distant crew may be thirty metres from the
+            // door. Past the ordinary four-metre standing adjustment, keep the nearest
+            // approach-facing replacement and let WalkRoute prove the trip around the
+            // buildings instead.
+            const float ConnectedAdjustmentReach = 4f;
             if (TryClearStandingSpot(wanted, radius, approachFrom, true,
-                    approachFrom, true, out spot, reach))
+                    approachFrom, true, out spot,
+                    Mathf.Min(reach, ConnectedAdjustmentReach)))
                 return true;
             // A distant order may have other buildings between it and the crew. In that
             // case retain the approach-facing choice and let WalkRoute prove the trip.

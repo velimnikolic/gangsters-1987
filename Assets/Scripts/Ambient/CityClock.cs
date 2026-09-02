@@ -21,7 +21,7 @@ namespace LivingCity.Ambient
         [Tooltip("Fallback for a scene with no config. 600 makes one game minute last 10 real seconds.")]
         [SerializeField, Min(0.02f)] float realSecondsPerGameHour = 600f;
 
-        [SerializeField, Range(0f, 24f)] float startHour = 8f;
+        [SerializeField, Range(0f, 24f)] float startHour = 6f;
 
         [Tooltip("Untick to freeze the clock where it is - useful for judging one particular hour.")]
         [SerializeField] bool running = true;

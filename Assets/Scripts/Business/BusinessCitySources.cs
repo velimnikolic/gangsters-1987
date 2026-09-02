@@ -1,4 +1,5 @@
 using LivingCity.Territory;
+using RoadDemo;
 using UnityEngine;
 
 namespace LivingCity.Business
@@ -109,6 +110,93 @@ namespace LivingCity.Business
             2 => Vector3.forward,
             _ => Vector3.left,
         };
+
+        /// <summary>
+        /// Which face of an amenity is connected to the public pavement. Mixed-block
+        /// amenities are placed as lots, so unlike residential units they may have no
+        /// authored AccessSide. Falling straight back to the block artery can point a
+        /// business door through another programme - the seed-1987 gym's east face is
+        /// behind a cafe terrace. Prefer a real door whose centre has an unobstructed
+        /// plan-cell corridor to a street; only fall back to the old frontage answer
+        /// when the plan offers no such face.
+        /// </summary>
+        public static int AmenityApproachSide(
+            ResidentialLot.Plan plan, ResidentialLot.Spot spot)
+        {
+            if (plan == null || spot?.Unit == null)
+                return 0;
+            if (spot.AccessSide >= 0 && spot.AccessSide < 4)
+                return spot.AccessSide;
+
+            var turn = ResidentialLot.Turn.Of(spot.Unit, spot.Yaw);
+            var best = -1;
+            var bestDistance = int.MaxValue;
+            for (var side = 0; side < 4; side++)
+            {
+                if (!plan.Street[side] || !turn.Face(side) ||
+                    turn.Doors(side) + turn.Shops(side) <= 0 ||
+                    !OpenToStreet(plan, spot, side, out var distance))
+                    continue;
+
+                if (best < 0 || distance < bestDistance ||
+                    (distance == bestDistance && side == plan.Artery))
+                {
+                    best = side;
+                    bestDistance = distance;
+                }
+            }
+
+            if (best >= 0)
+                return best;
+            if (spot.Side >= 0 && spot.Side < 4)
+                return spot.Side;
+            return plan.Artery >= 0 && plan.Artery < 4 ? plan.Artery : 0;
+        }
+
+        static bool OpenToStreet(
+            ResidentialLot.Plan plan, ResidentialLot.Spot spot,
+            int side, out int distance)
+        {
+            distance = 0;
+            if (plan.Ground == null || plan.W <= 0 || plan.D <= 0)
+                return false;
+
+            var along = side == 0 || side == 2
+                ? spot.I + (spot.CW - 1) / 2
+                : spot.J + (spot.CD - 1) / 2;
+            var i = side switch
+            {
+                1 => spot.I + spot.CW,
+                3 => spot.I - 1,
+                _ => along,
+            };
+            var j = side switch
+            {
+                0 => spot.J - 1,
+                2 => spot.J + spot.CD,
+                _ => along,
+            };
+
+            while (i >= 0 && j >= 0 && i < plan.W && j < plan.D)
+            {
+                var use = plan.Ground[i, j];
+                if (use == ResidentialLot.Use.Walkway)
+                    return true;
+                if (use == ResidentialLot.Use.Empty ||
+                    use == ResidentialLot.Use.Building ||
+                    use == ResidentialLot.Use.Yard ||
+                    use == ResidentialLot.Use.Cafe ||
+                    use == ResidentialLot.Use.Park ||
+                    use == ResidentialLot.Use.Subway)
+                    return false;
+
+                distance++;
+                i += ResidentialLot.Step[side, 0];
+                j += ResidentialLot.Step[side, 1];
+            }
+
+            return false;
+        }
 
         /// <summary>The middle of one edge of a rectangle: where a gate or a door stands.</summary>
         public static Vector3 EdgeMidpoint(Rect local, int side) => side switch

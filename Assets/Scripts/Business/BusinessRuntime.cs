@@ -199,6 +199,22 @@ namespace LivingCity.Business
             // pair allocated an array per pair for the same answer every time.
             MeasurePieces(content);
 
+            // The composer acquires prefab instances from a pool. A BusinessMarker was
+            // added to one of those instances the first time it represented a shop, so
+            // the component comes back with the prefab even when the instance now stands
+            // in another block. Treat every marker under this freshly composed payload
+            // as unassigned before matching the current plan. Otherwise the different-ID
+            // guard below mistakes yesterday's pooled binding for a second shop on this
+            // pass, skips the real binding, and OnEnable publishes the old business at
+            // the new building. Clicking that building then sends a crew to the old
+            // business's doorstep, potentially at the other end of the city.
+            ViewMarkers.Clear();
+            content.GetComponentsInChildren(true, ViewMarkers);
+            for (var i = 0; i < ViewMarkers.Count; i++)
+                if (ViewMarkers[i] != null)
+                    ViewMarkers[i].ClearViewBinding();
+            ViewMarkers.Clear();
+
             var bound = 0;
             for (var i = 0; i < sites.Count; i++)
             {
@@ -245,6 +261,7 @@ namespace LivingCity.Business
         static readonly List<Transform> Pieces = new List<Transform>();
         static readonly List<Bounds> PieceBounds = new List<Bounds>();
         static readonly List<Renderer> PieceRenderers = new List<Renderer>();
+        static readonly List<BusinessMarker> ViewMarkers = new List<BusinessMarker>();
 
         /// <summary>
         /// The block's buildings, measured. Paving, kerbs, road markings and painted bays

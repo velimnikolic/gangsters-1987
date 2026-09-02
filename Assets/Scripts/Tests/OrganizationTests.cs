@@ -99,7 +99,7 @@ namespace LivingCity.Tests
 
             // An overage the ROSTER never assented to - the ceiling dropped under men
             // already standing - is carried and read, and the men stay where they are.
-            var roster = RosterSeeder.Generate(23);
+            var roster = RosterSeeder.GenerateStaffed(23);
             var crew = roster.Crews[0];
             var standing = crew.HoodIds.Count;
             RosterOps.ConfigureOrganization(roster, new OrganizationLimits(70, 4, 1, 1));
@@ -115,7 +115,7 @@ namespace LivingCity.Tests
             if (PersonnelDirector.DefaultHoodRecruitmentCost != 50)
                 failures.Add("Recruitment: the configurable Phase-1 default is not $50.");
 
-            var roster = RosterSeeder.Generate(1987);
+            var roster = RosterSeeder.GenerateStaffed(1987);
             var accounts = new Accounts();
             accounts.Open(1);
             var beforeCount = roster.Members.Count;
@@ -171,7 +171,7 @@ namespace LivingCity.Tests
                 accounts.Current.Purchases != PersonnelDirector.DefaultHoodRecruitmentCost)
                 failures.Add("Recruitment: the authoritative account did not book the $50 cost.");
 
-            var poorRoster = RosterSeeder.Generate(1988);
+            var poorRoster = RosterSeeder.GenerateStaffed(1988);
             var poorAccounts = new Accounts { Safe = 49 };
             var poorCount = poorRoster.Members.Count;
             OpResult Refuse(int price, string _)
@@ -195,28 +195,28 @@ namespace LivingCity.Tests
         {
             for (var seed = 0; seed < 20; seed++)
             {
-                var roster = RosterSeeder.Generate(seed);
+                var roster = RosterSeeder.GenerateStaffed(seed);
                 var boss = roster.FindBoss();
                 var bosses = 0;
                 for (var i = 0; i < roster.Members.Count; i++)
                     if (roster.Members[i].Rank == Rank.Boss)
                         bosses++;
 
-                if (bosses != 1 || boss == null || boss.Id != RosterSeeder.BossCharacterId)
+                if (bosses != 1 || boss == null || boss.Id != RosterSeeder.FixtureBossCharacterId)
                     failures.Add("Boss: seed " + seed + " did not produce exactly one stable Boss.");
                 else if (boss.FullName != GangCatalog.BossName || boss.Look != GangCatalog.BossModel)
                     failures.Add("Boss: canonical Don Salvatore identity/model was not reused.");
 
                 // Adding him consumes no personnel draws and therefore never moves the
                 // six pre-existing IDs off 0..5.
-                for (var id = 0; id < RosterSeeder.StartingStaffCount; id++)
+                for (var id = 0; id < RosterSeeder.FixtureStaffCount; id++)
                     if (roster.Find(id) == null || roster.Find(id).Rank == Rank.Boss)
                         failures.Add("Boss: existing staff ID " + id + " was displaced.");
             }
 
             var large = RosterSeeder.GenerateLarge(1987, 60);
             var largeBoss = large.FindBoss();
-            if (largeBoss == null || largeBoss.Id != RosterSeeder.BossCharacterId)
+            if (largeBoss == null || largeBoss.Id != RosterSeeder.FixtureBossCharacterId)
                 failures.Add("Boss: scale fixture changed the canonical Boss Character ID.");
             var validation = new List<string>();
             OrganizationValidator.Validate(
@@ -227,7 +227,7 @@ namespace LivingCity.Tests
 
         static void HierarchyTransfersIdentityAndHasNoFourHoodLimit(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(42);
+            var roster = RosterSeeder.GenerateStaffed(42);
             var query = new OrganizationQuery(roster);
             var crew = roster.Crews[0];
             var lieutenant = roster.Find(crew.LieutenantId);
@@ -279,7 +279,7 @@ namespace LivingCity.Tests
                 defaults.LieutenantManpower != 50 || defaults.LieutenantBlocks != 3)
                 failures.Add("Capacity: canonical defaults moved or became scattered.");
 
-            var roster = RosterSeeder.Generate(7);
+            var roster = RosterSeeder.GenerateStaffed(7);
             RosterOps.ConfigureOrganization(roster, new OrganizationLimits(70, 4, 50, 1));
             var crew = roster.Crews[0];
             var rng = new System.Random(7);
@@ -330,7 +330,7 @@ namespace LivingCity.Tests
         static void ResponsibilityUsesCanonicalIdsWithoutChangingTerritorySignals(
             List<string> failures)
         {
-            var roster = RosterSeeder.Generate(11);
+            var roster = RosterSeeder.GenerateStaffed(11);
             var lieutenantId = roster.Crews[0].LieutenantId;
             var unknown = RosterOps.AssignBlockResponsibility(
                 roster, new TerritoryBlockId("missing"), lieutenantId, false);
@@ -365,7 +365,7 @@ namespace LivingCity.Tests
 
         static void QueryProjectsHierarchyAndPhysicalMappings(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(13);
+            var roster = RosterSeeder.GenerateStaffed(13);
             var crew = roster.Crews[0];
             var ids = new[] { crew.LieutenantId, crew.HoodIds[0] };
             var mapping = new TacticalPersonnelMapping(crew.Id, crew.LieutenantId, ids);
@@ -392,7 +392,7 @@ namespace LivingCity.Tests
 
         static void ValidationReportsCorruptionWithoutRepairingIt(List<string> failures)
         {
-            var roster = RosterSeeder.Generate(17);
+            var roster = RosterSeeder.GenerateStaffed(17);
             var crew = roster.Crews[0];
             var duplicate = crew.HoodIds[0];
             roster.Organization.BossHoodIds.Add(duplicate);

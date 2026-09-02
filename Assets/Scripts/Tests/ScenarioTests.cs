@@ -313,7 +313,7 @@ namespace LivingCity.Tests
         public static List<string> BossCapacity()
         {
             var failures = new List<string>();
-            var roster = Personnel.RosterSeeder.Generate(4);
+            var roster = Personnel.RosterSeeder.GenerateStaffed(4);
             var boss = roster.FindBoss();
             if (boss == null)
             {
@@ -388,7 +388,7 @@ namespace LivingCity.Tests
         public static List<string> LieutenantLoad()
         {
             var failures = new List<string>();
-            var roster = Personnel.RosterSeeder.Generate(9);
+            var roster = Personnel.RosterSeeder.GenerateStaffed(9);
             Personnel.RosterOps.ConfigureOrganization(
                 roster, new Personnel.OrganizationLimits(70, 4, 50, 3));
             if (roster.Crews.Count == 0)
