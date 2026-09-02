@@ -308,6 +308,12 @@ namespace RoadDemo
                 !runtime.TryGetBusinessApproach(id, out door))
                 return false;
 
+            // A gang HQ already carries the exact generated door and facade normal.
+            // Prefer that authored street link over measuring the whole building again:
+            // interiors and terraces can make a mesh heuristic choose the rear wall.
+            if (TryGangFrontage(id, out door, out outward, out width))
+                return true;
+
             if (TryLiveFrontage(id, out door, out outward, out width))
                 return true;
 
@@ -348,6 +354,41 @@ namespace RoadDemo
 
             width = FrontageOf(hasSite, footprint, outward, 0f);
             return true;
+        }
+
+        static bool TryGangFrontage(
+            LivingCity.Territory.TerritoryBusinessId id, out Vector3 door,
+            out Vector3 outward, out float width)
+        {
+            door = default;
+            outward = Vector3.forward;
+            width = StoreWidth;
+
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            LivingCity.Business.BusinessSite site = null;
+            var hasSite = business != null && business.TryGetSite(id, out site) && site != null;
+            var fronts = GangFront.All;
+            for (var i = 0; i < fronts.Count; i++)
+            {
+                var front = fronts[i];
+                if (front == null ||
+                    (front.BusinessId != id && (!hasSite || front.SiteId != site.SiteId)))
+                    continue;
+
+                door = front.Door;
+                outward = front.Outward;
+                outward.y = 0f;
+                if (outward.sqrMagnitude < 1e-4f)
+                    outward = Vector3.forward;
+                else
+                    outward.Normalize();
+
+                if (hasSite)
+                    width = FrontageOf(true, site.Footprint, outward, 0f);
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>Resolve only a currently bound renderer, with no plan fallback. This

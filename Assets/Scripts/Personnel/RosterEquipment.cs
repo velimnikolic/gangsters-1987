@@ -61,6 +61,22 @@ namespace LivingCity.Personnel
         /// NormalizeArms; never the source of ownership.</summary>
         public int HolderId = Unheld;
 
+        /// <summary>
+        /// The man the BOSS put this piece in the hands of, or Unheld when nobody did.
+        ///
+        /// The quartermaster's deal (RosterOps.NormalizeArms) re-derives who carries
+        /// what every time the roster moves, which is right for a crew's own stock and
+        /// wrong for an order: a gun the boss handed a named man has to still be on
+        /// that man tomorrow. A pinned piece is dealt to nobody - it and its hand step
+        /// out of the deal and the rest is dealt over what is left.
+        ///
+        /// The DEED does not move with the pin: OwnerId still names the group the piece
+        /// belongs to, so a man who leaves the crew still carries nothing out of it. The
+        /// pin lapses the moment he is off the books or out of that group; a hospital
+        /// bed only suspends it, and the piece comes back to him when he is on his feet.
+        /// </summary>
+        public int PinnedTo = Unheld;
+
         /// <summary>Book value - what it cost, what the Assets line counts.</summary>
         public int Value;
     }

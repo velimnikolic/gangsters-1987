@@ -618,11 +618,13 @@ namespace LivingCity.Personnel
             if (member.Gone)
                 return OpResult.Fail(GoneReason(member));
 
-            // Gear goes to a man who runs a branch and nobody else - he deals his own
-            // crew in himself (NormalizeArms): guns by who can shoot, wheels by who can
-            // drive. The Don's detail is such a branch, and on day one it is the only
-            // one (RunsABranch).
-            if (!CanBeIssuedGear(roster, id))
+            // A GUN goes into whatever hand the boss names - his own lieutenant's, or
+            // a corner hood's over that lieutenant's head. WHEELS and grenades still go
+            // through the man who runs the branch: a car belongs to a crew and to
+            // whoever drives it that day, and a grenade is a countable stock the
+            // quartermaster deals into no man's hand at all.
+            var runsIt = CanBeIssuedGear(roster, id);
+            if (!IsWeapon(item.Kind) && !runsIt)
                 return OpResult.Fail(LedgerText.ReasonGearViaLieutenant);
 
             if (item.OwnerId == id)
@@ -636,9 +638,47 @@ namespace LivingCity.Personnel
                         ? "the front" : "another man"));
             }
 
-            item.OwnerId = id;
+            if (runsIt)
+            {
+                // Stock for his own deck. He deals it out himself, as he always has -
+                // nothing here is pinned, or a crew would go unarmed behind a
+                // lieutenant standing there holding six guns.
+                item.OwnerId = id;
+                item.HolderId = id;
+                item.PinnedTo = RosterEquipment.Unheld;
+                return OpResult.Success;
+            }
+
+            // A named man. The deed stays with the group he stands in - he carries
+            // nothing out of it - but the piece is HIS while he stands there, and the
+            // deal does not take it off him (NormalizeArms).
+            item.OwnerId = DeedGroupOf(roster, id);
             item.HolderId = id;
+            item.PinnedTo = id;
             return OpResult.Success;
+        }
+
+        /// <summary>Whose deck a plain man's gear belongs to: his lieutenant's crew, or
+        /// the front's locker when he stands in the pool. Never the man himself - a
+        /// hood owns no deck, which is the whole of the parent rule.</summary>
+        static int DeedGroupOf(Roster roster, int id)
+        {
+            var crew = roster.CrewOf(id);
+            return crew != null ? crew.LieutenantId : RosterEquipment.FrontArmory;
+        }
+
+        /// <summary>Whether a man stands in the group that owns a piece - the one
+        /// question a pin outlives everything else on.</summary>
+        static bool InOwnerGroup(Roster roster, int ownerId, int id)
+        {
+            if (ownerId == RosterEquipment.FrontArmory)
+                return InFrontGuard(roster, id);
+            if (ownerId == RosterEquipment.Unheld)
+                return false;
+            if (ownerId == id)
+                return true;
+            var crew = roster.CrewOf(id);
+            return crew != null && crew.LieutenantId == ownerId;
         }
 
         /// <summary>The keys handed straight from whoever has them to another
@@ -667,9 +707,11 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(LedgerText.ReasonAlreadyHolds);
 
             // his crew's deed. Who in it actually drives the thing is the deal's call
-            // (NormalizeArms, wheels by Driving) and runs immediately after.
+            // (NormalizeArms, wheels by Driving) and runs immediately after - and any
+            // pin on it dies with the old deed.
             item.OwnerId = id;
             item.HolderId = id;
+            item.PinnedTo = RosterEquipment.Unheld;
             return OpResult.Success;
         }
 
@@ -692,6 +734,7 @@ namespace LivingCity.Personnel
 
             item.OwnerId = RosterEquipment.FrontArmory;
             item.HolderId = RosterEquipment.FrontArmory;
+            item.PinnedTo = RosterEquipment.Unheld;
             return OpResult.Success;
         }
 
@@ -721,6 +764,7 @@ namespace LivingCity.Personnel
 
             item.OwnerId = RosterEquipment.Unheld;
             item.HolderId = RosterEquipment.Unheld;
+            item.PinnedTo = RosterEquipment.Unheld;
             return OpResult.Success;
         }
 
@@ -759,6 +803,22 @@ namespace LivingCity.Personnel
                     item.OwnerId = RosterEquipment.Unheld;
                     item.HolderId = RosterEquipment.Unheld;
                 }
+            }
+
+            // Then the boss's own hand. A pin is his word about ONE man and it outlives
+            // a deal, a re-shuffle of the crew and a spell in a hospital bed; it lapses
+            // only when the man it names is off the books for good or no longer stands
+            // in the group the piece belongs to. A man in a bed keeps his pin and loses
+            // the piece for as long as he is off his feet - it comes back with him.
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var item = roster.Equipment[i];
+                if (item.PinnedTo == RosterEquipment.Unheld)
+                    continue;
+                var man = roster.Find(item.PinnedTo);
+                if (man == null || man.Gone ||
+                    !InOwnerGroup(roster, item.OwnerId, item.PinnedTo))
+                    item.PinnedTo = RosterEquipment.Unheld;
             }
 
             for (var i = 0; i < roster.Crews.Count; i++)
@@ -864,10 +924,37 @@ namespace LivingCity.Personnel
             if (items.Count == 0)
                 return;
 
-            items.Sort((x, y) => y.Value != x.Value
+            // The boss's own hand comes off the top. A piece pinned to a man who is
+            // standing today is his; it and he both step out of the deal, and the
+            // quartermaster deals what is left over the hands that are left. He does
+            // not take a man's iron off him to make his arithmetic come out.
+            var deck = new System.Collections.Generic.List<RosterEquipment>(items);
+            var ranked = new System.Collections.Generic.List<Character>(hands);
+            for (var i = deck.Count - 1; i >= 0; i--)
+            {
+                var pinned = deck[i].PinnedTo;
+                if (pinned == RosterEquipment.Unheld)
+                    continue;
+                var at = -1;
+                for (var h = 0; h < ranked.Count; h++)
+                    if (ranked[h].Id == pinned)
+                    {
+                        at = h;
+                        break;
+                    }
+                // Not standing today - the pin keeps, the piece deals on without him.
+                if (at < 0)
+                    continue;
+                deck[i].HolderId = pinned;
+                deck.RemoveAt(i);
+                ranked.RemoveAt(at);
+            }
+            if (deck.Count == 0)
+                return;
+
+            deck.Sort((x, y) => y.Value != x.Value
                 ? y.Value.CompareTo(x.Value) : x.Id.CompareTo(y.Id));
 
-            var ranked = new System.Collections.Generic.List<Character>(hands);
             ranked.Sort((x, y) =>
             {
                 var sx = x.GetHalfSteps(stat);
@@ -875,18 +962,18 @@ namespace LivingCity.Personnel
                 return sy != sx ? sy.CompareTo(sx) : x.Id.CompareTo(y.Id);
             });
 
-            var pairs = System.Math.Min(items.Count, ranked.Count);
+            var pairs = System.Math.Min(deck.Count, ranked.Count);
             var correct = pairs * organization / AttributeScale.MaxHalfSteps;
 
             for (var i = 0; i < pairs; i++)
             {
                 var hand = i < correct ? ranked[i] : ranked[correct + (pairs - 1 - i)];
-                items[i].HolderId = hand.Id;
+                deck[i].HolderId = hand.Id;
             }
 
             // One piece per pair of hands; the warehouse takes the surplus.
-            for (var i = pairs; i < items.Count; i++)
-                items[i].HolderId = warehouseId;
+            for (var i = pairs; i < deck.Count; i++)
+                deck[i].HolderId = warehouseId;
         }
 
         /// <summary>The shared gate for every assignment move; null means assignable.</summary>

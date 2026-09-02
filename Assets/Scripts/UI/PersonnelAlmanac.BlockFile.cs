@@ -511,11 +511,12 @@ namespace LivingCity.UI
 
         // ------------------------------------------------------------------ the head
 
-        /// <summary>The dark band the file opens with: what the sheet is (BLOCK FILE),
-        /// which block, its ward, what the street says about it, and the way out. The
-        /// design's own head, and the reason the card reads as a document rather than as
-        /// a photograph with figures under it.</summary>
-        const float BlockHeadH = 67f;
+        /// <summary>The dark band the file opens with: the ward, what the street says
+        /// about the block, and the way out. The kicker and the block's name came off it
+        /// on 2026-09-02 - the open row of the ledger beside it already names the block,
+        /// and the band said it a second time under a label saying what the sheet was.
+        /// One line of content, so the band is sized for one.</summary>
+        const float BlockHeadH = 44f;
 
         /// <summary>The filmed block's own height, from the design. Fixed, not a share
         /// of the column.</summary>
@@ -531,30 +532,36 @@ namespace LivingCity.UI
             var word = ControlWord(control);
             var ink = ControlColour(control);
             var stateW = word.Length * 7.2f + 30f;
-            var titleW = blocksW - 32f - stateW - 24f - 12f;
 
-            Caps(band, 16f, -10f, titleW, "BLOCK FILE", 8.5f, LedgerV2.HeadDim, 16f)
-                .font = LedgerStyle.Mono;
-            Line(band, LedgerStyle.Condensed, 19f, LedgerV2.HeadCream,
-                16f, -21f, titleW, 24f, BlockName(blockCardId))
+            var wardH = LineBox(10f);
+            var titleW = Mathf.Max(60f, blocksW - 16f - stateW - 24f - 12f - 16f);
+
+            LedgerV2.Mono(band, 16f, -(BlockHeadH - wardH) * 0.5f, titleW,
+                NeighborhoodOf(blockCardId), 10f, LedgerV2.HeadDim, 1f)
                 .overflowMode = TextOverflowModes.Ellipsis;
-            LedgerV2.Mono(band, 16f, -45f, titleW, NeighborhoodOf(blockCardId), 10f,
-                LedgerV2.HeadDim, 1f).overflowMode = TextOverflowModes.Ellipsis;
+
+            // The state and the way out stand on the band's own centre line, and the
+            // mark takes its y off the word it belongs to.
+            const float stateH = 17f;
+            const float shutH = 24f;
+            const float stateTop = -(BlockHeadH - stateH) * 0.5f;
+            const float shutTop = -(BlockHeadH - shutH) * 0.5f;
 
             var stateX = blocksW - 16f - 24f - 12f - stateW;
-            Block("Street", band, stateX, -14f, 9f, 9f, ink);
-            Caps(band, stateX + 16f, -13f, stateW - 16f, word, 11f, ink, 4f)
+            Block("Street", band, stateX, LedgerV2.MarkY(stateTop, stateH, 9f),
+                9f, 9f, ink);
+            Caps(band, stateX + 16f, stateTop, stateW - 16f, word, 11f, ink, 4f)
                 .font = LedgerStyle.MonoBold;
 
             // The way out is the same click the row is: a file is shut by the block it
             // belongs to, and this is that block.
             var shut = NewRect("Shut", band);
-            PlaceTopLeft(shut, blocksW - 16f - 24f, -11f, 24f, 24f);
+            PlaceTopLeft(shut, blocksW - 16f - 24f, shutTop, 24f, shutH);
             Fill(shut, new Color(0f, 0f, 0f, 0f));
             Frame(shut, 1f, LedgerV2.HeadDim);
             var open = blockCardId;
             RowButton(shut, ClickSurface(shut), () => OpenBlockCard(open));
-            Caps(shut, 0f, -7f, 24f, "X", 10f, LedgerV2.HeadCream, 0f,
+            Caps(shut, 0f, -(shutH - 16f) * 0.5f, 24f, "X", 10f, LedgerV2.HeadCream, 0f,
                 TextAlignmentOptions.Center).font = LedgerStyle.MonoBold;
 
             return BlockHeadH;
@@ -800,7 +807,8 @@ namespace LivingCity.UI
             for (var i = 0; i < words.Length; i++)
             {
                 var x = margin + i * cellW;
-                LedgerV2.StreetMark(plate, x, -(plateH - 26f), inks[i], 9f);
+                LedgerV2.StreetMark(plate, x,
+                    LedgerV2.MarkY(-(plateH - 27f), LineBox(9f), 9f), inks[i], 9f);
                 LedgerV2.Mono(plate, x + 14f, -(plateH - 27f), cellW - 18f, words[i],
                     9f, ModelLegend, 2f);
             }
@@ -1133,7 +1141,9 @@ namespace LivingCity.UI
             var ink = hasStanding
                 ? StandingInk(standing.Kind)
                 : TenureColour(trade.Tenure);
-            LedgerV2.StreetMark(row, 0f, -15f, ink, 10f);
+            // The two lines under it run from -6 to about -37, so the square takes the
+            // centre of the PAIR and not the centre of the row it happens to sit in.
+            LedgerV2.StreetMark(row, 0f, -18.5f, ink, 10f);
 
             const float figureW = 92f;
             const float chevronW = 14f;
@@ -1550,9 +1560,11 @@ namespace LivingCity.UI
                     blockCardWalkerId = blockCardWalkerId == manId ? -1 : manId;
                     dirty = true;
                 });
-                Block("Armed", chip, 10f, -8f, 6f, 6f,
+                var chipTextTop = -(22f - LineBox(10.5f)) * 0.5f;
+                Block("Armed", chip, 10f,
+                    LedgerV2.MarkY(chipTextTop, LineBox(10.5f), 6f), 6f, 6f,
                     man.Gone ? LedgerV2.Red : TenurePaying);
-                LedgerV2.Mono(chip, 22f, -5f, chipW - 30f, word, 10.5f,
+                LedgerV2.Mono(chip, 22f, chipTextTop, chipW - 30f, word, 10.5f,
                     picked ? LedgerV2.HeadCream : LedgerV2.Ink, 1f)
                     .font = LedgerStyle.MonoBold;
                 chipX += chipW + 6f;

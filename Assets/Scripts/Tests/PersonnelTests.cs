@@ -36,7 +36,9 @@ namespace LivingCity.Tests
             AssignToFrontSwapsTheManager(failures);
             LieutenantCannotBeClickAssigned(failures);
             EquipmentIsExclusive(failures);
-            GearFlowsThroughTheLieutenant(failures);
+            WheelsFlowThroughTheLieutenant(failures);
+            APinnedGunIsNotDealtAway(failures);
+            APinLapsesWhenTheManLeaves(failures);
             TheDonsDetailTakesTheKeys(failures);
             KeysMoveBetweenLieutenants(failures);
             LieutenantDealsArmsByOrganization(failures);
@@ -661,9 +663,10 @@ namespace LivingCity.Tests
                 failures.Add("EquipmentIsExclusive: refused after a clean return.");
         }
 
-        /// <summary>ALL gear - guns and wheels alike - issues to lieutenants alone,
-        /// with the refusal explaining the chain of command.</summary>
-        static void GearFlowsThroughTheLieutenant(List<string> failures)
+        /// <summary>WHEELS issue to the man who runs the branch and nobody else - a
+        /// car belongs to a crew and to whoever drives it that day. A GUN goes into
+        /// whatever hand the boss names, hood or lieutenant.</summary>
+        static void WheelsFlowThroughTheLieutenant(List<string> failures)
         {
             var roster = new Roster();
             var hood = Make(roster, "Corner", "Hood");
@@ -672,17 +675,99 @@ namespace LivingCity.Tests
             var pistol = MakeItem(roster, EquipmentKind.Pistol);
             var car = MakeItem(roster, EquipmentKind.Vehicle);
 
-            var refused = RosterOps.GiveEquipment(roster, pistol.Id, hood.Id);
+            var refused = RosterOps.GiveEquipment(roster, car.Id, hood.Id);
             if (refused.Ok || refused.Reason != LedgerText.ReasonGearViaLieutenant)
-                failures.Add("GearFlowsThroughTheLieutenant: the hood bought his " +
-                             "own iron.");
-            if (RosterOps.GiveEquipment(roster, car.Id, hood.Id).Ok)
-                failures.Add("GearFlowsThroughTheLieutenant: the hood got his own " +
+                failures.Add("WheelsFlowThroughTheLieutenant: the hood got his own " +
                              "car.");
-            if (!RosterOps.GiveEquipment(roster, pistol.Id, lieutenant.Id).Ok ||
-                !RosterOps.GiveEquipment(roster, car.Id, lieutenant.Id).Ok)
-                failures.Add("GearFlowsThroughTheLieutenant: the lieutenant was " +
-                             "refused.");
+            if (!RosterOps.GiveEquipment(roster, pistol.Id, hood.Id).Ok)
+                failures.Add("WheelsFlowThroughTheLieutenant: the boss could not put " +
+                             "a gun in a hood's hand.");
+            // The deed stays with the crew he stands in; the piece is his.
+            if (pistol.OwnerId != lieutenant.Id || pistol.HolderId != hood.Id ||
+                pistol.PinnedTo != hood.Id)
+                failures.Add("WheelsFlowThroughTheLieutenant: the hood's gun is not " +
+                             "on his lieutenant's deed and in his own hand.");
+            if (!RosterOps.GiveEquipment(roster, car.Id, lieutenant.Id).Ok)
+                failures.Add("WheelsFlowThroughTheLieutenant: the lieutenant was " +
+                             "refused the keys.");
+        }
+
+        /// <summary>
+        /// The boss's word beats the quartermaster's arithmetic. A gun handed to a
+        /// named hood stays on that hood through every re-deal, even when a better
+        /// shot stands beside him - and the rest of the crew's stock goes on being
+        /// dealt by who can shoot. Take it back and he is in the deal again.
+        /// </summary>
+        static void APinnedGunIsNotDealtAway(List<string> failures)
+        {
+            var roster = new Roster();
+            var lieutenant = Make(roster, "Head", "Crew", Rank.Lieutenant);
+            var poor = Make(roster, "Poor", "Shot");
+            var dead = Make(roster, "Dead", "Eye");
+            MakeCrew(roster, lieutenant, poor, dead);
+
+            // The lieutenant deals perfectly, and Dead Eye is the best hand in the crew.
+            lieutenant.SetHalfSteps(CharacterAttribute.Organization,
+                AttributeScale.MaxHalfSteps);
+            dead.SetHalfSteps(CharacterAttribute.Combat, AttributeScale.MaxHalfSteps);
+            poor.SetHalfSteps(CharacterAttribute.Combat, 1);
+            lieutenant.SetHalfSteps(CharacterAttribute.Combat, 1);
+
+            var pinned = MakeItem(roster, EquipmentKind.Shotgun);
+            var stock = MakeItem(roster, EquipmentKind.Pistol);
+
+            if (!RosterOps.GiveEquipment(roster, pinned.Id, poor.Id).Ok ||
+                !RosterOps.GiveEquipment(roster, stock.Id, lieutenant.Id).Ok)
+                failures.Add("APinnedGunIsNotDealtAway: the issue was refused.");
+
+            RosterOps.NormalizeArms(roster);
+            if (pinned.HolderId != poor.Id)
+                failures.Add("APinnedGunIsNotDealtAway: the deal took the boss's gun " +
+                             "off the man he gave it to.");
+            if (stock.HolderId != dead.Id)
+                failures.Add("APinnedGunIsNotDealtAway: the crew's own stock stopped " +
+                             "being dealt to the best hand.");
+
+            // Idempotent: a second deal moves nothing.
+            RosterOps.NormalizeArms(roster);
+            if (pinned.HolderId != poor.Id || stock.HolderId != dead.Id)
+                failures.Add("APinnedGunIsNotDealtAway: a second deal reshuffled a " +
+                             "settled hand.");
+
+            // Off the crew and the pin lapses with the group he no longer stands in.
+            if (!RosterOps.ReturnEquipment(roster, pinned.Id).Ok)
+                failures.Add("APinnedGunIsNotDealtAway: the take-back was refused.");
+            if (pinned.PinnedTo != RosterEquipment.Unheld ||
+                pinned.OwnerId != RosterEquipment.Unheld)
+                failures.Add("APinnedGunIsNotDealtAway: the returned gun kept its pin.");
+        }
+
+        /// <summary>A pin is his while he stands in that group and no longer: moved to
+        /// another crew, the piece stays behind on the old deed and is dealt there.
+        /// </summary>
+        static void APinLapsesWhenTheManLeaves(List<string> failures)
+        {
+            var roster = new Roster();
+            var first = Make(roster, "First", "Head", Rank.Lieutenant);
+            var second = Make(roster, "Second", "Head", Rank.Lieutenant);
+            var hood = Make(roster, "Corner", "Hood");
+            var crew = MakeCrew(roster, first, hood);
+            MakeCrew(roster, second);
+
+            var gun = MakeItem(roster, EquipmentKind.Shotgun);
+            RosterOps.GiveEquipment(roster, gun.Id, hood.Id);
+            RosterOps.NormalizeArms(roster);
+            if (gun.HolderId != hood.Id)
+                failures.Add("APinLapsesWhenTheManLeaves: he never got it.");
+
+            crew.HoodIds.Remove(hood.Id);
+            RosterOps.NormalizeArms(roster);
+            if (gun.PinnedTo != RosterEquipment.Unheld)
+                failures.Add("APinLapsesWhenTheManLeaves: the pin followed him out " +
+                             "of the crew.");
+            if (gun.OwnerId != first.Id || gun.HolderId != first.Id)
+                failures.Add("APinLapsesWhenTheManLeaves: the piece did not stay on " +
+                             "the deed it belongs to.");
         }
 
         /// <summary>The Don runs a branch too - his detail - and on day one it is the
