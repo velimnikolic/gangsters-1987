@@ -68,6 +68,17 @@ namespace RoadDemo
         /// over, because waiting is the whole of the order.</summary>
         internal const float AmbushLease = 240f;
 
+        /// <summary>A man told to get behind something RUNS to it. Not a const on the
+        /// order's signature but a named rule here, because it is the one place in the
+        /// game where the double click has nothing to say: the walk is what the order
+        /// exists to end.</summary>
+        const bool RunToCover = true;
+
+        /// <summary>Nearer the anchor than this and the crew has no approach to read:
+        /// men stood on top of the thing they were clicked onto came from nowhere in
+        /// particular, so the street decides the safe face instead.</summary>
+        const float ApproachMin = 0.75f;
+
         /// <summary>How near a man lying in wait has to be before anybody sees him. A
         /// range and not a raycast, deliberately: the sight model is walls only
         /// (WalkObstacles.Sees) and it is not going to learn about bins for this. The
@@ -325,6 +336,8 @@ namespace RoadDemo
                     if (m.CoverSpot.HasValue) _claimed.Add(m.CoverSpot.Value);
                     else if (m.HeldCover.HasValue) _claimed.Add(m.HeldCover.Value);
                 }
+            // and the places a deal being READ has already given out (PlanAmbush)
+            for (int i = 0; i < _planClaims.Count; i++) _claimed.Add(_planClaims[i]);
         }
 
         /// <summary>Is another man already behind this very flank?</summary>
@@ -470,18 +483,153 @@ namespace RoadDemo
         /// <summary>Why the crew will not lie in wait there. Null when it will.</summary>
         public string AmbushRefusal { get; private set; }
 
+        /// <summary>One man and the flank the deal put him on. The deal is READ before
+        /// it is given (<see cref="PlanAmbush"/>), so the player can be shown where his
+        /// men would stand while he is still turning the order round under a held right
+        /// button, and so the preview and the order can never disagree - they are the
+        /// same deal, asked twice.</summary>
+        public struct Placement
+        {
+            public CrewWalker Man;
+            public Vector3 Spot;
+            /// <summary>The tin the flank belongs to, or null when it is a bin.</summary>
+            public IRoadUser Anchor;
+        }
+
+        /// <summary>Which way the crew would watch if it were told to get behind this
+        /// thing right now. The seed of the player's own aim: he takes it, turns it with
+        /// the pointer, and hands it back to <see cref="OrderAmbush(Unit, CoverAnchor,
+        /// Vector3)"/>.</summary>
+        public Vector3 AmbushHeading(Unit unit, CoverAnchor anchor) =>
+            unit == null || !anchor.Valid ? Vector3.forward : ThreatToward(unit, anchor.At);
+
+        /// <summary>THE DEAL, WITHOUT GIVING IT. Who would stand where, if this crew
+        /// were told to get behind this thing and watch that way. Nothing is touched:
+        /// no man is sent anywhere, no lease is started, no fight is called off. The
+        /// preview under a held right button asks it every time the heading turns, and
+        /// <see cref="OrderAmbush(Unit, CoverAnchor, Vector3)"/> asks it once and
+        /// then hands the places out.
+        ///
+        /// Men it could find nothing for are left in <see cref="_ambushMen"/> - the
+        /// order reads them straight afterwards, so a flank that failed to be WALKED to
+        /// still gets the crouch beside somebody else's.</summary>
+        public bool PlanAmbush(Unit unit, CoverAnchor anchor, Vector3 threatDir,
+            List<Placement> into)
+        {
+            into?.Clear();
+            _ambushMen.Clear();
+            if (unit == null || unit.Wiped || !anchor.Valid || into == null) return false;
+            threatDir.y = 0f;
+            if (threatDir.sqrMagnitude < 1e-4f) return false;
+            threatDir.Normalize();
+            // a point out along the threat, which is all the oracle wants: it asks
+            // which face of a thing points AWAY from a place, not how far off it is
+            var threatAt = anchor.At + threatDir * 30f;
+
+            // EVERY MAN ON HIS FEET, armed or not: a hood with nothing in his coat still
+            // gets behind the bin rather than standing in the street beside it.
+            //
+            // AND THE MEN THE ORDER IS ABOUT TO PUT ON HIS FEET. The set is the one the
+            // ORDER will have and not the one the street has this instant: OrderAmbush
+            // gets its own men out of their car and calls their raid off BEFORE it deals,
+            // so by the time it reads this deal none of them is aboard or riding any
+            // more. A reading that left them out - which is the reading the player's
+            // preview does, with the car still full - would draw him a shape his release
+            // does not make. The two exceptions are men nothing here can get out of what
+            // they are doing: somebody ELSE'S car, and a saddle with no raid under it.
+            foreach (var man in unit.All())
+            {
+                if (man == null || man.Dead || man.Tf == null) continue;
+                if (!man.Tf.gameObject.activeInHierarchy || man.Panicked) continue;
+                if (IsAboard(man) && CarWith(man)?.Owner != unit) continue;
+                if (man.Riding && !OnRaid(man)) continue;
+                _ambushMen.Add(man);
+            }
+            if (_ambushMen.Count == 0) return false;
+
+            // a place this deal has already given out is taken, exactly as a place
+            // somebody in the town is already behind is taken - or the whole crew is
+            // dealt the one best flank
+            _planClaims.Clear();
+            _planTaken.Clear();
+
+            // THE MAN NEAREST IT TAKES IT. The clicked thing's own far face, by the same
+            // geometry every flank in the game is cut with.
+            GatherClaims(null);
+            var first = NearestOfList(anchor.At);
+            var held = Vector3.zero;
+            bool haveHeld = false;
+            if (first != null && first.Tf != null)
+                haveHeld = anchor.IsCar
+                    ? Held(CarFlank(anchor.Car, first.Tf.position, threatAt, anchor.At.y), out held)
+                    : (BoxFlank(anchor.Box, first.Tf.position, threatAt, anchor.At.y, out var face) &&
+                       Held(face, out held));
+
+            if (haveHeld)
+            {
+                var taker = NearestOfList(held) ?? first;
+                if (taker != null)
+                {
+                    into.Add(new Placement { Man = taker, Spot = held, Anchor = anchor.Car });
+                    _planClaims.Add(held);
+                    _planTaken.Add(held);
+                    _ambushMen.Remove(taker);
+                }
+            }
+
+            // and the rest round it, by the ordinary oracle - Claimed keeps them off one
+            // another's flank, the places this deal has already given included
+            for (int i = _ambushMen.Count - 1; i >= 0; i--)
+            {
+                var man = _ambushMen[i];
+                var spot = FlankAround(man, anchor.At, threatAt, AmbushSpread);
+                if (!spot.HasValue) continue;
+                into.Add(new Placement { Man = man, Spot = spot.Value, Anchor = LastCoverAnchor });
+                _planClaims.Add(spot.Value);
+                _planTaken.Add(spot.Value);
+                _ambushMen.RemoveAt(i);
+            }
+
+            // NOBODY IS LEFT STANDING IN THE OPEN. A man the street had no flank for
+            // crouches beside the nearest taken one, on its safe side.
+            for (int i = _ambushMen.Count - 1; i >= 0; i--)
+            {
+                var man = _ambushMen[i];
+                if (!BesideATakenFlank(man, threatDir, _planTaken, out var beside)) continue;
+                into.Add(new Placement { Man = man, Spot = beside, Anchor = null });
+                _planClaims.Add(beside);
+                _planTaken.Add(beside);
+                _ambushMen.RemoveAt(i);
+            }
+
+            _planClaims.Clear();
+            return into.Count > 0;
+        }
+
         /// <summary>THE AMBUSH (COVER-003). One man takes the thing the player pointed
         /// at, the rest take the furniture round it, and they lie in wait.
         ///
         /// Which face is the safe one is the whole of the order, so the threat is
-        /// decided first: a rival his crew can see, else the nearest carriageway (they
-        /// come down the street, so the men sit on the pavement side of the bin and
-        /// watch the road), else the way the crew itself came in. A crew already in a
-        /// fight that is clicked onto a prop is being told to fight from THERE - the
-        /// live mark is the threat and the fight goes on from the new flanks.
+        /// decided first (<see cref="ThreatToward"/>): a rival his crew can see, else
+        /// the way the crew itself walked in, else the nearest carriageway. A crew
+        /// already in a fight that is clicked onto a prop is being told to fight from
+        /// THERE - the live mark is the threat and the fight goes on from the new flanks.
         ///
-        /// Single click walks, the double runs, exactly as everywhere.</summary>
-        public bool OrderAmbush(Unit unit, CoverAnchor anchor, bool run)
+        /// A MAN SENT TO COVER RUNS THERE (the user's rule, 2026-09-03: "kad im naredim
+        /// cover moraju da trce do njega"). This is the one order that does not read the
+        /// double click: cover is wanted NOW or it is not cover, and the walk that every
+        /// other order gives would have the crew strolling into the open ground it was
+        /// sent to get off. The general rule stands everywhere else - crews run only on
+        /// the double right click, when closing, and when fleeing.</summary>
+        public bool OrderAmbush(Unit unit, CoverAnchor anchor) =>
+            OrderAmbush(unit, anchor, AmbushHeading(unit, anchor));
+
+        /// <summary>The same order with the heading the PLAYER chose - the right button
+        /// held on the thing and the pointer swung left and right until the men face the
+        /// way he means them to. The default heading is what <see cref="ThreatToward"/>
+        /// says, so letting go of the button without moving gives exactly the old
+        /// order.</summary>
+        public bool OrderAmbush(Unit unit, CoverAnchor anchor, Vector3 threatDir)
         {
             AmbushRefusal = OrderRefusal = null;
             if (unit == null || unit.Wiped || !anchor.Valid) return false;
@@ -500,70 +648,55 @@ namespace RoadDemo
             unit.PendingAttack = null;
             unit.OrderedAt = Time.time;
 
-            var threatDir = ThreatToward(unit, anchor.At);
-            // a point out along the threat, which is all the oracle wants: it asks
-            // which face of a thing points AWAY from a place, not how far off it is
-            var threatAt = anchor.At + threatDir * 30f;
+            threatDir.y = 0f;
+            threatDir = threatDir.sqrMagnitude > 1e-4f
+                ? threatDir.normalized
+                : ThreatToward(unit, anchor.At);
 
-            // EVERY MAN ON HIS FEET, armed or not: a hood with nothing in his coat still
-            // gets behind the bin rather than standing in the street beside it. Only the
-            // men who are not on the pavement at all are left out - riding, indoors, or
-            // out on a raid of their own.
-            _ambushMen.Clear();
-            foreach (var man in unit.All())
-                if (man != null && !man.Dead && man.Tf != null &&
-                    man.Tf.gameObject.activeInHierarchy &&
-                    !IsAboard(man) && !man.Riding && !OnRaid(man) && !man.Panicked)
-                    _ambushMen.Add(man);
-            if (_ambushMen.Count == 0)
-            { AmbushRefusal = OrderRefusal = "Nobody of the crew is on his feet"; return false; }
+            // THE DEAL IS READ FIRST, and the same reading the preview showed him.
+            if (!PlanAmbush(unit, anchor, threatDir, _ambushPlan))
+            {
+                AmbushRefusal = OrderRefusal = _ambushMen.Count == 0
+                    ? "Nobody of the crew is on his feet"
+                    : "No way to get behind it";
+                return false;
+            }
 
-            // THE MAN NEAREST IT TAKES IT. The clicked thing's own far face, by the same
-            // geometry every flank in the game is cut with.
-            GatherClaims(null);
-            var first = NearestOfList(anchor.At);
-            var held = Vector3.zero;
-            bool haveHeld = false;
-            if (first != null && first.Tf != null)
-                haveHeld = anchor.IsCar
-                    ? Held(CarFlank(anchor.Car, first.Tf.position, threatAt, anchor.At.y), out held)
-                    : (BoxFlank(anchor.Box, first.Tf.position, threatAt, anchor.At.y, out var face) &&
-                       Held(face, out held));
+            // the men the deal found nothing for, plus the men whose feet could not get
+            // to what it found: both get the crouch beside somebody else's flank below
+            _besideMen.Clear();
+            for (int i = 0; i < _ambushMen.Count; i++) _besideMen.Add(_ambushMen[i]);
 
             int dealt = 0;
-            if (haveHeld)
+            for (int i = 0; i < _ambushPlan.Count; i++)
             {
-                var taker = NearestOfList(held) ?? first;
-                if (taker != null && taker.HoldCover(held, threatDir, anchor.At, anchor.Car, run))
+                var place = _ambushPlan[i];
+                if (place.Man == null) continue;
+                if (place.Man.HoldCover(place.Spot, threatDir, anchor.At, place.Anchor, RunToCover)) dealt++;
+                else _besideMen.Add(place.Man);
+            }
+
+            // NOBODY IS LEFT STANDING IN THE OPEN, asked again against the flanks the
+            // crew is REALLY on - the plan's own beside pass ran against places that had
+            // not been walked to yet, and a man whose flank was refused underneath him
+            // must still get a corner.
+            if (_besideMen.Count > 0)
+            {
+                _planTaken.Clear();
+                foreach (var m in unit.All())
+                    if (m != null && !m.Dead && m.HeldCover.HasValue) _planTaken.Add(m.HeldCover.Value);
+                for (int i = 0; i < _besideMen.Count; i++)
                 {
-                    _ambushMen.Remove(taker);
+                    var man = _besideMen[i];
+                    // no guard on his own HeldCover: a man in this list is either one
+                    // the deal found nothing for or one whose flank his feet could not
+                    // reach, and the flank still under him is the OLD order's
+                    if (man == null) continue;
+                    if (!BesideATakenFlank(man, threatDir, _planTaken, out var beside)) continue;
+                    if (!man.HoldCover(beside, threatDir, anchor.At, null, RunToCover)) continue;
+                    _planTaken.Add(beside);
                     dealt++;
                 }
-            }
-
-            // and the rest round it, by the ordinary oracle - Claimed keeps them off
-            // one another's flank, and the men already dealt are claimed because their
-            // HeldCover is set (SearchCover reads it)
-            for (int i = _ambushMen.Count - 1; i >= 0; i--)
-            {
-                var man = _ambushMen[i];
-                var spot = FlankAround(man, anchor.At, threatAt, AmbushSpread);
-                if (!spot.HasValue) continue;
-                var user = LastCoverAnchor;
-                if (!man.HoldCover(spot.Value, threatDir, anchor.At, user, run)) continue;
-                _ambushMen.RemoveAt(i);
-                dealt++;
-            }
-
-            // NOBODY IS LEFT STANDING IN THE OPEN. A man the street had no flank for
-            // crouches beside the nearest taken one, on its safe side.
-            for (int i = _ambushMen.Count - 1; i >= 0; i--)
-            {
-                var man = _ambushMen[i];
-                if (!BesideATakenFlank(unit, man, threatDir, out var beside)) continue;
-                if (!man.HoldCover(beside, threatDir, anchor.At, null, run)) continue;
-                _ambushMen.RemoveAt(i);
-                dealt++;
             }
 
             if (dealt == 0)
@@ -583,7 +716,7 @@ namespace RoadDemo
                 DriveTrace.Str(sb, "who", unit.GangName);
                 DriveTrace.Bool(sb, "car", anchor.IsCar);
                 DriveTrace.Int(sb, "men", dealt);
-                DriveTrace.Int(sb, "open", _ambushMen.Count);
+                DriveTrace.Int(sb, "open", _ambushPlan.Count - dealt + _ambushMen.Count);
                 DriveTrace.Vec(sb, "at", anchor.At);
                 DriveTrace.Vec(sb, "threat", anchor.At + threatDir);
                 DriveTrace.Row("ambush", sb.ToString());
@@ -592,6 +725,14 @@ namespace RoadDemo
         }
 
         readonly List<CrewWalker> _ambushMen = new List<CrewWalker>();
+        readonly List<CrewWalker> _besideMen = new List<CrewWalker>();
+        readonly List<Placement> _ambushPlan = new List<Placement>();
+
+        /// <summary>Places THIS deal has already given out. They are claimed exactly as a
+        /// place somebody in the town is already behind is claimed - without them a
+        /// reading of the deal would hand the whole crew the one best flank.</summary>
+        static readonly List<Vector3> _planClaims = new List<Vector3>();
+        static readonly List<Vector3> _planTaken = new List<Vector3>();
 
         /// <summary>The man of the deal still without a place who stands nearest
         /// here.</summary>
@@ -622,8 +763,8 @@ namespace RoadDemo
         }
 
         /// <summary>Where the trouble is coming from, as a heading out of the anchor:
-        /// the crew's live mark or the nearest rival it can see, else the nearest
-        /// carriageway, else the way the crew itself walked in.</summary>
+        /// the crew's live mark or the nearest rival it can see, else OUT PAST THE THING
+        /// ALONG THE CREW'S OWN APPROACH, else the nearest carriageway.</summary>
         Vector3 ThreatToward(Unit unit, Vector3 at)
         {
             Vector3 way = Vector3.zero;
@@ -650,8 +791,24 @@ namespace RoadDemo
             }
             if (mark != null && mark.Tf != null) way = mark.Tf.position - at;
 
-            // else the road: they come down the street, so the men sit on the pavement
-            // side of the thing and watch the asphalt
+            // ELSE THE WAY THEY CAME IN, AND THE TROUBLE IS PAST THE THING (the user's
+            // own words, 2026-09-03: "treba da uzmu zaklon u smeru iz kog dolaze, znaci
+            // da su zaklonjeni s druge strane"). A crew told to get behind a bin does
+            // not walk ROUND it to stand with its back to the street it arrived down:
+            // the safe face is the one the men are already on, so the threat is put out
+            // along the line of their approach, past the anchor. This used to be the
+            // last resort and it pointed the other way (unit.Position - at), which is
+            // exactly the walk-round the player saw.
+            if (way.sqrMagnitude < 1e-4f)
+            {
+                var line = at - CrewMiddle(unit);
+                line.y = 0f;
+                if (line.sqrMagnitude > ApproachMin * ApproachMin) way = line;
+            }
+
+            // and failing that - a crew already stood on top of the thing has no
+            // approach to read - the road: they come down the street, so the men sit on
+            // the pavement side of it and watch the asphalt
             if (way.sqrMagnitude < 1e-4f)
             {
                 float s = 0f;
@@ -659,27 +816,46 @@ namespace RoadDemo
                 if (road != null) way = (road.A + road.Axis * Mathf.Clamp(s, 0f, road.Length)) - at;
             }
 
-            // and failing everything, the way they came in
-            if (way.sqrMagnitude < 1e-4f) way = unit.Position - at;
             way.y = 0f;
             return way.sqrMagnitude > 1e-4f ? way.normalized : Vector3.forward;
         }
 
-        /// <summary>Beside the nearest flank already taken, on the side of it away from
-        /// the threat - the corner a man with no bin of his own gets.</summary>
-        bool BesideATakenFlank(Unit unit, CrewWalker man, Vector3 threatDir, out Vector3 beside)
+        /// <summary>The middle of the men who are actually walking - what "the way they
+        /// came in" is read off. The boss alone will not do: one man stood beside the
+        /// bin while his three are still up the street would pick the side for all
+        /// four.</summary>
+        Vector3 CrewMiddle(Unit unit)
+        {
+            var sum = Vector3.zero;
+            int n = 0;
+            foreach (var m in unit.All())
+            {
+                if (m == null || m.Dead || m.Tf == null) continue;
+                if (!m.Tf.gameObject.activeInHierarchy || IsAboard(m)) continue;
+                sum += m.Tf.position;
+                n++;
+            }
+            return n > 0 ? sum / n : unit.Position;
+        }
+
+        /// <summary>Beside the nearest of <paramref name="taken"/>, on the side of it
+        /// away from the threat - the corner a man with no bin of his own gets. The
+        /// taken places are passed in rather than read off the crew, because a deal
+        /// being READ has no man standing anywhere yet.</summary>
+        bool BesideATakenFlank(CrewWalker man, Vector3 threatDir, List<Vector3> taken,
+            out Vector3 beside)
         {
             beside = default;
+            if (man == null || man.Tf == null || taken == null) return false;
             GatherClaims(man);
             Vector3 nearest = default;
             float bestD = float.MaxValue;
-            foreach (var m in unit.All())
+            for (int i = 0; i < taken.Count; i++)
             {
-                if (m == null || m == man || m.Dead || !m.HeldCover.HasValue) continue;
-                float d = (m.HeldCover.Value - man.Tf.position).sqrMagnitude;
+                float d = (taken[i] - man.Tf.position).sqrMagnitude;
                 if (d >= bestD) continue;
                 bestD = d;
-                nearest = m.HeldCover.Value;
+                nearest = taken[i];
             }
             if (bestD == float.MaxValue) return false;
 

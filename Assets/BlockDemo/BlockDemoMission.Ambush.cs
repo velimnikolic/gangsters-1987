@@ -97,7 +97,7 @@ namespace BlockDemo
             }
 
             _crews.Select(_ours);
-            if (!_crews.OrderAmbush(_ours, _ambushAnchor, run: false))
+            if (!_crews.OrderAmbush(_ours, _ambushAnchor))
             {
                 Fault("noambush", _crews.AmbushRefusal ?? "the order was refused");
                 Give("the crew would not lie in wait there");

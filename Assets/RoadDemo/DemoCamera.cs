@@ -90,6 +90,14 @@ namespace RoadDemo
         /// it prevents stale editor input from contaminating a measured camera route.</summary>
         public bool SuppressInput { get; set; }
 
+        /// <summary>THE RIGHT BUTTON IS SOMEBODY ELSE'S THIS DRAG. The overlay takes it
+        /// while the player holds it on something to get behind and swings the pointer
+        /// to turn his crew's cover (CrewOverlay's aim): the camera must not orbit under
+        /// a preview he is aiming. Set on the press that starts the aim and cleared on
+        /// the release that ends it - a static because there is one pointer, whatever
+        /// scene's camera is reading it.</summary>
+        public static bool RightDragTaken { get; set; }
+
         float MaximumDistance => mapTransition
             ? Mathf.Max(mapAt + 40f, mapCeiling)
             : Mathf.Max(Mathf.Max(0.5f, minDistance), mapCeiling);
@@ -196,7 +204,7 @@ namespace RoadDemo
                 float scroll = mouse.scroll.ReadValue().y;
                 if (scroll != 0f && !TurfMapHud.IsOpen)
                     distance = DistanceAfterWheel(scroll);
-                if (mouse.rightButton.isPressed && !MapOut)
+                if (mouse.rightButton.isPressed && !MapOut && !RightDragTaken)
                 {
                     Vector2 d = mouse.delta.ReadValue();
                     yaw += d.x * 0.25f;

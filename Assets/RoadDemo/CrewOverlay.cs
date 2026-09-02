@@ -39,7 +39,7 @@ namespace RoadDemo
     // Left clicks come through BuildingCardPicker's veto - chained behind the
     // police overlay's, which registered first - so a click on a man opens no
     // building card and a click on a cop selects the cop, not a crew behind him.
-    public class CrewOverlay : MonoBehaviour
+    public partial class CrewOverlay : MonoBehaviour
     {
         const float BossSize = 17f;    // reference pixels on the 1080p design height
         const float HoodSize = 10f;
@@ -217,6 +217,8 @@ namespace RoadDemo
         {
             if (BuildingCardPicker.ClickVeto == (System.Func<Vector2, bool>)ClaimsClick)
                 BuildingCardPicker.ClickVeto = _previousVeto;
+            if (_aiming) EndCoverAim(order: false);
+            DemoCamera.RightDragTaken = false;
             if (_groundSquareMaterial != null) Destroy(_groundSquareMaterial);
             if (_groundSquareMesh != null) Destroy(_groundSquareMesh);
             if (_selectedGroundSquareMesh != null) Destroy(_selectedGroundSquareMesh);
@@ -672,6 +674,19 @@ namespace RoadDemo
                 _rightPending = !BookOpen && !PointerOverUi();
                 _rightDown = mouse.position.ReadValue();
                 _rightDownAt = Time.unscaledTime;
+                // A PRESS ON SOMETHING TO GET BEHIND IS A QUESTION, NOT YET AN ORDER
+                // (CrewOverlay.CoverAim). Held, it draws the crew's places in grey and
+                // the pointer turns them; released without having moved, it is the same
+                // single click it always was.
+                if (_rightPending && CoverAimUnder(_rightDown, out var aim)) BeginCoverAim(aim);
+                return;
+            }
+            // the aim owns its own release: the order leaves on the heading he stopped
+            // at, and the rest of this chain never sees the click
+            if (mouse.rightButton.wasReleasedThisFrame && _aiming)
+            {
+                _rightPending = false;
+                EndCoverAim(order: true);
                 return;
             }
             if (!_rightPending || !mouse.rightButton.wasReleasedThisFrame) return;
@@ -804,7 +819,7 @@ namespace RoadDemo
             // to a bin.
             if (DemoCrews.AnchorUnder(ray, world, out var anchor))
             {
-                if (_crews.OrderAmbush(_crews.Selected, anchor, run))
+                if (_crews.OrderAmbush(_crews.Selected, anchor))
                     ShowMark(anchor.At + Vector3.up * 0.6f, MarkTint);
                 else if (_crews.AmbushRefusal != null)
                     Refuse(_crews.AmbushRefusal);
@@ -1825,7 +1840,7 @@ namespace RoadDemo
                         : "it is moving - there is no flank to take",
                 canHide ? () =>
                 {
-                    if (_crews.OrderAmbush(crew, stood, run: false))
+                    if (_crews.OrderAmbush(crew, stood))
                         ShowMark(stood.At + Vector3.up * 0.6f, MarkTint);
                     else if (_crews.AmbushRefusal != null)
                         Refuse(_crews.AmbushRefusal);
@@ -2125,6 +2140,8 @@ namespace RoadDemo
                     !BookOpen && !PointerOverUi())
                     ClaimsClick(mouse.position.ReadValue());
                 ReadRightClick(mouse);
+                // the pointer swinging under a held right button: the ambush turns
+                TickCoverAim(mouse);
                 // the middle button: the selected crew out of its car, wherever the
                 // pointer is - no aiming at the car needed
                 if (mouse.middleButton.wasPressedThisFrame && !BookOpen && !PointerOverUi())
@@ -2135,7 +2152,8 @@ namespace RoadDemo
                 }
             }
 
-            var pointerBlocked = mouse == null || BookOpen || _ordersOpen || PointerOverUi();
+            var pointerBlocked = mouse == null || BookOpen || _ordersOpen || _aiming ||
+                                 PointerOverUi();
             if (pointerBlocked)
             {
                 _hovered = -1;
@@ -2154,7 +2172,8 @@ namespace RoadDemo
             if (kb != null && kb.escapeKey.wasPressedThisFrame &&
                 !LivingCity.UI.PersonnelAlmanac.ClaimsEsc)
             {
-                if (_ordersOpen) CloseOrders();
+                if (_aiming) EndCoverAim(order: false);
+                else if (_ordersOpen) CloseOrders();
                 else _crews.Select(null);
             }
             TickOrders();

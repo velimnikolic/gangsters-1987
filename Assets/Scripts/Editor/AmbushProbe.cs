@@ -30,14 +30,16 @@ namespace GangstersTools
                     "The ambush click from the terminal: who is lying in wait behind what. " +
                     "--order clicks the nearest thing to get behind toward the nearest " +
                     "rival, --fight starts the fight first (manual cover), --drive takes " +
-                    "the tin they are behind off the road.",
+                    "the tin they are behind off the road, --aim turns the heading the " +
+                    "player's own hold-and-swing would have turned it.",
                     MainThreadRequired = true, Tags = new[] { "gangsters", "gameplay" })]
         public static object Probe(
             [CliArg("order", "Order the ambush at the nearest anchor toward the nearest rival.")] bool order = false,
             [CliArg("fight", "Start the fight first, so the click is manual cover on a live mark.")] bool fight = false,
             [CliArg("car", "Take somebody else's parked car as the anchor, not a prop.")] bool car = false,
             [CliArg("drive", "Take the anchor the men are behind off the road - a car pulling away.")] bool drive = false,
-            [CliArg("within", "Metres round the point between the crews to look for something to get behind.")] float within = 16f)
+            [CliArg("within", "Metres round the point between the crews to look for something to get behind.")] float within = 16f,
+            [CliArg("aim", "Degrees to turn the watched heading off the crew's own choice - the terminal's version of holding the right button and swinging the pointer.")] float aim = 0f)
         {
             if (!Application.isPlaying)
                 return new { ok = false, reason = "Play Mode is not running." };
@@ -72,7 +74,10 @@ namespace GangstersTools
                 }
                 else if (!DemoCrews.AnchorNear(look, Mathf.Max(2f, within), out anchor))
                     return new { ok = false, reason = $"Nothing to get behind within {within:F0} m of the line." };
-                ordered = crews.OrderAmbush(ours, anchor, run: false)
+                // THE PLAYER'S OWN HEADING, from the terminal. Zero is exactly what the
+                // single click gives, so an old run of this probe reads the same.
+                var heading = Quaternion.Euler(0f, aim, 0f) * crews.AmbushHeading(ours, anchor);
+                ordered = crews.OrderAmbush(ours, anchor, heading)
                     ? (anchor.IsCar ? "a car" : "a prop")
                     : null;
                 if (ordered == null)
@@ -99,6 +104,7 @@ namespace GangstersTools
             {
                 ok = true,
                 ordered,
+                aimed = order ? (float?)aim : null,
                 drove,
                 crew = ours.GangName,
                 word = CrewStatus.Short(ours),
