@@ -300,6 +300,40 @@ it every week for ever and the tally would read as a working economy.
 `NetPerDay` into the safe every midnight; a standing watch over the same door paid its
 own book figure on top. It is a bonus now (`OrderResolution.RunBusinessBonus`, D22).
 
+## Save and load
+
+`Assets/Scripts/Save/` holds the campaign file. `CampaignSave.Compose()` gathers the whole
+campaign out of the live ledgers and `Apply()` puts it back; `Write`/`Read` are those two
+plus a file, and the pair is kept apart so `gangsters_save_tests` can round trip a campaign
+with **no scene at all** — the only way to know a save is complete rather than merely
+written.
+
+What is in the file: the city seed, the day and hour, every house's roster (every man's
+attributes, practice and potential, his crew, his gear, his condition and the day he is
+back), every safe and day sheet, every order in flight, who stands where with whom and
+what each is owed, every door's standing and dues, the rounds that were out, the deeds,
+the shut shops, and what each family has learnt of the city.
+
+What is **not**, on purpose (D19):
+
+* **positions** — where a man was standing is a frame, not a campaign. Bodies are re-stood
+  from the rosters;
+* **fear, presence and derived control** — all three are decaying readings of bodies that
+  no longer exist. The streets re-learn what they feel within a day, which is what they
+  are for.
+
+`unity command gangsters_save [--path]` writes; `gangsters_load [--path]` reads and applies
+over the running city. An **autosave** goes to
+`Application.persistentDataPath/gangsters/autosave.json` at every campaign midnight.
+
+Loading in Play reloads the scene: the city is generated from a seed, so the honest way to
+put a saved one back is to build it again from that seed and restore the books over it.
+The file waits in `CampaignSave.Pending`; `UnderworldHost.SeedForScene` reads the seed off
+it, and the territory runtime applies the rest on its first business tick, by which time
+the businesses are populated and the racket is up.
+
+A file from a **newer** version is refused with a printed reason, never half-read.
+
 ## See also
 
 * `Docs/racket-collections.md` — the round ledger and the two clocks

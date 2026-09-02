@@ -440,6 +440,56 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_save_tests",
+                    "Run RIVAL-010's contracts: a campaign written down and read back " +
+                    "is the same campaign, and goes on being the same as it is played.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "save", "tests" })]
+        public static object SaveTests()
+        {
+            var failures = LivingCity.Tests.SaveTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        [CliCommand("gangsters_save",
+                    "Write the running campaign to a file (default: the autosave).",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "save" })]
+        public static object SaveCampaign(string path = null)
+        {
+            var where = string.IsNullOrEmpty(path)
+                ? LivingCity.Save.CampaignSave.AutosavePath
+                : path;
+            var refusal = LivingCity.Save.CampaignSave.Write(where);
+            return new { saved = string.IsNullOrEmpty(refusal), path = where, refusal };
+        }
+
+        [CliCommand("gangsters_load",
+                    "Read a campaign file and put it over the running city.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "save" })]
+        public static object LoadCampaign(string path = null)
+        {
+            var where = string.IsNullOrEmpty(path)
+                ? LivingCity.Save.CampaignSave.AutosavePath
+                : path;
+            var file = LivingCity.Save.CampaignSave.Read(where, out var refusal);
+            if (file == null)
+                return new { loaded = false, path = where, refusal };
+
+            LivingCity.Save.CampaignSave.Apply(file);
+            return new
+            {
+                loaded = true,
+                path = where,
+                day = file.day,
+                citySeed = file.citySeed,
+                refusal = "",
+            };
+        }
+
         [CliCommand("gangsters_loyalty_tests",
                     "Run EPIC 15 contracts for loyalty, promotion and betrayal: who a " +
                     "man answers to, what moves it, who walks and who goes with him.",

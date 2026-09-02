@@ -113,6 +113,31 @@ namespace LivingCity.Personnel
             };
         }
 
+        /// <summary>Where the three counters stand, for the save. Reading one must not
+        /// advance it, which is why they are not NextXId().</summary>
+        public int PeekNextCharacterId => nextCharacterId;
+        public int PeekNextCrewId => nextCrewId;
+        public int PeekNextEquipmentId => nextEquipmentId;
+
+        /// <summary>
+        /// THE LOAD BOUNDARY for a roster's own numbers. The lists are refilled by
+        /// RosterSnapshot; this is the identity and the three counters, which have no
+        /// other setter on purpose - an id counter that anything could wind back would
+        /// hand two men the same number.
+        /// </summary>
+        public void RestoreIdentity(int gangId, int seed, int year, int day, int frontId,
+            int nextCharacter, int nextCrew, int nextEquipment)
+        {
+            GangId = gangId;
+            Seed = seed;
+            Year = year;
+            Day = day;
+            FrontId = frontId;
+            nextCharacterId = nextCharacter;
+            nextCrewId = nextCrew;
+            nextEquipmentId = nextEquipment;
+        }
+
         public int NextCharacterId() => nextCharacterId++;
         public int NextCrewId() => nextCrewId++;
         public int NextEquipmentId() => nextEquipmentId++;

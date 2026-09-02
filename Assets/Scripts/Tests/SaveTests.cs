@@ -1,0 +1,435 @@
+using System.Collections.Generic;
+using System.Text;
+using LivingCity.Outfit;
+using LivingCity.Personnel;
+using LivingCity.Save;
+using LivingCity.Territory;
+using UnityEngine;
+
+namespace LivingCity.Tests
+{
+    /// <summary>
+    /// RIVAL-010. A campaign written down and read back.
+    ///
+    /// The contract is not "the file parses" - it is that a city put back from a file is
+    /// the SAME CITY, and that it goes on being the same city as it is played. So the
+    /// suite mutates everything it can reach, round trips it through the JSON the game
+    /// actually writes, and compares a full dump of both; then it plays both forward a
+    /// day and compares again.
+    /// </summary>
+    public static class SaveTests
+    {
+        const int Seed = 1987;
+
+        public static List<string> Run()
+        {
+            var failures = new List<string>();
+
+            ACampaignComesBackTheSameCampaign(failures);
+            TheCityComesBackTheSameCity(failures);
+            ALoadedCampaignPlaysOnTheSameWay(failures);
+            ANewerSaveIsRefused(failures);
+
+            return failures;
+        }
+
+        // ------------------------------------------------------------------ RIVAL-010
+
+        /// <summary>
+        /// (a) The books: money, days, orders in flight, a man in a bed, a man struck
+        /// off, a pending stance, a grudge. Everything mutated, written, read, restored -
+        /// and every figure the same on both sides.
+        /// </summary>
+        static void ACampaignComesBackTheSameCampaign(List<string> failures)
+        {
+            var world = Mutated();
+            var before = Dump(world);
+
+            // THE DUMP HAS TO BE WORTH COMPARING. Two empty strings match perfectly, and
+            // a contract that would pass over an empty campaign proves nothing about a
+            // full one.
+            if (before.Length < 5000)
+                failures.Add("SAVE-001: the dump is " + before.Length + " characters - " +
+                             "too little of a campaign to be worth comparing.");
+            var wanted = new[]
+            {
+                "safe=41250", "Hospitalized", "pending 0-9 War", "owed 5->0",
+                "skim=True", "job ",
+            };
+            for (var i = 0; i < wanted.Length; i++)
+                if (!before.Contains(wanted[i]))
+                    failures.Add("SAVE-001: the fixture never produced [" + wanted[i] +
+                                 "], so the round trip is not being asked about it.");
+
+            var json = JsonUtility.ToJson(OutfitSnapshot.Snapshot(world));
+            var read = JsonUtility.FromJson<UnderworldDto>(json);
+
+            var after = Underworld.Deal(Seed);
+            OutfitSnapshot.Restore(after, read);
+
+            var back = Dump(after);
+            if (before != back)
+                failures.Add("SAVE-001: the campaign did not come back the same. " +
+                             FirstDifference(before, back));
+        }
+
+        /// <summary>
+        /// (b) The city: who pays whom, what they owe, and a round that was out when the
+        /// game stopped.
+        /// </summary>
+        static void TheCityComesBackTheSameCity(List<string> failures)
+        {
+            var racket = new TerritoryRacketLedger();
+            var dues = new TerritoryDuesLedger();
+            var rounds = new TerritoryRoundLedger(racket, dues);
+            var mine = new TerritoryGangId(3);
+
+            var shop = new TerritoryBusinessId("biz:corner");
+            var bar = new TerritoryBusinessId("biz:bar");
+            racket.Demand(shop, mine, Strong(), 9.0, out _);
+            racket.Demand(bar, new TerritoryGangId(7), Hopeless(), 9.0, out _);
+            for (var day = 0; day < 7; day++)
+                dues.AccrueDay(shop, mine, 700);
+
+            var stops = new List<TerritoryRoundStop>
+            {
+                new TerritoryRoundStop(shop, new TerritoryPoint(10f, 20f)),
+                new TerritoryRoundStop(bar, new TerritoryPoint(30f, 20f)),
+            };
+            var round = rounds.Open(
+                mine, 3001, 11, new TerritoryBlockId("block:a"),
+                TerritoryRoundKind.Collect, stops, 9.0);
+            rounds.Arrive(round, 9.5);
+            round.Carried = 240;
+
+            var before = Dump(racket, dues, rounds);
+            var json = JsonUtility.ToJson(
+                TerritorySnapshot.Snapshot(racket, dues, rounds));
+            var read = JsonUtility.FromJson<TerritoryDto>(json);
+
+            var racketBack = new TerritoryRacketLedger();
+            var duesBack = new TerritoryDuesLedger();
+            var roundsBack = new TerritoryRoundLedger(racketBack, duesBack);
+            TerritorySnapshot.Restore(racketBack, duesBack, roundsBack, read);
+
+            var back = Dump(racketBack, duesBack, roundsBack);
+            if (before != back)
+                failures.Add("SAVE-002: the city did not come back the same. " +
+                             FirstDifference(before, back));
+        }
+
+        /// <summary>
+        /// (c) Determinism. A campaign saved, restored and then played a day forward is
+        /// the same campaign as one that was never saved and played the same day.
+        /// </summary>
+        static void ALoadedCampaignPlaysOnTheSameWay(List<string> failures)
+        {
+            var kept = Mutated();
+            var loaded = Underworld.Deal(Seed);
+            OutfitSnapshot.Restore(
+                loaded,
+                JsonUtility.FromJson<UnderworldDto>(
+                    JsonUtility.ToJson(OutfitSnapshot.Snapshot(kept))));
+
+            kept.AdvanceHours(24f);
+            kept.DayTick();
+            loaded.AdvanceHours(24f);
+            loaded.DayTick();
+
+            var a = Dump(kept);
+            var b = Dump(loaded);
+            if (a != b)
+                failures.Add("SAVE-003: a loaded campaign played on differently. " +
+                             FirstDifference(a, b));
+        }
+
+        /// <summary>(d) A file from a later game is refused, not half-read.</summary>
+        static void ANewerSaveIsRefused(List<string> failures)
+        {
+            var path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "gangsters-newer-save.json");
+            var file = new CampaignFile { version = CampaignFile.Version + 1 };
+            System.IO.File.WriteAllText(path, JsonUtility.ToJson(file));
+
+            var read = CampaignSave.Read(path, out var refusal);
+            if (read != null)
+                failures.Add("SAVE-004: a save from a newer game was read anyway.");
+            if (string.IsNullOrEmpty(refusal))
+                failures.Add("SAVE-004: it was refused without saying why.");
+
+            try
+            {
+                System.IO.File.Delete(path);
+            }
+            catch (System.Exception)
+            {
+                // A temp file that will not delete is not this contract's business.
+            }
+        }
+
+        // ------------------------------------------------------------------ the bench
+
+        /// <summary>An underworld with something wrong with every part of it - the only
+        /// kind worth round tripping.</summary>
+        static Underworld Mutated()
+        {
+            var world = Underworld.Deal(Seed);
+
+            var ours = world.Of(0);
+            ours.Runner.Accounts.Safe = 41_250;
+            ours.Runner.Heat = 17;
+            ours.Runner.Campaign.Day = 30;
+            ours.Front = new TerritoryBusinessId("biz:our-front");
+
+            // THE PLAYER OPENS ON THE DON ALONE. The men, the crews and the orders to
+            // round trip are a FAMILY's - house 7 is dealt a full book on day one, which
+            // is what makes it worth writing down.
+            var them = world.Of(7);
+
+            // A man in a bed, a man struck off, a man short in the count.
+            var men = them.Roster.Members;
+            for (var i = 0; i < men.Count; i++)
+            {
+                if (men[i].Rank != Rank.Hood || men[i].Gone)
+                    continue;
+                RosterOps.Hospitalize(them.Roster, men[i].Id, 36, "two ribs");
+                break;
+            }
+            for (var i = men.Count - 1; i >= 0; i--)
+            {
+                if (men[i].Rank != Rank.Hood || men[i].Gone)
+                    continue;
+                RosterOps.Kill(them.Roster, men[i].Id);
+                break;
+            }
+            for (var i = 0; i < men.Count; i++)
+                if (!men[i].Gone && men[i].Rank == Rank.Hood)
+                {
+                    men[i].Skimming = true;
+                    break;
+                }
+
+            // An order in flight.
+            if (them.Roster.Crews.Count > 0)
+                them.Runner.Issue(them.Roster, new Job
+                {
+                    CrewId = them.Roster.Crews[0].Id,
+                    Type = OrderType.Guard,
+                    Men = 2,
+                    TargetBusinessId = "biz:our-front",
+                    TargetBlockId = 4,
+                });
+
+            // A war coming, and a grudge behind it.
+            world.Relations.SetPending(0, 5, Stance.Truce);
+            world.Relations.Note(0, 5, GrievanceKind.DoorAttacked);
+            world.Relations.Note(5, 0, GrievanceKind.ManKilled);
+            world.Relations.ApplyPending();
+            world.Relations.SetPending(0, 9, Stance.War);
+
+            them.Runner.Accounts.Safe = 9_000;
+            them.NextThinkHour = 34.5;
+            return world;
+        }
+
+        static TerritoryComplianceInputs Strong() =>
+            new TerritoryComplianceInputs(70f, 60f, 10f, 0f, 0f, false);
+
+        static TerritoryComplianceInputs Hopeless() =>
+            new TerritoryComplianceInputs(0f, 0f, 0f, 40f, 0f, false);
+
+        // -------------------------------------------------------------------- dumps
+
+        /// <summary>
+        /// EVERY FIGURE THE CAMPAIGN HAS, as one string. A dump is the only honest way
+        /// to assert a save: a handful of spot checks passes while the thing it did not
+        /// check is quietly lost.
+        /// </summary>
+        static string Dump(Underworld world)
+        {
+            var sb = new StringBuilder();
+            sb.Append("seed ").Append(world.CitySeed).Append('\n');
+
+            for (var g = 0; g < world.Count; g++)
+            {
+                var house = world.Of(g);
+                if (house == null)
+                    continue;
+                sb.Append("house ").Append(house.GangId)
+                  .Append(" front=").Append(house.Front.Value)
+                  .Append(" think=").Append(house.NextThinkHour.ToString("F2"))
+                  .Append(" safe=").Append(house.Runner.Accounts.Safe)
+                  .Append(" risky=").Append(house.Runner.Accounts.RiskyMoney)
+                  .Append(" heat=").Append(house.Runner.Heat)
+                  .Append(" day=").Append(house.Runner.Campaign.Day)
+                  .Append('\n');
+
+                var roster = house.Roster;
+                sb.Append("  roster gang=").Append(roster.GangId)
+                  .Append(" seed=").Append(roster.Seed)
+                  .Append(" day=").Append(roster.Day)
+                  .Append(" boss=").Append(roster.Organization.BossId)
+                  .Append(" front=").Append(roster.FrontId)
+                  .Append('\n');
+
+                for (var i = 0; i < roster.Members.Count; i++)
+                {
+                    var man = roster.Members[i];
+                    sb.Append("  man ").Append(man.Id).Append(' ').Append(man.FullName)
+                      .Append(' ').Append(man.Rank).Append(' ').Append(man.Status)
+                      .Append(" duty=").Append(man.Duty)
+                      .Append(" back=").Append(man.BackOnDay)
+                      .Append(" loyal=").Append(man.Loyalty)
+                      .Append(" skim=").Append(man.Skimming)
+                      .Append(" note=").Append(man.ConditionNote);
+                    for (var a = 0; a < AttributeScale.Count; a++)
+                        sb.Append(' ')
+                          .Append(man.GetHalfSteps((CharacterAttribute)a)).Append('/')
+                          .Append(man.GetPractice((CharacterAttribute)a)).Append('/')
+                          .Append(man.PotentialValue((CharacterAttribute)a));
+                    sb.Append('\n');
+                }
+
+                for (var i = 0; i < roster.Crews.Count; i++)
+                {
+                    var crew = roster.Crews[i];
+                    sb.Append("  crew ").Append(crew.Id).Append(" lt=")
+                      .Append(crew.LieutenantId).Append(" policy=").Append(crew.Policy)
+                      .Append(" hoods=");
+                    for (var h = 0; h < crew.HoodIds.Count; h++)
+                        sb.Append(crew.HoodIds[h]).Append(',');
+                    sb.Append('\n');
+                }
+
+                for (var i = 0; i < roster.Equipment.Count; i++)
+                {
+                    var item = roster.Equipment[i];
+                    sb.Append("  kit ").Append(item.Id).Append(' ').Append(item.Kind)
+                      .Append(' ').Append(item.DisplayName)
+                      .Append(" owner=").Append(item.OwnerId)
+                      .Append(" holder=").Append(item.HolderId)
+                      .Append(" pinned=").Append(item.PinnedTo)
+                      .Append('\n');
+                }
+
+                var paper = roster.Organization.BlockResponsibilities;
+                for (var i = 0; i < paper.Count; i++)
+                    sb.Append("  paper ").Append(paper[i].BlockId.Value).Append(' ')
+                      .Append(paper[i].LeaderId).Append('\n');
+
+                for (var i = 0; i < house.Runner.Book.Jobs.Count; i++)
+                {
+                    var job = house.Runner.Book.Jobs[i];
+                    sb.Append("  job ").Append(job.Id).Append(' ').Append(job.Type)
+                      .Append(" crew=").Append(job.CrewId)
+                      .Append(" stage=").Append(job.Stage)
+                      .Append(" travel=").Append(job.TravelHoursLeft.ToString("F2"))
+                      .Append(" work=").Append(job.WorkHoursLeft.ToString("F2"))
+                      .Append(" target=").Append(job.TargetBusinessId)
+                      .Append(" man=").Append(job.TargetCharacterId)
+                      .Append('\n');
+                }
+
+                for (var i = 0; i < house.Runner.Accounts.Sheets.Count; i++)
+                {
+                    var sheet = house.Runner.Accounts.Sheets[i];
+                    sb.Append("  sheet ").Append(sheet.Day)
+                      .Append(" legal=").Append(sheet.LegalIncome)
+                      .Append(" illegal=").Append(sheet.IllegalIncome)
+                      .Append(" wages=").Append(sheet.WagesPaid)
+                      .Append(" closed=").Append(sheet.Closed)
+                      .Append('\n');
+                }
+            }
+
+            for (var a = 0; a < world.Count; a++)
+                for (var b = 0; b < world.Count; b++)
+                {
+                    if (a == b)
+                        continue;
+                    var owed = world.Relations.Grievance(a, b);
+                    if (owed > 0f)
+                        sb.Append("owed ").Append(a).Append("->").Append(b).Append(' ')
+                          .Append(owed.ToString("F2")).Append('\n');
+                    if (a >= b)
+                        continue;
+                    var stance = world.Relations.StanceBetween(a, b);
+                    if (stance != Stance.Peace)
+                        sb.Append("stance ").Append(a).Append('-').Append(b).Append(' ')
+                          .Append(stance).Append('\n');
+                    if (world.Relations.TryGetPending(a, b, out var pending))
+                        sb.Append("pending ").Append(a).Append('-').Append(b).Append(' ')
+                          .Append(pending).Append('\n');
+                }
+
+            return sb.ToString();
+        }
+
+        static string Dump(
+            TerritoryRacketLedger racket, TerritoryDuesLedger dues,
+            TerritoryRoundLedger rounds)
+        {
+            var sb = new StringBuilder();
+            var protection = new List<ProtectionRowDto>();
+            racket.Collect(protection);
+            protection.Sort((x, y) =>
+            {
+                var by = string.CompareOrdinal(x.businessId, y.businessId);
+                return by != 0 ? by : x.gangId.CompareTo(y.gangId);
+            });
+            for (var i = 0; i < protection.Count; i++)
+                sb.Append("door ").Append(protection[i].businessId).Append(' ')
+                  .Append(protection[i].gangId).Append(' ').Append(protection[i].state)
+                  .Append(" since=").Append(protection[i].stateSince.ToString("F2"))
+                  .Append(" refused=").Append(protection[i].refusedAt.ToString("F2"))
+                  .Append(" d/t/e=").Append(protection[i].demands).Append('/')
+                  .Append(protection[i].threats).Append('/')
+                  .Append(protection[i].escalations).Append('\n');
+
+            var owed = new List<DuesRowDto>();
+            dues.Collect(owed);
+            owed.Sort((x, y) => string.CompareOrdinal(x.businessId, y.businessId));
+            for (var i = 0; i < owed.Count; i++)
+                sb.Append("dues ").Append(owed[i].businessId).Append(' ')
+                  .Append(owed[i].gangId).Append(" rate=").Append(owed[i].weeklyRate)
+                  .Append(" sevenths=").Append(owed[i].owedSevenths)
+                  .Append(" last=").Append(owed[i].lastCollectedDay)
+                  .Append(" missed=").Append(owed[i].missedInARow).Append('\n');
+
+            for (var i = 0; i < rounds.Rounds.Count; i++)
+            {
+                var round = rounds.Rounds[i];
+                sb.Append("round ").Append(round.House.Value).Append(' ')
+                  .Append(round.CrewId).Append(' ').Append(round.BlockId.Value)
+                  .Append(' ').Append(round.Kind).Append(' ').Append(round.Stage)
+                  .Append(" cursor=").Append(round.StopIndex)
+                  .Append(" carried=").Append(round.Carried)
+                  .Append(" missed=").Append(round.Missed)
+                  .Append(" inside=").Append(round.InTheDoor)
+                  .Append(" stops=");
+                for (var s = 0; s < round.Stops.Count; s++)
+                    sb.Append(round.Stops[s].BusinessId.Value).Append('@')
+                      .Append(round.Stops[s].Doorstep.X.ToString("F1")).Append(',')
+                      .Append(round.Stops[s].Doorstep.Z.ToString("F1")).Append(';');
+                sb.Append('\n');
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>The first line the two dumps disagree on - a diff nobody has to
+        /// squint at.</summary>
+        static string FirstDifference(string a, string b)
+        {
+            var left = a.Split('\n');
+            var right = b.Split('\n');
+            for (var i = 0; i < left.Length || i < right.Length; i++)
+            {
+                var x = i < left.Length ? left[i] : "<end>";
+                var y = i < right.Length ? right[i] : "<end>";
+                if (x != y)
+                    return "line " + (i + 1) + ": saved [" + x + "] loaded [" + y + "]";
+            }
+            return "no line differs, but the dumps are not equal.";
+        }
+    }
+}

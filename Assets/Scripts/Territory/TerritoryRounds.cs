@@ -208,6 +208,20 @@ namespace LivingCity.Territory
 
         public IReadOnlyList<TerritoryRound> Rounds => rounds;
 
+        /// <summary>
+        /// The load boundary (RIVAL-010). A round that was out when the game stopped is
+        /// out again when it starts: the same stops, the same bag, the same cursor. What
+        /// clock walks it from here is the caller's business - the street re-marches its
+        /// men, the paper clock is re-sent.
+        /// </summary>
+        public void RestoreFrom(List<TerritoryRound> live)
+        {
+            rounds.Clear();
+            for (var i = 0; live != null && i < live.Count; i++)
+                if (live[i] != null && !live[i].Finished)
+                    rounds.Add(live[i]);
+        }
+
         /// <summary>Raised when a door has been settled, so the world can print it and
         /// file what it left behind. The ledger itself owes the street nothing.</summary>
         public System.Action<TerritoryRound, TerritoryRoundStop, TerritoryStopSettlement>

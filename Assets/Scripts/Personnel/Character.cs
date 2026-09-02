@@ -277,6 +277,11 @@ namespace LivingCity.Personnel
 
         public int GetPractice(CharacterAttribute attribute) => practice[(int)attribute];
 
+        /// <summary>The load boundary for a man's banked practice (RIVAL-010). Nothing
+        /// else writes it directly - Practice.Convert is the one road up.</summary>
+        public void SetPractice(CharacterAttribute attribute, int value) =>
+            practice[(int)attribute] = value < 0 ? 0 : value;
+
         /// <summary>His ceiling at this trade in half-steps - what the growth curve
         /// prices against and stops at. Five stars when the ceiling was never rolled.</summary>
         public int PotentialHalfSteps(CharacterAttribute attribute)

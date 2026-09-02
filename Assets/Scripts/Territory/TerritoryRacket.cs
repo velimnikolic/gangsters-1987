@@ -915,6 +915,51 @@ namespace LivingCity.Territory
             }
         }
 
+        /// <summary>
+        /// EVERY DOOR'S STANDING WITH EVERY FAMILY, flat (RIVAL-010). The wire's own
+        /// dispatches are NOT collected: a slip is news, and news a week old that
+        /// reappears at load would print yesterday's afternoon over this one's.
+        /// </summary>
+        public void Collect(List<ProtectionRowDto> into)
+        {
+            if (into == null)
+                return;
+            into.Clear();
+            for (var i = 0; i < businessIds.Count; i++)
+            {
+                if (!businesses.TryGetValue(businessIds[i], out var row))
+                    continue;
+                row.CollectRows(businessIds[i], into);
+            }
+        }
+
+        /// <summary>The load boundary. Every standing the ledger held is replaced.
+        /// </summary>
+        public void RestoreFrom(ProtectionRowDto[] rows)
+        {
+            businesses.Clear();
+            businessIds.Clear();
+            dispatches.Clear();
+
+            for (var i = 0; rows != null && i < rows.Length; i++)
+            {
+                var dto = rows[i];
+                var businessId = new TerritoryBusinessId(dto.businessId);
+                if (!businessId.IsValid)
+                    continue;
+
+                var entry = Row(businessId).Entry(new TerritoryGangId(dto.gangId));
+                entry.State = (TerritoryProtectionState)dto.state;
+                entry.StateSince = dto.stateSince;
+                entry.LastInteraction = dto.lastInteraction;
+                entry.RefusedAt = dto.refusedAt;
+                entry.Demands = dto.demands;
+                entry.Threats = dto.threats;
+                entry.Escalations = dto.escalations;
+            }
+            Version++;
+        }
+
         BusinessRelations Row(TerritoryBusinessId businessId)
         {
             if (businesses.TryGetValue(businessId, out var row))
@@ -931,6 +976,27 @@ namespace LivingCity.Territory
             readonly List<TerritoryRacketEntry> history = new List<TerritoryRacketEntry>();
 
             public BusinessRelations(TerritoryBusinessId businessId) => BusinessId = businessId;
+
+            public void CollectRows(
+                TerritoryBusinessId businessId, List<ProtectionRowDto> into)
+            {
+                for (var i = 0; i < gangs.Count; i++)
+                {
+                    var entry = gangs[i];
+                    into.Add(new ProtectionRowDto
+                    {
+                        businessId = businessId.Value,
+                        gangId = entry.GangId.Value,
+                        state = (int)entry.State,
+                        stateSince = entry.StateSince,
+                        lastInteraction = entry.LastInteraction,
+                        refusedAt = entry.RefusedAt,
+                        demands = entry.Demands,
+                        threats = entry.Threats,
+                        escalations = entry.Escalations,
+                    });
+                }
+            }
 
             public TerritoryBusinessId BusinessId { get; }
             public TerritoryGangId PressureGang { get; set; }

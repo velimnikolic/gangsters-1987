@@ -326,6 +326,13 @@ namespace LivingCity.Gameplay
                 if (Declines.Count > 0)
                     Debug.Log("[Outfit] Day " + Campaign.Day + " - " + Declines.Count +
                               " man-year(s) caught up with somebody.");
+
+                // THE DAY IS WRITTEN DOWN (D19). Every campaign midnight, over the same
+                // file - a player who loses an afternoon to a crash loses an afternoon,
+                // not a campaign. A refusal is logged and nothing else stops.
+                var refusal = Save.CampaignSave.Write(Save.CampaignSave.AutosavePath);
+                if (!string.IsNullOrEmpty(refusal))
+                    Debug.LogWarning("[Outfit] The autosave did not write: " + refusal);
             }
         }
 

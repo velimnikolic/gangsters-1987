@@ -176,6 +176,51 @@ namespace LivingCity.Territory
             account.OwedSevenths += weeklyRate;
         }
 
+        /// <summary>Every meter running, flat (RIVAL-010).</summary>
+        public void Collect(List<DuesRowDto> into)
+        {
+            if (into == null)
+                return;
+            into.Clear();
+            for (var i = 0; i < ids.Count; i++)
+            {
+                if (!accounts.TryGetValue(ids[i], out var row))
+                    continue;
+                into.Add(new DuesRowDto
+                {
+                    businessId = ids[i].Value,
+                    gangId = row.GangId.Value,
+                    weeklyRate = row.WeeklyRate,
+                    owedSevenths = row.OwedSevenths,
+                    lastCollectedDay = row.LastCollectedDay,
+                    missedInARow = row.MissedInARow,
+                });
+            }
+        }
+
+        /// <summary>The load boundary. Every meter the ledger held is replaced.</summary>
+        public void RestoreFrom(DuesRowDto[] rows)
+        {
+            accounts.Clear();
+            ids.Clear();
+            for (var i = 0; rows != null && i < rows.Length; i++)
+            {
+                var dto = rows[i];
+                var businessId = new TerritoryBusinessId(dto.businessId);
+                if (!businessId.IsValid)
+                    continue;
+                accounts.Add(businessId, new Account
+                {
+                    GangId = new TerritoryGangId(dto.gangId),
+                    WeeklyRate = dto.weeklyRate,
+                    OwedSevenths = dto.owedSevenths,
+                    LastCollectedDay = dto.lastCollectedDay,
+                    MissedInARow = dto.missedInARow,
+                });
+                ids.Add(businessId);
+            }
+        }
+
         public bool TryGet(TerritoryBusinessId businessId, out TerritoryDuesAccount account)
         {
             account = default;

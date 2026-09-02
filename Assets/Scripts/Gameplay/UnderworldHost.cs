@@ -39,6 +39,13 @@ namespace LivingCity.Gameplay
         /// </summary>
         public static int SeedForScene(bool quiet = true, Object context = null)
         {
+            // A CITY BEING LOADED IS THE FILE'S CITY. The save carries the seed the city
+            // was generated from, and everything else in the file only makes sense over
+            // that city (RIVAL-010).
+            var pending = Save.CampaignSave.Pending;
+            if (pending != null)
+                return pending.citySeed;
+
             var builder = Object.FindAnyObjectByType<Generation.CityBuilder>();
             if (builder && builder.Config)
                 return builder.Config.seed;

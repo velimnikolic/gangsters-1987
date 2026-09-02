@@ -130,6 +130,46 @@ namespace RoadDemo
 
         public static int CountOf(int gangId) => Book(gangId).Count;
 
+        /// <summary>What one family has learnt, flat (RIVAL-010).</summary>
+        public static void CollectFor(int gangId, out string[] places, out int[] men)
+        {
+            var book = Book(gangId);
+            places = new string[book.Count];
+            book.CopyTo(places);
+            System.Array.Sort(places, System.StringComparer.Ordinal);
+
+            // The faces are the player's own knowledge for now: a mind names a man off
+            // its own roster, not off somebody else's street.
+            if (gangId == LivingCity.Gangs.GangCatalog.PlayerGangId)
+            {
+                men = new int[knownMen.Count];
+                knownMen.CopyTo(men);
+                System.Array.Sort(men);
+            }
+            else
+            {
+                men = new int[0];
+            }
+        }
+
+        /// <summary>The load boundary. What that family knew, it knows again.</summary>
+        public static void RestoreFor(int gangId, string[] places, int[] men)
+        {
+            var book = Book(gangId);
+            book.Clear();
+            for (var i = 0; places != null && i < places.Length; i++)
+                if (!string.IsNullOrEmpty(places[i]))
+                    book.Add(places[i]);
+
+            if (gangId == LivingCity.Gangs.GangCatalog.PlayerGangId)
+            {
+                knownMen.Clear();
+                for (var i = 0; men != null && i < men.Length; i++)
+                    knownMen.Add(men[i]);
+            }
+            Version++;
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {

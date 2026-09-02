@@ -1620,6 +1620,17 @@ namespace RoadDemo
         /// </summary>
         void SettleBusinesses(double gameHour)
         {
+            // A SAVE WAITING FOR ITS CITY. The scene has been rebuilt from the file's own
+            // seed by now, the businesses are populated and the racket is up, so this is
+            // the first moment the books can be put back over it (RIVAL-010).
+            if (LivingCity.Save.CampaignSave.Pending != null)
+            {
+                var file = LivingCity.Save.CampaignSave.Pending;
+                LivingCity.Save.CampaignSave.Pending = null;
+                LivingCity.Save.CampaignSave.Apply(file);
+                Debug.Log("[Save] Day " + file.day + " restored from the file.");
+            }
+
             SweepDefiance(gameHour);
             SweepProtectionSwitches();
             DriveHouseMinds(gameHour);

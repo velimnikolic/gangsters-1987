@@ -394,6 +394,15 @@ namespace LivingCity.Outfit
 
         int nextJobId;
 
+        /// <summary>Where the counter stands, for the save. Reading it must not
+        /// advance it.</summary>
+        public int PeekNextJobId => nextJobId;
+
+        /// <summary>The load boundary for the book's own numbering (RIVAL-010). A
+        /// counter anything could wind back would hand two orders the same number.
+        /// </summary>
+        public void RestoreNextJobId(int next) => nextJobId = next;
+
         public int NextJobId() => nextJobId++;
 
         /// <summary>The job a crew is actually on: the first of its jobs that is not

@@ -268,6 +268,67 @@ namespace LivingCity.Outfit
             }
         }
 
+        /// <summary>
+        /// THE WHOLE BOOK, FLAT (RIVAL-010). The two dictionaries are keyed by packed
+        /// pairs and JsonUtility writes neither, so the save asks for them as rows and
+        /// hands them back the same way. Nothing reflects over the private fields.
+        /// </summary>
+        public void Collect(List<StanceDto> stances, List<GrievanceDto> grievances)
+        {
+            if (stances != null)
+            {
+                stances.Clear();
+                foreach (var entry in this.stances)
+                    stances.Add(new StanceDto
+                    {
+                        a = (int)(entry.Key >> 32),
+                        b = (int)(entry.Key & 0xFFFFFFFF),
+                        stance = (int)entry.Value,
+                        pending = false,
+                    });
+                foreach (var entry in pending)
+                    stances.Add(new StanceDto
+                    {
+                        a = (int)(entry.Key >> 32),
+                        b = (int)(entry.Key & 0xFFFFFFFF),
+                        stance = (int)entry.Value,
+                        pending = true,
+                    });
+            }
+
+            if (grievances == null)
+                return;
+            grievances.Clear();
+            foreach (var entry in this.grievances)
+                grievances.Add(new GrievanceDto
+                {
+                    aggrieved = (int)(entry.Key >> 32),
+                    offender = (int)(entry.Key & 0xFFFFFFFF),
+                    owed = entry.Value,
+                });
+        }
+
+        /// <summary>The load boundary. Everything the book held is replaced.</summary>
+        public void RestoreFrom(StanceDto[] rows, GrievanceDto[] owed)
+        {
+            stances.Clear();
+            pending.Clear();
+            grievances.Clear();
+            quietSince.Clear();
+
+            for (var i = 0; rows != null && i < rows.Length; i++)
+            {
+                var key = Pair(rows[i].a, rows[i].b);
+                if (rows[i].pending)
+                    pending[key] = (Stance)rows[i].stance;
+                else
+                    stances[key] = (Stance)rows[i].stance;
+            }
+
+            for (var i = 0; owed != null && i < owed.Length; i++)
+                grievances[Owed(owed[i].aggrieved, owed[i].offender)] = owed[i].owed;
+        }
+
         /// <summary>How many days a house could pay its men through a war (D15).
         /// </summary>
         public static int Endurance(int safe, int dailyPayroll) =>

@@ -153,6 +153,17 @@ namespace LivingCity.Ambient
         /// <summary>Jumps the clock. Used by the editor scrubber and by anything that skips ahead.</summary>
         public void SetHour(float hour) => Hour = Mathf.Repeat(hour, HoursPerDay);
 
+        /// <summary>
+        /// THE LOAD BOUNDARY (RIVAL-010). The only way the day itself is ever set: a
+        /// campaign that was on day 30 at half past nine comes back on day 30 at half
+        /// past nine, and nothing else in the game may wind the calendar.
+        /// </summary>
+        public void Restore(int day, float hour)
+        {
+            Day = day < 1 ? 1 : day;
+            Hour = Mathf.Repeat(hour, HoursPerDay);
+        }
+
         void OnDestroy()
         {
             DayClock.Unregister(this);
