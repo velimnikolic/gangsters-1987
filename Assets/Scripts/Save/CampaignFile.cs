@@ -23,6 +23,19 @@ namespace LivingCity.Save
         public double recoveryAt;
     }
 
+    /// <summary>One man the city is holding, and where in the pipe he stands.</summary>
+    [Serializable]
+    public sealed class PrisonerDto
+    {
+        public int characterId;
+        public int deed;
+        public int takenOnDay;
+        public int courtDay;
+        public int sentenceDays;
+        public int outOnDay;
+        public int stage;
+    }
+
     /// <summary>What one family has learnt of the city.</summary>
     [Serializable]
     public sealed class KnowledgeDto
@@ -62,6 +75,20 @@ namespace LivingCity.Save
         public float hourOfDay;
 
         public UnderworldDto underworld;
+
+        /// <summary>
+        /// THE MEN THE CITY IS HOLDING. A held man carries no release date - the day
+        /// tick will not discharge a man without one - so the pipe is the only thing
+        /// that ever lets him out. Leaving it out of the file jailed him for the rest
+        /// of the campaign.
+        /// </summary>
+        public PrisonerDto[] prisoners;
+
+        /// <summary>Everybody who has ever come out of the back of a car. The next
+        /// judge reads it.</summary>
+        public int[] escaped;
+
+        public int prisonRosterSeed;
         public TerritoryDto territory;
         public DeedDto[] deeds;
         public ShutdownDto[] shutdowns;

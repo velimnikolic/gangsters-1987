@@ -314,6 +314,12 @@ back), every safe and day sheet, every order in flight, who stands where with wh
 what each is owed, every door's standing and dues, the rounds that were out, the deeds,
 the shut shops, and what each family has learnt of the city.
 
+The **cells** are in it too: everybody the city is holding, where in the pipe each man
+stands, and everybody who has ever come out of the back of a car. That is not optional -
+a held man is booked with NO release date (the day tick refuses to discharge a man
+without one), so the pipe is the only thing that will ever let him out. A file without it
+jailed him for the rest of the campaign.
+
 What is **not**, on purpose (D19):
 
 * **positions** — where a man was standing is a frame, not a campaign. Bodies are re-stood

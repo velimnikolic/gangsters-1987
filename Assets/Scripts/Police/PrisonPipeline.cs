@@ -79,6 +79,46 @@ namespace LivingCity.Police
         public bool EverEscaped(int characterId) => _everEscaped.Contains(characterId);
 
         /// <summary>
+        /// Everybody who has ever come out of the back of a car (RIVAL-010). The set
+        /// itself is private because nothing but the pipe may add to it; the campaign
+        /// save has to be able to write it down, and a man's second sentence is longer
+        /// than his first.
+        /// </summary>
+        public void CollectEscapes(List<int> into)
+        {
+            if (into == null)
+                return;
+            into.Clear();
+            foreach (var characterId in _everEscaped)
+                into.Add(characterId);
+            into.Sort();
+        }
+
+        /// <summary>
+        /// THE LOAD BOUNDARY (RIVAL-010). Everybody the city was holding, and everybody
+        /// it remembered, put back as they were.
+        ///
+        /// This is not optional plumbing. A held man carries NO release date - the day
+        /// tick refuses to discharge a man without one - so the pipe is the only thing
+        /// that will ever let him out. A load that rebuilt an empty pipe left him jailed
+        /// for the rest of the campaign, drawing his envelope, against his lieutenant's
+        /// headcount, and never coming back.
+        /// </summary>
+        public void RestoreFrom(
+            IReadOnlyList<Prisoner> inside, IReadOnlyList<int> escaped, int rosterSeed)
+        {
+            _inside.Clear();
+            _everEscaped.Clear();
+            RosterSeed = rosterSeed;
+
+            for (var i = 0; inside != null && i < inside.Count; i++)
+                if (inside[i] != null)
+                    _inside.Add(inside[i]);
+            for (var i = 0; escaped != null && i < escaped.Count; i++)
+                _everEscaped.Add(escaped[i]);
+        }
+
+        /// <summary>
         /// TAKEN IN. He goes on the books as held with NO release date - a man waiting on
         /// a judge is not serving anything yet, and the day tick only discharges a man
         /// who has a day (RosterOps.Discharge).

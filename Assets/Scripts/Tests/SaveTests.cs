@@ -28,6 +28,7 @@ namespace LivingCity.Tests
             ACampaignComesBackTheSameCampaign(failures);
             TheCityComesBackTheSameCity(failures);
             ALoadedCampaignPlaysOnTheSameWay(failures);
+            NobodyIsLeftInTheCells(failures);
             ANewerSaveIsRefused(failures);
 
             return failures;
@@ -141,6 +142,116 @@ namespace LivingCity.Tests
             if (a != b)
                 failures.Add("SAVE-003: a loaded campaign played on differently. " +
                              FirstDifference(a, b));
+        }
+
+        /// <summary>
+        /// A MAN IN CUSTODY IS NOT LOST BY SAVING. He is booked with NO release date -
+        /// the day tick refuses to discharge a man without one - so the pipe is the only
+        /// thing that will ever let him out. Until this contract, the campaign file left
+        /// the pipe out entirely: a save taken while anybody was in the cells jailed him
+        /// for the rest of the campaign, drawing his envelope, against his lieutenant's
+        /// headcount, and never coming back.
+        /// </summary>
+        static void NobodyIsLeftInTheCells(List<string> failures)
+        {
+            var world = Underworld.Deal(Seed);
+            var theirs = world.Of(7);
+
+            var man = -1;
+            for (var i = 0; i < theirs.Roster.Members.Count && man < 0; i++)
+                if (!theirs.Roster.Members[i].Gone &&
+                    theirs.Roster.Members[i].Rank == Rank.Hood)
+                    man = theirs.Roster.Members[i].Id;
+            if (man < 0)
+            {
+                failures.Add("SAVE-005: the fixture dealt nobody to arrest.");
+                return;
+            }
+
+            var pipe = new Police.PrisonPipeline { RosterSeed = Seed };
+            var taken = pipe.Book(theirs.Roster, man, Deed.Affray, 12);
+            if (taken == null)
+            {
+                failures.Add("SAVE-005: the fixture could not book anybody.");
+                return;
+            }
+
+            // The state the defect turned on: held, and no way out but the pipe.
+            if (theirs.Roster.Find(man).BackOnDay != 0)
+                failures.Add("SAVE-005: a held man has a release date after all - the " +
+                             "contract is asking about a case that no longer exists.");
+
+            // ONLY A MAN WHO WAS IN THE CAR gets out of one. He is put in the back
+            // first, which is the only way the pipe lets anybody be freed.
+            var escapee = taken.CharacterId;
+            taken.Stage = Police.PrisonStage.InTransit;
+            if (pipe.Freed(theirs.Roster, taken, 13) == null)
+            {
+                failures.Add("SAVE-005: the fixture could not get anybody out of a car.");
+                return;
+            }
+            var second = pipe.Book(theirs.Roster, man, Deed.Affray, 20);
+            if (second != null)
+                second.Stage = Police.PrisonStage.InTransit;
+
+            // Through the file the game actually writes.
+            var rows = new List<PrisonerDto>();
+            var escaped = new List<int>();
+            pipe.CollectEscapes(escaped);
+            for (var i = 0; i < pipe.Inside.Count; i++)
+                rows.Add(new PrisonerDto
+                {
+                    characterId = pipe.Inside[i].CharacterId,
+                    deed = (int)pipe.Inside[i].Deed,
+                    takenOnDay = pipe.Inside[i].TakenOnDay,
+                    courtDay = pipe.Inside[i].CourtDay,
+                    sentenceDays = pipe.Inside[i].SentenceDays,
+                    outOnDay = pipe.Inside[i].OutOnDay,
+                    stage = (int)pipe.Inside[i].Stage,
+                });
+
+            var file = new CampaignFile
+            {
+                prisoners = rows.ToArray(),
+                escaped = escaped.ToArray(),
+                prisonRosterSeed = pipe.RosterSeed,
+            };
+            var read = JsonUtility.FromJson<CampaignFile>(JsonUtility.ToJson(file));
+
+            var back = new Police.PrisonPipeline();
+            var inside = new List<Police.Prisoner>();
+            for (var i = 0; read.prisoners != null && i < read.prisoners.Length; i++)
+                inside.Add(new Police.Prisoner
+                {
+                    CharacterId = read.prisoners[i].characterId,
+                    Deed = (Deed)read.prisoners[i].deed,
+                    TakenOnDay = read.prisoners[i].takenOnDay,
+                    CourtDay = read.prisoners[i].courtDay,
+                    SentenceDays = read.prisoners[i].sentenceDays,
+                    OutOnDay = read.prisoners[i].outOnDay,
+                    Stage = (Police.PrisonStage)read.prisoners[i].stage,
+                });
+            back.RestoreFrom(inside, read.escaped, read.prisonRosterSeed);
+
+            if (back.RosterSeed != pipe.RosterSeed)
+                failures.Add("SAVE-005: the pipe came back on a different stream, so " +
+                             "his sentence would be rolled twice differently.");
+            if (back.Inside.Count != pipe.Inside.Count)
+                failures.Add("SAVE-005: " + pipe.Inside.Count + " men were in the cells " +
+                             "and " + back.Inside.Count + " came back.");
+
+            var restored = back.Find(man);
+            if (restored == null)
+                failures.Add("SAVE-005: a man in the cells was lost by saving - nothing " +
+                             "will ever let him out again.");
+            else if (restored.Stage != Police.PrisonStage.InTransit ||
+                     restored.CourtDay != (second != null ? second.CourtDay : 0))
+                failures.Add("SAVE-005: he came back at the wrong point in the pipe (" +
+                             restored.Stage + ", court day " + restored.CourtDay + ").");
+
+            if (!back.EverEscaped(escapee))
+                failures.Add("SAVE-005: the city forgot he had been out of a car once, " +
+                             "so the next judge goes easy on him.");
         }
 
         /// <summary>(d) A file from a later game is refused, not half-read.</summary>
