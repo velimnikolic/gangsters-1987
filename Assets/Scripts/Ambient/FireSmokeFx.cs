@@ -27,6 +27,19 @@ namespace LivingCity.Ambient
         public const string Steam = SmokeRoot + "RisingSteam.prefab";
         public const string MuzzleFlash = WeaponRoot + "MuzzleFlash.prefab";
 
+        // Project-wide production defaults. The FX review bench exposes these exact
+        // multipliers and RESET returns to them; ordinary gameplay callers omit the
+        // optional arguments and therefore receive the same values automatically.
+        public const float DefaultWeaponFlash = 3f;
+        public const float DefaultGunSmokeAmount = 3f;
+        public const float DefaultGunSmokeSize = 3f;
+        public const float DefaultGunSmokeLifetime = 1.5f;
+        public const float DefaultExhaustAmount = 3f;
+        public const float DefaultExhaustSize = 1.6f;
+        public const float DefaultExhaustLifetime = 1f;
+        public const float DefaultExhaustSpeed = 1f;
+        public const float DefaultExhaustVisibility = 1f;
+
         // Particle start colour multiplies the pack's flipbook and colour-over-life gradient.
         // These are intentionally not opaque: overlapping translucent smoke becomes a flat wall.
         public static readonly Color ExhaustSmoke = new Color(0.66f, 0.68f, 0.69f, 0.78f);
@@ -58,10 +71,12 @@ namespace LivingCity.Ambient
         /// <summary>Removes the Particle Pack gallery pose and makes one trigger pull one
         /// short flash. The sample root is saved at 1.75 scale and loops for inspection;
         /// neither is appropriate on the end of a handheld barrel.</summary>
-        public static float TuneMuzzleFlash(GameObject effect, float metres)
+        public static float TuneMuzzleFlash(
+            GameObject effect, float metres, float amount = DefaultWeaponFlash)
         {
             if (effect == null) return 0f;
-            effect.transform.localScale = Vector3.one * Mathf.Max(0.01f, metres);
+            effect.transform.localScale = Vector3.one *
+                Mathf.Max(0.01f, metres * Mathf.Clamp(amount, 0.01f, 4f));
             float live = 0.2f;
             foreach (var system in effect.GetComponentsInChildren<ParticleSystem>(true))
             {
@@ -80,8 +95,9 @@ namespace LivingCity.Ambient
         /// one round. Particles remain in world space, so recoil and a moving car do not drag
         /// the smoke around after it has left the muzzle.</summary>
         public static float TuneGunSmoke(GameObject effect, float calibre, bool rapid,
-                                         float amount = 1f, float size = 1f,
-                                         float lifetime = 1f)
+                                         float amount = DefaultGunSmokeAmount,
+                                         float size = DefaultGunSmokeSize,
+                                         float lifetime = DefaultGunSmokeLifetime)
         {
             if (effect == null) return 0f;
             effect.transform.localScale = Vector3.one;

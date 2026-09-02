@@ -44,19 +44,19 @@ namespace RoadDemo
         /// top. An idling car is what you actually see smoking on a street, so the floor
         /// carries most of it; speed alone adds very little (a car at forty is not smoking
         /// harder than a car at ten, it is only leaving it behind faster).</summary>
-        const float IdleRate = 11f;
-        const float CruiseRate = 5f;
-        const float AccelRate = 26f;
+        const float IdleRate = 11f * LivingCity.Ambient.FireSmokeFx.DefaultExhaustAmount;
+        const float CruiseRate = 5f * LivingCity.Ambient.FireSmokeFx.DefaultExhaustAmount;
+        const float AccelRate = 26f * LivingCity.Ambient.FireSmokeFx.DefaultExhaustAmount;
 
         /// <summary>Metres a second per second that counts as flooring it.</summary>
         const float HardAccel = 3f;
 
         // a wisp, not a bonfire: a hand's width leaving the pipe, growing as it goes
-        const float PuffWide = 0.18f;
+        const float PuffWide = 0.18f * LivingCity.Ambient.FireSmokeFx.DefaultExhaustSize;
         const float PuffGrow = 1.8f;
-        const float PuffLifeLo = 0.9f;
-        const float PuffLifeHi = 1.7f;
-        const float PuffSpeed = 0.7f;
+        const float PuffLifeLo = 0.9f * LivingCity.Ambient.FireSmokeFx.DefaultExhaustLifetime;
+        const float PuffLifeHi = 1.7f * LivingCity.Ambient.FireSmokeFx.DefaultExhaustLifetime;
+        const float PuffSpeed = 0.7f * LivingCity.Ambient.FireSmokeFx.DefaultExhaustSpeed;
 
         /// <summary>The pipe points back and a little down - smoke off a car goes into the
         /// road behind it before it rises.</summary>

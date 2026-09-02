@@ -3,6 +3,7 @@ using LivingCity.Ambient;
 using LivingCity.Personnel;
 using RoadDemo;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace LivingCity.Gameplay
 {
@@ -87,22 +88,29 @@ namespace LivingCity.Gameplay
         ParticleSystem _exhaust;
         Transform _exhaustTransform;
         Camera _camera;
+        DemoCamera _cameraRig;
 
         bool _continuousFire = true;
+        bool _showControls = true;
         float _shotTempo = 1f;
-        float _flashSize = 1f;
-        float _gunSmokeAmount = 1f;
-        float _gunSmokeSize = 1f;
-        float _gunSmokeLifetime = 1f;
-        float _exhaustAmount = 1f;
-        float _exhaustSize = 1f;
-        float _exhaustLifetime = 1f;
-        float _exhaustSpeed = 1f;
-        float _exhaustOpacity = 1f;
+        float _flashSize = FireSmokeFx.DefaultWeaponFlash;
+        float _gunSmokeAmount = FireSmokeFx.DefaultGunSmokeAmount;
+        float _gunSmokeSize = FireSmokeFx.DefaultGunSmokeSize;
+        float _gunSmokeLifetime = FireSmokeFx.DefaultGunSmokeLifetime;
+        float _exhaustAmount = FireSmokeFx.DefaultExhaustAmount;
+        float _exhaustSize = FireSmokeFx.DefaultExhaustSize;
+        float _exhaustLifetime = FireSmokeFx.DefaultExhaustLifetime;
+        float _exhaustSpeed = FireSmokeFx.DefaultExhaustSpeed;
+        float _exhaustOpacity = FireSmokeFx.DefaultExhaustVisibility;
 
         GUIStyle _titleStyle;
         GUIStyle _sectionStyle;
         GUIStyle _labelStyle;
+        GUIStyle _toggleStyle;
+        GUIStyle _buttonStyle;
+        GUIStyle _sliderStyle;
+        GUIStyle _sliderThumbStyle;
+        GUIStyle _helpStyle;
 
         void Awake()
         {
@@ -156,16 +164,32 @@ namespace LivingCity.Gameplay
 
             var cameraGo = new GameObject("FX Demo Camera") { tag = "MainCamera" };
             cameraGo.transform.SetParent(_stage, false);
-            cameraGo.transform.position = new Vector3(0f, 5.3f, -16.5f);
-            cameraGo.transform.rotation = Quaternion.LookRotation(
-                new Vector3(0f, 1.15f, 2.6f) - cameraGo.transform.position,
-                Vector3.up);
             _camera = cameraGo.AddComponent<Camera>();
             _camera.fieldOfView = 49f;
             _camera.nearClipPlane = 0.05f;
             _camera.farClipPlane = 100f;
             _camera.clearFlags = CameraClearFlags.SolidColor;
             _camera.backgroundColor = new Color(0.075f, 0.085f, 0.105f);
+
+            // Every review scene uses the same camera contract as the city: WASD/arrows
+            // pan, Q/E or right-drag orbit, and the wheel zooms. This bench has no turf map,
+            // so its whole zoom range remains a 3D inspection view.
+            _cameraRig = cameraGo.AddComponent<DemoCamera>();
+            _cameraRig.pivot = new Vector3(0f, 0.85f, 2.8f);
+            _cameraRig.yaw = 0f;
+            _cameraRig.ConfigurePitch(28f, 6f);
+            _cameraRig.distance = 19f;
+            _cameraRig.minDistance = 6f;
+            _cameraRig.mapTransition = false;
+            _cameraRig.mapCeiling = 65f;
+            _cameraRig.showHint = false; // this bench draws a larger, readable help strip
+
+            var cameraRotation = Quaternion.Euler(
+                _cameraRig.pitch, _cameraRig.yaw, 0f);
+            cameraGo.transform.SetPositionAndRotation(
+                _cameraRig.pivot + cameraRotation * new Vector3(0f, 0f, -_cameraRig.distance),
+                cameraRotation);
+            DemoCamera.ClaimMainCamera(_camera);
         }
 
         void BuildShooters()
@@ -276,6 +300,10 @@ namespace LivingCity.Gameplay
 
         void Update()
         {
+            var keyboard = Keyboard.current;
+            if (keyboard != null && keyboard.hKey.wasPressedThisFrame)
+                _showControls = !_showControls;
+
             ApplyExhaustTuning();
             if (!_continuousFire || _shooters.Count == 0) return;
 
@@ -312,7 +340,7 @@ namespace LivingCity.Gameplay
             {
                 var flash = Instantiate(_muzzlePrefab, at, rotation, _stage);
                 var live = FireSmokeFx.TuneMuzzleFlash(
-                    flash, shooter.Calibre * 0.72f * _flashSize);
+                    flash, shooter.Calibre * 0.72f, _flashSize);
                 Destroy(flash, Mathf.Max(0.2f, live));
             }
 
@@ -396,49 +424,84 @@ namespace LivingCity.Gameplay
         void OnGUI()
         {
             EnsureStyles();
-            const float panelWidth = 410f;
-            var panel = new Rect(14f, 12f, panelWidth, 610f);
+            DrawCameraHelp();
+            if (!_showControls) return;
+
+            float panelWidth = Mathf.Min(920f, Screen.width - 28f);
+            var panel = new Rect(14f, 12f, panelWidth, 540f);
             GUI.Box(panel, GUIContent.none);
-            GUI.Label(new Rect(28f, 21f, panelWidth - 28f, 28f),
+            GUI.Label(new Rect(panel.x + 18f, panel.y + 9f, panel.width - 36f, 38f),
                 "FIRE / SMOKE FX REVIEW", _titleStyle);
-            GUI.Label(new Rect(28f, 48f, panelWidth - 28f, 20f),
-                "Svi ljudi i auto su zaključani u mjestu.", _labelStyle);
+            GUI.Label(new Rect(panel.x + 18f, panel.y + 47f, panel.width - 36f, 26f),
+                "Svi ljudi i auto su zaključani u mjestu. H skriva/prikazuje ovaj panel.",
+                _labelStyle);
 
-            float y = 76f;
+            float y = panel.y + 80f;
             _continuousFire = GUI.Toggle(
-                new Rect(28f, y, 250f, 21f), _continuousFire, " STALNO PUCAJ");
-            if (GUI.Button(new Rect(302f, y - 2f, 104f, 25f), "RESET")) ResetTuning();
-            y += 32f;
+                new Rect(panel.x + 18f, y, 250f, 31f), _continuousFire,
+                " STALNO PUCAJ", _toggleStyle);
+            if (GUI.Button(new Rect(panel.xMax - 138f, y - 1f, 120f, 34f),
+                           "RESET", _buttonStyle))
+                ResetTuning();
 
-            GUI.Label(new Rect(28f, y, panelWidth - 40f, 21f), "ORUŽJE", _sectionStyle);
-            y += 25f;
-            y = Slider(ref _shotTempo, "Tempo pucanja", 0.25f, 2.5f, y);
-            y = Slider(ref _flashSize, "Vatra / flash veličina", 0f, 3f, y);
-            y = Slider(ref _gunSmokeAmount, "Dim količina", 0f, 3f, y);
-            y = Slider(ref _gunSmokeSize, "Dim veličina", 0.2f, 3f, y);
-            y = Slider(ref _gunSmokeLifetime, "Dim trajanje", 0.2f, 3f, y);
+            const float gap = 34f;
+            float columnWidth = (panel.width - 36f - gap) * 0.5f;
+            float leftX = panel.x + 18f;
+            float rightX = leftX + columnWidth + gap;
+            float sectionY = y + 44f;
 
-            y += 4f;
-            GUI.Label(new Rect(28f, y, panelWidth - 40f, 21f), "AUSPUH", _sectionStyle);
-            y += 25f;
-            y = Slider(ref _exhaustAmount, "Količina", 0f, 3f, y);
-            y = Slider(ref _exhaustSize, "Veličina", 0.2f, 3f, y);
-            y = Slider(ref _exhaustLifetime, "Trajanje", 0.2f, 3f, y);
-            y = Slider(ref _exhaustSpeed, "Brzina izlaza", 0.2f, 3f, y);
-            y = Slider(ref _exhaustOpacity, "Vidljivost", 0.2f, 1.3f, y);
+            GUI.Label(new Rect(leftX, sectionY, columnWidth, 28f), "ORUŽJE", _sectionStyle);
+            float weaponY = sectionY + 34f;
+            weaponY = Slider(ref _shotTempo, "Tempo pucanja", 0.25f, 2.5f,
+                             leftX, weaponY, columnWidth);
+            weaponY = Slider(ref _flashSize, "Vatra / flash veličina", 0f, 3f,
+                             leftX, weaponY, columnWidth);
+            weaponY = Slider(ref _gunSmokeAmount, "Dim količina", 0f, 3f,
+                             leftX, weaponY, columnWidth);
+            weaponY = Slider(ref _gunSmokeSize, "Dim veličina", 0.2f, 3f,
+                             leftX, weaponY, columnWidth);
+            Slider(ref _gunSmokeLifetime, "Dim trajanje", 0.2f, 3f,
+                   leftX, weaponY, columnWidth);
 
-            GUI.Label(new Rect(28f, panel.yMax - 42f, panelWidth - 38f, 34f),
-                "Lijevo → desno: pistol · machine pistol · shotgun · rifle · Tommy Gun\n" +
-                "Vrijednosti važe samo u ovoj demo sceni.", _labelStyle);
+            GUI.Label(new Rect(rightX, sectionY, columnWidth, 28f), "AUSPUH", _sectionStyle);
+            float exhaustY = sectionY + 34f;
+            exhaustY = Slider(ref _exhaustAmount, "Količina", 0f, 3f,
+                              rightX, exhaustY, columnWidth);
+            exhaustY = Slider(ref _exhaustSize, "Veličina", 0.2f, 3f,
+                              rightX, exhaustY, columnWidth);
+            exhaustY = Slider(ref _exhaustLifetime, "Trajanje", 0.2f, 3f,
+                              rightX, exhaustY, columnWidth);
+            exhaustY = Slider(ref _exhaustSpeed, "Brzina izlaza", 0.2f, 3f,
+                              rightX, exhaustY, columnWidth);
+            Slider(ref _exhaustOpacity, "Vidljivost", 0.2f, 1.3f,
+                   rightX, exhaustY, columnWidth);
+
+            GUI.Label(new Rect(panel.x + 18f, panel.yMax - 31f, panel.width - 36f, 25f),
+                "Lijevo → desno: pistol · machine pistol · shotgun · rifle · Tommy Gun" +
+                "     |     Vrijednosti važe samo u ovom demu.", _labelStyle);
         }
 
-        float Slider(ref float value, string label, float minimum, float maximum, float y)
+        float Slider(ref float value, string label, float minimum, float maximum,
+                     float x, float y, float width)
         {
-            GUI.Label(new Rect(28f, y, 250f, 19f), label, _labelStyle);
-            GUI.Label(new Rect(338f, y, 66f, 19f), value.ToString("0.00") + "x", _labelStyle);
-            value = GUI.HorizontalSlider(new Rect(28f, y + 18f, 376f, 18f),
-                                         value, minimum, maximum);
-            return y + 37f;
+            GUI.Label(new Rect(x, y, width - 82f, 25f), label, _labelStyle);
+            GUI.Label(new Rect(x + width - 78f, y, 78f, 25f),
+                value.ToString("0.00") + "x", _labelStyle);
+            value = GUI.HorizontalSlider(
+                new Rect(x, y + 28f, width, 28f), value, minimum, maximum,
+                _sliderStyle, _sliderThumbStyle);
+            return y + 65f;
+        }
+
+        void DrawCameraHelp()
+        {
+            float width = Mathf.Min(1320f, Screen.width - 28f);
+            var bar = new Rect(14f, Screen.height - 58f, width, 46f);
+            GUI.Box(bar, GUIContent.none);
+            GUI.Label(new Rect(bar.x + 14f, bar.y + 7f, bar.width - 28f, 32f),
+                "WASD / STRELICE: POMJERI     Q / E: ROTIRAJ     DESNI MIŠ + DRAG: ORBIT     " +
+                "WHEEL: ZOOM     H: KONTROLE",
+                _helpStyle);
         }
 
         void EnsureStyles()
@@ -446,32 +509,55 @@ namespace LivingCity.Gameplay
             if (_titleStyle != null) return;
             _titleStyle = new GUIStyle(GUI.skin.label)
             {
-                fontSize = 21,
+                fontSize = 28,
                 fontStyle = FontStyle.Bold,
             };
             _titleStyle.normal.textColor = Color.white;
             _sectionStyle = new GUIStyle(GUI.skin.label)
             {
-                fontSize = 14,
+                fontSize = 20,
                 fontStyle = FontStyle.Bold,
             };
             _sectionStyle.normal.textColor = new Color(1f, 0.72f, 0.28f);
-            _labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 12 };
+            _labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 17 };
             _labelStyle.normal.textColor = new Color(0.86f, 0.89f, 0.94f);
+            _toggleStyle = new GUIStyle(GUI.skin.toggle)
+            {
+                fontSize = 18,
+                fontStyle = FontStyle.Bold,
+            };
+            _buttonStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize = 17,
+                fontStyle = FontStyle.Bold,
+            };
+            _sliderStyle = new GUIStyle(GUI.skin.horizontalSlider) { fixedHeight = 18f };
+            _sliderThumbStyle = new GUIStyle(GUI.skin.horizontalSliderThumb)
+            {
+                fixedWidth = 28f,
+                fixedHeight = 28f,
+            };
+            _helpStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 18,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+            };
+            _helpStyle.normal.textColor = Color.white;
         }
 
         void ResetTuning()
         {
             _shotTempo = 1f;
-            _flashSize = 1f;
-            _gunSmokeAmount = 1f;
-            _gunSmokeSize = 1f;
-            _gunSmokeLifetime = 1f;
-            _exhaustAmount = 1f;
-            _exhaustSize = 1f;
-            _exhaustLifetime = 1f;
-            _exhaustSpeed = 1f;
-            _exhaustOpacity = 1f;
+            _flashSize = FireSmokeFx.DefaultWeaponFlash;
+            _gunSmokeAmount = FireSmokeFx.DefaultGunSmokeAmount;
+            _gunSmokeSize = FireSmokeFx.DefaultGunSmokeSize;
+            _gunSmokeLifetime = FireSmokeFx.DefaultGunSmokeLifetime;
+            _exhaustAmount = FireSmokeFx.DefaultExhaustAmount;
+            _exhaustSize = FireSmokeFx.DefaultExhaustSize;
+            _exhaustLifetime = FireSmokeFx.DefaultExhaustLifetime;
+            _exhaustSpeed = FireSmokeFx.DefaultExhaustSpeed;
+            _exhaustOpacity = FireSmokeFx.DefaultExhaustVisibility;
         }
 
         void OnDestroy()
