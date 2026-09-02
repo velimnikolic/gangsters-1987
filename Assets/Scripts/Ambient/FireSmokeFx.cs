@@ -79,7 +79,9 @@ namespace LivingCity.Ambient
         /// <summary>Turns the continuous gallery smoke into the two-or-three wisps left by
         /// one round. Particles remain in world space, so recoil and a moving car do not drag
         /// the smoke around after it has left the muzzle.</summary>
-        public static float TuneGunSmoke(GameObject effect, float calibre, bool rapid)
+        public static float TuneGunSmoke(GameObject effect, float calibre, bool rapid,
+                                         float amount = 1f, float size = 1f,
+                                         float lifetime = 1f)
         {
             if (effect == null) return 0f;
             effect.transform.localScale = Vector3.one;
@@ -87,22 +89,29 @@ namespace LivingCity.Ambient
             if (system == null) return 0f;
 
             calibre = Mathf.Max(0.05f, calibre);
+            amount = Mathf.Clamp(amount, 0.1f, 4f);
+            size = Mathf.Clamp(size, 0.1f, 4f);
+            lifetime = Mathf.Clamp(lifetime, 0.1f, 4f);
             var main = system.main;
             main.loop = false;
             main.prewarm = false;
-            main.startLifetime = new ParticleSystem.MinMaxCurve(0.38f, rapid ? 0.7f : 0.9f);
+            main.startLifetime = new ParticleSystem.MinMaxCurve(
+                0.38f * lifetime, (rapid ? 0.7f : 0.9f) * lifetime);
             main.startSpeed = new ParticleSystem.MinMaxCurve(0.22f, 0.55f);
-            main.startSize = new ParticleSystem.MinMaxCurve(calibre * 0.45f, calibre);
+            main.startSize = new ParticleSystem.MinMaxCurve(
+                calibre * 0.45f * size, calibre * size);
             main.startColor = GunSmoke;
             main.simulationSpace = ParticleSystemSimulationSpace.World;
-            main.maxParticles = rapid ? 3 : 4;
+            int burstMin = Mathf.Max(1, Mathf.RoundToInt((rapid ? 1f : 2f) * amount));
+            int burstMax = Mathf.Max(burstMin, Mathf.RoundToInt((rapid ? 2f : 3f) * amount));
+            main.maxParticles = burstMax + 1;
 
             var emission = system.emission;
             emission.rateOverTime = 0f;
             emission.rateOverDistance = 0f;
             emission.SetBursts(new[]
             {
-                new ParticleSystem.Burst(0f, (short)(rapid ? 1 : 2), (short)(rapid ? 2 : 3))
+                new ParticleSystem.Burst(0f, (short)burstMin, (short)burstMax)
             });
 
             var shape = system.shape;
@@ -124,9 +133,9 @@ namespace LivingCity.Ambient
             velocity.y = new ParticleSystem.MinMaxCurve(0.14f, 0.3f);
             velocity.z = new ParticleSystem.MinMaxCurve(-0.05f, 0.05f);
 
-            var size = system.sizeOverLifetime;
-            size.enabled = true;
-            size.size = new ParticleSystem.MinMaxCurve(
+            var sizeOverLife = system.sizeOverLifetime;
+            sizeOverLife.enabled = true;
+            sizeOverLife.size = new ParticleSystem.MinMaxCurve(
                 1f, AnimationCurve.EaseInOut(0f, 0.55f, 1f, 1.8f));
 
             var colour = system.colorOverLifetime;
