@@ -13,12 +13,13 @@ the only place source paths appear. Re-running the script reproduces the folder
 byte for byte from the library, so a bad cut is fixed by editing an offset here
 rather than by hand-editing a WAV.
 
-The bundle has no firearm in it, so the guns come from a second library: the Free
-Firearm Sound Library (CC0), extracted at C:/Users/N/free-firearm-library. It holds
-22 weapons recorded at two mic distances each, and the game takes the MID distance
-throughout - the demo's ear sits on the camera focus, not on the muzzle, and a
-near-mic report on a city street sounds like a foley booth. Provenance and licences
-for everything outside the Sonniss bundle: Tools/audio/sources/SOURCES.md.
+The bundle has no firearm in it, so the guns come from a second library: the Krotos
+Studio free gun pack (KR016), extracted at C:/Users/N/krotos-gun-pack. Twelve takes
+of three weapons - a 9mm, an AK-47 and a SPAS-12 - designed rather than field
+recorded, which is why they are dry, short and mastered onto a subwoofer. They are
+also the loudest material this project has ever had, and the guns are baked to stay
+that way: see slam(). Provenance and licences for everything outside the Sonniss
+bundle: Tools/audio/sources/SOURCES.md.
 
 One role still has no recording at all: a POLICE SIREN, which is synthesized here as
 a Federal Signal style wail, the American electronic siren of the period.
@@ -28,6 +29,7 @@ Usage:  python Tools/audio/import_sounds.py [library-root] [--dry]
 
 import sys
 import math
+from collections import namedtuple
 from fractions import Fraction
 from pathlib import Path
 
@@ -37,7 +39,7 @@ from scipy import signal
 
 LIB = Path(sys.argv[1]) if len(sys.argv) > 1 and not sys.argv[1].startswith("-") \
     else Path("C:/Users/N/sonnis")
-GUNS = Path("C:/Users/N/free-firearm-library/Prepared SFX Library")
+GUNS = Path("C:/Users/N/krotos-gun-pack")
 SRC = Path(__file__).resolve().parent / "sources"   # what the bundle did not have
 OUT = Path(__file__).resolve().parents[2] / "Assets" / "Audio"
 DRY = "--dry" in sys.argv
@@ -201,6 +203,22 @@ def level(x, peak_db=None, rms_db=None):
     return y
 
 
+def slam(x, drive=2.5, peak_db=-0.5):
+    """LOUD, on purpose - the gun stage, and nothing else in the bake uses it.
+
+    A gunshot carries about 20 dB of crest: peak-normalise it and the ear still
+    hears it at its RMS while only the meter sees the peak, which is how a shot
+    ends up quieter than the traffic it is fired over. So the report is pushed
+    through a soft knee first - tanh, the curve a valve or a tape has - which
+    flattens the transient, lifts everything under it and folds some of the pack's
+    enormous low end up into harmonics a laptop speaker can actually move. Then it
+    is normalised. Body comes up about 8 dB over a plain peak normalise; the file
+    still never clips."""
+    y = level(x, peak_db=0.0)
+    y = np.tanh(drive * y) / math.tanh(drive)
+    return level(y, peak_db=peak_db)
+
+
 def write(rel, x, sr):
     path = OUT / rel
     x = np.clip(x, -1.0, 1.0)
@@ -280,61 +298,90 @@ def engine(rel, src, at, length, speed=1.0, xfade=0.35, rms_db=-20.0, f0=44.0):
 
 WHIP = "David Dumais Audio - Melee Weapons Sound Effects Pack 2/WEAPWhip_WHIP Snap Crack 05_DDUMAIS_MWP2.wav"
 
-# The guns, one per weapon the armoury actually sells. Every take is the library's
-# MID distance rather than its near one: the shots play to an ear on the camera
-# focus, and the near mics are dry enough to sound indoors.
+# The guns, one per weapon the armoury actually sells. The pack holds three weapons
+# in twelve takes, and a take is a whole string of fire rather than one report: the
+# shots inside it stand 0.19 to 0.7 s apart, so each is cut out and becomes one
+# variant. WINDOW is how much of the take a single report is allowed to take with
+# it, always short of the next shot's attack - these are designed sounds and the
+# whole report is over in a third of a second, so nothing is being cut off.
 #
-# Times are the individual reports inside each take, found by transient search and
-# then read off by hand. A shot is cut to TAIL seconds or to whatever room the next
-# report leaves it, whichever is shorter - which is why a burst weapon ends up with
-# a couple of stubby variants among its long ones, exactly as a burst sounds.
-TAIL = 2.2
+# TIMES are the attacks, found by transient search and then read off by hand. Only
+# the reports with room behind them are listed; a shot whose neighbour arrives 70 ms
+# later cannot be lifted out of a burst and is left in it.
+KROTOS = "KR016 3 Types of Gun Shot Sound Free - AK47, SPAS12 and 9mm/"
+LEAD = 0.012   # cut in ahead of the attack: a transient found in a 2 ms frame began
+               # a frame or two earlier, and a shot missing its front edge is a thud
+
+Take = namedtuple("Take", "src window times speed")
+Take.__new__.__defaults__ = (None,)   # speed: a tape ratio, or nothing
 
 GUNS_BY_KIND = {
-    # Twin Pack Pistols / the default sidearm. A .45 automatic and a .38 revolver,
-    # which between them are what a 1987 hood is carrying.
-    "pistol": [("1911/A_34P.wav", [1.86, 2.53, 6.98, 7.65]),
-               ("Smith & Wesson 642/V_22P.wav", [0.67, 5.50])],
-    # Two 12 gauges: a Winchester Model 12 pump and a Mossberg 190.
-    "shotgun": [("Model 12/K_17P.wav", [0.91, 7.05]),
-                ("Mossberg/N_26P.wav", [0.79, 4.57, 7.95])],
-    # Carl Gustav M45 - a 9mm submachine gun, the closest the library has to the
-    # spray the armoury describes.
-    "machinepistol": [("Carl Gustav M45/G_20P.wav", [0.35, 2.25, 5.26])],
-    # AK-47. The rifle of the decade's drug wars, and the only assault rifle here
-    # that is not a modern AR.
-    "rifle": [("AK-47/C_34P.wav", [1.06, 5.53, 9.42, 17.95])],
-    # PPSh - a drum-fed submachine gun, which is a Thompson in everything the ear
-    # cares about.
-    "tommygun": [("PPSh/P_18P.wav", [1.23, 3.66, 7.54, 11.72])],
+    # Twin Pack Pistols / the default sidearm: the pack's 9mm, its lighter pistol
+    # and its Desert Eagle, which between them are what a 1987 hood is carrying -
+    # and the demo draws a new one per round, so a firefight is not one gun looped.
+    "pistol": [Take(KROTOS + "9mm.wav", 0.30,
+                    [0.012, 0.326, 0.664, 0.978, 1.502]),
+               Take(KROTOS + "Light Pistol.wav", 0.27,
+                    [0.418, 0.698, 2.654, 3.118]),
+               Take(KROTOS + "Desert Eagle.wav", 0.27,
+                    [0.020, 0.326, 1.350])],
+    # SPAS-12. Three takes of the same 12 gauge: the single heavy blast, then the
+    # shootout and the suppressive string, which have the pump in them.
+    "shotgun": [Take(KROTOS + "SPAS12 Power.wav", 0.90, [0.012]),
+                Take(KROTOS + "SPAS12 Shootout.wav", 0.50,
+                     [0.008, 1.112, 2.510, 3.394]),
+                Take(KROTOS + "SPAS12 Suppressive Fire.wav", 0.50,
+                     [0.554, 1.672, 3.626])],
+    # The pack's rapid fire - a pistol-calibre stream, which is the spray the
+    # armoury describes. Four reports out of it have room enough to stand alone;
+    # the gun fires every 0.2 s in play, so their tails lie over each other there
+    # exactly as they do in the take.
+    "machinepistol": [Take(KROTOS + "Rapid Fire.wav", 0.19,
+                           [0.126, 1.072, 1.272, 1.804])],
+    # AK-47, single shots. The rifle of the decade's drug wars.
+    "rifle": [Take(KROTOS + "AK-47 Single Shots.wav", 0.40,
+                   [0.000, 0.512, 1.022, 1.536, 2.328, 2.746, 3.444])],
+    # A Thompson is a .45, and the pack has no .45 submachine gun. So it is the
+    # rapid fire again, run at 0.86 of speed - the tape trick, which takes the
+    # report down about two semitones and lengthens it into the slower, fatter
+    # bark a drum gun has. Same four reports, and they do not sound the same.
+    "tommygun": [Take(KROTOS + "Rapid Fire.wav", 0.19,
+                      [0.126, 1.072, 1.272, 1.804], 0.86)],
 }
 
 
 def guns():
     for kind, takes in GUNS_BY_KIND.items():
         n = 0
-        for src, times in takes:
-            x, sr = read(src)
+        for take in takes:
+            x, sr = read(take.src)
             x = mono(resample(x, sr))
-            for i, t in enumerate(times):
-                room = times[i + 1] - t - 0.03 if i + 1 < len(times) else TAIL
-                y = cut(x, RATE, t - 0.02, t - 0.02 + min(TAIL, room))
-                y = butter(y, RATE, "highpass", 40)   # rumble no speaker will move
+            for t in take.times:
+                y = cut(x, RATE, t - LEAD, t - LEAD + take.window)
+                # The pack is mastered onto a subwoofer: most of a 9mm's energy sits
+                # under 120 Hz and a fifth of one take is below 20 Hz, where no
+                # speaker in a room moves and every bit of it eats the headroom the
+                # report wants. Cut at 60 and the boom stays, the infrasound goes.
+                y = butter(y, RATE, "highpass", 60)
                 y = y[:trim(y, RATE)]
-                y = fade(y, RATE, 0.0005, min(0.15, len(y) / RATE * 0.3))
+                y = fade(y, RATE, 0.0005, min(0.06, len(y) / RATE * 0.25))
+                if take.speed:
+                    y = respeed(y, take.speed)
                 n += 1
-                write(f"Weapons/{kind}_{n}.wav", level(y, peak_db=-1.5), RATE)
+                write(f"Weapons/{kind}_{n}.wav", slam(y), RATE)
 
 
-def distant_shot(rel, src, at, peak_db=-7.0):
+def distant_shot(rel, src, at, length=1.10, peak_db=-4.0):
     """A report from the other side of the block. Distance takes the crack off a
     gun long before it takes the boom, so this is a real shot low-passed and run
-    quiet - not a different recording pretending to be far away."""
+    quiet - not a different recording pretending to be far away. It is levelled
+    rather than slammed: what makes a shot read as far away is that it is the one
+    sound on the street with no edge on it."""
     x, sr = read(src)
-    y = mono(resample(cut(x, sr, at - 0.03, at + 2.6), sr))
+    y = mono(resample(cut(x, sr, at - LEAD, at + length), sr))
     y = butter(y, RATE, "highpass", 60)
     y = butter(y, RATE, "lowpass", 1800)
-    y = fade(y, RATE, 0.004, 0.5)
+    y = fade(y, RATE, 0.004, 0.4)
     write(rel, level(y, peak_db=peak_db), RATE)
 
 
@@ -565,8 +612,10 @@ def build():
     print("Weapons")
     guns()
     # Gunfire somewhere else in the city: the rifle and a shotgun, heard badly.
-    distant_shot("Weapons/gunshot_far_1.wav", "AK-47/C_34P.wav", 17.95)
-    distant_shot("Weapons/gunshot_far_2.wav", "Model 12/K_17P.wav", 7.05)
+    distant_shot("Weapons/gunshot_far_1.wav",
+                 KROTOS + "AK-47 Single Shots.wav", 3.444)
+    distant_shot("Weapons/gunshot_far_2.wav",
+                 KROTOS + "SPAS12 Power.wav", 0.012, length=1.40)
     # The near miss: the whip crack whole, which is exactly the sound a round
     # going past makes and is why it replaces the old pack's slap.
     shot("Weapons/bullet_crack.wav", WHIP, at=0.44, length=0.32,

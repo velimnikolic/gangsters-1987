@@ -11,9 +11,9 @@ namespace RoadDemo
     //
     // The clips live in Assets/Audio, cut out of the Sonniss GDC library by
     // Tools/audio/import_sounds.py - which is where a bad cut gets fixed, not here.
-    // Two things the library did not have: a gunshot, which comes from OpenGameArt
-    // and is the one clip in the project with an attribution obligation on it, and a
-    // siren, which is synthesized.
+    // Two things the library did not have: the guns, which come from the Krotos
+    // Studio free gun pack, and a siren, which is synthesized. Neither carries an
+    // attribution obligation - Tools/audio/sources/SOURCES.md keeps that ledger.
     //
     // Every slot may come back null and every array may come back empty. A missing
     // clip means that layer stays silent, never that anything throws - the crowd's
@@ -44,6 +44,17 @@ namespace RoadDemo
         public const float UiVolume = 0.35f;
         public const float ScreamVolume = 0.7f;
         public const float SirenVolume = 0.55f;
+
+        /// <summary>The gun, and it is meant to be the loudest thing in the city -
+        /// a report played at half volume under a street of traffic is a door
+        /// closing. It runs flat out; the reports are baked with the headroom to
+        /// take it (import_sounds.slam) and the city's own SoundDatabase already
+        /// fires its generic gunshot at 1.</summary>
+        public const float GunVolume = 1f;
+
+        /// <summary>The round going past the ear, which layers under the report and
+        /// must stay under it - it is the whip, not the gun.</summary>
+        public const float BulletCrackVolume = 0.6f;
 
         // ---------------------------------------------------------------- the beds
 

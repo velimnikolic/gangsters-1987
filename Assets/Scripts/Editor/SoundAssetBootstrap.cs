@@ -74,16 +74,22 @@ namespace LivingCity.EditorTools
                 "Traffic/engine_idle_b.wav");
 
             // -- weapons ----------------------------------------------------------------
-            // The city's generic report is the sidearm's: a .45 automatic and a .38
-            // revolver, mid distance. The demo's crews pick per weapon instead, off the
-            // same folder - see CrewKit.Gunshots.
+            // The city's generic report is the sidearm's - the whole handgun pool, so a
+            // street fight heard from the map does not loop one report. The demo's crews
+            // pick per weapon instead, off the same folder - see CrewKit.Gunshots.
             db.gunshots = ClipArray(
                 "Weapons/pistol_1.wav",
                 "Weapons/pistol_2.wav",
                 "Weapons/pistol_3.wav",
                 "Weapons/pistol_4.wav",
                 "Weapons/pistol_5.wav",
-                "Weapons/pistol_6.wav");
+                "Weapons/pistol_6.wav",
+                "Weapons/pistol_7.wav",
+                "Weapons/pistol_8.wav",
+                "Weapons/pistol_9.wav",
+                "Weapons/pistol_10.wav",
+                "Weapons/pistol_11.wav",
+                "Weapons/pistol_12.wav");
 
             // -- pedestrians ------------------------------------------------------------
             db.footsteps = ClipArray(

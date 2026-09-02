@@ -13,37 +13,51 @@ MonoBehaviour:
   m_Name: SoundDatabase
   m_EditorClassIdentifier: Assembly-CSharp::LivingCity.Data.SoundDatabase
   cityDayBed:
-    clip: {fileID: 0}
+    clip: {fileID: 8300000, guid: 18d59c87a81ba6646afe20486c12f4e1, type: 3}
     volume: 0.18
   cityNightBed:
-    clip: {fileID: 0}
+    clip: {fileID: 8300000, guid: 00ce25673ee428c44b47ac3e08a9cb93, type: 3}
     volume: 0.18
   clearDuskLayer:
-    clip: {fileID: 0}
+    clip: {fileID: 8300000, guid: df315bb96ca9d7c4783865ed152054dc, type: 3}
     volume: 0.06
   overcastLayer:
-    clip: {fileID: 0}
+    clip: {fileID: 8300000, guid: 54183a4b8516cc14788734ead744288c, type: 3}
     volume: 0.1
   smogLayer:
-    clip: {fileID: 0}
+    clip: {fileID: 8300000, guid: 90884ed7a0e29a140b60705bab79d400, type: 3}
     volume: 0.05
   engineLoops:
-  - {fileID: 0}
-  - {fileID: 0}
+  - {fileID: 8300000, guid: 671b2877f93ceb742b4bedd938221033, type: 3}
+  - {fileID: 8300000, guid: 12d1f5d05abcb7c4aaf8d1d232ccf13a, type: 3}
   engineVolume: 0.311
   enginePitchMin: 0.95
   enginePitchMax: 1.35
   gunshots:
-  - {fileID: 0}
+  - {fileID: 8300000, guid: 1695f0eab3346684c8a38bca56f9d937, type: 3}
+  - {fileID: 8300000, guid: 509f4f3dc6ec7254293a3c3eb089143c, type: 3}
+  - {fileID: 8300000, guid: c686e3ac177e75241b3e2b84aeffe7b5, type: 3}
+  - {fileID: 8300000, guid: 116976faab5841c40aaf0d051fe001c3, type: 3}
+  - {fileID: 8300000, guid: 159f1a6ed8b2bd34fbdbace9d1229fa9, type: 3}
+  - {fileID: 8300000, guid: 995ee02e11b422543896a914a0b3f101, type: 3}
+  - {fileID: 8300000, guid: f2278323c2139694591a071a8913cc82, type: 3}
+  - {fileID: 8300000, guid: 3bf614af31d1744409a41f6195187b22, type: 3}
+  - {fileID: 8300000, guid: d8988214d9e697948b488b62bb12ed36, type: 3}
+  - {fileID: 8300000, guid: d79f73846dfdc2443931cae7d5637fbe, type: 3}
+  - {fileID: 8300000, guid: 88578dccf5b603d48902019f136dffdc, type: 3}
+  - {fileID: 8300000, guid: f39969df09cd25b48b49b0a72d3cfa0f, type: 3}
   gunshotVolume: 1
   footsteps:
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
+  - {fileID: 8300000, guid: 4a429377c2878534eab8a44ed57fe9e8, type: 3}
+  - {fileID: 8300000, guid: 3224beda538938245a7cb5ed477d32b0, type: 3}
+  - {fileID: 8300000, guid: 3466a75cdc446e844955ed5430f9af37, type: 3}
+  - {fileID: 8300000, guid: e5cc76845ffb47d4c93bcc7497980ccd, type: 3}
+  - {fileID: 8300000, guid: d05e09dc4f0f4a941be985a3a8a45185, type: 3}
+  - {fileID: 8300000, guid: 1d9d018a565da044f90e3734b70b2212, type: 3}
   footstepVolume: 0.04
   crowdMurmurLoops:
-  - {fileID: 0}
+  - {fileID: 8300000, guid: ca78ee0072aba9b4a95cb600e406d6ec, type: 3}
+  - {fileID: 8300000, guid: 62c8144cd78885547bc7e7f65cebed28, type: 3}
   murmurVolume: 0.22
   masterVolume: 1
   detailMaxDistance: 60

@@ -1228,11 +1228,12 @@ namespace RoadDemo
                 // identical - a transposition wide enough to fake variety also changes
                 // the calibre, which is the one thing these files get right for free.
                 _shots.pitch = Random.Range(0.94f, 1.07f);
-                _shots.PlayOneShot(shots[Random.Range(0, shots.Length)], 0.5f);
+                _shots.PlayOneShot(shots[Random.Range(0, shots.Length)],
+                    DemoSounds.GunVolume);
                 if (CrackClip)
                 {
                     _cracks.pitch = Random.Range(0.92f, 1.12f);
-                    _cracks.PlayOneShot(CrackClip, 0.3f);
+                    _cracks.PlayOneShot(CrackClip, DemoSounds.BulletCrackVolume);
                 }
             }
         }

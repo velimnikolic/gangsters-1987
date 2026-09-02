@@ -521,10 +521,11 @@ namespace RoadDemo
         public static GameObject Impact => _impact != null ? _impact : _impact = Load<GameObject>(ImpactPath);
         static GameObject _muzzleFlash, _gunSmoke, _blood, _impact;
 
-        /// <summary>The reports for one weapon, drawn at random per shot. Real
-        /// recordings of the gun the armoury actually sells - a .45 and a .38 for the
-        /// pistols, two 12 gauges, a Swedish K, an AK, a PPSh - cut by
-        /// Tools/audio/import_sounds.py, which is where the choices are argued.
+        /// <summary>The reports for one weapon, drawn at random per shot. Cut out of the
+        /// Krotos gun pack by Tools/audio/import_sounds.py, which is where the choices
+        /// are argued: three handguns for the pistols, a SPAS-12 for the shotgun, an AK
+        /// for the rifle, and one rapid-fire take that serves the machine pistol
+        /// straight and the tommy gun slowed. They are baked LOUD on purpose.
         ///
         /// Empty for anything that is not a firearm, and empty is not an error: the
         /// crews already treat a missing clip as a silent shot.</summary>

@@ -10,17 +10,18 @@ clip below anyway - a clip you cannot trace is a clip you cannot replace.
 
 ## Where the sources are
 
-Two libraries, neither in the repo, both attribution-free:
+Two libraries, neither in the repo:
 
 - `C:/Users/N/sonnis` - the Sonniss bundle, everything but the guns.
-- `C:/Users/N/free-firearm-library` - the Free Firearm Sound Library (CC0), 22
-  weapons at two mic distances each. The bundle has no firearm in it at all.
+- `C:/Users/N/krotos-gun-pack` - the Krotos Studio free gun pack `KR016`, three
+  weapons in twelve takes. The bundle has no firearm in it at all.
 
 The script looks in each in turn, so a manifest entry does not have to say which
 one a clip came from. Provenance and licences: `Tools/audio/sources/SOURCES.md`.
-**No SOUND in the game currently needs crediting** - check that file before adding
-a source that does. The art is another matter: what the game owes a credit for, and
-the fact that there is still no credits screen to print it on, is `Docs/credits.md`.
+**No SOUND in the game carries a credit line today, and the gun pack's terms are the
+one thing in that file nobody has read** - settle it before the game ships. The art
+is another matter: what the game owes a credit for, and the fact that there is still
+no credits screen to print it on, is `Docs/credits.md`.
 
 ## Re-baking
 
@@ -36,7 +37,8 @@ Then in Unity: **Tools > City > Create or Refresh Sound Database**, which re-poi
 Nothing is copied verbatim. Sources are 96-192 kHz, 24 bit and minutes long; the
 script cuts each to the useful moment, resamples to 44.1 kHz 16 bit, folds to mono
 anything that plays through a 3D source, seams the loops, and levels beds by RMS and
-one-shots by peak. **A bad cut is fixed by moving an offset in that script, never by
+one-shots by peak - the guns excepted, which are driven as well as levelled, see
+below. **A bad cut is fixed by moving an offset in that script, never by
 hand-editing a WAV** - the next re-bake would overwrite it.
 
 Requires `numpy`, `scipy`, `soundfile`.
@@ -93,16 +95,24 @@ Requires `numpy`, `scipy`, `soundfile`.
 | `radio_call_1..3` | 344 Audio, British Police Radio - band-limited to 400-2800 Hz |
 | `radio_squelch`, `radio_static` | Epic Stock Media, Fake Advertisements |
 
-### Weapons - one set per gun the armoury sells, all at the library's mid mic
+### Weapons - one set per gun the armoury sells, and they are meant to be LOUD
+
+The guns are the one thing in `Assets/Audio` that is not simply levelled. A report
+carries about 20 dB of crest, so a peak-normalised one is heard at its RMS and ends
+up quieter than the traffic it is fired over. `import_sounds.slam` drives each shot
+through a soft knee before normalising it, which flattens the transient, lifts the
+body about 8 dB and folds some of the pack's enormous low end into harmonics a
+laptop speaker can move. The demo fires them at full volume (`DemoSounds.GunVolume`)
+and the city's `SoundDatabase.gunshotVolume` was already 1.
 
 | Clip | Armoury kind | Weapon |
 | --- | --- | --- |
-| `pistol_1..6` | Pistol, TwinPistols | Colt 1911 .45 auto (4), S&W 642 .38 revolver (2) |
-| `shotgun_1..5` | Shotgun | Winchester Model 12 pump (2), Mossberg 190 (3) |
-| `machinepistol_1..3` | MachinePistol | Carl Gustav M45 "Swedish K", 9mm |
-| `rifle_1..4` | Rifle | AK-47, 7.62x39 |
-| `tommygun_1..4` | TommyGun | PPSh, 7.62x25 |
-| `gunshot_far_1..2` | - | the AK and the Model 12, low-passed to 1.8 kHz |
+| `pistol_1..12` | Pistol, TwinPistols | 9mm (5), the pack's light pistol (4), Desert Eagle (3) |
+| `shotgun_1..8` | Shotgun | SPAS-12 - the single power blast (1), the shootout (4), the suppressive string (3) |
+| `machinepistol_1..4` | MachinePistol | the pack's rapid fire, pistol calibre |
+| `rifle_1..7` | Rifle | AK-47, single shots |
+| `tommygun_1..4` | TommyGun | the same rapid fire at 0.86 speed - two semitones down, and a .45's bark |
+| `gunshot_far_1..2` | - | the AK and the SPAS-12, low-passed to 1.8 kHz and left unslammed |
 
 | Clip | Source |
 | --- | --- |
@@ -132,20 +142,23 @@ so adding a usable report to the bake needs no C# edit.
 ## The guns, and the one thing still missing
 
 **No firearm anywhere in the Sonniss bundle**, which is why there is a second
-library. Every take used is the **mid** mic rather than the near one: the demo's ear
-sits on the camera focus and not on the muzzle, and the near mics are dry enough to
-sound indoors. The mid takes carry the range's slapback, which is what a shot on a
-street has - a rifle is still at -20 dB a full second after the report.
+library. It used to be the Free Firearm Sound Library - real outdoor recordings, two
+mic distances, a rifle still ringing at -20 dB a second after the report. Since
+2026-09-02 it is the Krotos pack instead, and the two could not be less alike: these
+are *designed* sounds, dry, over in a third of a second, with no room on them at all
+and most of their weight under 120 Hz. What they have that the recordings did not is
+size - they are built to be the loudest thing on a soundtrack, and the bake keeps
+them that way.
 
-Individual shots inside each multi-shot take are found by transient search and then
-read off by hand into the manifest. Each is cut to 2.2 s or to whatever room the next
-report leaves it, whichever is shorter, then trimmed again to where its envelope
-falls 45 dB under its peak. That is why a burst weapon ends up with a couple of
-stubby variants among its long ones - which is exactly what a burst sounds like - and
-why the submachine guns come out around 1.5 s while the AK keeps the full 2.2.
+Each take is a string of fire rather than one report. The individual shots are found
+by transient search and read off by hand into the manifest, together with a window
+short of the next shot's attack - 0.19 s for the rapid fire, 0.5 s for the SPAS-12 -
+so no variant carries a second report in its tail. A shot with only 70 ms behind it
+cannot be lifted out of its burst and is left in it, which is why the rapid fire
+yields four variants out of twenty-two rounds.
 
-The crews carry pistols in the demo today, so most of what you hear is the .45 and
-the .38. The other four sets are wired and waiting on the armoury.
+The crews carry pistols in the demo today, so most of what you hear is the handgun
+pool. The other four sets are wired and waiting on the armoury.
 
 **Still no siren of any kind.** `siren_loop` is synthesized: a Federal Signal style wail,
 which is the American electronic siren of the period - a 4.8 s sweep between 700 and
