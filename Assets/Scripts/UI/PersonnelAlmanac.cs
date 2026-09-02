@@ -284,6 +284,14 @@ namespace LivingCity.UI
         readonly RectTransform[] tabRects = new RectTransform[TabNames.Length];
 
         PersonnelDirector director;
+
+        /// <summary>The campaign day the book is turned to, which the wage table needs
+        /// for a man's service premium (Outfit.Wages.TenureBonus). Read off the roster
+        /// rather than the clock, because the roster is what every page here already
+        /// holds and the two are written through together at the day tick.</summary>
+        int RosterDay => director != null && director.Roster != null
+            ? director.Roster.Day
+            : 0;
         OutfitDirector outfit;
         Ambient.CityClock cityClock;
 
@@ -1584,10 +1592,23 @@ namespace LivingCity.UI
             var perDay = Outfit.Wages.DailyPayroll(director.Roster);
             if (railPayroll)
                 railPayroll.text = LedgerText.Cash(perDay) + " / day";
+
+            // WAGE-003. A short night is not a quiet one: the rail says how many men
+            // are standing there unpaid before the player has to go looking for it.
+            var unpaid = Outfit.Wages.UnpaidCount(director.Roster);
             if (railPayrollNote)
-                railPayrollNote.text = perDay > 0
-                    ? "paid at midnight, worked or not"
-                    : "nobody is drawing pay";
+            {
+                railPayrollNote.text = unpaid > 0
+                    ? "SHORT " + LedgerText.Cash(
+                          Outfit.Wages.UnpaidWages(director.Roster)) + " · " +
+                      unpaid + (unpaid == 1 ? " man unpaid" : " men unpaid")
+                    : perDay > 0
+                        ? "paid at midnight, worked or not"
+                        : "nobody is drawing pay";
+                railPayrollNote.color = unpaid > 0
+                    ? LedgerStyle.RailRed
+                    : LedgerStyle.RailNote;
+            }
         }
 
         void RefreshRailTiles()
@@ -2371,7 +2392,7 @@ namespace LivingCity.UI
                     ? LedgerText.CrewName(lieutenant.Surname) : "a crew";
             }
             return member.FullName + " · " + LedgerText.AssignmentLine(post, crewName) +
-                   " · " + LedgerText.Cash(Outfit.Wages.WageFor(member)) + " a day";
+                   " · " + LedgerText.Cash(Outfit.Wages.WageFor(member, RosterDay)) + " a day";
         }
 
         /// <summary>The wire runs, and the source lamp blinks with it. Both are written

@@ -614,9 +614,12 @@ namespace RoadDemo
                 // walking ledger. Counting that same parked body here a second time at
                 // the wider live-traffic berth makes a route proved at CrewTravelRadius
                 // impossible for the feet to traverse. Moving/temporarily stopped road
-                // users retain the full traffic berth; only a StoodCar whose fixed body
-                // is actually present is already answered by OnGround.
-                if (u is StoodCar && OnGround(c, 0f)) continue;
+                // users retain the full traffic berth. Every StoodCar producer first
+                // registers that same measured body in the fixed walking ledger; its
+                // transform pivot is not necessarily inside those renderer bounds, so
+                // probing the pivot before skipping it can accidentally count the car
+                // twice with two different centres and two different footprints.
+                if (u is StoodCar) continue;
                 var f = u.RoadForward;
                 f.y = 0f;
                 var fwd = f.sqrMagnitude > 1e-4f ? new Vector2(f.x, f.z).normalized : Vector2.right;
@@ -879,20 +882,33 @@ namespace RoadDemo
             TryClearStandingSpot(wanted, radius, connectedTo, true,
                 connectedTo, true, out spot, reach);
 
-        /// <summary>Repair the narrow numerical shell in which a route endpoint rejects
-        /// a walker's full travel footprint although his centre is not inside the prop.
-        /// This is deliberately fallible and is intended only after route construction
-        /// has failed: ordinary near-wall walking is not relocated. The replacement must
-        /// be clear at the route radius and joined to the old centre by a chord clear at
+        /// <summary>Whether a failed route start is eligible for a local repair. Besides
+        /// the narrow clearance shell, a radius-clear point can sit in a corner pocket
+        /// which sees no lattice anchor. A true centre overlap is never teleported.</summary>
+        internal static bool RouteStartNeedsRecoveryModel(bool clearanceBlocked,
+            bool centreOverlapping, bool hasValidator, bool validatorAccepts) =>
+            !centreOverlapping &&
+            (clearanceBlocked || (hasValidator && !validatorAccepts));
+
+        /// <summary>Repair a failed route endpoint whose centre is physically free but
+        /// whose full footprint or optional route-anchor validator rejects it. This is
+        /// deliberately fallible and is intended only after route construction has
+        /// failed: ordinary near-wall walking is not relocated. The replacement must be
+        /// clear at the route radius and joined to the old centre by a chord clear at
         /// the physical-overlap probe, so the correction cannot jump through a wall.</summary>
         internal static bool TryClearRouteStart(Vector3 wanted, float radius,
-            Vector3 toward, out Vector3 spot, float reach = 2.5f)
+            Vector3 toward, out Vector3 spot, float reach = 2.5f,
+            System.Predicate<Vector3> accepts = null)
         {
             spot = wanted;
             radius = Mathf.Max(OverlapProbeRadius, radius);
             reach = Mathf.Max(0f, reach);
-            if (!InCity(wanted) || !Standing(wanted, radius) ||
-                Standing(wanted, OverlapProbeRadius)) return false;
+            if (!InCity(wanted)) return false;
+            bool centreOverlapping = Standing(wanted, OverlapProbeRadius);
+            bool clearanceBlocked = Standing(wanted, radius);
+            bool validatorAccepts = accepts == null || accepts(wanted);
+            if (!RouteStartNeedsRecoveryModel(clearanceBlocked, centreOverlapping,
+                    accepts != null, validatorAccepts)) return false;
 
             var forward = toward - wanted;
             forward.y = 0f;
@@ -915,7 +931,8 @@ namespace RoadDemo
                     var candidate = wanted + dir * ring;
                     candidate.y = wanted.y;
                     if (!InCity(candidate) || Standing(candidate, radius) ||
-                        BlocksStanding(wanted, candidate, OverlapProbeRadius)) continue;
+                        BlocksStanding(wanted, candidate, OverlapProbeRadius) ||
+                        (accepts != null && !accepts(candidate))) continue;
 
                     var chord = candidate - wanted;
                     chord.y = 0f;

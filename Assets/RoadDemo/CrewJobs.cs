@@ -545,6 +545,12 @@ namespace RoadDemo
             return lead;
         }
 
+        /// <summary>The crew a job at this address finds to put its hands on: ANY
+        /// house's but the one that sent it (D23, row 8, the user's word of
+        /// 2026-09-03). It used to skip house zero, so a family at war with another
+        /// family could file an Assault at a street the player's crew was standing in
+        /// and find nothing to hit - and the player was the one man in the city nobody's
+        /// order could name. Families take each other on, and they take us on.</summary>
         static DemoCrews.Unit NearestRival(DemoCrews crews, DemoCrews.Unit unit, Job job)
         {
             if (!job.HasPlace)
@@ -556,7 +562,7 @@ namespace RoadDemo
 
             foreach (var other in crews.Units)
             {
-                if (other == null || other == unit || other.Faction == 0 ||
+                if (other == null || other == unit || other.Faction == unit.Faction ||
                     other.IsPolice || other.Wiped)
                     continue;
 

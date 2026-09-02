@@ -69,8 +69,13 @@ namespace LivingCity.UI
             int roundStops, int roundCarried, string roundCollectorName,
             int owed, int inTheBag, int bankedThisWeek,
             int lastRoundDay, int lastRoundBanked, int lastRoundShort,
-            int doorsNeedingAnswer, int holdouts)
+            int doorsNeedingAnswer, int holdouts,
+            int collectorId = -1, string collectorName = "",
+            bool collectorNamedByBoss = false)
         {
+            CollectorId = collectorId;
+            CollectorName = collectorName ?? "";
+            CollectorNamedByBoss = collectorNamedByBoss;
             HasResponsible = hasResponsible;
             ResponsibleName = responsibleName ?? "";
             ResponsibleCrewId = responsibleCrewId;
@@ -142,6 +147,43 @@ namespace LivingCity.UI
 
         /// <summary>Refused + Wavering count (LEAN ON THE HOLDOUTS).</summary>
         public int Holdouts { get; }
+
+        /// <summary>THE BAG MAN (GAN-262): the one hood of the responsible crew who
+        /// carries its bag, -1 when nobody does.</summary>
+        public int CollectorId { get; }
+
+        public string CollectorName { get; }
+
+        /// <summary>Whether the boss named him from the ledger, as against the
+        /// lieutenant handing him the bag himself.</summary>
+        public bool CollectorNamedByBoss { get; }
+    }
+
+    /// <summary>One hood of a crew, as the bag menu lists him: who he is, how good a
+    /// bag man he would make, and where he stands today.</summary>
+    public readonly struct CrewHandView
+    {
+        public CrewHandView(int id, string name, int fitnessHalfSteps, bool walksTheStreet,
+            bool carries)
+        {
+            Id = id;
+            Name = name ?? "";
+            FitnessHalfSteps = fitnessHalfSteps;
+            WalksTheStreet = walksTheStreet;
+            Carries = carries;
+        }
+
+        public int Id { get; }
+        public string Name { get; }
+
+        /// <summary>CollectorChoice.Fitness: three trades summed, 6..30.</summary>
+        public int FitnessHalfSteps { get; }
+
+        /// <summary>One of the men in the crew's street line today.</summary>
+        public bool WalksTheStreet { get; }
+
+        /// <summary>He has the bag now.</summary>
+        public bool Carries { get; }
     }
 
     public interface IBlockRacketSource
@@ -149,6 +191,10 @@ namespace LivingCity.UI
         bool TryGetBlock(TerritoryBlockId blockId, out BlockRacketView view);
         void CollectDoorStandings(TerritoryBlockId blockId, List<DoorStanding> into);
         bool IsCollector(int characterId);
+
+        /// <summary>Every hood of the crew, in the crew's own order, for the bag
+        /// menu (GAN-262).</summary>
+        void CollectCrewHoods(int crewId, List<CrewHandView> into);
 
         /// <summary>The block a man is walking a round on, or invalid. WHO STANDS HERE
         /// prints "on the round · &lt;block&gt;".</summary>
@@ -171,8 +217,21 @@ namespace LivingCity.UI
         /// <summary>"" on success, else the refusal.</summary>
         string SetPolicy(int crewId, CrewPolicy policy);
 
-        /// <summary>"" on success, else the refusal.</summary>
+        /// <summary>"" on success, else the refusal. On: the man is named for his own
+        /// crew's bag; off: the bag is taken off him and left with nobody.</summary>
         string SetCollector(int characterId, bool on);
+
+        /// <summary>THE BOSS NAMES THE BAG MAN for a crew (GAN-262) - one of its own
+        /// hoods. "" on success, else the refusal.</summary>
+        string NameCollector(int crewId, int hoodId);
+
+        /// <summary>The lieutenant hands the bag to one of his own, as well as his
+        /// Organization lets him. "" on success, else the refusal.</summary>
+        string LetLieutenantPick(int crewId);
+
+        /// <summary>The bag comes off him and stays with nobody until the boss says
+        /// otherwise. "" on success, else the refusal.</summary>
+        string TakeOffTheBag(int hoodId);
     }
 
     /// <summary>The one place the page reads from and acts through. The mechanics half
@@ -228,6 +287,7 @@ namespace LivingCity.UI
         {
             collectors.Clear();
             policies.Clear();
+            namedByBoss.Clear();
             version = 0;
         }
 
@@ -267,25 +327,102 @@ namespace LivingCity.UI
             var crewId = (int)(hash % 4u);
             var owed = 120 + (int)(hash % 9u) * 60;
 
+            var bagMan = BagManOf(crewId);
             view = shape switch
             {
                 0 => new BlockRacketView(
                     true, "Dutch Kaminski", crewId, PolicyOf(crewId), 4, "Thursdays", 2,
                     true, 3, 7, 410, "Dutch Kaminski",
                     owed, 410, 1240,
-                    5, 980, 1, 3, 2),
+                    5, 980, 1, 3, 2,
+                    bagMan, NameOf(bagMan), bagMan >= 0 && namedByBoss.Contains(bagMan)),
                 1 => new BlockRacketView(
                     true, "Sal Petrosino", crewId, PolicyOf(crewId), -1, "", 0,
                     false, 0, 0, 0, "",
                     owed, 0, 0,
-                    0, 0, 0, 4, 3),
+                    0, 0, 0, 4, 3,
+                    bagMan, NameOf(bagMan), bagMan >= 0 && namedByBoss.Contains(bagMan)),
                 _ => new BlockRacketView(
                     true, "Frank Bevilacqua", crewId, PolicyOf(crewId), 1, "Mondays", 1,
                     false, 0, 0, 0, "",
                     owed, 0, 860,
-                    3, 720, 0, 1, 1),
+                    3, 720, 0, 1, 1,
+                    bagMan, NameOf(bagMan), bagMan >= 0 && namedByBoss.Contains(bagMan)),
             };
             return true;
+        }
+
+        // The stub's crews: four invented hoods to a crew, ids crewId*10+1..4, so the
+        // bag menu has rows to show and a reviewer can name one and see it stick.
+        static readonly string[] StubHoods =
+            { "Eddie Falco", "Tony Marsh", "Carmine Vella", "Lou Brandt" };
+
+        static readonly int[] StubFitness = { 24, 18, 27, 12 };
+
+        readonly HashSet<int> namedByBoss = new HashSet<int>();
+
+        static string NameOf(int hoodId) =>
+            hoodId >= 0 ? StubHoods[hoodId % StubHoods.Length] : "";
+
+        int BagManOf(int crewId)
+        {
+            for (var h = 1; h <= StubHoods.Length; h++)
+                if (IsCollector(crewId * 10 + h))
+                    return crewId * 10 + h;
+            return -1;
+        }
+
+        public void CollectCrewHoods(int crewId, List<CrewHandView> into)
+        {
+            into?.Clear();
+            if (into == null || crewId < 0)
+                return;
+            for (var h = 1; h <= StubHoods.Length; h++)
+            {
+                var id = crewId * 10 + h;
+                into.Add(new CrewHandView(id, StubHoods[h - 1], StubFitness[h - 1],
+                    walksTheStreet: !IsCollector(id), carries: IsCollector(id)));
+            }
+        }
+
+        public string NameCollector(int crewId, int hoodId)
+        {
+            if (hoodId / 10 != crewId)
+                return "he is not one of that lieutenant's men";
+            for (var h = 1; h <= StubHoods.Length; h++)
+                collectors[crewId * 10 + h] = false;
+            collectors[hoodId] = true;
+            namedByBoss.Add(hoodId);
+            version++;
+            Debug.Log("[BlockRacketSeam stub] " + NameOf(hoodId) + " named for crew " +
+                      crewId + "'s bag");
+            return "";
+        }
+
+        public string LetLieutenantPick(int crewId)
+        {
+            // The stub's lieutenant is a four-star organizer: the fittest man.
+            var best = -1;
+            for (var h = 1; h <= StubHoods.Length; h++)
+                if (best < 0 || StubFitness[h - 1] > StubFitness[best - 1])
+                    best = h;
+            for (var h = 1; h <= StubHoods.Length; h++)
+                collectors[crewId * 10 + h] = false;
+            collectors[crewId * 10 + best] = true;
+            namedByBoss.Remove(crewId * 10 + best);
+            version++;
+            Debug.Log("[BlockRacketSeam stub] the lieutenant handed crew " + crewId +
+                      "'s bag to " + StubHoods[best - 1]);
+            return "";
+        }
+
+        public string TakeOffTheBag(int hoodId)
+        {
+            collectors[hoodId] = false;
+            namedByBoss.Remove(hoodId);
+            version++;
+            Debug.Log("[BlockRacketSeam stub] the bag is off " + NameOf(hoodId));
+            return "";
         }
 
         CrewPolicy PolicyOf(int crewId) =>

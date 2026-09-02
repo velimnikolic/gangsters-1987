@@ -32,7 +32,11 @@ namespace RoadDemo
         [Min(0)] public int pedestrianCount = 100;
         public bool police = true;
         [Min(0)] public int policeBeatPairs = 3;
-        [Range(0, 20)] public int rivalCrews = 6;
+        // EVERY FAMILY IS ON THE STREET (RIVAL-008, the user's word of 2026-09-03).
+        // Six of them stood and fourteen ran on paper while the physical count was
+        // waiting to be measured; all twenty stand now, and how many CORNERS they hold
+        // between them is read from the size of the city (RoadDemoBuilder).
+        [Range(0, 20)] public int rivalCrews = 20;
         [Range(0, 4)] public int rivalHoods = 3;
 
         [Header("Day")]

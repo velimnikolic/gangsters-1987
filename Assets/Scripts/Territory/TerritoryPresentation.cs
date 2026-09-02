@@ -344,7 +344,7 @@ namespace LivingCity.Territory
                 case TerritoryDoorNews.Threatened:
                     return "WE LEANED ON THE OWNER OF " + name;
                 case TerritoryDoorNews.Wrecked:
-                    return "THE FRONT OF " + name + " WENT IN";
+                    return "WE SMASHED UP " + name;
                 case TerritoryDoorNews.Beaten:
                     return "SOMEBODY WAS PUT ON THE GROUND AT " + name;
                 case TerritoryDoorNews.StoppedPaying:

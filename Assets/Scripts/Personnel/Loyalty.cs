@@ -75,6 +75,102 @@ namespace LivingCity.Personnel
         /// owed - at Ambition 100 that is another twenty points off.</summary>
         public const int StingFromAmbitionPercent = 20;
 
+        // ---------------------------------------------------------------- GAN-245
+
+        /// <summary>
+        /// WHAT SELLING A MAN COSTS. The boss had a lieutenant inside and struck him off
+        /// rather than carry him ("jer si ga prodao"), and the whole outfit hears about
+        /// it - hardest in the crew that answered to him, then every other lieutenant
+        /// who has just learned what he is worth, then everybody else.
+        ///
+        /// The crew's own cut is softened by a man's Discipline the same way a
+        /// transfer's reset is (<see cref="CarryFromDisciplinePercent"/>): a steady man
+        /// takes the news as news, a wild one takes it personally.
+        /// </summary>
+        public const int CutLooseCrewHit = 25;
+
+        /// <summary>What every OTHER lieutenant takes off it. They are the men it could
+        /// happen to next.</summary>
+        public const int CutLooseLieutenantHit = 10;
+
+        /// <summary>What the rest of the outfit takes off it.</summary>
+        public const int CutLooseOutfitHit = 5;
+
+        /// <summary>Cutting a HOOD loose is a smaller thing and is felt as one: his own
+        /// crew notices, the rest of the city barely does.</summary>
+        public const int CutLooseHoodCrewHit = 10;
+
+        /// <summary>See <see cref="CutLooseHoodCrewHit"/>.</summary>
+        public const int CutLooseHoodOutfitHit = 2;
+
+        /// <summary>What standing by a man inside is worth a week, to the crew whose
+        /// leader it is. One point: it is not a strategy, it is the absence of a
+        /// betrayal, and it takes a month of it to undo one sale.</summary>
+        public const int StoodByGain = 1;
+
+        /// <summary>What a crew feels when its leader is inside AND his envelope was
+        /// empty - on top of the ordinary unpaid hit. The one thing worse than selling
+        /// a man is keeping him on the books and not paying him while he does your
+        /// time.</summary>
+        public const int InsideUnpaidLoss = 3;
+
+        /// <summary>
+        /// What one man actually takes off a cut-loose, given the outfit-wide figure.
+        /// A steady man hears it as news about the outfit; a wild one hears it as news
+        /// about himself, and the difference is his Discipline at exactly the weight a
+        /// transfer's carry uses (<see cref="CarryFromDisciplinePercent"/>) - one idea,
+        /// one constant.
+        /// </summary>
+        public static int CutLooseHit(Character man, int fullHit)
+        {
+            if (man == null || fullHit <= 0)
+                return 0;
+            var steadiness = Personality.Get(man, PersonalityTrait.Discipline);
+            var softened = fullHit -
+                           fullHit * steadiness * CarryFromDisciplinePercent / 10_000;
+            return softened < 1 ? 1 : softened;
+        }
+
+        /// <summary>
+        /// The day his rank last changed, as his file would answer it.
+        ///
+        /// <see cref="Character.RankSince"/> is stamped on every rank change and left
+        /// at zero on a man who has never had one - so a hood who has been a hood
+        /// since the day he came on would read as having been parked since the founding
+        /// of the city. He has been exactly what he is since he SIGNED, and the file
+        /// already knows that day (<see cref="Career.JoinedDay"/>), so it is read from
+        /// there rather than stored twice.
+        /// </summary>
+        public static int RankSinceDay(Character man)
+        {
+            if (man == null)
+                return 0;
+            return man.RankSince > 0 ? man.RankSince : Career.JoinedDay(man);
+        }
+
+        /// <summary>How long he has been exactly what he is, in days. THE figure
+        /// <see cref="Drift"/> is fed and the one the ledger prints, so the page and
+        /// the arithmetic can never disagree about him.</summary>
+        public static int TimeInRank(Character man, int today)
+        {
+            var days = today - RankSinceDay(man);
+            return days > 0 ? days : 0;
+        }
+
+        /// <summary>
+        /// He is ambitious enough to mind, and he has been in the same job long enough
+        /// to. This is exactly the pair <see cref="Drift"/> charges <see cref="ParkedLoss"/>
+        /// a week for, read out loud so a page can say WHY a good lieutenant is souring
+        /// - which is a decision the player could have acted on.
+        ///
+        /// It never acts. Drift charges off its own arithmetic and would charge the
+        /// same man the same points if nothing ever printed this.
+        /// </summary>
+        public static bool IsParked(Character man, int today) =>
+            man != null && !man.Gone &&
+            Personality.Get(man, PersonalityTrait.Ambition) > AmbitionFloor &&
+            TimeInRank(man, today) > ParkedDays;
+
         /// <summary>
         /// He answers to somebody new. Loyalty resets toward neutral, carrying only a
         /// fraction of what he had - and the carry is his own discipline, not his old
@@ -116,10 +212,16 @@ namespace LivingCity.Personnel
         ///
         /// superiorIsOverCapacity comes from RANK-001 - a lieutenant holding more men
         /// than he can lead is a lieutenant whose men feel it.
+        ///
+        /// leaderInside / leaderPaid are GAN-245's other side: standing by a man the
+        /// city has taken is worth something to the men who watch you do it, and
+        /// standing by him without paying him is worth rather more than nothing in the
+        /// wrong direction.
         /// </summary>
         public static void Drift(Character man, bool hasSuperior,
             bool superiorIsOverCapacity, int payGap, int day, int timeInRank,
-            List<PersonalityChange> changes, List<Incident> incidents)
+            List<PersonalityChange> changes, List<Incident> incidents,
+            bool leaderInside = false, bool leaderPaid = true)
         {
             if (man == null || man.Gone || !hasSuperior)
                 return;
@@ -140,6 +242,18 @@ namespace LivingCity.Personnel
             if (payGap <= 0)
                 RosterOps.NudgePersonality(man, PersonalityTrait.Loyalty, PaidOnTimeGain,
                     "paid the rate, week after week", changes);
+
+            // GAN-245: the men can see who the boss carries and who he does not.
+            if (leaderInside)
+            {
+                if (leaderPaid)
+                    RosterOps.NudgePersonality(man, PersonalityTrait.Loyalty, StoodByGain,
+                        "the boss is standing by a man inside", changes);
+                else
+                    RosterOps.NudgePersonality(man, PersonalityTrait.Loyalty,
+                        -InsideUnpaidLoss,
+                        "their man is inside and his envelope was empty", changes);
+            }
 
             // Crossing DOWN through the watch band is the one swing worth a line in
             // the paper: it is the last warning before LOY-002's arithmetic starts

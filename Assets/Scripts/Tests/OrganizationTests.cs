@@ -26,7 +26,216 @@ namespace LivingCity.Tests
             FilingOfficeAnswersOnlyAfterItsDelay(failures);
             FilingOfficeIsWhereCapacityIsHard(failures);
             OnlyAHoodInACrewCarriesTheBag(failures);
+            TheBagIsOneMansAndTheLieutenantHandsIt(failures);
             return failures;
+        }
+
+        /// <summary>
+        /// GAN-262. One bag to a crew; the boss names any of the lieutenant's men for it
+        /// or the lieutenant hands it out himself, as well as his Organization lets him;
+        /// the boss's ruling stands until he changes it, and the lieutenant only fills a
+        /// gap the boss has not spoken on.
+        /// </summary>
+        static void TheBagIsOneMansAndTheLieutenantHandsIt(List<string> failures)
+        {
+            // The four bands, and the clamp that makes a crew of one always yield him.
+            if (CollectorChoice.PickRank(8, 4) != 0 || CollectorChoice.PickRank(10, 1) != 0)
+                failures.Add("BAG: a four-star organizer did not reach for the best man.");
+            if (CollectorChoice.PickRank(6, 4) != 1 || CollectorChoice.PickRank(7, 1) != 0)
+                failures.Add("BAG: a three-star organizer did not reach for the second man.");
+            if (CollectorChoice.PickRank(4, 4) != 2 || CollectorChoice.PickRank(5, 3) != 1)
+                failures.Add("BAG: a two-star organizer did not reach for the middle man.");
+            if (CollectorChoice.PickRank(2, 4) != 3 || CollectorChoice.PickRank(3, 1) != 0)
+                failures.Add("BAG: a one-star organizer did not reach for the worst man.");
+            if (CollectorChoice.PickRank(8, 0) != -1)
+                failures.Add("BAG: an empty crew produced a pick.");
+
+            var roster = RosterSeeder.GenerateStaffed(31);
+            var crew = roster.Crews[0];
+            var lieutenant = roster.Find(crew.LieutenantId);
+            // Four men to the crew, whatever the seeder left it holding - the bands
+            // below are written against a roll of four.
+            var draw = new System.Random(262);
+            while (crew.HoodIds.Count < 4)
+            {
+                var recruit = RosterSeeder.Recruit(roster, draw);
+                if (!RosterOps.AssignToCrew(roster, recruit.Id, crew.Id).Ok)
+                    break;
+            }
+            if (crew.HoodIds.Count != 4)
+            {
+                failures.Add("BAG: the fixture crew holds " + crew.HoodIds.Count +
+                             " hoods, not four.");
+                return;
+            }
+
+            // EVERY MAN LEVEL AT THE FLOOR, and only their greed apart. SetHalfSteps
+            // caps at each man's own POTENTIAL, so a fixture that writes a ladder of
+            // skills gets whatever his ceilings allow and tests nothing; the floor is
+            // the one value it can never refuse. The order is then the greed tiebreak,
+            // in the order the men are named here.
+            var floor = AttributeScale.MinHalfSteps;
+            for (var i = 0; i < crew.HoodIds.Count; i++)
+            {
+                var hood = roster.Find(crew.HoodIds[i]);
+                hood.SetHalfSteps(CharacterAttribute.Streetwise, floor);
+                hood.SetHalfSteps(CharacterAttribute.Persuasion, floor);
+                hood.SetHalfSteps(CharacterAttribute.Awareness, floor);
+                hood.SetPotential(CharacterAttribute.Streetwise, 100);
+                hood.SetPotential(CharacterAttribute.Persuasion, 100);
+                hood.SetPotential(CharacterAttribute.Awareness, 100);
+                hood.Greed = 10 + i * 10;
+                hood.Status = CharacterStatus.Active;
+                hood.Duty = Duty.None;
+            }
+            // His own ceiling would otherwise hold the lieutenant at whatever
+            // Organization the seeder rolled him, and every band below would read the
+            // same man.
+            lieutenant.SetPotential(CharacterAttribute.Organization, 100);
+            var best = crew.HoodIds[0];
+            var second = crew.HoodIds[1];
+            var third = crew.HoodIds[2];
+            var worst = crew.HoodIds[3];
+
+            lieutenant.SetHalfSteps(CharacterAttribute.Organization, 10);
+            if (CollectorChoice.Pick(roster, crew) != best)
+                failures.Add("BAG: the organizer did not hand the bag to his best man.");
+            lieutenant.SetHalfSteps(CharacterAttribute.Organization, 6);
+            if (CollectorChoice.Pick(roster, crew) != second)
+                failures.Add("BAG: a three-star lieutenant did not hand it to his second man.");
+            lieutenant.SetHalfSteps(CharacterAttribute.Organization, 4);
+            if (CollectorChoice.Pick(roster, crew) != third)
+                failures.Add("BAG: a two-star lieutenant did not hand it to a middling man.");
+            lieutenant.SetHalfSteps(CharacterAttribute.Organization, 2);
+            if (CollectorChoice.Pick(roster, crew) != worst)
+                failures.Add("BAG: a one-star lieutenant did not hand it to his worst man.");
+            lieutenant.SetHalfSteps(CharacterAttribute.Organization, 10);
+
+            // SKILL BEATS GREED: the greediest of the four, raised above the rest,
+            // is taken ahead of them - greed only breaks a tie.
+            var greedy = roster.Find(worst);
+            greedy.SetHalfSteps(CharacterAttribute.Streetwise, 10);
+            greedy.SetHalfSteps(CharacterAttribute.Persuasion, 10);
+            greedy.SetHalfSteps(CharacterAttribute.Awareness, 10);
+            if (CollectorChoice.Fitness(greedy) <= 3 * floor)
+                failures.Add("BAG: the fixture could not raise a man above the floor.");
+            else if (CollectorChoice.Pick(roster, crew) != worst)
+                failures.Add("BAG: greed was read ahead of the trades that carry a bag.");
+            greedy.SetHalfSteps(CharacterAttribute.Streetwise, floor);
+            greedy.SetHalfSteps(CharacterAttribute.Persuasion, floor);
+            greedy.SetHalfSteps(CharacterAttribute.Awareness, floor);
+
+            // One bag to a crew: marking the second man takes it off the first.
+            RosterOps.SetDuty(roster, best, Duty.Collector);
+            RosterOps.SetDuty(roster, second, Duty.Collector);
+            var carried = new List<Character>();
+            RosterOps.CollectorsOf(roster, crew.Id, carried);
+            if (roster.Find(best).Duty != Duty.None || carried.Count != 1 ||
+                RosterOps.CollectorOf(roster, crew.Id) != second)
+                failures.Add("BAG: two men of one crew were left holding the bag.");
+
+            // The boss names one of the lieutenant's OWN men, and nobody else's. The
+            // stranger is another crew's hood where the fixture has one, else a man
+            // out of the pool - either way he is not on this lieutenant's roll.
+            var stranger = -1;
+            for (var c = 1; c < roster.Crews.Count && stranger < 0; c++)
+                if (roster.Crews[c].HoodIds.Count > 0)
+                    stranger = roster.Crews[c].HoodIds[0];
+            if (stranger < 0)
+            {
+                var pooled = new List<int>();
+                roster.PoolIds(pooled);
+                stranger = pooled.Count > 0
+                    ? pooled[0]
+                    : RosterSeeder.Recruit(roster, draw).Id;
+            }
+            if (RosterOps.NameCollector(roster, crew.Id, stranger).Ok)
+                failures.Add("BAG: another crew's man was named for this crew's bag.");
+            if (!RosterOps.NameCollector(roster, crew.Id, third).Ok ||
+                RosterOps.CollectorOf(roster, crew.Id) != third || !crew.BagNamedByBoss)
+                failures.Add("BAG: the boss's own naming did not take.");
+
+            // A lieutenant with nobody on his feet has nobody to hand it to.
+            for (var i = 0; i < crew.HoodIds.Count; i++)
+                roster.Find(crew.HoodIds[i]).Status = CharacterStatus.Jailed;
+            if (RosterOps.LetLieutenantPick(roster, crew.Id, out _).Ok)
+                failures.Add("BAG: a crew with every man inside still produced a bag man.");
+            for (var i = 0; i < crew.HoodIds.Count; i++)
+                roster.Find(crew.HoodIds[i]).Status = CharacterStatus.Active;
+
+            // The morning pass: only a crew with ground on the paper gets a bag man.
+            for (var c = 0; c < roster.Crews.Count; c++)
+            {
+                roster.Crews[c].BagNamedByBoss = false;
+                for (var i = 0; i < roster.Crews[c].HoodIds.Count; i++)
+                    roster.Find(roster.Crews[c].HoodIds[i]).Duty = Duty.None;
+            }
+            roster.Organization.BlockResponsibilities.Add(
+                new OrganizationBlockResponsibility(BlockA, crew.LieutenantId));
+            var handed = new List<(int crewId, int hoodId)>();
+            RosterOps.TendCollectors(roster, handed);
+            if (handed.Count != 1 || handed[0].crewId != crew.Id || handed[0].hoodId != best ||
+                RosterOps.CollectorOf(roster, crew.Id) != best ||
+                (roster.Crews.Count > 1 &&
+                 RosterOps.CollectorOf(roster, roster.Crews[1].Id) != -1))
+                failures.Add("BAG: the morning pass handed the bag to the wrong crews.");
+
+            // The boss's man keeps it through a sentence; the lieutenant's own pick
+            // does not - he hands it on to a man who can walk.
+            RosterOps.NameCollector(roster, crew.Id, second);
+            roster.Find(second).Status = CharacterStatus.Jailed;
+            RosterOps.TendCollectors(roster, handed);
+            if (handed.Count != 0 || RosterOps.CollectorOf(roster, crew.Id) != second)
+                failures.Add("BAG: the boss's man lost the bag in a cell.");
+            crew.BagNamedByBoss = false;
+            RosterOps.TendCollectors(roster, handed);
+            if (handed.Count != 1 || RosterOps.CollectorOf(roster, crew.Id) != best ||
+                roster.Find(second).Duty != Duty.None)
+                failures.Add("BAG: the lieutenant left his bag with a man in a cell.");
+            roster.Find(second).Status = CharacterStatus.Active;
+
+            // A RULING OUTLIVES A SENTENCE, NOT A MAN. The boss's man in a cell keeps
+            // the bag (above); the boss's man who is DEAD does not, or the crew would
+            // stand with a standing order naming a corpse and never collect again.
+            RosterOps.NameCollector(roster, crew.Id, second);
+            roster.Find(second).Status = CharacterStatus.Dead;
+            RosterOps.TendCollectors(roster, handed);
+            if (handed.Count != 1 || RosterOps.CollectorOf(roster, crew.Id) != best ||
+                crew.BagNamedByBoss)
+                failures.Add("BAG: a dead man's naming wedged the crew off the bag.");
+            roster.Find(second).Status = CharacterStatus.Active;
+            roster.Find(second).Duty = Duty.None;
+
+            // And a named man moved to another lieutenant is not this crew's ruling any
+            // more: the bag is handed out again here, and over there he is that crew's
+            // one bag man, whoever was carrying it for them.
+            if (roster.Crews.Count > 1)
+            {
+                var other = roster.Crews[1];
+                var theirs = other.HoodIds.Count > 0 ? other.HoodIds[0] : -1;
+                if (theirs >= 0)
+                {
+                    RosterOps.SetDuty(roster, theirs, Duty.Collector);
+                    RosterOps.NameCollector(roster, crew.Id, third);
+                    RosterOps.AssignToCrew(roster, third, other.Id);
+                    RosterOps.TendCollectors(roster, handed);
+                    if (crew.BagNamedByBoss ||
+                        RosterOps.CollectorOf(roster, crew.Id) == third)
+                        failures.Add("BAG: a man who walked out kept his old crew's bag.");
+                    if (RosterOps.CollectorOf(roster, other.Id) != third ||
+                        roster.Find(theirs).Duty != Duty.None)
+                        failures.Add("BAG: the crew he joined was left with two bag men.");
+                }
+            }
+
+            // The boss's "nobody" holds until he says LET HIM PICK.
+            RosterOps.TakeOffTheBag(roster, best);
+            RosterOps.TendCollectors(roster, handed);
+            if (handed.Count != 0 || RosterOps.CollectorOf(roster, crew.Id) != -1)
+                failures.Add("BAG: the lieutenant overruled the boss's nobody.");
+            if (!RosterOps.LetLieutenantPick(roster, crew.Id, out var picked).Ok ||
+                picked != best || crew.BagNamedByBoss)
+                failures.Add("BAG: LET HIM PICK did not give the job back to the lieutenant.");
         }
 
         /// <summary>

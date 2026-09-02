@@ -156,7 +156,7 @@ namespace BlockDemo
             // the outfit going down: TickWar counts the field itself. A car bomb run
             // outlives the crew that laid it - the charge stands, and TickCarBomb says
             // so - so that run is not failed here either.)
-            if (!onFoot && !carBombRun && _ours != null && _ours.Wiped)
+            if (!onFoot && !carBombRun && !ambush && _ours != null && _ours.Wiped)
             {
                 // TWO WHEELS: the crew standing at its own kerb being shot to pieces by
                 // the mobs it has been riding past is the game being a game, and it ends
@@ -174,7 +174,8 @@ namespace BlockDemo
                 return;
             }
 
-            if (carBombRun && State != Phase.Waiting) TickCarBomb();
+            if (ambush && State != Phase.Waiting) TickAmbush();
+            else if (carBombRun && State != Phase.Waiting) TickCarBomb();
             else if (bombRun && State != Phase.Waiting) TickBomb();
             else if (motoDriveBy && State != Phase.Waiting) TickMoto();
             else if (walkabout && State != Phase.Waiting) TickWalk();
@@ -204,6 +205,10 @@ namespace BlockDemo
             foreach (var unit in _crews.Units)
                 if (unit.Faction == 0 && !unit.Wiped) { _ours = unit; break; }
             if (_ours == null) { Give("there is no crew of the outfit in the quarter"); return; }
+
+            // THE AMBUSH: the crew is put behind something between itself and a mob,
+            // left to lie in wait, and the mob is walked into it (EPIC 28).
+            if (ambush) { StartAmbush(); return; }
 
             // THE CAR BOMB: the whole of it, on a car that is not ours. A charge is laid
             // under a rival's motor, the crew walks away, and the man it belongs to comes
@@ -413,7 +418,13 @@ namespace BlockDemo
             if (squad.Quarry == null) return;
             float gap = Vector3.Distance(squad.Ours.Position, squad.Quarry.Position);
             _crews.Select(squad.Ours);
-            if (!_crews.MarchTo(squad.Ours, squad.Quarry.Position))
+            // THE PAVEMENTS FIRST. A crew crossing town walks them and crosses at the
+            // crossings - that is what CrewAudit's roadwalk rule encodes, and on a bench
+            // that is ONE STREET (CoverDemo) a march laid straight at a mob down the
+            // road raised fifteen of them in a run. The direct way stays the fallback:
+            // a mob the pavements cannot reach is still a mob to be marched at.
+            if (!_crews.MarchTo(squad.Ours, squad.Quarry.Position, run: false, keepOffRoad: true) &&
+                !_crews.MarchTo(squad.Ours, squad.Quarry.Position))
             {
                 // nobody left of that crew to send: it is down, and TickWar buries it on
                 // the next pass. Only a crew that HAS men and still cannot be sent is a

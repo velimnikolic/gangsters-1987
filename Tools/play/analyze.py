@@ -500,7 +500,32 @@ CREW_FAULTS = ("teleport", "offcity", "strayman", "singlefile",
                "aimlow", "zebrastuck", "runnerchase", "roadwalk",
                "skate", "leftbehind", "noaim", "firewalk",
                "formationheading", "formationspread", "proppenetration",
-               "routestall", "routeorbit", "routeoverlap")
+               "routestall", "routeorbit", "routeoverlap",
+               # EPIC 28: a round from the open with a free flank on the fire line,
+               # and the ambush's own five
+               "openfire", "noambush", "nolurk", "seenfirst", "openambush", "nospring")
+
+
+def first_from_cover(rows):
+    """The number EPIC 28 is tuned on: of the men who fired at all, what share had
+    a flank in hand when their FIRST round left.
+
+    Read off the `shot` row's `fromcover`, which is the SHOOTER's own cover state at
+    the moment the round left (the row's older `cover` field is about the man being
+    shot AT and answers a different question). Only the first round each man fires is
+    counted: what is being measured is the ORDER of the two things, not how much of the
+    fight was spent behind something - CoverWatch already reports that."""
+    first_shot, from_cover = set(), set()
+    for r in rows:
+        if r.get("k") != "shot":
+            continue
+        who = r.get("from")
+        if not who or who in first_shot:
+            continue
+        first_shot.add(who)
+        if r.get("fromcover"):
+            from_cover.add(who)
+    return len(from_cover), len(first_shot)
 
 
 def crew(dirpath):
@@ -558,6 +583,11 @@ def crew(dirpath):
     print(f"   the fight    : {shots} shots, {len(hits)} hits, "
           f"{len([h for h in hits if h.get('dead')])} men down")
     print(f"   the walk     : {len(stalls)} crew walkstalls")
+    # EPIC 28's yardstick: the share of men whose FIRST round left from cover. Judged
+    # over the thirty runs of a soak and never off one of them (tally.sh sums these).
+    covered, fired = first_from_cover(rows)
+    print(f"   cover first  : {covered}/{fired} men opened up from behind something"
+          + (f" ({100.0 * covered / fired:.0f}%)" if fired else ""))
     for f in (broke + mission)[:10]:
         print(f"   FAULT {secs(f['t'])} {f.get('who', f.get('id', ''))} "
               f"{f.get('fault')}: {f.get('what')}")
@@ -671,6 +701,29 @@ def story(dirpath, every=2.0):
         print(f"   {len(hits)} hits, {len([h for h in hits if h.get('dead')])} men down")
 
 
+def cover_tally(dirpath):
+    """EPIC 28's number over a whole soak: of every man who fired at all, in every run
+    under this directory, what share had a flank in hand when his FIRST round left.
+
+    A RATE OVER RUNS AND NEVER A SEED. The cover code draws from the shared Random, so
+    one seed against another says nothing; this is the figure the epic is tuned on."""
+    import glob
+    import os
+
+    covered = fired = runs = 0
+    for d in sorted(glob.glob(os.path.join(dirpath, "run-*"))) or [dirpath]:
+        trace = os.path.join(d, "trace.jsonl")
+        if not os.path.exists(trace):
+            continue
+        runs += 1
+        c, n = first_from_cover(load(trace))
+        covered += c
+        fired += n
+    share = f" ({100.0 * covered / fired:.0f}%)" if fired else ""
+    print(f"== cover first: {covered}/{fired} men over {runs} runs{share}")
+    return 0
+
+
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:]]
     if not args:
@@ -688,6 +741,8 @@ if __name__ == "__main__":
         sys.exit(crew(path))
     if "--cover-route" in args:
         sys.exit(cover_route(path))
+    if "--cover-tally" in args:
+        sys.exit(cover_tally(path))
     if "--freeway" in args:
         sys.exit(freeway(path))
     if "--story" in args:

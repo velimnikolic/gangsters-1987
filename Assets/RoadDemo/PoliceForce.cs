@@ -166,6 +166,22 @@ namespace RoadDemo
 
         public IReadOnlyList<Precinct> Precincts => _precincts;
 
+        /// <summary>The city's one force. The ledger's own pages need to reach the
+        /// docket - a man's file has to be able to say what he is charged with and what
+        /// bail would cost - and everything else in this scene that owns city-wide
+        /// state is reachable the same way (TerritoryRuntime.Instance).</summary>
+        public static PoliceForce Instance { get; private set; }
+
+        void Awake()
+        {
+            if (Instance == null) Instance = this;
+        }
+
+        void OnDestroy()
+        {
+            if (Instance == this) Instance = null;
+        }
+
         public void Init(PoliceDispatch dispatch) => _dispatch = dispatch;
 
         /// <summary>A station house, with the strength the city authorised it.</summary>
@@ -447,22 +463,57 @@ namespace RoadDemo
                 return;
             }
 
-            // IT GOT THERE. Which ending that is depends on which leg it was: the court
-            // passes sentence, the county line hands him over to the state.
+            // IT GOT THERE. Which ending that is depends on which leg it was: at the
+            // courthouse he is TRIED, at the county line he is handed to the state.
+            //
+            // And a trial is not a sentencing (GAN-245). What comes back per man is one
+            // of three things, and the street is told which - a case thrown out for want
+            // of a witness reads nothing like a sentence, and the player who spent five
+            // days leaning on that witness has to see it. Only a man the court actually
+            // sentenced is left with a van booked for him; the ones who walked are off
+            // the city's books at the courthouse door and never ride the second leg.
+            var delivered = 0;
+            var sentenced = 0;
+            var walked = 0;
+            var dismissed = false;
             for (var r = 0; r < convoy.Riders.Count; r++)
             {
-                if (convoy.Leg == PrisonLeg.Prison) Pipeline.Delivered(convoy.Riders[r]);
-                else Pipeline.Convicted(roster, convoy.Riders[r], today);
+                var rider = convoy.Riders[r];
+                if (convoy.Leg == PrisonLeg.Prison)
+                {
+                    Pipeline.Delivered(rider);
+                    delivered++;
+                    continue;
+                }
+
+                var file = rider.CaseId >= 0 ? Pipeline.FindCase(rider.CaseId) : null;
+                Pipeline.Tried(roster, rider, today);
+                if (rider.Stage == PrisonStage.Sentenced) sentenced++;
+                else walked++;
+                if (file != null && file.Status == CaseStatus.Dismissed) dismissed = true;
+                // The wire through the one door; the BANNER is the aggregate below,
+                // because a car brings several men at once and one line per man would
+                // say the same thing four times.
+                AnnounceVerdict(roster, rider,
+                    file != null ? file.Status : CaseStatus.Tried, banner: false);
             }
             if (convoy.Riders.Count > 0)
             {
                 var director = LivingCity.Gameplay.PersonnelDirector.Instance;
                 if (director != null) director.Touch();
-                CrewOverlay.Announce(
-                    convoy.Leg == PrisonLeg.Prison
-                        ? "THE STATE HAS HIM NOW"
-                        : "THE COURT HAS PASSED SENTENCE",
-                    5f, new Color(0.55f, 0.78f, 1f));
+                if (delivered > 0)
+                    CrewOverlay.Announce("THE STATE HAS HIM NOW",
+                        5f, new Color(0.55f, 0.78f, 1f));
+                if (sentenced > 0)
+                    CrewOverlay.Announce("THE COURT HAS PASSED SENTENCE",
+                        5f, new Color(0.55f, 0.78f, 1f));
+                if (dismissed)
+                    CrewOverlay.Announce("CASE DISMISSED — NOBODY WOULD GIVE EVIDENCE",
+                        5f, new Color(0.75f, 0.95f, 0.7f));
+                else if (walked > 0)
+                    CrewOverlay.Announce(
+                        walked == 1 ? "ACQUITTED" : walked + " MEN ACQUITTED",
+                        5f, new Color(0.75f, 0.95f, 0.7f));
             }
             Release(convoy);
         }
@@ -567,6 +618,58 @@ namespace RoadDemo
         /// and it moves in exactly one place (Campaign.DayTick through OutfitDirector) -
         /// so watching the number is the day boundary, and no new event is needed to
         /// hang a replacement off.</summary>
+        readonly List<Prisoner> _forfeited = new List<Prisoner>();
+        readonly List<Prisoner> _paperTried = new List<Prisoner>();
+
+        /// <summary>What the court did to one man, said once - on the wire and over the
+        /// street. ONE door for it, because a verdict reached on paper at the day tick
+        /// and a verdict reached off the back of a convoy are the same fact and used to
+        /// be announced by only one of the two.</summary>
+        void AnnounceVerdict(LivingCity.Personnel.Roster roster, Prisoner prisoner,
+            CaseStatus status, bool banner = true)
+        {
+            if (prisoner == null) return;
+            var man = roster != null ? roster.Find(prisoner.CharacterId) : null;
+            LawWire.Verdict(man, prisoner.Stage, status);
+            if (!banner) return;
+
+            if (prisoner.Stage == PrisonStage.Sentenced)
+                CrewOverlay.Announce("THE COURT HAS PASSED SENTENCE",
+                    5f, new Color(0.55f, 0.78f, 1f));
+            else if (status == CaseStatus.Dismissed)
+                CrewOverlay.Announce("CASE DISMISSED — NOBODY WOULD GIVE EVIDENCE",
+                    5f, new Color(0.75f, 0.95f, 0.7f));
+            else
+                CrewOverlay.Announce("ACQUITTED", 5f, new Color(0.75f, 0.95f, 0.7f));
+        }
+
+        /// <summary>
+        /// THE FEAR GATE. Whether the shopkeeper who rang is still willing on the
+        /// morning of the trial - the one thing about a case only the street can
+        /// answer, so the pipeline asks through this rather than reaching into the
+        /// Territory layer itself.
+        ///
+        /// A Connected owner always turns up; anybody else keeps quiet once the family
+        /// has frightened him past Verdict.TestifyFearCap. There is no separate button
+        /// for silencing him: the crew leans on his SHOP, exactly as it always did, and
+        /// this reads what that did to him.
+        /// </summary>
+        static bool StillTalks(CourtCase file)
+        {
+            if (file == null || string.IsNullOrEmpty(file.BusinessId))
+                return true;
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime == null)
+                return true;
+
+            var businessId = new LivingCity.Territory.TerritoryBusinessId(file.BusinessId);
+            if (runtime.OwnerProfileOf(businessId).Trait ==
+                LivingCity.Territory.TerritoryOwnerTrait.Connected)
+                return true;
+            return runtime.BusinessFearOf(businessId,
+                new LivingCity.Territory.TerritoryGangId(file.GangId)) < Verdict.TestifyFearCap;
+        }
+
         void TickDay()
         {
             var today = Today();
@@ -580,8 +683,31 @@ namespace RoadDemo
             if (roster != null)
             {
                 if (Pipeline.RosterSeed == 0) Pipeline.RosterSeed = roster.Seed;
+                Pipeline.ComplainantStillTalks ??= StillTalks;
                 Pipeline.Discharged(roster);
                 CoolTheWanted(roster, today);
+
+                // BAIL IS SPENT ON THE DAY, whichever way it goes (GAN-245): a man who
+                // turns up is tried on paper with the rest of his case, and one who is
+                // hidden, out of town or told to skip forfeits the money and is looked
+                // for. Here rather than in the convoy because a bailed man is not in
+                // the back of a car - he is on the street, or he is not.
+                _forfeited.Clear();
+                _paperTried.Clear();
+                if (Pipeline.TryOnPaper(roster, today, _forfeited, _paperTried) > 0)
+                {
+                    for (var i = 0; i < _forfeited.Count; i++)
+                        LawWire.BailForfeit(roster.Find(_forfeited[i].CharacterId));
+                    for (var i = 0; i < _paperTried.Count; i++)
+                    {
+                        var paper = _paperTried[i];
+                        var file = paper.CaseId >= 0 ? Pipeline.FindCase(paper.CaseId) : null;
+                        AnnounceVerdict(roster, paper,
+                            file != null ? file.Status : CaseStatus.Tried);
+                    }
+                    var director = LivingCity.Gameplay.PersonnelDirector.Instance;
+                    if (director != null) director.Touch();
+                }
             }
             Pipeline.DayTick(today, _forTransfer);
             RunTransfers();

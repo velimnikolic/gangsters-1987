@@ -102,6 +102,18 @@ namespace LivingCity.UI
                 case IncidentKind.ReadyForACrew: return "Ready";
                 case IncidentKind.AGunForHire: return "A gun";
                 case IncidentKind.NotToBeTrusted: return "Watch him";
+                case IncidentKind.ComplaintRung: return "Complaint";
+                case IncidentKind.StatementTaken: return "Statement";
+                case IncidentKind.CaseOpened: return "On the docket";
+                case IncidentKind.WitnessWithdrawn: return "Withdrawn";
+                case IncidentKind.WitnessKilled: return "Silenced";
+                case IncidentKind.BailPosted: return "Bailed";
+                case IncidentKind.BailForfeit: return "Skipped";
+                case IncidentKind.Convicted: return "Sentenced";
+                case IncidentKind.Acquitted: return "Acquitted";
+                case IncidentKind.CaseDismissed: return "Dismissed";
+                case IncidentKind.CutLoose: return "Cut loose";
+                case IncidentKind.BagHanded: return "The bag";
                 default: return "Wire";
             }
         }
@@ -129,6 +141,8 @@ namespace LivingCity.UI
             CharacterStatus.Hospitalized => "Hospitalized",
             CharacterStatus.Dead => "Dead",
             CharacterStatus.Deserted => "Deserted",
+            CharacterStatus.Taken => "Taken",
+            CharacterStatus.CutLoose => "Cut loose",
             _ => "",
         };
 
@@ -487,6 +501,16 @@ namespace LivingCity.UI
             "The recruitment cost is invalid.";
         public const string ReasonDead = "The man is dead.";
         public const string ReasonDeserted = "The man deserted.";
+        public const string ReasonCutLoose = "The boss cut him loose.";
+
+        /// <summary>GAN-245: a man has to be inside before the boss can decline to
+        /// carry him.</summary>
+        public const string ReasonNotInside = "He is not in the city's hands.";
+
+        public const string ReasonNoCase = "There is no case against him.";
+        public const string ReasonNoCounsel = "No lawyer on the books can get him a hearing.";
+        public const string ReasonNoBail = "There is no bail on a charge like that.";
+        public const string ReasonAlreadyBailed = "He is already out on bail.";
         public const string ReasonSpecialist = "A specialist stays on retainer.";
         public const string ReasonAlreadyLieutenant = "He already runs a crew.";
         public const string ReasonNotLieutenant = "He does not run a crew.";

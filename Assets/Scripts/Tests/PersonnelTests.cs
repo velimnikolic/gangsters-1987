@@ -172,6 +172,28 @@ namespace LivingCity.Tests
             // deriving at read, and this is the assertion that keeps it that way.
             if (Wages.WageFor(man) != before + Wages.HoodPerHalfStep)
                 failures.Add("RisingWagesFollowTheStars: the wage did not follow the star.");
+
+            // WAGE-001. He is paid for his THREE BEST trades and no others: a man is
+            // hired for what he does, and getting better at a fourth thing nobody asks
+            // him for is not a raise.
+            var specialist = Make(roster, "Aldo", "Bruno");
+            for (var a = 0; a < AttributeScale.Count; a++)
+                specialist.SetHalfSteps((CharacterAttribute)a, AttributeScale.MinHalfSteps);
+            specialist.SetHalfSteps(CharacterAttribute.Combat, AttributeScale.MaxHalfSteps);
+            specialist.SetHalfSteps(CharacterAttribute.Awareness, AttributeScale.MaxHalfSteps);
+            specialist.SetHalfSteps(CharacterAttribute.Stealth, AttributeScale.MaxHalfSteps);
+
+            var top = Wages.WageFor(specialist);
+            specialist.SetHalfSteps(CharacterAttribute.Driving,
+                AttributeScale.MinHalfSteps + 1);
+            if (Wages.WageFor(specialist) != top)
+                failures.Add("RisingWagesFollowTheStars: a trade outside his best three " +
+                             "moved his envelope.");
+
+            specialist.SetHalfSteps(CharacterAttribute.Combat, AttributeScale.MaxHalfSteps - 1);
+            if (Wages.WageFor(specialist) != top - Wages.HoodPerHalfStep)
+                failures.Add("RisingWagesFollowTheStars: one of his best three moved " +
+                             "and the envelope did not follow it.");
         }
 
         static void TheLaidUpStandUpOnTheirDay(List<string> failures)

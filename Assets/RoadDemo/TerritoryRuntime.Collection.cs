@@ -39,14 +39,19 @@ namespace RoadDemo
         readonly List<RoundBody> bodies = new List<RoundBody>();
         readonly List<TerritoryRoundStop> stopScratch = new List<TerritoryRoundStop>();
 
-        /// <summary>The physical half of a round: the man who carries the bag, and where
-        /// on the ground each of its stops actually is. Same order as the round's own
-        /// stops - the ledger holds the doors as flat XZ points and the street needs a
-        /// place to march to.</summary>
+        /// <summary>The physical half of a round: the men walking it, the man who
+        /// carries the bag, and where on the ground each of its stops actually is. Same
+        /// order as the round's own stops - the ledger holds the doors as flat XZ points
+        /// and the street needs a place to march to.</summary>
         sealed class RoundBody
         {
             public TerritoryRound Round;
             public CrewWalker Collector;
+
+            /// <summary>The men walking it (GAN-262): the crew's bag unit when it has a
+            /// bag man, else the crew's own line. Every leg marches THIS unit; the
+            /// crew stays where it stands while its bag man walks.</summary>
+            public DemoCrews.Unit Walkers;
             public readonly List<Vector3> Doors = new List<Vector3>();
 
             public Vector3 Door(int index) =>
@@ -94,9 +99,11 @@ namespace RoadDemo
         }
 
         /// <summary>Opens a walk in the ledger and gives it a body on the street.
+        /// <paramref name="walkers"/> is the unit that actually marches it - a crew's
+        /// bag detachment on a collection, the whole line on a shakedown (GAN-262).
         /// </summary>
         TerritoryRound OpenRound(
-            DemoCrews.Unit unit, TerritoryGangId gang, TerritoryBlockId blockId,
+            DemoCrews.Unit walkers, TerritoryGangId gang, TerritoryBlockId blockId,
             TerritoryRoundKind kind, List<RoundStop> ordered, CrewWalker collector)
         {
             stopScratch.Clear();
@@ -106,12 +113,15 @@ namespace RoadDemo
                     new TerritoryPoint(ordered[i].Door.x, ordered[i].Door.z)));
 
             var round = roundLedger.Open(
-                gang, unit.CrewId, collector != null ? collector.CharacterId : -1,
+                gang, walkers.CrewId, collector != null ? collector.CharacterId : -1,
                 blockId, kind, stopScratch, lastGameHour);
             if (round == null)
                 return null;
 
-            var body = new RoundBody { Round = round, Collector = collector };
+            var body = new RoundBody
+            {
+                Round = round, Collector = collector, Walkers = walkers,
+            };
             for (var i = 0; i < ordered.Count; i++)
                 body.Doors.Add(ordered[i].Door);
             bodies.Add(body);
@@ -164,6 +174,130 @@ namespace RoadDemo
         {
             ownerShift = OwnerProfileOf(businessId).NerveShift;
             tierBar = TerritoryTierGuard.AcceptBar(TierOf(businessId));
+        }
+
+        // ------------------------------------------------------------------ GAN-245
+
+        /// <summary>Game hours a door the police have been round stays out of the
+        /// racket's reach. A collector who walks into a shop the afternoon a uniform
+        /// stood in it gets the excuse and nothing else - which is what makes ringing
+        /// the precinct worth a shopkeeper's while.</summary>
+        public const double ProtectedHours = 8.0;
+
+        /// <summary>The doors an officer has stood at, and the game hour each stops
+        /// being able to say so. Small and short-lived on purpose: it is a window, not
+        /// a state of the world.</summary>
+        readonly Dictionary<TerritoryBusinessId, double> underTheLaw =
+            new Dictionary<TerritoryBusinessId, double>();
+
+        /// <summary>An officer took a statement here. For the next few hours this shop
+        /// has an answer for anybody who puts a hand out.</summary>
+        public void MarkUnderTheLaw(TerritoryBusinessId businessId)
+        {
+            if (businessId.IsValid)
+                underTheLaw[businessId] = lastGameHour + ProtectedHours;
+        }
+
+        /// <summary>Whether that window is still open.</summary>
+        public bool UnderTheLaw(TerritoryBusinessId businessId) =>
+            businessId.IsValid && underTheLaw.TryGetValue(businessId, out var until) &&
+            lastGameHour < until;
+
+        /// <summary>
+        /// WHETHER HE RINGS. The one door a lean reaches the police through: his own
+        /// connections against his own fear, off the business's own stream mixed with
+        /// the day and the incident - never UnityEngine.Random, so the same city on the
+        /// same morning answers the same way twice.
+        ///
+        /// The call itself goes down StreetAlarm, which is the one channel; what
+        /// happens next is the dispatcher's (PoliceDispatch).
+        /// </summary>
+        void MaybeRingThePrecinct(
+            TerritoryGangId gangId, TerritoryBusinessId businessId)
+        {
+            if (!businessId.IsValid || !gangId.IsValid)
+                return;
+            if (!TryGetBusinessApproach(businessId, out var door))
+                return;
+
+            var owner = OwnerProfileOf(businessId);
+            var businessFear = 0f;
+            var cap = 100f;
+            if (fear != null && geography != null &&
+                geography.TryGetBusinessBlock(businessId, out var blockId))
+            {
+                businessFear = fear.BusinessFear(blockId, businessId, gangId, lastGameHour);
+                cap = fear.Config.FearCap;
+            }
+
+            var chance = LivingCity.Police.ComplaintRoll.Chance(
+                owner.Connections, businessFear, cap,
+                owner.Trait == TerritoryOwnerTrait.Connected,
+                owner.Trait == TerritoryOwnerTrait.Cowardly);
+
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            var citySeed = business != null && business.Populated ? business.CitySeed : 1987;
+            var day = (int)(lastGameHour / 24.0);
+            // A NUMBER THAT MOVES ON EVERY ATTEMPT, not on every complaint. The alarm's
+            // own ComplaintNumber only goes up when a complaint actually RINGS
+            // (StreetAlarm.Complain), so a roll that came back quiet handed the next
+            // lean on that shop the very same sample - and since leaning raises fear and
+            // lowers the chance, one quiet roll made the rest of the day
+            // deterministically safe unless some unrelated shop rang and moved the
+            // global counter. The count is per shop and per day, so one shop's leaning
+            // cannot shift another's stream either.
+            if (!LivingCity.Police.ComplaintRoll.Rings(chance,
+                    LivingCity.Police.ComplaintRoll.StreamFor(
+                        citySeed, businessId.Value, day,
+                        NextComplaintTry(businessId.Value, day))))
+                return;
+
+            var name = businessId.Value;
+            if (TryGetBusinessView(businessId, out var view))
+                name = view.BusinessName;
+            StreetAlarm.Complain(door, gangId.Value, businessId.Value, name, lastGameHour);
+        }
+
+        /// <summary>How many times each shop has been leaned on today, and which day
+        /// that is. Cleared when the day turns: the stream is keyed on the day already,
+        /// so the count only has to be unique within one.</summary>
+        readonly Dictionary<string, int> _complaintTries = new Dictionary<string, int>();
+        int _complaintTriesDay = int.MinValue;
+
+        /// <summary>The next attempt number for this shop today - 0, 1, 2 ... - which is
+        /// what the complaint roll's stream is drawn on.</summary>
+        int NextComplaintTry(string businessId, int day)
+        {
+            if (day != _complaintTriesDay)
+            {
+                _complaintTries.Clear();
+                _complaintTriesDay = day;
+            }
+            _complaintTries.TryGetValue(businessId, out var tries);
+            _complaintTries[businessId] = tries + 1;
+            return tries;
+        }
+
+        /// <summary>What one shop feels about one family right now. The trial's Fear
+        /// gate reads it (GAN-245) and so does anything else that has to ask what a
+        /// month of men in the doorway did to the man behind the counter.</summary>
+        public float BusinessFearOf(TerritoryBusinessId businessId, TerritoryGangId gangId)
+        {
+            if (fear == null || geography == null ||
+                !geography.TryGetBusinessBlock(businessId, out var blockId))
+                return 0f;
+            return fear.BusinessFear(blockId, businessId, gangId, lastGameHour);
+        }
+
+        /// <summary>Police eyes on the block this door stands in, by the hour. The one
+        /// door the STREET puts attention on a block through - an officer standing in a
+        /// shop is the only thing on the map that does it without a shot fired.</summary>
+        public void NotePoliceAttentionAt(TerritoryBusinessId businessId, float amount)
+        {
+            if (fear == null || geography == null || amount <= 0f ||
+                !geography.TryGetBusinessBlock(businessId, out var blockId))
+                return;
+            fear.NotePoliceAttention(blockId, amount, lastGameHour);
         }
 
         /// <summary>A Connected owner turns police eyes on the family that leans on him
@@ -260,6 +394,12 @@ namespace RoadDemo
             var unit = FindUnit(command.House, command.GroupId, out var refusal);
             if (unit == null)
                 return TerritoryCommandExecution.Reject(refusal);
+            // One round to a crew. The bag man's round outlives an order to the line
+            // (AbandonRound), so a second SEND while he is out has to be refused here
+            // rather than quietly stacked - in the seam's own words, so the key and
+            // the order never disagree.
+            if (RoundRunning(unit.CrewId))
+                return TerritoryCommandExecution.Reject("a round is already out");
 
             // The stops: every shop on the block that pays THIS family and owes
             // anything. The order follows the street - nearest first from where the
@@ -285,13 +425,17 @@ namespace RoadDemo
                 return TerritoryCommandExecution.Reject(
                     "Nothing on that block owes us anything yet.");
 
-            var collector = CollectorOf(unit);
+            // THE BAG MAN WALKS, THE CREW STAYS (GAN-262). A crew with a man marked
+            // for the bag sends him alone, from wherever he stands; a crew with nobody
+            // marked walks the round the old way, all of it, the lieutenant carrying.
+            var walkers = crews.BagUnitOf(unit.CrewId) ?? unit;
+            var collector = CollectorOf(walkers);
             if (collector == null)
                 return TerritoryCommandExecution.Reject(
                     "The crew has no hood who can carry the collection bag.");
 
             var ordered = new List<RoundStop>();
-            OrderStops(candidates, UnitAnchor(unit), ordered);
+            OrderStops(candidates, UnitAnchor(walkers), ordered);
 
             // One errand at a time: the old doorstep order and any old round go.
             DropPendingApproaches(unit.CrewId);
@@ -299,12 +443,12 @@ namespace RoadDemo
             // THE WALK IS TAKEN BEFORE THE ROUND IS OPENED. A crew that refuses to march
             // never had a round at all - opening one first would file a lost round for a
             // bag nobody ever picked up.
-            if (!crews.MarchTo(unit, ordered[0].Door))
+            if (!crews.MarchTo(walkers, ordered[0].Door))
                 return TerritoryCommandExecution.Reject(
                     "The physical crew refused the round.");
 
             var round = OpenRound(
-                unit, gang, command.BlockId, TerritoryRoundKind.Collect, ordered,
+                walkers, gang, command.BlockId, TerritoryRoundKind.Collect, ordered,
                 collector);
             if (round == null)
                 return TerritoryCommandExecution.Reject(
@@ -435,6 +579,14 @@ namespace RoadDemo
             LivingCity.Outfit.House house, LivingCity.Personnel.Crew crew,
             TerritoryBlockId blockId)
         {
+            // A STANDING ROUND NEEDS THE BAG MAN ON THE STREET (GAN-262), in his own
+            // unit: a mark on the books with nobody standing under it sends nothing.
+            // Only our own crews deal a man out into a bag unit at all - a family's
+            // round is walked by its line, or by the paper clock, and asking after a
+            // detachment they never form would stop their rounds for good.
+            if (house.IsPlayer && crews.BagUnitOf(crew.Id) == null)
+                return false;
+
             var result = Commands.Submit(new CollectDuesCommand(
                     TerritoryCommandNodeId.Crew(crew.Id), blockId)
                 { House = new TerritoryGangId(house.GangId) });
@@ -497,12 +649,33 @@ namespace RoadDemo
         bool RoundRunning(int crewId) => roundLedger != null &&
                                          roundLedger.RoundRunning(crewId);
 
+        /// <summary>Whether this man is one of the men of this unit right now. The bag
+        /// can change hands between deals (the boss names another man), and the unit
+        /// object is REUSED across deals - so a carrier who is merely alive is not
+        /// proof that he is still the man walking this round.</summary>
+        static bool Holds(DemoCrews.Unit unit, CrewWalker man)
+        {
+            if (unit == null || man == null)
+                return false;
+            if (unit.Boss == man)
+                return true;
+            for (var i = 0; i < unit.Hoods.Count; i++)
+                if (unit.Hoods[i] == man)
+                    return true;
+            return false;
+        }
+
         static CrewWalker EnsureCollector(RoundBody body, DemoCrews.Unit unit)
         {
             var collector = body.Collector;
             // DoorBeat temporarily hides the collector while he is inside a shop. That
             // is not a lost carrier and must never move the bag to a hood outside.
-            if (collector != null && !collector.Dead && collector.Tf != null)
+            // He must still be one of the men WALKING it, though: a man dealt back into
+            // the crew's line mid-round is standing somewhere else entirely, and the
+            // round would have gone on settling doors through him while another man
+            // walked to them.
+            if (collector != null && !collector.Dead && collector.Tf != null &&
+                Holds(unit, collector))
                 return collector;
 
             collector = CollectorOf(unit);
@@ -603,8 +776,10 @@ namespace RoadDemo
                     continue;
 
                 // Only the hood who visibly owns the collection bag settles this
-                // round. If he is lost, ownership visibly transfers to one survivor.
-                var collector = EnsureCollector(body, unit);
+                // round. If he is lost, ownership visibly transfers to one survivor -
+                // of the men WALKING it (the bag unit, or the line), never of a line
+                // standing on its block while its bag man is out.
+                var collector = EnsureCollector(body, body.Walkers ?? unit);
                 if (collector == null || actor != collector)
                     return;
 
@@ -704,8 +879,10 @@ namespace RoadDemo
         TerritoryActorObservation standingAtTheDoor;
 
         /// <summary>What the world says about one door at one moment: whether it is
-        /// open, what it owes, who is behind the counter, what the block feels, and how
-        /// the crew asks. The ledger decides everything from these and nothing else.
+        /// open, what it owes, who is behind the counter, what the block feels, how the
+        /// crew asks - and whether the police have been round (GAN-245). The ledger
+        /// decides everything from these and nothing else, so a door under the law's
+        /// eye pays nobody on either clock.
         /// </summary>
         public TerritoryStopInputs StopInputs(
             TerritoryRound round, TerritoryRoundStop stop, int policyLevel,
@@ -722,7 +899,8 @@ namespace RoadDemo
                 fear != null ? fear.BlockFear(blockId, gameHour) : 0f,
                 policyLevel, archetype,
                 business != null && business.Populated ? business.CitySeed : 1987,
-                (int)(gameHour / 24.0));
+                (int)(gameHour / 24.0),
+                UnderTheLaw(businessId));
         }
 
         /// <summary>The crew's policy and its lieutenant's trade, for whichever house's
@@ -826,6 +1004,10 @@ namespace RoadDemo
             var body = BodyOf(round);
             if (body == null)
                 return;
+
+            // Every leg is marched by the men WALKING it (GAN-262) - the bag unit when
+            // the crew has one out, the line when it does not.
+            unit = body.Walkers ?? unit;
 
             // A SHAKEDOWN HAS NOTHING TO CARRY HOME. Only a collection walks to the
             // front: the men who have just been down a block asking for money stay on
@@ -996,9 +1178,26 @@ namespace RoadDemo
 
         /// <summary>A crew retasked mid-round walked away from its own route; whatever
         /// it was carrying never reaches the books. An order countermanded is an order
-        /// countermanded.</summary>
-        void AbandonRound(int crewId) =>
-            roundLedger?.AbandonCrew(crewId, lastGameHour);
+        /// countermanded.
+        ///
+        /// An order to the CREW is not an order to its bag man (GAN-262), though: the
+        /// line can be sent anywhere while a detachment finishes its doors.</summary>
+        void AbandonRound(int crewId)
+        {
+            if (roundLedger == null)
+                return;
+            var walking = roundLedger.Rounds;
+            for (var i = walking.Count - 1; i >= 0; i--)
+            {
+                var round = walking[i];
+                if (round.CrewId != crewId)
+                    continue;
+                var body = BodyOf(round);
+                if (body != null && body.Walkers != null && body.Walkers.IsDetachment)
+                    continue;
+                roundLedger.Abandon(round, lastGameHour);
+            }
+        }
 
         /// <summary>The risk that makes a route a route (ECON-004): a round whose crew
         /// is scattered or wiped loses its take on the street where it fell.</summary>
@@ -1006,9 +1205,39 @@ namespace RoadDemo
         {
             for (var i = bodies.Count - 1; i >= 0; i--)
             {
-                var round = bodies[i].Round;
-                var unit = FindUnit(TerritoryCommandNodeId.Crew(round.CrewId));
-                if (unit != null && !unit.Wiped)
+                var body = bodies[i];
+                var round = body.Round;
+                var walkers = body.Walkers;
+                var standing = walkers != null && !walkers.Wiped &&
+                               crews != null && crews.Units.Contains(walkers);
+
+                // THE BAG FALLS WITH THE MAN. A carrier who is dead loses what he was
+                // carrying where he fell - that is the risk the whole walk is built on
+                // (ECON-004), and handing his take to men standing streets away would
+                // be money teleporting off a corpse. Only a bag unit dealt away under a
+                // LIVING carrier - the man taken off the bag, or moved to another crew -
+                // hands the round on to the crew's new bag man, else to the line.
+                var carrier = body.Collector;
+                var carrierDown = carrier == null || carrier.Dead || carrier.Tf == null;
+                if (!standing && !carrierDown)
+                {
+                    var next = crews.BagUnitOf(round.CrewId)
+                               ?? FindUnit(TerritoryCommandNodeId.Crew(round.CrewId));
+                    if (next != null && !next.Wiped && next != walkers)
+                    {
+                        body.Walkers = next;
+                        body.Collector = null;
+                        EnsureCollector(body, next);
+                        crews.MarchTo(next,
+                            round.Stage == TerritoryRoundStage.HeadingHome ||
+                            !round.HasStop
+                                ? HomeDoor(round.House)
+                                : body.Door(round.StopIndex));
+                        continue;
+                    }
+                }
+
+                if (standing)
                     continue;
                 roundLedger.Abandon(round, gameHour);
             }

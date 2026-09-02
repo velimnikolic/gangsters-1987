@@ -33,6 +33,12 @@ namespace RoadDemo
             if (indoors != null)
                 return indoors;
 
+            // LYING IN WAIT (COVER-006). Read off any man of the crew, not off the
+            // lieutenant alone: the boss may be the one man the street had no flank for
+            // and be crouched beside somebody else's, which is still an ambush.
+            if (DemoCrews.AnyLurking(unit))
+                return "LYING IN WAIT";
+
             var car = unit.Car;
             if (car != null)
                 return car.State == CrewCar.Mode.DriveBy ? "DRIVE-BY" : "IN THE CAR";

@@ -490,7 +490,7 @@ namespace RoadDemo
             // the outfit's crews, in book order; blocks pooled and re-bound
             _shown.Clear();
             foreach (var unit in _crews.Units)
-                if (unit.Faction == 0) _shown.Add(unit);
+                if (unit.Faction == 0 && !unit.IsDetachment) _shown.Add(unit);
             while (_blocks.Count < _shown.Count) _blocks.Add(BuildBlock());
 
             // the house at the head of the row, when the outfit has premises standing

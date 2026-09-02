@@ -6,6 +6,8 @@
 #   Tools/play/soak.sh --runs 30                    the car mission (soak.ps1's own)
 #   Tools/play/soak.sh --runs 30 --moto             the motorcycle: two men, one pass
 #   Tools/play/soak.sh --runs 30 --freeway          the motorway: two quarters, one road
+#   Tools/play/soak.sh --runs 30 --cover            cover first: a KILL down a furnished street
+#   Tools/play/soak.sh --runs 30 --ambush           the sacekusa: put behind a bin, walked into
 #
 # soak.ps1's opposite number for a Mac editor. Same shape, same ledger, same tally.
 # The editor must be CLOSED throughout. Around a minute a run.
@@ -33,6 +35,8 @@ while [ $# -gt 0 ]; do
         --roadblock) MODE="roadblock"; shift ;;
         --walk)    MODE="walk"; shift ;;
         --brawl)   MODE="brawl"; shift ;;
+        --cover)   MODE="cover"; shift ;;
+        --ambush)  MODE="ambush"; shift ;;
         --freeway) MODE="freeway"; shift ;;
         *) echo "[soak] unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -47,6 +51,15 @@ SEED_FIELD="BlockDemoBuilder.spacingSeed"
 if [ "$MODE" = "freeway" ]; then
     [ "$SCENE" = "Assets/Scenes/BlockDemo.unity" ] && SCENE="Assets/Scenes/FreewayDemo.unity"
     SEED_FIELD="FreewayDemoBuilder.spacingSeed"
+fi
+# COVER AND THE AMBUSH are judged on the bench built for them: one street, furniture
+# every few paces, cars at both kerbs and mobs on the far pavement (EPIC 28). The seed
+# names the furnished street and nothing else - the crews, the guns and the hit rolls
+# stay on the shared stream, which is why these are read as RATES over thirty runs and
+# never as one seed against another.
+if [ "$MODE" = "cover" ] || [ "$MODE" = "ambush" ]; then
+    [ "$SCENE" = "Assets/Scenes/BlockDemo.unity" ] && SCENE="Assets/Scenes/CoverDemo.unity"
+    SEED_FIELD="CoverDemoBuilder.layoutSeed"
 fi
 
 # The quarter each mode wants. The car soak's line is soak.ps1's, unchanged, so the two
@@ -96,6 +109,18 @@ if [ -z "$SETS" ]; then
     if [ "$MODE" = "brawl" ]; then
         SETS="BlockDemoBuilder.missionAfter=15;BlockDemoBuilder.missionOnFoot=1;BlockDemoBuilder.rivalCrews=3;BlockDemoBuilder.rivalHoods=4;BlockDemoBuilder.carCount=20;BlockDemoBuilder.outfitLieutenants=2;BlockDemoBuilder.outfitHoods=4;BlockDemoBuilder.mixedArms=1;BlockDemoBuilder.panicChance=0.8"
     fi
+    # COVER FIRST: the crews are marched at mobs the length of the furnished street -
+    # forty metres and more, which is the exact case that used to fire on the move and
+    # look for a bin afterwards. What is read out is the share of men whose FIRST round
+    # left from behind something (analyze.py's "cover first" line).
+    if [ "$MODE" = "cover" ]; then
+        SETS="CoverDemoBuilder.missionAfter=12;CoverDemoBuilder.rivalCrews=2;CoverDemoBuilder.rivalHoods=3;CoverDemoBuilder.outfitCrews=2"
+    fi
+    # THE SACEKUSA: the crew put behind a bin (or a parked car) between itself and a
+    # mob, left to lie in wait, and the mob then walked into it.
+    if [ "$MODE" = "ambush" ]; then
+        SETS="CoverDemoBuilder.missionAfter=12;CoverDemoBuilder.ambushRun=1;CoverDemoBuilder.rivalCrews=1;CoverDemoBuilder.rivalHoods=3;CoverDemoBuilder.outfitCrews=3"
+    fi
 fi
 
 if [ -z "$OUT" ]; then
@@ -117,7 +142,8 @@ if [ "$MODE" = "freeway" ]; then
     VERDICT_FLAG="--freeway"
 fi
 # the crews' own verdict (CrewAudit rows) judges the walking and the fighting
-if [ "$MODE" = "walk" ] || [ "$MODE" = "brawl" ]; then
+if [ "$MODE" = "walk" ] || [ "$MODE" = "brawl" ] || \
+   [ "$MODE" = "cover" ] || [ "$MODE" = "ambush" ]; then
     VERDICT_FLAG="--crew"
     # six corner-to-corner legs at a walking pace - a corner is ~400 m and the
     # boss walks 1.75 m/s, so a leg is near four sim-minutes; lights included
@@ -159,6 +185,14 @@ TALLY="== $PASSED of $RUNS passed"
 [ -n "$SKIPPED" ] && TALLY="$TALLY; never ran:$SKIPPED"
 echo "$TALLY"
 echo "$TALLY" >> "$LEDGER"
+
+# EPIC 28's number, over the whole soak rather than off any one run of it: the men
+# whose FIRST round left from behind something.
+if [ "$MODE" = "cover" ] || [ "$MODE" = "ambush" ]; then
+    COVER_TALLY=$(python3 "$HERE/analyze.py" "$OUT" --cover-tally 2>&1)
+    echo "$COVER_TALLY"
+    echo "$COVER_TALLY" >> "$LEDGER"
+fi
 echo "[soak] $LEDGER"
 [ -n "$FAILED" ] && exit 1
 exit 0

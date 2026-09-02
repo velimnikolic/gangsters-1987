@@ -50,6 +50,15 @@ namespace RoadDemo
             public string Name = "";
             public int Loyalty;
 
+            /// <summary>THE BAG MAN'S OWN UNIT (GAN-262): the one hood of a crew marked
+            /// for the collection bag, standing at the front between rounds and
+            /// walking them alone. Same CrewId as the crew he belongs to; Parent is the
+            /// crew's line. Every surface that LISTS or PICKS a crew skips these - the
+            /// books name a crew, and the crew is the parent - while everything that
+            /// samples bodies (presence, arrivals, combat) sees him like any man.</summary>
+            public bool IsDetachment;
+            public Unit Parent;
+
             /// <summary>Grenades the crew is carrying - what it can throw at a shopfront
             /// or a rival, or lay under a car (DemoCrews.Bomb). Spent one at a time; at
             /// nought the order is refused. Stocked at BombsPerCrew when the crew is
@@ -386,12 +395,6 @@ namespace RoadDemo
         // soak lost five seeds in thirty to crews wiped out and missions timed out
         // around it. A bin is protection, not a wall.
         const float DuckedCover = 0.45f;
-        const float CoverReach = 10f;         // the furthest he will go to get behind something
-        const float CoverApart = 0.8f;        // two men do not share one flank
-        // Slimmer than MinHalf on its short side is a post, not cover; wider than
-        // MaxHalf is a wall or a lot, not furniture. CoverDemo reads the same pair.
-        internal const float PropCoverMinHalf = 0.22f;
-        internal const float PropCoverMaxHalf = 3f;
         // A man leaning out of a window with his arm across the street is not shooting
         // the way he does stood on the pavement: he takes it further out and further
         // round. Without this a pass gave the guns about a second of the mark and a
@@ -926,6 +929,9 @@ namespace RoadDemo
             MapVisionRegistry.RegisterArea(this);
             PersonnelDirector.Instance?.SetOrganizationPhysicalSource(this);
             CrewWalker.FindCover = CoverNear;
+            // and the ambush's own question - a flank round THERE, facing THAT way -
+            // which a man asks again for himself when the car he was behind drives off
+            CrewWalker.FindFlankAround = FlankAround;
             PrepareCombatPrewarm();
         }
 
@@ -962,114 +968,6 @@ namespace RoadDemo
             if (unit.Root) Destroy(unit.Root.gameObject);
             Units.Remove(unit);
             if (Selected == unit) Selected = null;
-        }
-
-        // Somewhere for a pressed man to get behind: the far flank of a car stood still,
-        // or of a bin, a planter, a phone box - anything of the street's furniture that
-        // stands on the far side of him from the man shooting, and leaves the target
-        // still in his gun's reach. Never further off than the fight itself: nobody
-        // sprints eight metres to a bin with an enemy stood four away. Null: nothing
-        // near enough.
-        static readonly List<SidewalkPlan.Box> _coverBoxes = new List<SidewalkPlan.Box>();
-        static readonly List<Vector3> _claimed = new List<Vector3>();
-
-        Vector3? CoverNear(CrewWalker man, Vector3 target)
-        {
-            var p = man.Tf.position;
-            Vector3? best = null;
-            float distToTarget = Vector3.Distance(p, target);
-            float cap = Mathf.Min(CoverReach, Mathf.Max(3f, distToTarget * 0.9f));
-            float bestD = cap * cap;
-
-            // what the rest of the street is already behind: two men crowding one flank
-            // is one man in cover and one stood in the open beside him
-            _claimed.Clear();
-            foreach (var unit in Units)
-                foreach (var m in unit.All())
-                    if (m != null && m != man && !m.Dead && m.CoverSpot.HasValue) _claimed.Add(m.CoverSpot.Value);
-
-            foreach (var u in StreetTraffic.Users)
-            {
-                if (u.RoadSpeed > 0.5f) continue;
-                var c = u.RoadPosition;
-                var f = u.RoadForward;
-                f.y = 0f;
-                if (f.sqrMagnitude < 1e-4f) continue;
-                f.Normalize();
-                var right = Vector3.Cross(Vector3.up, f);
-                float side = Vector3.Dot(c - target, right) >= 0f ? 1f : -1f;
-                float along = Mathf.Clamp(Vector3.Dot(p - c, f), -u.HalfLength + 0.6f, u.HalfLength - 0.6f);
-                // off the flank by a shoulder and a bit - clear of the body the walk
-                // keeps out of (WalkObstacles), whatever its width
-                var spot = c + right * side * (u.HalfWidth + WalkObstacles.Radius + 0.4f) + f * along;
-                spot.y = p.y;
-                float d = (spot - p).sqrMagnitude;
-                if (d > bestD) continue;
-                // a flank he cannot stand at (the next car over, a wall) is no cover -
-                // and NOT a flank that puts him under a palm. A COVER SPOT IS A SPOT A
-                // MAN IS SENT TO STAND AT, so it takes the canopy berth every other
-                // chosen spot in the town takes (WalkObstacles.CanopyBerth). Without it
-                // the trunk's knee-high box says the ground beside a kerbside palm is
-                // free, the car flank lands right under the fronds, and the player
-                // watches a man take cover in a tree and put his gun through it.
-                if (WalkObstacles.Occupied(spot, WalkObstacles.Radius, WalkObstacles.CanopyBerth)) continue;
-                float toTarget = Vector3.Distance(spot, target);
-                if (toTarget < 3f || toTarget > man.Ballistics.Range * 1.2f) continue;
-                if (Claimed(spot)) continue;
-                bestD = d;
-                best = spot;
-            }
-
-            // and the same of the pavement's furniture. A prop is a box on the ground
-            // (SidewalkPlan): take the face pointing away from the shooter, stand him
-            // off it by a shoulder, and slide him along that face toward where he
-            // already is - the car's `along`, in the box's own frame.
-            WalkObstacles.PropsNear(p, cap, _coverBoxes);
-            var t2 = new Vector2(target.x, target.z);
-            var p2 = new Vector2(p.x, p.z);
-            for (int i = 0; i < _coverBoxes.Count; i++)
-            {
-                var b = _coverBoxes[i];
-                // big enough to put between himself and a round, small enough to be
-                // furniture. The plan keeps no height, so this is all the sorting there
-                // is: a grate is not solid at all, a lamp post is too slim to hide a man.
-                // A TRUNK IS NOT COVER. A palm's box is the slice of it at knee height,
-                // so a man sent to its far flank ends up a metre from the pivot - under
-                // the canopy, inside the fronds, looking for all the world like a man
-                // stuck in a tree, which is exactly what the player saw. Same for a lamp
-                // post. Neither hides a man anyway.
-                if (b.Tall) continue;
-                if (Mathf.Min(b.H.x, b.H.y) < PropCoverMinHalf) continue;
-                if (Mathf.Max(b.H.x, b.H.y) > PropCoverMaxHalf) continue;
-                var away = b.C - t2;
-                if (away.sqrMagnitude < 1e-4f) continue;
-                float ax = Vector2.Dot(away, b.Ax), az = Vector2.Dot(away, b.Az);
-                Vector2 n, slide;
-                float ext, slideHalf;
-                if (Mathf.Abs(ax) >= Mathf.Abs(az)) { n = b.Ax * Mathf.Sign(ax); ext = b.H.x; slide = b.Az; slideHalf = b.H.y; }
-                else                                { n = b.Az * Mathf.Sign(az); ext = b.H.y; slide = b.Ax; slideHalf = b.H.x; }
-                float room = Mathf.Max(0f, slideHalf - 0.2f);
-                float along = Mathf.Clamp(Vector2.Dot(p2 - b.C, slide), -room, room);
-                var s2 = b.C + n * (ext + WalkObstacles.Radius + 0.35f) + slide * along;
-                var spot = new Vector3(s2.x, p.y, s2.y);
-                float d = (spot - p).sqrMagnitude;
-                if (d > bestD) continue;
-                if (WalkObstacles.Occupied(spot, WalkObstacles.Radius, WalkObstacles.CanopyBerth)) continue;
-                float toTarget = Vector3.Distance(spot, target);
-                if (toTarget < 3f || toTarget > man.Ballistics.Range * 1.2f) continue;
-                if (Claimed(spot)) continue;
-                bestD = d;
-                best = spot;
-            }
-            return best;
-        }
-
-        /// <summary>Is another man already behind this very flank?</summary>
-        static bool Claimed(Vector3 spot)
-        {
-            for (int i = 0; i < _claimed.Count; i++)
-                if ((_claimed[i] - spot).sqrMagnitude < CoverApart * CoverApart) return true;
-            return false;
         }
 
         /// <summary>A crew on NOBODY'S BOOKS, dealt by hand - the law's squad, a bench
@@ -1238,6 +1136,9 @@ namespace RoadDemo
             // alive and answers the next scene's walkers with this one's floor
             if (CrewWalker.FindCover != null && ReferenceEquals(CrewWalker.FindCover.Target, this))
                 CrewWalker.FindCover = null;
+            if (CrewWalker.FindFlankAround != null &&
+                ReferenceEquals(CrewWalker.FindFlankAround.Target, this))
+                CrewWalker.FindFlankAround = null;
             if (Active == this) Active = null;
         }
 
@@ -1593,8 +1494,21 @@ namespace RoadDemo
             for (int i = 0; i < Units.Count; i++)
             {
                 var unit = Units[i];
-                if (unit == null || !OnTheBooks(unit)) continue;
+                if (unit == null || !OnTheBooks(unit) || unit.IsDetachment) continue;
                 if (unit.CrewId == crewId) return unit;
+            }
+            return null;
+        }
+
+        /// <summary>The crew's bag man, in a unit of his own (GAN-262), while he is on
+        /// his feet; null when the crew has no bag man on the street.</summary>
+        public Unit BagUnitOf(int crewId)
+        {
+            for (int i = 0; i < Units.Count; i++)
+            {
+                var unit = Units[i];
+                if (unit == null || unit.Faction != 0 || !unit.IsDetachment) continue;
+                if (unit.CrewId == crewId) return unit.Wiped ? null : unit;
             }
             return null;
         }
@@ -1866,6 +1780,11 @@ namespace RoadDemo
             if ((free - at).sqrMagnitude < 0.0001f) return false;
             free.y = at.y;
             man.Tf.position = free;
+            // he was PUT there, not walked there. A man standing at a flank has his
+            // shoulders against the thing he is behind (EPIC 28), so an order given to
+            // him lifts him clear by a stride or so - which the audit reads as a snap
+            // unless it is told (CrewAudit.teleport).
+            man.NoteRelocated();
             return true;
         }
 
@@ -2320,6 +2239,15 @@ namespace RoadDemo
                     // stepping him out of the shop he was sent into.
                     if (DoorBeat.Active(man)) continue;
                     if (man.State != CrewWalker.Mode.Standing) continue;
+                    // AND THE MAN LYING IN WAIT. The comment above says a man down
+                    // behind cover is Engaging and is left to his fight - an ambusher is
+                    // that same man, crouched behind that same bin, and he reads as
+                    // STANDING because he has no fight yet (EPIC 28). A flank is a spot
+                    // a shoulder's width off a box, and the last stride onto it lands
+                    // inside the walk's own arrival tolerance, so this pass would step
+                    // him off the thing the player put him behind - a metre and a half
+                    // in one frame, which the audit rightly calls a teleport.
+                    if (man.Lurking) continue;
                     // INSIDE SOMETHING, and only that. The asphalt used to count as a
                     // fault too, and it is what tore a crew apart: told to stand in the
                     // road, the men near enough a kerb were walked off it one by one by
@@ -2371,6 +2299,13 @@ namespace RoadDemo
                     // lieutenant walks INTO it - the boss's body ends up three or four
                     // metres inside the wall - and hauls the whole guard in after him.
                     if (man.Watching) continue;
+                    // AND THE MAN LYING IN WAIT. He was put behind that bin on purpose
+                    // and the whole order is that he stays there; the tether reading him
+                    // as a straggler and walking him back to his lieutenant is the
+                    // ambush dismantling itself. The same exemption from the moment he
+                    // is dealt the flank, not from the moment he reaches it - he is on
+                    // his way to a place of his own, not trailing the crew.
+                    if (man.HeldCover.HasValue) continue;
                     if (Chasing(man)) continue;   // running after somebody: the chase drives him
                     if (_unsticking.Contains(man)) continue;   // let him step out of the bin first
                     var gap = man.Tf.position - lead.Tf.position;
@@ -2562,6 +2497,8 @@ namespace RoadDemo
             }
             if (!walked)
                 OrderFallInAcross(unit, lead, man, k, 0f);
+            else
+                man.MarkFallingIn();
             // A RUN BELONGS TO THE CREW. Every order clears the last one's urgency, and
             // this is an order - so a hood hauled back into place while his crew was
             // running dropped to a walk on the spot and never caught it again. He
@@ -2593,15 +2530,34 @@ namespace RoadDemo
 
             _cohesionRoute.Clear();
             bool shared = man.CopyRemainingSharedWay(_cohesionRoute);
-            return shared
+            bool ordered = shared
                 ? man.OrderAcrossVia(spot, _cohesionRoute, beat)
                 : man.OrderAcross(spot, beat);
+            if (ordered) man.MarkFallingIn();
+            return ordered;
         }
 
         /// <summary>Metres two men keep between them on open ground - shoulder room.</summary>
         const float Elbow = 1.0f;
 
         readonly List<CrewWalker> _standing = new List<CrewWalker>();
+
+        /// <summary>Whether the elbow pass must treat this body as the passer. Combat
+        /// approaches are Mode.Engaging rather than a normal HasOrder state, but their
+        /// routed intent is published by TickCombatStride before Separate runs.</summary>
+        internal static bool SeparationMoverModel(bool hasOrder, bool routedStrideIntent) =>
+            hasOrder || routedStrideIntent;
+
+        /// <summary>Two active strides already see and steer around one another through
+        /// the crowd reader. Easing that pair a second time can put an equal reverse
+        /// step on the rear man and cancel his route forever. The elbow pass therefore
+        /// owns only standing/standing spacing and active/standing right of way.</summary>
+        internal static bool SeparationPairNeedsEaseModel(bool aMoving, bool bMoving) =>
+            !(aMoving && bMoving);
+
+        static bool SeparationMover(CrewWalker man) =>
+            man != null && SeparationMoverModel(
+                man.HasOrder, man.TryRoutedStrideIntent(out _));
 
         // Nobody stands inside anybody else: men who converge on the same spot -
         // a crew closing on one target, hoods falling in on a boss who has stopped
@@ -2676,10 +2632,11 @@ namespace RoadDemo
             for (int i = 0; i < _standing.Count; i++)
             {
                 var a = _at[i];
-                bool aOn = _standing[i].HasOrder;
+                bool aOn = SeparationMover(_standing[i]);
                 for (int j = i + 1; j < _standing.Count; j++)
                 {
-                    bool bOn = _standing[j].HasOrder;
+                    bool bOn = SeparationMover(_standing[j]);
+                    if (!SeparationPairNeedsEaseModel(aOn, bOn)) continue;
                     // ONE OF THEM WALKING IS A DIFFERENT QUESTION. Two men standing
                     // want shoulder room and nothing more. A man walking THROUGH a
                     // knot of men who are stood about needs them to open up before he
@@ -2767,20 +2724,44 @@ namespace RoadDemo
             // are unique across all twenty-one books by construction, so one map holds
             // the city.
             var wanted = new Dictionary<int, (LivingCity.Outfit.House house, Crew crew, bool boss)>();
+            // crew id -> the hood who carries its bag (GAN-262). Only OUR book is asked
+            // for one - no other family walks a collector - so a crew number is key
+            // enough here and cannot collide with another house's numbering.
+            var bagMen = new Dictionary<int, int>();
             for (var h = 0; h < _houses.Count; h++)
             {
                 var house = underworld.Of(_houses[h]);
                 if (house?.Roster == null)
                     continue;
                 var book = house.Roster;
+                var ours = house.GangId == LivingCity.Gangs.GangCatalog.PlayerGangId;
                 foreach (var crew in book.Crews)
                 {
                     var lt = book.Find(crew.LieutenantId);
                     if (lt == null || lt.Status != CharacterStatus.Active) continue;
                     wanted[lt.Id] = (house, crew, true);
                     var tacticalHoods = 0;
+
+                    // THE BAG MAN IS NOT IN THE LINE, BUT HE IS ONE OF THE FOUR. He
+                    // stands apart in a unit of his own (below) - and he still SPENDS
+                    // one of the crew's physical places, or naming a collector would put
+                    // a fifth body on the street and make an administrative duty a way
+                    // of buying men. Read BEFORE the line is filled: he can be anywhere
+                    // on the books, and a place reserved after four men are dealt is not
+                    // a place reserved.
+                    var bagId = ours ? RosterOps.CollectorOf(book, crew.Id) : -1;
+                    var bagMan = bagId >= 0 ? book.Find(bagId) : null;
+                    if (bagMan != null && bagMan.Status == CharacterStatus.Active)
+                    {
+                        bagMen[crew.Id] = bagId;
+                        wanted[bagId] = (house, crew, false);
+                        tacticalHoods++;
+                    }
+
                     foreach (int id in crew.HoodIds)
                     {
+                        // his place was reserved above, and he is not dealt into the line
+                        if (id == bagId) continue;
                         var hood = book.Find(id);
                         if (hood != null && hood.Status == CharacterStatus.Active &&
                             tacticalHoods < Crew.MaxTacticalHoods)
@@ -2817,7 +2798,7 @@ namespace RoadDemo
                 {
                     if (!wanted.TryGetValue(crew.LieutenantId, out var w) || w.crew != crew) continue;
                     var id = crew.Id;
-                    var unit = Units.Find(u => u.Faction == gangId && u.CrewId == id)
+                    var unit = Units.Find(u => u.Faction == gangId && !u.IsDetachment && u.CrewId == id)
                                ?? new Unit { CrewId = id, Faction = gangId, GangName = family,
                                              Bombs = gangId == 0 ? BombsPerCrew : 0 };
                     unit.CommandParentId = crew.LieutenantId;
@@ -2835,6 +2816,41 @@ namespace RoadDemo
                     unit.Root.SetParent(_root, false);
                 }
             }
+
+            // THE BAG UNITS (GAN-262): one per crew of OURS with a man marked for the
+            // bag, kept across deals by crew number like the line is. A crew whose bag
+            // man was taken off it loses the unit below with the rest of the dead wood,
+            // and the man walks back into the line if he is one of the four again.
+            // Held by crew number for the deal below: BagUnitOf refuses a unit with
+            // nobody standing in it, and a bag unit has nobody in it until its man is
+            // placed - asking it here would put the bag man back in the line.
+            var bagUnits = new Dictionary<int, Unit>();
+            var playerBook = underworld.Player?.Roster;
+            if (playerBook != null)
+                foreach (var crew in playerBook.Crews)
+                {
+                    if (!bagMen.ContainsKey(crew.Id)) continue;
+                    var parent = liveUnits.Find(
+                        u => u.Faction == 0 && !u.IsDetachment && u.CrewId == crew.Id);
+                    if (parent == null) continue;
+                    var bag = Units.Find(u => u.Faction == 0 && u.IsDetachment && u.CrewId == crew.Id)
+                              ?? new Unit { CrewId = crew.Id, Faction = 0,
+                                            GangName = parent.GangName, IsDetachment = true };
+                    bagUnits[crew.Id] = bag;
+                    bag.Parent = parent;
+                    bag.CommandParentId = crew.LieutenantId;
+                    bag.Boss = null;
+                    bag.Hoods.Clear();
+                    liveUnits.Add(bag);
+
+                    var carrier = playerBook.Find(bagMen[crew.Id]);
+                    bag.Name = parent.Name + " · the bag";
+                    bag.Loyalty = parent.Loyalty;
+                    if (bag.Root == null)
+                        bag.Root = new GameObject("Bag").transform;
+                    bag.Root.name = "Bag · " + carrier.FullName;
+                    bag.Root.SetParent(_root, false);
+                }
 
             // the law's squads and whatever a bench scene stood by hand: nobody's books,
             // and none of this pass's business
@@ -2859,7 +2875,38 @@ namespace RoadDemo
             foreach (var kv in wanted)
                 if (kv.Value.boss) Place(kv.Value.house, kv.Key, kv.Value.crew, true, previousUnitOf);
             foreach (var kv in wanted)
-                if (!kv.Value.boss) Place(kv.Value.house, kv.Key, kv.Value.crew, false, previousUnitOf);
+            {
+                if (kv.Value.boss) continue;
+                // the bag man is dealt into his own unit, not the line - and only ours
+                // has one, so a rival's hood is never looked for among the bag units
+                var bag = kv.Value.house.GangId == LivingCity.Gangs.GangCatalog.PlayerGangId &&
+                          bagMen.TryGetValue(kv.Value.crew.Id, out var bagId) && bagId == kv.Key &&
+                          bagUnits.TryGetValue(kv.Value.crew.Id, out var into)
+                    ? into
+                    : null;
+                Place(kv.Value.house, kv.Key, kv.Value.crew, false, previousUnitOf, bag);
+            }
+
+            // A man just handed the bag leaves the line for the front: he was standing
+            // in the crew's row a moment ago and has a walk ahead of him. A man dealt
+            // in fresh already stands outside the door (Place). A bag unit its man
+            // never reached - he was killed, or the deal refused him a body - is not a
+            // detachment, it is an empty billet, and it goes.
+            for (var i = liveUnits.Count - 1; i >= 0; i--)
+            {
+                var unit = liveUnits[i];
+                if (!unit.IsDetachment) continue;
+                if (unit.Standing() == 0)
+                {
+                    liveUnits.RemoveAt(i);
+                    Units.Remove(unit);
+                    if (unit.Root) Destroy(unit.Root.gameObject);
+                    continue;
+                }
+                foreach (var man in unit.All())
+                    if (!man.Dead && previousUnitOf.TryGetValue(man, out var was) && was != unit)
+                        MarchTo(unit, FrontDoorstep());
+            }
 
             if (!_initialPlayerSelectionMade)
             {
@@ -2924,7 +2971,9 @@ namespace RoadDemo
             for (var i = 0; i < Units.Count; i++)
             {
                 var unit = Units[i];
-                if (unit == null || unit.Faction != 0)
+                // The projection is the LINE. The bag man stands apart from it by
+                // design (GAN-262) and is not a second group under the same lieutenant.
+                if (unit == null || unit.Faction != 0 || unit.IsDetachment)
                     continue;
 
                 var count = (unit.Boss != null ? 1 : 0) + unit.Hoods.Count;
@@ -2943,13 +2992,28 @@ namespace RoadDemo
             }
         }
 
-        void Place(LivingCity.Outfit.House house, int id, Crew crew, bool boss,
-            Dictionary<CrewWalker, Unit> previousUnitOf)
+        /// <summary>Where the bag man stands between rounds: the outfit's own doorstep,
+        /// or the floor's anchor where the scene stands no front.</summary>
+        Vector3 FrontDoorstep()
         {
+            var front = PlayerFront();
+            if (front != null)
+                return front.Door;
+            var p = _outfitAnchor;
+            p.y = GroundY;
+            return p;
+        }
+
+        void Place(LivingCity.Outfit.House house, int id, Crew crew, bool boss,
+            Dictionary<CrewWalker, Unit> previousUnitOf, Unit into = null)
+        {
+            // <paramref name="into"/> names the bag unit for a bag man (GAN-262);
+            // everybody else is dealt into his crew's line, on his family's own books.
             var roster = house.Roster;
             var gangId = house.GangId;
             var crewId = crew.Id;
-            var unit = Units.Find(u => u.Faction == gangId && u.CrewId == crewId);
+            var unit = into ??
+                       Units.Find(u => u.Faction == gangId && !u.IsDetachment && u.CrewId == crewId);
             if (unit == null) return;
             var member = roster.Find(id);
 
@@ -3274,6 +3338,7 @@ namespace RoadDemo
                 var destination = boss.DestinationLink;
                 hood.OrderTo(destination,
                     FormationT(destination, boss.DestinationT, unit.CrewId, k), beat);
+                hood.MarkFallingIn();
                 return;
             }
 
@@ -3282,6 +3347,7 @@ namespace RoadDemo
             // freshly dealt in on his spot already - no need to shuffle
             if (hood.CurrentLink == link && Mathf.Abs(hood.CurrentT - t) < 0.35f) return;
             hood.OrderTo(link, t, beat);
+            hood.MarkFallingIn();
         }
 
         /// <summary>Fall in on a leader who is genuinely off the sidewalk graph. A
@@ -3297,7 +3363,11 @@ namespace RoadDemo
             var spot = WalkObstacles.ClearSpot(
                 anchor + rot * FormationOffset(unit.CrewId, k), WalkObstacles.Radius);
             if ((hood.Tf.position - spot).sqrMagnitude <= 0.35f * 0.35f) return;
-            if (FreeRoam) hood.OrderToPoint(spot, beat);
+            if (FreeRoam)
+            {
+                hood.OrderToPoint(spot, beat);
+                hood.MarkFallingIn();
+            }
             else OrderFallInAcross(unit, boss, hood, k, beat);
         }
 

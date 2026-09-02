@@ -5,27 +5,74 @@ anchored to documented Miami / US prices of 1985–1988 (sources at the bottom).
 $2.80 today. This document is the single authority on what anything costs; code constants
 follow it, not the other way round.*
 
-The point: when EPIC 9 (GAN-167) lets money flow, the numbers must already agree with each
-other. A hood costs $420/week, so a shop paying $100/week protection funds a quarter of a
-hood — the whole balance falls out of real prices instead of invented ones.
+The point: the numbers have to agree with each other. A hood costs about $525/week, so ten
+shopfronts paying $100/week fund roughly one of him once the street is frightened enough to
+pay — the whole balance falls out of real prices instead of invented ones. §10 is where that
+is asserted rather than asserted-in-prose.
 
 ---
 
 ## 1. Wages (per day — the game pays on the day tick)
 
-| Role | $/day | ≈ real anchor | Code today |
-|---|---|---|---|
-| Hood / soldier | 60 (+5 per attribute half-step) | gang enforcer ~$1,000/mo, but a full-time made man above that | `Wages.cs` 60+5 — **keep** |
-| Lieutenant | 200 | documented local gang leader $4,000–11,000/mo | `Wages.cs` 200 — **keep** |
-| Accountant | 250 | crooked professional premium | `Wages.cs` 250 — **keep** |
-| Lawyer | 400 | drug-bar retainers ran to six figures a case | `Wages.cs` 400 — **keep** |
-| Recruit signing fee | 500 | — | `EconomyPrices.RecruitSigning` — **keep**. ONE PRICE THROUGH EVERY DOOR: the ledger's HIRE A MAN and the Recruit order both charge it, for every house. The old $50 counter price is gone. |
-| Hired lieutenant signing | 28 days of wage | — | `Wages.cs DaysDown` — **keep** |
+*Rewritten 2026-09-02 for EPIC 24 (Crew Economy). Every figure here is what `Wages.cs`
+actually produces; the measured columns come from `unity command eval` over
+`RosterSeeder.GenerateStaffed` seeds 1–20 and 200 `RosterSeeder.Recruit` draws.*
+
+**ONE TABLE.** What the house pays a man it raised is what that man is *worth*
+(`Wages.HouseRate` is the only formula, and both `WageFor` and `WorthOf` read it). Nobody on
+the house scale is ever underpaid. A pay gap can only open under a **bargain** — a man hired
+out of the classified column whose stars have outgrown the price he printed.
+
+| Role | Formula ($/day) | Range | Measured in play | Real anchor |
+|---|---|---|---|---|
+| Hood / soldier | `40 + 4 ×` (his **three best** trades in half-steps − 6) | 40–136 | recruit off the corner avg **75**; founding hoods **68–104** | gang enforcer ~$1,000/mo; a full-time made man above it |
+| Lieutenant | `150 + 6 ×` (Leadership + Awareness + Organization + StreetAuthority in half-steps − 8) | 150–342 | founding lieutenants **192–246** | documented local gang leader $4,000–11,000/mo = $133–367/day |
+| Boss | 0 | — | — | he owns the payroll; he does not draw from it |
+| Accountant | 250 flat | — | — | crooked professional premium. **No code path assigns this specialty yet** |
+| Lawyer | 400 flat | — | — | drug-bar retainers ran to six figures a case. **Hired out of the classified column** (GAN-245) — one lawyer, advertised every 7 days while the outfit has none |
+| Service premium | `+2` per 30 days on the books, capped at **+20** | 0–20 | ~10 months to the cap | a man who has stood on the corner a year is not a corner boy |
+
+The lieutenant **floor (150) is above the hood ceiling (136)**, so a lieutenant out-earns every
+one of his men *by construction* and a promotion is always a rise — no per-crew rule, nothing to
+remember. A hood is paid for his three best trades and nothing else: getting better at a fourth
+thing nobody asks him for is not a raise.
+
+Service pay is read off the day his file says he joined (`Career.JoinedDay`) — nothing new is
+stored on a Character, and the joining line is exempt from the career cull for exactly this
+reason. A man on a bargain draws no service premium: his ask was struck for the man he was.
+
+| Hiring | Price | Code |
+|---|---|---|
+| Recruit signing fee | **500** | `EconomyPrices.RecruitSigning`. ONE PRICE THROUGH EVERY DOOR: the ledger's HIRE A MAN and the Recruit order both charge it, for every house |
+| Classified ask | house rate for the lieutenant he advertises as **× 125%** | `Wages.AskFor` / `AskPremiumPercent`. Measured column: **270–307/day** |
+| Classified signing | **14 days** of that ask | `Wages.DaysDown`. Measured: **$3,780–4,298** down, against a $25,000 opening safe |
+
+The ask premium is the whole of the difference between a man the outfit built and a man who
+walks in ready-made. **A rank change re-prices him**: `RosterOps.Promote` and `Demote` clear
+`WageAsked`, and `GrantRaise` clears it too — he asked for the rate, so he is put *on* the rate
+and his envelope follows his stars from then on. The old code wrote the demanded figure onto his
+bargain, which froze it while his stars kept rising, so a greedy man came back with a new demand
+every 35 days forever.
+
+**Founding payroll:** seeds 1–20 open on **$570–682/day** (average $633), lieutenant plus five
+hoods plus the Boss. The old table opened on $1,040.
 
 Civilian yardsticks (for flavour and NPC dialogue): minimum wage $134/wk, median household
 $500/wk, cop $23,000/yr entry, taxi driver $320/wk take-home.
 
-**The wage layer already matches 1987 reality. Nothing rescales here.**
+### The short envelope
+
+The safe **never goes negative from wages** (`CampaignRunner.TurnTheBooks`). What cannot be paid
+is not paid, and every unpaid man is a printed event, never a silent modifier:
+
+* the order is lieutenants first, then hoods by service (longest-standing first), then retained
+  professionals — every envelope all or nothing;
+* `DaySheet.WagesPaid` and `DaySheet.WagesShort` are both frozen at midnight, and the Finances
+  page prints the short line in red;
+* an unpaid man loses **3** loyalty that night, is read by the greed ladder as underpaid by his
+  **whole** wage, and carries `UNPAID SINCE DAY d` on his file;
+* a hood unpaid **3** nights running deserts; a lieutenant unpaid **5** goes over the next
+  midnight, with his crew, through the defection pass that already exists.
 
 ## 2. Protection racket (weekly, per business)
 
@@ -124,6 +171,10 @@ why it must carry proportional heat/risk when the system lands.
 | Cop on the pad | **800/mo** per officer | Knapp pad $400–1,500/mo |
 | Judge / case fix | **2,000–10,000** | Greylord: $100 traffic to thousands for felonies |
 | Bail, felony | **10,000** (drug felony to $37,500) | BJS |
+| Bail — extortion / intimidating a witness | **2,000** | the low end of the BJS felony series; a shakedown charge with one complainant behind it |
+| Bail — affray | **5,000** | firearms in the street, still short of a body |
+| Bail — murder | **25,000** | BJS murder bail runs to the high tens of thousands |
+| Bail — killing a policeman | **none, at any price** | no judge in 1987 Miami bails one |
 | Lawyer, per serious case | **10,000+** | — |
 | Funeral (war cost, §23) | **2,700** | NFDA interpolated |
 | Offload crew, per night | **7,500** | FL smuggling cases |
@@ -147,7 +198,25 @@ The counter used to charge $50 while the corner charged $500, which made the cou
 only sane way to grow for no reason anybody had decided. `PersonnelDirector.DefaultHoodRecruitmentCost` and its serialized override are deleted.
 
 The classified column is a separate thing and keeps its own price: a man who advertises
-is a lieutenant and wants **28 days of his wage** down (`Wages.DaysDown`).
+is a lieutenant, asks the house rate for the rank plus a 25% market premium
+(`Wages.AskFor`), and wants **14 days of that** down (`Wages.DaysDown`). See §1.
+
+**The lawyer advertises there too** (GAN-245). He is priced off the same table — the wage
+table reads a SPECIALTY before it reads a rank, so his ask is `LawyerWage × 125%` = **$500
+a day** with **$7,000** down — and he signs as a specialist: no rank, no crew, no place in
+the chain of command. One ad every `HireMarket.LawyerAdEveryDays` (7) days, and none at all
+while the outfit already has counsel on the books.
+
+### Bail — the money that gets a man out
+
+`EconomyPrices.Bail(deed)` is the door and `Sentencing.Bail` is the table it reads, so the
+sentence bands and the price of avoiding them live on one row each. Bail leaves the safe
+through the one purchase gate (`OutfitDirector.Purchase` → `BalanceMath.TryPurchase`) and
+lands on the day sheet like any other cost. **A forfeited bail is not refunded**: a man who
+does not appear costs the outfit the money AND leaves the case open against him.
+
+It also needs a lawyer: below `Lawyer.BailSkill` (2 of 5) nobody gets a remand hearing
+listed, which is the first thing the retainer actually buys.
 
 ## 8. Order economy (current `Orders.cs` → target)
 
@@ -174,13 +243,40 @@ is a lieutenant and wants **28 days of his wage** down (`Wages.DaysDown`).
 | Tax 30% profit, risk ceilings 5k/20k | — | **revisit ceilings ×5** at the new scale | `Accounts.cs` |
 | `PlayerArsenal.TryPay` | stub, always yes | wire to the safe when EPIC 9 lands | the only money seam with no balance behind it |
 
-## 10. Sanity check of the loop
+## 10. Sanity check of the loop — one block, one crew
 
-A lieutenant (200/day) with four hoods (4×60/day) costs **$3,080/week**. His route of ten
-tier-1/2 businesses brings **$2,000–4,000/week** — a crew roughly pays for itself and profit
-comes from scale, tiers 3–4, owned fronts and (later) the drug flip. That reproduces the
-design plan's §23 figure ("a man collects $8,000/week from his businesses") only for a good
-earner on a fat route, which is exactly how it should read.
+*The yardstick the whole territory economy is balanced against, and it is a TEST:
+`WageTests.OneBlockCarriesOneCrew` asserts every line of this section and reads `EconomyPrices`
+and `Wages` only, so retuning either side re-runs it.*
+
+**The city, measured (seed 1987):** 3,246 businesses on 110 blocks. The median block is 40-odd
+doors — 41 tier-1 and 3 tier-2 — owing about **$5,600/week** at full compliance. Quartiles:
+bottom **$1,800**, median **$5,600**, top **$7,000**, richest **$11,600**. Tier 1 is 54% of all
+racket money in the city; tier 3–4 is three businesses in the whole map.
+
+**What is actually collected**, over `TerritoryPaymentRoll` with the dealt owners: fear 30 pays
+**48%** of what is owed, fear 50 **68%**, fear 70 and over **91%**. A fortnight of daily rounds
+on the median block banks **$5,837 / $8,132 / $10,409** at those three readings.
+
+| Crew | $/day | a fortnight | median block @ fear 50 | @ fear 70 |
+|---|---|---|---|---|
+| lieutenant + 2 hoods | 378 | 5,292 | **+2,840** | +5,117 |
+| lieutenant + 4 hoods | 542 | 7,588 | +544 | **+2,821** |
+| lieutenant + 4 hoods @ fear 30 | 542 | 7,588 | — | **−1,751** |
+
+**The rule of thumb: one hood ≈ ten tier-1 doors under fear; a full crew ≈ a whole median block
+under fear.** A small crew holds a block with margin. A full crew needs the block properly
+frightened, or a second block. The bottom quartile never feeds a crew and is not meant to.
+
+The old table failed this: a full crew cost $870/day — **$12,180 a fortnight** — which the
+*best* block in four could not carry. That comparison is the negative control inside the test,
+so the yardstick cannot quietly stop discriminating.
+
+**Measurement note, not a change (EPIC 10, not this one):** `Tribute.PerBlockAhead` is 500 with
+a floor of 1,000, levied every 5 days by every house holding more blocks than the outfit — among
+21 families that can exceed the whole payroll for a one-block outfit. Measure `Tribute.Levies`
+on day 2 in Play before blaming wages for a broke opening, and file it against EPIC 10 if it
+reads high. This epic does not touch tribute.
 
 ---
 

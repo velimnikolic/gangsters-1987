@@ -258,6 +258,7 @@ namespace RoadDemo
             {
                 if (a.Dead || a.Tf == null) continue;
                 if ((a.Tf.position - man.Tf.position).sqrMagnitude > SightRange * SightRange) continue;
+                if (Concealed(man, a.Tf.position)) continue;   // he is down behind a bin waiting for them
                 if (InSight(a.Tf.position, man.Tf.position)) return true;
             }
             return false;
@@ -285,6 +286,7 @@ namespace RoadDemo
                     if (b.Dead || b.Tf == null || IsAboard(b)) continue;
                     float d = (b.Tf.position - man.Tf.position).sqrMagnitude;
                     if (d >= bestD) continue;
+                    if (Concealed(b, man.Tf.position)) continue;   // lying in wait: not there yet
                     if (!InSight(man.Tf.position, b.Tf.position)) continue;
                     bestD = d;
                     best = other;
@@ -331,32 +333,34 @@ namespace RoadDemo
                     foreach (var man in unit.All()) man.Disengage();
                 }
 
-                // A BEATEN CREW GOES HOME - boss down, one man left. It used to run
-                // sixty metres and be deleted where it stopped, which meant a family
-                // that lost a fight lost men nobody could account for. The survivor
-                // walks to his family's own door and goes inside it, the way the
-                // player's RUN FOR IT sends a crew of ours home, and he is still on his
-                // family's books when he gets there. Only where there is no door to
-                // reach does he still run out of sight and off the street.
-                if (unit.Faction != 0 && !unit.IsPolice && !unit.Retreated &&
-                    (unit.Boss == null || unit.Boss.Dead) && unit.Standing() <= 1 && unit.Standing() > 0)
-                {
-                    unit.Retreated = true;
-                    var threat = unit.TargetUnit != null ? unit.TargetUnit.Position : StreetAlarm.Incident;
-                    unit.TargetUnit = null;
-                    unit.Searching = false;
-                    unit.LookUntil = 0f;
-                    if (!SendHome(unit))
-                        foreach (var man in unit.All())
-                            if (!man.Dead && !IsAboard(man)) man.Retreat(threat);
-                }
+                // A BEATEN CREW FIGHTS ON - EVERY HOUSE'S ALIKE (D23, row 1, the
+                // user's word of 2026-09-03). A crew whose lieutenant is dead and
+                // whose last man is standing does not leave the fight because it is
+                // losing it: no house's does. A rival's used to walk home at exactly
+                // that point while ours stood and died, which was the fight going
+                // differently for the player than for anybody else. The only way off
+                // the pavement now is the same for both: an order (RUN FOR IT), or a
+                // man's own nerve breaking.
                 if (unit.Retreated) { TakeOffRetreated(unit); continue; }
+
+                // THE AMBUSH SPRINGS ITSELF (COVER-004). Whatever the stance below
+                // makes of the pair, a crew the player put behind a bin and told to
+                // wait is the one fight he asked it to start. A rival family's man
+                // inside the crew's best gun reach and in sight of one of the waiting
+                // men, and they open up from where they are lying. Never the law and
+                // never a civilian; ordered, because the player ordered the wait.
+                if (unit.TargetUnit == null && AnyLurking(unit))
+                {
+                    var sprung = LurkQuarry(unit);
+                    if (sprung != null) SetTarget(unit, sprung, ordered: true);
+                }
 
                 // WHO FIGHTS WHOM IS THE STANCE BETWEEN THE TWO HOUSES, and nothing
                 // else (D13). It is the same rule for every pair in the city, the
                 // player's included, and it is the three sentences the FAMILIES card
                 // prints: war on sight, truce on the ground the engager leads, peace
-                // never - except that a man being shot at turns and returns fire.
+                // never - except that a man being shot at turns and returns fire, and
+                // except the ambush above, which the player laid with his own hands.
                 //
                 // Until this, a rival crew watched for the outfit only and the outfit
                 // started nothing. That made the player the only family anybody could
@@ -711,18 +715,6 @@ namespace RoadDemo
         /// Answers false when the family has no door to reach, which is the only case
         /// left where a beaten crew simply runs.
         /// </summary>
-        bool SendHome(Unit unit)
-        {
-            if (CrewQuarters.Billeted(unit))
-                return true;
-            var front = FrontOf(unit.Faction);
-            if (front == null)
-                return false;
-            return front.BusinessId.IsValid
-                ? CrewQuarters.Station(this, unit, front.BusinessId)
-                : CrewQuarters.Station(this, unit, front.Outside, front.Role);
-        }
-
         void TakeOffRetreated(Unit unit)
         {
             // A man walking home is not gone - he is on his way to his own door, and
@@ -743,33 +735,21 @@ namespace RoadDemo
             }
         }
 
-        /// <summary>The law has shouted its warning at the scene: nobody at war lowers
-        /// their guns. The outfit stands its ground - it keeps the fight it has, and a
-        /// crew with its guns free answers the warning with them (retreat stays the
-        /// player's call); a rival crew in earshot either turns them on the police or
-        /// gets out. The law is a third side of the war, not a referee.</summary>
+        /// <summary>The law has shouted its warning at the scene, AT EVERY HOUSE IN
+        /// EARSHOT ALIKE (D23, row 3, the user's word of 2026-09-03) - and nobody at
+        /// war lowers their guns for it. Mid-fight a crew stays on the enemy it has
+        /// (police rounds pull it round later, through the shot-back rule); guns free,
+        /// it turns them on the squad now. A rival crew used to roll two in five to
+        /// break off and run, which is the one thing no house does any more: leaving a
+        /// fight is an order or a man's own nerve, never a shout. The law is a third
+        /// side of the war, not a referee.</summary>
         public void PoliceWarning(Vector3 from, Unit police)
         {
             foreach (var unit in Units)
             {
                 if (unit.IsPolice || unit.Wiped || unit.Surrendered) continue;
                 if ((unit.Position - from).sqrMagnitude > 45f * 45f) continue;
-                if (unit.Faction == 0)
-                {
-                    // the war does not pause for the law: mid-fight the crew stays on
-                    // its enemy (police rounds pull it round later, through the
-                    // shot-back rule); guns free, it turns them on the squad now
-                    if (unit.TargetUnit == null && police != null) SetTarget(unit, police);
-                    continue;
-                }
-                if (Random.value < 0.4f)
-                {
-                    unit.Retreated = true;
-                    unit.TargetUnit = null;
-                    foreach (var man in unit.All())
-                        if (!man.Dead && !IsAboard(man)) man.Retreat(from);
-                }
-                else if (police != null) SetTarget(unit, police);
+                if (unit.TargetUnit == null && police != null) SetTarget(unit, police);
             }
         }
 
@@ -828,9 +808,11 @@ namespace RoadDemo
                     // a man in a car is just a car going by until somebody shoots
                     foreach (var b in other.All())
                         // close enough AND in view: a crew on the far side of a block of
-                        // flats has not "seen the outfit walk up", whatever the tape says
+                        // flats has not "seen the outfit walk up", whatever the tape says -
+                        // and a man LYING IN WAIT is not walking up at all (COVER-004)
                         if (!b.Dead && !IsAboard(b) &&
                             (a.Tf.position - b.Tf.position).sqrMagnitude < r2 &&
+                            !Concealed(b, a.Tf.position) &&
                             InSight(a.Tf.position, b.Tf.position))
                             return other;
                 }
@@ -869,6 +851,8 @@ namespace RoadDemo
         void OnFired(CrewWalker shooter)
         {
             if (DriveTrace.On) CrewAudit.ShotFired(shooter);
+            // the round is what springs an ambush, not the order that gave him the mark
+            SpringAmbush(shooter);
             Resolve(shooter, shooter.Target, shooter.MuzzlePosition, shooter.Tf.position,
                 CrewArms.MuzzleOf(shooter.Weapon) ?? shooter.Tf);
         }
@@ -992,6 +976,10 @@ namespace RoadDemo
                 DriveTrace.Bool(sb, "aboard", IsAboard(target));
                 DriveTrace.Bool(sb, "cover", target.InCover);
                 DriveTrace.Bool(sb, "ducked", target.Ducked);
+                // and the SHOOTER's own: `cover` above has always been about the man
+                // being shot at, and EPIC 28's whole question is about the man pulling
+                // the trigger - did this round leave from behind something
+                DriveTrace.Bool(sb, "fromcover", shooter.InCover);
                 DriveTrace.Str(sb, "state", shooter.State.ToString());
                 DriveTrace.Vec(sb, "muzzle", muzzle);
                 DriveTrace.Row("shot", sb.ToString());
@@ -1303,10 +1291,16 @@ namespace RoadDemo
         // ------------------------------------------------------------- the detail
 
         static readonly List<int> DetailBefore = new List<int>();
-        System.Random _attemptRng;
+        // One stream per house: who stands and who runs when they come for a Don has
+        // to be the same twice, and one family's attempt must not shift another's roll.
+        readonly Dictionary<int, System.Random> _attemptRng = new Dictionary<int, System.Random>();
 
         /// <summary>
-        /// Somebody has come for the Don (RANK-003). Asked only when the round in the
+        /// Somebody has come for A Don - ANY HOUSE'S (D23, row 4, the user's word of
+        /// 2026-09-03). A family's Don is worth exactly what ours is: his own detail
+        /// stands between him and the round, off his own family's books.
+        ///
+        /// (RANK-003). Asked only when the round in the
         /// air would actually put him down, because the detail is what stands between
         /// him and DEATH, not what soaks up every graze - and because every ask spends
         /// a man, so a burst of fire eats the detail one guard at a time exactly as
@@ -1320,12 +1314,12 @@ namespace RoadDemo
         /// <returns>True when the round was stopped and never reached him.</returns>
         bool DetailStoppedIt(CrewWalker target, int damage)
         {
-            if (target == null || target.Faction != 0 || target.Dead ||
+            if (target == null || target.Dead ||
                 target.Health - Mathf.Max(1, damage) > 0)
                 return false;
 
-            var director = PersonnelDirector.Instance;
-            var roster = director != null ? director.Roster : null;
+            var his = HouseOf(target.Faction);
+            var roster = his?.Roster;
             var boss = roster?.FindBoss();
             if (boss == null || boss.Id != target.CharacterId)
                 return false;
@@ -1344,15 +1338,21 @@ namespace RoadDemo
             if (DetailBefore.Count == 0)
                 return false;
 
-            var outfit = OutfitDirector.Instance;
-            var day = outfit != null ? outfit.Campaign.Day : 1;
+            var runner = his.Runner;
+            var day = runner != null ? runner.Campaign.Day : 1;
             var where = BlockNameAt(target.Tf != null ? target.Tf.position : Vector3.zero);
-            // Off the city's own seed, like every other stream here: who stands and who
-            // runs when they come for the Don has to be the same twice.
-            _attemptRng ??= new System.Random(director.Seed * 31 + 977);
+            // Off the city's own seed, like every other stream here, and off the house's
+            // own number so no two families share a roll.
+            if (!_attemptRng.TryGetValue(target.Faction, out var rng))
+            {
+                var underworld = LivingCity.Outfit.Underworld.Current;
+                int seed = underworld != null ? underworld.CitySeed : 0;
+                rng = new System.Random(seed * 31 + 977 + target.Faction * 7919);
+                _attemptRng[target.Faction] = rng;
+            }
 
-            var outcome = Bodyguards.Attempt(roster, _attemptRng, day, where,
-                outfit != null ? outfit.Incidents : null);
+            var outcome = Bodyguards.Attempt(roster, rng, day, where,
+                runner != null ? runner.Incidents : null);
 
             // The books moved under the street: every man who is no longer standing was
             // spent on this, and his body has to answer for it here.
@@ -1386,7 +1386,10 @@ namespace RoadDemo
                 }
             }
 
-            director.Touch();
+            // Only OUR pages are repainted off this - a rival's detail spends itself
+            // on his own books and the FAMILIES page reads it on the next pass.
+            if (target.Faction == LivingCity.Gameplay.PlayerCommands.House.Value)
+                PersonnelDirector.Instance?.Touch();
             return !outcome.ReachedTheBoss;
         }
 

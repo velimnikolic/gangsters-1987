@@ -322,7 +322,7 @@ namespace LivingCity.UI
                     HasMeters = true,
                     Men = capacity.Manpower,
                     Blocks = capacity.Blocks,
-                    Wage = member != null ? Outfit.Wages.WageFor(member) : 0,
+                    Wage = member != null ? Outfit.Wages.WageFor(member, RosterDay) : 0,
                 };
                 branch.WageLine = member != null
                     ? CarriedGun(member) + " · " + ConditionWord(member.Status) + " · " +
@@ -838,7 +838,7 @@ namespace LivingCity.UI
             {
                 var member = roster.Find(branch.Roster[i].Id);
                 if (member != null)
-                    total += Outfit.Wages.WageFor(member);
+                    total += Outfit.Wages.WageFor(member, RosterDay);
             }
             return total;
         }
@@ -921,7 +921,7 @@ namespace LivingCity.UI
             cond.font = LedgerStyle.MonoBold;
 
             LedgerV2.Figure(row, wageX, -(rowH - LineBox(12f)) * 0.5f, LeafWageW,
-                member != null ? LedgerText.Cash(Outfit.Wages.WageFor(member)) : "--",
+                member != null ? LedgerText.Cash(Outfit.Wages.WageFor(member, RosterDay)) : "--",
                 12f, dead ? LedgerV2.Faint
                     : member != null && member.WageDemand > 0 ? LedgerV2.Red
                     : LedgerV2.Ink);
@@ -1043,8 +1043,11 @@ namespace LivingCity.UI
                 ("CARRIES", carried + (armsOpen ? "  ▴" : "  ▾"),
                     carried == "nothing" ? LedgerV2.Red : LedgerV2.Ink,
                     (UnityAction)(() => ToggleCommandArms(memberId))),
-                ("WAGE", LedgerText.Cash(Outfit.Wages.WageFor(member)) + " / day",
-                    member.WageDemand > 0 ? LedgerV2.Red : LedgerV2.Ink, null),
+                ("WAGE", LedgerText.Cash(Outfit.Wages.WageFor(member, RosterDay)) +
+                    " / day" + (member.UnpaidSince > 0
+                        ? "  ·  UNPAID SINCE DAY " + member.UnpaidSince : ""),
+                    member.WageDemand > 0 || member.UnpaidSince > 0
+                        ? LedgerV2.Red : LedgerV2.Ink, null),
                 ("CONDITION", LedgerText.StatusLabel(member.Status),
                     member.Status == CharacterStatus.Active
                         ? LedgerV2.Ink : LedgerV2.Red, null),
@@ -1452,7 +1455,7 @@ namespace LivingCity.UI
                 {
                     var member = roster.Find(commandReserve[i].Id);
                     if (member != null)
-                        wage += Outfit.Wages.WageFor(member);
+                        wage += Outfit.Wages.WageFor(member, RosterDay);
                 }
 
             cursor = CommandSectionHead(cursor, "RESERVE · STAYS WITH BOSS",

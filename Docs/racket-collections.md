@@ -3,7 +3,8 @@
 How money gets from a shopkeeper's till into the outfit's safe, who carries it, and what
 the books say about a door along the way.
 
-Built for GAN-224 (the mechanics) against the seam GAN-225 (the block file) reads.
+Built for GAN-224 (the mechanics) against the seam GAN-225 (the block file) reads, and
+rewritten by GAN-262 (one bag man to a crew, off the street line, walking it alone).
 
 ## The one rule under all of it
 
@@ -87,22 +88,81 @@ under yesterday's incidents on the ledger's wire. `HourOfDay` beside it is what 
 `Duty.Collector` is the only member: others (Enforcer, Driver, Guard) are in the design
 and are not here because nothing would read them.
 
-`RosterOps.SetDuty` is the only way to set one, and the rules are, in order:
+**One bag to a crew** (GAN-262). `RosterOps.SetDuty` is the only way to set one, and the
+rules are, in order:
 
 1. no such man → refused
 2. taking it OFF is always allowed
 3. not a `Rank.Hood` → "only a hood carries the bag"
 4. not `AssignmentKind.Crew` → "he has to be in a crew"
+5. otherwise the mark comes OFF every other hood of the same crew, and goes on him
 
-Every move that changes who a man answers to clears his duty with it — `Promote`,
-`Demote`, `AssignToBoss`, `AssignToPool`, `AssignToFront`. `AssignToCrew` keeps it.
+Anyone in the crew may carry it — the four who walk the street included. Every move that
+changes who a man answers to clears his duty with it — `Promote`, `Demote`,
+`AssignToBoss`, `AssignToPool`, `AssignToFront`. `AssignToCrew` keeps it.
 
-`RosterOps.CollectorsOf(roster, crewId, into)` answers the live, active, marked men of
-one crew. A man in a hospital bed is on the books and not on the round.
+`RosterOps.CollectorOf(roster, crewId)` answers the one man marked, `CollectorsOf` the
+same man only while he can actually walk (a man in a hospital bed is on the books and not
+on the round).
 
-On the street, `CollectorOf(unit)` prefers a marked man; failing that it falls back to
-the old rule (the lieutenant, then the first hood on his feet). A crew with nobody marked
-still collects when ordered by hand — the mark is an arrangement, not a requirement.
+### Who the lieutenant picks
+
+`CollectorChoice` (pure, no UnityEngine) is how a lieutenant hands the bag out himself:
+
+* `Fitness(man)` = half-steps of Streetwise + Persuasion + Awareness. Combat is not on
+  the list: the bag is carried, not fought over.
+* `PickRank(organizationHalfSteps, candidates)` — the index into the fitness-sorted list
+  the lieutenant reaches for. 8+ → the best man, 6–7 → the second, 4–5 → the middle,
+  2–3 → the worst. A good organizer picks well; a poor one does not.
+* Ties break on lower Greed, then lower id. Deterministic, no draw anywhere.
+
+`RosterOps.NameCollector(roster, crewId, hoodId)` is the boss's word and sets
+`Crew.BagNamedByBoss` with `Crew.BagNamedId`; `TakeOffTheBag` is the boss's "nobody"
+(`BagNamedId = -1`); `LetLieutenantPick` clears both and gives the job back to the
+lieutenant. `TendCrewBag` / `TendCollectors` fill a gap: a crew with ground on the paper
+and nobody on his feet carrying its bag gets one handed out — **unless the boss has ruled
+on that bag**.
+
+**A ruling outlives a sentence, not a man.** The named man keeps the bag through a cell or
+a hospital bed — that is the point of naming him. A named man who is DEAD, or who now
+answers to another lieutenant, is not a ruling any more: it is spent, the flag clears and
+the lieutenant hands the bag out again. Without that check one death left a crew with a
+standing order naming a corpse and its ground was never collected on again.
+`AssignToCrew` is the one move that keeps a duty, so a man who walks over with the bag has
+it re-laid in his new crew, which clears whoever was carrying it there.
+
+It runs at three moments: `PersonnelDirector.AssignBlockResponsibility` (ground without a
+collector is paper nobody collects on), the day tick (`CampaignRunner.DayTick`, after the
+books and before the closing passes, filing an `IncidentKind.BagHanded` line), and
+LET HIM PICK on the block file.
+
+### The bag man is not in the line
+
+`DemoCrews.Sync` deals four ACTIVE hoods of a crew onto the street. The man marked for the
+bag does not stand among them — the next man on the books walks in his place — but he
+still **spends one of the four**, read before the line is filled. Otherwise naming a
+collector would put a fifth body on the street, and an administrative duty would be a way
+of buying men. He is dealt into a **unit of his own** (`Unit.IsDetachment`, `Unit.Parent`, the same
+`CrewId`), standing at the outfit's own door. `DemoCrews.BagUnitOf(crewId)` finds him;
+`UnitOfCrew`, `TerritoryRuntime.FindUnit`/`FindPlayerUnit`/`TryGetCrewNode` and every
+surface that LISTS or PICKS a crew (`CrewOverlay`, `CrewBar`, `RacketProbe`,
+`DemoCrews.Boarding`, the tactical projection) return the parent and skip him. Everything
+that samples BODIES — presence, arrivals, combat, avoidance — sees him like any man,
+because he is in `Units`.
+
+So a Thursday round takes one man off the block and leaves the crew standing on it.
+`CollectionRound.Walkers` is the unit that walks: the bag unit where the crew has one,
+else the crew's own line, which is what a crew with nobody marked still does when the
+player orders a round by hand. An order to the CREW (`DropPendingApproaches`) no longer
+kills the bag man's round.
+
+Two rules hold the handover together. `EnsureCollector` requires the carrier to be one of
+the men **of the unit walking the round**, not merely alive — the unit object is reused
+between deals, so a carrier dealt back into the line would otherwise have gone on settling
+doors from wherever the crew was standing. And **the bag falls with the man**: a bag unit
+dealt away under a LIVING carrier hands the round on to the crew's new bag man, else to
+the line, but a carrier who is dead loses what he was carrying where he fell. Handing his
+take to men streets away would be money teleporting off a corpse.
 
 ## The schedule
 
@@ -220,6 +280,7 @@ settle, duty change and policy change.
 |---|---|
 | block file (BLOCKS sheet) | the six orders, POLICY, WHO WALKS THE DOORS, the standings column, the money figures |
 | **turf map, right-click a block** | SHAKE DOWN / COLLECT THE TAKE / LEAN, over the block whose label is up |
+| block file | WHO CARRIES THE BAG — the responsible crew's own roll, each man with his bag-fitness in stars and whether he walks the street, plus LET HIM PICK and NOBODY |
 | personnel card | MAKE HIM A COLLECTOR, and the round he actually walks under it |
 | roster row | the COLLECTOR mark |
 | the wire (rail + street strip) | short, missed, round out, banked, lost |
@@ -240,7 +301,7 @@ round had gone only when the money arrived — or never, if it did not.
 ## Not built
 
 * Duties other than Collector.
-* **The detachment** (GAN-224 Part D): a scheduled round still marches the whole crew, so
-  a Thursday round pulls every man off the block it is collecting. The design wants the
-  collector plus one escort to walk while the rest hold the street. It needs
-  `DemoCrews.Detach/Merge` and a `CrewOverlay` picker that skips detachments.
+* **The escort.** The bag man walks alone (GAN-262). The design wants one man with him
+  where the crew can spare it; that needs a second body detached from the line and a
+  formation for the pair.
+* Duties other than Collector on the bag unit — it is one man by construction today.

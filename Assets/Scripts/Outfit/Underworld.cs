@@ -85,6 +85,12 @@ namespace LivingCity.Outfit
                 ArmTheFamily(roster);
                 RosterOps.NormalizeArms(roster);
 
+                // The runner is told WHOSE books it keeps. Twenty-one of these tick
+                // every midnight and anything that asks "which family am I?" - where a
+                // defector's door opens, most of all - reads it from here rather than
+                // assuming house zero. The city's one book of standings is hung on it
+                // in the same breath: a stance belongs to the pair, so it is lent to
+                // every house and owned by none of them.
                 var runner = new CampaignRunner
                 {
                     Seed = citySeed,

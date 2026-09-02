@@ -76,6 +76,9 @@ namespace RoadDemo
                     ? LeanRefusal
                     : ShakedownRefusal);
 
+            // THE WHOLE CREW WALKS A SHAKEDOWN. A collection can send the bag man out
+            // alone (GAN-262); this cannot, because the men in the doorway ARE the
+            // argument - so the line itself is the unit that walks these doors.
             var mouth = CollectorOf(unit);
             if (mouth == null)
                 return TerritoryCommandExecution.Reject(

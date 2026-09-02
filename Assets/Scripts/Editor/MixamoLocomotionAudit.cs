@@ -15,6 +15,10 @@ namespace GangstersTools
     public static class MixamoLocomotionAudit
     {
         const string Root = "Assets/Animations/Mixamo/Locomotion";
+        const string FemaleGangBody =
+            "Assets/Synty/PolygonPalmCity/Prefabs/Characters/SM_Chr_Gang_Female_01.prefab";
+        const string MaleGangBody =
+            "Assets/Synty/PolygonPalmCity/Prefabs/Characters/SM_Chr_Gang_Male_01.prefab";
 
         [CliCommand("gangsters_cover_locomotion_audit",
             "Validate all 42 CoverDemo Mixamo motions, Humanoid avatars, loops, root pace, sex mapping and pistol directions.",
@@ -84,6 +88,7 @@ namespace GangstersTools
                 }
             }
 
+            int prefabSexMappings = 0;
             var seed = new AnimationClip { name = "rifle-sentinel" };
             try
             {
@@ -98,10 +103,23 @@ namespace GangstersTools
                 var female = MixamoLocomotionKit.ForBody(initial, true);
                 var male = MixamoLocomotionKit.ForBody(initial, false);
 
-                RequireBody(female, "mixamo-female", "/Female/walking.fbx",
-                    "/Female/running.fbx", failures);
-                RequireBody(male, "mixamo-male", "/Male/walking.fbx",
-                    "/Male/standard run.fbx", failures);
+                RequireBody(female, "mixamo-female", "/Female/idle.fbx",
+                    "/Female/walking.fbx", "/Female/running.fbx", failures);
+                RequireBody(male, "mixamo-male", "/Male/idle.fbx",
+                    "/Male/walking.fbx", "/Male/standard run.fbx", failures);
+
+                // Exercise the same decision made by DemoCrews.ClipsFor: inspect the
+                // actual body prefab's name first, then deal its basic wardrobe from
+                // that answer. A boolean-only resolver check would not catch a renamed
+                // prefab or a regression in the shared Synty sex convention.
+                if (RequirePrefabBody(FemaleGangBody, true, "mixamo-female",
+                        "/Female/idle.fbx", "/Female/walking.fbx",
+                        "/Female/running.fbx", failures))
+                    prefabSexMappings++;
+                if (RequirePrefabBody(MaleGangBody, false, "mixamo-male",
+                        "/Male/idle.fbx", "/Male/walking.fbx",
+                        "/Male/standard run.fbx", failures))
+                    prefabSexMappings++;
                 if (female.RifleIdle != seed || female.RifleAim != seed ||
                     female.RifleWalk != seed || female.RifleJog != seed ||
                     male.RifleIdle != seed || male.RifleAim != seed ||
@@ -137,17 +155,42 @@ namespace GangstersTools
                 loops,
                 oneShots,
                 moving,
+                prefabSexMappings,
                 failures = failures.ToArray(),
             };
         }
 
-        static void RequireBody(PedClips clips, string label, string walkPath,
-            string runPath, List<string> failures)
+        static bool RequirePrefabBody(string prefabPath, bool expectedFemale,
+            string label, string idlePath, string walkPath, string runPath,
+            List<string> failures)
+        {
+            int before = failures.Count;
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            if (prefab == null)
+            {
+                failures.Add("Known locomotion body is missing: " + prefabPath);
+                return false;
+            }
+
+            bool female = LivingCity.Entities.PedestrianIdentity.IsFemale(prefab.name);
+            if (female != expectedFemale)
+                failures.Add($"{prefab.name}: prefab-name sex resolved as " +
+                             (female ? "female" : "male") + ", expected " +
+                             (expectedFemale ? "female." : "male."));
+
+            var clips = MixamoLocomotionKit.ForBody(new PedClips(), female);
+            RequireBody(clips, label, idlePath, walkPath, runPath, failures);
+            return failures.Count == before;
+        }
+
+        static void RequireBody(PedClips clips, string label, string idlePath,
+            string walkPath, string runPath, List<string> failures)
         {
             if (!clips.AuthoredBasicLocomotion || clips.BasicLocomotionLabel != label)
                 failures.Add(label + ": basic locomotion flag/label missing.");
-            if (!EndsWith(clips.Walk, walkPath) || !EndsWith(clips.Jog, runPath))
-                failures.Add(label + ": wrong sex-specific walk/run mapping.");
+            if (!EndsWith(clips.Idle, idlePath) || !EndsWith(clips.Walk, walkPath) ||
+                !EndsWith(clips.Jog, runPath))
+                failures.Add(label + ": wrong sex-specific idle/walk/run mapping.");
         }
 
         static void RequirePistolSet(AnimationClip[] set, string pace,

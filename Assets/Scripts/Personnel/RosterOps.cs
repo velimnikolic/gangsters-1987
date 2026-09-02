@@ -59,10 +59,16 @@ namespace LivingCity.Personnel
         }
 
         /// <summary>
-        /// Yes. His envelope is brought up to what he asked, and the asking stops -
-        /// the bargain moves, which is the one thing that closes a pay gap for good.
-        /// A man who was skimming over it stops that too: he was taking what he thought
-        /// he was owed.
+        /// Yes. He asked for the rate, and he is put ON the rate: his bargain is torn
+        /// up (<c>WageAsked = 0</c>) and from that midnight he draws the house scale
+        /// like every man the outfit raised itself. The asking stops, and a man who was
+        /// skimming over it stops too - he was taking what he thought he was owed.
+        ///
+        /// WAGE-002. This used to write the demanded FIGURE onto his bargain, which
+        /// froze his envelope at what he was worth on the day he asked while his stars
+        /// went on rising underneath it - so a greedy man came back with a new demand
+        /// every thirty-five days, forever, and every grant bought thirty-five days of
+        /// quiet instead of settling anything.
         /// </summary>
         public static OpResult GrantRaise(Roster roster, int id)
         {
@@ -72,7 +78,7 @@ namespace LivingCity.Personnel
             if (member.WageDemand <= 0)
                 return OpResult.Fail(LedgerText.ReasonNoDemand);
 
-            member.WageAsked = member.WageDemand;
+            member.WageAsked = 0;
             member.WageDemand = 0;
             member.UnderpaidSince = 0;
             member.Skimming = false;
@@ -170,7 +176,8 @@ namespace LivingCity.Personnel
         /// of choosing a man on his history is that the choice is real, and a promotion
         /// that quietly made him better at leading men would make every choice the same
         /// choice. His wage changes because the house scale is read off his rank
-        /// (Wages.WageFor) - not because anything was written on him.
+        /// (Wages.WageFor) - not because anything was written on him, and it always
+        /// RISES: the lieutenant base sits above the hood ceiling by construction.
         ///
         /// What it does move is the men around him. His old crewmates watch one of
         /// their own rise, and an ambitious man passed over feels it exactly as much as
@@ -197,6 +204,12 @@ namespace LivingCity.Personnel
             member.Duty = Duty.None;   // he runs the branch now; he does not walk it
             member.Rank = Rank.Lieutenant;
             member.RankSince = roster.Day;
+            // A NEW RANK IS A NEW BARGAIN (WAGE-002): whatever he signed for as a hood
+            // has nothing to say about what a lieutenant costs, and the house rate of
+            // the rank he now holds applies the same midnight. A man signed out of the
+            // classified column is promoted on his way onto the books, so the door that
+            // signs him re-stamps his ask AFTER this returns.
+            member.WageAsked = 0;
             // He answers to the Boss now, and a new relationship starts near zero
             // history - what he felt about his old lieutenant does not come with him.
             Loyalty.Reaim(member, "made a lieutenant, and answers to the Boss now", changes);
@@ -280,6 +293,10 @@ namespace LivingCity.Personnel
             member.Rank = Rank.Hood;
             member.RankSince = roster.Day;
             member.Duty = Duty.None;
+            // The other half of WAGE-002's rule: a demoted paper lieutenant used to
+            // draw his old lieutenant's ask as a hood for the rest of his life. He is
+            // a hood now, and he is paid a hood's house rate.
+            member.WageAsked = 0;
             Loyalty.Reaim(member, "taken back down to a hood", changes);
             Loyalty.Sting(member, changes);
             PutUnderBossIfPresent(roster, member.Id);
@@ -317,11 +334,178 @@ namespace LivingCity.Personnel
 
             if (member.Rank != Rank.Hood)
                 return OpResult.Fail("only a hood carries the bag");
-            if (roster.AssignmentOf(id).Kind != AssignmentKind.Crew)
+            var assignment = roster.AssignmentOf(id);
+            if (assignment.Kind != AssignmentKind.Crew)
                 return OpResult.Fail("he has to be in a crew");
+
+            // ONE BAG TO A CREW (GAN-262). Marking a second man moves the bag: the
+            // first man's mark comes off with it, so the street never has two men of
+            // one crew each thinking he is the one who walks the round.
+            var crew = roster.FindCrew(assignment.CrewId);
+            if (crew != null)
+                for (var i = 0; i < crew.HoodIds.Count; i++)
+                {
+                    if (crew.HoodIds[i] == id)
+                        continue;
+                    var other = roster.Find(crew.HoodIds[i]);
+                    if (other != null && other.Duty == duty)
+                        other.Duty = Duty.None;
+                }
 
             member.Duty = duty;
             return OpResult.Success;
+        }
+
+        /// <summary>The one man of the crew marked for the bag and still on the books,
+        /// or -1. A man in a cell or a bed still holds the mark - he is not walking
+        /// it, but it is his (CollectorsOf is the list that answers who can walk).</summary>
+        public static int CollectorOf(Roster roster, int crewId)
+        {
+            var crew = roster?.FindCrew(crewId);
+            if (crew == null)
+                return -1;
+            for (var i = 0; i < crew.HoodIds.Count; i++)
+            {
+                var man = roster.Find(crew.HoodIds[i]);
+                if (man != null && !man.Gone && man.Duty == Duty.Collector)
+                    return man.Id;
+            }
+            return -1;
+        }
+
+        /// <summary>THE BOSS NAMES THE BAG MAN, from the ledger: one of that
+        /// lieutenant's own hoods, and the ruling sticks until the boss changes it.</summary>
+        public static OpResult NameCollector(Roster roster, int crewId, int hoodId)
+        {
+            var crew = roster?.FindCrew(crewId);
+            if (crew == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchCrew);
+            if (!crew.HoodIds.Contains(hoodId))
+                return OpResult.Fail("he is not one of that lieutenant's men");
+            var result = SetDuty(roster, hoodId, Duty.Collector);
+            if (result.Ok)
+            {
+                crew.BagNamedByBoss = true;
+                crew.BagNamedId = hoodId;
+            }
+            return result;
+        }
+
+        /// <summary>THE BOSS TAKES THE BAG OFF HIM and leaves it with nobody. That is a
+        /// ruling too: the lieutenant does not quietly hand it to the next man at
+        /// midnight - the boss said nobody, and nobody it is until LET HIM PICK.</summary>
+        public static OpResult TakeOffTheBag(Roster roster, int hoodId)
+        {
+            var member = roster?.Find(hoodId);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            member.Duty = Duty.None;
+            var crew = roster.CrewOf(hoodId);
+            if (crew != null)
+            {
+                crew.BagNamedByBoss = true;
+                crew.BagNamedId = -1;   // he ruled NOBODY, and that is a ruling too
+            }
+            return OpResult.Success;
+        }
+
+        /// <summary>
+        /// THE LIEUTENANT HANDS THE BAG TO ONE OF HIS OWN (CollectorChoice): the best
+        /// man he has if he is an organizer, a worse one if he is not. Clears the
+        /// boss's ruling on this crew's bag - the job is his again from here.
+        /// </summary>
+        public static OpResult LetLieutenantPick(Roster roster, int crewId, out int hoodId)
+        {
+            hoodId = -1;
+            var crew = roster?.FindCrew(crewId);
+            if (crew == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchCrew);
+            var pick = CollectorChoice.Pick(roster, crew);
+            if (pick < 0)
+                return OpResult.Fail("he has nobody to give the bag to");
+            var result = SetDuty(roster, pick, Duty.Collector);
+            if (!result.Ok)
+                return result;
+            crew.BagNamedByBoss = false;
+            crew.BagNamedId = -1;
+            hoodId = pick;
+            return OpResult.Success;
+        }
+
+        /// <summary>
+        /// One crew's bag, looked at the way its lieutenant looks at it every morning:
+        /// a man on his feet holds it - nothing to do; nobody holds it, or the man who
+        /// does is in a cell or a bed - hand it to another, unless the boss has ruled
+        /// on this bag, in which case the boss's word stands (his named man keeps it
+        /// through a sentence; his "nobody" stays nobody). Returns the id newly handed
+        /// the bag, or -1 when nothing moved.
+        /// </summary>
+        public static int TendCrewBag(Roster roster, Crew crew)
+        {
+            if (roster == null || crew == null)
+                return -1;
+            var lieutenant = roster.Find(crew.LieutenantId);
+            if (lieutenant == null || lieutenant.Gone)
+                return -1;
+
+            var current = CollectorOf(roster, crew.Id);
+            if (current >= 0)
+            {
+                var holder = roster.Find(current);
+                if (holder != null && holder.Status == CharacterStatus.Active)
+                    return -1;
+            }
+
+            // THE BOSS'S RULING OUTLIVES A SENTENCE, NOT A MAN. A named man in a cell
+            // or a bed keeps the bag - that is the whole point of naming him. A named
+            // man who is DEAD, or who now answers to another lieutenant, is not a
+            // ruling any more, he is a hole in the books: the ruling is spent and the
+            // lieutenant hands the bag out again. Without this the crew's ground was
+            // never collected on again, because nothing else clears the flag.
+            if (crew.BagNamedByBoss)
+            {
+                if (crew.BagNamedId < 0)
+                    return -1;   // he ruled NOBODY, and nobody it stays
+                var named = roster.Find(crew.BagNamedId);
+                if (named != null && !named.Gone && crew.HoodIds.Contains(crew.BagNamedId))
+                    return -1;
+                crew.BagNamedByBoss = false;
+                crew.BagNamedId = -1;
+            }
+
+            return LetLieutenantPick(roster, crew.Id, out var picked).Ok ? picked : -1;
+        }
+
+        /// <summary>
+        /// Every crew that answers for a block on the organization's paper gets its bag
+        /// tended (TendCrewBag) - a crew with no ground collects nothing and needs no
+        /// bag man. The pairs handed are returned so the day can print who gave the
+        /// bag to whom.
+        /// </summary>
+        public static void TendCollectors(
+            Roster roster, System.Collections.Generic.List<(int crewId, int hoodId)> handed)
+        {
+            handed?.Clear();
+            if (roster == null)
+                return;
+            for (var c = 0; c < roster.Crews.Count; c++)
+            {
+                var crew = roster.Crews[c];
+                if (!AnswersForABlock(roster, crew.LieutenantId))
+                    continue;
+                var picked = TendCrewBag(roster, crew);
+                if (picked >= 0)
+                    handed?.Add((crew.Id, picked));
+            }
+        }
+
+        static bool AnswersForABlock(Roster roster, int leaderId)
+        {
+            var paper = roster.Organization.BlockResponsibilities;
+            for (var i = 0; i < paper.Count; i++)
+                if (paper[i].LeaderId == leaderId && paper[i].BlockId.IsValid)
+                    return true;
+            return false;
         }
 
         /// <summary>The men of one crew who are marked for the bag and able to walk it.
@@ -368,6 +552,14 @@ namespace LivingCity.Personnel
 
             Detach(roster, id);
             crew.HoodIds.Add(id);
+            // A man walks over with the bag still marked on him (AssignToCrew is the one
+            // move that keeps a duty). His NEW crew may already have a bag man, and one
+            // bag to a crew is the rule - so the mark is re-laid here, which clears the
+            // other man's. His old crew's ruling, if the boss made one, is spent: he is
+            // not one of that lieutenant's men any more (TendCrewBag).
+            var carried = roster.Find(id);
+            if (carried != null && carried.Duty != Duty.None)
+                SetDuty(roster, id, carried.Duty);
             // A new superior is a new relationship: loyalty starts near neutral again.
             var moved = roster.Find(id);
             Loyalty.Reaim(moved, "put under a new lieutenant", changes);
@@ -1059,6 +1251,91 @@ namespace LivingCity.Personnel
             StrikeOff(roster, id, CharacterStatus.Deserted, story, weight, changes);
 
         /// <summary>
+        /// CUT HIM LOOSE (GAN-245). The city has him, and the boss has decided not to
+        /// carry him: struck off the same way a deserter is - his line kept, his gear
+        /// pooled, his post passed on - but marked as what it is, because it was not
+        /// the man who walked away.
+        ///
+        /// And the outfit is TOLD. Every loyalty movement here goes through
+        /// <see cref="NudgePersonality"/> with a printed reason, because a crew whose
+        /// lieutenant was sold and whose loyalty fell for reasons nobody was given is
+        /// the betrayal the player could not have seen coming. The weights are
+        /// <see cref="Loyalty"/>'s.
+        ///
+        /// The men are read BEFORE he is struck off: striking a lieutenant off promotes
+        /// an heir out of his own crew, and a crew read afterwards is a different crew.
+        /// </summary>
+        public static OpResult CutLoose(Roster roster, int id,
+            System.Collections.Generic.List<PersonalityChange> changes = null)
+        {
+            var member = roster?.Find(id);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (member.Gone)
+                return OpResult.Fail(GoneReason(member));
+            // Only a man the city is holding - in a cell, or out on the outfit's own
+            // bail money waiting on a court day. Nobody is sold off a street corner.
+            if (member.Status != CharacterStatus.Jailed && member.BailedUntil <= 0)
+                return OpResult.Fail(LedgerText.ReasonNotInside);
+
+            var wasLieutenant = member.Rank == Rank.Lieutenant;
+            var crew = roster.CrewOf(id);
+            var his = new System.Collections.Generic.List<int>();
+            if (crew != null)
+            {
+                if (crew.LieutenantId != id)
+                    his.Add(crew.LieutenantId);
+                for (var i = 0; i < crew.HoodIds.Count; i++)
+                    if (crew.HoodIds[i] != id)
+                        his.Add(crew.HoodIds[i]);
+            }
+
+            var result = StrikeOff(roster, id, CharacterStatus.CutLoose,
+                "Cut loose by the boss while inside.", 0, changes);
+            if (!result.Ok)
+                return result;
+
+            var crewHit = wasLieutenant
+                ? Loyalty.CutLooseCrewHit : Loyalty.CutLooseHoodCrewHit;
+            var restHit = wasLieutenant
+                ? Loyalty.CutLooseOutfitHit : Loyalty.CutLooseHoodOutfitHit;
+            var ownReason = wasLieutenant
+                ? "the boss sold their lieutenant"
+                : "the boss sold one of their own";
+
+            for (var i = 0; i < roster.Members.Count; i++)
+            {
+                var man = roster.Members[i];
+                if (man.Id == id || man.Gone || man.Rank == Rank.Boss ||
+                    man.Specialty != Specialty.None)
+                    continue;
+
+                int hit;
+                string why;
+                if (his.Contains(man.Id))
+                {
+                    hit = crewHit;
+                    why = ownReason;
+                }
+                else if (wasLieutenant && man.Rank == Rank.Lieutenant)
+                {
+                    hit = Loyalty.CutLooseLieutenantHit;
+                    why = "watched the boss sell a lieutenant";
+                }
+                else
+                {
+                    hit = restHit;
+                    why = "word went round that the boss sold a man inside";
+                }
+
+                NudgePersonality(man, PersonalityTrait.Loyalty,
+                    -Loyalty.CutLooseHit(man, hit), why, changes);
+            }
+
+            return OpResult.Success;
+        }
+
+        /// <summary>
         /// A man laid up - his own charge went off early, or the other side got the
         /// better of it. Unlike the dead he keeps his post, his crew and his gun: he is
         /// coming back, and the outfit pays him while he is in there (see Wages). The
@@ -1173,6 +1450,13 @@ namespace LivingCity.Personnel
                 // A man on his feet carries no note - leaving the old one would print
                 // "two ribs" beside FIT for the rest of his career.
                 member.ConditionNote = "";
+                // AND HE IS BACK IN THE CITY. Sending a man away (Police.WantedLevels
+                // .SendAway) is the one away-state that also takes him off the payroll,
+                // and nothing anywhere put the flag down again: he came back on his
+                // feet, drew nothing for the rest of the campaign, and could never be
+                // sent away a second time because CanSendAway refuses a man already
+                // gone. The bus ticket buys FOURTEEN DAYS, not a free man for life.
+                member.OutOfTown = false;
                 back++;
             }
             return back;
@@ -1195,41 +1479,16 @@ namespace LivingCity.Personnel
                 if (roster.Equipment[i].HolderId == id)
                     roster.Equipment[i].HolderId = RosterEquipment.Unheld;
 
+            // THE CHAIR HAS AN HEIR (EPIC 25, Q3 - the user's word of 2026-09-03: one
+            // of the lieutenants takes it). Read BEFORE the crew below is passed on:
+            // the Boss's own crew is his detail, and the man who takes the chair takes
+            // the detail with it.
+            if (roster.Organization.BossId == id)
+                SucceedTheBoss(roster, member, changes);
+
             var crew = roster.CrewOf(id);
             if (crew != null && crew.LieutenantId == id)
-            {
-                Character heir = null;
-                foreach (var hoodId in crew.HoodIds)
-                {
-                    var hood = roster.Find(hoodId);
-                    if (hood == null || hood.Status != CharacterStatus.Active) continue;
-                    if (heir == null || hood.Loyalty > heir.Loyalty) heir = hood;
-                }
-                if (heir != null)
-                {
-                    crew.HoodIds.Remove(heir.Id);
-                    roster.Organization.BossHoodIds.Remove(heir.Id);
-                    heir.Rank = Rank.Lieutenant;
-                    crew.LieutenantId = heir.Id;
-                    // Succession is still a promotion: the rank clock restarts and his
-                    // loyalty re-aims at the Boss, exactly as the regular path stamps
-                    // them. Without these the drift kept fining the new lieutenant as
-                    // "parked" against a date from his corner days.
-                    heir.RankSince = roster.Day;
-                    Loyalty.Reaim(heir,
-                        "stepped up when his lieutenant went down, and answers to the Boss now",
-                        changes);
-                    Career.RankChanged(heir, roster.Day, Rank.Lieutenant,
-                        "stepped up when " + member.Surname + " went down");
-                }
-                else
-                {
-                    var formerHoods = new System.Collections.Generic.List<int>(crew.HoodIds);
-                    roster.Crews.Remove(crew);
-                    for (var i = 0; i < formerHoods.Count; i++)
-                        PutUnderBossIfPresent(roster, formerHoods[i]);
-                }
-            }
+                PassTheCrewOn(roster, crew, member, changes);
             else
                 Detach(roster, id);
 
@@ -1238,8 +1497,102 @@ namespace LivingCity.Personnel
             return OpResult.Success;
         }
 
-        static string GoneReason(Character member) =>
-            member.Status == CharacterStatus.Deserted ? LedgerText.ReasonDeserted : LedgerText.ReasonDead;
+        /// <summary>
+        /// The crew of a lieutenant who is going: his most loyal man on his feet steps
+        /// up into the chair, and a crew with nobody left to take it is dissolved under
+        /// the Boss. Succession is still a promotion - the rank clock restarts and his
+        /// loyalty re-aims at the Boss, exactly as the regular path stamps them.
+        /// Without these the drift kept fining the new lieutenant as "parked" against a
+        /// date from his corner days.
+        /// </summary>
+        static void PassTheCrewOn(Roster roster, Crew crew, Character leaving,
+            System.Collections.Generic.List<PersonalityChange> changes)
+        {
+            Character heir = null;
+            foreach (var hoodId in crew.HoodIds)
+            {
+                var hood = roster.Find(hoodId);
+                if (hood == null || hood.Status != CharacterStatus.Active) continue;
+                if (heir == null || hood.Loyalty > heir.Loyalty) heir = hood;
+            }
+            if (heir != null)
+            {
+                crew.HoodIds.Remove(heir.Id);
+                roster.Organization.BossHoodIds.Remove(heir.Id);
+                heir.Rank = Rank.Lieutenant;
+                crew.LieutenantId = heir.Id;
+                heir.RankSince = roster.Day;
+                Loyalty.Reaim(heir,
+                    "stepped up when his lieutenant went down, and answers to the Boss now",
+                    changes);
+                Career.RankChanged(heir, roster.Day, Rank.Lieutenant,
+                    "stepped up when " + leaving.Surname + " went down");
+            }
+            else
+            {
+                var formerHoods = new System.Collections.Generic.List<int>(crew.HoodIds);
+                roster.Crews.Remove(crew);
+                for (var i = 0; i < formerHoods.Count; i++)
+                    PutUnderBossIfPresent(roster, formerHoods[i]);
+            }
+        }
+
+        /// <summary>
+        /// A DEAD DON IS SUCCEEDED (EPIC 25, Q3). Nothing moved
+        /// <see cref="Organization.BossId"/> when the man it named went down, so
+        /// <see cref="Roster.FindBoss"/> went on answering a corpse and the house
+        /// latched Fallen (ours) or read Extinct (a family's) with twenty men still on
+        /// its books. Now the most loyal LIEUTENANT still on his feet takes the chair -
+        /// the same rule the crews are passed on by, one rank up, so no new number and
+        /// no new preference enter the game.
+        ///
+        /// He leaves his own crew behind him first (it passes on by the ordinary rule),
+        /// then takes the dead man's detail, and his bargain is torn up because a new
+        /// rank is a new bargain (WAGE-002) - a Don left on a lieutenant's envelope
+        /// would read as underpaid against his own house rate from the hour he took the
+        /// chair, and demand a raise of himself.
+        ///
+        /// A house with no lieutenant left has nobody to take it and falls, which is
+        /// what it did before.
+        /// </summary>
+        static void SucceedTheBoss(Roster roster, Character fallen,
+            System.Collections.Generic.List<PersonalityChange> changes)
+        {
+            Character heir = null;
+            for (var i = 0; i < roster.Members.Count; i++)
+            {
+                var man = roster.Members[i];
+                if (man == null || man.Id == fallen.Id || man.Gone ||
+                    man.Status != CharacterStatus.Active || man.Rank != Rank.Lieutenant)
+                    continue;
+                if (heir == null || man.Loyalty > heir.Loyalty) heir = man;
+            }
+            if (heir == null)
+                return;
+
+            var his = roster.CrewOf(heir.Id);
+            if (his != null && his.LieutenantId == heir.Id)
+                PassTheCrewOn(roster, his, heir, changes);
+
+            var detail = roster.CrewOf(fallen.Id);
+            if (detail != null && detail.LieutenantId == fallen.Id)
+                detail.LieutenantId = heir.Id;
+
+            heir.Rank = Rank.Boss;
+            heir.RankSince = roster.Day;
+            heir.WageAsked = 0;
+            roster.Organization.BossId = heir.Id;
+            roster.Organization.BossHoodIds.Remove(heir.Id);
+            Career.RankChanged(heir, roster.Day, Rank.Boss,
+                "took the chair when " + fallen.Surname + " went down");
+        }
+
+        static string GoneReason(Character member) => member.Status switch
+        {
+            CharacterStatus.Deserted => LedgerText.ReasonDeserted,
+            CharacterStatus.CutLoose => LedgerText.ReasonCutLoose,
+            _ => LedgerText.ReasonDead,
+        };
 
         /// <summary>Removes the Hood from every post and command branch before one
         /// authoritative destination is written.</summary>

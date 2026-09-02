@@ -47,12 +47,41 @@ flagged against ITSELF:
 - `jump` — a step longer than the speed accounts for
 - `steer` — full lock at speed: the line being followed has a kink in it
 - `speeding`, `walkstall`, `carstuck`, `nokill`, `nopark`
+- `openfire` — a round from the open with a free flank standing on the man's own fire
+  line (EPIC 28). The audit asks the same oracle the man asks, at the moment he pulls
+  the trigger, and only after four seconds of it: an empty street is not a fault, and a
+  beat between the street changing and the man noticing is not one either.
+- the ambush's own five, from the CoverDemo run (`--ambush`): `noambush` (nothing to get
+  behind), `nolurk` (dealt flanks, never got down behind them), `seenfirst` (the mob had
+  its guns on us first — the surprise range is not holding), `openambush` (it sprang with
+  the men standing in the street), `nospring` (the mob walked up and nothing happened).
+
+`cover` is the row a fighting man writes every time he asks the street for a flank:
+`found` whether it had one, `first` whether he has yet fired a round in this fight,
+`walk` how far off it is. The `shot` row carries `fromcover` beside it - the SHOOTER's
+own cover state, as against the older `cover`/`ducked` pair, which have always been
+about the man being shot AT. "He got behind something BEFORE he opened up" is the
+first `shot` row of each man with `fromcover` true, and `analyze.py --crew` prints
+the share.
 
 ## Thirty in a row
 
 One good run proves nothing - the faults that matter here turn up one time in three.
 
     pwsh Tools/play/soak.ps1 -Runs 30
+
+On a Mac editor, `bash Tools/play/soak.sh --runs 30` does the same, and takes the mode
+it should run in: `--moto`, `--roadblock`, `--walk`, `--brawl`, `--freeway`, and the two
+combat ones — `--cover` (a KILL down the furnished CoverDemo street: the men have forty
+metres to cross, which is the exact case that used to fire on the move and look for a bin
+afterwards) and `--ambush` (the crew put behind a bin between itself and a mob, left to
+lie in wait, and the mob then walked into it). Both end with the epic's own number:
+
+    == cover first: 41/48 men over 30 runs (85%)
+
+which is the share of men whose FIRST round of a fight left from behind something. It is
+a RATE over runs and never a seed against a seed — the cover code draws from the shared
+`Random`, so one seed says nothing.
 
 Each run is a different quarter (the seed steps), each is judged the same way, and the
 tally is written to `soak.txt` beside the runs. A run FAILS on a **defect** only:
@@ -94,3 +123,19 @@ game being a game, not the code being wrong.
   is spoiled (a reload wipes the statics under it).
 - Runs are written OUTSIDE the project. `Temp/` is Unity's own scratch and is emptied when
   the editor shuts down — which is exactly when a run has finished writing its trace.
+
+## The ambush, by hand
+
+`gangsters_ambush_probe` gives the player's right click from the terminal, on a scene
+already in Play. It is what proves the two halves of EPIC 28 no unattended run reaches
+by luck:
+
+    unity command gangsters_ambush_probe                    # who is lying in wait behind what
+    unity command gangsters_ambush_probe --order            # click the nearest thing to get behind
+    unity command gangsters_ambush_probe --order --fight    # the same click with the fight already on
+    unity command gangsters_ambush_probe --drive            # the car they are behind pulls away
+
+The rows say, per man: `held` (he was dealt a flank), `lurking` (he is down behind it),
+`armed`, `inCover`, `fighting` (his mark), `fromHeld` (he is fighting FROM the flank he
+was put on) and `onRoad`. After `--drive`, no man should read `onRoad` - nobody guards
+the space where a car was.

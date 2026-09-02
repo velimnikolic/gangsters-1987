@@ -1268,7 +1268,8 @@ namespace RoadDemo
             for (var i = 0; i < crews.Units.Count; i++)
             {
                 var unit = crews.Units[i];
-                if (unit == null || unit.IsPolice || unit.Faction != 0 || unit.Wiped)
+                if (unit == null || unit.IsPolice || unit.Faction != 0 || unit.Wiped ||
+                    unit.IsDetachment)
                     continue;
                 if (unit.CrewId != crewId)
                     continue;
@@ -1447,6 +1448,12 @@ namespace RoadDemo
             racket.Threaten(businessId, gangId, lastGameHour, racketChanges);
             if (geography != null && geography.TryGetBusinessBlock(businessId, out var threatBlock))
                 PublishRacket(threatBlock);
+
+            // AND HE CAN PICK UP THE TELEPHONE (GAN-245). Every lean in the city lands
+            // here - the walked-in one, the round's own, the one a standing man is
+            // clicked into - so this is the one place the shopkeeper gets to answer
+            // back with something other than a number moving.
+            MaybeRingThePrecinct(gangId, businessId);
 
             return ResolveDemand(gangId, businessId, out verdict, out terms);
         }
@@ -1925,8 +1932,6 @@ namespace RoadDemo
             crews.MarchTo(unit, spot);
         }
 
-        /// <summary>The outfit's crew that carries this crew number, if it is still on the
-        /// street.</summary>
         /// <summary>The crew's doorstep errand, dropped. Called whenever the crew is
         /// retasked - a pending approach must not outlive the order that made it. A
         /// collection round in hand is dropped the same way: the take it was carrying
@@ -2629,13 +2634,16 @@ namespace RoadDemo
 
         /// <summary>The crew of this number that still has men standing, whichever
         /// house it belongs to. Crew ids are unique across all twenty-one books by
-        /// construction, so the number alone names the crew.</summary>
+        /// construction, so the number alone names the crew. The LINE, never its bag
+        /// man: a detachment is part of the crew, not the crew that answers for an
+        /// errand (GAN-262).</summary>
         DemoCrews.Unit StandingUnitOfCrew(int crewId)
         {
             for (var i = 0; i < crews.Units.Count; i++)
             {
                 var unit = crews.Units[i];
-                if (unit == null || unit.IsPolice || unit.Faction < 0 || unit.Wiped)
+                if (unit == null || unit.IsPolice || unit.Faction < 0 || unit.Wiped ||
+                    unit.IsDetachment)
                     continue;
                 if (unit.CrewId == crewId)
                     return unit;
@@ -2651,7 +2659,9 @@ namespace RoadDemo
             for (var i = 0; i < crews.Units.Count; i++)
             {
                 var unit = crews.Units[i];
-                if (unit != null && unit.CrewId == nodeId.Value)
+                // the crew's LINE answers to the node; its bag man is a detachment
+                // of it, never the addressee of an order (GAN-262)
+                if (unit != null && !unit.IsDetachment && unit.CrewId == nodeId.Value)
                     return unit;
             }
             return null;

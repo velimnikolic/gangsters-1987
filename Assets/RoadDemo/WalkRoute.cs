@@ -82,6 +82,7 @@ namespace RoadDemo
         const int MaxAnchorRing = 24;
         static readonly List<EndpointAnchor> _startAnchors = new List<EndpointAnchor>(32);
         static readonly List<EndpointAnchor> _goalAnchors = new List<EndpointAnchor>(32);
+        static readonly List<EndpointAnchor> _probeAnchors = new List<EndpointAnchor>(32);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void Forget()
@@ -337,6 +338,17 @@ namespace RoadDemo
             return into.Count > 0;
         }
 
+        /// <summary>Can this exact point join the route lattice by at least one proved
+        /// continuous chord? A merely radius-clear point can still sit in a narrow
+        /// corner pocket between lattice centres. Combat start recovery asks this
+        /// before committing a relocation, otherwise it can move twelve centimetres
+        /// out of one rejected shell and spend the rest of the fight in another.</summary>
+        internal static bool CanAnchor(Vector3 point, bool keepOffRoad = false)
+        {
+            if (!Ready(point, point)) return false;
+            return Reachable(point, keepOffRoad, _probeAnchors);
+        }
+
         // ------------------------------------------------------------------ the way
 
         static readonly int[] _dx = { 1, -1, 0, 0, 1, 1, -1, -1 };
@@ -572,7 +584,11 @@ namespace RoadDemo
                 // that invariant is ever broken, fail closed; never emit a segment and
                 // hope the live steer somehow crosses the wall for the planner.
                 if (!found) return false;
-                if ((crumbs[keep] - at).sqrMagnitude > 0.01f * 0.01f)
+                // Never advance the planner's logical position past a corner it did
+                // not emit. A tangent only millimetres from the real start can still
+                // be the point that makes the following chord clear; silently dropping
+                // it proves the next segment from coordinates the walker never reached.
+                if (RetainPulledCornerModel((crumbs[keep] - at).sqrMagnitude))
                     into.Add(crumbs[keep]);
                 at = crumbs[keep];
                 i = keep + 1;
@@ -580,6 +596,9 @@ namespace RoadDemo
             }
             return true;
         }
+
+        internal static bool RetainPulledCornerModel(float squareDistance) =>
+            squareDistance > 0f;
 
         /// <summary>Is the straight line between these two clear of everything fixed?
         ///

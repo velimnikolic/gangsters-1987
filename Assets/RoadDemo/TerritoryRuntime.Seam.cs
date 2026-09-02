@@ -176,6 +176,9 @@ namespace RoadDemo
                 var crewId = -1;
                 var name = "";
                 var policy = CrewPolicy.Normal;
+                var bagManId = -1;
+                var bagManName = "";
+                var bagNamedByBoss = false;
 
                 if (roster != null)
                 {
@@ -193,8 +196,15 @@ namespace RoadDemo
                         for (var c = 0; c < roster.Crews.Count; c++)
                             if (roster.Crews[c].LieutenantId == leaderId)
                             {
-                                crewId = roster.Crews[c].Id;
-                                policy = roster.Crews[c].Policy;
+                                var crew = roster.Crews[c];
+                                crewId = crew.Id;
+                                policy = crew.Policy;
+                                // THE BAG MAN (GAN-262): the one man of the crew who
+                                // carries it, and whose word put it in his hand.
+                                bagManId = RosterOps.CollectorOf(roster, crew.Id);
+                                var bagMan = bagManId >= 0 ? roster.Find(bagManId) : null;
+                                bagManName = bagMan != null ? bagMan.FullName : "";
+                                bagNamedByBoss = crew.BagNamedByBoss;
                                 break;
                             }
                     }
@@ -242,8 +252,54 @@ namespace RoadDemo
                     leaderId >= 0, name, crewId, policy, weekday, word, collectors.Count,
                     roundOut, cursor, stops, carried, collectorName,
                     owed, roundOut ? carried : 0, banked,
-                    last.Day, last.Banked, last.Short, needing, holdouts);
+                    last.Day, last.Banked, last.Short, needing, holdouts,
+                    bagManId, bagManName, bagNamedByBoss);
                 return true;
+            }
+
+            /// <summary>Every hood of the crew for the bag menu (GAN-262): his name,
+            /// what kind of bag man he would make, and whether he is one of the men in
+            /// the street line today - the line as it actually stands, where the
+            /// scene has one, else the books' own four.</summary>
+            public void CollectCrewHoods(int crewId, List<CrewHandView> into)
+            {
+                into?.Clear();
+                var roster = Roster();
+                var crew = roster?.FindCrew(crewId);
+                if (into == null || crew == null)
+                    return;
+
+                var line = runtime.crews != null ? runtime.crews.UnitOfCrew(crewId) : null;
+                // With no street under the page (a bench scene), the line is read off
+                // the books the way DemoCrews.Sync deals it: the bag man spends one of
+                // the crew's four places even though he does not stand in the line.
+                var bagId = RosterOps.CollectorOf(roster, crewId);
+                var bagMan = bagId >= 0 ? roster.Find(bagId) : null;
+                var dealt = bagMan != null && bagMan.Status == CharacterStatus.Active ? 1 : 0;
+                for (var i = 0; i < crew.HoodIds.Count; i++)
+                {
+                    var man = roster.Find(crew.HoodIds[i]);
+                    if (man == null || man.Gone)
+                        continue;
+                    var carries = man.Duty == Duty.Collector;
+                    bool walks;
+                    if (line != null)
+                    {
+                        walks = false;
+                        for (var h = 0; h < line.Hoods.Count && !walks; h++)
+                            walks = line.Hoods[h] != null && !line.Hoods[h].Dead &&
+                                    line.Hoods[h].CharacterId == man.Id;
+                    }
+                    else
+                    {
+                        walks = !carries && man.Status == CharacterStatus.Active &&
+                                dealt < Crew.MaxTacticalHoods;
+                        if (walks)
+                            dealt++;
+                    }
+                    into.Add(new CrewHandView(man.Id, man.FullName,
+                        CollectorChoice.Fitness(man), walks, carries));
+                }
             }
 
             public void CollectDoorStandings(
@@ -342,9 +398,11 @@ namespace RoadDemo
                     var round = runtime.bodies[i].Round;
                     if (round.Kind != TerritoryRoundKind.Collect)
                         continue;
-                    var unit = runtime.crews != null
+                    // The walkers hang off the BODY, not the round: the round is the
+                    // paper the ledger keeps, and paper has no men on it.
+                    var unit = runtime.bodies[i].Walkers ?? (runtime.crews != null
                         ? runtime.crews.UnitOfCrew(round.CrewId)
-                        : null;
+                        : null);
                     if (unit == null)
                     {
                         if (runtime.bodies[i].Collector != null &&
@@ -446,11 +504,59 @@ namespace RoadDemo
 
             public string SetCollector(int characterId, bool on)
             {
+                // Through the DIRECTOR, never RosterOps: the bag takes a man off the
+                // street line (GAN-262), and DemoCrews.Sync re-deals only on the
+                // director's Version.
+                var director = LivingCity.Gameplay.PersonnelDirector.Instance;
                 var roster = Roster();
-                if (roster == null)
+                if (director == null || roster == null)
                     return "the books are not open in this scene";
-                var result = RosterOps.SetDuty(
-                    roster, characterId, on ? Duty.Collector : Duty.None);
+
+                OpResult result;
+                if (!on)
+                    result = director.TakeOffTheBag(characterId);
+                else
+                {
+                    var crew = roster.CrewOf(characterId);
+                    result = crew == null
+                        ? OpResult.Fail("he has to be in a crew")
+                        : crew.LieutenantId == characterId
+                            ? OpResult.Fail("only a hood carries the bag")
+                            : director.NameCollector(crew.Id, characterId);
+                }
+                if (result.Ok)
+                    runtime.BumpRacketSeam();
+                return result.Ok ? "" : result.Reason;
+            }
+
+            public string NameCollector(int crewId, int hoodId)
+            {
+                var director = LivingCity.Gameplay.PersonnelDirector.Instance;
+                if (director == null || Roster() == null)
+                    return "the books are not open in this scene";
+                var result = director.NameCollector(crewId, hoodId);
+                if (result.Ok)
+                    runtime.BumpRacketSeam();
+                return result.Ok ? "" : result.Reason;
+            }
+
+            public string LetLieutenantPick(int crewId)
+            {
+                var director = LivingCity.Gameplay.PersonnelDirector.Instance;
+                if (director == null || Roster() == null)
+                    return "the books are not open in this scene";
+                var result = director.LetLieutenantPick(crewId, out _);
+                if (result.Ok)
+                    runtime.BumpRacketSeam();
+                return result.Ok ? "" : result.Reason;
+            }
+
+            public string TakeOffTheBag(int hoodId)
+            {
+                var director = LivingCity.Gameplay.PersonnelDirector.Instance;
+                if (director == null || Roster() == null)
+                    return "the books are not open in this scene";
+                var result = director.TakeOffTheBag(hoodId);
                 if (result.Ok)
                     runtime.BumpRacketSeam();
                 return result.Ok ? "" : result.Reason;

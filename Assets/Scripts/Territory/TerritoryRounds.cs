@@ -113,7 +113,7 @@ namespace LivingCity.Territory
     {
         public TerritoryStopInputs(bool open, int owed, TerritoryOwnerProfile owner,
             float protectorFear, float blockFear, int policyLevel, int archetype,
-            int citySeed, int day)
+            int citySeed, int day, bool policeWereRound = false)
         {
             Open = open;
             Owed = owed;
@@ -124,6 +124,7 @@ namespace LivingCity.Territory
             Archetype = archetype;
             CitySeed = citySeed;
             Day = day;
+            PoliceWereRound = policeWereRound;
         }
 
         /// <summary>The shop is trading. A place with its shutters down cannot be
@@ -138,6 +139,11 @@ namespace LivingCity.Territory
         public int Archetype { get; }
         public int CitySeed { get; }
         public int Day { get; }
+
+        /// <summary>An officer stood at this counter a few hours ago and the owner can
+        /// say so (GAN-245). A door under the law's eye pays nobody today, whatever the
+        /// roll would have said.</summary>
+        public bool PoliceWereRound { get; }
     }
 
     /// <summary>What happened at one door - the money, and the figures the world owes
@@ -320,6 +326,15 @@ namespace LivingCity.Territory
             var roll = TerritoryPaymentRoll.Roll(
                 inputs.Owed, inputs.Owner, inputs.ProtectorFear, inputs.BlockFear,
                 style.ShortAcceptedShare, inputs.CitySeed, inputs.Day, stop.BusinessId);
+
+            // THE POLICE WERE ROUND (GAN-245). A door an officer stood at this morning
+            // has one answer and it is the true one - and the excuse is not rolled for,
+            // it is handed over, because the crew can see the squad car from the corner.
+            // Whatever the payment roll said, nothing changes hands here today.
+            if (inputs.PoliceWereRound && inputs.Owed > 0)
+                roll = new TerritoryPaymentResult(
+                    TerritoryPaymentOutcome.Missed, 0, inputs.Owed,
+                    TerritoryPaymentExcuse.PoliceWereRound, true);
 
             var paid = (int)System.Math.Round(roll.Paid * takeScale);
             if (paid > inputs.Owed)

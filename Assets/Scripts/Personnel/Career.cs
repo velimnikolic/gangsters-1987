@@ -85,9 +85,9 @@ namespace LivingCity.Personnel
         /// the bottom of; twenty-four is about a screen of the personal file at the
         /// widths the book is set at, which is the real constraint.
         ///
-        /// Rank changes are exempt and never counted against it - see
-        /// <see cref="Cull"/>. Everything else competes on weight, so what survives a
-        /// long career is what mattered in it.
+        /// Rank changes and the joining line are exempt and never counted against it -
+        /// see <see cref="Cull"/>. Everything else competes on weight, so what survives
+        /// a long career is what mattered in it.
         /// </summary>
         public const int Kept = 24;
 
@@ -126,6 +126,25 @@ namespace LivingCity.Personnel
         public static void Joined(Character man, int day, string broughtBy) =>
             Write(man, day, CareerKind.Joined, JoinedWeight,
                 CareerText.Joined(broughtBy));
+
+        /// <summary>
+        /// The day his file says he came on the books; 0 for a man dealt without one -
+        /// the founding fixture, a hand-built test character, a rival house's roster.
+        /// Read rather than stored, which is what lets the wage table price service
+        /// (Outfit.Wages.TenureBonus) with nothing new on the Character at all.
+        ///
+        /// The FIRST joining line wins. A man struck off and taken on again keeps the
+        /// service he actually did; nothing in the design pays him twice for signing.
+        /// </summary>
+        public static int JoinedDay(Character man)
+        {
+            if (man == null)
+                return 0;
+            for (var i = 0; i < man.Career.Count; i++)
+                if (man.Career[i].Kind == CareerKind.Joined)
+                    return man.Career[i].Day;
+            return 0;
+        }
 
         /// <summary>Made, or taken back down. Never culled.</summary>
         public static void RankChanged(Character man, int day, Rank to, string reason) =>
@@ -198,9 +217,12 @@ namespace LivingCity.Personnel
 
         /// <summary>
         /// Holds the file to its length. Rank changes are kept whatever happens - they
-        /// are the skeleton the rest hangs on - and of the rest the LEAST notable go
-        /// first, oldest breaking the tie, so what a long career keeps is what mattered
-        /// in it rather than merely what happened last.
+        /// are the skeleton the rest hangs on - and so is the joining line, because the
+        /// wage table prices a man's SERVICE off it (Outfit.Wages.TenureBonus): a file
+        /// that had culled the day he came on the books would quietly cut a ten-year
+        /// man's envelope back to a recruit's. Of the rest the LEAST notable go first,
+        /// oldest breaking the tie, so what a long career keeps is what mattered in it
+        /// rather than merely what happened last.
         ///
         /// Order is never disturbed: entries are removed, never re-sorted, and the file
         /// still reads forward.
@@ -209,7 +231,7 @@ namespace LivingCity.Personnel
         {
             var cullable = 0;
             for (var i = 0; i < man.Career.Count; i++)
-                if (man.Career[i].Kind != CareerKind.Rank)
+                if (Cullable(man.Career[i].Kind))
                     cullable++;
             if (cullable <= Kept)
                 return;
@@ -221,7 +243,7 @@ namespace LivingCity.Personnel
                 for (var i = 0; i < man.Career.Count; i++)
                 {
                     var entry = man.Career[i];
-                    if (entry.Kind == CareerKind.Rank)
+                    if (!Cullable(entry.Kind))
                         continue;
                     if (worst < 0 || entry.Weight < man.Career[worst].Weight)
                         worst = i;
@@ -231,6 +253,11 @@ namespace LivingCity.Personnel
                 man.Career.RemoveAt(worst);
             }
         }
+
+        /// <summary>The two lines a file may never lose: what rank he holds and when
+        /// he came on the books. Everything else competes on weight.</summary>
+        static bool Cullable(CareerKind kind) =>
+            kind != CareerKind.Rank && kind != CareerKind.Joined;
     }
 
     /// <summary>
@@ -284,19 +311,27 @@ namespace LivingCity.Personnel
             {
                 CharacterStatus.Dead => "Killed.",
                 CharacterStatus.Deserted => "Gone. Did not come back.",
+                CharacterStatus.CutLoose => "Cut loose by the boss while inside.",
                 _ => "Off the books.",
             };
         }
 
         /// <summary>The lieutenant's own line the day he goes over. It carries the
         /// COUNT, because how expensive losing him was is the whole point of the
-        /// Leadership arithmetic that decided it.</summary>
-        public static string WentOver(int menTaken) => menTaken <= 0
-            ? "Went over to another family, and went alone."
-            : menTaken == 1
-                ? "Went over to another family, and took one man with him."
-                : "Went over to another family, and took " + menTaken +
-                  " men with him.";
+        /// Leadership arithmetic that decided it, and the HOUSE when the caller knows
+        /// which one took him - a man who went somewhere is a different fact from a
+        /// man who simply went.</summary>
+        public static string WentOver(int menTaken, string family = "")
+        {
+            var to = string.IsNullOrEmpty(family)
+                ? "Went over to another family"
+                : "Went over to the " + family + " family";
+            return menTaken <= 0
+                ? to + ", and went alone."
+                : menTaken == 1
+                    ? to + ", and took one man with him."
+                    : to + ", and took " + menTaken + " men with him.";
+        }
 
         /// <summary>And the line on the file of each man who went out behind him. This
         /// is what stops a defection reading as a desertion on the men it actually

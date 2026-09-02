@@ -29,7 +29,7 @@ namespace LivingCity.Tests
             ("TheUndisciplinedTakeTheirOwnChoices", TheUndisciplinedTakeTheirOwnChoices),
             ("OneNightOneStoryAboutAMan", OneNightOneStoryAboutAMan),
             ("EveryIncidentIsReadyForThePaper", EveryIncidentIsReadyForThePaper),
-            ("TheLieutenantsFlatPremiumOpensAGap", TheLieutenantsFlatPremiumOpensAGap),
+            ("AGapOpensOnlyUnderABargain", AGapOpensOnlyUnderABargain),
             ("TheGreedyClimbTheLadderOnSchedule", TheGreedyClimbTheLadderOnSchedule),
             ("AWellPaidManIsQuietHoweverGreedy", AWellPaidManIsQuietHoweverGreedy),
             ("TheSkimIsMoneyThatIsActuallyGone", TheSkimIsMoneyThatIsActuallyGone),
@@ -417,8 +417,10 @@ namespace LivingCity.Tests
 
         // ------------------------------------------------------------- greed and pay
 
-        /// <summary>A lieutenant good enough to know what he is worth, on the house's
-        /// flat premium.</summary>
+        /// <summary>A five-star lieutenant who signed for HALF the house rate - a man
+        /// out of the classified column whose stars have long outgrown the price he
+        /// printed. WAGE-001 made the bargain the only thing a pay gap can come from,
+        /// so this is now what an underpaid man has to be built out of.</summary>
         static Character Underpaid(Roster roster, int greed)
         {
             var man = new Character
@@ -429,18 +431,31 @@ namespace LivingCity.Tests
             for (var s = 0; s < AttributeScale.Count; s++)
                 man.SetHalfSteps((CharacterAttribute)s, AttributeScale.MaxHalfSteps);
             Personality.Set(man, PersonalityTrait.Greed, greed);
+            man.WageAsked = Wages.HouseRate(man) / 2;
             roster.Members.Add(man);
             return man;
         }
 
-        static void TheLieutenantsFlatPremiumOpensAGap(List<string> failures)
+        /// <summary>
+        /// WAGE-001. ONE table: what the house pays IS what the man is worth, so
+        /// nobody on the house scale can be underpaid at any rank. A gap exists only
+        /// where a BARGAIN sits under the rate.
+        /// </summary>
+        static void AGapOpensOnlyUnderABargain(List<string> failures)
         {
             var roster = new Roster();
-            var good = Underpaid(roster, 50);
-            if (Wages.PayGap(good) <= 0)
-                failures.Add("TheLieutenantsFlatPremiumOpensAGap: a five-star lieutenant " +
-                             "on the flat premium is not short of anything, so nobody " +
-                             "can ever be underpaid.");
+
+            var lieutenant = new Character
+            {
+                Id = roster.NextCharacterId(), Rank = Rank.Lieutenant,
+            };
+            for (var s = 0; s < AttributeScale.Count; s++)
+                lieutenant.SetHalfSteps((CharacterAttribute)s, AttributeScale.MaxHalfSteps);
+            roster.Members.Add(lieutenant);
+            if (Wages.PayGap(lieutenant) != 0)
+                failures.Add($"AGapOpensOnlyUnderABargain: a five-star lieutenant on " +
+                             $"the house scale reads {Wages.PayGap(lieutenant)} short " +
+                             "of it, so every lieutenant is underpaid from day one again.");
 
             // A plain hood on the house scale is paid exactly what he is worth.
             var hood = new Character { Id = roster.NextCharacterId() };
@@ -448,8 +463,15 @@ namespace LivingCity.Tests
                 hood.SetHalfSteps((CharacterAttribute)s, 7);
             roster.Members.Add(hood);
             if (Wages.PayGap(hood) != 0)
-                failures.Add($"TheLieutenantsFlatPremiumOpensAGap: a hood on the house " +
+                failures.Add($"AGapOpensOnlyUnderABargain: a hood on the house " +
                              $"scale reads {Wages.PayGap(hood)} short of it.");
+
+            // And the one man who CAN be short: a bargain under the rate.
+            var bargained = Underpaid(roster, 50);
+            if (Wages.PayGap(bargained) <= 0)
+                failures.Add("AGapOpensOnlyUnderABargain: a man drawing half the house " +
+                             "rate is not short of anything, so nobody can ever be " +
+                             "underpaid.");
         }
 
         static void TheGreedyClimbTheLadderOnSchedule(List<string> failures)
@@ -586,14 +608,30 @@ namespace LivingCity.Tests
                 failures.Add("ARaiseClosesIt: he never asked, so there is nothing to " +
                              "answer.");
 
+            // WAGE-002. He asked for the rate and he is put ON the rate: the bargain
+            // is torn up rather than moved to the figure he named, so his envelope
+            // follows his stars from here like every man the outfit raised itself.
             var asked = man.WageDemand;
             var granted = RosterOps.GrantRaise(roster, man.Id);
-            if (!granted.Ok || man.WageAsked != asked || man.WageDemand != 0 ||
+            if (!granted.Ok || man.WageAsked != 0 || man.WageDemand != 0 ||
                 man.Skimming || man.UnderpaidSince != 0)
                 failures.Add("ARaiseClosesIt: saying yes did not close it.");
+            if (Wages.WageFor(man) != asked)
+                failures.Add($"ARaiseClosesIt: he asked {asked} and draws " +
+                             $"{Wages.WageFor(man)}.");
             if (Wages.PayGap(man) != 0)
                 failures.Add($"ARaiseClosesIt: he is still {Wages.PayGap(man)} short " +
                              "after being given exactly what he asked for.");
+
+            // And the freeze is gone: he is on the SCALE now, not on a number, so his
+            // envelope moves with a trade he is paid for. He is at the ceiling, so the
+            // proof is a step DOWN - the old grant pinned the figure and would not have
+            // moved either way.
+            var onTheScale = Wages.WageFor(man);
+            man.SetHalfSteps(CharacterAttribute.Leadership, AttributeScale.MaxHalfSteps - 1);
+            if (Wages.WageFor(man) != onTheScale - Wages.LieutenantPerHalfStep)
+                failures.Add("ARaiseClosesIt: after the raise the wage no longer " +
+                             "follows the stars - the old freeze is back.");
 
             // And the other answer.
             var second = new Roster();

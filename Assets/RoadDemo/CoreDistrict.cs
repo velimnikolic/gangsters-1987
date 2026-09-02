@@ -734,6 +734,11 @@ namespace RoadDemo
             if (CoreAmenityLayout.Contains(_parkingSites, centre)) return true;
             for (int k = 0; k < _fuelSites.Count; k++)
                 if (CoreAmenityLayout.FuelSurface(_fuelSites[k]).Contains(centre)) return true;
+            // The courthouse parcel is taken OUT of the development list so it cannot also
+            // become housing (CoreAmenityLayout.PickCourthouse), which would leave it
+            // reading as vacant ground to anything counting programmes off this - and a
+            // parcel with a courthouse on it is the least vacant ground in the city.
+            if (_courthouseSite != null && _courthouseSite.Box.Contains(centre)) return true;
             return CoreAmenityLayout.Contains(_developmentSites, centre);
         }
 

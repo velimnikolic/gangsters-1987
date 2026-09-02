@@ -204,12 +204,26 @@ namespace RoadDemo
                  "mob on it rather than one rival somewhere. 0 for a quiet town.")]
         [Range(0, 20)] public int rivalCrewsInCity = 20;
 
-        [Tooltip("The most rival crews the street will hold, over all families together. " +
-                 "A family runs one to three capos (GangSeeder) and each of them holds a " +
-                 "corner of his own, so this is the ceiling on rival MEN: about four to " +
-                 "the crew. Rounds: every family is standing somewhere before any family " +
-                 "gets a second corner.")]
+        [Tooltip("Fallback ceiling on rival crews for a scene with no territory plan " +
+                 "under it. In the city the number is READ FROM THE CITY (RivalCrewCap): " +
+                 "every family stands a corner, and the map buys one more corner for " +
+                 "every ten canonical blocks. Rounds: every family is standing somewhere " +
+                 "before any family gets a second corner.")]
         [Range(1, 60)] public int rivalCrewCap = 26;
+
+        // How much city one extra rival corner costs. Every family is on the street
+        // whatever the map is (RIVAL-008, the user's word of 2026-09-03: they all exist
+        // live, and the number follows the size of the city); what a bigger city buys is
+        // SECOND and third corners for the families that have the capos to hold them.
+        // Ten blocks a corner: seed 1987's 110 blocks carry 20 families + 11 = 31 crews,
+        // which is the density the street was tuned at (26) plus the fourteen families
+        // that were only ever on paper.
+        const int BlocksPerExtraRivalCrew = 10;
+        const int MostRivalCrews = 60;   // the field's own ceiling
+
+        // What the city worked out it can hold this build - read back by the placement
+        // pass, whose sample of pavements has to grow with the crowd it is spreading.
+        int _rivalCrewCap;
 
         [Tooltip("The most soldiers behind one capo. The seeder deals two or three; this " +
                  "cuts a crew shorter, it never pads one out.")]
@@ -3470,6 +3484,15 @@ namespace RoadDemo
                 ? 0
                 : Mathf.Min(rivalCrewsInCity, gangs.Length - 1);
 
+            // THE CITY SAYS HOW MANY CORNERS IT HOLDS. A scene with no territory plan
+            // under it (a bench, a lab) keeps the inspector's number.
+            int blocks = Territories?.Plan != null ? Territories.Plan.Blocks.Count : 0;
+            _rivalCrewCap = blocks > 0
+                ? Mathf.Clamp(families + blocks / BlocksPerExtraRivalCrew,
+                              Mathf.Max(1, families), MostRivalCrews)
+                : rivalCrewCap;
+            int crewCap = _rivalCrewCap;
+
             // Every family gets PREMISES first - the player's outfit included - and the
             // capo's own crew stands outside its door. The rest of a family's crews hold
             // corners, which is what the sidewalk pass below is for.
@@ -3484,10 +3507,10 @@ namespace RoadDemo
             // crews first opens up - the capo's outside his own door, the rest on
             // corners of their own, spread across the city.
             int posted = 0;
-            for (int round = 0; posted < rivalCrewCap; round++)
+            for (int round = 0; posted < crewCap; round++)
             {
                 bool any = false;
-                for (int i = 0; i < families && posted < rivalCrewCap; i++)
+                for (int i = 0; i < families && posted < crewCap; i++)
                 {
                     var house = underworld.Of(1 + i);
                     var capoCrews = CapoCrews(house);
@@ -3698,7 +3721,8 @@ namespace RoadDemo
                 // keep the last of them off each other, so the sample grows with the crowd.
                 PedLink link = null;
                 float bestD = -1f;
-                int looks = Mathf.Clamp(6 * rivalCrewCap, 12, 96);
+                int looks = Mathf.Clamp(
+                    6 * (_rivalCrewCap > 0 ? _rivalCrewCap : rivalCrewCap), 12, 96);
                 for (int tries = 0; tries < looks; tries++)
                 {
                     var l = sidewalks[rng.Next(sidewalks.Count)];

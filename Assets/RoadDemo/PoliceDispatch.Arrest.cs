@@ -102,6 +102,14 @@ namespace RoadDemo
             LivingCity.UI.StrategicMapHud.InputBlocked;
 
         Collar _collar = Collar.None;
+        Deed _arrestDeed = Deed.Affray;    // what they are being taken for
+        CourtCase _arrestCase;             // the docket entry, when there is a city
+
+        /// <summary>Whether the collar OPENED that case. A shooting's file is opened by
+        /// the collar and is worth nothing if nobody is taken; a complaint's file was
+        /// opened by the telephone call and outlives a failed arrest, because a
+        /// complaint nobody was taken for is exactly what becomes a count later.</summary>
+        bool _arrestCaseIsOurs;
         PoliceFootPatrol _arrestOfficer;   // the beat man, when it is one
         CrewWalker _arrestLawman;          // a squad's lead, when the car brought him
         DemoCrews.Unit _arrestSquad;       // that lead's squad
@@ -170,8 +178,8 @@ namespace RoadDemo
                     // are not told about men who were shot where they stood
                     if (_arrestCrew == null || _arrestCrew.Wiped) { Drop(); return; }
                     if (Time.time < _takeAt) return;
-                    _crews.TakeIn(_arrestCrew, TheDeed(),
-                        Force != null ? Force.Pipeline : null);
+                    _crews.TakeIn(_arrestCrew, _arrestDeed,
+                        Force != null ? Force.Pipeline : null, _arrestCase);
                     EndChallenge(holster: true);
                     Clear();
                     return;
@@ -228,6 +236,9 @@ namespace RoadDemo
             if (man == null || man.Tf == null) return;
 
             _askedIncident = StreetAlarm.IncidentNumber;
+            _arrestDeed = TheDeed();
+            _arrestCase = OpenShootingCase(crew);
+            _arrestCaseIsOurs = true;
             _arrestOfficer = foot;
             _arrestLawman = lawman;
             _arrestSquad = squadMen;
@@ -251,6 +262,127 @@ namespace RoadDemo
             else BeginSquadChallenge(man);
             Banner();
             CrewOverlay.Announce("AN OFFICER IS WALKING OVER", 3.5f, new Color(0.55f, 0.78f, 1f));
+        }
+
+        /// <summary>
+        /// A COMPLAINT AT THE DOOR (GAN-245). The officer walked up to a shop somebody
+        /// rang about and there are men of the accused family still standing in it.
+        ///
+        /// Nothing new happens from here: the whole EPIC 17 window opens exactly as it
+        /// does after a shooting - the walk-up, the surrender roll, ARREST IN PROGRESS,
+        /// the player's attack order, the FLEE - and the only differences are what
+        /// opened it and what they are charged with.
+        ///
+        /// False when there is nobody to speak to, which is the ordinary case and the
+        /// one that ends in a statement instead.
+        /// </summary>
+        bool TryComplaintCollar(CallOut call)
+        {
+            if (_collar != Collar.None || _crews == null || call == null) return false;
+
+            PoliceFootPatrol foot = call.Unit as PoliceFootPatrol;
+            CrewWalker lawman = null;
+            if (foot == null)
+            {
+                lawman = call.Men != null && !call.Men.Wiped ? Lead(call.Men) : null;
+                if (lawman == null || lawman.Tf == null) return false;
+            }
+            var from = foot != null && foot.Tf != null ? foot.Tf.position
+                     : lawman != null && lawman.Tf != null ? lawman.Tf.position
+                     : call.Call.Pos;
+
+            var crew = AccusedNear(call.Call.Pos, call.Call.Faction);
+            if (crew == null) return false;
+
+            var man = crew.Boss != null && !crew.Boss.Dead
+                ? crew.Boss : DemoCrews.NearestOf(crew, from);
+            if (man == null || man.Tf == null) return false;
+
+            _askedIncident = call.Call.Number;
+            _arrestDeed = call.Call.Charge;
+            _arrestCase = call.File;
+            _arrestCaseIsOurs = false;   // the telephone opened it, not this collar
+            _arrestOfficer = foot;
+            _arrestLawman = lawman;
+            _arrestSquad = call.Men;
+            _arrestCrew = crew;
+            _arrestCollar = man;
+            _collar = Collar.WalkingUp;
+            _collarAt = Time.time;
+            _collarBy = Time.time + CollarPatience;
+
+            _fightChance = FightOdds(crew);
+            _willFight = SurrenderRoll.Fights(_fightChance,
+                SurrenderRoll.StreamFor(_crews.CitySeed, CrewKey(crew), call.Call.Number));
+
+            if (foot != null) foot.Challenge(man, _sidearm);
+            else BeginSquadChallenge(man);
+            Banner();
+            CrewOverlay.Announce("AN OFFICER IS WALKING OVER", 3.5f, new Color(0.55f, 0.78f, 1f));
+            return true;
+        }
+
+        /// <summary>The men of the complained-of family standing at the door, if any -
+        /// the nearest crew of that faction inside <see cref="ComplaintReach"/>. Nobody
+        /// is taken for a complaint about somebody else's family.</summary>
+        DemoCrews.Unit AccusedNear(Vector3 door, int faction)
+        {
+            DemoCrews.Unit best = null;
+            float bestD = ComplaintReach * ComplaintReach;
+            foreach (var unit in _crews.Units)
+            {
+                if (unit == null || unit.IsPolice || unit.Wiped || unit.Surrendered) continue;
+                if (unit.Faction != faction) continue;
+                if (unit.Retreated || unit.Car != null) continue;   // gone, or driving off
+                float d = (unit.Position - door).sqrMagnitude;
+                if (d > bestD) continue;
+                bestD = d;
+                best = unit;
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// The docket entry for an arrest made over a SHOOTING. Its witnesses are the
+        /// people who were on the pavement when the incident opened plus whatever the
+        /// law itself saw: an officer who watched the act is the strongest thing on a
+        /// charge sheet, and the man who merely found them at the scene is the weakest.
+        ///
+        /// Null in a scene with no city behind it, which is what makes a crew-demo
+        /// arrest the old flat conviction it always was.
+        /// </summary>
+        CourtCase OpenShootingCase(DemoCrews.Unit crew)
+        {
+            var pipeline = Force != null ? Force.Pipeline : null;
+            if (pipeline == null || crew == null) return null;
+
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            var today = outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0;
+            var file = pipeline.OpenCase(_arrestDeed, crew.Faction, today,
+                today > 0 ? today + Sentencing.DaysToCourt : 0);
+
+            // THE PEOPLE WHO WERE THERE WHEN IT HAPPENED - taken when the first round
+            // went off (SnapshotTheScene), not now. An arrest can be made a hundred and
+            // fifty seconds after the shooting stopped, by which time the men who saw it
+            // have walked home and a fresh crowd has drifted over to look at the chalk.
+            CopySceneWitnesses(file, StreetAlarm.IncidentNumber);
+
+            // WHAT THE LAW ITSELF SAW, recorded while the squad was actually looking at
+            // it (BeginWarning / PickFight). Read at arrest time it was always false:
+            // the squad that makes the arrest is by definition Securing a quiet street
+            // by then.
+            var sawTheAct = _lawSawIncident == StreetAlarm.IncidentNumber;
+            file.Witnesses.Add(new Witness
+            {
+                Kind = sawTheAct ? WitnessKind.PoliceSawIt : WitnessKind.PoliceFoundThem,
+                Name = "The arresting officer",
+                Seed = StreetAlarm.IncidentNumber,
+                X = StreetAlarm.Incident.x, Y = StreetAlarm.Incident.y,
+                Z = StreetAlarm.Incident.z,
+            });
+
+            LawWire.CaseOpened(file);
+            return file;
         }
 
         /// <summary>The squad's lead walks over with the piece out - the same arm's
@@ -493,6 +625,18 @@ namespace RoadDemo
 
         void Clear()
         {
+            // A DOCKET ENTRY NOBODY WAS TAKEN FOR IS NOT A CASE (GAN-245). The file is
+            // opened when the officer sets off, because the witnesses have to be
+            // snapshotted while the people who saw it are still on the pavement - but
+            // an arrest that was refused, dropped or walked away from charged nobody,
+            // and an empty file left open would quietly become an extra count against
+            // these men the next time they were taken (AttachOpenComplaints).
+            if (_arrestCaseIsOurs && _arrestCase != null &&
+                _arrestCase.Defendants.Count == 0)
+                _arrestCase.Status = CaseStatus.Tried;
+            _arrestCase = null;
+            _arrestCaseIsOurs = false;
+
             ClearBanner();
             _arrestOfficer = null;
             _arrestLawman = null;

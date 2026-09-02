@@ -51,6 +51,17 @@ namespace LivingCity.Personnel
         /// <summary>Another family has him. He is off the books for as long as they hold
         /// him and comes back in a bed, not on his feet (RIVAL-009).</summary>
         Taken,
+
+        /// <summary>
+        /// SOLD (GAN-245). The boss had a man inside and decided not to carry him: off
+        /// the books, off the payroll, off the case. Appended so every serialized
+        /// Active/Jailed/Hospitalized/Dead/Deserted keeps its meaning.
+        ///
+        /// Struck off like a deserter, and counted as <see cref="Character.Gone"/> for
+        /// exactly the same reasons - but it is the OUTFIT that did it, and the rest of
+        /// the men are told so (Loyalty.CutLoose*).
+        /// </summary>
+        CutLoose,
     }
 
     /// <summary>
@@ -89,9 +100,11 @@ namespace LivingCity.Personnel
         /// no two men in one crew are the same man.</summary>
         public string Look = "";
 
-        /// <summary>Off the books for good - dead or deserted: struck through, unpaid,
-        /// beyond promotion or a gun.</summary>
-        public bool Gone => Status == CharacterStatus.Dead || Status == CharacterStatus.Deserted;
+        /// <summary>Off the books for good - dead, deserted, or cut loose by the boss:
+        /// struck through, unpaid, beyond promotion or a gun.</summary>
+        public bool Gone => Status == CharacterStatus.Dead ||
+                            Status == CharacterStatus.Deserted ||
+                            Status == CharacterStatus.CutLoose;
 
         /// <summary>0-100 rather than stars: weekly drift will nudge this by single points,
         /// and a five-step scale would make every nudge invisible or enormous.</summary>
@@ -187,6 +200,19 @@ namespace LivingCity.Personnel
         /// a long soak and a stored day cannot.</summary>
         public int UnderpaidSince;
 
+        /// <summary>
+        /// The campaign day the outfit last failed to pay him at all - the first night
+        /// of the run he is currently on; 0 when his envelope was full. WAGE-003.
+        ///
+        /// Not the same thing as <see cref="UnderpaidSince"/>, and both can stand at
+        /// once: that one says he is drawing less than he is worth, this one says he
+        /// drew NOTHING. A day rather than a count of nights, for the reason every
+        /// other clock in this class is one - a counter drifts across a long soak and
+        /// a stored day cannot - and cleared the first night he is paid in full, which
+        /// is why the run has to be read as (today - this + 1).
+        /// </summary>
+        public int UnpaidSince;
+
         /// <summary>The campaign day he last changed rank. An ambitious man who has
         /// been exactly what he is for long enough starts to feel it (LOY-001), and a
         /// day rather than a count for the reason every other clock here is one.</summary>
@@ -200,6 +226,30 @@ namespace LivingCity.Personnel
         /// nothing. The player answers it - granting it moves his bargain, refusing it
         /// costs loyalty.</summary>
         public int WageDemand;
+
+        /// <summary>
+        /// OUT ON BAIL until this absolute campaign day - his own court day (GAN-245);
+        /// 0 when he is not. He is a normal man on the street until then: he can be
+        /// given orders, he can be arrested again, and on the day itself he is tried on
+        /// paper with the rest of his case whether or not he turns up.
+        ///
+        /// A day rather than a countdown, for the reason every other clock in this
+        /// class is one.
+        /// </summary>
+        public int BailedUntil;
+
+        /// <summary>What the outfit put up to get him out, so a forfeit can be printed
+        /// for what it cost. 0 when he was never bailed.</summary>
+        public int BailPaid;
+
+        /// <summary>Cases his counsel took to a verdict and won - an acquittal or a
+        /// dismissal. Kept ON THE LAWYER rather than derived: the outcome is written on
+        /// the DEFENDANT'S rap sheet, and a tally of other men's sheets is not a thing
+        /// his own file could ever rebuild after he changed hands.</summary>
+        public int CasesWon;
+
+        /// <summary>Cases his counsel lost. See <see cref="CasesWon"/>.</summary>
+        public int CasesLost;
 
         /// <summary>The campaign day he is back on his feet. Meaningful only while he
         /// is Jailed or Hospitalized; the day tick reads it and puts him back to work.

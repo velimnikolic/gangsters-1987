@@ -814,7 +814,7 @@ namespace RoadDemo
                 {
                     var crew = roster.CrewOf(keeper);
                     if (crew != null)
-                        owner = Units.Find(u => u.Faction == 0 && u.CrewId == crew.Id);
+                        owner = Units.Find(u => u.Faction == 0 && !u.IsDetachment && u.CrewId == crew.Id);
                 }
                 if (owner != car.Owner && car.Occupant != null && car.Occupant != owner)
                     Disembark(car.Occupant); // the book took the keys away mid-ride
@@ -914,7 +914,7 @@ namespace RoadDemo
             int keeper = CrewCars.KeeperOf(item);
             if (keeper < 0) return null;
             var crew = roster.CrewOf(keeper);
-            return crew == null ? null : Units.Find(u => u.Faction == 0 && u.CrewId == crew.Id);
+            return crew == null ? null : Units.Find(u => u.Faction == 0 && !u.IsDetachment && u.CrewId == crew.Id);
         }
 
         /// <summary>The outfit's own door - the kerb every car on the books is parked

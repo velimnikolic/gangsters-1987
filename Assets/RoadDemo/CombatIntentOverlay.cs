@@ -20,6 +20,8 @@ namespace RoadDemo
         static readonly Color Up = new Color(0.40f, 0.95f, 0.45f, 1f);
         static readonly Color Down = new Color(0.35f, 0.60f, 1f, 1f);
         static readonly Color Open = new Color(1f, 0.35f, 0.30f, 1f);
+        // lying in wait: a flank held with nobody to shoot at yet (EPIC 28)
+        static readonly Color Waiting = new Color(0.85f, 0.80f, 0.35f, 1f);
         static readonly Color Driving = new Color(0.92f, 0.48f, 1f, 1f);
         static readonly Color Walking = new Color(0.25f, 0.95f, 0.82f, 1f);
         static readonly Color Running = new Color(1f, 0.82f, 0.20f, 1f);
@@ -146,6 +148,23 @@ namespace RoadDemo
                 {
                     if (man == null || man.Dead || man.Tf == null) continue;
                     var from = man.Tf.position + Vector3.up * (man.Ducked ? 0.8f : 1.35f);
+
+                    // A FLANK HE IS HOLDING, with no fight on it: the ambush. Drawn
+                    // before the fighting colours because a waiting man has no target
+                    // line at all and would otherwise be the one man on the street the
+                    // indicators say nothing about.
+                    if (man.HeldCover.HasValue && man.Target == null)
+                    {
+                        var held = man.HeldCover.Value;
+                        held.y = 0.1f;
+                        if (!man.Lurking) Line(Waiting, from, held);
+                        Ring(Waiting,
+                            held + new Vector3(0.35f, 0f, 0.35f),
+                            held + new Vector3(0.35f, 0f, -0.35f),
+                            held + new Vector3(-0.35f, 0f, -0.35f),
+                            held + new Vector3(-0.35f, 0f, 0.35f));
+                        continue;
+                    }
 
                     if (man.CoverSpot.HasValue && !man.InCover)
                     {

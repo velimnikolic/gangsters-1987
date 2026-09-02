@@ -93,6 +93,11 @@ namespace CoverDemo
         [Tooltip("Navigation soak: order one outfit crew directly at Falcone, then Santoro. " +
                  "This uses the player's normal attack path, not BlockDemo's march.")]
         public bool routeSoak;
+        [Tooltip("THE AMBUSH (EPIC 28). Instead of marching at the mob, the crew is put " +
+                 "behind a bin or a parked car between itself and one - the player's own " +
+                 "right click (DemoCrews.OrderAmbush) - and the mob is then walked into " +
+                 "it. Needs missionAfter above 0, like every other headless run here.")]
+        public bool ambushRun;
 
         [Header("Watch")]
         [Tooltip("Draw what the cover code sees: the boxes it counts as cover, and a line " +
@@ -111,6 +116,7 @@ namespace CoverDemo
         const float Cell = StreetKit.Cell;            // the 5 m tile
         const float RoadY = -0.08f;                   // the asphalt, which is sunk a tenth
         const float WalkY = 0f;                       // the pavement top, where the men stand
+        const int StreetDressingSeedSalt = 0x31A4C7D;
 
         float StreetXMin => -Mathf.Round(streetLength * 0.5f / Cell) * Cell;
         float StreetXMax => Mathf.Round(streetLength * 0.5f / Cell) * Cell;
@@ -124,7 +130,7 @@ namespace CoverDemo
         {
 #if UNITY_EDITOR
             BuildFloor();
-            BuildStreet();
+            BuildSeededStreet();
             // the town's fence, the same rule every scene lays (the city's FenceCity,
             // CrewDemo's rect): the SET is the street and its pavements - the bare
             // slabs round it are backdrop, and nobody strolls, flees or is stood out
@@ -208,7 +214,8 @@ namespace CoverDemo
             {
                 var mission = gameObject.AddComponent<BlockDemo.BlockDemoMission>();
                 mission.startAfter = missionAfter;
-                mission.onFoot = true;
+                mission.onFoot = !ambushRun;
+                mission.ambush = ambushRun;
                 mission.engageWithin = missionEngageWithin;
             }
 #else
@@ -287,6 +294,30 @@ namespace CoverDemo
             if (!_kit.Load()) return;
             _kit.LayAlongX(0f, StreetXMin, StreetXMax, true, true, kitDressing);
 #endif
+        }
+
+        /// <summary>The named soak layout includes StreetKit's own palms, cages,
+        /// lamps and manholes as well as this scene's extra furniture. Give that
+        /// dressing an isolated derived random stream: a replay gets the same whole
+        /// street without seeding roster creation, gunplay or the live city.</summary>
+        void BuildSeededStreet()
+        {
+            if (layoutSeed == 0)
+            {
+                BuildStreet();
+                return;
+            }
+
+            var randomState = Random.state;
+            try
+            {
+                Random.InitState(layoutSeed ^ StreetDressingSeedSalt);
+                BuildStreet();
+            }
+            finally
+            {
+                Random.state = randomState;
+            }
         }
 
         // A street a car may drive from end to end, so the ledger's car has somewhere
@@ -591,7 +622,7 @@ namespace CoverDemo
         readonly List<CivilianAgent> _noWalkers = new List<CivilianAgent>();
         const string _hint =
             "WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom   " +
-            "left-click one of ours: select his crew   right-click the road: walk there   " +
+            "left-click one of ours: select his crew   right-click: walk   double right-click: run   " +
             "right-click a rival: attack   I: combat indicators   Space: hold   P: ledger";
 
         void BuildCamera()
@@ -623,6 +654,7 @@ namespace CoverDemo
         static readonly (string, EquipmentKind)[] RivalArms =
         {
             ("SM_Wep_Rifle_01", EquipmentKind.Rifle),
+            (CrewArms.DefaultSidearm, EquipmentKind.Pistol),
         };
 
         // one crew per pavement, turn and turn about, so the fight is fought ACROSS
@@ -633,7 +665,8 @@ namespace CoverDemo
         void SpawnRivals()
         {
             TestBench.SpawnRivals(_crews, nameSeed, rivalCrews, rivalHoods, RivalArms,
-                i => { var at = RivalAnchor(i, out var facing); return (at, facing); }, "[CoverDemo]");
+                i => { var at = RivalAnchor(i, out var facing); return (at, facing); }, "[CoverDemo]",
+                mixArmsWithinCrew: true);
         }
 
         /// <summary>Where a rival crew stands and which way it looks: one per pavement,
@@ -676,15 +709,17 @@ namespace CoverDemo
                 _kit.Plan.Reserve(RivalAnchor(i, out _), 0f, new Vector2(9f, 2.2f));
         }
 
-        // The outfit opens with long guns rather than the .38 in the coat, the same way
-        // the crew demo's bench does it (TestBench.ArmTheOutfit). Once, when the roster
-        // is in (the outfit is dealt off it a frame or two later).
+        // The outfit opens with a deliberate rifle/pistol mix. The issue still goes
+        // through the ledger (TestBench.ArmTheOutfit), so the street and the books name
+        // the same guns. Once, when the roster is in (the outfit is dealt off it a frame
+        // or two later).
         bool _armsGiven;
 
         void ArmTheOutfit()
         {
             if (_armsGiven) return;
-            _armsGiven = TestBench.ArmTheOutfit(EquipmentKind.Rifle, "[CoverDemo]");
+            _armsGiven = TestBench.ArmTheOutfit(
+                new[] { EquipmentKind.Rifle, EquipmentKind.Pistol }, "[CoverDemo]");
         }
     }
 

@@ -56,13 +56,21 @@ namespace RoadDemo
         Vector3 _combatWayEnd;
         bool _combatWayEndsAtTarget;
         float _combatReplanAt;
+        float _combatPlanTraceAt;
         float _combatBestGap = float.MaxValue;
         float _combatNoProgress;
 
         const float CombatCornerReach = 0.35f;
         const float CombatProgressGain = 0.15f;
         const float CombatProgressGrace = 1.25f;
-        const float RoutedForwardDot = 0.1f;
+        // A route remains authoritative, but its local car/prop pass may need one
+        // exactly perpendicular step at a tangent. A tiny negative epsilon admits the
+        // 90-degree entry in WalkObstacles' angle table despite cosine rounding while
+        // still rejecting the next 110-degree (genuinely backwards) fallback.
+        const float RoutedForwardDot = -0.001f;
+
+        internal static bool RoutedHeadingAllowedModel(float forwardDot) =>
+            forwardDot >= RoutedForwardDot;
 
         void ClearCombatWay()
         {
@@ -71,6 +79,7 @@ namespace RoadDemo
             _combatWayVersion = -1;
             _combatWayEndsAtTarget = false;
             _combatReplanAt = 0f;
+            _combatPlanTraceAt = 0f;
             _combatBestGap = float.MaxValue;
             _combatNoProgress = 0f;
         }
@@ -103,11 +112,26 @@ namespace RoadDemo
             return noProgress >= CombatProgressGrace;
         }
 
-        /// <summary>A later route corner may be taken as soon as the exact chord from
-        /// the man's current feet is proven clear. This is the safe escape for a man
-        /// who passed beside a waypoint instead of hitting its 35 cm bullseye.</summary>
+        /// <summary>A later route corner may be taken only when the exact chord from
+        /// the man's current feet is proven clear. Near a prop tangent, being inside a
+        /// waypoint's broad arrival circle does not mean he has crossed to the safe
+        /// side of it; advancing on distance alone can leave the next chord inside the
+        /// prop on every replan.</summary>
         internal static bool CombatCornerCanAdvanceModel(float gap, bool nextChordClear) =>
-            gap <= CombatCornerReach || nextChordClear;
+            nextChordClear;
+
+        /// <summary>A required tangent is reached exactly. Leaving even a centimetre
+        /// before it can leave the following chord on the blocked side forever; the
+        /// stride still pays that last distance at its ordinary animated pace.</summary>
+        internal static float CombatCornerStopModel(bool last, bool endsAtTarget,
+            float terminalStop) =>
+            last && endsAtTarget ? terminalStop : last ? CombatCornerReach : 0f;
+
+        /// <summary>A cover approach must be able to observe the same failure which
+        /// forces the combat path to redraw. Resetting corner bookkeeping must not
+        /// hide that result from its caller.</summary>
+        internal static bool CombatRouteFailedModel(float blockedFor, bool circling) =>
+            blockedFor > 0.8f || circling;
 
         bool RecoverCombatOverlap(Vector3 toward)
         {
@@ -131,14 +155,16 @@ namespace RoadDemo
         }
 
         /// <summary>A route can reject the 22.5 cm travel footprint after a tangent
-        /// step left it only brushing a prop, while the 10 cm centre probe correctly
-        /// says the man is not inside the prop. Repair that shell only after planning
-        /// has actually failed, and only over a proved centre-clear chord.</summary>
+        /// step left it only brushing a prop. It can also leave him radius-clear in a
+        /// corner pocket with no visible lattice centre. Repair either state only after
+        /// planning has actually failed, and only over a proved centre-clear chord to a
+        /// point which can join the route lattice.</summary>
         bool TryRecoverRouteStart(Vector3 toward, string context)
         {
             var from = Tf.position;
             if (!WalkObstacles.TryClearRouteStart(from, WalkRoute.ClearanceRadius,
-                    toward, out var free, 2.5f)) return false;
+                    toward, out var free, 2.5f,
+                    candidate => WalkRoute.CanAnchor(candidate))) return false;
             free.y = from.y;
             Tf.position = free;
             if (DriveTrace.On)
@@ -216,16 +242,31 @@ namespace RoadDemo
             else if (!attackEnvelope ||
                      !TryPlanCombatEnvelope(target, stopWithin, out _combatWayEnd))
             {
+                if (DriveTrace.On && Time.time >= _combatPlanTraceAt)
+                {
+                    _combatPlanTraceAt = Time.time + 2f;
+                    DriveTrace.Event("walk", DisplayName,
+                        "combat plan failed " +
+                        $"startAnchor={WalkRoute.CanAnchor(Tf.position)} " +
+                        $"targetAnchor={WalkRoute.CanAnchor(target)} " +
+                        $"startBlocked={WalkObstacles.Standing(Tf.position, WalkRoute.ClearanceRadius)} " +
+                        $"targetBlocked={WalkObstacles.Standing(target, WalkRoute.ClearanceRadius)} " +
+                        $"envelope={attackEnvelope}");
+                }
                 _combatWay.Clear();
                 return false;
             }
-            // The planner may retain a near start anchor. It is already under his
-            // feet, not a corner worth braking and turning back for.
+            // The planner may retain a near start anchor. Skip it only when the chord
+            // to the following point is proven from the ACTUAL feet. A 35 cm proximity
+            // test can put those feet on the wrong side of a prop tangent and make
+            // every later replan repeat the same blocked second corner.
             while (_combatWayAt < _combatWay.Count - 1)
             {
                 var gap = _combatWay[_combatWayAt] - Tf.position;
                 gap.y = 0f;
-                if (gap.sqrMagnitude > CombatCornerReach * CombatCornerReach) break;
+                bool nextClear = StaticChordClear(
+                    Tf.position, _combatWay[_combatWayAt + 1]);
+                if (!CombatCornerCanAdvanceModel(gap.magnitude, nextClear)) break;
                 _combatWayAt++;
             }
             BeginCombatCorner();
@@ -251,7 +292,7 @@ namespace RoadDemo
         /// <summary>Close on a live mark over routed static ground. The target may
         /// move, so the final corner is refreshed when it has shifted materially;
         /// props do not move, so a stable target pays for the route only once.</summary>
-        void TickCombatStride(float dt, Vector3 target, float stopWithin,
+        bool TickCombatStride(float dt, Vector3 target, float stopWithin,
             bool hurry, bool run, bool attackEnvelope = false)
         {
             target.y = Tf.position.y;
@@ -265,13 +306,13 @@ namespace RoadDemo
             if (RecoverCombatOverlap(target))
             {
                 CombatStand(dt);
-                return;
+                return false;
             }
             if (!closing)
             {
                 ClearCombatWay();
                 TickStride(dt, target, stopWithin, hurry, run);
-                return;
+                return false;
             }
 
             var moved = target - _combatWayTarget;
@@ -305,13 +346,17 @@ namespace RoadDemo
                 // and retry shortly; dynamic people are still handled inside stride.
                 CombatStand(dt);
                 _blockedFor += dt;
-                return;
+                return CombatRouteFailedModel(_blockedFor, false);
             }
 
             if (_combatWay.Count == 0)
             {
                 CombatStand(dt);
-                return;
+                // Count every frame of a failed plan, not just the 0.4-second retry
+                // frame. A cover caller otherwise never observes enough blocked time
+                // to abandon an unreachable flank.
+                _blockedFor += dt;
+                return CombatRouteFailedModel(_blockedFor, false);
             }
 
             while (_combatWayAt < _combatWay.Count - 1)
@@ -327,8 +372,11 @@ namespace RoadDemo
 
             bool last = _combatWayAt >= _combatWay.Count - 1;
             var waypoint = last ? _combatWayEnd : _combatWay[_combatWayAt];
-            float cornerStop = last && _combatWayEndsAtTarget
-                ? stopWithin : last ? CombatCornerReach : 0.12f;
+            // A non-terminal tangent is walked right onto its proved point. Stopping
+            // twelve centimetres short can leave the following chord just inside the
+            // inflated prop even though the authored corner itself connects cleanly.
+            float cornerStop = CombatCornerStopModel(
+                last, _combatWayEndsAtTarget, stopWithin);
             TickStride(dt, waypoint, cornerStop,
                 hurry, run, terminal: last, routed: true);
 
@@ -341,13 +389,22 @@ namespace RoadDemo
             // steering a short chance, then redraw from the feet. A man can also keep
             // taking full steps in a circle, so lack of forward progress is the second
             // half of this test rather than `_blockedFor` alone.
-            if (_blockedFor > 0.8f || circling)
+            bool routeFailed = CombatRouteFailedModel(_blockedFor, circling);
+            if (routeFailed)
             {
+                if (DriveTrace.On)
+                    DriveTrace.Event("walk", DisplayName,
+                        $"combat route dropped: blocked={_blockedFor:F2}, " +
+                        $"circling={circling}, left={left.magnitude:F2}, " +
+                        $"terminal={Vector3.Distance(Tf.position, target):F2}, " +
+                        $"corner={_combatWayAt + 1}/{_combatWay.Count}, " +
+                        $"waypoint=({waypoint.x:F2},{waypoint.z:F2})");
                 _combatWay.Clear();
                 _combatWayAt = 0;
                 _combatReplanAt = Time.time;
                 BeginCombatCorner();
             }
+            return routeFailed;
         }
 
         /// <summary>A moving shooter may aim only into the forward sixty-degree cone
@@ -498,12 +555,14 @@ namespace RoadDemo
             // into the JOG, not into a walk: the sprint's own band is the widest of
             // the three and a single test against it turned every braked flee into a
             // stroll - which is what the player watched a beaten mob do.
-            if (sprint && pace < SprintRateMin * (_strideJog ? 1f : 1.1f) * sprintClip)
+            if (sprint && !GaitPaceAllowedModel(
+                    pace, sprintClip, SprintRateMin, _strideJog))
             {
                 sprint = false;
                 pace = JogSpeed * held;
             }
-            if (jog && pace < RunRateMin * (_strideJog ? 1f : 1.1f) * ClipPace(PoseJog, JogClipPace))
+            if (jog && !GaitPaceAllowedModel(pace,
+                    ClipPace(PoseJog, JogClipPace), RunRateMin, _strideJog))
             {
                 jog = false;
                 pace = (hurry ? Speed * HurryFactor : Speed) * PaceScale * held *
@@ -600,13 +659,23 @@ namespace RoadDemo
             // proof on the ACTUAL heading, so neither rewrite can spend clearance that
             // belonged to a different line and step into a cafe, table or car. Doorway
             // crossings intentionally own their authored straight line through a wall.
-            if (!Crossing && step > 1e-4f)
+            if (!Crossing && step > 0f)
                 step = Mathf.Min(step, WalkObstacles.Clear(
                     Tf.position, dir, fixedRadius, trafficRadius, step));
 
-            if (step > 1e-4f)
+            // Finish a proved non-terminal route corner at its exact coordinate. The
+            // general movement epsilon below deliberately ignores sub-millimetre noise,
+            // but leaving that residue at a prop tangent can keep the next chord on the
+            // blocked side forever. This is still an ordinary speed-limited step: it is
+            // exact only when the whole remaining distance survived the final proof.
+            bool completesRoutedCorner = routed && !terminal && step > 0f &&
+                                         step >= dist;
+            if (step > 1e-4f || completesRoutedCorner)
             {
-                Tf.position += dir * step;
+                if (completesRoutedCorner)
+                    Tf.position = new Vector3(to.x, Tf.position.y, to.z);
+                else
+                    Tf.position += dir * step;
                 _strideDir = dir;
                 _strideMoveFrame = Time.frameCount;
                 _blockedFor = 0f;

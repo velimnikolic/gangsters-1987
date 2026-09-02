@@ -20,6 +20,17 @@ namespace LivingCity.Outfit
         /// <summary>The stat he is selling - his best, and what the ad is headed with.</summary>
         public CharacterAttribute Trade;
 
+        /// <summary>What KIND of man is advertising (GAN-245). None is the ordinary
+        /// column - a man offering to run a crew. Anything else is a specialist selling
+        /// the one thing he does, and he is signed onto the books without a rank, a
+        /// crew or a place in the chain of command.</summary>
+        public Specialty Specialty = Specialty.None;
+
+        /// <summary>What a lawyer's ad quotes as his standing in court, 1-5 - the SAME
+        /// function the trial reads (Personnel.Lawyer.Skill), so a four-star man in the
+        /// paper argues like a four-star man on the day.</summary>
+        public int Skill => Specialty == Specialty.Lawyer ? Lawyer.Skill(Man) : 0;
+
         /// <summary>The box number replies go to. Flavour, but a stable one: it is
         /// dealt with the man, so the same edition prints the same column twice.</summary>
         public string Box = "";
@@ -56,6 +67,15 @@ namespace LivingCity.Outfit
         /// <summary>Ads printed per edition. Four fills the page's two-by-two grid; a
         /// column that ran longer would scroll, and a newspaper column does not.</summary>
         public const int AdsPerEdition = 4;
+
+        /// <summary>How often a lawyer advertises (GAN-245). He takes the LAST slot of
+        /// that morning's column rather than a fifth box - the page is a two-by-two
+        /// grid and a fifth ad would scroll, which a newspaper column does not do.
+        ///
+        /// A week apart, and never at all while the outfit already has counsel: one
+        /// lawyer is the v1 rule, and a paper offering a second one is a paper offering
+        /// a button that refuses itself.</summary>
+        public const int LawyerAdEveryDays = 7;
 
         /// <summary>A man who advertises for a crew of his own claims the head for it:
         /// his Awareness and Organization are floored at the house's own promotion
@@ -107,8 +127,11 @@ namespace LivingCity.Outfit
             // cannot re-lay the city, and today's men cannot depend on how many jobs
             // the outfit happened to run yesterday.
             var rng = new System.Random(Mix(seed + SeedOffsets.Personnel, day));
+            var lawyerSlot = LawyerMorning(roster, day) ? AdsPerEdition - 1 : -1;
             for (var slot = 0; slot < AdsPerEdition; slot++)
-                ads.Add(DealOne(roster, rng, seed, day, slot));
+                ads.Add(slot == lawyerSlot
+                    ? DealLawyer(roster, rng, seed, day, slot)
+                    : DealOne(roster, rng, seed, day, slot));
 
             Revision++;
         }
@@ -138,6 +161,51 @@ namespace LivingCity.Outfit
             Revision++;
         }
 
+        /// <summary>Whether this morning's column carries the lawyer's ad. Asked of the
+        /// BOOKS and not of the courthouse: Lawyer.Counsel answers only for a lawyer who
+        /// is standing up, so a retained man who was jailed or put in a hospital bed
+        /// printed a second offer of counsel over himself - and nothing refuses the
+        /// signing, so the outfit came out of it paying two lawyers for ever while
+        /// Counsel quietly used whichever stood first on the roster.</summary>
+        static bool LawyerMorning(Roster roster, int day) =>
+            day > 0 && day % LawyerAdEveryDays == 0 && Lawyer.OnBooks(roster) == null;
+
+        /// <summary>
+        /// THE MAN AT THE COURTHOUSE. Dealt like anybody else and then made what he is:
+        /// a specialist, which in this codebase means a man who can never be crewed,
+        /// promoted or put on the front (Specialty), with the two stats a lawyer is
+        /// floored at the same line a lieutenant's head is - the paper does not print
+        /// an offer of counsel who could not get a hearing listed.
+        ///
+        /// He is priced off the wage table like every other ad: HouseRateAs reads the
+        /// specialty before the rank, so his ask is the lawyer's wage plus the market
+        /// premium and nothing about a crew enters into it.
+        /// </summary>
+        HireAd DealLawyer(Roster roster, System.Random rng, int seed, int day, int slot)
+        {
+            var man = RosterSeeder.Deal(roster, rng, AdvertisedCeilingHalfSteps,
+                Potential.Mix(Potential.StreamFor(seed, -2), day * AdsPerEdition + slot));
+
+            FloorHead(man, CharacterAttribute.Awareness);
+            FloorHead(man, CharacterAttribute.Organization);
+
+            man.Rank = Rank.Hood;
+            man.Specialty = Specialty.Lawyer;
+            man.WageAsked = Wages.AskFor(man);
+
+            var box = "BOX " + (11 + rng.Next(80)) + "-" +
+                      BoxLetters[rng.Next(BoxLetters.Length)];
+
+            return new HireAd
+            {
+                Man = man,
+                Trade = CharacterAttribute.Awareness,
+                Specialty = Specialty.Lawyer,
+                From = "THE COURTHOUSE",
+                Box = box,
+            };
+        }
+
         HireAd DealOne(Roster roster, System.Random rng, int seed, int day, int slot)
         {
             var man = RosterSeeder.Deal(roster, rng, AdvertisedCeilingHalfSteps,
@@ -149,8 +217,12 @@ namespace LivingCity.Outfit
             FloorHead(man, CharacterAttribute.Awareness);
             FloorHead(man, CharacterAttribute.Organization);
 
-            // He advertises as what he is: a lieutenant, and priced as one - the ask is
-            // stamped on him here and paid for the rest of his life on the books.
+            // He advertises as what he is: a lieutenant, and priced as one - the house
+            // rate for the crew he says he can run, plus the market's premium for a
+            // man who walks in ready-made (Wages.AskFor). The ask is stamped on him
+            // here and drawn for as long as he holds that rank: a promotion or a
+            // demotion tears the bargain up and puts him on the house scale
+            // (RosterOps, WAGE-002).
             man.Rank = Rank.Lieutenant;
             man.WageAsked = Wages.AskFor(man);
 
@@ -226,6 +298,24 @@ namespace LivingCity.Outfit
         /// <summary>The word the ad is headed with - what he is selling, in the trade's
         /// own language rather than the ledger's stat name. The man wrote it, not the
         /// book, which is why it lives with the market and not in LedgerText.</summary>
+        /// <summary>The word an ad is headed with - a specialist's trade before his
+        /// stats, because what he IS is the whole offer.</summary>
+        public static string HeadingFor(HireAd ad) =>
+            ad == null ? "" :
+            ad.Specialty == Specialty.Lawyer ? "COUNSEL" :
+            ad.Specialty == Specialty.Accountant ? "BOOKKEEPER" :
+            TradeName(ad.Trade);
+
+        /// <summary>The copy under that heading.</summary>
+        public static string PitchFor(HireAd ad) =>
+            ad == null ? "" :
+            ad.Specialty == Specialty.Lawyer
+                ? "Attorney at law. Bail applications, arraignments and trial work. " +
+                  "I have never yet been told a case was too far gone to look at."
+                : ad.Specialty == Specialty.Accountant
+                    ? "Books kept, returns filed, questions answered before they are asked."
+                    : Pitch(ad.Trade);
+
         public static string TradeName(CharacterAttribute trade) => trade switch
         {
             CharacterAttribute.Combat => "GUN HAND",

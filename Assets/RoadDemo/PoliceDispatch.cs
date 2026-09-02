@@ -105,12 +105,14 @@ namespace RoadDemo
             _sidearm = sidearm;
             StreetAlarm.OnShot += OnShot;
             StreetAlarm.OnDeath += OnDeath;
+            StreetAlarm.OnComplaint += OnComplaint;
         }
 
         void OnDestroy()
         {
             StreetAlarm.OnShot -= OnShot;
             StreetAlarm.OnDeath -= OnDeath;
+            StreetAlarm.OnComplaint -= OnComplaint;
         }
 
         /// <summary>A unit the dispatcher may send. Cars get lights and a siren.</summary>
@@ -148,6 +150,12 @@ namespace RoadDemo
                 _carsSent = 0;
                 _officerDied = false;
                 _callAt = Time.time + NobodyRang;
+                // WHO SAW IT IS DECIDED NOW (GAN-245), not when an officer eventually
+                // gets round to an arrest a hundred seconds later. Evidence is about the
+                // moment of the act: the people who were on this pavement when the first
+                // round went off are the witnesses, and the crowd that gathers
+                // afterwards - or has gone home by then - is not.
+                SnapshotTheScene(shot.Pos);
                 CrewOverlay.Announce("SHOTS FIRED", 4f, new Color(1f, 0.55f, 0.45f));
             }
             float add = Mathf.Min(ShotHeat, ShotHeatCap - _shotHeat);
@@ -248,6 +256,8 @@ namespace RoadDemo
             TickFoot();
             TickSwarm(dt);
             TickWanted(dt);
+            TickCalls(dt);
+            WitnessWatch.Tick();
             TickArrest(dt);
             foreach (var kv in _lights) kv.Value.Tick(dt);
         }
@@ -514,16 +524,26 @@ namespace RoadDemo
             CrewOverlay.Announce("POLICE LEAVING THE SCENE", 4f, new Color(0.55f, 0.78f, 1f));
         }
 
-        static CrewWalker Lead(Squad squad)
+        static CrewWalker Lead(Squad squad) => squad == null ? null : Lead(squad.Men);
+
+        /// <summary>Whoever is speaking for a body of the law: its sergeant while he is
+        /// standing, and the first man still on his feet after that.</summary>
+        static CrewWalker Lead(DemoCrews.Unit men)
         {
-            if (squad.Men == null) return null;
-            if (squad.Men.Boss != null && !squad.Men.Boss.Dead) return squad.Men.Boss;
-            foreach (var m in squad.Men.All()) if (!m.Dead) return m;
+            if (men == null) return null;
+            if (men.Boss != null && !men.Boss.Dead) return men.Boss;
+            foreach (var m in men.All()) if (!m.Dead) return m;
             return null;
         }
 
         void BeginWarning(Squad squad)
         {
+            // A squad shouting DROP THE GUNS is a squad LOOKING at it. That is what
+            // makes it a police eyewitness to the act (GAN-245), and it has to be
+            // recorded while it is true - by the time an arrest is made the same squad
+            // is Securing a quiet street and nothing about its state says it saw
+            // anything.
+            NoteLawWatchedIt(squad);
             squad.State = SquadState.Warning;
             squad.Timer = 3f;
             var lead = Lead(squad);
@@ -585,6 +605,7 @@ namespace RoadDemo
                 }
             }
             if (target == null) return false;
+            NoteLawWatchedIt(squad);
             if (squad.Men.TargetUnit != target) _crews.Sic(squad.Men, target);
             squad.State = SquadState.Engaging;
             squad.Reassess = 0.5f;
