@@ -239,7 +239,6 @@ round had gone only when the money arrived — or never, if it did not.
 
 ## Not built
 
-* Rival collectors on a schedule ("their man comes Thursdays" on a rival door).
 * Duties other than Collector.
 * **The detachment** (GAN-224 Part D): a scheduled round still marches the whole crew, so
   a Thursday round pulls every man off the block it is collecting. The design wants the

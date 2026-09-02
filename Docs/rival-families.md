@@ -334,6 +334,30 @@ the businesses are populated and the racket is up.
 
 A file from a **newer** version is refused with a printed reason, never half-read.
 
+## The tally
+
+One seed proves nothing; thirty is the verdict.
+
+```
+unity command gangsters_underworld_sim --seed 1987 --days 90 --houses 21 --json
+unity command gangsters_underworld_sim --sweep 30 --days 90 --houses 21 --json > sweep.json
+python Tools/sim/underworld_tally.py sweep.json
+```
+
+The sim runs every house on the paper clock over a bench city - two blocks a family, four
+doors each - and prints one line per house per week: safe, payroll, doors paying, blocks
+led, men (active/hurt/jailed/dead), wars, what it has banked, and the day each of the
+eight MVP steps first happened (`lost/signed/deployed/street/asked/banked/paid/answered`,
+`-1` for never).
+
+**These are notes, not a verdict.** Only three things make the sim fail: an exception, an
+order refused for ownership (which would mean a mind is reaching past its view), and it
+counts negative safes rather than failing on them - EPIC 24 owns the short envelope.
+
+Two things the yardstick cannot see, by construction: nobody attacks anybody on the paper
+city (no incidents are filed there), so the ANSWER step and the war ladder never fire in
+it. Those are `gangsters_house_tests`' and `gangsters_relations_tests`' business.
+
 ## See also
 
 * `Docs/racket-collections.md` — the round ledger and the two clocks

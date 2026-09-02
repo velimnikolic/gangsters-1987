@@ -490,6 +490,61 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_underworld_sim",
+                    "RIVAL-011's yardstick: every house on the paper clock for D days, " +
+                    "with a week-by-week line each. Notes, not a verdict - only an " +
+                    "exception, an ownership refusal or a safe under water fail it.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "underworld", "sim" })]
+        public static object UnderworldSim(
+            int seed = 1987, int days = 90, int houses = 21, int sweep = 0)
+        {
+            if (sweep <= 0)
+            {
+                var one = LivingCity.Tests.UnderworldSim.Run(seed, days, houses);
+                return new
+                {
+                    passed = one.Clean,
+                    seed,
+                    days,
+                    houses,
+                    negatives = one.Negatives,
+                    ownershipRefusals = one.OwnershipRefusals,
+                    error = one.Error,
+                    lines = one.Lines.ToArray(),
+                };
+            }
+
+            // THE SWEEP. Thirty cities, the same month in each - one seed proves
+            // nothing (the tally of thirty is the verdict).
+            var rows = new List<string>();
+            var negatives = 0;
+            var refused = 0;
+            var errors = new List<string>();
+            for (var s = 1; s <= sweep; s++)
+            {
+                var report = LivingCity.Tests.UnderworldSim.Run(s, days, houses);
+                negatives += report.Negatives;
+                refused += report.OwnershipRefusals;
+                if (!string.IsNullOrEmpty(report.Error))
+                    errors.Add("seed " + s + ": " + report.Error);
+                for (var i = 0; i < report.Lines.Count; i++)
+                    rows.Add("seed " + s + " " + report.Lines[i]);
+            }
+
+            return new
+            {
+                passed = errors.Count == 0 && refused == 0,
+                seeds = sweep,
+                days,
+                houses,
+                negatives,
+                ownershipRefusals = refused,
+                errors = errors.ToArray(),
+                lines = rows.ToArray(),
+            };
+        }
+
         [CliCommand("gangsters_loyalty_tests",
                     "Run EPIC 15 contracts for loyalty, promotion and betrayal: who a " +
                     "man answers to, what moves it, who walks and who goes with him.",
