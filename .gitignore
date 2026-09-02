@@ -92,3 +92,12 @@ Tools/ledger-ds/.design-sync/node_modules
 # Python bytecode from the play-harness tools
 __pycache__/
 *.pyc
+
+# Scratch regions a session parks beside a test file while it writes one - the
+# contract itself belongs in the .cs, never in a .txt next to it
+/Assets/**/*.region.txt
+/Assets/**/*.region.txt.meta
+
+# ProGrids writes an empty settings dictionary the moment the editor opens, and
+# rewrites it on every open: noise, not a project setting anybody chose
+/ProjectSettings/Packages/com.unity.progrids/
