@@ -65,11 +65,21 @@ namespace RoadDemo
 
         readonly List<PendingBagRound> pendingBagRounds =
             new List<PendingBagRound>();
-        readonly Dictionary<int, float> bagClearSince = new Dictionary<int, float>();
+        /// <summary>Last real HQ threat per bag detail. Only these timestamps buy the
+        /// post-fight street grace; an idle detail with no billet goes straight home.</summary>
+        readonly Dictionary<int, float> bagThreatSeenAt = new Dictionary<int, float>();
         int scheduledSubmitDay = -1;
         float nextBagDefenceAt;
 
         internal bool BagRoundPending(int crewId) => PendingBagRoundOf(crewId) != null;
+
+        /// <summary>Whether autonomous HQ defence still owns this detail, including
+        /// the quiet stand-down after its last threat. Roster sync asks this instead of
+        /// inferring lifecycle state from TargetUnit, which is cleared as soon as the
+        /// threat leaves.</summary>
+        internal bool BagDefenceActive(int crewId) =>
+            bagThreatSeenAt.TryGetValue(crewId, out var threatAt) &&
+            Time.time - threatAt < BagStandDownAfter;
 
         PendingBagRound PendingBagRoundOf(int crewId)
         {
@@ -195,33 +205,36 @@ namespace RoadDemo
             if (crews == null)
                 return;
             var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
-            if (outfit == null || !outfit.TryGetHeadquarters(out var hq, out _) ||
-                !TryGetBlockAtWorld(hq, out var hqBlock))
+            if (outfit == null || !outfit.TryGetHeadquarters(out var hq, out _))
                 return;
+            var hqMapped = TryGetBlockAtWorld(hq, out var hqBlock);
 
             DemoCrews.Unit threat = null;
-            for (var i = 0; i < crews.Units.Count; i++)
-            {
-                var unit = crews.Units[i];
-                if (unit == null || unit.Faction <= 0 || unit.IsPolice || unit.Wiped ||
-                    !TryGetBlockAtWorld(unit.Position, out var block) || block != hqBlock)
-                    continue;
-                threat = unit;
-                break;
-            }
+            if (hqMapped)
+                for (var i = 0; i < crews.Units.Count; i++)
+                {
+                    var unit = crews.Units[i];
+                    if (unit == null || unit.Faction <= 0 || unit.IsPolice || unit.Wiped ||
+                        CrewQuarters.Inside(unit) ||
+                        !TryGetBlockAtWorld(unit.Position, out var block) || block != hqBlock)
+                        continue;
+                    threat = unit;
+                    break;
+                }
 
             // The other trigger is a fight already under way at home, even when its
             // opponent is the law or is not otherwise a rival crew the scan above
             // would choose. Both sides must still be on the headquarters block: the
             // bag detail defends the doorstep; it never chases a fight into the next
             // street.
-            if (threat == null)
+            if (threat == null && hqMapped)
                 for (var i = 0; i < crews.Units.Count; i++)
                 {
                     var ours = crews.Units[i];
                     var target = ours?.TargetUnit;
                     if (ours == null || ours.Faction != 0 || ours.IsDetachment ||
-                        ours.Wiped || target == null || target.Wiped ||
+                        ours.Wiped || CrewQuarters.Inside(ours) ||
+                        target == null || target.Wiped || CrewQuarters.Inside(target) ||
                         !TryGetBlockAtWorld(ours.Position, out var ourBlock) ||
                         ourBlock != hqBlock ||
                         !TryGetBlockAtWorld(target.Position, out var targetBlock) ||
@@ -239,13 +252,16 @@ namespace RoadDemo
                 if (TryGetRound(bag.CrewId, out _, out _, out _) ||
                     BagRoundPending(bag.CrewId))
                 {
-                    bagClearSince.Remove(bag.CrewId);
+                    bagThreatSeenAt.Remove(bag.CrewId);
                     continue;
                 }
 
                 if (threat != null)
                 {
-                    bagClearSince.Remove(bag.CrewId);
+                    // Start the quiet clock at the last real threat. A detail that has
+                    // merely lost its billet is idle, not standing down from a fight,
+                    // and must go straight back inside instead of waiting in the street.
+                    bagThreatSeenAt[bag.CrewId] = Time.time;
                     if (CrewQuarters.Billeted(bag))
                         CrewQuarters.CallOut(bag);
                     bag.TargetUnit = threat;
@@ -256,23 +272,14 @@ namespace RoadDemo
                 bag.TargetUnit = null;
                 if (CrewQuarters.Billeted(bag))
                 {
-                    bagClearSince.Remove(bag.CrewId);
+                    bagThreatSeenAt.Remove(bag.CrewId);
                     continue;
                 }
-                if (!bagClearSince.TryGetValue(bag.CrewId, out var clearAt))
-                {
-                    bagClearSince[bag.CrewId] = Time.time;
-                    continue;
-                }
-                if (Time.time - clearAt < BagStandDownAfter)
+                if (BagDefenceActive(bag.CrewId))
                     continue;
 
-                var front = DemoCrews.PlayerFront();
-                if (front != null && front.BusinessId.IsValid)
-                    CrewQuarters.Station(crews, bag, front.BusinessId);
-                else
-                    CrewQuarters.Station(crews, bag, hq, "HQ");
-                bagClearSince.Remove(bag.CrewId);
+                if (crews.StationBagAtHeadquarters(bag))
+                    bagThreatSeenAt.Remove(bag.CrewId);
             }
         }
 
@@ -1478,14 +1485,7 @@ namespace RoadDemo
 
                 if (body?.Walkers != null && body.Walkers.IsDetachment &&
                     !body.Walkers.Wiped)
-                {
-                    var front = DemoCrews.PlayerFront();
-                    if (front != null && front.BusinessId.IsValid)
-                        CrewQuarters.Station(crews, body.Walkers, front.BusinessId);
-                    else
-                        CrewQuarters.Station(crews, body.Walkers,
-                            HomeDoor(round.House), "HQ");
-                }
+                    crews.StationBagAtHeadquarters(body.Walkers);
             }
             else if (round.Carried > 0)
             {

@@ -53,8 +53,8 @@ namespace RoadDemo
             public int Loyalty;
 
             /// <summary>THE BAG MAN'S OWN UNIT (GAN-262): the one hood of a crew marked
-            /// for the collection bag, standing at the front between rounds and
-            /// walking them alone. Same CrewId as the crew he belongs to; Parent is the
+            /// for the collection bag, held inside HQ between rounds and walking them
+            /// with his escorts. Same CrewId as the crew he belongs to; Parent is the
             /// crew's line. Every surface that LISTS or PICKS a crew skips these - the
             /// books name a crew, and the crew is the parent - while everything that
             /// samples bodies (presence, arrivals, combat) sees him like any man.</summary>
@@ -2956,9 +2956,16 @@ namespace RoadDemo
                     if (!man.Dead && (!previousUnitOf.TryGetValue(man, out var was) || was != unit))
                         changed = true;
                 var bagRuntime = TerritoryRuntime.Instance;
-                if (changed && (bagRuntime == null ||
-                    (!bagRuntime.TryGetRound(unit.CrewId, out _, out _, out _) &&
-                     !bagRuntime.BagRoundPending(unit.CrewId))))
+                var roundAway = bagRuntime != null &&
+                    (bagRuntime.TryGetRound(unit.CrewId, out _, out _, out _) ||
+                     bagRuntime.BagRoundPending(unit.CrewId));
+                var defenceAway =
+                    (unit.TargetUnit != null && !unit.TargetUnit.Wiped) ||
+                    (bagRuntime != null && bagRuntime.BagDefenceActive(unit.CrewId));
+                // Sync owns structural re-deals only. An unchanged idle detail whose
+                // billet was lost is TendBagDefence's concern, so its post-fight quiet
+                // window cannot be bypassed by an unrelated roster version bump.
+                if (BagSyncShouldStationModel(changed, roundAway, defenceAway))
                     StationBagAtHeadquarters(unit);
             }
 
@@ -3045,22 +3052,39 @@ namespace RoadDemo
             }
         }
 
-        void StationBagAtHeadquarters(Unit unit)
+        /// <summary>The roster sync may station only a structurally re-dealt detail.
+        /// Ordinary lost-billet recovery belongs to TerritoryRuntime's defence tick.</summary>
+        internal static bool BagSyncShouldStationModel(
+            bool rosterChanged, bool roundAway, bool defenceAway) =>
+            rosterChanged && !roundAway && !defenceAway;
+
+        /// <summary>One route home for every bag-detail caller: roster sync, defence
+        /// stand-down and a banked round must all put the men behind the same door.
+        ///
+        /// EVERY HOUSE HAS ITS OWN DOOR. A rival's bag men go home to the front the city
+        /// seated that family, never to the player's headquarters - the fallback below is
+        /// the OUTFIT's own office and belongs to house zero alone. A rival trio billeted
+        /// at the player's address stands there for good, counts as presence on his home
+        /// block, and is picked up by his own headquarters-defence tick as a threat that
+        /// his own code put there.</summary>
+        internal bool StationBagAtHeadquarters(Unit unit)
         {
             if (unit == null || !unit.IsDetachment)
-                return;
-            var front = PlayerFront();
+                return false;
+            var front = FrontOf(unit.Faction);
             if (front != null)
             {
-                if (front.BusinessId.IsValid)
-                    CrewQuarters.Station(this, unit, front.BusinessId);
-                else
-                    CrewQuarters.Station(this, unit, front.Outside, "HQ");
-                return;
+                if (front.BusinessId.IsValid &&
+                    CrewQuarters.Station(this, unit, front.BusinessId))
+                    return true;
+                return CrewQuarters.Station(this, unit, front.Outside, "HQ");
             }
+            if (unit.Faction != LivingCity.Gameplay.PlayerCommands.House.Value)
+                return false;
             var outfit = OutfitDirector.Instance;
             if (outfit != null && outfit.TryGetHeadquarters(out var hq, out _))
-                CrewQuarters.Station(this, unit, hq, "HQ");
+                return CrewQuarters.Station(this, unit, hq, "HQ");
+            return false;
         }
 
         public bool TryLocateGroup(int leaderId, out TerritoryBlockId blockId)

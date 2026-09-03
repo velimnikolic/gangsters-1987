@@ -2,7 +2,7 @@
 
 Design brief, written 2026-09-03 from the conversation that settled it. Linear: EPIC 30, GAN-273 (tickets `BAG-001..006` = GAN-274..279).
 
-GAN-262 gave every crew one bag man, dealt into a street unit of his own but still one of the crew's four. This epic finishes the thought the way the user put it: **the collector leaves the crew** — "kolektor treba da izađe iz crew, da bude poseban kao mini lieutenant unutar lieutenanta/bossa za čiji blok radi, a pošto je mini lieutenant dodaš mu obezbeđenje i to je to." He becomes his own node under the lieutenant (or the Don) whose ground he collects, he gets an escort posted to him the way men are posted to the Don's detail, he cannot be ordered about while he carries the bag, he sits inside the HQ between rounds and comes out only when the clock says, and if he and his escort die on the round the bag lies where he fell and whoever killed him may take it.
+GAN-262 gave every crew one bag man, dealt into a street unit of his own but still one of the crew's four. This epic finishes the thought the way the user put it: **the collector leaves the crew** — "kolektor treba da izađe iz crew, da bude poseban kao mini lieutenant unutar lieutenanta/bossa za čiji blok radi, a pošto je mini lieutenant dodaš mu obezbeđenje i to je to." He becomes his own node below the lieutenant, or beside the Don's detail when he works the Don's ground; he gets an escort posted to him the way men are posted to the Don's detail, he cannot be ordered about while he carries the bag, he sits inside the HQ between rounds and comes out only when the clock says, and if he and his escort die on the round the bag lies where he fell and whoever killed him may take it.
 
 Two smaller defects ride along because the same conversation found them: a robbery prints as "Protection" on the Finances page, and the ledger says a collector "stands with the Don".
 
@@ -14,7 +14,7 @@ Two smaller defects ride along because the same conversation found them: a robbe
 | 2 | Where does an escort come from? | The reserve **or** the crew's own men (bench or line). Posting a man from the reserve re-aims his loyalty like any other posting; posting one of the crew's own does not. |
 | 3 | Can the player order the bag unit? | **No.** Not while the man carries the bag. It has its own AI: inside the HQ, out on the round when the schedule says, back inside after banking, out again to defend the HQ block. Take the bag off him and he is an ordinary hood again. |
 | 4 | Finances | A new row **Jobs** (robbery, ransom cut) beside Protection; `DirtyIncome` is the derived sum used by dirty-money accounting. |
-| 5 | The Don's own block | His collector's node hangs under THE DETAIL. The collector is **not** a bodyguard: no attempt on the Don ever spends him. |
+| 5 | The Don's own block | His collector's node stands beside THE DETAIL on the Don's branch row. The collector is **not** a bodyguard: no attempt on the Don ever spends him. |
 | 6 | The collector dies on the round | A living escort picks the bag up and finishes the round. If nobody of ours is left standing, the bag lies on the ground with the day's take in it; **the man who killed him may take it** — a right-click on the bag, TAKE THE BAG, is a new order. |
 | 7 | Men inside the HQ between rounds | They count as presence on the HQ block, **and they come out to defend it** when a fight reaches the block. Taking that block gets harder; that is the point. |
 
@@ -29,7 +29,7 @@ Two smaller defects ride along because the same conversation found them: a robbe
 | Men inside a door | `RoadDemo/CrewQuarters.cs` — `Station / BringOut / Inside / Retasked`, billets keyed by **crew id** | re-keyed by unit identity so a bag unit and its line can be inside or out independently |
 | The bag prop | `RoadDemo/BagCarry.cs` — `Give / Drop`, a dropped bag is destroyed after `DroppedFor` | a dropped bag becomes a pickup that remembers the take |
 | The right-click card | `RoadDemo/CrewOverlay.cs` — `CrewEnemyAction` rows (KILL, MOTO DRIVE-BY, BOMBA) | gains TAKE THE BAG when the pointer is on a bag on the ground |
-| Chain of command | `UI/PersonnelAlmanac.Command.cs` — `CommandBranch`, THE DETAIL first, one branch per lieutenant, RESERVE with PLACE / PICKED tails; `FileDetailPosting` in the ORGANIZATION partial | a sub-branch per collector, hung under its leader's card; PLACE targets it |
+| Chain of command | `UI/PersonnelAlmanac.Command.cs` — `CommandBranch`, THE DETAIL first, one branch per lieutenant, RESERVE with PLACE / PICKED tails; `FileDetailPosting` in the ORGANIZATION partial | a branch per collector: beside THE DETAIL for the Don, below a lieutenant; PLACE targets it |
 | What a man is doing | `UI/PersonnelAlmanac.Organization.cs` `HoodDuty` | a collector / escort case before the detail case |
 | Personal file | `UI/PersonnelAlmanac.Personnel.cs` — MAKE HIM A COLLECTOR / TAKE HIM OFF THE BAG | a second key for the escort |
 | Money | `Outfit/Accounts.cs` `DaySheet.IllegalIncome`; `CampaignRunner.BookMoney` (jobs), `OutfitDirector.BankCollection` (rounds), dirty-on-entry accounting; `OutfitSnapshot` | one new field, `JobIncome`; `DirtyIncome` derives the sum |
@@ -62,22 +62,20 @@ The CHAIN OF COMMAND page draws one more level:
 ```
 THE DON
  ├─ THE DETAIL ........................ his own men
- │    └─ THE BAG · Artie Levine ....... his collector, when he answers for ground
- │         ├─ Artie Levine            carries the bag
- │         └─ Lou Kaminski           guards the bag
+ ├─ THE BAG · Artie Levine ............ his collector, beside the detail
+ │    └─ Lou Kaminski ................. guards the bag
  ├─ LIEUTENANT Byrne
  │    ├─ (his men) ..................... the line and the bench
  │    └─ THE BAG · Sal Provenzano
- │         ├─ Sal Provenzano          carries the bag
- │         ├─ Frank Stein             guards the bag
- │         └─ (empty)                 PLACE
+ │         ├─ Frank Stein .............. guards the bag
+ │         └─ (empty) .................. PLACE
  └─ RESERVE · STAYS WITH BOSS
 ```
 
-* The sub-branch is a `CommandBranch` with the collector as its head, hung off the parent card's rail on a second stub, in the same measurements as a branch (portrait, name, the men on a dashed rail). It is drawn whenever the crew has a collector, empty escort slots showing as PLACE rows.
+* The bag is a `CommandBranch` with the collector as its head, in the same measurements as a branch (portrait and name, with only his escorts on the dashed rail). The Don's bag stands beside THE DETAIL in the first branch row; a lieutenant's bag hangs one level below his card on a second stub. It is drawn whenever the crew has a collector, empty escort slots showing as PLACE rows. The collector is the branch head and is never repeated as his own escort leaf.
 * The RESERVE's PLACE / PICKED flow targets it the way it targets THE DETAIL: pick a man in the reserve, PLACE on the bag branch, filed through `FileOrder`, refused when the escort is full or the leader's manpower is. A line leaf gets a second tail word, TO THE BAG, that moves one of the crew's own men across. PULL on an escort leaf puts him on the bench.
 * Wage line under the bag card: "<n> men · $x / day · on the round Tue Thu" from the schedule the seam already knows.
-* `HoodDuty`: "carries the bag for Byrne's ground"; "on the round · Kearny St" while `TryGetRoundOf` answers; "guards the bag". The detail case comes after these, so a collector under THE DETAIL never reads "stands with the Don".
+* `HoodDuty`: "carries the bag for Byrne's ground"; "on the round · Kearny St" while `TryGetRoundOf` answers; "guards the bag". The detail case comes after these, so the Don's collector never reads "stands with the Don".
 * Personal file: MAKE HIM A COLLECTOR stays; a hood in a crew that has a collector gets PUT HIM ON THE BAG'S DETAIL / TAKE HIM OFF THE BAG'S DETAIL.
 
 ## 5. The street
@@ -121,14 +119,14 @@ A safe house or second premises; rival bag units on the street (EPIC 25); the ba
 ## 10. Acceptance
 
 * Headless green: `gangsters_organization_tests`, `gangsters_command_tests`, `gangsters_rack_tests`, `gangsters_economy_tests`, `gangsters_wage_tests`, `gangsters_save_tests`, `gangsters_ledger_tests` — with the new contracts named in the tickets.
-* Ledger: a crew with a collector shows THE BAG under its card; PLACE from the reserve fills the escort; the Don's collector sits under THE DETAIL and reads "carries the bag", never "stands with the Don"; Finances shows a robbery under Jobs and a round under Protection.
+* Ledger: a lieutenant's collector shows THE BAG under his card; PLACE from the reserve fills the escort; the Don's collector sits beside THE DETAIL, is not repeated as an escort, and reads "carries the bag", never "stands with the Don"; Finances shows a robbery under Jobs and a round under Protection.
 * Play: the bag unit is inside the HQ at 08:00, out at the scheduled hour with the escort behind the collector, back inside after banking; a click on it opens nothing; TAKE THEM INSIDE on the line and a round leaving the same door leave both billets correct.
 * Play: kill the collector on the round with the escort alive — the escort finishes it; kill both — the bag lies there, a right-click on it offers TAKE THE BAG, and the take lands under Jobs.
 
 ## 11. What landed
 
 GAN-273 now has one authoritative bag node per crew (`BagId` plus up to two
-`EscortIds`), snapshot migration and validation, the nested Personnel Ledger branch and
+`EscortIds`), snapshot migration and validation, the hierarchical Personnel Ledger branch and
 its PLACE / TO BAG / PULL / OFF BAG actions. The street projects that node as a separate
 unpickable three-man unit with an independent headquarters billet, scheduled `BringOut`,
 bounded and reasserted exit, post-bank return, four-times-a-second home-block defence and

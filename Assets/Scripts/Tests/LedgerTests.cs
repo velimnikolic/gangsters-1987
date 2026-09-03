@@ -1023,11 +1023,16 @@ namespace LivingCity.Tests
                 failures.Add("BAG-003: an empty crew gathered a THE BAG branch.");
 
             crew.BagId = 8;
+            if (!PersonnelAlmanac.HasBagBranch(crew) ||
+                PersonnelAlmanac.BagBranchLeaves(crew) != 0 ||
+                PersonnelAlmanac.BagBranchEmptyPlaces(crew) != Crew.MaxEscorts)
+                failures.Add("BAG-003: the collector was repeated as his own escort leaf.");
+
             crew.EscortIds.Add(9);
             if (!PersonnelAlmanac.HasBagBranch(crew) ||
-                PersonnelAlmanac.BagBranchLeaves(crew) != 2 ||
+                PersonnelAlmanac.BagBranchLeaves(crew) != 1 ||
                 PersonnelAlmanac.BagBranchEmptyPlaces(crew) != 1)
-                failures.Add("BAG-003: collector, escort and empty place shaped the wrong branch.");
+                failures.Add("BAG-003: escort and empty place shaped the wrong branch.");
         }
 
         static void TaxOnlyOnProfit(List<string> failures)

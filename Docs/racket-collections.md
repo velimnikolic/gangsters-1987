@@ -73,10 +73,12 @@ until its living men are through the door, then starts the route. The exit is re
 if roster sync stations the detail again and fails after 20 real seconds instead of
 wedging the crew. A standing-round slip and `RoundOut` news are filed only after the
 physical round opens, never merely because that exit was requested. Banking stations it
-inside again. Its only unscheduled outing is autonomous headquarters defence, checked
-four times a second: it comes out when a rival is on the home block and returns after the
-block has stayed clear for 20 seconds. Men crossing the door still count as presence
-through `DoorBeat.Active`.
+inside again. An idle detail whose billet is missing is sent straight home; the 20-second
+street grace applies only after a real headquarters threat. Its only unscheduled outing
+is autonomous headquarters defence, checked four times a second: it comes out when a
+rival who is actually outside is on the home block and returns after the block has stayed
+clear for 20 seconds. Men crossing the door still count as presence through
+`DoorBeat.Active`; men already held inside another premises are not street threats.
 
 Doorsteps come from `ITerritoryGeography.TryGetDoorstep(businessId, out TerritoryPoint)`,
 which the geography answers from the approach point each business site published.
@@ -292,7 +294,7 @@ settle, duty change and policy change.
 | block file (BLOCKS sheet) | the six orders, POLICY, WHO WALKS THE DOORS, the standings column, the money figures |
 | **turf map, right-click a block** | SHAKE DOWN / COLLECT THE TAKE / LEAN, over the block whose label is up |
 | block file | WHO CARRIES THE BAG — the responsible crew's own roll, each man with his bag-fitness in stars and whether he walks the street, plus LET HIM PICK and NOBODY |
-| chain of command | THE BAG sub-branch, escort PLACE / TO BAG / PULL, and OFF THE BAG |
+| chain of command | THE BAG beside the Don's DETAIL or below a lieutenant; escort-only PLACE / TO BAG / PULL leaves, and OFF THE BAG on its head |
 | personnel card | collector and escort posting keys, and the round under them |
 | roster row | the COLLECTOR / escort duty mark |
 | the wire (rail + street strip) | short, missed, round out, banked, lost |

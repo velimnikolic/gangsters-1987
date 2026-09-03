@@ -292,7 +292,9 @@ namespace LivingCity.Gameplay
 
             // The office answers in REAL seconds and before the clock is read: a
             // filing has to be ruled on whether or not a day clock exists in the scene.
-            if (Filings.Tick(Time.deltaTime))
+            // The ledger deliberately pauses scaled world time while it is open, but
+            // its filing desk must still answer without advancing the city simulation.
+            if (Filings.Tick(Time.unscaledDeltaTime))
                 Version++;
 
             var clock = Ambient.DayClock.Current;

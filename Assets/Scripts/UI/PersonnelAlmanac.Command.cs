@@ -325,12 +325,12 @@ namespace LivingCity.UI
             // capacity meter of its own - a guard is counted against the BOSS's
             // manpower, and his own card is where that figure is printed.
             //
-            // It stands on the sheet EMPTY as well as full. The detail is the only
-            // node the Boss commands himself, so it is the only place a man can be put
-            // under him - and it used to be drawn only once somebody was already on
-            // it, which left the first guard with nowhere to be posted to. A branch
-            // with nobody on it reads perfectly well; a branch that is not there
-            // cannot be filed to.
+            // It stands on the sheet EMPTY as well as full. The detail is the Boss's
+            // only ordinary branch and the only place a bodyguard can be put under him;
+            // his bag appears beside it only once a collector exists. The detail used
+            // to be drawn only once somebody was already on it, which left the first
+            // guard with nowhere to be posted to. A branch with nobody on it reads
+            // perfectly well; a branch that is not there cannot be filed to.
             var detail = director.BodyguardDetail();
             var guards = new CommandBranch
             {
@@ -354,6 +354,12 @@ namespace LivingCity.UI
             }
             SortCommandMen(guards.Roster);
             commandBranches.Add(guards);
+            // The Don's collector is his own command head beside THE DETAIL. It still
+            // belongs to the detail crew for posting and capacity, but it must not read
+            // as one of the bodyguards hanging underneath that card. Lieutenant bags
+            // keep the deeper, nested level below their own branch.
+            if (guards.Bag != null)
+                commandBranches.Add(guards.Bag);
 
             for (var i = 1; i < organizationLeaders.Count; i++)
             {
@@ -425,9 +431,6 @@ namespace LivingCity.UI
                     bag.Roster.Add(escort);
             }
             SortCommandMen(bag.Roster);
-            var collectorPerson = Person(collector.Id);
-            if (collectorPerson.IsValid && CommandShows(collectorPerson))
-                bag.Roster.Insert(0, collectorPerson);
             bag.WageLine = BagWageLine(crew, bag);
             return bag;
         }
@@ -437,7 +440,7 @@ namespace LivingCity.UI
         // Canvas or weakening the separation between the model and the page.
         internal static bool HasBagBranch(Crew crew) => crew != null && crew.BagId >= 0;
         internal static int BagBranchLeaves(Crew crew) =>
-            HasBagBranch(crew) ? 1 + crew.EscortIds.Count : 0;
+            HasBagBranch(crew) ? crew.EscortIds.Count : 0;
         internal static int BagBranchEmptyPlaces(Crew crew) =>
             HasBagBranch(crew)
                 ? System.Math.Max(0, Crew.MaxEscorts - crew.EscortIds.Count) : 0;
@@ -998,7 +1001,6 @@ namespace LivingCity.UI
                     DashAcross(commandContent, x + RailX, lastStub, RailStub);
                     cursor += BuildCommandLeaf(branch.Roster[i], leafX, cursor, leafW,
                         reserve: false, bagCrewId: branch.IsBag ? branch.CrewId : -1,
-                        bagCollectorId: branch.IsBag ? branch.LeaderId : -1,
                         postBagCrewId: !branch.IsBag && branch.Bag != null &&
                                        branch.Bag.BagSlotsUsed < Crew.MaxEscorts
                             ? branch.CrewId : -1) + LeafMargin;
@@ -1035,7 +1037,9 @@ namespace LivingCity.UI
                         Mathf.Max(0f, cursor - railTop - LeafMargin - LeafRowH() * 0.5f));
             }
 
-            if (branch.Bag != null)
+            // THE DETAIL's bag is already a peer in the Don's branch row. Every
+            // lieutenant's bag remains the next level down on his own rail.
+            if (branch.Bag != null && !branch.IsDetail)
             {
                 cursor += 14f;
                 var nestedX = x + RailX;
@@ -1082,8 +1086,7 @@ namespace LivingCity.UI
         /// one piece of paper. Answers its height.
         /// </summary>
         float BuildCommandLeaf(OrganizationPerson person, float x, float top, float w,
-            bool reserve, int bagCrewId = -1, int postBagCrewId = -1,
-            int bagCollectorId = -1)
+            bool reserve, int bagCrewId = -1, int postBagCrewId = -1)
         {
             var roster = director != null ? director.Roster : null;
             var member = roster != null ? roster.Find(person.Id) : null;
@@ -1156,7 +1159,6 @@ namespace LivingCity.UI
             {
                 var tail = LedgerV2.Mono(row, tailX, tailY, tailW,
                     reserve ? picked ? "PICKED" : "PLACE"
-                        : person.Id == bagCollectorId ? "OFF BAG"
                         : "PULL", 9.5f,
                     dead ? LedgerV2.Faint
                         : reserve ? picked ? LedgerV2.Red : LedgerV2.Muted : LedgerV2.Red,
@@ -1166,8 +1168,6 @@ namespace LivingCity.UI
                     NameKey(row, tailX, tailY, tailW, tailLine,
                         reserve
                             ? (UnityAction)(() => PickHood(id))
-                            : id == bagCollectorId
-                                ? () => FileBagOff(id)
                             : bagCrewId >= 0
                                 ? () => FileBagPull(id)
                                 : () => FileHoodRecall(id));

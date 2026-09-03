@@ -33,7 +33,21 @@ namespace LivingCity.Tests
             RoutedSteerMayStepSidewaysButNotBack(failures);
             NearRouteCornerIsRetained(failures);
             MixamoRunPacesClearSharedGaitGate(failures);
+            BagSyncRecallHonorsRoundAndDefenceOwnership(failures);
             return failures;
+        }
+
+        static void BagSyncRecallHonorsRoundAndDefenceOwnership(List<string> failures)
+        {
+            if (DemoCrews.BagSyncShouldStationModel(
+                    rosterChanged: false, roundAway: false, defenceAway: false) ||
+                DemoCrews.BagSyncShouldStationModel(
+                    rosterChanged: true, roundAway: true, defenceAway: false) ||
+                DemoCrews.BagSyncShouldStationModel(
+                    rosterChanged: true, roundAway: false, defenceAway: true) ||
+                !DemoCrews.BagSyncShouldStationModel(
+                    rosterChanged: true, roundAway: false, defenceAway: false))
+                failures.Add("Bag detail: roster sync bypasses round or HQ-defence ownership.");
         }
 
         static void MixamoRunPacesClearSharedGaitGate(List<string> failures)
