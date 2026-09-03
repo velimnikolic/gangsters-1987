@@ -1232,8 +1232,8 @@ namespace RoadDemo
         const int SightMask = 1;
 
         /// <summary>
-        /// WHO SAW IT. Run ONCE when an incident opens - the shot, or the officer
-        /// arriving at a complaint - and never again: a witness list that could grow
+        /// WHO SAW IT. Run ONCE when an incident opens - the shot, or the extortion
+        /// visit whose owner rang - and never again: a witness list that could grow
         /// afterwards would mean leaning on one bought the crew nothing, because
         /// another would simply appear (GAN-245's own rule).
         ///

@@ -16,8 +16,8 @@ namespace RoadDemo
     /// walks to the door and either finds somebody standing there or takes a statement.
     ///
     /// The 1987 telephone is the whole tempo of it: the call lands
-    /// <see cref="ComplaintDelay"/> seconds after the threat, which is the head start
-    /// the crew is given. A crew that leans on a shop and walks away has almost always
+    /// <see cref="ComplaintDelay"/> seconds after the demand or threat, which is the head
+    /// start the crew is given. A crew that leans on a shop and walks away has almost always
     /// gone by the time anybody arrives - and that is the intended play, not a
     /// shortcoming: what it leaves behind is a shop the racket cannot touch for the
     /// rest of the day and a count on the docket for the next time these men are taken.
@@ -64,7 +64,14 @@ namespace RoadDemo
             public DemoCrews.Unit Men;      // the men a CAR brought, when a car answered
             public CallStage Stage = CallStage.Ringing;
             public float StatementBy;
+            public bool StatementVisit;
+            public bool StatementRecorded;
             public CourtCase File;
+
+            // A block shakedown can put several calls in the switchboard at once.
+            // Each call keeps the people who saw ITS visit; a single dispatcher-wide
+            // snapshot would let the next telephone overwrite the previous door.
+            public readonly List<SceneWitness> Witnesses = new List<SceneWitness>();
 
             /// <summary>The backstop on going home. A squad that cannot reach its car -
             /// a body in the way, a torn pavement - must not hold a unit off the road
@@ -105,14 +112,23 @@ namespace RoadDemo
         void SnapshotTheScene(Vector3 where)
         {
             _sceneIncident = StreetAlarm.IncidentNumber;
-            _sceneWitnesses.Clear();
+            SnapshotTheScene(where, _sceneWitnesses);
+        }
+
+        /// <summary>Freeze the people who reacted to one act into the list owned by
+        /// that act. Shooting incidents use the dispatcher-wide slot above; telephone
+        /// calls use their own CallOut slot because several can wait concurrently.</summary>
+        static void SnapshotTheScene(Vector3 where, List<SceneWitness> into)
+        {
+            if (into == null) return;
+            into.Clear();
             CivilianAgent.SnapshotWitnesses(where, CivilianAgent.SightRadius,
                 CivilianAgent.MaxEyewitnesses, _sawIt);
             for (var i = 0; i < _sawIt.Count; i++)
             {
                 var saw = _sawIt[i];
                 if (saw == null || saw.Tf == null) continue;
-                _sceneWitnesses.Add(new SceneWitness
+                into.Add(new SceneWitness
                 {
                     Body = saw,
                     Name = saw.PersonName,
@@ -137,9 +153,15 @@ namespace RoadDemo
         void CopySceneWitnesses(CourtCase file, int incident)
         {
             if (file == null || _sceneIncident != incident) return;
-            for (var i = 0; i < _sceneWitnesses.Count; i++)
+            CopySceneWitnesses(file, _sceneWitnesses);
+        }
+
+        static void CopySceneWitnesses(CourtCase file, List<SceneWitness> witnesses)
+        {
+            if (file == null || witnesses == null) return;
+            for (var i = 0; i < witnesses.Count; i++)
             {
-                var seen = _sceneWitnesses[i];
+                var seen = witnesses[i];
                 if (seen.Body != null && seen.Body.Dead) continue;
                 var witness = new Witness
                 {
@@ -158,16 +180,17 @@ namespace RoadDemo
         {
             var wait = ComplaintDelayLow +
                        (ComplaintDelayHigh - ComplaintDelayLow) * DelayRoll(call);
-            // The act a complaint is about is the LEAN, and it happened just now - so
-            // the pavement is read now, not when the officer finally walks up half a
-            // minute later and finds a different set of people standing there.
-            SnapshotTheScene(call.Pos);
-            _calls.Add(new CallOut
+            var queued = new CallOut
             {
                 Call = call,
                 RingAt = Time.time + wait,
                 GiveUpAt = Time.time + wait + ComplaintPatience,
-            });
+            };
+            // The act a complaint is about is the EXTORTION VISIT, and it happened just
+            // now - so this call owns the pavement read taken now, not the people standing
+            // there when the officer finally walks up half a minute later.
+            SnapshotTheScene(call.Pos, queued.Witnesses);
+            _calls.Add(queued);
             // The banner is the PLAYER'S news. A shopkeeper who rang about somebody
             // else's family is a thing that happened in the city, not a thing that
             // happened to him - the officer still turns out for it either way.
@@ -211,6 +234,15 @@ namespace RoadDemo
                     case CallStage.Walking: TickWalking(call); break;
                     case CallStage.AtTheDoor: AtTheDoor(call); break;
                     case CallStage.Statement:
+                        // DoorBeat owns a real shop visit until the officer has crossed
+                        // back onto the pavement. Its callbacks record the statement
+                        // inside and release this call only after the outward crossing -
+                        // but the backstop this stage is given is the same one the collar
+                        // below has, and for the same reason: a passage that somehow
+                        // never answers must not hold a unit off the road for the rest of
+                        // the campaign.
+                        if (call.StatementVisit && Time.time < call.HomeBy) break;
+                        if (call.StatementVisit) { StatementTaken(call); break; }
                         if (Time.time < call.StatementBy) break;
                         StatementTaken(call);
                         break;
@@ -295,8 +327,8 @@ namespace RoadDemo
 
         /// <summary>
         /// HE IS AT THE DOOR. The case is opened here whichever way it goes - the
-        /// shopkeeper who rang is its first witness, and whoever was on the pavement
-        /// when the officer walked up is snapshotted with him, once and for good.
+        /// shopkeeper who rang is its first witness, and the people frozen at the
+        /// extortion visit are copied beside him, once and for good.
         /// </summary>
         void AtTheDoor(CallOut call)
         {
@@ -312,15 +344,68 @@ namespace RoadDemo
             }
 
             call.Stage = CallStage.Statement;
+            if (BeginStatementVisit(call))
+                return;
             call.StatementBy = Time.time + StatementSeconds;
+        }
+
+        /// <summary>The officer does not interview a shopkeeper through the glass. The
+        /// lead body uses the same DoorBeat.VisitBusiness passage as the racketeer: a
+        /// foot unit sends its lead while the partner covers the pavement; a car sends
+        /// the lead of the crew it put down. Calls without a business (witness matters)
+        /// retain the at-scene statement because there is no shop to enter.</summary>
+        bool BeginStatementVisit(CallOut call)
+        {
+            if (call == null || string.IsNullOrEmpty(call.Call.BusinessId))
+                return false;
+
+            var businessId = new TerritoryBusinessId(call.Call.BusinessId);
+            if (!businessId.IsValid)
+                return false;
+
+            call.StatementVisit = true;
+            // The passage is a walk-up, a threshold, the counter and the walk back out.
+            // ComplaintPatience is longer than all of it together and is what the stage
+            // above gives up after.
+            call.HomeBy = Time.time + ComplaintPatience;
+            System.Action recorded = () => StatementTaken(call, close: false);
+            System.Action outside = () =>
+            {
+                StatementTaken(call, close: false);
+                Close(call);
+            };
+
+            if (call.Unit is PoliceFootPatrol foot)
+            {
+                if (DoorBeat.VisitBusiness(foot, businessId, call.Call.Pos,
+                        recorded, outside, StatementSeconds))
+                    return true;
+            }
+            else
+            {
+                var officer = Lead(call.Men);
+                if (officer != null)
+                {
+                    DoorBeat.VisitBusiness(officer, businessId, call.Call.Pos,
+                        whenInside: recorded, whenOut: outside,
+                        insideSeconds: StatementSeconds);
+                    return true;
+                }
+            }
+
+            call.StatementVisit = false;
+            return false;
         }
 
         /// <summary>Nobody to speak to but the man behind the counter. The shop is out
         /// of the racket's reach for the rest of the day, the block has been looked at,
         /// and the complaint sits on the docket waiting for the next time these men are
         /// taken for anything.</summary>
-        void StatementTaken(CallOut call)
+        void StatementTaken(CallOut call, bool close = true)
         {
+            if (call == null || call.StatementRecorded)
+                return;
+            call.StatementRecorded = true;
             var runtime = TerritoryRuntime.Instance;
             if (runtime != null && !string.IsNullOrEmpty(call.Call.BusinessId))
             {
@@ -331,7 +416,7 @@ namespace RoadDemo
             CrewOverlay.AnnounceOurs(call.Call.Faction, "A STATEMENT WAS TAKEN", 4f,
                 new Color(1f, 0.85f, 0.55f));
             LawWire.StatementTaken(call.Call);
-            Close(call);
+            if (close) Close(call);
         }
 
         /// <summary>
@@ -344,6 +429,12 @@ namespace RoadDemo
         /// </summary>
         void Close(CallOut call)
         {
+            // CLOSED IS CLOSED. A shop visit that outlives its call - the statement stage
+            // gave up on it and took the statement itself - still answers its callbacks
+            // afterwards, and a second Release here would hand back a unit the dispatcher
+            // has since sent somewhere else, taking the officer off that call instead.
+            if (call == null || call.Stage == CallStage.Done)
+                return;
             if (call.Men != null && !call.Men.Wiped && call.Unit is PoliceCruiser cruiser)
             {
                 _crews.BoardCar(call.Men, cruiser.Car);
@@ -412,7 +503,7 @@ namespace RoadDemo
                 X = call.Call.Pos.x, Y = call.Call.Pos.y, Z = call.Call.Pos.z,
             });
 
-            CopySceneWitnesses(file, call.Call.Number);
+            CopySceneWitnesses(file, call.Witnesses);
 
             LawWire.CaseOpened(file);
             return file;

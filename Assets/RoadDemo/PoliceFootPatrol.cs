@@ -16,7 +16,7 @@ namespace RoadDemo
     // the car fleet covers the far districts.
     public class PoliceFootPatrol : PedestrianAgent, IPatrolMarker, IPoliceUnit
     {
-        public enum Mode { Inside, WalkOut, Patrolling, Returning, Homing, WalkIn, Responding, OnScene, Arresting, Ritual }
+        public enum Mode { Inside, WalkOut, Patrolling, Returning, Homing, WalkIn, Responding, OnScene, Arresting, Ritual, Doorway, SceneCover }
 
         /// <summary>Metres from the station door a beat waypoint may reach.</summary>
         const float BeatRadius = 180f;
@@ -50,6 +50,8 @@ namespace RoadDemo
 
         Vector3 _legFrom, _legTo;
         float _legT, _legLen;
+        bool _doorwayArrived;
+        bool _sceneCoverArrived;
 
         // THE COLLAR: the man he is stood over, the piece in his fist while he stands
         // there, and whether he has got there yet. A beat officer carries his sidearm
@@ -82,6 +84,10 @@ namespace RoadDemo
         const int TrailKeeps = 8;
         /// <summary>Metres of pavement the wingman holds behind his lead's shoulder.</summary>
         const float FollowGap = 1.7f;
+        /// <summary>Near enough to hold the pavement while his lead handles the scene or
+        /// steps through a shop door. Reaching the scene matters: merely seeing the lead
+        /// stop must not freeze the wingman half a block behind him.</summary>
+        const float SceneCoverGap = 4.5f;
         bool _running;   // the wingman's own record of whether he is at the jog
         GameObject _sidearmKind;   // what a sidearm IS here, kept so the cover can draw one too
 
@@ -301,6 +307,21 @@ namespace RoadDemo
                     }
                     break;
                 }
+
+                case Mode.Doorway:
+                    // DoorBeat owns this short, straight leg: doorstep -> room and the
+                    // exact reverse. Once the feet arrive he stands while the leaves or
+                    // the statement clock finish; DoorBeat alone starts the next leg.
+                    if (_doorwayArrived)
+                    {
+                        BlendLocomotion(dt, false);
+                    }
+                    else
+                    {
+                        BlendLocomotion(dt, true);
+                        _doorwayArrived = TickLeg(dt);
+                    }
+                    break;
             }
         }
 
@@ -329,6 +350,7 @@ namespace RoadDemo
             _sceneNode = best;
             _routeToWaypoint = RouteToward(best);
             _waypoint = best;
+            Partner?.FollowCallTo(scene, best);
             if (_beatSpeed <= 0f) _beatSpeed = Speed;
             switch (State)
             {
@@ -341,6 +363,19 @@ namespace RoadDemo
                     BeginResponding();
                     break;
             }
+        }
+
+        /// <summary>The wingman gets the same graph destination as his lead. Following
+        /// only the lead's short breadcrumb tail could send him round the wrong side of
+        /// a block; once the lead stopped, he then froze wherever that mistake left him.</summary>
+        void FollowCallTo(Vector3 scene, PedNode node)
+        {
+            if (Lead == null || node == null) return;
+            _scenePos = scene;
+            _sceneNode = node;
+            _routeToWaypoint = RouteToward(node);
+            _waypoint = node;
+            if (_beatSpeed <= 0f) _beatSpeed = Speed;
         }
 
         /// <summary>HE RUNS TO IT. A beat is a walk and everything else about this man
@@ -437,6 +472,27 @@ namespace RoadDemo
             EndRun();
         }
 
+        /// <summary>DoorBeat's last few metres, including the threshold itself. The
+        /// pavement graph deliberately has no links through a solid shop shell, so this
+        /// is the same hand-driven physical leg already used for the station forecourt
+        /// and the arrest walk-up.</summary>
+        internal void BeginDoorway(Vector3 point)
+        {
+            if (Lead != null || Tf == null) return;
+            point.y = Tf.position.y;
+            _doorwayArrived = false;
+            BeginLeg(Tf.position, point, Mode.Doorway);
+        }
+
+        /// <summary>Hands the officer back to dispatch at the scene. Dispatch releases
+        /// him only after DoorBeat has completed the outward crossing.</summary>
+        internal void EndDoorway()
+        {
+            if (Lead != null || State != Mode.Doorway) return;
+            _doorwayArrived = false;
+            State = Mode.OnScene;
+        }
+
         // ------------------------------------------------------------ the collar
 
         /// <summary>Walk up to this man with the sidearm out and stand over him. What is
@@ -449,6 +505,13 @@ namespace RoadDemo
         public void Challenge(CrewWalker man, GameObject sidearm)
         {
             if (man == null || man.Tf == null || Tf == null) return;
+            // NOT WHILE THE DOORWAY OWNS HIM. An officer taking a statement is hidden
+            // inside a shop with DoorBeat driving his body; a collar begun here would
+            // walk that same transform out into the street while the visit is still
+            // placing it - two owners of one man - and would leave the arrest to be
+            // torn down by the visit's own release. He answers the wire again the
+            // moment he is back on the pavement.
+            if (DoorBeat.Active(this)) return;
             _collar = man;
             _stoodOver = false;
             _sidearmKind = sidearm;   // kept so the wingman's cover can draw the same piece
@@ -522,7 +585,8 @@ namespace RoadDemo
         {
             get
             {
-                if (State == Mode.WalkOut || State == Mode.WalkIn)
+                if (State == Mode.WalkOut || State == Mode.WalkIn ||
+                    State == Mode.Doorway || State == Mode.SceneCover)
                 {
                     var to = _legTo - Tf.position;
                     to.y = 0f;
@@ -539,7 +603,17 @@ namespace RoadDemo
         {
             // the wingman walks his lead's steps and nothing else: no corners of his
             // own to count, no waypoints of his own to draw
-            if (Lead != null) return true;
+            if (Lead != null)
+            {
+                if (_sceneNode != null && node == _sceneNode &&
+                    (Lead.State == Mode.Responding || Lead.State == Mode.OnScene ||
+                     Lead.State == Mode.Doorway))
+                {
+                    BeginSceneCover();
+                    return false;
+                }
+                return true;
+            }
             if (Partner != null) Breadcrumb(node);
 
             // a long frame can push Homing past the entry point and off the far
@@ -646,6 +720,12 @@ namespace RoadDemo
             // then straight onto the stretch the lead is walking this minute
             if (Lead != null)
             {
+                if (_sceneNode != null &&
+                    (Lead.State == Mode.Responding || Lead.State == Mode.OnScene ||
+                     Lead.State == Mode.Doorway) &&
+                    _routeToWaypoint != null &&
+                    _routeToWaypoint.TryGetValue(node, out var scene) && scene != null)
+                    return scene;
                 var step = Lead.TrailFrom(node);
                 if (step != null) return step;
                 var anchor = Lead.TrailAnchor();
@@ -805,6 +885,26 @@ namespace RoadDemo
                     break;
                 }
 
+                case Mode.SceneCover:
+                    if (!_sceneCoverArrived)
+                    {
+                        BlendLocomotion(dt, true);
+                        _sceneCoverArrived = TickLeg(dt);
+                    }
+                    else
+                    {
+                        BlendLocomotion(dt, false);
+                        TurnToward(Lead._scenePos - Tf.position, 90f, dt);
+                    }
+                    if (Lead.State != Mode.Responding && Lead.State != Mode.OnScene &&
+                        Lead.State != Mode.Doorway)
+                    {
+                        _sceneCoverArrived = false;
+                        State = Mode.Patrolling;
+                        if (_running) { _running = false; EndRun(); }
+                    }
+                    break;
+
                 default:
                     TickFollow(dt);
                     break;
@@ -831,9 +931,17 @@ namespace RoadDemo
                 return;
             }
 
-            // the lead is stood somewhere - a corner, a scene: stand with him,
-            // facing what he faces, with a word back when they are only watching
-            if (Lead.State == Mode.Ritual || Lead.State == Mode.OnScene)
+            var sceneDelta = Tf.position - Lead._scenePos;
+            sceneDelta.y = 0f;
+            var leadAtScene = Lead.State == Mode.OnScene || Lead.State == Mode.Doorway;
+            var closeEnoughToCover = sceneDelta.sqrMagnitude <=
+                                     SceneCoverGap * SceneCoverGap;
+
+            // The lead is stood somewhere - a corner, or a scene the wingman has ALSO
+            // reached: stand with him, facing what he faces. Before this distance gate,
+            // the instant the lead reached a call froze his partner wherever he happened
+            // to be, sometimes half a block from the shop he was supposed to cover.
+            if (Lead.State == Mode.Ritual || (leadAtScene && closeEnoughToCover))
             {
                 if (_running) { _running = false; EndRun(); }
                 BlendLocomotion(dt, false);
@@ -849,7 +957,10 @@ namespace RoadDemo
                 return;
             }
 
-            bool leadRuns = Lead.State == Mode.Responding;
+            // Keep closing at the call pace until the wingman is actually at the scene,
+            // even if the lead has already stopped or gone through the door.
+            bool leadRuns = Lead.State == Mode.Responding ||
+                            (leadAtScene && !closeEnoughToCover);
             if (leadRuns != _running)
             {
                 _running = leadRuns;
@@ -862,6 +973,29 @@ namespace RoadDemo
             float gap = Vector3.Distance(Tf.position, Lead.Tf.position);
             PaceScale = Mathf.Clamp(gap / FollowGap, 0.8f, 1.35f);
             Tick(dt);
+        }
+
+        /// <summary>From the graph corner nearest the call, take the same ordinary short
+        /// final leg as the lead, but finish beside the doorstep. The shop shell has no
+        /// pedestrian links through it; this target remains on the pavement.</summary>
+        void BeginSceneCover()
+        {
+            if (_sceneNode == null) return;
+            var toward = _scenePos - _sceneNode.Pos;
+            toward.y = 0f;
+            if (toward.sqrMagnitude < 0.01f)
+                toward = Tf.forward;
+            toward.Normalize();
+            var beside = new Vector3(-toward.z, 0f, toward.x);
+            var target = _scenePos + beside * 1.8f;
+            target.y = Tf.position.y;
+            if (WalkObstacles.Standing(target, WalkObstacles.CrewTravelRadius))
+                target = WalkObstacles.ClearSpot(
+                    target, WalkObstacles.CrewTravelRadius, 4f);
+            target.y = Tf.position.y;
+            if (_running) { _running = false; EndRun(); }
+            _sceneCoverArrived = false;
+            BeginLeg(Tf.position, target, Mode.SceneCover);
         }
 
         /// <summary>The wingman's half of the arrest: a couple of metres behind his

@@ -1400,11 +1400,23 @@ namespace RoadDemo
         /// <summary>
         /// The demand, resolved. This is the authoritative path: the command executor and
         /// the rival driver both come through here, so a rival leans on a shop by exactly
-        /// the rules the player does.
+        /// the rules the player does. The demand itself is extortion: the owner gets his
+        /// one chance to ring here, before his answer changes how established the asking
+        /// family looks on the street.
         /// </summary>
         public bool ResolveDemand(
             TerritoryGangId gangId,
             TerritoryBusinessId businessId,
+            out TerritoryComplianceVerdict verdict,
+            out TerritoryComplianceTerms terms) =>
+            ResolveDemand(gangId, businessId, true, out verdict, out terms);
+
+        /// <summary>The demand's implementation. A threat asks again as part of the same
+        /// visit, so that nested ask suppresses its own telephone roll.</summary>
+        bool ResolveDemand(
+            TerritoryGangId gangId,
+            TerritoryBusinessId businessId,
+            bool considerComplaint,
             out TerritoryComplianceVerdict verdict,
             out TerritoryComplianceTerms terms)
         {
@@ -1413,6 +1425,15 @@ namespace RoadDemo
             if (racket == null || !IsRacketable(businessId) ||
                 !TryComplianceInputs(businessId, gangId, out var inputs, out var blockId))
                 return false;
+
+            // THE FIRST ASK CAN REACH THE LAW (GAN-245). This belongs to a demand,
+            // not only to a later threat: a fresh family asking a shopkeeper for money
+            // is already committing the extortion he reports. Every single-door and
+            // block-wide path resolves through here.
+            // Read the standing before Demand moves the relationship to Compliant: what
+            // decides the telephone is who walked in, not the answer he is about to give.
+            if (considerComplaint)
+                MaybeRingThePrecinct(gangId, businessId);
 
             racketChanges.Clear();
             // The owner himself and the tier guard shift the thresholds (ECON-002/007):
@@ -1442,6 +1463,18 @@ namespace RoadDemo
             TerritoryBusinessId businessId,
             TerritoryCharacterId actorId,
             out TerritoryComplianceVerdict verdict,
+            out TerritoryComplianceTerms terms) =>
+            ResolveThreat(gangId, businessId, actorId, true, out verdict, out terms);
+
+        /// <summary>The threat's implementation. A strict block shakedown can demand and
+        /// threaten in one doorway visit; its first demand already offered the owner the
+        /// telephone, so that caller passes false and does not file the same visit twice.</summary>
+        bool ResolveThreat(
+            TerritoryGangId gangId,
+            TerritoryBusinessId businessId,
+            TerritoryCharacterId actorId,
+            bool considerComplaint,
+            out TerritoryComplianceVerdict verdict,
             out TerritoryComplianceTerms terms)
         {
             verdict = TerritoryComplianceVerdict.Refuse;
@@ -1462,13 +1495,12 @@ namespace RoadDemo
             if (geography != null && geography.TryGetBusinessBlock(businessId, out var threatBlock))
                 PublishRacket(threatBlock);
 
-            // AND HE CAN PICK UP THE TELEPHONE (GAN-245). Every lean in the city lands
-            // here - the walked-in one, the round's own, the one a standing man is
-            // clicked into - so this is the one place the shopkeeper gets to answer
-            // back with something other than a number moving.
-            MaybeRingThePrecinct(gangId, businessId);
-
-            return ResolveDemand(gangId, businessId, out verdict, out terms);
+            // A direct threat gets one chance to reach the law. Its follow-up demand is
+            // still the same visit and must not roll a second time.
+            if (considerComplaint)
+                MaybeRingThePrecinct(gangId, businessId);
+            return ResolveDemand(
+                gangId, businessId, false, out verdict, out terms);
         }
 
         /// <summary>
@@ -2500,9 +2532,14 @@ namespace RoadDemo
             var mouth = command.ActorId;
             if (TryGetBusinessApproach(speaking, out var door))
             {
-                DoorBeat.VisitBusiness(FindWalker(mouth), speaking, door, () =>
+                var walker = FindWalker(mouth);
+                DoorBeat.VisitBusiness(walker, speaking, door, () =>
                 {
-                    if (ResolveDemand(house, speaking, out var answered, out _))
+                    // ONE VISIT, ONE TELEPHONE. The player can chain a second order onto
+                    // the same counter while his man is still inside; the owner is put to
+                    // the telephone by whichever of them asks first.
+                    if (ResolveDemand(house, speaking,
+                            DoorBeat.ClaimTelephone(walker), out var answered, out _))
                         AnnounceVerdict(speaking, threat: false, answered, mouth);
                 });
                 return TerritoryCommandExecution.Pending(
@@ -2544,9 +2581,13 @@ namespace RoadDemo
             var man = command.ActorId;
             if (TryGetBusinessApproach(leaned, out var doorstep))
             {
-                DoorBeat.VisitBusiness(FindWalker(man), leaned, doorstep, () =>
+                var leaner = FindWalker(man);
+                DoorBeat.VisitBusiness(leaner, leaned, doorstep, () =>
                 {
-                    if (ResolveThreat(leaning, leaned, man, out var answered, out _))
+                    // The same one-visit rule as the demand above: a lean chained onto a
+                    // demand already spent this owner's telephone.
+                    if (ResolveThreat(leaning, leaned, man,
+                            DoorBeat.ClaimTelephone(leaner), out var answered, out _))
                         AnnounceVerdict(leaned, threat: true, answered, man);
                 });
                 return TerritoryCommandExecution.Pending(

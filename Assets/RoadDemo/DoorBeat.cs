@@ -110,6 +110,8 @@ namespace RoadDemo
         sealed class Call
         {
             public CrewWalker Man;
+            public PoliceFootPatrol Officer;
+            public DoorVisitor Visitor;
             public Vector3 Door;
 
             /// <summary>The pavement he called from, and the spot he comes back out to.
@@ -121,6 +123,13 @@ namespace RoadDemo
             /// <summary>Still standing at the door making his point; hidden inside once
             /// the word is done.</summary>
             public bool Inside;
+
+            /// <summary>ONE DOORWAY VISIT IS ONE TELEPHONE DECISION. The owner gets his
+            /// chance to ring the precinct when a family walks in on him; a player who
+            /// chains a second order onto the same counter - a threat after a demand,
+            /// most often - is still the same visit, and must not put the man through a
+            /// second roll. Claimed by the first order that asks (ClaimTelephone).</summary>
+            public bool TelephoneClaimed;
 
             public float NextAt;
 
@@ -173,6 +182,63 @@ namespace RoadDemo
             public Vector3 Inner;
             public float PhaseAt;
             public DoorSwing Swing;
+
+            /// <summary>Most calls use the shared short counter conversation. A police
+            /// statement is the same doorway passage with a longer piece of business on
+            /// the far side, so the duration belongs to the call, not to a second doorway
+            /// machine.</summary>
+            public float StaySeconds = InsideSeconds;
+        }
+
+        /// <summary>The doorway owns passage, not the kind of badge on the body. Crew
+        /// walkers and beat officers have different street routing machines, but once at
+        /// a shop they need the exact same leaves / threshold / hide / reverse passage.
+        /// These tiny adapters keep that physical truth here.</summary>
+        abstract class DoorVisitor
+        {
+            public abstract Transform Tf { get; }
+            public abstract bool Gone { get; }
+            public abstract void WalkTo(Vector3 point);
+            public abstract void CrossTo(Vector3 point);
+            public abstract void EndCross();
+
+            public void Face(Vector3 point)
+            {
+                if (Tf == null) return;
+                var direction = point - Tf.position;
+                direction.y = 0f;
+                if (direction.sqrMagnitude > 0.001f)
+                    Tf.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
+            }
+
+            public void Show(bool visible)
+            {
+                if (Tf != null) Tf.gameObject.SetActive(visible);
+            }
+        }
+
+        sealed class CrewDoorVisitor : DoorVisitor
+        {
+            readonly CrewWalker man;
+
+            public CrewDoorVisitor(CrewWalker man) => this.man = man;
+            public override Transform Tf => man?.Tf;
+            public override bool Gone => man == null || man.Tf == null || man.Dead;
+            public override void WalkTo(Vector3 point) => DoorBeat.WalkTo(man, point);
+            public override void CrossTo(Vector3 point) => man?.OrderThroughDoorway(point);
+            public override void EndCross() => man?.EndDoorway();
+        }
+
+        sealed class PoliceDoorVisitor : DoorVisitor
+        {
+            readonly PoliceFootPatrol officer;
+
+            public PoliceDoorVisitor(PoliceFootPatrol officer) => this.officer = officer;
+            public override Transform Tf => officer?.Tf;
+            public override bool Gone => officer == null || officer.Tf == null;
+            public override void WalkTo(Vector3 point) => officer?.BeginDoorway(point);
+            public override void CrossTo(Vector3 point) => officer?.BeginDoorway(point);
+            public override void EndCross() => officer?.EndDoorway();
         }
 
         /// <summary>One pair of authored shop leaves, animated about the same measured
@@ -300,14 +366,19 @@ namespace RoadDemo
         static DoorBeat instance;
         readonly List<Call> calls = new List<Call>();
 
-        static bool UnderFire(CrewWalker man) =>
+        static bool UnderFire(Transform body) =>
+            body != null &&
             Time.time - StreetAlarm.LastShotAt < 8f &&
-            (StreetAlarm.LastShotPos - man.Tf.position).sqrMagnitude < 60f * 60f;
+            (StreetAlarm.LastShotPos - body.position).sqrMagnitude < 60f * 60f;
+
+        static bool UnderFire(CrewWalker man) => man != null && UnderFire(man.Tf);
+        static bool UnderFire(DoorVisitor visitor) =>
+            visitor != null && UnderFire(visitor.Tf);
 
         public static void Visit(
             CrewWalker man, Vector3 door, float talk = TalkSeconds,
             System.Action whenInside = null, System.Action whenOut = null,
-            bool hold = false)
+            bool hold = false, float insideSeconds = InsideSeconds)
         {
             // A visit that cannot be played still owes its caller the thing the visit was
             // FOR: the demand is the order, the walk through the door is the show of it.
@@ -359,6 +430,7 @@ namespace RoadDemo
             {
                 Man = man, Door = door, Home = man.Tf.position, WhenInside = whenInside,
                 WhenOut = whenOut, Hold = hold,
+                StaySeconds = Mathf.Max(0.1f, insideSeconds),
             };
             if (!Near(man.Tf.position, door, AtTheDoor))
             {
@@ -398,12 +470,13 @@ namespace RoadDemo
                     // a little longer and this one is settled inside as well.
                     call.WhenInside += whenInside;
                     call.Told = false;
-                    call.ActAt = Time.time + InsideSeconds * BeforeTheActShare;
+                    var stay = Mathf.Max(0.1f, call.StaySeconds);
+                    call.ActAt = Time.time + stay * BeforeTheActShare;
                     call.ActRealAt =
-                        Time.unscaledTime + InsideSeconds * BeforeTheActShare * 4f;
-                    call.NextAt = Mathf.Max(call.NextAt, Time.time + InsideSeconds);
+                        Time.unscaledTime + stay * BeforeTheActShare * 4f;
+                    call.NextAt = Mathf.Max(call.NextAt, Time.time + stay);
                     call.RealNextAt = Mathf.Max(
-                        call.RealNextAt, Time.unscaledTime + InsideSeconds * 4f);
+                        call.RealNextAt, Time.unscaledTime + stay * 4f);
                 }
                 else
                 {
@@ -430,9 +503,10 @@ namespace RoadDemo
         /// street until the whole walk is given up.</summary>
         static bool Stalled(Call call, Vector3 doorstep)
         {
-            if (call.Man == null || call.Man.Tf == null)
+            var body = call.Through ? call.Visitor?.Tf : call.Man?.Tf;
+            if (body == null)
                 return false;
-            var gap = Vector3.Distance(call.Man.Tf.position, doorstep);
+            var gap = Vector3.Distance(body.position, doorstep);
             if (gap < call.Nearest - StallProgress)
             {
                 call.Nearest = gap;
@@ -474,7 +548,8 @@ namespace RoadDemo
             Transform doorway,
             System.Action whenInside = null,
             System.Action whenOut = null,
-            bool hold = false)
+            bool hold = false,
+            float insideSeconds = InsideSeconds)
         {
             if (man == null || man.Dead || man.Tf == null ||
                 !man.Tf.gameObject.activeInHierarchy || UnderFire(man))
@@ -484,6 +559,54 @@ namespace RoadDemo
                 return;
             }
 
+            BeginThrough(new CrewDoorVisitor(man), man, null, outside, threshold,
+                inside, doorway, whenInside, whenOut, hold, insideSeconds);
+        }
+
+        /// <summary>The same authored shop passage for the lead of a foot patrol. His
+        /// partner remains on the pavement covering the door; the caller owns what is
+        /// said inside and releases the unit only after this passage brings him out.</summary>
+        /// <summary>A statement is the one piece of business a firefight interrupts. The
+        /// crew's own rule is the opposite - a demand is an ORDER and must not be lost, so
+        /// a man under fire answers his callbacks where he stands - but an officer who
+        /// walks into a shop with shots outside has not taken a statement, he has left the
+        /// street. The caller keeps him at the door instead.</summary>
+        static void VisitThrough(
+            PoliceFootPatrol officer,
+            Vector3 outside,
+            Vector3 threshold,
+            Vector3 inside,
+            Transform doorway,
+            System.Action whenInside,
+            System.Action whenOut,
+            float insideSeconds)
+        {
+            if (officer == null || officer.Tf == null ||
+                !officer.Tf.gameObject.activeInHierarchy)
+            {
+                whenInside?.Invoke();
+                whenOut?.Invoke();
+                return;
+            }
+
+            BeginThrough(new PoliceDoorVisitor(officer), null, officer, outside,
+                threshold, inside, doorway, whenInside, whenOut, hold: false,
+                insideSeconds: insideSeconds);
+        }
+
+        static void BeginThrough(
+            DoorVisitor visitor,
+            CrewWalker man,
+            PoliceFootPatrol officer,
+            Vector3 outside,
+            Vector3 threshold,
+            Vector3 inside,
+            Transform doorway,
+            System.Action whenInside,
+            System.Action whenOut,
+            bool hold,
+            float insideSeconds)
+        {
             if (instance == null)
             {
                 var go = new GameObject("Door Beat") { hideFlags = HideFlags.DontSave };
@@ -491,7 +614,8 @@ namespace RoadDemo
             }
 
             for (var i = 0; i < instance.calls.Count; i++)
-                if (instance.calls[i].Man == man ||
+                if ((man != null && instance.calls[i].Man == man) ||
+                    (officer != null && instance.calls[i].Officer == officer) ||
                     (doorway != null && instance.calls[i].Swing != null &&
                      instance.calls[i].Door == threshold))
                 {
@@ -499,35 +623,38 @@ namespace RoadDemo
                     return;
                 }
 
-            outside.y = threshold.y = inside.y = man.Tf.position.y;
+            var body = visitor.Tf;
+            outside.y = threshold.y = inside.y = body.position.y;
             // The pavement he waits on and comes back out to has to be pavement he can
             // stand on; the threshold and the room behind it are geometry and stay put.
             outside = Standable(outside);
             // The crew walks to the same doorstep and stands off it facing the street,
             // whether he is already on it or has the length of the block to cover. A
             // crew MOVING IN needs no guard on the door it is going through.
-            if (!hold)
+            if (!hold && man != null)
                 Escort(man, outside, outside - threshold);
             var swing = new DoorSwing(doorway);
             // The passage starts AT the doorstep. Ordering a man at the inside point
             // from across the street walks him in a straight line through the shopfront,
             // which is what a player reads as a man entering a door from thirty metres.
-            var atDoor = Near(man.Tf.position, outside, AtTheDoor);
+            var atDoor = Near(body.position, outside, AtTheDoor);
             if (atDoor)
             {
                 swing.Open();
-                Face(man, inside);
+                visitor.Face(inside);
             }
             else
             {
-                WalkTo(man, outside);
+                visitor.WalkTo(outside);
             }
 
             instance.calls.Add(new Call
             {
                 Man = man,
+                Officer = officer,
+                Visitor = visitor,
                 Door = threshold,
-                Home = man.Tf.position,
+                Home = body.position,
                 Outside = outside,
                 Threshold = threshold,
                 Inner = inside,
@@ -535,12 +662,13 @@ namespace RoadDemo
                 Phase = atDoor ? VisitPhase.OpeningEntry : VisitPhase.Approaching,
                 PhaseAt = Time.time,
                 RealNextAt = Time.unscaledTime + WalkPatience,
-                Nearest = Vector3.Distance(man.Tf.position, outside),
+                Nearest = Vector3.Distance(body.position, outside),
                 NearestAt = Time.unscaledTime,
                 Swing = swing,
                 WhenInside = whenInside,
                 WhenOut = whenOut,
                 Hold = hold,
+                StaySeconds = Mathf.Max(0.1f, insideSeconds),
             });
         }
 
@@ -553,11 +681,9 @@ namespace RoadDemo
             Vector3 fallbackOutside,
             System.Action whenInside = null,
             System.Action whenOut = null,
-            bool hold = false)
+            bool hold = false,
+            float insideSeconds = InsideSeconds)
         {
-            if (!BusinessViewBindings.TryGet(businessId, out var marker))
-                marker = null;
-
             // THE SHOP'S OWN FRONT, WHETHER OR NOT A VIEW STANDS THERE. The measured
             // facade (FacadeFinder, through ShopDoors.Of) answers for the BUILDING, and
             // the building is not the shop: a residential shell wears one measured door
@@ -572,25 +698,70 @@ namespace RoadDemo
             // doorstep the plan chose is the side with the pavement on it, so the whole
             // passage is laid against that side and the leaves, when there are any, swing
             // on the view standing there.
-            if (ShopDoors.TryStreetFront(
-                    businessId, out var wall, out var outward, out _))
+            if (TryBusinessPassage(businessId, fallbackOutside, out var outside,
+                    out var threshold, out var inside, out var doorway))
             {
-                VisitThrough(
-                    man, wall + outward * DoorstepOut, wall,
-                    wall - outward * RoomDepth(businessId, outward),
-                    marker != null ? marker.transform : null,
-                    whenInside, whenOut, hold);
+                VisitThrough(man, outside, threshold, inside, doorway,
+                    whenInside, whenOut, hold, insideSeconds);
                 return;
             }
 
-            if (marker == null)
+            // No plan ground and no view to measure: the doorstep beat is all there
+            // is, and he says his piece where he stands.
+            Visit(man, fallbackOutside, talk: 0f, whenInside: whenInside,
+                whenOut: whenOut, hold: hold, insideSeconds: insideSeconds);
+        }
+
+        /// <summary>A beat officer taking a shopkeeper's statement uses the very same
+        /// business facade and DoorBeat passage as the man who leaned on the shop. A call
+        /// without physical business geometry keeps its ordinary at-scene fallback.</summary>
+        public static bool VisitBusiness(
+            PoliceFootPatrol officer,
+            TerritoryBusinessId businessId,
+            Vector3 fallbackOutside,
+            System.Action whenInside = null,
+            System.Action whenOut = null,
+            float insideSeconds = InsideSeconds)
+        {
+            // Shots outside: he stays on the pavement and the caller keeps its own
+            // at-scene clock, rather than the statement completing itself instantly
+            // because the passage could not be played.
+            if (officer != null && UnderFire(officer.Tf))
+                return false;
+            if (!TryBusinessPassage(businessId, fallbackOutside, out var outside,
+                    out var threshold, out var inside, out var doorway))
+                return false;
+
+            VisitThrough(officer, outside, threshold, inside, doorway,
+                whenInside, whenOut, insideSeconds);
+            return true;
+        }
+
+        static bool TryBusinessPassage(
+            TerritoryBusinessId businessId,
+            Vector3 fallbackOutside,
+            out Vector3 outside,
+            out Vector3 threshold,
+            out Vector3 inside,
+            out Transform doorway)
+        {
+            outside = threshold = inside = default;
+            doorway = null;
+            if (!BusinessViewBindings.TryGet(businessId, out var marker))
+                marker = null;
+
+            if (ShopDoors.TryStreetFront(
+                    businessId, out var wall, out var outward, out _))
             {
-                // No plan ground and no view to measure: the doorstep beat is all there
-                // is, and he says his piece where he stands.
-                Visit(man, fallbackOutside, talk: 0f,
-                    whenInside: whenInside, whenOut: whenOut, hold: hold);
-                return;
+                outside = wall + outward * DoorstepOut;
+                threshold = wall;
+                inside = wall - outward * RoomDepth(businessId, outward);
+                doorway = marker != null ? marker.transform : null;
+                return true;
             }
+
+            if (marker == null)
+                return false;
 
             // A view with no simulated ground under it - the bench rigs and the older
             // generated city. The door is measured off its own building, the way every
@@ -602,13 +773,13 @@ namespace RoadDemo
                 facing = Vector3.forward;
             facing.Normalize();
 
-            var threshold = entrance != null
+            threshold = entrance != null
                 ? entrance.DoorWorld
                 : fallbackOutside - facing * 1.05f;
-            var inside = threshold - facing * RoomDepth(businessId, facing);
-            VisitThrough(
-                man, fallbackOutside, threshold, inside, marker.transform,
-                whenInside, whenOut, hold);
+            outside = fallbackOutside;
+            inside = threshold - facing * RoomDepth(businessId, facing);
+            doorway = marker.transform;
+            return true;
         }
 
         /// <summary>
@@ -767,6 +938,46 @@ namespace RoadDemo
 
         public static bool Active(CrewWalker man) => PhaseOf(man) != VisitPhase.None;
 
+        public static VisitPhase PhaseOf(PoliceFootPatrol officer)
+        {
+            if (instance == null || officer == null)
+                return VisitPhase.None;
+            for (var i = 0; i < instance.calls.Count; i++)
+                if (instance.calls[i].Officer == officer)
+                    return instance.calls[i].Phase;
+            return VisitPhase.None;
+        }
+
+        public static bool Active(PoliceFootPatrol officer) =>
+            PhaseOf(officer) != VisitPhase.None;
+
+        /// <summary>
+        /// THE OWNER IS PUT TO THE TELEPHONE ONCE PER VISIT. True the first time this
+        /// man's current shop visit asks, false every time after - so a demand and the
+        /// threat the player chains onto the same counter (see <see cref="Chain"/>) roll
+        /// the complaint between them exactly once, and the docket carries one count for
+        /// one conversation.
+        ///
+        /// A man on no visit at all has nothing to chain onto, so the answer is yes:
+        /// the paper walk and the bench rigs are unaffected.
+        /// </summary>
+        public static bool ClaimTelephone(CrewWalker man)
+        {
+            if (instance == null || man == null)
+                return true;
+            for (var i = 0; i < instance.calls.Count; i++)
+            {
+                var call = instance.calls[i];
+                if (call.Man != man)
+                    continue;
+                if (call.TelephoneClaimed)
+                    return false;
+                call.TelephoneClaimed = true;
+                return true;
+            }
+            return true;
+        }
+
         /// <summary>The doorway this man's visit is about, for anything measuring how
         /// far off it began. Zero when he is not on a visit.</summary>
         public static Vector3 DoorOf(CrewWalker man)
@@ -897,10 +1108,11 @@ namespace RoadDemo
         /// </summary>
         static void Stay(Call call)
         {
-            call.ActAt = Time.time + InsideSeconds * BeforeTheActShare;
-            call.ActRealAt = Time.unscaledTime + InsideSeconds * BeforeTheActShare * 4f;
-            call.NextAt = Time.time + InsideSeconds;
-            call.RealNextAt = Time.unscaledTime + InsideSeconds * 4f;
+            var stay = Mathf.Max(0.1f, call.StaySeconds);
+            call.ActAt = Time.time + stay * BeforeTheActShare;
+            call.ActRealAt = Time.unscaledTime + stay * BeforeTheActShare * 4f;
+            call.NextAt = Time.time + stay;
+            call.RealNextAt = Time.unscaledTime + stay * 4f;
         }
 
         /// <summary>He is at the door: the word, or straight in when there is no word.
@@ -977,7 +1189,8 @@ namespace RoadDemo
         void TickThrough(int index, Call call)
         {
             call.Swing?.Tick(Time.deltaTime);
-            if (call.Man == null || call.Man.Tf == null || call.Man.Dead)
+            var visitor = call.Visitor;
+            if (visitor == null || visitor.Gone)
             {
                 call.Swing?.SnapClosed();
                 calls.RemoveAt(index);
@@ -994,27 +1207,30 @@ namespace RoadDemo
                     // Either he got there, or he has stopped getting there: a doorstep
                     // behind a cafe's tables is one no route reaches, and the passage
                     // itself walks through what is in the way.
-                    if (Near(call.Man.Tf.position, call.Outside, AtTheDoor) ||
+                    if (Near(visitor.Tf.position, call.Outside, AtTheDoor) ||
                         Stalled(call, call.Outside))
                     {
                         call.Swing?.Open();
-                        Face(call.Man, call.Inner);
+                        visitor.Face(call.Inner);
                         call.Phase = VisitPhase.OpeningEntry;
                         call.PhaseAt = Time.time;
                         break;
                     }
 
-                    if (Time.unscaledTime > call.RealNextAt || UnderFire(call.Man))
+                    if (Time.unscaledTime > call.RealNextAt || UnderFire(visitor))
                     {
                         call.Swing?.SnapClosed();
                         calls.RemoveAt(index);
+                        // A foot officer's short approach uses his doorway leg too. Put
+                        // him back in OnScene before the dispatch callback releases him.
+                        visitor.EndCross();
                         Tell(call);
                         Left(call);
                     }
                     break;
 
                 case VisitPhase.OpeningEntry:
-                    Face(call.Man, call.Inner);
+                    visitor.Face(call.Inner);
                     if (call.Swing == null || call.Swing.IsOpen)
                     {
                         // THROUGH the front, not round it. A shop's interior is not
@@ -1022,7 +1238,7 @@ namespace RoadDemo
                         // map - so an ordinary order at a point inside it is steered
                         // along the wall and stops short, which is the man standing two
                         // metres from a shop he was supposed to have gone into.
-                        call.Man.OrderThroughDoorway(call.Inner);
+                        visitor.CrossTo(call.Inner);
                         call.Phase = VisitPhase.Entering;
                         call.PhaseAt = Time.time;
                     }
@@ -1032,12 +1248,12 @@ namespace RoadDemo
                     // He has to WALK it, but he must never be left walking it. A passage
                     // that has not finished in CrossPatience is finished for him rather
                     // than hung: an order carried out beats a man wedged in a shopfront.
-                    if (!Near(call.Man.Tf.position, call.Inner, 0.28f) &&
+                    if (!Near(visitor.Tf.position, call.Inner, 0.28f) &&
                         Time.time - call.PhaseAt < CrossPatience)
                         break;
-                    call.Man.EndDoorway();
-                    call.Man.Tf.position = call.Inner;
-                    call.Man.Tf.gameObject.SetActive(false);
+                    visitor.EndCross();
+                    visitor.Tf.position = call.Inner;
+                    visitor.Show(false);
                     call.Swing?.Close();
                     call.Phase = VisitPhase.Inside;
                     call.PhaseAt = Time.time;
@@ -1065,20 +1281,20 @@ namespace RoadDemo
                 case VisitPhase.OpeningExit:
                     if (call.Swing != null && !call.Swing.IsOpen)
                         break;
-                    call.Man.Tf.position = call.Inner;
-                    call.Man.Tf.gameObject.SetActive(true);
-                    Face(call.Man, call.Outside);
-                    call.Man.OrderThroughDoorway(call.Outside);
+                    visitor.Tf.position = call.Inner;
+                    visitor.Show(true);
+                    visitor.Face(call.Outside);
+                    visitor.CrossTo(call.Outside);
                     call.Phase = VisitPhase.Exiting;
                     call.PhaseAt = Time.time;
                     break;
 
                 case VisitPhase.Exiting:
-                    if (!Near(call.Man.Tf.position, call.Outside, 0.28f) &&
+                    if (!Near(visitor.Tf.position, call.Outside, 0.28f) &&
                         Time.time - call.PhaseAt < CrossPatience)
                         break;
-                    call.Man.EndDoorway();
-                    call.Man.Tf.position = call.Outside;
+                    visitor.EndCross();
+                    visitor.Tf.position = call.Outside;
                     call.Swing?.Close();
                     call.Phase = VisitPhase.Closing;
                     call.PhaseAt = Time.time;
@@ -1100,16 +1316,6 @@ namespace RoadDemo
             return (a - b).sqrMagnitude <= distance * distance;
         }
 
-        static void Face(CrewWalker man, Vector3 point)
-        {
-            if (man?.Tf == null)
-                return;
-            var direction = point - man.Tf.position;
-            direction.y = 0f;
-            if (direction.sqrMagnitude > 0.001f)
-                man.Tf.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
-        }
-
         void OnDestroy()
         {
             // Never strand an invisible man: whatever ends the beat runner ends the
@@ -1124,6 +1330,21 @@ namespace RoadDemo
             {
                 var call = calls[i];
                 call.Swing?.SnapClosed();
+                // Restore a doorway visitor BEFORE WhenOut releases its police unit or
+                // gives a crew man his next order. In particular, a beat officer hidden
+                // inside must be OnScene again when dispatch sends him back to his beat.
+                if (call.Through && call.Visitor?.Tf != null)
+                {
+                    call.Visitor.EndCross();
+                    call.Visitor.Tf.position = call.Outside;
+                    call.Visitor.Show(true);
+                }
+                else if (call.Man?.Tf != null &&
+                         (call.Inside || call.Phase == VisitPhase.Inside ||
+                          call.Phase == VisitPhase.OpeningExit))
+                {
+                    StepOut(call);
+                }
                 // And never swallow the order either. The act happens at the counter
                 // now, part way through the stay, so a beat torn down mid-conversation
                 // would lose a demand the player gave; the answer is owed whatever
@@ -1132,19 +1353,6 @@ namespace RoadDemo
                 {
                     Tell(call);
                     Left(call);
-                }
-                if (call.Man?.Tf == null)
-                    continue;
-                call.Man.EndDoorway();
-                if (call.Through)
-                    call.Man.Tf.position = call.Outside;
-                if (call.Inside || call.Phase == VisitPhase.Inside ||
-                    call.Phase == VisitPhase.OpeningExit)
-                {
-                    if (!call.Through)
-                        StepOut(call);
-                    else
-                        call.Man.Tf.gameObject.SetActive(true);
                 }
             }
             calls.Clear();

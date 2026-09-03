@@ -131,7 +131,14 @@ namespace RoadDemo
             foreach (var u in _units)
             {
                 if (u.Tf == null) continue;
-                if (u is PoliceFootPatrol foot && foot.State == PoliceFootPatrol.Mode.Inside) continue;
+                // An officer inside the station house sees nothing of the street, and
+                // neither does one inside a SHOP: DoorBeat hides his body while he takes
+                // a statement, and a man nobody can see must not be the one who
+                // recognises a face across the pavement.
+                if (u is PoliceFootPatrol foot &&
+                    (foot.State == PoliceFootPatrol.Mode.Inside ||
+                     foot.State == PoliceFootPatrol.Mode.Doorway ||
+                     DoorBeat.Active(foot))) continue;
                 if (u is PolicePatrolCar car && car.State == PolicePatrolCar.Mode.Resting) continue;
                 float d = (u.Position - at).sqrMagnitude;
                 if (d < bestD) { bestD = d; best = u; }
@@ -178,6 +185,7 @@ namespace RoadDemo
             if (law.Available) law.RouteTo(unit.Position, 4f);
 
             if (law is PoliceFootPatrol foot && foot.Tf != null &&
+                !DoorBeat.Active(foot) &&
                 (foot.Tf.position - man.Tf.position).sqrMagnitude < 30f * 30f)
             {
                 _arrestOfficer = foot;

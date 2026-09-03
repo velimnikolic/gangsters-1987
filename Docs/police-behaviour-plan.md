@@ -386,3 +386,63 @@ zatvoren plac kao skrovište) **ostaju popravljeni**: stoje sami za sebe.
 Knjiga biznisa se vraća na stanje pre ovog posla; `EconomyPrices.Apartment` ($55.000)
 ostaje u tabeli i u `Docs/economy-prices.md` — bio je tamo i pre, i epik koji dolazi će ga
 koristiti.
+
+## 9. Šta je urađeno 2026-09-03 (GAN-245 dopune — dve presude koje nadjačavaju tekst epika)
+
+GAN-245 je zatvoren 2026-09-02 i njegov tekst na dva mesta više ne opisuje ono što stoji u
+kodu. Ovde su obe presude, da sledeća sesija ne "ispravi" kod nazad u prijavljeni bug.
+
+### 9.1 Prijavu podiže SAMO TRAŽENJE PARE, ne tek pretnja
+
+Epik kaže „`ComplaintRoll` at `ResolveThreat`". Sada je i na `ResolveDemand`
+(`TerritoryRuntime.cs`, `MaybeRingThePrecinct` odmah posle `TryComplianceInputs`): sveža
+familija koja uđe i traži pare već vrši iznudu koju gazda prijavljuje, a to je bilo
+korisnikovo izričito traženje — „i dalje niko ne zove policiju kad tek počnem i krenem da
+im tražim pare".
+
+Roll se uzima **pre** nego što `Demand` pomeri odnos na Compliant: telefon odlučuje ko je
+ušao, ne odgovor koji čovek tek treba da da.
+
+**JEDAN ULAZAK, JEDNA TELEFONSKA ODLUKA.** Igrač može da nalanča drugi nalog na isti šalter
+dok je čovek unutra (`DoorBeat.Chain` — pretnja posle traženja, najčešće). Bravu drži sam
+ulazak: `DoorBeat.ClaimTelephone(man)` vraća `true` samo prvom nalogu te posete, a privatne
+`ResolveDemand`/`ResolveThreat` preopterećenja nose `considerComplaint`. Papirni put
+(`PaperDoor`) i ugnježdena pretnja u blok-šejkdaunu prosleđuju `false`.
+
+Papirna kuća **ne zvoni uopšte**: telefon je stvar koju gazda radi zbog ljudi ispred sebe,
+a kuća na papiru nema ljudi nigde — policajac bi stigao na vrata pred kojima ne stoji niko.
+Uz pravilo „nema papirnih familija" (`Docs/rival-families.md`) to je i tako mrtav put.
+
+### 9.2 Policajac ulazi UNUTRA, kroz ista vrata kao reketaš
+
+Epik kaže da policajac stoji na vratima `StatementSeconds` pa ode. Sada koristi isti
+`DoorBeat` prolaz kao čovek koji je reketirao: `DoorBeat.VisitBusiness(PoliceFootPatrol …)`,
+kroz `DoorVisitor` adapter, pa `PoliceFootPatrol.Mode.Doorway` za kratku deonicu preko
+praga (pešački graf namerno nema veze kroz zid radnje). Poziv stoji u `CallStage.Statement`
+dok ga `DoorBeat` ne pusti napolje; izjava se evidentira unutra, poziv se zatvara tek posle
+izlaska.
+
+Partner ostaje na pločniku: `Mode.SceneCover`, 1,8 m pored vrata, sa distancom-kapijom
+`SceneCoverGap = 4,5 m` — pre toga se smrzavao gde ga zatekne dolazak vođe, ponekad pola
+bloka iza radnje.
+
+Tri stvari koje idu uz to i nisu očigledne:
+
+* **Skriveni policajac nije oko zakona.** Dok ga `DoorBeat` drži (telo `SetActive(false)`),
+  `LawWithin` ga preskače i `ChaseOnSight` ne otvara hapšenje preko njega, a
+  `PoliceFootPatrol.Challenge` odbija posao ako `DoorBeat.Active(this)`. Bez toga je jedan
+  transform imao dva vlasnika, hapšenje je počinjalo bez vidljivog policajca, a globalna
+  `_collar` bravica je ostajala zaključana do `CollarPatience` i držala svako drugo
+  hapšenje u gradu.
+* **`CallStage.Statement` ima svoj backstop** (`HomeBy`, `ComplaintPatience`), isti kakav
+  `Arresting` odavno ima: prolaz koji nekako ne odgovori ne sme da drži jedinicu van ulice
+  do kraja kampanje.
+* **Pucnjava prekida izjavu.** `DoorBeat.VisitBusiness` za policajca vraća `false` pod
+  vatrom, pa dispečer zadržava svoj sat na licu mesta. Za ekipu je pravilo obrnuto i
+  namerno: nalog je nalog i ne sme se izgubiti.
+
+### 9.3 Šta ovo NE pokriva
+
+`Assets/Scripts/Tests/PoliceTests.cs` je čist sloj bez UnityEngine i ne dodiruje nijednu od
+ovih izmena — sve gore je *ivica*. Zeleno `gangsters_police_tests` (53/53) ovde ništa ne
+dokazuje; dokaz je bio Play prolaz i `gangsters_racket_probe`.

@@ -159,7 +159,10 @@ namespace RoadDemo
             PolicyAndArchetype(unit, out var policyLevel, out _);
             if (TerritoryShakedown.ThreatenAfter(verdict, policyLevel))
             {
-                ResolveThreat(gang, businessId, mouth, out var after, out _);
+                // One doorway visit, one telephone decision. The demand immediately
+                // above already gave this owner his chance to call; a strict crew's
+                // on-the-spot threat must not queue a duplicate complaint.
+                ResolveThreat(gang, businessId, mouth, false, out var after, out _);
                 AnnounceVerdict(businessId, true, after, mouth);
             }
         }
