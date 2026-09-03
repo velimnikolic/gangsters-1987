@@ -171,11 +171,10 @@ namespace RoadDemo
             // The banner is the PLAYER'S news. A shopkeeper who rang about somebody
             // else's family is a thing that happened in the city, not a thing that
             // happened to him - the officer still turns out for it either way.
-            if (call.Faction == LivingCity.Gangs.GangCatalog.PlayerGangId)
             {
                 var where = string.IsNullOrEmpty(call.Where)
                     ? "A SHOPKEEPER" : call.Where.ToUpperInvariant();
-                CrewOverlay.Announce("COMPLAINT — " + where, 4.5f,
+                CrewOverlay.AnnounceOurs(call.Faction, "COMPLAINT — " + where, 4.5f,
                     new Color(1f, 0.85f, 0.55f));
             }
             LawWire.ComplaintRung(call);
@@ -255,9 +254,8 @@ namespace RoadDemo
             // officer was sent to look at, and the whole point of the call is that he
             // arrives to find men standing in a doorway.
             if (_lights.TryGetValue(unit, out var lights)) lights.Set(true, siren: false);
-            if (call.Call.Faction == LivingCity.Gangs.GangCatalog.PlayerGangId)
-                CrewOverlay.Announce("A MAN OF THE LAW AT THE DOOR", 4f,
-                    new Color(0.55f, 0.78f, 1f));
+            CrewOverlay.AnnounceOurs(call.Call.Faction, "A MAN OF THE LAW AT THE DOOR", 4f,
+                new Color(0.55f, 0.78f, 1f));
             return true;
         }
 
@@ -332,9 +330,8 @@ namespace RoadDemo
                 runtime.MarkUnderTheLaw(businessId);
                 runtime.NotePoliceAttentionAt(businessId, StatementAttention);
             }
-            if (call.Call.Faction == LivingCity.Gangs.GangCatalog.PlayerGangId)
-                CrewOverlay.Announce("A STATEMENT WAS TAKEN", 4f,
-                    new Color(1f, 0.85f, 0.55f));
+            CrewOverlay.AnnounceOurs(call.Call.Faction, "A STATEMENT WAS TAKEN", 4f,
+                new Color(1f, 0.85f, 0.55f));
             LawWire.StatementTaken(call.Call);
             Close(call);
         }

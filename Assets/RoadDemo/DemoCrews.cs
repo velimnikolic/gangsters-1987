@@ -2734,7 +2734,7 @@ namespace RoadDemo
                 if (house?.Roster == null)
                     continue;
                 var book = house.Roster;
-                var ours = house.GangId == LivingCity.Gangs.GangCatalog.PlayerGangId;
+                var ours = house.IsPlayer;
                 foreach (var crew in book.Crews)
                 {
                     var lt = book.Find(crew.LieutenantId);
@@ -2879,7 +2879,7 @@ namespace RoadDemo
                 if (kv.Value.boss) continue;
                 // the bag man is dealt into his own unit, not the line - and only ours
                 // has one, so a rival's hood is never looked for among the bag units
-                var bag = kv.Value.house.GangId == LivingCity.Gangs.GangCatalog.PlayerGangId &&
+                var bag = kv.Value.house.IsPlayer &&
                           bagMen.TryGetValue(kv.Value.crew.Id, out var bagId) && bagId == kv.Key &&
                           bagUnits.TryGetValue(kv.Value.crew.Id, out var into)
                     ? into

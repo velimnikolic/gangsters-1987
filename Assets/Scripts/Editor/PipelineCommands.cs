@@ -1019,7 +1019,15 @@ namespace GangstersTools
                         line.Contains("Business"))
                         failures.Add(relative + ":" + (i + 1) +
                                      " writes a business deed directly.");
-                    if (line.Contains("TAKE IT"))
+                    // THE ROW ITSELF, not the words. What was taken out was a menu row
+                    // reading exactly "TAKE IT" (TurfMapPanel, b80ed6ab) that handed a
+                    // building over on a click. Matching the bare phrase matched prose
+                    // in a doc comment ("NOBODY TO TAKE IT") and the armory's own "TAKE
+                    // IT BACK", which returns a gun to the safe and claims no ground at
+                    // all - three false faults that had this audit red at HEAD. The
+                    // quoted literal is the claim; the closing quote is what tells it
+                    // apart from the button that only shares its first two words.
+                    if (line.Contains("\"TAKE IT\""))
                         failures.Add(relative + ":" + (i + 1) + " revives the TAKE IT claim.");
 
                     // 1b. ONE HOUSE PER ORDER, ONE PLACE THE PLAYER'S NAME GOES ON ONE
@@ -1070,6 +1078,11 @@ namespace GangstersTools
                 "Assets/RoadDemo/TerritoryPlaques.cs", "Assets/RoadDemo/TurfMinimap.cs",
                 "Assets/RoadDemo/TurfMapHud.cs", "Assets/RoadDemo/TurfKnowledge.cs",
                 "Assets/RoadDemo/StreetHud.cs", "Assets/RoadDemo/DemoClockHud.cs",
+                // The incident feed is the player's own paper and is written in the
+                // first person ("our men", "our names"): a line about a rival's man
+                // would be a lie on his page, so this file has to know whose page it is.
+                // It decides nothing on the street - it only chooses what to print.
+                "Assets/RoadDemo/LawWire.cs",
             };
             foreach (var file in System.IO.Directory.GetFiles(root, "*.cs",
                          System.IO.SearchOption.AllDirectories))
@@ -1106,8 +1119,14 @@ namespace GangstersTools
                 var relative = file.Substring(
                     System.IO.Directory.GetCurrentDirectory().Length + 1)
                     .Replace('\\', '/');
+                // The rule guards the RUNNING city against a second economy: a clock, a
+                // HUD or a street class that could add to the bag. A contract that
+                // stands a round up carrying money to prove the save brings it back is
+                // not a clock, and the ledger's own path cannot serve it - Settle rolls
+                // for what a door pays and may hand back nothing.
                 if (relative.EndsWith("Territory/TerritoryRounds.cs",
                         StringComparison.Ordinal) ||
+                    relative.StartsWith("Assets/Scripts/Tests/", StringComparison.Ordinal) ||
                     relative == "Assets/Scripts/Editor/PipelineCommands.cs")
                     continue;
 
