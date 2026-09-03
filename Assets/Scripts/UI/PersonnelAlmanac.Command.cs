@@ -146,6 +146,12 @@ namespace LivingCity.UI
 
         bool commandBossOpen;
 
+        /// <summary>FOLLOW-006's sentence for the open Boss card, measured before the
+        /// card is sized and printed inside it - the card is fit-content and cannot be
+        /// measured off a line it has not composed yet.</summary>
+        string commandReady = "";
+        bool commandReadyRoom;
+
         /// <summary>What the last order said when the roster answered it on the spot -
         /// the arming refusals and purchases that never reach the filing office.</summary>
         string commandNote = "";
@@ -155,6 +161,37 @@ namespace LivingCity.UI
         readonly List<CommandBranch> commandBranches = new List<CommandBranch>();
         readonly List<(CharacterAttribute Attribute, int Steps)> commandTrades =
             new List<(CharacterAttribute, int)>();
+
+        /// <summary>The men the book is shouting about, refilled every repaint by
+        /// <see cref="Notability.Top"/>. Read-only over the score - the board is thrown
+        /// away and rebuilt precisely so nothing here can keep a figure of its own.</summary>
+        readonly List<Character> commandNotable = new List<Character>();
+
+        /// <summary>The head of the reason book, in the order the section sets it -
+        /// refilled every repaint by <see cref="ReasonFeed.Latest"/>.</summary>
+        readonly List<ReasonLine> commandWords = new List<ReasonLine>();
+
+        /// <summary>How many men the WHO TO LOOK AT panel names. Five or six, never
+        /// sixty: the whole point is to answer "who should I be thinking about this
+        /// morning" in one glance.</summary>
+        const int NotableShown = 6;
+
+        /// <summary>How far back WORD FROM THE CREWS reads. A fortnight of a busy
+        /// outfit at the widths these columns run to.</summary>
+        const int ReasonsShown = 14;
+
+        /// <summary>The narrowest measure either watch section is set at. Under two of
+        /// these and a gutter the pair stands one over the other instead: a reason is a
+        /// sentence somebody wrote, and a sentence set across the whole sheet is not
+        /// read, it is scanned.</summary>
+        const float WatchColumnMin = 520f;
+
+        /// <summary>The air between the two watch columns.</summary>
+        const float WatchGutter = 26f;
+
+        /// <summary>Under this measure a section's aside cannot stand beside its own
+        /// heading. The ORGANIZATION sheet has always broken at exactly here.</summary>
+        const float NarrowSection = 720f;
 
         /// <summary>
         /// One branch of the tree, gathered before anything is drawn - the spine cannot
@@ -243,6 +280,7 @@ namespace LivingCity.UI
             // log 26 under that.
             cursor = BuildCommandTree(query, boss, cursor) + 8f;
             cursor = BuildCommandReserve(cursor + 22f);
+            cursor = BuildCommandWatch(cursor + 26f);
             cursor = BuildCommandOrders(cursor + 26f);
             CloseCommand(cursor);
         }
@@ -511,7 +549,21 @@ namespace LivingCity.UI
             var inner = Mathf.Max(CondensedWidth(boss.Name, 22f) + 4f, 150f,
                 MonoWidth("HEAD OF THE FAMILY", 10f, 3f));
             if (commandBossOpen)
+            {
                 inner = Mathf.Max(inner, Mathf.Min(PageWidth * 0.4f, 400f));
+                // FOLLOW-006's line NAMES men, so it is as long as their names are.
+                // fit-content means fit THIS content: measured off the face that will
+                // print it, and let the card grow to it rather than cutting the last
+                // man off the end of a line whose whole job is naming men.
+                commandReady = ReadyForACrewLine(boss, out commandReadyRoom);
+                if (commandReady.Length > 0)
+                    inner = Mathf.Max(inner, Mathf.Min(PageWidth * 0.72f,
+                        MonoWidth("READY FOR A CREW · " + commandReady, 10.5f, 1f) + 6f));
+            }
+            else
+            {
+                commandReady = "";
+            }
             var w = Mathf.Min(PageWidth, inner + BossPadSide * 2f);
             var x = (PageWidth - w) * 0.5f;
 
@@ -626,6 +678,20 @@ namespace LivingCity.UI
                 }
             }
             y += (facts.Count + columns - 1) / columns * 22f + 11f;
+
+            // FOLLOW-006. The hoods the book says could run a crew, against the span
+            // that is the actual constraint on making one - this is the sheet where a
+            // crew is made, so this is where "who do I promote" is answered. It NAMES
+            // men and does nothing; MAKE HIM LIEUTENANT is still a key on a man's own
+            // file, and the outfit still rules on it.
+            if (commandReady.Length > 0)
+            {
+                var line = LedgerV2.Mono(card, BossPadSide, -y, inner,
+                    "READY FOR A CREW · " + commandReady, 10.5f,
+                    commandReadyRoom ? LedgerV2.HeadPaper : LedgerV2.HeadDim, 1f);
+                line.overflowMode = TextOverflowModes.Ellipsis;
+                y += LineBox(10.5f) + 11f;
+            }
 
             // The counter's own paper, pulled out of the dark folder.
             if (member != null && commandArmsOpenId == member.Id)
@@ -997,6 +1063,7 @@ namespace LivingCity.UI
             y += LineBox(10f) + 6f;
 
             y = FileFacts(host, member, person, isLieutenant, pad, y, inner);
+            y = FileWarning(host, member, isLieutenant, pad, y, inner);
 
             // The gun drawer, if he has pulled it out - it belongs under CARRIES, which
             // is the line that opened it.
@@ -1051,9 +1118,28 @@ namespace LivingCity.UI
                 ("CONDITION", LedgerText.StatusLabel(member.Status),
                     member.Status == CharacterStatus.Active
                         ? LedgerV2.Ink : LedgerV2.Red, null),
+                // The watch band is THE number for "we are losing him" and there is one
+                // of it: a file that carried its own 35 would print a man at 34 in
+                // black the day the model moved the band.
                 ("LOYALTY", member.Loyalty + " of 100",
-                    member.Loyalty < 35 ? LedgerV2.Red : LedgerV2.Ink, null),
+                    member.Loyalty < Loyalty.WatchBand ? LedgerV2.Red : LedgerV2.Ink,
+                    null),
             };
+
+            // FOLLOW-004. How long he has been exactly what he is - the input to the
+            // one loyalty rule the player could act on, and red from the day it starts
+            // costing him. The same sentence his own file on the roll prints.
+            var today = OrganizationDay;
+            facts.Add((TenureLabel(member), TenureFigure(member, today),
+                Loyalty.IsParked(member, today) ? LedgerV2.Red : LedgerV2.Ink, null));
+
+            // LOY-004. The book's own verdict on him, so this sheet answers "who do I
+            // promote, who do I watch" without sending the reader to the roll. The red
+            // flag prints in red; the two he could BE print in ink.
+            var marks = ManFlags.Of(member);
+            if (marks != ManFlag.None)
+                facts.Add(("THE BOOK SAYS", ManFlags.Line(marks),
+                    (marks & ManFlag.RedFlag) != 0 ? LedgerV2.Red : LedgerV2.Ink, null));
 
             // One margin for every figure on the sheet: the longest label sets it.
             var labelW = 0f;
@@ -1186,6 +1272,32 @@ namespace LivingCity.UI
                     .font = LedgerStyle.MonoBold;
             }
             return y + (shown + columns - 1) / columns * rowH;
+        }
+
+        /// <summary>
+        /// FOLLOW-002/003. A red flag on a HOOD is a man worth watching; a red flag on
+        /// the man who HOLDS a branch is the branch, and this sheet is the tree - so
+        /// his file says it in words and says what it would cost. The count comes off
+        /// the defection arithmetic itself (<see cref="Defection.WouldFollow"/>), never
+        /// off the mark: a flag informs and never acts.
+        /// </summary>
+        float FileWarning(Transform host, Character member, bool isLieutenant,
+            float x, float y, float w)
+        {
+            if (member == null || !isLieutenant || director == null ||
+                (ManFlags.Of(member) & ManFlag.RedFlag) == 0)
+                return y;
+
+            const float bandH = 24f;
+            var would = Defection.WouldFollow(director.Roster, member);
+            var band = NewRect("Warning", host);
+            PlaceTopLeft(band, x, -(y + 6f), w, bandH);
+            Fill(band, LedgerV2.Wrong);
+            var warn = Caps(band, 10f, -(bandH - LineBox(9.5f)) * 0.5f, w - 20f,
+                BearsWatchingLine(would), 9.5f, LedgerV2.Red, 2f);
+            warn.font = LedgerStyle.MonoBold;
+            warn.overflowMode = TextOverflowModes.Ellipsis;
+            return y + 6f + bandH + 4f;
         }
 
         /// <summary>What a man is LIKE, in the clerk's own words - Personality's bands,
@@ -1506,6 +1618,206 @@ namespace LivingCity.UI
             return deepest;
         }
 
+        // ------------------------------------------------------------- what the book
+        //                                                             says of the men
+
+        /// <summary>
+        /// The two readings the sheet takes OF the men it has just drawn: who the book
+        /// is shouting about, and what moved on anybody last night.
+        ///
+        /// They stand side by side because they answer the same morning question from
+        /// two ends - the standing figure and the movement behind it - and a reader who
+        /// has one wants the other on the same screenful. Under two full columns they
+        /// stack rather than being squeezed: a reason is a sentence somebody wrote.
+        /// </summary>
+        float BuildCommandWatch(float cursor)
+        {
+            if (PageWidth >= WatchColumnMin * 2f + WatchGutter)
+            {
+                var column = (PageWidth - WatchGutter) * 0.5f;
+                var left = BuildWhoToLookAt(0f, column, cursor);
+                var right = BuildWordFromTheCrews(
+                    column + WatchGutter, column, cursor);
+                return Mathf.Max(left, right);
+            }
+
+            cursor = BuildWhoToLookAt(0f, PageWidth, cursor);
+            return BuildWordFromTheCrews(0f, PageWidth, cursor + 26f);
+        }
+
+        /// <summary>
+        /// FOLLOW-005. The notability figure itself, in the one room it belongs in.
+        ///
+        /// It is deliberately OFF the roll and off the personal file: attention is
+        /// rationed there and a column of numbers would let the player skip learning
+        /// who his men are, which is the whole design. This is the sheet where he
+        /// stands back and looks at the house, and here the figure is a tool.
+        ///
+        /// The men and their order are a plain descending sort by
+        /// <see cref="Notability.Of"/> - the board is READ and never written, and no
+        /// score is cached beside it.
+        /// </summary>
+        float BuildWhoToLookAt(float left, float width, float cursor)
+        {
+            cursor = CommandSectionHead(cursor, left, width, "WHO TO LOOK AT",
+                "WHAT THE BOOK IS SHOUTING ABOUT THIS MORNING", "", LedgerV2.Muted,
+                null, null);
+
+            var roster = director != null ? director.Roster : null;
+            var today = OrganizationDay;
+            Notability.Top(roster, today, NotableShown, commandNotable);
+
+            const float pad = 14f;
+            const float figureW = 52f;
+            const float trendW = 96f;
+            const float rowH = 40f;
+            var inner = width - pad * 2f;
+
+            if (commandNotable.Count == 0)
+            {
+                LedgerV2.Card("Notable", commandContent, left, -cursor, width, 46f,
+                    LedgerV2.Panel);
+                Line(commandContent, LedgerStyle.MonoItalic, 11.5f, LedgerV2.Muted,
+                    left + pad, -(cursor + 14f), inner, 20f,
+                    "Nobody is on the books to look at.");
+                return cursor + 46f;
+            }
+
+            var height = commandNotable.Count * rowH + 12f;
+            var frame = LedgerV2.Card("Notable", commandContent, left, -cursor, width,
+                height, LedgerV2.Panel);
+
+            for (var i = 0; i < commandNotable.Count; i++)
+            {
+                var man = commandNotable[i];
+                var row = NewRect("Notable " + man.FullName, frame);
+                PlaceTopLeft(row, pad, -(6f + i * rowH), inner, rowH);
+                if (i < commandNotable.Count - 1)
+                    Rule(row, 0f, -(rowH - 1f), inner, LedgerV2.Hair);
+
+                // The name takes what is left after the figure and the shape of it.
+                var nameW = Mathf.Max(80f, inner - figureW - trendW - 16f);
+                var name = Line(row, LedgerStyle.Condensed, 15f, LedgerV2.Ink,
+                    0f, -2f, nameW, LineBox(15f), man.FullName);
+                name.overflowMode = TextOverflowModes.Ellipsis;
+
+                // A man at ninety falling and a man at ninety rising are different
+                // problems, and the fold answers both for nothing.
+                var trend = Notability.Trend(man, today);
+                var shape = trend > 0 ? "CLIMBING" : trend < 0 ? "FALLING AWAY" : "HOLDING";
+                Caps(row, inner - figureW - trendW - 8f, -4f, trendW, shape, 9f,
+                    trend > 0 ? LedgerV2.Green
+                        : trend < 0 ? LedgerStyle.Ballpoint : LedgerV2.Label,
+                    2f, TextAlignmentOptions.MidlineRight);
+
+                var score = Notability.Of(man, today);
+                var figure = Line(row, LedgerStyle.MonoBold, 15f,
+                    score >= Notability.NewsBand ? LedgerV2.Ink : LedgerV2.Muted,
+                    inner - figureW, -2f, figureW, LineBox(15f), score.ToString());
+                figure.alignment = TextAlignmentOptions.MidlineRight;
+
+                // WHY he is up there, in his own file's words - never re-worded here.
+                var cause = Notability.Cause(man);
+                var causeText = Line(row, LedgerStyle.Mono, 10f, LedgerV2.Muted,
+                    0f, -21f, inner, LineBox(10f),
+                    cause.Length > 0 ? cause : "Nothing on his file yet.");
+                causeText.overflowMode = TextOverflowModes.Ellipsis;
+            }
+
+            return cursor + height;
+        }
+
+        /// <summary>
+        /// FOLLOW-001. Every movement of a man's character, with the reason the clerk
+        /// wrote for it, on the sheet where the player looks at his own house.
+        ///
+        /// EPIC 13's law is that there are no silent modifiers: every effect prints
+        /// somewhere. The model has always obeyed it - <c>CampaignRunner.
+        /// CharacterChanges</c> carries a written reason for every point that moves -
+        /// and until this section nothing read the list, so a man deciding he was done
+        /// with us read to the player as a number that fell for nothing.
+        ///
+        /// The reason is the PAYLOAD and is printed verbatim. The pen says which way it
+        /// went - the ballpoint the book already uses for a man of ours who is no
+        /// longer ours, the green it already uses for a promotion - and nothing here
+        /// composes a sentence of its own.
+        /// </summary>
+        float BuildWordFromTheCrews(float left, float width, float cursor)
+        {
+            cursor = CommandSectionHead(cursor, left, width, "WORD FROM THE CREWS",
+                "WHAT MOVED ON THE MEN, AND WHY", "", LedgerV2.Muted, null, null);
+
+            var book = outfit ? outfit.ReasonBook : null;
+
+            const float pad = 14f;
+            const float edgeW = 3f;
+            var inner = width - pad * 2f;
+            var copyX = edgeW + 8f;
+            var copyW = inner - copyX;
+
+            if (book == null || book.Count == 0)
+            {
+                LedgerV2.Card("Word", commandContent, left, -cursor, width, 46f,
+                    LedgerV2.Panel);
+                Line(commandContent, LedgerStyle.MonoItalic, 11.5f, LedgerV2.Muted,
+                    left + pad, -(cursor + 14f), inner, 20f,
+                    book == null
+                        ? "No campaign is running on this sheet."
+                        : ReasonText.Quiet);
+                return cursor + 46f;
+            }
+
+            // Newest DAY first, and inside it the loudest movement first. The two
+            // orders pull against each other and walking the flat book backwards gets
+            // only the first of them - it reads last night back to front and a limited
+            // run then keeps the day's +1s and drops the swings this section exists to
+            // show. ReasonFeed.Latest is where that is settled, once, and where the
+            // headless suite can hold it.
+            ReasonFeed.Latest(book, ReasonsShown, commandWords);
+
+            // The panel cannot be placed until its slips have said how tall they are -
+            // a reason is a sentence and the long ones run to two lines at this measure
+            // - so it is built first and sized at the end.
+            var frame = LedgerV2.Card("Word", commandContent, left, -cursor, width, 46f,
+                LedgerV2.Panel);
+
+            var run = commandWords.Count;
+            var y = 8f;
+            for (var i = 0; i < run; i++)
+            {
+                var word = commandWords[i];
+                var ink = word.Rising ? LedgerStyle.GreenOk : LedgerStyle.Ballpoint;
+
+                var head = word.Name + " · " +
+                           ReasonText.Movement(word.Trait, word.Delta).ToUpperInvariant();
+                var stamp = Caps(frame, pad + copyX, -y, copyW - 90f, head, 10f, ink, 3f);
+                stamp.font = LedgerStyle.MonoBold;
+                stamp.overflowMode = TextOverflowModes.Ellipsis;
+                Caps(frame, pad + copyX, -y, copyW, LedgerText.DayStamp(word.Day), 9f,
+                    LedgerV2.Label, 2f, TextAlignmentOptions.MidlineRight);
+
+                // MEASURED, not assumed: TMP's ellipsis eats a whole line when the rect
+                // cannot hold what it was given, so the rect is sized to what the face
+                // says it needs.
+                var copy = Paragraph(frame, LedgerStyle.Mono, 11f, LedgerV2.Body,
+                    pad + copyX, -(y + 16f), copyW, LineBox(11f), word.Reason,
+                    lineSpacing: 0f);
+                var tall = Mathf.Max(LineBox(11f),
+                    Mathf.Ceil(copy.GetPreferredValues(word.Reason, copyW, 0f).y));
+                copy.rectTransform.sizeDelta = new Vector2(copyW, tall);
+
+                var height = 16f + tall + 8f;
+                Block("Pen", frame, pad, -y, edgeW, height - 6f, ink);
+                y += height;
+                if (i < run - 1)
+                    Rule(frame, pad, -(y - 4f), inner, LedgerV2.Hair);
+            }
+
+            var total = y + 8f;
+            frame.sizeDelta = new Vector2(width, total);
+            return cursor + total;
+        }
+
         /// <summary>
         /// The design's section head: a 19-unit heading on the left, whatever the
         /// section has to say held to the right of the same line, and a hairline under
@@ -1513,17 +1825,28 @@ namespace LivingCity.UI
         /// the section's own content starts.
         /// </summary>
         float CommandSectionHead(float cursor, string title, string summary,
-            string figure, Color figureInk, string key, UnityAction onKey)
-        {
-            var heading = Line(commandContent, LedgerStyle.Condensed, 19f, LedgerV2.Ink,
-                0f, -cursor, PageWidth * 0.5f, LineBox(19f), title);
-            heading.characterSpacing = 4f;
+            string figure, Color figureInk, string key, UnityAction onKey) =>
+            CommandSectionHead(cursor, 0f, PageWidth, title, summary, figure, figureInk,
+                key, onKey);
 
-            // The heading sets the line and everything else is centred on IT - the
-            // key, the figure and the aside are three different heights, and dropped
-            // at their own tops they stood at three different levels.
+        /// <summary>
+        /// The same head, struck inside a column of the sheet rather than across it.
+        ///
+        /// Under <see cref="NarrowSection"/> the aside cannot stand on the title's line
+        /// without losing its own last words to an ellipsis, so it drops to a line of
+        /// its own under the heading - the rule the ORGANIZATION sheet's sections have
+        /// always kept, and there is one such rule in this book, not two.
+        /// </summary>
+        float CommandSectionHead(float cursor, float left, float width, string title,
+            string summary, string figure, Color figureInk, string key, UnityAction onKey)
+        {
+            var narrow = width < NarrowSection;
             var line = LineBox(19f);
-            var x = PageWidth;
+
+            // The key and the figure are measured and placed FIRST, from the right
+            // margin in, because in a column they are what is left for the heading:
+            // a title struck across the whole measure would run under them.
+            var x = left + width;
             if (key != null)
             {
                 const float keyH = 23f;
@@ -1544,17 +1867,42 @@ namespace LivingCity.UI
                     figureInk, 1f).font = LedgerStyle.MonoBold;
                 x -= 14f;
             }
+
+            // The heading sets the line and everything else is centred on IT - the
+            // key, the figure and the aside are three different heights, and dropped
+            // at their own tops they stood at three different levels.
+            var headW = narrow
+                ? Mathf.Max(60f, x - left)
+                : width * 0.5f;
+            var heading = Line(commandContent, LedgerStyle.Condensed, 19f, LedgerV2.Ink,
+                left, -cursor, headW, line, title);
+            heading.characterSpacing = 4f;
+            heading.overflowMode = TextOverflowModes.Ellipsis;
+
             if (summary.Length > 0)
             {
-                var summaryW = Mathf.Min(MonoWidth(summary, 11f, 1f) + 6f,
-                    Mathf.Max(40f, x - PageWidth * 0.5f));
-                LedgerV2.Mono(commandContent, x - summaryW, asideY, summaryW,
-                        summary, 11f, LedgerV2.Muted, 1f)
-                    .overflowMode = TextOverflowModes.Ellipsis;
+                if (narrow)
+                {
+                    // A four-word aside set beside a heading in a column loses its own
+                    // last words, so it drops to a line of its own - the rule the
+                    // ORGANIZATION sheet's sections keep, and there is one such rule in
+                    // this book rather than two.
+                    Caps(commandContent, left, -(cursor + line + 1f), width,
+                        summary, 9f, LedgerV2.Label, 2f);
+                    cursor += LineBox(9f) + 1f;
+                }
+                else
+                {
+                    var summaryW = Mathf.Min(MonoWidth(summary, 11f, 1f) + 6f,
+                        Mathf.Max(40f, x - left - width * 0.5f));
+                    LedgerV2.Mono(commandContent, x - summaryW, asideY, summaryW,
+                            summary, 11f, LedgerV2.Muted, 1f)
+                        .overflowMode = TextOverflowModes.Ellipsis;
+                }
             }
 
-            cursor += LineBox(19f) + 8f;
-            Rule(commandContent, 0f, -cursor, PageWidth, LedgerV2.SheetRule);
+            cursor += line + 8f;
+            Rule(commandContent, left, -cursor, width, LedgerV2.SheetRule);
             return cursor + 12f;
         }
 

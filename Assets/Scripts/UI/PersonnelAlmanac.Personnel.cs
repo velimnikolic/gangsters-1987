@@ -1276,12 +1276,8 @@ namespace LivingCity.UI
             // good lieutenant sour had no way to learn the cause was eight weeks in the
             // same job. A man who has never been anything else has been what he is
             // since he came on, and the line says that rather than printing a zero.
-            var inRank = Loyalty.TimeInRank(member, wageDay);
             var parked = Loyalty.IsParked(member, wageDay);
-            y = Particular(member.RankSince > 0 ? "IN RANK" : "A HOOD FOR",
-                (inRank == 1 ? "1 day" : inRank + " days") + "  ·  since " +
-                LedgerText.DayStamp(Loyalty.RankSinceDay(member)) +
-                (parked ? "  ·  parked" : ""),
+            y = Particular(TenureLabel(member), TenureFigure(member, wageDay),
                 textX, textW, y, parked ? LedgerV2.Red : (Color?)null);
             y = Particular("LOYALTY", member.Loyalty + " of 100", textX, textW, y,
                 member.Loyalty < Loyalty.WatchBand ? LedgerV2.Red : LedgerV2.Ink);
