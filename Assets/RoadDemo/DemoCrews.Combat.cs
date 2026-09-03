@@ -246,6 +246,206 @@ namespace RoadDemo
         /// hiding place.</summary>
         static bool InSight(Vector3 eye, Vector3 mark) => WalkObstacles.Sees(eye, mark);
 
+        // ------------------------------------------------ the closer threat (EPIC 33)
+
+        /// <summary>The street distance between two points - HORIZONTAL, both marks
+        /// measured the same way (D8). A man's transform is at his feet and his chest is
+        /// a metre and a bit above it; comparing a 3D distance to one mark against a 3D
+        /// distance to another on a kerb reads a rise the fight does not care about.
+        /// BestMark's own nearest-man pick is left on its 3D measure, unchanged.</summary>
+        static float FlatDistance(Vector3 a, Vector3 b)
+        {
+            float dx = a.x - b.x, dz = a.z - b.z;
+            return Mathf.Sqrt(dx * dx + dz * dz);
+        }
+
+        /// <summary>
+        /// IS SOMEBODY ELSE THE MORE IMMEDIATE THREAT? The whole of the user's rule:
+        /// a man aiming at somebody fifteen metres off, with somebody else twelve
+        /// metres off and in his eyeline, is aiming at the wrong man - the shorter shot
+        /// is the one about to kill him.
+        ///
+        /// This asks about NOW and nothing else. Where the candidate came from, where
+        /// he spawned, how far he has walked: none of it is read and none of it is
+        /// stored (acceptance 2). Two current distances and a margin.
+        ///
+        /// The one asymmetry, and it is deliberate: the current mark may be a man he
+        /// CANNOT see - an ordered KILL is an address, and a crew closing on it round a
+        /// block keeps the job (BestMark's `sighted: false`). A candidate may never be.
+        /// A man may hold an address he cannot see; he may only be pulled off it by
+        /// somebody he can see.
+        ///
+        /// Returns the nearest qualifying candidate, or null when nobody beats the mark
+        /// he has. Nothing is allocated: the crew's members are walked in place.
+        /// </summary>
+        static CrewWalker CloserThreatThan(Unit enemies, CrewWalker man, CrewWalker mark,
+            float within, out float markDistXZ, out float candidateDistXZ)
+        {
+            markDistXZ = 0f;
+            candidateDistXZ = 0f;
+            if (enemies == null || man == null || man.Tf == null) return null;
+            if (mark == null || mark.Dead || mark.Tf == null) return null;
+
+            var eye = man.Tf.position;
+            markDistXZ = FlatDistance(eye, mark.Tf.position);
+            float margin = CrewSkill.ThreatMargin(man.CombatHalfSteps);
+            // A MARK STILL IN THE FIGHT IS NOT GIVEN UP FOR A MAN RUNNING AWAY. The old
+            // combat priority, unchanged: only a shooter whose own mark has already
+            // broken may be turned onto another runner, and then only when nobody of
+            // them is still fighting (acceptance 6).
+            bool markRunning = mark.Panicked || mark.Retreating;
+
+            CrewWalker fighting = null, running = null;
+            float fd = float.MaxValue, rd = float.MaxValue;
+            bool fightingQualifies = false;
+            foreach (var m in enemies.All())
+            {
+                if (m == mark || m == man || m.Dead || !m.Tf) continue;
+                if (!m.Tf.gameObject.activeInHierarchy) continue;   // indoors: not there
+                float d = FlatDistance(eye, m.Tf.position);
+                if (d >= within) continue;
+                // the cheap comparison before the walls, as everywhere in this file
+                if (d + margin > markDistXZ) continue;
+                if (!InSight(eye, m.Tf.position)) continue;
+                bool runner = m.Panicked || m.Retreating;
+                if (!runner)
+                {
+                    fightingQualifies = true;
+                    if (d < fd) { fd = d; fighting = m; }
+                }
+                else if (d < rd) { rd = d; running = m; }
+            }
+            if (fighting != null) { candidateDistXZ = fd; return fighting; }
+            if (markRunning && !fightingQualifies && running != null)
+            {
+                candidateDistXZ = rd;
+                return running;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// One shooter's frame of it: watch the closer man, and turn onto him once the
+        /// advantage has HELD for as long as his hands need to notice it.
+        ///
+        /// The dwell is a held condition, not a timer phase (D2). The stamp lives on the
+        /// man; a candidate who lapses for a single frame, or a different candidate
+        /// crossing the margin, puts it back to zero. That is why the same geometry gives
+        /// the same answer every run, and why two men stood nearly level cannot flicker
+        /// the aim between them - after A gives way to B, B is what the next candidate
+        /// has to beat by the whole margin all over again.
+        /// </summary>
+        void TickCloserThreat(Unit unit, CrewWalker man, float reach)
+        {
+            var candidate = CloserThreatThan(unit.TargetUnit, man, man.Target, reach,
+                                             out float markDist, out float candDist);
+            if (candidate == null) { man.ForgetThreat(); return; }
+            man.WatchThreat(candidate, Time.time);
+            float heldFor = Time.time - man.ThreatHeldSince;
+            if (!CrewSkill.ShouldSwitch(markDist, candDist, man.CombatHalfSteps, heldFor))
+                return;
+
+            var left = man.Target;
+            bool wasInCover = man.InCover;
+            man.Engage(candidate, closerThreat: true);
+            // HIS SURVIVAL MAY DUPLICATE A MARK. An ordered fight deals one shooter per
+            // enemy, and this is the one thing allowed to break that - the man he left
+            // is picked back up by the uncovered pass a frame or two later (AIM-004).
+            if (unit.OrderedFight) _orderedMarks.Add(candidate);
+            if (DriveTrace.On)
+            {
+                var sb = DriveTrace.Take();
+                DriveTrace.Str(sb, "who", man.DisplayName);
+                DriveTrace.Int(sb, "combat", man.CombatHalfSteps);
+                DriveTrace.Str(sb, "left", left != null ? left.DisplayName : "nobody");
+                DriveTrace.Str(sb, "onto", candidate.DisplayName);
+                DriveTrace.Num(sb, "was", markDist);
+                DriveTrace.Num(sb, "now", candDist);
+                DriveTrace.Num(sb, "margin", CrewSkill.ThreatMargin(man.CombatHalfSteps));
+                DriveTrace.Num(sb, "dwell", CrewSkill.ThreatDwell(man.CombatHalfSteps));
+                DriveTrace.Num(sb, "held", heldFor);
+                DriveTrace.Bool(sb, "kept", wasInCover && man.InCover);
+                DriveTrace.Bool(sb, "ordered", unit.OrderedFight);
+                DriveTrace.Row("switch", sb.ToString());
+            }
+        }
+
+        /// <summary>Is this man's mark held by somebody else of his crew who is
+        /// actually fighting? A rider's stale mark is nobody's gun: he is shooting out
+        /// of a window at whatever the vehicle's own rules give him, and counting him
+        /// here would move a man off a mark that in truth has only one gun on it.</summary>
+        bool Duplicated(Unit unit, CrewWalker man)
+        {
+            foreach (var other in unit.All())
+                if (other != man && other.Target == man.Target && CanEngageOnFoot(other))
+                    return true;
+            return false;
+        }
+
+        /// <summary>Is this man worth a gun at all - alive, out on the street, and in
+        /// the fight? The mark test BestMark applies, without the range or the walls.</summary>
+        static bool ValidMark(CrewWalker m) =>
+            m != null && !m.Dead && m.Tf != null && m.Tf.gameObject.activeInHierarchy;
+
+        /// <summary>
+        /// THE MAN HE LEFT DOES NOT GET A FREE FIGHT (D4).
+        ///
+        /// A closer-threat switch is allowed to double up on a mark, which leaves an
+        /// enemy with nobody's gun on him - and today's retarget only fires when
+        /// somebody dies or breaks, so he would be free to shoot until one of ours went
+        /// down. After the ordered rebuild, an enemy nobody has is offered to the
+        /// nearest shooter whose own mark is a duplicate.
+        ///
+        /// Two refusals, and they are the point of the pass rather than exceptions to
+        /// it: the man who switched to save himself is never the one moved back off the
+        /// threat, and a shooter whose own closer-threat rule holds him where he is does
+        /// not take the offer - it would put him on a man the margin says is materially
+        /// farther than one he can see.
+        ///
+        /// One reassignment a crew a frame. The next frame does the next: at sixty
+        /// frames a second a five-man crew is dealt out again inside a tenth of a second,
+        /// and the alternative is a rebuild that walks every man against every enemy
+        /// every frame for a case that arises once a fight.
+        /// </summary>
+        void CoverTheUncovered(Unit unit)
+        {
+            var enemies = unit.TargetUnit;
+            if (enemies == null) return;
+
+            CrewWalker uncovered = null;
+            foreach (var enemy in enemies.All())
+            {
+                if (!ValidMark(enemy)) continue;
+                bool taken = false;
+                foreach (var man in unit.All())
+                    if (man.Target == enemy && CanEngageOnFoot(man)) { taken = true; break; }
+                if (!taken) { uncovered = enemy; break; }
+            }
+            if (uncovered == null) return;
+
+            CrewWalker mover = null;
+            float best = float.MaxValue;
+            foreach (var man in unit.All())
+            {
+                if (!CanEngageOnFoot(man) || man.Target == null) continue;
+                if (man.SwitchedForThreat) continue;          // never off his own threat
+                if (!Duplicated(unit, man)) continue;         // he is the only gun on his
+                float d = FlatDistance(man.Tf.position, uncovered.Tf.position);
+                if (d >= best) continue;
+                // would this offer put him on a man farther off than a visible threat?
+                if (CloserThreatThan(enemies, man, uncovered, float.MaxValue,
+                                     out _, out _) != null) continue;
+                best = d;
+                mover = man;
+            }
+            if (mover == null) return;
+            mover.Engage(uncovered);
+            _orderedMarks.Add(uncovered);
+            if (DriveTrace.On)
+                DriveTrace.Event("uncovered", mover.DisplayName,
+                    "picked up " + uncovered.DisplayName + " " + best.ToString("F1") + " m off");
+        }
+
         /// <summary>Can anybody of this crew see that man, at all? What a crew SHOT AT
         /// is asked before it is handed the shooter's whole crew as its enemy: a round
         /// out of a car going past the end of the street is a bang and a man down, not
@@ -461,8 +661,18 @@ namespace RoadDemo
                             : mark;
                         if (next != null) man.Engage(next);
                         else man.Disengage();
+                        continue;
                     }
+                    // HE KEEPS HIS MARK - unless somebody else has become the more
+                    // immediate threat (EPIC 33). Asked last on purpose: the dead, the
+                    // vanished and the broken are all dealt with above and stay
+                    // immediate, and the skill's dwell governs only a VOLUNTARY switch
+                    // between two otherwise valid living marks.
+                    TickCloserThreat(unit, man, reach);
                 }
+
+                // and the man somebody left to save himself gets a gun put back on him
+                if (unit.OrderedFight) CoverTheUncovered(unit);
 
                 if (anySeen)
                 {
@@ -878,43 +1088,21 @@ namespace RoadDemo
         /// down or running. The drive-by is over.</summary>
         public static bool Finished(Unit unit) => unit == null || unit.Wiped || Beaten(unit);
 
-        /// <summary>One shot, wherever it left from: a man's gun on the pavement, or a
-        /// car window on a pass. <paramref name="from"/> is where the shooter stands
-        /// for the range - the man, or the car he is in.</summary>
-        void Resolve(CrewWalker shooter, CrewWalker target, Vector3 muzzle, Vector3 from, Transform follow)
+        /// <summary>
+        /// THE ONE HIT PROBABILITY, and it stays the only thing that decides a hit
+        /// (EPIC 33: the scatter must never roll a second chance). Lifted out of
+        /// Resolve whole so the roll can be made BEFORE the flash is pointed - nothing
+        /// in the arithmetic changed in the move.
+        ///
+        /// The gun's accuracy holds to half its reach and falls to half of itself at
+        /// the edge; a lieutenant is a better shot; a man in a car has the door and the
+        /// sill, and a moving car speed on top of it; a man crouched behind a bin has
+        /// its flank. Nothing is ever certain, and a shotgun in a man's face very
+        /// nearly is.
+        /// </summary>
+        float HitChance(CrewWalker shooter, CrewWalker target, Vector3 from, float dist)
         {
-            // the flash points where the shot goes - at the man, whatever the last
-            // centimetre of the grip does to the barrel
-            var line = target != null ? (target.ChestPosition - muzzle).normalized : shooter.MuzzleForward;
-            Flash(muzzle, line, follow, shooter != null ? shooter.WeaponKind
-                                                       : EquipmentKind.Pistol);
             var stats = shooter.Ballistics;
-            // the street hears it: the crowd, the traffic, the police - and every man of
-            // every crew in earshot with nothing on his hands turns and draws
-            StreetAlarm.Report(muzzle, shooter, shooter.Faction, stats.Loudness);
-            float ear2 = stats.Loudness * stats.Loudness;
-            // a copy again, and of the crews as well as their men: hearing a shot can put
-            // a man on the run (and the law on the street), and either changes these lists
-            _heard.Clear();
-            foreach (var unit in Units)
-                foreach (var man in unit.All())
-                    if (man != shooter && !man.Dead && man.Tf && (man.Tf.position - muzzle).sqrMagnitude < ear2)
-                        _heard.Add(man);
-            foreach (var man in _heard) man.HearShot(muzzle);
-            if (target == null || target.Dead)
-            {
-                // NOBODY TO ROLL AGAINST AND STILL A MARK. A man put on a machine has
-                // no man to hit or miss - the tin IS the target, so every round finds
-                // it, and the damage model reads exactly the rounds it reads from a
-                // miss into a door (PutRoundIntoTin, CrewCar.TakeRound).
-                if (target == null && shooter.CarMark != null) PutRoundIntoTin(shooter.CarMark, muzzle);
-                return;
-            }
-
-            float dist = Vector3.Distance(from, target.Tf.position);
-            // the gun's accuracy holds to half its reach and falls to half of itself at
-            // the edge; a lieutenant is a better shot; nothing is ever certain, and a
-            // shotgun in a man's face very nearly is
             float reach = Mathf.Max(stats.Range, 1f);
             float falloff = dist <= reach * 0.5f ? 1f : Mathf.Lerp(1f, 0.5f, (dist / reach - 0.5f) / 0.5f);
             // THE MAN BEHIND THE GUN. Until the ledger's Combat stat reached this
@@ -925,8 +1113,6 @@ namespace RoadDemo
             // man's face is still a shotgun in a man's face.
             float p = stats.Accuracy * falloff * CrewSkill.Aim(shooter.CombatHalfSteps);
             if (shooter.IsLieutenant) p += 0.08f;
-            // a man in a car has the door and the sill between him and the round; a man
-            // crouched behind one has its flank
             // A man in a car has the door and the sill between him and the round - and if
             // the car is MOVING he has speed as well: hitting a rider going past at ten
             // metres a second, from a pavement, with a pistol, is a different shot from
@@ -941,8 +1127,173 @@ namespace RoadDemo
                     p *= Mathf.Lerp(1f, MovingCarCover, Mathf.InverseLerp(1.5f, 11f, Mathf.Abs(carriage.Speed)));
             }
             else if (target.InCover) p *= target.Ducked ? DuckedCover : BehindCover;
-            p = Mathf.Clamp(p, 0.04f, 0.98f);
+            return Mathf.Clamp(p, 0.04f, 0.98f);
+        }
 
+        /// <summary>
+        /// WHERE A MISSED ROUND ACTUALLY WENT. The aim line turned by a random angle
+        /// inside the cone - yaw across the street and a narrower pitch up and down,
+        /// because a round that misses a man goes past his shoulder rather more often
+        /// than over his head.
+        ///
+        /// An angle and not an offset (D6). Range is not fed into it and must not be:
+        /// distance widens a cone on its own, which is exactly the reading the user
+        /// asked for - the same bad shot who puts a round a hand's breadth wide at five
+        /// metres puts it well past a man at twenty-five.
+        /// </summary>
+        static Vector3 Scatter(Vector3 aim, float degrees)
+        {
+            // The two angles come off CrewSkill so the cone is BOUNDED and provable
+            // offline: yaw and pitch drawn independently at their own maxima would put
+            // a corner round outside the cone the table advertises and the trace
+            // reports, which is a shooter quietly worse than his sheet says he is.
+            CrewSkill.MissAngles(degrees, Random.value, Random.value,
+                                 out float yaw, out float pitch);
+            var right = Vector3.Cross(Vector3.up, aim);
+            if (right.sqrMagnitude < 1e-6f) right = Vector3.right;
+            right.Normalize();
+            var up = Vector3.Cross(aim, right).normalized;
+            return (aim + right * Mathf.Tan(yaw * Mathf.Deg2Rad)
+                        + up * Mathf.Tan(pitch * Mathf.Deg2Rad)).normalized;
+        }
+
+        /// <summary>The direction from the muzzle to a point, falling back on the aim
+        /// line when the two are on top of one another - a normalize of nothing is a
+        /// flash pointing at the horizon.</summary>
+        static Vector3 Toward(Vector3 muzzle, Vector3 at, Vector3 aim)
+        {
+            var line = at - muzzle;
+            return line.sqrMagnitude < 1e-6f ? aim : line.normalized;
+        }
+
+        /// <summary>
+        /// How far the round travelled and where it struck, following the direction it
+        /// was actually fired down. A wall stops it (the city's fixed geometry, the same
+        /// map the sight lines are drawn against); the pavement stops it when it is
+        /// dipping; and a round that meets neither inside the gun's spent range is spent
+        /// where it stops being anybody's business - a puff on the ground at the end of
+        /// its run, so a miss is always seen to be a miss.
+        /// </summary>
+        float MissImpact(Vector3 muzzle, Vector3 line, float reach, out Vector3 spot)
+        {
+            float span = reach * 1.5f;
+            float travel = span;
+            bool struck = false;
+
+            var flat = new Vector3(line.x, 0f, line.z);
+            float flatLen = flat.magnitude;
+            if (flatLen > 1e-3f)
+            {
+                float ahead = span * flatLen;
+                float run = WalkObstacles.ClearOfWalls(muzzle, flat, ahead);
+                if (run < ahead - 0.05f) { travel = run / flatLen; struck = true; }
+            }
+            if (line.y < -1e-3f)
+            {
+                float toGround = (GroundY + 0.02f - muzzle.y) / line.y;
+                if (toGround > 0f && toGround < travel) { travel = toGround; struck = true; }
+            }
+            spot = muzzle + line * travel;
+            if (!struck) spot.y = GroundY + 0.02f;
+            return travel;
+        }
+
+        /// <summary>A puff of dust where a round ended up.</summary>
+        void Puff(Vector3 at)
+        {
+            if (!ImpactPrefab) return;
+            var puff = CombatFx(ImpactPrefab, at, Quaternion.LookRotation(Vector3.up));
+            Destroy(puff, 2f);
+        }
+
+        /// <summary>One shot, wherever it left from: a man's gun on the pavement, or a
+        /// car window on a pass. <paramref name="from"/> is where the shooter stands
+        /// for the range - the man, or the car he is in.</summary>
+        void Resolve(CrewWalker shooter, CrewWalker target, Vector3 muzzle, Vector3 from, Transform follow)
+        {
+            // where he is pointing: at the man, whatever the last centimetre of the grip
+            // does to the barrel
+            var aim = target != null ? (target.ChestPosition - muzzle).normalized : shooter.MuzzleForward;
+            var stats = shooter.Ballistics;
+            bool live = target != null && !target.Dead;
+            float dist = live ? Vector3.Distance(from, target.Tf.position) : 0f;
+            float p = live ? HitChance(shooter, target, from, dist) : 0f;
+            // THE ROLL COMES FIRST AND THE FLASH FOLLOWS IT (AIM-003). It used to be the
+            // other way round, which is why three things about one round could disagree:
+            // the flash pointed at the man, the puff landed past him a metre to one side,
+            // and the bystander check ran down the centreline through both. One roll, one
+            // direction, and everything the round does afterwards uses it.
+            bool hit = live && Random.value < p;
+
+            // A ROUND THAT MISSED A MAN IN A CAR MOSTLY WENT INTO THE CAR. It was going
+            // at the car - it is what he is sitting in - so most of the misses are a hole
+            // in a door rather than a puff off the road ten metres past him. This is the
+            // whole of the damage model's input: shoot at men in a car for long enough
+            // and the car is what you hit (CrewCar.TakeRound).
+            //
+            // DECIDED HERE, BEFORE THE FLASH, because "the tin is their direction" is
+            // part of the one-path rule and not an exception to it (EPIC 33). The hole
+            // is chosen first; the flash is then pointed at the hole, the puff is struck
+            // there, and no scatter cone is applied at all - the round did not go wide,
+            // it went into the thing the man is sitting in. A round that misses BOTH the
+            // man and the tin falls through to the cone below.
+            CrewCar tin = null;
+            CrewBike machine = null;
+            var hole = Vector3.zero;
+            if (live && !hit)
+            {
+                var carriage = IsAboard(target) ? CarWith(target) : null;
+                var bike = carriage == null && target.Riding ? BikeWith(target) : null;
+                if (carriage != null && carriage.Tf != null && Random.value < RoundsIntoTheTin)
+                {
+                    tin = carriage;
+                    hole = TinHole(carriage, muzzle);
+                }
+                else if (bike != null && bike.Tf != null && Random.value < RoundsIntoTheMachine)
+                {
+                    machine = bike;
+                    hole = MachineHole(bike, muzzle);
+                }
+            }
+            // and the man shooting up an empty car has the same one path: every round
+            // finds it, so the hole is where he is firing
+            if (!live && target == null && shooter.CarMark != null && shooter.CarMark.Tf != null)
+            {
+                tin = shooter.CarMark;
+                hole = TinHole(tin, muzzle);
+            }
+
+            bool intoTin = tin != null || machine != null;
+            float cone = live && !hit && !intoTin
+                ? CrewSkill.MissConeDegrees(stats.Accuracy, shooter.CombatHalfSteps) : 0f;
+            var line = cone > 0f ? Scatter(aim, cone)
+                     : intoTin ? Toward(muzzle, hole, aim)
+                     : aim;
+            Flash(muzzle, line, follow, shooter != null ? shooter.WeaponKind
+                                                       : EquipmentKind.Pistol);
+            // the street hears it: the crowd, the traffic, the police - and every man of
+            // every crew in earshot with nothing on his hands turns and draws
+            StreetAlarm.Report(muzzle, shooter, shooter.Faction, stats.Loudness);
+            float ear2 = stats.Loudness * stats.Loudness;
+            // a copy again, and of the crews as well as their men: hearing a shot can put
+            // a man on the run (and the law on the street), and either changes these lists
+            _heard.Clear();
+            foreach (var unit in Units)
+                foreach (var man in unit.All())
+                    if (man != shooter && !man.Dead && man.Tf && (man.Tf.position - muzzle).sqrMagnitude < ear2)
+                        _heard.Add(man);
+            foreach (var man in _heard) man.HearShot(muzzle);
+            if (!live)
+            {
+                // NOBODY TO ROLL AGAINST AND STILL A MARK. A man put on a machine has
+                // no man to hit or miss - the tin IS the target, so every round finds
+                // it, and the damage model reads exactly the rounds it reads from a
+                // miss into a door (PutRoundIntoTin, CrewCar.TakeRound).
+                if (tin != null) PutRoundIntoTin(tin, muzzle, hole);
+                return;
+            }
+
+            float reach = Mathf.Max(stats.Range, 1f);
             // a crew shot at shoots back - unless it has just been ordered off (it can be
             // pulled back); a crew shot at IN ITS CAR always does, from the windows,
             // wherever the car is going: the order stands, the guns come out anyway
@@ -982,26 +1333,47 @@ namespace RoadDemo
                 DriveTrace.Bool(sb, "fromcover", shooter.InCover);
                 DriveTrace.Str(sb, "state", shooter.State.ToString());
                 DriveTrace.Vec(sb, "muzzle", muzzle);
+                // ONE PATH, WRITTEN DOWN (acceptance 10). `hit` is the roll that had
+                // already been made when the flash was pointed; `cone` is the widest
+                // this man's miss could have been with this gun; `ray` is the direction
+                // the round actually took, and it is the one the flash, the impact and
+                // the bystander check all use. A run of these rows is the proof, and it
+                // is also how the scatter is measured without a screenshot: `off` is how
+                // far the round left the aim line, in degrees.
+                DriveTrace.Bool(sb, "hit", hit);
+                DriveTrace.Bool(sb, "tin", intoTin);
+                DriveTrace.Int(sb, "combat", shooter.CombatHalfSteps);
+                DriveTrace.Num(sb, "cone", cone);
+                DriveTrace.Num(sb, "off", Vector3.Angle(aim, line));
+                DriveTrace.Vec(sb, "ray", line);
                 DriveTrace.Row("shot", sb.ToString());
             }
 
-            if (Random.value >= p)
+            if (!hit)
             {
-                // A ROUND THAT MISSED A MAN IN A CAR MOSTLY WENT INTO THE CAR. It was
-                // going at the car - it is what he is sitting in - so most of the misses
-                // are a hole in a door rather than a puff off the road ten metres past
-                // him. This is the whole of the damage model's input: shoot at men in a
-                // car for long enough and the car is what you hit (CrewCar.TakeRound).
-                var carriage = IsAboard(target) ? CarWith(target) : null;
-                var machine = carriage == null && target.Riding ? BikeWith(target) : null;
-                if (carriage != null && Random.value < RoundsIntoTheTin)
-                    PutRoundIntoTin(carriage, muzzle);
-                else if (machine != null && Random.value < RoundsIntoTheMachine)
-                    PutRoundIntoMachine(machine, muzzle);
-                else
-                    Miss(muzzle, target);
+                // THE TIN, DECIDED AND POINTED AT ABOVE. Its path ends at the door it
+                // holed: nothing carries on past it down the street, so the bystander
+                // check is not asked and no second impact is struck.
+                if (tin != null)
+                {
+                    PutRoundIntoTin(tin, muzzle, hole);
+                    target.UnderFire();
+                    return;
+                }
+                if (machine != null)
+                {
+                    PutRoundIntoMachine(machine, muzzle, hole);
+                    target.UnderFire();
+                    return;
+                }
+                // ONE RESOLVED DIRECTION, AND EVERYTHING THE ROUND DOES FOLLOWS IT: the
+                // flash above was pointed down it, the puff is struck where it meets the
+                // ground or a wall, and the bystander in its way is the one standing in
+                // ITS path rather than on the line to a man it never went near.
+                float travel = MissImpact(muzzle, line, reach, out var spot);
+                Puff(spot);
                 target.UnderFire();
-                StrayRound(muzzle, line, reach, from);
+                StrayRound(muzzle, line, travel, from);
                 return;
             }
             // RANK-003. A round that would put the Don down is spent on his detail
@@ -1075,9 +1447,17 @@ namespace RoadDemo
 
         // A round that missed its man carries on: a bystander stood in its way past him
         // may take it - the same wounds as anyone, and a killing the police weigh heaviest.
-        void StrayRound(Vector3 muzzle, Vector3 line, float reach, Vector3 from)
+        //
+        // ALONG THE ROUND THAT WAS ACTUALLY FIRED (D5). This used to be asked down the
+        // centreline to the man, so the visible puff went one way and the dangerous path
+        // another, and a bystander two metres off the aim line was safe from every round
+        // in the fight. Now it is the scattered ray, out to where the round stopped -
+        // and the consequence is deliberate: a poor shot with an automatic hits people
+        // down the street, the police weigh those bodies as they weigh any, and that is
+        // the price of putting a machine pistol in the hands of a man who cannot shoot.
+        void StrayRound(Vector3 muzzle, Vector3 line, float travel, Vector3 from)
         {
-            var civ = CivilianAgent.InLine(muzzle, line, reach * 1.5f, 0.7f);
+            var civ = CivilianAgent.InLine(muzzle, line, travel, 0.7f);
             if (civ == null || Random.value >= StrayChance) return;
             if (DriveTrace.On) DriveTrace.Event("stray", "round", "a civilian was hit");
             civ.TakeHit(1, from);
@@ -1121,9 +1501,8 @@ namespace RoadDemo
         /// The trace carries the INPUT and not only the outcome, which is the lesson the
         /// car's engine model had to be taught twice: a threshold nothing ever reaches
         /// looks exactly like a rule that is working.</summary>
-        void PutRoundIntoMachine(CrewBike bike, Vector3 muzzle)
+        Vector3 MachineHole(CrewBike bike, Vector3 muzzle)
         {
-            if (bike == null || bike.Tf == null) return;
             var local = bike.Tf.InverseTransformPoint(muzzle);
             float side = local.x >= 0f ? 1f : -1f;
             // THE BODY, NOT THE BOX IT DRIVES IN. HalfWide and HalfLen are what the ROAD
@@ -1132,9 +1511,18 @@ namespace RoadDemo
             // them lands a third of the way INSIDE the bodywork instead of on its flank.
             float flank = bike.Body != null ? bike.Body.HalfWidth : bike.HalfWide;
             float along = bike.Body != null ? bike.Body.HalfLength : bike.HalfLen;
-            var at = bike.Tf.TransformPoint(new Vector3(
+            return bike.Tf.TransformPoint(new Vector3(
                 side * flank, Random.Range(0.35f, 0.95f),
                 Random.Range(-along * 0.9f, along * 0.9f)));
+        }
+
+        /// <summary>And the round put through it. The hole is chosen by the caller
+        /// BEFORE the flash is lit, because the flash has to point down the path the
+        /// round actually took (AIM-003) - and for a round into the tin, the hole is
+        /// that path.</summary>
+        void PutRoundIntoMachine(CrewBike bike, Vector3 muzzle, Vector3 at)
+        {
+            if (bike == null || bike.Tf == null) return;
             int before = bike.TankHits;
             bike.TakeRound(at, muzzle);
             if (DriveTrace.On)
@@ -1161,9 +1549,8 @@ namespace RoadDemo
         /// is where along it - which nothing can tell from a miss anyway, and which the
         /// eye reads as scatter. What it must get right is the LENGTHWISE part, because
         /// that is what decides whether the engine took it (CrewCar.TakeRound).</summary>
-        void PutRoundIntoTin(CrewCar car, Vector3 muzzle)
+        Vector3 TinHole(CrewCar car, Vector3 muzzle)
         {
-            if (car == null || car.Tf == null) return;
             var local = car.Tf.InverseTransformPoint(muzzle);
             float side = local.x >= 0f ? 1f : -1f;
             // more of them land forward of the middle: a man shooting at a car shoots at
@@ -1176,8 +1563,17 @@ namespace RoadDemo
             // centreline as the body runs out.
             float station = Mathf.Abs(along) / Mathf.Max(car.HalfLength, 1e-3f);
             float flank = car.HalfWidth * Mathf.Lerp(1f, 0.7f, Mathf.InverseLerp(0.5f, 1f, station));
-            var at = car.Tf.TransformPoint(new Vector3(
+            return car.Tf.TransformPoint(new Vector3(
                 side * flank, Random.Range(0.55f, 1.15f), along));
+        }
+
+        /// <summary>And the round put through it. The hole is chosen by the caller
+        /// BEFORE the flash is lit: for a round into the tin the hole IS the round's
+        /// direction, and the flash, the impact and the trace all have to agree with
+        /// it (AIM-003).</summary>
+        void PutRoundIntoTin(CrewCar car, Vector3 muzzle, Vector3 at)
+        {
+            if (car == null || car.Tf == null) return;
             int before = car.EngineHits;
             car.TakeRound(at, muzzle);
             if (DriveTrace.On)
@@ -1193,24 +1589,6 @@ namespace RoadDemo
                 var puff = CombatFx(ImpactPrefab, at, Quaternion.LookRotation(muzzle - at));
                 Destroy(puff, 1.2f);
             }
-        }
-
-        /// <summary>A round that went wide lands somewhere past the man - a puff off the
-        /// ground beyond him, a little to one side, so a miss is seen to be a miss.</summary>
-        void Miss(Vector3 muzzle, CrewWalker target)
-        {
-            if (!ImpactPrefab) return;
-            var line = target.ChestPosition - muzzle;
-            float dist = line.magnitude;
-            if (dist < 0.1f) return;
-            var dir = line / dist;
-            var side = Vector3.Cross(Vector3.up, dir).normalized;
-            float beyond = dist + Random.Range(1.5f, 6f);
-            float wide = Random.Range(0.4f, 1.6f) * (Random.value < 0.5f ? -1f : 1f);
-            var spot = muzzle + dir * beyond + side * wide;
-            spot.y = GroundY + 0.02f;
-            var puff = CombatFx(ImpactPrefab, spot, Quaternion.LookRotation(Vector3.up));
-            Destroy(puff, 2f);
         }
 
         // The flash rides whatever fired it - the gun in the hand, the car under

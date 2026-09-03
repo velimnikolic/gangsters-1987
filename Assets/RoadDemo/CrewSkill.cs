@@ -23,6 +23,157 @@ namespace RoadDemo
         public static float Aim(int halfSteps) =>
             0.70f + 0.06f * AttributeScale.Clamp(halfSteps);
 
+        // ------------------------------------------------ the closer threat (EPIC 33)
+        //
+        // THE PURE CORE OF THE RETARGET, AND OF THE SCATTER. Three numbers a man's
+        // Combat stat decides, and one verdict off them. Not one of these touches a
+        // Transform, a Unit or the city's walls: they take metres and seconds and give
+        // back metres and seconds, so the offline suite can drive the whole policy with
+        // the editor shut and the live fight is left holding nothing but the geometry
+        // (AIM-002, D7).
+        //
+        // The table, from the user's word of 2026-09-03:
+        //
+        //   Combat            margin   dwell   miss cone
+        //   1 star  (2 hs)     4.0 m   0.90 s     1.25x
+        //   3 stars (6 hs)     3.0 m   0.55 s     1.00x
+        //   5 stars (10 hs)    2.0 m   0.25 s     0.75x
+        //
+        // The better shot notices a SMALLER but real positional advantage, and notices
+        // it SOONER. No roll decides whether he notices: the same two men in the same
+        // two places always reach the same verdict, which is the only way a fight can
+        // be argued about after the fact.
+
+        /// <summary>How much nearer than his current mark another man has to be before
+        /// he is worth turning onto - metres of street, not a share of the gun's reach
+        /// (D3). The rule is about who is closing on the shooter; a shotgun does not
+        /// make an enemy less close.</summary>
+        public static float ThreatMargin(int halfSteps) =>
+            Across(halfSteps, 4.0f, 3.0f, 2.0f);
+
+        /// <summary>How long the advantage has to HOLD before he acts on it. A dwell
+        /// and not a polling interval (D2): the condition is measured continuously and
+        /// the clock restarts the moment it lapses, so a man who dips inside the margin
+        /// for a stride never takes the aim and the same geometry gives the same answer
+        /// every run.</summary>
+        public static float ThreatDwell(int halfSteps) =>
+            Across(halfSteps, 0.90f, 0.55f, 0.25f);
+
+        /// <summary>What his hands do to the width of a missed round's cone.</summary>
+        public static float MissCone(int halfSteps) =>
+            Across(halfSteps, 1.25f, 1.00f, 0.75f);
+
+        /// <summary>The half-angle a missed round may leave the barrel at, in degrees:
+        /// the gun's own cone widened or tightened by the man behind it.
+        ///
+        /// AN ANGLE, NOT AN OFFSET (D6). A fixed sideways nudge of a metre or so is
+        /// invisible on screen and says nothing about range; a cone opens with distance
+        /// on its own, which is why a one-star rifleman at twenty-five metres misses
+        /// wide enough to watch and a five-star at the same range does not.
+        ///
+        /// The gun's share comes off its OWN accuracy rather than a second table, so a
+        /// weapon added tomorrow needs no new number: 4 degrees for the steadiest piece
+        /// in the game and ten more as accuracy falls away. Pistol 0.55 -> 8.5 deg,
+        /// machine pistol 0.30 -> 11 deg, Tommy gun 0.35 -> 10.5 deg, rifle 0.88 ->
+        /// 5.2 deg, shotgun 0.97 -> 4.3 deg.</summary>
+        public static float MissConeDegrees(float accuracy, int halfSteps) =>
+            BaseMissConeDegrees(accuracy) * MissCone(halfSteps);
+
+        /// <summary>The gun's own cone, before the man behind it.</summary>
+        public static float BaseMissConeDegrees(float accuracy)
+        {
+            if (accuracy < 0f) accuracy = 0f;
+            else if (accuracy > 1f) accuracy = 1f;
+            return 4f + 10f * (1f - accuracy);
+        }
+
+        /// <summary>How much of the cone a missed round is allowed to climb or dip
+        /// against how far it may go wide: about a third. A round that misses a man
+        /// goes past his shoulder rather more often than over his head.</summary>
+        public const float MissPitchShare = 0.34f;
+
+        /// <summary>
+        /// WHERE INSIDE THE CONE ONE MISSED ROUND WENT - the yaw across the street and
+        /// the pitch up or down, in degrees, off two rolls in [0,1).
+        ///
+        /// Drawn as a POINT IN A DISC and not as two independent numbers, and that is
+        /// the whole reason this is a function rather than two Random.Range calls at the
+        /// callsite. Yaw and pitch each drawn at their own maximum put a corner round
+        /// outside the cone the table advertises, the trace reports and the acceptance
+        /// measures - a shooter quietly worse than his sheet says he is, and telemetry
+        /// that cannot be trusted to catch it. Here the radius is bounded by the cone
+        /// before it is split into the two axes, so no draw can leave it:
+        /// sqrt(yaw^2 + pitch^2) &lt;= coneDegrees, always, and the widest draw reaches
+        /// the cone exactly rather than falling short of it.
+        ///
+        /// The radius carries a square root so the draw is even over the disc rather
+        /// than piled up on the aim line: a spread, which is what a spread looks like.
+        /// The pitch share squashes that disc vertically afterwards, which can only
+        /// bring a round further inside the bound.
+        ///
+        /// Pure, like everything else in this block: two numbers in, two numbers out,
+        /// so the offline suite can sweep the whole cone without a scene.
+        /// </summary>
+        public static void MissAngles(float coneDegrees, float radiusRoll,
+                                      float azimuthRoll,
+                                      out float yawDegrees, out float pitchDegrees)
+        {
+            yawDegrees = 0f;
+            pitchDegrees = 0f;
+            if (coneDegrees <= 0f) return;
+            float radius = coneDegrees * (float)System.Math.Sqrt(Unit(radiusRoll));
+            double azimuth = Unit(azimuthRoll) * 2.0 * System.Math.PI;
+            yawDegrees = radius * (float)System.Math.Cos(azimuth);
+            pitchDegrees = radius * (float)System.Math.Sin(azimuth) * MissPitchShare;
+        }
+
+        /// <summary>A roll held inside [0,1] - a caller's stream is trusted for its
+        /// spread and not for its bounds.</summary>
+        static float Unit(float roll) => roll < 0f ? 0f : (roll > 1f ? 1f : roll);
+
+        /// <summary>How far off the aim line a round drawn at these two angles actually
+        /// leaves, in degrees. The yaw and the pitch are perpendicular turns and do not
+        /// simply add: the round's direction is the aim line plus a tangent offset on
+        /// each axis, and this is the angle of the result. What the acceptance measures,
+        /// and what the trace's `off` field reports.</summary>
+        public static float MissOffAxisDegrees(float yawDegrees, float pitchDegrees)
+        {
+            double y = System.Math.Tan(yawDegrees * System.Math.PI / 180.0);
+            double p = System.Math.Tan(pitchDegrees * System.Math.PI / 180.0);
+            return (float)(System.Math.Atan(System.Math.Sqrt(y * y + p * p)) *
+                           180.0 / System.Math.PI);
+        }
+
+        /// <summary>
+        /// Should this shooter abandon the man he is aiming at for the one he is
+        /// watching? Both distances are HORIZONTAL street metres (D8) and both are
+        /// measured the same way, so a mark stood on a kerb and one in the road are
+        /// compared as the street compares them.
+        ///
+        /// Two conditions and no third: the candidate beats the current mark by the
+        /// whole of the skill's margin, and the advantage has held for the whole of the
+        /// skill's dwell. Margin plus dwell IS the hysteresis - after A gives way to B,
+        /// B is what the next candidate has to beat, so two men stood nearly level
+        /// cannot flicker the aim between them.
+        /// </summary>
+        public static bool ShouldSwitch(float currentDistXZ, float candidateDistXZ,
+                                        int halfSteps, float heldFor) =>
+            candidateDistXZ + ThreatMargin(halfSteps) <= currentDistXZ &&
+            heldFor >= ThreatDwell(halfSteps);
+
+        /// <summary>The table above read at a half-step, straight-lined between the
+        /// three stars it was written for. Piecewise on purpose: the user gave three
+        /// rows and the halves between them are read off the rows, not off a curve
+        /// nobody chose.</summary>
+        static float Across(int halfSteps, float atOneStar, float atThreeStars,
+                            float atFiveStars)
+        {
+            int hs = AttributeScale.Clamp(halfSteps);
+            if (hs <= 6)
+                return atOneStar + (atThreeStars - atOneStar) * (hs - 2) / 4f;
+            return atThreeStars + (atFiveStars - atThreeStars) * (hs - 6) / 4f;
+        }
+
         /// <summary>
         /// A round that found its mark taught him something - firing off a magazine
         /// into a wall teaches nobody anything, which is why this is called on the hit

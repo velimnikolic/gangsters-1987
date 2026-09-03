@@ -528,6 +528,52 @@ def first_from_cover(rows):
     return len(from_cover), len(first_shot)
 
 
+def retargets(rows):
+    """EPIC 33's first yardstick: how the closer-threat rule behaved over a run.
+
+    Three numbers, and the third is the one that matters. `switches` is how many
+    times a man turned onto a nearer enemy - a fight with none at all in a furnished
+    street usually means the rule never fired. `kept` is how many of those left him
+    in the cover he was already in (D1: a switch must not stand a man up at the
+    moment the danger is nearest). `flicker` counts a man turning back onto a mark he
+    held less than two seconds earlier, which is the A/B/A/B the margin and the dwell
+    exist to make impossible: it is expected to be zero, and one of them is a bug and
+    not a tuning matter."""
+    switches = kept = flicker = 0
+    held = {}          # man -> [(mark, when it was taken)]
+    for r in rows:
+        if r.get("k") != "switch":
+            continue
+        switches += 1
+        if r.get("kept"):
+            kept += 1
+        who, onto, at = r.get("who"), r.get("onto"), r.get("t", 0)
+        past = held.setdefault(who, [])
+        if any(mark == onto and at - when < 2.0 for mark, when in past):
+            flicker += 1
+        past.append((r.get("left"), at))
+        del past[:-6]
+    return switches, kept, flicker
+
+
+def scatter(rows):
+    """EPIC 33's second yardstick: the mean angle a MISSED round left the aim line
+    at, in degrees, by the shooter's Combat half-steps. The monotonicity acceptance
+    (9) read off the run rather than off the table - a build whose cone stopped
+    reaching the round would print the same number in every bucket."""
+    tally = {}
+    for r in rows:
+        # a round that went into the tin is not a scattered round: it has a direction
+        # (the hole) and no cone at all, and averaging it in would flatten the reading
+        if (r.get("k") != "shot" or r.get("hit") or r.get("tin")
+                or not r.get("cone") or "off" not in r):
+            continue
+        bucket = tally.setdefault(r.get("combat", 6), [0, 0.0])
+        bucket[0] += 1
+        bucket[1] += float(r["off"])
+    return {hs: (n, total / n) for hs, (n, total) in tally.items() if n}
+
+
 def crew(dirpath):
     """The walk and the fight against the crews' own rules (CrewAudit): nobody
     snaps, nobody leaves the floor, nobody strays off his crew or queues down one
@@ -551,6 +597,7 @@ def crew(dirpath):
     mission = [f for f in faults
                if f.get("fault") == "mission" and "wiped out" not in str(f.get("what", ""))]
     stalls = [f for f in faults if f.get("fault") == "walkstall" and f.get("tag") == "crew"]
+    switched, kept, flickered = retargets(rows)
     told = [r for r in rows if r["k"] == "mission" and "what" in r]
     end = told[-1] if told else {}
 
@@ -573,6 +620,10 @@ def crew(dirpath):
         defects.append(f"{len(stalls)} crew walkstalls")
     if thrown:
         defects.append(f"{thrown} exceptions")
+    # A man turning back onto a mark he had two seconds ago is the ping-pong the
+    # margin and the dwell were built to make impossible (EPIC 33, acceptance 4).
+    if flickered:
+        defects.append(f"{flickered} target flickers")
     ok = not defects
 
     print(f"== {dirpath}")
@@ -588,6 +639,15 @@ def crew(dirpath):
     covered, fired = first_from_cover(rows)
     print(f"   cover first  : {covered}/{fired} men opened up from behind something"
           + (f" ({100.0 * covered / fired:.0f}%)" if fired else ""))
+    # EPIC 33's yardstick: the retarget and the scatter. Judged over a soak like the
+    # rest; one run says only whether the rule fired at all.
+    print(f"   the retarget : {switched} switches onto a closer man, "
+          f"{kept} kept the flank, {flickered} flickered")
+    spread = scatter(rows)
+    if spread:
+        print("   the scatter  : " + ", ".join(
+            f"{hs / 2:g} star {mean:.1f} deg over {n}"
+            for hs, (n, mean) in sorted(spread.items())))
     for f in (broke + mission)[:10]:
         print(f"   FAULT {secs(f['t'])} {f.get('who', f.get('id', ''))} "
               f"{f.get('fault')}: {f.get('what')}")

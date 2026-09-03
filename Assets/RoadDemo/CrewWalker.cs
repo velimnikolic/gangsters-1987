@@ -1191,16 +1191,51 @@ namespace RoadDemo
         }
 
         /// <summary>Close on this man and shoot him. Nothing happens unarmed.</summary>
-        public void Engage(CrewWalker target)
+        public void Engage(CrewWalker target) => Engage(target, closerThreat: false);
+
+        /// <summary>The same, saying whether this is a man turning onto a CLOSER THREAT
+        /// rather than being dealt a fresh mark (EPIC 33).
+        ///
+        /// It matters for one thing only: the flank he is stood behind. Every other
+        /// target change is a new fight and clears the spot, which is right - but a
+        /// closer-threat switch happens at the moment the danger is NEAREST, and a man
+        /// who stands up out of good cover then has been made worse off by noticing
+        /// (D1). So the spot he occupies holds, on the same contract the ambush flank
+        /// has always held on: the new mark has to be worth shooting at from there, and
+        /// the thing he is behind has to still be between him and it. A spot that does
+        /// neither is dropped and the ordinary recheck finds him the next one.</summary>
+        public void Engage(CrewWalker target, bool closerThreat)
         {
             if (Dead || Riding || !Carrying || Panicked || target == null || target.Dead || target == this) return;
             ClearFallingIn();
             if (Target != target)
             {
+                // THE SAME COVER HOLDS FOR THE NEW ANGLE. Asked before anything is
+                // cleared, because what it is asking about is the spot he has.
+                bool keepCover = closerThreat && KeepsCoverAgainst(target);
+                if (keepCover)
+                {
+                    // his cadence is not reset either (the fire timer runs on through
+                    // any target change), and the route to a flank he is still walking
+                    // to is not thrown away: nothing about him changes but the man he
+                    // is pointing at
+                    _coverFrom = target.Tf.position;
+                    _threatMark = target;
+                    Target = target;
+                    EndChat();
+                    _watching = false;
+                    State = Mode.Engaging;
+                    ForgetThreat();
+                    if (DriveTrace.On)
+                        DriveTrace.Event("threatcover", DisplayName,
+                            "kept the flank against " + target.DisplayName);
+                    return;
+                }
                 _coverLooked = false;
                 _underFire = 0;
                 _coverRecheckAt = 0f;
                 _coverSpot = null;
+                _coverAnchorAt = null;
                 InCover = false;
                 _wasClosing = false;
                 _firedThisFight = false;
@@ -1219,6 +1254,10 @@ namespace RoadDemo
                     if (from >= 3f && from <= Ballistics.Range)
                     {
                         _coverSpot = _heldCover;
+                        // the thing he was put behind: DemoCrews recorded it when the
+                        // player pointed at it, so a later switch can ask whether it
+                        // still stands between him and the new man
+                        _coverAnchorAt = _ambushAt;
                         _coverFrom = target.Tf.position;
                         _coverLooked = true;
                         _coverRecheckAt = Time.time + Random.Range(2f, 3f);
@@ -1226,6 +1265,10 @@ namespace RoadDemo
                         _coverCycle = Random.Range(1.6f, 2.4f);
                     }
                 }
+                // a mark taken to save himself, or an ordinary one: the ordered rebuild
+                // reads this and never moves a man back off a threat (AIM-004)
+                _threatMark = closerThreat ? target : null;
+                ForgetThreat();
             }
             Target = target;
             EndChat();
@@ -1292,7 +1335,10 @@ namespace RoadDemo
             Target = null;
             ClearCombatWay();
             _coverSpot = null;
+            _coverAnchorAt = null;
             InCover = false;
+            _threatMark = null;
+            ForgetThreat();
             if (State == Mode.Engaging) State = Mode.Standing;
         }
 
@@ -2593,6 +2639,14 @@ namespace RoadDemo
         /// in the road guarding the space where a car was.</summary>
         IRoadUser _coverAnchor;
 
+        /// <summary>WHERE THE THING HE IS BEHIND STANDS, in world space - a car's road
+        /// position or a bin's box centre, whichever the oracle handed out
+        /// (DemoCrews.LastCoverAnchorAt). Kept because one question needs it and the
+        /// anchor above cannot answer it: does this flank still cover him against a
+        /// DIFFERENT man? A spot only shields the angle the thing sits in
+        /// (<see cref="CoverStillShields"/>, AIM-005).</summary>
+        Vector3? _coverAnchorAt;
+
         /// <summary>Which side of the thing he is behind his flank is on, relative to
         /// where he was standing when it was handed to him: "near", "far", or empty when
         /// the street offered nothing to measure against.
@@ -2615,6 +2669,85 @@ namespace RoadDemo
         /// been dealt is the one his FIRST round will leave from, which is the whole of
         /// the ask (EPIC 28).</summary>
         bool _firedThisFight;
+
+        // ------------------------------------------------ the closer threat (EPIC 33)
+
+        /// <summary>Would the flank he occupies still be between him and THIS man? The
+        /// flank was chosen as the face of the thing pointing away from the mark he had,
+        /// so it shields the angle the thing itself sits in and no other: a man who
+        /// switches onto somebody stood ninety degrees round from his old mark is in the
+        /// open whatever the spot says. Sixty degrees either side of the thing is the
+        /// width of that answer.
+        ///
+        /// Null anchor means the oracle never said what he is behind (an ambush flank
+        /// the player picked, a spot from before this was recorded): the shot-reach test
+        /// in Engage stands on its own then, and the ordinary recheck will find him the
+        /// next flank within a couple of seconds either way.</summary>
+        public bool CoverStillShields(Vector3 mark)
+        {
+            if (!_coverSpot.HasValue) return false;
+            if (!_coverAnchorAt.HasValue) return true;
+            var toThing = _coverAnchorAt.Value - _coverSpot.Value;
+            var toMark = mark - _coverSpot.Value;
+            toThing.y = 0f;
+            toMark.y = 0f;
+            if (toThing.sqrMagnitude < 1e-4f || toMark.sqrMagnitude < 1e-4f) return true;
+            return Vector3.Dot(toThing.normalized, toMark.normalized) >= CoverAngleHold;
+        }
+
+        /// <summary>Cosine of how far round the flank still holds - sixty degrees.</summary>
+        const float CoverAngleHold = 0.5f;
+
+        /// <summary>Does the spot he is in or walking to work against this man? The
+        /// same two questions the ambush flank has always been kept on: the shot from
+        /// the spot is worth taking (three metres out to the gun's reach - point blank
+        /// is not a firing position and past his reach is not a shot), and the thing
+        /// itself still stands between the spot and the man.</summary>
+        bool KeepsCoverAgainst(CrewWalker target)
+        {
+            if (!_coverSpot.HasValue || target == null || target.Tf == null) return false;
+            var shot = target.Tf.position - _coverSpot.Value;
+            shot.y = 0f;
+            float from = shot.magnitude;
+            if (from < 3f || from > Ballistics.Range) return false;
+            return CoverStillShields(target.Tf.position);
+        }
+
+        /// <summary>The man he is watching because he is materially closer than his
+        /// mark, and the moment that stopped being merely true and started being held
+        /// (DemoCrews.TickCloserThreat). Two fields and no list: the dwell is one clock
+        /// per shooter, and it belongs to the man and not to the arena.</summary>
+        public CrewWalker ThreatCandidate { get; private set; }
+
+        /// <summary>When the closer-threat condition first held for
+        /// <see cref="ThreatCandidate"/>, continuously since.</summary>
+        public float ThreatHeldSince { get; private set; }
+
+        /// <summary>He is on this mark because he turned onto it to save himself, and
+        /// the ordered rebuild must never be the thing that turns him back off it
+        /// (AIM-004).</summary>
+        public bool SwitchedForThreat => Target != null && Target == _threatMark;
+
+        CrewWalker _threatMark;
+
+        /// <summary>This man is materially closer, from this moment. A different
+        /// candidate restarts the clock; the same one leaves it alone, which is what
+        /// makes the dwell a HELD condition rather than a poll.</summary>
+        public void WatchThreat(CrewWalker candidate, float now)
+        {
+            if (candidate == null) { ForgetThreat(); return; }
+            if (ThreatCandidate == candidate) return;
+            ThreatCandidate = candidate;
+            ThreatHeldSince = now;
+        }
+
+        /// <summary>The advantage lapsed, or he has acted on it. Either way the clock
+        /// goes back to nothing.</summary>
+        public void ForgetThreat()
+        {
+            ThreatCandidate = null;
+            ThreatHeldSince = 0f;
+        }
 
         /// <summary>Put him behind this flank and leave him there: he walks (or runs, on
         /// the double click) to it, arrives, goes down behind it and watches
@@ -2689,6 +2822,7 @@ namespace RoadDemo
             // recheck below, forced); lying in wait he re-asks round the thing the
             // player pointed at, so an ambush survives its car leaving.
             _coverAnchor = null;
+            _coverAnchorAt = null;
             _coverSpot = null;
             InCover = false;
             _coverRecheckAt = 0f;
@@ -3053,6 +3187,7 @@ namespace RoadDemo
                     {
                         _coverSpot = found;
                         _coverAnchor = DemoCrews.LastCoverAnchor;
+                        _coverAnchorAt = DemoCrews.LastCoverAnchorAt;
                         if (moved)
                         {
                             _ducked = true;                       // he arrives low
@@ -3068,6 +3203,7 @@ namespace RoadDemo
                     {
                         _coverSpot = null;
                         _coverAnchor = null;
+                        _coverAnchorAt = null;
                         InCover = false;
                     }
 

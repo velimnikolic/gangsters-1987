@@ -35,12 +35,53 @@ namespace GangstersTools
         public static object CrewAuditTests()
         {
             var failures = LivingCity.Tests.CrewAuditModelTests.Run();
+            // The fighting policy rides along with the formation contracts: both are
+            // the crews, and a change to one is routinely a change to the other.
+            failures.AddRange(LivingCity.Tests.CloserThreatTests.Run()
+                .Select(failure => "Closer threat regression: " + failure));
             return new
             {
                 passed = failures.Count == 0,
                 failures = failures.ToArray(),
             };
         }
+
+        [CliCommand("gangsters_aim_tests",
+                    "Run EPIC 33 contracts for the closer threat: the distance margin, " +
+                    "the held dwell, the anti-flicker hysteresis, and the angular miss " +
+                    "cone a man's Combat stat opens or tightens.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "crew", "combat", "tests" })]
+        public static object AimTests()
+        {
+            var failures = LivingCity.Tests.CloserThreatTests.Run();
+            // The contract list comes back with the verdict on purpose: a stale
+            // assembly answers ALL PASS just as cheerfully as a fresh one.
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                contracts = LivingCity.Tests.CloserThreatTests.ContractNames(),
+                table = new
+                {
+                    oneStar = AimTableRow(2),
+                    threeStars = AimTableRow(6),
+                    fiveStars = AimTableRow(10),
+                },
+            };
+        }
+
+        /// <summary>One row of the closer-threat table as the build actually reads it -
+        /// what the terminal prints beside the verdict, so a tuning change is visible
+        /// without opening the file.</summary>
+        static object AimTableRow(int halfSteps) => new
+        {
+            halfSteps,
+            marginMetres = RoadDemo.CrewSkill.ThreatMargin(halfSteps),
+            dwellSeconds = RoadDemo.CrewSkill.ThreatDwell(halfSteps),
+            coneMultiplier = RoadDemo.CrewSkill.MissCone(halfSteps),
+            rifleConeDegrees = RoadDemo.CrewSkill.MissConeDegrees(0.88f, halfSteps),
+            pistolConeDegrees = RoadDemo.CrewSkill.MissConeDegrees(0.55f, halfSteps),
+        };
 
         [CliCommand("gangsters_core_vacancy_tests",
                     "Run seed-1987 contracts for stand-alone amenity blocks, empty remainders, " +

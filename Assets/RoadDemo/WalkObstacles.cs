@@ -682,6 +682,37 @@ namespace RoadDemo
         public static bool Sees(Vector3 from, Vector3 to) =>
             !_solids.Blocks(new Vector2(from.x, from.z), new Vector2(to.x, to.z));
 
+        /// <summary>
+        /// HOW FAR A ROUND GETS BEFORE IT MEETS A WALL, along a horizontal heading and
+        /// out to a limit. The same map the sight lines are drawn against - the city's
+        /// own blocks and nothing out of any sidewalk plan - because that is the honest
+        /// answer for a bullet: a building face stops it, a bin does not. What a bin is
+        /// worth against a round is already paid in the hit chance
+        /// (DemoCrews.HitChance's cover multipliers), and counting it twice would put
+        /// every impact puff in a fight against a dressed pavement on the near side of
+        /// the furniture.
+        ///
+        /// Returns the limit when the line is clear the whole way, which the caller
+        /// reads as "nothing in the way": one segment test to find that out, and a short
+        /// bisection only when there is something to place.
+        /// </summary>
+        public static float ClearOfWalls(Vector3 from, Vector3 dir, float ahead)
+        {
+            var a = new Vector2(from.x, from.z);
+            var h = new Vector2(dir.x, dir.z);
+            if (h.sqrMagnitude < 1e-6f) return ahead;
+            h.Normalize();
+            if (!_solids.Blocks(a, a + h * ahead)) return ahead;
+            float free = 0f, hit = ahead;
+            for (int i = 0; i < 9; i++)
+            {
+                float mid = (free + hit) * 0.5f;
+                if (_solids.Blocks(a, a + h * mid)) hit = mid;
+                else free = mid;
+            }
+            return free;
+        }
+
         /// <summary>Is there a WALL here - a building face, a lot's edge - as opposed
         /// to a piece of furniture? The blocks laid by the builder, and nothing out of
         /// any sidewalk plan.
