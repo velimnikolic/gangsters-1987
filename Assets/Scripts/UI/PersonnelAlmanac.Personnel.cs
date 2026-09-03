@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -228,6 +228,16 @@ namespace LivingCity.UI
         float listScroll;
         float cardScroll;
 
+        /// <summary>The next rebuild is to bring the picked man back into the window.
+        /// Set when the ORDER of the roll changes under him - selection is kept by
+        /// identity and always survives, but a scroll offset kept in units points at
+        /// whoever now stands on that line.</summary>
+        bool followSelection;
+
+        /// <summary>Where down the roll the picked man's line was printed, in the units
+        /// the scroll is kept in. NaN when he is not on the roll this pass.</summary>
+        float selectedRowTop = float.NaN;
+
         readonly List<LedgerRow> rows = new List<LedgerRow>();
 
         void BuildPersonnelPage(RectTransform sheet)
@@ -454,6 +464,10 @@ namespace LivingCity.UI
                     else
                         options.Sort = SortKey.Loyalty;
 
+                    // A new order puts the picked man on a different line. The roll
+                    // follows him there rather than leaving the reader looking at
+                    // whoever now stands where he used to.
+                    followSelection = true;
                     sortMenu.SetActive(false);
                     dirty = true;
                 });
@@ -492,9 +506,14 @@ namespace LivingCity.UI
             // standing in, and that band is the only thing this remembers.
             var pendingCrew = -1;
 
+            selectedRowTop = float.NaN;
+
             for (var i = 0; i < rows.Count; i++)
             {
                 var row = rows[i];
+                if (selectedId >= 0 && row.CharacterId == selectedId &&
+                    (row.Kind == RowKind.Character || row.Kind == RowKind.Lieutenant))
+                    selectedRowTop = -y;
                 switch (row.Kind)
                 {
                     case RowKind.CrewHeader:
@@ -555,6 +574,20 @@ namespace LivingCity.UI
             rollFootBand.anchoredPosition = new Vector2(0f, -(RollHeadH + bodyH));
 
             var maxScroll = Mathf.Max(0f, contentH - bodyH);
+
+            // The window follows the picked man when the roll has been re-ordered under
+            // him. It moves the LEAST it can - a line already in the window does not
+            // move the page at all - because a reader who re-sorts is asking a question
+            // about the order and not asking to be thrown to the top of it.
+            if (followSelection && !float.IsNaN(selectedRowTop))
+            {
+                if (selectedRowTop < listScroll)
+                    listScroll = selectedRowTop;
+                else if (selectedRowTop + RowHeight > listScroll + bodyH)
+                    listScroll = selectedRowTop + RowHeight - bodyH;
+            }
+            followSelection = false;
+
             listScroll = Mathf.Clamp(listScroll, 0f, maxScroll);
             listScroll = Mathf.Floor(listScroll / RowHeight) * RowHeight;
             listContent.anchoredPosition = new Vector2(0f, listScroll);
@@ -578,7 +611,7 @@ namespace LivingCity.UI
             var rect = NewRect("Band", listContent);
             PlaceTopLeft(rect, 0f, y, RollInner, BandHeight);
             bandFace = Fill(rect,
-                new Color(LedgerV2.Panel.r, LedgerV2.Panel.g, LedgerV2.Panel.b, 0f));
+                LedgerV2.At(LedgerV2.Panel, 0f));
             Block("Band rule", rect, 0f, 0f, RollInner, 2f, LedgerV2.Ink);
 
             var label = Line(rect, LedgerStyle.MonoBold, 16f, LedgerV2.Ink, ColName,
@@ -686,7 +719,7 @@ namespace LivingCity.UI
             // graphic. A second AddComponent<Image> on the same object silently answers
             // null in Unity, and a null target graphic takes the whole row down with it.
             var face = Fill(rect, chosen ? LedgerV2.Picked
-                : new Color(LedgerV2.Panel.r, LedgerV2.Panel.g, LedgerV2.Panel.b, 0f));
+                : LedgerV2.At(LedgerV2.Panel, 0f));
             face.raycastTarget = true;
             Block("Row rule", rect, 0f, 0f, RollInner, 1f, LedgerV2.Hair);
 
@@ -759,9 +792,14 @@ namespace LivingCity.UI
             // The bag is a DUTY, not a rank, so it is marked beside the name rather than
             // in a column of its own: the roll's columns are what every man has, and
             // only some men carry this.
+            //
+            // In the BOOK's green, not the street door's. The door menu's tenure inks
+            // are mixed to carry on a dark overlay; borrowing one of them put a pale
+            // green on white paper, and it made the ledger's own ink the property of a
+            // page it has nothing to do with.
             if (!dead && BlockRacketSeam.SourceOrStub.IsCollector(id))
                 LedgerV2.Mono(rect, ColName, -12f, NameW, "COLLECTOR", 8.5f,
-                    DoorMenu.TenurePaying, 6f, TextAlignmentOptions.MidlineRight);
+                    LedgerV2.Green, 6f, TextAlignmentOptions.MidlineRight);
 
             BuildRowCells(roster, rect, member, dead);
 
@@ -770,11 +808,24 @@ namespace LivingCity.UI
                 Block("Struck", rect, ColName - 2f, -26f, NameW - 4f, 1.5f, LedgerV2.Red);
         }
 
+        // What the marks print at. The row's ink and the column's width both come off
+        // these, so neither can be changed without the other following.
+        const float MarkSize = 9.5f;
+        const float MarkSpacing = 2f;
+
         /// <summary>The room the ledger's three marks are set in, at the right end of
-        /// the name column. MEASURED against the longest of them - "LT · GUN · !" at
-        /// 9.5pt mono, letter-spaced - and the aside beside it is cut to whatever is
-        /// left, so neither can ever print over the other.</summary>
-        const float FlagW = 92f;
+        /// the name column. MEASURED, and measured off the marks themselves with every
+        /// one of them up - the widest line they can make - at the size and spacing
+        /// they print at, through the same rule the type goes through. The aside beside
+        /// it is cut to whatever is left, so neither can ever print over the other.
+        /// </summary>
+        static float FlagW =>
+            flagW > 0f
+                ? flagW
+                : flagW = MonoWidth(ManFlags.MarkLine(ManFlags.Every), MarkSize,
+                    MarkSpacing) + 4f;
+
+        static float flagW;
 
         /// <summary>
         /// LOY-004's marks, as the roll prints them: what he could be, and what he is a
@@ -787,18 +838,9 @@ namespace LivingCity.UI
         /// </summary>
         void BuildRowMarks(RectTransform rect, ManFlag marks)
         {
-            var line = "";
-            for (var i = 0; i < ManFlags.All.Length; i++)
-            {
-                if ((marks & ManFlags.All[i]) == 0)
-                    continue;
-                if (line.Length > 0)
-                    line += " · ";
-                line += ManFlags.Mark(ManFlags.All[i]);
-            }
-
+            var line = ManFlags.MarkLine(marks);
             var mark = LedgerV2.Mono(rect, ColName + NameW - FlagW, -32f, FlagW, line,
-                9.5f,
+                MarkSize,
                 (marks & ManFlag.RedFlag) != 0 ? LedgerV2.Red : LedgerV2.Lieutenant,
                 2f, TextAlignmentOptions.MidlineRight);
             mark.font = LedgerStyle.MonoBold;
@@ -1279,6 +1321,12 @@ namespace LivingCity.UI
             var parked = Loyalty.IsParked(member, wageDay);
             y = Particular(TenureLabel(member), TenureFigure(member, wageDay),
                 textX, textW, y, parked ? LedgerV2.Red : (Color?)null);
+            // RANK-001/002. What he can HOLD, on the file of the man it is about. The
+            // figure lived only on the Organization tree and the command sheet, so a
+            // player reading a lieutenant's own file could not learn the one limit that
+            // decides whether he can be given another block - and the sheet that refuses
+            // him is a different page again. Red on the reading that is already over.
+            y = BuildWhatHeCanHold(member, textX, textW, y);
             y = Particular("LOYALTY", member.Loyalty + " of 100", textX, textW, y,
                 member.Loyalty < Loyalty.WatchBand ? LedgerV2.Red : LedgerV2.Ink);
             // What he is LIKE, in words. The numbers behind these are never shown: the
@@ -1599,6 +1647,50 @@ namespace LivingCity.UI
         /// Nothing here decides anything: LawDesk owns the money and the docket, and
         /// this only prints what it answers and refuses in its own words.
         /// </summary>
+        /// <summary>
+        /// RANK-001/002's two limits, on the file of the man they bind: how many men he
+        /// can hold and how many blocks can stand on his paper. Only for a man who
+        /// holds a command - a hood holds nothing, and a row saying "0 of 0" on sixty
+        /// files is noise. The figures are the organization's own; this page reads them
+        /// and never strikes its own.
+        /// </summary>
+        float BuildWhatHeCanHold(Character member, float x, float w, float y)
+        {
+            if (member == null || member.Status != CharacterStatus.Active)
+                return y;
+            if (member.Rank != Rank.Lieutenant && member.Id != BossIdOrNone)
+                return y;
+
+            var query = director != null ? director.Organization : null;
+            if (query == null)
+                return y;
+
+            var capacity = query.CapacityOf(member.Id);
+            y = Particular("MEN HE CAN HOLD", HoldLine(capacity.Manpower, "man", "men"),
+                x, w, y, capacity.Manpower.IsOverCapacity ? LedgerV2.Red : (Color?)null);
+            y = Particular("BLOCKS ON HIS PAPER",
+                HoldLine(capacity.Blocks, "block", "blocks"), x, w, y,
+                capacity.Blocks.IsOverCapacity ? LedgerV2.Red : (Color?)null);
+            return y;
+        }
+
+        /// <summary>"9 of 12" - and, when he is past it, by how much. The overage is
+        /// the part the player can act on, so it is printed rather than left to be
+        /// worked out from two figures.</summary>
+        static string HoldLine(CapacityMeasure measure, string one, string many)
+        {
+            var line = measure.Current + " of " + measure.Maximum + "  ·  " +
+                       (measure.Maximum == 1 ? one : many);
+            return measure.IsOverCapacity
+                ? line + "  ·  " + measure.Overage + " OVER"
+                : line;
+        }
+
+        /// <summary>The boss's id, or -1 where no roster answers.</summary>
+        int BossIdOrNone => director != null && director.Roster != null
+            ? director.Roster.BossId
+            : -1;
+
         float BuildTheLaw(Character member, float x, float w, float y)
         {
             var held = RoadDemo.LawDesk.Held(member.Id);
@@ -1701,15 +1793,46 @@ namespace LivingCity.UI
             return y - (rowH + 26f);
         }
 
+        /// <summary>
+        /// One LABEL / VALUE line of the personal file, and the dotted leader under it.
+        ///
+        /// The value WRAPS and the row is grown to what it measured. The book's
+        /// particulars are not all short: a man's character runs to five words, the
+        /// streets he is known on to three names with a "+N more" after them, and the
+        /// marks against him to all three at once. Every one of those overruns a single
+        /// line of the file pane, and the pane itself narrows to FileMin - at which
+        /// width an ellipsis eats better than half of them. An ellipsis here is the
+        /// reader losing the exact fact the page exists to tell him, so the line is
+        /// given the room instead, MEASURED and never guessed at.
+        /// </summary>
         float Particular(string label, string value, float x, float w, float y, Color? ink = null)
         {
+            const float size = 12.5f;
             var labelW = Mathf.Min(130f, w * 0.42f);
             LedgerV2.Mono(cardContent, x, y, labelW, label, 10.5f, LedgerV2.Label, 6f);
-            var text = LedgerV2.Figure(cardContent, x + labelW + 4f, y,
-                w - labelW - 4f, value, 12.5f, ink ?? LedgerV2.Ink);
-            text.overflowMode = TextOverflowModes.Ellipsis;
-            LedgerV2.Leader(cardContent, x, y - 19f, w);
-            return y - 24f;
+
+            var valueW = w - labelW - 4f;
+            var text = LedgerV2.Figure(cardContent, x + labelW + 4f, y, valueW, value,
+                size, ink ?? LedgerV2.Ink);
+            text.textWrappingMode = TextWrappingModes.Normal;
+            text.overflowMode = TextOverflowModes.Overflow;
+
+            var oneLine = LineBox(text.fontSize);
+            var needed = Mathf.Max(oneLine,
+                Mathf.Ceil(text.GetPreferredValues(value, valueW, 0f).y));
+            var extra = needed - oneLine;
+            if (extra > 0.5f)
+            {
+                // Only a value that actually took a second line changes how it sits in
+                // its box; a one-line value keeps the midline it has always had, so the
+                // page does not shift under a reader for whom nothing overran.
+                text.alignment = TextAlignmentOptions.TopRight;
+                var rect = text.rectTransform;
+                rect.sizeDelta = new Vector2(rect.sizeDelta.x, needed);
+            }
+
+            LedgerV2.Leader(cardContent, x, y - 19f - extra, w);
+            return y - 24f - extra;
         }
 
         /// <summary>
@@ -1760,8 +1883,8 @@ namespace LivingCity.UI
             var signedOut = filled ?? !string.IsNullOrEmpty(item);
             if (signedOut)
             {
-                Fill(rect, new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.06f));
-                Frame(rect, 1f, new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.5f));
+                Fill(rect, LedgerV2.At(LedgerV2.Sunk, 0.06f));
+                Frame(rect, 1f, LedgerV2.At(LedgerV2.Sunk, 0.5f));
             }
             else
                 DashedFrame(rect, w, h);
@@ -1792,7 +1915,7 @@ namespace LivingCity.UI
 
             var where = NewRect("Where", cardContent);
             PlaceTopLeft(where, 0f, y, boxW, boxH);
-            Fill(where, new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.05f));
+            Fill(where, LedgerV2.At(LedgerV2.Sunk, 0.05f));
             Frame(where, 1f, LedgerV2.Rule);
             Caps(where, 10f, -6f, boxW - 20f, "WHERE HE IS · PER THE MAP", 9f,
                 LedgerV2.Label, 3f);
@@ -1811,7 +1934,7 @@ namespace LivingCity.UI
 
             var experience = NewRect("Experience", cardContent);
             PlaceTopLeft(experience, boxW + gap, y, boxW, boxH);
-            Fill(experience, new Color(43f / 255f, 36f / 255f, 24f / 255f, 0.05f));
+            Fill(experience, LedgerV2.At(LedgerV2.Sunk, 0.05f));
             Frame(experience, 1f, LedgerV2.Rule);
             Caps(experience, 10f, -6f, boxW - 20f, "EXPERIENCE · " + word, 9f,
                 LedgerV2.Label, 3f);
@@ -1875,16 +1998,21 @@ namespace LivingCity.UI
         /// aside. The one voice on the sheet that is not typed.</summary>
         float MarginNote(string text, float y)
         {
-            var height = 44f;
+            // MEASURED. A refusal is written by whatever refused, and the ones worth
+            // reading are the long ones - a note cut to two fixed lines loses its
+            // reason and keeps its apology.
+            var copyW = CardInner - 26f;
+            var copyH = Mathf.Max(24f, CopyHeight(text, 14f, copyW, 1f));
+            var height = copyH + 28f;
+
             var rect = NewRect("Margin", cardContent);
             PlaceTopLeft(rect, 0f, y, CardInner, height);
-            Fill(rect, new Color(120f / 255f, 95f / 255f, 55f / 255f, 0.07f));
+            Fill(rect, LedgerV2.At(LedgerV2.Gilt, 0.07f));
             Block("Edge", rect, 0f, 0f, 3f, height,
-                new Color(47f / 255f, 74f / 255f, 122f / 255f, 0.55f));
-            var copy = Paragraph(rect, LedgerStyle.SerifItalic, 14f, LedgerV2.PaperBlue,
-                14f, -8f, CardInner - 26f, 24f, text, lineSpacing: 1f);
-            copy.overflowMode = TextOverflowModes.Ellipsis;
-            Caps(rect, 14f, -30f, CardInner - 26f, "IN THE MARGIN · PEN", 8.5f,
+                LedgerV2.At(LedgerStyle.Ballpoint, 0.55f));
+            Paragraph(rect, LedgerStyle.SerifItalic, 14f, LedgerV2.PaperBlue,
+                14f, -8f, copyW, copyH, text, lineSpacing: 1f);
+            Caps(rect, 14f, -(copyH + 6f), copyW, "IN THE MARGIN · PEN", 8.5f,
                 LedgerV2.Label, 3f);
             return y - height;
         }

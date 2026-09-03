@@ -433,6 +433,28 @@ namespace RoadDemo
 
         static void Streamed() => StreamRevision++;
 
+        /// <summary>Whether this recipe currently owns an active streamed hierarchy.
+        /// Diagnostics use this to distinguish a missing binding in a standing block from
+        /// the expected absence of views for the rest of the off-screen city.</summary>
+        public static bool IsViewActive(string recipeId)
+        {
+            if (string.IsNullOrEmpty(recipeId)) return false;
+            for (int i = Instances.Count - 1; i >= 0; i--)
+            {
+                var recycler = Instances[i];
+                if (recycler == null)
+                {
+                    Instances.RemoveAt(i);
+                    continue;
+                }
+                if (recycler._resident.TryGetValue(recipeId, out var view) &&
+                    view != null && view.Active && view.Holder != null &&
+                    view.Holder.activeInHierarchy)
+                    return true;
+            }
+            return false;
+        }
+
         /// <summary>Whether the streamed view covering this ground is fully attached and
         /// ready to be photographed. EVERY view over the ground has to be standing, not
         /// merely one of them: a block can straddle two recipes, and half a block is

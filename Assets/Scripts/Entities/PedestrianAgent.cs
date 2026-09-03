@@ -532,10 +532,17 @@ namespace LivingCity.Entities
 
             // The last step to the door ignores failure - a crowd on the doorstep just means
             // going in from a little further out.
+            var storefront = shop.GetComponentInParent<RoadDemo.Storefront>();
+            if (storefront != null)
+            {
+                storefront.Open();
+                yield return new WaitForSeconds(0.55f);
+            }
             yield return WalkTo(shop.DoorWorld, 0.3f, 4f);
 
             SetHidden(true);
             SetStationary(true);
+            if (storefront != null) storefront.Close();
 
             yield return new WaitForSeconds(Range(config.shopDurationRange));
 
@@ -543,9 +550,16 @@ namespace LivingCity.Entities
             for (var waited = 0f; waited < 10f && !PedestrianRegistry.IsClear(body, transform.position); waited += 0.5f)
                 yield return ReappearPoll;
 
+            if (storefront != null)
+            {
+                storefront.Open();
+                yield return new WaitForSeconds(0.55f);
+            }
             SetHidden(false);
             SetStationary(false);
             yield return Face(transform.position + shop.Facing);
+            yield return WalkTo(shop.StandWorld, 0.35f, 4f);
+            if (storefront != null) storefront.Close();
             yield return WalkTo(departure, 0.5f);
 
             Finish();
@@ -594,6 +608,12 @@ namespace LivingCity.Entities
 
             // The last step through the doorway ignores failure, like the shop's does: a knot
             // of people on the pavement just means going in from a little further out.
+            var entryStorefront = door.GetComponentInParent<RoadDemo.Storefront>();
+            if (entryStorefront != null)
+            {
+                entryStorefront.Open();
+                yield return new WaitForSeconds(0.55f);
+            }
             yield return Face(door.DoorWorld);
             yield return WalkTo(door.DoorWorld, 0.3f, 4f);
 
@@ -605,6 +625,7 @@ namespace LivingCity.Entities
             insideOf = door;
             door.Entered();
             ReleaseDoor();
+            if (entryStorefront != null) entryStorefront.Close();
 
             if (night)
             {
@@ -668,12 +689,19 @@ namespace LivingCity.Entities
             for (var waited = 0f; waited < 10f && !PedestrianRegistry.IsClear(body, transform.position); waited += 0.5f)
                 yield return ReappearPoll;
 
+            var exitStorefront = exit.GetComponentInParent<RoadDemo.Storefront>();
+            if (exitStorefront != null)
+            {
+                exitStorefront.Open();
+                yield return new WaitForSeconds(0.55f);
+            }
             SetHidden(false);
             SetStationary(false);
             LeaveBuilding();
 
             yield return Face(transform.position + exit.Facing);
             yield return WalkTo(exit.StandWorld, 0.4f);
+            if (exitStorefront != null) exitStorefront.Close();
 
             ReleaseDoor();
             Finish();

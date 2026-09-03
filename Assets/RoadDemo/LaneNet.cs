@@ -873,6 +873,12 @@ namespace RoadDemo
                     bool conflict;
                     if (a.From == b.From) conflict = false;
                     else if (a.To == b.To) conflict = true;
+                    // THE TURN-ROUND TAKES THE WHOLE BOX. Its line is a half circle at the
+                    // dead end, and the body on it leans out further than any turn's; the
+                    // segment test called it clear of the turn off the next road and the
+                    // two met nose to nose, and the one turning round never backs out
+                    // (DEPOT-004 S2 seed 102, a minute stood, 2 547 refusals).
+                    else if (a.UTurn || b.UTurn) conflict = true;
                     else
                     {
                         // A car going straight through keeps to its line. One TURNING

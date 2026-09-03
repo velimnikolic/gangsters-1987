@@ -13,8 +13,9 @@ namespace LivingCity.Business
     /// in full or composed incrementally.
     ///
     /// Three kinds of place come out of one plan:
-    ///   * SHOP BAYS carried by a residential building - one site per physical 5 m bay on
-    ///     every side, including the facade facing into the block. A genuine corner-shop
+    ///   * SHOP BAYS carried by a residential building - one site per doored premise on
+    ///     every side, including the facade facing into the block. Doorless Shop_05 and
+    ///     the display half of Shop_03 join the nearest doored 5 m bay. A genuine corner-shop
     ///     module is still one bay/business; merely standing in a corner BUILDING does not
     ///     merge all of that building's other shops into it. One legacy primary bay keeps
     ///     CoreResidentialFronts' deterministic address so existing outfit fronts do not
@@ -34,8 +35,8 @@ namespace LivingCity.Business
         /// same set, in the same order, from the catalogue.</summary>
         public const string FrontageRole = "frontage";
 
-        /// <summary>Every physical shop bay except the one legacy outfit-front candidate.
-        /// These include adjacent bays and bays on the building's other sides.</summary>
+        /// <summary>Every doored premise except the one legacy outfit-front candidate.
+        /// These include adjacent premises and premises on the building's other sides.</summary>
         public const string ExtraFrontageRole = "frontage-extra";
 
         public const string StorefrontRole = "storefront";
@@ -179,16 +180,21 @@ namespace LivingCity.Business
 
         readonly struct PlacedShopBay
         {
-            public PlacedShopBay(ResidentialShopBay source, Rect footprint, int side)
+            public PlacedShopBay(ResidentialShopBay source, Rect footprint, int side,
+                                 Vector3 door, Vector3 outward)
             {
                 Source = source;
                 Footprint = footprint;
                 Side = side;
+                Door = door;
+                Outward = outward;
             }
 
             public ResidentialShopBay Source { get; }
             public Rect Footprint { get; }
             public int Side { get; }
+            public Vector3 Door { get; }
+            public Vector3 Outward { get; }
         }
 
         static string FaceSiteId(ResidentialLot.Spot spot, int index, int side) =>
@@ -208,8 +214,10 @@ namespace LivingCity.Business
             var source = spot.Unit.ShopBays;
             for (var i = 0; i < source.Length; i++)
             {
-                PlaceBay(recipe, spot, whole, source[i], out var footprint, out var side);
-                placedBays.Add(new PlacedShopBay(source[i], footprint, side));
+                PlaceBay(recipe, spot, whole, source[i], out var footprint, out var side,
+                         out var door, out var outward);
+                placedBays.Add(new PlacedShopBay(
+                    source[i], footprint, side, door, outward));
             }
 
             // Preserve the one address/outfit candidate the old frontage provider exposed:
@@ -219,9 +227,9 @@ namespace LivingCity.Business
             for (var i = 0; i < placedBays.Count; i++)
             {
                 var bay = placedBays[i];
-                if (bay.Side != primary)
+                if (bay.Side != primary || bay.Source.Door.Leaves == 0)
                     continue;
-                var door = DoorOnFacade(bay.Footprint, bay.Side);
+                var door = bay.Door;
                 var fromOutside = bay.Side switch
                 {
                     0 => Mathf.Abs(door.z - whole.yMin),
@@ -242,20 +250,57 @@ namespace LivingCity.Business
             for (var i = 0; i < placedBays.Count; i++)
             {
                 var bay = placedBays[i];
+                if (bay.Source.Door.Leaves == 0)
+                    continue;
+
+                var footprint = bay.Footprint;
+                for (var n = 0; n < placedBays.Count; n++)
+                {
+                    var neighbour = placedBays[n];
+                    if (neighbour.Source.Door.Leaves != 0 ||
+                        !JoinableDoorless(neighbour.Source) ||
+                        !NearestDoorOwner(i, n))
+                        continue;
+                    footprint = JoinedFootprint(
+                        footprint, neighbour.Footprint, bay.Side, whole);
+                }
+
                 var role = i == primaryBay ? FrontageRole : ExtraFrontageRole;
                 var siteId = i == primaryBay
                     ? FaceSiteId(spot, index, primary)
                     : PhysicalSiteId(spot, index, bay.Source);
                 sites.Add(FrontageSite(
-                    recipe, bay.Footprint, bay.Side, siteId,
+                    recipe, footprint, bay.Side, siteId,
                     recipe.Name + " · " + spot.Unit.Name,
-                    block, order++, role));
+                    block, order++, role, bay.Door, bay.Outward));
+            }
+
+            bool NearestDoorOwner(int owner, int doorless)
+            {
+                float best = float.MaxValue;
+                int nearest = -1;
+                for (var candidate = 0; candidate < placedBays.Count; candidate++)
+                {
+                    var possible = placedBays[candidate];
+                    if (possible.Source.Door.Leaves == 0)
+                        continue;
+                    float distance = (possible.Footprint.center -
+                                      placedBays[doorless].Footprint.center).sqrMagnitude;
+                    if (distance >= best) continue;
+                    best = distance;
+                    nearest = candidate;
+                }
+                return nearest == owner;
             }
         }
 
+        static bool JoinableDoorless(ResidentialShopBay bay) =>
+            StorefrontDoorCatalog.TryGet(bay.Module, out _);
+
         static void PlaceBay(
             ResidentialBlockRecipe recipe, ResidentialLot.Spot spot, Rect whole,
-            ResidentialShopBay bay, out Rect footprint, out int side)
+            ResidentialShopBay bay, out Rect footprint, out int side,
+            out Vector3 measuredDoor, out Vector3 outward)
         {
             float cell = ResidentialLot.Cell;
             float width = spot.Unit.CW * cell;
@@ -271,25 +316,65 @@ namespace LivingCity.Business
             var origin = new Vector3(
                 recipe.LocalBounds.xMin + spot.I * cell, 0f,
                 recipe.LocalBounds.yMin + spot.J * cell) + offset;
-            var door = origin + rotation * new Vector3(bay.X, 0f, bay.Z);
-            var outward = rotation * SideVector(bay.Side);
+            var centre = origin + rotation * new Vector3(bay.X, 0f, bay.Z);
+            measuredDoor = origin + rotation * new Vector3(
+                bay.Door.X, 0f, bay.Door.Z);
+            outward = rotation * (Quaternion.Euler(0f, bay.Door.Yaw, 0f) * Vector3.forward);
+            if (bay.Door.Leaves == 0) outward = rotation * SideVector(bay.Side);
             side = SideOf(outward);
 
             float x = side switch
             {
-                1 => door.x - cell,
-                3 => door.x,
-                _ => door.x - cell * 0.5f,
+                1 => centre.x - cell,
+                3 => centre.x,
+                _ => centre.x - cell * 0.5f,
             };
             float z = side switch
             {
-                0 => door.z,
-                2 => door.z - cell,
-                _ => door.z - cell * 0.5f,
+                0 => centre.z,
+                2 => centre.z - cell,
+                _ => centre.z - cell * 0.5f,
             };
             x = Mathf.Clamp(x, whole.xMin, whole.xMax - cell);
             z = Mathf.Clamp(z, whole.yMin, whole.yMax - cell);
+            if (bay.Door.Leaves > 0)
+            {
+                // The chamfered corner door can sit beyond the planner's rectangular
+                // spot by more than a metre. Anchor the shallow site to the real wall,
+                // rather than clamping that wall back inside an abstract lot rectangle.
+                x = side switch
+                {
+                    1 => measuredDoor.x - cell,
+                    3 => measuredDoor.x,
+                    _ => measuredDoor.x - cell * 0.5f,
+                };
+                z = side switch
+                {
+                    0 => measuredDoor.z,
+                    2 => measuredDoor.z - cell,
+                    _ => measuredDoor.z - cell * 0.5f,
+                };
+            }
             footprint = new Rect(x, z, cell, cell);
+        }
+
+        static Rect Union(Rect a, Rect b) => Rect.MinMaxRect(
+            Mathf.Min(a.xMin, b.xMin), Mathf.Min(a.yMin, b.yMin),
+            Mathf.Max(a.xMax, b.xMax), Mathf.Max(a.yMax, b.yMax));
+
+        static Rect JoinedFootprint(Rect a, Rect b, int side, Rect limits)
+        {
+            var union = Union(a, b);
+            float cell = ResidentialLot.Cell;
+            if (side == 0 || side == 2)
+            {
+                float x = Mathf.Clamp(union.center.x - cell,
+                    limits.xMin, limits.xMax - cell * 2f);
+                return new Rect(x, a.y, cell * 2f, cell);
+            }
+            float z = Mathf.Clamp(union.center.y - cell,
+                limits.yMin, limits.yMax - cell * 2f);
+            return new Rect(a.x, z, cell, cell * 2f);
         }
 
         static Vector3 SideVector(int side) => side switch
@@ -330,16 +415,22 @@ namespace LivingCity.Business
 
         BusinessSite FrontageSite(
             ResidentialBlockRecipe recipe, Rect local, int side, string siteId,
-            string title, TerritoryBlockId block, int order, string role)
+            string title, TerritoryBlockId block, int order, string role,
+            Vector3? measuredDoor = null, Vector3? measuredOutward = null)
         {
-            var door = DoorOnFacade(local, side);
+            var door = measuredDoor ?? DoorOnFacade(local, side);
+            var outward = measuredOutward ?? SideVector(side);
+            // One walking stride outside the measured threshold. Keep it inside the
+            // site's one-metre tolerance so a diagonal corner door remains owned by its
+            // own premise rather than appearing to stand in a neighbour's footprint.
+            var stand = door + outward.normalized * 0.85f;
             return new BusinessSite(
                 BusinessProviders.Residential,
                 recipe.Id,
                 siteId,
                 Bounds(local),
-                Point(frame.ToWorld(door)),
-                Direction(side),
+                Point(frame.ToWorld(stand)),
+                Direction(outward),
                 BusinessSignage.None,
                 SizeOf(local),
                 block,
@@ -480,13 +571,11 @@ namespace LivingCity.Business
 
         TerritoryPoint Direction(int side)
         {
-            var local = side switch
-            {
-                0 => Vector3.back,
-                1 => Vector3.right,
-                2 => Vector3.forward,
-                _ => Vector3.left,
-            };
+            return Direction(SideVector(side));
+        }
+
+        TerritoryPoint Direction(Vector3 local)
+        {
             var world = frame.ToWorldDir(local).normalized;
             return new TerritoryPoint(world.x, world.z);
         }

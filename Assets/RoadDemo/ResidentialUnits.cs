@@ -19,18 +19,40 @@ namespace RoadDemo
     /// <summary>One physical 5 m ground-floor shop bay in an unturned harvested unit.
     /// X/Z is the centre of its glass line and Side is S/E/N/W. A corner-shop prefab
     /// emits one bay even when its glass wraps onto a second face.</summary>
+    public readonly struct ResidentialStorefrontDoor
+    {
+        public ResidentialStorefrontDoor(float x, float z, float width, int leaves, float yaw)
+        {
+            X = x;
+            Z = z;
+            Width = width;
+            Leaves = leaves;
+            Yaw = yaw;
+        }
+
+        public float X { get; }
+        public float Z { get; }
+        public float Width { get; }
+        public int Leaves { get; }
+        public float Yaw { get; }
+    }
+
     public readonly struct ResidentialShopBay
     {
-        public ResidentialShopBay(int side, float x, float z)
+        public ResidentialShopBay(int side, float x, float z, string module, ResidentialStorefrontDoor door)
         {
             Side = side;
             X = x;
             Z = z;
+            Module = module ?? string.Empty;
+            Door = door;
         }
 
         public int Side { get; }
         public float X { get; }
         public float Z { get; }
+        public string Module { get; }
+        public ResidentialStorefrontDoor Door { get; }
     }
 
     /// <summary>What a residential unit is: its footprint on the 5 m raster, which
@@ -147,7 +169,7 @@ namespace RoadDemo
                 Shops = new[] { 0, 1, 3, 4 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "00000", "00d0", "0cbbe", "fagh" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 12.43f, 9.86f), new ResidentialShopBay(1, 10.44f, 2.45f), new ResidentialShopBay(1, 11.00f, 7.43f), new ResidentialShopBay(1, 25.00f, 12.91f), new ResidentialShopBay(2, 7.25f, 20.00f), new ResidentialShopBay(2, 12.19f, 20.00f), new ResidentialShopBay(2, 17.32f, 20.00f), new ResidentialShopBay(2, 22.25f, 20.00f), new ResidentialShopBay(3, 0.00f, 7.25f), new ResidentialShopBay(3, 0.00f, 12.24f), new ResidentialShopBay(3, 0.00f, 17.25f), new ResidentialShopBay(3, 0.04f, 2.25f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 12.43f, 9.86f, "SM_Bld_Shop_05", new ResidentialStorefrontDoor(12.43f, 9.86f, 0.00f, 0, 180.00f)), new ResidentialShopBay(1, 10.44f, 2.45f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(9.48f, 0.78f, 1.27f, 1, 135.00f)), new ResidentialShopBay(1, 11.00f, 7.43f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(10.70f, 7.52f, 1.40f, 1, 90.00f)), new ResidentialShopBay(1, 25.00f, 12.91f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(24.21f, 11.23f, 1.27f, 1, 135.00f)), new ResidentialShopBay(2, 7.25f, 20.00f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(7.16f, 20.52f, 1.40f, 1, 0.00f)), new ResidentialShopBay(2, 12.19f, 20.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(14.68f, 20.11f, 1.90f, 2, 0.00f)), new ResidentialShopBay(2, 17.32f, 20.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(17.32f, 20.00f, 0.00f, 0, 0.00f)), new ResidentialShopBay(2, 22.25f, 20.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(23.83f, 20.42f, 1.30f, 2, 0.00f)), new ResidentialShopBay(3, 0.00f, 7.25f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(0.36f, 5.65f, 1.25f, 2, 270.00f)), new ResidentialShopBay(3, 0.00f, 12.24f, "SM_Bld_Shop_01", new ResidentialStorefrontDoor(0.00f, 12.17f, 1.70f, 2, 270.00f)), new ResidentialShopBay(3, 0.00f, 17.25f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.48f, 18.92f, 1.27f, 1, 315.00f)), new ResidentialShopBay(3, 0.04f, 2.25f, "SM_Bld_Shop_05", new ResidentialStorefrontDoor(0.04f, 2.25f, 0.00f, 0, 270.00f)) },
                 Over = new[] { 0.73f, 0.47f, 1.97f, 2.03f },
             },
             new ResidentialUnit
@@ -168,7 +190,7 @@ namespace RoadDemo
                 Shops = new[] { 6, 1, 1, 3 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "kibhjff0", "a0000", "0e000000", "0dccg" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f), new ResidentialShopBay(0, 7.50f, 0.00f), new ResidentialShopBay(0, 12.50f, 0.00f), new ResidentialShopBay(0, 17.50f, 0.00f), new ResidentialShopBay(0, 22.50f, 0.00f), new ResidentialShopBay(0, 27.48f, 0.00f), new ResidentialShopBay(0, 32.52f, 0.00f), new ResidentialShopBay(1, 10.13f, 12.50f), new ResidentialShopBay(1, 40.00f, 2.50f), new ResidentialShopBay(2, 37.50f, 10.28f), new ResidentialShopBay(2, 32.50f, 10.43f), new ResidentialShopBay(2, 27.50f, 10.79f), new ResidentialShopBay(2, 12.50f, 10.83f), new ResidentialShopBay(2, 7.50f, 25.00f), new ResidentialShopBay(3, 0.00f, 7.50f), new ResidentialShopBay(3, 0.00f, 12.48f), new ResidentialShopBay(3, 0.00f, 17.52f), new ResidentialShopBay(3, 0.00f, 22.50f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.77f, 0.77f, 1.27f, 1, 225.00f)), new ResidentialShopBay(0, 7.50f, 0.00f, "SM_Bld_Shop_01", new ResidentialStorefrontDoor(7.50f, 0.02f, 1.70f, 2, 180.00f)), new ResidentialShopBay(0, 12.50f, 0.00f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(14.03f, 0.21f, 1.25f, 2, 180.00f)), new ResidentialShopBay(0, 17.50f, 0.00f, "SM_Bld_Shop_05", new ResidentialStorefrontDoor(17.50f, 0.00f, 0.00f, 0, 180.00f)), new ResidentialShopBay(0, 22.50f, 0.00f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(24.34f, 0.00f, 1.10f, 1, 180.00f)), new ResidentialShopBay(0, 27.48f, 0.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(30.00f, 0.05f, 1.90f, 2, 180.00f)), new ResidentialShopBay(0, 32.52f, 0.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(32.52f, 0.00f, 0.00f, 0, 180.00f)), new ResidentialShopBay(1, 10.13f, 12.50f, "SM_Bld_Shop_05", new ResidentialStorefrontDoor(10.13f, 12.50f, 0.00f, 0, 90.00f)), new ResidentialShopBay(1, 40.00f, 2.50f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(39.23f, 0.77f, 1.27f, 1, 135.00f)), new ResidentialShopBay(2, 37.50f, 10.28f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(39.16f, 9.96f, 1.30f, 2, 0.00f)), new ResidentialShopBay(2, 32.50f, 10.43f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(30.97f, 9.79f, 1.25f, 2, 0.00f)), new ResidentialShopBay(2, 27.50f, 10.79f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(25.66f, 10.12f, 1.10f, 1, 0.00f)), new ResidentialShopBay(2, 12.50f, 10.83f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(12.50f, 10.61f, 1.40f, 1, 0.00f)), new ResidentialShopBay(2, 7.50f, 25.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(9.23f, 24.23f, 1.27f, 1, 45.00f)), new ResidentialShopBay(3, 0.00f, 7.50f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(0.00f, 7.50f, 1.40f, 1, 270.00f)), new ResidentialShopBay(3, 0.00f, 12.48f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(0.00f, 12.48f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 0.00f, 17.52f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(0.05f, 15.00f, 1.90f, 2, 270.00f)), new ResidentialShopBay(3, 0.00f, 22.50f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(0.04f, 24.16f, 1.30f, 2, 270.00f)) },
                 Over = new[] { 1.76f, 1.76f, 0.46f, 1.68f },
             },
             new ResidentialUnit
@@ -189,7 +211,7 @@ namespace RoadDemo
                 Shops = new[] { 7, 1, 1, 3 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "kgihfaad0", "c0000", "0b0000000", "0jlle" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f), new ResidentialShopBay(0, 7.50f, 0.00f), new ResidentialShopBay(0, 12.50f, 0.00f), new ResidentialShopBay(0, 17.50f, 0.00f), new ResidentialShopBay(0, 22.50f, 0.00f), new ResidentialShopBay(0, 27.48f, 0.00f), new ResidentialShopBay(0, 32.52f, 0.00f), new ResidentialShopBay(0, 37.50f, 0.00f), new ResidentialShopBay(1, 10.13f, 12.50f), new ResidentialShopBay(1, 45.00f, 2.50f), new ResidentialShopBay(2, 42.50f, 10.17f), new ResidentialShopBay(2, 32.50f, 10.43f), new ResidentialShopBay(2, 22.50f, 10.54f), new ResidentialShopBay(2, 27.50f, 10.79f), new ResidentialShopBay(2, 12.50f, 10.83f), new ResidentialShopBay(2, 7.50f, 25.00f), new ResidentialShopBay(3, 0.00f, 7.50f), new ResidentialShopBay(3, 0.00f, 12.48f), new ResidentialShopBay(3, 0.00f, 17.52f), new ResidentialShopBay(3, 0.00f, 22.50f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.77f, 0.77f, 1.27f, 1, 225.00f)), new ResidentialShopBay(0, 7.50f, 0.00f, "SM_Bld_Shop_01", new ResidentialStorefrontDoor(7.50f, 0.02f, 1.70f, 2, 180.00f)), new ResidentialShopBay(0, 12.50f, 0.00f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(14.03f, 0.21f, 1.25f, 2, 180.00f)), new ResidentialShopBay(0, 17.50f, 0.00f, "SM_Bld_Shop_05", new ResidentialStorefrontDoor(17.50f, 0.00f, 0.00f, 0, 180.00f)), new ResidentialShopBay(0, 22.50f, 0.00f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(24.34f, 0.00f, 1.10f, 1, 180.00f)), new ResidentialShopBay(0, 27.48f, 0.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(30.00f, 0.05f, 1.90f, 2, 180.00f)), new ResidentialShopBay(0, 32.52f, 0.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(32.52f, 0.00f, 0.00f, 0, 180.00f)), new ResidentialShopBay(0, 37.50f, 0.00f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(37.50f, 0.00f, 1.40f, 1, 180.00f)), new ResidentialShopBay(1, 10.13f, 12.50f, "SM_Bld_Shop_05", new ResidentialStorefrontDoor(10.13f, 12.50f, 0.00f, 0, 90.00f)), new ResidentialShopBay(1, 45.00f, 2.50f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(44.96f, 0.84f, 1.30f, 2, 90.00f)), new ResidentialShopBay(2, 42.50f, 10.17f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(44.23f, 9.23f, 1.27f, 1, 45.00f)), new ResidentialShopBay(2, 32.50f, 10.43f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(30.97f, 9.79f, 1.25f, 2, 0.00f)), new ResidentialShopBay(2, 22.50f, 10.54f, "SM_Bld_Shop_01", new ResidentialStorefrontDoor(22.50f, 9.98f, 1.70f, 2, 0.00f)), new ResidentialShopBay(2, 27.50f, 10.79f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(25.66f, 10.12f, 1.10f, 1, 0.00f)), new ResidentialShopBay(2, 12.50f, 10.83f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(12.50f, 10.61f, 1.40f, 1, 0.00f)), new ResidentialShopBay(2, 7.50f, 25.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(9.23f, 24.23f, 1.27f, 1, 45.00f)), new ResidentialShopBay(3, 0.00f, 7.50f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(0.00f, 7.50f, 1.40f, 1, 270.00f)), new ResidentialShopBay(3, 0.00f, 12.48f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(0.05f, 15.00f, 1.90f, 2, 270.00f)), new ResidentialShopBay(3, 0.00f, 17.52f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(0.00f, 17.52f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 0.00f, 22.50f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(0.04f, 24.16f, 1.30f, 2, 270.00f)) },
                 Over = new[] { 3.25f, 1.76f, 0.73f, 1.76f },
             },
             new ResidentialUnit
@@ -210,7 +232,7 @@ namespace RoadDemo
                 Shops = new[] { 0, 0, 0, 0 },
                 Stoops = new[] { 0, 5, 3, 0 },
                 ShopCells = new[] { "00000", "00000", "00000", "00000" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 9.21f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 9.21f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(4.34f, 9.88f, 1.10f, 1, 180.00f)) },
                 Over = new[] { 1.14f, 0.13f, 0.13f, 1.76f },
             },
             new ResidentialUnit
@@ -260,7 +282,7 @@ namespace RoadDemo
                 Shops = new[] { 1, 4, 6, 1 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "00000000g0", "e00d0bc00", "0ih0kll0af", "00000000j" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 42.50f, 0.00f), new ResidentialShopBay(0, 22.50f, 34.21f), new ResidentialShopBay(0, 12.50f, 34.46f), new ResidentialShopBay(0, 32.48f, 34.51f), new ResidentialShopBay(0, 37.52f, 34.51f), new ResidentialShopBay(0, 27.50f, 34.57f), new ResidentialShopBay(0, 2.50f, 34.72f), new ResidentialShopBay(1, 50.00f, 2.50f), new ResidentialShopBay(1, 50.00f, 17.50f), new ResidentialShopBay(1, 50.00f, 27.50f), new ResidentialShopBay(1, 50.00f, 32.50f), new ResidentialShopBay(2, 7.50f, 45.00f), new ResidentialShopBay(2, 12.50f, 45.00f), new ResidentialShopBay(2, 22.50f, 45.00f), new ResidentialShopBay(2, 27.48f, 45.00f), new ResidentialShopBay(2, 32.52f, 45.00f), new ResidentialShopBay(2, 42.50f, 45.00f), new ResidentialShopBay(2, 47.50f, 45.00f), new ResidentialShopBay(3, 0.00f, 42.50f), new ResidentialShopBay(3, 39.17f, 7.50f), new ResidentialShopBay(3, 39.21f, 22.50f), new ResidentialShopBay(3, 39.87f, 27.50f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 42.50f, 0.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(40.84f, 0.04f, 1.30f, 2, 180.00f)), new ResidentialShopBay(0, 22.50f, 34.21f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(24.34f, 34.88f, 1.10f, 1, 180.00f)), new ResidentialShopBay(0, 12.50f, 34.46f, "SM_Bld_Shop_01", new ResidentialStorefrontDoor(12.50f, 35.02f, 1.70f, 2, 180.00f)), new ResidentialShopBay(0, 32.48f, 34.51f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(35.00f, 35.05f, 1.90f, 2, 180.00f)), new ResidentialShopBay(0, 37.52f, 34.51f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(37.52f, 34.51f, 0.00f, 0, 180.00f)), new ResidentialShopBay(0, 27.50f, 34.57f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(29.03f, 35.21f, 1.25f, 2, 180.00f)), new ResidentialShopBay(0, 2.50f, 34.72f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(0.84f, 35.04f, 1.30f, 2, 180.00f)), new ResidentialShopBay(1, 50.00f, 2.50f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(49.23f, 0.77f, 1.27f, 1, 135.00f)), new ResidentialShopBay(1, 50.00f, 17.50f, "SM_Bld_Shop_01", new ResidentialStorefrontDoor(49.98f, 17.50f, 1.70f, 2, 90.00f)), new ResidentialShopBay(1, 50.00f, 27.50f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(50.12f, 29.34f, 1.10f, 1, 90.00f)), new ResidentialShopBay(1, 50.00f, 32.50f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(49.79f, 34.03f, 1.25f, 2, 90.00f)), new ResidentialShopBay(2, 7.50f, 45.00f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(5.66f, 45.12f, 1.10f, 1, 0.00f)), new ResidentialShopBay(2, 12.50f, 45.00f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(10.97f, 44.79f, 1.25f, 2, 0.00f)), new ResidentialShopBay(2, 22.50f, 45.00f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(22.50f, 45.61f, 1.40f, 1, 0.00f)), new ResidentialShopBay(2, 27.48f, 45.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(27.48f, 45.00f, 0.00f, 0, 0.00f)), new ResidentialShopBay(2, 32.52f, 45.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(30.00f, 44.95f, 1.90f, 2, 0.00f)), new ResidentialShopBay(2, 42.50f, 45.00f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(40.66f, 45.12f, 1.10f, 1, 0.00f)), new ResidentialShopBay(2, 47.50f, 45.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(49.16f, 44.96f, 1.30f, 2, 0.00f)), new ResidentialShopBay(3, 0.00f, 42.50f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.77f, 44.23f, 1.27f, 1, 315.00f)), new ResidentialShopBay(3, 39.17f, 7.50f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(39.39f, 7.50f, 1.40f, 1, 270.00f)), new ResidentialShopBay(3, 39.21f, 22.50f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(39.88f, 20.66f, 1.10f, 1, 270.00f)), new ResidentialShopBay(3, 39.87f, 27.50f, "SM_Bld_Shop_05", new ResidentialStorefrontDoor(39.87f, 27.50f, 0.00f, 0, 270.00f)) },
                 Over = new[] { 1.76f, 1.76f, 1.76f, 0.27f },
             },
             new ResidentialUnit
@@ -281,7 +303,7 @@ namespace RoadDemo
                 Shops = new[] { 2, 2, 1, 3 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "gh", "0ab00", "0e", "0dccf" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f), new ResidentialShopBay(0, 7.34f, 0.00f), new ResidentialShopBay(1, 10.00f, 7.50f), new ResidentialShopBay(1, 10.00f, 12.25f), new ResidentialShopBay(2, 7.50f, 25.00f), new ResidentialShopBay(3, 0.00f, 7.50f), new ResidentialShopBay(3, 0.00f, 12.48f), new ResidentialShopBay(3, 0.00f, 17.52f), new ResidentialShopBay(3, 0.00f, 22.50f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.77f, 0.77f, 1.27f, 1, 225.00f)), new ResidentialShopBay(0, 7.34f, 0.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(9.07f, 0.77f, 1.27f, 1, 225.00f)), new ResidentialShopBay(1, 10.00f, 7.50f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(9.44f, 9.07f, 1.25f, 2, 90.00f)), new ResidentialShopBay(1, 10.00f, 12.25f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(9.41f, 10.76f, 1.25f, 2, 90.00f)), new ResidentialShopBay(2, 7.50f, 25.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(9.23f, 24.23f, 1.27f, 1, 45.00f)), new ResidentialShopBay(3, 0.00f, 7.50f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(0.00f, 7.50f, 1.40f, 1, 270.00f)), new ResidentialShopBay(3, 0.00f, 12.48f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(0.05f, 15.00f, 1.90f, 2, 270.00f)), new ResidentialShopBay(3, 0.00f, 17.52f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(0.00f, 17.52f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 0.00f, 22.50f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(0.04f, 24.16f, 1.30f, 2, 270.00f)) },
                 Over = new[] { 1.74f, 1.84f, 0.46f, 1.68f },
             },
             new ResidentialUnit
@@ -299,7 +321,7 @@ namespace RoadDemo
                 Shops = new[] { 2, 1, 3, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "fdd0", "b0", "0eca", "00" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f), new ResidentialShopBay(0, 7.48f, 0.00f), new ResidentialShopBay(0, 12.52f, 0.00f), new ResidentialShopBay(1, 20.00f, 2.50f), new ResidentialShopBay(2, 7.50f, 10.00f), new ResidentialShopBay(2, 12.50f, 10.00f), new ResidentialShopBay(2, 17.50f, 10.00f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(4.34f, 0.00f, 1.10f, 1, 180.00f)), new ResidentialShopBay(0, 7.48f, 0.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(10.00f, 0.05f, 1.90f, 2, 180.00f)), new ResidentialShopBay(0, 12.52f, 0.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(12.52f, 0.00f, 0.00f, 0, 180.00f)), new ResidentialShopBay(1, 20.00f, 2.50f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(19.23f, 0.77f, 1.27f, 1, 135.00f)), new ResidentialShopBay(2, 7.50f, 10.00f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(5.66f, 10.12f, 1.10f, 1, 0.00f)), new ResidentialShopBay(2, 12.50f, 10.00f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(10.97f, 9.79f, 1.25f, 2, 0.00f)), new ResidentialShopBay(2, 17.50f, 10.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(19.16f, 9.96f, 1.30f, 2, 0.00f)) },
                 Over = new[] { 1.76f, 1.76f, 1.78f, 0.75f },
             },
             new ResidentialUnit
@@ -318,7 +340,7 @@ namespace RoadDemo
                 Shops = new[] { 3, 0, 0, 1 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "dbc", "000", "000", "0a0" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f), new ResidentialShopBay(0, 7.50f, 0.00f), new ResidentialShopBay(0, 12.39f, 0.00f), new ResidentialShopBay(0, 2.50f, 9.80f), new ResidentialShopBay(1, 10.13f, 12.50f), new ResidentialShopBay(2, 12.50f, 10.83f), new ResidentialShopBay(3, 0.00f, 7.50f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.77f, 0.77f, 1.27f, 1, 225.00f)), new ResidentialShopBay(0, 7.50f, 0.00f, "SM_Bld_Shop_01", new ResidentialStorefrontDoor(7.50f, 0.02f, 1.70f, 2, 180.00f)), new ResidentialShopBay(0, 12.39f, 0.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(14.12f, 0.77f, 1.27f, 1, 225.00f)), new ResidentialShopBay(0, 2.50f, 9.80f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.77f, 14.20f, 1.27f, 1, 225.00f)), new ResidentialShopBay(1, 10.13f, 12.50f, "SM_Bld_Shop_05", new ResidentialStorefrontDoor(10.13f, 12.50f, 0.00f, 0, 90.00f)), new ResidentialShopBay(2, 12.50f, 10.83f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(12.50f, 10.61f, 1.40f, 1, 0.00f)), new ResidentialShopBay(3, 0.00f, 7.50f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(0.00f, 7.50f, 1.40f, 1, 270.00f)) },
                 Over = new[] { 1.74f, 1.40f, 0.72f, 1.68f },
             },
             new ResidentialUnit
@@ -336,7 +358,7 @@ namespace RoadDemo
                 Shops = new[] { 0, 1, 2, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "000", "a0", "b0c", "00" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 7.29f, 4.98f), new ResidentialShopBay(1, 5.29f, 2.41f), new ResidentialShopBay(1, 15.00f, 2.74f), new ResidentialShopBay(2, 2.43f, 10.00f), new ResidentialShopBay(2, 12.35f, 10.00f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 7.29f, 4.98f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(8.82f, 9.77f, 1.25f, 2, 180.00f)), new ResidentialShopBay(1, 5.29f, 2.41f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.87f, 0.63f, 1.27f, 1, 135.00f)), new ResidentialShopBay(1, 15.00f, 2.74f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(14.30f, 1.07f, 1.27f, 1, 135.00f)), new ResidentialShopBay(2, 2.43f, 10.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(0.69f, 9.82f, 1.30f, 2, 0.00f)), new ResidentialShopBay(2, 12.35f, 10.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(13.93f, 10.25f, 1.30f, 2, 0.00f)) },
                 Over = new[] { 1.65f, 0.57f, 1.81f, 0.81f },
             },
             new ResidentialUnit
@@ -354,7 +376,7 @@ namespace RoadDemo
                 Shops = new[] { 0, 1, 2, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "000", "a0", "b0c", "00" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 7.29f, 4.98f), new ResidentialShopBay(1, 5.29f, 2.41f), new ResidentialShopBay(1, 15.00f, 2.74f), new ResidentialShopBay(2, 2.43f, 10.00f), new ResidentialShopBay(2, 12.35f, 10.00f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 7.29f, 4.98f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(8.82f, 9.77f, 1.25f, 2, 180.00f)), new ResidentialShopBay(1, 5.29f, 2.41f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.87f, 0.63f, 1.27f, 1, 135.00f)), new ResidentialShopBay(1, 15.00f, 2.74f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(14.30f, 1.07f, 1.27f, 1, 135.00f)), new ResidentialShopBay(2, 2.43f, 10.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(0.69f, 9.82f, 1.30f, 2, 0.00f)), new ResidentialShopBay(2, 12.35f, 10.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(13.93f, 10.25f, 1.30f, 2, 0.00f)) },
                 Over = new[] { 1.65f, 0.57f, 1.81f, 0.81f },
             },
             new ResidentialUnit
@@ -372,7 +394,7 @@ namespace RoadDemo
                 Shops = new[] { 1, 1, 3, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "0dd0", "b0", "0eca", "00" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 7.48f, 0.00f), new ResidentialShopBay(0, 12.52f, 0.00f), new ResidentialShopBay(1, 20.00f, 2.50f), new ResidentialShopBay(2, 7.50f, 10.00f), new ResidentialShopBay(2, 12.50f, 10.00f), new ResidentialShopBay(2, 17.50f, 10.00f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 7.48f, 0.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(10.00f, 0.05f, 1.90f, 2, 180.00f)), new ResidentialShopBay(0, 12.52f, 0.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(12.52f, 0.00f, 0.00f, 0, 180.00f)), new ResidentialShopBay(1, 20.00f, 2.50f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(19.23f, 0.77f, 1.27f, 1, 135.00f)), new ResidentialShopBay(2, 7.50f, 10.00f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(5.66f, 10.12f, 1.10f, 1, 0.00f)), new ResidentialShopBay(2, 12.50f, 10.00f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(10.97f, 9.79f, 1.25f, 2, 0.00f)), new ResidentialShopBay(2, 17.50f, 10.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(19.16f, 9.96f, 1.30f, 2, 0.00f)) },
                 Over = new[] { 1.76f, 1.76f, 1.78f, 0.75f },
             },
             new ResidentialUnit
@@ -391,7 +413,7 @@ namespace RoadDemo
                 Shops = new[] { 3, 0, 0, 1 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "dbc", "000", "000", "0a0" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f), new ResidentialShopBay(0, 7.50f, 0.00f), new ResidentialShopBay(0, 12.39f, 0.00f), new ResidentialShopBay(0, 2.50f, 9.80f), new ResidentialShopBay(1, 10.13f, 12.50f), new ResidentialShopBay(2, 12.50f, 10.83f), new ResidentialShopBay(3, 0.00f, 7.50f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.77f, 0.77f, 1.27f, 1, 225.00f)), new ResidentialShopBay(0, 7.50f, 0.00f, "SM_Bld_Shop_01", new ResidentialStorefrontDoor(7.50f, 0.02f, 1.70f, 2, 180.00f)), new ResidentialShopBay(0, 12.39f, 0.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(14.12f, 0.77f, 1.27f, 1, 225.00f)), new ResidentialShopBay(0, 2.50f, 9.80f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.77f, 14.20f, 1.27f, 1, 225.00f)), new ResidentialShopBay(1, 10.13f, 12.50f, "SM_Bld_Shop_05", new ResidentialStorefrontDoor(10.13f, 12.50f, 0.00f, 0, 90.00f)), new ResidentialShopBay(2, 12.50f, 10.83f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(12.50f, 10.61f, 1.40f, 1, 0.00f)), new ResidentialShopBay(3, 0.00f, 7.50f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(0.00f, 7.50f, 1.40f, 1, 270.00f)) },
                 Over = new[] { 0.72f, 1.40f, 0.72f, 1.68f },
             },
             new ResidentialUnit
@@ -412,7 +434,7 @@ namespace RoadDemo
                 Shops = new[] { 2, 2, 1, 3 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "gh", "0ab00", "0e", "0dccf" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f), new ResidentialShopBay(0, 7.34f, 0.00f), new ResidentialShopBay(1, 10.00f, 7.50f), new ResidentialShopBay(1, 10.00f, 12.25f), new ResidentialShopBay(2, 7.50f, 25.00f), new ResidentialShopBay(3, 0.00f, 7.50f), new ResidentialShopBay(3, 0.00f, 12.48f), new ResidentialShopBay(3, 0.00f, 17.52f), new ResidentialShopBay(3, 0.00f, 22.50f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.77f, 0.77f, 1.27f, 1, 225.00f)), new ResidentialShopBay(0, 7.34f, 0.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(9.07f, 0.77f, 1.27f, 1, 225.00f)), new ResidentialShopBay(1, 10.00f, 7.50f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(9.44f, 9.07f, 1.25f, 2, 90.00f)), new ResidentialShopBay(1, 10.00f, 12.25f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(9.41f, 10.76f, 1.25f, 2, 90.00f)), new ResidentialShopBay(2, 7.50f, 25.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(9.23f, 24.23f, 1.27f, 1, 45.00f)), new ResidentialShopBay(3, 0.00f, 7.50f, "SM_Bld_Shop_04", new ResidentialStorefrontDoor(0.00f, 7.50f, 1.40f, 1, 270.00f)), new ResidentialShopBay(3, 0.00f, 12.48f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(0.05f, 15.00f, 1.90f, 2, 270.00f)), new ResidentialShopBay(3, 0.00f, 17.52f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(0.00f, 17.52f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 0.00f, 22.50f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(0.04f, 24.16f, 1.30f, 2, 270.00f)) },
                 Over = new[] { 1.74f, 1.84f, 0.46f, 1.68f },
             },
             new ResidentialUnit
@@ -469,7 +491,7 @@ namespace RoadDemo
                 Shops = new[] { 1, 0, 0, 1 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "a", "00", "0", "0b" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f), new ResidentialShopBay(3, 0.00f, 7.50f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(0.84f, 0.04f, 1.30f, 2, 180.00f)), new ResidentialShopBay(3, 0.00f, 7.50f, "SM_Bld_Shop_01", new ResidentialStorefrontDoor(0.02f, 7.50f, 1.70f, 2, 270.00f)) },
                 Over = new[] { 0.46f, 0.19f, 0.46f, 0.54f },
             },
             new ResidentialUnit
@@ -487,7 +509,7 @@ namespace RoadDemo
                 Shops = new[] { 2, 0, 2, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "cd", "00", "ab", "00" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f), new ResidentialShopBay(0, 7.45f, 0.00f), new ResidentialShopBay(2, 2.36f, 10.00f), new ResidentialShopBay(2, 7.37f, 10.00f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(0.84f, 0.04f, 1.30f, 2, 180.00f)), new ResidentialShopBay(0, 7.45f, 0.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(9.11f, 0.04f, 1.30f, 2, 180.00f)), new ResidentialShopBay(2, 2.36f, 10.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.63f, 9.25f, 1.27f, 1, 45.00f)), new ResidentialShopBay(2, 7.37f, 10.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(9.10f, 9.25f, 1.27f, 1, 45.00f)) },
                 Over = new[] { 0.46f, 0.85f, 0.75f, 0.88f },
             },
             new ResidentialUnit
@@ -546,7 +568,7 @@ namespace RoadDemo
                 Shops = new[] { 1, 0, 2, 2 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "0bb000", "00000", "0aacc0", "0dee0" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 9.56f, 7.96f), new ResidentialShopBay(0, 11.44f, 7.96f), new ResidentialShopBay(0, 18.94f, 7.96f), new ResidentialShopBay(0, 20.81f, 7.96f), new ResidentialShopBay(2, 10.19f, 15.78f), new ResidentialShopBay(2, 20.19f, 15.78f), new ResidentialShopBay(3, 8.78f, 9.37f), new ResidentialShopBay(3, 8.78f, 11.87f), new ResidentialShopBay(3, 8.78f, 14.37f), new ResidentialShopBay(3, 21.28f, 9.37f), new ResidentialShopBay(3, 21.28f, 11.87f), new ResidentialShopBay(3, 21.28f, 14.37f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 9.56f, 7.96f, "SM_Bld_Wall_Window_03_Half_01", new ResidentialStorefrontDoor(9.56f, 7.96f, 0.00f, 0, 180.00f)), new ResidentialShopBay(0, 11.44f, 7.96f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(11.44f, 7.96f, 0.00f, 0, 180.00f)), new ResidentialShopBay(0, 18.94f, 7.96f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(18.94f, 7.96f, 0.00f, 0, 180.00f)), new ResidentialShopBay(0, 20.81f, 7.96f, "SM_Bld_Wall_Window_03_Half_01", new ResidentialStorefrontDoor(20.81f, 7.96f, 0.00f, 0, 180.00f)), new ResidentialShopBay(2, 10.19f, 15.78f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(10.19f, 15.78f, 0.00f, 0, 0.00f)), new ResidentialShopBay(2, 20.19f, 15.78f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(20.19f, 15.78f, 0.00f, 0, 0.00f)), new ResidentialShopBay(3, 8.78f, 9.37f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(8.78f, 9.37f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 8.78f, 11.87f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(8.78f, 11.87f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 8.78f, 14.37f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(8.78f, 14.37f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 21.28f, 9.37f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(21.28f, 9.37f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 21.28f, 11.87f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(21.28f, 11.87f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 21.28f, 14.37f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(21.28f, 14.37f, 0.00f, 0, 270.00f)) },
                 Over = new[] { 0.00f, 0.00f, 0.00f, 0.00f },
             },
             new ResidentialUnit
@@ -603,7 +625,7 @@ namespace RoadDemo
                 Shops = new[] { 0, 1, 0, 0 },
                 Stoops = new[] { 0, 0, 0, 0 },
                 ShopCells = new[] { "000", "aa", "000", "00" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(1, 0.95f, 4.57f), new ResidentialShopBay(1, 10.95f, 4.57f) },
+                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(1, 0.95f, 4.57f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(0.95f, 4.57f, 0.00f, 0, 90.00f)), new ResidentialShopBay(1, 10.95f, 4.57f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(10.95f, 4.57f, 0.00f, 0, 90.00f)) },
                 Over = new[] { 0.00f, 0.00f, 0.00f, 0.00f },
             },
             new ResidentialUnit

@@ -618,7 +618,7 @@ namespace RoadDemo
             _layers.SetInputWeight(1, _longGunRunWeight);
         }
 
-        public void Dispose()
+        public virtual void Dispose()
         {
             Walking.Remove(this);
             CrewGore.Forget(this);

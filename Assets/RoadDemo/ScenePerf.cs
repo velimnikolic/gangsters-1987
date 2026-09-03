@@ -274,6 +274,7 @@ namespace RoadDemo
                 foreach (var mr in root.GetComponentsInChildren<MeshRenderer>())
                 {
                     if (!mr.enabled) continue;
+                    if (mr.GetComponent<StorefrontLive>() != null) continue;
                     var mf = mr.GetComponent<MeshFilter>();
                     var mesh = mf ? mf.sharedMesh : null;
                     if (mesh == null) continue;

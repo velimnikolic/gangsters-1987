@@ -141,7 +141,10 @@ namespace RoadDemo
                     // at the kerb, a car in its stall stood as a phantom in the running
                     // lane for the whole of its rest (the same word CrewBike gives a spill)
                     Slid(Tf.position);
+                    // the body is out of the lane by mid-swing: off the graph from here
+                    if (State == Mode.Docking && Lane != null && _t >= 0.5f) Despawn();
                     if (_t < 1f) break;
+                    Swinging.Remove(this);
                     if (State == Mode.Undocking)
                     {
                         State = Mode.Patrolling;
@@ -153,6 +156,7 @@ namespace RoadDemo
                     }
                     else
                     {
+                        if (Lane != null) Despawn();   // a swing short enough to skip the midpoint
                         State = Mode.Resting;
                         _restTimer = Random.Range(_restRange.x, _restRange.y);
                         Tf.SetPositionAndRotation(_stall, _stallRot);
@@ -163,8 +167,10 @@ namespace RoadDemo
                 case Mode.Patrolling:
                 case Mode.Returning:
                     Tick(dt);
+                    // at the kerb, and the swing is nobody else's: LimitTarget holds
+                    // the car at nought here, so a held lease costs a tick's wait
                     if (State == Mode.Returning && CurrentEdge == _home &&
-                        Progress >= _kerbS - 0.15f)
+                        Progress >= _kerbS - 0.15f && !SwingHeld())
                         BeginDock();
                     break;
 
@@ -246,22 +252,45 @@ namespace RoadDemo
 
         protected override bool Fearless => true;
 
-        // The same footprint test a gate spawn would apply: the kerb is the metre
-        // of lane the car is about to occupy, and a busy moment costs only the
-        // next tick's retry.
-        bool KerbClear()
+        /// <summary>Room behind the kerb, in seconds. The swing from the bay to the
+        /// kerb is walked at PatrolDocking.Speed and takes its time; a car that would
+        /// reach the kerb inside that time, at the speed it is doing, meets us halfway
+        /// out - and a car on the running lane has no lead to brake for until the
+        /// footprint is already in it (DEPOT-004 S2 run-01, 2026-09-03: one undock, a
+        /// civilian nose to tail with it for 65 s, 2 274 belt refusals). So the window
+        /// behind is TIME, not metres, and it reaches back onto the roads that feed
+        /// this one. A busy moment costs only the next tick's retry.</summary>
+        float SwingSeconds =>
+            Vector3.Distance(_stall, _kerb) * 1.4f / PatrolDocking.Speed + 1.5f;
+
+        /// <summary>THE KERB LEASE. A car on the swing between its bay and the kerb is
+        /// on no road, so the cars still in their bays cannot see it on the lane the
+        /// way they see traffic - and two of one yard with rests five seconds apart
+        /// swung out together and met at the kerb, three pairs in one run, 27 000
+        /// belt refusals (DEPOT-004 S2 seed 102). One car of a yard swings at a time,
+        /// out or in; the next waits its tick in the bay or at the kerb.</summary>
+        static readonly List<PolicePatrolCar> Swinging = new List<PolicePatrolCar>();
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetLeases() => Swinging.Clear();
+
+        bool SwingHeld()
         {
-            var cars = _home.Cars;
-            for (int i = 0; i < cars.Count; i++)
+            for (int i = 0; i < Swinging.Count; i++)
             {
-                float s = cars[i].Progress;
-                if (s > _kerbS - 14f && s < _kerbS + 8f) return false;
+                var other = Swinging[i];
+                if (other == this || other.Wrecked) continue;   // a wreck holds nothing
+                if (other._home == _home && Mathf.Abs(other._kerbS - _kerbS) < 30f) return true;
             }
-            return true;
+            return false;
         }
+
+        bool KerbClear() =>
+            !SwingHeld() && LaneGate.Clear(_home, _kerbS, SwingSeconds, this);
 
         void BeginUndock()
         {
+            Swinging.Add(this);
             State = Mode.Undocking;
             _curve = PatrolDocking.Undock(
                 _stall, _stallRot * Vector3.forward, _kerb, _home.Dir);
@@ -273,7 +302,13 @@ namespace RoadDemo
 
         void BeginDock()
         {
-            Despawn();
+            Swinging.Add(this);
+            // NOT off the road yet. The first half of the swing is still in the lane,
+            // and a car that left the graph at the kerb was no longer anybody's lead: the
+            // car behind, just out of the box, drove into the swinging body (DEPOT-004
+            // S2 seed 101, one refusal). It stays a standing car on the lane - Slid keeps
+            // its (s, d) under the body - and leaves the graph once the body has cleared
+            // the lane (the Docking tick).
             State = Mode.Docking;
             _curve = PatrolDocking.Dock(Tf.position, _stall, _stallRot * Vector3.forward);
             _t = 0f;

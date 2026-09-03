@@ -1,4 +1,4 @@
-using TMPro;
+﻿using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using static LivingCity.UI.LedgerKit;
@@ -186,7 +186,7 @@ namespace LivingCity.UI
 
                 var strip = NewRect("Yours", diplomacyContent);
                 PlaceTopLeft(strip, PageLeft, FamilyMineY, PageWidth, FamilyMineH);
-                Fill(strip, new Color(143f / 255f, 33f / 255f, 25f / 255f, 0.06f));
+                Fill(strip, LedgerV2.At(LedgerV2.Alert, 0.06f));
                 Block("Edge", strip, 0f, 0f, 3f, FamilyMineH, LedgerV2.Red);
 
                 var raw = LedgerV2.PortraitPlate(strip, 12f, -6f, 44f, 44f, "");

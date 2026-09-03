@@ -25,7 +25,7 @@ is why they, and never a composed hierarchy, are the authority.
 
 | Source (data path) | Class | Grouping | Owner |
 |---|---|---|---|
-| `Plan.Spots[i].Unit.ShopBays` — every harvested ground-floor shop module | business | 1→N: one 5×5 m site per physical bay, including inward/rear faces; a genuine corner-shop module is one business, but a `ResidentialKind.Corner` building may contain many | **BIZ-004** |
+| `Plan.Spots[i].Unit.ShopBays` — every harvested ground-floor shop module | business | 1→N: one site per measured door, including inward/rear faces; doorless Shop 05 / the display half of wide Shop 03 joins its nearest doored neighbour into one 10×5 m premise | **GAN-294 / BIZ-004** |
 | `Plan.Cafes` — the kit storefront gaps the lot deals (`Use.Cafe`) | business | 1→1 per gap, sign `cafe` | **BIZ-004** |
 | `Plan.Spots[i].Unit.Kind == Storefront` (`pizzapub`, `pizzapub2`, `radnja1..3`) | business | 1→1, sign `pizza` for the pizzapubs | **BIZ-004** |
 | `Plan.Spots[i].Unit.Kind == Amenity`, unit `gym` | business | 1→1, sign `gym` | **BIZ-005** |
@@ -48,8 +48,8 @@ every ground-floor shop source piece, without the street-visibility filter used 
 planner's `Shops`/`ShopCells` fields. Straight source pieces are subdivided by their 5 m
 width, so one wide mesh no longer merges adjacent premises; a true `_Corner_` source piece
 stays one business even when its glass wraps onto two faces. BIZ-004 rotates and places
-every harvested bay on every exterior, rear or inward face, with its own 5×5 m footprint
-and door. Buildings which only expose an inward shop are included even when `Spot.Shop` is
+every harvested doored premise on every exterior, rear or inward face, with an explicit 5×5 m
+footprint (10×5 m after a doorless neighbour joins it) and measured door. Buildings which only expose an inward shop are included even when `Spot.Shop` is
 false; complete amenity lots remain owned by their one-site venue/compound providers rather
 than being split by decorative meshes. Where the old system had a street-front address,
 exactly one representative retains that stable ID and `frontage` role; other bays use

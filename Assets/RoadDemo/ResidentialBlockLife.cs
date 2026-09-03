@@ -76,6 +76,8 @@ namespace RoadDemo
             [NonSerialized] public Vector3[] PanicRoute;
             [NonSerialized] public bool PanicStanding;
             [NonSerialized] public float PanicStandTime, PanicStandDuration;
+            [NonSerialized] public Storefront Storefront;
+            [NonSerialized] public bool StorefrontOpen;
         }
 
         const float Arrived = 0.09f;
@@ -285,6 +287,48 @@ namespace RoadDemo
             actor.Motion = new AmbientMotion(actor.Animator, _idle, _walk, _run,
                                              actor.Action, actor.Secondary, _standUp,
                                              actor.Phase, IsSeated(actor.Job));
+            if (actor.Job == Routine.Door)
+                AssignStorefront(actor, StorefrontAt(actor.A));
+        }
+
+        Storefront StorefrontAt(Vector3 localDoor)
+        {
+            var root = transform.parent != null ? transform.parent : transform;
+            var storefronts = root.GetComponentsInChildren<Storefront>(true);
+            Vector3 world = transform.TransformPoint(localDoor);
+            Storefront best = null;
+            float distance = 2.25f * 2.25f;
+            for (int i = 0; i < storefronts.Length; i++)
+            {
+                var storefront = storefronts[i];
+                if (storefront == null) continue;
+                Vector3 delta = storefront.DoorWorld - world;
+                delta.y = 0f;
+                if (delta.sqrMagnitude >= distance) continue;
+                distance = delta.sqrMagnitude;
+                best = storefront;
+            }
+            return best;
+        }
+
+        static void StorefrontDoor(Actor actor, bool open)
+        {
+            if (actor?.Storefront == null || actor.StorefrontOpen == open) return;
+            actor.StorefrontOpen = open;
+            if (open) actor.Storefront.Open();
+            else actor.Storefront.Close();
+        }
+
+        static void AssignStorefront(Actor actor, Storefront storefront)
+        {
+            if (actor == null) return;
+            // A panic route can retarget a door actor in the middle of its normal entry
+            // beat. Close the old leaf before replacing the reference, then make the
+            // cached flag describe the new storefront rather than the previous one.
+            if (actor.StorefrontOpen && actor.Storefront != null)
+                actor.Storefront.Close();
+            actor.Storefront = storefront;
+            actor.StorefrontOpen = false;
         }
 
         bool Owned(Actor actor) => actor?.Root != null && actor.Tf != null &&
@@ -688,6 +732,7 @@ namespace RoadDemo
                     // Hidden inside -> walk out -> linger -> walk back -> hidden inside.
                     if (cycle < 0.12f || cycle >= 0.88f)
                     {
+                        StorefrontDoor(actor, false);
                         Visible(actor, false);
                         actor.Motion?.SetOverlay(false);
                         return;
@@ -695,6 +740,7 @@ namespace RoadDemo
                     Visible(actor, true);
                     if (cycle < 0.35f)
                     {
+                        StorefrontDoor(actor, true);
                         float t = Smooth((cycle - 0.12f) / 0.23f);
                         Travel(actor, actor.A, actor.B, t);
                         pose = AmbientMotion.BasePose.Walk;
@@ -703,10 +749,12 @@ namespace RoadDemo
                     }
                     else if (cycle < 0.65f)
                     {
+                        StorefrontDoor(actor, cycle < 0.43f);
                         Place(actor, actor.B, actor.YawB);
                     }
                     else
                     {
+                        StorefrontDoor(actor, true);
                         float t = Smooth((cycle - 0.65f) / 0.23f);
                         Travel(actor, actor.B, actor.A, t);
                         pose = AmbientMotion.BasePose.Walk;
@@ -1021,6 +1069,9 @@ namespace RoadDemo
             actor.PanicStandTime = 0f;
             actor.PanicStandDuration = Mathf.Max(0.55f,
                 (_standUp != null ? _standUp.length : 0.7f) / 1.25f);
+            AssignStorefront(actor, route != null && route.Length > 0
+                ? StorefrontAt(route[route.Length - 1])
+                : null);
             Carry(actor, false);
             actor.Motion?.SetOverlay(false);
             _panicPreparing = null;
@@ -1079,6 +1130,8 @@ namespace RoadDemo
                 return;
             }
             Vector3 target = actor.PanicRoute[actor.PanicLeg];
+            StorefrontDoor(actor,
+                actor.Storefront != null && actor.PanicLeg == actor.PanicRoute.Length - 1);
             Vector3 before = actor.Tf.localPosition;
             actor.Tf.localPosition = Vector3.MoveTowards(before, target, actor.PanicSpeed * dt);
             Vector3 direction = target - before;
@@ -1096,6 +1149,7 @@ namespace RoadDemo
                 if (actor.PanicLeg >= actor.PanicRoute.Length)
                 {
                     actor.PanicDone = true;
+                    StorefrontDoor(actor, false);
                     Visible(actor, false);
                     return;
                 }

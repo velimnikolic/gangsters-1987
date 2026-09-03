@@ -2382,6 +2382,198 @@ namespace GangstersTools
 
         // ------------------------------------------------------------ the residential harvest
 
+        [CliCommand("gangsters_storefront",
+                    "Bake, build, demo and audit GAN-294 live residential storefronts. Supports --seed, --unit and --draw.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "residential", "tests" })]
+        public static object Storefront(
+            [CliArg("what", "all, bake, bench, demo, or audit")] string what = "all",
+            [CliArg("seed", "Deterministic storefront dressing seed.")] int seed = 1987,
+            [CliArg("unit", "One harvested residential unit, or all when omitted.")] string unit = "",
+            [CliArg("draw", "Stand the selected unit in the open scene without saving.")] bool draw = false)
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is in play mode; leave it first.");
+            what = (what ?? "all").Trim().ToLowerInvariant();
+            if (what != "all" && what != "bake" && what != "bench" &&
+                what != "demo" && what != "audit")
+                throw new ArgumentException("--what is all, bake, bench, demo, or audit.");
+
+            StorefrontLeafBaker.BakeReport bake = null;
+            StorefrontShowroom.Report bench = null;
+            StorefrontTrafficShowroom.Report demo = null;
+            if (what == "all" || what == "bake") bake = StorefrontLeafBaker.BakeAll();
+            if (what == "all" || what == "bench") bench = StorefrontShowroom.Draw();
+            if (what == "all" || what == "demo") demo = StorefrontTrafficShowroom.Draw();
+
+            var meshAudit = StorefrontLeafBaker.Audit();
+            var contracts = LivingCity.Tests.StorefrontContractTests.Run();
+            var unitAudit = StorefrontUnitAudit(seed, unit, draw);
+            object prefabAudit = null;
+            if (what == "all" || what == "audit") prefabAudit = StorefrontAudit();
+            bool passed = (bake == null || bake.Passed) &&
+                          (bench == null || bench.Passed) &&
+                          (demo == null || demo.Passed) &&
+                          meshAudit.Passed && contracts.Passed && unitAudit.Passed;
+            return new
+            {
+                passed, what, seed, unit = string.IsNullOrWhiteSpace(unit) ? "all" : unit,
+                draw, bake, bench, demo, meshAudit, contracts, unitAudit, prefabAudit
+            };
+        }
+
+        public sealed class StorefrontUnitAuditReport
+        {
+            public int Seed;
+            public bool Drawn;
+            public string[] Failures = Array.Empty<string>();
+            public StorefrontUnitAuditRow[] Rows = Array.Empty<StorefrontUnitAuditRow>();
+            public bool Passed => Failures.Length == 0 && Rows.Length > 0;
+        }
+
+        public sealed class StorefrontUnitAuditRow
+        {
+            public string Unit;
+            public int ExpectedBays;
+            public int Storefronts;
+            public int ExpectedPanes;
+            public int Panes;
+            public int ExpectedLeaves;
+            public int Leaves;
+            public bool Deterministic;
+            public bool Passed;
+        }
+
+        static StorefrontUnitAuditReport StorefrontUnitAudit(
+            int seed, string requestedUnit, bool draw)
+        {
+            var report = new StorefrontUnitAuditReport { Seed = seed, Drawn = draw };
+            var failures = new List<string>();
+            var rows = new List<StorefrontUnitAuditRow>();
+            var eligible = ResidentialUnits.All.Where(candidate =>
+                candidate != null && !ResidentialUnits.IsLot(candidate) &&
+                candidate.Kind != ResidentialKind.Storefront &&
+                candidate.Shops != null && candidate.Shops.Any(count => count > 0) &&
+                candidate.ShopBays != null && candidate.ShopBays.Any(bay =>
+                    StorefrontDoorCatalog.TryGet(bay.Module, out _))).ToList();
+            if (!string.IsNullOrWhiteSpace(requestedUnit))
+                eligible = eligible.Where(candidate => string.Equals(
+                    candidate.Name, requestedUnit.Trim(),
+                    StringComparison.OrdinalIgnoreCase)).ToList();
+            else if (draw)
+                eligible = eligible.Where(candidate => candidate.Name == "residential-06").ToList();
+
+            if (eligible.Count == 0)
+                failures.Add("No eligible residential shop unit matched --unit.");
+
+            for (int i = 0; i < eligible.Count; i++)
+            {
+                var candidate = eligible[i];
+                string path = $"{ResidentialHarvest.OutDir}/{candidate.Name}.prefab";
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab == null)
+                {
+                    failures.Add(candidate.Name + ": source prefab missing");
+                    continue;
+                }
+
+                GameObject instance = null;
+                bool prefabContents = !draw;
+                try
+                {
+                    if (draw)
+                    {
+                        var scene = EditorSceneManager.GetActiveScene();
+                        instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, scene);
+                        instance.name = "GAN-294 storefront preview · " + candidate.Name;
+                        instance.transform.position = new Vector3(i * 20f, 0f, 0f);
+                        Undo.RegisterCreatedObjectUndo(instance, "Draw storefront preview");
+                    }
+                    else
+                        instance = PrefabUtility.LoadPrefabContents(path);
+
+                    int expectedPanes = ResidentialBlocks.AuditStorefrontOpeningCount(
+                        instance, candidate, Vector3.zero);
+                    ResidentialBlocks.BuildStorefrontPreview(instance, candidate, seed);
+                    var storefronts = instance.GetComponentsInChildren<RoadDemo.Storefront>(true);
+                    string firstBuild = StorefrontBuildSignature(instance, storefronts);
+                    // Exercise the same inactive-child reuse that refreshes and pooled
+                    // leases depend on, then compare the real rebuilt hierarchy.
+                    foreach (var storefront in storefronts)
+                        storefront.gameObject.SetActive(false);
+                    ResidentialBlocks.BuildStorefrontPreview(instance, candidate, seed);
+                    storefronts = instance.GetComponentsInChildren<RoadDemo.Storefront>(true);
+                    string secondBuild = StorefrontBuildSignature(instance, storefronts);
+                    int expectedBays = candidate.ShopBays.Count(bay => bay.Door.Leaves > 0);
+                    int expectedLeaves = candidate.ShopBays.Sum(bay => bay.Door.Leaves);
+                    int panes = storefronts.Sum(front => front.PaneCount);
+                    int leaves = storefronts.Sum(front => front.LeafCount);
+                    bool deterministic = firstBuild == secondBuild &&
+                        storefronts.All(front => front.gameObject.activeSelf);
+                    bool countsMatch = storefronts.Length == expectedBays &&
+                                       panes == expectedPanes && leaves == expectedLeaves;
+                    bool passed = countsMatch && deterministic;
+                    if (!countsMatch)
+                        failures.Add(candidate.Name + ": expected " + expectedBays + "/" +
+                            expectedPanes + "/" + expectedLeaves + " storefronts/panes/leaves, got " +
+                            storefronts.Length + "/" + panes + "/" + leaves + ".");
+                    if (!deterministic)
+                        failures.Add(candidate.Name +
+                            ": repeated build drifted or left an inactive storefront bay.");
+                    rows.Add(new StorefrontUnitAuditRow
+                    {
+                        Unit = candidate.Name,
+                        ExpectedBays = expectedBays,
+                        Storefronts = storefronts.Length,
+                        ExpectedPanes = expectedPanes,
+                        Panes = panes,
+                        ExpectedLeaves = expectedLeaves,
+                        Leaves = leaves,
+                        Deterministic = deterministic,
+                        Passed = passed,
+                    });
+                    if (draw)
+                        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+                }
+                catch (Exception exception)
+                {
+                    failures.Add(candidate.Name + ": " + exception);
+                }
+                finally
+                {
+                    if (prefabContents && instance != null)
+                        PrefabUtility.UnloadPrefabContents(instance);
+                }
+            }
+
+            report.Rows = rows.ToArray();
+            report.Failures = failures.ToArray();
+            return report;
+        }
+
+        static string StorefrontBuildSignature(
+            GameObject root, IEnumerable<RoadDemo.Storefront> storefronts)
+        {
+            if (root == null || storefronts == null) return string.Empty;
+            return string.Join(";", storefronts
+                .Where(front => front != null)
+                .OrderBy(front => front.name, StringComparer.Ordinal)
+                .Select(front =>
+                {
+                    Vector3 door = root.transform.InverseTransformPoint(front.DoorWorld);
+                    Vector3 outward = root.transform.InverseTransformDirection(front.OutwardWorld);
+                    Bounds binding = front.BindingBounds;
+                    Vector3 centre = root.transform.InverseTransformPoint(binding.center);
+                    return string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                        "{0}|{1}|{2}|{3:R},{4:R},{5:R}|{6:R},{7:R},{8:R}|" +
+                        "{9:R},{10:R},{11:R}|{12:R},{13:R},{14:R}|{15:R}|{16}|{17}",
+                        front.name, front.Module, front.gameObject.activeSelf,
+                        door.x, door.y, door.z, outward.x, outward.y, outward.z,
+                        centre.x, centre.y, centre.z,
+                        binding.size.x, binding.size.y, binding.size.z,
+                        front.FrontageWidth, front.PaneCount, front.LeafCount);
+                }));
+        }
+
         [CliCommand("gangsters_storefront_refresh",
                     "Refresh only generated storefront interiors in the open ResidentialDemo; does not save or rebuild blocks.",
                     MainThreadRequired = true, Tags = new[] { "gangsters", "residential" })]

@@ -117,6 +117,11 @@ namespace LivingCity.Entities
                     BusinessViewBindings.Unbind(wasBound, this);
                 BusinessViewBindings.Bind(BusinessId, this);
             }
+
+            var storefront = GetComponent<RoadDemo.Storefront>() ??
+                             GetComponentInParent<RoadDemo.Storefront>();
+            if (storefront != null)
+                storefront.BindBusiness(BusinessId);
         }
 
         /// <summary>

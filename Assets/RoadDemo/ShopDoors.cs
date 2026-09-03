@@ -47,6 +47,14 @@ namespace RoadDemo
             if (marker == null)
                 return null;
 
+            var storefront = marker.GetComponent<Storefront>() ??
+                             marker.GetComponentInParent<Storefront>();
+            if (storefront != null && storefront.Entrance != null)
+            {
+                frontage = storefront.FrontageWidth;
+                return storefront.Entrance;
+            }
+
             var found = marker.GetComponentInChildren<ShopEntrance>(true);
             if (found != null)
             {
@@ -143,6 +151,20 @@ namespace RoadDemo
             var ground = site.Footprint;
             if (ground.IsEmpty)
                 return false;
+
+            if (LivingCity.Business.BusinessViewBindings.TryGet(id, out var marker))
+            {
+                var storefront = marker != null
+                    ? marker.GetComponent<Storefront>() ?? marker.GetComponentInParent<Storefront>()
+                    : null;
+                if (storefront != null)
+                {
+                    door = storefront.DoorWorld;
+                    outward = storefront.OutwardWorld;
+                    frontage = storefront.FrontageWidth;
+                    return true;
+                }
+            }
 
             // Which side the doorstep is off. Measured from the footprint's own edges, so
             // a shop whose door is on the short side is not given the long one.

@@ -14,6 +14,10 @@ namespace RoadDemo
             "Assets/Synty/PolygonCoffeeShop/Materials/Background.mat";
         const string StorefrontShutterMaterial =
             "Assets/Synty/PolygonMapsPrison/Materials/Concrete_Dark_01.mat";
+        const string StorefrontGlassMaterial =
+            "Assets/Synty/PolygonCity/Materials/Misc/Glass_01.mat";
+        const string StorefrontWallMaterial =
+            "Assets/Synty/PolygonCity/Materials/Alts/PolygonCity_01_A.mat";
         const string StorefrontProps = "Assets/Synty/PolygonCity/Prefabs/Props/";
         const string StorefrontPropName = "storefront SM_Prop_ShopInterior_";
 
@@ -93,7 +97,8 @@ namespace RoadDemo
         {
             for (Transform at = candidate; at != null && at != buildingRoot; at = at.parent)
                 if (at.name == StorefrontShellName ||
-                    at.name.StartsWith(StorefrontPropName, StringComparison.Ordinal))
+                    at.name.StartsWith(StorefrontPropName, StringComparison.Ordinal) ||
+                    at.GetComponent<Storefront>() != null)
                     return true;
             return false;
         }
@@ -148,6 +153,7 @@ namespace RoadDemo
             storefrontShutterMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShutterMaterial);
             rooms.Configure(layout.Openings, plan.ClosedMask,
                             storefrontShellMaterial, storefrontShutterMaterial);
+            BuildLiveStorefronts(building, unit, layout.Openings);
 
             stood.Storefronts += layout.Openings.Length;
             stood.ClosedStorefronts += plan.Closed;
@@ -171,6 +177,285 @@ namespace RoadDemo
             // both eager and incremental composition paths.
             BuildingCutaway.Prepare(building);
             yield return plan.Styles.Length + 1;
+        }
+
+        sealed class LiveBay
+        {
+            public int Primary;
+            public Rect Footprint;
+            public readonly List<int> Members = new List<int>(2);
+            public readonly List<ResidentialStorefrontOpening> Openings =
+                new List<ResidentialStorefrontOpening>(3);
+        }
+
+        /// <summary>Create/rebind one independently live facade per doored logical bay.</summary>
+        static void BuildLiveStorefronts(
+            GameObject building, ResidentialUnit unit,
+            ResidentialStorefrontOpening[] measured)
+        {
+            // Named kit venues (pizzapub/radnja) keep the legacy damage and doorway path;
+            // EPIC 32 addresses shop bays embedded in residential buildings only.
+            if (building == null || unit == null || unit.Kind == ResidentialKind.Storefront ||
+                unit.ShopBays == null || unit.ShopBays.Length == 0)
+                return;
+
+            var bays = unit.ShopBays;
+            var logical = new List<LiveBay>(bays.Length);
+            for (int i = 0; i < bays.Length; i++)
+            {
+                if (bays[i].Door.Leaves == 0) continue;
+                var live = new LiveBay { Primary = i, Footprint = LocalBayRect(unit, bays[i]) };
+                live.Members.Add(i);
+                logical.Add(live);
+            }
+
+            // Display-only Shop_05 and the second half of wide Shop_03 are part of the
+            // nearest doored premise on the same face.
+            for (int i = 0; i < bays.Length; i++)
+            {
+                if (bays[i].Door.Leaves != 0) continue;
+                if (!StorefrontDoorCatalog.TryGet(bays[i].Module, out _)) continue;
+                int nearest = -1;
+                float best = float.MaxValue;
+                var footprint = LocalBayRect(unit, bays[i]);
+                for (int n = 0; n < logical.Count; n++)
+                {
+                    var owner = bays[logical[n].Primary];
+                    float distance = (logical[n].Footprint.center -
+                                      footprint.center).sqrMagnitude;
+                    if (distance >= best) continue;
+                    best = distance;
+                    nearest = n;
+                }
+                if (nearest < 0) continue;
+                logical[nearest].Members.Add(i);
+                var merged = Rect.MinMaxRect(
+                    Mathf.Min(logical[nearest].Footprint.xMin, footprint.xMin),
+                    Mathf.Min(logical[nearest].Footprint.yMin, footprint.yMin),
+                    Mathf.Max(logical[nearest].Footprint.xMax, footprint.xMax),
+                    Mathf.Max(logical[nearest].Footprint.yMax, footprint.yMax));
+                float cell = ResidentialLot.Cell;
+                if (bays[i].Side == 0 || bays[i].Side == 2)
+                    logical[nearest].Footprint = new Rect(
+                        Mathf.Clamp(merged.center.x - cell, 0f,
+                            unit.CW * cell - cell * 2f),
+                        logical[nearest].Footprint.y, cell * 2f, cell);
+                else
+                    logical[nearest].Footprint = new Rect(
+                        logical[nearest].Footprint.x,
+                        Mathf.Clamp(merged.center.y - cell, 0f,
+                            unit.CD * cell - cell * 2f),
+                        cell, cell * 2f);
+            }
+
+            // The harvest and DiscoverStorefronts both emit one entry per source module.
+            // Match those entries to the source bays first, then follow the logical owner
+            // (which may be the neighbour of Shop_05 / the display half of Shop_03).
+            // Matching directly to doored footprints made chamfer normals steal a nearby
+            // corner's pane and left another bay with a synthetic replacement.
+            var usedOpenings = new bool[measured?.Length ?? 0];
+            for (int bayIndex = 0; bayIndex < bays.Length; bayIndex++)
+            {
+                if (!StorefrontDoorCatalog.TryGet(bays[bayIndex].Module, out _)) continue;
+                // Shop_03 is a single 10 m source module represented by two planner
+                // cells. Its doorless second half shares the first half's glass child;
+                // it must not consume another module's measured opening.
+                if (bays[bayIndex].Door.Leaves == 0 &&
+                    bays[bayIndex].Module == "SM_Bld_Shop_03") continue;
+                int owner = -1;
+                for (int n = 0; n < logical.Count; n++)
+                    if (logical[n].Members.Contains(bayIndex)) { owner = n; break; }
+                if (owner < 0) continue;
+
+                int opening = NearestOpening(bayIndex, requireFacing: true);
+                if (opening < 0) opening = NearestOpening(bayIndex, requireFacing: false);
+                if (opening < 0) continue;
+                usedOpenings[opening] = true;
+                logical[owner].Openings.Add(measured[opening]);
+            }
+
+            // A future source mesh may expose an extra pane group. It still belongs to the
+            // closest logical premise and must not be silently discarded.
+            for (int i = 0; measured != null && i < measured.Length; i++)
+            {
+                if (usedOpenings[i]) continue;
+                int nearest = -1;
+                float best = float.MaxValue;
+                for (int n = 0; n < logical.Count; n++)
+                {
+                    Vector3 target = new Vector3(logical[n].Footprint.center.x,
+                        measured[i].Front.y, logical[n].Footprint.center.y);
+                    float distance = (measured[i].Front - target).sqrMagnitude;
+                    if (distance >= best) continue;
+                    best = distance;
+                    nearest = n;
+                }
+                if (nearest >= 0) logical[nearest].Openings.Add(measured[i]);
+            }
+
+            int NearestOpening(int bayIndex, bool requireFacing)
+            {
+                int nearest = -1;
+                float best = float.MaxValue;
+                Vector3 centre = new Vector3(bays[bayIndex].X, 0f, bays[bayIndex].Z);
+                Vector3 outward = SideOutward(bays[bayIndex].Side);
+                for (int i = 0; measured != null && i < measured.Length; i++)
+                {
+                    if (usedOpenings[i] || requireFacing &&
+                        Vector3.Dot(outward, measured[i].Outward) < 0.35f)
+                        continue;
+                    Vector3 delta = measured[i].Front - centre;
+                    delta.y = 0f;
+                    float distance = delta.sqrMagnitude;
+                    if (distance >= best) continue;
+                    best = distance;
+                    nearest = i;
+                }
+                return nearest;
+            }
+
+            var filters = new List<MeshFilter>(64);
+            building.GetComponentsInChildren(true, filters);
+            Material fallbackGlass = DemoAssetLoad.Load<Material>(StorefrontGlassMaterial);
+            Material fallbackWall = DemoAssetLoad.Load<Material>(StorefrontWallMaterial);
+            storefrontShutterMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShutterMaterial);
+
+            var existing = new List<Storefront>();
+            building.GetComponentsInChildren(true, existing);
+            for (int n = 0; n < logical.Count; n++)
+            {
+                var live = logical[n];
+                var bay = bays[live.Primary];
+                Storefront storefront = n < existing.Count ? existing[n] : null;
+                if (storefront == null || storefront.transform.parent != building.transform)
+                {
+                    var root = new GameObject("Storefront bay " + n);
+                    root.transform.SetParent(building.transform, false);
+                    root.layer = building.layer;
+                    storefront = root.AddComponent<Storefront>();
+                }
+                storefront.name = "Storefront bay " + n;
+
+                var walls = new List<MeshFilter>(live.Members.Count);
+                var glasses = new List<MeshRenderer>(live.Members.Count);
+                Material wallMaterial = fallbackWall;
+                Material glassMaterial = fallbackGlass;
+                for (int member = 0; member < live.Members.Count; member++)
+                {
+                    var sourceBay = bays[live.Members[member]];
+                    var wall = FindModuleFilter(building.transform, filters, sourceBay);
+                    if (wall == null || walls.Contains(wall)) continue;
+                    walls.Add(wall);
+                    var wallRenderer = wall.GetComponent<MeshRenderer>();
+                    if (wallRenderer != null && wallRenderer.sharedMaterial != null &&
+                        member == 0) wallMaterial = wallRenderer.sharedMaterial;
+                    foreach (var renderer in wall.GetComponentsInChildren<MeshRenderer>(true))
+                    {
+                        if (renderer == null || renderer == wallRenderer ||
+                            !renderer.name.EndsWith("_Glass", StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        if (!glasses.Contains(renderer)) glasses.Add(renderer);
+                        if (renderer.sharedMaterial != null) glassMaterial = renderer.sharedMaterial;
+                    }
+                }
+
+                if (live.Openings.Count == 0)
+                    live.Openings.Add(SyntheticOpening(bay, live.Footprint));
+                storefront.Configure(
+                    bay.Module,
+                    new Vector3(bay.Door.X, 0f, bay.Door.Z),
+                    bay.Door.Yaw,
+                    live.Footprint,
+                    live.Openings.ToArray(), walls.ToArray(), glasses.ToArray(),
+                    glassMaterial, storefrontShutterMaterial, wallMaterial);
+                // Refresh and authoring passes reuse inactive surplus children. Configure
+                // them before enabling so OnEnable sees the new bay, not the old lease.
+                if (!storefront.gameObject.activeSelf)
+                    storefront.gameObject.SetActive(true);
+            }
+
+            // A refresh can reduce the count; old pooled children must not remain bindable.
+            for (int i = logical.Count; i < existing.Count; i++)
+                if (existing[i] != null && existing[i].transform.parent == building.transform)
+                    existing[i].gameObject.SetActive(false);
+        }
+
+        static MeshFilter FindModuleFilter(
+            Transform building, List<MeshFilter> filters, ResidentialShopBay bay)
+        {
+            if (string.IsNullOrEmpty(bay.Module)) return null;
+            Vector3 target = new Vector3(
+                bay.Door.Leaves > 0 ? bay.Door.X : bay.X, 0f,
+                bay.Door.Leaves > 0 ? bay.Door.Z : bay.Z);
+            MeshFilter best = null;
+            float bestDistance = float.MaxValue;
+            StorefrontDoorCatalog.TryGet(bay.Module, out var profile);
+            for (int i = 0; i < filters.Count; i++)
+            {
+                var filter = filters[i];
+                if (filter == null || filter.sharedMesh == null) continue;
+                string meshName = filter.sharedMesh.name;
+                if (!meshName.StartsWith(bay.Module, StringComparison.OrdinalIgnoreCase) ||
+                    meshName.EndsWith("_Glass", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                Vector3 sourcePoint = building.InverseTransformPoint(
+                    filter.transform.TransformPoint(profile.Centre));
+                sourcePoint.y = target.y = 0f;
+                float distance = (sourcePoint - target).sqrMagnitude;
+                if (distance >= bestDistance) continue;
+                bestDistance = distance;
+                best = filter;
+            }
+            return best;
+        }
+
+        static Rect LocalBayRect(ResidentialUnit unit, ResidentialShopBay bay)
+        {
+            float cell = ResidentialLot.Cell;
+            float width = unit.CW * cell;
+            float depth = unit.CD * cell;
+            int side = bay.Door.Leaves > 0
+                ? SideOfVector(Quaternion.Euler(0f, bay.Door.Yaw, 0f) * Vector3.forward)
+                : bay.Side;
+            float alongX = bay.Door.Leaves > 0 ? bay.Door.X : bay.X;
+            float alongZ = bay.Door.Leaves > 0 ? bay.Door.Z : bay.Z;
+            float x = side switch
+            {
+                1 => alongX - cell,
+                3 => alongX,
+                _ => alongX - cell * 0.5f,
+            };
+            float z = side switch
+            {
+                0 => alongZ,
+                2 => alongZ - cell,
+                _ => alongZ - cell * 0.5f,
+            };
+            if (bay.Door.Leaves == 0)
+            {
+                x = Mathf.Clamp(x, 0f, Mathf.Max(0f, width - cell));
+                z = Mathf.Clamp(z, 0f, Mathf.Max(0f, depth - cell));
+            }
+            return new Rect(x, z, cell, cell);
+        }
+
+        static int SideOfVector(Vector3 outward)
+        {
+            if (Mathf.Abs(outward.x) > Mathf.Abs(outward.z))
+                return outward.x >= 0f ? 1 : 3;
+            return outward.z >= 0f ? 2 : 0;
+        }
+
+        static ResidentialStorefrontOpening SyntheticOpening(
+            ResidentialShopBay bay, Rect footprint)
+        {
+            Vector3 outward = Quaternion.Euler(0f, bay.Door.Yaw, 0f) * Vector3.forward;
+            Vector3 right = Vector3.Cross(Vector3.up, outward).normalized;
+            float width = bay.Side == 0 || bay.Side == 2
+                ? footprint.width : footprint.height;
+            return new ResidentialStorefrontOpening(
+                new Vector3(bay.X, 0f, bay.Z), outward, right,
+                Mathf.Max(1.2f, width - 0.2f), 3f);
         }
 
         internal static StorefrontDecorationPlan PlanStorefronts(int count, int seed)
@@ -210,21 +495,7 @@ namespace RoadDemo
             int closed = 0;
             var openGroups = new List<int>(groups.Count);
             for (int group = 0; group < groups.Count; group++)
-            {
-                if (dice.Next(100) < 23)
-                {
-                    foreach (int opening in groups[group]) closed |= 1 << opening;
-                }
-                else openGroups.Add(group);
-            }
-            // Panes from one corner module are one business: they open and close together.
-            // A whole building may never be visually vacant.
-            if (openGroups.Count == 0)
-            {
-                int one = dice.Next(groups.Count);
-                foreach (int opening in groups[one]) closed &= ~(1 << opening);
-                openGroups.Add(one);
-            }
+                openGroups.Add(group);
 
             var candidates = new List<int>(count);
             // A two-sided corner shop gets one compact display on each main facade before
@@ -569,6 +840,35 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>Editor/audit entry point which exercises the same dressing pass as a
+        /// streamed residential unit. The caller owns the temporary or drawn instance.</summary>
+        public static void BuildStorefrontPreview(
+            GameObject building, ResidentialUnit unit, int seed)
+        {
+            if (building == null || unit == null)
+                return;
+            var openings = DiscoverStorefronts(building, unit, null);
+            if (openings.Length == 0)
+                return;
+            var plan = PlanStorefronts(openings, seed);
+            var shell = building.transform.Find(StorefrontShellName);
+            if (shell == null)
+            {
+                shell = new GameObject(StorefrontShellName).transform;
+                shell.SetParent(building.transform, false);
+            }
+            shell.gameObject.layer = building.layer;
+            var rooms = shell.GetComponent<ResidentialStorefrontShell>();
+            if (rooms == null)
+                rooms = shell.gameObject.AddComponent<ResidentialStorefrontShell>();
+            storefrontShellMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShellMaterial);
+            storefrontShutterMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShutterMaterial);
+            rooms.Configure(openings, plan.ClosedMask,
+                storefrontShellMaterial, storefrontShutterMaterial);
+            BuildLiveStorefronts(building, unit, openings);
+            BuildingCutaway.Prepare(building);
+        }
+
         static void AddMissingUnitFaces(List<ResidentialStorefrontOpening> found,
                                         ResidentialUnit unit, ref int nextGroup)
         {
@@ -824,6 +1124,7 @@ namespace RoadDemo
                 storefrontShutterMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShutterMaterial);
                 oldShell.Configure(openings, plan.ClosedMask,
                     storefrontShellMaterial, storefrontShutterMaterial);
+                BuildLiveStorefronts(building, unit, openings);
 
                 int displays = 0;
                 for (int opening = 0; opening < plan.Styles.Length; opening++)

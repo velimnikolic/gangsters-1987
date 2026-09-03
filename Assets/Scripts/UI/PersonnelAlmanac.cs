@@ -297,6 +297,11 @@ namespace LivingCity.UI
         OutfitDirector outfit;
         Ambient.CityClock cityClock;
 
+        /// <summary>Whether the scene has been asked for its clock. A scene with none is
+        /// an answer worth keeping, not a search worth repeating sixty times a second.
+        /// </summary>
+        bool clockSearched;
+
         /// <summary>Scratch for Turf reads - refilled from the markers on use.</summary>
         readonly List<Outfit.Turf.Holding> holdings = new List<Outfit.Turf.Holding>();
 
@@ -1253,6 +1258,10 @@ namespace LivingCity.UI
 
         void AcquireLedgerPause()
         {
+            // The book opening is the moment to look again: a scene that has gained a
+            // clock since the last time gets one search here, and the per-frame refresh
+            // under it goes back to keeping the answer.
+            clockSearched = false;
             if (!cityClock)
                 cityClock = FindAnyObjectByType<Ambient.CityClock>();
             if (!cityClock)
@@ -1295,11 +1304,32 @@ namespace LivingCity.UI
 
         void RefreshTimeControls()
         {
-            if (!cityClock)
+            // This runs every frame the book is open. The scene is searched ONCE and
+            // the answer is kept even when it is "there is no clock here" - the
+            // standalone ledger scene has none, and a per-frame FindAnyObjectByType
+            // walking the whole scene to learn that again is the worst kind of nothing.
+            if (!cityClock && !clockSearched)
+            {
                 cityClock = FindAnyObjectByType<Ambient.CityClock>();
+                clockSearched = true;
+            }
 
+            // Written in place, like the rail's own clock two hundred lines below.
+            // CityClock.Display builds a string, and a string a frame for a face that
+            // changes a digit a minute is an allocation the book does not need.
             if (chromeClock)
-                chromeClock.text = cityClock ? cityClock.Display : "--:--";
+            {
+                if (cityClock)
+                {
+                    var hour = cityClock.Hour;
+                    chromeClock.SetText("{0:00}:{1:00}", Mathf.FloorToInt(hour),
+                        Mathf.FloorToInt(hour % 1f * 60f));
+                }
+                else
+                {
+                    chromeClock.SetText("--:--");
+                }
+            }
 
             if (!cityClock)
             {

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using LivingCity.Business;
 using LivingCity.Territory;
 using RoadDemo;
@@ -507,10 +508,8 @@ namespace LivingCity.Tests
                 if (!seen.Add(site.SiteId.Value))
                     failures.Add("BIZ-004: duplicate site " + site.SiteId + ".");
 
-            // Every physical 5 m shop bay is a site, on every side of the building. A
-            // corner BUILDING is not itself one business; only its actual corner-shop
-            // module is. This also catches a wide authored glass mesh ("aa") wrongly
-            // merging the two equal premises it spans.
+            // Every doored premise is a site, on every side of the building. Doorless
+            // Shop_05 and the display half of wide Shop_03 join their nearest doored bay.
             var runs = new List<(int At, int Len)>();
             foreach (var recipe in model.Blocks)
             {
@@ -533,7 +532,7 @@ namespace LivingCity.Tests
                     else if (spot.Unit.ShopBays != null &&
                              spot.Unit.ShopBays.Length > 0)
                     {
-                        expected = spot.Unit.ShopBays.Length;
+                        expected = spot.Unit.ShopBays.Count(bay => bay.Door.Leaves > 0);
                     }
                     else if (spot.Shop)
                     {
@@ -577,18 +576,25 @@ namespace LivingCity.Tests
                 if (site.Approach.X < f.XMin - 1.01f || site.Approach.X > f.XMin + f.Width + 1.01f ||
                     site.Approach.Z < f.ZMin - 1.01f || site.Approach.Z > f.ZMin + f.Depth + 1.01f)
                 {
-                    failures.Add("BIZ-004: " + site.SiteId + " has a doorstep off its own ground.");
+                    failures.Add("BIZ-004: " + site.SiteId + " has doorstep " +
+                                 site.Approach.X + "," + site.Approach.Z +
+                                 " off footprint " + f.XMin + "," + f.ZMin + " + " +
+                                 f.Width + "x" + f.Depth + ".");
                     break;
                 }
 
                 if ((site.Role == ResidentialBusinessSites.FrontageRole ||
                      site.Role == ResidentialBusinessSites.ExtraFrontageRole) &&
-                    (Mathf.Abs(f.Width - ResidentialLot.Cell) > 0.01f ||
-                     Mathf.Abs(f.Depth - ResidentialLot.Cell) > 0.01f))
+                    !((Mathf.Abs(f.Width - ResidentialLot.Cell) <= 0.01f &&
+                       Mathf.Abs(f.Depth - ResidentialLot.Cell) <= 0.01f) ||
+                      (Mathf.Abs(f.Width - ResidentialLot.Cell * 2f) <= 0.01f &&
+                       Mathf.Abs(f.Depth - ResidentialLot.Cell) <= 0.01f) ||
+                      (Mathf.Abs(f.Width - ResidentialLot.Cell) <= 0.01f &&
+                       Mathf.Abs(f.Depth - ResidentialLot.Cell * 2f) <= 0.01f)))
                 {
-                    failures.Add("BIZ-004: physical shop bay " + site.SiteId + " is " +
+                    failures.Add("BIZ-004: storefront binding piece " + site.SiteId + " is " +
                                  f.Width + "x" + f.Depth + " m instead of " +
-                                 ResidentialLot.Cell + "x" + ResidentialLot.Cell + " m.");
+                                 "5x5 or joined 10x5 m.");
                     break;
                 }
             }

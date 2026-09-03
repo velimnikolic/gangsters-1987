@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
@@ -1439,7 +1439,12 @@ namespace LivingCity.UI
             }
             pitch = Mathf.Min(pitch, 7f);
 
-            var shown = Mathf.Min(4, commandTrades.Count);
+            // ALL eleven, best first. The grid computed every one of them and then
+            // printed the top four, which made the file quietly disagree with the man's
+            // own page on the roll - and the four a man is best at are exactly the four
+            // a reader can already guess. What he CANNOT do is the half of the file
+            // worth opening it for.
+            var shown = commandTrades.Count;
             var rowH = LineBox(9.5f) + 1f;
 
             for (var i = 0; i < shown; i++)
@@ -1525,9 +1530,18 @@ namespace LivingCity.UI
                 cx += chipW + 5f;
             }
 
+            // Five of the six. Loyalty has its own FIGURE on the sheet above - the
+            // watch band is a number the player acts on - and a page that prints a man
+            // as "34 of 100" and then again as one word is a page saying one fact
+            // twice in two voices. The man's own file on the roll settled this the same
+            // way; this is that ruling applied here.
             for (var i = 0; i < Personality.All.Length; i++)
+            {
+                if (Personality.All[i] == PersonalityTrait.Loyalty)
+                    continue;
                 Chip(Personality.Band(Personality.All[i],
                     Personality.Get(member, Personality.All[i])));
+            }
             if (extra.Length > 0)
                 Chip(extra);
 
@@ -2368,11 +2382,17 @@ namespace LivingCity.UI
         /// <summary>What a run of IBM Plex Mono measures. The face is monospaced at
         /// 0.6 em (LedgerStyle documents the ratio) and TMP's letter-spacing is in
         /// hundredths of an em, so a mono run's width is arithmetic - which is what lets
-        /// this sheet lay a flowing row without a layout pass.</summary>
-        static float MonoWidth(string text, float size, float spacing) =>
-            string.IsNullOrEmpty(text)
-                ? 0f
-                : text.Length * (size * 0.6f + size * spacing / 100f);
+        /// this sheet lay a flowing row without a layout pass. The size asked for is not
+        /// the size that prints - the book lifts its small print - so the arithmetic is
+        /// struck off LedgerKit.BookSize, the same rule the type itself goes through.
+        /// </summary>
+        static float MonoWidth(string text, float size, float spacing)
+        {
+            if (string.IsNullOrEmpty(text))
+                return 0f;
+            var printed = LedgerKit.BookSize(size);
+            return text.Length * (printed * 0.6f + printed * spacing / 100f);
+        }
 
         /// <summary>What a run of the condensed gothic measures. Oswald is proportional,
         /// so this is the real thing: TMP is asked, off a face carrying the same font
@@ -2390,11 +2410,37 @@ namespace LivingCity.UI
                 condensedRule.font = LedgerStyle.Condensed;
                 condensedRule.enabled = false;
             }
-            condensedRule.fontSize = size;
+            // The measuring face hangs outside the book, so the lift the book gives its
+            // small print never reaches it. Ask for the size that will actually print.
+            condensedRule.fontSize = LedgerKit.BookSize(size);
             return condensedRule.GetPreferredValues(text, 0f, 0f).x;
         }
 
         static TextMeshProUGUI condensedRule;
+
+        /// <summary>What a block of the serif copy face measures DOWN when it is poured
+        /// into a column of a given width. The same question the personal file asks of
+        /// its own career lines, asked off one hidden face so a page can strike a
+        /// height before it commits to building the paragraph.</summary>
+        static float CopyHeight(string text, float size, float width, float lineSpacing)
+        {
+            if (string.IsNullOrEmpty(text) || width <= 0f)
+                return 0f;
+            if (copyRule == null)
+            {
+                var host = new GameObject("Ledger copy measure", typeof(RectTransform));
+                host.hideFlags = HideFlags.HideAndDontSave;
+                copyRule = host.AddComponent<TextMeshProUGUI>();
+                copyRule.font = LedgerStyle.Serif;
+                copyRule.enabled = false;
+            }
+            copyRule.fontSize = LedgerKit.BookSize(size);
+            copyRule.lineSpacing = lineSpacing;
+            copyRule.textWrappingMode = TextWrappingModes.Normal;
+            return Mathf.Ceil(copyRule.GetPreferredValues(text, width, 0f).y);
+        }
+
+        static TextMeshProUGUI copyRule;
 
         /// <summary>What the stock book signed out to him, in the file's own words. A
         /// man the book has issued nothing to still has the .38 in his coat, which is

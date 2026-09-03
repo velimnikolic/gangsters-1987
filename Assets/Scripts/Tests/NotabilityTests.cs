@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using LivingCity.Personnel;
 
@@ -38,6 +38,7 @@ namespace LivingCity.Tests
             ("TheMarkedManIsMarkedAtTheBand", TheMarkedManIsMarkedAtTheBand),
             ("TheTopIsAPlainDescendingSort", TheTopIsAPlainDescendingSort),
             ("AMarkAlwaysHasACauseBehindIt", AMarkAlwaysHasACauseBehindIt),
+            ("TheRowsMarksAreOneWriter", TheRowsMarksAreOneWriter),
         };
 
         public static List<string> Run()
@@ -667,6 +668,65 @@ namespace LivingCity.Tests
             if (opening.Count != 3)
                 failures.Add("TheTopIsAPlainDescendingSort: a day-one campaign answered " +
                              "with an empty panel.");
+        }
+
+        /// <summary>
+        /// NOTE-003. The roster row's marks and the room the row cuts for them come off
+        /// ONE writer, so a mark cannot be added, renamed or reordered without the
+        /// column that holds it following. The row used to build its own line by hand
+        /// beside a width measured from a literal spelled out in a comment - the two
+        /// agreed only for as long as nobody touched either.
+        /// </summary>
+        static void TheRowsMarksAreOneWriter(List<string> failures)
+        {
+            // Every flag the book knows is in Every, and Every is what the widest line
+            // is struck from. A flag added to All and forgotten here would silently get
+            // a column measured without it.
+            for (var i = 0; i < ManFlags.All.Length; i++)
+                if ((ManFlags.Every & ManFlags.All[i]) == 0)
+                    failures.Add("TheRowsMarksAreOneWriter: " + ManFlags.All[i] +
+                                 " is a flag the book prints but Every does not carry, " +
+                                 "so the column is measured without it.");
+
+            // The widest line is the one with every mark up, and it is at least as wide
+            // as any single mark or pair.
+            var widest = ManFlags.MarkLine(ManFlags.Every);
+            for (var i = 0; i < ManFlags.All.Length; i++)
+            {
+                var one = ManFlags.MarkLine(ManFlags.All[i]);
+                if (one != ManFlags.Mark(ManFlags.All[i]))
+                    failures.Add("TheRowsMarksAreOneWriter: one flag alone printed \"" +
+                                 one + "\" and not its own mark.");
+                if (one.Length > widest.Length)
+                    failures.Add("TheRowsMarksAreOneWriter: a single mark ran wider " +
+                                 "than the line every mark makes.");
+            }
+
+            // Nothing said about him is an EMPTY line, not a separator with nothing
+            // round it - the row draws no marks at all in that case.
+            if (ManFlags.MarkLine(ManFlag.None).Length != 0)
+                failures.Add("TheRowsMarksAreOneWriter: a man with no marks was given " +
+                             "a line to print.");
+
+            // The order the marks print in is the order the book keeps them in.
+            var pair = ManFlags.MarkLine(
+                ManFlag.LieutenantMaterial | ManFlag.RedFlag);
+            if (pair != ManFlags.Mark(ManFlag.LieutenantMaterial) + " · " +
+                ManFlags.Mark(ManFlag.RedFlag))
+                failures.Add("TheRowsMarksAreOneWriter: two marks printed out of the " +
+                             "book's own order: " + pair);
+
+            // The row's short marks and the file's words are two voices for the same
+            // set - neither may answer for a flag the other is silent on.
+            for (var i = 0; i < ManFlags.All.Length; i++)
+            {
+                if (ManFlags.Mark(ManFlags.All[i]).Length == 0)
+                    failures.Add("TheRowsMarksAreOneWriter: " + ManFlags.All[i] +
+                                 " has no mark for the roll.");
+                if (ManFlags.Label(ManFlags.All[i]).Length == 0)
+                    failures.Add("TheRowsMarksAreOneWriter: " + ManFlags.All[i] +
+                                 " has no words for the file.");
+            }
         }
     }
 }

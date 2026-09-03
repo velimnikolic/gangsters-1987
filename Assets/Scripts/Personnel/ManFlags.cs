@@ -173,6 +173,12 @@ namespace LivingCity.Personnel
             ManFlag.RedFlag,
         };
 
+        /// <summary>Every mark at once. Not a state any man reaches often, but it is
+        /// the widest line the marks can make, which is what a column has to be cut
+        /// to.</summary>
+        public const ManFlag Every =
+            ManFlag.LieutenantMaterial | ManFlag.HitmanMaterial | ManFlag.RedFlag;
+
         /// <summary>The whole set as one line - "Lieutenant material · Bears watching",
         /// or an empty string when the book has nothing to say about him.</summary>
         public static string Line(ManFlag flags)
@@ -185,6 +191,23 @@ namespace LivingCity.Personnel
                 if (line.Length > 0)
                     line += " · ";
                 line += Label(All[i]);
+            }
+            return line;
+        }
+
+        /// <summary>The set as the roster ROW prints it - "LT · GUN · !" - the short
+        /// marks rather than the clerk's words. One writer for the line the row sets
+        /// and the width that room is measured from, so the two cannot drift.</summary>
+        public static string MarkLine(ManFlag flags)
+        {
+            var line = "";
+            for (var i = 0; i < All.Length; i++)
+            {
+                if ((flags & All[i]) == 0)
+                    continue;
+                if (line.Length > 0)
+                    line += " · ";
+                line += Mark(All[i]);
             }
             return line;
         }

@@ -287,14 +287,41 @@ namespace LivingCity.Tests
             }
             if (territory.Quarters.Count != 6)
                 failures.Add($"Core published {territory.Quarters.Count} quarters, expected 6");
-            if (territory.Blocks.Count != all.Count)
-                failures.Add($"territory named {territory.Blocks.Count} blocks, layout contains {all.Count}");
+            int territorialBlocks = 0;
+            for (int i = 0; i < all.Count; i++)
+                if (!CoreLayout.IsPark(all[i])) territorialBlocks++;
+            if (territory.Blocks.Count != territorialBlocks)
+                failures.Add($"territory named {territory.Blocks.Count} blocks, layout contains " +
+                             $"{territorialBlocks} territorial blocks");
             var ids = new HashSet<int>();
             var stable = new HashSet<string>();
             var names = new HashSet<string>();
+            int parks = 0;
             for (int i = 0; i < all.Count; i++)
             {
                 var block = all[i];
+                if (CoreLayout.IsPark(block))
+                {
+                    parks++;
+                    if (block.BlockId != -1 || !string.IsNullOrEmpty(block.StableId) ||
+                        !string.IsNullOrEmpty(block.DisplayName))
+                        failures.Add($"{block.Name} acquired territory identity");
+                    if (block.QuarterId == CoreQuarterId.None)
+                        failures.Add($"{block.Name} belongs to no quarter");
+
+                    bool decorated = false;
+                    for (int n = 0; n < territory.Decorations.Count; n++)
+                    {
+                        var decoration = territory.Decorations[n];
+                        if (decoration.Kind != "park" || decoration.QuarterId != block.QuarterId ||
+                            decoration.LocalBounds != block.Box) continue;
+                        decorated = true;
+                        break;
+                    }
+                    if (!decorated)
+                        failures.Add($"{block.Name} has no matching park decoration");
+                    continue;
+                }
                 if (block.BlockId < 0 || !ids.Add(block.BlockId))
                     failures.Add($"{block.Name} has missing/duplicate runtime block id {block.BlockId}");
                 if (string.IsNullOrEmpty(block.StableId) || !stable.Add(block.StableId))
@@ -304,6 +331,9 @@ namespace LivingCity.Tests
                 if (block.QuarterId == CoreQuarterId.None)
                     failures.Add($"{block.DisplayName ?? block.Name} belongs to no quarter");
             }
+            if (territory.Decorations.Count != parks)
+                failures.Add($"territory published {territory.Decorations.Count} decorations for " +
+                             $"{parks} parks");
 
             for (int i = 0; i < territory.Quarters.Count; i++)
             {

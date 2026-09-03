@@ -331,9 +331,7 @@ namespace GangstersTools
         }
 
         [CliCommand("gangsters_door_audit",
-                    "For the businesses nearest the player crew: whether the shop has a " +
-                    "view, a door, leaves that can swing, and how far its boards would " +
-                    "stand from the door and from the job's approach point.",
+                    "Audit every live residential bay doorstep against its measured door; report the nearest rows.",
                     MainThreadRequired = true, Tags = new[] { "gangsters", "gameplay" })]
         public static object DoorAudit(
             [CliArg("count", "How many of the nearest shops to report.")] int count = 6)
@@ -346,50 +344,91 @@ namespace GangstersTools
 
             TryOutfit(out _, out var ours, out _);
             var here = ours != null ? ours.Position : Vector3.zero;
-            var rows = LivingCity.Business.CityBusinesses.All
+            var audited = LivingCity.Business.CityBusinesses.All
                 .Select(row =>
                 {
+                    LivingCity.Business.BusinessSite site = null;
+                    bool physical = LivingCity.Business.BusinessRuntime.Instance != null &&
+                        LivingCity.Business.BusinessRuntime.Instance.TryGetSite(row.Id, out site) &&
+                        (site.Role == LivingCity.Business.ResidentialBusinessSites.FrontageRole ||
+                         site.Role == LivingCity.Business.ResidentialBusinessSites.ExtraFrontageRole);
                     Vector3 approach;
                     var hasApproach = runtime.TryGetBusinessApproach(row.Id, out approach);
-                    return new { row, approach, hasApproach };
-                })
-                .Where(one => one.hasApproach)
-                .OrderBy(one => (one.approach - here).sqrMagnitude)
-                .Take(Mathf.Clamp(count, 1, 40))
-                .Select(one =>
-                {
                     LivingCity.Entities.BusinessMarker marker;
                     var bound = LivingCity.Business.BusinessViewBindings.TryGet(
-                        one.row.Id, out marker) && marker != null;
+                        row.Id, out marker) && marker != null;
+                    var storefront = bound
+                        ? marker.GetComponent<RoadDemo.Storefront>() ??
+                          marker.GetComponentInParent<RoadDemo.Storefront>()
+                        : null;
+                    bool activeView = physical && site != null &&
+                        RoadDemo.CityBlockRecycler.IsViewActive(site.SourcePlanId);
+                    return new { row, physical, approach, hasApproach,
+                                 marker, bound, storefront, activeView };
+                })
+                // Missing approach/view rows are failures too. Filtering them here made
+                // the audit claim success precisely when an exact facade failed to bind.
+                // Off-screen sites correctly have no view, so only standing recipes count.
+                .Where(one => one.physical && (one.bound || one.activeView))
+                .Select(one =>
+                {
                     float frontage = 0f;
-                    var entrance = bound ? RoadDemo.ShopDoors.Of(marker, out frontage) : null;
-
-                    var leaves = 0;
-                    if (marker != null)
-                        foreach (var tf in marker.GetComponentsInChildren<Transform>(true))
-                            if (tf.name.EndsWith("_Door_L") || tf.name.EndsWith("_Door_R"))
-                                leaves++;
+                    var entrance = one.bound
+                        ? RoadDemo.ShopDoors.Of(one.marker, out frontage)
+                        : null;
+                    var facing = entrance != null ? entrance.Facing : Vector3.forward;
+                    var door = entrance != null ? entrance.DoorWorld : Vector3.zero;
+                    var expected = door + facing *
+                        (0.85f + LivingCity.Business.CityBusinesses.DoorstepClearanceMetres);
+                    float error = entrance != null && one.hasApproach
+                        ? Vector3.Distance(expected, one.approach)
+                        : float.PositiveInfinity;
+                    bool doorless = one.storefront == null || one.storefront.LeafCount == 0;
+                    bool onDoor = one.hasApproach && one.bound && entrance != null &&
+                                  !doorless && error <= 0.15f;
+                    bool onGlass = one.hasApproach && one.bound && entrance != null &&
+                                   !doorless && !onDoor;
 
                     return new
                     {
                         shop = one.row.Name,
-                        hasView = bound,
+                        one.hasApproach,
+                        hasView = one.bound,
                         hasDoor = entrance != null,
-                        doorLeaves = leaves,
+                        doorLeaves = one.storefront != null ? one.storefront.LeafCount : 0,
+                        doorstepOnDoor = onDoor,
+                        doorstepOnGlass = onGlass,
+                        doorlessBay = doorless,
+                        bad = !one.hasApproach || !one.bound || entrance == null ||
+                              !onDoor || onGlass || doorless,
                         measuredFrontage = frontage,
                         doorToApproach = entrance != null
                             ? Vector3.Distance(entrance.DoorWorld, one.approach)
                             : -1f,
+                        thresholdError = float.IsPositiveInfinity(error) ? -1f : error,
                         approach = Point(one.approach),
-                        door = Point(entrance != null ? entrance.DoorWorld : Vector3.zero),
+                        door = Point(door),
                         boardsAt = Point(entrance != null
                             ? entrance.DoorWorld + entrance.Facing * 0.1f
                             : Vector3.zero),
+                        distance = one.hasApproach
+                            ? (one.approach - here).sqrMagnitude
+                            : float.MaxValue,
                     };
                 })
                 .ToArray();
 
-            return new { ok = true, rows };
+            // Put failures first so a bounded --count cannot hide the reason for a red audit.
+            var rows = audited.OrderByDescending(one => one.bad).ThenBy(one => one.distance)
+                .Take(Mathf.Clamp(count, 1, 40)).ToArray();
+            int badSites = audited.Count(one => one.bad);
+            return new
+            {
+                ok = badSites == 0,
+                auditedSites = audited.Length,
+                badSites,
+                rows,
+            };
         }
 
         [CliCommand("gangsters_racket_probe",

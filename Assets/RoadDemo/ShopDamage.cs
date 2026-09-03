@@ -10,11 +10,11 @@ namespace RoadDemo
     /// boarded up: planks nailed across the ground-floor windows, the way a gutted shop
     /// stands while somebody decides whether to reopen it.
     ///
-    /// A shop is only ever done once (GangFront.Damaged): a second charge on a already
-    /// boarded front does nothing new. The geometry it needs is only the doorstep and
-    /// which way it faces (GangFront.Door / Outward) - it lays a fixed run of boards
-    /// across the front rather than measuring a merged building it may no longer find
-    /// the renderers of.
+    /// Generated residential bays route first to their bound Storefront, which owns only
+    /// that bay's panes, fire and measured-width boards and never holds a merged chunk open.
+    /// Catalogue buildings and named kit venues have no Storefront component and deliberately
+    /// remain on the legacy mesh-derived path below. A shop is only ever done once: a second
+    /// charge on an already boarded front does nothing new.
     /// </summary>
     public static class ShopDamage
     {
@@ -112,6 +112,12 @@ namespace RoadDemo
         public static bool IsBusinessDamaged(LivingCity.Territory.TerritoryBusinessId id) =>
             id.IsValid && DamagedBusinesses.Contains(id.Value);
 
+        public static bool IsBusinessSmashed(LivingCity.Territory.TerritoryBusinessId id) =>
+            id.IsValid && SmashedBusinesses.Contains(id.Value);
+
+        public static bool IsBusinessBurned(LivingCity.Territory.TerritoryBusinessId id) =>
+            id.IsValid && BurnedBusinesses.Contains(id.Value);
+
         /// <summary>Remove the finite damage presentation when the authoritative business
         /// reopens, either because its timer expired or its owner paid for repairs.</summary>
         public static bool RepairBusiness(LivingCity.Territory.TerritoryBusinessId id)
@@ -125,6 +131,11 @@ namespace RoadDemo
             known |= SmashedBusinesses.Remove(id.Value);
             known |= BurnedBusinesses.Remove(id.Value);
             SmashedVisuals.Remove(id.Value);
+            if (TryStorefront(id, out var repairedStorefront))
+            {
+                repairedStorefront.Repair();
+                known = true;
+            }
             if (_root == null)
                 return known;
 
@@ -148,8 +159,20 @@ namespace RoadDemo
         /// door cannot be resolved or the place is already a wreck.</summary>
         public static bool ScorchBusiness(LivingCity.Territory.TerritoryBusinessId id)
         {
-            if (!TryFrontage(id, out var door, out var outward, out var width) ||
-                BurnedBusinesses.Contains(id.Value))
+            if (BurnedBusinesses.Contains(id.Value))
+                return false;
+
+
+            if (TryStorefront(id, out var liveStorefront))
+            {
+                SmashedBusinesses.Remove(id.Value);
+                DeferredSmashedViews.Remove(id.Value);
+                DamagedBusinesses.Add(id.Value);
+                BurnedBusinesses.Add(id.Value);
+                return liveStorefront.Scorch();
+            }
+
+            if (!TryFrontage(id, out var door, out var outward, out var width))
                 return false;
 
             // Arson is the stronger presentation. If this shop was smashed first, replace
@@ -179,10 +202,17 @@ namespace RoadDemo
         /// Torched shops still burn and board themselves up through <see cref="ScorchBusiness"/>.</summary>
         public static bool SmashBusiness(LivingCity.Territory.TerritoryBusinessId id)
         {
-            if (!TryFrontage(id, out var door, out var outward, out var width) ||
-                !DamagedBusinesses.Add(id.Value))
+            if (!id.IsValid || !DamagedBusinesses.Add(id.Value))
                 return false;
             SmashedBusinesses.Add(id.Value);
+            if (TryStorefront(id, out var liveStorefront))
+                return liveStorefront.Smash();
+            if (!TryFrontage(id, out _, out _, out _))
+            {
+                DamagedBusinesses.Remove(id.Value);
+                SmashedBusinesses.Remove(id.Value);
+                return false;
+            }
             Root();
             RefreshBusinessView(id);
             return true;
@@ -197,6 +227,12 @@ namespace RoadDemo
         internal static void RefreshBusinessView(
             LivingCity.Territory.TerritoryBusinessId id)
         {
+            if (TryStorefront(id, out var liveStorefront))
+            {
+                liveStorefront.BindBusiness(id);
+                DeferredSmashedViews.Remove(id.Value);
+                return;
+            }
             if (!id.IsValid || !SmashedBusinesses.Contains(id.Value))
             {
                 if (id.IsValid) DeferredSmashedViews.Remove(id.Value);
@@ -268,14 +304,27 @@ namespace RoadDemo
         /// only the same shared fire presentation and returns it for finite-lived callers.</summary>
         public static Transform ScorchAt(
             Vector3 door, Vector3 outward, string label, float groundY,
-            float width = StoreWidth)
+            float width = StoreWidth, bool boardWhenDone = true)
         {
             var go = new GameObject("Burning · " + (label ?? "premises"));
             go.transform.SetParent(Root(), false);
             var fire = go.AddComponent<ShopFire>();
             fire.BeginAt(door, outward, label, groundY,
-                FireMaterial(), SmokeMaterial(), BoardMaterial(), width);
+                FireMaterial(), SmokeMaterial(), BoardMaterial(), width, boardWhenDone);
             return go.transform;
+        }
+
+        static bool TryStorefront(
+            LivingCity.Territory.TerritoryBusinessId id, out Storefront storefront)
+        {
+            storefront = null;
+            if (!id.IsValid ||
+                !LivingCity.Business.BusinessViewBindings.TryGet(id, out var marker) ||
+                marker == null)
+                return false;
+            storefront = marker.GetComponent<Storefront>() ??
+                         marker.GetComponentInParent<Storefront>();
+            return storefront != null;
         }
 
         /// <summary>The ordinary-premises smash visual at already resolved frontage
@@ -799,6 +848,8 @@ namespace RoadDemo
             SetColor(_board, new Color(0.36f, 0.24f, 0.13f));   // bare timber
             return _board;
         }
+
+        internal static Material StorefrontBoardMaterial => BoardMaterial();
 
         static Material BrokenGlassMaterial()
         {
@@ -1380,6 +1431,7 @@ namespace RoadDemo
         string _label = "";
         float _groundY;
         float _frontage = 7f;
+        bool _boardWhenDone = true;
         Material _board;
         float _age;
         Light _glow;
@@ -1401,7 +1453,7 @@ namespace RoadDemo
         /// torched over its dues (EPIC 9). Boards itself up by position and label.</summary>
         public void BeginAt(Vector3 doorAt, Vector3 facingOut, string label,
             float groundY, Material fire, Material smoke, Material board,
-            float width = 7f)
+            float width = 7f, bool boardWhenDone = true)
         {
             // The fire is strung across THIS front, and the boards it leaves behind are
             // cut to the same width.
@@ -1411,6 +1463,7 @@ namespace RoadDemo
             _label = label ?? "";
             _groundY = groundY;
             _board = board;
+            _boardWhenDone = boardWhenDone;
             _smokeMat = smoke;
 
             var outward = facingOut.sqrMagnitude > 1e-4f ? facingOut.normalized : Vector3.forward;
@@ -1481,9 +1534,9 @@ namespace RoadDemo
             // burnt out: board it up and go
             if (_age >= ShopDamage.BurnFor)
             {
-                if (_front != null)
+                if (_boardWhenDone && _front != null)
                     ShopDamage.BoardUp(_front, _groundY, _board);
-                else
+                else if (_boardWhenDone)
                     ShopDamage.BoardUpAt(
                         _doorAt, _facingOut, _label, _groundY, _board, _frontage);
                 Destroy(gameObject);

@@ -106,18 +106,49 @@ namespace RoadDemo
             if (ReferenceEquals(_moving, car)) _moving = null;
         }
 
-        internal bool RejoinClear(ParkingCar self)
+        /// <summary>Nothing standing on the home road between this car and the join:
+        /// the sweep in to the gate starts where the car is and is driven by hand, so
+        /// a car stopped on that stretch would be driven through, not round.</summary>
+        /// <summary>A gate this close to the junction sends the sweep in through the
+        /// corner of its box.</summary>
+        const float GateOnTheCorner = 20f;
+
+        internal bool EntryClear(ParkingCar self)
         {
-            if (_home == null) return false;
+            if (_home == null || self.CurrentEdge != _home) return true;
+            if (_joinProgress < GateOnTheCorner)
+            {
+                float sweep = (Vector3.Distance(self.Tf.position, GateOutside) +
+                               Vector3.Distance(GateOutside, GateInside)) / PatrolDocking.Speed + 1.5f;
+                if (!LaneGate.BoxClear(_home.From, sweep, self)) return false;
+            }
+            float mine = self.Progress;
+            float lo = Mathf.Min(mine, _joinProgress) - self.HalfLen;
+            float hi = Mathf.Max(mine, _joinProgress) + self.HalfLen;
             for (int i = 0; i < _home.Cars.Count; i++)
             {
                 var other = _home.Cars[i];
                 if (ReferenceEquals(other, self)) continue;
                 float progress = other.Progress;
-                if (progress > _joinProgress - (self.HalfLen + 18f) &&
-                    progress < _joinProgress + (self.HalfLen + 7f))
-                    return false;
+                if (progress > lo && progress < hi) return false;
             }
+            return true;
+        }
+
+        /// <summary>Room to come out onto the road. The way from the gate to the join
+        /// is walked at PatrolDocking.Speed and takes its seconds, so the window behind
+        /// the join is TIME, not metres - a car that would reach the join inside the
+        /// sweep, at the speed it is doing, meets us on the way out - and it reaches
+        /// back onto the roads that feed this one. The same rule as
+        /// PolicePatrolCar.KerbClear, for the same reason.</summary>
+        internal bool RejoinClear(ParkingCar self)
+        {
+            if (_home == null) return false;
+            float sweep = (Vector3.Distance(GateInside, GateOutside) +
+                           Vector3.Distance(GateOutside, _join)) / PatrolDocking.Speed + 1.5f;
+            if (!LaneGate.Clear(_home, _joinProgress, sweep, self,
+                                behindMin: self.HalfLen + 18f, aheadMax: self.HalfLen + 7f))
+                return false;
             return true;
         }
 
@@ -182,6 +213,7 @@ namespace RoadDemo
         Vector2 _driveSeconds, _parkedSeconds;
         float _timer, _t;
         int _motion;
+        int _laneMotion = -1;   // the exit motion that first puts the body on the road
         Quaternion _motionStart;
 
         public Mode State { get; private set; }
@@ -256,6 +288,10 @@ namespace RoadDemo
             Add(PatrolDocking.Undock(stand, forward, mouth, aisle), true, Quaternion.identity);
             AddSweep(mouth, aisle, junction, outward);
             AddSweep(junction, outward, gateInside, outward);
+            // the motion that takes the body out of the gate: held at ITS start, inside
+            // the lot, until the road is clear (TickMotion). If the gate has no depth
+            // the index falls on the sweep to the join, which starts at the gate anyway
+            _laneMotion = _motions.Count;
             AddSweep(gateInside, outward, gateOutside, outward);
             AddSweep(gateOutside, outward, _lot.Join, _lot.Home.Dir);
             StartMotions();
@@ -279,7 +315,10 @@ namespace RoadDemo
                            || (Parked && CurrentEdge == _lot.Home && distance < 30f);
             if (atEntrance && Mathf.Abs(Speed) < 1.2f)
             {
-                if (!_lot.TryUseDrive(this)) { Halt(false); return; }
+                // the way in is hand-driven from here to the gate: nobody may be
+                // standing on it, and the drive is asked for only once it is clear,
+                // so a car held at the mouth does not hold the drive against an exit
+                if (!_lot.EntryClear(this) || !_lot.TryUseDrive(this)) { Halt(false); return; }
                 BeginEnter();
                 return;
             }
@@ -291,6 +330,13 @@ namespace RoadDemo
 
         void BeginEnter()
         {
+            // THE ROAD GOAL DIES AT THE GATE. Leaving the graph keeps the goal (GoTo the
+            // join, park at the kerb), and the car came back out of the lot with it
+            // still set: it spawned at the join and parked at the kerb on the spot,
+            // square across the lot's mouth, and the next commuter home swept through
+            // it (DEPOT-004 S2 seed 101, 99 belt refusals, 5 s). Out of the lot it
+            // drives as traffic does until BeginReturn gives it a goal of its own.
+            Stop();
             Despawn();
             State = Mode.Entering;
             EngineOff = false;
@@ -333,8 +379,13 @@ namespace RoadDemo
         void TickMotion(float dt)
         {
             if (_motion >= _motions.Count) { FinishMotion(); return; }
-            bool finalExit = State == Mode.Exiting && _motion == _motions.Count - 1;
-            if (finalExit && _t < 0.2f && !_lot.RejoinClear(this))
+            // HELD INSIDE THE GATE, where no part of the body is in the lane yet. The
+            // hold used to be at the start of the last sweep, at the kerb line, with the
+            // nose already in the running lane: a car came along at nine metres a
+            // second, met it, and the two stood waiting for each other for a minute
+            // (DEPOT-004 S2 seed 102, 1 203 belt refusals).
+            bool atGate = State == Mode.Exiting && _motion == _laneMotion;
+            if (atGate && _t < 0.2f && !_lot.RejoinClear(this))
             {
                 Speed = 0f;
                 return;

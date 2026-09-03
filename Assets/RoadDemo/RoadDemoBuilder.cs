@@ -447,6 +447,10 @@ namespace RoadDemo
             /// the row has to be laid against the lot instead.</summary>
             public readonly List<Pose> Stalls = new List<Pose>();
 
+            /// <summary>Who holds each bay, parallel to Stalls: null or a wreck is a bay
+            /// a replacement may take. One car to a bay, never two.</summary>
+            public readonly List<PolicePatrolCar> Holders = new List<PolicePatrolCar>();
+
             public RoadEdge CarHome;
             public float CarHomeS;
             public Quaternion StallRot = Quaternion.identity;
@@ -4248,9 +4252,15 @@ namespace RoadDemo
                 // department sends reaches the street, and never the world origin.
                 if (station.Door == Vector3.zero) station.Door = station.StallCentre;
 
+                // THE ROSTER IS THE FLEET, THE YARD IS WHAT SHOWS. The house owns every
+                // car the scene authorises; only as many as have a bay stand on the
+                // ground (SpawnPatrolCars). The rest are on the books and off the map,
+                // and a bay that frees is filled off the books (MakeCar).
+                var owned = _policeCarPrefabs.Count > 0 && station.CarHome != null
+                    ? Mathf.Max(policeCarCount, station.Cars.Count)
+                    : station.Cars.Count;
                 var precinct = force.Add(i, "Precinct " + (i + 1), station.At, station.Door,
-                    CountyLine(station.At), station.Cars.Count,
-                    men + 2 * station.Cars.Count);
+                    CountyLine(station.At), owned, men + 2 * owned);
                 station.Precinct = precinct;
 
                 foreach (var car in station.Cars)
@@ -4277,10 +4287,14 @@ namespace RoadDemo
             {
                 var station = HouseOfPrecinct(p);
                 if (station == null || station.CarHome == null) return null;
+                // every bay held: the car is on the books and gets no body today
+                var stall = FreeStall(station);
+                if (stall < 0) return null;
                 var car = MakePatrolCar(_policeRoot, _policeCars.Count,
                     station.CarHome, station.CarHomeS,
-                    StallFor(station, station.Cars.Count), station.StallRot);
+                    station.Stalls[stall].position, station.Stalls[stall].rotation);
                 if (car == null) return null;
+                HoldStall(station, stall, car);
                 _policeCars.Add(car);
                 station.Cars.Add(car);
                 StreetTraffic.Users.Add(car);
@@ -4329,18 +4343,43 @@ namespace RoadDemo
             return best;
         }
 
-        /// <summary>Where the nth car of this house stands at rest: its own authored bay
-        /// where the yard has them, otherwise a place in the row laid against the face.
-        /// Never a kerb - that is the SpreadPatrolHomes lesson, and it holds per station.
-        /// </summary>
-        static Vector3 StallFor(StationHouse station, int index)
+        /// <summary>The first bay no living car holds, or -1 when the yard is full. ONE
+        /// CAR TO A BAY, AND NO BAY MEANS NO CAR: the row centre used to catch every car
+        /// past the last bay, and twelve cars welded into one point were eighteen to
+        /// thirty thousand belt refusals a run and a gridlocked city (NIGHT-013 S2,
+        /// 2026-09-03). The fleet the yard cannot hold stays on the roster and off the
+        /// ground. Never a kerb either - that is the SpreadPatrolHomes lesson.</summary>
+        static int FreeStall(StationHouse station)
         {
-            // One car to a bay: a fleet bigger than the yard was drawn for keeps the row
-            // centre, which is where every resting car stood before any of them had a bay
-            // of their own. Two cars welded into one authored bay reads as a bug.
-            if (index >= 0 && index < station.Stalls.Count)
-                return station.Stalls[index].position;
-            return station.StallCentre;
+            for (int i = 0; i < station.Stalls.Count; i++)
+            {
+                var holder = i < station.Holders.Count ? station.Holders[i] : null;
+                if (holder == null || holder.Wrecked) return i;
+            }
+            return -1;
+        }
+
+        static void HoldStall(StationHouse station, int stall, PolicePatrolCar car)
+        {
+            while (station.Holders.Count <= stall) station.Holders.Add(null);
+            station.Holders[stall] = car;
+        }
+
+        /// <summary>A yard nobody drew gets its row laid out as distinct places against
+        /// the face, one per authorised car, where PlanForecourt sized it (StallRowHalf)
+        /// - so a house without authored bays still parks every car on its own spot.
+        /// </summary>
+        void LayStallRow(StationHouse station)
+        {
+            if (station.Stalls.Count > 0) return;
+            station.StallRot = Quaternion.LookRotation(station.StallOut);
+            int n = policeCarCount;
+            for (int i = 0; i < n; i++)
+            {
+                float off = (i - (n - 1) * 0.5f) * StallSpacing;
+                station.Stalls.Add(new Pose(
+                    station.StallCentre + station.StallAlong * off, station.StallRot));
+            }
         }
 
         void SpawnPatrolCars(
@@ -4372,31 +4411,36 @@ namespace RoadDemo
             // exactly where these did (PoliceForce.MakeCar)
             station.CarHome = home;
             station.CarHomeS = homeS;
-            if (station.Stalls.Count == 0)
-                station.StallRot = Quaternion.LookRotation(station.StallOut);
+            LayStallRow(station);
 
             // WHERE THE FLEET RESTS. Scattering resting cars over the city jams the
             // traffic: a patrol left at a kerb is a registered obstacle, and even set off
             // the running lane it gridlocked the ambient cars in about a quarter of seeds
             // (car soak: worst 14k+ belt refusals with the spread; 0 in every one of 12
             // with the cars docked). So every car rests on ITS OWN station's forecourt -
-            // in the bays the yard was drawn with where there are any, and stacked on the
-            // one row-centre point where there are not. The farthest-point spread over the
-            // long lanes is in git history (before 2026-08-27) for the day a computed
-            // resting spot is provably traffic-safe.
-            for (int i = 0; i < policeCarCount; i++)
+            // in the bays the yard was drawn with where there are any, in the row laid
+            // against the face where there are not - and ONLY AS MANY CARS AS THERE ARE
+            // BAYS. The rest of the authorised fleet is on the roster (PoliceForce.Add
+            // takes policeCarCount, not this count) and has no body until a bay frees.
+            // The farthest-point spread over the long lanes is in git history (before
+            // 2026-08-27) for the day a computed resting spot is provably traffic-safe.
+            int bodies = Mathf.Min(policeCarCount, station.Stalls.Count);
+            for (int i = 0; i < bodies; i++)
             {
-                var rot = i < station.Stalls.Count
-                    ? station.Stalls[i].rotation
-                    : station.StallRot;
+                int stall = FreeStall(station);
+                if (stall < 0) break;
                 var car = MakePatrolCar(parent, _policeCars.Count, home, homeS,
-                    StallFor(station, i), rot);
+                    station.Stalls[stall].position, station.Stalls[stall].rotation);
                 if (car == null) continue;
+                HoldStall(station, stall, car);
                 _policeCars.Add(car);
                 station.Cars.Add(car);
                 StreetTraffic.Users.Add(car);
                 markers.Add(car);
             }
+            if (bodies < policeCarCount)
+                Debug.Log($"[RoadDemo] {station.House.name}: {bodies} of {policeCarCount} " +
+                          "patrol cars have a bay; the rest are on the roster only");
         }
 
         /// <summary>Where a prisoner transfer is driven to (GAN-219): the lane point

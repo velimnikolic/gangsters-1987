@@ -263,10 +263,37 @@ namespace RoadDemo
 
         void Update()
         {
+            TracePrecincts();
             TickWrecks();
             TickWatch();
             TickDay();
             TickConvoys();
+        }
+
+        bool _traced;
+
+        /// <summary>One row per house, once the trace is open (the harness opens it a
+        /// few seconds in, so this cannot be written at founding): where the house is
+        /// and how many cars it owns against how many stand in its yard. The reader
+        /// puts a police-on-police belt refusal on the yard's tab when it happened
+        /// within the yard's reach of one of these, and on the road's otherwise.
+        /// </summary>
+        void TracePrecincts()
+        {
+            if (_traced || !DriveTrace.On) return;
+            _traced = true;
+            for (var i = 0; i < _precincts.Count; i++)
+            {
+                var precinct = _precincts[i];
+                if (precinct.Roster == null) continue;
+                var sb = DriveTrace.Take();
+                DriveTrace.Int(sb, "id", precinct.Roster.StationId);
+                DriveTrace.Str(sb, "name", precinct.Roster.Name);
+                DriveTrace.Int(sb, "cars", precinct.Roster.Cars);
+                DriveTrace.Int(sb, "bodies", precinct.Cars.Count);
+                DriveTrace.Vec(sb, "p", precinct.At);
+                DriveTrace.Row("precinct", sb.ToString());
+            }
         }
 
         // ------------------------------------------------------------------ transfers

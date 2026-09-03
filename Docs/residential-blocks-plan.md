@@ -20,6 +20,23 @@
 | laboratorija | `Assets/Scenes/ResidentialLab.unity` **učitana aditivno** (kao `IndustrialBlockForge.Lab()`) + `Assets/Scripts/Editor/ResidentialSketch.cs`, meni `Tools/City/Residential/Sketch A Block` |
 | komanda | `unity command gangsters_residential --seed N --size corner\|row\|block\|court\|WxD [--count M] [--draw]` u `PipelineCommands.cs` |
 | presuda bez editora | `Tools/CoreSim --residential` (30 seedova × 4 klase = sud; jedan seed ne dokazuje ništa) |
+
+Prizemne radnje od GAN-294 imaju poseban live sloj, izmerena vrata i jednokratno isečene Synty
+mesh assete; ugovor, tabela svih osam modula i reprodukcija su u
+[`Docs/storefronts.md`](storefronts.md). `SM_Bld_Shop_05` je izlog bez vrata i pripada susednom
+lokalu, dok široki `Shop_03` daje jedan 10×5 lokal sa jednim pragom.
+
+| shop modul | centar vrata X/Z | okvir W/H | krila | yaw |
+|---|---:|---:|---:|---:|
+| `SM_Bld_Shop_01` | -2,50 / -0,02 | 1,70 / 2,22 | 2 | 0° |
+| `SM_Bld_Shop_02` | -4,03 / -0,21 | 1,25 / 2,40 | 2 | 0° |
+| `SM_Bld_Shop_03` | -5,00 / -0,05 | 1,90 / 2,40 | 2 | 0° |
+| `SM_Bld_Shop_04` | -2,50 / 0,61 | 1,40 / 2,62 | 1 | 0° |
+| `SM_Bld_Shop_05` | — | — | 0 | 0° |
+| `SM_Bld_Shop_06` | -4,34 / 0,12 | 1,10 / 2,50 | 1 | 0° |
+| `SM_Bld_Shop_Corner_01` | -0,84 / -0,04 | 1,30 / 2,05 | 2 | 0° |
+| `SM_Bld_Shop_Corner_02` | -0,77 / -0,77 | 1,27 / 2,62 | 1 | 45° |
+
 | kvart (redovi blokova na park drive-u, lane graf, harness ≥ 5 runova) | **nije u ovom planu** — posebna faza, v. §3 i §5 |
 
 ## Stanje
@@ -524,7 +541,9 @@ istočna strana broja 4 seže 4,6 m preko prstena (stepeništa; `Over` kaže 0,1
 ## 7. Odluke (uzete 2026-08-26)
 
 1. **Rupe ili sečenje?** **UZETO: samo rupe** (v1) — jedinice cele, ostatak ivice je bašta /
-   prilaz / zub. Sečenje reda 5 na 10 m kuće ostaje za v2 ako mere traže.
+   prilaz / zub. Sečenje reda 5 na 10 m kuće ostaje za v2 ako mere traže. Jedini izuzetak je
+   pravougaonik vrata u shop modulu: GAN-294 ga iseče jednom u editor bake-u, a doorless zid i
+   originalna Synty krila čuva pod `Assets/CityKit/Storefront/`; granice između modula se ne seku.
 2. **Kafić iz kita (PalmCity `building-cafe`/`coffeeshop`) u rupi, ili samo Synty radnje u
    prizemlju jedinica 1/2/3/6?** **UZETO: kit kafić DA** — oba dozvoljena, **najviše jedan kafić
    po bloku**, kit samo na arteriji.

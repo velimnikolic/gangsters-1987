@@ -193,12 +193,18 @@ namespace RoadDemo
             }
 
             readonly List<Leaf> leaves = new List<Leaf>(2);
+            readonly Storefront storefront;
             float amount;
             float target;
 
             public DoorSwing(Transform doorway)
             {
                 if (doorway == null)
+                    return;
+
+                storefront = doorway.GetComponent<Storefront>() ??
+                             doorway.GetComponentInParent<Storefront>();
+                if (storefront != null)
                     return;
 
                 var right = doorway.right;
@@ -235,14 +241,26 @@ namespace RoadDemo
                 }
             }
 
-            public bool IsOpen => leaves.Count == 0 || amount >= 0.999f;
-            public bool IsClosed => leaves.Count == 0 || amount <= 0.001f;
+            public bool IsOpen => storefront != null ? storefront.IsOpen
+                : leaves.Count == 0 || amount >= 0.999f;
+            public bool IsClosed => storefront != null ? storefront.IsClosed
+                : leaves.Count == 0 || amount <= 0.001f;
 
-            public void Open() => target = 1f;
-            public void Close() => target = 0f;
+            public void Open()
+            {
+                if (storefront != null) storefront.Open();
+                else target = 1f;
+            }
+
+            public void Close()
+            {
+                if (storefront != null) storefront.Close();
+                else target = 0f;
+            }
 
             public void Tick(float dt)
             {
+                if (storefront != null) return;
                 if (leaves.Count == 0 || Mathf.Approximately(amount, target))
                     return;
                 amount = Mathf.MoveTowards(amount, target,
@@ -252,6 +270,11 @@ namespace RoadDemo
 
             public void SnapClosed()
             {
+                if (storefront != null)
+                {
+                    storefront.SnapClosed();
+                    return;
+                }
                 amount = target = 0f;
                 Apply(0f);
             }

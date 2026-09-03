@@ -1,4 +1,4 @@
-using TMPro;
+﻿using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
@@ -123,6 +123,48 @@ namespace LivingCity.UI
 
         /// <summary>The trough a meter fills on light ground.</summary>
         public static readonly Color Trough = Rgb(0xc5bcb4);
+
+        /// <summary>A key the sheet is showing but will not take a press on. One grey
+        /// for the whole book: the armoury and the classifieds both spent it, each
+        /// spelling out the same unnamed triple.</summary>
+        public static readonly Color Spent = Rgb(0x736b61);
+
+        /// <summary>The carbon flimsy's SECOND ink - browner than the entry ink, for
+        /// everything on that page which is not the entry itself. The armoury set every
+        /// one of its stat lines in it by hand before it had a name.</summary>
+        public static readonly Color CarbonSecond = Rgb(0x6b2b23);
+
+        /// <summary>The alert wash the diplomacy sheet lays under a line - the warning
+        /// red as a GROUND rather than as a mark, so a page cannot invent a second red
+        /// to do the same job.</summary>
+        public static readonly Color Alert = Rgb(0x8f2119);
+
+        /// <summary>The sunk ground a card rules a well, a plate or a track into: the
+        /// file's own ink, always laid at a whisper.</summary>
+        public static readonly Color Sunk = Rgb(0x2b2418);
+
+        /// <summary>The gold a card lays under a thing worth the reader's eye - a warm
+        /// tint, always at a whisper.</summary>
+        public static readonly Color Gilt = Rgb(0x785f37);
+
+        /// <summary>The highlighter a draft order washes the map in, and the ink a
+        /// confirmed one is read back in. Two states that must never look alike, and
+        /// the one place either of them is written down.</summary>
+        public static readonly Color Highlighter = Rgb(0xffd926);
+        public static readonly Color Washed = Rgb(0x29231e);
+
+
+        /// <summary>The panel a sheet lays INSIDE another panel - a shade under Panel,
+        /// so a nested card reads as sunk rather than as a second sheet. Two pages
+        /// struck the same expression by hand; it is one number.</summary>
+        public static readonly Color PanelInset =
+            new Color(Panel.r * 0.94f, Panel.g * 0.94f, Panel.b * 0.94f);
+
+        /// <summary>The same ink at a stated alpha. The book washes a colour in a
+        /// hundred places and every one of them used to spell out a fresh Color with
+        /// the channels written as thirds of 255.</summary>
+        public static Color At(Color ink, float alpha) =>
+            new Color(ink.r, ink.g, ink.b, alpha);
 
         // ------------------------------------------------------------------ panels
 

@@ -1,4 +1,4 @@
-using TMPro;
+﻿using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using LivingCity.News;
@@ -165,8 +165,16 @@ namespace LivingCity.UI
             Rule(newsContent, NewsLeft, LeadRuleY, NewsWidth, LedgerV2.Ink, 2f);
 
             // ---- the briefs, one row across the foot ----
+            //
+            // The outfit's own night is RESERVED a column before the wire is let at the
+            // row. It is not the paper's furniture - it is the one column on this page
+            // the player came for - and letting the wire fill first made it the first
+            // thing a narrower window dropped, silently and without a test to catch it.
+            var ourOwn = outfit && outfit.LastNight.Count > 0;
+            var wireColumns = ourOwn ? Mathf.Max(1, BriefColumns - 1) : BriefColumns;
+
             var slot = 0;
-            for (var i = 1; i < stories.Length && slot < BriefColumns; i++, slot++)
+            for (var i = 1; i < stories.Length && slot < wireColumns; i++, slot++)
             {
                 var x = NewsLeft + slot * (BriefW + BriefGap);
                 NewsColumn(stories[i], x, BriefTop, BriefW, BriefH,
@@ -176,10 +184,8 @@ namespace LivingCity.UI
                         LedgerV2.Rule);
             }
 
-            // What the outfit's own men did last night, ahead of the paper's own
-            // furniture: a player who has to hunt for the news that his best gun ran
-            // is a player who will never find it.
-            if (slot < BriefColumns && outfit && outfit.LastNight.Count > 0)
+            // What the outfit's own men did last night, in the column held for it.
+            if (ourOwn && slot < BriefColumns)
             {
                 var x = NewsLeft + slot * (BriefW + BriefGap);
                 if (slot > 0)
@@ -338,11 +344,20 @@ namespace LivingCity.UI
                 if (text.Length == 0)
                     continue;
 
-                var height = text.Length > 70 ? 46f : 32f;
+                // MEASURED, exactly as the same sentence is measured on the man's own
+                // file. The column used to size a line by whether it ran past seventy
+                // characters - a guess about a proportional face poured into a column
+                // whose width the window decides - and the sentences it cut short were
+                // the long ones, which are the ones worth reading. A line that will not
+                // fit what is left of the column is not started at all.
+                const float lead = 6f;
+                var height = CopyHeight(text, 12.5f, w, 2f);
+                if (height + lead > room)
+                    break;
                 Paragraph(newsContent, LedgerStyle.Serif, 12.5f, LedgerV2.Ink, x, line,
                     w, height, text, lineSpacing: 2f);
-                line -= height;
-                room -= height;
+                line -= height + lead;
+                room -= height + lead;
             }
         }
 
@@ -380,8 +395,7 @@ namespace LivingCity.UI
         void NewsCut(Headline story, float x, float y, float w, float h)
         {
             var raw = LedgerV2.PortraitPlate(newsContent, x, y, w, h, "PRESS PHOTO",
-                new Color(LedgerV2.Panel.r * 0.94f, LedgerV2.Panel.g * 0.94f,
-                    LedgerV2.Panel.b * 0.94f));
+                LedgerV2.PanelInset);
 
             // The crop that keeps the subject in his own proportions is PortraitFit's,
             // put on with the print itself - see PortraitStudio.Show.

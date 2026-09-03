@@ -27,6 +27,18 @@ namespace LivingCity.UI
         // line itself at exactly the requested thickness.
         const float RuleFeather = 0.5f;
 
+        // The full-screen personnel ledger is read at a greater viewing distance than
+        // the smaller street/map cards that share this drawing kit, so its small print
+        // is lifted. The rule lives here, in one place, because anything that MEASURES
+        // book type has to strike its width off the size that will actually print -
+        // measuring the requested size under-reports every width by this factor.
+        public const float BookLift = 1.15f;
+        public const float BookDisplaySize = 15f;
+
+        /// <summary>The size a point size actually prints at inside the book.</summary>
+        public static float BookSize(float size) =>
+            size < BookDisplaySize ? size * BookLift : size;
+
         // -------------------------------------------------------------- rect basics
 
         public static RectTransform NewRect(string name, Transform parent)
@@ -475,12 +487,10 @@ namespace LivingCity.UI
             var text = go.AddComponent<TextMeshProUGUI>();
             if (font)
                 text.font = font;
-            // The full-screen personnel ledger is read at a greater viewing distance
-            // than the smaller street/map cards that share this drawing kit. Lift only
-            // its small print; established display type (15pt and above) keeps the
-            // existing hierarchy and dimensions.
-            if (size < 15f && parent.GetComponentInParent<PersonnelAlmanac>(true))
-                size *= 1.15f;
+            // Lift only the book's small print; established display type keeps the
+            // existing hierarchy and dimensions. BookSize is the rule.
+            if (parent.GetComponentInParent<PersonnelAlmanac>(true))
+                size = BookSize(size);
             text.fontSize = size;
             text.color = color;
             text.alignment = alignment;
@@ -501,7 +511,12 @@ namespace LivingCity.UI
             // NOTHING - the block's name, the man's name in the menu, the ward under a
             // heading, all silently gone. The box is grown about its own centre, so the
             // word still sits on the line the sheet drew it on.
-            var lineBox = LineBox(size);
+            //
+            // The box is struck off the size that PRINTS and not the size asked for:
+            // inside the book they are not the same number, and a box cut to the
+            // unlifted size is short by the lift - which is the exact condition that
+            // drops the line.
+            var lineBox = LineBox(text.fontSize);
             if (h < lineBox)
             {
                 y += (lineBox - h) * 0.5f;

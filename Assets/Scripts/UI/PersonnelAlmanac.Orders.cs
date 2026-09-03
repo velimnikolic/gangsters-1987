@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -581,7 +581,7 @@ namespace LivingCity.UI
             // The still-unconfirmed draft washes the map in highlighter yellow; a
             // confirmed order the player is reading back washes in ink. The two states
             // must never look alike.
-            var color = new Color(1f, 0.85f, 0.15f, 0.32f);
+            var color = LedgerV2.At(LedgerV2.Highlighter, 0.32f);
 
             var book = outfit ? outfit.Book : null;
             Outfit.Job selected = null;
@@ -592,7 +592,7 @@ namespace LivingCity.UI
 
             if (selected != null)
             {
-                color = new Color(0.16f, 0.14f, 0.12f, 0.30f);
+                color = LedgerV2.At(LedgerV2.Washed, 0.30f);
                 foreach (var id in selected.BlockTargets)
                     AddBlockRect(id);
                 if (selected.BlockTargets.Count == 0)

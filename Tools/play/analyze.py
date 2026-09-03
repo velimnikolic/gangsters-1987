@@ -724,6 +724,39 @@ def cover_tally(dirpath):
     return 0
 
 
+YARD_METRES = 60.0   # RoadDemoBuilder.StationYardMetres: a station's own ground
+
+
+def belt_split(rows, police_cars):
+    """Whose refusal each belt row is. 'yard' and 'road' are police-on-police, told
+    apart by whether it happened within a house's reach of a 'precinct' row (the force
+    writes one per house once the trace is open); 'other' is any other refusal with a
+    police car on either side; 'crew' is the outfit's own machines; the rest is
+    civilian traffic, which is the traffic model's ticket and never the depot's."""
+    houses = [r for r in rows if r["k"] == "precinct"]
+    yards = [(r.get("p") or [0.0, 0.0]) for r in houses]
+    out = {"yard": 0, "road": 0, "other": 0, "crew": 0, "civil": 0, "houses": houses}
+    for r in rows:
+        if r["k"] != "belt":
+            continue
+        hit = str(r.get("hit", ""))
+        hit_id = int(hit[4:]) if hit.startswith("car ") and hit[4:].isdigit() else -1
+        mine = r.get("tag") == "police"
+        theirs = hit_id in police_cars
+        if mine and theirs:
+            p = r.get("p") or [0.0, 0.0]
+            in_yard = any((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 <= YARD_METRES ** 2
+                          for q in yards)
+            out["yard" if in_yard else "road"] += 1
+        elif mine or theirs:
+            out["other"] += 1
+        elif r.get("tag") in ("crew", "crewbike"):
+            out["crew"] += 1
+        else:
+            out["civil"] += 1
+    return out
+
+
 def core(dirpath, want=""):
     """THE FORCED SCENARIOS' READER (EPIC 31 NIGHT-013).
 
@@ -763,6 +796,7 @@ def core(dirpath, want=""):
     cars = [r for r in rows if r["k"] == "car"]
     police_cars = {r.get("id") for r in cars if r.get("tag") == "police"}
     belts = len([r for r in rows if r["k"] == "belt"])
+    split = belt_split(rows, police_cars)
     worst_stand = max((r.get("quiet", 0) or 0 for r in cars if r.get("tag") != "crew"),
                       default=0)
     complaints = [r for r in rows if r["k"] == "complaint"]
@@ -813,8 +847,16 @@ def core(dirpath, want=""):
             defects.append("no police car ever ran")
         if worst_stand >= 90:
             defects.append(f"a car stood {worst_stand:.0f}s")
-        if belts:
-            defects.append(f"{belts} belt refusals")
+        # ATTRIBUTED. A police car driving into a police car in its own yard is the
+        # yard's fault (the depot ticket); anywhere else it is the patrol's; a police
+        # car in any other collision is still the law's business. Two civilians at
+        # the far end of town are the traffic model's, and go on that ticket, not this.
+        if split["yard"]:
+            defects.append(f"{split['yard']} police-on-police belt refusals in a yard")
+        if split["road"]:
+            defects.append(f"{split['road']} police-on-police belt refusals on the road")
+        if split["other"]:
+            defects.append(f"{split['other']} belt refusals with a police car")
     if "law" in demands:
         if not complaints:
             defects.append("no complaint was ever rung in")
@@ -832,6 +874,13 @@ def core(dirpath, want=""):
     print(f"   the street  : {len(shots)} shots by factions "
           f"{sorted(g for g in {r.get('fac') for r in shots} if g is not None)}, "
           f"{len(police_cars)} police car(s), worst stand {worst_stand:.0f}s, {belts} belt")
+    if belts:
+        print(f"   the belt    : police-on-police {split['yard']} in a yard, "
+              f"{split['road']} on the road; {split['other']} with a police car; "
+              f"{split['crew']} crew; {split['civil']} civilian")
+    for r in split["houses"]:
+        print(f"   the house   : {r.get('name')} owns {r.get('cars')} car(s), "
+              f"{r.get('bodies')} in the yard")
     print(f"   the law     : {len(complaints)} complaint(s), {len(courts)} verdict(s)")
     if crew_faults:
         by = Counter(r.get("fault") for r in crew_faults)

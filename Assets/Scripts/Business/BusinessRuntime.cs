@@ -167,6 +167,22 @@ namespace LivingCity.Business
             return directory != null && directory.TryGet(businessId, out record);
         }
 
+        /// <summary>Real shutter truth: operational closure, or outside trading hours.</summary>
+        public bool ShouldShutter(TerritoryBusinessId businessId)
+        {
+            if (!businessId.IsValid)
+                return false;
+            if (TryGetShutdown(businessId, out _))
+                return true;
+            if (TryGetBusiness(businessId, out var record) &&
+                record.State != BusinessOperationalState.Trading)
+                return true;
+            var clock = LivingCity.Ambient.DayClock.Current;
+            if (clock == null)
+                return false;
+            return clock.Hour < 8f || clock.Hour >= 22f;
+        }
+
         public string OwnerNameOf(BusinessRecord record) =>
             record != null && directory != null &&
             directory.TryGetOwner(record.OwnerId, out var owner)
@@ -260,8 +276,10 @@ namespace LivingCity.Business
         /// Rebuilt once per block bind - see BindBlockView.</summary>
         static readonly List<Transform> Pieces = new List<Transform>();
         static readonly List<Bounds> PieceBounds = new List<Bounds>();
+        static readonly List<Storefront> PieceStorefronts = new List<Storefront>();
         static readonly List<Renderer> PieceRenderers = new List<Renderer>();
         static readonly List<BusinessMarker> ViewMarkers = new List<BusinessMarker>();
+        static readonly List<Storefront> StorefrontPieces = new List<Storefront>();
 
         /// <summary>
         /// The block's buildings, measured. Paving, kerbs, road markings and painted bays
@@ -272,12 +290,24 @@ namespace LivingCity.Business
         {
             Pieces.Clear();
             PieceBounds.Clear();
+            PieceStorefronts.Clear();
 
             for (var i = 0; i < content.childCount; i++)
             {
                 var child = content.GetChild(i);
                 if (!child.gameObject.activeSelf)
                     continue;
+
+                StorefrontPieces.Clear();
+                child.GetComponentsInChildren(true, StorefrontPieces);
+                for (var s = 0; s < StorefrontPieces.Count; s++)
+                {
+                    var storefront = StorefrontPieces[s];
+                    if (storefront == null) continue;
+                    Pieces.Add(storefront.transform);
+                    PieceBounds.Add(storefront.BindingBounds);
+                    PieceStorefronts.Add(storefront);
+                }
 
                 PieceRenderers.Clear();
                 // includeInactive, and it is load-bearing: the recycler binds while the
@@ -297,9 +327,11 @@ namespace LivingCity.Business
 
                 Pieces.Add(child);
                 PieceBounds.Add(bounds);
+                PieceStorefronts.Add(null);
             }
 
             PieceRenderers.Clear();
+            StorefrontPieces.Clear();
         }
 
         /// <summary>
@@ -322,6 +354,30 @@ namespace LivingCity.Business
         /// </summary>
         static Transform PieceAt(BusinessSite site)
         {
+            if (site.ProviderId == BusinessProviders.Residential &&
+                (site.Role == ResidentialBusinessSites.FrontageRole ||
+                 site.Role == ResidentialBusinessSites.ExtraFrontageRole))
+            {
+                Storefront closest = null;
+                float closestDistance = 1.5f * 1.5f;
+                for (var i = 0; i < PieceStorefronts.Count; i++)
+                {
+                    var storefront = PieceStorefronts[i];
+                    if (storefront == null) continue;
+                    Vector3 door = storefront.DoorWorld;
+                    float dx = door.x - site.Approach.X;
+                    float dz = door.z - site.Approach.Z;
+                    float distance = dx * dx + dz * dz;
+                    if (distance >= closestDistance) continue;
+                    closestDistance = distance;
+                    closest = storefront;
+                }
+                // Never put a residential shop marker on the whole terrace. A missing
+                // exact facade is an auditable unbound view, not permission to make an
+                // adjacent shop's doorway answer for this business.
+                return closest != null ? closest.transform : null;
+            }
+
             var xMin = site.Footprint.XMin;
             var zMin = site.Footprint.ZMin;
             var xMax = xMin + site.Footprint.Width;
@@ -342,6 +398,17 @@ namespace LivingCity.Business
 
                 var pieceArea = Mathf.Max(1f, bounds.size.x * bounds.size.z);
                 var score = overlap * overlap / pieceArea;
+                var storefront = i < PieceStorefronts.Count ? PieceStorefronts[i] : null;
+                if (storefront != null)
+                {
+                    Vector3 door = storefront.DoorWorld;
+                    float dx = door.x - site.Approach.X;
+                    float dz = door.z - site.Approach.Z;
+                    // Adjacent five-metre pieces can overlap after a chamfer is projected
+                    // onto the axis-aligned site catalogue. The measured threshold is the
+                    // stable tie-breaker: its own site is one stride away, its neighbour is not.
+                    score += siteArea * siteArea / (1f + dx * dx + dz * dz);
+                }
                 if (score <= bestScore)
                     continue;
 

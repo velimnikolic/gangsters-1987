@@ -64,6 +64,7 @@ make it call the shared service/model.
 | the city's districts | `Docs/city-districts-plan.md` |
 | the canonical blocks, neighborhoods and the block graph | `Docs/territory-geography.md` |
 | every source of a business, and which provider owns it | `Docs/business-inventory.md` |
+| the residential storefront bay, baked Synty leaf and live states | `Docs/design-briefs/storefront-brief.md` |
 | the racket: collector duty, the schedule, money on the wire | `Docs/racket-collections.md` |
 | the law sheet: the docket, the cells, the wanted, the counsel, the verdicts | `Docs/ledger-law-sheet.md` |
 | what everything costs (1987 dollars, Miami-anchored) | `Docs/economy-prices.md` |

@@ -3355,6 +3355,19 @@ namespace RoadDemo
             float farNose = _next.RoadS(ViaS - via.Length) + _next.Heading * HalfLen;
             float farTail = farNose - _next.Heading * 2f * HalfLen;
             var lead = far.Ahead(_occNext, _next.Heading, farNose, farTail, _next.Offset - HalfWide - SideAir, _next.Offset + HalfWide + SideAir, out float fgap);
+            // A CLAIM IS NOT A CAR. The lane beyond is claimed ahead of time by whoever
+            // is coming into it - off its approach, or across this very box on a merging
+            // way - and that claim stopped us dead in the middle of the junction: a
+            // police car straight through braked to nought for the claim of a car
+            // turning in BEHIND it, and that car, following it across, drove into its
+            // tail (DEPOT-004 S2 seed 103, 31 refusals). A body already on the road we
+            // come out into is a lead; a claim from a car not on that road yet is the
+            // box's business to sequence, not ours to wait for.
+            if (lead != null && lead.Car != null && !lead.Parked && lead.Car.Road != far)
+            {
+                lead = null;
+                fgap = float.MaxValue;
+            }
             // Something STOOD in the lane we come out into - parked, or left there - is a
             // thing to drive round once we are out, not a reason to sit in the middle of
             // a junction waiting for it to move, which it never will. Waiting here blocks

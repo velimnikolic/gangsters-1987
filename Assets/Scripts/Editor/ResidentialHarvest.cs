@@ -177,16 +177,39 @@ namespace LivingCity.EditorTools
 
         public readonly struct ShopBay
         {
-            public ShopBay(int side, float x, float z)
+            public ShopBay(int side, float x, float z, string module,
+                           ShopDoor door)
             {
                 Side = side;
                 X = x;
                 Z = z;
+                Module = module ?? string.Empty;
+                Door = door;
             }
 
             public int Side { get; }
             public float X { get; }
             public float Z { get; }
+            public string Module { get; }
+            public ShopDoor Door { get; }
+        }
+
+        public readonly struct ShopDoor
+        {
+            public ShopDoor(float x, float z, float width, int leaves, float yaw)
+            {
+                X = x;
+                Z = z;
+                Width = width;
+                Leaves = leaves;
+                Yaw = yaw;
+            }
+
+            public float X { get; }
+            public float Z { get; }
+            public float Width { get; }
+            public int Leaves { get; }
+            public float Yaw { get; }
         }
 
         // ------------------------------------------------------------------ the menu
@@ -750,6 +773,33 @@ namespace LivingCity.EditorTools
                 int count = corner
                     ? 1
                     : Mathf.Max(1, Mathf.RoundToInt((along1 - along0) / Cell));
+                string module = RoadDemo.StorefrontDoorCatalog.Normalise(piece.Source);
+                bool hasProfile = RoadDemo.StorefrontDoorCatalog.TryGet(
+                    module, out var profile);
+                Vector3 measuredDoor = hasProfile
+                    ? piece.Go.TransformPoint(profile.Centre)
+                    : piece.Box.center;
+                float doorAlong = side == 0 || side == 2
+                    ? measuredDoor.x - origin.x
+                    : measuredDoor.z - origin.y;
+                int doorBay = -1;
+                if (hasProfile && profile.Leaves > 0)
+                {
+                    float nearest = float.MaxValue;
+                    for (int candidate = 0; candidate < count; candidate++)
+                    {
+                        float centre = Mathf.Lerp(
+                            along0, along1, (candidate + 0.5f) / count);
+                        float distance = Mathf.Abs(centre - doorAlong);
+                        if (distance >= nearest) continue;
+                        nearest = distance;
+                        doorBay = candidate;
+                    }
+                }
+
+                float doorYaw = Mathf.Repeat(
+                    piece.Yaw + (hasProfile ? profile.Yaw : 0f), 360f);
+                if (doorYaw > 359.95f) doorYaw = 0f;
                 for (var bay = 0; bay < count; bay++)
                 {
                     float along = Mathf.Lerp(along0, along1, (bay + 0.5f) / count);
@@ -757,8 +807,15 @@ namespace LivingCity.EditorTools
                     float z = side == 0 || side == 2 ? front : along;
                     x = Mathf.Clamp(x, 0f, width);
                     z = Mathf.Clamp(z, 0f, depth);
+                    bool ownsDoor = bay == doorBay;
+                    var door = new ShopDoor(
+                        ownsDoor ? Hundredth(measuredDoor.x - origin.x) : Hundredth(x),
+                        ownsDoor ? Hundredth(measuredDoor.z - origin.y) : Hundredth(z),
+                        ownsDoor ? Hundredth(profile.Width) : 0f,
+                        ownsDoor ? profile.Leaves : 0,
+                        Hundredth(doorYaw));
                     unit.ShopBays.Add(new ShopBay(
-                        side, Hundredth(x), Hundredth(z)));
+                        side, Hundredth(x), Hundredth(z), module, door));
                 }
             }
 
@@ -775,6 +832,14 @@ namespace LivingCity.EditorTools
         }
 
         static float Hundredth(float value) => Mathf.Round(value * 100f) * 0.01f;
+
+        static Vector3 SideVector(int side) => side switch
+        {
+            0 => Vector3.back,
+            1 => Vector3.right,
+            2 => Vector3.forward,
+            _ => Vector3.left,
+        };
 
         /// <summary>Every raster cell whose centre this box stands over, read in the frame
         /// the drift has been taken out of.</summary>
@@ -1163,18 +1228,40 @@ namespace LivingCity.EditorTools
             sb.AppendLine("    /// <summary>One physical 5 m ground-floor shop bay in an unturned harvested unit.");
             sb.AppendLine("    /// X/Z is the centre of its glass line and Side is S/E/N/W. A corner-shop prefab");
             sb.AppendLine("    /// emits one bay even when its glass wraps onto a second face.</summary>");
+            sb.AppendLine("    public readonly struct ResidentialStorefrontDoor");
+            sb.AppendLine("    {");
+            sb.AppendLine("        public ResidentialStorefrontDoor(float x, float z, float width, int leaves, float yaw)");
+            sb.AppendLine("        {");
+            sb.AppendLine("            X = x;");
+            sb.AppendLine("            Z = z;");
+            sb.AppendLine("            Width = width;");
+            sb.AppendLine("            Leaves = leaves;");
+            sb.AppendLine("            Yaw = yaw;");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        public float X { get; }");
+            sb.AppendLine("        public float Z { get; }");
+            sb.AppendLine("        public float Width { get; }");
+            sb.AppendLine("        public int Leaves { get; }");
+            sb.AppendLine("        public float Yaw { get; }");
+            sb.AppendLine("    }");
+            sb.AppendLine();
             sb.AppendLine("    public readonly struct ResidentialShopBay");
             sb.AppendLine("    {");
-            sb.AppendLine("        public ResidentialShopBay(int side, float x, float z)");
+            sb.AppendLine("        public ResidentialShopBay(int side, float x, float z, string module, ResidentialStorefrontDoor door)");
             sb.AppendLine("        {");
             sb.AppendLine("            Side = side;");
             sb.AppendLine("            X = x;");
             sb.AppendLine("            Z = z;");
+            sb.AppendLine("            Module = module ?? string.Empty;");
+            sb.AppendLine("            Door = door;");
             sb.AppendLine("        }");
             sb.AppendLine();
             sb.AppendLine("        public int Side { get; }");
             sb.AppendLine("        public float X { get; }");
             sb.AppendLine("        public float Z { get; }");
+            sb.AppendLine("        public string Module { get; }");
+            sb.AppendLine("        public ResidentialStorefrontDoor Door { get; }");
             sb.AppendLine("    }");
             sb.AppendLine();
             sb.AppendLine("    /// <summary>What a residential unit is: its footprint on the 5 m raster, which");
@@ -1326,7 +1413,10 @@ namespace LivingCity.EditorTools
             "\"" + (lane == null ? "" : new string(lane)) + "\"";
 
         static string Bay(ShopBay bay) =>
-            $"new ResidentialShopBay({bay.Side}, {Metres(bay.X)}, {Metres(bay.Z)})";
+            $"new ResidentialShopBay({bay.Side}, {Metres(bay.X)}, {Metres(bay.Z)}, " +
+            $"\"{bay.Module}\", new ResidentialStorefrontDoor({Metres(bay.Door.X)}, " +
+            $"{Metres(bay.Door.Z)}, {Metres(bay.Door.Width)}, {bay.Door.Leaves}, " +
+            $"{Metres(bay.Door.Yaw)}))";
 
         static char Glyph(Unit unit, int i, int j)
         {

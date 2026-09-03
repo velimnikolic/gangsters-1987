@@ -35,6 +35,18 @@ namespace RoadDemo
             }
         }
 
+        readonly struct MeshState
+        {
+            public readonly MeshFilter Filter;
+            public readonly Mesh Mesh;
+
+            public MeshState(MeshFilter filter)
+            {
+                Filter = filter;
+                Mesh = filter.sharedMesh;
+            }
+        }
+
         sealed class Entry
         {
             public GameObject Prefab;
@@ -44,6 +56,7 @@ namespace RoadDemo
             public Vector3 LocalScale;
             public bool Active;
             public RendererState[] Renderers;
+            public MeshState[] Meshes;
         }
 
         readonly Dictionary<GameObject, Stack<Entry>> _available =
@@ -428,6 +441,10 @@ namespace RoadDemo
             entry.Renderers = new RendererState[renderers.Length];
             for (int i = 0; i < renderers.Length; i++)
                 entry.Renderers[i] = new RendererState(renderers[i]);
+            var meshes = instance.GetComponentsInChildren<MeshFilter>(true);
+            entry.Meshes = new MeshState[meshes.Length];
+            for (int i = 0; i < meshes.Length; i++)
+                entry.Meshes[i] = new MeshState(meshes[i]);
 
             _capacity.TryGetValue(prefab, out int count);
             _capacity[prefab] = count + 1;
@@ -467,6 +484,10 @@ namespace RoadDemo
                 renderer.shadowCastingMode = state.Shadows;
                 renderer.sharedMaterials = state.Materials;
             }
+            var meshes = entry.Meshes;
+            for (int i = 0; meshes != null && i < meshes.Length; i++)
+                if (meshes[i].Filter != null)
+                    meshes[i].Filter.sharedMesh = meshes[i].Mesh;
         }
 
         void Lose(GameObject prefab)

@@ -3494,6 +3494,19 @@ namespace RoadDemo
         bool _arguing;
         float _gestureIn, _fidgetIn = -1f, _leanUntil;
 
+        /// <summary>A man taken off the street mid-word - struck off, driven away by the
+        /// police, deserted - leaves the man he was talking to with a partner whose body
+        /// is gone, and TickLoiter read that body's position every tick until the run
+        /// was called broken (DEPOT-004 S2, 2026-09-03). The word ends on both sides
+        /// before the body does.</summary>
+        public override void Dispose()
+        {
+            var partner = _chatPartner;
+            _chatPartner = null;
+            if (partner != null && partner._chatPartner == this) partner.EndChat();
+            base.Dispose();
+        }
+
         public void EndChat()
         {
             if (_chatPartner == null) return;
@@ -3592,7 +3605,10 @@ namespace RoadDemo
 
             if (_chatPartner != null)
             {
-                if (_chatPartner.Dead || _chatPartner.State != Mode.Standing || _chatPartner._chatPartner != this)
+                // a partner whose body is gone (Tf == null is Unity's destroyed check)
+                // is a partner who left without a word, whoever forgot to say so
+                if (_chatPartner.Tf == null || _chatPartner.Dead ||
+                    _chatPartner.State != Mode.Standing || _chatPartner._chatPartner != this)
                 {
                     EndChat();
                 }

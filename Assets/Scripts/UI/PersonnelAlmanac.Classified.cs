@@ -1,4 +1,4 @@
-using TMPro;
+﻿using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using LivingCity.Outfit;
@@ -241,7 +241,7 @@ namespace LivingCity.UI
 
             // Short money reads at a glance; the click still spells out how short.
             if (safe < ad.Down)
-                ButtonOf(hire).targetGraphic.color = new Color(0.45f, 0.42f, 0.38f);
+                ButtonOf(hire).targetGraphic.color = LedgerV2.Spent;
         }
 
         /// <summary>The ad's halftone: the studio's newsprint print of the very body
@@ -250,8 +250,7 @@ namespace LivingCity.UI
         void AdCut(RectTransform parent, Character man, float x, float y, float w, float h)
         {
             var raw = LedgerV2.PortraitPlate(parent, x, y, w, h, "PRESS PHOTO",
-                new Color(LedgerV2.Panel.r * 0.94f, LedgerV2.Panel.g * 0.94f,
-                    LedgerV2.Panel.b * 0.94f));
+                LedgerV2.PanelInset);
 
             // The crop that keeps the man in his own proportions is PortraitFit's, put
             // on with the print itself - see PortraitStudio.Show.
