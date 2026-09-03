@@ -32,7 +32,20 @@ namespace LivingCity.Gameplay
         {
             Selection = 0,
             Order = 1,
-            Refusal = 2,
+
+            /// <summary>The noise of a fight: a man hit, a rival dropped, a curse over the
+            /// gun. Above an order, because by the time it is said the order is history.
+            /// </summary>
+            Combat = 2,
+
+            /// <summary>Under a refusal on purpose: a refusal is the game answering the
+            /// player, and a firefight must not swallow the reason his order did nothing.
+            /// </summary>
+            Refusal = 3,
+
+            /// <summary>A man going down. Nothing talks over it - it is the one line that
+            /// tells the player he has lost somebody.</summary>
+            Death = 4,
         }
 
         /// <summary>A line cut off before this much of it has been heard reads as a bug
@@ -63,6 +76,26 @@ namespace LivingCity.Gameplay
             VoiceLines.OrdInside, VoiceLines.OrdOutside,
         };
 
+        /// <summary>
+        /// THE WHOLE FIGHT SPEAKS THROUGH ONE MOUTH.
+        ///
+        /// A street fight has forty men in it and every one of them is hit, drops somebody
+        /// or curses over his gun several times a minute. Per-man pacing does nothing about
+        /// that - fifty men each shouting once still make fifty shouts - so the fight has a
+        /// budget of its own: one combat line in this many seconds, whoever gets there
+        /// first, and the rest of them are simply not said.
+        ///
+        /// Widened by a fifth on the boss's word (1.8 s -> 1.5 s): the fight was too quiet
+        /// against the shooting. Every other pacing number under it is unchanged - this is
+        /// the one that decides how much of a fight is heard.
+        /// </summary>
+        const float CombatGap = 1.5f;
+
+        /// <summary>A death is worth interrupting the budget for, but a crew wiped in one
+        /// pass is still six men, and six screams on top of each other is a noise. This is
+        /// how close together two of them may be.</summary>
+        const float DeathGap = 0.67f;
+
         /// <summary>Past this the order is somebody else's business - the camera is
         /// looking at another part of town and a crew off the edge of it should not be
         /// heard giving orders.</summary>
@@ -73,6 +106,11 @@ namespace LivingCity.Gameplay
         /// the only place to tune how loud the outfit is.</summary>
         const float Volume = 0.5f;
 
+        /// <summary>A tenth louder in a fight. A man giving an order is talking to the boss;
+        /// a man hit is shouting over gunfire, and the same level for both puts the scream
+        /// underneath the thing causing it.</summary>
+        const float CombatVolume = Volume * 1.1f;
+
         static CrewVoice instance;
 
         AudioSource source;
@@ -80,6 +118,9 @@ namespace LivingCity.Gameplay
         // what is playing, and how much of it is left to hear
         Priority speakingPriority;
         float speakingUntil;
+
+        // when the fight last said anything at all
+        float lastCombatAt = -99f;
 
         // how many ordinary lines have come due, counted over the whole outfit: what wears
         // on the ear is how often ANY of them speaks, so a player working down a row of six
@@ -106,6 +147,22 @@ namespace LivingCity.Gameplay
             if (string.IsNullOrEmpty(bank))
                 return;
             Speak(key, bank, VoiceCasting.PitchFor(speaker), speaker.Id, at, priority);
+        }
+
+        /// <summary>
+        /// A man who is on nobody's books speaks - a rival, an officer. Same lines, same
+        /// banks, a voice dealt off his own number (VoiceCasting.BankForSeed): when the
+        /// shooting starts everybody on the street cries out, not only the outfit.
+        /// </summary>
+        public static void SayUnbooked(string key, int seed, Vector3 at,
+            Priority priority = Priority.Combat)
+        {
+            if (string.IsNullOrEmpty(key))
+                return;
+            var bank = VoiceCasting.BankForSeed(seed);
+            if (string.IsNullOrEmpty(bank))
+                return;
+            Speak(key, bank, VoiceCasting.PitchForSeed(seed), seed, at, priority);
         }
 
         /// <summary>The desk answers - an order filed with the office, or an act that is
@@ -169,15 +226,25 @@ namespace LivingCity.Gameplay
             if (Routine.Contains(key) && ++routine % SpeakOneRoutineIn != 0)
                 return;
 
+            // The fight's own budget, spent in the same place and for the same reason.
+            if (priority == Priority.Combat && now - lastCombatAt < CombatGap)
+                return;
+            if (priority == Priority.Death && now - lastCombatAt < DeathGap)
+                return;
+
             source.transform.position = atEar ? EarPosition() : at;
             source.spatialBlend = atEar ? 0f : 0.7f;
             source.pitch = pitch;
             source.clip = clip;
-            source.volume = Volume;
+            source.volume = priority == Priority.Combat || priority == Priority.Death
+                ? CombatVolume
+                : Volume;
             source.Play();
 
             speakingPriority = priority;
             speakingUntil = now + clip.length;
+            if (priority == Priority.Combat || priority == Priority.Death)
+                lastCombatAt = now;
 
             if (speakerId == 0)
                 return;

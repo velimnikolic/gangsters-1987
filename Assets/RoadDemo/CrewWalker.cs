@@ -1210,6 +1210,12 @@ namespace RoadDemo
             ClearFallingIn();
             if (Target != target)
             {
+                // A NEW MARK IS THE MOMENT THE FIGHT STARTS FOR HIM. Thinned to once in a
+                // long while per man: a crew re-targets across a street fight constantly,
+                // and "they're on us" is a thing said when it begins, not every time the
+                // aim moves.
+                CrewSpeech.Cry(this, LivingCity.Data.VoiceLines.SpotContact, cooldown: 25f);
+
                 // THE SAME COVER HOLDS FOR THE NEW ANGLE. Asked before anything is
                 // cleared, because what it is asking about is the spot he has.
                 bool keepCover = closerThreat && KeepsCoverAgainst(target);
@@ -2044,8 +2050,20 @@ namespace RoadDemo
             if (Health <= 0)
             {
                 Kill();
+                CrewSpeech.Fell(this, from);
                 return;
             }
+
+            // He is still up, and what he says about it depends on how close it was: the
+            // last point of health is a different sentence from the first, and a man hit
+            // behind a bin is telling the crew the fire is on top of them rather than
+            // reporting his own arm.
+            CrewSpeech.Cry(this,
+                Health <= 1 && MaxHealth > 1 ? LivingCity.Data.VoiceLines.HitBad
+                : InCover && Random.value < 0.35f ? LivingCity.Data.VoiceLines.PinHeld
+                : LivingCity.Data.VoiceLines.HitTake,
+                cooldown: 2.5f);
+
             if (HasPose(PoseHit))
             {
                 RestartPose(PoseHit, 0f, Random.Range(0.9f, 1.2f));
@@ -2056,6 +2074,10 @@ namespace RoadDemo
         public void Kill()
         {
             if (Dead) return;
+            // SPOKEN BEFORE HE IS DEAD, because it is the last thing he does alive and
+            // because everything downstream of this line tests Dead and would swallow it.
+            CrewSpeech.Cry(this, LivingCity.Data.VoiceLines.DownCry,
+                LivingCity.Gameplay.CrewVoice.Priority.Death);
             ClearFallingIn();
             Health = 0;
             Target = null;

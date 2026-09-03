@@ -64,6 +64,47 @@ namespace LivingCity.Data
         public const string NoReach = "VOX_NO_REACH";
         public const string NoMen = "VOX_NO_MEN";
 
+        // -------------------------------------------------------------------- the fight
+        //
+        // Everything here fires off something the street did - a bullet lands, a man goes
+        // down, the law turns the corner - so no line of it is atmosphere on a timer.
+
+        /// <summary>Shot and still standing.</summary>
+        public const string HitTake = "VOX_HIT_TAKE";
+
+        /// <summary>Shot, and one more would put him down.</summary>
+        public const string HitBad = "VOX_HIT_BAD";
+
+        /// <summary>The hit that kills him. The one line nothing may talk over.</summary>
+        public const string DownCry = "VOX_DOWN_CRY";
+
+        /// <summary>Firing - the curses and the taunts, thinned hard.</summary>
+        public const string FightCurse = "VOX_FIGHT_CURSE";
+
+        /// <summary>The first sight of a man to shoot at.</summary>
+        public const string SpotContact = "VOX_SPOT_CONTACT";
+
+        /// <summary>He put a rival down.</summary>
+        public const string DropGot = "VOX_DROP_GOT";
+
+        /// <summary>One of his own has fallen.</summary>
+        public const string LossMan = "VOX_LOSS_MAN";
+
+        /// <summary>Hit while holding cover - the fire is on top of them.</summary>
+        public const string PinHeld = "VOX_PIN_HELD";
+
+        /// <summary>Something is coming: a grenade on the pavement, a car at the kerb.</summary>
+        public const string WarnCall = "VOX_WARN_CALL";
+
+        /// <summary>Hands up to the law.</summary>
+        public const string SurrHands = "VOX_SURR_HANDS";
+
+        /// <summary>The law has arrived on the fight.</summary>
+        public const string LawHeat = "VOX_LAW_HEAT";
+
+        /// <summary>The last rival on the street is down.</summary>
+        public const string WinOver = "VOX_WIN_OVER";
+
         // ---------------------------------------------------------- filed at the desk
         //
         // One key per OrderType, spoken by the office bank: the order is filed at a desk

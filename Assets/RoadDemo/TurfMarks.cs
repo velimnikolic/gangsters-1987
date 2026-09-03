@@ -1,14 +1,19 @@
 using System.Collections.Generic;
+using LivingCity.Business;
+using LivingCity.Entities;
+using LivingCity.Territory;
+using LivingCity.UI;
 using TMPro;
 using UnityEngine;
 
 namespace RoadDemo
 {
     /// <summary>
-    /// The word painted on the pavement outside a place a family holds: an arrow pointing
-    /// at the door, what the place IS under it, and the house's name under that - all of
-    /// it in the family's own colour, so the city can be read from the boom without
-    /// clicking a single building.
+    /// Paint on the pavement outside a door. A family's premises gets an arrow, what the
+    /// place IS and the house's name, all in the family's own colour. Every ordinary shop
+    /// that the shared territory runtime says can carry a racket gets the same arrow with
+    /// no words, in the same tenure colour its door wears in the ledger's BLOCK DETAILS.
+    /// The city can therefore be read from the boom without clicking every building.
     ///
     /// Paint, not furniture. No collider, no claim on the pavement, nothing for a walker
     /// to go round: men walk over it exactly as they walk over a road line. It is laid
@@ -63,24 +68,34 @@ namespace RoadDemo
         static Mesh _arrow;
         readonly Dictionary<Color, Material> _paints = new Dictionary<Color, Material>();
 
-        /// <summary>One painted mark, kept beside the front it belongs to. Keyed by the
-        /// front's entity id rather than by the component: a destroyed UnityEngine.Object
-        /// compares equal to null AND to every other destroyed object, which is exactly
-        /// the wrong key for a dictionary that outlives a scene change.</summary>
+        /// <summary>One painted mark, kept beside the door it belongs to.</summary>
         struct Mark
         {
             public GangFront Front;
+            public BusinessMarker Business;
             public Transform Paint;
+            public MeshRenderer Arrow;
 
             /// <summary>The doorstep the arrow's tip is pinned to, at pavement height,
             /// and the way out of it - the mark is grown from here rather than about
             /// its own middle, so the tip stays on the step at every boom.</summary>
             public Vector3 Step;
             public Vector3 Out;
+            public Color Tint;
         }
 
+        // Fronts are keyed by entity id rather than by their Unity component: a destroyed
+        // UnityEngine.Object compares equal to null AND to every other destroyed object.
         readonly Dictionary<EntityId, Mark> _marks = new Dictionary<EntityId, Mark>();
         readonly List<EntityId> _gone = new List<EntityId>();
+        // Ordinary businesses have a stable simulation id across streamed views. Their
+        // paint leaves with the view and is laid again when that block comes back.
+        readonly Dictionary<TerritoryBusinessId, Mark> _businessMarks =
+            new Dictionary<TerritoryBusinessId, Mark>();
+        readonly HashSet<TerritoryBusinessId> _businessSeen =
+            new HashSet<TerritoryBusinessId>();
+        readonly List<TerritoryBusinessId> _businessGone =
+            new List<TerritoryBusinessId>();
 
         /// <summary>How many marks are painted right now - what the audit holds against
         /// the number of places the outfit is supposed to be able to see.</summary>
@@ -147,6 +162,12 @@ namespace RoadDemo
 
         void Sweep()
         {
+            SweepFronts();
+            SweepBusinesses();
+        }
+
+        void SweepFronts()
+        {
             var fronts = GangFront.All;
             for (int i = 0; i < fronts.Count; i++)
             {
@@ -171,10 +192,86 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>
+        /// Paint every currently composed ordinary shop the racket rules admit. The
+        /// shared runtime is the eligibility authority; the streamed marker is only the
+        /// geometry needed to put paint beside a door. Family fronts keep their richer
+        /// named mark and are excluded here so no doorway gets two arrows.
+        /// </summary>
+        void SweepBusinesses()
+        {
+            _businessSeen.Clear();
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime != null)
+            {
+                var businesses = CityBusinesses.All;
+                for (var i = 0; i < businesses.Count; i++)
+                {
+                    var business = businesses[i];
+                    if (business.Marker == null || !runtime.IsRacketable(business.Id) ||
+                        IsFront(business.Id) ||
+                        !ShopDamage.TryBusinessFrontage(
+                            business.Id, out var door, out var outward))
+                        continue;
+
+                    outward.y = 0f;
+                    if (outward.sqrMagnitude < 1e-4f)
+                        continue;
+                    outward.Normalize();
+
+                    _businessSeen.Add(business.Id);
+                    var step = door + Vector3.up * Lift;
+                    var tint = DoorMenu.TenureColour(DoorMenu.Read(business).Tenure);
+
+                    if (!_businessMarks.TryGetValue(business.Id, out var mark) ||
+                        mark.Business != business.Marker || mark.Paint == null)
+                    {
+                        if (mark.Paint != null)
+                            Destroy(mark.Paint.gameObject);
+                        _businessMarks[business.Id] = LayBusiness(
+                            business.Marker, business.Name, step, outward, tint);
+                        continue;
+                    }
+
+                    mark.Step = step;
+                    mark.Out = outward;
+                    Place(mark);
+                    if (mark.Tint != tint)
+                    {
+                        mark.Tint = tint;
+                        if (mark.Arrow != null)
+                            mark.Arrow.sharedMaterial = Ink(tint);
+                    }
+                    _businessMarks[business.Id] = mark;
+                }
+            }
+
+            _businessGone.Clear();
+            foreach (var pair in _businessMarks)
+                if (pair.Value.Business == null || !_businessSeen.Contains(pair.Key))
+                    _businessGone.Add(pair.Key);
+            for (var i = 0; i < _businessGone.Count; i++)
+            {
+                if (_businessMarks.TryGetValue(_businessGone[i], out var mark) &&
+                    mark.Paint != null)
+                    Destroy(mark.Paint.gameObject);
+                _businessMarks.Remove(_businessGone[i]);
+            }
+        }
+
+        static bool IsFront(TerritoryBusinessId businessId)
+        {
+            var fronts = GangFront.All;
+            for (var i = 0; i < fronts.Count; i++)
+                if (fronts[i] != null && fronts[i].BusinessId == businessId)
+                    return true;
+            return false;
+        }
+
         /// <summary>Lay one mark on the pavement at a door.</summary>
         Mark Lay(GangFront front)
         {
-            var tint = LivingCity.UI.GangPalette.Of(front.GangId);
+            var tint = GangPalette.Of(front.GangId);
 
             // Which way the facade faces. A front with no measured normal (a demo scene
             // that bound one by hand) falls back to the line from the doorstep out to
@@ -194,27 +291,58 @@ namespace RoadDemo
             // kerb behind it.
             var step = new Vector3(front.Door.x, front.Outside.y + Lift, front.Door.z);
 
-            var mark = new GameObject("Mark · " + front.GangName + " · " + front.Role)
-                .transform;
-            mark.SetParent(_root, false);
-            // Flat on the ground with the letters' tops toward the building: read by a
-            // man walking up to the door, not by one inside it. Forward points INTO the
-            // ground, because the visible face of a flat mesh is -forward - aimed at the
-            // sky, every word here was read from its back, which is to say mirrored.
-            mark.SetPositionAndRotation(step + outward * ArrowTip,
-                Quaternion.LookRotation(Vector3.down, -outward));
+            var paint = LayArrow(
+                "Mark · " + front.GangName + " · " + front.Role,
+                step, outward, tint, out var arrow);
 
+            Word(paint, front.Role, tint, RoleMid, RoleHeight, 1f);
+            Word(paint, front.GangName, tint, HouseMid, HouseHeight, 0.78f);
+            return new Mark
+            {
+                Front = front,
+                Paint = paint,
+                Arrow = arrow,
+                Step = step,
+                Out = outward,
+                Tint = tint,
+            };
+        }
+
+        Mark LayBusiness(BusinessMarker business, string name, Vector3 step,
+            Vector3 outward, Color tint)
+        {
+            var paint = LayArrow(
+                "Racketable · " + (string.IsNullOrEmpty(name) ? business.name : name),
+                step, outward, tint, out var arrow);
+            return new Mark
+            {
+                Business = business,
+                Paint = paint,
+                Arrow = arrow,
+                Step = step,
+                Out = outward,
+                Tint = tint,
+            };
+        }
+
+        Transform LayArrow(string name, Vector3 step, Vector3 outward, Color tint,
+            out MeshRenderer renderer)
+        {
+            var mark = new GameObject(name).transform;
+            mark.SetParent(_root, false);
             var arrow = new GameObject("Arrow", typeof(MeshFilter), typeof(MeshRenderer));
             arrow.transform.SetParent(mark, false);
             arrow.GetComponent<MeshFilter>().sharedMesh = Arrow();
-            var renderer = arrow.GetComponent<MeshRenderer>();
+            renderer = arrow.GetComponent<MeshRenderer>();
             renderer.sharedMaterial = Ink(tint);
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
 
-            Word(mark, front.Role, tint, RoleMid, RoleHeight, 1f);
-            Word(mark, front.GangName, tint, HouseMid, HouseHeight, 0.78f);
-            return new Mark { Front = front, Paint = mark, Step = step, Out = outward };
+            // Flat on the ground with the tip at the door. Forward points into the
+            // ground because the visible face of a flat mesh is -forward, toward the sky.
+            mark.SetPositionAndRotation(step + outward * ArrowTip,
+                Quaternion.LookRotation(Vector3.down, -outward));
+            return mark;
         }
 
         /// <summary>One line of the mark's lettering, laid in the same flat frame as the
@@ -256,18 +384,30 @@ namespace RoadDemo
             if (_cam == null) return;
 
             foreach (var pair in _marks)
-            {
-                var mark = pair.Value;
-                var paint = mark.Paint;
-                if (paint == null) continue;
-                var boom = Mathf.Max(1f, _cam.transform.position.y - mark.Step.y);
-                var grown = Mathf.Clamp(boom / TrueSizeHeight, 1f, MaxGrowth);
-                paint.localScale = Vector3.one * grown;
-                // Grown OUT of the door rather than about its own middle: scaled in
-                // place the arrow would drive its tip through the wall and drag the
-                // words into the road.
-                paint.position = mark.Step + mark.Out * (ArrowTip * grown);
-            }
+                Grow(pair.Value);
+            foreach (var pair in _businessMarks)
+                Grow(pair.Value);
+        }
+
+        void Grow(Mark mark)
+        {
+            var paint = mark.Paint;
+            if (paint == null) return;
+            var boom = Mathf.Max(1f, _cam.transform.position.y - mark.Step.y);
+            var grown = Mathf.Clamp(boom / TrueSizeHeight, 1f, MaxGrowth);
+            paint.localScale = Vector3.one * grown;
+            Place(mark);
+        }
+
+        /// <summary>Grow out from the door rather than about the arrow's own middle, so
+        /// its tip remains pinned to the threshold at every boom height.</summary>
+        static void Place(Mark mark)
+        {
+            if (mark.Paint == null) return;
+            var grown = mark.Paint.localScale.x;
+            mark.Paint.SetPositionAndRotation(
+                mark.Step + mark.Out * (ArrowTip * grown),
+                Quaternion.LookRotation(Vector3.down, -mark.Out));
         }
 
         // ------------------------------------------------------------------- the kit

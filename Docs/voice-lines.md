@@ -81,7 +81,7 @@ First pass to hear it in the game: core tier on 4 banks (88 clips) plus the offi
 ## Mixing rules
 
 - The men sit UNDER the street, at half volume (`CrewVoice.Volume` = 0.5) - one number,
-  and the only place to tune how loud the outfit is.
+  and the only place to tune how loud the outfit is. Fight lines ride 10% over it.
 - One voice at a time. A second order inside 0.6 s cuts the first off rather than
   stacking two men over each other.
 - Priority when they collide: `NO` beats `ORD` beats `SEL`. A refusal that gets talked
@@ -260,39 +260,47 @@ rather than being atmosphere on a timer. Not yet recorded: the sheet rows are in
 `lines.csv` (groups HIT, DOWN, FIGHT, SPOT, DROP, LOSS, PIN, WARN, SURR, LAW, WIN), 48
 lines, 384 clips over the eight street banks.
 
-| id | when | line |
+| id | fired by | line |
 |---|---|---|
-| `VOX_HIT_TAKE_01..06` | shot and still standing | "Agh!" / "Unh! Damn it!" / "I'm hit!" / "He got me!" / "Son of a bitch!" / "Agh! That's blood!" |
-| `VOX_HIT_BAD_01..03` | shot, one hit from going down | "I'm bleeding bad!" / "I can't take another one!" / "I'm hurt, I'm hurt bad!" |
-| `VOX_DOWN_CRY_01..04` | the hit that kills him | "Aaagh!" / "No... not like this..." / "Unh... you bastards..." / "Agh... Mother of God..." |
-| `VOX_FIGHT_CURSE_01..08` | firing, every few seconds | "Come on, you bastards!" / "Eat it!" / "That all you got?" / "Son of a bitch, stay down!" / "You want some? Here!" / "Die already!" / "Damn you!" / "Nowhere to run now!" |
-| `VOX_SPOT_CONTACT_01..04` | first shot of a fight, or a rival crew seen close | "They're on us!" / "Guns! Get down!" / "We got company!" / "Over there! Shooters!" |
-| `VOX_DROP_GOT_01..04` | he drops a rival | "He's down!" / "Got him!" / "That's one." / "Finished. Next." |
-| `VOX_LOSS_MAN_01..04` | a crewmate falls | "They got him!" / "He's down! He's down!" / "We lost one!" / "Bastards killed him!" |
-| `VOX_PIN_HELD_01..03` | held behind cover under fire | "We're pinned!" / "Too much fire!" / "Keep your head down!" |
-| `VOX_WARN_CALL_01..03` | a grenade lands near, a car comes at them | "Grenade!" / "Take cover!" / "Look out!" |
-| `VOX_SURR_HANDS_01..03` | hands up to the law | "Don't shoot! Don't shoot!" / "We're done! Hands up!" / "All right, all right! You got us!" |
-| `VOX_LAW_HEAT_01..03` | the law arrives on a fight | "Cops!" / "The law! Move!" / "Heat's here! Break it off!" |
-| `VOX_WIN_OVER_01..03` | the last rival on the street is down | "That's the last of them." / "Street's ours." / "It's over. Let's move." |
+| `VOX_HIT_TAKE_01..06` | `CrewWalker.TakeHit`, survivor | "Agh!" / "Unh! Damn it!" / "I'm hit!" / "He got me!" / "Son of a bitch!" / "Agh! That's blood!" |
+| `VOX_HIT_BAD_01..03` | `TakeHit`, one point of health left | "I'm bleeding bad!" / "I can't take another one!" / "I'm hurt, I'm hurt bad!" |
+| `VOX_DOWN_CRY_01..04` | `CrewWalker.Kill`, spoken as he goes down | "Aaagh!" / "No... not like this..." / "Unh... you bastards..." / "Agh... Mother of God..." |
+| `VOX_FIGHT_CURSE_01..08` | `DemoCrews.FireFrom`, one shot in six | "Come on, you bastards!" / "Eat it!" / "That all you got?" / "Son of a bitch, stay down!" / "You want some? Here!" / "Die already!" / "Damn you!" / "Nowhere to run now!" |
+| `VOX_SPOT_CONTACT_01..04` | `CrewWalker.Engage`, on a new mark | "They're on us!" / "Guns! Get down!" / "We got company!" / "Over there! Shooters!" |
+| `VOX_DROP_GOT_01..04` | `CrewSpeech.Fell`, the killer | "He's down!" / "Got him!" / "That's one." / "Finished. Next." |
+| `VOX_LOSS_MAN_01..04` | `CrewSpeech.Fell`, his nearest crewmate | "They got him!" / "He's down! He's down!" / "We lost one!" / "Bastards killed him!" |
+| `VOX_PIN_HELD_01..03` | `TakeHit` while holding cover | "We're pinned!" / "Too much fire!" / "Keep your head down!" |
+| `VOX_WARN_CALL_01..03` | `BombProjectile.Throw`, nearest man of another family | "Grenade!" / "Take cover!" / "Look out!" |
+| `VOX_SURR_HANDS_01..03` | `DemoCrews.GiveUp` | "Don't shoot! Don't shoot!" / "We're done! Hands up!" / "All right, all right! You got us!" |
+| `VOX_LAW_HEAT_01..03` | NOT WIRED YET - no clean seam for the law arriving on a fight | "Cops!" / "The law! Move!" / "Heat's here! Break it off!" |
+| `VOX_WIN_OVER_01..03` | `CrewSpeech.Fell`, when that death wipes the crew | "That's the last of them." / "Street's ours." / "It's over. Let's move." |
 
-Generate them with the same pipeline: `generate.py --only-group HIT DOWN FIGHT SPOT DROP
+Recorded and in the project. Generate more with the same pipeline: `generate.py --only-group HIT DOWN FIGHT SPOT DROP
 LOSS PIN WARN SURR LAW WIN`, copy `voice/` into `Assets/Audio/Voice/`, re-run the bake.
 
-### What the fight lines cost that the orders did not
+### How the fight is kept quiet enough to listen to
 
-An order is one click and one answer. A fight is forty men firing at once, so these need
-rules the order lines never needed:
+An order is one click and one answer. A fight is forty men firing at once, so these lines
+are paced by three rules on top of each other, and the first is the one that matters:
 
-- **They are not routine-thinned, they are event-thinned.** A hit, a death and a kill each
-  fire on their own event and should speak nearly every time; the firing curses want a
-  per-man cooldown of several seconds, or a street fight becomes a shouting match.
-- **The dying cry cannot be talked over.** It wants its own priority above a refusal - it
-  is the one line that must never be cut off, because the player is being told he has lost
-  a man.
-- **Everybody on the street cries out, not only our men.** A rival crew and a police squad
-  have no roster character, so their pain has no bank to speak in. Either they get a bank
-  dealt from their body's own seed (rivals in the same eight, the law kept apart), or the
-  fight is silent on every side but ours.
+- **THE WHOLE FIGHT SPEAKS THROUGH ONE MOUTH.** One combat line every 1.5 s (`CombatGap`),
+  whoever gets there first; every other man hit in that window says nothing at all. Fifty
+  men each shouting once is still fifty shouts, and per-man pacing does nothing about it.
+  A death may come closer - 0.67 s (`DeathGap`) - and nothing else may talk over one.
+- **A fight is a tenth louder** (`CombatVolume` = 0.55 against 0.5): a man giving an order
+  is talking to the boss, a man hit is shouting over gunfire.
+- **Per man, per kind**, under that budget: a hit every 2.5 s, a curse every 8 s and only
+  on one shot in six, "they're on us" once in 25 s, a kill brag every 3 s, a grenade
+  warning every 5 s and only from the nearest man inside 22 m.
+- **Priorities**: `Death` > `Refusal` > `Combat` > `Order` > `Selection`. The refusal sits
+  above the fight on purpose - a firefight must not swallow the reason an order did
+  nothing - and the dying cry sits above everything, because it is how the player is told
+  he has lost somebody.
+
+Everybody on the street cries out, not only our men: a rival and an officer have no roster
+entry, so their bank is dealt off their own body number (`VoiceCasting.BankForSeed`) rather
+than written down. One of our own screams in the voice his ledger entry was cast in - the
+man who says "on our way" is the man who yells when he is hit.
 
 ## What is in the project
 
@@ -305,7 +313,7 @@ street banks, 27 on the office.
 | the sheet they were cut from | `Assets/Audio/Voice/lines.csv`, and the run's own log beside it |
 | import settings | `SoundPackImportSettings` - Vorbis, forced mono, CompressedInMemory for the voice folder (667 clips decompressed would be about 60 MB of RAM to say "moving") |
 | the baked asset | `Assets/Configs/Audio/Resources/VoiceDatabase.asset` |
-| re-bake it | `Tools/City/Create or Refresh Voice Database`, or `unity command menu --path "Tools/City/Create or Refresh Voice Database"` |
+| re-bake it (it throws the live lookup away as it goes, or the session answers out of the old index) | `Tools/City/Create or Refresh Voice Database`, or `unity command menu --path "Tools/City/Create or Refresh Voice Database"` |
 | the keys, by name | `Assets/Scripts/Data/VoiceLines.cs` - nothing else spells a key as a literal |
 | who speaks in which voice | `Assets/Scripts/Gameplay/VoiceCasting.cs`, written onto `Character.Voice` and saved |
 | the speaker | `Assets/Scripts/Gameplay/CrewVoice.cs` (`Say`, `Office`) |

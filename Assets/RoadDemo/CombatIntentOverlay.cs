@@ -45,7 +45,7 @@ namespace RoadDemo
 
         public bool IsVisible => _visible;
 
-        public void Init(DemoCrews crews, bool visible = false)
+        public void Init(DemoCrews crews, bool visible = true)
         {
             _crews = crews;
             if (_root == null)

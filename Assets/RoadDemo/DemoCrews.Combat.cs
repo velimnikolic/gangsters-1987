@@ -1075,6 +1075,14 @@ namespace RoadDemo
         public void FireFrom(CrewWalker shooter, CrewWalker mark, Transform follow = null)
         {
             if (shooter == null || shooter.Dead || shooter.Tf == null) return;
+
+            // THE CURSING IS THE THINNEST THING IN THE GAME. A man empties a magazine in
+            // seconds and forty of them are firing at once; one shot in six, and never
+            // twice from the same mouth inside eight seconds, is the difference between a
+            // street fight and a football crowd.
+            if (Random.value < 0.16f)
+                CrewSpeech.Cry(shooter, LivingCity.Data.VoiceLines.FightCurse, cooldown: 8f);
+
             Resolve(shooter, mark, shooter.MuzzlePosition, shooter.Tf.position,
                 follow != null ? follow : (CrewArms.MuzzleOf(shooter.Weapon) ?? shooter.Tf));
         }

@@ -66,6 +66,35 @@ namespace LivingCity.Gameplay
             return man.Voice;
         }
 
+        /// <summary>
+        /// A voice for a man who is on nobody's books - a rival mobster, an officer of the
+        /// law. They cry out when they are shot exactly as our men do, and a fight where
+        /// only our side makes a sound is half a fight; but they have no Character to write
+        /// a bank onto, so the bank is dealt straight off whatever number identifies the
+        /// body and never stored. Stable for as long as that body lives, which is as long
+        /// as it needs to be.
+        /// </summary>
+        public static string BankForSeed(int seed)
+        {
+            var db = VoiceDatabase.Instance;
+            if (db == null)
+                return null;
+
+            db.CollectBankIds(Banks);
+            if (Banks.Count == 0)
+                return null;
+
+            var rng = new System.Random(Potential.Mix(seed, VoiceSeed + 2));
+            return Banks[rng.Next(Banks.Count)];
+        }
+
+        /// <summary>The same pitch trim for a man with no roster entry.</summary>
+        public static float PitchForSeed(int seed)
+        {
+            var rng = new System.Random(Potential.Mix(seed, VoiceSeed + 3));
+            return 0.94f + rng.Next(0, 13) * 0.01f;
+        }
+
         static string Deal(Character man, VoiceDatabase db, Roster roster)
         {
             var year = roster != null && roster.Year > 0 ? roster.Year : RosterSeeder.CalendarStartYear;

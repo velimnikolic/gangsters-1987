@@ -27,6 +27,11 @@ namespace RoadDemo
         /// blast for the gangsters it catches.</summary>
         public static void Throw(Vector3 from, Vector3 to, DemoCrews crews, int faction, float groundY)
         {
+            // WHOEVER IS STANDING WHERE IT IS GOING TO LAND SEES IT COMING. One shout for
+            // the whole throw, from the nearest man who is not of the family that threw it -
+            // the warning is what makes a grenade read as a grenade before it goes off.
+            CrewSpeech.Warn(crews, to, faction);
+
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = "Bomb";
             var col = go.GetComponent<Collider>();

@@ -104,6 +104,7 @@ namespace LivingCity.EditorTools
 
             banks.Sort((a, b) => string.CompareOrdinal(a.id, b.id));
             db.banks = banks.ToArray();
+            db.Invalidate();   // the running session must not answer out of the old index
 
             EditorUtility.SetDirty(db);
             AssetDatabase.SaveAssets();

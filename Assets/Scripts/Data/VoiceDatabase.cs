@@ -71,7 +71,17 @@ namespace LivingCity.Data
         // through 9 banks of 80 lines is a scan nobody needs to pay.
         Dictionary<string, Dictionary<string, AudioClip[]>> index;
 
-        void OnDisable() => index = null;   // a re-bake in the editor must not serve stale takes
+        void OnDisable() => index = null;
+
+        /// <summary>
+        /// Throw the lookup away. The baker calls it: a re-bake in a running editor writes
+        /// new banks into the SAME live object, and OnDisable only fires when the asset is
+        /// unloaded - so without this the session goes on answering out of the index it
+        /// built before, and every newly recorded key reads as silence. (Which is exactly
+        /// what the first combat bake did: 1,051 clips on disk, four takes in the asset,
+        /// and Takes() still returning nothing.)
+        /// </summary>
+        public void Invalidate() => index = null;
 
         /// <summary>Every take of one key in one bank, or an empty span. A bank that never
         /// recorded the key falls through to <paramref name="fallbackBank"/> - which is how

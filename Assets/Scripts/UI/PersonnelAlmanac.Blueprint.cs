@@ -657,6 +657,180 @@ namespace LivingCity.UI
             return front;
         }
 
+        /// <summary>The floor's own read, on the light band at the end of its row.</summary>
+        void PaintBpFloorRead(RectTransform row, float x, int ours, int doors, int open,
+            int dark, int shut, int heat, bool ground)
+        {
+            var band = NewRect("Floor read", row);
+            PlaceTopLeft(band, x, 0f, BpSummaryW, BpCellH);
+            Fill(band, LedgerV2.PanelBand);
+            Block("Edge", band, 0f, 0f, 1f, BpCellH, LedgerV2.Hair);
+
+            if (ground)
+            {
+                LedgerV2.Mono(band, 11f, -(BpCellH * 0.5f - 16f), BpSummaryW - 22f,
+                    "NOT SOLD HERE", 11.5f, LedgerV2.Muted, 4f);
+                LedgerV2.Mono(band, 11f, -(BpCellH * 0.5f + 1f), BpSummaryW - 22f,
+                    "a shop is bought at its door", 10.5f, LedgerV2.Faint, 1f);
+                return;
+            }
+
+            var openInk = dark > 0 || shut > 0 ? LedgerV2.Red : LedgerV2.Green;
+            LedgerV2.Mono(band, 11f, -(BpCellH * 0.5f - 22f), BpSummaryW - 22f,
+                "OURS " + ours + "/" + doors, 11.5f, LedgerV2.Body, 4f);
+            LedgerV2.Mono(band, 11f, -(BpCellH * 0.5f - 3f), BpSummaryW - 22f,
+                "OPEN " + open + (dark > 0 ? " · DARK " + dark : "") +
+                (shut > 0 ? " · SHUT " + shut : ""), 10.5f, openInk, 4f);
+            LedgerV2.Mono(band, 11f, -(BpCellH * 0.5f + 16f), BpSummaryW - 22f,
+                "HEAT " + heat + "/DAY", 10.5f,
+                heat >= 4 ? LedgerV2.Red : heat > 0 ? LedgerV2.Amber : LedgerV2.Muted, 4f);
+        }
+
+        /// <summary>
+        /// One door, exactly as the prototype draws it: the badge and the state square on
+        /// the top line, the role or the tenant under it, and at the foot either the
+        /// keeper's half-stars, a stamp, or a plain tag.
+        /// </summary>
+        void PaintBpCell(RectTransform row, ApartmentUnitId unit, UnitState state,
+            float x, float cell)
+        {
+            var picked = blueprintFormOpen && blueprintUnit.Equals(unit);
+            var ours = Apartments.TryGet(unit, out var record) &&
+                       record.GangId == GangCatalog.PlayerGangId;
+
+            var tile = NewRect("Door " + unit.Door, row);
+            PlaceTopLeft(tile, x, 0f, cell, BpCellH);
+            tile.gameObject.AddComponent<RectMask2D>();
+
+            var face = ours
+                ? Face(tile, picked ? LedgerV2.Picked : LedgerV2.Panel)
+                : Hatch(tile, cell, BpCellH);
+
+            // The selection is a 3-unit bar on the cell's own left edge; a hairline closes
+            // it on the right.
+            if (picked)
+                Block("Picked", tile, 0f, 0f, 3f, BpCellH, LedgerV2.Red);
+            Block("Edge", tile, cell - 1f, 0f, 1f, BpCellH, LedgerV2.Hair);
+
+            DoorBadge(tile, 10f, -8f, unit.Door, picked);
+            Block("State", tile, cell - 18f, -8f, 10f, 10f, StateInk(state));
+
+            var role = !ours ? TenantOf(unit)
+                : record.Role == UnitRole.Empty ? "NO ROLE"
+                : UnitRoles.Of(record.Role).ShortLabel;
+            LedgerV2.Mono(tile, 10f, -34f, cell - 20f, role, 11f,
+                state == UnitState.Open ? LedgerV2.Body
+                    : !ours ? LedgerV2.PaperBlue : LedgerV2.Muted, 4f);
+
+            var footY = -(BpCellH - 26f);
+            var stamp = state switch
+            {
+                UnitState.Raided => "RAID " + (ours ? record.RaidUntilDay : 0),
+                UnitState.NoBank => "NO BANK",
+                UnitState.Dark => ours && record.Role != UnitRole.Empty ? "DARK" : "",
+                _ => "",
+            };
+
+            if (!string.IsNullOrEmpty(stamp))
+            {
+                var box = NewRect("Stamp", tile);
+                var stampW = Mathf.Min(cell - 20f, stamp.Length * 7.6f + 12f);
+                PlaceTopLeft(box, 10f, footY, stampW, 18f);
+                Frame(box, 1.5f, StateInk(state));
+                box.localRotation = Quaternion.Euler(0f, 0f, 3f);
+                LedgerV2.Mono(box, 5f, -1f, stampW - 10f, stamp, 9.5f, StateInk(state), 7f);
+            }
+            else if (ours && record.Role != UnitRole.Empty && record.KeeperId >= 0)
+            {
+                var keeper = director != null && director.Roster != null
+                    ? director.Roster.Find(record.KeeperId)
+                    : null;
+                if (keeper != null)
+                    Stars(tile, 10f, footY - 6f,
+                        keeper.GetHalfSteps(UnitRoles.Of(record.Role).Wants), 11f, 12f);
+            }
+            else
+            {
+                var tag = !ours ? "TENANT"
+                    : record.Role == UnitRole.Empty ? "EMPTY" : "OPEN";
+                LedgerV2.Mono(tile, 10f, footY, cell - 20f, tag, 10.5f, StateInk(state), 7f);
+            }
+
+            RowButton(tile, face, () => OpenFlatForm(unit));
+
+            // The pointer over a door reads it in the caption bar, and NOTHING repaints:
+            // the plan is destroyed and rebuilt whole, and a repaint under a moving
+            // pointer is what makes a hover feel broken.
+            var hovered = unit;
+            var trigger = tile.gameObject.AddComponent<EventTrigger>();
+            var enter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
+            enter.callback.AddListener(_ =>
+            {
+                blueprintCaption = hovered;
+                RefreshBpCaption();
+            });
+            trigger.triggers.Add(enter);
+        }
+
+        /// <summary>The plan is taken hold of and pulled sideways, the way the block film
+        /// is turned. Nothing repaints: the content is MOVED, so a drag cannot destroy the
+        /// grid under the hand doing it.</summary>
+        void DragSideways(RectTransform window)
+        {
+            var trigger = window.gameObject.AddComponent<EventTrigger>();
+            var surface = window.gameObject.AddComponent<Image>();
+            surface.color = new Color(1f, 1f, 1f, 0f);
+            surface.raycastTarget = true;
+            surface.transform.SetAsFirstSibling();
+
+            var drag = new EventTrigger.Entry { eventID = EventTriggerType.Drag };
+            drag.callback.AddListener(data =>
+            {
+                var pointer = (PointerEventData)data;
+                blueprintPlanScroll = Mathf.Clamp(
+                    blueprintPlanScroll - pointer.delta.x, 0f, blueprintPlanRun);
+                if (blueprintPlan != null)
+                    blueprintPlan.anchoredPosition =
+                        new Vector2(-blueprintPlanScroll, 0f);
+            });
+            trigger.triggers.Add(drag);
+        }
+
+        /// <summary>The dark chip a door number is set in - red when that door is the one
+        /// the form is open on.</summary>
+        void DoorBadge(RectTransform parent, float x, float y, string door, bool picked)
+        {
+            var badge = NewRect("Badge", parent);
+            var w = door.Length * 7.8f + 12f;
+            PlaceTopLeft(badge, x, y, w, 18f);
+            Fill(badge, picked ? LedgerV2.Red : LedgerV2.DarkPlate);
+            Line(badge, LedgerStyle.Mono, 12f, LedgerV2.HeadCream, 6f, -1f, w - 12f, 16f,
+                door).characterSpacing = 4f;
+        }
+
+        /// <summary>The 45° hatch a flat that is not ours - and the common ground - wears.
+        /// Clipped by the cell's own mask, which is what keeps it inside the cell: the
+        /// first cut let every stripe run the width of the sheet.</summary>
+        Image Hatch(RectTransform tile, float w, float h)
+        {
+            var face = Fill(tile, BpHatchLight);
+            face.raycastTarget = true;
+            var span = w + h;
+            for (var i = 0; i * 11f < span; i++)
+            {
+                var stripe = NewRect("Hatch", tile);
+                stripe.anchorMin = stripe.anchorMax = new Vector2(0f, 1f);
+                stripe.pivot = new Vector2(0f, 1f);
+                stripe.anchoredPosition = new Vector2(i * 11f - h, 0f);
+                stripe.sizeDelta = new Vector2(5f, span * 1.6f);
+                stripe.localRotation = Quaternion.Euler(0f, 0f, -45f);
+                var ink = stripe.gameObject.AddComponent<Image>();
+                ink.color = BpHatchDark;
+                ink.raycastTarget = false;
+            }
+            return face;
+        }
+
         // ------------------------------------------------------------------ the caption
 
         TMP_Text bpCaptionDoor, bpCaptionName, bpCaptionLine, bpCaptionState;

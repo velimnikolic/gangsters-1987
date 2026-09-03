@@ -51,6 +51,8 @@ namespace RoadDemo
             }
             CrewOverlay.Announce(unit.GangName.ToUpperInvariant() + " GIVE THEMSELVES UP",
                 4f, new Color(0.95f, 0.9f, 0.6f));
+            CrewSpeech.Cry(unit.Boss != null && !unit.Boss.Dead ? unit.Boss : null,
+                LivingCity.Data.VoiceLines.SurrHands);
             return true;
         }
 
