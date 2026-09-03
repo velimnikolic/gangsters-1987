@@ -724,6 +724,125 @@ def cover_tally(dirpath):
     return 0
 
 
+def core(dirpath, want=""):
+    """THE FORCED SCENARIOS' READER (EPIC 31 NIGHT-013).
+
+    The mini core run judged as a CITY rather than as a piece of driving: which houses
+    thought and at what tier, what changed hands, who fired at whom, what the law did -
+    plus the ordinary rules that apply to every run (the harness finished, nothing
+    threw, no crew fault epidemic).
+
+    `want` is a comma-separated list of demands the caller's scenario makes of it, so
+    one reader serves all five and each scenario's verdict is written where the
+    scenario is:
+
+        expand      at least one house fired tier 7 (expand)
+        turf        at least one block changed leader
+        allthink    every gang that stands in the city had a turn of mind
+        war         some pair reached a war intent AND both sides fired
+        short       a short envelope was paid, somebody left, the safe never went under
+        police      police cars ran, nobody stood 90 s, no belt refusal
+        law         a complaint rang, a car came, a verdict landed (needs NIGHT-009)
+    """
+    import os
+
+    trace = os.path.join(dirpath, "trace.jsonl")
+    summary_path = os.path.join(dirpath, "summary.json")
+    if not os.path.exists(trace) or not os.path.exists(summary_path):
+        print(f"== {dirpath}")
+        print("   NO RUN - the editor never played it")
+        return 3
+    summary = json.load(open(summary_path, encoding="utf-8"))
+    rows = load(trace)
+
+    houses = [r for r in rows if r["k"] == "house"]
+    turf = [r for r in rows if r["k"] == "turf"]
+    shots = [r for r in rows if r["k"] == "shot"]
+    faults = [r for r in rows if r["k"] == "fault"]
+    crew_faults = [r for r in faults if r.get("tag") in ("crew", "coverroute")]
+    cars = [r for r in rows if r["k"] == "car"]
+    police_cars = {r.get("id") for r in cars if r.get("tag") == "police"}
+    belts = len([r for r in rows if r["k"] == "belt"])
+    worst_stand = max((r.get("quiet", 0) or 0 for r in cars if r.get("tag") != "crew"),
+                      default=0)
+    complaints = [r for r in rows if r["k"] == "complaint"]
+    courts = [r for r in rows if r["k"] == "court"]
+
+    thinkers = {r.get("gang") for r in houses}
+    tiers = Counter(r.get("tier") for r in houses)
+    firing = {r.get("fac") for r in shots} | {r.get("atfac") for r in shots}
+    war_rows = [r for r in houses
+                if "war" in str(r.get("intent", "")).lower()
+                or "war" in str(r.get("why", "")).lower()]
+    short_rows = [r for r in rows
+                  if "short" in str(r.get("what", "")).lower()
+                  or "short" in str(r.get("why", "")).lower()]
+    safes = [r.get("safe") for r in houses if isinstance(r.get("safe"), int)]
+
+    defects = []
+    if summary.get("why") != "done":
+        defects.append("the run ended " + repr(summary.get("why")))
+    if summary.get("errors", 0):
+        defects.append(f"{summary.get('errors')} errors")
+    if summary.get("exceptions", 0):
+        defects.append(f"{summary.get('exceptions')} exceptions")
+
+    demands = [w.strip() for w in want.split(",") if w.strip()]
+    if "expand" in demands and 7 not in tiers:
+        defects.append("no house reached tier 7 (expand)")
+    if "turf" in demands and not turf:
+        defects.append("no block changed hands")
+    if "allthink" in demands:
+        # every gang that fired, held ground or thought at all is a gang that stands
+        standing = thinkers | {g for g in firing if isinstance(g, int) and g >= 0}
+        missing = sorted(g for g in standing if g not in thinkers)
+        if missing:
+            defects.append(f"{len(missing)} standing gang(s) never thought: {missing[:8]}")
+    if "war" in demands:
+        if not war_rows:
+            defects.append("no house ever formed a war intent")
+        elif len({r.get("fac") for r in shots}) < 2:
+            defects.append("only one side ever fired")
+    if "short" in demands:
+        if not short_rows:
+            defects.append("no short envelope was paid")
+        if any(s < 0 for s in safes):
+            defects.append("a safe read below zero")
+    if "police" in demands:
+        if not police_cars:
+            defects.append("no police car ever ran")
+        if worst_stand >= 90:
+            defects.append(f"a car stood {worst_stand:.0f}s")
+        if belts:
+            defects.append(f"{belts} belt refusals")
+    if "law" in demands:
+        if not complaints:
+            defects.append("no complaint was ever rung in")
+        if not courts:
+            defects.append("no verdict ever landed")
+
+    ok = not defects
+    print(f"== {dirpath}")
+    print("   " + ("PASSED" if ok else "FAULTS: " + "; ".join(defects)))
+    print(f"   the city    : {len(houses)} turns of mind by {len(thinkers)} house(s), "
+          f"tiers {dict(sorted(tiers.items(), key=lambda kv: str(kv[0])))}")
+    print(f"   the turf    : {len(turf)} block(s) changed hands"
+          + ("; " + ", ".join(f"{r.get('block')} {r.get('from')}->{r.get('to')} "
+                              f"({r.get('state')})" for r in turf[:4]) if turf else ""))
+    print(f"   the street  : {len(shots)} shots by factions "
+          f"{sorted(g for g in {r.get('fac') for r in shots} if g is not None)}, "
+          f"{len(police_cars)} police car(s), worst stand {worst_stand:.0f}s, {belts} belt")
+    print(f"   the law     : {len(complaints)} complaint(s), {len(courts)} verdict(s)")
+    if crew_faults:
+        by = Counter(r.get("fault") for r in crew_faults)
+        print("   crew faults : " +
+              ", ".join(f"{n} {kind}" for kind, n in by.most_common(8)))
+    print(f"   summary     : why={summary.get('why')!r}, "
+          f"errors={summary.get('errors', 0)}/{summary.get('exceptions', 0)}, "
+          f"sim={summary.get('sim')}s")
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:]]
     if not args:
@@ -743,6 +862,10 @@ if __name__ == "__main__":
         sys.exit(cover_route(path))
     if "--cover-tally" in args:
         sys.exit(cover_tally(path))
+    if "--core" in args:
+        at = args.index("--core")
+        demands = args[at + 1] if len(args) > at + 1 and not args[at + 1].startswith("--") else ""
+        sys.exit(core(path, demands))
     if "--freeway" in args:
         sys.exit(freeway(path))
     if "--story" in args:

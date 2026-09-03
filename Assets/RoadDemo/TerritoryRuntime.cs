@@ -608,6 +608,13 @@ namespace RoadDemo
 
             if (control.Read(blockId, controlScores, lastGameHour, out var change))
             {
+                // THE STREET MOVED, AND THE TRACE SAYS SO (EPIC 31 NIGHT-013). Written
+                // here, at the one place a change of hands is DERIVED, so the row is the
+                // reading itself and never a second opinion of it.
+                DriveTrace.Turf(blockId.Value,
+                    change.PreviousLeader.IsValid ? change.PreviousLeader.Value : -1,
+                    change.Leader.IsValid ? change.Leader.Value : -1,
+                    change.Current.ToString(), change.GameHour);
                 events.Publish(new BlockControlChanged(
                     blockId, change.PreviousLeader, change.Leader, change.Current,
                     change.GameHour));

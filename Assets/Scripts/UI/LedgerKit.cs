@@ -496,6 +496,17 @@ namespace LivingCity.UI
             TextAlignmentOptions alignment = TextAlignmentOptions.MidlineLeft)
         {
             var text = Text("Text", parent, font, size, color, alignment);
+            // A line is never given less room than one line needs. TMP drops a line
+            // WHOLE when the rect cannot hold it, so a box cut to the point size prints
+            // NOTHING - the block's name, the man's name in the menu, the ward under a
+            // heading, all silently gone. The box is grown about its own centre, so the
+            // word still sits on the line the sheet drew it on.
+            var lineBox = LineBox(size);
+            if (h < lineBox)
+            {
+                y += (lineBox - h) * 0.5f;
+                h = lineBox;
+            }
             PlaceTopLeft(text.rectTransform, x, y, w, h);
             text.text = content;
             return text;

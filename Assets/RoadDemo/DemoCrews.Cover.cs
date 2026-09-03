@@ -100,6 +100,19 @@ namespace RoadDemo
         /// it must not have to pass one.</summary>
         internal static IRoadUser LastCoverAnchor { get; private set; }
 
+        /// <summary>
+        /// WHERE THE THING HE IS BEHIND ACTUALLY STANDS - a car's road position or a
+        /// bin's box centre, whichever the flank came off, in world space; null when the
+        /// oracle handed out nothing.
+        ///
+        /// The anchor above only names a car, so a bin's flank had no middle to measure
+        /// from and there was no way to ask the one question EPIC 28 never answered:
+        /// which SIDE of it he ended up on. He is meant to drop behind the near face of
+        /// the nearest thing; walking round to the far face crosses the fire line to get
+        /// out of it, which is worse than staying where he was.
+        /// </summary>
+        internal static Vector3? LastCoverAnchorAt { get; private set; }
+
         // ------------------------------------------------------------ the flank itself
 
         /// <summary>The far flank of a car stood still: off its side away from
@@ -171,10 +184,12 @@ namespace RoadDemo
             float maxWalk, float minShot, float maxShot)
         {
             LastCoverAnchor = null;
+            LastCoverAnchorAt = null;
             if (man == null || man.Tf == null) return null;
             var p = man.Tf.position;
             Vector3? best = null;
             IRoadUser bestUser = null;
+            Vector3? bestAt = null;
             float bestWalk = maxWalk, bestToMark = float.MaxValue;
             float reach2 = reach * reach;
 
@@ -190,6 +205,7 @@ namespace RoadDemo
                           ref bestWalk, ref bestToMark)) continue;
                 best = spot;
                 bestUser = u;
+                bestAt = u.RoadPosition;
             }
 
             // and the same of the pavement's furniture
@@ -204,9 +220,11 @@ namespace RoadDemo
                           ref bestWalk, ref bestToMark)) continue;
                 best = spot;
                 bestUser = null;
+                bestAt = new Vector3(b.C.x, p.y, b.C.y);
             }
 
             LastCoverAnchor = best.HasValue ? bestUser : null;
+            LastCoverAnchorAt = best.HasValue ? bestAt : null;
             return best;
         }
 

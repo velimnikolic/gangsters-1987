@@ -241,6 +241,22 @@ namespace RoadDemo
             bannerTint = tint ?? new Color(1f, 0.92f, 0.78f, 1f);
         }
 
+        /// <summary>
+        /// THE BANNER IS THE PLAYER'S NEWS, and only his. A complaint about a rival's
+        /// men is a thing that happened in the city, not a thing that happened to him.
+        ///
+        /// The question "is this family ours?" is asked HERE and not out in the street
+        /// classes on purpose (TEST-008): who the player is is a fact about identity,
+        /// and the pages painted for him are the surfaces entitled to ask it. The law's
+        /// dispatch used to ask the catalog itself at three call sites.
+        /// </summary>
+        public static void AnnounceOurs(int faction, string text, float seconds,
+                                        Color? tint = null)
+        {
+            if (faction != LivingCity.Gangs.GangCatalog.PlayerGangId) return;
+            Announce(text, seconds, tint);
+        }
+
         void BuildBanner(Transform root)
         {
             if (DemoUi.Dot == null) return;

@@ -135,12 +135,59 @@ namespace RoadDemo
             LivingCity.Outfit.Underworld.Current?.Of(house.Value)?.WakeNow(gameHour);
 
         /// <summary>
+        /// THE FORCED SCENARIOS' TWO DIALS (EPIC 31 NIGHT-013), both left alone by
+        /// default so a scene that sets neither is the scene as it was.
+        ///
+        /// The cadence: twenty houses think ONE AT A TIME in rota, so a run that wants
+        /// every family to have had a turn needs either a short interval or a long
+        /// clock. Above 0 replaces the model's own four game hours.
+        ///
+        /// The safe: what the player's house starts with. At or above 0 it replaces the
+        /// ledger's $25,000, and 0 is the broke-player scenario. They are statics
+        /// because the runtime is made at Play and has nothing in the scene to write to.
+        /// </summary>
+        public static float MindThinkEveryHoursOverride { get; set; }
+
+        /// <summary>See <see cref="MindThinkEveryHoursOverride"/>. Below 0 leaves the
+        /// ledger's own starting figure.</summary>
+        public static int PlayerSafeAtStartOverride { get; set; } = -1;
+
+        /// <summary>
+        /// NO SCENARIO SURVIVES ITS OWN RUN. A static outlives Play, and the scene that
+        /// sets these is the core's - so a forced run and then a plain BlockDemo in the
+        /// same editor session would have played the second one under the first one's
+        /// rules, silently. They are put back to their defaults before every scene
+        /// wakes, and the builder that wants them writes them again in its own Awake.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void ForgetTheLastScenario()
+        {
+            MindThinkEveryHoursOverride = 0f;
+            PlayerSafeAtStartOverride = -1;
+            OwnerTraitOverride = null;
+        }
+
+        /// <summary>
         /// Hangs the book off the street. The only wire between them is one question -
         /// "is anybody sitting on this door?" - and the answer is the guard lieutenant's
         /// own hand (D10 iii). Called once, with the rest of the runtime's wake-up.
         /// </summary>
         void InstallMinds()
         {
+            if (MindThinkEveryHoursOverride > 0f)
+                mindConfig.ThinkEveryHours = MindThinkEveryHoursOverride;
+            Debug.Log($"[Core] the houses think every {mindConfig.ThinkEveryHours} game hours.");
+            if (PlayerSafeAtStartOverride >= 0)
+            {
+                var accounts = LivingCity.Outfit.Underworld.Current?.Player?.Runner?.Accounts;
+                if (accounts != null)
+                {
+                    accounts.Safe = PlayerSafeAtStartOverride;
+                    Debug.Log("[Core] the player's safe starts at $" +
+                              PlayerSafeAtStartOverride);
+                }
+            }
+
             LivingCity.Outfit.CampaignRunner.GuardOnTheDoor = job =>
             {
                 if (job == null || crews == null ||

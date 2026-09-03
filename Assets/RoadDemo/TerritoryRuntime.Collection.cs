@@ -133,6 +133,16 @@ namespace RoadDemo
         /// <summary>The man behind this counter, dealt once from the city seed
         /// (ECON-002) and remembered - hashing is cheap, but the same question a frame
         /// should not cost the same hash a frame.</summary>
+        /// <summary>
+        /// EVERY COUNTER IN THE CITY, ONE KIND OF MAN - for the forced scenarios and
+        /// nothing else (EPIC 31 NIGHT-013). Null is the city as it deals itself, and
+        /// that is the default: a scene that never sets it is the scene as it was.
+        ///
+        /// It is set before the city stands and read here, at the one place a profile
+        /// is dealt, so nothing downstream has to know the difference.
+        /// </summary>
+        public static TerritoryOwnerTrait? OwnerTraitOverride { get; set; }
+
         public TerritoryOwnerProfile OwnerProfileOf(TerritoryBusinessId businessId)
         {
             if (!businessId.IsValid)
@@ -142,7 +152,7 @@ namespace RoadDemo
 
             var business = LivingCity.Business.BusinessRuntime.Instance;
             var seed = business != null && business.Populated ? business.CitySeed : 1987;
-            profile = TerritoryOwnerProfile.Deal(seed, businessId);
+            profile = TerritoryOwnerProfile.Deal(seed, businessId, OwnerTraitOverride);
             ownerProfiles[businessId] = profile;
             return profile;
         }
