@@ -4,9 +4,13 @@ using LivingCity.Personnel;
 namespace LivingCity.Outfit
 {
     /// <summary>
-    /// The city's twenty-one families, dealt once from the city's own seed. One
+    /// The city's families, dealt once from the city's own seed. One
     /// <see cref="House"/> apiece - the player's outfit is house 0 - and one shared
     /// classified column, because there is one newspaper in town.
+    ///
+    /// HOW MANY there are is the city's decision and not this table's: the catalogue
+    /// holds twenty-one names so an id never moves, and a city deals as many of them as
+    /// it can stand men for (<see cref="Dealt"/>). Nobody runs on paper.
     ///
     /// This is the only place a campaign's books are created, and there is exactly one
     /// of it (<see cref="Current"/>). The two directors are hosts of it, not owners:
@@ -31,6 +35,20 @@ namespace LivingCity.Outfit
 
         /// <summary>The seed the whole underworld was dealt from - the city's own.</summary>
         public int CitySeed { get; private set; }
+
+        /// <summary>
+        /// HOW MANY FAMILIES THIS CITY HOLDS - the player's house and the rivals dealt
+        /// beside him, ids 0 upwards. The table above is always the full twenty-one long
+        /// because an id must never move (a saved campaign, a stance and a map colour all
+        /// hang off it); this figure is how many of those slots a given city actually
+        /// deals, and every one of them stands men on the pavement.
+        ///
+        /// NO FAMILY RUNS ON PAPER (the user's rule of 2026-09-03). If the city cannot
+        /// carry twenty-one houses it holds fewer houses, not twenty-one houses of which
+        /// most are invisible: the street decides the number
+        /// (RoadDemoBuilder.HousesInThisCity) and hands it here.
+        /// </summary>
+        public int Dealt { get; private set; }
 
         /// <summary>One newspaper for the whole city: the men who advertise this
         /// morning advertise to everybody, and the first house to sign one takes
@@ -69,15 +87,24 @@ namespace LivingCity.Outfit
         public House Player => Of(GangCatalog.PlayerGangId);
 
         /// <summary>
-        /// Deals the whole underworld: every house's roster off its own stream, its own
-        /// safe with the same opening stake, and the same organization rules, bodyguard
-        /// detail and arms deal the player's outfit gets. One pass, one rule, twenty-one
-        /// times.
+        /// Deals the underworld: every house's roster off its own stream, its own safe
+        /// with the same opening stake, and the same organization rules, bodyguard detail
+        /// and arms deal the player's outfit gets. One pass, one rule, once per house
+        /// this city holds.
+        ///
+        /// <paramref name="houses"/> is the player's house and the rivals beside him -
+        /// ids 0 upwards, so the same seed always deals the same families and a smaller
+        /// city is the same city with the far names left out. The slots above it stay
+        /// empty and <see cref="Of"/> answers null for them, which every reader of a
+        /// house already allows for.
         /// </summary>
-        public static Underworld Deal(int citySeed)
+        public static Underworld Deal(int citySeed, int houses = GangCatalog.GangCount)
         {
-            var underworld = new Underworld { CitySeed = citySeed };
-            for (var gangId = 0; gangId < underworld.houses.Length; gangId++)
+            var dealt = houses < 1 ? 1
+                : houses > GangCatalog.GangCount ? GangCatalog.GangCount
+                : houses;
+            var underworld = new Underworld { CitySeed = citySeed, Dealt = dealt };
+            for (var gangId = 0; gangId < dealt; gangId++)
             {
                 var roster = RosterSeeder.Generate(citySeed, gangId);
                 RosterOps.ConfigureOrganization(roster, OrganizationLimits.Default);
@@ -170,13 +197,20 @@ namespace LivingCity.Outfit
         /// and not a re-deal - two halves of one Play would otherwise be looking at two
         /// different cities.
         /// </summary>
-        public static Underworld Ensure(int citySeed)
+        public static Underworld Ensure(int citySeed, int houses = GangCatalog.GangCount)
         {
             if (Current == null)
-                Current = Deal(citySeed);
+                Current = Deal(citySeed, houses);
             else if (Current.CitySeed != citySeed)
                 Fault?.Invoke("[Underworld] already dealt from seed " + Current.CitySeed +
                               "; the call for seed " + citySeed + " was ignored.");
+            else if (Current.Dealt != houses && houses != GangCatalog.GangCount)
+                // The same fault as a second seed, and for the same reason: two halves of
+                // one Play would be looking at two different cities. The default is not a
+                // demand for twenty-one - it is the ledger and the bench asking for
+                // whatever this city already dealt.
+                Fault?.Invoke("[Underworld] already dealt " + Current.Dealt +
+                              " houses; the call for " + houses + " was ignored.");
             return Current;
         }
 

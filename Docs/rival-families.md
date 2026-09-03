@@ -1,6 +1,6 @@
 # The rival families
 
-Twenty families run on the player's own systems. There is one `Roster`, one
+The city's rival families run on the player's own systems. There is one `Roster`, one
 `CampaignRunner`, one racket, one round ledger and one command gateway, and every house
 uses them — the only difference between house 0 and house 7 is that a person files house
 0's orders and a `HouseMind` files house 7's.
@@ -249,11 +249,45 @@ attackers in a bed for `MisfireDays`, the same as a botched charge.
 The player may only name a man his own men have stood near: `TurfKnowledge.LearnMan`
 records a face at the same reach a door is learnt at.
 
-## The houses the city never stood up
+## How many families a city holds
 
-Every family is simulated always. How many have BODIES is a performance decision, and
-`TerritoryRuntime.Stands(house)` is the whole of the test: a family with nobody on the
-street runs on paper, and nothing else about it changes.
+**No family runs on paper** (the user's rule of 2026-09-03). If the frame budget will not
+carry twenty-one houses, the city holds FEWER HOUSES — never twenty-one of which most are
+invisible. A name in the ledger is a mob you can walk up to.
+
+One figure decides it and both the books and the pavement read it:
+
+| where | what |
+|---|---|
+| `RoadDemoBuilder.rivalCrewsInCity` | the rival families this city holds (default **6**) |
+| `RoadDemoBuilder.HousesInThisCity` | that plus the player's own house — the whole underworld |
+| `Underworld.Deal(seed, houses)` / `Underworld.Dealt` | deals exactly that many books, ids 0 upwards |
+| `RoadDemoBuilder`'s seating pass | stands `Underworld.Dealt - 1` rival families, read back from the deal |
+
+The catalogue stays twenty-one names long (`GangCatalog.GangCount`) because **an id must
+never move** — a saved campaign, a stance and a map colour all hang off it. A smaller city
+is the same city with the far names left out: house 1 is the Falcones whether the city
+holds four families or twenty-one, and `Underworld.Of` answers null for a house this city
+never dealt. `gangsters_underworld_tests`' `ACityDealsOnlyTheHousesItStands` is the
+contract.
+
+The numbers as they stand: **MiniCoreDemo 3 rivals** (4 houses), **the full core 6**
+(7 houses). How many CORNERS those families hold between them still follows the size of
+the map — one more crew per ten canonical blocks (`BlocksPerExtraRivalCrew`), which is
+second and third corners for the families that have the capos to hold them.
+
+## The paper machinery, and what is left of it
+
+`TerritoryRuntime.Stands(house)` is still the test — a family with nobody on the street
+runs on paper, and nothing else about it changes — but with the rule above it answers for
+the WIPED-OUT and the bench rigs alone, never for a family the city simply never stood up.
+`TerritoryRuntime.PaperHouses` reads 0 in a healthy city and is worth watching as a fault
+signal.
+
+One thing paper leaning deliberately does NOT do: **ring the precinct**. The telephone is
+a thing a shopkeeper does about the men in front of him, and a house working on paper has
+no men anywhere, so an officer sent there would arrive at a door with nothing standing at
+it (`TerritoryRuntime.Paper.cs`, `PaperDoor`).
 
 * its orders go to `PaperOrder` instead of the command gateway, and call the SAME
   resolutions — `ResolveDemand`, `ResolveThreat`, the racket, the round ledger;
@@ -268,9 +302,10 @@ Every think is timed and the milliseconds go on the `"house"` trace row, and
 `Underworld.Think` executes at most ONE house's turn of mind per call on a round-robin
 rota — a single frame never carries twenty of them.
 
-**The physical count is the user's to write** (D18). Until he has played a measurement
-build and put a number in the table, `CoreDemoBuilder.rivalCrews` stays at 6 and
-everything above that runs on paper by the rule above.
+**The physical count is the user's to write** (D18), and he has written it: three rivals
+on the mini core, six on the full city, and the underworld is dealt to match. Raising
+`CoreDemoBuilder.rivalCrews` adds families to the BOOKS as well as the street; it never
+leaves a house behind on paper.
 
 ## Every order, and what it actually does
 

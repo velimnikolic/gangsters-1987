@@ -40,11 +40,13 @@ namespace RoadDemo
         [Tooltip("Officers resting inside the station house, who come out when the wire " +
                  "calls them. 0 leaves the scene as it was.")]
         [Min(0)] public int policeOfficers;
-        // EVERY FAMILY IS ON THE STREET (RIVAL-008, the user's word of 2026-09-03).
-        // Six of them stood and fourteen ran on paper while the physical count was
-        // waiting to be measured; all twenty stand now, and how many CORNERS they hold
-        // between them is read from the size of the city (RoadDemoBuilder).
-        [Range(0, 20)] public int rivalCrews = 20;
+        // THE CITY HOLDS ONLY THE FAMILIES IT CAN STAND (the user's rule of
+        // 2026-09-03). There are no paper houses any more: the books deal exactly these
+        // families and every one of them has men on the pavement, so a name in the
+        // ledger is a mob you can walk up to. Three is the mini core, six the full city;
+        // how many CORNERS they hold between them still follows the size of the map
+        // (RoadDemoBuilder.BlocksPerExtraRivalCrew).
+        [Range(0, 20)] public int rivalCrews = 6;
         [Range(0, 4)] public int rivalHoods = 3;
 
         [Header("Day")]

@@ -91,10 +91,16 @@ namespace RoadDemo
             racketChanges.Clear();
             racket.Approach(businessId, mine, lastGameHour, racketChanges, announce: false);
 
+            // NOBODY IS AT THIS DOOR TO REPORT. The telephone is a thing a shopkeeper
+            // does about the men in front of him; a house working on paper has no men
+            // anywhere, so an officer sent here would arrive at a door with nothing
+            // standing at it. A city deals only the families it can stand
+            // (RoadDemoBuilder.HousesInThisCity), so this path is the wiped-out and the
+            // bench alone - and neither of them rings.
             if (followUp == TerritoryRacketIntent.Demand)
-                ResolveDemand(mine, businessId, out _, out _);
+                ResolveDemand(mine, businessId, false, out _, out _);
             else if (followUp == TerritoryRacketIntent.Threaten)
-                ResolveThreat(mine, businessId, default, out _, out _);
+                ResolveThreat(mine, businessId, default, false, out _, out _);
 
             if (geography.TryGetBusinessBlock(businessId, out var blockId))
                 PublishRacket(blockId);

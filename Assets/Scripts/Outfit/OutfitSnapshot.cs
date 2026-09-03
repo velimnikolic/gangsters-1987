@@ -146,6 +146,10 @@ namespace LivingCity.Outfit
 
             for (var i = 0; i < dto.houses.Length; i++)
             {
+                // A city that holds fewer families than the catalogue names writes an
+                // empty slot for every house it never dealt.
+                if (dto.houses[i] == null)
+                    continue;
                 var house = underworld.Of(dto.houses[i].gangId);
                 if (house != null)
                     Restore(house, dto.houses[i]);

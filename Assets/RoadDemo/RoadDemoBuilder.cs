@@ -199,10 +199,12 @@ namespace RoadDemo
         [Range(0f, 1f)] public float policeNightFootShare = 0.5f;
 
         [Header("Rivals")]
-        [Tooltip("Rival FAMILIES on the street (the ledger deals none), in GangCatalog " +
-                 "order and spread across the whole map: twenty of them is a city with a " +
-                 "mob on it rather than one rival somewhere. 0 for a quiet town.")]
-        [Range(0, 20)] public int rivalCrewsInCity = 20;
+        [Tooltip("Rival FAMILIES in this city (the ledger deals none), in GangCatalog " +
+                 "order and spread across the whole map. THIS IS THE WHOLE UNDERWORLD, " +
+                 "not a display budget: the books deal exactly these families and every " +
+                 "one of them stands men on the pavement. Six is a big city, three is " +
+                 "the mini core, 0 a quiet town.")]
+        [Range(0, 20)] public int rivalCrewsInCity = 6;
 
         [Tooltip("Fallback ceiling on rival crews for a scene with no territory plan " +
                  "under it. In the city the number is READ FROM THE CITY (RivalCrewCap): " +
@@ -211,19 +213,27 @@ namespace RoadDemo
                  "before any family gets a second corner.")]
         [Range(1, 60)] public int rivalCrewCap = 26;
 
-        // How much city one extra rival corner costs. Every family is on the street
-        // whatever the map is (RIVAL-008, the user's word of 2026-09-03: they all exist
-        // live, and the number follows the size of the city); what a bigger city buys is
-        // SECOND and third corners for the families that have the capos to hold them.
-        // Ten blocks a corner: seed 1987's 110 blocks carry 20 families + 11 = 31 crews,
-        // which is the density the street was tuned at (26) plus the fourteen families
-        // that were only ever on paper.
+        // How much city one extra rival corner costs. Every family dealt is on the
+        // street - there are no paper houses (the user's rule of 2026-09-03) - so what a
+        // bigger city buys is SECOND and third corners for the families that have the
+        // capos to hold them, never more families than the city can carry.
+        // Ten blocks a corner: seed 1987's 110 blocks carry 6 families + 11 = 17 crews.
         const int BlocksPerExtraRivalCrew = 10;
         const int MostRivalCrews = 60;   // the field's own ceiling
 
         // What the city worked out it can hold this build - read back by the placement
         // pass, whose sample of pavements has to grow with the crowd it is spreading.
         int _rivalCrewCap;
+
+        /// <summary>
+        /// HOW MANY FAMILIES THIS CITY DEALS - the player's house plus the rivals it can
+        /// stand men for. The one figure the books and the pavement both read, so a house
+        /// that exists is a house you can walk up to: if the frame budget will not carry
+        /// twenty-one families the city holds fewer families, never twenty-one of which
+        /// most are invisible (the user's rule of 2026-09-03).
+        /// </summary>
+        public int HousesInThisCity =>
+            Mathf.Clamp(rivalCrewsInCity + 1, 1, LivingCity.Gangs.GangCatalog.GangCount);
 
         [Tooltip("The most soldiers behind one capo. The seeder deals two or three; this " +
                  "cuts a crew shorter, it never pads one out.")]
@@ -693,11 +703,11 @@ namespace RoadDemo
             // connectors they cross are in
                 Pass("BuildHighwayLinks", BuildHighwayLinks);
             }
-            // the twenty-one families' books, dealt once from the city's own seed and
+            // the city's families' books, dealt once from the city's own seed and
             // BEFORE anything reads a roster: every house has men, a safe and a wage
             // bill from this line on, the player's outfit included. Idempotent - the
             // directors call it too, a frame later, and get the same deal.
-            LivingCity.Outfit.Underworld.Ensure(BuiltFromSeed);
+            LivingCity.Outfit.Underworld.Ensure(BuiltFromSeed, HousesInThisCity);
             // the city's businesses and their gazde, dealt once from the plan BEFORE any
             // consumer - the outfit fronts, the map, the territory runtime - asks who
             // trades where (RoadDemoBuilder.Business.cs)
@@ -3471,7 +3481,8 @@ namespace RoadDemo
             // The books first, and unconditionally: the families exist whether or not
             // this pass finds pavement to stand them on, and the ledger's FAMILIES page
             // reads the registry, not the street.
-            var underworld = LivingCity.Outfit.Underworld.Ensure(BuiltFromSeed);
+            var underworld = LivingCity.Outfit.Underworld.Ensure(
+                BuiltFromSeed, HousesInThisCity);
             var gangs = LivingCity.Gangs.GangSeeder.Generate(
                 BuiltFromSeed, gang => underworld.Of(gang)?.Roster);
             LivingCity.Gangs.GangRegistry.Install(gangs);
@@ -3484,9 +3495,12 @@ namespace RoadDemo
             // player cannot point at, and the street mark outside his door is the first
             // thing the city is read by - so the budget takes RIVAL families away,
             // never ours.
-            int families = rivalCrewsInCity <= 0
-                ? 0
-                : Mathf.Min(rivalCrewsInCity, gangs.Length - 1);
+            // EVERY DEALT HOUSE STANDS. The books hold exactly the families this city
+            // can carry, so the street stands all of them and no house is ever left
+            // running on paper - the count is READ BACK from the deal rather than
+            // computed a second time, because two figures would drift apart.
+            int families = Mathf.Min(underworld.Dealt - 1, gangs.Length - 1);
+            if (families < 0) families = 0;
 
             // THE CITY SAYS HOW MANY CORNERS IT HOLDS. A scene with no territory plan
             // under it (a bench, a lab) keeps the inspector's number.

@@ -30,6 +30,7 @@ namespace LivingCity.Tests
             ("AnExtinctHouseIsSkipped", AnExtinctHouseIsSkipped),
             ("AHeadlessHouseIsSkipped", AHeadlessHouseIsSkipped),
             ("OneDealPerCity", OneDealPerCity),
+            ("ACityDealsOnlyTheHousesItStands", ACityDealsOnlyTheHousesItStands),
         };
 
         public static List<string> Run()
@@ -49,6 +50,44 @@ namespace LivingCity.Tests
         }
 
         // ------------------------------------------------------------------ the deal
+
+        /// <summary>
+        /// NO FAMILY RUNS ON PAPER. A city that can stand four families deals four
+        /// books and leaves the rest of the catalogue empty - the ids do not move, so
+        /// house 1 is the same family in a small city as in a big one, and the slots
+        /// above the count answer null rather than dealing a house nobody can walk up to.
+        /// </summary>
+        static void ACityDealsOnlyTheHousesItStands(List<string> failures)
+        {
+            var small = Underworld.Deal(Seed, 4);
+            if (small.Dealt != 4)
+                failures.Add($"Deal: a four-family city dealt {small.Dealt}.");
+            if (small.Count != GangCatalog.GangCount)
+                failures.Add("Deal: the catalogue shrank with the city; an id moved.");
+
+            for (var gangId = 0; gangId < 4; gangId++)
+                if (small.Of(gangId) == null)
+                    failures.Add($"Deal: house {gangId} was not dealt in a four-family city.");
+            for (var gangId = 4; gangId < GangCatalog.GangCount; gangId++)
+                if (small.Of(gangId) != null)
+                    failures.Add($"Deal: house {gangId} was dealt into a four-family city.");
+
+            var whole = Underworld.Deal(Seed);
+            if (whole.Dealt != GangCatalog.GangCount)
+                failures.Add("Deal: the default deal is no longer the whole catalogue.");
+            var here = small.Of(1)?.Roster;
+            var there = whole.Of(1)?.Roster;
+            if (here == null || there == null ||
+                here.Members.Count != there.Members.Count)
+                failures.Add("Deal: a family changed when the city around it got smaller.");
+
+            // A city below one house is still the player's own, and a city that asks for
+            // more than the catalogue holds gets the catalogue.
+            if (Underworld.Deal(Seed, 0).Dealt != 1 ||
+                Underworld.Deal(Seed, GangCatalog.GangCount + 5).Dealt !=
+                    GangCatalog.GangCount)
+                failures.Add("Deal: the house count was not held inside the catalogue.");
+        }
 
         static void TwentyOneHousesAreDealt(List<string> failures)
         {
