@@ -145,6 +145,8 @@ namespace LivingCity.EditorTools
                 failures.Add(profile.Module + $": expected {profile.Leaves} leaves, got " +
                              display.LeafCount);
             ValidatePreviewPanes(module, display, profile.Module, failures);
+            if (display.PaneCount > 0)
+                display.SetPreviewState(StorefrontState.Smashed);
 
             Storefront entrance = display;
             string subtitle = profile.Leaves == 1 ? "single door" : "double door";
@@ -295,7 +297,8 @@ namespace LivingCity.EditorTools
 
         static void Header(Transform parent, float centreX)
         {
-            Label(parent, "STOREFRONT TRAFFIC DEMO\nPLAY: doors cycle / people enter and leave",
+            Label(parent, "STOREFRONT GLASS + TRAFFIC DEMO\n" +
+                          "EDIT: broken windows   PLAY: doors cycle / people enter and leave",
                   new Vector3(centreX, 7.5f, -0.1f), 0.12f,
                   new Color(0.12f, 0.12f, 0.14f), TextAnchor.LowerCenter);
         }

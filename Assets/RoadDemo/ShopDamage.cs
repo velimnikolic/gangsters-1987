@@ -335,6 +335,15 @@ namespace RoadDemo
             float width = StoreWidth) =>
             ShatterAt(door, outward, label, groundY, width);
 
+        /// <summary>A replacement for one already measured storefront pane. Unlike the
+        /// ordinary frontage fallback, this stays on the supplied glass plane and keeps
+        /// the authored pane's exact width and vertical span.</summary>
+        internal static Transform SmashPaneAt(
+            Vector3 pane, Vector3 outward, string label, float groundY,
+            float width, float bottom, float top, Material glassMaterial) =>
+            ShatterAt(pane, outward, label, groundY, width, bottom, top,
+                glassMaterial, exactGlassPlane: true);
+
         /// <summary>The doorstep and which way the front faces. A live facade is exact;
         /// the simulation site remains the stable fallback while its view is streamed out.</summary>
         static bool TryFrontage(

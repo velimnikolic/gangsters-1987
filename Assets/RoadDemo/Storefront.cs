@@ -263,11 +263,58 @@ namespace RoadDemo
             Close();
             damageState = StorefrontState.Smashed;
             ClearDamageVisual();
-            damageVisual = ShopDamage.SmashAt(
-                DoorWorld, OutwardWorld, businessId.Value, DoorWorld.y, frontageWidth);
+            string label = businessId.IsValid ? businessId.Value : module;
+            damageVisual = openings.Length > 0
+                ? SmashMeasuredPanes(label)
+                : ShopDamage.SmashAt(
+                    DoorWorld, OutwardWorld, label, DoorWorld.y, frontageWidth);
             AdoptDamageVisual();
             ApplyState();
             return true;
+        }
+
+        Transform SmashMeasuredPanes(string label)
+        {
+            var root = new GameObject("Broken glass · " +
+                (string.IsNullOrEmpty(label) ? "premises" : label)).transform;
+            root.SetParent(transform, false);
+            int paneNumber = 0;
+            var rects = new List<Vector4>(2);
+            for (int i = 0; i < openings.Length; i++)
+            {
+                DescribePaneRuns(openings[i], rects,
+                    out var right, out var outward, out float front);
+                float widthScale = transform.TransformVector(right).magnitude;
+                float heightScale = transform.TransformVector(Vector3.up).magnitude;
+                Vector3 worldOutward = transform.TransformDirection(outward);
+                worldOutward.y = 0f;
+                if (worldOutward.sqrMagnitude < 0.001f)
+                    worldOutward = OutwardWorld;
+                else
+                    worldOutward.Normalize();
+
+                for (int n = 0; n < rects.Count; n++)
+                {
+                    var run = rects[n];
+                    float centre = (run.x + run.y) * 0.5f;
+                    // PaneMesh begins 4 cm above the measured sill. Anchor the broken
+                    // replacement to that same sill so both the frame fragments and the
+                    // pavement shards remain on the authored facade plane.
+                    float floor = run.z - 0.04f;
+                    Vector3 localAt = right * centre + outward * front +
+                                      Vector3.up * floor;
+                    Vector3 worldAt = transform.TransformPoint(localAt);
+                    var broken = ShopDamage.SmashPaneAt(
+                        worldAt, worldOutward,
+                        label + " pane " + (++paneNumber), worldAt.y,
+                        Mathf.Max(0.45f, (run.y - run.x) * widthScale),
+                        0.04f * heightScale,
+                        Mathf.Max(0.39f, (run.w - floor) * heightScale),
+                        paneMaterial);
+                    broken.SetParent(root, true);
+                }
+            }
+            return root;
         }
 
         public bool Scorch()
@@ -420,16 +467,29 @@ namespace RoadDemo
 
         Mesh PaneMesh(ResidentialStorefrontOpening opening)
         {
-            Vector3 outward = Flat(opening.Outward, OutwardLocal());
-            Vector3 right = Flat(opening.Right, Vector3.Cross(Vector3.up, outward));
+            var rects = new List<Vector4>(2);
+            DescribePaneRuns(opening, rects,
+                out var right, out var outward, out float front);
+            var mesh = QuadRuns("Storefront pane", rects, right, outward, front);
+            runtimeMeshes.Add(mesh);
+            return mesh;
+        }
+
+        void DescribePaneRuns(ResidentialStorefrontOpening opening,
+                              List<Vector4> rects,
+                              out Vector3 right, out Vector3 outward,
+                              out float front)
+        {
+            rects.Clear();
+            outward = Flat(opening.Outward, OutwardLocal());
+            right = Flat(opening.Right, Vector3.Cross(Vector3.up, outward));
             float low = opening.Front.y + 0.04f;
             float high = low + Mathf.Max(1f, opening.Height - 0.08f);
             float half = Mathf.Max(0.3f, opening.Width * 0.5f - 0.04f);
             float centre = Vector3.Dot(opening.Front, right);
             float left = centre - half;
             float rightEdge = centre + half;
-            float front = Vector3.Dot(opening.Front, outward) + 0.006f;
-            var rects = new List<Vector4>(2);
+            front = Vector3.Dot(opening.Front, outward) + 0.006f;
 
             Vector3 doorOut = OutwardLocal();
             float doorCentre = Vector3.Dot(doorLocal, right);
@@ -447,10 +507,6 @@ namespace RoadDemo
                 if (rightEdge - (doorCentre + doorHalf) > 0.12f)
                     rects.Add(new Vector4(doorCentre + doorHalf, rightEdge, low, high));
             }
-
-            var mesh = QuadRuns("Storefront pane", rects, right, outward, front);
-            runtimeMeshes.Add(mesh);
-            return mesh;
         }
 
         void RebuildLeaves(Material glassMaterial, Material wallMaterial)
