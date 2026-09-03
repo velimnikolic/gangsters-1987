@@ -528,6 +528,61 @@ namespace LivingCity.UI
         }
 
         /// <summary>
+        /// A TYPED LINE - the book's first and only text input.
+        ///
+        /// Nothing in this project had one: no `TMP_InputField` stood anywhere under
+        /// Assets/Scripts/UI or Assets/RoadDemo before the blueprint asked the player to
+        /// name a room. It is here rather than on that sheet because the next sheet that
+        /// needs a typed word must not invent a second one.
+        ///
+        /// The caller is responsible for the one thing this cannot own: a ledger page is
+        /// destroyed and rebuilt on world events, so a field left standing through a
+        /// repaint loses the caret and half the word. Hold the repaint while
+        /// <paramref name="onFocus"/> says the caret is in it.
+        /// </summary>
+        public static TMP_InputField Field(Transform parent, float x, float y, float w,
+            float h, string content, UnityAction<string> onChanged,
+            UnityAction<bool> onFocus = null, float size = 15f, int limit = 28)
+        {
+            var rect = NewRect("Field", parent);
+            PlaceTopLeft(rect, x, y, w, h);
+            var face = rect.gameObject.AddComponent<Image>();
+            face.color = LedgerV2.Panel;
+            Rule(rect, 0f, -(h - 2f), w, LedgerV2.Ink, 1.5f);
+
+            var viewport = NewRect("Field viewport", rect);
+            PlaceTopLeft(viewport, 4f, 0f, w - 8f, h - 4f);
+            viewport.gameObject.AddComponent<RectMask2D>();
+
+            var text = Text("Field text", viewport, LedgerStyle.Mono, size, LedgerV2.Ink,
+                TextAlignmentOptions.MidlineLeft);
+            PlaceTopLeft(text.rectTransform, 0f, 0f, w - 8f, h - 4f);
+            text.richText = false;
+
+            var field = rect.gameObject.AddComponent<TMP_InputField>();
+            field.textViewport = viewport;
+            field.textComponent = text;
+            field.targetGraphic = face;
+            field.fontAsset = LedgerStyle.Mono;
+            field.pointSize = size;
+            field.characterLimit = limit;
+            field.lineType = TMP_InputField.LineType.SingleLine;
+            field.caretColor = LedgerV2.Ink;
+            field.selectionColor = new Color(LedgerV2.Picked.r, LedgerV2.Picked.g,
+                LedgerV2.Picked.b, 0.8f);
+            field.customCaretColor = true;
+            field.text = content ?? "";
+            if (onChanged != null)
+                field.onValueChanged.AddListener(onChanged);
+            if (onFocus != null)
+            {
+                field.onSelect.AddListener(_ => onFocus(true));
+                field.onDeselect.AddListener(_ => onFocus(false));
+            }
+            return field;
+        }
+
+        /// <summary>
         /// The book's one voice for a label: letter-spaced small caps in the condensed
         /// gothic. Every LABEL / VALUE pair, every column head, every kicker on the
         /// sheet is one of these - the design puts .1em to .22em on all of them, and

@@ -571,6 +571,18 @@ namespace RoadDemo
             fear.NotePoliceAttention(blockId, amount, lastGameHour);
         }
 
+        /// <summary>
+        /// Police eyes on a BLOCK, named directly. The flats put attention on the ground
+        /// they stand on (EPIC 27) and have no business id to go through: a card room is
+        /// not a shop and never appears in the business directory.
+        /// </summary>
+        public void AddPoliceAttention(TerritoryBlockId blockId, float amount)
+        {
+            if (fear == null || amount <= 0f || !blockId.IsValid)
+                return;
+            fear.NotePoliceAttention(blockId, amount, lastGameHour);
+        }
+
         /// <summary>A Connected owner turns police eyes on the family that leans on him
         /// (ECON-002). Quiet men draw nothing.</summary>
         void NoteConnectedHeat(TerritoryBusinessId businessId)

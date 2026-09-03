@@ -334,6 +334,11 @@ namespace LivingCity.Gameplay
                 // it, so a shop's dollars and the day it earned them agree.
                 SettleBusinessDay();
                 var paid = Underworld.Current.DayTick();
+                // WHAT THE FLATS ASKED FOR (EPIC 27). The nightly pass is pure, so the
+                // two things it cannot do itself are carried out here, at the outfit's
+                // one scene edge: the heat a room put on its block, and the precinct
+                // taking its keeper away.
+                ApplyFlatNight();
                 Version++;
 
                 // A campaign that is over turns no more pages (CampaignRunner's
@@ -359,6 +364,45 @@ namespace LivingCity.Gameplay
                 if (!string.IsNullOrEmpty(refusal))
                     Debug.LogWarning("[Outfit] The autosave did not write: " + refusal);
             }
+        }
+
+        /// <summary>
+        /// The flats' half of the night that needs a city. The heat goes onto the block
+        /// the building actually stands on, through the territory runtime's own pool -
+        /// never a second heat number kept here - and a collared keeper goes into a cell
+        /// through the same RosterOps door every other arrest uses.
+        /// </summary>
+        void ApplyFlatNight()
+        {
+            var report = Runner.Flats;
+            if (report == null)
+                return;
+
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            for (var i = 0; i < report.Heat.Count; i++)
+            {
+                var deposit = report.Heat[i];
+                if (runtime == null ||
+                    !Property.ApartmentBuildings.TryGet(deposit.Building, out var building))
+                    continue;
+                runtime.AddPoliceAttention(building.CanonicalBlockId, deposit.Heat);
+            }
+
+            for (var i = 0; i < report.Raids.Count; i++)
+            {
+                var raid = report.Raids[i];
+                if (raid.KeeperId < 0)
+                    continue;
+                // The keeper is taken. The flat is already sealed by the pure pass; this
+                // is the man, through the same door a street collar uses.
+                Personnel.RosterOps.ClearKeeper(RosterOrNull(), raid.KeeperId);
+                Personnel.RosterOps.Jail(RosterOrNull(), raid.KeeperId,
+                    Campaign.Day + Property.FlatDay.SealedDays);
+                Property.Apartments.SetKeeper(raid.Unit, -1);
+            }
+
+            if (report.Raids.Count > 0 || report.Heat.Count > 0)
+                Version++;
         }
 
         void RegisterHeadquartersArmory()

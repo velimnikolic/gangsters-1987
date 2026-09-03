@@ -86,6 +86,12 @@ namespace LivingCity.Business
             {
                 catalog.Add(new ResidentialBusinessSites(core.ResidentialBlocks, core.Frame));
                 catalog.Add(new StandaloneBusinessSites(core));
+
+                // The flats above the shops come off the SAME plan, at the same moment, so
+                // a building's shop and a building's rooms can never disagree about which
+                // building they are in (EPIC 27).
+                LivingCity.Property.ApartmentBuildings.Init(
+                    core.ResidentialBlocks, core.Frame);
             }
 
             catalog.Add(new CompoundBusinessSites(core, builder?.BuiltDistricts));

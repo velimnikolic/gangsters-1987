@@ -105,6 +105,13 @@ namespace LivingCity.Personnel
         /// <summary>His lieutenant handed him the crew's collection bag (GAN-262) - he
         /// walks the rounds now and stands at the front between them.</summary>
         BagHanded,
+
+        /// <summary>The precinct came through the door of a flat he was keeping
+        /// (EPIC 27).</summary>
+        FlatRaided,
+
+        /// <summary>He was keeping a room with money in it and helped himself.</summary>
+        SkimmedTheStash,
     }
 
     /// <summary>
@@ -194,6 +201,12 @@ namespace LivingCity.Personnel
                     return name + " was cut loose while he was inside.";
                 case IncidentKind.BagHanded:
                     return name + " was handed the bag.";
+                case IncidentKind.FlatRaided:
+                    return "The precinct came through the door" + place +
+                           " and took " + name + " with them.";
+                case IncidentKind.SkimmedTheStash:
+                    return name + " has been helping himself to what he minds" +
+                           place + ".";
                 default:
                     return name + " is slowing down.";
             }

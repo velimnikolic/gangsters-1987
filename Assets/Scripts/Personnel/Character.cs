@@ -38,6 +38,11 @@ namespace LivingCity.Personnel
         Collector,
         // Appended so serialized None/Collector values keep their meaning.
         Escort,
+
+        /// <summary>He keeps a flat. Unlike the bag and its escort, a keeper is OFF THE
+        /// STREET: he stands in the room instead of walking with a crew, and pulling him
+        /// back into one darkens the flat that moment (EPIC 27).</summary>
+        Keeper,
     }
 
     public enum CharacterStatus

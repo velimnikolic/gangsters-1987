@@ -191,6 +191,12 @@ namespace LivingCity.UI
             Diplomacy,
             Law,
             Orders,
+
+            /// <summary>The blueprint of ONE building's flats. Tab-less like Orders: it is
+            /// about a building, not about the outfit, so it is opened from the block file
+            /// - the building's mast on the film, or its header in the trade column - and
+            /// never from the strip (EPIC 27).</summary>
+            Blueprint,
         }
 
         /// <summary>The tabs the folder actually shows, in strip order. ORDERS is the
@@ -439,6 +445,11 @@ namespace LivingCity.UI
                 {
                     // The chain of command consumed this Esc.
                 }
+                else if (currentPage == LedgerPage.Blueprint && CloseBlueprintTransient())
+                {
+                    // The blueprint consumed this Esc: the flat's form first, then the
+                    // sheet itself, which gives back the page it was opened over.
+                }
                 else if (pendingConfirm != Confirm.None)
                 {
                     pendingConfirm = Confirm.None;
@@ -498,6 +509,12 @@ namespace LivingCity.UI
             // turn raises the flag itself, and nothing is lost because the versions are
             // only marked painted when the paint actually happens.
             if (blockCardModel != null && blockCardModel.Turning)
+                return;
+
+            // The caret is in the blueprint's name field. A repaint destroys the field
+            // under the player's hands and takes half the typed word with it, so the paint
+            // waits the way it waits for the block being turned.
+            if (blueprintTyping)
                 return;
 
             if (dirty || paintedVersion != director.Version ||
@@ -560,6 +577,9 @@ namespace LivingCity.UI
                     break;
                 case LedgerPage.Orders:
                     RebuildOrders();
+                    break;
+                case LedgerPage.Blueprint:
+                    RebuildBlueprint();
                     break;
             }
             RefreshRail();
@@ -702,9 +722,13 @@ namespace LivingCity.UI
             currentPage = pageKind;
             if ((int)pageKind < TabNames.Length)
                 lastTab = pageKind;
+            // THE BLUEPRINT IS A POPUP OVER A PAGE, so the page it was opened over stays
+            // standing behind its backdrop - the reader has to see the block file they
+            // came from, dimmed, exactly as the design shows it.
             for (var i = 0; i < pageRoots.Length; i++)
                 if (pageRoots[i])
-                    pageRoots[i].SetActive(i == (int)pageKind);
+                    pageRoots[i].SetActive(i == (int)pageKind ||
+                        (pageKind == LedgerPage.Blueprint && i == (int)blueprintReturn));
 
             // Leaving the orders page clears whatever it lit on the map.
             if (pageKind != LedgerPage.Orders)
@@ -797,6 +821,10 @@ namespace LivingCity.UI
                 case LedgerPage.Blocks:
                     viewport = blocksViewport;
                     content = blocksContent;
+                    break;
+                case LedgerPage.Blueprint:
+                    viewport = blueprintViewport;
+                    content = blueprintContent;
                     break;
                 case LedgerPage.Armory:
                     if (catalogueViewport && RectTransformUtility
@@ -913,6 +941,12 @@ namespace LivingCity.UI
                 blocksScroll = Mathf.Clamp(
                     blocksScroll - wheel * WheelStep, 0f, maxScroll);
                 content.anchoredPosition = new Vector2(0f, blocksScroll);
+            }
+            else if (viewport == blueprintViewport)
+            {
+                blueprintScroll = Mathf.Clamp(
+                    blueprintScroll - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, blueprintScroll);
             }
             else if (viewport == lawDocketViewport)
             {
@@ -1061,6 +1095,7 @@ namespace LivingCity.UI
             BuildCommandPage(paper);
             BuildLawPage(paper);
             BuildOrdersPage(paper);
+            BuildBlueprintPage(paper);
 
             SetPage(currentPage);
 
@@ -1388,7 +1423,11 @@ namespace LivingCity.UI
             {
                 if (!tabFaces[i])
                     continue;
-                var active = i == (int)currentPage;
+                // While the blueprint stands over a page, that page's tab stays lit: the
+                // reader has not left it.
+                var showing = currentPage == LedgerPage.Blueprint
+                    ? blueprintReturn : currentPage;
+                var active = i == (int)showing;
                 tabFaces[i].color = active ? LedgerStyle.TabRed : LedgerStyle.Chrome;
                 tabLabels[i].color = active
                     ? LedgerStyle.TabActiveText
@@ -2539,8 +2578,14 @@ namespace LivingCity.UI
 
             var day = outfit ? outfit.Campaign.Day : 1;
             footerLeft.text = News.NewsDate.FromClockDay(day - 1).Stamped();
-            footerRight.text = "[ ] TURN THE PAGE   [ESC] SHUT THE FILE   |   PAGE " +
-                TabFolios[(int)currentPage].ToString("00") + " OF " + Folios;
+            // A TAB-LESS PAGE HAS NO FOLIO. The blueprint is one leaf of a building's
+            // own file, not of the book, so it says which building it is instead of a
+            // page number the book does not have - and the array is never indexed past
+            // its end, which is what an added page did to this line the first time.
+            var folio = (int)currentPage < TabFolios.Length
+                ? "PAGE " + TabFolios[(int)currentPage].ToString("00") + " OF " + Folios
+                : "THE BLUEPRINT";
+            footerRight.text = "[ ] TURN THE PAGE   [ESC] SHUT THE FILE   |   " + folio;
         }
     }
 }

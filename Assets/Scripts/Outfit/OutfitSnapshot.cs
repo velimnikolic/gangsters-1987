@@ -102,12 +102,33 @@ namespace LivingCity.Outfit
         public RunnerDto runner;
     }
 
+    /// <summary>One flat on somebody's deed (EPIC 27). Written at the underworld level
+    /// rather than per house because the book is the CITY's - a rival's room and ours are
+    /// rows of the same ledger, keyed on the building the plan deals.</summary>
+    [Serializable]
+    public sealed class FlatDto
+    {
+        public string building;
+        public int floor;
+        public int slot;
+        public int gangId;
+        public string name;
+        public int role;
+        public int keeper;
+        public int paidRole;
+        public int bank;
+        public int raidUntilDay;
+        public int boughtOnDay;
+        public int staff;
+    }
+
     [Serializable]
     public sealed class UnderworldDto
     {
         public int citySeed;
         public HouseDto[] houses;
         public RelationsDto relations;
+        public FlatDto[] flats;
     }
 
     /// <summary>
@@ -133,6 +154,7 @@ namespace LivingCity.Outfit
                 citySeed = underworld.CitySeed,
                 houses = new HouseDto[underworld.Count],
                 relations = Snapshot(underworld.Relations),
+                flats = SnapshotFlats(),
             };
             for (var g = 0; g < underworld.Count; g++)
                 dto.houses[g] = Snapshot(underworld.Of(g));
@@ -155,6 +177,61 @@ namespace LivingCity.Outfit
                     Restore(house, dto.houses[i]);
             }
             Restore(underworld.Relations, dto.relations);
+            RestoreFlats(dto.flats);
+        }
+
+        // ------------------------------------------------------------------ the flats
+
+        static FlatDto[] SnapshotFlats()
+        {
+            var book = Property.Apartments.All;
+            var flats = new FlatDto[book.Count];
+            for (var i = 0; i < book.Count; i++)
+            {
+                var record = book[i];
+                flats[i] = new FlatDto
+                {
+                    building = record.Unit.Building.Value,
+                    floor = record.Unit.Floor,
+                    slot = record.Unit.Slot,
+                    gangId = record.GangId,
+                    name = record.Name,
+                    role = (int)record.Role,
+                    keeper = record.KeeperId,
+                    paidRole = (int)record.PaidRole,
+                    bank = record.Bank,
+                    raidUntilDay = record.RaidUntilDay,
+                    boughtOnDay = record.BoughtOnDay,
+                    staff = record.Staff,
+                };
+            }
+            return flats;
+        }
+
+        /// <summary>
+        /// The deeds back onto the buildings. The city has already been dealt from the
+        /// file's own seed by the time this runs, so a building id written last week names
+        /// the same building tonight - which is the whole reason the book is keyed on the
+        /// PLAN and not on anything the scene composed.
+        /// </summary>
+        static void RestoreFlats(FlatDto[] flats)
+        {
+            Property.Apartments.Clear();
+            if (flats == null)
+                return;
+            for (var i = 0; i < flats.Length; i++)
+            {
+                var flat = flats[i];
+                if (flat == null || string.IsNullOrEmpty(flat.building))
+                    continue;
+                Property.Apartments.Restore(
+                    new Property.ApartmentUnitId(
+                        new Property.ApartmentBuildingId(flat.building),
+                        flat.floor, flat.slot),
+                    flat.gangId, flat.name, (Property.UnitRole)flat.role, flat.keeper,
+                    (Property.UnitRole)flat.paidRole, flat.bank, flat.raidUntilDay,
+                    flat.boughtOnDay, flat.staff);
+            }
         }
 
         // ----------------------------------------------------------------- the house

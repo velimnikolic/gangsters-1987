@@ -283,6 +283,10 @@ namespace GangstersTools
             catalog.Add(new LivingCity.Business.CompoundBusinessSites(core, null));
             catalog.Build();
 
+            // The flats come off the same plan at the same moment they do at Play, so a
+            // command that deals a quarter can be asked about them too (EPIC 27).
+            LivingCity.Property.ApartmentBuildings.Init(core.ResidentialBlocks, core.Frame);
+
             var directory = new LivingCity.Business.BusinessDirectory();
             LivingCity.Business.BusinessPopulation.Populate(catalog, seed, directory);
             geography.BindBusinesses(
@@ -498,6 +502,95 @@ namespace GangstersTools
                 failures = failures.ToArray(),
                 contracts = LivingCity.Tests.WageTests.ContractNames(),
             };
+        }
+
+        [CliCommand("gangsters_flat_tests",
+                    "Run EPIC 27's contracts for the flats: how a door is named, what a " +
+                    "flat reads as with and without a keeper, one man one flat, the card " +
+                    "room's bank, the precinct's seal - and, with --seed, how a dealt " +
+                    "quarter's buildings come out.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "flats", "tests" })]
+        public static object FlatTests(
+            [CliArg("seed", "Deal a Core quarter from this seed and count its apartment " +
+                            "buildings too. -1 runs the pure contracts only.")] int seed = -1)
+        {
+            var failures = LivingCity.Tests.FlatTests.Run();
+            object dealt = null;
+
+            if (seed >= 0)
+            {
+                DealOrReadCity(seed);
+                var buildings = LivingCity.Property.ApartmentBuildings.All;
+                var flats = 0;
+                var doorless = 0;
+                var storeyless = 0;
+                var addresses = new HashSet<string>();
+                var duplicates = 0;
+                var biggest = 0;
+                foreach (var building in buildings)
+                {
+                    flats += building.Flats;
+                    if (building.DoorsPerLanding <= 0)
+                        doorless++;
+                    if (building.Storeys < 2)
+                        storeyless++;
+                    if (!addresses.Add(building.Id.Value))
+                        duplicates++;
+                    if (building.Flats > biggest)
+                        biggest = building.Flats;
+                }
+
+                if (buildings.Count == 0)
+                    failures.Add("FLAT: the dealt quarter has no apartment buildings at all.");
+                if (doorless > 0)
+                    failures.Add("FLAT: " + doorless + " buildings deal no doors - the " +
+                                 "shop-bay count and its harvested-door fallback both " +
+                                 "came back empty.");
+                if (storeyless > 0)
+                    failures.Add("FLAT: " + storeyless + " buildings stand under two " +
+                                 "storeys, so they hold a ground floor and nothing else.");
+                if (duplicates > 0)
+                    failures.Add("FLAT: " + duplicates + " buildings share an id.");
+
+                // The same seed must deal the same building, every load: the deed book is
+                // keyed on these ids and a drift moves a bought flat under a live campaign.
+                var first = Snapshot();
+                DealOrReadCity(seed);
+                var second = Snapshot();
+                if (first != second)
+                    failures.Add("FLAT: the same seed dealt a different set of buildings " +
+                                 "the second time.");
+
+                dealt = new
+                {
+                    seed,
+                    buildings = buildings.Count,
+                    flats,
+                    flatsPerBuilding = buildings.Count == 0 ? 0 : flats /
+                        System.Math.Max(1, buildings.Count),
+                    biggest,
+                };
+            }
+
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                contracts = LivingCity.Tests.FlatTests.ContractNames(),
+                dealt,
+            };
+        }
+
+        /// <summary>Every building the plan dealt, as one string - the cheapest thing to
+        /// compare two deals of the same seed with.</summary>
+        static string Snapshot()
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var building in LivingCity.Property.ApartmentBuildings.All)
+                sb.Append(building.Id.Value).Append(':').Append(building.Storeys)
+                  .Append('x').Append(building.DoorsPerLanding).Append('|');
+            return sb.ToString();
         }
 
         [CliCommand("gangsters_round_tests",
@@ -1623,6 +1716,11 @@ namespace GangstersTools
             catalog.Add(new LivingCity.Business.StandaloneBusinessSites(core));
             catalog.Add(new LivingCity.Business.CompoundBusinessSites(core, null));
             catalog.Build();
+
+            // The flats come off the same plan the shops do, at the same moment, so a
+            // command that deals a quarter with the editor idle can be asked about them
+            // as well (EPIC 27).
+            LivingCity.Property.ApartmentBuildings.Init(core.ResidentialBlocks, core.Frame);
 
             var directory = new LivingCity.Business.BusinessDirectory();
             var report = LivingCity.Business.BusinessPopulation.Populate(catalog, citySeed, directory);

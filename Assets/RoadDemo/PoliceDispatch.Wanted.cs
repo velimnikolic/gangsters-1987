@@ -234,6 +234,16 @@ namespace RoadDemo
                 return;
             }
 
+            // THE SAFEHOUSE IS THE PREFERRED DOOR (EPIC 27). A room the outfit keeps for
+            // exactly this beats a shopfront that merely happens to be ours; every owned
+            // door stays the fallback behind it, which is GAN-222's rule unchanged.
+            if (ToTheSafehouse(unit))
+            {
+                CrewOverlay.Announce("THEY ARE MAKING FOR THE SAFEHOUSE", 4f,
+                    new Color(0.95f, 0.9f, 0.6f));
+                return;
+            }
+
             var door = OurNearestDoor(unit.Position);
             if (door == null) return;
             if (CrewQuarters.Station(_crews, unit, door.BusinessId) ||
@@ -291,6 +301,55 @@ namespace RoadDemo
         /// it stays here because a man cornered across town from the hideout still has to
         /// have somewhere to go.
         /// </summary>
+        /// <summary>
+        /// The nearest OPEN safehouse: ours, fitted out as one, with a keeper standing in
+        /// it. A dark room is no refuge - nobody is there to open the door - which is the
+        /// same rule the sheet prints, read here rather than restated.
+        /// </summary>
+        bool ToTheSafehouse(DemoCrews.Unit unit)
+        {
+            var house = LivingCity.Gameplay.PlayerCommands.House.Value;
+            var book = LivingCity.Property.Apartments.All;
+            var day = LivingCity.Gameplay.OutfitDirector.Instance != null
+                ? LivingCity.Gameplay.OutfitDirector.Instance.Campaign.Day
+                : 0;
+            var roster = LivingCity.Gameplay.PersonnelDirector.Instance != null
+                ? LivingCity.Gameplay.PersonnelDirector.Instance.Roster
+                : null;
+
+            var best = Vector3.zero;
+            var bestDistance = float.MaxValue;
+            var found = false;
+
+            for (var i = 0; i < book.Count; i++)
+            {
+                var record = book[i];
+                if (record.GangId != house || record.Role != LivingCity.Property.UnitRole.Safehouse)
+                    continue;
+
+                var keeper = roster != null ? roster.Find(record.KeeperId) : null;
+                var standing = keeper != null && !keeper.Gone &&
+                               keeper.Status == LivingCity.Personnel.CharacterStatus.Active;
+                if (LivingCity.Property.Apartments.StateOf(
+                        record.Unit, house, day, standing) !=
+                    LivingCity.Property.UnitState.Open)
+                    continue;
+
+                if (!LivingCity.Property.ApartmentBuildings.TryGet(
+                        record.Unit.Building, out var building))
+                    continue;
+
+                var distance = (building.Centre - unit.Position).sqrMagnitude;
+                if (distance >= bestDistance)
+                    continue;
+                bestDistance = distance;
+                best = building.Centre;
+                found = true;
+            }
+
+            return found && CrewQuarters.Station(_crews, unit, best, "the safehouse");
+        }
+
         static GangFront OurNearestDoor(Vector3 from)
         {
             _doors.Clear();

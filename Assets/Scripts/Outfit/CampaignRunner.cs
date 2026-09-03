@@ -54,6 +54,12 @@ namespace LivingCity.Outfit
         /// <summary>What came of the last few days' work, most recent first.</summary>
         public readonly List<OrderRecord> Records = new List<OrderRecord>();
 
+        /// <summary>What the outfit's flats did last night, and the two things the scene
+        /// has to carry out for them: the heat they put on their blocks and the raids the
+        /// precinct made (EPIC 27). Refilled every midnight.</summary>
+        public readonly Property.FlatDayReport Flats = new Property.FlatDayReport();
+
+
         /// <summary>Men who got better overnight - cleared and refilled at each day
         /// tick, so a page shows today's rises and not the campaign's.</summary>
         public readonly List<Improvement> Rises = new List<Improvement>();
@@ -701,6 +707,13 @@ namespace LivingCity.Outfit
                 if (back > 0 || Rises.Count > 0 || Declines.Count > 0)
                     RosterMoved?.Invoke();
             }
+
+            // THE FLATS (EPIC 27). Before the books close, so the rent, the night's take
+            // at the tables and any fine are on the sheet the payroll is drawn against.
+            // What it cannot do itself - putting heat on a block, taking a keeper into a
+            // cell - is handed back in the report for the scene edge to carry out.
+            Property.FlatDay.Tick(roster, GangId, Campaign.Day, Seed, Accounts,
+                Incidents, Flats);
 
             // The books close BEFORE the day is read off the men. Being paid - or
             // going home with nothing, and the desertion three of those nights ends in

@@ -44,6 +44,35 @@ namespace LivingCity.UI
             public Transform View;
         }
 
+        /// <summary>
+        /// A BUILDING's own way of being clicked: a line from the middle of its footprint
+        /// up past its roof, with the same square mark the doors wear at the top of it.
+        ///
+        /// It exists because a building CANNOT be clicked on its walls. A shop's
+        /// <see cref="Door.View"/> is the whole building transform (BusinessRuntime binds
+        /// the marker to a direct child of the block content), and <see cref="At"/>
+        /// resolves by first ancestry match - so every hit anywhere on a block of flats
+        /// already belongs to the shop in its ground floor, and 13 of the 14 apartment
+        /// units in the harvest carry shop bays. Reversing that order would take the shops
+        /// away instead. The mast puts the building's answer where nothing else stands:
+        /// in the air over its own roof.
+        /// </summary>
+        public struct Mast
+        {
+            public int Key;
+
+            /// <summary>The middle of the building's footprint, on the ground.</summary>
+            public Vector3 Base;
+
+            /// <summary>The head, over the roof. Measured off the building's own rise so
+            /// it clears it at EVERY yaw - the lens turns round the block, and a clearance
+            /// guessed from the front is swallowed from behind.</summary>
+            public Vector3 Head;
+
+            public Color Ink;
+            public bool Picked;
+        }
+
         /// <summary>The picture the file is currently showing. The sheet is rebuilt by
         /// destroying it whole and building it again, and Unity destroys at the END of
         /// the frame - so the OLD picture's shutdown runs after the NEW one has already
@@ -53,6 +82,9 @@ namespace LivingCity.UI
 
         readonly List<Door> doors = new List<Door>();
         readonly List<RectTransform> marks = new List<RectTransform>();
+        readonly List<Mast> masts = new List<Mast>();
+        readonly List<RectTransform> mastLines = new List<RectTransform>();
+        readonly List<RectTransform> mastHeads = new List<RectTransform>();
 
         BlockFilm film;
         int hovered = -1;
@@ -60,6 +92,21 @@ namespace LivingCity.UI
         bool dragged;
 
         float yaw = -35f;
+
+        /// <summary>The building's head square, and the one that is picked. The doors wear
+        /// 10 and 15; a mast head is the same square, so the reader learns one shape.</summary>
+        const float MastHead = 11f;
+        const float MastHeadPicked = 15f;
+        const float MastThickness = 2f;
+
+        /// <summary>Not "the bare street" (-1) and not a building (-2 and down): nothing
+        /// was near enough to answer, so the ray is still to be asked.</summary>
+        const int NoAnswer = int.MinValue;
+
+        /// <summary>How near the pointer has to come to a mast head. Tighter than the
+        /// doors' 22 px fallback, because a head stands in open air where nothing else
+        /// competes, and it must never take a click meant for the shopfront under it.</summary>
+        const float MastReach = 13f;
 
         /// <summary>Answered when the pointer moves onto a premise or off every one.
         /// The sheet writes a caption under it; it does not repaint.</summary>
@@ -84,13 +131,20 @@ namespace LivingCity.UI
         /// pointer is actively turning the persistent plate.</summary>
         public bool Turning { get; private set; }
 
-        public void Watch(BlockFilm crew, List<Door> read, float readYaw)
+        public void Watch(BlockFilm crew, List<Door> read, float readYaw) =>
+            Watch(crew, read, null, readYaw);
+
+        public void Watch(BlockFilm crew, List<Door> read, List<Mast> readMasts,
+            float readYaw)
         {
             current = this;
             film = crew;
             doors.Clear();
             if (read != null)
                 doors.AddRange(read);
+            masts.Clear();
+            if (readMasts != null)
+                masts.AddRange(readMasts);
             yaw = readYaw;
             hovered = -1;
             BuildMarks();
@@ -141,6 +195,50 @@ namespace LivingCity.UI
                 }
                 marks.Add(rect);
             }
+
+            BuildMasts();
+        }
+
+        /// <summary>A hairline up the air over each building and its head square. Built
+        /// once per repaint and only MOVED afterwards, like the door marks.</summary>
+        void BuildMasts()
+        {
+            for (var i = 0; i < mastLines.Count; i++)
+                if (mastLines[i] != null)
+                    Destroy(mastLines[i].gameObject);
+            for (var i = 0; i < mastHeads.Count; i++)
+                if (mastHeads[i] != null)
+                    Destroy(mastHeads[i].gameObject);
+            mastLines.Clear();
+            mastHeads.Clear();
+
+            for (var i = 0; i < masts.Count; i++)
+            {
+                var line = new GameObject("Mast", typeof(RectTransform));
+                line.transform.SetParent(transform, false);
+                var lineRect = (RectTransform)line.transform;
+                lineRect.anchorMin = lineRect.anchorMax = new Vector2(0f, 0f);
+                // Pivot at the FOOT: the line is stretched and turned about the point it
+                // stands on, so a building at the back of the block does not swing.
+                lineRect.pivot = new Vector2(0.5f, 0f);
+                var ink = line.AddComponent<Image>();
+                ink.color = new Color(masts[i].Ink.r, masts[i].Ink.g, masts[i].Ink.b, 0.75f);
+                ink.raycastTarget = false;
+                mastLines.Add(lineRect);
+
+                var head = new GameObject("Mast head", typeof(RectTransform));
+                head.transform.SetParent(transform, false);
+                var headRect = (RectTransform)head.transform;
+                headRect.anchorMin = headRect.anchorMax = new Vector2(0f, 0f);
+                headRect.pivot = new Vector2(0.5f, 0.5f);
+                var size = masts[i].Picked ? MastHeadPicked : MastHead;
+                headRect.sizeDelta = new Vector2(size, size);
+                var face = head.AddComponent<Image>();
+                face.color = masts[i].Ink;
+                face.raycastTarget = false;
+                LedgerKit.Frame(headRect, 1f, LedgerV2.HeadCream);
+                mastHeads.Add(headRect);
+            }
         }
 
         void PlaceMarks()
@@ -160,6 +258,46 @@ namespace LivingCity.UI
                 }
                 mark.gameObject.SetActive(true);
                 mark.anchoredPosition = new Vector2(viewport.x * size.x, viewport.y * size.y);
+            }
+
+            PlaceMasts(size);
+        }
+
+        void PlaceMasts(Vector2 size)
+        {
+            for (var i = 0; i < mastLines.Count && i < masts.Count; i++)
+            {
+                var line = mastLines[i];
+                var head = mastHeads[i];
+                if (line == null || head == null)
+                    continue;
+
+                if (!film.TryPlace(masts[i].Base, out var footView) ||
+                    !film.TryPlace(masts[i].Head, out var headView))
+                {
+                    line.gameObject.SetActive(false);
+                    head.gameObject.SetActive(false);
+                    continue;
+                }
+
+                var foot = new Vector2(footView.x * size.x, footView.y * size.y);
+                var top = new Vector2(headView.x * size.x, headView.y * size.y);
+                var run = top - foot;
+                var length = run.magnitude;
+                // A mast whose head has left the plate takes its line with it: half a
+                // pole pointing off the edge names nothing.
+                var on = headView.x >= 0f && headView.x <= 1f &&
+                         headView.y >= 0f && headView.y <= 1f && length > 1f;
+                line.gameObject.SetActive(on);
+                head.gameObject.SetActive(on);
+                if (!on)
+                    continue;
+
+                line.anchoredPosition = foot;
+                line.sizeDelta = new Vector2(MastThickness, length);
+                line.localRotation = Quaternion.Euler(0f, 0f,
+                    Mathf.Atan2(run.y, run.x) * Mathf.Rad2Deg - 90f);
+                head.anchoredPosition = top;
             }
         }
 
@@ -267,6 +405,28 @@ namespace LivingCity.UI
                 Mathf.InverseLerp(rect.xMin, rect.xMax, local.x),
                 Mathf.InverseLerp(rect.yMin, rect.yMax, local.y));
 
+            var size = rect.size;
+            var point = new Vector2(viewport.x * size.x, viewport.y * size.y);
+
+            // THE MAST ANSWERS FIRST. The building's own head stands in the air over its
+            // roof, so a pointer on it is unambiguous - and it has to be asked before the
+            // ray, because the ray through the building's walls belongs to the shop in
+            // its ground floor and always will.
+            var head = NoAnswer;
+            var headDistance = MastReach;
+            for (var i = 0; i < mastHeads.Count && i < masts.Count; i++)
+            {
+                if (mastHeads[i] == null || !mastHeads[i].gameObject.activeSelf)
+                    continue;
+                var distance = Vector2.Distance(mastHeads[i].anchoredPosition, point);
+                if (distance >= headDistance)
+                    continue;
+                headDistance = distance;
+                head = masts[i].Key;
+            }
+            if (head != NoAnswer)
+                return head;
+
             if (film.TryPick(viewport, out var hit))
             {
                 // The ray lands on the copy standing on the film's stage, so it is asked
@@ -285,8 +445,6 @@ namespace LivingCity.UI
             // pointer, but only when the pointer is genuinely on it.
             var best = -1;
             var bestDistance = 22f;
-            var size = rect.size;
-            var point = new Vector2(viewport.x * size.x, viewport.y * size.y);
             for (var i = 0; i < marks.Count && i < doors.Count; i++)
             {
                 if (marks[i] == null || !marks[i].gameObject.activeSelf)

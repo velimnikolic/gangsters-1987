@@ -140,6 +140,15 @@ namespace LivingCity.UI
         }
 
         readonly List<BlockTrade> blockCardTrades = new List<BlockTrade>();
+
+        /// <summary>The apartment buildings standing on this block, in plan order. They
+        /// are NOT premises and never join <see cref="blockCardTrades"/>: that list is
+        /// what the PREMISES count, the racket standings and the door menu are keyed on.
+        /// A building is reached by its own mast and its own header instead.</summary>
+        readonly List<LivingCity.Property.ApartmentBuilding> blockCardBuildings =
+            new List<LivingCity.Property.ApartmentBuilding>();
+
+        readonly List<BlockFilmView.Mast> blockCardMasts = new List<BlockFilmView.Mast>();
         readonly List<BlockHand> blockCardHands = new List<BlockHand>();
         readonly List<TerritoryActorObservation> blockCardActors =
             new List<TerritoryActorObservation>();
@@ -244,9 +253,23 @@ namespace LivingCity.UI
             blockCardRise = 0f;
 
             ReadBlockTrades(runtime);
+            ReadBlockBuildings();
             ReadBlockHands(runtime);
             ReadBlockPressure(runtime);
             ReadBlockRacket();
+        }
+
+        /// <summary>The block's apartment buildings, off the PLAN - so a building the
+        /// recycler has pooled is still listed, still masted and still openable.</summary>
+        void ReadBlockBuildings()
+        {
+            blockCardBuildings.Clear();
+            if (!blockCardId.IsValid)
+                return;
+            var standing = LivingCity.Property.ApartmentBuildings.OnBlock(blockCardId);
+            for (var i = 0; i < standing.Count; i++)
+                blockCardBuildings.Add(standing[i]);
+            blockCardBuildings.Sort((a, b) => string.CompareOrdinal(a.Address, b.Address));
         }
 
         /// <summary>
@@ -660,7 +683,8 @@ namespace LivingCity.UI
                 });
             }
 
-            blockCardModel.Watch(film, blockCardDoors, blockCardYaw);
+            BuildBlockMasts();
+            blockCardModel.Watch(film, blockCardDoors, blockCardMasts, blockCardYaw);
             blockCardModel.Turned = yaw =>
             {
                 blockCardYaw = yaw;
@@ -670,10 +694,20 @@ namespace LivingCity.UI
             // Turning changes only the cached film frame. It is not a reason to rebuild
             // the paper around the model.
             blockCardModel.Settled = null;
-            blockCardModel.Picked = key => PickTrade(
-                key >= 0 && key < blockCardTrades.Count
+            blockCardModel.Picked = key =>
+            {
+                // A building answers on its own key range: the mast is the only way to
+                // click a block of flats, because the walls belong to the shop in its
+                // ground floor (BlockFilmView.Mast says why).
+                if (TryBuildingKey(key, out var building))
+                {
+                    OpenBlueprint(building.Id);
+                    return;
+                }
+                PickTrade(key >= 0 && key < blockCardTrades.Count
                     ? blockCardTrades[key].Id
                     : default);
+            };
             blockCardModel.Hovered = ShowBlockModelNote;
 
             var marked = blockCardDoors.Count;
@@ -693,6 +727,74 @@ namespace LivingCity.UI
             BuildBlockModelKey(plate, plateH);
             return plateH;
         }
+
+        /// <summary>
+        /// A mast per apartment building: a line from the middle of its footprint to a
+        /// head over its roof, and the head is what opens the blueprint.
+        ///
+        /// The head must clear the building AT EVERY YAW. The lens turns round the block
+        /// at the city's own pitch, so the far roof edge climbs the screen as the block
+        /// turns: a head only just above the roof is swallowed from behind. At pitch θ a
+        /// point h above the roof clears the far edge when h &gt; d·tanθ, where d is the
+        /// footprint's half-depth - so the clearance is MEASURED off the building's own
+        /// rectangle and the film's own pitch, never a constant.
+        /// </summary>
+        void BuildBlockMasts()
+        {
+            blockCardMasts.Clear();
+            if (blockCardBuildings.Count == 0)
+                return;
+
+            var pitch = Mathf.Clamp(BlockFilm.CityPitch, 5f, 85f);
+            var clear = Mathf.Tan(pitch * Mathf.Deg2Rad);
+            var gang = GangCatalog.PlayerGangId;
+
+            for (var i = 0; i < blockCardBuildings.Count; i++)
+            {
+                var building = blockCardBuildings[i];
+                var rect = building.WorldRect;
+                var half = Mathf.Max(rect.width, rect.height) * 0.5f;
+                var head = building.Rise + half * clear + MastClearance;
+
+                blockCardMasts.Add(new BlockFilmView.Mast
+                {
+                    Key = BuildingKey(i),
+                    Base = new Vector3(rect.center.x, blockCardGroundY, rect.center.y),
+                    Head = new Vector3(rect.center.x, blockCardGroundY + head, rect.center.y),
+                    Ink = FlatsInk(building, gang),
+                    Picked = blueprintBuilding == building.Id &&
+                             currentPage == LedgerPage.Blueprint,
+                });
+            }
+        }
+
+        /// <summary>Air over the computed clearance, so the head never sits ON the ridge
+        /// it is meant to stand above.</summary>
+        const float MastClearance = 4f;
+
+        /// <summary>Buildings answer on their own key range: -1 is the bare street and
+        /// every index from 0 up is a premise, so a building is -2 and down.</summary>
+        static int BuildingKey(int index) => -2 - index;
+
+        bool TryBuildingKey(int key, out LivingCity.Property.ApartmentBuilding building)
+        {
+            building = null;
+            if (key > -2)
+                return false;
+            var index = -2 - key;
+            if (index < 0 || index >= blockCardBuildings.Count)
+                return false;
+            building = blockCardBuildings[index];
+            return true;
+        }
+
+        /// <summary>The FIFTH word in the film's key. The four it had are racket states -
+        /// OURS, PAYS US, ANOTHER HOUSE, NOBODY LEANS - and a building we hold two rooms
+        /// in is none of them.</summary>
+        static Color FlatsInk(LivingCity.Property.ApartmentBuilding building, int gang) =>
+            LivingCity.Property.Apartments.CountIn(building.Id, gang) > 0
+                ? LedgerV2.Green
+                : LedgerV2.PaperBlue;
 
         /// <summary>Puts the second lens away and lets the city have the ground back.
         /// Called whenever the file stops standing open - a closed card, a shut book.
@@ -787,6 +889,20 @@ namespace LivingCity.UI
             if (blockCardHoverName == null || blockCardHoverLine == null)
                 return;
             var note = blockCardHoverName.transform.parent;
+
+            // A mast under the pointer names its building, not a shop.
+            if (TryBuildingKey(key, out var building))
+            {
+                var held = LivingCity.Property.Apartments.CountIn(
+                    building.Id, GangCatalog.PlayerGangId);
+                blockCardHoverName.text = building.Address;
+                blockCardHoverLine.text = building.Flats + " flats · " +
+                    (held > 0 ? held + " on our deed" : "not one door is ours") +
+                    " · click for the blueprint";
+                note.gameObject.SetActive(true);
+                return;
+            }
+
             if (key < 0 || key >= blockCardTrades.Count)
             {
                 note.gameObject.SetActive(false);
@@ -1097,12 +1213,29 @@ namespace LivingCity.UI
                 ? blockCardTrades.Count
                 : Mathf.Min(blockCardTrades.Count, BlockCardTradeShown);
             blockCardPickY = y;
-            for (var i = 0; i < shown; i++)
+
+            // THE COLUMN IS GROUPED BY BUILDING (the user, 2026-09-03). A flat alphabet
+            // of shop names cannot say which of them share a stairwell, and a block of
+            // flats with no shop in it could never appear in a list of trades at all.
+            // The header is the second way into the blueprint, and the one that needs no
+            // camera - which is what makes the sheet reviewable in the city-less
+            // Ledger.unity, where the film has nothing to photograph.
+            GroupTradesByBuilding();
+            var printed = 0;
+            for (var g = 0; g < blockTradeGroups.Count && printed < shown; g++)
             {
-                // Where the picked row lands is where its menu opens beside it.
-                if (blockCardPick.IsValid && blockCardTrades[i].Id == blockCardPick)
-                    blockCardPickY = y;
-                y += TradeRow(card, x, y, width, blockCardTrades[i]);
+                var group = blockTradeGroups[g];
+                if (group.Building != null)
+                    y += BuildingHeaderRow(card, x, y, width, group.Building);
+                for (var i = 0; i < group.Trades.Count && printed < shown; i++)
+                {
+                    var trade = blockCardTrades[group.Trades[i]];
+                    // Where the picked row lands is where its menu opens beside it.
+                    if (blockCardPick.IsValid && trade.Id == blockCardPick)
+                        blockCardPickY = y;
+                    y += TradeRow(card, x, y, width, trade);
+                    printed++;
+                }
             }
 
             if (blockCardTrades.Count > shown)
@@ -1126,6 +1259,98 @@ namespace LivingCity.UI
                 if (blockCardTrades[i].Id == blockCardPick)
                     return i;
             return -1;
+        }
+
+        /// <summary>One building and the doors that trade out of its ground floor. A
+        /// building with no shop in it still gets a group, with nothing under it: that is
+        /// how a block of flats becomes visible on a sheet that has only ever listed
+        /// trades.</summary>
+        sealed class BlockTradeGroup
+        {
+            public LivingCity.Property.ApartmentBuilding Building;
+            public readonly List<int> Trades = new List<int>();
+        }
+
+        readonly List<BlockTradeGroup> blockTradeGroups = new List<BlockTradeGroup>();
+
+        /// <summary>
+        /// Groups the doors under the building they stand in, keeping the SEVERITY sort
+        /// inside a group - the column's whole reason for sorting is that a door needing
+        /// an answer must not be thirty rows down, and grouping must not undo that.
+        ///
+        /// Which building a door is in is read off the business id itself, which carries
+        /// the plan and the spot it was minted from; no geometry, no second index.
+        /// </summary>
+        void GroupTradesByBuilding()
+        {
+            blockTradeGroups.Clear();
+            var byBuilding = new Dictionary<LivingCity.Property.ApartmentBuildingId,
+                BlockTradeGroup>();
+
+            for (var i = 0; i < blockCardBuildings.Count; i++)
+            {
+                var group = new BlockTradeGroup { Building = blockCardBuildings[i] };
+                blockTradeGroups.Add(group);
+                byBuilding[blockCardBuildings[i].Id] = group;
+            }
+
+            BlockTradeGroup loose = null;
+            for (var i = 0; i < blockCardTrades.Count; i++)
+            {
+                if (LivingCity.Property.ApartmentBuildings.TryBuildingOf(
+                        blockCardTrades[i].Id, out var id) &&
+                    byBuilding.TryGetValue(id, out var group))
+                {
+                    group.Trades.Add(i);
+                    continue;
+                }
+                // A venue, a compound, a downtown prefab: no plan-level building owns it,
+                // so it stands on the block on its own.
+                loose ??= new BlockTradeGroup();
+                loose.Trades.Add(i);
+            }
+
+            // A building whose shops are all elsewhere is still listed; an empty group is
+            // only dropped when the building has no flats either.
+            for (var i = blockTradeGroups.Count - 1; i >= 0; i--)
+                if (blockTradeGroups[i].Trades.Count == 0 &&
+                    blockTradeGroups[i].Building != null &&
+                    blockTradeGroups[i].Building.Flats <= 0)
+                    blockTradeGroups.RemoveAt(i);
+
+            if (loose != null)
+                blockTradeGroups.Add(loose);
+        }
+
+        /// <summary>The building's own row: its address, what we hold in it, and the way
+        /// into its blueprint.</summary>
+        float BuildingHeaderRow(RectTransform card, float x, float top, float width,
+            LivingCity.Property.ApartmentBuilding building)
+        {
+            const float rowH = 30f;
+            var gang = GangCatalog.PlayerGangId;
+            var held = LivingCity.Property.Apartments.CountIn(building.Id, gang);
+
+            var row = NewRect("Building " + building.Address, card);
+            PlaceTopLeft(row, x, -top, width, rowH);
+            Fill(row, LedgerV2.PanelDark);
+            var surface = ClickSurface(row);
+            var id = building.Id;
+            RowButton(row, surface, () => OpenBlueprint(id));
+            Rule(row, 0f, -(rowH - 1f), width, LedgerV2.Rule);
+
+            LedgerV2.StreetMark(row, 0f, -15f, FlatsInk(building, gang), 10f);
+            var name = LedgerV2.Name(row, 19f, -4f, width - 220f, building.Address, 12.5f,
+                LedgerV2.Ink);
+            name.overflowMode = TextOverflowModes.Ellipsis;
+            LedgerV2.Mono(row, width - 200f, -4f, 180f,
+                held > 0
+                    ? held + " OF " + building.Flats + " FLATS OURS"
+                    : building.Flats + " FLATS · NONE OURS",
+                9f, held > 0 ? LedgerV2.Green : LedgerV2.Label, 2f,
+                TextAlignmentOptions.MidlineRight);
+            LedgerV2.Mono(row, width - 16f, -4f, 14f, "›", 12f, LedgerV2.Muted, 0f);
+            return rowH;
         }
 
         float TradeRow(RectTransform card, float x, float top, float width, BlockTrade trade)

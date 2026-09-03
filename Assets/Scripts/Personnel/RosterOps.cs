@@ -387,6 +387,100 @@ namespace LivingCity.Personnel
             return OpResult.Success;
         }
 
+        // ------------------------------------------------------------------ the keeper
+
+        /// <summary>
+        /// Whether this man can be spared to keep a flat, and why not when he cannot. Asked
+        /// by the sheet BEFORE it offers him, so the picker greys a man out with the reason
+        /// on him rather than failing on the click.
+        ///
+        /// The boss runs the outfit, a lieutenant runs his branch, and a specialist was
+        /// bought for other work; a man in a cell or a bed cannot stand in a room at all.
+        /// </summary>
+        public static bool CanKeep(Roster roster, int id, out string reason)
+        {
+            reason = "";
+            var member = roster?.Find(id);
+            if (member == null)
+            {
+                reason = LedgerText.ReasonNoSuchMember;
+                return false;
+            }
+            if (member.Gone)
+            {
+                reason = "off the books";
+                return false;
+            }
+            if (member.Status == CharacterStatus.Jailed)
+            {
+                reason = "jailed";
+                return false;
+            }
+            if (member.Status == CharacterStatus.Hospitalized)
+            {
+                reason = "hurt";
+                return false;
+            }
+            if (id == roster.BossId)
+            {
+                reason = "he runs the outfit";
+                return false;
+            }
+            if (member.Specialty != Specialty.None)
+            {
+                reason = "bought for other work";
+                return false;
+            }
+            if (member.Rank != Rank.Hood)
+            {
+                reason = "he runs a crew";
+                return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Takes a man OFF THE STREET and puts him in a room. He leaves his crew's line -
+        /// the bag and its escort included - so nothing walks him anywhere while he keeps
+        /// the flat; by derivation he then reads as pooled, which is what "off the street"
+        /// means to every other sheet.
+        ///
+        /// The flat itself is written by <see cref="LivingCity.Property.Apartments"/>: this
+        /// owns only the rules about who may be spared.
+        /// </summary>
+        public static OpResult SetKeeper(Roster roster, int id)
+        {
+            if (!CanKeep(roster, id, out var reason))
+                return OpResult.Fail(reason);
+
+            var member = roster.Find(id);
+            var crew = roster.CrewOf(id);
+            if (crew != null)
+            {
+                if (crew.BagId == id)
+                    ReturnBagNodeToLine(roster, crew);
+                crew.HoodIds.Remove(id);
+                crew.EscortIds.Remove(id);
+                if (crew.BagId == id)
+                    crew.BagId = -1;
+            }
+
+            member.Duty = Duty.Keeper;
+            return OpResult.Success;
+        }
+
+        /// <summary>Pulls him out of the room and back onto the street. Always allowed: a
+        /// man must never be stuck holding a job the books no longer let him do.</summary>
+        public static OpResult ClearKeeper(Roster roster, int id)
+        {
+            var member = roster?.Find(id);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (member.Duty == Duty.Keeper)
+                member.Duty = Duty.None;
+            return OpResult.Success;
+        }
+
         /// <summary>The one man of the crew marked for the bag and still on the books,
         /// or -1. A man in a cell or a bed still holds the mark - he is not walking
         /// it, but it is his (CollectorsOf is the list that answers who can walk).</summary>
