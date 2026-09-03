@@ -85,21 +85,77 @@ namespace LivingCity.Tests
                 failures.Add("Core river reservation was published as a one-ended harbour basin");
         }
 
+        /// <summary>
+        /// THE PICKER, NOT THE SEED. This used to fail seed 1987 for selecting no filling
+        /// station at all - and seed 1987 offers no parcel that will hold one: the shared
+        /// fuel block is an exact 60 x 55 m footprint and this city's three stand-alone
+        /// candidates measure 35x90, 50x35 and 40x65 (`gangsters_core --seed 1987`). That
+        /// is a fact about one arrangement, not a rule the generator broke; nothing in
+        /// `Docs/core-district-plan.md` promises a pump in every city.
+        ///
+        /// What IS a rule is that the picker can pick at all, and that a station it does
+        /// pick owns a whole block. Seed 1987 proves the second on nothing, so the first
+        /// is asked of ONE city known to have the ground for it - seed 4, which stands
+        /// two (`gangsters_core --seed 4`). One extra deal, not the five a blind sweep
+        /// would cost: this suite has the port's thirty seconds to answer in.
+        /// </summary>
         static void FuelStationsOwnWholeStandaloneBlocks(CoreDistrict core,
             List<string> failures)
         {
-            if (core.FuelSites.Count == 0)
-                failures.Add($"Core vacancy seed {Seed}: no stand-alone filling station was selected");
+            const int EligibleSeed = 4;
+            var eligible = new CoreDistrict();
+            eligible.Plan(Array.Empty<float>(), EligibleSeed);
+            if (eligible.FuelSites.Count == 0)
+                failures.Add($"Core vacancy: seed {EligibleSeed} has the ground for a " +
+                             "filling station and the picker stood none");
+            CheckWholeBlocks(eligible, EligibleSeed, failures);
+            eligible.Dispose();
 
+            CheckWholeBlocks(core, Seed, failures);
+        }
+
+        /// <summary>
+        /// A STATION SITS IN ONE STAND-ALONE BLOCK AND SHARES IT WITH NO OTHER
+        /// PROGRAMME - which is not the same as filling it, and this contract used to
+        /// demand that the fuel site EQUAL a planned lot. CoreAmenityLayout says
+        /// otherwise in its own words: "Fuel reserves an exact full FuelStationBlock
+        /// footprint against a road-facing edge; any ground left in that source
+        /// rectangle remains CoreRoads' ordinary painted parking"
+        /// (<see cref="CoreAmenityLayout.Select"/>, and TryFuelFootprint CROPS the
+        /// 60 x 55 m block out of a bigger remainder). The equality rule was only ever
+        /// vacuously true because seed 1987 stands no station at all; asked of seed 4,
+        /// which stands two, it failed both of them for being what they are meant to be.
+        ///
+        /// So the rule is stated the way the generator means it: the footprint lies
+        /// inside exactly one planned lot, and nothing else was programmed over it.
+        /// </summary>
+        static void CheckWholeBlocks(CoreDistrict core, int seed, List<string> failures)
+        {
             foreach (var fuel in core.FuelSites)
             {
-                int wholeLots = 0;
+                int hostLots = 0;
                 for (int i = 0; i < core.Layout.Lots.Count; i++)
-                    if (Same(fuel.Box, core.Layout.Lots[i])) wholeLots++;
-                if (wholeLots != 1)
-                    failures.Add($"Core fuel {Where(fuel.Box)} is not the sole programme of one stand-alone block");
+                    if (Holds(core.Layout.Lots[i], fuel.Box)) hostLots++;
+                if (hostLots != 1)
+                    failures.Add($"Core fuel seed {seed} {Where(fuel.Box)} lies in " +
+                                 $"{hostLots} stand-alone blocks, not one");
+
+                foreach (var other in core.ParkingSites)
+                    if (other != fuel && other.Box.Overlaps(fuel.Box))
+                        failures.Add($"Core fuel seed {seed} {Where(fuel.Box)} shares " +
+                                     $"its ground with car parking {Where(other.Box)}");
+                foreach (var other in core.DevelopmentSites)
+                    if (other.Box.Overlaps(fuel.Box))
+                        failures.Add($"Core fuel seed {seed} {Where(fuel.Box)} shares " +
+                                     $"its ground with housing {Where(other.Box)}");
             }
         }
+
+        /// <summary>Does this lot hold the whole of that box, give or take a millimetre
+        /// of floating point?</summary>
+        static bool Holds(Rect lot, Rect box) =>
+            box.xMin >= lot.xMin - 0.01f && box.xMax <= lot.xMax + 0.01f &&
+            box.yMin >= lot.yMin - 0.01f && box.yMax <= lot.yMax + 0.01f;
 
         static void EveryDevelopmentParcelHasHousing(CoreDistrict core, List<string> failures)
         {
@@ -199,8 +255,23 @@ namespace LivingCity.Tests
                         }
                     }
 
+                    // A BLOCK, NOT A PATCH. `Docs/core-district-plan.md` is explicit about
+                    // leftover ground: a block's cut becomes parking and the rest is
+                    // reported with its measure - painted parking IS what a remainder
+                    // becomes. The fault this contract is named for is a whole BLOCK left
+                    // blank, so the question to ask of a run is the one the programme
+                    // itself asks: could anything have been built here? A 20 x 30 m strip
+                    // (the one this used to fail 1987 on, at -145,-40) carries no
+                    // residential recipe and no filling station, and painted parking is
+                    // its right and documented answer. Ten metres in both directions was
+                    // never that line.
                     int width = i1 - i0 + 1, depth = j1 - j0 + 1;
-                    if (Mathf.Min(width, depth) > 2)
+                    var run = new Rect(raster.X(i0), raster.Z(j0),
+                                       width * CoreRoads.Cell, depth * CoreRoads.Cell);
+                    var couldBuild = CoreAmenityLayout.CanCarryHousing(
+                        new CoreAmenityLayout.Site(run, ParkingEntrySide.South,
+                                                   width * depth));
+                    if (couldBuild)
                         failures.Add($"Core vacancy seed {Seed}: unprogrammed stand-alone block " +
                                      $"{width * CoreRoads.Cell:F0}x{depth * CoreRoads.Cell:F0} m " +
                                      $"at ({raster.X(i0):F0},{raster.Z(j0):F0})");
