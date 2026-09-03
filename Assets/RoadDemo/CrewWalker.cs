@@ -1662,6 +1662,16 @@ namespace RoadDemo
         /// laid over the top, and blends away the moment the fight is over.</summary>
         public void AimGun(float dt)
         {
+            // A MAN'S OWN BODY CAN GO BEFORE HE DOES. The guard below already covers the
+            // man he is shooting at; it never covered HIM. A CrewWalker is a plain object
+            // the crew keeps hold of, and the body it drives is a scene object that is
+            // taken away the moment he is struck off (shot dead, deserted, a house wound
+            // up) - so the walker is still in Units, still asked to pose its arm, and
+            // every read of Tf from here down throws. One dead man in a brawl put a
+            // MissingReferenceException in LateUpdate on every frame of the rest of the
+            // run: twenty of them in the first judged run of the core.
+            if (Tf == null) return;
+
             bool onCar = Target == null && CarMark != null && CarMark.Tf != null && !CarMark.Wrecked;
             // The old crowd run needs its procedural rifle overlay suppressed. The
             // authored rifle run already owns both arms, so only its prop is corrected.
@@ -2583,6 +2593,18 @@ namespace RoadDemo
         /// in the road guarding the space where a car was.</summary>
         IRoadUser _coverAnchor;
 
+        /// <summary>Which side of the thing he is behind his flank is on, relative to
+        /// where he was standing when it was handed to him: "near", "far", or empty when
+        /// the street offered nothing to measure against.
+        ///
+        /// Written beside the cover row and therefore only while the trace is running -
+        /// which is the same condition CrewAudit itself runs under, so the fault it
+        /// raises off this never reads a stale value from an untraced session.</summary>
+        string _coverSide = "";
+
+        /// <summary>The side of his last flank. See <see cref="_coverSide"/>.</summary>
+        public string CoverSide => _coverSide;
+
         /// <summary>Is the thing he is behind somebody's CAR rather than a bin? The one
         /// bit of the flank that can drive away, so it is the one the bench and the
         /// indicators ask about (gangsters_ambush_probe).</summary>
@@ -3061,7 +3083,27 @@ namespace RoadDemo
                         DriveTrace.Bool(sb, "first", !_firedThisFight);
                         DriveTrace.Num(sb, "range", dist);
                         if (found.HasValue)
+                        {
                             DriveTrace.Num(sb, "walk", Vector3.Distance(Tf.position, found.Value));
+                            // WHICH SIDE OF IT HE ENDED UP ON (EPIC 31 NIGHT-010). The
+                            // flank is chosen away from the mark, and that is right; what
+                            // was never written down is whether reaching it means dropping
+                            // behind the face he is already looking at, or walking round
+                            // the thing - across the fire line - to stand on the far side
+                            // of it from where he came. "near" is the first, "far" the
+                            // second, and the crew audit calls the second a fault.
+                            var anchorAt = DemoCrews.LastCoverAnchorAt;
+                            if (anchorAt.HasValue)
+                            {
+                                var toSpot = found.Value - anchorAt.Value;
+                                var toMan = Tf.position - anchorAt.Value;
+                                toSpot.y = 0f; toMan.y = 0f;
+                                _coverSide = Vector3.Dot(toSpot, toMan) >= 0f ? "near" : "far";
+                                DriveTrace.Str(sb, "side", _coverSide);
+                            }
+                            else _coverSide = "";
+                        }
+                        else _coverSide = "";
                         DriveTrace.Row("cover", sb.ToString());
                     }
                 }

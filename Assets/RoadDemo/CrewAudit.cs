@@ -187,6 +187,10 @@ namespace RoadDemo
             /// whether the street has already been asked about it (the openfire rule).</summary>
             public float OpenFireSince, OpenProbeAt;
             public bool OpenFireSaid;
+            /// <summary>The side of the flank he was last seen holding, and whether the
+            /// far side of it has already been said out loud for this one - a man holds
+            /// a flank for seconds and it is one fault, not sixty.</summary>
+            public string CoverSideSaid = "";
             public Vector3 RouteStart, RouteGoal, RouteLastDir;
             public float RouteStartGap, RouteFor, RouteRecentTravel, RouteTravel, RouteTurn;
         }
@@ -331,6 +335,29 @@ namespace RoadDemo
                 $"{Vector3.Distance(man.Tf.position, flank.Value):F1} m off");
         }
 
+        /// <summary>
+        /// THE SIDE RULE (EPIC 31 NIGHT-010). A man drops behind the near face of the
+        /// nearest thing. A flank on the FAR side of it from where he was standing is
+        /// one he has to walk round the cover to reach - across the very fire line the
+        /// cover exists to get him out of - and arriving there is worse than not going
+        /// at all. The walker writes which side it was beside the cover row it already
+        /// writes (CrewWalker.CoverSide); this turns "far" into a fault the soak counts.
+        ///
+        /// Said once per flank: a man holds one for seconds on end, and sixty rows of
+        /// the same complaint would drown the run's other faults.
+        /// </summary>
+        static void CoverSide(CrewWalker man)
+        {
+            if (!Men.TryGetValue(man, out var w)) Men[man] = w = new Watch();
+            var side = man.CoverSide ?? "";
+            if (side == w.CoverSideSaid) return;
+            w.CoverSideSaid = side;
+            if (side != "far") return;
+            Fault(man, "wrongside",
+                  "took cover on the far side of it from where he came, walking round " +
+                  "the thing to get behind it");
+        }
+
         // -------------------------------------------------------------- per man
 
         static void TickMen(DemoCrews arena, DemoCrews.Unit unit, float dt)
@@ -339,6 +366,7 @@ namespace RoadDemo
             {
                 if (man == null || man.Tf == null) continue;
                 if (!Men.TryGetValue(man, out var w)) Men[man] = w = new Watch();
+                CoverSide(man);
 
                 bool afoot = !man.Dead && man.Tf.gameObject.activeSelf &&
                              !man.Riding && !arena.IsAboard(man);
