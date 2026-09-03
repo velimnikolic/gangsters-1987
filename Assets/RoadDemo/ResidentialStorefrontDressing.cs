@@ -132,7 +132,7 @@ namespace RoadDemo
                 // one required registration here without doing a second scan.
                 if (building.GetComponent<BuildingCutaway>() == null)
                 {
-                    BuildingCutaway.Prepare(building);
+                    BuildingCutaway.Prepare(building, unit);
                     yield return 0;
                 }
                 yield break;
@@ -175,7 +175,7 @@ namespace RoadDemo
             // Cutaway preparation is deliberately deferred until the fake room and display
             // props exist, so a recycled building scans its final topology exactly once on
             // both eager and incremental composition paths.
-            BuildingCutaway.Prepare(building);
+            BuildingCutaway.Prepare(building, unit);
             yield return plan.Styles.Length + 1;
         }
 
@@ -599,8 +599,8 @@ namespace RoadDemo
                 var filter = filters[i];
                 var mesh = filter != null ? filter.sharedMesh : null;
                 if (mesh == null || !StorefrontMesh(mesh.name)) continue;
-                MeasureOpenings(building.transform, filter.transform, mesh,
-                                nextGroup++, found);
+                MeasureStorefrontOpenings(building.transform, filter.transform, mesh,
+                                          nextGroup++, found);
             }
 
             if (found.Count == 0)
@@ -655,6 +655,7 @@ namespace RoadDemo
         sealed class StorefrontPlane
         {
             public Vector3 Outward;
+            public float Distance;
             public readonly List<Vector3> Points = new List<Vector3>(24);
         }
 
@@ -663,10 +664,16 @@ namespace RoadDemo
         /// a corner module produces two shop faces and its diagonal entrance. Treating the
         /// old combined bounds as one rectangle is what sent props through the cut corner.
         /// </summary>
-        static void MeasureOpenings(Transform root, Transform piece, Mesh mesh,
-                                    int group, List<ResidentialStorefrontOpening> found)
+        internal static void MeasureStorefrontOpenings(
+            Transform root, Transform piece, Mesh mesh, int group,
+            List<ResidentialStorefrontOpening> found)
         {
             bool corner = mesh.name.IndexOf("_Corner_", StringComparison.OrdinalIgnoreCase) >= 0;
+            string sourceModule = mesh.name.EndsWith("_Glass", StringComparison.OrdinalIgnoreCase)
+                ? mesh.name.Substring(0, mesh.name.Length - "_Glass".Length)
+                : mesh.name;
+            bool hasDoor = StorefrontDoorCatalog.TryGet(
+                sourceModule, out var doorProfile) && doorProfile.Leaves > 0;
             var vertices = mesh.vertices;
             var normals = mesh.normals;
             if (vertices == null || normals == null || vertices.Length == 0 ||
@@ -681,6 +688,7 @@ namespace RoadDemo
             var planes = new List<StorefrontPlane>(3);
             for (int i = 0; i < vertices.Length; i++)
             {
+                Vector3 point = intoRoot.MultiplyPoint3x4(vertices[i]);
                 Vector3 outward = intoRoot.MultiplyVector(normals[i]);
                 outward.y = 0f;
                 if (outward.sqrMagnitude < 0.25f) continue;
@@ -688,17 +696,23 @@ namespace RoadDemo
 
                 StorefrontPlane plane = null;
                 for (int n = 0; n < planes.Count; n++)
-                    if (Vector3.Dot(planes[n].Outward, outward) >= 0.97f)
+                    if (Vector3.Dot(planes[n].Outward, outward) >= 0.97f &&
+                        Mathf.Abs(Vector3.Dot(planes[n].Outward, point) -
+                                  planes[n].Distance) <= 0.08f)
                     {
                         plane = planes[n];
                         break;
                     }
                 if (plane == null)
                 {
-                    plane = new StorefrontPlane { Outward = outward };
+                    plane = new StorefrontPlane
+                    {
+                        Outward = outward,
+                        Distance = Vector3.Dot(outward, point),
+                    };
                     planes.Add(plane);
                 }
-                plane.Points.Add(intoRoot.MultiplyPoint3x4(vertices[i]));
+                plane.Points.Add(point);
             }
 
             int before = found.Count;
@@ -730,7 +744,9 @@ namespace RoadDemo
                              Vector3.up * floor;
                 bool entrance = Mathf.Abs(outward.x) > 0.5f &&
                                 Mathf.Abs(outward.z) > 0.5f;
-                if (entrance) continue;
+                if (entrance || hasDoor && IsDoorGlassPlane(
+                        intoRoot, doorProfile, outward, right, along0, along1))
+                    continue;
                 AddUnique(found, new ResidentialStorefrontOpening(
                     at, outward, right, width, height, group, entrance, corner));
             }
@@ -738,6 +754,26 @@ namespace RoadDemo
             if (found.Count == before &&
                 MeasureOpeningBounds(root, piece, mesh.bounds, group, out var boundsOpening))
                 AddUnique(found, boundsOpening);
+        }
+
+        static bool IsDoorGlassPlane(Matrix4x4 intoRoot,
+                                     StorefrontDoorProfile profile,
+                                     Vector3 outward, Vector3 right,
+                                     float along0, float along1)
+        {
+            Vector3 doorOutward = intoRoot.MultiplyVector(profile.Outward);
+            doorOutward.y = 0f;
+            if (doorOutward.sqrMagnitude < 0.25f ||
+                Vector3.Dot(outward, doorOutward.normalized) < 0.96f)
+                return false;
+
+            Vector3 doorPoint = intoRoot.MultiplyPoint3x4(profile.Centre);
+            float centre = Vector3.Dot(doorPoint, right);
+            float scale = intoRoot.MultiplyVector(profile.Right).magnitude;
+            float half = profile.Width * Mathf.Max(0.01f, scale) * 0.5f + 0.10f;
+            // The separate door-glass plane rides on the baked leaf. Only the wider
+            // display-window run is rebuilt as static storefront glass.
+            return along0 >= centre - half && along1 <= centre + half;
         }
 
         static bool MeasureOpeningBounds(Transform root, Transform piece, Bounds bounds,
@@ -866,7 +902,7 @@ namespace RoadDemo
             rooms.Configure(openings, plan.ClosedMask,
                 storefrontShellMaterial, storefrontShutterMaterial);
             BuildLiveStorefronts(building, unit, openings);
-            BuildingCutaway.Prepare(building);
+            BuildingCutaway.Prepare(building, unit);
         }
 
         static void AddMissingUnitFaces(List<ResidentialStorefrontOpening> found,

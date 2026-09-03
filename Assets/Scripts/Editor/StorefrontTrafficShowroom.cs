@@ -62,11 +62,18 @@ namespace LivingCity.EditorTools
             var report = new Report { Scene = ScenePath };
             var failures = new List<string>();
             Scene previous = SceneManager.GetActiveScene();
-            Scene demo = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,
-                                                      NewSceneMode.Additive);
+            Scene loadedDemo = SceneManager.GetSceneByPath(ScenePath);
+            bool reuseLoadedDemo = loadedDemo.IsValid() && loadedDemo.isLoaded;
+            Scene demo = reuseLoadedDemo
+                ? loadedDemo
+                : EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,
+                                              NewSceneMode.Additive);
             try
             {
                 SceneManager.SetActiveScene(demo);
+                if (reuseLoadedDemo)
+                    foreach (var sceneRoot in demo.GetRootGameObjects())
+                        UnityEngine.Object.DestroyImmediate(sceneRoot);
                 RenderSettings.fog = false;
                 RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
                 RenderSettings.ambientSkyColor = new Color(0.72f, 0.78f, 0.86f);
@@ -104,9 +111,10 @@ namespace LivingCity.EditorTools
             }
             finally
             {
-                if (previous.IsValid() && previous.isLoaded)
+                if (previous.IsValid() && previous.isLoaded && previous != demo)
                     SceneManager.SetActiveScene(previous);
-                EditorSceneManager.CloseScene(demo, removeScene: true);
+                if (!reuseLoadedDemo)
+                    EditorSceneManager.CloseScene(demo, removeScene: true);
             }
 
             report.Failures = failures.ToArray();
@@ -136,6 +144,7 @@ namespace LivingCity.EditorTools
             if (display.LeafCount != profile.Leaves)
                 failures.Add(profile.Module + $": expected {profile.Leaves} leaves, got " +
                              display.LeafCount);
+            ValidatePreviewPanes(module, display, profile.Module, failures);
 
             Storefront entrance = display;
             string subtitle = profile.Leaves == 1 ? "single door" : "double door";
@@ -180,6 +189,68 @@ namespace LivingCity.EditorTools
             Label(station.transform, ShortName(profile.Module) + "\n" + subtitle,
                   new Vector3(x - 2.5f, 4.25f, 0.15f), 0.10f,
                   new Color(0.08f, 0.08f, 0.09f), TextAnchor.LowerCenter);
+        }
+
+        static void ValidatePreviewPanes(GameObject module, Storefront storefront,
+                                         string moduleName, List<string> failures)
+        {
+            var sourceGlass = new List<MeshFilter>();
+            foreach (var filter in module.GetComponentsInChildren<MeshFilter>(true))
+                if (filter != null && filter.sharedMesh != null &&
+                    filter.name.EndsWith("_Glass", StringComparison.OrdinalIgnoreCase))
+                    sourceGlass.Add(filter);
+
+            if (sourceGlass.Count == 0)
+            {
+                if (storefront.PaneCount != 0)
+                    failures.Add(moduleName + ": solid facade grew replacement glass");
+                return;
+            }
+            if (storefront.PaneCount == 0)
+            {
+                failures.Add(moduleName + ": authored glass produced no replacement panes");
+                return;
+            }
+
+            Bounds authored = default;
+            bool haveBounds = false;
+            for (int i = 0; i < sourceGlass.Count; i++)
+            {
+                var filter = sourceGlass[i];
+                var vertices = filter.sharedMesh.vertices;
+                for (int n = 0; n < vertices.Length; n++)
+                {
+                    Vector3 local = module.transform.InverseTransformPoint(
+                        filter.transform.TransformPoint(vertices[n]));
+                    if (!haveBounds)
+                    {
+                        authored = new Bounds(local, Vector3.zero);
+                        haveBounds = true;
+                    }
+                    else authored.Encapsulate(local);
+                }
+            }
+            // Generated panes deliberately reach close to the floor even when the
+            // imported glass starts above a sill. Keep that vertical allowance while
+            // making the lateral/depth check tight enough to catch stray bevel planes.
+            authored.Expand(new Vector3(0.2f, 0.9f, 0.2f));
+
+            var panes = module.transform.Find("Panes");
+            if (panes == null) return;
+            foreach (var filter in panes.GetComponentsInChildren<MeshFilter>(true))
+            {
+                if (filter == null || filter.sharedMesh == null) continue;
+                var vertices = filter.sharedMesh.vertices;
+                for (int n = 0; n < vertices.Length; n++)
+                {
+                    Vector3 local = module.transform.InverseTransformPoint(
+                        filter.transform.TransformPoint(vertices[n]));
+                    if (authored.Contains(local)) continue;
+                    failures.Add(moduleName +
+                                 ": replacement glass extends outside authored frontage");
+                    return;
+                }
+            }
         }
 
         static GameObject Instantiate(string module, Scene scene, Transform parent,

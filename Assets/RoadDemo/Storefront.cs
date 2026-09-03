@@ -151,6 +151,7 @@ namespace RoadDemo
             var filters = GetComponentsInChildren<MeshFilter>(true);
             var walls = new List<MeshFilter>(1);
             var glass = new List<MeshRenderer>(1);
+            var measured = new List<ResidentialStorefrontOpening>(3);
             Material wallMaterial = null;
             Material glassMaterial = null;
             Bounds bounds = default;
@@ -168,6 +169,9 @@ namespace RoadDemo
                     {
                         glass.Add(renderer);
                         if (renderer.sharedMaterial != null) glassMaterial = renderer.sharedMaterial;
+                        ResidentialBlocks.MeasureStorefrontOpenings(
+                            transform, filter.transform, filter.sharedMesh,
+                            glass.Count - 1, measured);
                     }
                     continue;
                 }
@@ -184,16 +188,11 @@ namespace RoadDemo
             if (walls.Count == 0) return;
             glassMaterial ??= DemoAssetLoad.Load<Material>(GlassMaterialPath);
             wallMaterial ??= DemoAssetLoad.Load<Material>(WallMaterialPath);
-            float frontage = source == "SM_Bld_Shop_03" ? 9.8f : 4.8f;
-            var opening = new ResidentialStorefrontOpening(
-                profile.Centre, profile.Outward, profile.Right, frontage,
-                Mathf.Max(2.7f, profile.Height), 0, profile.Yaw != 0f,
-                source.IndexOf("Corner", StringComparison.OrdinalIgnoreCase) >= 0);
             var footprint = haveBounds
                 ? Rect.MinMaxRect(bounds.min.x, bounds.min.z, bounds.max.x, bounds.max.z)
-                : new Rect(-frontage * 0.5f, -2.5f, frontage, 5f);
+                : new Rect(-2.5f, -2.5f, 5f, 5f);
             Configure(source, profile.Centre, profile.Yaw, footprint,
-                new[] { opening }, walls.ToArray(), glass.ToArray(),
+                measured.ToArray(), walls.ToArray(), glass.ToArray(),
                 glassMaterial, shutterMaterial, wallMaterial);
         }
 

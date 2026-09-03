@@ -33,7 +33,7 @@ namespace RoadDemo
         const float GroundCapOverhang = 0.04f;
         const float FallbackMinimumPlanSpan = 2f;
         public const float DeclaredHeight = 3.5f;
-        public const float DefaultGradientAmount = 1.37f;
+        public const float DefaultGradientAmount = 1.42f;
 
         static readonly Dictionary<Collider, BuildingCutaway> ByCollider =
             new Dictionary<Collider, BuildingCutaway>();
@@ -73,10 +73,20 @@ namespace RoadDemo
         public static BuildingCutaway Prepare(GameObject root, float minimumHeight = DeclaredHeight,
                                                float proxyHeight = 0.95f)
         {
+            return Prepare(root, null, minimumHeight, proxyHeight);
+        }
+
+        /// <summary>Residential composition also supplies the harvested occupied-cell plan.
+        /// That plan is the authority for concave/L-shaped ground floors; renderer bounds
+        /// remain the fallback for buildings which have no authored plan.</summary>
+        internal static BuildingCutaway Prepare(GameObject root, ResidentialUnit footprint,
+                                                float minimumHeight = DeclaredHeight,
+                                                float proxyHeight = 0.95f)
+        {
             if (root == null) return null;
             var cutaway = root.GetComponent<BuildingCutaway>();
             if (cutaway == null) cutaway = root.AddComponent<BuildingCutaway>();
-            return cutaway.Configure(minimumHeight, proxyHeight) ? cutaway : null;
+            return cutaway.Configure(minimumHeight, proxyHeight, footprint) ? cutaway : null;
         }
 
         /// <summary>The group already registered for this collider, or a conservative
@@ -162,7 +172,7 @@ namespace RoadDemo
             return false;
         }
 
-        bool Configure(float minimumHeight, float proxyHeight)
+        bool Configure(float minimumHeight, float proxyHeight, ResidentialUnit footprint)
         {
             if (_cut) Restore();
             Unregister();
@@ -211,6 +221,8 @@ namespace RoadDemo
                     _opacity = GetComponent<BuildingOpacityGradient>();
                     if (_opacity == null) _opacity = gameObject.AddComponent<BuildingOpacityGradient>();
                 }
+                if (footprint != null)
+                    _opacity.ConfigureFootprint(footprint);
                 _opacity.PrepareForRecycledBinding(_renderers);
                 RegisterRenderers();
                 if (isActiveAndEnabled) Register();

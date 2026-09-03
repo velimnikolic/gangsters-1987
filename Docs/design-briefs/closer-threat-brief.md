@@ -1,7 +1,7 @@
 # The closer threat: retargeting, reaction and bullet scatter
 
 Design brief, written 2026-09-03 from the conversation that settled it and from the code as
-built the same day. Linear: EPIC 33 / GAN-309 (label Combat, tickets `AIM-`). It follows
+built the same day. Linear: EPIC 33 / GAN-309 Done (label Combat, tickets `AIM-001..005` Done). It follows
 [the cover brief](cover-and-ambush-brief.md) as part 2 of the combat track.
 
 The ask, in the user's words: a shooter aiming at enemy A must turn onto enemy B when B has

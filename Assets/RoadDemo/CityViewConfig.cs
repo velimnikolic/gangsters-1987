@@ -32,8 +32,8 @@ namespace RoadDemo
         [Min(10f)] public float cutawayExitDistance = 68f;
         [Tooltip("Absolute height in metres of the closed footprint left by a cut building.")]
         [Range(0.35f, 1.5f)] public float cutawayProxyHeight = 0.95f;
-        [Tooltip("Opacity-gradient effect applied to an occluding building. 1.37 is the city-approved 137% cutaway.")]
-        [Range(0f, 2f)] public float cutawayGradientAmount = 1.37f;
+        [Tooltip("Opacity-gradient effect applied to an occluding building. 1.42 is the city-approved 142% cutaway.")]
+        [Range(0f, 2f)] public float cutawayGradientAmount = 1.42f;
         [Tooltip("Seconds a building stays cut after the last sample met it, preventing edge flicker.")]
         [Range(0.2f, 1f)] public float cutawayRestoreDelay = 0.55f;
         [Tooltip("Visible crew samples checked immediately each frame before the slower street grid.")]

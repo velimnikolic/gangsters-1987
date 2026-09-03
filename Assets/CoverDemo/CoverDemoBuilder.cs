@@ -37,7 +37,7 @@ namespace CoverDemo
         public float streetLength = 240f;
         [Tooltip("The bare ground either side of it.")]
         public Color floorColour = new Color(0.20f, 0.20f, 0.21f);
-        [Tooltip("Lay the road demo's own dressing as well - palms, lamps, the kerb furniture. " +
+        [Tooltip("Lay the road demo's own dressing as well - lamps and the kerb furniture. " +
                  "Off: bare pavement with nothing on it but what this scene scatters.")]
         public bool kitDressing = true;
 
@@ -291,13 +291,14 @@ namespace CoverDemo
 #if UNITY_EDITOR
             var root = new GameObject("Streetscape").transform;
             _kit = new StreetKit(root, y: -0.1f);
+            _kit.Palms = false;
             if (!_kit.Load()) return;
             _kit.LayAlongX(0f, StreetXMin, StreetXMax, true, true, kitDressing);
 #endif
         }
 
-        /// <summary>The named soak layout includes StreetKit's own palms, cages,
-        /// lamps and manholes as well as this scene's extra furniture. Give that
+        /// <summary>The named soak layout includes StreetKit's own lamps, kerb props
+        /// and manholes as well as this scene's extra furniture. Give that
         /// dressing an isolated derived random stream: a replay gets the same whole
         /// street without seeding roster creation, gunplay or the live city.</summary>
         void BuildSeededStreet()

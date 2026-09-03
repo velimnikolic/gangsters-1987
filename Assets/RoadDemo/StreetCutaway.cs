@@ -62,8 +62,8 @@ namespace RoadDemo
         public float proxyHeight = 0.95f;
 
         /// <summary>Shared gradient strength for an occluding building. The approved city
-        /// value is 1.37 (137%): the rear is clear and the low front remains.</summary>
-        [Range(0f, 2f)] public float gradientAmount = 1.37f;
+        /// value is 1.42 (142%): the rear is clear and the low front remains.</summary>
+        [Range(0f, 2f)] public float gradientAmount = 1.42f;
 
         /// <summary>How long an occluder remains cut after the last sample met it. Longer
         /// than the grid refresh so rotating or resting on a facade edge cannot blink it.</summary>

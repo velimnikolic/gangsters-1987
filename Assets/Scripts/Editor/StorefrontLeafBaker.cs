@@ -19,7 +19,10 @@ namespace LivingCity.EditorTools
     {
         public const string OutputDir = "Assets/CityKit/Storefront";
         const string SourceDir = "Assets/Synty/PolygonCity/Prefabs/Buildings/";
-        const float CutDepth = 1.5f;
+        // Shop 04's recessed authored leaf sits 0.71 m behind its measured threshold.
+        // Anything deeper than this band is room/floor geometry, never part of a door.
+        const float CutDepth = 0.75f;
+        const float GroundTop = 0.08f;
         const float Epsilon = 0.0001f;
 
         public sealed class BakeReport
@@ -195,7 +198,19 @@ namespace LivingCity.EditorTools
                     if (mesh == null || mesh.vertexCount == 0 || mesh.subMeshCount != 2)
                         failures.Add(profile.Module + ": missing/invalid " + path);
                     else
+                    {
                         assets++;
+                        if (ContainsGroundSurface(mesh))
+                            failures.Add(profile.Module + ": " + suffix +
+                                         " contains pavement/floor geometry");
+                        Vector3 hinge = profile.Centre + profile.Right *
+                            (profile.Leaves == 1 || leaf > 0
+                                ? -profile.Width * 0.5f
+                                : profile.Width * 0.5f);
+                        if (ExtendsOutsideDoorBand(mesh, profile, hinge))
+                            failures.Add(profile.Module + ": " + suffix +
+                                         " contains deep interior geometry");
+                    }
                 }
             }
             return new AuditReport
@@ -294,6 +309,15 @@ namespace LivingCity.EditorTools
         {
             ForEachTriangle(mesh, triangle =>
             {
+                // The source wall mesh also carries the module floor. A doorway prism
+                // alone cuts a neat floor strip and makes that strip swing with the door.
+                // Door pieces sit wholly inside the shallow facade band; broad surfaces
+                // which cross its depth edge, and horizontal ground at y=0, stay static.
+                if (!LeafCandidate(triangle, profile))
+                {
+                    doorless.Add(triangle, 0, Vector3.zero);
+                    return;
+                }
                 var remaining = new List<Vertex>(triangle);
                 for (int plane = 0; plane < planes.Length && remaining.Count >= 3; plane++)
                 {
@@ -304,6 +328,67 @@ namespace LivingCity.EditorTools
                 AddLeafPolygon(remaining, profile, left, right, leafSubMesh,
                     leftHinge, rightHinge);
             });
+        }
+
+        static bool LeafCandidate(IReadOnlyList<Vertex> triangle,
+                                  StorefrontDoorProfile profile)
+        {
+            if (triangle == null || triangle.Count < 3) return false;
+            float minDepth = float.MaxValue;
+            float maxDepth = float.MinValue;
+            float highest = float.MinValue;
+            for (int i = 0; i < triangle.Count; i++)
+            {
+                float depth = Vector3.Dot(
+                    triangle[i].Position - profile.Centre, profile.Outward);
+                minDepth = Mathf.Min(minDepth, depth);
+                maxDepth = Mathf.Max(maxDepth, depth);
+                highest = Mathf.Max(highest, triangle[i].Position.y);
+            }
+            if (minDepth < -CutDepth - Epsilon || maxDepth > CutDepth + Epsilon)
+                return false;
+
+            Vector3 edgeA = triangle[1].Position - triangle[0].Position;
+            Vector3 edgeB = triangle[2].Position - triangle[0].Position;
+            Vector3 face = Vector3.Cross(edgeA, edgeB);
+            bool horizontal = face.sqrMagnitude > Epsilon * Epsilon &&
+                              Mathf.Abs(face.normalized.y) >= 0.75f;
+            return !horizontal || highest > GroundTop;
+        }
+
+        static bool ContainsGroundSurface(Mesh mesh)
+        {
+            if (mesh == null || mesh.subMeshCount == 0) return false;
+            var vertices = mesh.vertices;
+            var indices = mesh.GetTriangles(0);
+            for (int i = 0; i + 2 < indices.Length; i += 3)
+            {
+                Vector3 a = vertices[indices[i]];
+                Vector3 b = vertices[indices[i + 1]];
+                Vector3 c = vertices[indices[i + 2]];
+                if (Mathf.Max(a.y, b.y, c.y) > GroundTop) continue;
+                Vector3 face = Vector3.Cross(b - a, c - a);
+                if (face.sqrMagnitude > Epsilon * Epsilon &&
+                    Mathf.Abs(face.normalized.y) >= 0.75f)
+                    return true;
+            }
+            return false;
+        }
+
+        static bool ExtendsOutsideDoorBand(Mesh mesh,
+                                           StorefrontDoorProfile profile,
+                                           Vector3 hinge)
+        {
+            if (mesh == null) return false;
+            var vertices = mesh.vertices;
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                Vector3 source = vertices[i] + hinge;
+                float depth = Vector3.Dot(
+                    source - profile.Centre, profile.Outward);
+                if (Mathf.Abs(depth) > CutDepth + 0.002f) return true;
+            }
+            return false;
         }
 
         static void PartitionGlass(Mesh mesh, CutPlane[] planes,

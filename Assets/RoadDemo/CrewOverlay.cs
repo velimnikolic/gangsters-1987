@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using LivingCity.CameraRig;
 using LivingCity.UI;
 using TMPro;
@@ -1488,16 +1488,19 @@ namespace RoadDemo
 
         /// <summary>
         /// Mirrors the opacity profile only as far as pointer ownership needs it. The
-        /// ray already struck the camera-facing surface, so rear-shell suppression cannot
-        /// turn this hit into the visible face; vertical/uniform alpha and the roof cut can.
+        /// camera-facing ground floor is always rendered at authored opacity; every upper
+        /// or rear hit still needs the vertical/uniform alpha and roof-cut calculation.
         /// </summary>
-        static bool CutawaySurfaceVisible(RaycastHit hit)
+        bool CutawaySurfaceVisible(RaycastHit hit)
         {
             var gradient = hit.collider != null
                 ? hit.collider.GetComponentInParent<BuildingOpacityGradient>()
                 : null;
             if (gradient == null || !gradient.GradientMaterialsActive)
                 return false;
+            if (_cam != null && gradient.IsPreservedGroundFloor(
+                    hit.point, _cam.transform.position))
+                return true;
 
             var amount = gradient.Amount;
             float alpha;

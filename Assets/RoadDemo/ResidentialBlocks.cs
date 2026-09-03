@@ -958,7 +958,8 @@ namespace RoadDemo
             // Houses and storefronts are one logical shell and must cut as one, otherwise
             // roofs and upper floors remain floating over the revealed street. Storefronts
             // defer this one scan until their generated interior renderers also exist.
-            if (!ResidentialUnits.IsLot(unit) && !deferCutaway) BuildingCutaway.Prepare(go);
+            if (!ResidentialUnits.IsLot(unit) && !deferCutaway)
+                BuildingCutaway.Prepare(go, unit);
             return go;
         }
 

@@ -44,6 +44,12 @@ namespace OcclusionDemo
             BuildCamera(runtime);
 
             _gradient = building.AddComponent<BuildingOpacityGradient>();
+            for (int i = 0; i < ResidentialUnits.All.Length; i++)
+                if (ResidentialUnits.All[i].Name == "residential-01")
+                {
+                    _gradient.ConfigureFootprint(ResidentialUnits.All[i]);
+                    break;
+                }
             _gradient.Prepare();
             _gradient.Set(_amount, _profile, GradientStartHeight);
             _colliderCount = building.GetComponentsInChildren<Collider>(true).Length;
@@ -240,7 +246,7 @@ namespace OcclusionDemo
                 : $"UNIFORM CONTROL: alpha {1f - _amount * 0.5f:0.00} over the whole shell";
             GUI.Label(new Rect(30f, 62f, width - 28f, 24f), profile, _stateStyle);
             GUI.Label(new Rect(30f, 86f, width - 28f, 22f),
-                $"Gradient starts at {GradientStartHeight:0}m   |   200%: shell clear",
+                $"Near ground floor stays opaque   |   upper floors still cut",
                 _bodyStyle);
             GUI.Label(new Rect(30f, 108f, width - 28f, 22f),
                 $"Effect {_amount * 100f:0}%   |   collider ON ({_colliderCount})   |   full shadow ON",
