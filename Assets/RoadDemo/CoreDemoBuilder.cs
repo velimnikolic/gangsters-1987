@@ -32,6 +32,14 @@ namespace RoadDemo
         [Min(0)] public int pedestrianCount = 100;
         public bool police = true;
         [Min(0)] public int policeBeatPairs = 3;
+        [Tooltip("Patrol cars docked at the station house's forecourt. The core stands a " +
+                 "real station (the police-station-block the deal packs), so the fleet has " +
+                 "a yard to undock from - but the scene as it shipped had none, and 0 " +
+                 "leaves it exactly as it was.")]
+        [Min(0)] public int policeCars;
+        [Tooltip("Officers resting inside the station house, who come out when the wire " +
+                 "calls them. 0 leaves the scene as it was.")]
+        [Min(0)] public int policeOfficers;
         // EVERY FAMILY IS ON THE STREET (RIVAL-008, the user's word of 2026-09-03).
         // Six of them stood and fourteen ran on paper while the physical count was
         // waiting to be measured; all twenty stand now, and how many CORNERS they hold
@@ -67,6 +75,80 @@ namespace RoadDemo
         [Tooltip("Quarters built. 0 is the whole city; 2 is the test rig - the city is " +
                  "dealt whole and everything outside those quarters is taken back off it.")]
         [Min(0)] public int quarterBudget;
+
+        // THE LAB'S PLAYER, ON THE CORE (EPIC 31 NIGHT-000). BlockDemo has had the mission
+        // knobs since the first soak; the core - the scene the game is actually played on -
+        // had none, so every judged run of the street happened on a rig nobody plays. The
+        // knobs below are BlockDemoBuilder's own, name for name, and they attach the same
+        // two components the same way. Every one of them defaults to off: a MiniCoreDemo
+        // opened without them is the scene as it always was.
+        [Header("The lab run")]
+        [Tooltip("Sim seconds after the city is up before the outfit gets in its car and " +
+                 "is sent at the rivals, one after another, and parks when they are down. " +
+                 "0: nobody is sent anywhere - a normal Play session.")]
+        public float missionAfter = 0f;
+        [Tooltip("Seconds of drive-by passes at one crew before the men get out and " +
+                 "finish it on foot.")]
+        public float missionPasses = 45f;
+        [Tooltip("The mission on foot: no car at all. The crew walks to the mob furthest " +
+                 "from it - over the lots, across the roads, never mind the lights - and " +
+                 "has it out with them there.")]
+        public bool missionOnFoot;
+        [Tooltip("The walkabout mission: no fight, no car - the crew walks corner to " +
+                 "corner down the pavements and through the lights, and the crew audit " +
+                 "judges the walk itself.")]
+        public bool missionWalk;
+        [Tooltip("Walkabout: corners to walk (0 leaves the mission's default 3).")]
+        [Min(0)] public int missionWalkLegs = 0;
+        [Tooltip("Walkabout: the HARD ceiling on one leg in seconds (0 leaves the default " +
+                 "600). The core is a whole city and its legs are longer than the block " +
+                 "lab's - raise this to judge the big scene fairly.")]
+        [Min(0)] public float missionLegPatience = 0f;
+        [Tooltip("The nerve lever: chance a man shot to his last hit breaks and runs. " +
+                 "Below 0 leaves the game's own figure (0.4).")]
+        public float panicChance = -1f;
+        [Tooltip("The bomb mission: grenades at a rival crew, then a charge under a car.")]
+        public bool missionBomb;
+        [Tooltip("Bomb mission: grenades thrown at the rival before the plant test.")]
+        [Min(1)] public int missionBombThrows = 3;
+        [Tooltip("Bomb mission: swing the camera onto the action so a --shot frames it.")]
+        public bool missionBombShot;
+        [Tooltip("THE CAR BOMB: a charge under a rival's car, the crew walks clear, and " +
+                 "the rival is sent for it. Overrides every other mission.")]
+        public bool missionCarBomb;
+        [Tooltip("Car bomb: metres the crew walks away from the charge before the rival " +
+                 "is sent for his car.")]
+        [Min(10f)] public float missionCarBombClearBy = 45f;
+        [Tooltip("Car bomb: seconds any one leg may take before the run fails.")]
+        [Min(10f)] public float missionCarBombPatience = 90f;
+        [Tooltip("Car bomb: seconds to let the rest of the rival's crew climb in.")]
+        [Min(0f)] public float missionCarBombSettle = 8f;
+        [Tooltip("The mission on two wheels: one pass at a rival and home again, over and " +
+                 "over. Needs outfitMotorcycle set.")]
+        public bool missionMoto;
+        [Tooltip("The car mission with a roadblock: the hunted mob is marched into the " +
+                 "carriageway in front of the outfit's car every few seconds.")]
+        public bool missionRoadblock;
+        [Tooltip("Two wheels: how many passes to ride before the run is done.")]
+        [Min(1)] public int missionPassesRidden = 3;
+        [Tooltip("Two wheels: force one of the four endings on every pass - 2 the man on " +
+                 "the back is shot, 3 the rider is shot, 4 the tank catches. 0 rides them " +
+                 "as they fall.")]
+        [Range(0, 4)] public int missionMotoAct;
+        [Tooltip("A motorcycle bought off the armory counter and signed for by the " +
+                 "outfit's first lieutenant, by listing name: Motorbike, Moped, Scooter.")]
+        public string outfitMotorcycle = "";
+
+        [Header("The outfit")]
+        [Tooltip("Crews of the outfit sent out, one lieutenant each - the ledger is " +
+                 "rewritten to match before anybody stands up. 0 leaves the seeded " +
+                 "roster alone.")]
+        [Min(0)] public int outfitLieutenants = 0;
+        [Tooltip("Hoods behind each of those lieutenants. 0 sends them out alone.")]
+        [Min(0)] public int outfitHoods = 0;
+        [Tooltip("Every man on the street carrying his own piece instead of a crew " +
+                 "holding five copies of one gun.")]
+        public bool mixedArms = false;
 
         void Awake()
         {
@@ -109,8 +191,13 @@ namespace RoadDemo
             runtime.bikeCount = Mathf.Max(0, bikeCount);
             runtime.pedestrianCount = Mathf.Max(0, pedestrianCount);
             runtime.insideAtStart = 0f; // Core does not publish building doors yet
-            runtime.policeCarCount = 0; // no police forecourt in the structural core yet
-            runtime.policeOfficerCount = 0;
+            // THE FLEET HAS A YARD AFTER ALL. The core's deal packs the station block
+            // (police-station-block, which carries a building-policestation), and
+            // RoadDemoBuilder.FindStationHouses sweeps the districts root for exactly
+            // that name - so a car asked for here docks at a real forecourt. It stayed
+            // at nought because nobody had asked; the scenarios ask now.
+            runtime.policeCarCount = police ? Mathf.Max(0, policeCars) : 0;
+            runtime.policeOfficerCount = police ? Mathf.Max(0, policeOfficers) : 0;
             runtime.policeBeatPairs = police ? Mathf.Max(0, policeBeatPairs) : 0;
             runtime.rivalCrewsInCity = Mathf.Max(0, rivalCrews);
             runtime.rivalHoodsInCity = Mathf.Max(0, rivalHoods);
@@ -131,6 +218,43 @@ namespace RoadDemo
             runtime.treesPerHectare = 14f;
 
             runtimeObject.SetActive(true);
+
+            // the books first: the men who will be stood up are the men the ledger says
+            // the outfit has, so the run's outfit is written before it deals
+            if (outfitLieutenants > 0 || !string.IsNullOrEmpty(outfitMotorcycle))
+            {
+                var books = gameObject.AddComponent<BlockDemo.BlockDemoOutfit>();
+                books.lieutenants = outfitLieutenants;
+                books.hoodsEach = outfitHoods;
+                books.mixedArms = mixedArms;
+                books.armsSeed = seed;
+                books.motorcycle = outfitMotorcycle;
+            }
+
+            // BlockDemoMission never referenced BlockDemoBuilder - it finds DemoCrews
+            // itself - so the lab's player rides the core with no fork of its own.
+            if (missionAfter > 0f)
+            {
+                var mission = gameObject.AddComponent<BlockDemo.BlockDemoMission>();
+                mission.startAfter = missionAfter;
+                mission.passesBefore = missionPasses;
+                mission.onFoot = missionOnFoot;
+                mission.walkabout = missionWalk;
+                mission.panic = panicChance;
+                mission.motoDriveBy = missionMoto;
+                mission.roadblock = missionRoadblock;
+                mission.passes = missionPassesRidden;
+                mission.forceAct = missionMotoAct;
+                mission.bombRun = missionBomb;
+                mission.bombThrows = missionBombThrows;
+                mission.bombShotCam = missionBombShot;
+                mission.carBombRun = missionCarBomb;
+                mission.carBombClearBy = missionCarBombClearBy;
+                mission.carBombPatience = missionCarBombPatience;
+                mission.carBombSettle = missionCarBombSettle;
+                if (missionWalkLegs > 0) mission.walkLegs = missionWalkLegs;
+                if (missionLegPatience > 0f) mission.legPatience = missionLegPatience;
+            }
 
             var rig = FindFirstObjectByType<DemoCamera>();
             if (rig != null)
