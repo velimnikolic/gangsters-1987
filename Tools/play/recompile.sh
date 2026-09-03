@@ -51,6 +51,26 @@ case "$MARK" in ''|*[!0-9]*) MARK=0 ;; esac
 
 wait_ready || { echo "FAILED: the editor never came back to ready"; exit 1; }
 
+# UNITY DOES NOT COMPILE WHILE IT IS PLAYING. The request is taken and deferred, and
+# `recompile_status` then answers about the LAST compile - which is `completed` or
+# `up_to_date` from before the edit. That is not a hypothetical: a killed soak left the
+# editor in Play, three recompiles in a row said COMPILED, and the fix under test was
+# still not in the assemblies (the exception it fixed came back with its OLD line
+# numbers). So Play is stopped first, and if it will not stop this fails.
+PLAY=$(unity command editor_status --json 2>/dev/null | python "$HERE/suiteread.py" --playmode)
+if [ "$PLAY" != "stopped" ]; then
+    unity command editor_stop >/dev/null 2>&1
+    for _ in $(seq 1 20); do
+        sleep 2
+        PLAY=$(unity command editor_status --json 2>/dev/null | python "$HERE/suiteread.py" --playmode)
+        [ "$PLAY" = "stopped" ] && break
+    done
+fi
+if [ "$PLAY" != "stopped" ]; then
+    echo "FAILED: the editor is in play mode ($PLAY) and will not compile there"
+    exit 1
+fi
+
 TRIGGER=$(unity command recompile --json 2>&1)
 if ! printf '%s' "$TRIGGER" | grep -q '"success": true'; then
     echo "FAILED: the editor would not take a recompile"

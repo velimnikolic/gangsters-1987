@@ -1053,6 +1053,20 @@ namespace RoadDemo
 
         void ReturnHolder(View view)
         {
+            if (view?.Holder == null) return;
+            // NOTHING GOES BACK IN A POOL THAT IS BEING TAKEN AWAY. OnDestroy calls this
+            // through CancelBinding, and re-parenting a holder onto a transform Unity is
+            // already destroying is an ERROR - "Cannot set the parent of the GameObject
+            // 'Block ViewHolder (pooled)' while its new parent is being destroyed" - and
+            // the harness counts errors. It fired on the SECOND play of the core in one
+            // editor session, when the old scene's recycler is torn down as the new one
+            // loads, and it took a five-seed soak's third run down with it.
+            if (_teardown)
+            {
+                view.Holder.SetActive(false);
+                _pool.Push(view);
+                return;
+            }
             view.Holder.SetActive(false);
             view.Holder.name = "Block ViewHolder (pooled)";
             view.Holder.transform.SetParent(transform, false);
@@ -1061,8 +1075,14 @@ namespace RoadDemo
             _pool.Push(view);
         }
 
+        /// <summary>This recycler is going away: the pool is about to be destroyed with
+        /// it, so nothing is re-parented back onto it. See <see cref="ReturnHolder"/>.
+        /// </summary>
+        bool _teardown;
+
         void OnDestroy()
         {
+            _teardown = true;
             Instances.Remove(this);
             if (_model != null) _model.Changed -= OnModelChanged;
             CancelBinding();
