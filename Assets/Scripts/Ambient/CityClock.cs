@@ -153,14 +153,25 @@ namespace LivingCity.Ambient
         /// <summary>Jumps the clock. Used by the editor scrubber and by anything that skips ahead.</summary>
         public void SetHour(float hour) => Hour = Mathf.Repeat(hour, HoursPerDay);
 
+        /// <summary>The inverse of OutfitDirector's clock.Day + 1 calendar bridge.
+        /// Saves speak in one-based campaign days; this clock stores whole elapsed days.</summary>
+        public static int ElapsedDayOfCampaignDay(int campaignDay) =>
+            campaignDay > 1 ? campaignDay - 1 : 0;
+
+        /// <summary>The absolute hour used by deadline ledgers when reading a saved
+        /// one-based campaign date.</summary>
+        public static double GameHourOfCampaignTime(int campaignDay, float hour) =>
+            ElapsedDayOfCampaignDay(campaignDay) * (double)HoursPerDay +
+            Mathf.Repeat(hour, HoursPerDay);
+
         /// <summary>
         /// THE LOAD BOUNDARY (RIVAL-010). The only way the day itself is ever set: a
-        /// campaign that was on day 30 at half past nine comes back on day 30 at half
-        /// past nine, and nothing else in the game may wind the calendar.
+        /// campaign displayed as day 30 at half past nine restores the clock to 29 whole
+        /// elapsed days and 09:30, and nothing else in the game may wind the calendar.
         /// </summary>
-        public void Restore(int day, float hour)
+        public void Restore(int campaignDay, float hour)
         {
-            Day = day < 1 ? 1 : day;
+            Day = ElapsedDayOfCampaignDay(campaignDay);
             Hour = Mathf.Repeat(hour, HoursPerDay);
         }
 

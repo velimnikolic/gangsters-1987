@@ -41,7 +41,13 @@ namespace LivingCity.Save
         /// </summary>
         public static string Write(string path)
         {
-            var file = Compose();
+            return Write(Compose(), path);
+        }
+
+        /// <summary>The actual file writer, split from Compose so the save suite can put
+        /// a deliberately exact campaign file through the same JSON/IO boundary.</summary>
+        internal static string Write(CampaignFile file, string path)
+        {
             if (file == null)
                 return "there is no campaign to save";
 
@@ -163,10 +169,40 @@ namespace LivingCity.Save
             if (file == null)
                 return;
 
+            var police = Object.FindFirstObjectByType<RoadDemo.PoliceForce>();
+            Apply(
+                file,
+                Object.FindFirstObjectByType<Ambient.CityClock>(),
+                RoadDemo.TerritoryRuntime.Instance,
+                BusinessRuntime.Instance,
+                police != null ? police.Pipeline : null);
+        }
+
+        /// <summary>The production load wiring with its scene dependencies resolved.
+        /// Keeping the wiring in one callable seam lets the save suite exercise the same
+        /// clock-before-deadline ordering without requiring or disturbing a loaded city.</summary>
+        internal static void Apply(
+            CampaignFile file,
+            Ambient.CityClock clock,
+            RoadDemo.TerritoryRuntime runtime,
+            BusinessRuntime business,
+            Police.PrisonPipeline prison)
+        {
+            if (file == null)
+                return;
+
+            // Put the central clock back first. Shutdown deadlines and every other
+            // absolute-hour ledger must read the saved moment, not the new scene's
+            // configured start hour. Campaign days are one-based; CityClock owns the
+            // inverse conversion to its zero-based elapsed-day counter.
+            if (clock != null)
+                clock.Restore(file.day, file.hourOfDay);
+            var savedGameHour = Ambient.CityClock.GameHourOfCampaignTime(
+                file.day, file.hourOfDay);
+
             var underworld = Underworld.Ensure(file.citySeed);
             OutfitSnapshot.Restore(underworld, file.underworld);
 
-            var runtime = RoadDemo.TerritoryRuntime.Instance;
             if (runtime != null)
                 TerritorySnapshot.Restore(
                     runtime.Racket, runtime.Dues, runtime.Rounds, file.territory);
@@ -176,7 +212,6 @@ namespace LivingCity.Save
                     new TerritoryBusinessId(file.deeds[i].businessId),
                     file.deeds[i].gangId, file.deeds[i].legacyBlockId);
 
-            var business = BusinessRuntime.Instance;
             if (business?.Shutdowns != null && file.shutdowns != null)
             {
                 var snapshots = new List<BusinessShutdownSnapshot>();
@@ -188,7 +223,7 @@ namespace LivingCity.Save
                         StartedAt = file.shutdowns[i].startedAt,
                         RecoveryAt = file.shutdowns[i].recoveryAt,
                     });
-                business.Shutdowns.Restore(snapshots, business.CurrentGameHour);
+                business.Shutdowns.Restore(snapshots, savedGameHour);
             }
 
             for (var i = 0; file.knowledge != null && i < file.knowledge.Length; i++)
@@ -198,14 +233,8 @@ namespace LivingCity.Save
 
             // THE CELLS, after the rosters: the men have to exist before the pipe can
             // hold them.
-            var police = Object.FindFirstObjectByType<RoadDemo.PoliceForce>();
-            if (police?.Pipeline != null)
-                Save.PrisonSnapshot.Restore(police.Pipeline, file);
-
-
-            var clock = Object.FindFirstObjectByType<Ambient.CityClock>();
-            if (clock != null)
-                clock.Restore(file.day, file.hourOfDay);
+            if (prison != null)
+                Save.PrisonSnapshot.Restore(prison, file);
         }
 
         // ------------------------------------------------------------------- pieces

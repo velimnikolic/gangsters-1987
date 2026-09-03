@@ -16,8 +16,10 @@ namespace LivingCity.Tests
             DurationsAndBoundaryAreExact(failures);
             DamageCannotRepeatButSmashCanEscalateToArson(failures);
             ClosedDaysAddNoRacketDebt(failures);
+            ClosedDoorDoesNotBecomeAMissOrStopTheRound(failures);
             OnlyTheOwnerCanRepairAndPaymentIsOnce(failures);
             SnapshotRestoresCauseAndDeadline(failures);
+            SavedCampaignTimePreservesTheDeadline(failures);
             SharedOrdersGateCollectionAndOwnerRepair(failures);
             return failures;
         }
@@ -78,6 +80,59 @@ namespace LivingCity.Tests
                 failures.Add("WAR-001: future dues did not resume at the recovery boundary.");
         }
 
+        static void ClosedDoorDoesNotBecomeAMissOrStopTheRound(List<string> failures)
+        {
+            Make(out _, out var id, out var shutdowns);
+            var next = new TerritoryBusinessId("biz:test:next-stop");
+            var racket = new TerritoryRacketLedger();
+            var dues = new TerritoryDuesLedger();
+            racket.Demand(
+                id, Us,
+                new TerritoryComplianceInputs(100f, 100f, 100f, 0f, 0f, false),
+                0d, out _);
+            dues.AccrueDay(id, Us, 700);
+            var owed = dues.OwedOf(id, Us);
+            var standing = racket.StateOf(id, Us);
+            var dispatches = racket.Dispatches.Count;
+            shutdowns.Shut(id, BusinessShutdownCause.SmashUp, 0d);
+
+            var rounds = new TerritoryRoundLedger(racket, dues);
+            var round = rounds.Open(
+                Us, 1, 11, new TerritoryBlockId("block:test"),
+                TerritoryRoundKind.Collect,
+                new List<TerritoryRoundStop>
+                {
+                    new TerritoryRoundStop(id, new TerritoryPoint(0f, 0f)),
+                    new TerritoryRoundStop(next, new TerritoryPoint(10f, 0f)),
+                },
+                12d);
+            if (round == null)
+            {
+                failures.Add("WAR-001: the closed-door route fixture did not open.");
+                return;
+            }
+
+            rounds.Arrive(round, 12.1d);
+            var settlement = rounds.Settle(
+                round,
+                new TerritoryStopInputs(
+                    shutdowns.ShouldAccrueRacketAt(id, 12.1d), owed,
+                    TerritoryOwnerProfile.Deal(1987, id), 100f, 0f,
+                    (int)LivingCity.Personnel.CrewPolicy.Normal,
+                    (int)LivingCity.Personnel.LieutenantArchetype.Soldier,
+                    1987, 1),
+                12.1d);
+
+            if (settlement.Settled || settlement.Missed || settlement.Paid != 0 ||
+                round.Missed != 0 || dues.OwedOf(id, Us) != owed ||
+                racket.StateOf(id, Us) != standing ||
+                racket.Dispatches.Count != dispatches)
+                failures.Add("WAR-001: a closed collection stop was treated as a missed or refused payment.");
+            if (!rounds.Advance(round, 12.2d) || !round.HasStop ||
+                round.Stop.BusinessId != next)
+                failures.Add("WAR-001: a closed collection stop left the route stuck at its door.");
+        }
+
         static void OnlyTheOwnerCanRepairAndPaymentIsOnce(List<string> failures)
         {
             Make(out var directory, out var id, out var shutdowns);
@@ -122,6 +177,29 @@ namespace LivingCity.Tests
                 !directory.TryGet(id, out var record) ||
                 record.State != BusinessOperationalState.Shut)
                 failures.Add("WAR-001: save/load did not preserve the shutdown cause and deadline.");
+        }
+
+        static void SavedCampaignTimePreservesTheDeadline(List<string> failures)
+        {
+            const int campaignDay = 30;
+            const float hour = 9.5f;
+            var savedAt = LivingCity.Ambient.CityClock.GameHourOfCampaignTime(
+                campaignDay, hour);
+            if (savedAt != 29d * 24d + 9.5d ||
+                LivingCity.Ambient.CityClock.ElapsedDayOfCampaignDay(1) != 0 ||
+                LivingCity.Ambient.CityClock.ElapsedDayOfCampaignDay(campaignDay) != 29)
+                failures.Add("WAR-001: the saved campaign date did not map back to the clock's elapsed day.");
+
+            Make(out _, out var id, out var source);
+            source.Shut(id, BusinessShutdownCause.SmashUp, savedAt);
+            var snapshots = new List<BusinessShutdownSnapshot>();
+            source.CollectSnapshots(snapshots);
+
+            Make(out _, out _, out var restored);
+            restored.Restore(snapshots, savedAt);
+            if (!restored.TryGet(id, savedAt, out var status) ||
+                status.RecoveryAt != savedAt + 72d || status.RemainingHours != 72d)
+                failures.Add("WAR-001: a save/load cycle shortened the shutdown deadline by a day.");
         }
 
         static void SharedOrdersGateCollectionAndOwnerRepair(List<string> failures)

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using LivingCity.Business;
 using LivingCity.Outfit;
 using LivingCity.Personnel;
 using LivingCity.Save;
@@ -28,6 +29,7 @@ namespace LivingCity.Tests
             ACampaignComesBackTheSameCampaign(failures);
             TheCityComesBackTheSameCity(failures);
             ALoadedCampaignPlaysOnTheSameWay(failures);
+            AnActiveShutdownComesBackThroughCampaignApply(failures);
             NobodyIsLeftInTheCells(failures);
             TheDocketComesBackWithIts(failures);
             ASaveFromBeforeTheDocketStillGetsATrial(failures);
@@ -161,6 +163,107 @@ namespace LivingCity.Tests
             if (a != b)
                 failures.Add("SAVE-003: a loaded campaign played on differently. " +
                              FirstDifference(a, b));
+        }
+
+        /// <summary>
+        /// WAR-001 THROUGH THE DOOR THE GAME SHIPS. The file is written and read by
+        /// CampaignSave, then the same Apply wiring production uses restores an actual
+        /// CityClock and BusinessRuntime fixture. This catches the one-based campaign /
+        /// zero-based clock mismatch where a load silently ate one shutdown day.
+        /// </summary>
+        static void AnActiveShutdownComesBackThroughCampaignApply(List<string> failures)
+        {
+            const int campaignDay = 30;
+            const float hour = 9.5f;
+            var path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "gangsters-shutdown-apply.json");
+            var wasCurrent = Underworld.Current;
+            var wasClock = LivingCity.Ambient.DayClock.Current;
+            GameObject fixture = null;
+
+            try
+            {
+                fixture = new GameObject("SAVE WAR-001 fixture")
+                {
+                    hideFlags = HideFlags.HideAndDontSave,
+                };
+                fixture.SetActive(false);
+                var clock = fixture.AddComponent<LivingCity.Ambient.CityClock>();
+                var business = fixture.AddComponent<BusinessRuntime>();
+                business.Init(null, Seed);
+
+                var site = BusinessIdentity.Site("save", "shutdown", "apply");
+                var owner = BusinessIdentity.Owner(site);
+                business.Directory.RegisterOwner(
+                    owner, BusinessOwnerKind.Individual, "Saved Owner",
+                    BusinessOwnerAge.Middle, 17);
+                var record = business.Directory.Register(
+                    site, BusinessArchetypeId.Grocer, "Saved Shop", owner,
+                    BusinessSiteSize.Small, 1_200, "save-test");
+                if (record == null)
+                {
+                    failures.Add("SAVE-008: the shutdown Apply fixture could not register its business.");
+                    return;
+                }
+
+                var savedAt = LivingCity.Ambient.CityClock.GameHourOfCampaignTime(
+                    campaignDay, hour);
+                var file = new CampaignFile
+                {
+                    citySeed = Seed,
+                    day = campaignDay,
+                    hourOfDay = hour,
+                    shutdowns = new[]
+                    {
+                        new ShutdownDto
+                        {
+                            businessId = record.Id.Value,
+                            cause = (int)BusinessShutdownCause.SmashUp,
+                            startedAt = savedAt,
+                            recoveryAt = savedAt + 72d,
+                        },
+                    },
+                };
+
+                var refusal = CampaignSave.Write(file, path);
+                var read = CampaignSave.Read(path, out var readRefusal);
+                if (!string.IsNullOrEmpty(refusal) || read == null ||
+                    !string.IsNullOrEmpty(readRefusal))
+                {
+                    failures.Add("SAVE-008: the shutdown file did not cross Write/Read: " +
+                                 (refusal + " " + readRefusal).Trim());
+                    return;
+                }
+
+                Underworld.ResetForPlay();
+                CampaignSave.Apply(read, clock, null, business, null);
+
+                if (clock.Day != campaignDay - 1 ||
+                    Mathf.Abs(clock.Hour - hour) > 0.001f)
+                    failures.Add("SAVE-008: CampaignSave.Apply restored the central clock to the wrong date.");
+                if (!business.Shutdowns.TryGet(record.Id, savedAt, out var shutdown) ||
+                    shutdown.Cause != BusinessShutdownCause.SmashUp ||
+                    shutdown.RecoveryAt != savedAt + 72d ||
+                    shutdown.RemainingHours != 72d ||
+                    record.State != BusinessOperationalState.Shut)
+                    failures.Add("SAVE-008: CampaignSave.Apply did not preserve the active shutdown deadline.");
+            }
+            finally
+            {
+                Underworld.Restore(wasCurrent);
+                if (fixture != null)
+                    Object.DestroyImmediate(fixture);
+                if (wasClock != null)
+                    LivingCity.Ambient.DayClock.Register(wasClock);
+                try
+                {
+                    System.IO.File.Delete(path);
+                }
+                catch (System.Exception)
+                {
+                    // A temp file that will not delete is not this contract's business.
+                }
+            }
         }
 
         /// <summary>
