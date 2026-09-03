@@ -135,11 +135,6 @@ namespace RoadDemo
             LivingCity.Outfit.Underworld.Current?.Of(house.Value)?.WakeNow(gameHour);
 
         /// <summary>
-        /// Hangs the book off the street. The only wire between them is one question -
-        /// "is anybody sitting on this door?" - and the answer is the guard lieutenant's
-        /// own hand (D10 iii). Called once, with the rest of the runtime's wake-up.
-        /// </summary>
-        /// <summary>
         /// THE FORCED SCENARIOS' TWO DIALS (EPIC 31 NIGHT-013), both left alone by
         /// default so a scene that sets neither is the scene as it was.
         ///
@@ -172,6 +167,11 @@ namespace RoadDemo
             OwnerTraitOverride = null;
         }
 
+        /// <summary>
+        /// Hangs the book off the street. The only wire between them is one question -
+        /// "is anybody sitting on this door?" - and the answer is the guard lieutenant's
+        /// own hand (D10 iii). Called once, with the rest of the runtime's wake-up.
+        /// </summary>
         void InstallMinds()
         {
             if (MindThinkEveryHoursOverride > 0f)

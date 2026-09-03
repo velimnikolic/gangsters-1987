@@ -189,7 +189,11 @@ namespace RoadDemo
             // scenario (the two statics outlive Play).
             TerritoryRuntime.OwnerTraitOverride =
                 System.Enum.TryParse<LivingCity.Territory.TerritoryOwnerTrait>(
-                    ownerTraitOverride, true, out var forcedTrait)
+                    ownerTraitOverride, true, out var forcedTrait) &&
+                // TryParse takes a NUMBER too, and hands back an out-of-range trait for
+                // it - "42" would have passed as a trait no switch in the deal matches.
+                System.Enum.IsDefined(
+                    typeof(LivingCity.Territory.TerritoryOwnerTrait), forcedTrait)
                     ? forcedTrait
                     : (LivingCity.Territory.TerritoryOwnerTrait?)null;
             if (!string.IsNullOrEmpty(ownerTraitOverride) &&

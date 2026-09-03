@@ -171,12 +171,10 @@ namespace RoadDemo
             // The banner is the PLAYER'S news. A shopkeeper who rang about somebody
             // else's family is a thing that happened in the city, not a thing that
             // happened to him - the officer still turns out for it either way.
-            {
-                var where = string.IsNullOrEmpty(call.Where)
-                    ? "A SHOPKEEPER" : call.Where.ToUpperInvariant();
-                CrewOverlay.AnnounceOurs(call.Faction, "COMPLAINT — " + where, 4.5f,
-                    new Color(1f, 0.85f, 0.55f));
-            }
+            CrewOverlay.AnnounceOurs(call.Faction, "COMPLAINT — " +
+                (string.IsNullOrEmpty(call.Where)
+                    ? "A SHOPKEEPER" : call.Where.ToUpperInvariant()),
+                4.5f, new Color(1f, 0.85f, 0.55f));
             LawWire.ComplaintRung(call);
         }
 
