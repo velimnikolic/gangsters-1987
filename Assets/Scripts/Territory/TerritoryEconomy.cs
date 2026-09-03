@@ -51,14 +51,21 @@ namespace LivingCity.Territory
             new TerritoryOwnerProfile(TerritoryOwnerTrait.Careful, 0.5f, 0.5f, 0.5f);
 
         /// <summary>Deal the owner. Pure hashing - no RNG object, no draw order to
-        /// disturb - so a profile can be asked for lazily, in any order, forever.</summary>
-        public static TerritoryOwnerProfile Deal(int citySeed, TerritoryBusinessId businessId)
+        /// disturb - so a profile can be asked for lazily, in any order, forever.
+        ///
+        /// <paramref name="forced"/> puts the SAME word behind every counter in the
+        /// city, and is for the forced scenarios only (EPIC 31 NIGHT-013: "every owner
+        /// rings" is every owner Connected). The three numbers are still dealt from the
+        /// hash and the trait still pulls its own one to its own end, so a forced city
+        /// is a city of that kind of man and not a city of one identical man.</summary>
+        public static TerritoryOwnerProfile Deal(int citySeed, TerritoryBusinessId businessId,
+                                                 TerritoryOwnerTrait? forced = null)
         {
             if (!businessId.IsValid)
                 return Neutral;
 
             var h = Hash(citySeed, businessId.Value);
-            var trait = (TerritoryOwnerTrait)(int)(h % 6UL);
+            var trait = forced ?? (TerritoryOwnerTrait)(int)(h % 6UL);
             var nerve = Unit(h >> 8);
             var greed = Unit(h >> 24);
             var connections = Unit(h >> 40);

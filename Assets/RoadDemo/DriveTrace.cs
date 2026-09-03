@@ -113,6 +113,29 @@ namespace RoadDemo
             Row("house", sb.ToString());
         }
 
+        /// <summary>
+        /// A STREET CHANGED HANDS (EPIC 31 NIGHT-013). The one row that says the city
+        /// moved: which block, who led it before, who leads it now, and what the block
+        /// itself says about that (neutral, contested, held). Written where control is
+        /// derived, so it is the reading and not somebody's opinion of it.
+        ///
+        /// Without it, a run in which the whole map turned over looked exactly like a
+        /// run in which nothing happened - the minds' own rows say what a house MEANT
+        /// to do, and nothing said what came of it.
+        /// </summary>
+        public static void Turf(string block, int fromGang, int toGang, string state,
+            double gameHour)
+        {
+            if (!On) return;
+            var sb = Take();
+            Str(sb, "block", block);
+            Int(sb, "from", fromGang);
+            Int(sb, "to", toGang);
+            Str(sb, "state", state);
+            Num(sb, "hour", (float)gameHour);
+            Row("turf", sb.ToString());
+        }
+
         // -------- the shared builder, so a row is one string and no garbage per field
 
         public static StringBuilder Take() { Sb.Clear(); return Sb; }

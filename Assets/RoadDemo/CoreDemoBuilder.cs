@@ -150,6 +150,24 @@ namespace RoadDemo
                  "holding five copies of one gun.")]
         public bool mixedArms = false;
 
+        // THE FORCED SCENARIOS (EPIC 31 NIGHT-013). The night does not wait for a
+        // scenario to happen by chance; it sets the city up so it MUST happen. These
+        // reach systems the harness cannot -hSet, because RoadDemoBuilder and
+        // TerritoryRuntime are made at runtime and have no component in the scene to
+        // write to. Every one of them is off by default.
+        [Header("Forced scenarios")]
+        [Tooltip("Put the same word behind every counter in the city: Cowardly, Proud, " +
+                 "Greedy, Connected, Stubborn, Careful. 'Connected' is the scenario where " +
+                 "every owner rings the police. Empty deals the city as it deals itself.")]
+        public string ownerTraitOverride = "";
+        [Tooltip("What the player's safe holds when the city stands up. Below 0 leaves " +
+                 "the ledger's own $25,000, which is what the scene has always started on.")]
+        public int playerSafeAtStart = -1;
+        [Tooltip("Game hours between one house's turns of mind. 0 leaves the model's own " +
+                 "figure (4). Twenty houses think one at a time in rota, so a run that " +
+                 "wants every family to have thought needs this short or the clock long.")]
+        [Min(0f)] public float mindThinkEveryHours = 0f;
+
         void Awake()
         {
 #if UNITY_EDITOR
@@ -162,6 +180,24 @@ namespace RoadDemo
             // a sketch left in the scene from the editor menu would stand under the quarter
             foreach (var root in gameObject.scene.GetRootGameObjects())
                 if (root.name == CoreLayout.SketchRoot) Destroy(root);
+
+            // BEFORE THE CITY STANDS. The owner override is read the first time a
+            // counter is asked about, and the mind's cadence the first time a house
+            // thinks - both of which happen after this, so setting them here is the
+            // whole of the wiring. An empty override restores the city's own deal, so a
+            // scene played twice in one editor session does not inherit the last run's
+            // scenario (the two statics outlive Play).
+            TerritoryRuntime.OwnerTraitOverride =
+                System.Enum.TryParse<LivingCity.Territory.TerritoryOwnerTrait>(
+                    ownerTraitOverride, true, out var forcedTrait)
+                    ? forcedTrait
+                    : (LivingCity.Territory.TerritoryOwnerTrait?)null;
+            if (!string.IsNullOrEmpty(ownerTraitOverride) &&
+                TerritoryRuntime.OwnerTraitOverride == null)
+                Debug.LogWarning($"[CoreDemo] '{ownerTraitOverride}' is not one of the six " +
+                                 "owner traits; the city deals its own men.");
+            TerritoryRuntime.MindThinkEveryHoursOverride = Mathf.Max(0f, mindThinkEveryHours);
+            TerritoryRuntime.PlayerSafeAtStartOverride = playerSafeAtStart;
 
             var district = new CoreDistrict
             {

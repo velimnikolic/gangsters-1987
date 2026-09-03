@@ -48,6 +48,11 @@ while [ $# -gt 0 ]; do
         --brawl)   MODE="brawl"; shift ;;
         --cover)   MODE="cover"; shift ;;
         --ambush)  MODE="ambush"; shift ;;
+        --core-s1) MODE="core-s1"; shift ;;
+        --core-s2) MODE="core-s2"; shift ;;
+        --core-s3) MODE="core-s3"; shift ;;
+        --core-s4) MODE="core-s4"; shift ;;
+        --core-s5) MODE="core-s5"; shift ;;
         *) echo "[night] unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -139,11 +144,6 @@ dirty_scene() {
 
 play_and_wait() {   # scene seconds sets dir wallcap
     local scene="$1" secs="$2" sets="$3" dir="$4" cap="$5"
-    if [ "${NIGHT_ALLOW_DIRTY:-0}" != "1" ] && dirty_scene; then
-        echo "[night] a loaded scene has unsaved changes - refusing to open $scene over it." >&2
-        echo "[night] save it, or re-run with NIGHT_ALLOW_DIRTY=1 to discard it." >&2
-        return 3
-    fi
     rm -rf "$dir"; mkdir -p "$dir"
     stop_play
     unity command gangsters_play --scene "$scene" --seconds "$secs" --step 0.05 \
@@ -208,6 +208,45 @@ case "$MODE" in
         SETS="${SETS:-CoreDemoBuilder.rivalCrews=1;CoreDemoBuilder.missionAfter=15;CoreDemoBuilder.carCount=20;CoreDemoBuilder.rivalHoods=3;CoreDemoBuilder.missionPasses=120;CoreDemoBuilder.missionRoadblock=1}"
         VERDICT_FLAG="--verdict"
         ;;
+    # THE FORCED SCENARIOS (EPIC 31 NIGHT-013). The night does not wait for a scenario
+    # to happen by chance; it sets the mini core up so it MUST happen, and analyze.py
+    # --core is told in words what the scenario promised. The clock runs at 5 real
+    # seconds to the game hour throughout, so a game day is 120 sim-seconds.
+    core-s3)   # does the AI spread the way we do, with nobody at the mouse
+        SCENE="${SCENE:-Assets/Scenes/MiniCoreDemo.unity}"
+        SECONDS_="${SECONDS_:-840}"
+        SEED_FIELD="CoreDemoBuilder.seed"
+        SETS="${SETS:-CoreDemoBuilder.realSecondsPerGameHour=5;CoreDemoBuilder.rivalCrews=20;CoreDemoBuilder.rivalHoods=3;CoreDemoBuilder.mindThinkEveryHours=1;CoreDemoBuilder.carCount=12;CoreDemoBuilder.pedestrianCount=20}"
+        VERDICT_FLAG="--core expand,turf,allthink"
+        ;;
+    core-s4)   # no police at all: does the ladder reach a war
+        SCENE="${SCENE:-Assets/Scenes/MiniCoreDemo.unity}"
+        SECONDS_="${SECONDS_:-840}"
+        SEED_FIELD="CoreDemoBuilder.seed"
+        SETS="${SETS:-CoreDemoBuilder.realSecondsPerGameHour=5;CoreDemoBuilder.police=0;CoreDemoBuilder.rivalCrews=20;CoreDemoBuilder.rivalHoods=4;CoreDemoBuilder.mindThinkEveryHours=1;CoreDemoBuilder.carCount=12;CoreDemoBuilder.pedestrianCount=20}"
+        VERDICT_FLAG="--core war"
+        ;;
+    core-s5)   # the broke player: the envelope comes up short and men walk
+        SCENE="${SCENE:-Assets/Scenes/MiniCoreDemo.unity}"
+        SECONDS_="${SECONDS_:-360}"
+        SEED_FIELD="CoreDemoBuilder.seed"
+        SETS="${SETS:-CoreDemoBuilder.realSecondsPerGameHour=5;CoreDemoBuilder.playerSafeAtStart=0;CoreDemoBuilder.outfitLieutenants=2;CoreDemoBuilder.outfitHoods=3;CoreDemoBuilder.rivalCrews=3;CoreDemoBuilder.carCount=8;CoreDemoBuilder.pedestrianCount=20}"
+        VERDICT_FLAG="--core short"
+        ;;
+    core-s2)   # a ton of police, and a brawl for them to turn out to
+        SCENE="${SCENE:-Assets/Scenes/MiniCoreDemo.unity}"
+        SECONDS_="${SECONDS_:-480}"
+        SEED_FIELD="CoreDemoBuilder.seed"
+        SETS="${SETS:-CoreDemoBuilder.realSecondsPerGameHour=5;CoreDemoBuilder.policeCars=12;CoreDemoBuilder.policeOfficers=12;CoreDemoBuilder.policeBeatPairs=12;CoreDemoBuilder.rivalCrews=20;CoreDemoBuilder.rivalHoods=4;CoreDemoBuilder.missionAfter=15;CoreDemoBuilder.missionOnFoot=1;CoreDemoBuilder.outfitLieutenants=2;CoreDemoBuilder.outfitHoods=4;CoreDemoBuilder.mixedArms=1;CoreDemoBuilder.carCount=20}"
+        VERDICT_FLAG="--core police"
+        ;;
+    core-s1)   # every owner rings: needs NIGHT-009's shakedown mission and its rows
+        SCENE="${SCENE:-Assets/Scenes/MiniCoreDemo.unity}"
+        SECONDS_="${SECONDS_:-480}"
+        SEED_FIELD="CoreDemoBuilder.seed"
+        SETS="${SETS:-CoreDemoBuilder.realSecondsPerGameHour=5;CoreDemoBuilder.ownerTraitOverride=Connected;CoreDemoBuilder.policeCars=6;CoreDemoBuilder.policeOfficers=6;CoreDemoBuilder.rivalCrews=20;CoreDemoBuilder.missionAfter=15;CoreDemoBuilder.missionOnFoot=1;CoreDemoBuilder.outfitLieutenants=2;CoreDemoBuilder.outfitHoods=4}"
+        VERDICT_FLAG="--core law,police"
+        ;;
     moto)
         SCENE="${SCENE:-Assets/Scenes/MiniCoreDemo.unity}"
         SECONDS_="${SECONDS_:-900}"
@@ -228,6 +267,17 @@ esac
 # fifteen minutes: the core is a big city and its first frame is not cheap.
 WALL=$(python -c "import sys; print(max(900, int(float(sys.argv[1]) * 3)))" "$SECONDS_")
 
+# ASKED ONCE, BEFORE THE FIRST RUN, AND NEVER AGAIN. The harness marks the builder
+# dirty as it writes its own -hSet overrides, so every run after the first leaves the
+# scene dirty by construction - checking per run would refuse the whole soak on the
+# strength of its own first run. What this protects is the morning's unsaved editing,
+# and that is a question about the state the night STARTED in.
+if [ "${NIGHT_ALLOW_DIRTY:-0}" != "1" ] && dirty_scene; then
+    echo "[night] a loaded scene has unsaved changes - refusing to play over it." >&2
+    echo "[night] save it, or re-run with NIGHT_ALLOW_DIRTY=1 to discard it." >&2
+    exit 3
+fi
+
 # A MODE THAT ORDERS A MISSION MUST SHOW ITS MISSION. An -hSet override that never
 # reached the builder plays an ordinary session, and an ordinary session's trace is
 # one every quality verdict is happy with - so the gate asks for the mission's own
@@ -239,7 +289,7 @@ WALL=$(python -c "import sys; print(max(900, int(float(sys.argv[1]) * 3)))" "$SE
 # in the same breath, and the ambient traffic then passed for a car mission.
 GATE_ARGS=""
 case "$MODE" in
-    car|roadblock|moto|walk|brawl|cover|ambush) GATE_ARGS="--mission" ;;
+    car|roadblock|moto|walk|brawl|cover|ambush|core-s1|core-s2) GATE_ARGS="--mission" ;;
 esac
 
 PASSED=0
