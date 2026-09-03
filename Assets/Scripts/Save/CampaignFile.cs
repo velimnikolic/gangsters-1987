@@ -54,6 +54,11 @@ namespace LivingCity.Save
 
         /// <summary>The boss has said he is not turning up.</summary>
         public bool skipOrdered;
+
+        // Appended (GAN-315): how he answered at the door, and whether this custody
+        // had already been broken before the station threshold.
+        public int answer;
+        public bool sprung;
     }
 
     /// <summary>One name on a case's witness list, as it went to disk. The position is
@@ -78,6 +83,8 @@ namespace LivingCity.Save
         public int days;
         public int outOnDay;
         public int day;
+        public int answer;
+        public bool sprung;
     }
 
     /// <summary>
@@ -97,6 +104,7 @@ namespace LivingCity.Save
         public int[] defendants;
         public WitnessDto[] witnesses;
         public int[] counts;
+        public int[] extraCharges;
         public int openedDay;
         public int courtDay;
         public int lawyerId = -1;

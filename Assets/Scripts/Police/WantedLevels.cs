@@ -26,6 +26,10 @@ namespace LivingCity.Police
         public const int FreedFromTransfer = 2;
         public const int CopKiller = 3;
 
+        // Appended: serialized levels 1-3 retain their old meaning. Integer order is
+        // deliberately not severity order; CopKiller remains the worst mark.
+        public const int ShotAtOfficer = 4;
+
         /// <summary>Clear days out of sight that clear each grade. Index by level; the
         /// cop-killer's entry is deliberately impossible rather than large.</summary>
         public const int FledDays = 3;
@@ -39,8 +43,24 @@ namespace LivingCity.Police
         {
             Fled => FledDays,
             FreedFromTransfer => FreedDays,
+            ShotAtOfficer => FreedDays,
             _ => Never,
         };
+
+        /// <summary>Orders wanted outcomes without relying on their serialized value.</summary>
+        public static int Severity(int level) => level switch
+        {
+            Fled => 1,
+            FreedFromTransfer => 2,
+            ShotAtOfficer => 3,
+            CopKiller => 4,
+            _ => 0,
+        };
+
+        /// <summary>The swarm's final mark follows what happened, not the integer used
+        /// to serialize it: a miss is a seven-day mark; a dead officer is permanent.</summary>
+        public static int ShotOutcome(bool officerDied) =>
+            officerDied ? CopKiller : ShotAtOfficer;
 
         /// <summary>Marks him, and never downgrades: a man wanted for killing a
         /// policeman who then merely runs from an arrest is still wanted for killing a
@@ -49,8 +69,8 @@ namespace LivingCity.Police
         {
             if (man == null || level <= 0)
                 return;
-            if (level > man.WantedLevel)
-                man.WantedLevel = level > CopKiller ? CopKiller : level;
+            if (Severity(level) > Severity(man.WantedLevel))
+                man.WantedLevel = level;
             // A fresh mark starts him on the street, however long he had been quiet: the
             // city has just been reminded he exists. (The day is taken for the same
             // reason every other call here takes one - so a caller cannot mark a man
@@ -116,7 +136,7 @@ namespace LivingCity.Police
         /// already (a few days indoors), and the point of this is the man who has not.
         /// </summary>
         public static bool CanSendAway(Character man) =>
-            man != null && man.WantedLevel >= CopKiller &&
+            man != null && Severity(man.WantedLevel) >= Severity(CopKiller) &&
             man.Status == CharacterStatus.Active && !man.OutOfTown;
 
         public static bool SendAway(Character man, int today, int days = OutOfTownDays)
@@ -136,6 +156,7 @@ namespace LivingCity.Police
         {
             Fled => "Wanted — fled arrest",
             FreedFromTransfer => "Wanted — escaped custody",
+            ShotAtOfficer => "Wanted — shot at an officer",
             CopKiller => "Wanted — cop killer",
             _ => "",
         };

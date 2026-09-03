@@ -26,6 +26,7 @@ namespace LivingCity.Police
         public bool CanPostBail;
         public bool CanSkipBail;
         public bool CanCutLoose;
+        public string Answer = "";
     }
 
     /// <summary>One name on the prosecution's list, as the sheet reads it.</summary>
@@ -216,7 +217,7 @@ namespace LivingCity.Police
                     OpenedDay = file.OpenedDay,
                     CourtDay = file.CourtDay,
                     DaysToCourt = file.CourtDay > 0 && today > 0 ? file.CourtDay - today : 0,
-                    Counts = file.Counts.Count,
+                    Counts = file.Counts.Count + file.ExtraCharges.Count,
                     NobodyTaken = file.Defendants.Count == 0,
                     Counsel = into.Counsel.Has
                         ? into.Counsel.Name + "  ·  " + into.Counsel.Skill + " of " +
@@ -226,7 +227,7 @@ namespace LivingCity.Police
 
                 for (var d = 0; d < file.Defendants.Count; d++)
                     row.Defendants.Add(Defendant(
-                        pipeline, roster, file.Defendants[d], lawyerSkill));
+                        pipeline, roster, file, file.Defendants[d], lawyerSkill));
 
                 for (var w = 0; w < file.Witnesses.Count; w++)
                     row.Witnesses.Add(Witness(file.Witnesses[w], talks));
@@ -253,7 +254,8 @@ namespace LivingCity.Police
         }
 
         static DefendantRow Defendant(
-            PrisonPipeline pipeline, Roster roster, int characterId, int lawyerSkill)
+            PrisonPipeline pipeline, Roster roster, CourtCase file, int characterId,
+            int lawyerSkill)
         {
             var member = roster.Find(characterId);
             var prisoner = pipeline.Find(characterId);
@@ -269,9 +271,22 @@ namespace LivingCity.Police
                 CanSkipBail = prisoner != null &&
                               prisoner.Stage == PrisonStage.Bailed && !prisoner.SkipOrdered,
                 CanCutLoose = RosterOps.CanCutLoose(member),
+                Answer = prisoner != null
+                    ? LedgerText.DoorAnswerLabel(prisoner.Answer, prisoner.Sprung)
+                    : AnswerOnOpenFile(file),
             };
             row.CanPostBail = row.BailRefusal == null;
             return row;
+        }
+
+        static string AnswerOnOpenFile(CourtCase file)
+        {
+            if (file == null) return "";
+            if (file.Deed == Deed.AssaultOnOfficer || file.Deed == Deed.CopKilling)
+                return LedgerText.DoorAnswerLabel(DoorAnswer.Fight);
+            if (file.ExtraCharges.Contains(Deed.Resisting))
+                return LedgerText.DoorAnswerLabel(DoorAnswer.Run);
+            return "";
         }
 
         static WitnessRow Witness(Witness witness, bool complainantTalks)
@@ -451,7 +466,8 @@ namespace LivingCity.Police
                     var verdict = file.Verdicts[v];
                     var member = roster.Find(verdict.CharacterId);
                     row.Lines.Add((member != null ? member.FullName : "A man of ours") +
-                                  " — " + LedgerText.CaseOutcomeLine(verdict));
+                                  " — " + LedgerText.CaseOutcomeLine(verdict) +
+                                  AnswerSuffix(verdict));
                     if (verdict.Day > row.Day) row.Day = verdict.Day;
                 }
 
@@ -471,6 +487,13 @@ namespace LivingCity.Police
                 a.Day != b.Day
                     ? b.Day.CompareTo(a.Day)
                     : b.File.CaseId.CompareTo(a.File.CaseId));
+        }
+
+        static string AnswerSuffix(CaseVerdict verdict)
+        {
+            var answer = verdict != null
+                ? LedgerText.DoorAnswerLabel(verdict.Answer, verdict.Sprung) : "";
+            return string.IsNullOrEmpty(answer) ? "" : " · " + answer;
         }
     }
 }

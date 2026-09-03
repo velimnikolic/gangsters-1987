@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using LivingCity.Personnel;
 using LivingCity.Entities;
+using LivingCity.Police;
 using UnityEngine;
 
 namespace RoadDemo
@@ -85,6 +86,15 @@ namespace RoadDemo
         /// nothing that happens round him - a shot, an alarm, a mark walking past -
         /// can put it back in his fist while he waits to be taken.</summary>
         public bool Surrendered;
+
+        /// <summary>The visible proof of surrender used by the GAN-315 live regression.
+        /// A flag alone is not hands in the air.</summary>
+        public bool HandsRaised => Surrendered && !Riding && !HasOrder &&
+                                   Take == CrewKit.HandsUp;
+
+        /// <summary>Police beat walkers use the civilian crossing rule; outfit crews
+        /// retain their deliberate jaywalking behaviour.</summary>
+        public bool ObeysSignals;
         public int MaxHealth = 3;
         public bool Dead => State == Mode.Dead;
 
@@ -1226,6 +1236,7 @@ namespace RoadDemo
             ClearFallingIn();
             ClearFleeIntent();
             _coverGuardUntil = 0f;
+            GunpointTarget = null;
             if (Target != target)
             {
                 _hasLastSeenTarget = false;
@@ -1459,6 +1470,28 @@ namespace RoadDemo
             return true;
         }
 
+        /// <summary>A non-firing cover on a surrendered prisoner. It deliberately does
+        /// not make him a combat target: the gun is raised and follows him, but no round
+        /// is fired until the prisoner actually breaks the surrender.</summary>
+        public CrewWalker GunpointTarget { get; private set; }
+
+        public void HoldAtGunpoint(CrewWalker prisoner)
+        {
+            if (Dead || Tf == null || Riding || !Carrying || prisoner == null || prisoner.Dead ||
+                prisoner.Tf == null || Target != null)
+                return;
+            GunpointTarget = prisoner;
+            EndChat();
+            // Gunpoint is its own reason to have the weapon out. Treating every refresh
+            // as a newly heard shot kept officers in a false alert state after custody
+            // had ended and made the whole street react to choreography, not gunfire.
+            DrawGun();
+            if (!HasOrder)
+                WatchToward(prisoner.Tf.position - Tf.position);
+        }
+
+        public void LowerGunpoint() => GunpointTarget = null;
+
         // ------------------------------------------------------------------ arms
 
         /// <summary>Give him this gun (replacing whatever he carried); null disarms.
@@ -1499,6 +1532,8 @@ namespace RoadDemo
             // fist a moment later is the gun the books say he owned.
             if (wasOut) IntoTheHand();
         }
+
+        public void Disarm() => Arm(null, default);
 
         /// <summary>Out from under the coat and into his fist, and KEPT there: every
         /// call pushes the quiet timer back out to full, so a caller that wants the gun
@@ -1614,6 +1649,8 @@ namespace RoadDemo
         public bool WantsGunOut =>
             !Dead && Carrying && !Surrendered &&
             (FightCloseEnoughToDraw ||  // a fight, once he is about to enter its reach
+             (GunpointTarget != null && GunpointTarget.Tf != null &&
+              !GunpointTarget.Dead) ||   // a surrendered prisoner he is physically covering
              CarMark != null ||         // a car he was explicitly told to shoot up
              State == Mode.Fleeing ||    // running from one, which is still one
              Alert ||                    // shooting within earshot, twelve seconds of it
@@ -1836,24 +1873,32 @@ namespace RoadDemo
             // run: twenty of them in the first judged run of the core.
             if (Tf == null) return;
 
+            if (GunpointTarget != null &&
+                (GunpointTarget.Dead || GunpointTarget.Tf == null))
+                GunpointTarget = null;
+            bool covering = GunpointTarget != null;
             bool onCar = Target == null && CarMark != null && CarMark.Tf != null && !CarMark.Wrecked;
             // The old crowd run needs its procedural rifle overlay suppressed. The
             // authored rifle run already owns both arms, so only its prop is corrected.
             bool carryingLongGunAtRun = _runningLeg && CrewArms.TwoHanded(WeaponKind) &&
                                         !UsesAuthoredLongGun;
-            bool aiming = !Dead && Armed && State == Mode.Engaging && _flinch <= 0f &&
+            bool aiming = !Dead && Armed && _flinch <= 0f &&
                           !carryingLongGunAtRun &&
-                          (onCar || (Target != null && Target.Tf && !Target.Dead)) &&
+                          (covering || (State == Mode.Engaging &&
+                           (onCar || (Target != null && Target.Tf && !Target.Dead)))) &&
                           !(InCover && _ducked);
             // what the arm is turned at: a man's chest, or the flank of a machine
-            var markAt = onCar ? CarMark.Tf.position : (Target != null && Target.Tf ? Target.Tf.position : Tf.position);
+            var markAt = covering ? GunpointTarget.Tf.position
+                : onCar ? CarMark.Tf.position
+                : (Target != null && Target.Tf ? Target.Tf.position : Tf.position);
             // his Tf is asked for twice over on purpose: a CrewWalker is a plain object
             // and outlives the body it drives, so a man who was removed from the scene
             // mid-fight (a deserter struck off the roster) is a Target that is NOT null
             // with a Transform that has been destroyed. Reading his chest through it threw
             // out of LateUpdate every frame for the rest of the run.
-            var markAim = onCar ? CarAim(CarMark)
-                                : (Target != null && Target.Tf ? Target.ChestPosition : Tf.position);
+            var markAim = covering ? GunpointTarget.ChestPosition
+                : onCar ? CarAim(CarMark)
+                : (Target != null && Target.Tf ? Target.ChestPosition : Tf.position);
             if (aiming)
             {
                 var flat = markAt - Tf.position;
@@ -1871,12 +1916,13 @@ namespace RoadDemo
                 // rounds that answer a drive-by are long, wild and mostly miss - the
                 // falloff sees to that (DemoCrews.Resolve) - and they are the whole
                 // scene.
-                float reach = Target != null && (Target.Riding || Target.Astride)
+                float reach = covering ? 45f
+                    : Target != null && (Target.Riding || Target.Astride)
                     ? Mathf.Max(Ballistics.Range * 1.35f, PassingShot)
                     : Ballistics.Range * 1.35f;
                 aiming = flat.magnitude <= reach &&
-                         CombatAimError(flat) < 70f &&
-                         StrideAllowsAim(flat);
+                         (covering || (CombatAimError(flat) < 70f &&
+                          StrideAllowsAim(flat)));
             }
             _aimBlend = Mathf.MoveTowards(_aimBlend, aiming ? 1f : 0f, 6f * dt);
             if (UsesAuthoredLongGun)
@@ -2244,6 +2290,18 @@ namespace RoadDemo
             // death on its last frame.
             if (Spilling && !Dead)
             {
+                TickBlend(dt);
+                return;
+            }
+            var handsUp = CustodyPlan.ShouldRaiseHands(
+                Surrendered, Riding, HasOrder);
+            if (!handsUp && Take == CrewKit.HandsUp)
+                EndTake();
+            if (handsUp)
+            {
+                EndChat();
+                if (Take != CrewKit.HandsUp)
+                    PlayTake(CrewKit.HandsUp, loop: true, speed: 1f, at: 0f);
                 TickBlend(dt);
                 return;
             }
@@ -2648,6 +2706,7 @@ namespace RoadDemo
             if (on)
             {
                 ClearFleeIntent();
+                GunpointTarget = null;
                 Target = null;
                 EndChat();
                 State = Mode.Riding;
@@ -4094,7 +4153,9 @@ namespace RoadDemo
         /// on a door is not: two hoods covering a shopfront who turn to face each other
         /// for a chat are two hoods with their backs to the street, which is the one
         /// thing the post was for.</summary>
-        public bool Loitering => State == Mode.Standing && _chatPartner == null && ChatCooldown <= 0f && !Alert && _shoutLeft <= 0f && !Retreating && !Watching;
+        public bool Loitering => !Surrendered && GunpointTarget == null &&
+            State == Mode.Standing && _chatPartner == null && ChatCooldown <= 0f &&
+            !Alert && _shoutLeft <= 0f && !Retreating && !Watching;
 
         /// <summary>Two men stop for a word: face each other, one talks, the other
         /// listens, and the floor changes hands every few seconds.</summary>
@@ -4432,7 +4493,8 @@ namespace RoadDemo
         /// on the sidewalk graph, rather than the whole crew leaving it to cut across the
         /// ground (which strung them out over the block). The crowd's own MayEnter is
         /// untouched - only the outfit ignores the light.</summary>
-        protected override bool MayEnter(PedLink link) => true;
+        protected override bool MayEnter(PedLink link) =>
+            ObeysSignals ? base.MayEnter(link) : true;
 
         bool StepOntoIfOn(PedLink link, float t)
         {

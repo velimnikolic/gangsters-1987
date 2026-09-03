@@ -265,6 +265,13 @@ namespace LivingCity.UI
                 TextAlignmentOptions.MidlineRight);
             y -= LineBox(11f) + 2f;
 
+            if (!string.IsNullOrEmpty(man.Answer))
+            {
+                LedgerV2.Mono(card, x, y, w, man.Answer.ToUpperInvariant(), 8.5f,
+                    man.Answer.Contains("sprung") ? LedgerV2.Red : LedgerV2.PaperBlue, 1.2f);
+                y -= LineBox(8.5f) + 2f;
+            }
+
             // The three keys, and the SAME desk the man's own file calls: two doors on
             // one operation, never two implementations of it.
             var id = man.CharacterId;

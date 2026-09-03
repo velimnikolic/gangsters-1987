@@ -1,3 +1,5 @@
+using LivingCity.Police;
+
 namespace LivingCity.Personnel
 {
     /// <summary>What a man was taken for. The deed, not the paperwork - the charge text
@@ -23,6 +25,12 @@ namespace LivingCity.Personnel
         /// the extortion it was meant to bury, because it is the same crime committed
         /// twice.</summary>
         WitnessTampering,
+
+        /// <summary>Firing on the law, whether or not an officer was hit.</summary>
+        AssaultOnOfficer,
+
+        /// <summary>Running from an officer who had put the question.</summary>
+        Resisting,
     }
 
     /// <summary>
@@ -56,6 +64,9 @@ namespace LivingCity.Personnel
         /// <summary>Days added for a man who has been out of custody once already. The
         /// city remembers - and remembers it for twice as long as it used to.</summary>
         public const int EscapeSurcharge = 4;
+
+        /// <summary>Added when the answer at the door was RUN.</summary>
+        public const int ResistSurcharge = 2;
 
         /// <summary>Days at the station before he is put in front of a judge - the leg
         /// the convoy drives (GAN-219, PIPE-002). The sentence is not known before it:
@@ -98,8 +109,11 @@ namespace LivingCity.Personnel
         {
             Deed.CopKilling => Life,
             Deed.Murder => 15,
+            Deed.AssaultOnOfficer => 11,
             Deed.Extortion => 8,
             Deed.WitnessTampering => 8,
+            Deed.Affray => 6,
+            Deed.Resisting => 2,
             _ => 6,
         };
 
@@ -108,10 +122,27 @@ namespace LivingCity.Personnel
         {
             Deed.CopKilling => Life,
             Deed.Murder => 25,
+            Deed.AssaultOnOfficer => 14,
             Deed.Extortion => 14,
             Deed.WitnessTampering => 14,
+            Deed.Affray => 10,
+            Deed.Resisting => 4,
             _ => 10,
         };
+
+        /// <summary>The charge that stays on the front of the file when a fresh act is
+        /// added to an existing one. A graver existing deed is never downgraded; on an
+        /// equal band the fresh act leads and the old one remains an extra charge.</summary>
+        public static Deed PrimaryCharge(Deed existing, Deed fresh)
+        {
+            var oldHigh = BandHigh(existing);
+            var newHigh = BandHigh(fresh);
+            if (oldHigh != newHigh) return newHigh > oldHigh ? fresh : existing;
+
+            var oldLow = BandLow(existing);
+            var newLow = BandLow(fresh);
+            return newLow >= oldLow ? fresh : existing;
+        }
 
         /// <summary>The sentence with nothing on it but the deed and the man's record -
         /// what a defendant of no particular rank, with no counsel and no extra counts,
@@ -131,7 +162,8 @@ namespace LivingCity.Personnel
         /// A dead policeman is life and is not rolled, argued, scaled or surcharged.
         /// </summary>
         public static int Days(Deed deed, System.Random rng, bool everEscaped,
-            Rank rank, bool marked, int lawyerSkill, int extraCounts)
+            Rank rank, bool marked, int lawyerSkill, int extraCounts,
+            DoorAnswer answer = DoorAnswer.Quiet)
         {
             if (deed == Deed.CopKilling)
                 return Life;
@@ -147,6 +179,8 @@ namespace LivingCity.Personnel
 
             if (everEscaped)
                 days += EscapeSurcharge;
+            if (answer == DoorAnswer.Run)
+                days += ResistSurcharge;
             if (extraCounts > 0)
                 days += extraCounts * ExtraCountDays;
 
@@ -176,8 +210,11 @@ namespace LivingCity.Personnel
         {
             Deed.CopKilling => "Murder of a police officer",
             Deed.Murder => "Murder",
+            Deed.AssaultOnOfficer => "Assault on a police officer",
+            Deed.Resisting => "Resisting arrest",
             Deed.Extortion => "Extortion",
             Deed.WitnessTampering => "Intimidating a witness",
+            Deed.Affray => "Affray - discharging firearms in the street",
             _ => "Affray - discharging firearms in the street",
         };
 
@@ -192,7 +229,11 @@ namespace LivingCity.Personnel
         {
             Deed.CopKilling => 0,
             Deed.Murder => 25_000,
+            Deed.AssaultOnOfficer => 15_000,
             Deed.Affray => 5_000,
+            Deed.Extortion => 2_000,
+            Deed.WitnessTampering => 2_000,
+            Deed.Resisting => 5_000,
             _ => 2_000,
         };
 

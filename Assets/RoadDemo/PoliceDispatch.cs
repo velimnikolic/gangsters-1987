@@ -75,6 +75,7 @@ namespace RoadDemo
         GameObject _sidearm;
         List<GameObject> _officerPrefabs = new List<GameObject>();
         PedClips _clips;
+        AnimationClip _sitLoop;
         readonly List<IPoliceUnit> _units = new List<IPoliceUnit>();
         readonly Dictionary<IPoliceUnit, PoliceLights> _lights = new Dictionary<IPoliceUnit, PoliceLights>();
         readonly List<Squad> _squads = new List<Squad>();
@@ -97,12 +98,26 @@ namespace RoadDemo
 
         /// <summary>The scene builder wires the arena and the bodies of the law: any
         /// officer prefabs (the police station pack's) and their sidearm.</summary>
-        public void Init(DemoCrews crews, PedClips clips, IList<GameObject> officerPrefabs, GameObject sidearm)
+        public void Init(DemoCrews crews, PedClips clips, IList<GameObject> officerPrefabs,
+            GameObject sidearm, AnimationClip sitLoop = null)
         {
             _crews = crews;
             _clips = clips;
-            _officerPrefabs = officerPrefabs != null ? new List<GameObject>(officerPrefabs) : new List<GameObject>();
+            // Enforce the uniform at the authority that actually deals every patrol,
+            // response squad and car occupant. Scene builders may hand us a broader
+            // pack list, but novelty/variant bodies never enter the force from here.
+            _officerPrefabs = new List<GameObject>();
+            if (officerPrefabs != null)
+                for (var i = 0; i < officerPrefabs.Count; i++)
+                {
+                    var body = officerPrefabs[i];
+                    if (body != null && string.Equals(body.name,
+                            LivingCity.Police.PoliceProcedure.UniformOfficerPrefabName,
+                            System.StringComparison.Ordinal))
+                        _officerPrefabs.Add(body);
+                }
             _sidearm = sidearm;
+            _sitLoop = sitLoop != null ? sitLoop : clips.SitLoop;
             StreetAlarm.OnShot += OnShot;
             StreetAlarm.OnDeath += OnDeath;
             StreetAlarm.OnComplaint += OnComplaint;
@@ -121,6 +136,62 @@ namespace RoadDemo
             if (unit == null || _units.Contains(unit)) return;
             _units.Add(unit);
             if (unit.Carries && unit.Tf != null) _lights[unit] = new PoliceLights(unit.Tf);
+        }
+
+        /// <summary>A permanent street unit whose body has been lost leaves dispatch's
+        /// books before its replacement is dealt. Temporary response squads use their
+        /// existing lifecycle and never come through here.</summary>
+        public void Unregister(IPoliceUnit unit)
+        {
+            if (unit == null) return;
+            _units.Remove(unit);
+            _lights.Remove(unit);
+            _footOnSceneAt.Remove(unit);
+        }
+
+        /// <summary>The beat pair at an officer-death position, if that death belonged
+        /// to a permanent foot unit. The death channel intentionally carries only kind
+        /// and place, so the force resolves ownership against the same registered-unit
+        /// book it already uses for precinct attribution.</summary>
+        public PoliceBeat BeatNear(Vector3 where, float metres)
+        {
+            PoliceBeat best = null;
+            var bestD = metres * metres;
+            for (var i = 0; i < _units.Count; i++)
+            {
+                if (!(_units[i] is PoliceBeat beat) || beat.Unit == null || beat.Tf == null)
+                    continue;
+                var d = (beat.Position - where).sqrMagnitude;
+                if (d > bestD) continue;
+                bestD = d;
+                best = beat;
+            }
+            return best;
+        }
+
+        /// <summary>Deals the shared two-man body for a beat and puts its brain on the
+        /// same dispatcher list as every car and response squad.</summary>
+        public PoliceBeat MakeBeat(PedLink start, float startT, List<PedNode> nodes,
+            List<PedNode> ring, int unitNumber, Vector3? stationDoor,
+            Vector2 restRange, float firstRest)
+        {
+            if (start == null || _crews == null) return null;
+            var at = Vector3.Lerp(start.From.Pos, start.To.Pos,
+                Mathf.Clamp01(startT / Mathf.Max(0.01f, start.Length)));
+            var facing = start.To.Pos - start.From.Pos;
+            var unit = SpawnSquad(at, facing, 2, aboardOf: null, start, startT);
+            if (unit == null) return null;
+            var beat = new PoliceBeat(_crews, unit, unitNumber, nodes, ring,
+                stationDoor, restRange, firstRest);
+            beat.Provoked = BeatProvoked;
+            Register(beat);
+            return beat;
+        }
+
+        void BeatProvoked(PoliceBeat beat, DemoCrews.Unit attacker)
+        {
+            if (beat == null || attacker == null) return;
+            RaiseSwarm(beat.Position, SwarmGrade.ShotsFired, attacker);
         }
 
         /// <summary>The crew demo's cruiser: a CrewCar with its two officers already in
@@ -161,6 +232,20 @@ namespace RoadDemo
             float add = Mathf.Min(ShotHeat, ShotHeatCap - _shotHeat);
             if (add > 0f) { _shotHeat += add; Heat = Mathf.Min(120f, Heat + add); }
 
+            // The first round AT any officer is the escalation, not only a hit or a
+            // death. The shooter's crew already carries its ordered target.
+            var shooterUnit = shot.Shooter != null && _crews != null
+                ? _crews.UnitOf(shot.Shooter) : null;
+            if (shooterUnit != null && shooterUnit.TargetUnit != null &&
+                shooterUnit.TargetUnit.IsPolice)
+            {
+                // Police do not open a fight, but a shot directed at their unit is the
+                // line: the whole pair/squad answers through the shared combat model.
+                if (!shooterUnit.TargetUnit.Wiped)
+                    _crews.Sic(shooterUnit.TargetUnit, shooterUnit);
+                RaiseSwarm(shot.Pos, SwarmGrade.ShotsFired, shooterUnit);
+            }
+
             // a patrol in earshot rings it in itself, at once - no telephone, no wait
             float heard = Mathf.Max(shot.Loudness, Earshot);
             foreach (var u in _units)
@@ -181,7 +266,7 @@ namespace RoadDemo
             _officerDied = true;
             // and the radio call that is not an escalation but a different kind of day
             // (GAN-220): every car in the city, and a hunt that outlives the shooting
-            RaiseSwarm(where);
+            RaiseSwarm(where, SwarmGrade.OfficerDown);
             // and the precinct is a man short until the department fills the hole
             // (GAN-226). Through here rather than through a second listener: StreetAlarm
             // is the one channel for a death, and this is already listening to it.
@@ -211,12 +296,7 @@ namespace RoadDemo
                 if (u == null || u.Tf == null) continue;
                 var d = (u.Position - where).sqrMagnitude;
                 if (d > bestD) continue;
-                var precinct = u switch
-                {
-                    PoliceFootPatrol foot => foot.Precinct,
-                    PolicePatrolCar car => car.Precinct,
-                    _ => -1,
-                };
+                var precinct = u.Precinct;
                 if (precinct < 0) continue;
                 bestD = d;
                 best = precinct;
@@ -256,6 +336,7 @@ namespace RoadDemo
             TickFoot();
             TickSwarm(dt);
             TickWanted(dt);
+            TickCustody(dt);
             TickCalls(dt);
             WitnessWatch.Tick();
             TickArrest(dt);
@@ -335,7 +416,12 @@ namespace RoadDemo
             return best;
         }
 
-        static DemoCrews.Unit MenOf(IPoliceUnit unit) => unit is PoliceCruiser c ? c.Men : null;
+        static DemoCrews.Unit MenOf(IPoliceUnit unit) => unit switch
+        {
+            PoliceCruiser cruiser => cruiser.Men,
+            PoliceBeat beat => beat.Unit,
+            _ => null,
+        };
 
         // ------------------------------------------------------------ the squads
 
@@ -353,6 +439,7 @@ namespace RoadDemo
             public float MoveAlongIn;
             public float Reassess;
             public float ArrivedAt;
+            public float RouteRetryAt;
         }
 
         void TickSquad(Squad squad, float dt)
@@ -391,30 +478,41 @@ namespace RoadDemo
                 case SquadState.Responding:
                 {
                     if (Wiped(squad)) return;
-                    if (!squad.Ordered)
-                    {
-                        squad.Ordered = true;
-                        var from = ride.Position;
-                        var to = squad.Scene;
-                        var dir = to - from;
-                        dir.y = 0f;
-                        float d = dir.magnitude;
-                        dir = d > 0.1f ? dir / d : Vector3.forward;
-                        var stand = to - dir * Mathf.Min(WarnRange - 6f, Mathf.Max(6f, d - 4f));
-                        int k = 0;
-                        foreach (var man in squad.Men.All())
-                        {
-                            if (man.Dead) continue;
-                            var side = Vector3.Cross(Vector3.up, dir) * ((k % 2 == 0 ? -1f : 1f) * 1.4f * (k / 2 + 1));
-                            man.OrderToPoint(stand + side, k * 0.4f);
-                            k++;
-                        }
-                    }
                     var boss = Lead(squad);
-                    if (boss == null) return;
-                    float dist = Vector3.Distance(boss.Tf.position, squad.Scene);
-                    bool there = dist <= WarnRange || !boss.HasOrder;
-                    if (!there) return;
+                    if (boss == null || boss.Tf == null) return;
+
+                    var from = ride.Position;
+                    var to = squad.Scene;
+                    var dir = to - from;
+                    dir.y = 0f;
+                    float d = dir.magnitude;
+                    dir = d > 0.1f ? dir / d : Vector3.forward;
+                    // The car stops short so it does not drive through the incident.
+                    // Its officers close the remaining ground on foot, to a useful
+                    // pistol distance, over the same shared WalkRoute as a player crew.
+                    var stand = to - dir * Mathf.Min(8f, d * 0.5f);
+                    if (!WalkObstacles.TryClearStandingSpot(
+                            stand, WalkObstacles.Radius, boss.Tf.position,
+                            out stand, 12f))
+                        return;
+
+                    var toPost = boss.Tf.position - stand;
+                    toPost.y = 0f;
+                    if (toPost.sqrMagnitude > 3.5f * 3.5f &&
+                        (!squad.Ordered || !boss.HasOrder) &&
+                        Time.time >= squad.RouteRetryAt)
+                    {
+                        squad.RouteRetryAt = Time.time + 1.25f;
+                        squad.Ordered = _crews.MarchTo(squad.Men, stand,
+                            run: LivingCity.Police.PoliceProcedure.RunToScene,
+                            keepOffRoad: false, allowCustody: true);
+                    }
+                    // A stopped route is not an arrival. It is retried above until the
+                    // body itself reaches the post; only then may the warning/scene beat
+                    // begin.
+                    toPost = boss.Tf.position - stand;
+                    toPost.y = 0f;
+                    if (toPost.sqrMagnitude > 3.5f * 3.5f) return;
                     // THE HUNTED ARE NOT WARNED AGAIN (GAN-220). They were warned when
                     // the first squad arrived, and a squad shouting DROP THE GUNS at the
                     // man who has just shot a policeman is the city being polite about
@@ -629,21 +727,17 @@ namespace RoadDemo
             squad.MoveAlongIn = 2f;
             var men = squad.Men;
             men.TargetUnit = null;
-            int k = 0;
             var from = squad.Ride.Position;
             var dir = squad.Scene - from;
             dir.y = 0f;
             dir = dir.sqrMagnitude > 0.1f ? dir.normalized : Vector3.forward;
-            var side = Vector3.Cross(Vector3.up, dir);
-            foreach (var man in men.All())
-            {
-                if (man.Dead) continue;
-                man.Disengage();
-                // one by the body, one a little back where the crowd is kept
-                var spot = k == 0 ? squad.Scene - dir * 3.5f + side * 1.2f : squad.Scene - dir * 7f - side * 2f;
-                man.OrderToPoint(spot, k * 0.5f);
-                k++;
-            }
+            // Out of the car and onto the crime scene by the crew's shared WalkRoute,
+            // at the run. The response must not become a pair of leisurely straight
+            // lines through whatever stands between the cruiser and the body.
+            var scenePost = squad.Scene - dir * 3.5f;
+            _crews.MarchTo(men, scenePost,
+                run: LivingCity.Police.PoliceProcedure.RunToScene,
+                keepOffRoad: false, allowCustody: true);
         }
 
         void BeginLeaving(Squad squad)
@@ -657,7 +751,8 @@ namespace RoadDemo
         // Two officers of the law as a unit of the arena: a sergeant and a constable,
         // .38s in hand, in the police pack's bodies - dealt at a spot (beside the car),
         // or straight into a car's seats.
-        DemoCrews.Unit SpawnSquad(Vector3 at, Vector3 facing, int count, CrewCar aboardOf)
+        DemoCrews.Unit SpawnSquad(Vector3 at, Vector3 facing, int count, CrewCar aboardOf,
+            PedLink spawnLink = null, float spawnT = 0f)
         {
             if (_crews == null) return null;
             var names = new List<string>();
@@ -675,7 +770,8 @@ namespace RoadDemo
                 return null;
             }
             var unit = _crews.AddRival(StreetAlarm.PoliceFaction, "Police", "Sgt. " + OfficerName(), bossPrefab,
-                names, hoods, at, facing, _sidearm, EquipmentKind.Pistol, lineUp: true);
+                names, hoods, at, facing, _sidearm, EquipmentKind.Pistol, lineUp: true,
+                spawnLink: spawnLink, spawnT: spawnT);
             if (unit == null) return null;
             unit.Root.name = "Police · " + unit.Name;
             foreach (var man in unit.All()) man.RangeFactor = 0.9f;
@@ -764,6 +860,14 @@ namespace RoadDemo
                 if (u.Carries) continue;
                 if (u.OnScene)
                 {
+                    // A scene timer may send an idle beat home; it may not take the
+                    // officers away from an open collar, complaint, or prisoners who
+                    // are still waiting for their carrier.
+                    if (FootHeldByLawWork(u))
+                    {
+                        _footOnSceneAt.Remove(u);
+                        continue;
+                    }
                     if (!_footOnSceneAt.ContainsKey(u)) _footOnSceneAt[u] = Time.time;
                     else if (Time.time - _footOnSceneAt[u] > SceneSeconds && StreetAlarm.QuietFor > 20f)
                     {
@@ -773,6 +877,21 @@ namespace RoadDemo
                 }
                 else if (u.Available) _footOnSceneAt.Remove(u);
             }
+        }
+
+        bool FootHeldByLawWork(IPoliceUnit unit)
+        {
+            if (unit == null) return false;
+            if (_collar != Collar.None && _arrestOfficer == unit) return true;
+            for (var i = 0; i < _calls.Count; i++)
+                if (_calls[i] != null && _calls[i].Stage != CallStage.Done &&
+                    _calls[i].Unit == unit)
+                    return true;
+            for (var i = 0; i < _custodies.Count; i++)
+                if (_custodies[i] != null && !_custodies[i].Finished &&
+                    _custodies[i].Beat == unit)
+                    return true;
+            return false;
         }
     }
 
@@ -805,6 +924,8 @@ namespace RoadDemo
         public bool Carries => true;
         public int Precinct { get; set; }
         public bool OnScene => _sent && !Car.Moving && Flat(Car.Position - _target).sqrMagnitude < 8f * 8f;
+        public Vector3 Home => _home;
+        public bool AtHome => !_sent && !Car.Moving && Flat(Car.Position - _home).sqrMagnitude < 8f * 8f;
 
         /// <summary>Short of the scene ALONG THE STREET it is on, on the car's side of
         /// it. Measured along x it stood off into the yards on every north-south street.</summary>

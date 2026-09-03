@@ -224,7 +224,7 @@ namespace RoadDemo
         /// <summary>The pavement's frame: every walker, the crowd, the beat (if the
         /// bench has one), and every second and a half a pass pairing walkers off to
         /// chat. <paramref name="chatScan"/> is the bench's own countdown to that pass.</summary>
-        public static void TickPavementLife(List<CivilianAgent> walkers, List<PoliceFootPatrol> beat,
+        public static void TickPavementLife(List<CivilianAgent> walkers, List<PoliceBeat> beat,
                                             float dt, ref float chatScan)
         {
             for (int i = 0; i < walkers.Count; i++) walkers[i].TickCivilian(dt);

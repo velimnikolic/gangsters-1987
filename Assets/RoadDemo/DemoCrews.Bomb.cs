@@ -83,6 +83,8 @@ namespace RoadDemo
         /// the refusal it leaves on BombRefusal is the row's faded note.</summary>
         public bool CanBombThrow(Unit unit, Vector3 targetPos)
         {
+            if (CustodyRefuses(unit))
+            { BombRefusal = InCustodyRefusal; return false; }
             var man = Thrower(unit, targetPos, out var why);
             BombRefusal = man == null ? why : null;
             return man != null;
@@ -92,6 +94,8 @@ namespace RoadDemo
         /// up, the crew at the car.)</summary>
         public bool CanBombPlant(Unit unit, RoadCar car)
         {
+            if (CustodyRefuses(unit))
+            { BombRefusal = InCustodyRefusal; return false; }
             if (car == null || car.Tf == null || car.Wrecked) { BombRefusal = "No car to lay it under"; return false; }
             var man = Planter(unit, car.Position, out var why);
             BombRefusal = man == null ? why : null;
@@ -128,6 +132,8 @@ namespace RoadDemo
         bool ThrowAt(Unit unit, Vector3 targetPos, string what)
         {
             BombRefusal = null;
+            if (CustodyRefuses(unit))
+            { BombRefusal = InCustodyRefusal; return false; }
             var man = Thrower(unit, targetPos, out var why);
             if (man == null) { BombRefusal = why; return false; }
 
@@ -155,6 +161,8 @@ namespace RoadDemo
         public bool OrderPlantBomb(RoadCar car)
         {
             BombRefusal = null;
+            if (CustodyRefuses(Selected))
+            { BombRefusal = InCustodyRefusal; return false; }
             if (car == null || car.Tf == null || car.Wrecked)
             {
                 BombRefusal = "No car to lay it under";

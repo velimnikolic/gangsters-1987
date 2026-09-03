@@ -353,7 +353,8 @@ namespace GangstersTools
         [CliCommand("gangsters_police_tests",
                     "Run the law & order contracts (EPICs 17-21): the fight-or-surrender " +
                     "roll, the precinct roster and its watch, the sentence table, the " +
-                    "station-court-prison pipe, wanted levels and the deputy.",
+                    "station-court-prison pipe, wanted levels, the deputy, and the exact " +
+                    "GAN-315 arrest/escort/shop-entry regressions.",
                     MainThreadRequired = true, Tags = new[] { "gangsters", "police", "tests" })]
         public static object PoliceTests()
         {

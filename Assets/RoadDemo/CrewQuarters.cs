@@ -20,8 +20,8 @@ namespace RoadDemo
     /// exception is GAN-273's bag detail; its own runtime AI may bring it out to defend
     /// the headquarters block, then file it back in when that block is clear.
     ///
-    /// Keyed by crew id plus unit kind: the line and its bag detail share command paper
-    /// but occupy independent rooms and may come through the door independently.
+    /// Keyed by the physical unit token: separate families may reuse a paper crew id,
+    /// while a line, its bag detail, and every police pair need independent rooms.
     /// </summary>
     public static class CrewQuarters
     {
@@ -29,19 +29,26 @@ namespace RoadDemo
         {
             public readonly int CrewId;
             public readonly bool Detachment;
-            public UnitKey(int crewId, bool detachment)
+            public readonly int RuntimeId;
+            public UnitKey(DemoCrews.Unit unit)
             {
-                CrewId = crewId;
-                Detachment = detachment;
+                CrewId = unit != null ? unit.CrewId : 0;
+                Detachment = unit != null && unit.IsDetachment;
+                // Crew numbers belong to organization books and overlap across
+                // families; every police detail dealt by hand has CrewId zero.  The
+                // physical unit token is the only identity that is unique across all
+                // of them, and a Sync keeps the same Unit object/token while rebuilding
+                // its members.
+                RuntimeId = unit != null ? unit.CrowdGroupId : 0;
             }
             public bool Equals(UnitKey other) =>
-                CrewId == other.CrewId && Detachment == other.Detachment;
+                RuntimeId == other.RuntimeId;
             public override bool Equals(object obj) => obj is UnitKey other && Equals(other);
-            public override int GetHashCode() => CrewId * 397 ^ (Detachment ? 1 : 0);
+            public override int GetHashCode() => RuntimeId;
         }
 
         static UnitKey Key(DemoCrews.Unit unit) =>
-            new UnitKey(unit.CrewId, unit.IsDetachment);
+            new UnitKey(unit);
         /// <summary>Near enough the doorstep for the men to start going through it.
         /// A crew stood off a door spreads over several metres, so this is the crew's
         /// reach and not the beat's own stride (DoorBeat.AtTheDoor) - each man walks
@@ -60,6 +67,7 @@ namespace RoadDemo
         /// <summary>One crew, and the door it was put behind.</summary>
         sealed class Billet
         {
+            public DemoCrews.Unit Unit;
             /// <summary>The premises, as the simulation names it. Invalid on an
             /// authored scene's front, where the men hide at the doorstep instead.</summary>
             public TerritoryBusinessId Door;
@@ -74,6 +82,10 @@ namespace RoadDemo
 
             public float MarchedAt;
             public float NextManAt;
+
+            /// <summary>The law, not the player, is walking surrendered men through
+            /// the precinct door. Every other direct march still respects custody.</summary>
+            public bool AllowCustody;
 
             /// <summary>Everybody who could get in is in.</summary>
             public bool In;
@@ -211,19 +223,20 @@ namespace RoadDemo
         /// card, the paper map, the block file - sends the men to the same place.
         /// </summary>
         public static bool Station(
-            DemoCrews crews, DemoCrews.Unit unit, TerritoryBusinessId door, bool speak = false)
+            DemoCrews crews, DemoCrews.Unit unit, TerritoryBusinessId door,
+            bool speak = false, bool allowCustody = false)
         {
             if (!TryDoorstep(door, out var doorstep, out var word))
                 return false;
-            return Station(crews, unit, door, doorstep, word, speak);
+            return Station(crews, unit, door, doorstep, word, speak, allowCustody);
         }
 
         /// <summary>The same order against a door the business directory cannot name -
         /// an authored scene's front, known only by the pavement outside it.</summary>
         public static bool Station(
             DemoCrews crews, DemoCrews.Unit unit, Vector3 doorstep, string word,
-            bool speak = false) =>
-            Station(crews, unit, default, doorstep, word, speak);
+            bool speak = false, bool allowCustody = false) =>
+            Station(crews, unit, default, doorstep, word, speak, allowCustody);
 
         /// <summary>Where the men would go, and what the place is called on the street.
         /// False for a door with no pavement point anybody can name.</summary>
@@ -261,12 +274,15 @@ namespace RoadDemo
         /// </summary>
         static bool Station(
             DemoCrews crews, DemoCrews.Unit unit, TerritoryBusinessId door,
-            Vector3 doorstep, string word, bool speak)
+            Vector3 doorstep, string word, bool speak, bool allowCustody)
         {
             // ANY house's crew may be taken indoors - a family's Don keeps to his own
             // premises (D4) by exactly the call the player's TAKE THEM INSIDE row makes.
-            // The law is the exception: a squad has no premises to be held in.
-            if (crews == null || unit == null || unit.Faction < 0 || unit.Wiped)
+            // A permanent police beat also uses this passage at its station door; the
+            // direct Unit on the billet keeps it distinct from an underworld crew id.
+            if (crews == null || unit == null || unit.Wiped)
+                return false;
+            if (!allowCustody && !crews.AcceptsPlayerOrder(unit))
                 return false;
 
             // Another of our doors: they are not in two buildings at once. Out of that
@@ -284,17 +300,19 @@ namespace RoadDemo
 
             Billets[key] = new Billet
             {
+                Unit = unit,
                 Door = door,
                 Doorstep = doorstep,
                 Word = word ?? "",
                 MarchedAt = Time.time,
                 NextManAt = 0f,
+                AllowCustody = allowCustody,
             };
 
             // The walk is an ordinary march, so everything a march already settles -
             // the car left behind, the fight called off, the errand dropped - is
             // settled here too.
-            March(crews, unit, doorstep);
+            March(crews, unit, doorstep, allowCustody);
             if (speak)
                 CrewSpeech.Say(unit, LivingCity.Data.VoiceLines.OrdInside);
             return true;
@@ -355,10 +373,11 @@ namespace RoadDemo
 
         /// <summary>Our own walk to the door, marked as ours so it does not read as the
         /// crew being retasked away from the order that issued it.</summary>
-        static void March(DemoCrews crews, DemoCrews.Unit unit, Vector3 to)
+        static void March(DemoCrews crews, DemoCrews.Unit unit, Vector3 to,
+            bool allowCustody = false)
         {
             _marching = Key(unit);
-            crews.MarchTo(unit, to);
+            crews.MarchTo(unit, to, allowCustody: allowCustody);
             _marching = null;
         }
 
@@ -382,8 +401,10 @@ namespace RoadDemo
         /// behind for the next crew to inherit that number.</summary>
         public static void Forget(int crewId)
         {
-            Billets.Remove(new UnitKey(crewId, false));
-            Billets.Remove(new UnitKey(crewId, true));
+            Scratch.Clear();
+            foreach (var key in Billets.Keys)
+                if (key.CrewId == crewId) Scratch.Add(key);
+            for (var i = 0; i < Scratch.Count; i++) Billets.Remove(Scratch[i]);
         }
 
         public static void Forget(DemoCrews.Unit unit)
@@ -407,9 +428,11 @@ namespace RoadDemo
                 if (!Billets.TryGetValue(key, out var billet))
                     continue;
 
-                var unit = key.Detachment
-                    ? crews.BagUnitOf(key.CrewId)
-                    : crews.UnitOfCrew(key.CrewId);
+                var unit = billet.Unit != null
+                    ? billet.Unit
+                    : key.Detachment
+                        ? crews.BagUnitOf(key.CrewId)
+                        : crews.UnitOfCrew(key.CrewId);
                 if (unit == null || unit.Wiped)
                 {
                     Billets.Remove(key);
@@ -487,7 +510,7 @@ namespace RoadDemo
                 Time.time - billet.MarchedAt > MarchAgainSeconds)
             {
                 billet.MarchedAt = Time.time;
-                March(crews, unit, billet.Doorstep);
+                March(crews, unit, billet.Doorstep, billet.AllowCustody);
             }
         }
 

@@ -34,7 +34,6 @@ namespace RoadDemo
             _combatFxPrewarm.Clear();
             AddPrewarmFx(MuzzleFlashPrefab);
             AddPrewarmFx(GunSmokePrefab);
-            AddPrewarmFx(BloodPrefab);
             AddPrewarmFx(ImpactPrefab);
             _combatFxPrewarmAt = 0;
             _prewarmedCombatFx ??= new Dictionary<GameObject, GameObject>();
@@ -1110,7 +1109,8 @@ namespace RoadDemo
         {
             foreach (var unit in Units)
             {
-                if (unit.TargetUnit != null) continue;
+                if (unit.IsPolice || unit.InCustody || unit.Surrendered ||
+                    unit.TargetUnit != null) continue;
                 // one word at a time per crew: the rest keep watch
                 bool talking = false;
                 foreach (var m in unit.All()) if (m.Chatting) { talking = true; break; }
@@ -1613,12 +1613,6 @@ namespace RoadDemo
                     }
                 }
             }
-            if (BloodPrefab)
-            {
-                var blood = CombatFx(BloodPrefab, target.ChestPosition,
-                    Quaternion.LookRotation(-line));
-                Destroy(blood, 4f);
-            }
         }
 
         // A round that missed its man carries on: a bystander stood in its way past him
@@ -1639,12 +1633,6 @@ namespace RoadDemo
             civ.TakeHit(1, from);
             CrewGore.Hit(civ, from, GroundY);
             if (civ.Dead) CrewGore.Death(civ, GroundY);
-            if (BloodPrefab)
-            {
-                var blood = CombatFx(BloodPrefab, civ.Tf.position + Vector3.up * 1.2f,
-                    Quaternion.LookRotation(-line));
-                Destroy(blood, 4f);
-            }
         }
 
         /// <summary>Of the rounds that miss a man sat in a car, this many hit the car.

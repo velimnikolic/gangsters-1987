@@ -52,6 +52,11 @@ namespace RoadDemo
         /// loop of officers walking up to him for ever.</summary>
         const float ChaseAgain = 30f;
 
+        /// <summary>A running crew's assigned unit is retargeted to fresh sightings at
+        /// this cadence. Re-running the nearest-unit lookup on every sighting would
+        /// quietly turn RUN into a city-wide response one free car at a time.</summary>
+        const float PursuitRouteEvery = 3f;
+
         /// <summary>Metres a running man will cross to reach the named hideout. Past
         /// this the walk is longer than a broken pursuit is likely to stay broken, so he
         /// takes the nearest door of ours instead - which is what the running man had
@@ -61,6 +66,10 @@ namespace RoadDemo
         float _watchAt;
         float _chaseAgainAt;
         static readonly List<GangFront> _doors = new List<GangFront>();
+        readonly Dictionary<DemoCrews.Unit, IPoliceUnit> _flightResponders =
+            new Dictionary<DemoCrews.Unit, IPoliceUnit>();
+        readonly Dictionary<DemoCrews.Unit, float> _flightRouteAt =
+            new Dictionary<DemoCrews.Unit, float>();
 
         void TickWanted(float dt)
         {
@@ -73,7 +82,22 @@ namespace RoadDemo
 
             foreach (var unit in _crews.Units)
             {
-                if (unit == null || unit.Wiped) continue;
+                if (unit == null) continue;
+                if (unit.Wiped)
+                {
+                    _flightResponders.Remove(unit);
+                    _flightRouteAt.Remove(unit);
+                    continue;
+                }
+                // A man already in the law's hands is not recognised and challenged
+                // again through the wanted sweep. Custody deliberately has no CrewCar,
+                // so the old car guard did not cover the visible prisoner ride.
+                if (unit.InCustody || unit.Surrendered)
+                {
+                    _flightResponders.Remove(unit);
+                    _flightRouteAt.Remove(unit);
+                    continue;
+                }
                 // THE LAW LOOKS AT EVERY FAMILY. A wanted man is a wanted man whichever
                 // house he belongs to, and the sweep reads HIS house's book - ours only
                 // when he is ours.
@@ -92,6 +116,8 @@ namespace RoadDemo
                     // and the hidden days are about being off it - not about the order
                     // that put him there.
                     if (unit.Fleeing) _crews.EndFlight(unit);
+                    _flightResponders.Remove(unit);
+                    _flightRouteAt.Remove(unit);
                     GoneToGround(roster, unit, today);
                     continue;
                 }
@@ -107,13 +133,49 @@ namespace RoadDemo
                     MarkSeen(roster, unit);
                 }
 
-                if (seen && WantedIn(roster, unit) &&
+                if (seen && unit.Fleeing)
+                    FollowSighting(unit, seenBy);
+                else if (seen && WantedIn(roster, unit) &&
                     _collar == Collar.None && Time.time >= _chaseAgainAt &&
                     StreetAlarm.QuietFor > QuietBefore)
                     ChaseOnSight(unit, seenBy, today);
 
                 if (unit.Fleeing) TickFlight(unit, roster, today, seen);
+                else
+                {
+                    _flightResponders.Remove(unit);
+                    _flightRouteAt.Remove(unit);
+                }
             }
+        }
+
+        void FollowSighting(DemoCrews.Unit unit, IPoliceUnit seer)
+        {
+            if (unit == null || seer == null) return;
+            if (!_flightResponders.TryGetValue(unit, out var responder) ||
+                PursuerLost(responder))
+            {
+                responder = seer.Available ? seer : NearestAvailable(unit.Position);
+                if (responder == null) return;
+                _flightResponders[unit] = responder;
+                _flightRouteAt[unit] = 0f;
+            }
+
+            if (_flightRouteAt.TryGetValue(unit, out var next) && Time.time < next)
+                return;
+            _flightRouteAt[unit] = Time.time + PursuitRouteEvery;
+            responder.RouteTo(unit.Position, 4f);
+        }
+
+        static bool PursuerLost(IPoliceUnit unit)
+        {
+            if (unit == null || unit.Tf == null) return true;
+            if (unit is PoliceBeat beat) return beat.Unit == null || beat.Unit.Wiped;
+            if (unit is PolicePatrolCar car) return car.Wrecked;
+            if (unit is PoliceCruiser cruiser)
+                return cruiser.Car == null || cruiser.Car.Wrecked ||
+                       cruiser.Men == null || cruiser.Men.Wiped;
+            return false;
         }
 
         /// <summary>
@@ -135,10 +197,10 @@ namespace RoadDemo
                 // neither does one inside a SHOP: DoorBeat hides his body while he takes
                 // a statement, and a man nobody can see must not be the one who
                 // recognises a face across the pavement.
-                if (u is PoliceFootPatrol foot &&
-                    (foot.State == PoliceFootPatrol.Mode.Inside ||
-                     foot.State == PoliceFootPatrol.Mode.Doorway ||
-                     DoorBeat.Active(foot))) continue;
+                if (u is PoliceBeat foot &&
+                    (foot.State == PoliceBeat.Mode.Inside ||
+                     foot.State == PoliceBeat.Mode.Doorway ||
+                     DoorBeat.Active(foot.Lead))) continue;
                 if (u is PolicePatrolCar car && car.State == PolicePatrolCar.Mode.Resting) continue;
                 float d = (u.Position - at).sqrMagnitude;
                 if (d < bestD) { bestD = d; best = u; }
@@ -176,39 +238,62 @@ namespace RoadDemo
         /// </summary>
         void ChaseOnSight(DemoCrews.Unit unit, IPoliceUnit law, int today)
         {
-            if (law == null || law.Tf == null) return;
+            if (unit == null || unit.InCustody || unit.Surrendered ||
+                law == null || law.Tf == null) return;
             var man = unit.Boss != null && !unit.Boss.Dead
                 ? unit.Boss : DemoCrews.NearestOf(unit, law.Tf.position);
             if (man == null || man.Tf == null) return;
 
-            // he is brought to them first; the collar opens when somebody is stood there
-            if (law.Available) law.RouteTo(unit.Position, 4f);
+            // A busy seer still radios it in: the nearest AVAILABLE unit is routed to
+            // the sighting, while the seer also goes when it is free.
+            var responder = NearestAvailable(unit.Position);
+            var seerCanGo = law.Available;
+            if (seerCanGo) law.RouteTo(unit.Position, 4f);
+            if (responder != null && responder != law) responder.RouteTo(unit.Position, 4f);
+            _chaseAgainAt = Time.time + ChaseAgain;
 
-            if (law is PoliceFootPatrol foot && foot.Tf != null &&
-                !DoorBeat.Active(foot) &&
-                (foot.Tf.position - man.Tf.position).sqrMagnitude < 30f * 30f)
+            var beat = law as PoliceBeat;
+            if (beat == null || !seerCanGo)
+                beat = responder as PoliceBeat;
+
+            if (beat != null && beat.Tf != null &&
+                !DoorBeat.Active(beat.Lead) &&
+                (beat.Tf.position - man.Tf.position).sqrMagnitude < 30f * 30f)
             {
-                _arrestOfficer = foot;
+                _arrestOfficer = beat;
                 _arrestLawman = null;
                 _arrestSquad = null;
                 _arrestCrew = unit;
                 _arrestCollar = man;
+                _arrestDeed = unit.HasDoorAnswer ? unit.ArrestDeed : Deed.Resisting;
+                _arrestCase = unit.ArrestCase;
+                _arrestCaseIsOurs = false;
                 _collar = Collar.WalkingUp;
                 _collarAt = Time.time;
                 _collarBy = Time.time + CollarPatience;
-                _chaseAgainAt = Time.time + ChaseAgain;
-                _fightChance = FightOdds(unit);
                 // Salted with the DAY and not with the clock: Time.time is whatever the
                 // frame rate made of it, and a stream seeded off it would answer
                 // differently on two runs of the same seed. A recognition is one thing
                 // per crew per day, which is the grain the rest of the sim keeps.
-                _willFight = SurrenderRoll.Fights(_fightChance,
-                    SurrenderRoll.StreamFor(_crews.CitySeed, CrewKey(unit), -today));
-                foot.Challenge(man, _sidearm);
+                RollAnswer(unit, -today);
+                beat.Challenge(man);
                 Banner();
                 CrewOverlay.Announce("AN OFFICER HAS RECOGNISED ONE OF OURS",
                     4f, new Color(1f, 0.55f, 0.45f));
             }
+        }
+
+        IPoliceUnit NearestAvailable(Vector3 at)
+        {
+            IPoliceUnit best = null;
+            var bestD = float.MaxValue;
+            foreach (var unit in _units)
+            {
+                if (unit == null || !unit.Available || unit.Tf == null) continue;
+                var d = (unit.Position - at).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = unit; }
+            }
+            return best;
         }
 
         /// <summary>
@@ -222,6 +307,14 @@ namespace RoadDemo
             if (CrewQuarters.Billeted(unit)) return;
             if (seen) return;
             if (Time.time - unit.SeenByLawAt < PursuitBroken) return;
+
+            if (unit.Faction != LivingCity.Gameplay.PlayerCommands.House.Value)
+            {
+                if (ToOwnFront(unit)) return;
+                if ((unit.Position - unit.FlightFrom).sqrMagnitude >= 70f * 70f)
+                    _crews.EndFlight(unit);
+                return;
+            }
 
             // THE HIDEOUT FIRST (GAN-235). The one address the family named is what a
             // man makes for; the nearest door we hold is the fallback and has to stay
@@ -250,6 +343,21 @@ namespace RoadDemo
                 CrewQuarters.Station(_crews, unit, door.Outside, door.Role))
                 CrewOverlay.Announce("THEY HAVE GONE TO GROUND", 4f,
                     new Color(0.95f, 0.9f, 0.6f));
+        }
+
+        bool ToOwnFront(DemoCrews.Unit unit)
+        {
+            GangFront best = null;
+            var bestD = float.MaxValue;
+            foreach (var front in GangFront.All)
+            {
+                if (front == null || front.Boarded || front.GangId != unit.Faction) continue;
+                var d = (front.Outside - unit.Position).sqrMagnitude;
+                if (d < bestD) { bestD = d; best = front; }
+            }
+            return best != null &&
+                   (CrewQuarters.Station(_crews, unit, best.BusinessId) ||
+                    CrewQuarters.Station(_crews, unit, best.Outside, best.Role));
         }
 
         /// <summary>

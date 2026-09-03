@@ -18,7 +18,8 @@ slojem (ledger), i šta se NE radi. Građa perioda: `Docs/1987-period-reference.
   → Leaving. `IPoliceUnit` apstrahuje ko dolazi.
 - `PolicePatrolCar` — patrolna kola: Resting → Undocking → Patrolling (BFS waypoints
   po celom grafu) → Returning → Docking; + Responding/OnScene.
-- `PoliceFootPatrol` — pozornik: isti ciklus peške, beat radijus 180 m od stanice.
+- `PoliceBeat` — stalni par pozornika kao jedan `DemoCrews.Unit`: isti ciklus peške,
+  beat radijus 180 m od stanice, zajednički combat/targeting i oba čoveka uzvraćaju vatru.
 - `PoliceCruiser` (CrewDemo) — CrewCar sa dva policajca kao jedinica zakona.
 - Odobrene odluke: zalutali meci pogađaju civile; policija smrtonosna za SVAKOG ko
   puca posle upozorenja (i za našu ekipu); heat je demo-lokalan; bez hapšenja u demou.
@@ -416,13 +417,13 @@ Uz pravilo „nema papirnih familija" (`Docs/rival-families.md`) to je i tako mr
 ### 9.2 Policajac ulazi UNUTRA, kroz ista vrata kao reketaš
 
 Epik kaže da policajac stoji na vratima `StatementSeconds` pa ode. Sada koristi isti
-`DoorBeat` prolaz kao čovek koji je reketirao: `DoorBeat.VisitBusiness(PoliceFootPatrol …)`,
-kroz `DoorVisitor` adapter, pa `PoliceFootPatrol.Mode.Doorway` za kratku deonicu preko
+`DoorBeat` prolaz kao čovek koji je reketirao: `DoorBeat.TryVisitBusiness(CrewWalker …)`,
+pa `PoliceBeat.Mode.Doorway` za kratku deonicu preko
 praga (pešački graf namerno nema veze kroz zid radnje). Poziv stoji u `CallStage.Statement`
 dok ga `DoorBeat` ne pusti napolje; izjava se evidentira unutra, poziv se zatvara tek posle
 izlaska.
 
-Partner ostaje na pločniku: `Mode.SceneCover`, 1,8 m pored vrata, sa distancom-kapijom
+Partner iz istog `DemoCrews.Unit` ostaje na pločniku: `Mode.SceneCover`, 1,8 m pored vrata, sa distancom-kapijom
 `SceneCoverGap = 4,5 m` — pre toga se smrzavao gde ga zatekne dolazak vođe, ponekad pola
 bloka iza radnje.
 
@@ -430,7 +431,7 @@ Tri stvari koje idu uz to i nisu očigledne:
 
 * **Skriveni policajac nije oko zakona.** Dok ga `DoorBeat` drži (telo `SetActive(false)`),
   `LawWithin` ga preskače i `ChaseOnSight` ne otvara hapšenje preko njega, a
-  `PoliceFootPatrol.Challenge` odbija posao ako `DoorBeat.Active(this)`. Bez toga je jedan
+  `PoliceBeat.Challenge` odbija posao ako je vođa već aktivni `DoorBeat` posjetilac. Bez toga je jedan
   transform imao dva vlasnika, hapšenje je počinjalo bez vidljivog policajca, a globalna
   `_collar` bravica je ostajala zaključana do `CollarPatience` i držala svako drugo
   hapšenje u gradu.
@@ -443,6 +444,17 @@ Tri stvari koje idu uz to i nisu očigledne:
 
 ### 9.3 Šta ovo NE pokriva
 
-`Assets/Scripts/Tests/PoliceTests.cs` je čist sloj bez UnityEngine i ne dodiruje nijednu od
-ovih izmena — sve gore je *ivica*. Zeleno `gangsters_police_tests` (53/53) ovde ništa ne
-dokazuje; dokaz je bio Play prolaz i `gangsters_racket_probe`.
+`Assets/Scripts/Tests/PoliceTests.cs` je čist sloj bez UnityEngine i ne dokazuje prolazak
+kroz vrata ni scensku koreografiju. Zelen suite dokazuje model; dokaz za ove ivice ostaje
+Play prolaz i `gangsters_racket_probe`.
+
+## 10. GAN-315 — odgovor na vratima
+
+Autoritativni brief je `Docs/design-briefs/answer-at-the-door-brief.md`. Implementacija
+uvodi determinističke QUIET / RUN / FIGHT odgovore, stalni dvočlani `PoliceBeat`, potjeru
+bez swarma za RUN, gradski swarm i nove deeds/grade za FIGHT, te fizički višetalasan
+prevoz i booking na pragu stanice za QUIET. Model pokrivaju police, organization, wage i
+save suite; scenski prolazi i broj parova u velikom gradu moraju se potvrditi u Play-u.
+
+ANSW-008/GAN-323 nije zatvoren ovim prolazom: pet-seed night watch ostaje iza GAN-291,
+koji prvo mora dodati `arrest`/`court` trace redove i `analyze.py --law`.

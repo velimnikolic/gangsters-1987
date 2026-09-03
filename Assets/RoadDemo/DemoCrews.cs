@@ -3,6 +3,7 @@ using LivingCity.Gameplay;
 using LivingCity.Entities;
 using LivingCity.Personnel;
 using LivingCity.Outfit;
+using LivingCity.Police;
 using LivingCity.Territory;
 using UnityEngine;
 
@@ -170,6 +171,21 @@ namespace RoadDemo
             /// until it is taken in (DemoCrews.TakeIn) or the arrest falls through.</summary>
             public bool Surrendered;
 
+            /// <summary>The latest answer this physical crew gave the law, and the
+            /// open paper that follows it until station, flight or trial resolves it.</summary>
+            public bool HasDoorAnswer;
+            public DoorAnswer LastDoorAnswer;
+            public CourtCase ArrestCase;
+            public Deed ArrestDeed = Deed.Affray;
+
+            /// <summary>From hands-up until the station threshold. The crew stays in
+            /// the organization and on every map, but no player order may move it.</summary>
+            public bool InCustody;
+
+            /// <summary>A first-leg custody was broken. Kept until the next booking so
+            /// the prisoner's saved record and eventual verdict retain the fact.</summary>
+            public bool CustodySprung;
+
             /// <summary>RUNNING. The player told this crew to break off and get away
             /// from the law (GAN-222). It is a state and not just an order because two
             /// other things read it: a running man never fires (the existing rule), and
@@ -182,6 +198,7 @@ namespace RoadDemo
             /// starts at the last sighting, not at the order.</summary>
             public float FledAt = -1000f;
             public float SeenByLawAt = -1000f;
+            public Vector3 FlightFrom;
 
             /// <summary>When the PLAYER last told this crew to shoot at the law.
             ///
@@ -268,8 +285,9 @@ namespace RoadDemo
             {
                 get
                 {
-                    if (Boss != null && Boss.Tf) return Boss.Tf.position;
-                    foreach (var m in All()) if (m.Tf) return m.Tf.position;
+                    if (Boss != null && !Boss.Dead && Boss.Tf) return Boss.Tf.position;
+                    foreach (var m in All())
+                        if (m != null && !m.Dead && m.Tf) return m.Tf.position;
                     return Vector3.zero;
                 }
             }
@@ -863,6 +881,23 @@ namespace RoadDemo
         /// the men until the officer is done with them (or somebody shoots him).</summary>
         const string HandsUpRefusal = "Hands up at gunpoint - he takes no orders";
 
+        /// <summary>Once seated for the station he is still on the map and in the
+        /// organization, but no player command reaches him.</summary>
+        public const string InCustodyRefusal = "In police custody - he takes no orders";
+
+        static bool CustodyRefuses(Unit unit) =>
+            unit != null && CustodyPlan.RefusesOrders(unit.InCustody);
+
+        /// <summary>Shared gate for command surfaces that live outside DemoCrews, such
+        /// as a premises' TAKE THEM INSIDE row.</summary>
+        internal bool AcceptsPlayerOrder(Unit unit)
+        {
+            OrderRefusal = null;
+            if (!CustodyRefuses(unit)) return true;
+            OrderRefusal = InCustodyRefusal;
+            return false;
+        }
+
         /// <summary>The city: crews dealt onto the sidewalk graph.</summary>
         public void Init(List<PedLink> links, PedClips clips, List<GameObject> fallbackPrefabs,
             int citySeed = 1987)
@@ -984,7 +1019,8 @@ namespace RoadDemo
         public Unit AddRival(int faction, string gangName, string bossName, GameObject bossPrefab,
             IList<string> hoodNames, IList<GameObject> hoodPrefabs, Vector3 anchor, Vector3 facing,
             GameObject weapon, EquipmentKind weaponKind, bool lineUp = false,
-            System.Func<int, (GameObject weapon, EquipmentKind kind)> armsFor = null)
+            System.Func<int, (GameObject weapon, EquipmentKind kind)> armsFor = null,
+            PedLink spawnLink = null, float spawnT = 0f)
         {
             var unit = new Unit
             {
@@ -1001,8 +1037,11 @@ namespace RoadDemo
                 ? PedestrianAnthropometry.PoliceSalt
                 : PedestrianAnthropometry.GangSalt;
 
-            var boss = SpawnAt(bossPrefab, bossName, _streetIds--, anchor, rot, BossPace,
-                anthropometrySalt: anthropometrySalt);
+            var boss = spawnLink != null
+                ? SpawnAt(bossPrefab, bossName, _streetIds--, spawnLink, spawnT,
+                    BossPace, anthropometrySalt)
+                : SpawnAt(bossPrefab, bossName, _streetIds--, anchor, rot, BossPace,
+                    anthropometrySalt: anthropometrySalt);
             if (boss != null)
             {
                 boss.IsLieutenant = true;
@@ -1023,8 +1062,12 @@ namespace RoadDemo
                 // a crew loafing on a pavement strings out along it rather than
                 // wedging back into the shopfront behind
                 var pos = anchor + rot * (lineUp ? LineOffset(unit.CrewId, k) : FormationOffset(unit.CrewId, k));
-                var hood = SpawnAt(prefab, hoodNames[k], _streetIds--, pos, rot, HoodPace(),
-                    anthropometrySalt: anthropometrySalt);
+                var hood = spawnLink != null
+                    ? SpawnAt(prefab, hoodNames[k], _streetIds--, spawnLink,
+                        Mathf.Clamp(spawnT - (k + 1) * Spacing, 0.3f,
+                            spawnLink.Length - 0.3f), HoodPace(), anthropometrySalt)
+                    : SpawnAt(prefab, hoodNames[k], _streetIds--, pos, rot, HoodPace(),
+                        anthropometrySalt: anthropometrySalt);
                 if (hood == null) continue;
                 hood.Faction = faction;
                 hood.CrowdGroupId = unit.CrowdGroupId;
@@ -1561,6 +1604,7 @@ namespace RoadDemo
             destination = world;
             OrderRefusal = null;
             if (unit == null || unit.Boss == null || unit.Boss.Dead) return false;
+            if (CustodyRefuses(unit)) { OrderRefusal = InCustodyRefusal; return false; }
             if (unit.Surrendered) { OrderRefusal = HandsUpRefusal; return false; }
             // an ordinary move order ends a run: the player has told them to go
             // somewhere, which is not the same as telling them to get away
@@ -1614,9 +1658,15 @@ namespace RoadDemo
         /// <summary>March a crew on foot over physical ground. Static obstacles shape
         /// the route through WalkRoute; <paramref name="keepOffRoad"/> optionally makes
         /// that direct route prefer crossings over walking along the carriageway.</summary>
-        public bool MarchTo(Unit unit, Vector3 world, bool run = false, bool keepOffRoad = false)
+        public bool MarchTo(Unit unit, Vector3 world, bool run = false,
+            bool keepOffRoad = false, bool allowCustody = false)
         {
             if (unit == null) return false;
+            if (!allowCustody && CustodyRefuses(unit))
+            {
+                OrderRefusal = InCustodyRefusal;
+                return false;
+            }
             // A CREW WHOSE LIEUTENANT IS DOWN IS STILL A CREW. His hoods are on their
             // feet and they can still be sent - somebody at the front picks up the walk.
             // Refusing the order because the man who used to give it is dead left three
@@ -1855,6 +1905,7 @@ namespace RoadDemo
         {
             OrderRefusal = null;
             if (Selected == null || target == null || target == Selected || target.Wiped) return false;
+            if (CustodyRefuses(Selected)) { OrderRefusal = InCustodyRefusal; return false; }
             if (Selected.Surrendered) { OrderRefusal = HandsUpRefusal; return false; }
 
             // CONF-003: an attack on the LAW is also the player's answer to an arrest.
@@ -1914,6 +1965,7 @@ namespace RoadDemo
         {
             OrderRefusal = null;
             if (unit == null || unit.Wiped) return false;
+            if (CustodyRefuses(unit)) { OrderRefusal = InCustodyRefusal; return false; }
             if (unit.Surrendered) { OrderRefusal = HandsUpRefusal; return false; }
 
             var away = unit.Position - from;
@@ -1934,6 +1986,7 @@ namespace RoadDemo
             unit.Fleeing = true;
             unit.FledAt = Time.time;
             unit.SeenByLawAt = Time.time;
+            unit.FlightFrom = unit.Position;
             CrewOverlay.Announce(unit.GangName.ToUpperInvariant() + " ARE RUNNING FOR IT",
                 4f, new Color(0.95f, 0.9f, 0.6f));
             return true;
@@ -1965,6 +2018,8 @@ namespace RoadDemo
             { ShootCarRefusal = "Not a machine the crew can be put on"; return false; }
             if (unit == null || unit.Wiped)
             { ShootCarRefusal = "Nobody to give it to"; return false; }
+            if (CustodyRefuses(unit))
+            { ShootCarRefusal = InCustodyRefusal; return false; }
             foreach (var man in unit.All())
                 if (!man.Dead && man.Carrying && !man.Riding && !IsAboard(man))
                 { ShootCarRefusal = null; return true; }
@@ -3671,6 +3726,28 @@ namespace RoadDemo
                   Anthropometry = anthropometry };
             man.InitAt(go.transform, ClipsFor(prefab),
                 afoot ? Clear(pos, name) : pos, rot);
+            man.Fired = OnFired;
+            man.RangeFactor = Random.Range(0.55f, 0.85f);
+            man.SetJog(Random.Range(2.7f, 3.5f));
+            return man;
+        }
+
+        CrewWalker SpawnAt(GameObject prefab, string name, int id, PedLink link, float t,
+            float pace, int anthropometrySalt)
+        {
+            if (prefab == null || link == null) return null;
+            if (id == -1) id = _anonymousCharacterId--;
+            var go = Body(prefab, name, id, anthropometrySalt, out var anthropometry);
+            var man = new CrewWalker
+            {
+                Speed = pace,
+                CharacterId = id,
+                SourcePrefab = prefab,
+                DisplayName = name,
+                Anthropometry = anthropometry,
+            };
+            man.Init(go.transform, ClipsFor(prefab), link,
+                Mathf.Clamp(t, 0.3f, link.Length - 0.3f));
             man.Fired = OnFired;
             man.RangeFactor = Random.Range(0.55f, 0.85f);
             man.SetJog(Random.Range(2.7f, 3.5f));

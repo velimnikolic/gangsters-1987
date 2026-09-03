@@ -1399,7 +1399,12 @@ namespace RoadDemo
             else
                 Row(LivingCity.Territory.TerritoryRacketOrders.MoveInLabel,
                     "the men wait inside · off the street",
-                    () => CrewQuarters.Station(_crews, crew, doorstep, front.Role, speak: true),
+                    () =>
+                    {
+                        if (!CrewQuarters.Station(_crews, crew, doorstep, front.Role,
+                                speak: true))
+                            Refuse(_crews.OrderRefusal);
+                    },
                     lit: true);
 
             LayoutAndShow(screen);
@@ -1704,7 +1709,11 @@ namespace RoadDemo
                             if (move == LivingCity.Territory.TerritoryQuartersMove.Out)
                                 CrewQuarters.BringOut(housed, speak: true);
                             else
-                                CrewQuarters.Station(_crews, housed, quartersId, speak: true);
+                            {
+                                if (!CrewQuarters.Station(_crews, housed, quartersId,
+                                        speak: true))
+                                    Refuse(_crews.OrderRefusal);
+                            }
                         };
                     }
                     else if (order.Kind ==

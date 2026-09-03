@@ -1061,7 +1061,6 @@ namespace CrewDemo
         {
             ResetManualClock();
             for (int i = 0; i < _walkers.Count; i++) _walkers[i].Dispose();
-            for (int i = 0; i < _beat.Count; i++) _beat[i].Dispose();
         }
 
         // ------------------------------------------------------------ the law
@@ -1130,11 +1129,11 @@ namespace CrewDemo
         // ------------------------------------------------------------ the beat
         //
         // Officers on foot, walking the block's own pavement and answering a shooting
-        // the way the city's do - the same PoliceFootPatrol the station spawns, given a
+        // the way the city's do - the same PoliceBeat the station spawns, given a
         // shopfront to stand at instead of a station door. Nothing about how they walk,
         // what they do when they are sent, or how long they hold a scene is decided
         // here: this stands them up and hands them to the dispatcher.
-        readonly List<PoliceFootPatrol> _beat = new List<PoliceFootPatrol>();
+        readonly List<PoliceBeat> _beat = new List<PoliceBeat>();
 
         /// <summary>Metres off the pavement's centre line the post stands - the officer's
         /// "station door", far enough in to read as a man stood at a shopfront rather
@@ -1180,7 +1179,6 @@ namespace CrewDemo
                 if (l.To == homeFwd.From) { homeBack = l; break; }
             if (homeBack == null) return;
 
-            var routeHome = PoliceFootPatrol.RouteHome(homeFwd);
             // every walkable corner of both loops, the officers' waypoint pool - the
             // same pool the city's beat draws from, read the same way
             var corners = new HashSet<PedNode>();
@@ -1188,37 +1186,16 @@ namespace CrewDemo
             var nodes = new List<PedNode>(corners);
 
             var along = (homeFwd.To.Pos - homeFwd.From.Pos).normalized;
-            // which way the block is from the pavement: the door is pushed THAT way, so
-            // an officer standing at his post has a building at his back and the road in
-            // front of him, never the other way about
-            var mid = Vector3.Lerp(homeFwd.From.Pos, homeFwd.To.Pos, 0.5f);
-            var inward = Vector3.Cross(Vector3.up, along);
-            if (Vector3.Dot(inward, Flat(BlockCentre - mid)) < 0f) inward = -inward;
-
-            float entryT = Mathf.Clamp(Vector3.Dot(post - homeFwd.From.Pos, along), 2f, homeFwd.Length - 2f);
-            var root = new GameObject("Beat Officers").transform;
-            for (int i = 0; i < policeBeat; i++)
+            float entryT = Mathf.Clamp(Vector3.Dot(post - homeFwd.From.Pos, along), 2f,
+                homeFwd.Length - 2f);
+            var ring = PoliceBeat.BeatRing(homeFwd, homeBack, BlockCentre);
+            var pairs = Mathf.CeilToInt(policeBeat / 2f);
+            for (int i = 0; i < pairs; i++)
             {
-                var go = Instantiate(beatBody, root);
-                go.name = "Beat Officer " + (i + 1);
-                foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
-                foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
-                foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
-                foreach (var animator in go.GetComponentsInChildren<Animator>()) animator.runtimeAnimatorController = null;
-
-                // each man his own few metres of the same stretch, so two officers do not
-                // stand in one another
-                float t = Mathf.Clamp(entryT + i * 3f, 2f, homeFwd.Length - 2f);
-                var door = Vector3.Lerp(homeFwd.From.Pos, homeFwd.To.Pos, t / homeFwd.Length)
-                           + inward * PostOffPavement;
-
-                var officer = new PoliceFootPatrol
-                    { Speed = Random.Range(1.3f, 1.5f), UnitNumber = i + 1 };
-                officer.Init(go.transform, beatClips, homeFwd, t);
-                officer.Configure(door, homeFwd, homeBack, t, nodes, routeHome,
-                    BeatRest, BeatStops, Random.Range(2f, 6f) + i * 4f);
-                _beat.Add(officer);
-                dispatch.Register(officer);
+                var t = Mathf.Clamp(entryT + i * 3f, 2f, homeFwd.Length - 2f);
+                var beat = dispatch.MakeBeat(homeFwd, t, nodes, ring, i + 1,
+                    null, BeatRest, 0f);
+                if (beat != null) _beat.Add(beat);
             }
 #endif
         }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LivingCity.Ambient;
 using UnityEngine;
 
 namespace RoadDemo
@@ -13,9 +14,11 @@ namespace RoadDemo
     public static class CrewGore
     {
         const int MaxSplats = 240;
-        static readonly Color Blood = new Color(0.42f, 0.03f, 0.03f, 0.9f);
-        static readonly Color Pool = new Color(0.36f, 0.02f, 0.02f, 0.95f);
-        static readonly Color StainOnCloth = new Color(0.30f, 0.02f, 0.02f, 0.92f);
+        // The authored texture carries the blood colour and wet highlights. These
+        // neutral tints preserve them instead of multiplying everything into flat red.
+        static readonly Color Blood = new Color(0.86f, 0.72f, 0.7f, 0.88f);
+        static readonly Color Pool = new Color(0.7f, 0.54f, 0.52f, 0.94f);
+        static readonly Color StainOnCloth = new Color(0.7f, 0.56f, 0.54f, 0.88f);
         static readonly Color Bloodied = new Color(0.72f, 0.28f, 0.24f);
         static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
         static readonly int ColorId = Shader.PropertyToID("_Color");
@@ -55,6 +58,11 @@ namespace RoadDemo
             var line = man.Tf.position - from;
             line.y = 0f;
             var dir = line.sqrMagnitude > 1e-3f ? line.normalized : -man.Tf.forward;
+            var wound = man is CrewWalker crew ? crew.ChestPosition
+                : man.Tf.position + Vector3.up * 1.2f;
+            bool fatal = man is CrewWalker walker ? walker.Dead
+                : man is CivilianAgent civilian && civilian.Dead;
+            BloodFx.PlayHit(wound, dir, fatal);
             // exit side: past him, a little to either hand
             var spot = man.Tf.position + dir * Random.Range(0.4f, 1.4f) +
                        Vector3.Cross(Vector3.up, dir) * Random.Range(-0.5f, 0.5f);
@@ -89,24 +97,7 @@ namespace RoadDemo
 
         static void Splat(Vector3 at, float groundY, float size, Color tint)
         {
-            var sprite = DemoUi.Dot;
-            if (sprite == null) return;
-            if (splatMaterial == null)
-            {
-                var shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Transparent");
-                if (shader == null) return;
-                splatMaterial = new Material(shader) { name = "Blood" };
-                splatMaterial.mainTexture = sprite.texture;
-                // URP Unlit: transparent surface, alpha blend, no depth write, drawn late
-                splatMaterial.SetFloat("_Surface", 1f);
-                splatMaterial.SetFloat("_Blend", 0f);
-                splatMaterial.SetFloat("_ZWrite", 0f);
-                splatMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-                splatMaterial.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-                splatMaterial.SetOverrideTag("RenderType", "Transparent");
-                splatMaterial.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-                splatMaterial.renderQueue = 3000;
-            }
+            if (!EnsureSplatMaterial()) return;
             if (root == null) root = new GameObject("Blood").transform;
 
             GameObject go;
@@ -129,6 +120,30 @@ namespace RoadDemo
             go.SetActive(true);
         }
 
+        static bool EnsureSplatMaterial()
+        {
+            if (splatMaterial != null) return true;
+            var texture = BloodFx.SplatterTexture;
+            if (texture == null) return false;
+            var shader = Shader.Find("Universal Render Pipeline/Unlit") ??
+                         Shader.Find("Unlit/Transparent");
+            if (shader == null) return false;
+            splatMaterial = new Material(shader) { name = "Realistic Blood Decal" };
+            splatMaterial.mainTexture = texture;
+            if (splatMaterial.HasProperty("_BaseMap"))
+                splatMaterial.SetTexture("_BaseMap", texture);
+            splatMaterial.SetFloat("_Surface", 1f);
+            splatMaterial.SetFloat("_Blend", 0f);
+            splatMaterial.SetFloat("_ZWrite", 0f);
+            splatMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            splatMaterial.SetInt("_DstBlend",
+                (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            splatMaterial.SetOverrideTag("RenderType", "Transparent");
+            splatMaterial.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            splatMaterial.renderQueue = 3000;
+            return true;
+        }
+
         static GameObject NewSplat()
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
@@ -149,7 +164,7 @@ namespace RoadDemo
         // side facing the shooter, so the shirt front or the back reads shot.
         static void Stain(PedestrianAgent man, Vector3 from)
         {
-            if (splatMaterial == null) return;
+            if (!EnsureSplatMaterial()) return;
             var animator = man.Tf.GetComponentInChildren<Animator>();
             var chest = animator ? animator.GetBoneTransform(HumanBodyBones.Chest) ??
                                    animator.GetBoneTransform(HumanBodyBones.Spine) : null;

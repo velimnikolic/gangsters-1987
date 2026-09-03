@@ -32,8 +32,8 @@ namespace RoadDemo
         /// <summary>Seconds between the receiver coming off the hook and a unit being
         /// given the call. A 1987 switchboard, a desk sergeant and a radio: the band is
         /// rolled per complaint off its own stream, never per frame.</summary>
-        const float ComplaintDelayLow = 20f;
-        const float ComplaintDelayHigh = 40f;
+        const float ComplaintDelayLow = PoliceProcedure.ComplaintDelayMinimum;
+        const float ComplaintDelayHigh = PoliceProcedure.ComplaintDelayMaximum;
 
         /// <summary>Metres from the door a man of the accused faction has to be for the
         /// officer to have somebody to speak to. An arm of the street: he has to be AT
@@ -82,6 +82,8 @@ namespace RoadDemo
             public float StatementBy;
             public bool StatementVisit;
             public bool StatementRecorded;
+            public bool StatementEntered;
+            public bool StatementInterviewed;
             public CourtCase File;
 
             // A block shakedown can put several calls in the switchboard at once.
@@ -101,6 +103,10 @@ namespace RoadDemo
             /// <summary>The men were asked and would not go. NOT the same disposition as
             /// a door with nobody at it, and never filed as one.</summary>
             public bool MenRefused;
+            public bool MenRan;
+            public bool MenFought;
+            public DemoCrews.Unit Accused;
+            public Custody Transfer;
 
             /// <summary>Whether this call has already asked a station to put a car out.
             /// Once is once: a ringing telephone does not empty a garage.</summary>
@@ -294,7 +300,7 @@ namespace RoadDemo
                         // never answers must not hold a unit off the road for the rest of
                         // the campaign.
                         if (call.StatementVisit && Time.time < call.HomeBy) break;
-                        if (call.StatementVisit) { StatementTaken(call); break; }
+                        if (call.StatementVisit) { StatementVisitFailed(call); break; }
                         if (Time.time < call.StatementBy) break;
                         StatementTaken(call);
                         break;
@@ -308,6 +314,14 @@ namespace RoadDemo
                         // a window that somehow never closes must not hold a car off
                         // the road for the rest of the campaign.
                         if (_collar != Collar.None && Time.time < call.HomeBy) break;
+                        if (call.Transfer != null && !call.Transfer.Finished) break;
+                        if (call.MenRan && call.Accused != null &&
+                            call.Accused.Fleeing && !call.Accused.Wiped &&
+                            (call.Accused.Position - call.Call.Pos).sqrMagnitude <
+                            ComplaintReach * ComplaintReach) break;
+                        if (call.MenFought && call.Accused != null &&
+                            !call.Accused.Wiped && call.Accused.TargetUnit != null &&
+                            !call.Accused.TargetUnit.Wiped) break;
                         // NOBODY WAS TAKEN, SO THE CALL IS NOT ANSWERED. The men walked
                         // off the question, or the window ran out - and the officer is
                         // still stood at a door somebody rang about. He does what he
@@ -323,7 +337,6 @@ namespace RoadDemo
                         // complaint's file alone).
                         if (call.MenRefused)
                         {
-                            LawWire.RefusedTheOfficer(call.Call);
                             Close(call);
                             break;
                         }
@@ -453,7 +466,7 @@ namespace RoadDemo
                     var side = Vector3.Dot(toDoor, t.right) >= 0f ? 1f : -1f;
                     call.Men = SpawnSquad(unit.Position + t.right * side * 2.4f,
                         toDoor.sqrMagnitude > 0.01f ? toDoor.normalized : t.forward,
-                        1, aboardOf: null);
+                        2, aboardOf: null);
                 }
                 if (call.Men == null) { Close(call); return; }
             }
@@ -464,7 +477,7 @@ namespace RoadDemo
             // what a collar that never reached its man and a statement taken across a
             // car park both came out of. He walks the rest by hand, the same short
             // straight leg DoorBeat uses for a threshold.
-            if (call.Unit is PoliceFootPatrol foot && foot.Tf != null)
+            if (call.Unit is PoliceBeat foot && foot.Tf != null)
             {
                 var toDoor = foot.Tf.position - call.Call.Pos;
                 toDoor.y = 0f;
@@ -481,13 +494,26 @@ namespace RoadDemo
             }
             else
             {
-                // a car's men are put down beside the door they were driven to
+                // A car puts its pair down at the kerb. They still run the physical last
+                // leg together, over the same WalkRoute as a crew, before anybody can be
+                // challenged or any statement visit can begin.
                 var lead = Lead(call.Men);
                 if (lead?.Tf != null)
                 {
                     var toDoor = lead.Tf.position - call.Call.Pos;
                     toDoor.y = 0f;
-                    call.AtTheDoorstep = toDoor.sqrMagnitude <= DoorstepReach * DoorstepReach;
+                    var gap = toDoor.magnitude;
+                    if (gap > DoorstepReach && gap <= ClosingMax)
+                    {
+                        var doorstep = call.Call.Pos + toDoor / gap * 2f;
+                        _crews.MarchTo(call.Men, doorstep,
+                            run: PoliceProcedure.RunToScene,
+                            keepOffRoad: false, allowCustody: true);
+                        call.Stage = CallStage.Closing;
+                        call.ClosedBy = Time.time + ClosingSeconds;
+                        return;
+                    }
+                    call.AtTheDoorstep = gap <= DoorstepReach;
                 }
             }
 
@@ -499,9 +525,10 @@ namespace RoadDemo
         /// call before anything else is asked of him.</summary>
         void TickClosing(CallOut call)
         {
-            var foot = call.Unit as PoliceFootPatrol;
-            if (foot == null || foot.Tf == null) { Close(call); return; }
-            var toDoor = foot.Tf.position - call.Call.Pos;
+            var foot = call.Unit as PoliceBeat;
+            var body = foot != null ? foot.Lead : Lead(call.Men);
+            if (body == null || body.Tf == null) { Close(call); return; }
+            var toDoor = body.Tf.position - call.Call.Pos;
             toDoor.y = 0f;
             bool there = toDoor.sqrMagnitude <= DoorstepReach * DoorstepReach;
             if (!there && Time.time < call.ClosedBy) return;
@@ -511,20 +538,18 @@ namespace RoadDemo
             // there. He may still take a statement - he is on the block, the shopkeeper
             // will speak to him - but nobody is asked to put his hands up by a man who
             // never arrived.
-            foot.EndDoorway();
+            foot?.EndDoorway();
             call.AtTheDoorstep = there;
             call.Stage = CallStage.AtTheDoor;
         }
 
         /// <summary>
-        /// HE IS AT THE DOOR. The case is opened here whichever way it goes - the
-        /// shopkeeper who rang is its first witness, and the people frozen at the
-        /// extortion visit are copied beside him, once and for good.
+        /// HE IS AT THE DOOR. A collar may open a case once a real accused man is found;
+        /// otherwise the case waits for the officer to cross the shop threshold and take
+        /// the statement. Merely reaching this dispatcher stage is not evidence.
         /// </summary>
         void AtTheDoor(CallOut call)
         {
-            call.File = OpenComplaintCase(call);
-
             if (TryComplaintCollar(call))
             {
                 // The EPIC 17 window has the CREW from here; the call keeps the UNIT,
@@ -562,6 +587,13 @@ namespace RoadDemo
             call.Stage = CallStage.Statement;
             if (BeginStatementVisit(call))
                 return;
+            // A named business has a real doorway. If that passage cannot even start,
+            // no statement is fabricated on the pavement and no case is opened.
+            if (!string.IsNullOrEmpty(call.Call.BusinessId))
+            {
+                StatementVisitFailed(call);
+                return;
+            }
             call.StatementBy = Time.time + StatementSeconds;
         }
 
@@ -584,33 +616,54 @@ namespace RoadDemo
             // ComplaintPatience is longer than all of it together and is what the stage
             // above gives up after.
             call.HomeBy = Time.time + ComplaintPatience;
-            System.Action recorded = () => StatementTaken(call, close: false);
+            System.Action recorded = () =>
+            {
+                call.StatementEntered = true;
+                call.StatementInterviewed = true;
+                StatementTaken(call, close: false);
+            };
             System.Action outside = () =>
             {
                 StatementTaken(call, close: false);
                 Close(call);
             };
+            System.Action failed = () => StatementVisitFailed(call);
 
-            if (call.Unit is PoliceFootPatrol foot)
+            if (call.Unit is PoliceBeat foot)
             {
-                if (DoorBeat.VisitBusiness(foot, businessId, call.Call.Pos,
-                        recorded, outside, StatementSeconds))
-                    return true;
+                var officer = foot.Lead;
+                if (officer != null && officer.Tf != null)
+                {
+                    if (DoorBeat.TryVisitBusiness(officer, businessId, call.Call.Pos,
+                            whenInside: recorded, whenOut: outside,
+                            insideSeconds: StatementSeconds, whenFailed: failed))
+                        return true;
+                }
             }
             else
             {
                 var officer = Lead(call.Men);
                 if (officer != null)
                 {
-                    DoorBeat.VisitBusiness(officer, businessId, call.Call.Pos,
-                        whenInside: recorded, whenOut: outside,
-                        insideSeconds: StatementSeconds);
-                    return true;
+                    if (DoorBeat.TryVisitBusiness(officer, businessId, call.Call.Pos,
+                            whenInside: recorded, whenOut: outside,
+                            insideSeconds: StatementSeconds, whenFailed: failed))
+                        return true;
                 }
             }
 
             call.StatementVisit = false;
             return false;
+        }
+
+        void StatementVisitFailed(CallOut call)
+        {
+            if (call == null || call.Stage == CallStage.Done) return;
+            call.StatementVisit = false;
+            CrewOverlay.AnnounceOurs(call.Call.Faction,
+                "THE OFFICER COULD NOT REACH THE SHOP", 4f,
+                new Color(1f, 0.85f, 0.55f));
+            Close(call);
         }
 
         /// <summary>Nobody to speak to but the man behind the counter. The shop is out
@@ -619,9 +672,15 @@ namespace RoadDemo
         /// taken for anything.</summary>
         void StatementTaken(CallOut call, bool close = true)
         {
-            if (call == null || call.StatementRecorded)
+            if (call == null || call.Stage != CallStage.Statement ||
+                call.StatementRecorded)
+                return;
+            if (!string.IsNullOrEmpty(call.Call.BusinessId) &&
+                !PoliceProcedure.CanRecordShopStatement(
+                    call.StatementEntered, call.StatementInterviewed))
                 return;
             call.StatementRecorded = true;
+            call.File ??= OpenComplaintCase(call);
             var runtime = TerritoryRuntime.Instance;
             if (runtime != null && !string.IsNullOrEmpty(call.Call.BusinessId))
             {
@@ -655,8 +714,8 @@ namespace RoadDemo
             // doorway walk is driven by hand and answers nothing else - Release refuses
             // him outright - so a call that gives up mid-leg must hand him back first or
             // the man stands in a shop doorway for the rest of the campaign.
-            if (call.Unit is PoliceFootPatrol walking &&
-                walking.State == PoliceFootPatrol.Mode.Doorway)
+            if (call.Unit is PoliceBeat walking &&
+                walking.State == PoliceBeat.Mode.Doorway)
                 walking.EndDoorway();
             if (call.Men != null && !call.Men.Wiped && call.Unit is PoliceCruiser cruiser)
             {

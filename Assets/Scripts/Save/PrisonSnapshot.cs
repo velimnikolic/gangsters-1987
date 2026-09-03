@@ -35,6 +35,8 @@ namespace LivingCity.Save
                 {
                     characterId = man.CharacterId,
                     deed = (int)man.Deed,
+                    answer = (int)man.Answer,
+                    sprung = man.Sprung,
                     takenOnDay = man.TakenOnDay,
                     courtDay = man.CourtDay,
                     sentenceDays = man.SentenceDays,
@@ -87,6 +89,8 @@ namespace LivingCity.Save
                         days = verdict.Days,
                         outOnDay = verdict.OutOnDay,
                         day = verdict.Day,
+                        answer = (int)verdict.Answer,
+                        sprung = verdict.Sprung,
                     };
                 }
 
@@ -100,6 +104,7 @@ namespace LivingCity.Save
                     defendants = file.Defendants.ToArray(),
                     witnesses = witnesses,
                     counts = file.Counts.ToArray(),
+                    extraCharges = ToInts(file.ExtraCharges),
                     openedDay = file.OpenedDay,
                     courtDay = file.CourtDay,
                     lawyerId = file.LawyerId,
@@ -129,6 +134,8 @@ namespace LivingCity.Save
                 {
                     CharacterId = row.characterId,
                     Deed = (Deed)row.deed,
+                    Answer = (DoorAnswer)row.answer,
+                    Sprung = row.sprung,
                     TakenOnDay = row.takenOnDay,
                     CourtDay = row.courtDay,
                     SentenceDays = row.sentenceDays,
@@ -164,6 +171,8 @@ namespace LivingCity.Save
                     reopened.Defendants.Add(row.defendants[d]);
                 for (var c = 0; row.counts != null && c < row.counts.Length; c++)
                     reopened.Counts.Add(row.counts[c]);
+                for (var c = 0; row.extraCharges != null && c < row.extraCharges.Length; c++)
+                    reopened.ExtraCharges.Add((Deed)row.extraCharges[c]);
                 for (var w = 0; row.witnesses != null && w < row.witnesses.Length; w++)
                 {
                     var witness = row.witnesses[w];
@@ -189,6 +198,8 @@ namespace LivingCity.Save
                         Days = verdict.days,
                         OutOnDay = verdict.outOnDay,
                         Day = verdict.day,
+                        Answer = (DoorAnswer)verdict.answer,
+                        Sprung = verdict.sprung,
                     });
                 }
                 docket.Add(reopened);
@@ -199,6 +210,13 @@ namespace LivingCity.Save
 
             pipe.RestoreFrom(inside, docket, file.escaped, file.nextCaseId,
                 file.prisonRosterSeed);
+        }
+
+        static int[] ToInts(System.Collections.Generic.List<Deed> values)
+        {
+            var result = new int[values != null ? values.Count : 0];
+            for (var i = 0; i < result.Length; i++) result[i] = (int)values[i];
+            return result;
         }
 
         /// <summary>

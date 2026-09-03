@@ -305,8 +305,9 @@ namespace RoadDemo
 
         Transform IPoliceUnit.Tf => Tf;
         Vector3 IPoliceUnit.Position => Tf.position;
-        bool IPoliceUnit.Available => !_sceneWanted && !OffWatch && !Wrecked &&
+        public bool Available => !_sceneWanted && !OffWatch && !Wrecked &&
             (State == Mode.Resting || State == Mode.Patrolling || State == Mode.Returning);
+        bool IPoliceUnit.Available => Available;
         bool IPoliceUnit.OnScene => State == Mode.OnScene;
         bool IPoliceUnit.Carries => true;
 

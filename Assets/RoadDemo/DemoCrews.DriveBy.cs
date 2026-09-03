@@ -382,7 +382,12 @@ namespace RoadDemo
         /// lieutenant goes with him; with no hoods at all, nobody goes. A crew's boss
         /// is worth more than a pass, and one man on a machine is a man who cannot
         /// shoot without stopping (CrewBike.TickGuns), which is not a drive-by.</summary>
-        public bool CanDriveBy(Unit unit, Unit target) => Pick(unit, target, out _, out _) != null;
+        public bool CanDriveBy(Unit unit, Unit target)
+        {
+            if (CustodyRefuses(unit))
+            { DriveByRefusal = InCustodyRefusal; return false; }
+            return Pick(unit, target, out _, out _) != null;
+        }
 
         /// <summary>Scratch for the two loops below - which machines and which men have
         /// already been dealt out inside ONE question. Neither loop runs inside the
@@ -400,6 +405,8 @@ namespace RoadDemo
         /// it: the card reads both off this one question.</summary>
         public int DriveByMachines(Unit unit, Unit target)
         {
+            if (CustodyRefuses(unit))
+            { DriveByRefusal = InCustodyRefusal; return 0; }
             _countBikes.Clear();
             _countMen.Clear();
             while (true)
@@ -438,6 +445,8 @@ namespace RoadDemo
             DriveByRefusal = null;
             DriveByShortHanded = false;
             if (Selected == null || target == null) return false;
+            if (CustodyRefuses(Selected))
+            { DriveByRefusal = InCustodyRefusal; return false; }
 
             _sentBikes.Clear();
             _sentMen.Clear();

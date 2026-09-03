@@ -66,6 +66,41 @@ namespace RoadDemo
             File(-1, Named(call.Where, "the door"), IncidentKind.RefusedTheOfficer, "");
         }
 
+        static bool IsOurs(StreetAlarm.Complaint? call, DemoCrews.Unit crew) =>
+            crew != null ? crew.Faction == Ours : call.HasValue && call.Value.Faction == Ours;
+
+        static string CrewName(DemoCrews.Unit crew) =>
+            crew == null || string.IsNullOrEmpty(crew.GangName) ? "Our men" : crew.GangName;
+
+        static string Scene(StreetAlarm.Complaint? call) =>
+            call.HasValue ? Named(call.Value.Where, "the street") : "the street";
+
+        public static void RanFromTheOfficer(StreetAlarm.Complaint? call,
+            DemoCrews.Unit crew)
+        {
+            if (!IsOurs(call, crew)) return;
+            File(-1, CrewName(crew), IncidentKind.RanFromTheOfficer, Scene(call));
+        }
+
+        public static void FiredOnTheOfficer(StreetAlarm.Complaint? call,
+            DemoCrews.Unit crew)
+        {
+            if (!IsOurs(call, crew)) return;
+            File(-1, CrewName(crew), IncidentKind.FiredOnTheOfficer, Scene(call));
+        }
+
+        public static void TakenIn(StreetAlarm.Complaint? call, DemoCrews.Unit crew)
+        {
+            if (!IsOurs(call, crew)) return;
+            File(-1, CrewName(crew), IncidentKind.TakenIn, Scene(call));
+        }
+
+        public static void Sprung(StreetAlarm.Complaint? call, DemoCrews.Unit crew)
+        {
+            if (!IsOurs(call, crew)) return;
+            File(-1, CrewName(crew), IncidentKind.Sprung, Scene(call));
+        }
+
         /// <summary>A uniform in the doorway and nobody to take in.</summary>
         public static void StatementTaken(StreetAlarm.Complaint call)
         {

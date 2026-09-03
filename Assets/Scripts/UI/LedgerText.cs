@@ -106,6 +106,10 @@ namespace LivingCity.UI
                 case IncidentKind.StatementTaken: return "Statement";
                 case IncidentKind.NobodyCame: return "Nobody came";
                 case IncidentKind.RefusedTheOfficer: return "Refused";
+                case IncidentKind.RanFromTheOfficer: return "Ran from law";
+                case IncidentKind.FiredOnTheOfficer: return "Fired on law";
+                case IncidentKind.TakenIn: return "Taken in";
+                case IncidentKind.Sprung: return "Sprung";
                 case IncidentKind.CaseOpened: return "On the docket";
                 case IncidentKind.WitnessWithdrawn: return "Withdrawn";
                 case IncidentKind.WitnessKilled: return "Silenced";
@@ -322,6 +326,19 @@ namespace LivingCity.UI
         /// <summary>The same word in the capitals a band head is set in.</summary>
         public static string StageBand(Police.PrisonStage stage) =>
             StageLabel(stage).ToUpperInvariant();
+
+        /// <summary>The one phrase used on the docket and in its archive for the
+        /// answer at the door.</summary>
+        public static string DoorAnswerLabel(Police.DoorAnswer answer, bool sprung = false)
+        {
+            var line = answer switch
+            {
+                Police.DoorAnswer.Run => "ran from the officer",
+                Police.DoorAnswer.Fight => "fired on the officer",
+                _ => "went quietly",
+            };
+            return sprung ? line + " · sprung on the way in" : line;
+        }
 
         /// <summary>What became of one man on one case, for the archive.</summary>
         public static string CaseOutcomeLine(Police.CaseVerdict verdict) =>

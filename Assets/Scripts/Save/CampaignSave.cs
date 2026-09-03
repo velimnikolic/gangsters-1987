@@ -159,6 +159,11 @@ namespace LivingCity.Save
                 shutdowns = Shutdowns(business),
                 knowledge = Knowledge(underworld),
             };
+            // The physical first leg is intentionally not serialized. Its dispatcher
+            // writes only the accepted recovery rule into this snapshot: unbooked men
+            // return to the street wanted rather than becoming quietly free on load.
+            Object.FindFirstObjectByType<RoadDemo.PoliceDispatch>()?
+                .WriteCustodySaveFallback(file);
             return file;
         }
 

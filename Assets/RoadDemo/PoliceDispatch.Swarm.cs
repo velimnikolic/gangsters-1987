@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LivingCity.Personnel;
 using LivingCity.Police;
 using UnityEngine;
 
@@ -34,6 +35,7 @@ namespace RoadDemo
     /// </summary>
     public sealed partial class PoliceDispatch
     {
+        enum SwarmGrade { ShotsFired, OfficerDown }
         /// <summary>The most cars the radio call puts on one scene. A number for
         /// legibility as much as for the frame: past about this many the street is a
         /// car park and the player cannot read what is happening. Never more than the
@@ -61,6 +63,7 @@ namespace RoadDemo
         float _swarmSeenAt;
         float _swarmSweepAt;
         Vector3 _swarmScene;
+        SwarmGrade _swarmGrade;
 
         readonly List<DemoCrews.Unit> _hunted = new List<DemoCrews.Unit>();
         static readonly List<CrewWalker> _swarmShooters = new List<CrewWalker>();
@@ -71,10 +74,12 @@ namespace RoadDemo
         /// <summary>
         /// SWARM-001: an officer is down. Everything the city has, now.
         /// </summary>
-        void RaiseSwarm(Vector3 where)
+        void RaiseSwarm(Vector3 where, SwarmGrade grade, DemoCrews.Unit culprit = null)
         {
             _swarmScene = where;
             _swarmSeenAt = Time.time;
+            if (!_swarm || grade == SwarmGrade.OfficerDown)
+                _swarmGrade = grade;
 
             // whoever has been shooting at this incident is who the city is looking for
             _swarmShooters.Clear();
@@ -86,10 +91,37 @@ namespace RoadDemo
                 if (unit == null || unit.IsPolice || unit.Wiped) continue;
                 if (!_hunted.Contains(unit)) _hunted.Add(unit);
             }
+            if (culprit != null && !culprit.IsPolice && !culprit.Wiped &&
+                !_hunted.Contains(culprit))
+                _hunted.Add(culprit);
 
-            if (_swarm) return;
+            if (grade == SwarmGrade.OfficerDown)
+                for (var i = 0; i < _hunted.Count; i++)
+                {
+                    var hunted = _hunted[i];
+                    hunted.ArrestDeed = Deed.CopKilling;
+                    if (hunted.ArrestCase != null &&
+                        hunted.ArrestCase.Status == CaseStatus.Open)
+                    {
+                        var former = hunted.ArrestCase.Deed;
+                        if (former != Deed.Affray && former != Deed.CopKilling)
+                            PrisonPipeline.AttachCharge(hunted.ArrestCase, former);
+                        hunted.ArrestCase.Deed = Deed.CopKilling;
+                    }
+                }
+
+            if (_swarm)
+            {
+                if (grade == SwarmGrade.OfficerDown)
+                    CrewOverlay.Announce("OFFICER DOWN — EVERY CAR IN THE CITY IS COMING",
+                        7f, new Color(1f, 0.45f, 0.4f));
+                SendSwarm();
+                return;
+            }
             _swarm = true;
-            CrewOverlay.Announce("OFFICER DOWN — EVERY CAR IN THE CITY IS COMING",
+            CrewOverlay.Announce(grade == SwarmGrade.OfficerDown
+                    ? "OFFICER DOWN — EVERY CAR IN THE CITY IS COMING"
+                    : "SHOTS AT AN OFFICER — EVERY CAR IN THE CITY IS COMING",
                 7f, new Color(1f, 0.45f, 0.4f));
             SendSwarm();
         }
@@ -193,7 +225,9 @@ namespace RoadDemo
                     if (man == null || man.Dead || man.CharacterId < 0) continue;
                     var member = roster.Find(man.CharacterId);
                     if (member == null) continue;
-                    WantedLevels.Mark(member, WantedLevels.CopKiller, today);
+                    WantedLevels.Mark(member,
+                        WantedLevels.ShotOutcome(_swarmGrade == SwarmGrade.OfficerDown),
+                        today);
                 }
             }
             _hunted.Clear();

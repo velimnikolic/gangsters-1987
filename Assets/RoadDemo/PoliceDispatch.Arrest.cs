@@ -31,7 +31,7 @@ namespace RoadDemo
     /// is what tells the player to intervene now or lose them for the sentence.
     ///
     /// The officer's half of this - the walk over, the piece in his fist, the stance -
-    /// is PoliceFootPatrol.Challenge for a beat man and a plain walk order with the gun
+    /// is PoliceBeat.Challenge for a beat pair and a plain walk order with the gun
     /// up for a squad's lead; the crew's half is DemoCrews.GiveUp / TakeIn.
     /// </summary>
     public sealed partial class PoliceDispatch
@@ -52,7 +52,7 @@ namespace RoadDemo
         /// <summary>Seconds the question stands before the men answer it. This is the
         /// PLAYER'S window and nothing else: the answer was settled the moment the
         /// officer set off, and these are the seconds he has to overrule it.</summary>
-        const float AskSeconds = 15f;
+        const float AskSeconds = 8f;
 
         /// <summary>Seconds between one telling of it and the next, so a player who
         /// looked away still sees what is being asked.</summary>
@@ -88,7 +88,8 @@ namespace RoadDemo
         /// <summary>How often the man holding the gun is reminded there is something to
         /// hold it for. The concealment rule (CrewWalker.WantsGunOut) keeps a piece out
         /// while a man is ALERT and puts it away when he is not, so the arrest refreshes
-        /// that rather than forking a second way of having a gun in your hand.</summary>
+        /// the gunpoint target itself keeps the weapon drawn; this cadence only refreshes
+        /// which prisoner a changing squad is covering.</summary>
         const float GunRefresh = 6f;
 
         /// <summary>A PAPER SCREEN STOPS THE CLOCK. The ledger and the strategic map are
@@ -116,15 +117,16 @@ namespace RoadDemo
         /// the door has been answered, so the collar must not hand that officer back to
         /// his beat behind the call's back.</summary>
         CallOut _arrestCall;
-        PoliceFootPatrol _arrestOfficer;   // the beat man, when it is one
+        PoliceBeat _arrestOfficer;         // the beat pair, when it is one
         CrewWalker _arrestLawman;          // a squad's lead, when the car brought him
         DemoCrews.Unit _arrestSquad;       // that lead's squad
         DemoCrews.Unit _arrestCrew;
         CrewWalker _arrestCollar;          // the man of the crew being spoken to
         float _askUntil, _sayAgainAt, _takeAt, _gunAt, _collarBy, _collarAt;
         int _askedIncident = -1;
-        float _fightChance;
-        bool _willFight;
+        float _refusalOdds, _secondFightOdds;
+        bool _answerArmed;
+        DoorAnswer _answer;
         ArrestHud _hud;
 
         static readonly List<CrewWalker> _shotBy = new List<CrewWalker>();
@@ -138,43 +140,67 @@ namespace RoadDemo
                     return;
 
                 case Collar.WalkingUp:
+                    if (Blocked)
+                    {
+                        _collarAt += dt;
+                        _collarBy += dt;
+                        Banner();
+                        return;
+                    }
+                    if (PlayerSaysFight()) { Fight(ordered: true); return; }
+                    if (PlayerSaysRun()) { Run(ordered: true); return; }
                     if (ArrestOff()) return;
                     KeepGunUp();
                     Banner();
-                    // the player can call it a fight before the officer is even there
-                    if (PlayerSaysFight()) { Refused(ordered: true); return; }
                     if (!StoodOver()) return;
+                    if (_answer == DoorAnswer.Run) { Run(ordered: false); return; }
                     _collar = Collar.Asking;
-                    _askUntil = Time.time + AskSeconds;
+                    _askUntil = Mathf.Max(Time.time, _collarAt + AskSeconds);
                     _sayAgainAt = 0f;
                     return;
 
                 case Collar.Asking:
                 {
-                    if (ArrestOff()) return;
-                    KeepGunUp();
-                    Banner();
-                    if (PlayerSaysFight()) { Refused(ordered: true); return; }
+                    if (PlayerSaysFight()) { Fight(ordered: true); return; }
+                    if (PlayerSaysRun()) { Run(ordered: true); return; }
                     if (Blocked)
                     {
                         _askUntil += dt;
                         _sayAgainAt = 0f;   // said again the moment the page is closed
                         return;
                     }
+                    if (ArrestOff()) return;
+                    KeepGunUp();
+                    Banner();
                     if (Time.time >= _sayAgainAt)
                     {
                         _sayAgainAt = Time.time + AskAgain;
                         CrewOverlay.Announce(Question, AskAgain, new Color(0.55f, 0.78f, 1f));
                     }
                     if (Time.time < _askUntil) return;
-                    if (_willFight) { Refused(ordered: false); return; }
+                    // GiveUp returns false for a crew whose hands are already up. That
+                    // is still a quiet arrest, never evidence that prisoners opened fire.
+                    if (_arrestCrew != null &&
+                        (_arrestCrew.InCustody || _arrestCrew.Surrendered))
+                    {
+                        if (_arrestCrew.InCustody)
+                        {
+                            EndChallenge(holster: true);
+                            Clear(preserveCase: true);
+                            return;
+                        }
+                        _collar = Collar.Taking;
+                        _takeAt = Time.time;
+                        return;
+                    }
+                    if (_answer == DoorAnswer.Fight) { Fight(ordered: false); return; }
                     if (_crews.GiveUp(_arrestCrew))
                     {
                         _collar = Collar.Taking;
-                        _takeAt = Time.time + TakeSeconds;
+                        _takeAt = Time.time;
                         return;
                     }
-                    Refused(ordered: false);
+                    Drop();
                     return;
                 }
 
@@ -184,10 +210,17 @@ namespace RoadDemo
                     // are not told about men who were shot where they stood
                     if (_arrestCrew == null || _arrestCrew.Wiped) { Drop(); return; }
                     if (Time.time < _takeAt) return;
-                    _crews.TakeIn(_arrestCrew, _arrestDeed,
-                        Force != null ? Force.Pipeline : null, _arrestCase);
-                    EndChallenge(holster: true);
-                    Clear();
+                    // A quiet answer is not a booking. Keep it on the physical crew,
+                    // but do not put names on the docket until the station threshold.
+                    var answer = RememberAnswer(DoorAnswer.Quiet, _arrestDeed,
+                        attachDefendants: false);
+                    // The question is over, but the arresting officers stay over the
+                    // hands-up crew with their pieces trained on them. Custody takes
+                    // ownership of that cover and releases it only after boarding.
+                    BeginCustody(_arrestCrew, _arrestDeed, _arrestCase,
+                        _arrestCall, _arrestOfficer, _arrestSquad,
+                        answer);
+                    Clear(preserveCase: true);
                     return;
                 }
             }
@@ -206,9 +239,9 @@ namespace RoadDemo
             if (StreetAlarm.QuietFor > ArrestWindow) return;
             if (StreetAlarm.IncidentNumber == _askedIncident) return;
 
-            PoliceFootPatrol foot = null;
+            PoliceBeat foot = null;
             foreach (var u in _units)
-                if (!u.Carries && u.OnScene && u is PoliceFootPatrol beat) { foot = beat; break; }
+                if (!u.Carries && u.OnScene && u is PoliceBeat beat) { foot = beat; break; }
 
             CrewWalker lawman = null;
             DemoCrews.Unit squadMen = null;
@@ -235,7 +268,7 @@ namespace RoadDemo
             }
 
             var crew = GuiltyNear(from);
-            if (crew == null) return;
+            if (crew == null || crew.InCustody || crew.Surrendered) return;
 
             var man = crew.Boss != null && !crew.Boss.Dead
                 ? crew.Boss : DemoCrews.NearestOf(crew, from);
@@ -244,6 +277,7 @@ namespace RoadDemo
             _askedIncident = StreetAlarm.IncidentNumber;
             _arrestDeed = TheDeed();
             _arrestCase = OpenShootingCase(crew);
+            if (_arrestCase != null) _arrestDeed = _arrestCase.Deed;
             _arrestCaseIsOurs = true;
             _arrestOfficer = foot;
             _arrestLawman = lawman;
@@ -260,11 +294,9 @@ namespace RoadDemo
             // arrives, so it can be READ while he walks: the banner has to tell the
             // player which way this is going while he still has time to change it. The
             // DECISION still lands at the end of the ask window, which is the window.
-            _fightChance = FightOdds(crew);
-            _willFight = SurrenderRoll.Fights(_fightChance,
-                SurrenderRoll.StreamFor(_crews.CitySeed, CrewKey(crew), StreetAlarm.IncidentNumber));
+            RollAnswer(crew, StreetAlarm.IncidentNumber);
 
-            if (foot != null) foot.Challenge(man, _sidearm);
+            if (foot != null) foot.Challenge(man);
             else BeginSquadChallenge(man);
             Banner();
             CrewOverlay.Announce("AN OFFICER IS WALKING OVER", 3.5f, new Color(0.55f, 0.78f, 1f));
@@ -286,7 +318,7 @@ namespace RoadDemo
         {
             if (_collar != Collar.None || _crews == null || call == null) return false;
 
-            PoliceFootPatrol foot = call.Unit as PoliceFootPatrol;
+            PoliceBeat foot = call.Unit as PoliceBeat;
             CrewWalker lawman = null;
             if (foot == null)
             {
@@ -306,7 +338,8 @@ namespace RoadDemo
             if (!call.AtTheDoorstep) return false;
 
             var crew = AccusedNear(call.Call.Pos, call.Call.Faction);
-            if (crew == null) return false;
+            if (crew == null || crew.InCustody || crew.Surrendered) return false;
+            call.Accused = crew;
 
             var man = crew.Boss != null && !crew.Boss.Dead
                 ? crew.Boss : DemoCrews.NearestOf(crew, from);
@@ -314,9 +347,14 @@ namespace RoadDemo
 
             // AND HIS MAN HAS TO BE A WALK AWAY. The crew is found within the whole
             // reach of the call, but the walk-up itself is a few metres of hand-lerped
-            // pavement (PoliceFootPatrol.Challenge). Started from further off it walks
+            // pavement (PoliceBeat.Challenge). Started from further off it walks
             // through whatever stands between them and ends in the patience running out.
             if ((man.Tf.position - from).sqrMagnitude > WalksOff * WalksOff) return false;
+
+            // Finding the accused at the actual doorstep is the first honest point at
+            // which this telephone call can become a case. If nobody is here, the file
+            // waits for a physically completed shop interview instead.
+            call.File ??= OpenComplaintCase(call);
 
             _askedIncident = call.Call.Number;
             _arrestDeed = call.Call.Charge;
@@ -332,11 +370,9 @@ namespace RoadDemo
             _collarAt = Time.time;
             _collarBy = Time.time + CollarPatience;
 
-            _fightChance = FightOdds(crew);
-            _willFight = SurrenderRoll.Fights(_fightChance,
-                SurrenderRoll.StreamFor(_crews.CitySeed, CrewKey(crew), call.Call.Number));
+            RollAnswer(crew, call.Call.Number);
 
-            if (foot != null) foot.Challenge(man, _sidearm);
+            if (foot != null) foot.Challenge(man);
             else BeginSquadChallenge(man);
             Banner();
             CrewOverlay.Announce("AN OFFICER IS WALKING OVER", 3.5f, new Color(0.55f, 0.78f, 1f));
@@ -352,7 +388,8 @@ namespace RoadDemo
             float bestD = ComplaintReach * ComplaintReach;
             foreach (var unit in _crews.Units)
             {
-                if (unit == null || unit.IsPolice || unit.Wiped || unit.Surrendered) continue;
+                if (unit == null || unit.IsPolice || unit.Wiped ||
+                    unit.InCustody || unit.Surrendered) continue;
                 if (unit.Faction != faction) continue;
                 if (unit.Retreated || unit.Car != null) continue;   // gone, or driving off
                 float d = (unit.Position - door).sqrMagnitude;
@@ -376,6 +413,8 @@ namespace RoadDemo
         {
             var pipeline = Force != null ? Force.Pipeline : null;
             if (pipeline == null || crew == null) return null;
+            if (crew.ArrestCase != null && crew.ArrestCase.Status == CaseStatus.Open)
+                return crew.ArrestCase;
 
             var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
             var today = outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0;
@@ -412,13 +451,33 @@ namespace RoadDemo
         {
             var law = _arrestLawman;
             if (law == null || law.Tf == null || man == null || man.Tf == null) return;
-            law.Disengage();
             var back = law.Tf.position - man.Tf.position;
             back.y = 0f;
             back = back.sqrMagnitude > 0.04f ? back.normalized : law.Tf.forward;
-            var standAt = man.Tf.position + back * SquadGap;
-            standAt.y = law.Tf.position.y;
-            law.OrderToPoint(standAt);
+            var side = Vector3.Cross(Vector3.up, back);
+            var index = 0;
+            var squad = _arrestSquad;
+            if (squad != null)
+                foreach (var officer in squad.All())
+                {
+                    if (officer == null || officer.Dead || officer.Tf == null) continue;
+                    officer.Disengage();
+                    var standAt = man.Tf.position + back * (SquadGap + index * 0.8f) +
+                                  side * (index == 0 ? -1f : 1f) * 1.2f;
+                    standAt.y = officer.Tf.position.y;
+                    if (!officer.OrderAcross(standAt, index * 0.12f))
+                        officer.OrderToPoint(standAt, index * 0.12f);
+                    officer.HoldAtGunpoint(man);
+                    index++;
+                }
+            else
+            {
+                law.Disengage();
+                var standAt = man.Tf.position + back * SquadGap;
+                standAt.y = law.Tf.position.y;
+                if (!law.OrderAcross(standAt)) law.OrderToPoint(standAt);
+                law.HoldAtGunpoint(man);
+            }
             _gunAt = 0f;
             KeepGunUp();
         }
@@ -428,11 +487,21 @@ namespace RoadDemo
         /// concealment rule does the rest.</summary>
         void KeepGunUp()
         {
+            if (_arrestOfficer != null && _arrestCollar != null)
+            {
+                _arrestOfficer.HoldAtGunpoint(_arrestCollar);
+                return;
+            }
             if (_arrestLawman == null || _arrestLawman.Dead || _arrestLawman.Tf == null) return;
             if (_arrestCollar == null || _arrestCollar.Tf == null) return;
             if (Time.time < _gunAt) return;
             _gunAt = Time.time + GunRefresh;
-            _arrestLawman.HearShot(_arrestCollar.Tf.position);
+            if (_arrestSquad != null)
+                foreach (var officer in _arrestSquad.All())
+                    if (officer != null && !officer.Dead)
+                        officer.HoldAtGunpoint(_arrestCollar);
+            else
+                _arrestLawman.HoldAtGunpoint(_arrestCollar);
         }
 
         /// <summary>He is stood over his man with the gun out - the question can be put
@@ -453,13 +522,20 @@ namespace RoadDemo
         bool PlayerSaysFight() =>
             _arrestCrew != null && _arrestCrew.PoliceFightOrderedAt >= _collarAt;
 
+        bool PlayerSaysRun() =>
+            _arrestCrew != null &&
+            _arrestCrew.Faction == LivingCity.Gameplay.PlayerCommands.House.Value &&
+            _arrestCrew.OrderedAt >= _collarAt &&
+            !PlayerSaysFight();
+
         /// <summary>ARREST IN PROGRESS, for as long as it is. Pushed every frame; the
         /// banner only touches its labels when the words have actually changed.</summary>
         void Banner()
         {
             if (_hud == null) _hud = ArrestHud.For(gameObject);
             if (_hud == null || _arrestCrew == null) return;
-            _hud.Show(_arrestCrew.GangName, SurrenderRoll.Leaning(_fightChance));
+            _hud.Show(_arrestCrew.GangName,
+                SurrenderRoll.Leaning(_refusalOdds, _secondFightOdds, _answerArmed));
         }
 
         void ClearBanner()
@@ -477,14 +553,29 @@ namespace RoadDemo
         /// books at all - the law, a bench scene's mob - stands at the middle of the
         /// band.
         /// </summary>
-        float FightOdds(DemoCrews.Unit crew)
+        void RollAnswer(DemoCrews.Unit crew, int incident)
         {
+            AnswerOdds(crew, out _refusalOdds, out _secondFightOdds, out _answerArmed);
+            _answer = SurrenderRoll.Answer(_refusalOdds, _secondFightOdds, _answerArmed,
+                SurrenderRoll.StreamFor(_crews.CitySeed, CrewKey(crew), incident));
+        }
+
+        void AnswerOdds(DemoCrews.Unit crew, out float refusal, out float fight,
+            out bool armed)
+        {
+            refusal = 0.5f;
+            fight = 0.5f;
+            armed = false;
             var underworld = LivingCity.Outfit.Underworld.Current;
             var roster = crew != null && underworld != null
                 ? underworld.Of(crew.Faction)?.Roster : null;
             if (crew == null || roster == null)
-                return SurrenderRoll.FightChance(
-                    SurrenderRoll.NoBooks, SurrenderRoll.NoBooks, SurrenderRoll.NoBooks);
+            {
+                if (crew != null)
+                    foreach (var man in crew.All())
+                        if (man != null && !man.Dead && man.Carrying) armed = true;
+                return;
+            }
 
             int temper = 0, loyalty = 0, counted = 0, bestLead = -1;
             Character senior = null, lieutenant = null;
@@ -493,6 +584,7 @@ namespace RoadDemo
                 if (man == null || man.Dead || man.CharacterId < 0) continue;
                 var member = roster.Find(man.CharacterId);
                 if (member == null) continue;
+                if (man.Carrying) armed = true;
                 temper += member.Temper;
                 loyalty += member.Loyalty;
                 counted++;
@@ -502,13 +594,16 @@ namespace RoadDemo
                 if (lead > bestLead) { bestLead = lead; senior = member; }
             }
             if (counted == 0)
-                return SurrenderRoll.FightChance(
-                    SurrenderRoll.NoBooks, SurrenderRoll.NoBooks, SurrenderRoll.NoBooks);
+                return;
 
             var speaker = lieutenant ?? senior;
-            return SurrenderRoll.FightChance(
+            refusal = SurrenderRoll.FightChance(
                 speaker != null ? speaker.Courage : SurrenderRoll.NoBooks,
                 temper / counted, loyalty / counted);
+            fight = SurrenderRoll.FightAfterRefusal(
+                speaker != null ? speaker.Temper : SurrenderRoll.NoBooks,
+                speaker != null ? speaker.Courage : SurrenderRoll.NoBooks,
+                speaker != null ? speaker.Discipline : SurrenderRoll.NoBooks);
         }
 
         /// <summary>The stream key of one crew: its branch on the books when it has one,
@@ -531,7 +626,8 @@ namespace RoadDemo
             {
                 if (man == null || man.Dead || man.Tf == null) continue;
                 var unit = _crews.UnitOf(man);
-                if (unit == null || unit.IsPolice || unit.Wiped || unit.Surrendered) continue;
+                if (unit == null || unit.IsPolice || unit.Wiped ||
+                    unit.InCustody || unit.Surrendered) continue;
                 if (unit.Retreated || unit.Car != null) continue;   // gone, or driving off
                 float d = Vector3.Distance(unit.Position, from);
                 if (d > ArrestReach) continue;
@@ -547,7 +643,11 @@ namespace RoadDemo
         static Deed TheDeed()
         {
             if (StreetAlarm.OfficerDeaths > 0) return Deed.CopKilling;
-            if (StreetAlarm.CivilianDeaths > 0 || StreetAlarm.GangDeaths > 0) return Deed.Murder;
+            var since = Mathf.Max(0.1f, Time.time - StreetAlarm.IncidentStart + 0.1f);
+            var lawFired = StreetAlarm.FactionFiredSince(StreetAlarm.PoliceFaction, since);
+            if (StreetAlarm.CivilianDeaths > 0 ||
+                (StreetAlarm.GangDeaths > 0 && !lawFired)) return Deed.Murder;
+            if (lawFired) return Deed.AssaultOnOfficer;
             return Deed.Affray;
         }
 
@@ -567,7 +667,7 @@ namespace RoadDemo
             if (Vector3.Distance(_arrestCrew.Position, lawAt) > WalksOff)
             {
                 CrewOverlay.Announce("THEY WALKED AWAY FROM IT", 3.5f, new Color(1f, 0.55f, 0.45f));
-                Drop();
+                Run(ordered: true);
                 return true;
             }
             return false;
@@ -578,33 +678,110 @@ namespace RoadDemo
         /// it brings the cars that a lone officer on a pavement cannot be. Where a squad
         /// is stood at the scene the crew turns its guns on THEM, which is what refusing
         /// a man with a gun in his hand actually looks like.</summary>
-        void Refused(bool ordered)
+        void Fight(bool ordered)
         {
-            // the telephone call that opened this collar has to know how it ended: a
-            // refusal is a disposition of its own and must not become a statement
-            if (_arrestCall != null) _arrestCall.MenRefused = true;
+            if (_arrestCall != null)
+            {
+                _arrestCall.MenRefused = true;
+                _arrestCall.MenFought = true;
+            }
             CrewOverlay.Announce(ordered
                     ? "THE CREW OPENS UP ON THE OFFICER"
-                    : "THE LIEUTENANT REFUSED - THE OFFICER IS CALLING IT IN",
+                    : "THE LIEUTENANT CHOOSES TO FIGHT",
                 4.5f, new Color(1f, 0.55f, 0.45f));
+            var original = _arrestDeed;
+            var fresh = StreetAlarm.OfficerDeaths > 0
+                ? Deed.CopKilling : Deed.AssaultOnOfficer;
+            _arrestDeed = Sentencing.PrimaryCharge(original, fresh);
+            if (_arrestCase != null)
+            {
+                // Every act lands, but firing at an officer must not turn an existing
+                // murder into the lesser assault charge. The graver deed leads; the
+                // other one remains a typed count on the same file.
+                var extra = _arrestDeed == fresh ? original : fresh;
+                if (extra != Deed.Affray && extra != _arrestDeed)
+                    PrisonPipeline.AttachCharge(_arrestCase, extra);
+                _arrestCase.Deed = _arrestDeed;
+            }
+            RememberAnswer(DoorAnswer.Fight, _arrestDeed);
+            LawWire.FiredOnTheOfficer(_arrestCall?.Call, _arrestCrew);
             EndChallenge(holster: false);
             var law = PoliceOnTheScene();
             if (law != null && _arrestCrew != null && !_arrestCrew.Wiped)
                 _crews.Sic(_arrestCrew, law);
             Heat = Mathf.Min(120f, Heat + RefusalHeat);
-            // AND THE CARS ARE SENT NOW, not left to the escalation check - that one only
-            // fires while the shooting is still going on (QuietFor < 12 s), and a refusal
-            // is by definition made in the quiet after it. Without this the heat went up
-            // and nothing whatever came of it.
-            _called = true;
-            Send(first: false);
             Clear();
+        }
+
+        void Run(bool ordered)
+        {
+            if (_arrestCall != null)
+            {
+                _arrestCall.MenRefused = true;
+                _arrestCall.MenRan = true;
+            }
+            CrewOverlay.Announce(ordered ? "THE CREW BREAKS FOR IT" : "THEY RUN",
+                4.5f, new Color(1f, 0.72f, 0.35f));
+            PrisonPipeline.AttachCharge(_arrestCase, Deed.Resisting);
+            RememberAnswer(DoorAnswer.Run, _arrestDeed);
+            MarkCrewWanted(_arrestCrew, WantedLevels.Fled);
+            LawWire.RanFromTheOfficer(_arrestCall?.Call, _arrestCrew);
+            var law = PoliceOnTheScene();
+            var from = _arrestOfficer != null ? _arrestOfficer.Position
+                : _arrestLawman != null && _arrestLawman.Tf != null
+                    ? _arrestLawman.Tf.position : _arrestCrew.Position;
+            EndChallenge(holster: false);
+            var moved = _crews.OrderFlee(_arrestCrew, from);
+            // Walking away from a live gunpoint arrest is the resisting act itself.
+            // The law does not holster and watch him leave; every officer on the scene
+            // immediately turns the held aim into a real combat target.
+            if (PoliceProcedure.ShouldOpenFireOnFlight(
+                    arrestInProgress: law != null && !law.Wiped,
+                    suspectMoved: moved) &&
+                _arrestCrew != null && !_arrestCrew.Wiped)
+                _crews.Sic(law, _arrestCrew);
+            Clear();
+        }
+
+        DoorAnswer RememberAnswer(DoorAnswer answer, Deed deed,
+            bool attachDefendants = true)
+        {
+            if (_arrestCrew == null) return answer;
+            if (_arrestCrew.HasDoorAnswer)
+                answer = SurrenderRoll.MostSerious(_arrestCrew.LastDoorAnswer, answer);
+            _arrestCrew.HasDoorAnswer = true;
+            _arrestCrew.LastDoorAnswer = answer;
+            _arrestCrew.ArrestCase = _arrestCase;
+            _arrestCrew.ArrestDeed = deed;
+            if (_arrestCase == null || !attachDefendants) return answer;
+            foreach (var man in _arrestCrew.All())
+                if (man != null && !man.Dead && man.CharacterId >= 0 &&
+                    !_arrestCase.Defendants.Contains(man.CharacterId))
+                    _arrestCase.Defendants.Add(man.CharacterId);
+            return answer;
+        }
+
+        static void MarkCrewWanted(DemoCrews.Unit crew, int level)
+        {
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            var roster = crew != null ? underworld?.Of(crew.Faction)?.Roster : null;
+            if (roster == null) return;
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            var today = outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0;
+            foreach (var man in crew.All())
+            {
+                if (man == null || man.CharacterId < 0) continue;
+                WantedLevels.Mark(roster.Find(man.CharacterId), level, today);
+            }
+            LivingCity.Gameplay.PersonnelDirector.Instance?.Touch();
         }
 
         /// <summary>A squad of the law stood at this scene with somebody still on his
         /// feet, or null - what a crew that refuses has in front of it to shoot at.</summary>
         DemoCrews.Unit PoliceOnTheScene()
         {
+            if (_arrestOfficer != null && _arrestOfficer.Unit != null &&
+                !_arrestOfficer.Unit.Wiped) return _arrestOfficer.Unit;
             if (_arrestSquad != null && !_arrestSquad.Wiped) return _arrestSquad;
             if (_arrestCrew == null) return null;
             // and it has to be a squad they can actually see. Any squad in the list would
@@ -633,7 +810,7 @@ namespace RoadDemo
 
         /// <summary>The piece goes away (or stays out after a refusal) and the man who
         /// held it goes back to holding the scene, whichever body he was.</summary>
-        void EndChallenge(bool holster)
+        void EndChallenge(bool holster, bool release = true)
         {
             if (_arrestOfficer != null)
             {
@@ -645,16 +822,27 @@ namespace RoadDemo
                 // off - and the shop it was rung about got nothing at all. EndChallenge
                 // leaves him OnScene instead, and the call takes the statement and then
                 // sends him home itself.
-                if (holster && _arrestCall == null) _arrestOfficer.Release();
+                if (holster && release && _arrestCall == null) _arrestOfficer.Release();
             }
             else if (_arrestLawman != null && !_arrestLawman.Dead && _arrestLawman.Tf != null)
             {
                 // he stands where he is; the squad's own Securing orders have him again
-                if (holster) _arrestLawman.OrderToPoint(_arrestLawman.Tf.position);
+                if (_arrestSquad != null)
+                    foreach (var officer in _arrestSquad.All())
+                    {
+                        if (officer == null || officer.Dead || officer.Tf == null) continue;
+                        officer.LowerGunpoint();
+                        if (holster) officer.Holster();
+                    }
+                else
+                {
+                    _arrestLawman.LowerGunpoint();
+                    if (holster) _arrestLawman.Holster();
+                }
             }
         }
 
-        void Clear()
+        void Clear(bool preserveCase = false)
         {
             // A DOCKET ENTRY NOBODY WAS TAKEN FOR IS NOT A CASE (GAN-245). The file is
             // opened when the officer sets off, because the witnesses have to be
@@ -662,7 +850,7 @@ namespace RoadDemo
             // an arrest that was refused, dropped or walked away from charged nobody,
             // and an empty file left open would quietly become an extra count against
             // these men the next time they were taken (AttachOpenComplaints).
-            if (_arrestCaseIsOurs && _arrestCase != null &&
+            if (!preserveCase && _arrestCaseIsOurs && _arrestCase != null &&
                 _arrestCase.Defendants.Count == 0)
                 _arrestCase.Status = CaseStatus.Tried;
             _arrestCase = null;

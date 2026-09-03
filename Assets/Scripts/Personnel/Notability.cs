@@ -105,6 +105,10 @@ namespace LivingCity.Personnel
                 // neighbourhood remembers - more than a case being opened, less than a
                 // verdict.
                 case IncidentKind.RefusedTheOfficer: return 45;
+                case IncidentKind.RanFromTheOfficer: return 45;
+                case IncidentKind.FiredOnTheOfficer: return 65;
+                case IncidentKind.TakenIn: return 35;
+                case IncidentKind.Sprung: return 65;
                 default: return 15; // SlowingDown, and anything added later.
             }
         }

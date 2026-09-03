@@ -129,10 +129,19 @@ namespace RoadDemo
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 1f;
 
-            for (int i = 0; i < subjects.Count; i++)
+            EnsureIndicators(subjects.Count);
+
+            BuildPopup();
+            BuildingCardPicker.ClickVeto = ClaimsClick;
+        }
+
+        void EnsureIndicators(int count)
+        {
+            var dot = DemoUi.Dot;
+            while (_images.Count < count)
             {
                 var go = new GameObject("indicator", typeof(RectTransform));
-                go.transform.SetParent(root.transform, false);
+                go.transform.SetParent(_canvas.transform, false);
                 var img = go.AddComponent<Image>();
                 img.sprite = dot;
                 img.raycastTarget = false;
@@ -142,7 +151,7 @@ namespace RoadDemo
 
                 var bracket = new GameObject("ground bracket", typeof(RectTransform))
                     .AddComponent<GroundBracketGraphic>();
-                bracket.transform.SetParent(root.transform, false);
+                bracket.transform.SetParent(_canvas.transform, false);
                 bracket.raycastTarget = false;
                 var rect = bracket.rectTransform;
                 rect.anchorMin = Vector2.zero;
@@ -153,8 +162,14 @@ namespace RoadDemo
                 _brackets.Add(bracket);
             }
 
-            BuildPopup();
-            BuildingCardPicker.ClickVeto = ClaimsClick;
+            // Subjects can also shrink when a dead permanent beat leaves the force's
+            // books. Reuse its UI slot later, but do not leave the old dot on screen.
+            for (var i = count; i < _images.Count; i++)
+            {
+                _images[i].enabled = false;
+                _brackets[i].enabled = false;
+            }
+            if (_selected >= count) Select(-1);
         }
 
         void OnDestroy()
@@ -270,6 +285,7 @@ namespace RoadDemo
         void LateUpdate()
         {
             if (_subjects == null) return;
+            EnsureIndicators(_subjects.Count);
             if (_cam == null)
             {
                 _cam = Camera.main;
@@ -323,7 +339,7 @@ namespace RoadDemo
                           screen.x >= 0f && screen.x <= w &&
                           screen.y >= 0f && screen.y <= h;
                 var selected = _selected == i;
-                var footPatrol = subject is PoliceFootPatrol;
+                var footPatrol = subject is PoliceBeat;
                 var bracketOn = footPatrol && on && (_hovered == i || selected) &&
                                 UpdateGroundBracket(bracket, tf, selected);
                 if (!bracketOn && bracket.enabled)

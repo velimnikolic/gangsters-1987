@@ -1,5 +1,13 @@
 namespace LivingCity.Police
 {
+    /// <summary>The answer a crew gives when the law puts the question at the door.</summary>
+    public enum DoorAnswer
+    {
+        Quiet,
+        Run,
+        Fight,
+    }
+
     /// <summary>
     /// HANDS UP, OR NOT. What a crew does when an officer walks up with his piece out
     /// and puts the question - decided by the men themselves rather than by two keys on
@@ -55,10 +63,53 @@ namespace LivingCity.Police
             return raw < Floor ? Floor : raw > Ceiling ? Ceiling : raw;
         }
 
+        /// <summary>Among crews that do not submit: temper and nerve against discipline.</summary>
+        public static float FightAfterRefusal(int temper, int courage, int discipline)
+        {
+            var raw = 0.5f * Clamp01(temper / 100f) +
+                      0.3f * Clamp01(courage / 100f) -
+                      0.2f * Clamp01(discipline / 100f);
+            return Clamp(raw);
+        }
+
         /// <summary>Puts the question. Deterministic: the same stream and the same odds
         /// always answer the same, so a seeded run can be replayed.</summary>
         public static bool Fights(float chance, int stream) =>
             new System.Random(stream).NextDouble() < chance;
+
+        /// <summary>
+        /// Puts the whole question from one deterministic stream. Both draws are always
+        /// consumed, including for an unarmed crew, so changing its kit cannot move the
+        /// stream on to a different incident. The first draw decides quiet/not quiet;
+        /// the second divides a refusal between running and fighting.
+        /// </summary>
+        public static DoorAnswer Answer(float refusalOdds, float fightOdds, bool armed, int stream)
+        {
+            var rng = new System.Random(stream);
+            var refusal = rng.NextDouble();
+            var fight = rng.NextDouble();
+            // Draw one is the original Fights(chance, stream) draw. Preserve that
+            // seeded answer exactly: the second draw only divides an existing refusal
+            // into RUN or FIGHT.
+            if (refusal >= Clamp01(refusalOdds))
+                return DoorAnswer.Quiet;
+            if (!armed)
+                return DoorAnswer.Run;
+            return fight < Clamp01(fightOdds) ? DoorAnswer.Fight : DoorAnswer.Run;
+        }
+
+        /// <summary>An answer already on an open case is never softened by a later
+        /// surrender. A man caught after running still answers for the run; one caught
+        /// after firing still answers for the gunfire.</summary>
+        public static DoorAnswer MostSerious(DoorAnswer first, DoorAnswer second) =>
+            Severity(first) >= Severity(second) ? first : second;
+
+        static int Severity(DoorAnswer answer) => answer switch
+        {
+            DoorAnswer.Fight => 2,
+            DoorAnswer.Run => 1,
+            _ => 0,
+        };
 
         /// <summary>The stream one crew's answer at one incident is rolled off. Its own
         /// mix per (crew, incident) so that a crew asked twice over two different
@@ -76,6 +127,18 @@ namespace LivingCity.Police
             : chance >= 0.38f ? "wavering"
             : "going quietly";
 
+        /// <summary>The street read before the answer lands: words, never the roll.</summary>
+        public static string Leaning(float refusalOdds, float fightOdds, bool armed)
+        {
+            refusalOdds = Clamp01(refusalOdds);
+            if (refusalOdds < 0.5f)
+                return "going quietly";
+            if (!armed || Clamp01(fightOdds) < 0.5f)
+                return "will run";
+            return "itching to fight";
+        }
+
         static float Clamp01(float v) => v < 0f ? 0f : v > 1f ? 1f : v;
+        static float Clamp(float v) => v < Floor ? Floor : v > Ceiling ? Ceiling : v;
     }
 }

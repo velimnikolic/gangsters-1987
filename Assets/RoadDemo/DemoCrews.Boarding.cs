@@ -105,6 +105,7 @@ namespace RoadDemo
         {
             CarRefusal = null;
             if (Selected == null || car == null) return false;
+            if (CustodyRefuses(Selected)) { CarRefusal = InCustodyRefusal; return false; }
             if (Selected.Faction != 0) return false;
             if (car.Civic) { CarRefusal = "That is a police car"; return false; }
             if (car.ItemId < 0) { CarRefusal = "That car is not on the books"; return false; }
@@ -131,6 +132,7 @@ namespace RoadDemo
         {
             CarRefusal = null;
             if (Selected == null || car == null) return false;
+            if (CustodyRefuses(Selected)) { CarRefusal = InCustodyRefusal; return false; }
             if (car.Owner != Selected)
             {
                 CarRefusal = car.Civic ? "That is a police car"
@@ -161,6 +163,7 @@ namespace RoadDemo
         public bool OrderOut()
         {
             if (Selected == null) return false;
+            if (CustodyRefuses(Selected)) { CarRefusal = InCustodyRefusal; return false; }
             if (Selected.Car != null)
             {
                 Disembark(Selected);

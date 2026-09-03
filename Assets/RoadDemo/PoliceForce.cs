@@ -61,7 +61,7 @@ namespace RoadDemo
 
             /// <summary>The LEADS of its beat pairs; a wingman goes where his lead
             /// goes.</summary>
-            public readonly List<PoliceFootPatrol> Leads = new List<PoliceFootPatrol>();
+            public readonly List<PoliceBeat> Leads = new List<PoliceBeat>();
 
             /// <summary>Where a transfer is driven to: the far end of the road network.
             /// The county court and the state prison are not on this map and nothing
@@ -99,6 +99,13 @@ namespace RoadDemo
             public readonly List<Prisoner> Riders = new List<Prisoner>();
             public float By;          // the backstop: a drive that never arrives
             public string WasCalled;  // the car's own name, put back when it docks
+        }
+
+        sealed class LostBeat
+        {
+            public Precinct Precinct;
+            public PoliceBeat Beat;
+            public int BackOnDay;
         }
 
         /// <summary>
@@ -151,6 +158,7 @@ namespace RoadDemo
         readonly List<PoliceLossRecord> _filled = new List<PoliceLossRecord>();
         readonly List<Prisoner> _forTransfer = new List<Prisoner>();
         readonly List<Convoy> _convoys = new List<Convoy>();
+        readonly List<LostBeat> _lostBeats = new List<LostBeat>();
 
         PoliceDispatch _dispatch;
         int _day = -1;
@@ -163,6 +171,8 @@ namespace RoadDemo
         /// geometry, the lane the fleet undocks onto), so it hands the FORCE a way to
         /// ask rather than the force reaching into the builder.</summary>
         public System.Func<Precinct, PolicePatrolCar> MakeCar;
+        public System.Func<Precinct, PoliceBeat> MakeBeat;
+        public System.Action<PoliceBeat> RetireBeat;
 
         public IReadOnlyList<Precinct> Precincts => _precincts;
 
@@ -218,14 +228,57 @@ namespace RoadDemo
         /// station", and what the plaque reads off.</summary>
         public Precinct Station => _precincts.Count > 0 ? _precincts[0] : null;
 
+        /// <summary>Two prisoners to a car, while one on-duty car remains free.</summary>
+        public static int CarsForPrisoners(int prisoners, int carsOnDuty)
+            => CustodyPlan.CarsForPrisoners(prisoners, carsOnDuty);
+
+        /// <summary>Nearest precinct's free cars for the first leg into the station.</summary>
+        public void CollectCustodyCars(Vector3 near, int prisoners,
+            List<PolicePatrolCar> into)
+        {
+            into?.Clear();
+            if (into == null) return;
+            var precinct = Nearest(near);
+            if (precinct == null) return;
+            var free = 0;
+            for (var i = 0; i < precinct.Cars.Count; i++)
+                if (precinct.Cars[i] != null && precinct.Cars[i].Available) free++;
+            var count = CarsForPrisoners(prisoners, free);
+            for (var i = 0; i < precinct.Cars.Count && into.Count < count; i++)
+                if (precinct.Cars[i] != null && precinct.Cars[i].Available)
+                    into.Add(precinct.Cars[i]);
+        }
+
         /// <summary>An officer went down. Told through the dispatcher, which already
         /// hears every death on StreetAlarm - no second channel for the same fact.</summary>
         public void OfficerDown(Vector3 where)
         {
             var precinct = WhoLost(where);
             if (precinct == null) return;
+            var beat = _dispatch != null ? _dispatch.BeatNear(where, OfficerReach) : null;
             var loss = precinct.Roster.Lose(PoliceLoss.Officer, Today(), Config);
             if (loss == null) return;
+
+            // A pair is one permanent street unit. Only a death which actually wiped
+            // that unit creates a replacement body; car-squad casualties restore the
+            // roster number but must not conjure extra beat pairs onto the pavement.
+            if (beat != null && beat.Unit != null && beat.Unit.Wiped)
+            {
+                var known = false;
+                for (var i = 0; i < _lostBeats.Count; i++)
+                    if (_lostBeats[i].Beat == beat) { known = true; break; }
+                if (!known)
+                {
+                    _lostBeats.Add(new LostBeat
+                    {
+                        Precinct = precinct,
+                        Beat = beat,
+                        BackOnDay = loss.BackOnDay,
+                    });
+                    precinct.Leads.Remove(beat);
+                    RetireBeat?.Invoke(beat);
+                }
+            }
             CrewOverlay.Announce(
                 precinct.Roster.Empty
                     ? "NO LAW LEFT AT " + Plain(precinct.Roster.Name)
@@ -755,7 +808,7 @@ namespace RoadDemo
             for (var i = 0; i < _precincts.Count; i++)
             {
                 var precinct = _precincts[i];
-                if (precinct.Roster.Replace(today, _filled) == 0) continue;
+                var restored = precinct.Roster.Replace(today, _filled);
 
                 var cars = 0;
                 for (var f = 0; f < _filled.Count; f++)
@@ -774,6 +827,23 @@ namespace RoadDemo
                     precinct.Cars.Add(car);
                     if (_dispatch != null) _dispatch.Register(car);
                 }
+
+                var beats = 0;
+                for (var b = _lostBeats.Count - 1; b >= 0 && MakeBeat != null; b--)
+                {
+                    var lost = _lostBeats[b];
+                    if (lost.Precinct != precinct || lost.BackOnDay <= 0 ||
+                        lost.BackOnDay > today) continue;
+                    var beat = MakeBeat(precinct);
+                    if (beat == null) continue;
+                    if (lost.Beat != null) beat.UnitNumber = lost.Beat.UnitNumber;
+                    beat.Precinct = precinct.Roster.StationId;
+                    precinct.Leads.Add(beat);
+                    _lostBeats.RemoveAt(b);
+                    beats++;
+                }
+
+                if (restored == 0 && beats == 0) continue;
 
                 // and whatever came back reports for the next watch, not this second
                 _watchKnown = false;

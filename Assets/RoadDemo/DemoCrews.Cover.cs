@@ -719,6 +719,7 @@ namespace RoadDemo
         {
             AmbushRefusal = OrderRefusal = null;
             if (unit == null || unit.Wiped || !anchor.Valid) return false;
+            if (CustodyRefuses(unit)) { AmbushRefusal = OrderRefusal = InCustodyRefusal; return false; }
             if (unit.Surrendered) { AmbushRefusal = OrderRefusal = HandsUpRefusal; return false; }
             if (unit.Car != null || unit.Boarding != null)
             {

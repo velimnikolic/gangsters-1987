@@ -77,6 +77,8 @@ namespace LivingCity.Police
     {
         public int CharacterId;
         public CaseOutcome Outcome;
+        public DoorAnswer Answer;
+        public bool Sprung;
 
         /// <summary>Days of the sentence, or 0 for anything but a conviction.
         /// <see cref="Sentencing.Life"/> when it is life.</summary>
@@ -161,6 +163,9 @@ namespace LivingCity.Police
         /// <summary>Other cases folded into this one as extra counts, by their id -
         /// open complaints the same crew never answered for.</summary>
         public readonly List<int> Counts = new List<int>();
+
+        /// <summary>Deed-typed counts born in this arrest rather than another case.</summary>
+        public readonly List<Deed> ExtraCharges = new List<Deed>();
 
         public int OpenedDay;
 
@@ -361,6 +366,8 @@ namespace LivingCity.Police
         public const float AffrayBase = 0.50f;
         public const float MurderBase = 0.55f;
         public const float CopKillingBase = 0.95f;
+        public const float AssaultOnOfficerBase = 0.75f;
+        public const float ResistingBase = 0.45f;
 
         /// <summary>What each eyewitness is worth, and how many of them the court
         /// bothers to count. A third man who saw the same thing is not a third case.</summary>
@@ -397,7 +404,11 @@ namespace LivingCity.Police
         {
             Deed.CopKilling => CopKillingBase,
             Deed.Murder => MurderBase,
+            Deed.AssaultOnOfficer => AssaultOnOfficerBase,
+            Deed.Resisting => ResistingBase,
             Deed.Affray => AffrayBase,
+            Deed.Extortion => ExtortionBase,
+            Deed.WitnessTampering => ExtortionBase,
             _ => ExtortionBase,
         };
 

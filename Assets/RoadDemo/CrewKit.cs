@@ -392,6 +392,14 @@ namespace RoadDemo
             : plead = IdleClip(ActDir + "Plead/Actions/A_POLY_IDL_Plead_F_Masc");
         static AnimationClip plead;
 
+        /// <summary>Both hands held over the head for as long as the law owns the man.
+        /// Unlike Plead this is an authored loop, so a long wait for a carrier cannot
+        /// silently hand him back to an ordinary idle.</summary>
+        public static AnimationClip HandsUp => handsUp != null ? handsUp
+            : handsUp = IdleClip(
+                ActDir + "Wave/Stances/A_POLY_IDL_Wave_Double_Loop_Masc");
+        static AnimationClip handsUp;
+
         /// <summary>Down on the knees with the hands together - what a share of the
         /// crowd does under fire instead of the crouch.</summary>
         public static AnimationClip PrayKneel => prayKneel != null ? prayKneel

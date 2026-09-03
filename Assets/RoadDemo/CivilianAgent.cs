@@ -7,7 +7,7 @@ namespace RoadDemo
     // on the way past a bench may turn in and sit a while, and past a door may
     // step inside and vanish - coming back out of another door across the demo
     // later. The door and bench legs are hand-lerped straight off the pavement,
-    // the same trick PoliceFootPatrol uses for its forecourt walk. Two civilians
+    // the same short-leg trick a police beat uses for its forecourt walk. Two civilians
     // meeting head-on may also stop for a chat (PairChats, driven by the builder).
     //
     // And a nerve: a shot heard close by freezes him for a beat and then sends him

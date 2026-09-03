@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using LivingCity.Personnel;
 using LivingCity.Police;
+using LivingCity.Save;
 
 namespace LivingCity.Tests
 {
@@ -20,6 +21,7 @@ namespace LivingCity.Tests
         {
             ("NerveAndTemperDecideTheAnswer", NerveAndTemperDecideTheAnswer),
             ("TheAnswerIsTheSameTwiceForOneSeed", TheAnswerIsTheSameTwiceForOneSeed),
+            ("ThreeAnswersUseOneDeterministicStream", ThreeAnswersUseOneDeterministicStream),
             ("TheLeaningIsReadableWithoutANumber", TheLeaningIsReadableWithoutANumber),
             ("ARosterNeverGoesAboveItsStrength", ARosterNeverGoesAboveItsStrength),
             ("AHoleIsFilledOnItsOwnDayAndNoSooner", AHoleIsFilledOnItsOwnDayAndNoSooner),
@@ -28,13 +30,34 @@ namespace LivingCity.Tests
             ("TheNightHasTheCarsAndTheDayTheFeet", TheNightHasTheCarsAndTheDayTheFeet),
             ("NobodyIsOnDutyWhoIsNotOnTheRoster", NobodyIsOnDutyWhoIsNotOnTheRoster),
             ("TheDeedDecidesTheSentence", TheDeedDecidesTheSentence),
+            ("AssaultIsWorseThanAffrayAndBetterThanMurder", AssaultIsWorseThanAffrayAndBetterThanMurder),
+            ("ASecondActNeverDowngradesTheCharge", ASecondActNeverDowngradesTheCharge),
             ("LifeIsASentinelAndNotAnOverflow", LifeIsASentinelAndNotAnOverflow),
             ("AnEscapeCostsHimTheSurcharge", AnEscapeCostsHimTheSurcharge),
+            ("RunningCostsTwoMoreDays", RunningCostsTwoMoreDays),
+            ("ExtraChargesAddDays", ExtraChargesAddDays),
+            ("SprungRecordsAnEscapeWithoutABooking", SprungRecordsAnEscapeWithoutABooking),
+            ("TheAnswerSurvivesASave", TheAnswerSurvivesASave),
+            ("RebookingKeepsTheWorstAnswer", RebookingKeepsTheWorstAnswer),
+            ("InCustodyRefusesEveryOrder", InCustodyRefusesEveryOrder),
+            ("CarsForPrisoners", CarsForPrisoners),
+            ("GAN315_ArrestedManRaisesHisHands", GAN315_ArrestedManRaisesHisHands),
+            ("GAN315_PoliceKeepEveryPrisonerCovered", GAN315_PoliceKeepEveryPrisonerCovered),
+            ("GAN315_PrisonerBoardsOnlyWithHisEscort", GAN315_PrisonerBoardsOnlyWithHisEscort),
+            ("GAN315_NormalBoardingNeverSpringsCustody", GAN315_NormalBoardingNeverSpringsCustody),
+            ("GAN315_RightClickCannotReleaseAPrisoner", GAN315_RightClickCannotReleaseAPrisoner),
+            ("GAN315_OfficerReturnsToTheCarPromptly", GAN315_OfficerReturnsToTheCarPromptly),
+            ("GAN315_ShopStatementRequiresARealEntry", GAN315_ShopStatementRequiresARealEntry),
+            ("GAN315_OneUniformAndAFastDispatch", GAN315_OneUniformAndAFastDispatch),
+            ("GAN315_ResponseRunsAndFlightDrawsFire", GAN315_ResponseRunsAndFlightDrawsFire),
             ("HeldMeansHeldUntilAJudgeSaysOtherwise", HeldMeansHeldUntilAJudgeSaysOtherwise),
             ("TheVerdictLandsWhenTheTransferArrives", TheVerdictLandsWhenTheTransferArrives),
             ("AWreckedTransferIsAFreeManUnarmed", AWreckedTransferIsAFreeManUnarmed),
             ("NoCarNoConvoyAndHeWaitsADay", NoCarNoConvoyAndHeWaitsADay),
             ("HiddenDaysClearTheGradeAndSightingsResetThem", HiddenDaysClearTheGradeAndSightingsResetThem),
+            ("ShotAtOfficerCoolsInSevenDays", ShotAtOfficerCoolsInSevenDays),
+            ("SeverityOrdersTheMarks", SeverityOrdersTheMarks),
+            ("AMissIsNotACopKiller", AMissIsNotACopKiller),
             ("ACopKillerNeverComesClean", ACopKillerNeverComesClean),
             ("AMarkIsNeverDowngraded", AMarkIsNeverDowngraded),
             ("OutOfTownDrawsNoWage", OutOfTownDrawsNoWage),
@@ -141,6 +164,155 @@ namespace LivingCity.Tests
                 "SURRENDER: the banner must have words for both ends of the band.");
             Want(failures, SurrenderRoll.Leaning(0.1f) != SurrenderRoll.Leaning(0.9f),
                 "SURRENDER: a quiet crew and a hot one must not read the same.");
+        }
+
+        static void ThreeAnswersUseOneDeterministicStream(List<string> failures)
+        {
+            var stream = SurrenderRoll.StreamFor(1987, 14, 8);
+            Want(failures,
+                SurrenderRoll.Answer(0f, 0f, true, stream) == DoorAnswer.Quiet,
+                "ANSWER: a zero refusal chance must go quietly.");
+            Want(failures,
+                SurrenderRoll.Answer(1f, 0f, true, stream) == DoorAnswer.Run,
+                "ANSWER: a refusal below the fight draw must run.");
+            Want(failures,
+                SurrenderRoll.Answer(1f, 1f, true, stream) == DoorAnswer.Fight,
+                "ANSWER: an armed refusal above the fight draw must fight.");
+            Want(failures,
+                SurrenderRoll.Answer(1f, 1f, false, stream) == DoorAnswer.Run,
+                "ANSWER: an unarmed crew can only run when it refuses.");
+            var once = SurrenderRoll.Answer(0.41f, 0.63f, true, stream);
+            var twice = SurrenderRoll.Answer(0.41f, 0.63f, true, stream);
+            Want(failures, once == twice,
+                "ANSWER: one crew and incident must consume the same two draws twice.");
+            const float legacyChance = 0.41f;
+            var legacyRefused = SurrenderRoll.Fights(legacyChance, stream);
+            Want(failures,
+                (SurrenderRoll.Answer(legacyChance, 0.63f, true, stream) != DoorAnswer.Quiet) ==
+                legacyRefused,
+                "ANSWER: draw one must preserve the old seeded refusal decision.");
+            Want(failures,
+                SurrenderRoll.FightAfterRefusal(90, 80, 10) >
+                SurrenderRoll.FightAfterRefusal(10, 20, 90),
+                "ANSWER: temper and courage must beat discipline in the second draw.");
+            Want(failures,
+                SurrenderRoll.MostSerious(DoorAnswer.Run, DoorAnswer.Quiet) ==
+                DoorAnswer.Run &&
+                SurrenderRoll.MostSerious(DoorAnswer.Run, DoorAnswer.Fight) ==
+                DoorAnswer.Fight,
+                "ANSWER: capture later must not soften a run or a fight already on file.");
+        }
+
+        static void InCustodyRefusesEveryOrder(List<string> failures)
+        {
+            Want(failures, CustodyPlan.RefusesOrders(true) &&
+                           !CustodyPlan.RefusesOrders(false),
+                "CUSTODY: the shared gate must refuse every order only while held.");
+        }
+
+        static void CarsForPrisoners(List<string> failures)
+        {
+            Want(failures, CustodyPlan.CarsForPrisoners(4, 4) == 2,
+                "CUSTODY: four prisoners need two cars when the watch can spare them.");
+            Want(failures, CustodyPlan.CarsForPrisoners(8, 3) == 2,
+                "CUSTODY: even a large arrest must leave one on-duty car free.");
+            Want(failures, CustodyPlan.CarsForPrisoners(2, 1) == 0,
+                "CUSTODY: the last working car must remain available for another call.");
+            Want(failures, CustodyPlan.PrisonersThisTrip(5, 2) == 4,
+                "CUSTODY: a five-man crew must send four and hold one for trip two.");
+            Want(failures, CustodyPlan.PrisonersThisTrip(1, 2) == 1,
+                "CUSTODY: the return trip must carry only the man left at the pickup.");
+        }
+
+        // ------------------------------------------------ GAN-315: user's exact live repro
+
+        static void GAN315_ArrestedManRaisesHisHands(List<string> failures)
+        {
+            Want(failures,
+                CustodyPlan.ShouldRaiseHands(surrendered: true, riding: false, moving: false),
+                "GAN-315/1: a stationary arrested man must show the hands-up loop.");
+            Want(failures,
+                !CustodyPlan.ShouldRaiseHands(true, riding: true, moving: false) &&
+                !CustodyPlan.ShouldRaiseHands(true, riding: false, moving: true),
+                "GAN-315/1: the static loop must yield to the escorted walk and car seat.");
+        }
+
+        static void GAN315_PoliceKeepEveryPrisonerCovered(List<string> failures)
+        {
+            Want(failures,
+                CustodyPlan.MustCoverPrisoner(inCustody: true, booked: false, riding: false),
+                "GAN-315/2: an unbooked prisoner outside the car must stay at gunpoint.");
+            Want(failures,
+                !CustodyPlan.MustCoverPrisoner(true, booked: true, riding: false) &&
+                !CustodyPlan.MustCoverPrisoner(true, booked: false, riding: true),
+                "GAN-315/2: cover ends only after the man is seated or booked.");
+        }
+
+        static void GAN315_PrisonerBoardsOnlyWithHisEscort(List<string> failures)
+        {
+            Want(failures,
+                CustodyPlan.CanSeatPrisoner(atRearDoor: true, escortBesideHim: true) &&
+                !CustodyPlan.CanSeatPrisoner(atRearDoor: true, escortBesideHim: false) &&
+                !CustodyPlan.CanSeatPrisoner(atRearDoor: false, escortBesideHim: true),
+                "GAN-315/3: no prisoner may enter the car without a physical escort.");
+        }
+
+        static void GAN315_NormalBoardingNeverSpringsCustody(List<string> failures)
+        {
+            Want(failures,
+                !CustodyPlan.ShouldSpring(carrierWrecked: false, escortWiped: false),
+                "GAN-315/5: ordinary actor spacing must never produce SPRUNG or restore control.");
+            Want(failures,
+                CustodyPlan.ShouldSpring(carrierWrecked: true, escortWiped: false) &&
+                CustodyPlan.ShouldSpring(carrierWrecked: false, escortWiped: true),
+                "GAN-315/5: only a wreck or a wiped escort may break physical custody.");
+        }
+
+        static void GAN315_RightClickCannotReleaseAPrisoner(List<string> failures)
+        {
+            Want(failures,
+                CustodyPlan.RefusesOrders(inCustody: true),
+                "GAN-315/5: right-click movement, car-exit and attack orders must all stay refused in custody.");
+        }
+
+        static void GAN315_OfficerReturnsToTheCarPromptly(List<string> failures)
+        {
+            Want(failures, PoliceProcedure.OfficerBoardingSeconds <= 8f,
+                "GAN-315/4: an officer may not wander for thirty seconds before boarding.");
+        }
+
+        static void GAN315_ShopStatementRequiresARealEntry(List<string> failures)
+        {
+            Want(failures,
+                PoliceProcedure.CanRecordShopStatement(
+                    crossedThreshold: true, completedInterview: true) &&
+                !PoliceProcedure.CanRecordShopStatement(false, true) &&
+                !PoliceProcedure.CanRecordShopStatement(true, false),
+                "GAN-315/statement: no case or statement may be filed by an officer passing outside.");
+        }
+
+        static void GAN315_OneUniformAndAFastDispatch(List<string> failures)
+        {
+            Want(failures,
+                PoliceProcedure.UniformOfficerPrefabName == "SM_Chr_Officer_Male_01",
+                "GAN-315/uniform: every patrol and response squad must use the canonical officer.");
+            Want(failures,
+                PoliceProcedure.ComplaintDelayMinimum >= 0f &&
+                PoliceProcedure.ComplaintDelayMaximum <= 4f &&
+                PoliceProcedure.ComplaintDelayMinimum < PoliceProcedure.ComplaintDelayMaximum,
+                "GAN-315/response: a shop call must leave dispatch inside four seconds.");
+        }
+
+        static void GAN315_ResponseRunsAndFlightDrawsFire(List<string> failures)
+        {
+            Want(failures, PoliceProcedure.RunToScene,
+                "GAN-315/response: officers must run the shared crew route to the scene.");
+            Want(failures,
+                PoliceProcedure.ShouldOpenFireOnFlight(
+                    arrestInProgress: true, suspectMoved: true) &&
+                !PoliceProcedure.ShouldOpenFireOnFlight(true, false) &&
+                !PoliceProcedure.ShouldOpenFireOnFlight(false, true),
+                "GAN-315/gunpoint: movement during a live arrest must turn cover into fire.");
         }
 
         // ------------------------------------------------------------------ the roster
@@ -267,6 +439,10 @@ namespace LivingCity.Tests
             Want(failures, PoliceShifts.CarsOnDuty(empty, PoliceWatch.Night, config) == 0 &&
                            PoliceShifts.FootOnDuty(empty, PoliceWatch.Day, config) == 0,
                 "WATCH: an empty precinct puts nobody out at all.");
+
+            var lone = new PoliceRoster(2, "P3", 0, 1);
+            Want(failures, PoliceShifts.FootOnDuty(lone, PoliceWatch.Day, config) == 0,
+                "WATCH: a lone officer must not be dealt as half of a beat pair.");
         }
 
         // -------------------------------------------------------------- the sentence
@@ -313,9 +489,46 @@ namespace LivingCity.Tests
             Want(failures, Sentencing.DaysToCourt >= 5,
                 "SENTENCE: there must be days enough between the arrest and the court " +
                 "day to play bail, a lawyer and the witnesses in.");
-            for (var deed = Deed.Affray; deed <= Deed.WitnessTampering; deed++)
+            foreach (Deed deed in Enum.GetValues(typeof(Deed)))
+            {
                 Want(failures, Sentencing.BandHigh(deed) >= Sentencing.BandLow(deed),
                     "SENTENCE: " + deed + " has a band that runs backwards.");
+                Want(failures, !string.IsNullOrEmpty(Sentencing.ChargeFor(deed)),
+                    "SENTENCE: " + deed + " has no charge wording.");
+                Want(failures, Verdict.BaseFor(deed) > 0f,
+                    "VERDICT: " + deed + " has no conviction base.");
+            }
+        }
+
+        static void AssaultIsWorseThanAffrayAndBetterThanMurder(List<string> failures)
+        {
+            Want(failures,
+                Sentencing.BandHigh(Deed.AssaultOnOfficer) >
+                Sentencing.BandHigh(Deed.Affray) &&
+                Sentencing.BandHigh(Deed.AssaultOnOfficer) <
+                Sentencing.BandLow(Deed.Murder),
+                "SENTENCE: assault on an officer must sit between affray and murder.");
+            Want(failures,
+                Sentencing.Bail(Deed.AssaultOnOfficer) > Sentencing.Bail(Deed.Affray) &&
+                Sentencing.Bail(Deed.Resisting) == Sentencing.Bail(Deed.Affray),
+                "SENTENCE: assault needs higher bail; resisting uses affray bail.");
+            Want(failures,
+                Verdict.BaseFor(Deed.AssaultOnOfficer) > Verdict.BaseFor(Deed.Affray),
+                "VERDICT: firing on the law must be stronger than an affray case.");
+        }
+
+        static void ASecondActNeverDowngradesTheCharge(List<string> failures)
+        {
+            Want(failures,
+                Sentencing.PrimaryCharge(Deed.Murder, Deed.AssaultOnOfficer) == Deed.Murder,
+                "CHARGE: firing at the officer must not downgrade an existing murder.");
+            Want(failures,
+                Sentencing.PrimaryCharge(Deed.Extortion, Deed.AssaultOnOfficer) ==
+                Deed.AssaultOnOfficer,
+                "CHARGE: the fresh assault must lead an equal-band complaint file.");
+            Want(failures,
+                Sentencing.PrimaryCharge(Deed.Affray, Deed.CopKilling) == Deed.CopKilling,
+                "CHARGE: killing an officer must always become the primary deed.");
         }
 
         static void AHoodGetsLessAndAMarkedLieutenantMore(List<string> failures)
@@ -383,6 +596,125 @@ namespace LivingCity.Tests
                 "SENTENCE: a man who has been out of custody once gets the surcharge.");
             Want(failures, Sentencing.IsLife(Sentencing.Days(Deed.CopKilling, new Random(3), true)),
                 "SENTENCE: a cop-killer's life is not lengthened by arithmetic.");
+        }
+
+        static void RunningCostsTwoMoreDays(List<string> failures)
+        {
+            var quiet = Sentencing.Days(Deed.Affray, new Random(37), false,
+                Rank.Lieutenant, false, 0, 0, DoorAnswer.Quiet);
+            var ran = Sentencing.Days(Deed.Affray, new Random(37), false,
+                Rank.Lieutenant, false, 0, 0, DoorAnswer.Run);
+            Want(failures, ran == quiet + Sentencing.ResistSurcharge,
+                "ANSWER: running must add exactly the resisting surcharge.");
+        }
+
+        static void ExtraChargesAddDays(List<string> failures)
+        {
+            var one = Sentencing.Days(Deed.Extortion, new Random(41), false,
+                Rank.Lieutenant, false, 0, 0);
+            var three = Sentencing.Days(Deed.Extortion, new Random(41), false,
+                Rank.Lieutenant, false, 0, 2);
+            Want(failures, three == one + Sentencing.ExtraCountDays * 2,
+                "ANSWER: deed-typed extra charges must reach the sentence count.");
+        }
+
+        static void SprungRecordsAnEscapeWithoutABooking(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            roster.Equipment.Add(new RosterEquipment
+            {
+                Id = roster.NextEquipmentId(), Kind = EquipmentKind.Pistol,
+                OwnerId = man.Id, HolderId = man.Id, PinnedTo = man.Id,
+            });
+            Want(failures, pipe.Sprung(roster, man.Id, 10),
+                "CUSTODY: first-leg springing must be recorded without a booking.");
+            Want(failures, pipe.Find(man.Id) == null && pipe.EverEscaped(man.Id),
+                "CUSTODY: a sprung man stays out of the pipe but the city remembers him.");
+            Want(failures, man.Status == CharacterStatus.Active &&
+                           man.WantedLevel == WantedLevels.FreedFromTransfer,
+                "CUSTODY: a sprung man stays active and is wanted for escaped custody.");
+            Want(failures, roster.Equipment.Count == 0,
+                "CUSTODY: a confiscated gun must not return to the crew armory.");
+
+            man.Rank = Rank.Lieutenant;
+            var prisoner = pipe.Book(roster, man.Id, Deed.Affray, 12,
+                answer: DoorAnswer.Quiet, sprung: true);
+            var trialDay = 17;
+            var marked = Notability.Marked(man, trialDay);
+            var clean = Sentencing.Days(Deed.Affray,
+                new Random(Sentencing.StreamFor(pipe.RosterSeed, man.Id, trialDay)),
+                false, man.Rank, marked, 0, 0, DoorAnswer.Quiet);
+            var escaped = Sentencing.Days(Deed.Affray,
+                new Random(Sentencing.StreamFor(pipe.RosterSeed, man.Id, trialDay)),
+                true, man.Rank, marked, 0, 0, DoorAnswer.Quiet);
+            pipe.Convicted(roster, prisoner, trialDay);
+            Want(failures, prisoner != null &&
+                           prisoner.SentenceDays == escaped && escaped > clean,
+                "CUSTODY: the next judge must apply the remembered escape surcharge.");
+        }
+
+        static void TheAnswerSurvivesASave(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var file = pipe.OpenCase(Deed.AssaultOnOfficer, 0, 10, 15,
+                "shop-4", "THE BARBER");
+            file.ExtraCharges.Add(Deed.Resisting);
+            var prisoner = pipe.Book(roster, man.Id, Deed.AssaultOnOfficer, 10,
+                file, DoorAnswer.Fight, sprung: true);
+            file.Verdicts.Add(new CaseVerdict
+            {
+                CharacterId = man.Id,
+                Outcome = CaseOutcome.Convicted,
+                Answer = DoorAnswer.Fight,
+                Sprung = true,
+                Day = 15,
+                Days = 18,
+                OutOnDay = 33,
+            });
+
+            var saved = new CampaignFile
+            {
+                version = CampaignFile.Version,
+                prisoners = PrisonSnapshot.Prisoners(pipe),
+                cases = PrisonSnapshot.Cases(pipe),
+                nextCaseId = pipe.NextCaseId,
+                prisonRosterSeed = pipe.RosterSeed,
+            };
+            var back = new PrisonPipeline();
+            PrisonSnapshot.Restore(back, saved);
+            var loaded = back.Find(man.Id);
+            var loadedFile = back.FindCase(file.CaseId);
+            var verdict = loadedFile?.VerdictFor(man.Id);
+            Want(failures, prisoner != null && loaded != null &&
+                           loaded.Answer == DoorAnswer.Fight && loaded.Sprung,
+                "SAVE: the prisoner's answer and sprung flag must survive.");
+            Want(failures, loadedFile != null && loadedFile.ExtraCharges.Count == 1 &&
+                           loadedFile.ExtraCharges[0] == Deed.Resisting,
+                "SAVE: deed-typed extra charges must survive.");
+            Want(failures, verdict != null && verdict.Answer == DoorAnswer.Fight &&
+                           verdict.Sprung,
+                "SAVE: the verdict archive must retain the answer at the door.");
+        }
+
+        static void RebookingKeepsTheWorstAnswer(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            Want(failures, pipe.Sprung(roster, man.Id, 9),
+                "ANSWER: the first-leg escape must be remembered before booking.");
+            var first = pipe.OpenCase(Deed.AssaultOnOfficer, 0, 10, 15);
+            var prisoner = pipe.Book(roster, man.Id, Deed.AssaultOnOfficer, 10,
+                first, DoorAnswer.Fight);
+            Want(failures, prisoner != null && prisoner.Sprung,
+                "ANSWER: booking after an escape must retain the sprung flag.");
+            Want(failures, pipe.PostBail(roster, prisoner,
+                    PrisonPipeline.BailPrice(prisoner), 10),
+                "ANSWER: the re-booking contract needs the man back on bail.");
+            var second = pipe.OpenCase(Deed.Affray, 0, 11, 16);
+            var back = pipe.Book(roster, man.Id, Deed.Affray, 11,
+                second, DoorAnswer.Quiet);
+            Want(failures, back == prisoner && back != null &&
+                           back.Answer == DoorAnswer.Fight && back.Sprung,
+                "ANSWER: a quiet re-arrest must not soften a fight or lose springing.");
         }
 
         // ------------------------------------------------------------------- the pipe
@@ -650,6 +982,13 @@ namespace LivingCity.Tests
             WantedLevels.WentToGround(freed, 1);
             Want(failures, !WantedLevels.DayTick(freed, 6) && WantedLevels.DayTick(freed, 8),
                 "WANTED: a man freed off a transfer wants a week of it.");
+
+            var shooter = new Character { Id = 4, Surname = "Neri" };
+            WantedLevels.Mark(shooter, WantedLevels.ShotAtOfficer, 1);
+            WantedLevels.WentToGround(shooter, 1);
+            Want(failures,
+                !WantedLevels.DayTick(shooter, 6) && WantedLevels.DayTick(shooter, 8),
+                "WANTED: shooting at an officer also wants a week out of sight.");
         }
 
         static void ACopKillerNeverComesClean(List<string> failures)
@@ -663,13 +1002,58 @@ namespace LivingCity.Tests
                 "WANTED: the cop-killer's cure must be impossible, not merely long.");
         }
 
+        static void ShotAtOfficerCoolsInSevenDays(List<string> failures)
+        {
+            var man = new Character { Id = 1, Surname = "Neri" };
+            WantedLevels.Mark(man, WantedLevels.ShotAtOfficer, 1);
+            WantedLevels.WentToGround(man, 1);
+            Want(failures, !WantedLevels.DayTick(man, 7) &&
+                           WantedLevels.DayTick(man, 8),
+                "WANTED: a shot at an officer needs seven clear days.");
+        }
+
+        static void SeverityOrdersTheMarks(List<string> failures)
+        {
+            var man = new Character { Id = 1, Surname = "Moretti" };
+            WantedLevels.Mark(man, WantedLevels.ShotAtOfficer, 2);
+            WantedLevels.Mark(man, WantedLevels.Fled, 3);
+            WantedLevels.Mark(man, WantedLevels.FreedFromTransfer, 3);
+            Want(failures, man.WantedLevel == WantedLevels.ShotAtOfficer,
+                "WANTED: flight and escape must not soften a shot-at-officer mark.");
+            WantedLevels.Mark(man, WantedLevels.CopKiller, 4);
+            Want(failures, man.WantedLevel == WantedLevels.CopKiller &&
+                           WantedLevels.Severity(WantedLevels.CopKiller) >
+                           WantedLevels.Severity(WantedLevels.ShotAtOfficer),
+                "WANTED: an officer death must upgrade the mark and remain the top grade.");
+        }
+
+        static void AMissIsNotACopKiller(List<string> failures)
+        {
+            Want(failures,
+                WantedLevels.ShotOutcome(false) == WantedLevels.ShotAtOfficer &&
+                WantedLevels.ShotOutcome(true) == WantedLevels.CopKiller,
+                "WANTED: the outcome helper must reserve cop-killer for an officer death.");
+        }
+
         static void AMarkIsNeverDowngraded(List<string> failures)
         {
             var man = new Character { Id = 1, Surname = "Gallo" };
             WantedLevels.Mark(man, WantedLevels.CopKiller, 3);
             WantedLevels.Mark(man, WantedLevels.Fled, 4);
+            WantedLevels.Mark(man, WantedLevels.ShotAtOfficer, 4);
             Want(failures, man.WantedLevel == WantedLevels.CopKiller,
-                "WANTED: running from an arrest must not demote a cop-killer.");
+                "WANTED: flight or a missed shot must not demote a cop-killer.");
+
+            var shooter = new Character { Id = 3, Surname = "Moretti" };
+            WantedLevels.Mark(shooter, WantedLevels.Fled, 3);
+            WantedLevels.Mark(shooter, WantedLevels.ShotAtOfficer, 4);
+            WantedLevels.Mark(shooter, WantedLevels.FreedFromTransfer, 5);
+            Want(failures, shooter.WantedLevel == WantedLevels.ShotAtOfficer &&
+                           WantedLevels.Severity(WantedLevels.CopKiller) >
+                           WantedLevels.Severity(WantedLevels.ShotAtOfficer) &&
+                           WantedLevels.Severity(WantedLevels.ShotAtOfficer) >
+                           WantedLevels.Severity(WantedLevels.FreedFromTransfer),
+                "WANTED: severity, not the serialized integer, must rank the marks.");
 
             var flag = new Character { Id = 2, Surname = "Conti" };
             flag.Wanted = true;

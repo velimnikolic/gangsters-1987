@@ -257,6 +257,10 @@ namespace LivingCity.UI
                 case IncidentKind.CaseOpened:
                 case IncidentKind.WitnessKilled:
                 case IncidentKind.RefusedTheOfficer:
+                case IncidentKind.RanFromTheOfficer:
+                case IncidentKind.FiredOnTheOfficer:
+                case IncidentKind.TakenIn:
+                case IncidentKind.Sprung:
                     return LedgerStyle.Ballpoint;
                 case IncidentKind.DemandedARaise:
                 case IncidentKind.ComplaintRung:

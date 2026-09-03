@@ -2680,6 +2680,11 @@ namespace RoadDemo
                 refusal = "The tactical group has nobody standing.";
                 return null;
             }
+            if (unit.InCustody)
+            {
+                refusal = DemoCrews.InCustodyRefusal;
+                return null;
+            }
             return unit;
         }
 

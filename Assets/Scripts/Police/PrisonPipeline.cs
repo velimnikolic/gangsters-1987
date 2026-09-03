@@ -61,6 +61,8 @@ namespace LivingCity.Police
     {
         public int CharacterId;
         public Deed Deed;
+        public DoorAnswer Answer;
+        public bool Sprung;
         public int TakenOnDay;
 
         /// <summary>The absolute campaign day the transfer to court runs and the verdict
@@ -209,6 +211,15 @@ namespace LivingCity.Police
             return file;
         }
 
+        /// <summary>Adds a deed-typed count once. Unlike Counts this is not another case.</summary>
+        public static bool AttachCharge(CourtCase file, Deed deed)
+        {
+            if (file == null || file.ExtraCharges.Contains(deed))
+                return false;
+            file.ExtraCharges.Add(deed);
+            return true;
+        }
+
         /// <summary>
         /// Folds every open complaint against this crew, inside the memory window, into
         /// the case that is actually going to be heard. Each one is worth
@@ -330,7 +341,7 @@ namespace LivingCity.Police
         /// who has a day (RosterOps.Discharge).
         /// </summary>
         public Prisoner Book(Roster roster, int characterId, Deed deed, int today,
-            CourtCase file = null)
+            CourtCase file = null, DoorAnswer answer = DoorAnswer.Quiet, bool sprung = false)
         {
             // A roster's first man is id 0 (Roster.NextCharacterId), so the guard is
             // "not a member" and not "not positive": the Don himself would fail the
@@ -347,7 +358,7 @@ namespace LivingCity.Police
                 // which left the crew stood in the street with its hands up and the new
                 // case with no defendant on it.
                 if (standing.Stage == PrisonStage.Bailed)
-                    return ReBook(roster, standing, deed, today, file);
+                    return ReBook(roster, standing, deed, today, file, answer, sprung);
                 return null;   // already inside; one arrest per man
             }
 
@@ -364,6 +375,8 @@ namespace LivingCity.Police
             {
                 CharacterId = characterId,
                 Deed = deed,
+                Answer = answer,
+                Sprung = sprung || EverEscaped(characterId),
                 TakenOnDay = today,
                 CourtDay = courtDay,
                 Stage = PrisonStage.Held,
@@ -391,7 +404,7 @@ namespace LivingCity.Police
         /// safe does not get it back either way.
         /// </summary>
         Prisoner ReBook(Roster roster, Prisoner prisoner, Deed deed, int today,
-            CourtCase file)
+            CourtCase file, DoorAnswer answer, bool sprung)
         {
             var member = roster.Find(prisoner.CharacterId);
             if (member == null || member.Gone)
@@ -406,6 +419,8 @@ namespace LivingCity.Police
             var old = prisoner.CaseId >= 0 ? FindCase(prisoner.CaseId) : null;
 
             prisoner.Deed = worse;
+            prisoner.Answer = SurrenderRoll.MostSerious(prisoner.Answer, answer);
+            prisoner.Sprung = prisoner.Sprung || sprung || EverEscaped(prisoner.CharacterId);
             prisoner.Stage = PrisonStage.Held;
             prisoner.Leg = PrisonLeg.None;
             prisoner.TakenOnDay = today;
@@ -614,7 +629,8 @@ namespace LivingCity.Police
             // on its record from this morning - the archive prints a forfeit whether or
             // not the case is ever heard.
             Note(prisoner.CaseId >= 0 ? FindCase(prisoner.CaseId) : null,
-                prisoner.CharacterId, CaseOutcome.BailForfeit, today);
+                prisoner.CharacterId, CaseOutcome.BailForfeit, today,
+                answer: prisoner.Answer, sprung: prisoner.Sprung);
             WantedLevels.Mark(member, WantedLevels.FreedFromTransfer, today);
             RapSheet.Add(member, Stamp(today), Sentencing.ChargeFor(prisoner.Deed),
                 Sentencing.BailForfeitOutcome);
@@ -707,7 +723,8 @@ namespace LivingCity.Police
             // roll - which is what leaning on witnesses is FOR.
             if (file != null && !file.AnyWilling())
             {
-                Note(file, prisoner.CharacterId, CaseOutcome.Dismissed, today);
+                Note(file, prisoner.CharacterId, CaseOutcome.Dismissed, today,
+                    answer: prisoner.Answer, sprung: prisoner.Sprung);
                 ResolveDefendant(file, prisoner.CharacterId, CaseStatus.Dismissed);
                 Walks(roster, member, prisoner, today, Sentencing.DismissedOutcome);
                 if (counsel != null) counsel.CasesWon++;
@@ -726,7 +743,8 @@ namespace LivingCity.Police
                 !Verdict.Convicts(
                     Verdict.ConvictionChance(file, Priors(member), lawyerSkill), rng))
             {
-                Note(file, prisoner.CharacterId, CaseOutcome.Acquitted, today);
+                Note(file, prisoner.CharacterId, CaseOutcome.Acquitted, today,
+                    answer: prisoner.Answer, sprung: prisoner.Sprung);
                 ResolveDefendant(file, prisoner.CharacterId, CaseStatus.Tried);
                 Walks(roster, member, prisoner, today, Sentencing.AcquittedOutcome);
                 if (counsel != null) counsel.CasesWon++;
@@ -739,7 +757,8 @@ namespace LivingCity.Police
             var days = Sentencing.Days(prisoner.Deed, rng,
                 EverEscaped(prisoner.CharacterId), member.Rank,
                 Notability.Marked(member, today), lawyerSkill,
-                file != null ? file.Counts.Count : 0);
+                file != null ? file.Counts.Count + file.ExtraCharges.Count : 0,
+                prisoner.Answer);
 
             prisoner.SentenceDays = days;
             prisoner.OutOnDay = Sentencing.IsLife(days) ? Sentencing.Life : today + days;
@@ -754,7 +773,8 @@ namespace LivingCity.Police
             member.BailedUntil = 0;
             member.ConditionNote = Sentencing.IsLife(days) ? "Serving life" : "Serving his time";
             Note(file, prisoner.CharacterId, CaseOutcome.Convicted, today, days,
-                Sentencing.IsLife(days) ? 0 : prisoner.OutOnDay);
+                Sentencing.IsLife(days) ? 0 : prisoner.OutOnDay,
+                prisoner.Answer, prisoner.Sprung);
             RapSheet.Add(member, Stamp(today), Sentencing.ChargeFor(prisoner.Deed),
                 Sentencing.Verdict(days, Sentencing.IsLife(days) ? 0 : prisoner.OutOnDay));
         }
@@ -869,6 +889,40 @@ namespace LivingCity.Police
             return prisoner;
         }
 
+        /// <summary>
+        /// Freed on the first, station-bound leg. There is deliberately no booking to
+        /// undo: the roster remains active, while the escape and wanted truth are still
+        /// recorded for the next judge.
+        /// </summary>
+        public bool Sprung(Roster roster, int characterId, int today)
+        {
+            if (roster == null) return false;
+            var member = roster.Find(characterId);
+            if (member == null || member.Gone) return false;
+            _everEscaped.Add(characterId);
+            WantedLevels.Mark(member, WantedLevels.FreedFromTransfer, today);
+            ConfiscateWeapons(roster, characterId);
+            return true;
+        }
+
+        /// <summary>The station-bound arrest confiscates what the man carried. Unlike
+        /// a transfer wreck, these pieces do not go back into the crew's deck: they
+        /// leave the outfit's books at the car door.</summary>
+        public static int ConfiscateWeapons(Roster roster, int characterId)
+        {
+            if (roster == null || characterId < 0) return 0;
+            var taken = 0;
+            for (var i = roster.Equipment.Count - 1; i >= 0; i--)
+            {
+                var item = roster.Equipment[i];
+                if (item.HolderId != characterId || !RosterOps.IsWeapon(item.Kind))
+                    continue;
+                roster.Equipment.RemoveAt(i);
+                taken++;
+            }
+            return taken;
+        }
+
         /// <summary>He served it, or somebody let him out: he leaves the pipe. Called
         /// off the roster's own discharge, which is the one place a man stands up.
         /// A man out on bail is NOT swept: he is Active on purpose and still owes the
@@ -895,9 +949,11 @@ namespace LivingCity.Police
             for (var i = _inside.Count - 1; i >= 0; i--)
             {
                 if (_inside[i].CharacterId != characterId) continue;
-                var file = _inside[i].CaseId >= 0 ? FindCase(_inside[i].CaseId) : null;
+                var prisoner = _inside[i];
+                var file = prisoner.CaseId >= 0 ? FindCase(prisoner.CaseId) : null;
                 _inside.RemoveAt(i);
-                Note(file, characterId, CaseOutcome.CutLoose, today);
+                Note(file, characterId, CaseOutcome.CutLoose, today,
+                    answer: prisoner.Answer, sprung: prisoner.Sprung);
                 DropDefendant(file, characterId);
             }
             // He may be on an open case without being in the pipe at all - bailed and
@@ -906,7 +962,10 @@ namespace LivingCity.Police
                 if (_cases[i].Status == CaseStatus.Open &&
                     _cases[i].HasDefendant(characterId))
                 {
-                    Note(_cases[i], characterId, CaseOutcome.CutLoose, today);
+                    var prisoner = Find(characterId);
+                    Note(_cases[i], characterId, CaseOutcome.CutLoose, today,
+                        answer: prisoner != null ? prisoner.Answer : DoorAnswer.Quiet,
+                        sprung: prisoner != null && prisoner.Sprung);
                     DropDefendant(_cases[i], characterId);
                 }
         }
@@ -946,7 +1005,8 @@ namespace LivingCity.Police
         /// sheet twice.
         /// </summary>
         static void Note(CourtCase file, int characterId, CaseOutcome outcome,
-            int today, int days = 0, int outOnDay = 0)
+            int today, int days = 0, int outOnDay = 0,
+            DoorAnswer answer = DoorAnswer.Quiet, bool sprung = false)
         {
             if (file == null || file.VerdictFor(characterId) != null)
                 return;
@@ -954,6 +1014,8 @@ namespace LivingCity.Police
             {
                 CharacterId = characterId,
                 Outcome = outcome,
+                Answer = answer,
+                Sprung = sprung,
                 Days = days,
                 OutOnDay = outOnDay,
                 Day = today,

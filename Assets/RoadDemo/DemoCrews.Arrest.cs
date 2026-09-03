@@ -61,9 +61,14 @@ namespace RoadDemo
         public void LetGo(Unit unit)
         {
             if (unit == null || !unit.Surrendered) return;
+            unit.InCustody = false;
             unit.Surrendered = false;
             foreach (var man in unit.All())
-                if (man != null && !man.Dead) man.Surrendered = false;
+                if (man != null && !man.Dead)
+                {
+                    man.Surrendered = false;
+                    if (man.Take == CrewKit.HandsUp) man.EndTake();
+                }
         }
 
         /// <summary>TAKEN IN. The men are led off the street and onto the books as held,
@@ -78,7 +83,9 @@ namespace RoadDemo
         /// the flat hold, so the arrest still means something there.</summary>
         public void TakeIn(Unit unit, Deed deed = Deed.Affray,
             LivingCity.Police.PrisonPipeline pipeline = null,
-            LivingCity.Police.CourtCase file = null)
+            LivingCity.Police.CourtCase file = null,
+            LivingCity.Police.DoorAnswer answer = LivingCity.Police.DoorAnswer.Quiet,
+            bool sprung = false)
         {
             if (unit == null) return;
 
@@ -115,7 +122,8 @@ namespace RoadDemo
                 if (man == null || man.Dead || man.CharacterId < 0) continue;
                 if (pipeline != null)
                 {
-                    if (pipeline.Book(roster, man.CharacterId, deed, today, file) != null)
+                    if (pipeline.Book(roster, man.CharacterId, deed, today, file,
+                            answer, sprung) != null)
                         taken++;
                 }
                 else if (LivingCity.Outfit.HouseOps.Jail(house, man.CharacterId, backOn,
@@ -131,28 +139,9 @@ namespace RoadDemo
                 return;
             }
 
-            // EVERY MAN OF THIS CREW ON ONE CASE (GAN-245), and the arresting officer
-            // on the witness list: he found them at the scene, which is the weakest
-            // thing on a charge sheet and still the reason there is one. Whatever the
-            // crew never answered for lately is attached as extra counts here, because
-            // this is the moment the city has them.
-            if (pipeline != null && file != null)
-            {
-                var found = false;
-                for (var w = 0; w < file.Witnesses.Count; w++)
-                    if (file.Witnesses[w].Kind == LivingCity.Police.WitnessKind.PoliceFoundThem ||
-                        file.Witnesses[w].Kind == LivingCity.Police.WitnessKind.PoliceSawIt)
-                        found = true;
-                if (!found)
-                    file.Witnesses.Add(new LivingCity.Police.Witness
-                    {
-                        Kind = LivingCity.Police.WitnessKind.PoliceFoundThem,
-                        Name = "The arresting officer",
-                        Seed = StreetAlarm.IncidentNumber,
-                        X = unit.Position.x, Y = unit.Position.y, Z = unit.Position.z,
-                    });
-                pipeline.AttachOpenComplaints(file, today);
-            }
+            unit.InCustody = false;
+
+            AttachArrestPaper(unit, pipeline, file, today);
 
             // and the street re-deals without them: Sync keeps only Active men, so the
             // bodies go the same way a discharged man's does, through the books
@@ -166,6 +155,63 @@ namespace RoadDemo
             CrewOverlay.Announce(
                 taken == 1 ? "ONE MAN TAKEN IN" : taken + " MEN TAKEN IN",
                 5f, new Color(0.55f, 0.78f, 1f));
+        }
+
+        /// <summary>Books one body after that body, rather than merely his crew, has
+        /// crossed the station threshold.  The caller owns the wider custody state so
+        /// a second car trip can leave the lieutenant and any men who did not fit still
+        /// surrendered at the pickup.</summary>
+        public bool TakeInOne(Unit unit, CrewWalker man, Deed deed = Deed.Affray,
+            LivingCity.Police.PrisonPipeline pipeline = null,
+            LivingCity.Police.CourtCase file = null,
+            LivingCity.Police.DoorAnswer answer = LivingCity.Police.DoorAnswer.Quiet,
+            bool sprung = false)
+        {
+            if (unit == null || man == null || man.Dead || man.CharacterId < 0)
+                return false;
+            var house = HouseOf(unit.Faction);
+            var roster = house?.Roster;
+            if (roster == null) return false;
+
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            int today = outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0;
+            var taken = pipeline != null
+                ? pipeline.Book(roster, man.CharacterId, deed, today, file,
+                    answer, sprung) != null
+                : LivingCity.Outfit.HouseOps.Jail(house, man.CharacterId,
+                    today > 0 ? today + HeldDays : 0, "Held at the station",
+                    Sentencing.ChargeFor(deed), today > 0 ? "DAY " + today : "").Ok;
+            if (!taken) return false;
+
+            AttachArrestPaper(unit, pipeline, file, today);
+            house.Touch();
+            if (unit.Faction == LivingCity.Gameplay.PlayerCommands.House.Value)
+                PersonnelDirector.Instance?.Touch();
+            return true;
+        }
+
+        /// <summary>Every defendant from one arrest shares the same paper.  The first
+        /// man adds the officer and folds outstanding complaints; later car-loads see
+        /// that work already done.</summary>
+        static void AttachArrestPaper(Unit unit,
+            LivingCity.Police.PrisonPipeline pipeline,
+            LivingCity.Police.CourtCase file, int today)
+        {
+            if (unit == null || pipeline == null || file == null) return;
+            var found = false;
+            for (var w = 0; w < file.Witnesses.Count; w++)
+                if (file.Witnesses[w].Kind == LivingCity.Police.WitnessKind.PoliceFoundThem ||
+                    file.Witnesses[w].Kind == LivingCity.Police.WitnessKind.PoliceSawIt)
+                    found = true;
+            if (!found)
+                file.Witnesses.Add(new LivingCity.Police.Witness
+                {
+                    Kind = LivingCity.Police.WitnessKind.PoliceFoundThem,
+                    Name = "The arresting officer",
+                    Seed = StreetAlarm.IncidentNumber,
+                    X = unit.Position.x, Y = unit.Position.y, Z = unit.Position.z,
+                });
+            pipeline.AttachOpenComplaints(file, today);
         }
     }
 }

@@ -122,6 +122,18 @@ namespace LivingCity.Personnel
         /// him. Not the same thing as a door with nobody at it, and it must never be
         /// filed as one.</summary>
         RefusedTheOfficer,
+
+        /// <summary>The men broke from the question and ran.</summary>
+        RanFromTheOfficer,
+
+        /// <summary>The men answered the question with gunfire.</summary>
+        FiredOnTheOfficer,
+
+        /// <summary>The custody reached the station threshold.</summary>
+        TakenIn,
+
+        /// <summary>The custody was broken before the station threshold.</summary>
+        Sprung,
     }
 
     /// <summary>
@@ -195,6 +207,14 @@ namespace LivingCity.Personnel
                 case IncidentKind.RefusedTheOfficer:
                     return "Our men refused the officer at " + name +
                            ", and the case stays open.";
+                case IncidentKind.RanFromTheOfficer:
+                    return name + " ran from the officer" + place + ".";
+                case IncidentKind.FiredOnTheOfficer:
+                    return name + " fired on the officer" + place + ".";
+                case IncidentKind.TakenIn:
+                    return name + " were taken in" + place + ".";
+                case IncidentKind.Sprung:
+                    return name + " were sprung before the station threshold" + place + ".";
                 case IncidentKind.CaseOpened:
                     return "The city has opened a case over " + name +
                            ", and our names are on it.";
