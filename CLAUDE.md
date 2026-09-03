@@ -72,4 +72,5 @@ make it call the shared service/model.
 | headquarters safe, stock, report and armory gate | `Docs/headquarters.md` |
 | what the port is made of | `Docs/harbor-detail.md` |
 | the period | `Docs/1987-period-reference.md` |
+| the voices: the banks, who says what, how a man is cast | `Docs/voice-lines.md` |
 | what the game owes a credit for | `Docs/credits.md` |

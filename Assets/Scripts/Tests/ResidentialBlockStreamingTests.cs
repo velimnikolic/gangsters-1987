@@ -450,7 +450,8 @@ namespace LivingCity.Tests
                     sites[i].BlockId, sites[i].Door.x, sites[i].Door.z));
 
             var picks = GangFronts.Select(candidates,
-                GangSeeder.Generate(seed, null)[GangCatalog.PlayerGangId].FrontRoll,
+                GangSeeder.Generate(seed, GangCatalog.GangCount, null)
+                    [GangCatalog.PlayerGangId].FrontRoll,
                 GangCatalog.GangCount);
             var occupied = new HashSet<int>();
             for (var gang = 0; gang < picks.Length; gang++)

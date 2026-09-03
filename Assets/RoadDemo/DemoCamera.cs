@@ -115,6 +115,8 @@ namespace RoadDemo
 
         /// <summary>Made on first OnGUI: GUI.skin exists only there.</summary>
         GUIStyle _zoomStyle;
+        GUIStyle _hintStyle;
+        int _hintFontSize;
 
         /// <summary>How quickly the pivot closes on what it rides. A man on foot is
         /// held dead centre; a car at speed runs a metre or two ahead of the picture -
@@ -304,7 +306,31 @@ namespace RoadDemo
                 // below the top bar, which spans the full width at 42 canvas-px
                 // (reference height 1080) - convert to real screen pixels
                 float barPx = UnityEngine.Screen.height / 1080f * hintTopPx;
-                GUI.Label(new Rect(12f, barPx + 6f, 1400f, 24f), hint);
+                int fontSize = Mathf.Clamp(
+                    Mathf.RoundToInt(UnityEngine.Screen.height / 1080f * 30f), 20, 32);
+                if (_hintStyle == null || _hintFontSize != fontSize)
+                {
+                    _hintFontSize = fontSize;
+                    _hintStyle = new GUIStyle(GUI.skin.label)
+                    {
+                        fontSize = fontSize,
+                        fontStyle = FontStyle.Bold,
+                        alignment = TextAnchor.MiddleLeft,
+                        clipping = TextClipping.Clip
+                    };
+                    _hintStyle.normal.textColor = Color.white;
+                }
+
+                float height = fontSize + 18f;
+                var background = new Rect(10f, barPx + 4f,
+                    Mathf.Max(1f, UnityEngine.Screen.width - 20f), height);
+                var was = GUI.color;
+                GUI.color = new Color(0.02f, 0.025f, 0.035f, 0.82f);
+                GUI.DrawTexture(background, Texture2D.whiteTexture);
+                GUI.color = Color.white;
+                GUI.Label(new Rect(background.x + 10f, background.y,
+                    background.width - 20f, background.height), hint, _hintStyle);
+                GUI.color = was;
             }
 
             if (showZoom)

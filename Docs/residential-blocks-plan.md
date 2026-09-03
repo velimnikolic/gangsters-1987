@@ -21,6 +21,15 @@
 | komanda | `unity command gangsters_residential --seed N --size corner\|row\|block\|court\|WxD [--count M] [--draw]` u `PipelineCommands.cs` |
 | presuda bez editora | `Tools/CoreSim --residential` (30 seedova × 4 klase = sud; jedan seed ne dokazuje ništa) |
 
+> **PRAVILO (2026-09-03): grad stoji samo ono što je korisnik napravio.** Nema modularnih
+> zidova: uklonjeni su `residential-frontage-01..03` (tri jednoćelijska `SM_Bld_Apartment_*`
+> modula), `ResidentialLot.Frontage`/`CanFrontage`, `LayCompactRow` i
+> `ResidentialBlocks.StandFrontageUnit`. Plitka traka od 10–15 m se sada deli običnim
+> deliocem iz požnjevenog kataloga; gde katalog nema dovoljno plitku kuću sa licem na obe
+> duge strane, blok prijavi `Bare` i to je poziv da se požnje takva kuća — nikad novi modul.
+> Klupa (20 seedova, 960 blokova): plitki redovi padaju sa 91% na 71% prosečne pokrivenosti,
+> 6 od 100 prijavi `Bare`; ostale klase su nepromenjene.
+
 Prizemne radnje od GAN-294 imaju poseban live sloj, izmerena vrata i jednokratno isečene Synty
 mesh assete; ugovor, tabela svih osam modula i reprodukcija su u
 [`Docs/storefronts.md`](storefronts.md). `SM_Bld_Shop_05` je izlog bez vrata i pripada susednom

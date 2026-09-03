@@ -110,6 +110,12 @@ namespace RoadDemo
         /// opened by the telephone call and outlives a failed arrest, because a
         /// complaint nobody was taken for is exactly what becomes a count later.</summary>
         bool _arrestCaseIsOurs;
+
+        /// <summary>The telephone call this collar was begun for, or null when it came
+        /// out of a shooting. A complaint OWNS its unit from the moment it is sent until
+        /// the door has been answered, so the collar must not hand that officer back to
+        /// his beat behind the call's back.</summary>
+        CallOut _arrestCall;
         PoliceFootPatrol _arrestOfficer;   // the beat man, when it is one
         CrewWalker _arrestLawman;          // a squad's lead, when the car brought him
         DemoCrews.Unit _arrestSquad;       // that lead's squad
@@ -291,6 +297,14 @@ namespace RoadDemo
                      : lawman != null && lawman.Tf != null ? lawman.Tf.position
                      : call.Call.Pos;
 
+            // HE HAS TO BE ON THE DOORSTEP HIMSELF. Arriving is measured against the
+            // pavement graph, and the corner nearest a shop can be the length of a block
+            // from it; the walk-up is a hand-driven straight line and cannot cross that.
+            // The call says whether he actually got there (CallOut.AtTheDoorstep) - a
+            // clock running out is not an arrival - and a man who did not is a man who
+            // takes a statement, not one who puts anybody's hands up.
+            if (!call.AtTheDoorstep) return false;
+
             var crew = AccusedNear(call.Call.Pos, call.Call.Faction);
             if (crew == null) return false;
 
@@ -298,10 +312,17 @@ namespace RoadDemo
                 ? crew.Boss : DemoCrews.NearestOf(crew, from);
             if (man == null || man.Tf == null) return false;
 
+            // AND HIS MAN HAS TO BE A WALK AWAY. The crew is found within the whole
+            // reach of the call, but the walk-up itself is a few metres of hand-lerped
+            // pavement (PoliceFootPatrol.Challenge). Started from further off it walks
+            // through whatever stands between them and ends in the patience running out.
+            if ((man.Tf.position - from).sqrMagnitude > WalksOff * WalksOff) return false;
+
             _askedIncident = call.Call.Number;
             _arrestDeed = call.Call.Charge;
             _arrestCase = call.File;
             _arrestCaseIsOurs = false;   // the telephone opened it, not this collar
+            _arrestCall = call;
             _arrestOfficer = foot;
             _arrestLawman = lawman;
             _arrestSquad = call.Men;
@@ -559,6 +580,9 @@ namespace RoadDemo
         /// a man with a gun in his hand actually looks like.</summary>
         void Refused(bool ordered)
         {
+            // the telephone call that opened this collar has to know how it ended: a
+            // refusal is a disposition of its own and must not become a statement
+            if (_arrestCall != null) _arrestCall.MenRefused = true;
             CrewOverlay.Announce(ordered
                     ? "THE CREW OPENS UP ON THE OFFICER"
                     : "THE LIEUTENANT REFUSED - THE OFFICER IS CALLING IT IN",
@@ -614,7 +638,14 @@ namespace RoadDemo
             if (_arrestOfficer != null)
             {
                 _arrestOfficer.EndChallenge(holster);
-                if (holster) _arrestOfficer.Release();
+                // NOT WHILE A TELEPHONE CALL STILL HOLDS HIM. A complaint keeps its unit
+                // until the door has been answered one way or the other; releasing the
+                // beat man here put him back on his round the instant a collar fell
+                // through, so the call went on holding an officer who had already walked
+                // off - and the shop it was rung about got nothing at all. EndChallenge
+                // leaves him OnScene instead, and the call takes the statement and then
+                // sends him home itself.
+                if (holster && _arrestCall == null) _arrestOfficer.Release();
             }
             else if (_arrestLawman != null && !_arrestLawman.Dead && _arrestLawman.Tf != null)
             {
@@ -636,6 +667,7 @@ namespace RoadDemo
                 _arrestCase.Status = CaseStatus.Tried;
             _arrestCase = null;
             _arrestCaseIsOurs = false;
+            _arrestCall = null;
 
             ClearBanner();
             _arrestOfficer = null;

@@ -56,11 +56,22 @@ namespace LivingCity.EditorTools
             var report = new Report { Scene = ScenePath };
             var failures = new List<string>();
             Scene previous = SceneManager.GetActiveScene();
-            Scene bench = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,
-                                                       NewSceneMode.Additive);
+            Scene loadedBench = SceneManager.GetSceneByPath(ScenePath);
+            bool reuseLoadedBench = loadedBench.IsValid() && loadedBench.isLoaded;
+            Scene bench = reuseLoadedBench
+                ? loadedBench
+                : EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
             try
             {
                 SceneManager.SetActiveScene(bench);
+                if (reuseLoadedBench)
+                {
+                    // Generated review scenes may be rebuilt while the user is looking at
+                    // them. Saving a second additive scene over an already loaded target is
+                    // rejected by Unity, so rebuild the loaded target in place instead.
+                    foreach (var sceneRoot in bench.GetRootGameObjects())
+                        UnityEngine.Object.DestroyImmediate(sceneRoot);
+                }
                 RenderSettings.fog = false;
                 var root = new GameObject("STOREFRONT BENCH");
                 SceneManager.MoveGameObjectToScene(root, bench);
@@ -124,7 +135,7 @@ namespace LivingCity.EditorTools
                 }
 
                 Floor(root.transform, span * 0.5f, span + 18f);
-                CameraAndLight(root.transform, span * 0.5f);
+                CameraAndLight(root.transform, span * 0.5f, span + 18f);
                 EditorSceneManager.MarkSceneDirty(bench);
                 if (!EditorSceneManager.SaveScene(bench, ScenePath))
                     failures.Add("could not save " + ScenePath);
@@ -135,9 +146,10 @@ namespace LivingCity.EditorTools
             }
             finally
             {
-                if (previous.IsValid() && previous.isLoaded)
+                if (previous.IsValid() && previous.isLoaded && previous != bench)
                     SceneManager.SetActiveScene(previous);
-                EditorSceneManager.CloseScene(bench, removeScene: true);
+                if (!reuseLoadedBench)
+                    EditorSceneManager.CloseScene(bench, removeScene: true);
             }
             report.Failures = failures.ToArray();
             AssetDatabase.Refresh();
@@ -174,7 +186,7 @@ namespace LivingCity.EditorTools
             }
         }
 
-        static void CameraAndLight(Transform parent, float centreX)
+        static void CameraAndLight(Transform parent, float centreX, float width)
         {
             var sun = new GameObject("Sun");
             sun.transform.SetParent(parent, false);
@@ -188,10 +200,34 @@ namespace LivingCity.EditorTools
             cameraObject.transform.SetParent(parent, false);
             cameraObject.transform.position = new Vector3(centreX, 30f, 58f);
             cameraObject.transform.LookAt(new Vector3(centreX, 2.2f, 0f));
+            cameraObject.tag = "MainCamera";
             var camera = cameraObject.AddComponent<Camera>();
             camera.fieldOfView = 55f;
+            camera.nearClipPlane = 0.3f;
             camera.farClipPlane = 220f;
             camera.clearFlags = CameraClearFlags.Skybox;
+            cameraObject.AddComponent<AudioListener>();
+
+            // All interactive review scenes use the shared city camera: WASD/arrows
+            // pan, Q/E or right-drag orbit, and the wheel zooms without entering map mode.
+            var rig = cameraObject.AddComponent<DemoCamera>();
+            rig.pivot = new Vector3(centreX, 2.2f, 0f);
+            rig.distance = Mathf.Clamp(width * 0.70f, 58f, 72f);
+            rig.yaw = 180f;
+            rig.ConfigurePitch(30f, 25f);
+            rig.minDistance = 7f;
+            rig.mapTransition = false;
+            rig.mapCeiling = 150f;
+            rig.showHint = true;
+            rig.hintTopPx = 14f;
+            rig.hint = "STOREFRONT BENCH   WASD/arrows: move   " +
+                       "Q/E or right-drag: rotate   wheel: zoom";
+
+            var shadows = cameraObject.AddComponent<DemoShadows>();
+            shadows.rig = rig;
+            shadows.margin = 35f;
+            shadows.maxDistance = 180f;
+            DemoCamera.ClaimMainCamera(camera);
         }
     }
 }

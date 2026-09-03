@@ -78,10 +78,116 @@ namespace RoadDemo
 
             State = Mode.Resting;
             _restTimer = firstRest;
+            HasBay = true;
             Profile = DriverProfile.Patrol;
             Tag = "police";
             Tf.SetPositionAndRotation(stall, stallRot);
             Slid(stall);
+        }
+
+        /// <summary>
+        /// A CAR WITH NO BAY, DEALT STRAIGHT ONTO THE ROAD (2026-09-03). A quarter is
+        /// authorised more cars than its station has bays, and the rest of that fleet is
+        /// not a car that does not exist: it is a car already out on its round when the
+        /// city opens.
+        ///
+        /// It never rests at a kerb - a resting car at a kerb is a registered obstacle
+        /// and gridlocked the ambient traffic in about a quarter of seeds (the note on
+        /// RoadDemoBuilder.SpawnPatrolCars) - so when its round ends it asks its station
+        /// for a bay, and goes back round the city again when there is none.
+        /// </summary>
+        public void InitRolling(RoadEdge start, float startS, RoadEdge home, float kerbS,
+            List<RoadEdge> allEdges, Dictionary<RoadEdge, RoadEdge> routeHome,
+            Vector2 restRange, Vector2Int waypointRange)
+        {
+            _home = home;
+            _kerbS = kerbS;
+            _kerb = home.Start + home.Dir * kerbS;
+            _allEdges = allEdges;
+            _routeHome = routeHome;
+            _restRange = restRange;
+            _waypointRange = new Vector2Int(
+                Mathf.Max(1, waypointRange.x), Mathf.Max(1, waypointRange.y));
+
+            HasBay = false;
+            Profile = DriverProfile.Patrol;
+            Tag = "police";
+            State = Mode.Patrolling;
+            _waypointsLeft = Random.Range(_waypointRange.x, _waypointRange.y + 1);
+            _waypoint = null;
+            _routeToWaypoint = null;
+            var at = start.Start + start.Dir * startS;
+            Tf.SetPositionAndRotation(at, Quaternion.LookRotation(start.Dir));
+            Spawn(start, startS);
+        }
+
+        /// <summary>Whether this car has a bay of its own to go home to.</summary>
+        public bool HasBay { get; private set; }
+
+        /// <summary>Asked for a bay at the moment the car reaches its station's kerb with
+        /// nowhere to put itself. Returns true when one was found - the caller has taken
+        /// the bay in the station's book and handed it over with TakeBay.</summary>
+        public System.Func<PolicePatrolCar, bool> AskForABay;
+
+        /// <summary>A bay has been given to this car; from here it docks like any other.
+        /// </summary>
+        public void TakeBay(Vector3 stall, Quaternion stallRot)
+        {
+            _stall = stall;
+            _stallRot = stallRot;
+            HasBay = true;
+        }
+
+        /// <summary>Round the city again: no bay was free, and a police car does not
+        /// stand at a kerb waiting for one.</summary>
+        void BackOnTheRound()
+        {
+            State = Mode.Patrolling;
+            _waypointsLeft = Random.Range(_waypointRange.x, _waypointRange.y + 1);
+            _waypoint = null;
+            _routeToWaypoint = null;
+        }
+
+        /// <summary>Whether this car is standing in the yard with no bay of its own.
+        /// </summary>
+        bool _inTheYard;
+
+        /// <summary>
+        /// OFF THE WATCH WITH NOWHERE TO PARK. A car that reaches its station at the end
+        /// of its shift and finds every bay held cannot go round again - the whole
+        /// meaning of a shift is that its cars are OFF the road - and it cannot stand at
+        /// the kerb either, which is the one thing the traffic has been proved not to
+        /// survive. So it goes into the yard: off the lane graph, body away, answering
+        /// nothing, until the watch calls it back out.
+        /// </summary>
+        void StandInTheYard()
+        {
+            if (Lane != null) Despawn();
+            Swinging.Remove(this);
+            _inTheYard = true;
+            State = Mode.Resting;
+            _restTimer = float.MaxValue;
+            if (Tf != null)
+            {
+                // below the world as well as switched off: nothing that sweeps bodies
+                // rather than the graph can read it as an obstacle at the kerb
+                Tf.position = _kerb + Vector3.down * 50f;
+                Tf.gameObject.SetActive(false);
+            }
+        }
+
+        /// <summary>Back out of the yard when the watch turns: onto its own kerb lane and
+        /// straight into the round, because there was no bay to swing out of.</summary>
+        void OutOfTheYard()
+        {
+            _inTheYard = false;
+            if (Tf != null)
+            {
+                Tf.gameObject.SetActive(true);
+                Tf.SetPositionAndRotation(_kerb, Quaternion.LookRotation(_home.Dir));
+            }
+            BackOnTheRound();
+            Spawn(_home, _kerbS);
         }
 
         /// <summary>The officer at the wheel (CarOccupant), set by the builder. Shown
@@ -124,6 +230,12 @@ namespace RoadDemo
             switch (State)
             {
                 case Mode.Resting:
+                    if (_inTheYard)
+                    {
+                        // no bay to swing out of; it rejoins the road at its kerb
+                        if (!OffWatch && KerbClear()) OutOfTheYard();
+                        break;
+                    }
                     if (OffWatch && !_sceneWanted) break;   // off the watch: it stays in
                     _restTimer -= dt;
                     if ((_restTimer <= 0f || _sceneWanted) && KerbClear()) BeginUndock();
@@ -171,7 +283,11 @@ namespace RoadDemo
                     // the car at nought here, so a held lease costs a tick's wait
                     if (State == Mode.Returning && CurrentEdge == _home &&
                         Progress >= _kerbS - 0.15f && !SwingHeld())
-                        BeginDock();
+                    {
+                        if (HasBay || (AskForABay != null && AskForABay(this))) BeginDock();
+                        else if (OffWatch) StandInTheYard();
+                        else BackOnTheRound();
+                    }
                     break;
 
                 case Mode.Responding:

@@ -329,7 +329,10 @@ namespace RoadDemo
             // which is also how you find out whether the frame is the LIFE at all.
             carCount = Mathf.RoundToInt(carCount * Mathf.Min(factor, maxCarScale));
             pedestrianCount = Mathf.RoundToInt(pedestrianCount * Mathf.Min(factor, maxCrowdScale));
-            policeCarCount = Mathf.Max(policeCarCount, Mathf.RoundToInt(policeCarCount * Mathf.Sqrt(factor)));
+            // a negative count is "deal it by the city's own size" and is not a number
+            // to multiply (RoadDemoBuilder.PatrolCarsWanted already reads the city)
+            if (policeCarCount >= 0)
+                policeCarCount = Mathf.Max(policeCarCount, Mathf.RoundToInt(policeCarCount * Mathf.Sqrt(factor)));
             policeOfficerCount = Mathf.Max(policeOfficerCount, Mathf.RoundToInt(policeOfficerCount * Mathf.Sqrt(factor)));
             Debug.Log($"[RoadDemo] {lots} blocks: {carCount} cars, {pedestrianCount} pedestrians, " +
                       $"{policeCarCount} patrol cars, {policeOfficerCount} officers");

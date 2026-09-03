@@ -5,11 +5,12 @@ namespace LivingCity.Gangs
     /// their people wear. Engine-free tables - the headless suite asserts they stay
     /// aligned and inside the popup budgets.
     ///
-    /// TWENTY families and the player's outfit. Five was one mob per quarter and the
-    /// city read as empty between them; a city this size has a name on every third
-    /// corner, and the street layer deals one crew per family
-    /// (RoadDemoBuilder.rivalCrewsInCity), so this table's LENGTH is how many mobs the
-    /// player can run into. Adding a name here puts a crew on the pavement.
+    /// TWENTY families and the player's outfit: the stable catalogue the largest city can
+    /// draw from. A particular city deals only the leading slice it can stand
+    /// (<see cref="LivingCity.Outfit.Underworld.Dealt"/>), and GangSeeder mirrors exactly
+    /// that slice. The table stays full
+    /// sized so saved ids, stances and colours never move; its length is a capacity, not a
+    /// promise that every name exists in every city.
     ///
     /// Model names resolve by NAME against the cast baked into LedgerModelSet, which
     /// accepts the "_AI" suffix the retired crowd prefabs carried - so an entry here

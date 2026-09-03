@@ -31,6 +31,7 @@ namespace LivingCity.Tests
             ("AHeadlessHouseIsSkipped", AHeadlessHouseIsSkipped),
             ("OneDealPerCity", OneDealPerCity),
             ("ACityDealsOnlyTheHousesItStands", ACityDealsOnlyTheHousesItStands),
+            ("TheStreetListsOnlyDealtHouses", TheStreetListsOnlyDealtHouses),
         };
 
         public static List<string> Run()
@@ -87,6 +88,29 @@ namespace LivingCity.Tests
                 Underworld.Deal(Seed, GangCatalog.GangCount + 5).Dealt !=
                     GangCatalog.GangCount)
                 failures.Add("Deal: the house count was not held inside the catalogue.");
+        }
+
+        /// <summary>
+        /// The street registry is the FAMILIES page's source. A four-house city therefore
+        /// hands it four entries - ours and three rivals - never the full catalogue with
+        /// seventeen empty cards showing zero capos.
+        /// </summary>
+        static void TheStreetListsOnlyDealtHouses(List<string> failures)
+        {
+            var underworld = Underworld.Deal(Seed, 4);
+            var gangs = GangSeeder.Generate(
+                Seed, underworld.Dealt, gang => underworld.Of(gang)?.Roster);
+
+            if (gangs.Length != underworld.Dealt)
+                failures.Add($"Registry: a {underworld.Dealt}-house city listed " +
+                             $"{gangs.Length} houses.");
+            if (gangs.Length - 1 != 3)
+                failures.Add($"Ledger: a three-rival city would print {gangs.Length - 1} " +
+                             "rival cards.");
+
+            for (var gangId = 1; gangId < gangs.Length; gangId++)
+                if (gangs[gangId].Id != gangId || gangs[gangId].Members.Count == 0)
+                    failures.Add($"Registry: dealt house {gangId} has no street crew.");
         }
 
         static void TwentyOneHousesAreDealt(List<string> failures)
@@ -434,7 +458,8 @@ namespace LivingCity.Tests
         static void TheStreetMirrorsEveryBook(List<string> failures)
         {
             var underworld = Underworld.Deal(Seed);
-            var gangs = GangSeeder.Generate(Seed, gang => underworld.Of(gang)?.Roster);
+            var gangs = GangSeeder.Generate(
+                Seed, underworld.Dealt, gang => underworld.Of(gang)?.Roster);
 
             if (gangs.Length != GangCatalog.GangCount)
                 failures.Add("Mirror: the street does not know twenty-one families.");

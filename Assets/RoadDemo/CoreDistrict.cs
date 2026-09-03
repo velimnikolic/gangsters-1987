@@ -543,6 +543,20 @@ namespace RoadDemo
         /// <summary>The plan the quarter was dealt: which seed, which deal of it, and the
         /// rows the blocks went into.</summary>
         public CoreLayout.Plan Layout => _plan;
+
+        /// <summary>How many authored blocks the deal actually stood. The law is dealt
+        /// off this rather than off the pavement: two beat pairs to a block is a rule
+        /// about the CITY, and a rig cut to two quarters must get two quarters' worth of
+        /// policemen and not a whole city's.</summary>
+        public int BlockCount => _blocks.Count;
+
+        /// <summary>How many quarters the city standing on the ground is made of - the
+        /// budget where the rig was cut to one, and the plan's own count otherwise. What
+        /// the patrol fleet is dealt per quarter is measured against this.</summary>
+        public int QuarterCount =>
+            quarterBudget > 0
+                ? quarterBudget
+                : _plan?.Territory != null ? _plan.Territory.Quarters.Count : 0;
         CoreLayout.Plan _plan;
 
         public void Reserve(DistrictReservations into)

@@ -256,13 +256,14 @@ namespace RoadDemo
                 return false;
             crews = source;
             claimant = unit;
-            if (!crews.OrderUnit(unit, transform.position, out _))
+            if (!crews.OrderUnit(unit, transform.position, out _, run: false, speak: false))
             {
                 claimant = null;
                 return false;
             }
             CrewOverlay.Announce("TAKE THE BAG · $" + Take, 3f,
                 new Color(0.9f, 0.85f, 0.65f));
+            CrewSpeech.Say(unit, LivingCity.Data.VoiceLines.OrdBag);
             return true;
         }
 

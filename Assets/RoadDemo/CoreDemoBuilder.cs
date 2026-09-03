@@ -31,12 +31,15 @@ namespace RoadDemo
         [Min(0)] public int bikeCount = 4;
         [Min(0)] public int pedestrianCount = 100;
         public bool police = true;
-        [Min(0)] public int policeBeatPairs = 3;
+        [Tooltip("Beat pairs over the city's blocks. -1 deals them by the city's own " +
+                 "size - policeBeatPairsPerBlock (2) for every block the deal stood - " +
+                 "which is what makes a telephone call from any street reach somebody.")]
+        [Min(-1)] public int policeBeatPairs = -1;
         [Tooltip("Patrol cars docked at the station house's forecourt. The core stands a " +
                  "real station (the police-station-block the deal packs), so the fleet has " +
                  "a yard to undock from - but the scene as it shipped had none, and 0 " +
                  "leaves it exactly as it was.")]
-        [Min(0)] public int policeCars;
+        [Min(-1)] public int policeCars = -1;
         [Tooltip("Officers resting inside the station house, who come out when the wire " +
                  "calls them. 0 leaves the scene as it was.")]
         [Min(0)] public int policeOfficers;
@@ -238,9 +241,11 @@ namespace RoadDemo
             // RoadDemoBuilder.FindStationHouses sweeps the districts root for exactly
             // that name - so a car asked for here docks at a real forecourt. It stayed
             // at nought because nobody had asked; the scenarios ask now.
-            runtime.policeCarCount = police ? Mathf.Max(0, policeCars) : 0;
+            // -1 is not a count but a rule: the runtime deals the fleet off the city's
+            // own quarters. Only a non-negative number is a number.
+            runtime.policeCarCount = police ? Mathf.Max(-1, policeCars) : 0;
             runtime.policeOfficerCount = police ? Mathf.Max(0, policeOfficers) : 0;
-            runtime.policeBeatPairs = police ? Mathf.Max(0, policeBeatPairs) : 0;
+            runtime.policeBeatPairs = police ? Mathf.Max(-1, policeBeatPairs) : 0;
             runtime.rivalCrewsInCity = Mathf.Max(0, rivalCrews);
             runtime.rivalHoodsInCity = Mathf.Max(0, rivalHoods);
             runtime.buildingCards = buildingCards;

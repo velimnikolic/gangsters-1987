@@ -256,10 +256,12 @@ namespace LivingCity.UI
                 case IncidentKind.CaughtSkimming:
                 case IncidentKind.CaseOpened:
                 case IncidentKind.WitnessKilled:
+                case IncidentKind.RefusedTheOfficer:
                     return LedgerStyle.Ballpoint;
                 case IncidentKind.DemandedARaise:
                 case IncidentKind.ComplaintRung:
                 case IncidentKind.StatementTaken:
+                case IncidentKind.NobodyCame:
                     return LedgerStyle.PenAmber;
                 case IncidentKind.Promoted:
                 case IncidentKind.ReadyForACrew:

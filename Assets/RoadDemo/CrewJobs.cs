@@ -214,7 +214,7 @@ namespace RoadDemo
                 Dispatched.Remove(crewId);
                 if (!Driving.TryGetValue(crewId, out var driven) || driven != job.Id)
                 {
-                    if (!crews.OrderUnit(unit, destination, out _))
+                    if (!crews.OrderUnit(unit, destination, out _, run: false, speak: false))
                         return;
 
                     Driving[crewId] = job.Id;
@@ -602,7 +602,7 @@ namespace RoadDemo
             if (Home(house, out var hq))
             {
                 if (unit.Car != null)
-                    crews.OrderUnit(unit, hq, out _);
+                    crews.OrderUnit(unit, hq, out _, run: false, speak: false);
                 else
                     crews.MarchTo(unit, hq);
             }

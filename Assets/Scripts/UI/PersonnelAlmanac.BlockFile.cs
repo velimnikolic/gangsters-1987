@@ -1250,6 +1250,106 @@ namespace LivingCity.UI
             return y - top;
         }
 
+        /// <summary>
+        /// OUR FLATS for ONE block. Not printed on the file itself - the sheet's own
+        /// column carries the city's rooms under the word from the blocks (the user,
+        /// 2026-09-03), and the same list twice on one screen is one list too many. Kept
+        /// because a per-block reading is what the file will want the day it grows a
+        /// second page.
+        /// </summary>
+        float BuildBlockFlats(RectTransform card, float x, float top, float width)
+        {
+            var gang = GangCatalog.PlayerGangId;
+            var held = 0;
+            for (var i = 0; i < blockCardBuildings.Count; i++)
+                held += LivingCity.Property.Apartments.CountIn(
+                    blockCardBuildings[i].Id, gang);
+
+            // A block with no rooms of ours on it says nothing at all: an empty heading is
+            // a heading the reader has to read before learning there is nothing under it.
+            if (held == 0)
+                return 0f;
+
+            var y = top;
+            y += Head(card, x, y, width, "OUR FLATS",
+                held + (held == 1 ? " ROOM" : " ROOMS"), LedgerV2.Green);
+
+            var day = RosterDay;
+            for (var i = 0; i < blockCardBuildings.Count; i++)
+            {
+                var building = blockCardBuildings[i];
+                LivingCity.Property.Apartments.OwnedIn(building.Id, gang, blockFlatScratch);
+                if (blockFlatScratch.Count == 0)
+                    continue;
+
+                y += BuildingHeaderRow(card, x, y, width, building);
+                for (var f = 0; f < blockFlatScratch.Count; f++)
+                    y += BlockFlatRow(card, x, y, width, blockFlatScratch[f], day);
+            }
+
+            return y - top + 18f;
+        }
+
+        readonly List<LivingCity.Property.ApartmentRecord> blockFlatScratch =
+            new List<LivingCity.Property.ApartmentRecord>();
+
+        /// <summary>One room of ours, under its building: the door, what runs out of it,
+        /// who keeps it, and how it reads today.</summary>
+        float BlockFlatRow(RectTransform card, float x, float top, float width,
+            LivingCity.Property.ApartmentRecord record, int day)
+        {
+            const float rowH = 30f;
+            var unit = record.Unit;
+            var state = StateOfFlat(unit, day);
+            var spec = LivingCity.Property.UnitRoles.Of(record.Role);
+
+            var row = NewRect("Flat " + unit.Door, card);
+            PlaceTopLeft(row, x, -top, width, rowH);
+            var surface = ClickSurface(row);
+            RowButton(row, surface, () =>
+            {
+                OpenBlueprint(unit.Building);
+                OpenFlatForm(unit);
+            });
+            Rule(row, 0f, -(rowH - 1f), width, LedgerV2.Hair);
+
+            var badge = NewRect("Door", row);
+            var badgeW = unit.Door.Length * 7.8f + 12f;
+            PlaceTopLeft(badge, 8f, -(rowH - 17f) * 0.5f, badgeW, 17f);
+            Fill(badge, LedgerV2.DarkPlate);
+            Line(badge, LedgerStyle.Mono, 10.5f, LedgerV2.HeadCream, 6f, -1f,
+                badgeW - 12f, 15f, unit.Door).characterSpacing = 4f;
+
+            var textX = 8f + badgeW + 10f;
+            var stateW = 96f;
+            var keeperW = 118f;
+            var nameW = Mathf.Max(60f, width - textX - stateW - keeperW - 16f);
+
+            var name = LedgerV2.Name(row, textX, -(rowH - 18f) * 0.5f, nameW,
+                string.IsNullOrEmpty(record.Name)
+                    ? LivingCity.Property.UnitRoles.Label(record.Role)
+                    : record.Name,
+                12.5f, record.Role == LivingCity.Property.UnitRole.Empty
+                    ? LedgerV2.Red : LedgerV2.Ink);
+            name.overflowMode = TextOverflowModes.Ellipsis;
+
+            var keeper = record.KeeperId >= 0 && director != null && director.Roster != null
+                ? director.Roster.Find(record.KeeperId)
+                : null;
+            var keeperLine = LedgerV2.Mono(row, textX + nameW, -(rowH - 16f) * 0.5f,
+                keeperW, keeper != null ? keeper.FullName : "NO KEEPER", 9f,
+                keeper != null ? LedgerV2.Label : LedgerV2.Red, 1f);
+            keeperLine.overflowMode = TextOverflowModes.Ellipsis;
+
+            LedgerV2.StreetMark(row, width - stateW - 4f, -(rowH * 0.5f),
+                StateInk(state), 9f);
+            LedgerV2.Mono(row, width - stateW + 10f, -(rowH - 16f) * 0.5f, stateW - 14f,
+                LivingCity.Property.Apartments.Word(state), 9f, StateInk(state), 3f,
+                TextAlignmentOptions.MidlineRight);
+
+            return rowH;
+        }
+
         /// <summary>Which premise on this block is picked, or -1.</summary>
         int PickedTrade()
         {

@@ -142,6 +142,7 @@ namespace RoadDemo
             if (Selected.Car == car)
             {
                 Disembark(Selected);
+                CrewSpeech.Say(Selected, LivingCity.Data.VoiceLines.OrdOut);
                 return true;
             }
             if (car.Occupant != null && car.Occupant != Selected)
@@ -150,6 +151,7 @@ namespace RoadDemo
                 return false;
             }
             Board(Selected, car);
+            CrewSpeech.Say(Selected, LivingCity.Data.VoiceLines.OrdBoard);
             return true;
         }
 
@@ -162,6 +164,7 @@ namespace RoadDemo
             if (Selected.Car != null)
             {
                 Disembark(Selected);
+                CrewSpeech.Say(Selected, LivingCity.Data.VoiceLines.OrdOut);
                 return true;
             }
             var car = Selected.Boarding;

@@ -377,9 +377,37 @@ namespace RoadDemo
         {
             if (string.IsNullOrEmpty(reason))
                 return;
+            CrewSpeech.Say(_crews != null ? _crews.Selected : null, RefusalVoice(reason),
+                LivingCity.Gameplay.CrewVoice.Priority.Refusal);
             refusalText = reason;
             refusalUntil = Time.unscaledTime + RefusalSeconds;
             refusalUnit = _crews != null ? _crews.Selected : null;
+        }
+
+        /// <summary>
+        /// Which of the four refusals the men speak.
+        ///
+        /// The reason itself is written for the eye, one sentence per refusing system and
+        /// no two the same; there is no enum behind it and inventing one would mean
+        /// touching every refusal in the game to say what it already says in English. So
+        /// the line is chosen off the words - and the fall-through is the generic "can't
+        /// do that", which is right for anything unrecognised. The card carries the actual
+        /// reason; the voice only has to carry the no.
+        /// </summary>
+        static string RefusalVoice(string reason)
+        {
+            var text = reason.ToLowerInvariant();
+
+            if (text.Contains("nobody") || text.Contains("no man") || text.Contains("nothing left"))
+                return LivingCity.Data.VoiceLines.NoMen;
+            if (text.Contains("grenade") || text.Contains("machine") || text.Contains("gun") ||
+                text.Contains("bomb") || text.Contains("armed"))
+                return LivingCity.Data.VoiceLines.NoArms;
+            if (text.Contains("too far") || text.Contains("no way") || text.Contains("cannot get") ||
+                text.Contains("reach") || text.Contains("moving"))
+                return LivingCity.Data.VoiceLines.NoReach;
+
+            return LivingCity.Data.VoiceLines.NoGeneric;
         }
 
         // one status dot (and one tag, used only over lieutenants) per man, grown on demand
@@ -1224,6 +1252,9 @@ namespace RoadDemo
                         {
                             if (!LivingCity.Police.WantedLevels.SendAway(away, today)) return;
                             director.Touch();
+                            LivingCity.Gameplay.CrewVoice.Say(
+                                LivingCity.Data.VoiceLines.OrdAway, away, crew.Position,
+                                LivingCity.Gameplay.CrewVoice.Priority.Order, roster);
                             Announce(away.FullName.ToUpperInvariant() + " IS ON A BUS OUT OF THE CITY",
                                 5f, new Color(0.95f, 0.9f, 0.6f));
                         }));
@@ -1328,12 +1359,16 @@ namespace RoadDemo
                 already ? (System.Action)null : () =>
                 {
                     if (body.Tf == null) return;
-                    if (!_crews.OrderSelected(body.Tf.position, out var destination, false))
+                    // The walk under it stays quiet: the men are not going for a stroll,
+                    // they are going to have a word, and that is the line that plays.
+                    if (!_crews.OrderUnit(crew, body.Tf.position, out var destination,
+                            run: false, speak: false))
                     {
                         Refuse(_crews.OrderRefusal);
                         return;
                     }
                     WitnessWatch.OrderLean(crew, witness, body);
+                    CrewSpeech.Say(crew, LivingCity.Data.VoiceLines.OrdWitness);
                     ShowMark(destination, AttackTint);
                 },
                 lit: !already);
@@ -1360,11 +1395,11 @@ namespace RoadDemo
             if (CrewQuarters.AtDoorstep(crew, doorstep))
                 Row(LivingCity.Territory.TerritoryRacketOrders.MoveOutLabel,
                     "out of the door and back on the street",
-                    () => CrewQuarters.BringOut(crew), lit: true);
+                    () => CrewQuarters.BringOut(crew, speak: true), lit: true);
             else
                 Row(LivingCity.Territory.TerritoryRacketOrders.MoveInLabel,
                     "the men wait inside · off the street",
-                    () => CrewQuarters.Station(_crews, crew, doorstep, front.Role),
+                    () => CrewQuarters.Station(_crews, crew, doorstep, front.Role, speak: true),
                     lit: true);
 
             LayoutAndShow(screen);
@@ -1664,9 +1699,9 @@ namespace RoadDemo
                         run = () =>
                         {
                             if (move == LivingCity.Territory.TerritoryQuartersMove.Out)
-                                CrewQuarters.BringOut(housed);
+                                CrewQuarters.BringOut(housed, speak: true);
                             else
-                                CrewQuarters.Station(_crews, housed, quartersId);
+                                CrewQuarters.Station(_crews, housed, quartersId, speak: true);
                         };
                     }
                     else if (order.Kind ==
@@ -1765,8 +1800,12 @@ namespace RoadDemo
                     if (!string.IsNullOrEmpty(roundResult.Reason))
                         Refuse(roundResult.Reason);
                 }
-                else if (runtime.TryGetBusinessApproach(businessId, out var firstDoor))
-                    ShowMark(firstDoor + Vector3.up * 1.0f, MarkTint);
+                else
+                {
+                    CrewSpeech.Say(crew, LivingCity.Data.VoiceLines.RktCollect);
+                    if (runtime.TryGetBusinessApproach(businessId, out var firstDoor))
+                        ShowMark(firstDoor + Vector3.up * 1.0f, MarkTint);
+                }
                 return;
             }
 
@@ -1805,6 +1844,13 @@ namespace RoadDemo
                     Refuse(result.Reason);
                 return;
             }
+
+            CrewSpeech.Say(crew, intent switch
+            {
+                LivingCity.Territory.TerritoryRacketIntent.Demand => LivingCity.Data.VoiceLines.RktDemand,
+                LivingCity.Territory.TerritoryRacketIntent.Threaten => LivingCity.Data.VoiceLines.RktThreat,
+                _ => LivingCity.Data.VoiceLines.RktApproach,
+            });
 
             if (runtime.TryGetBusinessApproach(businessId, out var door))
                 ShowMark(door + Vector3.up * 1.0f,
@@ -1852,18 +1898,37 @@ namespace RoadDemo
                 return;
             }
 
-            var result = outfit.IssueOrder(job);
+            var result = outfit.IssueOrder(job, announce: false);
             if (!result.Ok)
             {
                 Refuse(result.Reason);
                 return;
             }
 
+            // The men answer for what the men do; the deed and the paper are the desk's.
+            var spoken = DoorJobVoice(type);
+            if (spoken != null)
+                CrewSpeech.Say(crew, spoken);
+            else
+                LivingCity.Gameplay.CrewVoice.Office(LivingCity.Data.VoiceLines.ForOrder(type));
+
             if (TerritoryRuntime.Instance != null &&
                 TerritoryRuntime.Instance.TryGetBusinessApproach(businessId, out var door))
                 ShowMark(door + Vector3.up * 1.0f,
                     LivingCity.Outfit.DoorOrders.IsViolence(type) ? AttackTint : MarkTint);
         }
+
+        /// <summary>What the crew says when it is given one of the door's jobs. The deed
+        /// and the repair are money and paper, so they have no street line at all - the
+        /// desk answers those, through IssueOrder's own announcement.</summary>
+        static string DoorJobVoice(LivingCity.Outfit.OrderType type) => type switch
+        {
+            LivingCity.Outfit.OrderType.SmashUp => LivingCity.Data.VoiceLines.RktSmash,
+            LivingCity.Outfit.OrderType.Torch => LivingCity.Data.VoiceLines.RktTorch,
+            LivingCity.Outfit.OrderType.Raid => LivingCity.Data.VoiceLines.RktRob,
+            LivingCity.Outfit.OrderType.Guard => LivingCity.Data.VoiceLines.RktGuard,
+            _ => null,
+        };
 
         /// <summary>Whoever of the crew is nearest the front of it does the talking.</summary>
         static LivingCity.Territory.TerritoryCharacterId Speaker(DemoCrews.Unit crew)

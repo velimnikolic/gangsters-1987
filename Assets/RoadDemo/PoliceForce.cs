@@ -783,6 +783,39 @@ namespace RoadDemo
         }
 
         /// <summary>
+        /// THE LAST CAR IN THE HOUSE (2026-09-03, the user's rule). A telephone is
+        /// ringing and there is nothing on the street to send - every beat pair dead,
+        /// every car wrecked - so the nearest house that is still authorised a car puts
+        /// one on its forecourt and it answers the call itself.
+        ///
+        /// Never more than the roster says the house HAS: a station that has lost its
+        /// whole fleet stays lost until the department fills it (the replacement day),
+        /// and a city with no precinct at all answers nothing, which is the honest
+        /// outcome and the one the wire now prints.
+        /// </summary>
+        public PolicePatrolCar TurnOutACar(Vector3 near)
+        {
+            if (MakeCar == null) return null;
+            var precinct = Nearest(near);
+            if (precinct?.Roster == null) return null;
+
+            var bodies = 0;
+            for (var i = 0; i < precinct.Cars.Count; i++)
+                if (precinct.Cars[i] != null && !precinct.Cars[i].Wrecked) bodies++;
+            if (bodies >= precinct.Roster.Cars) return null;
+
+            var car = MakeCar(precinct);
+            if (car == null) return null;
+            car.Precinct = precinct.Roster.StationId;
+            precinct.Cars.Add(car);
+            _dispatch?.Register(car);
+            car.StandTo();
+            CrewOverlay.Announce("A CAR IS COMING OUT OF " + Plain(precinct.Roster.Name),
+                4.5f, new Color(0.55f, 0.78f, 1f));
+            return car;
+        }
+
+        /// <summary>
         /// THE ONLY CURE (GAN-222, FLEE-004). A day the city did not see him is a day
         /// off a wanted man's grade; a day it did resets him to nothing. A cop-killer's
         /// grade never comes off, whatever he does with his time.

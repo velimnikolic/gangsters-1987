@@ -33,6 +33,14 @@ namespace LivingCity.EditorTools
             AudioRoot + "Ambience/",
         };
 
+        /// <summary>The spoken banks (Assets/Audio/Voice/VB01..VBOF). Not beds and not
+        /// ordinary one-shots: 667 clips of a second each, one per line per actor, and
+        /// DecompressOnLoad would sit the lot in RAM decoded - about 60 MB to have a man
+        /// say "moving" now and again. CompressedInMemory pays a decode at the moment of
+        /// speech instead, which is a syllable's worth of latency on a clip nobody is
+        /// timing to a footstep.</summary>
+        internal const string VoiceRoot = AudioRoot + "Voice/";
+
         /// <summary>The one bed that does not live in Ambience: dispatch static, which is
         /// a loop under a scene rather than a one-shot in it.</summary>
         const string StaticLoop = AudioRoot + "Police/radio_static.wav";
@@ -44,15 +52,18 @@ namespace LivingCity.EditorTools
 
             var importer = (AudioImporter)assetImporter;
             var isBed = IsBed(assetPath);
+            var isVoice = assetPath.StartsWith(VoiceRoot);
 
             var settings = importer.defaultSampleSettings;
             settings.compressionFormat = AudioCompressionFormat.Vorbis;
             settings.quality = 0.35f;
-            settings.loadType = isBed
+            settings.loadType = isBed || isVoice
                 ? AudioClipLoadType.CompressedInMemory
                 : AudioClipLoadType.DecompressOnLoad;
             importer.defaultSampleSettings = settings;
 
+            // A voice is already one mono take; forcing it costs nothing and guarantees
+            // it, because a stereo clip on a positional source is a clip decoded twice.
             importer.forceToMono = !isBed;
             importer.loadInBackground = isBed;
         }

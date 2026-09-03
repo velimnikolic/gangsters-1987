@@ -104,6 +104,8 @@ namespace LivingCity.UI
                 case IncidentKind.NotToBeTrusted: return "Watch him";
                 case IncidentKind.ComplaintRung: return "Complaint";
                 case IncidentKind.StatementTaken: return "Statement";
+                case IncidentKind.NobodyCame: return "Nobody came";
+                case IncidentKind.RefusedTheOfficer: return "Refused";
                 case IncidentKind.CaseOpened: return "On the docket";
                 case IncidentKind.WitnessWithdrawn: return "Withdrawn";
                 case IncidentKind.WitnessKilled: return "Silenced";

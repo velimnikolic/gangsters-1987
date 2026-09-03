@@ -106,10 +106,14 @@ namespace RoadDemo
         /// on its way through a hex literal.</summary>
         const float Epsilon = 0.004f;
 
-        /// <summary>How finely the crossing is stepped. A smooth ramp would re-ink every
-        /// graphic every frame for a colour nobody can see move; sixteen steps across a
-        /// twilight is finer than the eye.</summary>
-        const int Steps = 16;
+        /// <summary>Where the paper turns over. The HUD has TWO faces, not a ramp
+        /// between them: a sheet under a midday sun and the same sheet under a desk
+        /// lamp. Crossing them smoothly walked every panel through the mud halfway
+        /// between cream and near-black, so at six in the morning the bar read as
+        /// yellow-brown - neither day paper nor night paper. It flips at the middle of
+        /// twilight instead, which is the moment the street lamps are doing most of
+        /// their work anyway.</summary>
+        const float Turnover = 0.5f;
 
         readonly struct Inked
         {
@@ -195,6 +199,11 @@ namespace RoadDemo
             return clock != null ? DemoSky.Nightness(clock.Hour) : 0f;
         }
 
+        /// <summary>Whether the HUD is wearing its night face. The one reading every
+        /// panel, every plate wash and every remembered hover colour asks, so the whole
+        /// bar turns over on the same frame.</summary>
+        public static bool IsNight() => Nightness() >= Turnover;
+
         /// <summary>
         /// One colour, crossed to wherever the sky is now - for ink a control has to
         /// set itself rather than wear off the register, which is every hover: a button
@@ -214,8 +223,7 @@ namespace RoadDemo
                     Mathf.Abs(colour.b - token.Base.b) > Epsilon)
                     continue;
 
-                var night = Mathf.RoundToInt(Nightness() * Steps) / (float)Steps;
-                var crossed = Color.Lerp(token.Day, token.Night, night);
+                var crossed = IsNight() ? token.Night : token.Day;
                 return new Color(crossed.r, crossed.g, crossed.b, colour.a);
             }
             return colour;
@@ -241,25 +249,26 @@ namespace RoadDemo
         /// steps the panels cross on so paper and chrome move together.</summary>
         public static Color PlateWash()
         {
-            var night = Mathf.RoundToInt(Nightness() * Steps) / (float)Steps;
-            return new Color(PlateInk.r, PlateInk.g, PlateInk.b, night * PlateDeepest);
+            return new Color(PlateInk.r, PlateInk.g, PlateInk.b,
+                IsNight() ? PlateDeepest : 0f);
         }
 
-        /// <summary>Cross everything registered to wherever the sky is now. Only on a
-        /// step change: the hour moves every frame and the colour does not.</summary>
+        /// <summary>Put every registered graphic on the face the sky is showing. Only
+        /// when the face itself turns over: the hour moves every frame and there are
+        /// two colours, not a ramp.</summary>
         public void Relight(bool force = false)
         {
-            var step = Mathf.RoundToInt(Nightness() * Steps);
+            var step = IsNight() ? 1 : 0;
             if (!force && step == _step)
                 return;
             _step = step;
 
-            var night = step / (float)Steps;
+            var night = step == 1;
             for (var i = 0; i < _inked.Count; i++)
             {
                 var ink = _inked[i];
                 if (ink.Target != null)
-                    ink.Target.color = Color.Lerp(ink.Day, ink.Night, night);
+                    ink.Target.color = night ? ink.Night : ink.Day;
             }
         }
     }

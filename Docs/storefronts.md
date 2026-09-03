@@ -61,8 +61,9 @@ With the project open in Unity:
 eligible harvested prefabs and five deterministic residential seeds. Each prefab is built twice,
 including inactive-child reuse, and the resulting live hierarchy must match. The bench has all eight
 untouched source modules, all eight live modules open at 78°, and a separate six-state Shop 01
-row. `--unit residential-06` narrows the live construction verdict; `--draw` stands that unit in
-the open scene without saving.
+row. It is an interactive review scene: WASD/arrows pan, Q/E or right-drag orbits, and the mouse
+wheel zooms; the same readable command hint is shown in Play Mode. `--unit residential-06` narrows
+the live construction verdict; `--draw` stands that unit in the open scene without saving.
 
 The traffic demo lines up all eight source shops and staggers one animated visitor per shop through
 a continuous enter/open/close/exit cycle. It calls the production `Storefront.Open` and `Close`

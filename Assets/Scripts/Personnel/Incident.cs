@@ -112,6 +112,16 @@ namespace LivingCity.Personnel
 
         /// <summary>He was keeping a room with money in it and helped himself.</summary>
         SkimmedTheStash,
+
+        /// <summary>The telephone rang at the precinct and nobody was sent - no unit
+        /// within reach of the door for as long as the call was held open. Appended,
+        /// like everything before it.</summary>
+        NobodyCame,
+
+        /// <summary>An officer put the question at a door and our men would not go with
+        /// him. Not the same thing as a door with nobody at it, and it must never be
+        /// filed as one.</summary>
+        RefusedTheOfficer,
     }
 
     /// <summary>
@@ -179,6 +189,12 @@ namespace LivingCity.Personnel
                 case IncidentKind.StatementTaken:
                     return "An officer took a statement at " + name +
                            " and found nobody to take in.";
+                case IncidentKind.NobodyCame:
+                    return "Nobody was sent to " + name + ". The precinct had no car " +
+                           "and no man near enough.";
+                case IncidentKind.RefusedTheOfficer:
+                    return "Our men refused the officer at " + name +
+                           ", and the case stays open.";
                 case IncidentKind.CaseOpened:
                     return "The city has opened a case over " + name +
                            ", and our names are on it.";

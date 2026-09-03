@@ -98,6 +98,13 @@ namespace LivingCity.Personnel
                 // man - nobody is made a name by being complained about.
                 case IncidentKind.ComplaintRung: return 15;
                 case IncidentKind.StatementTaken: return 15;
+                // A call nobody answered is news about the PRECINCT. It makes a name of
+                // nobody at all, which is the whole point of it.
+                case IncidentKind.NobodyCame: return 10;
+                // Standing in the street and telling a policeman no is a thing the
+                // neighbourhood remembers - more than a case being opened, less than a
+                // verdict.
+                case IncidentKind.RefusedTheOfficer: return 45;
                 default: return 15; // SlowingDown, and anything added later.
             }
         }

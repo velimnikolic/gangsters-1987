@@ -255,12 +255,25 @@ namespace LivingCity.Gameplay
 
         // ------------------------------------------------------------------- issuing
 
-        public OpResult IssueOrder(Job job)
+        /// <summary>
+        /// File work with the office.
+        ///
+        /// <paramref name="announce"/> is the voice, and it is on by default because this
+        /// is where an order is filed from every sheet in the ledger - the order book, the
+        /// block file, the door menu - and the desk answering is what tells the player the
+        /// thing was taken. The street card turns it OFF: a crew standing at the shop says
+        /// its own line in its lieutenant's voice, and the consigliere agreeing over the
+        /// top of him is two answers to one click.
+        /// </summary>
+        public OpResult IssueOrder(Job job, bool announce = true)
         {
             if (job != null)
                 job.GangId = Gangs.GangCatalog.PlayerGangId;
             Adopt();
-            return Commit(Underworld.Current.Issue(job));
+            var result = Commit(Underworld.Current.Issue(job));
+            if (announce && result.Ok && job != null)
+                CrewVoice.Office(Data.VoiceLines.ForOrder(job.Type));
+            return result;
         }
 
         public OpResult CancelOrder(int jobId) => Commit(Runner.Cancel(RosterOrNull(), jobId));

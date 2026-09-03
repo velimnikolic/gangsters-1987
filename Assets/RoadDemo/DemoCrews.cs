@@ -1468,8 +1468,12 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ orders
 
-        public void Select(Unit unit) => Selected = unit != null && unit.Faction == 0 &&
+        public void Select(Unit unit)
+        {
+            Selected = unit != null && unit.Faction == 0 &&
             !unit.IsDetachment ? unit : null;
+            CrewSpeech.Selected(Selected);
+        }
 
         /// <summary>The house a body belongs to, or null when it belongs to none -
         /// the law, a bench scene's mob, a passer-by.</summary>
@@ -1530,6 +1534,29 @@ namespace RoadDemo
         /// than one crew, but every one must still get the street's exact move semantics:
         /// finish boarding, drive when already in a car, or walk across open ground.</summary>
         public bool OrderUnit(Unit unit, Vector3 world, out Vector3 destination, bool run = false)
+            => OrderUnit(unit, world, out destination, run, speak: true);
+
+        /// <summary>
+        /// The same order, with the crew's answer switched off.
+        ///
+        /// A move is the one order the game gives itself: the collection round walks its
+        /// own doors, a filed job marches the men to the address, the bag detail goes home
+        /// (CrewJobs, BagCarry). Those are not orders the player gave this second, and a
+        /// lieutenant announcing "on our way" to nobody, all day, would make the street
+        /// unlistenable. So the voice hangs off THIS method - one place, every caller,
+        /// street card and paper map alike - and the automatic callers pass speak: false.
+        /// </summary>
+        public bool OrderUnit(Unit unit, Vector3 world, out Vector3 destination, bool run,
+            bool speak)
+        {
+            var ordered = MoveUnit(unit, world, out destination, run);
+            if (ordered && speak)
+                CrewSpeech.Say(unit, run ? LivingCity.Data.VoiceLines.OrdRun
+                                         : LivingCity.Data.VoiceLines.OrdMove);
+            return ordered;
+        }
+
+        bool MoveUnit(Unit unit, Vector3 world, out Vector3 destination, bool run)
         {
             destination = world;
             OrderRefusal = null;
@@ -1817,6 +1844,15 @@ namespace RoadDemo
         /// <summary>Send the selected crew at that one: every man closes and shoots.</summary>
         public bool OrderAttack(Unit target)
         {
+            var crew = Selected;
+            var ordered = AttackOrder(target);
+            if (ordered)
+                CrewSpeech.Say(crew, LivingCity.Data.VoiceLines.OrdKill);
+            return ordered;
+        }
+
+        bool AttackOrder(Unit target)
+        {
             OrderRefusal = null;
             if (Selected == null || target == null || target == Selected || target.Wiped) return false;
             if (Selected.Surrendered) { OrderRefusal = HandsUpRefusal; return false; }
@@ -1893,7 +1929,8 @@ namespace RoadDemo
             // the walk order FIRST: an ordinary move ends a flight (below), so the flags
             // are set on the far side of it or they would be cleared by the very order
             // that starts the run
-            if (!OrderUnit(unit, run, out _, run: true)) return false;
+            if (!OrderUnit(unit, run, out _, run: true, speak: false)) return false;
+            CrewSpeech.Say(unit, LivingCity.Data.VoiceLines.OrdFlee);
             unit.Fleeing = true;
             unit.FledAt = Time.time;
             unit.SeenByLawAt = Time.time;
@@ -1959,6 +1996,7 @@ namespace RoadDemo
                 DriveTrace.Int(sb, "hits", machine.EngineHits);
                 DriveTrace.Row("shootup", sb.ToString());
             }
+            CrewSpeech.Say(Selected, LivingCity.Data.VoiceLines.OrdShootCar);
             return true;
         }
 

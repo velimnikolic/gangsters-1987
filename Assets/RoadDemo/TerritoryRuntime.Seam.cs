@@ -490,22 +490,45 @@ namespace RoadDemo
 
             // --------------------------------------------------------------- the acts
 
-            // The block file is the PLAYER's page, so these three carry his name.
+            // The block file is the PLAYER's page, so these three carry his name. They are
+            // also the one place a block order is submitted from - the paper map's block
+            // menu and the ledger's block file both come through here - so the crew's
+            // answer hangs off them rather than off either sheet.
             public TerritoryCommandResult ShakeDown(int crewId, TerritoryBlockId blockId) =>
-                runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
+                Spoken(runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
                     new ShakeDownBlockCommand(
-                        TerritoryCommandNodeId.Crew(crewId), blockId)));
+                        TerritoryCommandNodeId.Crew(crewId), blockId))),
+                    crewId, LivingCity.Data.VoiceLines.RktShake);
 
             public TerritoryCommandResult SendRound(int crewId, TerritoryBlockId blockId) =>
-                runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
+                Spoken(runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
                     new CollectDuesCommand(
-                        TerritoryCommandNodeId.Crew(crewId), blockId)));
+                        TerritoryCommandNodeId.Crew(crewId), blockId))),
+                    crewId, LivingCity.Data.VoiceLines.RktCollect);
 
             public TerritoryCommandResult LeanOnHoldouts(
                 int crewId, TerritoryBlockId blockId) =>
-                runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
+                Spoken(runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
                     new LeanOnHoldoutsCommand(
-                        TerritoryCommandNodeId.Crew(crewId), blockId)));
+                        TerritoryCommandNodeId.Crew(crewId), blockId))),
+                    crewId, LivingCity.Data.VoiceLines.RktHoldout);
+
+            /// <summary>The crew answers an order the books took. A rejected order is
+            /// silent here on purpose: the sheet prints the reason where the note goes,
+            /// and it is the STREET card that speaks refusals, over a crew the player can
+            /// see.</summary>
+            TerritoryCommandResult Spoken(TerritoryCommandResult result, int crewId, string key)
+            {
+                if (result.Status != TerritoryCommandStatus.Rejected &&
+                    result.Status != TerritoryCommandStatus.Failed)
+                {
+                    var unit = runtime != null && runtime.crews != null
+                        ? runtime.crews.UnitOfCrew(crewId)
+                        : null;
+                    CrewSpeech.Say(unit, key);
+                }
+                return result;
+            }
 
             public string SetPolicy(int crewId, CrewPolicy policy)
             {

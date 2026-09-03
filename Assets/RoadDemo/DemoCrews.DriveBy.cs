@@ -461,6 +461,7 @@ namespace RoadDemo
             // crew at speed, and a pass made through a queue is a car crawling past one.
             // Once for the order however many machines ride it - it is the one street.
             StreetTraffic.Quiet(target.Position, QuietRadius, QuietSeconds);
+            CrewSpeech.Say(Selected, LivingCity.Data.VoiceLines.OrdDriveBy);
             return true;
         }
 

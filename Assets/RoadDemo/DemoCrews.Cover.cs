@@ -739,6 +739,7 @@ namespace RoadDemo
                 DriveTrace.Vec(sb, "threat", anchor.At + threatDir);
                 DriveTrace.Row("ambush", sb.ToString());
             }
+            CrewSpeech.Say(unit, LivingCity.Data.VoiceLines.OrdCover);
             return true;
         }
 

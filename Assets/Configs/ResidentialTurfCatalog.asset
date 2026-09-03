@@ -6475,33 +6475,3 @@ MonoBehaviour:
         height: 2
       _bottom: 0
       _top: 3.2091627
-  - Name: residential-frontage-01
-    Masses:
-    - _footprint:
-        serializedVersion: 2
-        x: 0
-        y: 0
-        width: 5
-        height: 5
-      _bottom: 0
-      _top: 12.75
-  - Name: residential-frontage-02
-    Masses:
-    - _footprint:
-        serializedVersion: 2
-        x: 0
-        y: 0
-        width: 5
-        height: 5
-      _bottom: 0
-      _top: 12.75
-  - Name: residential-frontage-03
-    Masses:
-    - _footprint:
-        serializedVersion: 2
-        x: 0
-        y: 0
-        width: 5
-        height: 5
-      _bottom: 0
-      _top: 12.75

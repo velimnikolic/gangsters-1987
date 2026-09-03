@@ -288,18 +288,6 @@ namespace LivingCity.EditorTools
                 }
                 finally { PrefabUtility.UnloadPrefabContents(root); }
             }
-            // Frontage modules are generated from three authored apartment pieces rather
-            // than one harvested prefab. Their Turf companions still belong in the same
-            // baked catalog: scrolling the map must not synthesize even these tiny towers.
-            foreach (var unit in RoadDemo.ResidentialUnits.Frontages)
-            {
-                if (unit == null) continue;
-                entries.Add(new RoadDemo.ResidentialTurfCatalogEntry
-                {
-                    Name = unit.Name,
-                    Masses = RoadDemo.ResidentialTurfPrefab.FromMask(unit),
-                });
-            }
             var catalog = AssetDatabase.LoadAssetAtPath<RoadDemo.ResidentialTurfCatalog>(
                 RoadDemo.ResidentialTurfCatalog.AssetPath);
             if (catalog == null)
@@ -1319,49 +1307,6 @@ namespace LivingCity.EditorTools
             sb.AppendLine("        public static IEnumerable<ResidentialUnit> Storefronts => All.Where(u => u.Kind == ResidentialKind.Storefront);");
             sb.AppendLine("        public static bool IsLot(ResidentialUnit unit) => unit != null &&");
             sb.AppendLine("            (unit.Kind == ResidentialKind.Park || unit.Kind == ResidentialKind.Amenity);");
-            sb.AppendLine();
-            // NOT measured: the frontage modules are authored one-cell apartment pieces
-            // the frontage planner assembles, and they lived in this file by hand once -
-            // which a re-run of the harvest silently deleted (2026-09-01). The writer
-            // owns them now, so the bake can never eat them again.
-            sb.AppendLine("        /// <summary>");
-            sb.AppendLine("        /// One-cell apartment modules for the 5-10 m rear strips left by Core's authored");
-            sb.AppendLine("        /// blocks. They are deliberately outside <see cref=\"All\"/>: the ordinary dealer");
-            sb.AppendLine("        /// must keep using the harvested complete houses, while");
-            sb.AppendLine("        /// <see cref=\"ResidentialLot.Frontage\"/> may explicitly build a contiguous street");
-            sb.AppendLine("        /// wall out of these modular POLYGON City pieces.");
-            sb.AppendLine("        /// </summary>");
-            sb.AppendLine("        public static readonly ResidentialUnit[] Frontages =");
-            sb.AppendLine("        {");
-            sb.AppendLine("            FrontageUnit(\"residential-frontage-01\", doors: 1),");
-            sb.AppendLine("            FrontageUnit(\"residential-frontage-02\", doors: 1),");
-            sb.AppendLine("            FrontageUnit(\"residential-frontage-03\", doors: 0),");
-            sb.AppendLine("        };");
-            sb.AppendLine();
-            sb.AppendLine("        public static bool IsFrontage(ResidentialUnit unit) =>");
-            sb.AppendLine("            unit != null && unit.Name != null &&");
-            sb.AppendLine("            unit.Name.StartsWith(\"residential-frontage-\");");
-            sb.AppendLine();
-            sb.AppendLine("        static ResidentialUnit FrontageUnit(string name, int doors) => new ResidentialUnit");
-            sb.AppendLine("        {");
-            sb.AppendLine("            Name = name,");
-            sb.AppendLine("            CW = 1,");
-            sb.AppendLine("            CD = 1,");
-            sb.AppendLine("            Kind = ResidentialKind.Row,");
-            sb.AppendLine("            MaxH = 12.75f,");
-            sb.AppendLine("            Floor = 0f,");
-            sb.AppendLine("            Trees = 0,");
-            sb.AppendLine("            Pieces = 3,");
-            sb.AppendLine("            Seats = 0,");
-            sb.AppendLine("            Plan = new[] { \"#\" },");
-            sb.AppendLine("            // The modular apartment's authored facade is north. The frontage planner");
-            sb.AppendLine("            // rotates this single face toward the real serving street.");
-            sb.AppendLine("            Face = new[] { false, false, true, false },");
-            sb.AppendLine("            Doors = new[] { 0, 0, doors, 0 },");
-            sb.AppendLine("            Shops = new[] { 0, 0, 0, 0 },");
-            sb.AppendLine("            Stoops = new[] { 0, 0, 0, 0 },");
-            sb.AppendLine("            Over = new[] { 0f, 0f, 0.75f, 0f },");
-            sb.AppendLine("        };");
             sb.AppendLine();
             sb.AppendLine("        public static readonly ResidentialUnit[] All =");
             sb.AppendLine("        {");

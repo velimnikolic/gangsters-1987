@@ -20,6 +20,7 @@ namespace LivingCity.Personnel
         public int duty;
         public int status;
         public string look;
+        public string voice;
         public int loyalty;
         public int courage;
         public int greed;
@@ -221,6 +222,7 @@ namespace LivingCity.Personnel
                 duty = (int)man.Duty,
                 status = (int)man.Status,
                 look = man.Look,
+                voice = man.Voice,
                 loyalty = man.Loyalty,
                 courage = man.Courage,
                 greed = man.Greed,
@@ -267,6 +269,7 @@ namespace LivingCity.Personnel
                 Duty = (Duty)dto.duty,
                 Status = (CharacterStatus)dto.status,
                 Look = dto.look ?? "",
+                Voice = dto.voice ?? "",
                 Loyalty = dto.loyalty,
                 Courage = dto.courage,
                 Greed = dto.greed,

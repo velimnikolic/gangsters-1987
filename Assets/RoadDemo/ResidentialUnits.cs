@@ -111,45 +111,6 @@ namespace RoadDemo
         public static bool IsLot(ResidentialUnit unit) => unit != null &&
             (unit.Kind == ResidentialKind.Park || unit.Kind == ResidentialKind.Amenity);
 
-        /// <summary>
-        /// One-cell apartment modules for the 5-10 m rear strips left by Core's authored
-        /// blocks. They are deliberately outside <see cref="All"/>: the ordinary dealer
-        /// must keep using the harvested complete houses, while
-        /// <see cref="ResidentialLot.Frontage"/> may explicitly build a contiguous street
-        /// wall out of these modular POLYGON City pieces.
-        /// </summary>
-        public static readonly ResidentialUnit[] Frontages =
-        {
-            FrontageUnit("residential-frontage-01", doors: 1),
-            FrontageUnit("residential-frontage-02", doors: 1),
-            FrontageUnit("residential-frontage-03", doors: 0),
-        };
-
-        public static bool IsFrontage(ResidentialUnit unit) =>
-            unit != null && unit.Name != null &&
-            unit.Name.StartsWith("residential-frontage-");
-
-        static ResidentialUnit FrontageUnit(string name, int doors) => new ResidentialUnit
-        {
-            Name = name,
-            CW = 1,
-            CD = 1,
-            Kind = ResidentialKind.Row,
-            MaxH = 12.75f,
-            Floor = 0f,
-            Trees = 0,
-            Pieces = 3,
-            Seats = 0,
-            Plan = new[] { "#" },
-            // The modular apartment's authored facade is north. The frontage planner
-            // rotates this single face toward the real serving street.
-            Face = new[] { false, false, true, false },
-            Doors = new[] { 0, 0, doors, 0 },
-            Shops = new[] { 0, 0, 0, 0 },
-            Stoops = new[] { 0, 0, 0, 0 },
-            Over = new[] { 0f, 0f, 0.75f, 0f },
-        };
-
         public static readonly ResidentialUnit[] All =
         {
             new ResidentialUnit

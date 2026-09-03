@@ -107,6 +107,14 @@ namespace LivingCity.Personnel
         /// no two men in one crew are the same man.</summary>
         public string Look = "";
 
+        /// <summary>The voice he speaks in - a bank id off the recorded sheet ("VB03"),
+        /// settled the first time he says anything (VoiceCasting.BankFor) and kept on him
+        /// from then on, exactly like <see cref="Look"/>. Stored rather than worked out
+        /// from his id each time for the reason the coat is: a ninth actor added to the
+        /// folder later would otherwise re-cast every man in every save, and a man whose
+        /// voice changes between two sessions is a stranger giving the orders.</summary>
+        public string Voice = "";
+
         /// <summary>Off the books for good - dead, deserted, or cut loose by the boss:
         /// struck through, unpaid, beyond promotion or a gun.</summary>
         public bool Gone => Status == CharacterStatus.Dead ||

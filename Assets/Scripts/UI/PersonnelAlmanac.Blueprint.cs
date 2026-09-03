@@ -59,12 +59,15 @@ namespace LivingCity.UI
         const float BpCaptionH = 38f;
         const float BpRowH = 34f;
 
-        static readonly Color BpBackdrop = new Color(0.09f, 0.075f, 0.06f, 0.66f);
+        /// <summary>The page under the sheet is NOT darkened (the user, 2026-09-03): the
+        /// block file behind it stays readable, and the backdrop is only what catches a
+        /// click outside the paper.</summary>
+        static readonly Color BpBackdrop = new Color(0f, 0f, 0f, 0f);
 
         /// <summary>oklch(0.86 0.02 68) and oklch(0.93 0.015 74): the two bands of the 45°
         /// hatch a flat that is not ours - and the common ground - is filled with.</summary>
-        static readonly Color BpHatchDark = new Color32(0xDC, 0xD0, 0xC2, 0xFF);
-        static readonly Color BpHatchLight = new Color32(0xEC, 0xE3, 0xD6, 0xFF);
+        static readonly Color32 BpHatchDark = new Color32(0xDC, 0xD0, 0xC2, 0xFF);
+        static readonly Color32 BpHatchLight = new Color32(0xEC, 0xE3, 0xD6, 0xFF);
 
         // ------------------------------------------------------------------ the state
 
@@ -183,7 +186,9 @@ namespace LivingCity.UI
             // The paper is not the backdrop: a click on it must not close the sheet.
             face.raycastTarget = true;
             paper.gameObject.AddComponent<Button>().transition = Selectable.Transition.None;
-            ShadowUnder(paper, 26f);
+            // No drop shadow (the user, 2026-09-03) - the paper is told from the page it
+            // lies on by its own edge instead.
+            Frame(paper, 2f, LedgerV2.Ink);
             blueprintSheet = paper;
 
             blueprintFixed = NewRect("Blueprint fixed", paper);
@@ -446,8 +451,14 @@ namespace LivingCity.UI
             return y - BpCellH;
         }
 
-        /// <summary>The ground floor is drawn as what it is - the shops and the entrance -
-        /// and NOTHING on it is sold from this sheet.</summary>
+        /// <summary>
+        /// The ground floor, drawn as what it IS: the shops that trade out of it, by
+        /// name, the entrance, and - stamped in red - THE HOUSE, when one of those shops
+        /// is the outfit's own front (the user, 2026-09-03).
+        ///
+        /// Nothing on it is sold from this sheet. A shop is bought at its own door,
+        /// through the block file's menu, and two ways to buy one thing is two truths.
+        /// </summary>
         float PaintBpGround(RectTransform plan, ApartmentBuilding building, float cell,
             float planW, float y)
         {
@@ -465,7 +476,11 @@ namespace LivingCity.UI
             LedgerV2.Mono(stub, 0f, -(BpCellH * 0.5f + 3f), BpFloorW, "SHOPS", 8.5f,
                 LedgerV2.HeadDim, 10f, TextAlignmentOptions.Midline);
 
+            ReadGroundShops(building);
             var entrance = doors / 2;
+            var shop = 0;
+            var houses = 0;
+
             for (var slot = 0; slot < doors; slot++)
             {
                 var tile = NewRect("Ground " + slot, row);
@@ -474,192 +489,172 @@ namespace LivingCity.UI
                 Hatch(tile, cell, BpCellH);
                 Block("Edge", tile, cell - 1f, 0f, 1f, BpCellH, LedgerV2.Hair);
 
-                DoorBadge(tile, 10f, -8f,
-                    slot == entrance ? "ENTR" : "G" + ApartmentBuildings.DoorLetter(slot),
-                    false);
-                Block("State", tile, cell - 18f, -8f, 10f, 10f, LedgerV2.Faint);
-                LedgerV2.Mono(tile, 10f, -34f, cell - 20f,
-                    slot == entrance ? "HALL & STAIRS" : "SHOP", 11f, LedgerV2.Muted, 4f);
-                LedgerV2.Mono(tile, 10f, -(BpCellH - 24f), cell - 20f,
-                    slot == entrance ? "COMMON" : "SHOP", 10.5f, LedgerV2.Faint, 7f);
+                if (slot == entrance)
+                {
+                    DoorBadge(tile, 10f, -8f, "ENTR", false);
+                    Block("State", tile, cell - 18f, -8f, 10f, 10f, LedgerV2.Faint);
+                    LedgerV2.Mono(tile, 10f, -34f, cell - 20f, "HALL & STAIRS", 11f,
+                        LedgerV2.Muted, 4f);
+                    LedgerV2.Mono(tile, 10f, -(BpCellH - 26f), cell - 20f, "COMMON",
+                        10.5f, LedgerV2.Faint, 7f);
+                    continue;
+                }
+
+                var trades = shop < bpGroundShops.Count ? bpGroundShops[shop] : default;
+                var named = shop < bpGroundShops.Count;
+                var ours = named && trades.House;
+                if (ours)
+                    houses++;
+                shop++;
+
+                DoorBadge(tile, 10f, -8f, "G" + ApartmentBuildings.DoorLetter(slot), false);
+                Block("State", tile, cell - 18f, -8f, 10f, 10f,
+                    ours ? LedgerV2.Red : LedgerV2.Faint);
+
+                var name = LedgerV2.Mono(tile, 10f, -34f, cell - 20f,
+                    named ? trades.Name : "SHOP", 11f,
+                    ours ? LedgerV2.Ink : LedgerV2.Muted, 4f);
+                name.overflowMode = TextOverflowModes.Ellipsis;
+
+                if (ours)
+                {
+                    // THE HOUSE'S OWN DOOR, stamped the way a shut room is stamped, so
+                    // the eye finds it on a landing of nine.
+                    var stamp = NewRect("House", tile);
+                    var stampW = Mathf.Min(cell - 20f, 76f);
+                    PlaceTopLeft(stamp, 10f, -(BpCellH - 26f), stampW, 18f);
+                    Frame(stamp, 1.5f, LedgerV2.Red);
+                    stamp.localRotation = Quaternion.Euler(0f, 0f, 3f);
+                    LedgerV2.Mono(stamp, 5f, -1f, stampW - 10f, "THE HOUSE", 9.5f,
+                        LedgerV2.Red, 7f);
+                }
+                else
+                {
+                    LedgerV2.Mono(tile, 10f, -(BpCellH - 26f), cell - 20f,
+                        named ? "TRADES HERE" : "SHOP", 10.5f, LedgerV2.Faint, 7f);
+                }
             }
 
-            PaintBpFloorRead(row, BpFloorW + cell * doors, 0, 0, 0, 0, 0, 0, true);
+            PaintBpFloorRead(row, BpFloorW + cell * doors,
+                bpHouseHere || houses > 0 ? 1 : 0, 0, 0, 0, 0, 0, true);
             return y - BpCellH;
         }
 
-        /// <summary>The floor's own read, on the light band at the end of its row.</summary>
-        void PaintBpFloorRead(RectTransform row, float x, int ours, int doors, int open,
-            int dark, int shut, int heat, bool ground)
+        /// <summary>One shop of a building's ground floor, as the plan needs it.</summary>
+        readonly struct BpGroundShop
         {
-            var band = NewRect("Floor read", row);
-            PlaceTopLeft(band, x, 0f, BpSummaryW, BpCellH);
-            Fill(band, LedgerV2.PanelBand);
-            Block("Edge", band, 0f, 0f, 1f, BpCellH, LedgerV2.Hair);
-
-            if (ground)
+            public BpGroundShop(string name, bool house)
             {
-                LedgerV2.Mono(band, 11f, -(BpCellH * 0.5f - 16f), BpSummaryW - 22f,
-                    "NOT SOLD HERE", 11.5f, LedgerV2.Muted, 4f);
-                LedgerV2.Mono(band, 11f, -(BpCellH * 0.5f + 1f), BpSummaryW - 22f,
-                    "a shop is bought at its door", 10.5f, LedgerV2.Faint, 1f);
-                return;
+                Name = name;
+                House = house;
             }
 
-            var openInk = dark > 0 || shut > 0 ? LedgerV2.Red : LedgerV2.Green;
-            LedgerV2.Mono(band, 11f, -(BpCellH * 0.5f - 22f), BpSummaryW - 22f,
-                "OURS " + ours + "/" + doors, 11.5f, LedgerV2.Body, 4f);
-            LedgerV2.Mono(band, 11f, -(BpCellH * 0.5f - 3f), BpSummaryW - 22f,
-                "OPEN " + open + (dark > 0 ? " · DARK " + dark : "") +
-                (shut > 0 ? " · SHUT " + shut : ""), 10.5f, openInk, 4f);
-            LedgerV2.Mono(band, 11f, -(BpCellH * 0.5f + 16f), BpSummaryW - 22f,
-                "HEAT " + heat + "/DAY", 10.5f,
-                heat >= 4 ? LedgerV2.Red : heat > 0 ? LedgerV2.Amber : LedgerV2.Muted, 4f);
+            public string Name { get; }
+
+            /// <summary>The outfit's own front stands behind this door.</summary>
+            public bool House { get; }
         }
+
+        readonly List<BpGroundShop> bpGroundShops = new List<BpGroundShop>();
 
         /// <summary>
-        /// One door, exactly as the prototype draws it: the badge and the state square on
-        /// the top line, the role or the tenant under it, and at the foot either the
-        /// keeper's half-stars, a stamp, or a plain tag.
+        /// What trades out of this building's ground floor, in the city's own order, and
+        /// which of those doors is THE HOUSE.
+        ///
+        /// The shops are read off the directory through the building id the business id
+        /// itself carries - no geometry, no second index. The FRONT is asked for three
+        /// ways, because the city seats it three ways: the outfit's own books first, then
+        /// the registry's bound marker, then the planned city's `GangFront` door - which
+        /// is the one MiniCoreDemo actually uses, and the reason the first cut marked
+        /// nothing at all.
         /// </summary>
-        void PaintBpCell(RectTransform row, ApartmentUnitId unit, UnitState state,
-            float x, float cell)
+        void ReadGroundShops(ApartmentBuilding building)
         {
-            var picked = blueprintFormOpen && blueprintUnit.Equals(unit);
-            var ours = Apartments.TryGet(unit, out var record) &&
-                       record.GangId == GangCatalog.PlayerGangId;
+            bpGroundShops.Clear();
+            bpHouseHere = false;
 
-            var tile = NewRect("Door " + unit.Door, row);
-            PlaceTopLeft(tile, x, 0f, cell, BpCellH);
-            tile.gameObject.AddComponent<RectMask2D>();
+            var front = HouseFront(out var frontName, out var frontAt);
 
-            var face = ours
-                ? Face(tile, picked ? LedgerV2.Picked : LedgerV2.Panel)
-                : Hatch(tile, cell, BpCellH);
-
-            // The selection is a 3-unit bar on the cell's own left edge; a hairline closes
-            // it on the right.
-            if (picked)
-                Block("Picked", tile, 0f, 0f, 3f, BpCellH, LedgerV2.Red);
-            Block("Edge", tile, cell - 1f, 0f, 1f, BpCellH, LedgerV2.Hair);
-
-            DoorBadge(tile, 10f, -8f, unit.Door, picked);
-            Block("State", tile, cell - 18f, -8f, 10f, 10f, StateInk(state));
-
-            var role = !ours ? TenantOf(unit)
-                : record.Role == UnitRole.Empty ? "NO ROLE"
-                : UnitRoles.Of(record.Role).ShortLabel;
-            LedgerV2.Mono(tile, 10f, -34f, cell - 20f, role, 11f,
-                state == UnitState.Open ? LedgerV2.Body
-                    : !ours ? LedgerV2.PaperBlue : LedgerV2.Muted, 4f);
-
-            var footY = -(BpCellH - 26f);
-            var stamp = state switch
+            var rows = LivingCity.Business.CityBusinesses.All;
+            for (var i = 0; i < rows.Count; i++)
             {
-                UnitState.Raided => "RAID " + (ours ? record.RaidUntilDay : 0),
-                UnitState.NoBank => "NO BANK",
-                UnitState.Dark => ours && record.Role != UnitRole.Empty ? "DARK" : "",
-                _ => "",
-            };
+                var row = rows[i];
+                if (!ApartmentBuildings.TryBuildingOf(row.Id, out var id) ||
+                    !id.Equals(building.Id))
+                    continue;
 
-            if (!string.IsNullOrEmpty(stamp))
-            {
-                var box = NewRect("Stamp", tile);
-                var stampW = Mathf.Min(cell - 20f, stamp.Length * 7.6f + 12f);
-                PlaceTopLeft(box, 10f, footY, stampW, 18f);
-                Frame(box, 1.5f, StateInk(state));
-                box.localRotation = Quaternion.Euler(0f, 0f, 3f);
-                LedgerV2.Mono(box, 5f, -1f, stampW - 10f, stamp, 9.5f, StateInk(state), 7f);
-            }
-            else if (ours && record.Role != UnitRole.Empty && record.KeeperId >= 0)
-            {
-                var keeper = director != null && director.Roster != null
-                    ? director.Roster.Find(record.KeeperId)
-                    : null;
-                if (keeper != null)
-                    Stars(tile, 10f, footY - 6f,
-                        keeper.GetHalfSteps(UnitRoles.Of(record.Role).Wants), 11f, 12f);
-            }
-            else
-            {
-                var tag = !ours ? "TENANT"
-                    : record.Role == UnitRole.Empty ? "EMPTY" : "OPEN";
-                LedgerV2.Mono(tile, 10f, footY, cell - 20f, tag, 10.5f, StateInk(state), 7f);
+                var ours = front.IsValid && row.Id.Equals(front);
+                if (!ours && !string.IsNullOrEmpty(frontName) &&
+                    string.Equals(row.Name, frontName, System.StringComparison.Ordinal))
+                    ours = true;
+                if (ours)
+                    bpHouseHere = true;
+                bpGroundShops.Add(new BpGroundShop(row.Name.ToUpperInvariant(), ours));
             }
 
-            RowButton(tile, face, () => OpenFlatForm(unit));
+            bpGroundShops.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
 
-            // The pointer over a door reads it in the caption bar, and NOTHING repaints:
-            // the plan is destroyed and rebuilt whole, and a repaint under a moving
-            // pointer is what makes a hover feel broken.
-            var hovered = unit;
-            var trigger = tile.gameObject.AddComponent<EventTrigger>();
-            var enter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
-            enter.callback.AddListener(_ =>
-            {
-                blueprintCaption = hovered;
-                RefreshBpCaption();
-            });
-            trigger.triggers.Add(enter);
+            // A front the directory cannot name is still a front: if headquarters STANDS
+            // on this building's ground, the floor says so even when no single door of it
+            // could be matched.
+            if (!bpHouseHere && frontAt.HasValue)
+                bpHouseHere = building.WorldRect.Contains(
+                    new Vector2(frontAt.Value.x, frontAt.Value.z));
         }
 
-        /// <summary>The plan is taken hold of and pulled sideways, the way the block film
-        /// is turned. Nothing repaints: the content is MOVED, so a drag cannot destroy the
-        /// grid under the hand doing it.</summary>
-        void DragSideways(RectTransform window)
-        {
-            var trigger = window.gameObject.AddComponent<EventTrigger>();
-            var surface = window.gameObject.AddComponent<Image>();
-            surface.color = new Color(1f, 1f, 1f, 0f);
-            surface.raycastTarget = true;
-            surface.transform.SetAsFirstSibling();
+        /// <summary>True while the building being painted holds the outfit's own front.</summary>
+        bool bpHouseHere;
 
-            var drag = new EventTrigger.Entry { eventID = EventTriggerType.Drag };
-            drag.callback.AddListener(data =>
+        /// <summary>
+        /// The outfit's front door, however this city happens to seat it: the books, the
+        /// registry's marker, or the planned city's own `GangFront`. The name and the
+        /// place come back with it so a door that cannot be matched by id can still be
+        /// matched by either.
+        /// </summary>
+        Territory.TerritoryBusinessId HouseFront(out string name, out Vector3? at)
+        {
+            name = "";
+            at = null;
+
+            var front = outfit != null && outfit.House != null
+                ? outfit.House.Front
+                : default;
+
+            var marker = Gangs.GangRegistry.FrontBusinessOf(Gangs.GangCatalog.PlayerGangId);
+            if (marker != null)
             {
-                var pointer = (PointerEventData)data;
-                blueprintPlanScroll = Mathf.Clamp(
-                    blueprintPlanScroll - pointer.delta.x, 0f, blueprintPlanRun);
-                if (blueprintPlan != null)
-                    blueprintPlan.anchoredPosition =
-                        new Vector2(-blueprintPlanScroll, 0f);
-            });
-            trigger.triggers.Add(drag);
-        }
-
-        /// <summary>The dark chip a door number is set in - red when that door is the one
-        /// the form is open on.</summary>
-        void DoorBadge(RectTransform parent, float x, float y, string door, bool picked)
-        {
-            var badge = NewRect("Badge", parent);
-            var w = door.Length * 7.8f + 12f;
-            PlaceTopLeft(badge, x, y, w, 18f);
-            Fill(badge, picked ? LedgerV2.Red : LedgerV2.DarkPlate);
-            Line(badge, LedgerStyle.Mono, 12f, LedgerV2.HeadCream, 6f, -1f, w - 12f, 16f,
-                door).characterSpacing = 4f;
-        }
-
-        /// <summary>The 45° hatch a flat that is not ours - and the common ground - wears.
-        /// Clipped by the cell's own mask, which is what keeps it inside the cell: the
-        /// first cut let every stripe run the width of the sheet.</summary>
-        Image Hatch(RectTransform tile, float w, float h)
-        {
-            var face = Fill(tile, BpHatchLight);
-            face.raycastTarget = true;
-            var span = w + h;
-            for (var i = 0; i * 11f < span; i++)
-            {
-                var stripe = NewRect("Hatch", tile);
-                stripe.anchorMin = stripe.anchorMax = new Vector2(0f, 1f);
-                stripe.pivot = new Vector2(0f, 1f);
-                stripe.anchoredPosition = new Vector2(i * 11f - h, 0f);
-                stripe.sizeDelta = new Vector2(5f, span * 1.6f);
-                stripe.localRotation = Quaternion.Euler(0f, 0f, -45f);
-                var ink = stripe.gameObject.AddComponent<Image>();
-                ink.color = BpHatchDark;
-                ink.raycastTarget = false;
+                if (!front.IsValid)
+                    front = marker.BusinessId;
+                at = marker.transform.position;
             }
-            return face;
+
+            var doors = RoadDemo.GangFront.All;
+            for (var i = 0; doors != null && i < doors.Count; i++)
+            {
+                var door = doors[i];
+                if (door == null || door.GangId != Gangs.GangCatalog.PlayerGangId)
+                    continue;
+                if (!front.IsValid)
+                    front = door.BusinessId;
+                at ??= door.transform.position;
+                break;
+            }
+
+            // The directory has no by-id reader, so the front's own row is found the way
+            // every other consumer finds one: over the rows it already publishes.
+            if (front.IsValid)
+            {
+                var rows = LivingCity.Business.CityBusinesses.All;
+                for (var i = 0; i < rows.Count; i++)
+                {
+                    if (!rows[i].Id.Equals(front))
+                        continue;
+                    name = rows[i].Name;
+                    at ??= rows[i].Position;
+                    break;
+                }
+            }
+            return front;
         }
 
         // ------------------------------------------------------------------ the caption

@@ -93,7 +93,7 @@ namespace LivingCity.UI
             var paper = Fill(sheet, LedgerV2.Panel);
             paper.raycastTarget = true;      // the paper is not the backdrop
             sheet.gameObject.AddComponent<Button>().transition = Selectable.Transition.None;
-            ShadowUnder(sheet, 26f);
+            Frame(sheet, 2f, LedgerV2.Ink);
 
             PaintFormHead(sheet, building, unit, state);
 

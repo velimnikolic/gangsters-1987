@@ -325,19 +325,6 @@ namespace RoadDemo
                     if (i < Walk || j < Walk || i >= w - Walk || j >= d - Walk)
                         plan.Ground[i, j] = Use.Walkway;
 
-            // A 10-15 m inner strip cannot take the catalogue's two-street corner houses.
-            // The generic dealer then accepts two small units and programmes the rejected
-            // frontage as paving, producing an 85 x 35 m "clean" block that is visually an
-            // empty slab. Use the existing modular apartment frontage for this one physical
-            // shape: two street-facing terraces with a narrow service yard between them.
-            if (plan.Klass == Klass.Row && Math.Min(plan.Inner, plan.InnerD) <= 3 &&
-                LayCompactRow(plan))
-            {
-                Measure(plan);
-                Judge(plan);
-                return plan;
-            }
-
             // The same seed and the same buildable ground deal the same block even when the
             // city's pavement standard changes. The +2 preserves the sequence from the old
             // one-cell ring while making the ring itself irrelevant to the interior deal.
@@ -557,174 +544,6 @@ namespace RoadDemo
             return plan;
         }
 
-        /// <summary>
-        /// Can a road-facing remainder too shallow for the ordinary ten-metre pavement
-        /// ring become a real apartment frontage? The strip is one or two cells deep and
-        /// at least three cells long. <paramref name="streetSide"/> follows the shared
-        /// south/east/north/west numbering.
-        /// </summary>
-        public static bool CanFrontage(int w, int d, int streetSide)
-        {
-            streetSide = ((streetSide % 4) + 4) % 4;
-            bool horizontal = streetSide == 0 || streetSide == 2;
-            int along = horizontal ? w : d;
-            int deep = horizontal ? d : w;
-            return along >= 3 && deep >= 1 && deep <= 2;
-        }
-
-        /// <summary>
-        /// A solid 5-10 m deep apartment ribbon for an authored Core block's shallow rear
-        /// parcel. It has no invented lawn and no squeezed pavement ring: every cell is a
-        /// genuine modular building cell. A two-cell strip is two facades back-to-back,
-        /// making one ten-metre-deep building rather than leaving another asphalt sliver.
-        /// </summary>
-        public static Plan Frontage(int w, int d, int seed, int streetSide)
-        {
-            streetSide = ((streetSide % 4) + 4) % 4;
-            var plan = new Plan
-            {
-                W = Math.Max(1, w),
-                D = Math.Max(1, d),
-                Seed = seed,
-                Artery = streetSide,
-                Klass = Klass.Row,
-            };
-            plan.Street[streetSide] = true;
-            Roles(plan);
-            plan.Ground = new Use[plan.W, plan.D];
-
-            if (!CanFrontage(plan.W, plan.D, streetSide))
-            {
-                plan.Faults.Add($"NoFrontage: {plan.W}x{plan.D} cells do not make a shallow " +
-                                $"residential strip on {SideName[streetSide]}");
-                return plan;
-            }
-
-            bool horizontal = streetSide == 0 || streetSide == 2;
-            for (int i = 0; i < plan.W; i++)
-                for (int j = 0; j < plan.D; j++)
-                {
-                    // On a ten-metre strip the second module faces the other way. The two
-                    // backs meet in the middle, exactly like a double-fronted apartment bar.
-                    int face = streetSide;
-                    if (horizontal)
-                    {
-                        bool streetRow = streetSide == 0 ? j == 0 : j == plan.D - 1;
-                        if (!streetRow) face = (streetSide + 2) % 4;
-                    }
-                    else
-                    {
-                        bool streetColumn = streetSide == 3 ? i == 0 : i == plan.W - 1;
-                        if (!streetColumn) face = (streetSide + 2) % 4;
-                    }
-
-                    int style = unchecked(seed * 486187739 + i * 73856093 + j * 19349663);
-                    style = (style % ResidentialUnits.Frontages.Length +
-                             ResidentialUnits.Frontages.Length) % ResidentialUnits.Frontages.Length;
-                    var unit = ResidentialUnits.Frontages[style];
-                    // The source module faces north (side 2). Rotate that face onto the
-                    // requested side: S=180, E=90, N=0, W=270.
-                    int yaw = ((2 - face + 4) % 4) * 90;
-                    int along = horizontal ? i : j;
-                    plan.Spots.Add(new Spot
-                    {
-                        Unit = unit,
-                        Yaw = yaw,
-                        I = i,
-                        J = j,
-                        CW = 1,
-                        CD = 1,
-                        Side = face,
-                        AccessSide = face,
-                        EntranceAt = along,
-                    });
-                    plan.Ground[i, j] = Use.Building;
-                }
-
-            plan.M.Units = plan.Spots.Count;
-            plan.M.Doors = plan.Spots.Sum(spot =>
-            {
-                var turn = Turn.Of(spot.Unit, spot.Yaw);
-                return plan.Street[spot.Side] ? turn.Doors(spot.Side) : 0;
-            });
-            plan.M.MainFrontage = 100;
-            plan.M.Share = 100 / Math.Max(1, plan.W * plan.D);
-            double ha = plan.W * plan.D * Cell * Cell / 10000.0;
-            plan.M.DoorsPerHa = ha > 0d ? plan.M.Doors / ha : 0d;
-            return plan;
-        }
-
-        /// <summary>Lay the shallow ordinary-row case without converting most of its only
-        /// buildable band to anonymous paving. Returns false when two opposite serving
-        /// streets are unavailable, in which case the ordinary dealer remains authoritative.</summary>
-        static bool LayCompactRow(Plan plan)
-        {
-            bool horizontal = plan.Inner >= plan.InnerD;
-            int firstSide = horizontal ? 0 : 3;
-            int secondSide = horizontal ? 2 : 1;
-            if (!plan.Street[firstSide] || !plan.Street[secondSide]) return false;
-
-            int along = horizontal ? plan.Inner : plan.InnerD;
-            int passage = along >= 10 ? Walk + along / 2 : -1;
-            foreach (int side in new[] { firstSide, secondSide })
-                for (int n = 0; n < along; n++)
-                {
-                    int at = Walk + n;
-                    if (at == passage) continue;
-
-                    int i = horizontal ? at : (side == 3 ? Walk : plan.W - Walk - 1);
-                    int j = horizontal ? (side == 0 ? Walk : plan.D - Walk - 1) : at;
-                    int style = unchecked(plan.Seed * 486187739 + i * 73856093 +
-                                          j * 19349663 + side * 104729);
-                    style = (style % ResidentialUnits.Frontages.Length +
-                             ResidentialUnits.Frontages.Length) % ResidentialUnits.Frontages.Length;
-                    var unit = ResidentialUnits.Frontages[style];
-                    int yaw = ((2 - side + 4) % 4) * 90;
-                    plan.Spots.Add(new Spot
-                    {
-                        Unit = unit,
-                        Yaw = yaw,
-                        I = i,
-                        J = j,
-                        CW = 1,
-                        CD = 1,
-                        Side = side,
-                        AccessSide = side,
-                        EntranceAt = at,
-                    });
-                    plan.Accesses.Add(new Access
-                    {
-                        Side = side,
-                        At = at,
-                        Purpose = unit.Name,
-                    });
-                    plan.Ground[i, j] = Use.Building;
-                }
-
-            for (int i = Walk; i < plan.W - Walk; i++)
-                for (int j = Walk; j < plan.D - Walk; j++)
-                    if (plan.Ground[i, j] == Use.Empty)
-                        plan.Ground[i, j] = passage >= 0 && (horizontal ? i : j) == passage
-                            ? Use.Paved
-                            : Use.Yard;
-
-            if (passage >= 0)
-            {
-                plan.Gaps.Add(new Gap
-                {
-                    Side = firstSide,
-                    At = passage,
-                    Run = 1,
-                    Depth = horizontal ? plan.InnerD : plan.Inner,
-                    Use = Use.Paved,
-                });
-                plan.M.Gaps = 1;
-                plan.M.GapCells = 1;
-                plan.M.Paved = 1;
-            }
-            return plan.Spots.Count > 0;
-        }
-
         /// <summary>Reserves the existing ParkingDemo attended-lot footprint along the
         /// caryard's north edge. This is only the paper plan; <c>ResidentialBlocks</c>
         /// transfers the real ParkingDemo composer into these cells.</summary>
@@ -801,9 +620,20 @@ namespace RoadDemo
         /// middle of it, which is what a gym given a whole quarter cell looked like.</summary>
         public const int FillLeast = 30;
 
-        /// <summary>A shallow row has almost no private middle to explain a large gap.
-        /// Require half of its inner strip to be actual buildings/forecourts so a pair of
-        /// small houses cannot leave most of an 85 x 35 m block as anonymous paving.</summary>
+        /// <summary>
+        /// A shallow row has almost no private middle to explain a large gap. Require half
+        /// of its inner strip to be actual buildings/forecourts so a pair of small houses
+        /// cannot leave most of an 85 x 35 m block as anonymous paving.
+        ///
+        /// A ten-metre band used to reach this by standing a wall of POLYGON City apartment
+        /// modules along it. THE CITY STANDS ONLY WHAT THE USER BUILT (2026-09-03, looking
+        /// at The Heights Block 29: "necu da imam modularne zidove nikad samo ono sto sam ja
+        /// napravio"), so the band is now dealt out of the harvested catalogue like every
+        /// other block - and where the catalogue has nothing shallow enough with a face on
+        /// both long sides, this fault is the block asking for one. Twenty seeds of the
+        /// bench: shallow rows fall from 91% to 71% mean built coverage and six in a hundred
+        /// report Bare. The answer is another harvested house, never another module.
+        /// </summary>
         public const int CompactRowFillLeast = 50;
 
         public static int RequiredBuiltCoverage(Plan plan) =>

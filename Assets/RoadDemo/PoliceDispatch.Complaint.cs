@@ -53,7 +53,23 @@ namespace RoadDemo
         /// doorway with a notebook is not a raid.</summary>
         const float StatementAttention = 12f;
 
-        enum CallStage { Ringing, Walking, AtTheDoor, Statement, Arresting, Boarding, Done }
+        enum CallStage { Ringing, Walking, Closing, AtTheDoor, Statement, Arresting, Boarding, Done }
+
+        /// <summary>Metres from the door the officer has to be for the door to count as
+        /// answered. ComplaintReach is how far a call REACHES; this is where a man
+        /// stands when he is speaking to somebody.</summary>
+        const float DoorstepReach = 6f;
+
+        /// <summary>The longest last leg that is walked by hand. The pavement graph gets
+        /// the officer to the nearest corner and the leg from there to the door is a
+        /// straight line, exactly as DoorBeat's own threshold is - which is only honest
+        /// over a few metres. A shop further from its pavement than this is answered
+        /// from the corner, as it always was.</summary>
+        const float ClosingMax = 20f;
+
+        /// <summary>Seconds the last leg is given before the door is called answered
+        /// wherever he got to.</summary>
+        const float ClosingSeconds = 14f;
 
         sealed class CallOut
         {
@@ -72,6 +88,23 @@ namespace RoadDemo
             // Each call keeps the people who saw ITS visit; a single dispatcher-wide
             // snapshot would let the next telephone overwrite the previous door.
             public readonly List<SceneWitness> Witnesses = new List<SceneWitness>();
+
+            /// <summary>The backstop on the hand-walked last leg to the door.</summary>
+            public float ClosedBy;
+
+            /// <summary>Whether the officer is actually ON the doorstep, as opposed to
+            /// standing at the nearest corner of the pavement graph. Only a man at the
+            /// door may put a question to anybody; a man at the corner takes a statement
+            /// and that is all he can honestly do.</summary>
+            public bool AtTheDoorstep;
+
+            /// <summary>The men were asked and would not go. NOT the same disposition as
+            /// a door with nobody at it, and never filed as one.</summary>
+            public bool MenRefused;
+
+            /// <summary>Whether this call has already asked a station to put a car out.
+            /// Once is once: a ringing telephone does not empty a garage.</summary>
+            public bool TurnedOut;
 
             /// <summary>The backstop on going home. A squad that cannot reach its car -
             /// a body in the way, a torn pavement - must not hold a unit off the road
@@ -228,10 +261,29 @@ namespace RoadDemo
                     case CallStage.Ringing:
                         if (Time.time < call.RingAt) break;
                         if (SendToDoor(call)) break;
-                        if (Time.time > call.GiveUpAt) call.Stage = CallStage.Done;
+                        // NOTHING LEFT ON THE STREET. Not "everybody is busy" - that is
+                        // what the switchboard's own patience is for - but every man and
+                        // every car of the city gone. The nearest house that is still
+                        // authorised a car puts one out, once per call, and the next tick
+                        // sends it.
+                        if (!call.TurnedOut && NothingLeftOnTheStreet())
+                        {
+                            call.TurnedOut = true;
+                            if (Force != null && Force.TurnOutACar(call.Call.Pos) != null) break;
+                        }
+                        if (Time.time <= call.GiveUpAt) break;
+                        // NOBODY WAS SENT, AND THE PLAYER IS TOLD SO. A call that dies
+                        // in the switchboard used to leave no trace at all - no line, no
+                        // case, nothing - and read as the shopkeeper's telephone being
+                        // broken rather than as the precinct being out of men.
+                        LawWire.NobodyCame(call.Call);
+                        CrewOverlay.AnnounceOurs(call.Call.Faction, "NOBODY CAME", 4f,
+                            new Color(1f, 0.85f, 0.55f));
+                        call.Stage = CallStage.Done;
                         break;
 
                     case CallStage.Walking: TickWalking(call); break;
+                    case CallStage.Closing: TickClosing(call); break;
                     case CallStage.AtTheDoor: AtTheDoor(call); break;
                     case CallStage.Statement:
                         // DoorBeat owns a real shop visit until the officer has crossed
@@ -256,6 +308,31 @@ namespace RoadDemo
                         // a window that somehow never closes must not hold a car off
                         // the road for the rest of the campaign.
                         if (_collar != Collar.None && Time.time < call.HomeBy) break;
+                        // NOBODY WAS TAKEN, SO THE CALL IS NOT ANSWERED. The men walked
+                        // off the question, or the window ran out - and the officer is
+                        // still stood at a door somebody rang about. He does what he
+                        // would have done had he found the pavement empty: he takes the
+                        // statement. Without this the shop that telephoned got a case on
+                        // the docket and then silence - no line in the paper, and none of
+                        // the day's protection a statement is worth.
+                        // A REFUSAL IS ITS OWN ANSWER. The men were found, asked and
+                        // said no: printing "an officer found nobody to take in" over
+                        // that is a lie, and the shop gets no quiet day out of a crew
+                        // that faced the law down on its step. The case stays open,
+                        // which is what makes it a count next time (Clear leaves a
+                        // complaint's file alone).
+                        if (call.MenRefused)
+                        {
+                            LawWire.RefusedTheOfficer(call.Call);
+                            Close(call);
+                            break;
+                        }
+                        if (!AnybodyTaken(call) && StillAtTheDoor(call) &&
+                            StreetAlarm.QuietFor > StatementQuiet)
+                        {
+                            BeginStatement(call);
+                            break;
+                        }
                         Close(call);
                         break;
 
@@ -266,26 +343,85 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// ONE UNIT, and the nearest one that is free. A beat officer for choice - a man
-        /// on foot is what a telephone call about a shopkeeper actually gets - and a car
-        /// only when there is no beat to send. Nothing city-wide: the ordinary response
-        /// range, so a complaint from the far side of the island reaches nobody.
+        /// ONE UNIT, AND IT IS THE NEAREST ONE THERE IS (the user's rule, 2026-09-03).
+        ///
+        /// The response range is gone from the telephone. It was written as the same
+        /// "station-LOCAL" rule a shooting gets, and on a city of any size that meant a
+        /// shop with no beat inside 150 m of it was rung about, waited a minute and a
+        /// half, and got nobody - deterministically, for the whole campaign, because a
+        /// beat pair walks its own block and never happens to be somewhere else. A
+        /// complaint is not a gunfight: nobody is running, and a car that takes four
+        /// minutes to cross the city is still an answer.
+        ///
+        /// Nearest is measured in TIME rather than metres - a car eight hundred metres
+        /// off arrives before a man on foot three hundred - and the call is given the
+        /// patience that trip actually needs.
         /// </summary>
         bool SendToDoor(CallOut call)
         {
-            var unit = Nearest(call.Call.Pos, carries: false) ??
-                       Nearest(call.Call.Pos, carries: true);
+            var unit = NearestToAnswer(call.Call.Pos, out var trip);
             if (unit == null) return false;
 
             unit.RouteTo(call.Call.Pos, 5f);
             call.Unit = unit;
             call.Stage = CallStage.Walking;
+            // THE CLOCK STARTS WHEN HE DOES, AND IT IS AS LONG AS THE TRIP. GiveUpAt was
+            // set at the ring and was a flat minute and a half, so a unit sent from the
+            // other side of the city was cancelled halfway to a door it was walking to.
+            // The switchboard's wait and the journey are two different patiences.
+            call.GiveUpAt = Time.time + ComplaintPatience + trip;
             // NO SIREN. Lights and a siren for a complaint would empty the street the
             // officer was sent to look at, and the whole point of the call is that he
             // arrives to find men standing in a doorway.
             if (_lights.TryGetValue(unit, out var lights)) lights.Set(true, siren: false);
             CrewOverlay.AnnounceOurs(call.Call.Faction, "A MAN OF THE LAW AT THE DOOR", 4f,
                 new Color(0.55f, 0.78f, 1f));
+            return true;
+        }
+
+        /// <summary>Metres a second a unit is worth on the way to a complaint: an officer
+        /// jogs, a car drives a city with lights and no siren. Rough on purpose - it
+        /// decides which unit is SENT and how long the call waits for it, not how fast
+        /// anybody actually moves.</summary>
+        const float FootPace = 2.6f;
+        const float CarPace = 8f;
+
+        /// <summary>The unit that can be at this door soonest, of every unit the city has
+        /// free. Returns the trip it is expected to take.</summary>
+        IPoliceUnit NearestToAnswer(Vector3 door, out float trip)
+        {
+            IPoliceUnit best = null;
+            float bestTrip = float.MaxValue;
+            for (var i = 0; i < _units.Count; i++)
+            {
+                var unit = _units[i];
+                if (unit == null || !unit.Available || unit.Tf == null) continue;
+                var gap = unit.Position - door;
+                gap.y = 0f;
+                // the graph is never the straight line; a third again is what a city
+                // block grid costs a trip across it
+                float t = gap.magnitude * 1.35f / (unit.Carries ? CarPace : FootPace);
+                if (t >= bestTrip) continue;
+                bestTrip = t;
+                best = unit;
+            }
+            trip = best != null ? bestTrip : 0f;
+            return best;
+        }
+
+        /// <summary>Whether the city has ANY law left standing - a body on the street or
+        /// a car on the road, busy or not. Nothing here is about who is free: it is the
+        /// difference between "they are all out on other calls" and "they are all dead",
+        /// and only the second one gets a car turned out of the station.</summary>
+        bool NothingLeftOnTheStreet()
+        {
+            for (var i = 0; i < _units.Count; i++)
+            {
+                var unit = _units[i];
+                if (unit == null || unit.Tf == null) continue;
+                if (unit is PolicePatrolCar car && car.Wrecked) continue;
+                return false;
+            }
             return true;
         }
 
@@ -322,6 +458,61 @@ namespace RoadDemo
                 if (call.Men == null) { Close(call); return; }
             }
 
+            // THE LAST FEW METRES. Arriving is measured against the pavement GRAPH, and
+            // the corner nearest a shop can be most of a block from its door - the
+            // officer was then declared to be at a door he was nowhere near, which is
+            // what a collar that never reached its man and a statement taken across a
+            // car park both came out of. He walks the rest by hand, the same short
+            // straight leg DoorBeat uses for a threshold.
+            if (call.Unit is PoliceFootPatrol foot && foot.Tf != null)
+            {
+                var toDoor = foot.Tf.position - call.Call.Pos;
+                toDoor.y = 0f;
+                float gap = toDoor.magnitude;
+                if (gap > DoorstepReach && gap <= ClosingMax)
+                {
+                    var doorstep = call.Call.Pos + toDoor / gap * 2f;
+                    foot.BeginDoorway(doorstep);
+                    call.Stage = CallStage.Closing;
+                    call.ClosedBy = Time.time + ClosingSeconds;
+                    return;
+                }
+                call.AtTheDoorstep = gap <= DoorstepReach;
+            }
+            else
+            {
+                // a car's men are put down beside the door they were driven to
+                var lead = Lead(call.Men);
+                if (lead?.Tf != null)
+                {
+                    var toDoor = lead.Tf.position - call.Call.Pos;
+                    toDoor.y = 0f;
+                    call.AtTheDoorstep = toDoor.sqrMagnitude <= DoorstepReach * DoorstepReach;
+                }
+            }
+
+            call.Stage = CallStage.AtTheDoor;
+        }
+
+        /// <summary>Walking the last leg. He is at the door when he is on the doorstep or
+        /// when the leg has had long enough; either way the officer is handed back to the
+        /// call before anything else is asked of him.</summary>
+        void TickClosing(CallOut call)
+        {
+            var foot = call.Unit as PoliceFootPatrol;
+            if (foot == null || foot.Tf == null) { Close(call); return; }
+            var toDoor = foot.Tf.position - call.Call.Pos;
+            toDoor.y = 0f;
+            bool there = toDoor.sqrMagnitude <= DoorstepReach * DoorstepReach;
+            if (!there && Time.time < call.ClosedBy) return;
+            // A CLOCK RUNNING OUT IS NOT AN ARRIVAL. The leg is a straight line and a
+            // shop behind a wall, a body in the way or a torn pavement will stop it; the
+            // officer is then where he is, and the door was not answered by him standing
+            // there. He may still take a statement - he is on the block, the shopkeeper
+            // will speak to him - but nobody is asked to put his hands up by a man who
+            // never arrived.
+            foot.EndDoorway();
+            call.AtTheDoorstep = there;
             call.Stage = CallStage.AtTheDoor;
         }
 
@@ -343,6 +534,31 @@ namespace RoadDemo
                 return;
             }
 
+            BeginStatement(call);
+        }
+
+        /// <summary>Seconds of quiet a statement needs behind it. An officer in a
+        /// gunfight is not writing anything down, and the crew that refused him is what
+        /// the shooting is: the call is simply closed and the wire says nothing.</summary>
+        const float StatementQuiet = 12f;
+
+        /// <summary>Whether the collar this call opened actually charged anybody. The
+        /// complaint's file is the telephone's, not the arrest's, so the defendants on it
+        /// are the one honest answer to "was anyone taken".</summary>
+        static bool AnybodyTaken(CallOut call) =>
+            call?.File != null && call.File.Defendants.Count > 0;
+
+        /// <summary>He is still the officer this call sent, and still within arm of the
+        /// street of the door it sent him to.</summary>
+        bool StillAtTheDoor(CallOut call) =>
+            call?.Unit != null && call.Unit.Tf != null &&
+            (call.Unit.Position - call.Call.Pos).sqrMagnitude <=
+            ComplaintReach * ComplaintReach;
+
+        /// <summary>The statement stage: the shop passage where there is a shop to walk
+        /// into, and a stand at the door where there is not.</summary>
+        void BeginStatement(CallOut call)
+        {
             call.Stage = CallStage.Statement;
             if (BeginStatementVisit(call))
                 return;
@@ -435,6 +651,13 @@ namespace RoadDemo
             // has since sent somewhere else, taking the officer off that call instead.
             if (call == null || call.Stage == CallStage.Done)
                 return;
+            // A LEG HAS TO BE ENDED BY WHOEVER STARTED IT. An officer left in the
+            // doorway walk is driven by hand and answers nothing else - Release refuses
+            // him outright - so a call that gives up mid-leg must hand him back first or
+            // the man stands in a shop doorway for the rest of the campaign.
+            if (call.Unit is PoliceFootPatrol walking &&
+                walking.State == PoliceFootPatrol.Mode.Doorway)
+                walking.EndDoorway();
             if (call.Men != null && !call.Men.Wiped && call.Unit is PoliceCruiser cruiser)
             {
                 _crews.BoardCar(call.Men, cruiser.Car);

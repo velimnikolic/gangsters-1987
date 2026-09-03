@@ -158,13 +158,28 @@ namespace RoadDemo
         [Range(0f, 24f)] public float startHour = 6f;
 
         [Header("Police patrol")]
+        [Tooltip("Patrol cars authorised for the whole city. -1 deals them by the city's " +
+                 "own size: policePatrolCarsPerQuarter for every quarter it stands.")]
         public int policeCarCount = 3;
         public int policeOfficerCount = 2;
         [Tooltip("Beat PAIRS dealt over the city's blocks, each walking its own block's " +
                  "ring from the first frame - the law the player sees everywhere, not " +
-                 "just at the station door. -1 scales it: one pair to every four blocks. " +
-                 "0 leaves only the station pair.")]
+                 "just at the station door. -1 deals them by the city's own size: " +
+                 "policeBeatPairsPerBlock for every block it stands. 0 leaves only the " +
+                 "station pair.")]
         public int policeBeatPairs = -1;
+
+        [Tooltip("Beat PAIRS to a city block, used when policeBeatPairs is -1. The " +
+                 "telephone is answered by whoever is already within the response range " +
+                 "(PoliceDispatch.ResponseRange), so how thickly the beats are dealt IS " +
+                 "how often a shopkeeper who rings gets anybody at all.")]
+        [Min(0)] public int policeBeatPairsPerBlock = 2;
+
+        [Tooltip("Patrol cars to a QUARTER, used when policeCarCount is -1. A station " +
+                 "forecourt holds as many bodies as it has bays; the rest of the fleet is " +
+                 "dealt straight onto the road already patrolling, and queues for a bay " +
+                 "when it comes home rather than resting at a kerb.")]
+        [Min(0)] public int policePatrolCarsPerQuarter = 5;
         public Vector2 policeRestSeconds = new Vector2(6f, 16f);
         // waypoints per patrol, drawn across the whole map (cars) or the beat
         // radius (officers) - each one is a routed trip, not a wandered block
@@ -3478,13 +3493,13 @@ namespace RoadDemo
         // biggest mobs and never leaves a family out of the city altogether.
         void SpawnRivals()
         {
-            // The books first, and unconditionally: the families exist whether or not
-            // this pass finds pavement to stand them on, and the ledger's FAMILIES page
-            // reads the registry, not the street.
+            // The books first, and unconditionally. GangSeeder mirrors exactly the houses
+            // this city dealt, so the registry and the ledger cannot grow empty catalogue
+            // cards beyond the families this pass is about to stand on the pavement.
             var underworld = LivingCity.Outfit.Underworld.Ensure(
                 BuiltFromSeed, HousesInThisCity);
             var gangs = LivingCity.Gangs.GangSeeder.Generate(
-                BuiltFromSeed, gang => underworld.Of(gang)?.Roster);
+                BuiltFromSeed, underworld.Dealt, gang => underworld.Of(gang)?.Roster);
             LivingCity.Gangs.GangRegistry.Install(gangs);
 
             var sidewalks = _pedLinks.FindAll(l => !l.Gated && l.Length >= 24f);
@@ -3823,10 +3838,28 @@ namespace RoadDemo
                     CarOccupant.Crew(go.transform, _pedPrefabs, _sitLoopClip, passengerChance: 0.3f, layer: CrowdLayer);
                     _vehicles.Add(v);
                     StreetTraffic.Users.Add(v); // the men on foot, and the outfit's drivers, see it
+                    // how far along this lane the traffic reached, so anything dealt onto
+                    // the road AFTER the ambient cars (the patrol fleet with no bay) is
+                    // put down in a slot that is provably empty rather than on top of one
+                    _laneFill[e] = s;
                     placed++;
                 }
                 if (!any) break;
             }
+        }
+
+        /// <summary>The last slot the ambient traffic took on each lane (SpawnCars lays
+        /// them at 6 m and every 18 m after). Read by the passes that come after it.
+        /// </summary>
+        readonly Dictionary<RoadEdge, float> _laneFill = new Dictionary<RoadEdge, float>();
+
+        /// <summary>The next free slot on a lane, or -1 where the lane is too short to
+        /// hold another body clear of the traffic already on it.</summary>
+        float FreeLaneSlot(RoadEdge lane)
+        {
+            float used = _laneFill.TryGetValue(lane, out var s) ? s : -12f;
+            float next = used + 18f;
+            return next <= lane.Length - 12f ? next : -1f;
         }
 
         // ----------------------------------------------------------------- bikes
@@ -3902,7 +3935,7 @@ namespace RoadDemo
             station.StallOut = best.outDir;
             station.StallAlong = Vector3.Cross(Vector3.up, best.outDir);
             station.StallLift = floorTop > 0f ? floorTop + 0.02f : 0.02f;
-            station.StallRowHalf = Mathf.Max(1, policeCarCount) * StallSpacing * 0.5f;
+            station.StallRowHalf = Mathf.Max(1, PatrolCarsWanted()) * StallSpacing * 0.5f;
 
             var centre = b.center;
             station.StallCentre = new Vector3(
@@ -3948,7 +3981,7 @@ namespace RoadDemo
             station.StallOut = outDir;
             station.StallAlong = Vector3.Cross(Vector3.up, outDir);
             station.StallLift = b.min.y + 0.02f;
-            station.StallRowHalf = Mathf.Max(1, policeCarCount) * StallSpacing * 0.5f;
+            station.StallRowHalf = Mathf.Max(1, PatrolCarsWanted()) * StallSpacing * 0.5f;
             station.StallCentre = new Vector3(
                 outDir.x != 0f ? face + outDir.x * StallSetback : b.center.x,
                 station.StallLift,
@@ -4153,6 +4186,43 @@ namespace RoadDemo
         /// <summary>Metres out from the court's face that a transfer pulls in.</summary>
         const float CourthouseSetback = 6f;
 
+        /// <summary>
+        /// HOW BIG THE CITY IS, in the two units the law is dealt in.
+        ///
+        /// Blocks are the AUTHORED blocks the deal stood, not the canonical geography's
+        /// (which counts every parcel a street bounds and is several times the number),
+        /// and not the pavement's corners. Quarters are the quarters the city is made of,
+        /// or the budget where a rig was cut to a few of them. Both are read off the
+        /// primary structure because the police are dealt long before the territory
+        /// foundation stands (the pass order in Build).
+        /// </summary>
+        int CityBlockCount()
+        {
+            var core = PrimaryCore;
+            if (core != null && core.BlockCount > 0) return core.BlockCount;
+            return _lotPlans.Count;
+        }
+
+        int CityQuarterCount()
+        {
+            var core = PrimaryCore;
+            if (core != null && core.QuarterCount > 0) return core.QuarterCount;
+            return Mathf.Max(1, _quarters.Count);
+        }
+
+        /// <summary>Beat pairs to deal: the explicit number where a scene named one, the
+        /// city's own size where it did not.</summary>
+        int BeatPairsWanted() =>
+            policeBeatPairs >= 0
+                ? policeBeatPairs
+                : Mathf.Max(0, policeBeatPairsPerBlock) * CityBlockCount();
+
+        /// <summary>Patrol cars the city authorises, the same way round.</summary>
+        int PatrolCarsWanted() =>
+            policeCarCount >= 0
+                ? policeCarCount
+                : Mathf.Max(0, policePatrolCarsPerQuarter) * CityQuarterCount();
+
         void SpawnPolice()
         {
             var policeRoot = new GameObject("Police").transform;
@@ -4164,14 +4234,19 @@ namespace RoadDemo
             FindStationHouses();
 
             // each station's own layer - the cars docked at its forecourt and the pair
-            // that rests inside it
+            // that rests inside it. THE FLEET IS THE CITY'S, not the station's: what the
+            // quarters are authorised between them is dealt into whatever bays the city
+            // has, and what is left over goes onto the road already patrolling.
+            int fleet = PatrolCarsWanted();
+            int docked = 0;
             for (int i = 0; i < _stations.Count; i++)
             {
                 var station = _stations[i];
                 if (!station.Forecourt) continue;
-                SpawnPatrolCars(policeRoot, markers, station);
+                docked += SpawnPatrolCars(policeRoot, markers, station, fleet - docked);
                 SpawnFootPatrols(policeRoot, markers, station);
             }
+            SpawnRollingPatrolCars(policeRoot, markers, fleet - docked);
 
             // and the beat pairs over the blocks, station or no station: the law
             // the player sees on the first frame, wherever he looks
@@ -4271,7 +4346,7 @@ namespace RoadDemo
                 // ground (SpawnPatrolCars). The rest are on the books and off the map,
                 // and a bay that frees is filled off the books (MakeCar).
                 var owned = _policeCarPrefabs.Count > 0 && station.CarHome != null
-                    ? Mathf.Max(policeCarCount, station.Cars.Count)
+                    ? Mathf.Max(PatrolCarsWanted(), station.Cars.Count)
                     : station.Cars.Count;
                 var precinct = force.Add(i, "Precinct " + (i + 1), station.At, station.Door,
                     CountyLine(station.At), owned, men + 2 * owned);
@@ -4383,11 +4458,11 @@ namespace RoadDemo
         /// the face, one per authorised car, where PlanForecourt sized it (StallRowHalf)
         /// - so a house without authored bays still parks every car on its own spot.
         /// </summary>
-        void LayStallRow(StationHouse station)
+        void LayStallRow(StationHouse station, int wanted)
         {
             if (station.Stalls.Count > 0) return;
             station.StallRot = Quaternion.LookRotation(station.StallOut);
-            int n = policeCarCount;
+            int n = Mathf.Max(0, wanted);
             for (int i = 0; i < n; i++)
             {
                 float off = (i - (n - 1) * 0.5f) * StallSpacing;
@@ -4396,10 +4471,10 @@ namespace RoadDemo
             }
         }
 
-        void SpawnPatrolCars(
-            Transform parent, List<IPatrolMarker> markers, StationHouse station)
+        int SpawnPatrolCars(
+            Transform parent, List<IPatrolMarker> markers, StationHouse station, int wanted)
         {
-            if (_policeCarPrefabs.Count == 0 || policeCarCount <= 0) return;
+            if (_policeCarPrefabs.Count == 0 || wanted <= 0) return 0;
 
             // the kerb: the nearest lane point, where the fleet undocks onto the
             // graph and rolls to a stop coming home
@@ -4418,14 +4493,14 @@ namespace RoadDemo
             {
                 Debug.LogWarning("[RoadDemo] no lane near a police forecourt; that " +
                                  "station's fleet stays parked");
-                return;
+                return 0;
             }
 
             // kept past the build: a car the department sends to replace a wreck docks
             // exactly where these did (PoliceForce.MakeCar)
             station.CarHome = home;
             station.CarHomeS = homeS;
-            LayStallRow(station);
+            LayStallRow(station, wanted);
 
             // WHERE THE FLEET RESTS. Scattering resting cars over the city jams the
             // traffic: a patrol left at a kerb is a registered obstacle, and even set off
@@ -4434,11 +4509,13 @@ namespace RoadDemo
             // with the cars docked). So every car rests on ITS OWN station's forecourt -
             // in the bays the yard was drawn with where there are any, in the row laid
             // against the face where there are not - and ONLY AS MANY CARS AS THERE ARE
-            // BAYS. The rest of the authorised fleet is on the roster (PoliceForce.Add
-            // takes policeCarCount, not this count) and has no body until a bay frees.
-            // The farthest-point spread over the long lanes is in git history (before
-            // 2026-08-27) for the day a computed resting spot is provably traffic-safe.
-            int bodies = Mathf.Min(policeCarCount, station.Stalls.Count);
+            // BAYS. The rest of the authorised fleet is dealt straight onto the road
+            // instead (SpawnRollingPatrolCars): a car that is driving is not an obstacle,
+            // and it queues for a bay when its round ends rather than stopping at a kerb.
+            // The farthest-point spread of RESTING cars over the long lanes is in git
+            // history (before 2026-08-27) and is what must not come back.
+            int bodies = Mathf.Min(wanted, station.Stalls.Count);
+            int made = 0;
             for (int i = 0; i < bodies; i++)
             {
                 int stall = FreeStall(station);
@@ -4451,10 +4528,80 @@ namespace RoadDemo
                 station.Cars.Add(car);
                 StreetTraffic.Users.Add(car);
                 markers.Add(car);
+                made++;
             }
-            if (bodies < policeCarCount)
-                Debug.Log($"[RoadDemo] {station.House.name}: {bodies} of {policeCarCount} " +
-                          "patrol cars have a bay; the rest are on the roster only");
+            if (made < wanted)
+                Debug.Log($"[RoadDemo] {station.House.name}: {made} of {wanted} " +
+                          "patrol cars have a bay; the rest are dealt onto the road");
+            return made;
+        }
+
+        /// <summary>
+        /// THE REST OF THE FLEET, ALREADY OUT. The quarters authorised more cars than the
+        /// city has bays for, and those cars are not phantoms on a roster: they are on
+        /// their round when the city opens, which is what makes a telephone call from a
+        /// street with no beat on it reach anybody at all - PoliceDispatch answers a
+        /// complaint out of whatever is within its response range, and does not care
+        /// where a car sleeps.
+        ///
+        /// Each is put down in a slot the ambient traffic provably left empty, and each
+        /// asks a house for a bay when its round ends - never resting at a kerb, which is
+        /// the one thing the traffic cannot take (the note in SpawnPatrolCars).
+        /// </summary>
+        void SpawnRollingPatrolCars(Transform parent, List<IPatrolMarker> markers, int count)
+        {
+            if (count <= 0 || _policeCarPrefabs.Count == 0) return;
+
+            StationHouse yard = null;
+            for (int i = 0; i < _stations.Count; i++)
+                if (_stations[i].CarHome != null) { yard = _stations[i]; break; }
+            if (yard == null)
+            {
+                Debug.Log("[RoadDemo] no police forecourt in the city; " + count +
+                          " authorised patrol cars stay on the roster");
+                return;
+            }
+
+            // long lanes with a slot the traffic did not take, in a stable shuffled order
+            // so the fleet is spread over the city rather than dealt down one street
+            var lanes = new List<RoadEdge>();
+            foreach (var e in _edges)
+            {
+                if (e.Auxiliary || e.Length < 40f) continue;
+                if (FreeLaneSlot(e) < 0f) continue;
+                lanes.Add(e);
+            }
+            if (lanes.Count == 0) return;
+            var shuffle = new System.Random(spacingSeed * 613 + 29);
+            for (int i = lanes.Count - 1; i > 0; i--)
+            {
+                int j = shuffle.Next(i + 1);
+                (lanes[i], lanes[j]) = (lanes[j], lanes[i]);
+            }
+
+            var routeHome = PolicePatrolCar.RouteToward(_edges, yard.CarHome);
+            var house = yard;
+            for (int i = 0; i < count && i < lanes.Count; i++)
+            {
+                var lane = lanes[i];
+                float at = FreeLaneSlot(lane);
+                if (at < 0f) continue;
+                var car = MakeRollingCar(parent, _policeCars.Count, house, routeHome, lane, at);
+                if (car == null) continue;
+                _laneFill[lane] = at;
+                car.AskForABay = rolling =>
+                {
+                    int stall = FreeStall(house);
+                    if (stall < 0) return false;
+                    HoldStall(house, stall, rolling);
+                    rolling.TakeBay(house.Stalls[stall].position, house.Stalls[stall].rotation);
+                    return true;
+                };
+                _policeCars.Add(car);
+                house.Cars.Add(car);
+                StreetTraffic.Users.Add(car);
+                markers.Add(car);
+            }
         }
 
         /// <summary>Where a prisoner transfer is driven to (GAN-219): the lane point
@@ -4479,18 +4626,18 @@ namespace RoadDemo
         /// <summary>ONE car of the fleet, dealt into a stall. Split out of the build pass
         /// so the department can send another one on the day a wreck's replacement is due
         /// (GAN-226) without a second copy of what a patrol car is.</summary>
-        PolicePatrolCar MakePatrolCar(Transform parent, int index, RoadEdge home, float homeS,
-            Vector3 stall, Quaternion rot)
+        /// <summary>The body, the measurements and the man at the wheel - everything a
+        /// patrol car is before it is told whether it starts in a bay or on the road.
+        /// </summary>
+        PolicePatrolCar NewPatrolCarBody(Transform parent, int index, Vector3 at, Quaternion rot)
         {
-            if (_policeCarPrefabs.Count == 0 || home == null || parent == null) return null;
-
             var policePrefab = _policeCarPrefabs[index % _policeCarPrefabs.Count];
-            var go = Instantiate(policePrefab, stall, Quaternion.identity, parent);
+            var go = Instantiate(policePrefab, at, Quaternion.identity, parent);
             go.name = "Patrol Car " + (index + 1);
             foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
             foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
 
-            // half length measured at identity yaw, before the stall rotation
+            // half length measured at identity yaw, before the resting rotation
             var bounds = new Bounds(go.transform.position, Vector3.zero);
             foreach (var r in go.GetComponentsInChildren<Renderer>())
                 bounds.Encapsulate(r.bounds);
@@ -4506,14 +4653,38 @@ namespace RoadDemo
                 // machine is handed over rather than read off the transform
                 Machine = LivingCity.Gameplay.VehiclePerformance.For(policePrefab.name),
             };
-            // each car returns to its own kerb and patrols its own quarter
-            var carRouteHome = PolicePatrolCar.RouteToward(_edges, home);
-            car.InitParked(stall, rot, home, homeS, _edges, carRouteHome,
-                policeRestSeconds, policePatrolWaypoints, Random.Range(3f, 8f) + index * 5f);
             // an officer at the wheel - the force's own uniform; he is indoors
             // while the car stands in its stall (PolicePatrolCar shows him)
             var officers = CarOccupant.Crew(go.transform, _officerPrefabs, _sitLoopClip, layer: CrowdLayer);
             if (officers.Count > 0) car.Officer = officers[0];
+            return car;
+        }
+
+        PolicePatrolCar MakePatrolCar(Transform parent, int index, RoadEdge home, float homeS,
+            Vector3 stall, Quaternion rot)
+        {
+            if (_policeCarPrefabs.Count == 0 || home == null || parent == null) return null;
+
+            var car = NewPatrolCarBody(parent, index, stall, rot);
+            // each car returns to its own kerb and patrols its own quarter
+            var carRouteHome = PolicePatrolCar.RouteToward(_edges, home);
+            car.InitParked(stall, rot, home, homeS, _edges, carRouteHome,
+                policeRestSeconds, policePatrolWaypoints, Random.Range(3f, 8f) + index * 5f);
+            return car;
+        }
+
+        /// <summary>A car of the fleet the bays could not hold: made on the road, already
+        /// on its round, and given the yard it will ask for a bay at.</summary>
+        PolicePatrolCar MakeRollingCar(Transform parent, int index, StationHouse yard,
+            Dictionary<RoadEdge, RoadEdge> routeHome, RoadEdge lane, float at)
+        {
+            if (_policeCarPrefabs.Count == 0 || lane == null || parent == null ||
+                yard?.CarHome == null) return null;
+
+            var where = lane.Start + lane.Dir * at;
+            var car = NewPatrolCarBody(parent, index, where, Quaternion.LookRotation(lane.Dir));
+            car.InitRolling(lane, at, yard.CarHome, yard.CarHomeS, _edges, routeHome,
+                policeRestSeconds, policePatrolWaypoints);
             return car;
         }
 
@@ -4639,11 +4810,17 @@ namespace RoadDemo
                 }
             }
 
-            int pairs = policeBeatPairs < 0
-                ? Mathf.Max(1, _lotPlans.Count > 0 ? _lotPlans.Count / 4 : beatCentres.Count / 24)
-                : policeBeatPairs;
+            int pairs = BeatPairsWanted();
             if (pairs <= 0 || beatCentres.Count == 0 || _pedLinks.Count == 0) return;
-            pairs = Mathf.Min(pairs, beatCentres.Count);
+
+            // MORE THAN ONE PAIR TO A BLOCK. The centres are one to a block, so asking
+            // for two pairs each hands the same centre out twice - and two pairs put on
+            // the same ring at the same corner walk on top of each other. Each duplicate
+            // starts a fraction of the way round instead, so a block gets men on opposite
+            // sides of it and a shopkeeper on any of its four streets has somebody within
+            // sight. The count is no longer clamped to the number of blocks.
+            int perBlock = Mathf.Max(1, Mathf.CeilToInt(pairs / (float)beatCentres.Count));
+            int lastCentre = -1, sameCentre = 0;
 
             // the waypoint pool a call routes over - every walkable corner
             var nodeSet = new HashSet<PedNode>();
@@ -4653,7 +4830,10 @@ namespace RoadDemo
             int unit = _policeOfficers.Count;
             for (int p = 0; p < pairs; p++)
             {
-                var centre = beatCentres[p * beatCentres.Count / pairs];
+                int centreIndex = p * beatCentres.Count / pairs;
+                if (centreIndex == lastCentre) sameCentre++;
+                else { lastCentre = centreIndex; sameCentre = 0; }
+                var centre = beatCentres[centreIndex];
 
                 // the block's nearest stretch of pavement, and its reverse
                 PedLink front = null;
@@ -4676,10 +4856,15 @@ namespace RoadDemo
                 var ring = PoliceFootPatrol.BeatRing(front, back, centre);
                 if (ring == null) continue;
 
-                // the ring's own first stretch, to be stood on mid-stride
+                // the ring's own first stretch, to be stood on mid-stride - offset round
+                // the ring for every pair after the first on this block
+                int from = sameCentre * ring.Count / perBlock % ring.Count;
                 PedLink start = null;
-                foreach (var l in ring[0].Links)
-                    if (l.To == ring[1 % ring.Count]) { start = l; break; }
+                foreach (var l in ring[from].Links)
+                    if (l.To == ring[(from + 1) % ring.Count]) { start = l; break; }
+                if (start == null)
+                    foreach (var l in ring[0].Links)
+                        if (l.To == ring[1 % ring.Count]) { start = l; break; }
                 if (start == null) continue;
 
                 PoliceFootPatrol lead = null;

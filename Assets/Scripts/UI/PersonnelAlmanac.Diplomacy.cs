@@ -121,9 +121,13 @@ namespace LivingCity.UI
                 // generator with a fixed seed, so the preview IS the live layout.
                 if (Application.isEditor)
                     LedgerV2.Button(diplomacyContent, "DEAL DUMMY FAMILIES", PageLeft, PageTop - 82f,
-                        220f, 28f, () => Gangs.GangRegistry.Install(
-                            Gangs.GangSeeder.Generate(1987,
-                                gang => Outfit.Underworld.Ensure(1987).Of(gang)?.Roster)));
+                        220f, 28f, () =>
+                        {
+                            var underworld = Outfit.Underworld.Ensure(1987);
+                            Gangs.GangRegistry.Install(Gangs.GangSeeder.Generate(
+                                1987, underworld.Dealt,
+                                gang => underworld.Of(gang)?.Roster));
+                        });
                 return;
             }
 

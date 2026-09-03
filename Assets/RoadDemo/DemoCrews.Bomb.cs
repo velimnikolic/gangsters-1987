@@ -105,7 +105,10 @@ namespace RoadDemo
         public bool OrderBombThrow(Unit target)
         {
             if (target == null || target.Wiped) { BombRefusal = "Nobody to throw at"; return false; }
-            return ThrowAt(Selected, target.Position, target.GangName);
+            var crew = Selected;
+            if (!ThrowAt(crew, target.Position, target.GangName)) return false;
+            CrewSpeech.Say(crew, LivingCity.Data.VoiceLines.OrdGrenade);
+            return true;
         }
 
         /// <summary>Throw a grenade at a rival family's premises - it lands on the
@@ -113,7 +116,10 @@ namespace RoadDemo
         public bool OrderBombFront(GangFront front)
         {
             if (front == null) { BombRefusal = "Nothing to throw at"; return false; }
-            return ThrowAt(Selected, front.Door, front.GangName);
+            var crew = Selected;
+            if (!ThrowAt(crew, front.Door, front.GangName)) return false;
+            CrewSpeech.Say(crew, LivingCity.Data.VoiceLines.OrdDoorBomb);
+            return true;
         }
 
         /// <summary>Throw a grenade at a point on the ground the player pointed at.</summary>
@@ -172,6 +178,7 @@ namespace RoadDemo
                 DriveTrace.Int(sb, "left", Selected.Bombs);
                 DriveTrace.Row("bomb", sb.ToString());
             }
+            CrewSpeech.Say(Selected, LivingCity.Data.VoiceLines.OrdCarBomb);
             return true;
         }
 

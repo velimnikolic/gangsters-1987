@@ -192,6 +192,7 @@ namespace LivingCity.UI
                 var ledger = BuildBlockLedger(BlocksSectionTop);
                 ledger = BuildCityBlocks(ledger + BlocksSectionGap);
                 ledger = BuildBlockWire(ledger + BlocksSectionGap);
+                ledger = BuildOurFlats(ledger + BlocksSectionGap);
                 ledger = BuildStreetJobs(ledger + BlocksSectionGap);
 
                 InBlocksColumn(half + BlocksGutter, span - half);
@@ -206,6 +207,7 @@ namespace LivingCity.UI
                 cursor = BuildBlockDetails(cursor + BlocksSectionGap);
                 cursor = BuildCityBlocks(cursor + BlocksSectionGap);
                 cursor = BuildBlockWire(cursor + BlocksSectionGap);
+                cursor = BuildOurFlats(cursor + BlocksSectionGap);
                 cursor = BuildStreetJobs(cursor + BlocksSectionGap);
             }
 
@@ -518,6 +520,93 @@ namespace LivingCity.UI
                     9f, LedgerV2.Label, 3f);
                 cursor += 22f;
             }
+            return cursor + 16f;
+        }
+
+        // ------------------------------------------------------------------ our flats
+
+        /// <summary>How many rooms the sheet prints before it stops and says how many
+        /// more there are. The blueprint is where a building's whole holding is read;
+        /// this is the city's, and a census is not a reading.</summary>
+        const int OurFlatsLimit = 24;
+
+        readonly List<LivingCity.Property.ApartmentBuilding> ourFlatBuildings =
+            new List<LivingCity.Property.ApartmentBuilding>();
+
+        readonly List<LivingCity.Property.ApartmentRecord> ourFlatScratch =
+            new List<LivingCity.Property.ApartmentRecord>();
+
+        /// <summary>
+        /// OUR FLATS, under the word from the blocks (the user, 2026-09-03): every room
+        /// the outfit holds anywhere, grouped by the building it stands in - the same
+        /// list the blueprint prints for one building, over the whole city.
+        ///
+        /// The building's own header opens its blueprint; a room's row opens that room's
+        /// paper. Nothing here is a second source: the rows are read off
+        /// <see cref="LivingCity.Property.Apartments"/> at paint.
+        /// </summary>
+        float BuildOurFlats(float cursor)
+        {
+            var gang = GangCatalog.PlayerGangId;
+            ourFlatBuildings.Clear();
+
+            var book = LivingCity.Property.Apartments.All;
+            var rooms = 0;
+            for (var i = 0; i < book.Count; i++)
+            {
+                var record = book[i];
+                if (record.GangId != gang)
+                    continue;
+                rooms++;
+                if (!LivingCity.Property.ApartmentBuildings.TryGet(
+                        record.Unit.Building, out var building))
+                    continue;
+                if (!ourFlatBuildings.Contains(building))
+                    ourFlatBuildings.Add(building);
+            }
+            ourFlatBuildings.Sort((a, b) => string.CompareOrdinal(a.Address, b.Address));
+
+            cursor = BlocksSection(cursor, "OUR FLATS",
+                rooms == 0 ? "NONE"
+                    : rooms + (rooms == 1 ? " ROOM · " : " ROOMS · ") +
+                      ourFlatBuildings.Count +
+                      (ourFlatBuildings.Count == 1 ? " BUILDING" : " BUILDINGS"));
+
+            if (rooms == 0)
+            {
+                Line(blocksColumn, LedgerStyle.MonoItalic, 12f, LedgerV2.Muted,
+                    0f, -cursor, blocksW, 20f,
+                    "Not a room in this city is on our deed. Click a building on a " +
+                    "block's plate to read its blueprint.");
+                return cursor + 32f;
+            }
+
+            var day = RosterDay;
+            var printed = 0;
+            for (var i = 0; i < ourFlatBuildings.Count && printed < OurFlatsLimit; i++)
+            {
+                var building = ourFlatBuildings[i];
+                LivingCity.Property.Apartments.OwnedIn(building.Id, gang, ourFlatScratch);
+                if (ourFlatScratch.Count == 0)
+                    continue;
+
+                cursor += BuildingHeaderRow(blocksColumn, 0f, cursor, blocksW, building);
+                for (var f = 0; f < ourFlatScratch.Count && printed < OurFlatsLimit; f++)
+                {
+                    cursor += BlockFlatRow(blocksColumn, 0f, cursor, blocksW,
+                        ourFlatScratch[f], day);
+                    printed++;
+                }
+            }
+
+            if (rooms > printed)
+            {
+                Caps(blocksColumn, 0f, -(cursor + 6f), blocksW,
+                    "AND " + (rooms - printed) + " MORE ROOMS · READ THEM ON THEIR OWN " +
+                    "BLUEPRINTS", 9f, LedgerV2.Label, 3f);
+                cursor += 22f;
+            }
+
             return cursor + 16f;
         }
 

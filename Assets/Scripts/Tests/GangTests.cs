@@ -57,7 +57,8 @@ namespace LivingCity.Tests
         /// The player's house opens on the Don alone, so the fixture stands the staffed
         /// six under him - that is what a campaign a few weeks old looks like, and it is
         /// what the mirror contracts below are written against.</summary>
-        static Gang[] Deal(int seed) => GangSeeder.Generate(seed, gang =>
+        static Gang[] Deal(int seed) => GangSeeder.Generate(
+            seed, GangCatalog.GangCount, gang =>
             gang == GangCatalog.PlayerGangId
                 ? RosterSeeder.GenerateStaffed(seed)
                 : Family(seed, gang));
@@ -231,7 +232,7 @@ namespace LivingCity.Tests
         static void PlayerGangMirrorsRoster(List<string> failures)
         {
             var roster = RosterSeeder.GenerateStaffed(99);
-            var player = GangSeeder.Generate(99,
+            var player = GangSeeder.Generate(99, GangCatalog.GangCount,
                 gang => gang == GangCatalog.PlayerGangId ? roster : null)
                 [GangCatalog.PlayerGangId];
 
@@ -262,12 +263,12 @@ namespace LivingCity.Tests
                 failures.Add("Mirror: the roster's lieutenant is not first in line.");
         }
 
-        /// <summary>A house whose books the caller does not hand over stands installed
-        /// with nobody outside - the FAMILIES page reads the registry, not the pavement -
-        /// and one house's absence never moves another's.</summary>
+        /// <summary>The mirror tolerates a missing roster in an isolated/headless view and
+        /// one house's absence never moves another's. Production callers size the view
+        /// from Underworld.Dealt and supply every dealt house's live roster.</summary>
         static void EmptyRosterLeavesPlayerGangEmpty(List<string> failures)
         {
-            var gangs = GangSeeder.Generate(5,
+            var gangs = GangSeeder.Generate(5, GangCatalog.GangCount,
                 gang => gang == GangCatalog.PlayerGangId ? null : Family(5, gang));
             if (gangs[GangCatalog.PlayerGangId].Members.Count != 0)
                 failures.Add("Mirror: a null roster still produced player members.");

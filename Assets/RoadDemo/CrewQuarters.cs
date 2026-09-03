@@ -211,18 +211,19 @@ namespace RoadDemo
         /// card, the paper map, the block file - sends the men to the same place.
         /// </summary>
         public static bool Station(
-            DemoCrews crews, DemoCrews.Unit unit, TerritoryBusinessId door)
+            DemoCrews crews, DemoCrews.Unit unit, TerritoryBusinessId door, bool speak = false)
         {
             if (!TryDoorstep(door, out var doorstep, out var word))
                 return false;
-            return Station(crews, unit, door, doorstep, word);
+            return Station(crews, unit, door, doorstep, word, speak);
         }
 
         /// <summary>The same order against a door the business directory cannot name -
         /// an authored scene's front, known only by the pavement outside it.</summary>
         public static bool Station(
-            DemoCrews crews, DemoCrews.Unit unit, Vector3 doorstep, string word) =>
-            Station(crews, unit, default, doorstep, word);
+            DemoCrews crews, DemoCrews.Unit unit, Vector3 doorstep, string word,
+            bool speak = false) =>
+            Station(crews, unit, default, doorstep, word, speak);
 
         /// <summary>Where the men would go, and what the place is called on the street.
         /// False for a door with no pavement point anybody can name.</summary>
@@ -251,9 +252,16 @@ namespace RoadDemo
             return runtime != null && runtime.TryGetBusinessApproach(door, out doorstep);
         }
 
+        /// <summary>
+        /// <paramref name="speak"/> is the crew's answer, and it is OFF by default. Men are
+        /// put indoors by the game as often as by the player - a wanted man going to ground,
+        /// a crew standing up inside its own headquarters at the start of a run - and a
+        /// lieutenant announcing that they are off the street each time is chatter nobody
+        /// asked for. The rows the PLAYER clicks turn it on.
+        /// </summary>
         static bool Station(
             DemoCrews crews, DemoCrews.Unit unit, TerritoryBusinessId door,
-            Vector3 doorstep, string word)
+            Vector3 doorstep, string word, bool speak)
         {
             // ANY house's crew may be taken indoors - a family's Don keeps to his own
             // premises (D4) by exactly the call the player's TAKE THEM INSIDE row makes.
@@ -287,13 +295,24 @@ namespace RoadDemo
             // the car left behind, the fight called off, the errand dropped - is
             // settled here too.
             March(crews, unit, doorstep);
+            if (speak)
+                CrewSpeech.Say(unit, LivingCity.Data.VoiceLines.OrdInside);
             return true;
         }
 
         /// <summary>
         /// BRING THEM OUT. Out through the door they went in by, on their feet.
         /// </summary>
-        public static void BringOut(DemoCrews.Unit unit) => Empty(unit, walkOut: true);
+        public static void BringOut(DemoCrews.Unit unit, bool speak = false)
+        {
+            // Only a crew that WAS inside answers, and only when the player asked: the
+            // collection round brings its own bag man out every day, and the street calls
+            // this defensively on every retask.
+            var housed = speak && unit != null && Billets.ContainsKey(Key(unit));
+            Empty(unit, walkOut: true);
+            if (housed)
+                CrewSpeech.Say(unit, LivingCity.Data.VoiceLines.OrdOutside);
+        }
 
         /// <summary>True once every living man has completed the reverse doorway beat
         /// and is visibly back on the pavement.</summary>

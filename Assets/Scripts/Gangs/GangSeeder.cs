@@ -46,15 +46,21 @@ namespace LivingCity.Gangs
 
         /// <summary>
         /// The city's gangs, with each one's street view mirrored off that house's own
-        /// book. <paramref name="rosterOf"/> answers with a house's roster by gang id -
-        /// the underworld supplies it - and may answer null, which leaves that family
-        /// installed with nobody outside: the ledger's FAMILIES page reads the registry,
-        /// not the pavement.
+        /// book. <paramref name="gangCount"/> is the number the city actually dealt,
+        /// INCLUDING the player's house; it deliberately limits the returned array so the
+        /// registry and its FAMILIES page can never see undealt catalogue slots.
+        /// <paramref name="rosterOf"/> answers with a house's roster by gang id - the
+        /// underworld supplies it. A null roster is tolerated for isolated/headless views,
+        /// but production callers pass the live books for every id inside gangCount.
         /// </summary>
-        public static Gang[] Generate(int seed, System.Func<int, Personnel.Roster> rosterOf)
+        public static Gang[] Generate(int seed, int gangCount,
+            System.Func<int, Personnel.Roster> rosterOf)
         {
             var rng = new System.Random(seed + SeedOffsets.Gangs);
-            var gangs = new Gang[GangCatalog.GangCount];
+            var count = gangCount < 1 ? 1
+                : gangCount > GangCatalog.GangCount ? GangCatalog.GangCount
+                : gangCount;
+            var gangs = new Gang[count];
             for (var i = 0; i < gangs.Length; i++)
                 gangs[i] = new Gang
                 {

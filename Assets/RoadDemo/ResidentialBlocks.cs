@@ -31,28 +31,8 @@ namespace RoadDemo
     {
         const string CityEnv = "Assets/Synty/PolygonCity/Prefabs/Environments/";
         const string CityProps = "Assets/Synty/PolygonCity/Prefabs/Props/";
-        const string CityBuildings = "Assets/Synty/PolygonCity/Prefabs/Buildings/";
         internal const string Units = "Assets/Prefabs/Residential/";
         const string KitBld = "Assets/CityKit/Buildings/";
-
-        static readonly string[] FrontageBases =
-        {
-            CityBuildings + "SM_Bld_Apartment_Door_01.prefab",
-            CityBuildings + "SM_Bld_Apartment_Door_02.prefab",
-            CityBuildings + "SM_Bld_Apartment_03.prefab",
-        };
-        static readonly string[] FrontageStacks =
-        {
-            CityBuildings + "SM_Bld_Apartment_Stack_01.prefab",
-            CityBuildings + "SM_Bld_Apartment_Stack_02.prefab",
-            CityBuildings + "SM_Bld_Apartment_Stack_03.prefab",
-        };
-        static readonly string[] FrontageRoofs =
-        {
-            CityBuildings + "SM_Bld_Apartment_Roof_01.prefab",
-            CityBuildings + "SM_Bld_Apartment_Roof_02.prefab",
-            CityBuildings + "SM_Bld_Apartment_Roof_03.prefab",
-        };
 
         const string Kerb = CityEnv + "SM_Env_Sidewalk_Straight_01.prefab";
         const string KerbCorner = CityEnv + "SM_Env_Sidewalk_Corner_01.prefab";
@@ -958,9 +938,6 @@ namespace RoadDemo
         static GameObject StandUnit(ResidentialUnit unit, int yaw, int i, int j, Transform root,
                                    int way = 0, bool deferCutaway = false)
         {
-            if (ResidentialUnits.IsFrontage(unit))
-                return StandFrontageUnit(unit, yaw, i, j, root, way, deferCutaway);
-
             var go = Raise($"{Units}{unit.Name}.prefab", root);
             if (go == null) return null;
             Colourway(go, way);
@@ -982,59 +959,6 @@ namespace RoadDemo
             // roofs and upper floors remain floating over the revealed street. Storefronts
             // defer this one scan until their generated interior renderers also exist.
             if (!ResidentialUnits.IsLot(unit) && !deferCutaway) BuildingCutaway.Prepare(go);
-            return go;
-        }
-
-        /// <summary>
-        /// Build one genuine 5x5 m POLYGON City apartment bay. The pack supplies its base,
-        /// nine-metre upper stack and roof separately; keeping those authored proportions
-        /// lets a one-cell Core remainder carry housing without squashing a normal house.
-        /// </summary>
-        static GameObject StandFrontageUnit(
-            ResidentialUnit unit, int yaw, int i, int j, Transform root, int way,
-            bool deferCutaway)
-        {
-            int style = 0;
-            for (int n = 0; n < ResidentialUnits.Frontages.Length; n++)
-                if (object.ReferenceEquals(unit, ResidentialUnits.Frontages[n])) { style = n; break; }
-
-            var go = new GameObject($"{unit.Name} ({i},{j}) {yaw}");
-            go.transform.SetParent(root, false);
-            float cell = ResidentialLot.Cell;
-            var offset = yaw switch
-            {
-                90 => new Vector3(0f, 0f, cell),
-                180 => new Vector3(cell, 0f, cell),
-                270 => new Vector3(cell, 0f, 0f),
-                _ => Vector3.zero,
-            };
-            go.transform.SetLocalPositionAndRotation(
-                new Vector3(i * cell, 0f, j * cell) + offset,
-                Quaternion.Euler(0f, yaw, 0f));
-
-            bool stood = false;
-            void Piece(string path, float y, string label)
-            {
-                var piece = Raise(path, go.transform);
-                if (piece == null) return;
-                // Apartment modules are authored from (-5,-5) to (0,0). This wrapper
-                // converts them to the residential unit convention: (0,0) to (5,5).
-                piece.transform.SetLocalPositionAndRotation(
-                    new Vector3(cell, y, cell), Quaternion.identity);
-                piece.name = label;
-                stood = true;
-            }
-
-            Piece(FrontageBases[style], 0f, "apartment base");
-            Piece(FrontageStacks[style], 3f, "apartment upper floors");
-            Piece(FrontageRoofs[style], 12f, "apartment roof");
-            if (!stood)
-            {
-                Object.Destroy(go);
-                return null;
-            }
-            Colourway(go, way);
-            if (!deferCutaway) BuildingCutaway.Prepare(go);
             return go;
         }
 

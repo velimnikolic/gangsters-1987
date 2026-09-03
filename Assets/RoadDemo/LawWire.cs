@@ -46,6 +46,26 @@ namespace RoadDemo
             File(-1, Named(call.Where, "A shopkeeper"), IncidentKind.ComplaintRung, "");
         }
 
+        /// <summary>The telephone rang and the precinct had nobody to send. The one law
+        /// line that is about the DEPARTMENT rather than about us - and the one the
+        /// player needs most, because a call that dies in the switchboard used to leave
+        /// no trace anywhere and read as the telephone itself being broken.</summary>
+        public static void NobodyCame(StreetAlarm.Complaint call)
+        {
+            if (call.Faction != Ours) return;
+            File(-1, Named(call.Where, "the door"), IncidentKind.NobodyCame, "");
+        }
+
+        /// <summary>The question was put and the answer was no. Filed apart from the
+        /// statement on purpose: a statement says the officer found nobody, and printing
+        /// that over a crew that stood there and refused him is a lie the paper would
+        /// have to correct.</summary>
+        public static void RefusedTheOfficer(StreetAlarm.Complaint call)
+        {
+            if (call.Faction != Ours) return;
+            File(-1, Named(call.Where, "the door"), IncidentKind.RefusedTheOfficer, "");
+        }
+
         /// <summary>A uniform in the doorway and nobody to take in.</summary>
         public static void StatementTaken(StreetAlarm.Complaint call)
         {

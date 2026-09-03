@@ -1192,6 +1192,7 @@ namespace LivingCity.UI
             {
                 TerritoryHideout.Clear();
                 Say("no hideout named · the men fall back on the nearest door we hold.");
+                Gameplay.CrewVoice.Office(LivingCity.Data.VoiceLines.RktHideoutOff);
                 return;
             }
 
@@ -1211,6 +1212,7 @@ namespace LivingCity.UI
 
             var moved = TerritoryHideout.Any && !TerritoryHideout.Is(door.Id);
             TerritoryHideout.Designate(door.Id);
+            Gameplay.CrewVoice.Office(LivingCity.Data.VoiceLines.RktHideoutOn);
             Say(moved
                 ? "the hideout moves to " + door.Name + "."
                 : door.Name + " is the hideout.");
@@ -1227,6 +1229,8 @@ namespace LivingCity.UI
             }
 
             var result = outfit.RepairBusiness(door.Id);
+            if (result.Ok)
+                Gameplay.CrewVoice.Office(LivingCity.Data.VoiceLines.RktRepair);
             Say(result.Ok
                 ? door.Name + " repaired and open for future collections"
                 : result.Reason);

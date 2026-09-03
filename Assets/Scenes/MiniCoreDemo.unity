@@ -150,22 +150,23 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::RoadDemo.CoreDemoBuilder
   newSeedEveryPlay: 0
   seed: 1987
-  carCount: 6
+  carCount: 40
   streetSpeed: 9
   boulevardSpeed: 13
   alleySpeed: 5
-  bikeCount: 1
-  pedestrianCount: 20
+  bikeCount: 4
+  pedestrianCount: 100
   police: 1
-  policeBeatPairs: 1
-  rivalCrews: 3
-  rivalHoods: 2
+  policeBeatPairs: -1
+  policeCars: -1
+  rivalCrews: 6
+  rivalHoods: 3
   startHour: 6
   realSecondsPerGameHour: 60
   greenBelt: 140
-  parkingLots: 1
-  parkingCarsPerLot: 2
-  fuelStations: 1
+  parkingLots: 3
+  parkingCarsPerLot: 5
+  fuelStations: 5
   quarterBudget: 2
 --- !u!4 &242302771
 Transform:
