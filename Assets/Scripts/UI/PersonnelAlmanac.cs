@@ -2369,8 +2369,13 @@ namespace LivingCity.UI
         {
             if (currentPage == LedgerPage.Armory && armoryNote.Length > 0)
                 return armoryNote;
-            if (currentPage == LedgerPage.Newspaper && classifiedNote.Length > 0)
-                return classifiedNote;
+            if (currentPage == LedgerPage.Newspaper)
+            {
+                if (classifiedOpen && classifiedNote.Length > 0)
+                    return classifiedNote;
+                if (!classifiedOpen && newspaperNote.Length > 0)
+                    return newspaperNote;
+            }
 
             var roster = director.Roster;
             if (currentPage != LedgerPage.Personnel || roster == null || selectedId < 0)

@@ -331,6 +331,8 @@ What is **not**, on purpose (D19):
 `unity command gangsters_save [--path]` writes; `gangsters_load [--path]` reads and applies
 over the running city. An **autosave** goes to
 `Application.persistentDataPath/gangsters/autosave.json` at every campaign midnight.
+The ledger's front page has **SAVE** and **LOAD** rows for that same file, so the player
+uses the identical write and scene-reload path without the terminal.
 
 Loading in Play reloads the scene: the city is generated from a seed, so the honest way to
 put a saved one back is to build it again from that seed and restore the books over it.

@@ -75,6 +75,11 @@ namespace LivingCity.UI
 
         RectTransform newsContent;
 
+        /// <summary>The last word from the file desk. It runs on the ledger's telex
+        /// rather than being painted into the edition, so saving does not reset the
+        /// morning paper just to acknowledge the click.</summary>
+        string newspaperNote = "";
+
         /// <summary>The day the sheet was set for - it is only re-set when the day
         /// turns, because staging two studio photographs per repaint would be waste.</summary>
         int newsPaintedDay = -1;
@@ -119,14 +124,14 @@ namespace LivingCity.UI
             var stories = HeadlineGenerator.FrontPage(seed, date);
 
             // ---- the flag ----
-            var ear = NewRect("EarLeft", newsContent);
-            PlaceTopLeft(ear, NewsLeft, -14f, 118f, 46f);
-            Frame(ear, 1f, LedgerV2.Ink);
-            var earText = Text("Text", ear, LedgerStyle.Serif, 10.5f, LedgerV2.Ink,
-                TextAlignmentOptions.Center);
-            Stretch(earText.rectTransform, 4f);
-            earText.textWrappingMode = TextWrappingModes.Normal;
-            earText.text = "FINAL\nCITY EDITION";
+            // The file desk lives in the left ear: two rows in the newspaper's own
+            // outlined-key hand, always on the front page. Both use the same autosave
+            // file as midnight and the terminal verbs, so the player never has a
+            // second, subtly different save path.
+            LedgerV2.Button(newsContent, "SAVE", NewsLeft, -14f, 118f, 21f,
+                SaveCampaignFromLedger, LedgerV2.Key.Outline, 9.5f);
+            LedgerV2.Button(newsContent, "LOAD", NewsLeft, -39f, 118f, 21f,
+                LoadCampaignFromLedger, LedgerV2.Key.Red, 9.5f);
 
             // The right ear is where a paper prints its pointer to the inside pages,
             // and this one points at the men advertising for work.
@@ -207,6 +212,36 @@ namespace LivingCity.UI
                 Paragraph(newsContent, LedgerStyle.Serif, 13f, LedgerV2.Ink, x,
                     BriefTop - 26f, BriefW, BriefH - 30f, WeatherLine(date), lineSpacing: 3f);
             }
+        }
+
+        void SaveCampaignFromLedger()
+        {
+            var refusal = LivingCity.Save.CampaignSave.Write(
+                LivingCity.Save.CampaignSave.AutosavePath);
+            if (string.IsNullOrEmpty(refusal))
+            {
+                lastRefusal = "";
+                newspaperNote = "Campaign saved to " +
+                                LivingCity.Save.CampaignSave.AutosaveName + ".";
+            }
+            else
+            {
+                newspaperNote = "";
+                lastRefusal = "Save refused: " + refusal;
+            }
+            dirty = true;
+        }
+
+        void LoadCampaignFromLedger()
+        {
+            var refusal = LivingCity.Save.CampaignSave.LoadFromFile(
+                LivingCity.Save.CampaignSave.AutosavePath);
+            if (string.IsNullOrEmpty(refusal))
+                return; // The scene reload has begun; this page is going away.
+
+            newspaperNote = "";
+            lastRefusal = "Load refused: " + refusal;
+            dirty = true;
         }
 
         /// <summary>The lead: the deck across five sevenths of the sheet with its copy
