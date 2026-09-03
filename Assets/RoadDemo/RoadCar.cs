@@ -2921,6 +2921,13 @@ namespace RoadDemo
             {
                 // no lights: give way to what is already coming at the box on a crossing path
                 if (_turn == Turn.Left && OncomingPriority(node)) { Why = "left: oncoming"; return false; }
+                // THE TURN-ROUND GIVES WAY TO EVERYBODY COMING. Its half circle takes the
+                // whole box (LaneNet), and the check below sees only cars already IN the
+                // box: two that commit to it in the same second from two roads both find
+                // it empty and meet in the middle (DEPOT-004 S2 seed 102, twice). The car
+                // turning round is the one with time to spare, so it is the one that waits.
+                if (_via != null && _via.UTurn && ConflictApproaching(node, 3f))
+                { Why = "u-turn: traffic"; return false; }
             }
             // the connectors in use
             for (int i = 0; i < node.Inside.Count; i++)

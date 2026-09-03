@@ -294,6 +294,10 @@ namespace RoadDemo
             _laneMotion = _motions.Count;
             AddSweep(gateInside, outward, gateOutside, outward);
             AddSweep(gateOutside, outward, _lot.Join, _lot.Home.Dir);
+            // a gate ON the lane adds neither sweep (AddSweep drops anything under
+            // half a metre); the hold then belongs to the last motion there is, as it
+            // always did, and never to an index past the end of the list
+            _laneMotion = Mathf.Min(_laneMotion, _motions.Count - 1);
             StartMotions();
         }
 

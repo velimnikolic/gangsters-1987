@@ -735,7 +735,9 @@ namespace RoadDemo
             for (int i = 0; i < k; i++)
                 for (int j = i + 1; j < k; j++)
                 {
-                    bool clash = n.Connectors[i].To == n.Connectors[j].To;
+                    // and a turn-round, wherever it stands, takes the whole box (BuildConflicts)
+                    bool clash = n.Connectors[i].To == n.Connectors[j].To ||
+                                 n.Connectors[i].UTurn || n.Connectors[j].UTurn;
                     n.Connectors[i].Conflicts[j] = clash;
                     n.Connectors[j].Conflicts[i] = clash;
                 }

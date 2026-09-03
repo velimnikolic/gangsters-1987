@@ -735,6 +735,13 @@ def belt_split(rows, police_cars):
     civilian traffic, which is the traffic model's ticket and never the depot's."""
     houses = [r for r in rows if r["k"] == "precinct"]
     yards = [(r.get("p") or [0.0, 0.0]) for r in houses]
+    # every car a house owns, by id - a car that never left its bay wrote no car row,
+    # and a civilian driving into it must still be the law's business
+    police_cars = set(police_cars)
+    for h in houses:
+        for u in str(h.get("units", "")).split(","):
+            if u.strip().isdigit():
+                police_cars.add(int(u))
     out = {"yard": 0, "road": 0, "other": 0, "crew": 0, "civil": 0, "houses": houses}
     for r in rows:
         if r["k"] != "belt":

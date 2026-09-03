@@ -291,6 +291,17 @@ namespace RoadDemo
                 DriveTrace.Str(sb, "name", precinct.Roster.Name);
                 DriveTrace.Int(sb, "cars", precinct.Roster.Cars);
                 DriveTrace.Int(sb, "bodies", precinct.Cars.Count);
+                // WHICH cars, by the id the belt names: a car that rests in its bay for
+                // the whole trace never writes a car row, and the reader would count a
+                // civilian driving into it as a civilian matter (Codex review, DEPOT-004)
+                var units = new System.Text.StringBuilder();
+                for (var c = 0; c < precinct.Cars.Count; c++)
+                {
+                    if (precinct.Cars[c] == null) continue;
+                    if (units.Length > 0) units.Append(',');
+                    units.Append(precinct.Cars[c].Id);
+                }
+                DriveTrace.Str(sb, "units", units.ToString());
                 DriveTrace.Vec(sb, "p", precinct.At);
                 DriveTrace.Row("precinct", sb.ToString());
             }
