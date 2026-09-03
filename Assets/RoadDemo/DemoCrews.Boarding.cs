@@ -662,8 +662,10 @@ namespace RoadDemo
                             }
                             foreach (var man in fled)
                             {
-                                man.Flee(car.Position, 15f, 25f, comeBack: true);
-                                OnFled(man, car.Position);
+                                // Driver-loss shock is temporary too; the explicit
+                                // comeBack run must not be rewritten as desertion.
+                                man.PanicFrom(man.LastAttacker, car.Position,
+                                    15f, 25f, comeBack: true);
                             }
                         }
                     }

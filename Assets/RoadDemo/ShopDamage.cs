@@ -32,13 +32,13 @@ namespace RoadDemo
         const float BoardOutset = 0.1f;
 
         static Transform _root;
-        static Material _fire, _board, _smoke, _brokenGlass, _brokenEdge;
+        static Material _fire, _board, _smoke, _brokenGlass, _brokenEdge, _brokenDebris;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetForPlay()
         {
             _root = null;
-            _fire = _board = _smoke = _brokenGlass = _brokenEdge = null;
+            _fire = _board = _smoke = _brokenGlass = _brokenEdge = _brokenDebris = null;
         }
 
         static Transform Root()
@@ -870,40 +870,73 @@ namespace RoadDemo
                 hideFlags = HideFlags.HideAndDontSave,
                 enableInstancing = true,
             };
-            SetColor(_brokenGlass, new Color(0.28f, 0.52f, 0.62f, 0.68f));
-            SetFloat(_brokenGlass, "_Metallic", 0.08f);
-            SetFloat(_brokenGlass, "_Smoothness", 0.82f);
-            SetFloat(_brokenGlass, "_Glossiness", 0.82f);
-            // Geometry supplies the missing chunks; transparency is only for the shards
-            // that remain. Without configuring the surface this colour's alpha is ignored
-            // by URP and the result reads as blue sheet metal rather than broken glass.
-            SetFloat(_brokenGlass, "_Surface", 1f);
-            SetFloat(_brokenGlass, "_Mode", 3f);
-            SetFloat(_brokenGlass, "_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            SetFloat(_brokenGlass, "_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            SetFloat(_brokenGlass, "_ZWrite", 0f);
-            _brokenGlass.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-            _brokenGlass.DisableKeyword("_ALPHATEST_ON");
-            _brokenGlass.SetOverrideTag("RenderType", "Transparent");
-            _brokenGlass.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            // Broken float glass is almost colourless. Its visibility comes from a sharp
+            // grazing reflection, not from a saturated blue body colour.
+            SetColor(_brokenGlass, new Color(0.66f, 0.72f, 0.73f, 0.18f));
+            SetFloat(_brokenGlass, "_Metallic", 0f);
+            SetFloat(_brokenGlass, "_Smoothness", 0.96f);
+            SetFloat(_brokenGlass, "_Glossiness", 0.96f);
+            ConfigureTransparent(_brokenGlass);
             return _brokenGlass;
         }
 
         static Material BrokenEdgeMaterial()
         {
             if (_brokenEdge != null) return _brokenEdge;
-            var shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
+            var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
             _brokenEdge = new Material(shader)
             {
                 name = "Broken glass fracture edges",
                 hideFlags = HideFlags.HideAndDontSave,
                 enableInstancing = true,
             };
-            // A fracture catches a pale highlight even when the shop's own glass material
-            // is nearly black at night. This draws only thin broken edges: the fragments
-            // themselves still use the exact original material and colour.
-            SetColor(_brokenEdge, new Color(0.62f, 0.82f, 0.88f, 1f));
+            // The edge is a dim, partially transparent specular catch. Keeping it lit and
+            // sub-white prevents cracks from reading as emissive cyan paint at night.
+            SetColor(_brokenEdge, new Color(0.76f, 0.80f, 0.80f, 0.34f));
+            SetFloat(_brokenEdge, "_Metallic", 0f);
+            SetFloat(_brokenEdge, "_Smoothness", 0.88f);
+            SetFloat(_brokenEdge, "_Glossiness", 0.88f);
+            ConfigureTransparent(_brokenEdge, 1);
             return _brokenEdge;
+        }
+
+        static Material BrokenDebrisMaterial()
+        {
+            if (_brokenDebris != null) return _brokenDebris;
+            var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            _brokenDebris = new Material(shader)
+            {
+                name = "Broken glass pavement glints",
+                hideFlags = HideFlags.HideAndDontSave,
+                enableInstancing = true,
+            };
+            // A slightly stronger silver reflection is a distance-readability LOD for
+            // horizontal fragments only; it never brightens the cracks in the window.
+            SetColor(_brokenDebris, new Color(0.68f, 0.72f, 0.72f, 0.46f));
+            SetFloat(_brokenDebris, "_Metallic", 0.04f);
+            SetFloat(_brokenDebris, "_Smoothness", 0.98f);
+            SetFloat(_brokenDebris, "_Glossiness", 0.98f);
+            ConfigureTransparent(_brokenDebris, 2);
+            return _brokenDebris;
+        }
+
+        static void ConfigureTransparent(Material material, int queueOffset = 0)
+        {
+            SetFloat(material, "_Surface", 1f);
+            SetFloat(material, "_Mode", 3f);
+            SetFloat(material, "_Blend", 0f);
+            SetFloat(material, "_AlphaClip", 0f);
+            SetFloat(material, "_SrcBlend",
+                (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            SetFloat(material, "_DstBlend",
+                (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            SetFloat(material, "_ZWrite", 0f);
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.DisableKeyword("_ALPHATEST_ON");
+            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            material.SetOverrideTag("RenderType", "Transparent");
+            material.renderQueue =
+                (int)UnityEngine.Rendering.RenderQueue.Transparent + queueOffset;
         }
 
         static void SetFloat(Material material, string property, float value)
@@ -928,8 +961,8 @@ namespace RoadDemo
         /// Stand a smashed shopfront on the captured plane of its original glass. The live
         /// business path first removes only this shop's ground-floor glass triangles from a
         /// runtime mesh clone; neighbouring shops and upper floors stay untouched. This
-        /// replacement reuses that original material for the jagged frame and pavement
-        /// shards. One combined mesh keeps the result to one renderer and no colliders.
+        /// replacement uses one neutral transparent glass treatment for the remaining pane
+        /// and pavement shards. One combined mesh keeps it to one renderer and no colliders.
         /// </summary>
         static Transform ShatterAt(
             Vector3 doorAt, Vector3 facingOut, string label, float groundY,
@@ -963,13 +996,15 @@ namespace RoadDemo
             var drawn = broken.AddComponent<MeshRenderer>();
             drawn.sharedMaterials = new[]
             {
-                glassMaterial != null ? glassMaterial : BrokenGlassMaterial(),
+                BrokenGlassMaterial(),
                 BrokenEdgeMaterial(),
+                BrokenDebrisMaterial(),
             };
             drawn.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             drawn.receiveShadows = false;
             drawn.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
-            drawn.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+            drawn.reflectionProbeUsage =
+                UnityEngine.Rendering.ReflectionProbeUsage.BlendProbesAndSkybox;
             drawn.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;
             broken.AddComponent<ShopDamageMesh>().Own(mesh);
             return broken.transform;
@@ -982,6 +1017,7 @@ namespace RoadDemo
             var uvs = new List<Vector2>(420);
             var edges = new List<int>(720);
             var glass = new List<int>(720);
+            var debris = new List<int>(720);
             var dice = new DamageDice(seed);
 
             int panes = Mathf.Clamp(Mathf.CeilToInt(frontage / 2.35f), 1, 8);
@@ -997,8 +1033,8 @@ namespace RoadDemo
 
                 float hx = (x0 + x1) * 0.5f + dice.Range(-width * 0.11f, width * 0.11f);
                 float hy = bottom + paneHeight * dice.Range(0.43f, 0.60f);
-                float rx = width * dice.Range(0.25f, 0.37f);
-                float ry = paneHeight * dice.Range(0.23f, 0.35f);
+                float rx = width * dice.Range(0.17f, 0.27f);
+                float ry = paneHeight * dice.Range(0.17f, 0.28f);
 
                 var outer = new[]
                 {
@@ -1036,30 +1072,70 @@ namespace RoadDemo
                         Vector3.forward, vertices, normals, uvs, glass);
                 }
 
-                // Pale fracture highlights outline the open hole and branch into the
-                // surviving glass. They remain readable when night windows turn off.
+                // A fine impact ring plus kinked radial and secondary cracks makes a
+                // laminated spiderweb. Real fracture lines are millimetres wide; the
+                // small visibility allowance here keeps them readable from game height
+                // without turning them into bright ribbons.
                 for (int i = 0; i < 8; i++)
                 {
+                    if (i == missing) continue;
                     int next = (i + 1) & 7;
                     AddDamageCrack(
-                        hole[i], hole[next], dice.Range(0.030f, 0.052f), 0.026f,
+                        hole[i], hole[next], dice.Range(0.006f, 0.011f), 0.017f,
                         vertices, normals, uvs, edges);
                 }
-                for (int i = dice.Int(2); i < 8; i += 2)
-                    AddDamageCrack(
-                        hole[i], Vector2.Lerp(hole[i], outer[i], dice.Range(0.72f, 0.98f)),
-                        dice.Range(0.024f, 0.044f), 0.028f,
+                var radial = new Vector2[8];
+                for (int i = 0; i < 8; i++)
+                {
+                    Vector2 from = hole[i];
+                    Vector2 to = Vector2.Lerp(
+                        hole[i], outer[i], dice.Range(0.72f, 0.98f));
+                    Vector2 along = to - from;
+                    Vector2 bend = along.sqrMagnitude > 0.0001f
+                        ? new Vector2(-along.y, along.x).normalized *
+                          dice.Range(-0.035f, 0.035f)
+                        : Vector2.zero;
+                    Vector2 middle = Vector2.Lerp(from, to, dice.Range(0.42f, 0.60f)) + bend;
+                    radial[i] = middle;
+                    float crack = dice.Range(0.005f, 0.010f);
+                    AddDamageCrack(from, middle, crack, 0.019f,
                         vertices, normals, uvs, edges);
+                    AddDamageCrack(middle, to, crack * dice.Range(0.72f, 0.94f), 0.019f,
+                        vertices, normals, uvs, edges);
+
+                    if ((i & 1) == 0)
+                    {
+                        Vector2 branchTarget = Vector2.Lerp(
+                            middle, outer[(i + (dice.Int(2) == 0 ? 1 : 7)) & 7],
+                            dice.Range(0.18f, 0.34f));
+                        AddDamageCrack(middle, branchTarget,
+                            crack * dice.Range(0.55f, 0.76f), 0.020f,
+                            vertices, normals, uvs, edges);
+                    }
+                }
+
+                // Broken concentric links stop the result from looking like a regular
+                // eight-point icon. Missing links are intentional and vary by pane.
+                for (int i = 0; i < 8; i++)
+                {
+                    if (i == missing || dice.Unit() < 0.28f) continue;
+                    int next = (i + 1) & 7;
+                    Vector2 a = Vector2.Lerp(hole[i], radial[i], dice.Range(0.46f, 0.74f));
+                    Vector2 b = Vector2.Lerp(hole[next], radial[next], dice.Range(0.46f, 0.74f));
+                    AddDamageCrack(a, b, dice.Range(0.0035f, 0.007f), 0.021f,
+                        vertices, normals, uvs, edges);
+                }
             }
 
-            // More frontage means more glass, but cap it: these are readable triangles,
-            // not physics debris, and every wreck remains a single cheap renderer.
-            int shardCount = Mathf.Clamp(Mathf.CeilToInt(frontage * 2.7f), 12, 42);
+            // The city camera sees this from tens of metres away. Use enough hand-sized
+            // pieces and specular perimeter to survive that distance, while the neutral
+            // lit material keeps the debris from turning back into a cyan carpet.
+            int shardCount = Mathf.Clamp(Mathf.CeilToInt(frontage * 4.5f), 24, 64);
             for (int i = 0; i < shardCount; i++)
             {
                 float x = dice.Range(-frontage * 0.52f, frontage * 0.52f);
-                float z = 0.18f + Mathf.Pow(dice.Unit(), 1.65f) * 2.25f;
-                float size = dice.Range(0.055f, 0.19f);
+                float z = 0.12f + Mathf.Pow(dice.Unit(), 1.65f) * 1.85f;
+                float size = dice.Range(0.045f, 0.145f);
                 float angle = dice.Range(0f, Mathf.PI * 2f);
                 Vector2 along = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
                 Vector2 across = new Vector2(-along.y, along.x);
@@ -1075,9 +1151,11 @@ namespace RoadDemo
                     z - along.y * size * 0.48f - across.y * size * 0.62f);
                 AddDamageTriangle(a, b, c, Vector3.up,
                     vertices, normals, uvs, glass);
-                AddPavementEdge(a, b, 0.014f, vertices, normals, uvs, edges);
-                AddPavementEdge(b, c, 0.014f, vertices, normals, uvs, edges);
-                AddPavementEdge(c, a, 0.014f, vertices, normals, uvs, edges);
+                float edgeWidth = dice.Range(0.012f, 0.019f);
+                AddPavementEdge(a, b, edgeWidth, vertices, normals, uvs, debris);
+                AddPavementEdge(b, c, edgeWidth, vertices, normals, uvs, debris);
+                if (dice.Unit() > 0.55f)
+                    AddPavementEdge(c, a, edgeWidth, vertices, normals, uvs, debris);
             }
 
             var mesh = new Mesh
@@ -1088,9 +1166,10 @@ namespace RoadDemo
             mesh.SetVertices(vertices);
             mesh.SetNormals(normals);
             mesh.SetUVs(0, uvs);
-            mesh.subMeshCount = 2;
+            mesh.subMeshCount = 3;
             mesh.SetTriangles(glass, 0, true);
             mesh.SetTriangles(edges, 1, true);
+            mesh.SetTriangles(debris, 2, true);
             mesh.RecalculateBounds();
             return mesh;
         }

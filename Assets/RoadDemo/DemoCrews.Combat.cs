@@ -246,6 +246,18 @@ namespace RoadDemo
         /// hiding place.</summary>
         static bool InSight(Vector3 eye, Vector3 mark) => WalkObstacles.Sees(eye, mark);
 
+        /// <summary>Does this particular man still have his own live mark in sight?
+        /// Usually it belongs to Unit.TargetUnit. Return fire may deliberately give
+        /// just the man a shooter from a second crew, so callers which move bodies
+        /// must ask his eyes as well as the unit's strategic target.</summary>
+        static bool SeesPersonalTarget(CrewWalker man) =>
+            man != null && man.Tf != null && man.Target != null &&
+            !man.Target.Dead && man.Target.Tf != null &&
+            man.Target.Tf.gameObject.activeInHierarchy &&
+            (man.Target.Tf.position - man.Tf.position).sqrMagnitude <
+                SightRange * SightRange &&
+            InSight(man.Tf.position, man.Target.Tf.position);
+
         // ------------------------------------------------ the closer threat (EPIC 33)
 
         /// <summary>The street distance between two points - HORIZONTAL, both marks
@@ -412,10 +424,22 @@ namespace RoadDemo
             var enemies = unit.TargetUnit;
             if (enemies == null) return;
 
+            bool fightersRemain = false;
+            foreach (var enemy in enemies.All())
+                if (ValidMark(enemy) && !enemy.Panicked && !enemy.Retreating)
+                {
+                    fightersRemain = true;
+                    break;
+                }
+
             CrewWalker uncovered = null;
             foreach (var enemy in enemies.All())
             {
                 if (!ValidMark(enemy)) continue;
+                // As long as one enemy is still fighting, every available gun belongs
+                // on that fight. A runner is considered only after no fighter remains,
+                // never merely because all fighters already have one shooter.
+                if (fightersRemain && (enemy.Panicked || enemy.Retreating)) continue;
                 bool taken = false;
                 foreach (var man in unit.All())
                     if (man.Target == enemy && CanEngageOnFoot(man)) { taken = true; break; }
@@ -463,6 +487,14 @@ namespace RoadDemo
             }
             return false;
         }
+
+        internal static bool AnswerCrossUnitAttackerModel(bool hasCurrentEnemyUnit,
+            bool sameEnemyUnit, bool attackerVisible, bool canEngage) =>
+            hasCurrentEnemyUnit && !sameEnemyUnit && attackerVisible && canEngage;
+
+        internal static bool OrderedAddressAppliesModel(bool unitOrderedFight,
+            bool personalTargetBelongsToStrategicUnit) =>
+            unitOrderedFight && personalTargetBelongsToStrategicUnit;
 
         /// <summary>The enemy crew nearest THIS MAN that he can actually see - his own
         /// eyes, not his crew's. What a man handed back into the street on his own asks
@@ -526,11 +558,12 @@ namespace RoadDemo
                 if (unit.Surrendered) continue;
                 if (unit.TargetUnit != null && unit.TargetUnit.Wiped)
                 {
-                    unit.TargetUnit = null;
+                    // End the dead strategic fight through the same exit that knows
+                    // how to promote a still-visible personal return-fire target.
+                    // Clearing every man here made a second live attacker disappear
+                    // from their minds merely because the first crew fell.
                     unit.OrderedFight = false;
-                    unit.Searching = false;
-                    unit.LookUntil = 0f;
-                    foreach (var man in unit.All()) man.Disengage();
+                    EndSearch(unit);
                 }
 
                 // A BEATEN CREW FIGHTS ON - EVERY HOUSE'S ALIKE (D23, row 1, the
@@ -615,15 +648,28 @@ namespace RoadDemo
                 foreach (var man in unit.All())
                 {
                     if (!CanEngageOnFoot(man)) continue;
-                    var mark = BestMark(unit.TargetUnit, man.Tf.position, reach,
-                                        sighted: !unit.OrderedFight);
-                    if (mark != null && mark.Tf != null)
+                    // Keep the ordered ADDRESS separate from what this man can SEE.
+                    // An ordered job may quite properly hand him a mark round a corner,
+                    // but that mark is not evidence that his eyes are still on anybody.
+                    // Conversely, seeing another member of the enemy crew must not keep
+                    // the timestamp on his hidden current mark fresh forever.
+                    var visibleMark = BestMark(unit.TargetUnit, man.Tf.position,
+                                               SightRange, sighted: true);
+                    var mark = unit.OrderedFight
+                        ? BestMark(unit.TargetUnit, man.Tf.position, reach, sighted: false)
+                        : visibleMark;
+                    if (visibleMark != null && visibleMark.Tf != null)
                     {
                         anySeen = true;
-                        man.SawMarkAt = Time.time;
-                        float d = (mark.Tf.position - man.Tf.position).sqrMagnitude;
-                        if (d < seenNear) { seenNear = d; seenAt = mark.Tf.position; }
+                        float d = (visibleMark.Tf.position - man.Tf.position).sqrMagnitude;
+                        if (d < seenNear)
+                        {
+                            seenNear = d;
+                            seenAt = visibleMark.Tf.position;
+                        }
                     }
+                    bool seesTarget = SeesPersonalTarget(man);
+                    if (seesTarget) man.NoteTargetSeen();
                     // A MAN OUT RUNNING AFTER HIM STILL HAS EYES. He counts toward what
                     // the crew can see (above - he is usually the NEAREST of them to the
                     // enemy, being the one who went after him), but his feet are the
@@ -637,14 +683,25 @@ namespace RoadDemo
                     // streets away that he could not possibly have eyes on. Out of
                     // sight, the gun comes down; what the CREW does about it is the
                     // chase below, and that is laid against a remembered place.
-                    if (man.Target != null && !man.Target.Dead && mark == null)
+                    bool ownsOrderedAddress = OrderedAddressAppliesModel(
+                        unit.OrderedFight,
+                        man.Target != null && UnitOf(man.Target) == unit.TargetUnit);
+                    if (!ownsOrderedAddress && man.Target != null &&
+                        !man.Target.Dead && !seesTarget)
                     {
                         // not on the frame he disappears. A fight runs past parked vans
                         // and round the corners of buildings, and a man whose gun came
                         // down the instant a mark stepped behind one and up again the
                         // instant he stepped out is a man twitching, not fighting.
                         if (Time.time - man.SawMarkAt < BlindGrace) continue;
-                        man.Disengage();
+                        // If somebody else is plainly in front of him, turn onto that
+                        // live threat instead of standing idle beside the firefight.
+                        // Only the strategic ordered mark stays an unseen address. A
+                        // personal return-fire target from another crew never inherits
+                        // that privilege merely because the unit has an order on.
+                        if (visibleMark != null) man.Engage(visibleMark);
+                        else if (!man.GuardCoverAfterLostSight(LoseSight))
+                            man.Disengage();
                         continue;
                     }
                     // a mark that has since broken and run is dropped for one still
@@ -660,7 +717,7 @@ namespace RoadDemo
                                                sighted: false)
                             : mark;
                         if (next != null) man.Engage(next);
-                        else man.Disengage();
+                        else if (!man.RenewCoverGuard(LoseSight)) man.Disengage();
                         continue;
                     }
                     // HE KEEPS HIS MARK - unless somebody else has become the more
@@ -693,7 +750,7 @@ namespace RoadDemo
                 }
 
                 if (unit.Car != null) continue;   // a crew in a car does not chase, and does not lose the job
-                StartChase(unit);
+                if (StartChase(unit)) continue;
                 if (unit.OrderedFight) continue;   // a job stands until it is done
                 if (Time.time - unit.SawEnemyAt < LoseSight) continue;
                 // MEN ARE OUT LOOKING FOR HIM. The fight is not written off under their
@@ -708,10 +765,16 @@ namespace RoadDemo
                 // stands for the rest of the scene on a crew that is not looking for
                 // anybody.
                 if (unit.Searching && !AnyChasing(unit) &&
-                    Time.time - unit.ChasedAt > ChaseSeconds) EndSearch(unit);
+                    Time.time - unit.ChasedAt > ChaseSeconds)
+                {
+                    EndSearch(unit);
+                    continue;
+                }
                 if (unit.Searching) continue;
-                unit.TargetUnit = null;
-                foreach (var man in unit.All()) if (!Chasing(man)) man.Disengage();
+                // The same exit owns both cleanup and promotion of any still-visible
+                // personal return-fire target. Duplicating half of it here used to
+                // erase that promotion in the very same frame.
+                EndSearch(unit);
             }
         }
 
@@ -729,27 +792,32 @@ namespace RoadDemo
         /// long as he keeps showing himself. If they get there and there is nothing to
         /// see, they stand a moment and go home. Nothing carries them past
         /// <see cref="SearchRange"/> from the door they started at.</summary>
-        void StartChase(Unit unit)
+        bool StartChase(Unit unit)
         {
-            if (unit == null || unit.TargetUnit == null) return;
+            if (unit == null || unit.TargetUnit == null) return false;
             // THE MOBS RUN; THE OUTFIT AND THE LAW DO NOT. A chase is the arena moving
             // men on its own initiative, and the player's crews are the player's to
             // move - a lieutenant sent to hold a corner who took himself forty metres
             // down the street after a passing machine would be the game playing itself.
             // The police have a dispatcher of their own (PoliceDispatch) and answer to
             // that, exactly as they do everywhere else in this loop.
-            if (unit.Faction == 0 || unit.IsPolice) return;
-            if (unit.Retreated || unit.Car != null) return;
-            if (!unit.HasLastSeen) return;                          // never laid eyes on him
-            if (Time.time - unit.SawEnemyAt < ChaseAfter) return;   // he may only be behind a van
-            if (Time.time - unit.ChasedAt < ChaseAgainAfter) return;
-            if (AnyChasing(unit)) return;                           // a leg is already running
+            if (unit.Faction == 0 || unit.IsPolice) return false;
+            if (unit.Retreated || unit.Car != null) return false;
+            if (!unit.HasLastSeen) return false;                         // never laid eyes on him
+            if (Time.time - unit.SawEnemyAt < ChaseAfter) return false;  // he may only be behind a van
+            if (Time.time - unit.ChasedAt < ChaseAgainAfter) return false;
+            if (AnyChasing(unit)) return false;                          // a leg is already running
 
             // where this search started - the door they are to end up back at
             if (!unit.Searching)
             {
                 unit.SearchHome = unit.Position;
                 unit.Searching = true;
+                // A cover-only search has no running leg to stamp this below. Give it
+                // the same finite lifetime now, or an all-covered crew would either
+                // end immediately off the default zero or search forever.
+                unit.ChasedAt = Time.time;
+                unit.ChaseUntil = Time.time + ChaseSeconds;
             }
 
             var after = unit.LastSeenPos;
@@ -757,15 +825,29 @@ namespace RoadDemo
             reach.y = 0f;
             // too far from their own door: the search is over, whatever they think they
             // saw. They are walked back by the tether the moment nobody is chasing.
-            if (reach.magnitude > SearchRange) { EndSearch(unit); return; }
+            if (reach.magnitude > SearchRange) { EndSearch(unit); return true; }
 
             int sent = 0;
+            bool defenderStayed = false;
             foreach (var man in unit.All())
             {
                 if (sent >= Chasers) break;
                 if (man == null || man.Tf == null || man.Dead || !man.Carrying) continue;
                 if (man.Panicked || man.Retreating || man.Riding || IsAboard(man)) continue;
                 if (OnRaid(man) || Chasing(man)) continue;
+                // A search party is drawn from the men who are free to move. A man
+                // whose mark only just crossed a wall is still doing useful work:
+                // guarding the shielding flank he reached. Pulling him out after
+                // ChaseAfter (1.5 s) silently defeated the longer lost-sight lease and
+                // recreated the stand-up-and-run behaviour that lease exists to stop.
+                if (!ChaseCandidateModel(
+                        ordinarilyEligible: true,
+                        guardingCover: man.GuardingCover,
+                        hasVisiblePersonalTarget: SeesPersonalTarget(man)))
+                {
+                    defenderStayed = true;
+                    continue;
+                }
                 man.Disengage();
                 // spread out across the street rather than running in one another's
                 // footprints - three men on one point is a queue, not a chase. Across
@@ -787,7 +869,16 @@ namespace RoadDemo
                 _chasers.Add(man);
                 sent++;
             }
-            if (sent == 0) { EndSearch(unit); return; }
+            // If everybody available is still guarding cover, the fight and search
+            // remain alive. They can reacquire from the flank while the finite search
+            // runs; its EndSearch releases them. A man with a visible personal target
+            // stays in that fight and may become available after it ends. With nobody
+            // available for either reason, the old end-search behaviour still applies.
+            if (sent == 0)
+            {
+                if (!defenderStayed) { EndSearch(unit); return true; }
+                return false;
+            }
             unit.LookUntil = 0f;
             unit.ChaseUntil = Time.time + ChaseSeconds;
             unit.ChasedAt = Time.time;
@@ -800,7 +891,20 @@ namespace RoadDemo
                 DriveTrace.Num(sb, "from", reach.magnitude);
                 DriveTrace.Row("chase", sb.ToString());
             }
+            return false;
         }
+
+        internal static bool ChaseCandidateModel(bool ordinarilyEligible,
+            bool guardingCover, bool hasVisiblePersonalTarget) =>
+            ordinarilyEligible && !guardingCover && !hasVisiblePersonalTarget;
+
+        internal static bool DropAtEndSearchModel(bool dead, bool chasing,
+            bool guardingCover, bool hasPersonalTarget, bool personalTargetProtected) =>
+            !dead && !chasing &&
+            (guardingCover || (hasPersonalTarget && !personalTargetProtected));
+
+        internal static bool ActiveChaserAtSearchEndModel(bool registeredChaser,
+            bool queuedForRemoval) => registeredChaser && !queuedForRemoval;
 
         /// <summary>Has this crew anybody out on their feet after somebody?</summary>
         bool AnyChasing(Unit unit)
@@ -828,8 +932,35 @@ namespace RoadDemo
             unit.HasLastSeen = false;
             unit.LastSeenDir = Vector3.zero;
             if (!unit.OrderedFight) unit.TargetUnit = null;
+            Unit visiblePersonalEnemy = null;
             foreach (var man in unit.All())
-                if (!man.Dead && !Chasing(man) && man.Target != null) man.Disengage();
+            {
+                bool visiblePersonal = SeesPersonalTarget(man);
+                // TickChase removes in a second pass to keep its HashSet enumerator
+                // valid. A reacquirer already queued in _chaseDone is nevertheless
+                // finished NOW for this cleanup and must be eligible for promotion.
+                bool activeChaser = ActiveChaserAtSearchEndModel(
+                    Chasing(man), _chaseDone.Contains(man));
+                bool ownsOrderedAddress = OrderedAddressAppliesModel(
+                    unit.OrderedFight,
+                    man.Target != null && UnitOf(man.Target) == unit.TargetUnit);
+                if (DropAtEndSearchModel(
+                        man.Dead, activeChaser, man.GuardingCover,
+                        man.Target != null, visiblePersonal || ownsOrderedAddress))
+                    man.Disengage();
+                else if (!man.Dead && !activeChaser && man.Target != null &&
+                         visiblePersonal && visiblePersonalEnemy == null)
+                    visiblePersonalEnemy = UnitOf(man.Target);
+            }
+            // A visible personal return-fire target must not become an orphan after
+            // the old strategic search ends: TickCombat is unit-driven and would skip
+            // its future LOS/drop lifecycle with TargetUnit null. Promote that live
+            // fight to the unit now that the old one is over.
+            if (!unit.OrderedFight && visiblePersonalEnemy != null)
+            {
+                SetTarget(unit, visiblePersonalEnemy);
+                return;
+            }
             if (!searched || unit.OrderedFight || unit.Retreated || unit.Car != null) return;
             var strayed = unit.Position - unit.SearchHome;
             strayed.y = 0f;
@@ -865,7 +996,12 @@ namespace RoadDemo
 
                 var drawn = man.Tf.position - unit.SearchHome;
                 drawn.y = 0f;
-                if (drawn.magnitude > SearchRange) { EndSearch(unit); _chaseDone.Add(man); continue; }
+                if (drawn.magnitude > SearchRange)
+                {
+                    _chaseDone.Add(man);
+                    EndSearch(unit);
+                    continue;
+                }
 
                 var mark = unit.TargetUnit != null
                     ? BestMark(unit.TargetUnit, man.Tf.position, SightRange) : null;
@@ -876,8 +1012,8 @@ namespace RoadDemo
                     // he was standing when they last had eyes on him.
                     unit.SawEnemyAt = Time.time;
                     unit.LookUntil = 0f;
-                    man.SawMarkAt = Time.time;
                     man.Engage(mark);
+                    man.NoteTargetSeen();
                     _chaseDone.Add(man);
                     continue;
                 }
@@ -892,11 +1028,12 @@ namespace RoadDemo
                     man.Urgent = false;
                     if (unit.LookUntil <= 0f) unit.LookUntil = Time.time + ChaseLook;
                     if (Time.time < unit.LookUntil) continue;
-                    EndSearch(unit);
                     _chaseDone.Add(man);
+                    EndSearch(unit);
                 }
             }
             foreach (var man in _chaseDone) EndChase(man);
+            _chaseDone.Clear();
         }
 
         readonly List<CrewWalker> _chaseDone = new List<CrewWalker>();
@@ -1312,15 +1449,43 @@ namespace RoadDemo
             // it is under has stopped holding its fire
             if (victimUnit != null && shooterUnit != null && !shooterUnit.IsPolice)
                 victimUnit.ProvokedAt = Time.time;
+
+            bool mayAnswer = victimUnit != null && shooterUnit != null &&
+                !shooterUnit.IsPolice &&
+                (IsAboard(target) || Time.time - victimUnit.OrderedAt > HoldFireAfterOrder);
+            bool shooterSpotted = mayAnswer && Spotted(victimUnit, shooter);
             // AND THE FIGHT ITSELF IS ONLY EVER PICKED UP OFF SOMEBODY IN SIGHT. Being
             // shot at is provocation (above) and provocation is answered by looking
             // round for whoever is there to answer - it is not knowledge of who fired.
             // A car that shot up a doorway and turned the corner is gone; the crew it
             // shot at keeps its guns up and its temper, and finds nobody.
-            if (victimUnit != null && shooterUnit != null && victimUnit.TargetUnit == null &&
-                (IsAboard(target) || Time.time - victimUnit.OrderedAt > HoldFireAfterOrder) &&
-                Spotted(victimUnit, shooter))
+            if (victimUnit != null && victimUnit.TargetUnit == null && shooterSpotted)
                 SetTarget(victimUnit, shooterUnit);
+
+            // A UNIT HAS ONE STRATEGIC ENEMY; A MAN STILL HAS EYES. CoverDemo commonly
+            // has three player crews in the same street. If this victim's crew is
+            // already fighting one of them, replacing TargetUnit would make every mate
+            // abandon that fight - but ignoring this visible shooter leaves the man who
+            // was just hit facing away like a clay pigeon. Give only the victim the
+            // immediate threat. The ordinary closer-threat/allocation passes can fold
+            // him back into the crew fight after the danger has passed.
+            bool targetSeesShooter = mayAnswer && CanEngageOnFoot(target) &&
+                target.Tf != null && shooter != null && shooter.Tf != null &&
+                (target.Tf.position - shooter.Tf.position).sqrMagnitude <=
+                    SightRange * SightRange &&
+                !Concealed(shooter, target.Tf.position) &&
+                InSight(target.Tf.position, shooter.Tf.position);
+            if (AnswerCrossUnitAttackerModel(
+                    victimUnit != null && victimUnit.TargetUnit != null,
+                    victimUnit != null && victimUnit.TargetUnit == shooterUnit,
+                    targetSeesShooter, CanEngageOnFoot(target)))
+            {
+                target.Engage(shooter, closerThreat: true);
+                target.NoteTargetSeen();
+                if (DriveTrace.On)
+                    DriveTrace.Event("shotback", target.DisplayName,
+                        "turned on " + shooter.DisplayName + " across the crew fight");
+            }
 
             if (DriveTrace.On)
             {
@@ -1413,8 +1578,8 @@ namespace RoadDemo
             {
                 if (!IsAboard(target))
                 {
-                    target.MaybePanic(shooter, PanicChance);
-                    if (target.State == CrewWalker.Mode.Fleeing) OnFled(target, from);
+                    if (target.MaybePanic(shooter, PanicChance))
+                        OnFled(target, from);
                 }
             }
             else
@@ -1439,8 +1604,11 @@ namespace RoadDemo
                         if ((mate.Tf.position - target.Tf.position).sqrMagnitude > NerveRange * NerveRange) continue;
                         if (Random.value < (mate.IsLieutenant ? BossNerve : HoodNerve))
                         {
-                            mate.Flee(from, 15f, 25f, comeBack: true);
-                            OnFled(mate, from);
+                            // A nearby death is a temporary break: `comeBack` is the
+                            // contract. Only the critical-wound panic above is handed
+                            // to OnFled and allowed to become permanent desertion.
+                            mate.PanicFrom(
+                                shooter, from, 15f, 25f, comeBack: true);
                         }
                     }
                 }

@@ -31,6 +31,20 @@ namespace LivingCity.Tests
             RouteOrbitRequiresLostGround(failures);
             CombatRouteFailureReachesCoverCaller(failures);
             RoutedSteerMayStepSidewaysButNotBack(failures);
+            CoverUseRequiresAUsefulShotAndShieldedAngle(failures);
+            CoverApproachStaysOnTheNearFace(failures);
+            BreachedCoverReopensLocalDefense(failures);
+            EmptyCoverRecheckKeepsAShieldedFlank(failures);
+            FailedCoverHopsEventuallyAdvance(failures);
+            RecoveredRangeResetsCoverHopBudget(failures);
+            LostSightKeepsAReachedShield(failures);
+            StalledFleeReplansAreBounded(failures);
+            TemporaryFleeReturnsToALiveThreat(failures);
+            CrossUnitAttackerGetsAnAnswer(failures);
+            CoverGuardsAreNotDraftedIntoAChase(failures);
+            EndedSearchKeepsAVisiblePersonalFight(failures);
+            CrossUnitReturnFireDoesNotInheritAnOrder(failures);
+            PendingChaseRemovalIsNotAnActiveChaser(failures);
             NearRouteCornerIsRetained(failures);
             MixamoRunPacesClearSharedGaitGate(failures);
             BagSyncRecallHonorsRoundAndDefenceOwnership(failures);
@@ -105,6 +119,261 @@ namespace LivingCity.Tests
                 !CrewWalker.CombatRouteFailedModel(0.81f, false) ||
                 !CrewWalker.CombatRouteFailedModel(0f, true))
                 failures.Add("Combat route: a failed cover approach is hidden by corner reset.");
+        }
+
+        static void CoverUseRequiresAUsefulShotAndShieldedAngle(List<string> failures)
+        {
+            const float range = 18f;
+            // Three metres and the gun's full reach are inclusive. A flank outside
+            // either edge is not a firing position worth retaining.
+            if (!CrewWalker.CoverUsableModel(3f, range, true, 0.5f) ||
+                !CrewWalker.CoverUsableModel(range, range, true, 0.5f) ||
+                CrewWalker.CoverUsableModel(2.99f, range, true, 1f) ||
+                CrewWalker.CoverUsableModel(range + 0.01f, range, true, 1f))
+                failures.Add("Cover retention: point-blank or out-of-range cover passed the shot envelope.");
+
+            // A known anchor has to remain between the man and his mark: sixty
+            // degrees is the inclusive edge. Legacy/hand-authored cover with no
+            // recorded anchor keeps relying on the shot envelope alone.
+            if (!CrewWalker.CoverUsableModel(10f, range, true, 0.5f) ||
+                CrewWalker.CoverUsableModel(10f, range, true, 0.49f) ||
+                !CrewWalker.CoverUsableModel(10f, range, false, -1f))
+                failures.Add("Cover retention: the anchor angle does not hold its sixty-degree boundary.");
+        }
+
+        static void CoverApproachStaysOnTheNearFace(List<string> failures)
+        {
+            var anchor = Vector3.zero;
+            var protectedSpot = new Vector3(1f, 0f, 0f);
+            if (!DemoCrews.CoverApproachSafeModel(
+                    protectedSpot, anchor, new Vector3(4f, 0f, 0f)) ||
+                DemoCrews.CoverApproachSafeModel(
+                    protectedSpot, anchor, new Vector3(-4f, 0f, 0f)))
+                failures.Add("Cover approach: a man may still cross round the obstacle onto its far face.");
+
+            // A long car is not useful side-on when the threat is at its nose. The
+            // selected face must put the anchor on the same line as the threat.
+            var threatAtNose = new Vector3(0f, 0f, 10f);
+            if (!DemoCrews.CoverShieldsModel(
+                    new Vector3(0f, 0f, -2f), anchor, threatAtNose) ||
+                DemoCrews.CoverShieldsModel(
+                    new Vector3(2f, 0f, 0f), anchor, threatAtNose))
+                failures.Add("Cover geometry: a car side was accepted against a longitudinal threat.");
+        }
+
+        static void BreachedCoverReopensLocalDefense(List<string> failures)
+        {
+            if (!DemoCrews.NeedsLocalDefenseModel(
+                    hasCover: false, currentCoverShields: false) ||
+                !DemoCrews.NeedsLocalDefenseModel(
+                    hasCover: true, currentCoverShields: false) ||
+                DemoCrews.NeedsLocalDefenseModel(
+                    hasCover: true, currentCoverShields: true))
+                failures.Add("Cover breach: an invalid old flank suppresses the local defensive search.");
+        }
+
+        static void EmptyCoverRecheckKeepsAShieldedFlank(List<string> failures)
+        {
+            // A periodic search returning nothing is not an instruction to step into
+            // the open. The current flank survives while its anchor still shields the
+            // man, independently of whether the mark is presently inside gun range.
+            if (!CrewWalker.KeepCoverAfterRecheckModel(
+                    hadCover: true, foundCover: false, currentCoverShields: true) ||
+                CrewWalker.KeepCoverAfterRecheckModel(
+                    hadCover: true, foundCover: false, currentCoverShields: false) ||
+                CrewWalker.KeepCoverAfterRecheckModel(
+                    hadCover: false, foundCover: false, currentCoverShields: true))
+                failures.Add("Cover recheck: an empty search drops a shielding flank or invents one in the open.");
+
+            bool shotOutsideRange = !CrewWalker.CoverUsableModel(
+                shotDistance: 24f, range: 18f, anchorKnown: true, anchorDot: 1f);
+            bool shieldSurvivesFailedLeapfrog = CrewWalker.KeepCoverAfterRecheckModel(
+                hadCover: true, foundCover: false, currentCoverShields: true);
+            if (!shotOutsideRange || !shieldSurvivesFailedLeapfrog)
+                failures.Add("Cover leapfrog: a shielded flank was dropped when its mark moved out of range and no replacement existed.");
+
+            // A real replacement wins; this answer means "keep the old point", not
+            // merely that the man will still have some cover after the recheck.
+            if (CrewWalker.KeepCoverAfterRecheckModel(
+                    hadCover: true, foundCover: true, currentCoverShields: true))
+                failures.Add("Cover recheck: a new flank was ignored in favour of the old one.");
+
+            if (CrewWalker.KeepCoverAfterRecheckModel(
+                    hadCover: true, foundCover: false,
+                    currentCoverShields: true, tooClose: true))
+                failures.Add("Cover recheck: a point-blank flank survives a failed replacement search.");
+        }
+
+        static void LostSightKeepsAReachedShield(List<string> failures)
+        {
+            if (!CrewWalker.GuardCoverAfterLostSightModel(
+                    hasCover: true, reachedCover: true, stillShields: true) ||
+                CrewWalker.GuardCoverAfterLostSightModel(
+                    hasCover: false, reachedCover: true, stillShields: true) ||
+                CrewWalker.GuardCoverAfterLostSightModel(
+                    hasCover: true, reachedCover: false, stillShields: true) ||
+                CrewWalker.GuardCoverAfterLostSightModel(
+                    hasCover: true, reachedCover: true, stillShields: false))
+                failures.Add("Lost sight: a reached shielding flank is dropped or an invalid one is guarded.");
+
+            var actuallySeen = new Vector3(4f, 0f, 7f);
+            var hiddenTransform = new Vector3(-9f, 0f, 3f);
+            if (CrewWalker.LostSightGuardPointModel(
+                    hasLastSeenTarget: true, lastSeenTarget: actuallySeen,
+                    coverThreat: hiddenTransform) !=
+                actuallySeen ||
+                CrewWalker.LostSightGuardPointModel(
+                    hasLastSeenTarget: false, lastSeenTarget: actuallySeen,
+                    coverThreat: hiddenTransform) !=
+                hiddenTransform)
+                failures.Add("Lost sight: cover reacts to the hidden live transform instead of the last visible line.");
+        }
+
+        static void FailedCoverHopsEventuallyAdvance(List<string> failures)
+        {
+            if (CrewWalker.CoverHopShouldReleaseModel(
+                    outOfReach: true, failedHops: 0) ||
+                CrewWalker.CoverHopShouldReleaseModel(
+                    outOfReach: true, failedHops: 1) ||
+                !CrewWalker.CoverHopShouldReleaseModel(
+                    outOfReach: true, failedHops: 64) ||
+                CrewWalker.CoverHopShouldReleaseModel(
+                    outOfReach: false, failedHops: 64))
+                failures.Add("Cover leapfrog: failed protected hops either release immediately or freeze forever.");
+        }
+
+        static void RecoveredRangeResetsCoverHopBudget(List<string> failures)
+        {
+            if (CrewWalker.CoverHopMissesForRangeModel(
+                    outOfReach: false, failedHops: 2) != 0 ||
+                CrewWalker.CoverHopMissesForRangeModel(
+                    outOfReach: true, failedHops: 2) != 2)
+                failures.Add("Cover leapfrog: a new out-of-range spell inherits stale failed hops.");
+        }
+
+        static void StalledFleeReplansAreBounded(List<string> failures)
+        {
+            if (CrewWalker.FleeShouldReplanModel(
+                    arrived: true, stalled: true, replans: 0) ||
+                CrewWalker.FleeShouldReplanModel(
+                    arrived: false, stalled: false, replans: 0))
+                failures.Add("Flee route: arrival or a still-moving run spuriously requests a replan.");
+
+            // The first blocked escape must try another reachable line instead of
+            // turning the man into a standing target. It must also have a finite
+            // retry ceiling, so a boxed-in man cannot re-roll forever.
+            bool first = CrewWalker.FleeShouldReplanModel(
+                arrived: false, stalled: true, replans: 0);
+            int ceiling = -1;
+            for (int replans = 1; replans <= 64; replans++)
+            {
+                if (CrewWalker.FleeShouldReplanModel(
+                        arrived: false, stalled: true, replans: replans)) continue;
+                ceiling = replans;
+                break;
+            }
+            if (!first || ceiling < 1)
+                failures.Add("Flee route: a stalled first leg is abandoned immediately or retries forever.");
+            else
+            {
+                // Once the budget is spent, larger counts must never reopen it.
+                for (int replans = ceiling; replans <= ceiling + 4; replans++)
+                    if (CrewWalker.FleeShouldReplanModel(
+                            arrived: false, stalled: true, replans: replans))
+                    {
+                        failures.Add("Flee route: the exhausted replan budget becomes available again.");
+                        break;
+                    }
+            }
+        }
+
+        static void TemporaryFleeReturnsToALiveThreat(List<string> failures)
+        {
+            if (!CrewWalker.FleeShouldResumeFightModel(
+                    retreating: false, threatAlive: true) ||
+                CrewWalker.FleeShouldResumeFightModel(
+                    retreating: false, threatAlive: false) ||
+                CrewWalker.FleeShouldResumeFightModel(
+                    retreating: true, threatAlive: true) ||
+                CrewWalker.FleeShouldResumeFightModel(
+                    retreating: true, threatAlive: false))
+                failures.Add("Flee recovery: temporary panic and a true retreat share the wrong combat outcome.");
+        }
+
+        static void CrossUnitAttackerGetsAnAnswer(List<string> failures)
+        {
+            if (!DemoCrews.AnswerCrossUnitAttackerModel(
+                    hasCurrentEnemyUnit: true, sameEnemyUnit: false,
+                    attackerVisible: true, canEngage: true) ||
+                DemoCrews.AnswerCrossUnitAttackerModel(
+                    hasCurrentEnemyUnit: false, sameEnemyUnit: false,
+                    attackerVisible: true, canEngage: true) ||
+                DemoCrews.AnswerCrossUnitAttackerModel(
+                    hasCurrentEnemyUnit: true, sameEnemyUnit: true,
+                    attackerVisible: true, canEngage: true) ||
+                DemoCrews.AnswerCrossUnitAttackerModel(
+                    hasCurrentEnemyUnit: true, sameEnemyUnit: false,
+                    attackerVisible: false, canEngage: true) ||
+                DemoCrews.AnswerCrossUnitAttackerModel(
+                    hasCurrentEnemyUnit: true, sameEnemyUnit: false,
+                    attackerVisible: true, canEngage: false))
+                failures.Add("Return fire: a visible attacker from a second enemy crew is ignored or steals the whole crew's fight.");
+        }
+
+        static void CoverGuardsAreNotDraftedIntoAChase(List<string> failures)
+        {
+            if (!DemoCrews.ChaseCandidateModel(
+                    ordinarilyEligible: true, guardingCover: false,
+                    hasVisiblePersonalTarget: false) ||
+                DemoCrews.ChaseCandidateModel(
+                    ordinarilyEligible: true, guardingCover: true,
+                    hasVisiblePersonalTarget: false) ||
+                DemoCrews.ChaseCandidateModel(
+                    ordinarilyEligible: true, guardingCover: false,
+                    hasVisiblePersonalTarget: true) ||
+                DemoCrews.ChaseCandidateModel(
+                    ordinarilyEligible: false, guardingCover: false,
+                    hasVisiblePersonalTarget: false))
+                failures.Add("Lost sight: the chase selector pulls a guarding or actively fighting man away.");
+        }
+
+        static void EndedSearchKeepsAVisiblePersonalFight(List<string> failures)
+        {
+            if (DemoCrews.DropAtEndSearchModel(
+                    dead: false, chasing: false, guardingCover: false,
+                    hasPersonalTarget: true, personalTargetProtected: true) ||
+                !DemoCrews.DropAtEndSearchModel(
+                    dead: false, chasing: false, guardingCover: false,
+                    hasPersonalTarget: true, personalTargetProtected: false) ||
+                !DemoCrews.DropAtEndSearchModel(
+                    dead: false, chasing: false, guardingCover: true,
+                    hasPersonalTarget: false, personalTargetProtected: false))
+                failures.Add("Search end: a visible personal fight is dropped or a finished cover guard survives.");
+        }
+
+        static void CrossUnitReturnFireDoesNotInheritAnOrder(List<string> failures)
+        {
+            if (!DemoCrews.OrderedAddressAppliesModel(
+                    unitOrderedFight: true,
+                    personalTargetBelongsToStrategicUnit: true) ||
+                DemoCrews.OrderedAddressAppliesModel(
+                    unitOrderedFight: true,
+                    personalTargetBelongsToStrategicUnit: false) ||
+                DemoCrews.OrderedAddressAppliesModel(
+                    unitOrderedFight: false,
+                    personalTargetBelongsToStrategicUnit: true))
+                failures.Add("Return fire: a cross-unit personal target inherits the strategic order's omniscient address.");
+        }
+
+        static void PendingChaseRemovalIsNotAnActiveChaser(List<string> failures)
+        {
+            if (!DemoCrews.ActiveChaserAtSearchEndModel(
+                    registeredChaser: true, queuedForRemoval: false) ||
+                DemoCrews.ActiveChaserAtSearchEndModel(
+                    registeredChaser: true, queuedForRemoval: true) ||
+                DemoCrews.ActiveChaserAtSearchEndModel(
+                    registeredChaser: false, queuedForRemoval: false))
+                failures.Add("Chase cleanup: a reacquirer queued for removal is skipped by EndSearch promotion.");
         }
 
         static void RouteStallUsesRecentTravel(List<string> failures)

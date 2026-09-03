@@ -378,7 +378,10 @@ namespace RoadDemo
                 RebuildShutter(rollerMaterial);
                 EnsureDoorMarkers();
             }
-            if (!Application.isPlaying && authoringPreview)
+            // Generated review rows keep their authored state in Play mode too. Live
+            // production storefronts never set this flag; their business state remains
+            // authoritative.
+            if (authoringPreview)
                 ApplyPreviewState(authoringState);
             else
                 ApplyState();

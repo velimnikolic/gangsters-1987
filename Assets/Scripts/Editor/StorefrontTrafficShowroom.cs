@@ -18,6 +18,7 @@ namespace LivingCity.EditorTools
         const string IdleClip = "Assets/Animations/People/Breathing Idle.anim";
         const string WalkClip = "Assets/Animations/People/Standard Walk.anim";
         const float Spacing = 11f;
+        const float BrokenRowZ = -10f;
 
         static readonly string[] Characters =
         {
@@ -38,11 +39,14 @@ namespace LivingCity.EditorTools
             public int AnimatedEntrances;
             public int Visitors;
             public int SharedEntrances;
+            public int BrokenFronts;
             public string[] Failures = Array.Empty<string>();
             public bool Passed => Modules == StorefrontDoorCatalog.Count &&
                                   AnimatedEntrances == StorefrontDoorCatalog.Count &&
                                   Visitors == StorefrontDoorCatalog.Count &&
-                                  SharedEntrances == 1 && Failures.Length == 0;
+                                  SharedEntrances == 1 &&
+                                  BrokenFronts == StorefrontDoorCatalog.Count - 1 &&
+                                  Failures.Length == 0;
         }
 
         [MenuItem("Tools/City/Residential/Build Storefront Traffic Demo", priority = 34)]
@@ -51,7 +55,8 @@ namespace LivingCity.EditorTools
             var report = Draw();
             Debug.Log($"[Storefront traffic demo] {(report.Passed ? "PASS" : "FAIL")}: " +
                       $"{report.Modules} shops, {report.AnimatedEntrances} entrances, " +
-                      $"{report.Visitors} visitors, {report.SharedEntrances} shared; " +
+                      $"{report.Visitors} visitors, {report.SharedEntrances} shared, " +
+                      $"{report.BrokenFronts} broken fronts; " +
                       report.Scene + (report.Failures.Length > 0
                           ? "; " + string.Join("; ", report.Failures)
                           : string.Empty));
@@ -145,8 +150,6 @@ namespace LivingCity.EditorTools
                 failures.Add(profile.Module + $": expected {profile.Leaves} leaves, got " +
                              display.LeafCount);
             ValidatePreviewPanes(module, display, profile.Module, failures);
-            if (display.PaneCount > 0)
-                display.SetPreviewState(StorefrontState.Smashed);
 
             Storefront entrance = display;
             string subtitle = profile.Leaves == 1 ? "single door" : "double door";
@@ -191,6 +194,52 @@ namespace LivingCity.EditorTools
             Label(station.transform, ShortName(profile.Module) + "\n" + subtitle,
                   new Vector3(x - 2.5f, 4.25f, 0.15f), 0.10f,
                   new Color(0.08f, 0.08f, 0.09f), TextAnchor.LowerCenter);
+
+            BuildBrokenExample(station.transform, demo, profile, x, shutter,
+                               report, failures);
+        }
+
+        static void BuildBrokenExample(
+            Transform station, Scene demo, StorefrontDoorProfile profile, float x,
+            Material shutter, Report report, List<string> failures)
+        {
+            var module = Instantiate(profile.Module, demo, station,
+                                     new Vector3(x, 0f, BrokenRowZ), failures);
+            if (module == null) return;
+            var storefront = module.GetComponent<Storefront>();
+            if (storefront == null) storefront = module.AddComponent<Storefront>();
+            storefront.ConfigurePreview(shutter);
+            module.name = profile.Module + " broken-glass review";
+            ValidatePreviewPanes(module, storefront,
+                                 profile.Module + " broken review", failures);
+
+            string subtitle = "no authored window";
+            if (storefront.PaneCount > 0)
+            {
+                storefront.SetPreviewState(StorefrontState.Smashed);
+                subtitle = "broken glass";
+                if (HasBrokenGlass(storefront)) report.BrokenFronts++;
+                else failures.Add(profile.Module +
+                                  ": smashed preview produced no broken-glass mesh");
+            }
+            Label(station, ShortName(profile.Module) + "\n" + subtitle,
+                  new Vector3(x - 2.5f, 4.25f, BrokenRowZ + 0.15f), 0.10f,
+                  new Color(0.08f, 0.08f, 0.09f), TextAnchor.LowerCenter);
+        }
+
+        static bool HasBrokenGlass(Storefront storefront)
+        {
+            for (int i = 0; i < storefront.transform.childCount; i++)
+            {
+                var child = storefront.transform.GetChild(i);
+                if (!child.name.StartsWith("Broken glass", StringComparison.Ordinal))
+                    continue;
+                foreach (var filter in child.GetComponentsInChildren<MeshFilter>(true))
+                    if (filter != null && filter.sharedMesh != null &&
+                        filter.sharedMesh.vertexCount > 0)
+                        return true;
+            }
+            return false;
         }
 
         static void ValidatePreviewPanes(GameObject module, Storefront storefront,
@@ -298,7 +347,7 @@ namespace LivingCity.EditorTools
         static void Header(Transform parent, float centreX)
         {
             Label(parent, "STOREFRONT GLASS + TRAFFIC DEMO\n" +
-                          "EDIT: broken windows   PLAY: doors cycle / people enter and leave",
+                          "FRONT: doors + visitors   BACK: broken-window review",
                   new Vector3(centreX, 7.5f, -0.1f), 0.12f,
                   new Color(0.12f, 0.12f, 0.14f), TextAnchor.LowerCenter);
         }
@@ -308,8 +357,8 @@ namespace LivingCity.EditorTools
             var floor = GameObject.CreatePrimitive(PrimitiveType.Cube);
             floor.name = "review pavement";
             floor.transform.SetParent(parent, false);
-            floor.transform.position = new Vector3(centreX, -0.15f, 2.5f);
-            floor.transform.localScale = new Vector3(width, 0.25f, 15f);
+            floor.transform.position = new Vector3(centreX, -0.15f, -5f);
+            floor.transform.localScale = new Vector3(width, 0.25f, 25f);
             var collider = floor.GetComponent<Collider>();
             if (collider != null) UnityEngine.Object.DestroyImmediate(collider);
             var renderer = floor.GetComponent<Renderer>();
@@ -333,8 +382,8 @@ namespace LivingCity.EditorTools
 
             var cameraObject = new GameObject("Storefront demo camera");
             cameraObject.transform.SetParent(parent, false);
-            cameraObject.transform.position = new Vector3(centreX, 29f, 58f);
-            cameraObject.transform.LookAt(new Vector3(centreX, 2.2f, 0f));
+            cameraObject.transform.position = new Vector3(centreX, 32f, 64f);
+            cameraObject.transform.LookAt(new Vector3(centreX, 2.2f, -5f));
             cameraObject.tag = "MainCamera";
             var camera = cameraObject.AddComponent<Camera>();
             camera.fieldOfView = 52f;
@@ -344,7 +393,7 @@ namespace LivingCity.EditorTools
             cameraObject.AddComponent<AudioListener>();
 
             var rig = cameraObject.AddComponent<DemoCamera>();
-            rig.pivot = new Vector3(centreX, 1.9f, 0f);
+            rig.pivot = new Vector3(centreX, 1.9f, -5f);
             rig.distance = Mathf.Clamp(width * 0.70f, 58f, 72f);
             rig.yaw = 180f;
             rig.pitch = 30f;

@@ -120,6 +120,19 @@ namespace RoadDemo
         /// stride); it is dropped when this has gone stale. Carried on the man rather
         /// than in a register on the arena so it dies with him.</summary>
         public float SawMarkAt = -100f;
+        Vector3 _lastSeenTargetAt;
+        bool _hasLastSeenTarget;
+
+        /// <summary>Stamp both when and where this man's own mark was genuinely in his
+        /// line of sight. Lost-sight cover must use this point, never the hidden
+        /// target's still-live transform behind a wall.</summary>
+        public void NoteTargetSeen()
+        {
+            if (Target == null || Target.Tf == null) return;
+            SawMarkAt = Time.time;
+            _lastSeenTargetAt = Target.Tf.position;
+            _hasLastSeenTarget = true;
+        }
 
         /// <summary>The last man who put a bullet in him - the arena's cue to answer.</summary>
         public CrewWalker LastAttacker { get; private set; }
@@ -573,14 +586,15 @@ namespace RoadDemo
             if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
             if (Dead || Riding || link == null || link.Length <= 0.01f || _link == null) return;
             ClearFallingIn();
+            ClearFleeIntent();
             ClearSharedCorridor();
             _throughWall = false;
             _watching = false;
             DropHeldCover();   // a man sent somewhere else is not lying in wait any more
             Target = null;
             _coverSpot = null;
+            _coverHoldUntil = 0f;
             InCover = false;
-            _returnTo = null;
             Hustle = false;
             Urgent = false;
             _runningLeg = false;
@@ -628,11 +642,13 @@ namespace RoadDemo
             if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
             if (Dead) return;
             ClearFallingIn();
+            ClearFleeIntent();
             ClearSharedCorridor();
             LeaveGraphOrder();
             DropHeldCover();   // a man sent somewhere else is not lying in wait any more
             Target = null;
             _coverSpot = null;
+            _coverHoldUntil = 0f;
             InCover = false;
             Hustle = false;
             Urgent = false;
@@ -783,9 +799,11 @@ namespace RoadDemo
             if (Spilling) return false;   // in the air off a machine: he is the spill's until he lands
             if (Dead) return false;
             ClearFallingIn();
+            ClearFleeIntent();
             DropHeldCover();   // a man sent somewhere else is not lying in wait any more
             Target = null;
             _coverSpot = null;
+            _coverHoldUntil = 0f;
             InCover = false;
             Hustle = false;
             Urgent = false;
@@ -1196,20 +1214,22 @@ namespace RoadDemo
         /// <summary>The same, saying whether this is a man turning onto a CLOSER THREAT
         /// rather than being dealt a fresh mark (EPIC 33).
         ///
-        /// It matters for one thing only: the flank he is stood behind. Every other
-        /// target change is a new fight and clears the spot, which is right - but a
-        /// closer-threat switch happens at the moment the danger is NEAREST, and a man
-        /// who stands up out of good cover then has been made worse off by noticing
-        /// (D1). So the spot he occupies holds, on the same contract the ambush flank
-        /// has always held on: the new mark has to be worth shooting at from there, and
-        /// the thing he is behind has to still be between him and it. A spot that does
-        /// neither is dropped and the ordinary recheck finds him the next one.</summary>
+        /// It records the short-lived personal threat override, while every retarget
+        /// also preserves a flank that still physically shields this man from the new
+        /// mark. Noticing somebody nearer - or simply picking the next living mark -
+        /// must not make him stand up into the shot. A bad angle is dropped and the
+        /// ordinary recheck finds him the next one.</summary>
         public void Engage(CrewWalker target, bool closerThreat)
         {
-            if (Dead || Riding || !Carrying || Panicked || target == null || target.Dead || target == this) return;
+            if (Dead || Riding || Surrendered || !Carrying || Panicked ||
+                target == null || target.Dead || target == this) return;
             ClearFallingIn();
+            ClearFleeIntent();
+            _coverGuardUntil = 0f;
             if (Target != target)
             {
+                _hasLastSeenTarget = false;
+                _coverHopMisses = 0;
                 // A NEW MARK IS THE MOMENT THE FIGHT STARTS FOR HIM. Thinned to once in a
                 // long while per man: a crew re-targets across a street fight constantly,
                 // and "they're on us" is a thing said when it begins, not every time the
@@ -1217,8 +1237,11 @@ namespace RoadDemo
                 CrewSpeech.Cry(this, LivingCity.Data.VoiceLines.SpotContact, cooldown: 25f);
 
                 // THE SAME COVER HOLDS FOR THE NEW ANGLE. Asked before anything is
-                // cleared, because what it is asking about is the spot he has.
-                bool keepCover = closerThreat && KeepsCoverAgainst(target);
+                // cleared, because what it is asking about is the spot he has. This is
+                // true for every live retarget, not only the closer-threat switch: the
+                // man whose mark just fell must not stand up out of a good flank merely
+                // because the next man of the same crew now has his attention.
+                bool keepCover = CoverProtectsAgainst(target);
                 if (keepCover)
                 {
                     // his cadence is not reset either (the fire timer runs on through
@@ -1237,7 +1260,12 @@ namespace RoadDemo
                     // beat, exactly like any other.
                     _coverLooked = true;
                     _coverRecheckAt = Time.time + Random.Range(2f, 3f);
-                    _threatMark = target;
+                    if (InCover)
+                        // A lost-sight guard may have leased this flank for much longer.
+                        // Seeing a mark again renews the ordinary combat hold, rather
+                        // than pinning him here for the whole remaining search watch.
+                        _coverHoldUntil = Time.time + CoverHoldMin;
+                    _threatMark = closerThreat ? target : null;
                     Target = target;
                     EndChat();
                     _watching = false;
@@ -1253,6 +1281,7 @@ namespace RoadDemo
                 _coverRecheckAt = 0f;
                 _coverSpot = null;
                 _coverAnchorAt = null;
+                _coverHoldUntil = 0f;
                 InCover = false;
                 _wasClosing = false;
                 _firedThisFight = false;
@@ -1268,7 +1297,9 @@ namespace RoadDemo
                     var shot = target.Tf.position - _heldCover.Value;
                     shot.y = 0f;
                     float from = shot.magnitude;
-                    if (from >= 3f && from <= Ballistics.Range)
+                    if (from >= CoverMinShot &&
+                        DemoCrews.CoverShieldsModel(
+                            _heldCover.Value, _ambushAt, target.Tf.position))
                     {
                         _coverSpot = _heldCover;
                         // the thing he was put behind: DemoCrews recorded it when the
@@ -1278,6 +1309,10 @@ namespace RoadDemo
                         _coverFrom = target.Tf.position;
                         _coverLooked = true;
                         _coverRecheckAt = Time.time + Random.Range(2f, 3f);
+                        InCover = AtHeldCover;
+                        _coverHoldUntil = InCover
+                            ? Time.time + CoverHoldMin
+                            : 0f;
                         _ducked = false;                          // already down: he comes UP
                         _coverCycle = Random.Range(1.6f, 2.4f);
                     }
@@ -1315,6 +1350,7 @@ namespace RoadDemo
             if (Dead || Riding || !Carrying || Panicked) return;
             if (car == null || car.Tf == null || car.Wrecked) return;
             ClearFallingIn();
+            ClearFleeIntent();
             DrawGun();
             Target = null;            // clears any car mark too, and then we set ours
             CarMark = car;
@@ -1327,6 +1363,7 @@ namespace RoadDemo
             _sprinting = false;
             _keepingLow = false;
             _coverSpot = null;
+            _coverHoldUntil = 0f;
             InCover = false;
             SetPace(1f);
             State = Mode.Engaging;
@@ -1349,14 +1386,77 @@ namespace RoadDemo
         {
             if (Dead) return;
             ClearFallingIn();
+            ClearFleeIntent();
             Target = null;
             ClearCombatWay();
             _coverSpot = null;
             _coverAnchorAt = null;
+            _coverHoldUntil = 0f;
+            _coverHopMisses = 0;
+            _coverGuardUntil = 0f;
+            _hasLastSeenTarget = false;
             InCover = false;
             _threatMark = null;
             ForgetThreat();
             if (State == Mode.Engaging) State = Mode.Standing;
+        }
+
+        /// <summary>His mark vanished behind a wall while the crew's fight is still
+        /// live. If he has actually reached a shielding flank, hold it with the gun
+        /// quiet until the arena either gives him a visible mark or ends the search.
+        /// This is not an ambush and grants no concealment.</summary>
+        internal static bool GuardCoverAfterLostSightModel(bool hasCover,
+            bool reachedCover, bool stillShields) =>
+            hasCover && reachedCover && stillShields;
+
+        internal static Vector3 LostSightGuardPointModel(bool hasLastSeenTarget,
+            Vector3 lastSeenTarget, Vector3 coverThreat) =>
+            hasLastSeenTarget ? lastSeenTarget : coverThreat;
+
+        public bool GuardCoverAfterLostSight(float seconds)
+        {
+            if (Dead || Spilling || Riding || Target == null || Target.Tf == null)
+                return false;
+            // The target is hidden now. Its transform may keep moving behind the
+            // obstacle, but that is information this man does not have; defend the
+            // line on which he actually last saw it (or, for legacy callers, the line
+            // against which this flank was selected).
+            var lastSeen = LostSightGuardPointModel(
+                _hasLastSeenTarget, _lastSeenTargetAt, _coverFrom);
+            if (!GuardCoverAfterLostSightModel(
+                    _coverSpot.HasValue, InCover,
+                    CoverStillShields(lastSeen))) return false;
+
+            ClearFleeIntent();
+
+            _coverGuardToward = lastSeen - Tf.position;
+            _coverGuardToward.y = 0f;
+            if (_coverGuardToward.sqrMagnitude < 1e-3f)
+                _coverGuardToward = Tf.forward;
+            else _coverGuardToward.Normalize();
+            _coverFrom = lastSeen;
+            Target = null;
+            ClearCombatWay();
+            _coverGuardUntil = Time.time + Mathf.Max(0.1f, seconds);
+            _coverHoldUntil = Mathf.Max(_coverHoldUntil, _coverGuardUntil);
+            _ducked = true;
+            _coverCycle = Mathf.Max(_coverCycle, 0.8f);
+            _threatMark = null;
+            ForgetThreat();
+            _runningLeg = false;
+            _sprinting = false;
+            State = Mode.Standing;
+            return true;
+        }
+
+        /// <summary>The arena still owns a live fight/search. Keep this reached flank
+        /// leased while that lifecycle is alive; EndSearch/Disengage releases it.</summary>
+        public bool RenewCoverGuard(float seconds)
+        {
+            if (!GuardingCover || !CoverStillShields(_coverFrom)) return false;
+            _coverGuardUntil = Time.time + Mathf.Max(0.1f, seconds);
+            _coverHoldUntil = Mathf.Max(_coverHoldUntil, _coverGuardUntil);
+            return true;
         }
 
         // ------------------------------------------------------------------ arms
@@ -1518,6 +1618,7 @@ namespace RoadDemo
              State == Mode.Fleeing ||    // running from one, which is still one
              Alert ||                    // shooting within earshot, twelve seconds of it
              RidingAim ||                // out of a window, or off the back of a machine
+             GuardingCover ||            // lost the mark, not the fight or protection
              Lurking ||                  // down behind a bin waiting for them: the whole point
              _shoutLeft > 0f);           // the law's warning, shouted with the gun up
 
@@ -2163,9 +2264,19 @@ namespace RoadDemo
                     return;
 
                 case Mode.Standing:
-                    if (_shaken > 0f) _shaken -= dt;
+                    if (GuardingCover) { TickCoverGuard(dt); return; }
+                    if (_coverGuardUntil > 0f)
+                    {
+                        // The unit did not reacquire anybody before its local guard
+                        // lease ended. Only now is the old combat flank released.
+                        _coverGuardUntil = 0f;
+                        _coverSpot = null;
+                        _coverAnchorAt = null;
+                        _coverHoldUntil = 0f;
+                        InCover = false;
+                    }
                     // ran and got his nerve back: back to where he stood
-                    if (_shaken <= 0f && _returnTo.HasValue && Target == null)
+                    if (_returnTo.HasValue && Target == null)
                     {
                         var back = _returnTo.Value;
                         _returnTo = null;
@@ -2295,24 +2406,40 @@ namespace RoadDemo
                     if (_hold > 0f)
                     {
                         _hold -= dt;
+                        if (LiveThreat(_fleeThreat))
+                        {
+                            var look = _fleeThreat.Tf.position - Tf.position;
+                            look.y = 0f;
+                            if (look.sqrMagnitude > 1e-3f) TurnToward(look, 220f, dt);
+                        }
                         if (_flinch > 0f) { _flinch -= dt; SetPose(PoseHit); }
                         else SetPose(PoseIdle);
                         TickBlend(dt);
                         return;
                     }
-                    TickStride(dt, _fleeTo, 0.4f, run: true);
+                    // The endpoint was route-proved when the leg was chosen; follow
+                    // those same fixed-ground corners instead of sprinting straight at
+                    // a wall and declaring the whole escape over after 0.7 seconds.
+                    bool routeFailed = TickCombatStride(dt, _fleeTo, 0.4f,
+                        hurry: true, run: true);
                     var gap = _fleeTo - Tf.position;
                     gap.y = 0f;
                     float left = gap.magnitude;
-                    if (left <= 0.4f || LegStalled(left, dt))
+                    bool arrived = left <= 0.4f;
+                    if (FleeShouldReplanModel(arrived, routeFailed, _fleeReplans))
                     {
-                        State = Mode.Standing;
-                        _sprinting = false;
-                        _shaken = Random.Range(8f, 14f); // out of it a while, then game again
-                        // pulled up, and the first thing he does is look back at what
-                        // he ran from - the beat that says he has not forgotten it
-                        PlayAction(CrewKit.BackLooks);
+                        _fleeReplans++;
+                        if (TryBeginFleeLeg())
+                        {
+                            BreakIntoRun();
+                            BreakIntoSprint();
+                            if (DriveTrace.On)
+                                DriveTrace.Event("flee", DisplayName,
+                                    $"replanned escape {_fleeReplans}/{MaxFleeReplans}");
+                            return;
+                        }
                     }
+                    if (arrived || routeFailed) FinishFlee();
                     return;
                 }
 
@@ -2520,6 +2647,7 @@ namespace RoadDemo
             if (Dead) return;
             if (on)
             {
+                ClearFleeIntent();
                 Target = null;
                 EndChat();
                 State = Mode.Riding;
@@ -2566,13 +2694,27 @@ namespace RoadDemo
         // ------------------------------------------------------------------ nerve
 
         Vector3 _fleeTo;
-        float _shaken;
+        Vector3 _fleeFrom;
+        float _fleeNear, _fleeFar;
+        int _fleeReplans;
+        CrewWalker _fleeThreat;
+        readonly List<Vector3> _fleeRouteProbe = new List<Vector3>();
         bool _nerveRolled;
         Vector3? _returnTo;
         float _alertUntil, _alertBeat;
         Vector3 _alertAt;
         float _shoutLeft;
         int _underFire;
+
+        /// <summary>A normal order owns him now. Cancel every deferred consequence of
+        /// a temporary escape, so completing the new walk cannot send him back to the
+        /// old panic point and a later break cannot reacquire its stale shooter.</summary>
+        void ClearFleeIntent()
+        {
+            _returnTo = null;
+            _fleeThreat = null;
+            _fleeReplans = 0;
+        }
 
         /// <summary>Heard shooting lately and stood ready for it - gun out, turned to
         /// where it came from - though not in a fight himself.</summary>
@@ -2595,10 +2737,20 @@ namespace RoadDemo
         /// it so that two men do not claim one flank.</summary>
         public Vector3? CoverSpot => _coverSpot;
 
+        /// <summary>Holding fire behind a reached flank while the unit still searches
+        /// for a mark it just lost. Unlike Lurking, this confers no concealment.</summary>
+        public bool GuardingCover =>
+            _coverSpot.HasValue && Target == null && State == Mode.Standing &&
+            !Dead && !Spilling && !Riding && Time.time <= _coverGuardUntil;
+
         Vector3? _coverSpot;
         bool _ducked;           // down behind it this beat, rather than up firing
         float _coverCycle;      // what is left of that beat
         float _coverRecheckAt;  // when the arena may be asked for a spot again
+        float _coverHoldUntil;  // a reached flank is not traded for another on the next poll
+        int _coverHopMisses;     // bounded patience for an out-of-range leapfrog
+        float _coverGuardUntil; // lost sight, but the unit's search is still alive
+        Vector3 _coverGuardToward;
         Vector3 _coverFrom;     // where the target stood when this spot was chosen
 
         /// <summary>The arena's answer to "where can this man duck behind, this near
@@ -2731,19 +2883,49 @@ namespace RoadDemo
         /// <summary>Cosine of how far round the flank still holds - sixty degrees.</summary>
         const float CoverAngleHold = 0.5f;
 
-        /// <summary>Does the spot he is in or walking to work against this man? The
-        /// same two questions the ambush flank has always been kept on: the shot from
-        /// the spot is worth taking (three metres out to the gun's reach - point blank
-        /// is not a firing position and past his reach is not a shot), and the thing
-        /// itself still stands between the spot and the man.</summary>
-        bool KeepsCoverAgainst(CrewWalker target)
+        /// <summary>The shortest useful shot from a flank. Nearer than this, the other
+        /// man is already round the furniture and cover is no longer a firing position.</summary>
+        const float CoverMinShot = 3f;
+
+        /// <summary>Once a man reaches a useful flank he gives it a real firing beat.
+        /// This is deliberately longer than the cover oracle's poll, otherwise a target
+        /// hovering at the range edge makes him swap props every two seconds.</summary>
+        const float CoverHoldMin = 3.5f, CoverHoldMax = 5f;
+
+        const int MaxCoverHopMisses = 3;
+
+        /// <summary>The pure firing-position contract, shared with the idle test suite.
+        /// A hand-authored/legacy flank whose anchor was not recorded can only be judged
+        /// by its shot; a known anchor must still sit inside the shielding sixty degrees.</summary>
+        internal static bool CoverUsableModel(float shotDistance, float range,
+            bool anchorKnown, float anchorDot) =>
+            shotDistance >= CoverMinShot && shotDistance <= range &&
+            (!anchorKnown || anchorDot >= CoverAngleHold);
+
+        /// <summary>A null poll is not a movement order. It may retire an invalid flank,
+        /// but never one which still physically stands between the man and his mark,
+        /// even when that mark is temporarily beyond the gun's reach.</summary>
+        internal static bool KeepCoverAfterRecheckModel(bool hadCover, bool foundCover,
+            bool currentCoverShields, bool tooClose = false) =>
+            hadCover && !foundCover && currentCoverShields && !tooClose;
+
+        internal static bool CoverHopShouldReleaseModel(bool outOfReach,
+            int failedHops) =>
+            outOfReach && failedHops >= MaxCoverHopMisses;
+
+        internal static int CoverHopMissesForRangeModel(bool outOfReach,
+            int failedHops) => outOfReach ? Mathf.Max(0, failedHops) : 0;
+
+        /// <summary>Does the spot he is in or walking to still protect him from this
+        /// man? Range is deliberately not part of survival: a farther mark causes a
+        /// bounded leapfrog after the hold beat, not an immediate step into the open.</summary>
+        bool CoverProtectsAgainst(CrewWalker target)
         {
             if (!_coverSpot.HasValue || target == null || target.Tf == null) return false;
             var shot = target.Tf.position - _coverSpot.Value;
             shot.y = 0f;
-            float from = shot.magnitude;
-            if (from < 3f || from > Ballistics.Range) return false;
-            return CoverStillShields(target.Tf.position);
+            return shot.magnitude >= CoverMinShot &&
+                   CoverStillShields(target.Tf.position);
         }
 
         /// <summary>The man he is watching because he is materially closer than his
@@ -2857,6 +3039,8 @@ namespace RoadDemo
             _coverAnchor = null;
             _coverAnchorAt = null;
             _coverSpot = null;
+            _coverHoldUntil = 0f;
+            _coverHopMisses = 0;
             InCover = false;
             _coverRecheckAt = 0f;
             if (!_heldCover.HasValue) return;
@@ -2910,6 +3094,18 @@ namespace RoadDemo
             // re-armed rather than left to run out under him
             if (!Watching) WatchToward(_lurkThreat);
             TurnToward(_lurkThreat, 160f, dt);
+            SetPose(VisibleCrouchPose);
+            TickBlend(dt);
+        }
+
+        /// <summary>The quiet beat after a visible mark crosses a wall or van. He does
+        /// not fire at knowledge through geometry and does not abandon the cover while
+        /// his unit is still looking; he keeps his head down toward the last line.</summary>
+        void TickCoverGuard(float dt)
+        {
+            InCover = true;
+            _ducked = true;
+            TurnToward(_coverGuardToward, 180f, dt);
             SetPose(VisibleCrouchPose);
             TickBlend(dt);
         }
@@ -2985,19 +3181,119 @@ namespace RoadDemo
         /// something to get behind.</summary>
         public void UnderFire() => _underFire++;
 
-        /// <summary>Running from the fight, or too shaken to be sent back into it yet -
-        /// the arena leaves such a man alone.</summary>
-        public bool Panicked => State == Mode.Fleeing || _shaken > 0f;
+        /// <summary>Actively running from the fight; the arena leaves him alone until
+        /// the route ends or becomes impossible.</summary>
+        public bool Panicked => State == Mode.Fleeing;
+
+        const int MaxFleeReplans = 3;
+
+        internal static bool FleeShouldReplanModel(bool arrived, bool stalled,
+            int replans) =>
+            !arrived && stalled && replans < MaxFleeReplans;
+
+        internal static bool FleeShouldResumeFightModel(bool retreating,
+            bool threatAlive) =>
+            !retreating && threatAlive;
+
+        static bool LiveThreat(CrewWalker threat) =>
+            threat != null && !threat.Dead && threat.Tf != null &&
+            threat.Tf.gameObject.activeInHierarchy;
+
+        /// <summary>A broken nerve first means GET SMALL, not blindly leave good
+        /// protection. A current shielding flank wins; otherwise the same shared cover
+        /// oracle used by every ordinary fight gets one immediate chance. Only a man
+        /// for whom the street has no cover actually bolts.</summary>
+        bool TryBraceInCover(CrewWalker threat)
+        {
+            if (!LiveThreat(threat) || !Carrying || Surrendered) return false;
+
+            var threatAt = threat.Tf.position;
+            Vector3? chosen = null;
+            IRoadUser chosenAnchor = null;
+            Vector3? chosenAnchorAt = null;
+            bool keptCurrent = false;
+            bool wasInCover = InCover;
+            float oldHold = _coverHoldUntil;
+
+            if (_coverSpot.HasValue)
+            {
+                if (CoverProtectsAgainst(threat))
+                {
+                    chosen = _coverSpot;
+                    chosenAnchor = _coverAnchor;
+                    chosenAnchorAt = _coverAnchorAt;
+                    keptCurrent = true;
+                }
+            }
+
+            if (!chosen.HasValue)
+            {
+                if (FindCover == null) return false;
+                chosen = FindCover(this, threatAt);
+                if (!chosen.HasValue) return false;
+                chosenAnchor = DemoCrews.LastCoverAnchor;
+                chosenAnchorAt = DemoCrews.LastCoverAnchorAt;
+            }
+
+            // Engage may legitimately discard the old flank for a different firing
+            // angle. The survival decision above is deliberately broader (a shield is
+            // still useful beyond gun range), so restore the selected protected point
+            // after the target bookkeeping has been reset.
+            Engage(threat, closerThreat: true);
+            if (Target != threat || State != Mode.Engaging) return false;
+
+            _coverSpot = chosen;
+            _coverAnchor = chosenAnchor;
+            _coverAnchorAt = chosenAnchorAt;
+            _coverFrom = threatAt;
+            _coverLooked = true;
+            _coverRecheckAt = Time.time + Random.Range(2f, 3f);
+            var gap = chosen.Value - Tf.position;
+            gap.y = 0f;
+            InCover = keptCurrent && wasInCover && gap.sqrMagnitude <= 0.5f * 0.5f;
+            _coverHoldUntil = InCover
+                ? Mathf.Max(oldHold, Time.time + CoverHoldMin)
+                : 0f;
+            _ducked = true;
+            _coverCycle = Random.Range(0.8f, 1.4f);
+            _underFire = Mathf.Max(1, _underFire);
+            if (!keptCurrent) ClearCombatWay();
+            if (DriveTrace.On)
+                DriveTrace.Event("paniccover", DisplayName,
+                    keptCurrent ? "held shielding flank" : "broke for reachable cover");
+            return true;
+        }
+
+        /// <summary>Resolve a morale break from an identified event. Protection wins;
+        /// otherwise start a route-proved escape and report whether a real run began,
+        /// so the owning roster never deserts a man who stayed to fight.</summary>
+        public bool PanicFrom(CrewWalker threat, Vector3 from, float near, float far,
+            bool comeBack)
+        {
+            if (Surrendered) return false;
+            var rememberedThreat = LiveThreat(threat) ? threat
+                : LiveThreat(Target) ? Target
+                : LiveThreat(LastAttacker) ? LastAttacker
+                : null;
+            if (TryBraceInCover(rememberedThreat)) return false;
+            if (rememberedThreat != null) _fleeThreat = rememberedThreat;
+            Flee(from, near, far, comeBack);
+            return State == Mode.Fleeing;
+        }
 
         /// <summary>A hit that leaves him one from the ground may break him: not
-        /// every man - the roll is made once - but the one it breaks drops the
-        /// fight and runs from whoever hit him, and stays out of it a while after.</summary>
-        public void MaybePanic(CrewWalker threat, float chance)
+        /// every man - the roll is made once. A man with protection braces behind it;
+        /// only one caught without any route to cover runs from whoever hit him.</summary>
+        public bool MaybePanic(CrewWalker threat, float chance)
         {
-            if (Dead || Spilling || _nerveRolled || Health > 1) return;
+            if (Dead || Spilling || Surrendered || _nerveRolled || Health > 1)
+                return false;
             _nerveRolled = true;
-            if (Random.value >= chance) return;
-            Flee(threat != null && threat.Tf ? threat.Tf.position : Tf.position - Tf.forward);
+            if (Random.value >= chance) return false;
+            var from = threat != null && threat.Tf
+                ? threat.Tf.position
+                : Tf.position - Tf.forward;
+            return PanicFrom(threat, from, 18f, 28f, comeBack: false);
         }
 
         public void Flee(Vector3 from) => Flee(from, 18f, 28f, comeBack: false);
@@ -3014,32 +3310,53 @@ namespace RoadDemo
             // machine's own guns went on firing him (CrewBike.TickGuns), which is a man
             // fleeing and shooting at once. His nerve is asked again the moment he is
             // back on his feet (DemoCrews.Rejoin, and the car's DriverLost).
-            if (Dead || Spilling || Riding) return;
+            if (Dead || Spilling || Riding || Surrendered) return;
+            bool alreadyFleeing = State == Mode.Fleeing;
+
+            // A permanent break (including promotion of a temporary run to a real
+            // retreat) must never carry the old "walk back here" promise with it.
+            if (!comeBack) _returnTo = null;
+
+            if (!LiveThreat(_fleeThreat))
+            {
+                if (LiveThreat(Target)) _fleeThreat = Target;
+                else if (LiveThreat(LastAttacker)) _fleeThreat = LastAttacker;
+                else _fleeThreat = null;
+            }
+            _fleeFrom = from;
+            _fleeNear = Mathf.Max(4f, near);
+            _fleeFar = Mathf.Max(_fleeNear, far);
+            _fleeReplans = 0;
+
+            // Do not throw away a live target and a shielding spot until there is an
+            // actual escape route to take. A boxed-in man keeps fighting instead of
+            // becoming a stationary, back-turned target.
+            if (!TryBeginFleeLeg())
+            {
+                // OnFled promotes a short break into a long, permanent retreat. If the
+                // farther endpoint has no route, keep the already-proved short leg
+                // instead of making the deserter vanish where everybody can see him.
+                if (alreadyFleeing) return;
+                State = Mode.Standing;
+                if (FleeShouldResumeFightModel(Retreating, LiveThreat(_fleeThreat)))
+                {
+                    var boxedThreat = _fleeThreat;
+                    _fleeThreat = null;
+                    Engage(boxedThreat);
+                }
+                return;
+            }
+
             ClearFallingIn();
             Target = null;
             _coverSpot = null;
+            _coverAnchorAt = null;
+            _coverHoldUntil = 0f;
+            _coverHopMisses = 0;
             InCover = false;
             if (comeBack && !_returnTo.HasValue) _returnTo = Tf.position;
             EndChat();
-            var away = Tf.position - from;
-            away.y = 0f;
-            if (away.sqrMagnitude < 1e-3f) away = -Tf.forward;
-            away.Normalize();
-            // not straight back: a little off the line, so two men do not run one road
-            // - and not into a wall or a car, and not off the scene's floor: a few
-            // rolls for a spot he can stand on, then whatever the last roll gave
-            // (he stops short of it, as near as he gets - the stride itself holds
-            // the hem, so a run aimed out into the void ends at the fence, standing)
-            for (int roll = 0; roll < 6; roll++)
-            {
-                var line = Quaternion.Euler(0f, Random.Range(-30f, 30f), 0f) * away;
-                _fleeTo = Tf.position + line * Random.Range(near, far);
-                if (WalkObstacles.InCity(_fleeTo) &&
-                    !WalkObstacles.Occupied(_fleeTo, WalkObstacles.Radius)) break;
-            }
-            _fleeTo = WalkObstacles.ClampToCity(_fleeTo);
             _preferredSteerSide = 0;
-            BeginLeg();
             // a beat of nerve failing before the legs go, and the run picked up at a
             // random stride, at a rate of his own - not the crew's one run, in step.
             // A MAN RUNNING FOR HIS LIFE SPRINTS. It is the one place in the town that
@@ -3055,6 +3372,91 @@ namespace RoadDemo
             // from a gunfight because his boss wanted him level is not a scene.
             SetPace(1f);
             State = Mode.Fleeing;
+        }
+
+        /// <summary>Choose an endpoint which increases separation and has a complete
+        /// fixed-ground route. The runtime follows the same route system in TickCrew;
+        /// this proof prevents an escape from beginning on a point behind a wall.</summary>
+        bool TryBeginFleeLeg()
+        {
+            // The event's explicit origin is authoritative. The remembered actor is
+            // for reacquisition after the run; he may have moved (or be a different
+            // current mark) while this man is still escaping the shot/death/car point.
+            var away = Tf.position - _fleeFrom;
+            away.y = 0f;
+            if (away.sqrMagnitude < 1e-3f) away = -Tf.forward;
+            away.Normalize();
+
+            Vector3? best = null;
+            float bestScore = float.MinValue;
+            float spread = _fleeReplans > 0 ? 85f : 45f;
+            for (int roll = 0; roll < 12; roll++)
+            {
+                var line = Quaternion.Euler(0f, Random.Range(-spread, spread), 0f) * away;
+                var candidate = Tf.position + line * Random.Range(_fleeNear, _fleeFar);
+                candidate = WalkObstacles.ClampToCity(candidate);
+                candidate.y = Tf.position.y;
+                var travel = candidate - Tf.position;
+                travel.y = 0f;
+                float direct = travel.magnitude;
+                float escape = Vector3.Dot(travel, away);
+                if (direct < 4f || escape < 2f) continue;
+                if (WalkObstacles.Occupied(candidate, WalkObstacles.Radius)) continue;
+                if (!WalkRoute.Plan(Tf.position, candidate, _fleeRouteProbe, false) ||
+                    _fleeRouteProbe.Count == 0) continue;
+
+                float route = 0f;
+                var stepFrom = Tf.position;
+                for (int i = 0; i < _fleeRouteProbe.Count; i++)
+                {
+                    route += Vector3.Distance(stepFrom, _fleeRouteProbe[i]);
+                    stepFrom = _fleeRouteProbe[i];
+                }
+                // Separation is the point; only the extra distance caused by a detour
+                // is a cost. A long, clear escape therefore beats a short shuffle.
+                float score = escape - Mathf.Max(0f, route - direct) * 0.75f;
+                if (score <= bestScore) continue;
+                bestScore = score;
+                best = candidate;
+            }
+
+            if (!best.HasValue) return false;
+            _fleeTo = best.Value;
+            ClearCombatWay();
+            BeginLeg();
+            return true;
+        }
+
+        /// <summary>End either kind of run without the old eight-to-fourteen-second
+        /// helpless stand. A true retreat is removed by its owner; a temporary break
+        /// immediately turns back onto a live threat. With that threat gone, the unit
+        /// may allocate another one on its next combat tick.</summary>
+        void FinishFlee()
+        {
+            State = Mode.Standing;
+            _runningLeg = false;
+            _sprinting = false;
+            ClearCombatWay();
+            bool threatAlive = LiveThreat(_fleeThreat);
+            bool resume = !Surrendered &&
+                FleeShouldResumeFightModel(Retreating, threatAlive);
+            var threat = _fleeThreat;
+            _fleeThreat = null;
+            _fleeReplans = 0;
+
+            if (resume)
+            {
+                _returnTo = null;
+                Engage(threat);
+                if (DriveTrace.On)
+                    DriveTrace.Event("flee", DisplayName,
+                        "escape ended; reacquired live threat");
+                return;
+            }
+
+            // With no remembered live shooter, leave him immediately available to
+            // his unit's target allocator. It may have another visible enemy already;
+            // even a short generic shaken lock would recreate the standing-target bug.
         }
 
         /// <summary>Emptying a gun into a machine. It is TickEngage with everything a
@@ -3188,9 +3590,6 @@ namespace RoadDemo
             {
                 bool have = _coverSpot.HasValue;
                 bool due = Time.time >= _coverRecheckAt;
-                // A FLANK THE MARK HAS BACKED OUT OF IS NOT A FLANK - but out of reach
-                // he no longer drops it for the open. He holds it and asks for the next
-                // one toward the man (COVER-002).
                 float shotFromSpot = 0f;
                 if (have)
                 {
@@ -3198,10 +3597,29 @@ namespace RoadDemo
                     fromSpot.y = 0f;
                     shotFromSpot = fromSpot.magnitude;
                 }
+                bool currentCoverShields = have && CoverStillShields(Target.Tf.position);
+                bool tooClose = have && shotFromSpot < CoverMinShot;
                 bool outOfReach = have && shotFromSpot > range;
-                bool walkedRound = have && (Target.Tf.position - _coverFrom).sqrMagnitude > 4f * 4f;
+                // Failed leapfrogs belong to one continuous out-of-range spell. Once
+                // the mark comes back inside the gun's reach, a later retreat starts a
+                // fresh retry budget rather than inheriting two old misses.
+                _coverHopMisses = CoverHopMissesForRangeModel(
+                    outOfReach, _coverHopMisses);
+                // A recorded anchor answers the actual angle. Only old/hand-authored
+                // cover without one falls back to how far the mark moved since it was
+                // selected; radial movement must not churn a known, shielding flank.
+                bool unknownAngleMoved = have && !_coverAnchorAt.HasValue &&
+                    (Target.Tf.position - _coverFrom).sqrMagnitude > 4f * 4f;
+                // Reaching a selected flank, then taking one real firing beat there,
+                // is a commitment. A breached or point-blank flank is never protected
+                // by this lease; it is replaced immediately.
+                bool committed = have && currentCoverShields && !tooClose &&
+                    (!InCover || Time.time < _coverHoldUntil);
+                bool breached = have && (!currentCoverShields || tooClose);
+                bool replace = have && !committed &&
+                    (breached || (due && (outOfReach || unknownAngleMoved)));
 
-                if ((!have && (!_coverLooked || due)) || (have && due && (walkedRound || outOfReach)))
+                if ((!have && (!_coverLooked || due)) || replace)
                 {
                     _coverLooked = true;
                     _coverFrom = Target.Tf.position;
@@ -3216,28 +3634,50 @@ namespace RoadDemo
                         (found.HasValue ? Random.Range(2f, 3f) : Random.Range(1f, 1.6f));
                     bool moved = found.HasValue &&
                                  (!have || (found.Value - _coverSpot.Value).sqrMagnitude > 0.01f);
+                    bool keptOld = false;
                     if (found.HasValue)
                     {
+                        _coverHopMisses = 0;
                         _coverSpot = found;
                         _coverAnchor = DemoCrews.LastCoverAnchor;
                         _coverAnchorAt = DemoCrews.LastCoverAnchorAt;
                         if (moved)
                         {
+                            InCover = false;
+                            _coverHoldUntil = 0f;
+                            ClearCombatWay();
                             _ducked = true;                       // he arrives low
                             _coverCycle = Random.Range(0.6f, 1.1f);
                         }
                     }
-                    // LEAPFROG, NEVER THE OPEN - but never a man welded to a useless
-                    // flank either. He holds the one he has from the moment the mark
-                    // steps out of its reach until the throttle lets him look again
-                    // (COVER-002); when that look comes back with nothing, the street
-                    // really has nothing, and he closes in the open as he always did.
+                    // A failed leapfrog is not an order to step into the open. The old
+                    // spot remains protection even when the mark is beyond weapon
+                    // range; only a breached flank is retired on a null answer.
                     else
                     {
-                        _coverSpot = null;
-                        _coverAnchor = null;
-                        _coverAnchorAt = null;
-                        InCover = false;
+                        keptOld = KeepCoverAfterRecheckModel(
+                            have, foundCover: false,
+                            currentCoverShields: currentCoverShields,
+                            tooClose: tooClose);
+                        if (keptOld && outOfReach)
+                        {
+                            _coverHopMisses++;
+                            if (CoverHopShouldReleaseModel(
+                                    outOfReach: true,
+                                    failedHops: _coverHopMisses))
+                                keptOld = false;
+                        }
+                        else _coverHopMisses = 0;
+
+                        if (!keptOld)
+                        {
+                            _coverSpot = null;
+                            _coverAnchor = null;
+                            _coverAnchorAt = null;
+                            _coverHoldUntil = 0f;
+                            InCover = false;
+                            ClearCombatWay();
+                        }
                     }
 
                     // what the street had to offer, asked and answered - the only way
@@ -3249,6 +3689,8 @@ namespace RoadDemo
                         var sb = DriveTrace.Take();
                         DriveTrace.Str(sb, "who", DisplayName);
                         DriveTrace.Bool(sb, "found", found.HasValue);
+                        DriveTrace.Bool(sb, "kept", keptOld);
+                        DriveTrace.Int(sb, "hopmiss", _coverHopMisses);
                         DriveTrace.Bool(sb, "first", !_firedThisFight);
                         DriveTrace.Num(sb, "range", dist);
                         if (found.HasValue)
@@ -3306,7 +3748,19 @@ namespace RoadDemo
                         run: RunWhile(!_keepingLow && gap.magnitude > RunToCover));
                     // no way through to it (the car has rolled on, something else
                     // stands in the way): he fights from where he is instead
-                    if (coverRouteFailed) { _coverSpot = null; _blockedFor = 0f; }
+                    if (coverRouteFailed)
+                    {
+                        _coverSpot = null;
+                        _coverAnchor = null;
+                        _coverAnchorAt = null;
+                        _coverHoldUntil = 0f;
+                        _coverHopMisses = 0;
+                        _coverLooked = false;
+                        _coverRecheckAt = 0f;
+                        InCover = false;
+                        _blockedFor = 0f;
+                        ClearCombatWay();
+                    }
                     return;
                 }
                 else
@@ -3315,7 +3769,11 @@ namespace RoadDemo
                     // and comes up to shoot. Down he is silent and very hard to hit; up
                     // he is the same man he always was, firing the same rounds through
                     // the same code below. That trade is the whole of it.
+                    bool justArrived = !InCover;
                     InCover = true;
+                    if (justArrived)
+                        _coverHoldUntil = Time.time +
+                            Random.Range(CoverHoldMin, CoverHoldMax);
                     _coverCycle -= dt;
                     if (_ducked)
                     {

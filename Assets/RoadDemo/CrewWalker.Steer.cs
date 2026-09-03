@@ -279,6 +279,14 @@ namespace RoadDemo
         void CombatStand(float dt)
         {
             RunWhile(false);
+            if (State == Mode.Fleeing)
+            {
+                // A transient route retry is not a combat stance for a man who has
+                // deliberately dropped his target. Hold the interrupted run neutrally;
+                // the bounded flee replan decides his next leg.
+                Loco(dt, false);
+                return;
+            }
             if (!Armed)
             {
                 Loco(dt, false);
