@@ -1226,6 +1226,17 @@ namespace RoadDemo
                     // to is not thrown away: nothing about him changes but the man he
                     // is pointing at
                     _coverFrom = target.Tf.position;
+                    // AND THE LEASE ON IT, not only the spot. The ambush keep below has
+                    // always pushed the recheck out when it holds a flank, and leaving
+                    // that off here was worth ten `wrongside` faults in one CoverDemo
+                    // run against one in the same run before this epic: the spot was
+                    // kept, the recheck fired a moment later anyway, the oracle handed
+                    // out the face away from the NEW mark - which is the far side of
+                    // the thing from where he is now stood - and he walked round it
+                    // across the fire line. A flank kept for a new angle is kept for a
+                    // beat, exactly like any other.
+                    _coverLooked = true;
+                    _coverRecheckAt = Time.time + Random.Range(2f, 3f);
                     _threatMark = target;
                     Target = target;
                     EndChat();

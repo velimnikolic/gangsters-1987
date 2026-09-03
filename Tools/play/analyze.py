@@ -540,19 +540,26 @@ def retargets(rows):
     exist to make impossible: it is expected to be zero, and one of them is a bug and
     not a tuning matter."""
     switches = kept = flicker = 0
-    held = {}          # man -> [(mark, when it was taken)]
+    last = {}          # man -> (the mark he left, the mark he took, when)
     for r in rows:
         if r.get("k") != "switch":
             continue
         switches += 1
         if r.get("kept"):
             kept += 1
-        who, onto, at = r.get("who"), r.get("onto"), r.get("t", 0)
-        past = held.setdefault(who, [])
-        if any(mark == onto and at - when < 2.0 for mark, when in past):
+        who, left, onto, at = (r.get("who"), r.get("left"), r.get("onto"),
+                               r.get("t", 0))
+        # A FLICKER IS A REVERSAL, and only a reversal: this switch undoes the last
+        # one this man made. Counting every return to a mark he once held was wrong
+        # and said so in a CoverDemo run - the uncovered pass (AIM-004) deliberately
+        # moves a duplicate shooter onto the man somebody abandoned, so a man can
+        # legitimately end up back on an old mark without the closer-threat rule
+        # having oscillated at all. What the margin and the dwell make impossible is
+        # A to B and straight back to A, and that is what this counts.
+        was = last.get(who)
+        if was and was[1] == left and was[0] == onto and at - was[2] < 2.0:
             flicker += 1
-        past.append((r.get("left"), at))
-        del past[:-6]
+        last[who] = (left, onto, at)
     return switches, kept, flicker
 
 
