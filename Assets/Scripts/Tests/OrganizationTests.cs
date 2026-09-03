@@ -22,6 +22,7 @@ namespace LivingCity.Tests
             CapacityIsCentralHardForMenSoftForBlocks(failures);
             ResponsibilityUsesCanonicalIdsWithoutChangingTerritorySignals(failures);
             QueryProjectsHierarchyAndPhysicalMappings(failures);
+            TheBossesOwnDetailIsNotAStaleCommandParent(failures);
             ValidationReportsCorruptionWithoutRepairingIt(failures);
             FilingOfficeAnswersOnlyAfterItsDelay(failures);
             FilingOfficeIsWhereCapacityIsHard(failures);
@@ -812,6 +813,35 @@ namespace LivingCity.Tests
                 roster, new HashSet<TerritoryBlockId>(), source, validation);
             if (validation.Count != 0)
                 failures.Add("Query: valid physical mapping reports " + validation[0]);
+        }
+
+        /// <summary>
+        /// THE DON'S OWN DETAIL IS A GROUP LIKE ANY OTHER (RANK-003). The branch check
+        /// has always made this exception - the bodyguard crew is the one branch whose
+        /// head is not a Lieutenant - but the PHYSICAL projection did not, so the moment
+        /// the detail stood on the street the live audit called the whole graph corrupt:
+        /// "ORG: tactical group 0 has stale command parent 0", measured on MiniCoreDemo
+        /// with Don Salvatore Ricci at the head of his own crew.
+        /// </summary>
+        static void TheBossesOwnDetailIsNotAStaleCommandParent(List<string> failures)
+        {
+            var roster = RosterSeeder.GenerateStaffed(13);
+            var detail = Bodyguards.FormDetail(roster);
+            if (detail == null || detail.LieutenantId != roster.BossId)
+            {
+                failures.Add("Detail: the Boss could not be given his own crew.");
+                return;
+            }
+
+            var source = new FakePhysicalSource(new TacticalPersonnelMapping(
+                detail.Id, detail.LieutenantId, new[] { roster.BossId }));
+            var validation = new List<string>();
+            OrganizationValidator.Validate(
+                roster, new HashSet<TerritoryBlockId>(), source, validation);
+
+            if (Contains(validation, "stale command parent"))
+                failures.Add("Detail: the Boss leading his own detail reads as a stale " +
+                             "command parent (" + validation[0] + ").");
         }
 
         static void ValidationReportsCorruptionWithoutRepairingIt(List<string> failures)

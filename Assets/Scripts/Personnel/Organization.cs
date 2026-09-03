@@ -575,7 +575,14 @@ namespace LivingCity.Personnel
                              mapping.PersonnelIds.Count + " Characters; maximum physical " +
                              "projection is " + (Crew.MaxTacticalHoods + 1) + ".");
                 var leader = roster.Find(mapping.CommandParentId);
-                if (leader == null || leader.Gone || leader.Rank != Rank.Lieutenant)
+                // The Boss's own detail is a group on the street like any other, and its
+                // head is the Boss (RANK-003) - the same exception the branch check above
+                // makes. It was never made here, so the first time the Don walked out
+                // with his men the live audit called the whole graph corrupt: "tactical
+                // group 0 has stale command parent 0", read off MiniCoreDemo.
+                var ownDetail = leader != null && leader.Id == roster.BossId;
+                if (leader == null || leader.Gone ||
+                    (!ownDetail && leader.Rank != Rank.Lieutenant))
                     into.Add("ORG: tactical group " + mapping.GroupId +
                              " has stale command parent " + mapping.CommandParentId + ".");
 
