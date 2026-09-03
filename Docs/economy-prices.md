@@ -235,12 +235,26 @@ listed, which is the first thing the retainer actually buys.
 
 ## 9. The treasury
 
+The headquarters safe is the outfit's one cash balance. `Accounts.Safe` is everything
+physically on the premises; `Accounts.RiskyMoney` is the dirty share of that same pile, never a
+second balance. Therefore `0 <= RiskyMoney <= Safe`, and clean cash is `Safe - RiskyMoney`.
+
+Receipts declare their source at once through `BalanceMath.Receive`: protection collections and
+illegal-order payouts are dirty, while owned-business net is clean. Spending goes through
+`BalanceMath.Pay` and consumes dirty cash first. A rollback restores the exact dirty share the
+payment returned; midnight does not mark income dirty a second time. `BalanceMath.Seize` is the
+future raid seam: it removes and returns only the dirty pile. The bank and laundering are not
+built yet.
+
+The day sheet keeps the two dirty sources legible: `IllegalIncome` is Protection rounds,
+`JobIncome` is robberies, ransoms and recovered street bags, and `DirtyIncome` derives their sum.
+
 | Constant | Today | Target | Why |
 |---|---|---|---|
 | `Accounts.StartingSafe` | 1,000,000 | **25,000** | a million buys the whole cenovnik on day one and voids the GAN-167 casino guard. $25k = a few weeks of payroll + a cheap front + guns: racket first, buy later. $3M (design §22) is an endgame treasury, not an opening one. |
 | `Tribute.PerBlockAhead` | 90 | **500** | scale with the new order economy |
 | `Tribute.Floor` | 150 | **1,000** | — |
-| Tax 30% profit, risk ceilings 5k/20k | — | **revisit ceilings ×5** at the new scale | `Accounts.cs` |
+| Tax 30% profit; dirty-risk ceilings 25k/100k | — | **current scale** | `Accounts.cs` |
 | `PlayerArsenal.TryPay` | stub, always yes | wire to the safe when EPIC 9 lands | the only money seam with no balance behind it |
 
 ## 10. Sanity check of the loop — one block, one crew

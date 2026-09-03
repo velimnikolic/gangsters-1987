@@ -222,7 +222,7 @@ namespace LivingCity.UI
                     }
                 }
 
-            var inH = FinBandH + FinRowH * 3f + FinTotalH + FinProfitH + FinTaxH * 3f;
+            var inH = FinBandH + FinRowH * 4f + FinTotalH + FinProfitH + FinTaxH * 3f;
             // WHAT THE ROWS MAY SAY DEPENDS ON WHETHER THE NIGHT IS OVER.
             //
             // An OPEN sheet is a forecast: the live roster IS the obligation, so the
@@ -250,8 +250,9 @@ namespace LivingCity.UI
             // ---- MONEY IN ----
             var y = FinanceBand(moneyIn, "MONEY IN", FinInLabel);
             y = FinanceRow(moneyIn, y, "Protection", report.IllegalIncome, 0);
-            y = FinanceRow(moneyIn, y, "Sales", report.SalesIncome, 1);
-            y = FinanceRow(moneyIn, y, "Legitimate", report.LegalIncome, 2);
+            y = FinanceRow(moneyIn, y, "Jobs", report.JobIncome, 1);
+            y = FinanceRow(moneyIn, y, "Sales", report.SalesIncome, 2);
+            y = FinanceRow(moneyIn, y, "Legitimate", report.LegalIncome, 3);
             y = FinanceTotal(moneyIn, y, "TOTAL IN", report.TotalIncome);
 
             var loss = report.TotalProfit < 0;
@@ -319,7 +320,7 @@ namespace LivingCity.UI
                 oy = FinanceRow(moneyOut, oy, "Money in safe", report.Safe, -1);
                 oy = FinanceRow(moneyOut, oy, "Stock at book value", report.Assets, -1);
                 var risky = report.Risk >= Outfit.RiskRating.Moderate;
-                oy = FinanceRow(moneyOut, oy, "Risky money (unlaundered)",
+                oy = FinanceRow(moneyOut, oy, "Dirty cash in the safe",
                     report.RiskyMoney, -1, red: risky);
                 oy = FinanceText(moneyOut, oy, "Risk",
                     LedgerText.RiskLabel(report.Risk).ToUpperInvariant(), -1,

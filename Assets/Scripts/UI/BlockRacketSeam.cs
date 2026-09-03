@@ -196,6 +196,9 @@ namespace LivingCity.UI
         /// menu (GAN-262).</summary>
         void CollectCrewHoods(int crewId, List<CrewHandView> into);
 
+        /// <summary>The collector node's escorts, in posting order.</summary>
+        void EscortsOf(int crewId, List<CrewHandView> into);
+
         /// <summary>The block a man is walking a round on, or invalid. WHO STANDS HERE
         /// prints "on the round · &lt;block&gt;".</summary>
         bool TryGetRoundOf(int characterId, out TerritoryBlockId blockId);
@@ -232,6 +235,9 @@ namespace LivingCity.UI
         /// <summary>The bag comes off him and stays with nobody until the boss says
         /// otherwise. "" on success, else the refusal.</summary>
         string TakeOffTheBag(int hoodId);
+
+        string PostEscort(int crewId, int hoodId);
+        string PullEscort(int hoodId);
     }
 
     /// <summary>The one place the page reads from and acts through. The mechanics half
@@ -278,6 +284,7 @@ namespace LivingCity.UI
         StubBlockRacket() { }
 
         readonly Dictionary<int, bool> collectors = new Dictionary<int, bool>();
+        readonly HashSet<int> escorts = new HashSet<int>();
         readonly Dictionary<int, CrewPolicy> policies = new Dictionary<int, CrewPolicy>();
         int version;
 
@@ -286,6 +293,7 @@ namespace LivingCity.UI
         public void Reset()
         {
             collectors.Clear();
+            escorts.Clear();
             policies.Clear();
             namedByBoss.Clear();
             version = 0;
@@ -385,6 +393,20 @@ namespace LivingCity.UI
             }
         }
 
+        public void EscortsOf(int crewId, List<CrewHandView> into)
+        {
+            into?.Clear();
+            if (into == null)
+                return;
+            for (var h = 1; h <= StubHoods.Length; h++)
+            {
+                var id = crewId * 10 + h;
+                if (escorts.Contains(id))
+                    into.Add(new CrewHandView(id, StubHoods[h - 1], StubFitness[h - 1],
+                        false, false));
+            }
+        }
+
         public string NameCollector(int crewId, int hoodId)
         {
             if (hoodId / 10 != crewId)
@@ -422,6 +444,33 @@ namespace LivingCity.UI
             namedByBoss.Remove(hoodId);
             version++;
             Debug.Log("[BlockRacketSeam stub] the bag is off " + NameOf(hoodId));
+            return "";
+        }
+
+        public string PostEscort(int crewId, int hoodId)
+        {
+            if (BagManOf(crewId) < 0)
+                return "nobody carries the bag for him to guard";
+            if (hoodId / 10 != crewId)
+                return "he is not one of that lieutenant's men";
+            if (escorts.Contains(hoodId))
+                return "he is already on the bag's detail";
+            var posted = 0;
+            for (var h = 1; h <= StubHoods.Length; h++)
+                if (escorts.Contains(crewId * 10 + h))
+                    posted++;
+            if (posted >= Crew.MaxEscorts)
+                return "his escort is full · " + Crew.MaxEscorts + " men";
+            escorts.Add(hoodId);
+            version++;
+            return "";
+        }
+
+        public string PullEscort(int hoodId)
+        {
+            if (!escorts.Remove(hoodId))
+                return "he is not on the bag's detail";
+            version++;
             return "";
         }
 

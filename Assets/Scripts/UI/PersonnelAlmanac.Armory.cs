@@ -472,17 +472,19 @@ namespace LivingCity.UI
 
                 var memberId = member.Id;
                 var crew = roster.CrewOf(memberId);
+                var access = director.EquipmentAccessFor(memberId);
                 PickerRow(y, member.FullName,
                     LedgerText.AttributeLabel(CharacterAttribute.Organization) + " " +
                     LedgerText.Stars(member.GetHalfSteps(CharacterAttribute.Organization)),
-                    crew != null ? "deals to " + crew.HoodIds.Count + " men" : "no crew yet",
+                    (crew != null ? "deals to " + crew.HoodIds.Count + " men" : "no crew yet") +
+                    " · " + director.ArmoryLocationLine(memberId),
                     () =>
                     {
                         var result = director.GiveEquipment(givePickerItemId, memberId);
                         armoryNote = result.Ok ? "" : result.Reason;
                         givePickerItemId = -1;
                         dirty = true;
-                    });
+                    }, access.Allowed, () => SendForArmory(memberId));
                 y -= StockPitch;
             }
 
@@ -490,31 +492,58 @@ namespace LivingCity.UI
         }
 
         void PickerRow(float y, string name, string stat, string men,
-            UnityEngine.Events.UnityAction pick)
+            UnityEngine.Events.UnityAction pick, bool enabled = true,
+            UnityEngine.Events.UnityAction send = null)
         {
             var row = NewRect("Pick", stockContent);
             PlaceTopLeft(row, 0f, y, StockInner, StockPitch);
-            var surface = ClickSurface(row);
-            RowButton(row, surface, pick);
-            Highlight(row, LedgerV2.Picked);
+            if (enabled)
+            {
+                var surface = ClickSurface(row);
+                RowButton(row, surface, pick);
+                Highlight(row, LedgerV2.Picked);
+            }
 
             var carbonInk = LedgerV2.CarbonInk;
-            var nameText = Text("Name", row, LedgerStyle.MonoBold, 13.5f, carbonInk,
+            var disabledInk = new Color(107f / 255f, 43f / 255f, 35f / 255f, 0.42f);
+            var nameText = Text("Name", row, LedgerStyle.MonoBold, 13.5f,
+                enabled ? carbonInk : disabledInk,
                 TextAlignmentOptions.MidlineLeft);
             FillRow(nameText.rectTransform, 12f, 320f);
             nameText.text = name;
 
             var statText = Text("Stat", row, LedgerStyle.Mono, 13.5f,
-                new Color(107f / 255f, 43f / 255f, 35f / 255f, 0.7f),
+                enabled ? new Color(107f / 255f, 43f / 255f, 35f / 255f, 0.7f)
+                    : disabledInk,
                 TextAlignmentOptions.MidlineLeft);
             FillRow(statText.rectTransform, 340f, 260f);
             statText.text = stat;
 
             var menText = Text("Crew", row, LedgerStyle.Mono, 13.5f,
-                new Color(107f / 255f, 43f / 255f, 35f / 255f, 0.7f),
+                enabled ? new Color(107f / 255f, 43f / 255f, 35f / 255f, 0.7f)
+                    : disabledInk,
                 TextAlignmentOptions.MidlineLeft);
             FillRow(menText.rectTransform, 620f, 300f);
             menText.text = men;
+
+            if (!enabled && send != null)
+                LedgerV2.Button(row, "SEND FOR THEM", StockActionX - 30f, -2f,
+                    130f, 22f, send, red: false, size: 9f, outline: true);
+        }
+
+        void SendForArmory(int memberId)
+        {
+            var roster = director?.Roster;
+            var crew = roster?.CrewOf(memberId);
+            var unit = crew != null ? RoadDemo.DemoCrews.Active?.UnitOfCrew(crew.Id) : null;
+            if (unit == null || outfit == null ||
+                !outfit.TryGetHeadquarters(out var doorstep, out _) ||
+                !RoadDemo.DemoCrews.Active.MarchTo(unit, doorstep))
+                armoryNote = lastRefusal = LedgerText.CrewNowhere;
+            else
+                armoryNote = lastRefusal =
+                    "Sent for " + (roster.Find(memberId)?.FullName ?? "the crew") + ".";
+            dirty = true;
         }
 
         void SizeCatalogueContent(float height)

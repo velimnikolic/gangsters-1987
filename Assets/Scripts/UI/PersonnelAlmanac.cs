@@ -189,6 +189,7 @@ namespace LivingCity.UI
             Finances,
             Armory,
             Diplomacy,
+            Law,
             Orders,
         }
 
@@ -198,12 +199,12 @@ namespace LivingCity.UI
         static readonly string[] TabNames =
         {
             "THE PAPER", "PERSONNEL", "ORGANIZATION", "CHAIN OF COMMAND", "BLOCKS",
-            "FINANCES", "ARMORY", "FAMILIES",
+            "FINANCES", "ARMORY", "FAMILIES", "THE LAW",
         };
 
         /// <summary>What a real file's tabs say: the sheet is one leaf of a numbered
         /// file, and the ticker prints which one. Pure furniture, and the design's.</summary>
-        static readonly int[] TabFolios = { 1, 4, 7, 8, 10, 12, 14, 16, 18 };
+        static readonly int[] TabFolios = { 1, 4, 7, 8, 10, 12, 14, 16, 17, 18 };
         const int Folios = 18;
 
         Canvas canvas;
@@ -278,7 +279,8 @@ namespace LivingCity.UI
         TMP_Text footerRight;
 
         LedgerPage currentPage = LedgerPage.Newspaper;
-        readonly GameObject[] pageRoots = new GameObject[9];
+        readonly GameObject[] pageRoots =
+            new GameObject[System.Enum.GetValues(typeof(LedgerPage)).Length];
         readonly Image[] tabFaces = new Image[TabNames.Length];
         readonly TMP_Text[] tabLabels = new TMP_Text[TabNames.Length];
         readonly RectTransform[] tabRects = new RectTransform[TabNames.Length];
@@ -548,6 +550,9 @@ namespace LivingCity.UI
                 case LedgerPage.Diplomacy:
                     RebuildDiplomacy();
                     break;
+                case LedgerPage.Law:
+                    RebuildLaw();
+                    break;
                 case LedgerPage.Orders:
                     RebuildOrders();
                     break;
@@ -809,6 +814,30 @@ namespace LivingCity.UI
                     viewport = familiesViewport;
                     content = familiesContent;
                     break;
+                case LedgerPage.Law:
+                    // FOUR REGIONS on this sheet, and whichever the pointer sits over
+                    // takes the wheel - the PERSONNEL and ARMORY rule.
+                    if (Over(lawArchiveViewport, point))
+                    {
+                        viewport = lawArchiveViewport;
+                        content = lawArchiveContent;
+                    }
+                    else if (Over(lawInsideViewport, point))
+                    {
+                        viewport = lawInsideViewport;
+                        content = lawInsideContent;
+                    }
+                    else if (Over(lawWantedViewport, point))
+                    {
+                        viewport = lawWantedViewport;
+                        content = lawWantedContent;
+                    }
+                    else
+                    {
+                        viewport = lawDocketViewport;
+                        content = lawDocketContent;
+                    }
+                    break;
                 default:
                     return;
             }
@@ -879,6 +908,30 @@ namespace LivingCity.UI
                 blocksScroll = Mathf.Clamp(
                     blocksScroll - wheel * WheelStep, 0f, maxScroll);
                 content.anchoredPosition = new Vector2(0f, blocksScroll);
+            }
+            else if (viewport == lawDocketViewport)
+            {
+                lawDocketScroll = Mathf.Clamp(
+                    lawDocketScroll - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, lawDocketScroll);
+            }
+            else if (viewport == lawInsideViewport)
+            {
+                lawInsideScroll = Mathf.Clamp(
+                    lawInsideScroll - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, lawInsideScroll);
+            }
+            else if (viewport == lawWantedViewport)
+            {
+                lawWantedScroll = Mathf.Clamp(
+                    lawWantedScroll - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, lawWantedScroll);
+            }
+            else if (viewport == lawArchiveViewport)
+            {
+                lawArchiveScroll = Mathf.Clamp(
+                    lawArchiveScroll - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, lawArchiveScroll);
             }
             else
             {
@@ -1001,6 +1054,7 @@ namespace LivingCity.UI
             BuildArmoryPage(paper);
             BuildDiplomacyPage(paper);
             BuildCommandPage(paper);
+            BuildLawPage(paper);
             BuildOrdersPage(paper);
 
             SetPage(currentPage);
@@ -1030,6 +1084,11 @@ namespace LivingCity.UI
             }
             dirty = true;
         }
+
+        /// <summary>Whether the pointer sits over one of a sheet's regions - which is
+        /// what decides who takes the wheel on a page with several.</summary>
+        static bool Over(RectTransform rect, Vector2 point) =>
+            rect && RectTransformUtility.RectangleContainsScreenPoint(rect, point);
 
         RectTransform NewPageRoot(RectTransform sheet, LedgerPage kind)
         {
@@ -2307,6 +2366,10 @@ namespace LivingCity.UI
                         "stands · several at once", TelexVoice.Plain));
                     telexMessages.Add(("Nothing on this sheet happens at the click · " +
                         "the order is FILED and the outfit answers it", TelexVoice.Plain));
+                    break;
+
+                case LedgerPage.Law:
+                    ComposeLawTelex();
                     break;
 
                 case LedgerPage.Blocks:

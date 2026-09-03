@@ -195,9 +195,7 @@ namespace LivingCity.Personnel
             // The men he stood beside, taken BEFORE he is detached from them - after
             // Detach there is nothing left to say who they were.
             var oldCrew = roster.CrewOf(id);
-            var witnesses = oldCrew != null
-                ? new System.Collections.Generic.List<int>(oldCrew.HoodIds)
-                : null;
+            var witnesses = oldCrew != null ? AllCrewHoods(oldCrew) : null;
 
             Detach(roster, id);
             var member = roster.Find(id);
@@ -284,11 +282,13 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(LedgerText.ReasonNotLieutenant);
 
             var crew = roster.CrewOf(lieutenantId);
-            var formerHoods = crew != null
-                ? new System.Collections.Generic.List<int>(crew.HoodIds)
-                : null;
+            var formerHoods = crew != null ? AllCrewHoods(crew) : null;
             if (crew != null)
+            {
                 roster.Crews.Remove(crew);
+                for (var i = 0; i < formerHoods.Count; i++)
+                    ClearDuty(roster, formerHoods[i]);
+            }
 
             member.Rank = Rank.Hood;
             member.RankSince = roster.Day;
@@ -328,7 +328,16 @@ namespace LivingCity.Personnel
 
             if (duty == Duty.None)
             {
-                member.Duty = Duty.None;
+                var assigned = roster.CrewOf(id);
+                if (assigned != null && assigned.BagId == id)
+                    ReturnBagNodeToLine(roster, assigned);
+                else if (assigned != null && assigned.EscortIds.Remove(id))
+                {
+                    member.Duty = Duty.None;
+                    AddLineHood(roster, assigned, id);
+                }
+                else
+                    member.Duty = Duty.None;
                 return OpResult.Success;
             }
 
@@ -338,19 +347,41 @@ namespace LivingCity.Personnel
             if (assignment.Kind != AssignmentKind.Crew)
                 return OpResult.Fail("he has to be in a crew");
 
-            // ONE BAG TO A CREW (GAN-262). Marking a second man moves the bag: the
-            // first man's mark comes off with it, so the street never has two men of
-            // one crew each thinking he is the one who walks the round.
             var crew = roster.FindCrew(assignment.CrewId);
-            if (crew != null)
-                for (var i = 0; i < crew.HoodIds.Count; i++)
-                {
-                    if (crew.HoodIds[i] == id)
-                        continue;
-                    var other = roster.Find(crew.HoodIds[i]);
-                    if (other != null && other.Duty == duty)
-                        other.Duty = Duty.None;
-                }
+            if (crew == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchCrew);
+
+            if (duty == Duty.Escort)
+            {
+                if (crew.BagId < 0)
+                    return OpResult.Fail("nobody carries the bag for him to guard");
+                if (crew.BagId == id)
+                    return OpResult.Fail("the collector cannot escort himself");
+                if (crew.EscortIds.Contains(id))
+                    return OpResult.Fail("he is already on the bag's detail");
+                if (crew.EscortIds.Count >= Crew.MaxEscorts)
+                    return OpResult.Fail("his escort is full · " + Crew.MaxEscorts + " men");
+                crew.HoodIds.Remove(id);
+                crew.EscortIds.Add(id);
+                member.Duty = Duty.Escort;
+                return OpResult.Success;
+            }
+
+            if (duty != Duty.Collector)
+                return OpResult.Fail("that duty is not carried by a crew");
+
+            // One collector node per crew. Replacing its head returns the previous
+            // collector to the line; the escorts remain attached to the bag.
+            if (crew.BagId >= 0 && crew.BagId != id)
+            {
+                var previous = roster.Find(crew.BagId);
+                if (previous != null)
+                    previous.Duty = Duty.None;
+                AddLineHood(roster, crew, crew.BagId);
+            }
+            crew.HoodIds.Remove(id);
+            crew.EscortIds.Remove(id);
+            crew.BagId = id;
 
             member.Duty = duty;
             return OpResult.Success;
@@ -364,12 +395,9 @@ namespace LivingCity.Personnel
             var crew = roster?.FindCrew(crewId);
             if (crew == null)
                 return -1;
-            for (var i = 0; i < crew.HoodIds.Count; i++)
-            {
-                var man = roster.Find(crew.HoodIds[i]);
-                if (man != null && !man.Gone && man.Duty == Duty.Collector)
-                    return man.Id;
-            }
+            var man = roster.Find(crew.BagId);
+            if (man != null && !man.Gone && man.Duty == Duty.Collector)
+                return man.Id;
             return -1;
         }
 
@@ -399,14 +427,74 @@ namespace LivingCity.Personnel
             var member = roster?.Find(hoodId);
             if (member == null)
                 return OpResult.Fail(LedgerText.ReasonNoSuchMember);
-            member.Duty = Duty.None;
             var crew = roster.CrewOf(hoodId);
-            if (crew != null)
-            {
-                crew.BagNamedByBoss = true;
-                crew.BagNamedId = -1;   // he ruled NOBODY, and that is a ruling too
-            }
+            if (crew == null || crew.BagId != hoodId)
+                return OpResult.Fail("he is not carrying a crew's bag");
+            ReturnBagNodeToLine(roster, crew);
+            crew.BagNamedByBoss = true;
+            crew.BagNamedId = -1;   // he ruled NOBODY, and that is a ruling too
             return OpResult.Success;
+        }
+
+        /// <summary>Posts a line hood, or an unassigned hood first put into the crew,
+        /// to the collector's own detail.</summary>
+        public static OpResult PostEscort(Roster roster, int crewId, int hoodId,
+            System.Collections.Generic.List<PersonalityChange> changes = null)
+        {
+            var crew = roster?.FindCrew(crewId);
+            if (crew == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchCrew);
+            if (crew.BagId < 0)
+                return OpResult.Fail("nobody carries the bag for him to guard");
+            if (crew.LieutenantId == hoodId || crew.BagId == hoodId)
+                return OpResult.Fail("that man cannot take an escort place");
+            if (roster.FrontId == hoodId)
+                return OpResult.Fail("the front man cannot leave the desk");
+            if (crew.EscortIds.Contains(hoodId))
+                return OpResult.Fail("he is already on the bag's detail");
+            if (crew.EscortIds.Count >= Crew.MaxEscorts)
+                return OpResult.Fail("his escort is full · " + Crew.MaxEscorts + " men");
+
+            var member = roster.Find(hoodId);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (member.Rank != Rank.Hood || member.Specialty != Specialty.None || member.Gone)
+                return OpResult.Fail("only an available hood can escort the bag");
+
+            if (!crew.HoodIds.Contains(hoodId))
+            {
+                if (roster.CrewOf(hoodId) != null)
+                    return OpResult.Fail("he already answers to another crew");
+                var assigned = AssignToCrew(roster, hoodId, crewId, changes);
+                if (!assigned.Ok)
+                    return assigned;
+            }
+            return SetDuty(roster, hoodId, Duty.Escort);
+        }
+
+        public static OpResult PullEscort(Roster roster, int hoodId)
+        {
+            var crew = roster?.CrewOf(hoodId);
+            if (crew == null || !crew.EscortIds.Contains(hoodId))
+                return OpResult.Fail("he is not on the bag's detail");
+            return SetDuty(roster, hoodId, Duty.None);
+        }
+
+        /// <summary>The living men posted to this bag, in posting order. A man in a
+        /// cell or a bed keeps his post on the books, just as the collector does.</summary>
+        public static void EscortsOf(Roster roster, int crewId,
+            System.Collections.Generic.List<Character> into)
+        {
+            into?.Clear();
+            var crew = roster?.FindCrew(crewId);
+            if (crew == null || into == null)
+                return;
+            for (var i = 0; i < crew.EscortIds.Count; i++)
+            {
+                var escort = roster.Find(crew.EscortIds[i]);
+                if (escort != null && !escort.Gone && escort.Duty == Duty.Escort)
+                    into.Add(escort);
+            }
         }
 
         /// <summary>
@@ -467,7 +555,7 @@ namespace LivingCity.Personnel
                 if (crew.BagNamedId < 0)
                     return -1;   // he ruled NOBODY, and nobody it stays
                 var named = roster.Find(crew.BagNamedId);
-                if (named != null && !named.Gone && crew.HoodIds.Contains(crew.BagNamedId))
+                if (named != null && !named.Gone && crew.BagId == crew.BagNamedId)
                     return -1;
                 crew.BagNamedByBoss = false;
                 crew.BagNamedId = -1;
@@ -517,13 +605,10 @@ namespace LivingCity.Personnel
             var crew = roster?.FindCrew(crewId);
             if (crew == null || into == null)
                 return;
-            for (var i = 0; i < crew.HoodIds.Count; i++)
-            {
-                var man = roster.Find(crew.HoodIds[i]);
-                if (man != null && !man.Gone && man.Status == CharacterStatus.Active &&
-                    man.Duty == Duty.Collector)
-                    into.Add(man);
-            }
+            var man = roster.Find(crew.BagId);
+            if (man != null && !man.Gone && man.Status == CharacterStatus.Active &&
+                man.Duty == Duty.Collector)
+                into.Add(man);
         }
 
         public static OpResult AssignToCrew(Roster roster, int id, int crewId,
@@ -552,14 +637,6 @@ namespace LivingCity.Personnel
 
             Detach(roster, id);
             crew.HoodIds.Add(id);
-            // A man walks over with the bag still marked on him (AssignToCrew is the one
-            // move that keeps a duty). His NEW crew may already have a bag man, and one
-            // bag to a crew is the rule - so the mark is re-laid here, which clears the
-            // other man's. His old crew's ruling, if the boss made one, is spent: he is
-            // not one of that lieutenant's men any more (TendCrewBag).
-            var carried = roster.Find(id);
-            if (carried != null && carried.Duty != Duty.None)
-                SetDuty(roster, id, carried.Duty);
             // A new superior is a new relationship: loyalty starts near neutral again.
             var moved = roster.Find(id);
             Loyalty.Reaim(moved, "put under a new lieutenant", changes);
@@ -576,6 +653,15 @@ namespace LivingCity.Personnel
             {
                 var hood = roster.Find(crew.HoodIds[i]);
                 if (hood != null && !hood.Gone)
+                    men++;
+            }
+            var collector = roster.Find(crew.BagId);
+            if (collector != null && !collector.Gone)
+                men++;
+            for (var i = 0; i < crew.EscortIds.Count; i++)
+            {
+                var escort = roster.Find(crew.EscortIds[i]);
+                if (escort != null && !escort.Gone)
                     men++;
             }
             return men;
@@ -951,13 +1037,6 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(LedgerText.ReasonNoSuchItem);
             if (item.OwnerId == RosterEquipment.FrontArmory)
                 return OpResult.Fail(LedgerText.ReasonAlreadyHolds);
-            if (item.OwnerId != RosterEquipment.Unheld)
-            {
-                var holder = roster.Find(item.HolderId);
-                return OpResult.Fail(LedgerText.HeldByLine(
-                    holder != null ? holder.FullName : "another man"));
-            }
-
             item.OwnerId = RosterEquipment.FrontArmory;
             item.HolderId = RosterEquipment.FrontArmory;
             item.PinnedTo = RosterEquipment.Unheld;
@@ -1267,6 +1346,19 @@ namespace LivingCity.Personnel
         /// The men are read BEFORE he is struck off: striking a lieutenant off promotes
         /// an heir out of his own crew, and a crew read afterwards is a different crew.
         /// </summary>
+        /// <summary>
+        /// WHETHER HE CAN BE SOLD. Only a man the city is holding - in a cell, or out on
+        /// the outfit's own bail money waiting on a court day. Nobody is cut loose off a
+        /// street corner.
+        ///
+        /// The ONE predicate: the desk offers the key on it, the ledger's sheets show it
+        /// on it, and <see cref="CutLoose"/> refuses on it. Two copies of this rule
+        /// drift into a button that is offered and then refused (GAN-302).
+        /// </summary>
+        public static bool CanCutLoose(Character member) =>
+            member != null && !member.Gone &&
+            (member.Status == CharacterStatus.Jailed || member.BailedUntil > 0);
+
         public static OpResult CutLoose(Roster roster, int id,
             System.Collections.Generic.List<PersonalityChange> changes = null)
         {
@@ -1275,9 +1367,7 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(LedgerText.ReasonNoSuchMember);
             if (member.Gone)
                 return OpResult.Fail(GoneReason(member));
-            // Only a man the city is holding - in a cell, or out on the outfit's own
-            // bail money waiting on a court day. Nobody is sold off a street corner.
-            if (member.Status != CharacterStatus.Jailed && member.BailedUntil <= 0)
+            if (!CanCutLoose(member))
                 return OpResult.Fail(LedgerText.ReasonNotInside);
 
             var wasLieutenant = member.Rank == Rank.Lieutenant;
@@ -1558,10 +1648,13 @@ namespace LivingCity.Personnel
             }
             else
             {
-                var formerHoods = new System.Collections.Generic.List<int>(crew.HoodIds);
+                var formerHoods = AllCrewHoods(crew);
                 roster.Crews.Remove(crew);
                 for (var i = 0; i < formerHoods.Count; i++)
+                {
+                    ClearDuty(roster, formerHoods[i]);
                     PutUnderBossIfPresent(roster, formerHoods[i]);
+                }
                 // The men went under the Boss; so does the ground they were holding.
                 PassTheGroundOn(roster, leaving.Id, roster.Organization.BossId);
             }
@@ -1637,7 +1730,61 @@ namespace LivingCity.Personnel
 
             roster.Organization.BossHoodIds.Remove(id);
             for (var i = 0; i < roster.Crews.Count; i++)
-                roster.Crews[i].HoodIds.Remove(id);
+            {
+                var crew = roster.Crews[i];
+                if (crew.BagId == id)
+                {
+                    crew.BagId = -1;
+                    ClearDuty(roster, id);
+                    crew.BagNamedByBoss = false;
+                    crew.BagNamedId = -1;
+                    for (var e = crew.EscortIds.Count - 1; e >= 0; e--)
+                    {
+                        var escortId = crew.EscortIds[e];
+                        ClearDuty(roster, escortId);
+                        AddLineHood(roster, crew, escortId);
+                    }
+                    crew.EscortIds.Clear();
+                }
+                else if (crew.EscortIds.Remove(id))
+                    ClearDuty(roster, id);
+                crew.HoodIds.Remove(id);
+            }
+        }
+
+        static System.Collections.Generic.List<int> AllCrewHoods(Crew crew)
+        {
+            var all = new System.Collections.Generic.List<int>(crew.HoodIds);
+            if (crew.BagId >= 0 && !all.Contains(crew.BagId))
+                all.Add(crew.BagId);
+            for (var i = 0; i < crew.EscortIds.Count; i++)
+                if (!all.Contains(crew.EscortIds[i]))
+                    all.Add(crew.EscortIds[i]);
+            return all;
+        }
+
+        static void ReturnBagNodeToLine(Roster roster, Crew crew)
+        {
+            if (crew.BagId >= 0)
+            {
+                ClearDuty(roster, crew.BagId);
+                AddLineHood(roster, crew, crew.BagId);
+            }
+            crew.BagId = -1;
+            for (var i = 0; i < crew.EscortIds.Count; i++)
+            {
+                ClearDuty(roster, crew.EscortIds[i]);
+                AddLineHood(roster, crew, crew.EscortIds[i]);
+            }
+            crew.EscortIds.Clear();
+        }
+
+        static void AddLineHood(Roster roster, Crew crew, int id)
+        {
+            var member = roster.Find(id);
+            if (member != null && !member.Gone && member.Rank == Rank.Hood &&
+                !crew.HoodIds.Contains(id))
+                crew.HoodIds.Add(id);
         }
 
         static void PutUnderBossIfPresent(Roster roster, int id)

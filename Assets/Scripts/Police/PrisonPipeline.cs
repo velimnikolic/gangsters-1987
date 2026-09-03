@@ -147,6 +147,11 @@ namespace LivingCity.Police
         public IReadOnlyList<Prisoner> Inside => _inside;
         public IReadOnlyList<CourtCase> Cases => _cases;
 
+        /// <summary>The docket number the next case will take. The save writes it down
+        /// so a case opened after a load cannot collide with one already on the books
+        /// (GAN-302).</summary>
+        public int NextCaseId => _nextCaseId;
+
         public Prisoner Find(int characterId)
         {
             for (var i = 0; i < _inside.Count; i++)
@@ -225,7 +230,10 @@ namespace LivingCity.Police
                     today - other.OpenedDay > ComplaintMemoryDays) continue;
 
                 file.Counts.Add(other.CaseId);
-                other.Status = CaseStatus.Tried;
+                // FOLDED, NOT TRIED. Nobody stood up for this one: it lives on as a
+                // count on the case that is actually going to be heard, and the archive
+                // must not print it as a trial that happened (GAN-302).
+                other.Status = CaseStatus.Folded;
                 attached++;
             }
             return attached;
@@ -287,17 +295,33 @@ namespace LivingCity.Police
         /// headcount, and never coming back.
         /// </summary>
         public void RestoreFrom(
-            IReadOnlyList<Prisoner> inside, IReadOnlyList<int> escaped, int rosterSeed)
+            IReadOnlyList<Prisoner> inside, IReadOnlyList<CourtCase> cases,
+            IReadOnlyList<int> escaped, int nextCaseId, int rosterSeed)
         {
             _inside.Clear();
             _everEscaped.Clear();
+            _cases.Clear();
             RosterSeed = rosterSeed;
 
             for (var i = 0; inside != null && i < inside.Count; i++)
                 if (inside[i] != null)
                     _inside.Add(inside[i]);
+            // AND THE DOCKET WITH THEM (GAN-302). A held man restored without his case
+            // was tried with nothing behind him: the trial's "no docket, no defence"
+            // branch convicts without a roll, so every witness the player had leaned on
+            // counted for nothing the moment he loaded.
+            for (var i = 0; cases != null && i < cases.Count; i++)
+                if (cases[i] != null)
+                    _cases.Add(cases[i]);
             for (var i = 0; escaped != null && i < escaped.Count; i++)
                 _everEscaped.Add(escaped[i]);
+
+            _nextCaseId = nextCaseId > 0 ? nextCaseId : 1;
+            // A file written before the docket was saved carries no number at all; the
+            // next case must still not collide with anything that came back.
+            for (var i = 0; i < _cases.Count; i++)
+                if (_cases[i].CaseId >= _nextCaseId)
+                    _nextCaseId = _cases[i].CaseId + 1;
         }
 
         /// <summary>
@@ -402,7 +426,7 @@ namespace LivingCity.Police
                 {
                     Drop(old, prisoner.CharacterId);
                     if (!file.Counts.Contains(old.CaseId)) file.Counts.Add(old.CaseId);
-                    old.Status = CaseStatus.Tried;
+                    old.Status = CaseStatus.Folded;
                 }
             }
             prisoner.CourtDay = courtDay;
@@ -444,6 +468,42 @@ namespace LivingCity.Police
                 prisoner.Stage = PrisonStage.ForTransfer;
                 prisoner.Leg = PrisonLeg.Prison;
                 wantTransfer?.Add(prisoner);
+            }
+
+            LapseAbandonedCases(today);
+        }
+
+        /// <summary>
+        /// A CASE NOBODY IS LEFT TO TRY LAPSES (GAN-302).
+        ///
+        /// A man who skips his bail stays a defendant - that is the epic's ruling, and
+        /// it is what lets a re-arrest fold the old charge in as a count. But if he is
+        /// never taken again, the case sits Open forever: it keeps a card on the docket
+        /// for a defendant who is neither held nor bailed nor even wanted any more, and
+        /// its witness markers stay on the map for a trial that cannot be listed.
+        ///
+        /// So an open case whose court day is a memory window behind and whose every
+        /// remaining defendant is out of the pipe is FOLDED, with whatever verdicts it
+        /// collected already on it. A complaint nobody was ever taken for is untouched:
+        /// it has no defendants at all and is exactly what becomes a count later.
+        /// </summary>
+        void LapseAbandonedCases(int today)
+        {
+            if (today <= 0) return;
+            for (var i = 0; i < _cases.Count; i++)
+            {
+                var file = _cases[i];
+                if (file.Status != CaseStatus.Open) continue;
+                if (file.Defendants.Count == 0) continue;
+                if (file.CourtDay <= 0 ||
+                    today - file.CourtDay <= ComplaintMemoryDays) continue;
+
+                var anybodyToTry = false;
+                for (var d = 0; d < file.Defendants.Count && !anybodyToTry; d++)
+                    anybodyToTry = Find(file.Defendants[d]) != null;
+                if (anybodyToTry) continue;
+
+                file.Status = file.AnyTried ? CaseStatus.Tried : CaseStatus.Folded;
             }
         }
 
@@ -550,6 +610,11 @@ namespace LivingCity.Police
             _inside.Remove(prisoner);
             prisoner.Stage = PrisonStage.Skipped;
             member.BailedUntil = 0;
+            // The case stays OPEN against him (the GAN-245 ruling), but what he did is
+            // on its record from this morning - the archive prints a forfeit whether or
+            // not the case is ever heard.
+            Note(prisoner.CaseId >= 0 ? FindCase(prisoner.CaseId) : null,
+                prisoner.CharacterId, CaseOutcome.BailForfeit, today);
             WantedLevels.Mark(member, WantedLevels.FreedFromTransfer, today);
             RapSheet.Add(member, Stamp(today), Sentencing.ChargeFor(prisoner.Deed),
                 Sentencing.BailForfeitOutcome);
@@ -642,6 +707,7 @@ namespace LivingCity.Police
             // roll - which is what leaning on witnesses is FOR.
             if (file != null && !file.AnyWilling())
             {
+                Note(file, prisoner.CharacterId, CaseOutcome.Dismissed, today);
                 ResolveDefendant(file, prisoner.CharacterId, CaseStatus.Dismissed);
                 Walks(roster, member, prisoner, today, Sentencing.DismissedOutcome);
                 if (counsel != null) counsel.CasesWon++;
@@ -660,6 +726,7 @@ namespace LivingCity.Police
                 !Verdict.Convicts(
                     Verdict.ConvictionChance(file, Priors(member), lawyerSkill), rng))
             {
+                Note(file, prisoner.CharacterId, CaseOutcome.Acquitted, today);
                 ResolveDefendant(file, prisoner.CharacterId, CaseStatus.Tried);
                 Walks(roster, member, prisoner, today, Sentencing.AcquittedOutcome);
                 if (counsel != null) counsel.CasesWon++;
@@ -686,6 +753,8 @@ namespace LivingCity.Police
             member.BackOnDay = prisoner.OutOnDay;
             member.BailedUntil = 0;
             member.ConditionNote = Sentencing.IsLife(days) ? "Serving life" : "Serving his time";
+            Note(file, prisoner.CharacterId, CaseOutcome.Convicted, today, days,
+                Sentencing.IsLife(days) ? 0 : prisoner.OutOnDay);
             RapSheet.Add(member, Stamp(today), Sentencing.ChargeFor(prisoner.Deed),
                 Sentencing.Verdict(days, Sentencing.IsLife(days) ? 0 : prisoner.OutOnDay));
         }
@@ -821,13 +890,14 @@ namespace LivingCity.Police
         /// <summary>The boss cut him loose: the outfit's file is closed, and the city
         /// keeps him. He comes off the outfit's side of the pipe and his case goes on
         /// without him.</summary>
-        public void CutLoose(int characterId)
+        public void CutLoose(int characterId, int today = 0)
         {
             for (var i = _inside.Count - 1; i >= 0; i--)
             {
                 if (_inside[i].CharacterId != characterId) continue;
                 var file = _inside[i].CaseId >= 0 ? FindCase(_inside[i].CaseId) : null;
                 _inside.RemoveAt(i);
+                Note(file, characterId, CaseOutcome.CutLoose, today);
                 DropDefendant(file, characterId);
             }
             // He may be on an open case without being in the pipe at all - bailed and
@@ -835,7 +905,10 @@ namespace LivingCity.Police
             for (var i = 0; i < _cases.Count; i++)
                 if (_cases[i].Status == CaseStatus.Open &&
                     _cases[i].HasDefendant(characterId))
+                {
+                    Note(_cases[i], characterId, CaseOutcome.CutLoose, today);
                     DropDefendant(_cases[i], characterId);
+                }
         }
 
         /// <summary>
@@ -864,6 +937,30 @@ namespace LivingCity.Police
         }
 
         /// <summary>
+        /// WHAT BECAME OF THIS MAN, written on the case (GAN-302). One line per man per
+        /// close, and this is the only door: the rap sheet is his own book and keeps its
+        /// prose, while the docket keeps the record the ledger's archive prints.
+        ///
+        /// A man can only be closed once on one case - a second call for the same name
+        /// overwrites nothing and adds nothing, so a re-tried man cannot end up on the
+        /// sheet twice.
+        /// </summary>
+        static void Note(CourtCase file, int characterId, CaseOutcome outcome,
+            int today, int days = 0, int outOnDay = 0)
+        {
+            if (file == null || file.VerdictFor(characterId) != null)
+                return;
+            file.Verdicts.Add(new CaseVerdict
+            {
+                CharacterId = characterId,
+                Outcome = outcome,
+                Days = days,
+                OutOnDay = outOnDay,
+                Day = today,
+            });
+        }
+
+        /// <summary>
         /// He is off this case. A case that had defendants and has none left is CLOSED:
         /// nothing will ever put it up for transfer again, and an open case with nobody
         /// on it goes on drawing witness markers and taking leans for a trial that
@@ -878,7 +975,7 @@ namespace LivingCity.Police
             if (file == null || !file.Defendants.Remove(characterId))
                 return;
             if (file.Defendants.Count == 0 && file.Status == CaseStatus.Open)
-                file.Status = CaseStatus.Tried;
+                file.Status = file.AnyTried ? CaseStatus.Tried : CaseStatus.Folded;
         }
 
         /// <summary>Takes a man off a case without judging what is left of it - the

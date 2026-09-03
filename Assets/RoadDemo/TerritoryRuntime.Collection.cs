@@ -38,6 +38,243 @@ namespace RoadDemo
 
         readonly List<RoundBody> bodies = new List<RoundBody>();
         readonly List<TerritoryRoundStop> stopScratch = new List<TerritoryRoundStop>();
+        const float PendingBagRoundTimeout = 20f;
+        const float PendingBagRoundReassert = 1f;
+        const float BagDefenceInterval = 0.25f;
+
+        /// <summary>Quiet seconds on the headquarters block before the detail files
+        /// back inside.</summary>
+        const float BagStandDownAfter = 20f;
+
+        sealed class PendingBagRound
+        {
+            public CollectDuesCommand Command;
+            public float Deadline;
+            public float ReassertAt;
+            public int ScheduledDay = -1;
+
+            /// <summary>
+            /// EVERY HISTORY ROW WAITING ON THIS ONE ROUND. The gateway hands each
+            /// submission its own receipt, and a second SEND while the detail is still
+            /// in the doorway is answered Pending - so a retry used to leave a row that
+            /// nothing would ever make terminal, and the reader could not tell whether
+            /// his order had started or died. They all resolve together now.
+            /// </summary>
+            public readonly List<long> Receipts = new List<long>();
+        }
+
+        readonly List<PendingBagRound> pendingBagRounds =
+            new List<PendingBagRound>();
+        readonly Dictionary<int, float> bagClearSince = new Dictionary<int, float>();
+        int scheduledSubmitDay = -1;
+        float nextBagDefenceAt;
+
+        internal bool BagRoundPending(int crewId) => PendingBagRoundOf(crewId) != null;
+
+        PendingBagRound PendingBagRoundOf(int crewId)
+        {
+            for (var i = 0; i < pendingBagRounds.Count; i++)
+                if (pendingBagRounds[i].Command.GroupId.Value == crewId)
+                    return pendingBagRounds[i];
+            return null;
+        }
+
+        /// <summary>Closes every receipt waiting on one deferred round.</summary>
+        void ResolveBagRound(PendingBagRound pending, TerritoryCommandStatus status,
+            string reason)
+        {
+            if (pending == null || Commands == null)
+                return;
+            for (var i = 0; i < pending.Receipts.Count; i++)
+                Commands.Resolve(pending.Receipts[i], status, reason);
+            pending.Receipts.Clear();
+        }
+
+        /// <summary>A scheduled detail walks back through the headquarters door before
+        /// it receives its first route. The filed command waits here; the line and its
+        /// independent billet are untouched.</summary>
+        void TendPendingBagRounds()
+        {
+            if (crews == null || pendingBagRounds.Count == 0)
+                return;
+            for (var i = pendingBagRounds.Count - 1; i >= 0; i--)
+            {
+                var pending = pendingBagRounds[i];
+                var command = pending.Command;
+                var bag = crews.BagUnitOf(command.GroupId.Value);
+
+                if (bag == null)
+                {
+                    pendingBagRounds.RemoveAt(i);
+                    FailPendingBagRound(pending, "The bag detail could not come out.");
+                    continue;
+                }
+
+                if (Time.time >= pending.Deadline)
+                {
+                    pendingBagRounds.RemoveAt(i);
+                    FailPendingBagRound(pending, "The bag detail could not clear the door.");
+                    continue;
+                }
+
+                if (!CrewQuarters.AllOutside(bag))
+                {
+                    // Roster sync may have re-stationed a newly projected detail while
+                    // its command was waiting. Keep the exit intent authoritative and
+                    // bounded instead of leaving the crew pending forever.
+                    if (Time.time >= pending.ReassertAt)
+                    {
+                        if (CrewQuarters.Billeted(bag))
+                            CrewQuarters.BringOut(bag);
+                        pending.ReassertAt = Time.time + PendingBagRoundReassert;
+                    }
+                    continue;
+                }
+
+                pendingBagRounds.RemoveAt(i);
+                TerritoryCommandExecution result;
+                var previousScheduledDay = scheduledSubmitDay;
+                scheduledSubmitDay = pending.ScheduledDay;
+                try
+                {
+                    result = Execute(command);
+                }
+                finally
+                {
+                    scheduledSubmitDay = previousScheduledDay;
+                }
+
+                if (RoundRunning(command.GroupId.Value))
+                {
+                    ResolveBagRound(pending, TerritoryCommandStatus.Succeeded,
+                        "The round is walking.");
+                    ConfirmScheduledBagRound(command, pending.ScheduledDay);
+                    continue;
+                }
+
+                // A same-frame billet reappearing can legitimately queue the command
+                // again. The receipts waiting on THIS attempt move to that one rather
+                // than being closed under a round that is still trying to start.
+                var requeued = PendingBagRoundOf(command.GroupId.Value);
+                if (requeued != null)
+                {
+                    for (var r = 0; r < pending.Receipts.Count; r++)
+                        if (!requeued.Receipts.Contains(pending.Receipts[r]))
+                            requeued.Receipts.Add(pending.Receipts[r]);
+                    continue;
+                }
+                var reason = !string.IsNullOrEmpty(result.Reason)
+                    ? result.Reason
+                    : "The bag detail could not start the round.";
+                FailPendingBagRound(pending, reason);
+            }
+        }
+
+        void FailPendingBagRound(PendingBagRound pending, string reason)
+        {
+            ResolveBagRound(pending, TerritoryCommandStatus.Failed, reason);
+            CrewOverlay.Announce(reason.ToUpperInvariant(), 4f,
+                new Color(1f, 0.55f, 0.45f));
+        }
+
+        void ConfirmScheduledBagRound(CollectDuesCommand command, int scheduledDay)
+        {
+            if (scheduledDay < 0 || roundScheduler == null)
+                return;
+            var house = LivingCity.Outfit.Underworld.Current?.Of(command.House.Value);
+            var crew = house?.Roster?.FindCrew(command.GroupId.Value);
+            if (house != null && crew != null)
+                roundScheduler.Confirm(house, crew, command.BlockId, scheduledDay);
+        }
+
+        /// <summary>The autonomous bag detail answers a threat on the headquarters
+        /// block, then returns inside after twenty quiet seconds. It never accepts a
+        /// player unit order and never abandons a round to do this.</summary>
+        void TendBagDefence()
+        {
+            if (crews == null)
+                return;
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            if (outfit == null || !outfit.TryGetHeadquarters(out var hq, out _) ||
+                !TryGetBlockAtWorld(hq, out var hqBlock))
+                return;
+
+            DemoCrews.Unit threat = null;
+            for (var i = 0; i < crews.Units.Count; i++)
+            {
+                var unit = crews.Units[i];
+                if (unit == null || unit.Faction <= 0 || unit.IsPolice || unit.Wiped ||
+                    !TryGetBlockAtWorld(unit.Position, out var block) || block != hqBlock)
+                    continue;
+                threat = unit;
+                break;
+            }
+
+            // The other trigger is a fight already under way at home, even when its
+            // opponent is the law or is not otherwise a rival crew the scan above
+            // would choose. Both sides must still be on the headquarters block: the
+            // bag detail defends the doorstep; it never chases a fight into the next
+            // street.
+            if (threat == null)
+                for (var i = 0; i < crews.Units.Count; i++)
+                {
+                    var ours = crews.Units[i];
+                    var target = ours?.TargetUnit;
+                    if (ours == null || ours.Faction != 0 || ours.IsDetachment ||
+                        ours.Wiped || target == null || target.Wiped ||
+                        !TryGetBlockAtWorld(ours.Position, out var ourBlock) ||
+                        ourBlock != hqBlock ||
+                        !TryGetBlockAtWorld(target.Position, out var targetBlock) ||
+                        targetBlock != hqBlock)
+                        continue;
+                    threat = target;
+                    break;
+                }
+
+            for (var i = 0; i < crews.Units.Count; i++)
+            {
+                var bag = crews.Units[i];
+                if (bag == null || bag.Faction != 0 || !bag.IsDetachment || bag.Wiped)
+                    continue;
+                if (TryGetRound(bag.CrewId, out _, out _, out _) ||
+                    BagRoundPending(bag.CrewId))
+                {
+                    bagClearSince.Remove(bag.CrewId);
+                    continue;
+                }
+
+                if (threat != null)
+                {
+                    bagClearSince.Remove(bag.CrewId);
+                    if (CrewQuarters.Billeted(bag))
+                        CrewQuarters.CallOut(bag);
+                    bag.TargetUnit = threat;
+                    bag.ProvokedAt = Time.time;
+                    continue;
+                }
+
+                bag.TargetUnit = null;
+                if (CrewQuarters.Billeted(bag))
+                {
+                    bagClearSince.Remove(bag.CrewId);
+                    continue;
+                }
+                if (!bagClearSince.TryGetValue(bag.CrewId, out var clearAt))
+                {
+                    bagClearSince[bag.CrewId] = Time.time;
+                    continue;
+                }
+                if (Time.time - clearAt < BagStandDownAfter)
+                    continue;
+
+                var front = DemoCrews.PlayerFront();
+                if (front != null && front.BusinessId.IsValid)
+                    CrewQuarters.Station(crews, bag, front.BusinessId);
+                else
+                    CrewQuarters.Station(crews, bag, hq, "HQ");
+                bagClearSince.Remove(bag.CrewId);
+            }
+        }
 
         /// <summary>The physical half of a round: the men walking it, the man who
         /// carries the bag, and where on the ground each of its stops actually is. Same
@@ -47,6 +284,8 @@ namespace RoadDemo
         {
             public TerritoryRound Round;
             public CrewWalker Collector;
+            public bool LeaveBagOnGround;
+            public string FallenName = "";
 
             /// <summary>The men walking it (GAN-262): the crew's bag unit when it has a
             /// bag man, else the crew's own line. Every leg marches THIS unit; the
@@ -231,17 +470,32 @@ namespace RoadDemo
                 return;
 
             var owner = OwnerProfileOf(businessId);
+            // THE FAMILY'S STANDING ON HIS STREET: what the block fears of it, or how
+            // much of the block already pays it - whichever is the larger. A stranger
+            // gets the telephone picked up on him; a house the street answers to does
+            // not, and the man who has watched every other door pay needs no shot fired
+            // to know which of the two he is looking at.
             var businessFear = 0f;
             var cap = 100f;
-            if (fear != null && geography != null &&
+            var payingShare = 0f;
+            if (geography != null &&
                 geography.TryGetBusinessBlock(businessId, out var blockId))
             {
-                businessFear = fear.BusinessFear(blockId, businessId, gangId, lastGameHour);
-                cap = fear.Config.FearCap;
+                if (fear != null)
+                {
+                    businessFear = fear.BusinessFear(blockId, businessId, gangId, lastGameHour);
+                    cap = fear.Config.FearCap;
+                }
+                if (racket != null)
+                {
+                    BlockBusinesses(blockId);
+                    payingShare = racket.ComplianceOf(blockBusinessScratch, gangId);
+                }
             }
 
             var chance = LivingCity.Police.ComplaintRoll.Chance(
-                owner.Connections, businessFear, cap,
+                owner.Connections,
+                LivingCity.Police.ComplaintRoll.Standing(businessFear, cap, payingShare),
                 owner.Trait == TerritoryOwnerTrait.Connected,
                 owner.Trait == TerritoryOwnerTrait.Cowardly);
 
@@ -410,6 +664,16 @@ namespace RoadDemo
             // the order never disagree.
             if (RoundRunning(unit.CrewId))
                 return TerritoryCommandExecution.Reject("a round is already out");
+            var waiting = PendingBagRoundOf(unit.CrewId);
+            if (waiting != null)
+            {
+                // The same errand, asked for twice. This receipt joins the one already
+                // in the doorway rather than becoming a row nothing can close.
+                if (command.CommandId > 0 && !waiting.Receipts.Contains(command.CommandId))
+                    waiting.Receipts.Add(command.CommandId);
+                return TerritoryCommandExecution.Pending(
+                    "The bag detail is coming out of the house.");
+            }
 
             // The stops: every shop on the block that pays THIS family and owes
             // anything. The order follows the street - nearest first from where the
@@ -435,10 +699,25 @@ namespace RoadDemo
                 return TerritoryCommandExecution.Reject(
                     "Nothing on that block owes us anything yet.");
 
-            // THE BAG MAN WALKS, THE CREW STAYS (GAN-262). A crew with a man marked
-            // for the bag sends him alone, from wherever he stands; a crew with nobody
-            // marked walks the round the old way, all of it, the lieutenant carrying.
-            var walkers = crews.BagUnitOf(unit.CrewId) ?? unit;
+            // Our line never walks collection orders. Its autonomous bag detail comes
+            // out of the headquarters and owns the route. Rival paper still falls back
+            // to the physical line where that family has no detached projection.
+            if (command.House == LivingCity.Gameplay.PlayerCommands.House)
+            {
+                var roster = LivingCity.Outfit.Underworld.Current?.Player?.Roster;
+                var assignedId = LivingCity.Personnel.RosterOps.CollectorOf(
+                    roster, unit.CrewId);
+                var assigned = roster?.Find(assignedId);
+                if (assigned == null ||
+                    assigned.Status != LivingCity.Personnel.CharacterStatus.Active)
+                    return TerritoryCommandExecution.Reject(
+                        "The crew's collector is not available to walk the round.");
+            }
+            var walkers = crews.BagUnitOf(unit.CrewId);
+            if (command.House == LivingCity.Gameplay.PlayerCommands.House && walkers == null)
+                return TerritoryCommandExecution.Reject(
+                    "The crew has no bag detail on the street.");
+            walkers ??= unit;
             var collector = CollectorOf(walkers);
             if (collector == null)
                 return TerritoryCommandExecution.Reject(
@@ -449,6 +728,24 @@ namespace RoadDemo
 
             // One errand at a time: the old doorstep order and any old round go.
             DropPendingApproaches(unit.CrewId);
+
+            // The detail comes through the door on its feet. The filed round begins
+            // only once the doorway beat has put every survivor back on the pavement.
+            if (CrewQuarters.Billeted(walkers))
+            {
+                CrewQuarters.BringOut(walkers);
+                var queued = new PendingBagRound
+                {
+                    Command = command,
+                    Deadline = Time.time + PendingBagRoundTimeout,
+                    ReassertAt = Time.time + PendingBagRoundReassert,
+                    ScheduledDay = scheduledSubmitDay,
+                };
+                if (command.CommandId > 0) queued.Receipts.Add(command.CommandId);
+                pendingBagRounds.Add(queued);
+                return TerritoryCommandExecution.Pending(
+                    "The bag detail is coming out of the house.");
+            }
 
             // THE WALK IS TAKEN BEFORE THE ROUND IS OPENED. A crew that refuses to march
             // never had a round at all - opening one first would file a lost round for a
@@ -575,10 +872,19 @@ namespace RoadDemo
             // EVERY house's paper, not only ours. A family's rounds go out on their own
             // days off their own lieutenants' blocks, and the money walks home to their
             // own front - the same schedule, the same refusals, the same wire.
-            for (var g = 0; g < underworld.Count; g++)
-                roundScheduler.Tend(
-                    underworld.Of(g), day, dayOfWeek, hourOfDay, roundLedger,
-                    SubmitScheduledRound);
+            var previousScheduledDay = scheduledSubmitDay;
+            scheduledSubmitDay = day;
+            try
+            {
+                for (var g = 0; g < underworld.Count; g++)
+                    roundScheduler.Tend(
+                        underworld.Of(g), day, dayOfWeek, hourOfDay, roundLedger,
+                        SubmitScheduledRound);
+            }
+            finally
+            {
+                scheduledSubmitDay = previousScheduledDay;
+            }
         }
 
         /// <summary>The gateway is the mutation boundary and it records the command, so
@@ -597,12 +903,13 @@ namespace RoadDemo
             if (house.IsPlayer && crews.BagUnitOf(crew.Id) == null)
                 return false;
 
-            var result = Commands.Submit(new CollectDuesCommand(
+            Commands.Submit(new CollectDuesCommand(
                     TerritoryCommandNodeId.Crew(crew.Id), blockId)
                 { House = new TerritoryGangId(house.GangId) });
-            return result.Status == TerritoryCommandStatus.Accepted ||
-                   result.Status == TerritoryCommandStatus.Pending ||
-                   result.Status == TerritoryCommandStatus.Succeeded;
+            // Pending can mean either "the route is walking" or only "the detail is
+            // crossing the door". The physical ledger is the distinction. Scheduler
+            // filing waits for the former; the deferred path confirms it on OpenRound.
+            return RoundRunning(crew.Id);
         }
 
         /// <summary>A ROUND THAT GOES OUT BY ITSELF HAS TO SAY SO. It is the one thing in
@@ -1130,8 +1437,21 @@ namespace RoadDemo
                 return;
 
             var banked = round.Stage == TerritoryRoundStage.Banked;
-            BagCarry.Drop(round.CrewId, banked);
             var ours = round.House == LivingCity.Gameplay.PlayerCommands.House;
+            // Where it lies if the carrier had no bag on him to drop: the collector's
+            // own last position, else the door he was walking to. A take with nowhere
+            // to fall is a take that vanishes (BagCarry.Drop).
+            Vector3? fellAt = null;
+            if (body != null)
+            {
+                if (body.Collector != null && body.Collector.Tf != null)
+                    fellAt = body.Collector.Tf.position;
+                else if (body.Doors.Count > 0)
+                    fellAt = body.Door(round.StopIndex);
+            }
+            BagCarry.Drop(round.CrewId, banked, round.Carried, round.House.Value,
+                body != null ? body.FallenName : "",
+                body != null && body.LeaveBagOnGround, crews, fellAt);
 
             if (banked)
             {
@@ -1155,6 +1475,17 @@ namespace RoadDemo
                         LivingCity.Gameplay.OutfitDirector.Instance != null
                             ? LivingCity.Gameplay.OutfitDirector.Instance.Campaign.Day
                             : 1);
+
+                if (body?.Walkers != null && body.Walkers.IsDetachment &&
+                    !body.Walkers.Wiped)
+                {
+                    var front = DemoCrews.PlayerFront();
+                    if (front != null && front.BusinessId.IsValid)
+                        CrewQuarters.Station(crews, body.Walkers, front.BusinessId);
+                    else
+                        CrewQuarters.Station(crews, body.Walkers,
+                            HomeDoor(round.House), "HQ");
+                }
             }
             else if (round.Carried > 0)
             {
@@ -1173,10 +1504,14 @@ namespace RoadDemo
                 // The loudest money event on the wire was the quietest one on the
                 // street: every ordinary stop calls itself over the door and a bag
                 // going missing said nothing at all.
-                CrewOverlay.Announce(
-                    "THE BAG IS GONE · $" + round.Carried +
-                    " OFF " + BlockWord(round.BlockId), 4f,
-                    new Color(1f, 0.55f, 0.45f));
+                var line = body != null && body.LeaveBagOnGround
+                    ? (string.IsNullOrEmpty(body.FallenName)
+                        ? "OUR COLLECTOR" : body.FallenName.ToUpperInvariant()) +
+                      " FELL ON THE ROUND · $" + round.Carried + " LIES ON " +
+                      BlockWord(round.BlockId)
+                    : "THE BAG IS GONE · $" + round.Carried +
+                      " OFF " + BlockWord(round.BlockId);
+                CrewOverlay.Announce(line, 4f, new Color(1f, 0.55f, 0.45f));
             }
 
             events.Publish(new CollectionRoundSettled(
@@ -1229,6 +1564,12 @@ namespace RoadDemo
                 // hands the round on to the crew's new bag man, else to the line.
                 var carrier = body.Collector;
                 var carrierDown = carrier == null || carrier.Dead || carrier.Tf == null;
+                if (carrierDown && standing)
+                {
+                    body.Collector = null;
+                    if (EnsureCollector(body, walkers) != null)
+                        continue;
+                }
                 if (!standing && !carrierDown)
                 {
                     var next = crews.BagUnitOf(round.CrewId)
@@ -1249,6 +1590,11 @@ namespace RoadDemo
 
                 if (standing)
                     continue;
+                if (carrierDown && round.Carried > 0)
+                {
+                    body.LeaveBagOnGround = true;
+                    body.FallenName = carrier != null ? carrier.DisplayName : "our collector";
+                }
                 roundLedger.Abandon(round, gameHour);
             }
         }

@@ -36,6 +36,8 @@ namespace LivingCity.Personnel
     {
         None,
         Collector,
+        // Appended so serialized None/Collector values keep their meaning.
+        Escort,
     }
 
     public enum CharacterStatus

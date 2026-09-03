@@ -590,7 +590,7 @@ namespace RoadDemo
         /// </summary>
         static string Bought(House house, HouseIntent intent)
         {
-            var paid = HouseOps.Purchase(house, intent.Price);
+            var paid = HouseOps.Purchase(house, intent.Price, out var dirtyPart);
             if (!paid.Ok)
                 return paid.Reason;
 
@@ -598,7 +598,7 @@ namespace RoadDemo
                 house.Roster, intent.Kit, intent.Listing, intent.Price);
             if (item == null)
             {
-                HouseOps.Refund(house, intent.Price);
+                HouseOps.Refund(house, intent.Price, dirtyPart);
                 return "the dealer had nothing";
             }
 

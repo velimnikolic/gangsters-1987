@@ -200,10 +200,15 @@ namespace LivingCity.UI
         sealed class CommandBranch
         {
             public int LeaderId;
+            public int CrewId = -1;
             public string Rank;
             public string Name;
             public Color Ink;
             public bool IsDetail;
+            public bool IsBag;
+            public int BagSlotsUsed;
+            public CommandBranch Parent;
+            public CommandBranch Bag;
             public bool HasMeters;
             public CapacityMeasure Men;
             public CapacityMeasure Blocks;
@@ -337,12 +342,16 @@ namespace LivingCity.UI
                 WageLine = "full wages · no earnings",
             };
             if (detail != null)
+            {
                 for (var i = 0; i < detail.HoodIds.Count; i++)
                 {
                     var guard = Person(detail.HoodIds[i]);
                     if (guard.IsValid && CommandShows(guard))
                         guards.Roster.Add(guard);
                 }
+                guards.CrewId = detail.Id;
+                guards.Bag = GatherBagBranch(detail, guards);
+            }
             SortCommandMen(guards.Roster);
             commandBranches.Add(guards);
 
@@ -354,6 +363,7 @@ namespace LivingCity.UI
                 var branch = new CommandBranch
                 {
                     LeaderId = leader.Id,
+                    CrewId = roster.CrewOf(leader.Id)?.Id ?? -1,
                     Rank = "LIEUTENANT",
                     Name = leader.Name,
                     Ink = capacity.IsOverCapacity ? LedgerV2.Red : LedgerV2.Lieutenant,
@@ -370,8 +380,11 @@ namespace LivingCity.UI
                 query.CollectDirectSubordinates(leader.Id, organizationScratch);
                 for (var m = 0; m < organizationScratch.Count; m++)
                     if (organizationScratch[m].Rank == Rank.Hood &&
+                        roster.Find(organizationScratch[m].Id)?.Duty == Duty.None &&
                         CommandShows(organizationScratch[m]))
                         branch.Roster.Add(organizationScratch[m]);
+                var crew = roster.CrewOf(leader.Id);
+                branch.Bag = GatherBagBranch(crew, branch);
                 SortCommandMen(branch.Roster);
                 commandBranches.Add(branch);
             }
@@ -384,6 +397,95 @@ namespace LivingCity.UI
                     commandReserve.Add(person);
             }
             SortCommandMen(commandReserve);
+        }
+
+        CommandBranch GatherBagBranch(Crew crew, CommandBranch parent)
+        {
+            var roster = director != null ? director.Roster : null;
+            var collector = crew != null && roster != null ? roster.Find(crew.BagId) : null;
+            if (collector == null || collector.Gone)
+                return null;
+
+            var bag = new CommandBranch
+            {
+                LeaderId = collector.Id,
+                CrewId = crew.Id,
+                Rank = "THE BAG",
+                Name = collector.FullName,
+                Ink = LedgerV2.Lieutenant,
+                IsBag = true,
+                BagSlotsUsed = crew.EscortIds.Count,
+                Parent = parent,
+                Wage = Outfit.Wages.WageFor(collector, RosterDay),
+            };
+            for (var i = 0; i < crew.EscortIds.Count; i++)
+            {
+                var escort = Person(crew.EscortIds[i]);
+                if (escort.IsValid && CommandShows(escort))
+                    bag.Roster.Add(escort);
+            }
+            SortCommandMen(bag.Roster);
+            var collectorPerson = Person(collector.Id);
+            if (collectorPerson.IsValid && CommandShows(collectorPerson))
+                bag.Roster.Insert(0, collectorPerson);
+            bag.WageLine = BagWageLine(crew, bag);
+            return bag;
+        }
+
+        // Pure shape read for the ledger contract: the renderer below consumes these
+        // same three figures, so tests can assert the branch without constructing a
+        // Canvas or weakening the separation between the model and the page.
+        internal static bool HasBagBranch(Crew crew) => crew != null && crew.BagId >= 0;
+        internal static int BagBranchLeaves(Crew crew) =>
+            HasBagBranch(crew) ? 1 + crew.EscortIds.Count : 0;
+        internal static int BagBranchEmptyPlaces(Crew crew) =>
+            HasBagBranch(crew)
+                ? System.Math.Max(0, Crew.MaxEscorts - crew.EscortIds.Count) : 0;
+
+        string BagWageLine(Crew crew, CommandBranch bag)
+        {
+            var roster = director != null ? director.Roster : null;
+            var men = 0;
+            var wages = 0;
+            var collector = roster != null ? roster.Find(crew.BagId) : null;
+            if (collector != null && !collector.Gone)
+            {
+                men++;
+                wages += Outfit.Wages.WageFor(collector, RosterDay);
+            }
+            for (var i = 0; roster != null && i < crew.EscortIds.Count; i++)
+            {
+                var escort = roster.Find(crew.EscortIds[i]);
+                if (escort == null || escort.Gone)
+                    continue;
+                men++;
+                wages += Outfit.Wages.WageFor(escort, RosterDay);
+            }
+            var days = new List<int>();
+            if (roster != null)
+                for (var i = 0; i < roster.Organization.BlockResponsibilities.Count; i++)
+                {
+                    var row = roster.Organization.BlockResponsibilities[i];
+                    if (row.LeaderId != crew.LieutenantId)
+                        continue;
+                    var day = LivingCity.Territory.TerritoryCollectionSchedule.DayOf(row.BlockId);
+                    if (!days.Contains(day))
+                        days.Add(day);
+                }
+            var rounds = "no ground";
+            if (days.Count > 0)
+            {
+                days.Sort();
+                var words = new List<string>();
+                for (var i = 0; i < days.Count; i++)
+                {
+                    var word = LivingCity.Territory.TerritoryCollectionSchedule.WordOfDay(days[i]);
+                    words.Add(word.Length > 3 ? word.Substring(0, 3) : word);
+                }
+                rounds = "rounds " + string.Join(" ", words);
+            }
+            return men + (men == 1 ? " man · " : " men · ") +
+                   LedgerText.Cash(wages) + " / day · " + rounds;
         }
 
         /// <summary>The SHOW chip's answer, applied to one man.</summary>
@@ -743,7 +845,7 @@ namespace LivingCity.UI
 
             // The hire key keeps the right of the head; the name block takes the rest.
             var hireW = 0f;
-            if (!branch.IsDetail)
+            if (!branch.IsDetail && !branch.IsBag)
             {
                 // No sum on the key. What a man costs to sign is not one flat
                 // figure - the recruiting money is only the first of it, and quoting
@@ -772,6 +874,15 @@ namespace LivingCity.UI
                 NameKey(card, BranchPad, -y, textW, LineBox(17f),
                     () => ToggleCommandFile(leaderId));
             y += LineBox(17f) + 3f;
+
+            if (branch.IsBag)
+            {
+                const float offW = 96f;
+                LedgerV2.Button(card, "OFF THE BAG", w - BranchPad - offW, -y,
+                    offW, 21f, () => FileBagOff(branch.LeaderId),
+                    LedgerV2.Key.Red, 9f);
+                y += 24f;
+            }
 
             LedgerV2.Mono(card, BranchPad, -y, w - BranchPad * 2f,
                     branch.IsDetail
@@ -808,7 +919,9 @@ namespace LivingCity.UI
             PlaceTopLeft(band, 0f, -y, w, 28f);
             Fill(band, LedgerV2.PanelBand);
             Rule(band, 0f, 0f, w, LedgerV2.Hair);
-            var summary = branch.IsDetail
+            var summary = branch.IsBag
+                ? "collector detail · no player orders"
+                : branch.IsDetail
                 ? "protection · earns the outfit nothing"
                 : BranchSummary(branch.Roster).ToLowerInvariant();
             var summaryW = Mathf.Min(MonoWidth(summary, 10.5f, 1f) + 4f,
@@ -829,7 +942,8 @@ namespace LivingCity.UI
                 y = BuildCommandFile(card, member, Leader(branch.LeaderId), y, w);
 
             // The man picked out of the reserve, offered to this branch.
-            if (organizationPickedHoodId >= 0)
+            if (organizationPickedHoodId >= 0 &&
+                (!branch.IsBag || branch.BagSlotsUsed < Crew.MaxEscorts))
             {
                 var picked = Person(organizationPickedHoodId);
                 if (picked.IsValid)
@@ -839,10 +953,14 @@ namespace LivingCity.UI
                     LedgerV2.Button(card,
                         branch.IsDetail
                             ? "FILE · PUT " + first + " ON THE DETAIL"
+                            : branch.IsBag
+                                ? "FILE · PUT " + first + " ON THE BAG"
                             : "FILE · PUT " + first + " UNDER HIM",
                         0f, -y, w, 33f,
                         branch.IsDetail
                             ? (UnityAction)(() => FileDetailPosting(hoodId))
+                            : branch.IsBag
+                                ? () => FileBagPosting(branch.CrewId, hoodId)
                             : () => FileHoodPlacement(hoodId, leaderId),
                         branch.IsDetail ? LedgerV2.Key.Red : LedgerV2.Key.Dark, 11f);
                     y += 33f;
@@ -857,7 +975,7 @@ namespace LivingCity.UI
             var leafX = x + RailX + RailStub;
             var leafW = w - RailX - RailStub;
 
-            if (branch.Roster.Count == 0)
+            if (branch.Roster.Count == 0 && !branch.IsBag)
             {
                 DashAcross(commandContent, x + RailX, cursor + 11f, RailStub);
                 DashDown(commandContent, x + RailX, railTop, 11f);
@@ -879,12 +997,52 @@ namespace LivingCity.UI
                     lastStub = cursor + LeafRowH() * 0.5f;
                     DashAcross(commandContent, x + RailX, lastStub, RailStub);
                     cursor += BuildCommandLeaf(branch.Roster[i], leafX, cursor, leafW,
-                        reserve: false) + LeafMargin;
+                        reserve: false, bagCrewId: branch.IsBag ? branch.CrewId : -1,
+                        bagCollectorId: branch.IsBag ? branch.LeaderId : -1,
+                        postBagCrewId: !branch.IsBag && branch.Bag != null &&
+                                       branch.Bag.BagSlotsUsed < Crew.MaxEscorts
+                            ? branch.CrewId : -1) + LeafMargin;
                 }
                 // The rail is trimmed at the LAST man's stub, the way the design's
                 // little patch of paper trims it: a tail hanging past the last leaf
                 // reads as a branch with a man missing off the end of it.
                 DashDown(commandContent, x + RailX, railTop, lastStub - railTop);
+            }
+
+            if (branch.IsBag)
+            {
+                var empty = Mathf.Max(0, Crew.MaxEscorts - branch.BagSlotsUsed);
+                for (var i = 0; i < empty; i++)
+                {
+                    cursor += LeafMargin;
+                    var stub = cursor + LeafRowH() * 0.5f;
+                    DashAcross(commandContent, x + RailX, stub, RailStub);
+                    var slot = LedgerV2.Card("Escort place", commandContent,
+                        leafX, -cursor, leafW, LeafRowH(), LedgerV2.Panel);
+                    LedgerV2.Mono(slot, LeafPad, -(LeafRowH() - LineBox(10f)) * 0.5f,
+                        leafW - LeafPad * 2f, "EMPTY ESCORT PLACE · PLACE", 10f,
+                        LedgerV2.Muted, 1f, TextAlignmentOptions.MidlineRight);
+                    if (organizationPickedHoodId >= 0)
+                    {
+                        var hoodId = organizationPickedHoodId;
+                        NameKey(slot, 0f, 0f, leafW, LeafRowH(),
+                            () => FileBagPosting(branch.CrewId, hoodId));
+                    }
+                    cursor += LeafRowH() + LeafMargin;
+                }
+                if (branch.Roster.Count + empty > 0)
+                    DashDown(commandContent, x + RailX, railTop,
+                        Mathf.Max(0f, cursor - railTop - LeafMargin - LeafRowH() * 0.5f));
+            }
+
+            if (branch.Bag != null)
+            {
+                cursor += 14f;
+                var nestedX = x + RailX;
+                DashAcross(commandContent, x + RailX * 0.45f, cursor + 24f,
+                    RailX * 0.55f);
+                cursor += BuildCommandBranch(branch.Bag, nestedX, cursor,
+                    Mathf.Max(180f, w - RailX));
             }
 
             return cursor - top;
@@ -902,6 +1060,8 @@ namespace LivingCity.UI
             var total = branch.IsDetail ? 0 : branch.Wage;
             for (var i = 0; i < branch.Roster.Count; i++)
             {
+                if (branch.Roster[i].Id == branch.LeaderId)
+                    continue;
                 var member = roster.Find(branch.Roster[i].Id);
                 if (member != null)
                     total += Outfit.Wages.WageFor(member, RosterDay);
@@ -922,7 +1082,8 @@ namespace LivingCity.UI
         /// one piece of paper. Answers its height.
         /// </summary>
         float BuildCommandLeaf(OrganizationPerson person, float x, float top, float w,
-            bool reserve)
+            bool reserve, int bagCrewId = -1, int postBagCrewId = -1,
+            int bagCollectorId = -1)
         {
             var roster = director != null ? director.Roster : null;
             var member = roster != null ? roster.Find(person.Id) : null;
@@ -966,18 +1127,51 @@ namespace LivingCity.UI
             var wageX = tailX - gap - LeafWageW;
             var condX = wageX - gap - LeafCondW;
 
-            var tailY = -(rowH - LineBox(9.5f)) * 0.5f;
-            var tail = LedgerV2.Mono(row, tailX, tailY, tailW,
-                reserve ? picked ? "PICKED" : "PLACE" : "PULL", 9.5f,
-                dead ? LedgerV2.Faint
-                    : reserve ? picked ? LedgerV2.Red : LedgerV2.Muted : LedgerV2.Red,
-                0f, TextAlignmentOptions.MidlineRight);
-            tail.font = LedgerStyle.MonoBold;
-            if (!dead)
-                NameKey(row, tailX, tailY, tailW, LineBox(9.5f),
-                    reserve
-                        ? (UnityAction)(() => PickHood(id))
-                        : () => FileHoodRecall(id));
+            var tailLine = LineBox(9.5f);
+            var tailY = -(rowH - tailLine) * 0.5f;
+            if (!reserve && bagCrewId < 0 && postBagCrewId >= 0)
+            {
+                // A line hood keeps his ordinary PULL and gains the brief's SECOND
+                // action for the bag. Stacking the two words preserves every existing
+                // column width and gives each one its own hit surface.
+                var bagY = -4f;
+                var pullY = -(rowH - tailLine - 4f);
+                var bagTail = LedgerV2.Mono(row, tailX, bagY, tailW, "TO BAG", 9.5f,
+                    dead ? LedgerV2.Faint : LedgerV2.Red, 0f,
+                    TextAlignmentOptions.MidlineRight);
+                bagTail.font = LedgerStyle.MonoBold;
+                var pullTail = LedgerV2.Mono(row, tailX, pullY, tailW, "PULL", 9.5f,
+                    dead ? LedgerV2.Faint : LedgerV2.Red, 0f,
+                    TextAlignmentOptions.MidlineRight);
+                pullTail.font = LedgerStyle.MonoBold;
+                if (!dead)
+                {
+                    NameKey(row, tailX, bagY, tailW, tailLine,
+                        () => FileBagPosting(postBagCrewId, id));
+                    NameKey(row, tailX, pullY, tailW, tailLine,
+                        () => FileHoodRecall(id));
+                }
+            }
+            else
+            {
+                var tail = LedgerV2.Mono(row, tailX, tailY, tailW,
+                    reserve ? picked ? "PICKED" : "PLACE"
+                        : person.Id == bagCollectorId ? "OFF BAG"
+                        : "PULL", 9.5f,
+                    dead ? LedgerV2.Faint
+                        : reserve ? picked ? LedgerV2.Red : LedgerV2.Muted : LedgerV2.Red,
+                    0f, TextAlignmentOptions.MidlineRight);
+                tail.font = LedgerStyle.MonoBold;
+                if (!dead)
+                    NameKey(row, tailX, tailY, tailW, tailLine,
+                        reserve
+                            ? (UnityAction)(() => PickHood(id))
+                            : id == bagCollectorId
+                                ? () => FileBagOff(id)
+                            : bagCrewId >= 0
+                                ? () => FileBagPull(id)
+                                : () => FileHoodRecall(id));
+            }
 
             var status = member != null ? member.Status : CharacterStatus.Dead;
             var cond = LedgerV2.Mono(row, condX, -(rowH - LineBox(10.5f)) * 0.5f,
@@ -1482,6 +1676,35 @@ namespace LivingCity.UI
         readonly List<(string Title, string Note, Color NoteInk, Color Dot, bool Live,
             UnityAction Do)> commandArms =
             new List<(string, string, Color, Color, bool, UnityAction)>();
+
+        void FileBagPosting(int branchCrew, int hoodId)
+        {
+            var refusal = BlockRacketSeam.ActionsOrStub.PostEscort(branchCrew, hoodId);
+            organizationNote = string.IsNullOrEmpty(refusal)
+                ? "Filed: he is on the bag's detail."
+                : refusal;
+            if (string.IsNullOrEmpty(refusal))
+                organizationPickedHoodId = -1;
+            dirty = true;
+        }
+
+        void FileBagPull(int hoodId)
+        {
+            var refusal = BlockRacketSeam.ActionsOrStub.PullEscort(hoodId);
+            organizationNote = string.IsNullOrEmpty(refusal)
+                ? "Filed: he is back in the line."
+                : refusal;
+            dirty = true;
+        }
+
+        void FileBagOff(int collectorId)
+        {
+            var refusal = BlockRacketSeam.ActionsOrStub.TakeOffTheBag(collectorId);
+            organizationNote = string.IsNullOrEmpty(refusal)
+                ? "Filed: nobody carries that bag."
+                : refusal;
+            dirty = true;
+        }
 
         /// <summary>
         /// The verbs at the foot of a file, as a RANK of keys and not a run of them:

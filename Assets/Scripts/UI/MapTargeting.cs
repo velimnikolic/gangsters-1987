@@ -48,6 +48,13 @@ namespace LivingCity.UI
         /// <summary>What to tell the player when the map has to be reached by hand.</summary>
         string SummonHint { get; }
 
+        /// <summary>
+        /// PUT THE VIEW ON THIS PLACE (GAN-302). The book sends the player to a spot -
+        /// a witness's marker, a door - and the map is whichever one is registered, so
+        /// the jump is written once here rather than against a named HUD.
+        /// </summary>
+        void FocusOn(Vector3 at);
+
         /// <summary>World-XZ rectangles the picking page wants lit while it waits.</summary>
         void SetTargetHighlights(List<Rect> worldRects, Color colour);
     }

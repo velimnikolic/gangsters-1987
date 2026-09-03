@@ -38,6 +38,55 @@ namespace LivingCity.Police
         Open,
         Dismissed,
         Tried,
+
+        // Appended (GAN-302) so every serialized status above keeps its meaning.
+
+        /// <summary>Closed without a trial: its counts were folded into a later case,
+        /// or every man on it was taken off it before a judge ever saw one. Not a
+        /// dismissal - nothing was thrown out - and not a trial.</summary>
+        Folded,
+    }
+
+    /// <summary>How one man's case ended.</summary>
+    public enum CaseOutcome
+    {
+        Convicted,
+        Acquitted,
+
+        /// <summary>The case was thrown out before any roll: nobody was left to give
+        /// evidence.</summary>
+        Dismissed,
+
+        /// <summary>He was bailed and never appeared. The money is gone and the case
+        /// stays open against him.</summary>
+        BailForfeit,
+
+        /// <summary>The boss closed the outfit's file on him while he was inside.</summary>
+        CutLoose,
+    }
+
+    /// <summary>
+    /// WHAT THE COURT DID TO ONE MAN, kept on the case rather than only on his sheet.
+    ///
+    /// The rap sheet is the MAN's book and stays exactly as it is - free text, one line
+    /// per thing that happened to him. This is the CASE's book: it says what became of
+    /// every name on this docket number, so the ledger can print a closed case as the
+    /// thing it was rather than reassembling it out of prose.
+    /// </summary>
+    public sealed class CaseVerdict
+    {
+        public int CharacterId;
+        public CaseOutcome Outcome;
+
+        /// <summary>Days of the sentence, or 0 for anything but a conviction.
+        /// <see cref="Sentencing.Life"/> when it is life.</summary>
+        public int Days;
+
+        /// <summary>The absolute day he comes out, 0 when there is none.</summary>
+        public int OutOnDay;
+
+        /// <summary>The absolute campaign day it was decided.</summary>
+        public int Day;
     }
 
     /// <summary>
@@ -131,6 +180,20 @@ namespace LivingCity.Police
         /// the men who came after him got on (PrisonPipeline.ResolveDefendant).</summary>
         public bool AnyTried;
 
+        /// <summary>What became of each man who was ever a defendant here (GAN-302).
+        /// Written by <see cref="PrisonPipeline"/> at every close and by nothing else.
+        /// Empty while the case is still being answered.</summary>
+        public readonly List<CaseVerdict> Verdicts = new List<CaseVerdict>();
+
+        /// <summary>What the court did to one man on this case, or null.</summary>
+        public CaseVerdict VerdictFor(int characterId)
+        {
+            for (var i = 0; i < Verdicts.Count; i++)
+                if (Verdicts[i].CharacterId == characterId)
+                    return Verdicts[i];
+            return null;
+        }
+
         public bool HasDefendant(int characterId) => Defendants.Contains(characterId);
 
         /// <summary>Eyewitnesses still willing to stand up.</summary>
@@ -174,20 +237,38 @@ namespace LivingCity.Police
 
     /// <summary>
     /// WHETHER HE RINGS. A leaned-on shopkeeper is not a number that moves any more -
-    /// he decides, and the decision is his own connections against his own fear.
+    /// he decides, and the decision is the family's STANDING on his street against his
+    /// own nerve to go against it.
     ///
-    /// A man with a cousin at the precinct rings; a man who has been frightened for a
-    /// month by the family standing in his doorway does not, whatever his cousin does
-    /// for a living. Both ends are clamped so no shopkeeper is ever a certainty in
+    /// The arc is the whole point: a family nobody has heard of gets the telephone
+    /// picked up on it most of the time - a stranger in the doorway is a matter for
+    /// the precinct - and a family the street already answers to does not, because
+    /// the man behind the counter has watched what happened to the last one who rang,
+    /// or has simply watched every other door on the block pay. A cousin at the
+    /// precinct is worth something whatever the standing; a man who wants no trouble
+    /// is worth less. Both ends are clamped so no shopkeeper is ever a certainty in
     /// either direction - the player has to expect the telephone, not know about it.
     /// </summary>
     public static class ComplaintRoll
     {
-        public const float Floor = 0.05f;
-        public const float Ceiling = 0.9f;
+        public const float Floor = 0.02f;
+        public const float Ceiling = 0.95f;
 
-        /// <summary>What a cousin at the precinct is worth on top of the connections
-        /// figure itself.</summary>
+        /// <summary>What a shopkeeper with no cousin anywhere rings at when nobody on
+        /// his street fears the family or pays it: most of the time.</summary>
+        public const float NewcomerBase = 0.55f;
+
+        /// <summary>What his own connections add on top of that, at full connections.</summary>
+        public const float ConnectionsWeight = 0.45f;
+
+        /// <summary>How fast standing silences a street. The bold share is
+        /// (1 - standing) to this power: at half standing a quarter of the calls are
+        /// left, at seventy percent one in ten, at ninety next to none.</summary>
+        public const float Steep = 2f;
+
+        /// <summary>What a cousin at the precinct is worth on top of the roll itself -
+        /// added AFTER standing has done its work, so a connected owner still rings
+        /// now and then on a family the rest of the street would not dare to.</summary>
         public const float ConnectedBonus = 0.15f;
 
         /// <summary>What being the kind of man who does not want trouble takes off
@@ -195,25 +276,51 @@ namespace LivingCity.Police
         public const float CowardlyPenalty = 0.15f;
 
         /// <summary>
-        /// The odds this owner picks up the telephone about what was just said to him.
+        /// HOW ESTABLISHED THE FAMILY IS ON HIS STREET, 0..1: the larger of what the
+        /// street fears of it (its fear over the cap) and how much of the street
+        /// already pays it (the block's compliance share, 0..100). A family that has
+        /// never fired a shot but collects from every door on the block is as
+        /// established, to the man behind the counter, as one that has.
+        /// </summary>
+        public static float Standing(float businessFear, float fearCap, float payingShare)
+        {
+            var cap = fearCap > 1f ? fearCap : 1f;
+            var frightened = businessFear / cap;
+            var paying = payingShare / 100f;
+            var standing = frightened > paying ? frightened : paying;
+            if (standing < 0f) standing = 0f;
+            if (standing > 1f) standing = 1f;
+            return standing;
+        }
+
+        /// <summary>
+        /// The odds this owner picks up the telephone about what was just said to him,
+        /// against a family with this standing on his street.
         ///
         /// Traits are handed in as the two flags that matter rather than as the
         /// Territory enum: this layer knows nothing about the economy layer and is not
         /// going to start now.
         /// </summary>
-        public static float Chance(float connections, float businessFear, float fearCap,
+        public static float Chance(float connections, float standing,
             bool connected, bool cowardly)
         {
-            var cap = fearCap > 1f ? fearCap : 1f;
-            var frightened = businessFear / cap;
-            if (frightened < 0f) frightened = 0f;
-            if (frightened > 1f) frightened = 1f;
+            if (connections < 0f) connections = 0f;
+            if (connections > 1f) connections = 1f;
+            if (standing < 0f) standing = 0f;
+            if (standing > 1f) standing = 1f;
 
-            var chance = connections - frightened
+            var bold = (float)System.Math.Pow(1f - standing, Steep);
+            var chance = bold * (NewcomerBase + ConnectionsWeight * connections)
                          + (connected ? ConnectedBonus : 0f)
                          - (cowardly ? CowardlyPenalty : 0f);
             return chance < Floor ? Floor : chance > Ceiling ? Ceiling : chance;
         }
+
+        /// <summary>The same roll for a street where nobody pays the family yet: fear
+        /// is the whole of its standing.</summary>
+        public static float Chance(float connections, float businessFear, float fearCap,
+            bool connected, bool cowardly) =>
+            Chance(connections, Standing(businessFear, fearCap, 0f), connected, cowardly);
 
         /// <summary>The roll itself, off a stream the caller mixed - never a shared
         /// RNG, so the same city on the same day answers the same way.</summary>
@@ -333,12 +440,29 @@ namespace LivingCity.Police
         public static bool Convicts(float chance, System.Random rng) =>
             rng == null || rng.NextDouble() < chance;
 
-        /// <summary>How it reads on the banner while the player is waiting on it.</summary>
+        /// <summary>
+        /// HOW IT READS, and the ONLY table that says so (GAN-302). The banner while the
+        /// player waits on a verdict and the counsel's read on the ledger's law sheet
+        /// are the same four bands: two tables would have the street and the book
+        /// disagreeing about the same case.
+        ///
+        /// Words, never a number. The player is meant to expect the court, not to know
+        /// it - and the draw itself is fixed per man per court day, so no amount of
+        /// reading the line tells him where it fell.
+        /// </summary>
         public static string Leaning(float chance) =>
             chance >= 0.8f ? "IT LOOKS BAD FOR HIM"
             : chance >= 0.55f ? "THE STATE HAS A CASE"
             : chance >= 0.3f ? "IT COULD GO EITHER WAY"
             : "THEY HAVE ALMOST NOTHING";
+
+        /// <summary>What the read says when the prosecution has nobody left to put up.
+        /// Not a band: it is a certainty, and the case is thrown out before any
+        /// roll.</summary>
+        public const string NoWitnessesLeft = "THEY HAVE NOBODY";
+
+        /// <summary>And what it says with no lawyer on the books to ask.</summary>
+        public const string NoCounselToAsk = "NO COUNSEL TO ASK";
     }
 
     /// <summary>

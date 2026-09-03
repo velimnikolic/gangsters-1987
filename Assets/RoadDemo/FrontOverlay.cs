@@ -4,6 +4,9 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 using LivingCity.CameraRig;
+using LivingCity.Gameplay;
+using LivingCity.Gangs;
+using LivingCity.Outfit;
 
 namespace RoadDemo
 {
@@ -36,8 +39,8 @@ namespace RoadDemo
         const float RowHeight = 21f;
         const float TabHeight = 26f;
 
-        /// <summary>Rows the card can print on either tab. LEGIT needs eight.</summary>
-        const int MaxRows = 8;
+        /// <summary>Rows the card can print on either tab. THE HOUSE needs nine.</summary>
+        const int MaxRows = 9;
 
         /// <summary>Metres of daylight between the doorway and the card that reads it.
         /// The card hangs off the DOOR rather than off the click that opened it: placed
@@ -66,6 +69,8 @@ namespace RoadDemo
         GangFront _open;
         Vector3 _anchor;   // the doorway the card is reading, in world metres
         bool _crooked;   // which tab is up: false LEGIT, true THE BUSINESS
+        int _outfitVersion = -1;
+        int _personnelVersion = -1;
 
         public void Init()
         {
@@ -98,6 +103,14 @@ namespace RoadDemo
         void Update()
         {
             if (_open == null) return;
+
+            var outfitVersion = OutfitDirector.Instance != null
+                ? OutfitDirector.Instance.Version : -1;
+            var personnelVersion = PersonnelDirector.Instance != null
+                ? PersonnelDirector.Instance.Version : -1;
+            if (_crooked && IsPlayer(_open) &&
+                (outfitVersion != _outfitVersion || personnelVersion != _personnelVersion))
+                Show(true);
 
             // Follow the door, not the screen. The card is re-placed every frame, so it
             // sits over its own premises through a pan and a zoom, and stands down
@@ -196,6 +209,7 @@ namespace RoadDemo
                 : front.GangName.ToUpperInvariant() + " FAMILY" + Where(front);
 
             _anchor = front.Door + Vector3.up * DoorLift;
+            _crookedLabel.text = IsPlayer(front) ? "THE HOUSE" : "THE BUSINESS";
             Show(false);
             _card.gameObject.SetActive(true);
             Place();
@@ -245,15 +259,44 @@ namespace RoadDemo
             }
             else
             {
-                Row(ref used, "RUN BY", books.RunBy);
-                Row(ref used, "RACKET", books.Racket);
-                Row(ref used, "SKIM", Money(books.Skim) + " a week");
-                Row(ref used, "UPSTAIRS", books.Cut + "% to the family");
-                Row(ref used, "ON THE DOOR",
-                    books.Men == 0 ? "nobody standing" :
-                    books.Men == 1 ? "one man" : books.Men + " men");
-                _note.text = books.RacketNote + "\n" + books.Heat + "\n" + books.Whisper;
-                _note.color = Dirty;
+                if (IsPlayer(_open))
+                {
+                    var outfit = OutfitDirector.Instance;
+                    var personnel = PersonnelDirector.Instance;
+                    var report = personnel != null
+                        ? personnel.ReadHeadquarters(outfit != null ? outfit.Accounts : null)
+                        : HeadquartersReport.For(outfit != null ? outfit.Accounts : null,
+                            null, null);
+                    Row(ref used, "IN THE SAFE", Money(report.Safe));
+                    Row(ref used, "DIRTY", Money(report.Dirty),
+                        report.Risk >= RiskRating.Moderate ? Dirty : DemoUi.Ink);
+                    Row(ref used, "CLEAN", Money(report.Clean));
+                    Row(ref used, "THE DESK", string.IsNullOrEmpty(report.DeskManager)
+                        ? "nobody runs the desk" : report.DeskManager + " runs it",
+                        string.IsNullOrEmpty(report.DeskManager) ? Dirty : DemoUi.Ink);
+                    Row(ref used, "ON GUARD", report.Guards == 1
+                        ? "1 hood" : report.Guards + " hoods");
+                    Row(ref used, "INSIDE", HeadquartersText.Inside(report));
+                    Row(ref used, "ARMORY", HeadquartersText.Armory(report));
+                    Row(ref used, "IN HANDS", HeadquartersText.InHands(report));
+                    Row(ref used, "OUT BACK", HeadquartersText.Vehicles(report));
+                    _note.text = "cash on the premises is what a raid takes · the bank is not built yet";
+                    _note.color = report.Risk >= RiskRating.Moderate ? Dirty : DemoUi.InkDim;
+                    _outfitVersion = outfit != null ? outfit.Version : -1;
+                    _personnelVersion = personnel != null ? personnel.Version : -1;
+                }
+                else
+                {
+                    Row(ref used, "RUN BY", books.RunBy);
+                    Row(ref used, "RACKET", books.Racket);
+                    Row(ref used, "SKIM", Money(books.Skim) + " a week");
+                    Row(ref used, "UPSTAIRS", books.Cut + "% to the family");
+                    Row(ref used, "ON THE DOOR",
+                        books.Men == 0 ? "nobody standing" :
+                        books.Men == 1 ? "one man" : books.Men + " men");
+                    _note.text = books.RacketNote + "\n" + books.Heat + "\n" + books.Whisper;
+                    _note.color = Dirty;
+                }
             }
 
             for (var i = 0; i < _rows.Count; i++)
@@ -270,16 +313,21 @@ namespace RoadDemo
                 CardWidth, noteTop + (crooked ? 62f : 34f) + Pad);
         }
 
-        void Row(ref int used, string label, string value)
+        void Row(ref int used, string label, string value, Color? valueColour = null)
         {
             while (_rows.Count <= used) BuildRow();
             var row = _rows[used];
             row.rect.anchoredPosition = new Vector2(
                 Pad, -(Pad + 30f + 20f + TabHeight + 8f + used * RowHeight));
             row.label.text = label;
+            row.label.color = DemoUi.InkDim;
             row.value.text = value;
+            row.value.color = valueColour ?? DemoUi.Ink;
             used++;
         }
+
+        static bool IsPlayer(GangFront front) =>
+            front != null && front.GangId == GangCatalog.PlayerGangId;
 
         static string Money(int dollars) => "$" + dollars.ToString("N0");
 

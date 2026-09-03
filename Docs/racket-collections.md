@@ -4,7 +4,8 @@ How money gets from a shopkeeper's till into the outfit's safe, who carries it, 
 the books say about a door along the way.
 
 Built for GAN-224 (the mechanics) against the seam GAN-225 (the block file) reads, and
-rewritten by GAN-262 (one bag man to a crew, off the street line, walking it alone).
+rewritten by GAN-262 and GAN-273 (the collector and up to two escorts form a separate
+command node and autonomous street detail).
 
 ## The one rule under all of it
 
@@ -66,6 +67,17 @@ The same round moves under one of two clocks, and both call `Arrive` → `Settle
   `TerritoryRoundConfig.PaperStopMinutes` (2), then the same three calls and `Bank` at the
   front. No bodies at all — this is how a house the city has not stood up still collects.
 
+The line and its bag detail have independent `CrewQuarters` keys. Between rounds the
+bag detail is inside the headquarters; the scheduled round first calls `BringOut`, waits
+until its living men are through the door, then starts the route. The exit is reasserted
+if roster sync stations the detail again and fails after 20 real seconds instead of
+wedging the crew. A standing-round slip and `RoundOut` news are filed only after the
+physical round opens, never merely because that exit was requested. Banking stations it
+inside again. Its only unscheduled outing is autonomous headquarters defence, checked
+four times a second: it comes out when a rival is on the home block and returns after the
+block has stayed clear for 20 seconds. Men crossing the door still count as presence
+through `DoorBeat.Active`.
+
 Doorsteps come from `ITerritoryGeography.TryGetDoorstep(businessId, out TerritoryPoint)`,
 which the geography answers from the approach point each business site published.
 
@@ -85,8 +97,7 @@ under yesterday's incidents on the ledger's wire. `HourOfDay` beside it is what 
 ## The duty
 
 `Character.Duty` is standing work a man is marked for, over and above the crew he is in.
-`Duty.Collector` is the only member: others (Enforcer, Driver, Guard) are in the design
-and are not here because nothing would read them.
+`Duty.Collector` heads the bag node and `Duty.Escort` marks its guards.
 
 **One bag to a crew** (GAN-262). `RosterOps.SetDuty` is the only way to set one, and the
 rules are, in order:
@@ -95,11 +106,13 @@ rules are, in order:
 2. taking it OFF is always allowed
 3. not a `Rank.Hood` → "only a hood carries the bag"
 4. not `AssignmentKind.Crew` → "he has to be in a crew"
-5. otherwise the mark comes OFF every other hood of the same crew, and goes on him
+5. otherwise he leaves `HoodIds` and becomes `Crew.BagId`; the old collector returns
+   to the line
 
-Anyone in the crew may carry it — the four who walk the street included. Every move that
-changes who a man answers to clears his duty with it — `Promote`, `Demote`,
-`AssignToBoss`, `AssignToPool`, `AssignToFront`. `AssignToCrew` keeps it.
+The collector and escorts remain members of the crew through `Roster.CrewOf`, but are not
+line members. `RosterOps.PostEscort` moves a line or reserve hood into `EscortIds` (maximum
+two); `PullEscort` returns him to `HoodIds`. Every move to another assignment clears the
+node duty, including `AssignToCrew`.
 
 `RosterOps.CollectorOf(roster, crewId)` answers the one man marked, `CollectorsOf` the
 same man only while he can actually walk (a man in a hospital bed is on the books and not
@@ -128,8 +141,8 @@ a hospital bed — that is the point of naming him. A named man who is DEAD, or 
 answers to another lieutenant, is not a ruling any more: it is spent, the flag clears and
 the lieutenant hands the bag out again. Without that check one death left a crew with a
 standing order naming a corpse and its ground was never collected on again.
-`AssignToCrew` is the one move that keeps a duty, so a man who walks over with the bag has
-it re-laid in his new crew, which clears whoever was carrying it there.
+A moved collector leaves the old node empty and arrives as an ordinary hood; the old
+escorts return to that crew's line.
 
 It runs at three moments: `PersonnelDirector.AssignBlockResponsibility` (ground without a
 collector is paper nobody collects on), the day tick (`CampaignRunner.DayTick`, after the
@@ -138,31 +151,29 @@ LET HIM PICK on the block file.
 
 ### The bag man is not in the line
 
-`DemoCrews.Sync` deals four ACTIVE hoods of a crew onto the street. The man marked for the
-bag does not stand among them — the next man on the books walks in his place — but he
-still **spends one of the four**, read before the line is filled. Otherwise naming a
-collector would put a fifth body on the street, and an administrative duty would be a way
-of buying men. He is dealt into a **unit of his own** (`Unit.IsDetachment`, `Unit.Parent`, the same
-`CrewId`), standing at the outfit's own door. `DemoCrews.BagUnitOf(crewId)` finds him;
+`DemoCrews.Sync` deals the first four ACTIVE `HoodIds` onto the street. The collector and
+escorts spend none of those places: they are a **unit of their own**
+(`Unit.IsDetachment`, `Unit.Parent`, the same `CrewId`) and billet inside headquarters
+between rounds. `DemoCrews.BagUnitOf(crewId)` finds them;
 `UnitOfCrew`, `TerritoryRuntime.FindUnit`/`FindPlayerUnit`/`TryGetCrewNode` and every
 surface that LISTS or PICKS a crew (`CrewOverlay`, `CrewBar`, `RacketProbe`,
 `DemoCrews.Boarding`, the tactical projection) return the parent and skip him. Everything
 that samples BODIES — presence, arrivals, combat, avoidance — sees him like any man,
 because he is in `Units`.
 
-So a Thursday round takes one man off the block and leaves the crew standing on it.
+So a Thursday round brings the bag detail out and leaves the line standing on its block.
 `CollectionRound.Walkers` is the unit that walks: the bag unit where the crew has one,
-else the crew's own line, which is what a crew with nobody marked still does when the
-player orders a round by hand. An order to the CREW (`DropPendingApproaches`) no longer
-kills the bag man's round.
+else a rival crew's own line where no rival detachment is projected. Our line never
+accepts a collection round. An order to the CREW (`DropPendingApproaches`) no longer
+kills the bag detail's round.
 
 Two rules hold the handover together. `EnsureCollector` requires the carrier to be one of
 the men **of the unit walking the round**, not merely alive — the unit object is reused
 between deals, so a carrier dealt back into the line would otherwise have gone on settling
-doors from wherever the crew was standing. And **the bag falls with the man**: a bag unit
-dealt away under a LIVING carrier hands the round on to the crew's new bag man, else to
-the line, but a carrier who is dead loses what he was carrying where he fell. Handing his
-take to men streets away would be money teleporting off a corpse.
+doors from wherever the crew was standing. And **the bag falls with the man**: a living
+escort in the same detail takes over. With nobody standing, `BagOnGround` retains the
+take without a timer; right-clicking it with a line selected offers TAKE THE BAG, and a
+rival standing over it can take it first.
 
 ## The schedule
 
@@ -281,8 +292,9 @@ settle, duty change and policy change.
 | block file (BLOCKS sheet) | the six orders, POLICY, WHO WALKS THE DOORS, the standings column, the money figures |
 | **turf map, right-click a block** | SHAKE DOWN / COLLECT THE TAKE / LEAN, over the block whose label is up |
 | block file | WHO CARRIES THE BAG — the responsible crew's own roll, each man with his bag-fitness in stars and whether he walks the street, plus LET HIM PICK and NOBODY |
-| personnel card | MAKE HIM A COLLECTOR, and the round he actually walks under it |
-| roster row | the COLLECTOR mark |
+| chain of command | THE BAG sub-branch, escort PLACE / TO BAG / PULL, and OFF THE BAG |
+| personnel card | collector and escort posting keys, and the round under them |
+| roster row | the COLLECTOR / escort duty mark |
 | the wire (rail + street strip) | short, missed, round out, banked, lost |
 | the street | a toast when a standing round goes out, and when a bag is lost |
 
@@ -296,12 +308,12 @@ offering an order the stub would only pretend to carry out.
 
 `RoundOut` is the ninth door-news kind and the only one nothing filed before: a standing
 round is the one thing in the racket the player did not order, and without it he learned a
-round had gone only when the money arrived — or never, if it did not.
+round had gone only when the money arrived — or never, if it did not. A detail still
+crossing the headquarters door is not `RoundOut`; the scheduler confirms that daily slip
+only after the round ledger contains the opened round.
 
-## Not built
+## Money split
 
-* Duties other than Collector.
-* **The escort.** The bag man walks alone (GAN-262). The design wants one man with him
-  where the crew can spare it; that needs a second body detached from the line and a
-  formation for the pair.
-* Duties other than Collector on the bag unit — it is one man by construction today.
+Protection rounds book `DaySheet.IllegalIncome`; robberies, ransoms and recovered ground
+bags book `JobIncome`. `DirtyIncome` is their derived sum. Both enter the dirty share of
+the safe on receipt; the Finances sheet prints separate Protection and Jobs rows.

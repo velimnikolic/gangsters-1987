@@ -363,7 +363,8 @@ namespace LivingCity.Business
             if (payerGangId != ownerGangId)
                 return "we protect this place, but we do not own its deed";
 
-            var refusal = BalanceMath.TryPurchase(accounts, status.RepairPrice);
+            var refusal = BalanceMath.TryPurchase(accounts, status.RepairPrice,
+                out var dirtyPart);
             if (refusal != null)
                 return refusal;
 
@@ -371,9 +372,7 @@ namespace LivingCity.Business
             {
                 // Defensive rollback: a transaction that repaired nothing cannot remain
                 // on the books, even if a future caller introduces re-entrancy here.
-                accounts.Safe += status.RepairPrice;
-                if (accounts.Current != null)
-                    accounts.Current.Purchases -= status.RepairPrice;
+                BalanceMath.RefundPurchase(accounts, status.RepairPrice, dirtyPart);
                 return "the repair could not be completed";
             }
 

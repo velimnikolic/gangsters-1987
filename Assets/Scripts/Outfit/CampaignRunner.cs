@@ -330,6 +330,28 @@ namespace LivingCity.Outfit
             var rng = new System.Random(OrderResolution.Mix(
                 Seed + Generation.SeedOffsets.Orders, job.IssuedDay, job.Id));
 
+            // PAY BEFORE THE RESOLUTION CAN MUTATE ANYTHING. Recruit adds a man while
+            // resolving, Audit may rewrite the books, personality checks write incidents,
+            // and a completed order is handed to the city below. Letting any of those
+            // happen before discovering that the safe could not cover the attempt made
+            // the outcome free. A failed purchase is refunded below because its asking
+            // price buys the deed rather than paying for the attempt.
+            var expectedCost = OrderResolution.CostFor(
+                spec, job.TargetCount,
+                CrewKit.BestAt(roster, crew, spec.PrimaryAttribute),
+                job.TargetWorth);
+            var costPaid = false;
+            var prepaidDirty = 0;
+            if (expectedCost > 0)
+            {
+                if (BalanceMath.Pay(Accounts, expectedCost, out prepaidDirty) != null)
+                {
+                    FinishUnfunded(roster, job);
+                    return;
+                }
+                costPaid = true;
+            }
+
             var incidentsBefore = Incidents.Count;
             // MEN ON THE DOOR (D10). The street answers whether anybody is sitting on
             // this address; a scene with no street answers nothing and the order is
@@ -338,7 +360,14 @@ namespace LivingCity.Outfit
             var result = OrderResolution.Resolve(spec, job, roster, crew, rng,
                 job.StreetOutcome, Incidents, guard);
 
-            BookMoney(spec, result.Payout, result.Cost);
+            if (spec.Type == OrderType.BuyPremises &&
+                result.Outcome != OrderOutcome.Completed && costPaid)
+            {
+                BalanceMath.Refund(Accounts, expectedCost, prepaidDirty);
+                costPaid = false;
+            }
+
+            BookMoney(spec, result.Payout, result.Cost, costPaid);
             Heat += result.Heat;
 
             if (result.CasualtyId >= 0)
@@ -404,6 +433,13 @@ namespace LivingCity.Outfit
             JobResolved?.Invoke(job, result.Outcome);
         }
 
+        void FinishUnfunded(Roster roster, Job job)
+        {
+            Record(roster, job, OrderOutcome.Failed, 0, 0);
+            job.Stage = JobStage.Finished;
+            JobResolved?.Invoke(job, OrderOutcome.Failed);
+        }
+
         /// <summary>
         /// WHO IS SITTING ON THE DOOR THIS ORDER IS AGAINST, in Combat half-steps, and
         /// zero when nobody is. The street sets it; the book asks it. A bench with no
@@ -421,10 +457,21 @@ namespace LivingCity.Outfit
         {
             if (amount <= 0)
                 return;
-            Accounts.Safe += amount;
+            BalanceMath.Receive(Accounts, amount, MoneyKind.Dirty);
             var sheet = Accounts.Current;
             if (sheet != null)
                 sheet.IllegalIncome += amount;
+        }
+
+        /// <summary>A recovered street bag enters the safe as dirty Jobs income, not
+        /// as protection newly collected at a door.</summary>
+        public void BankTake(int amount)
+        {
+            if (amount <= 0)
+                return;
+            BalanceMath.Receive(Accounts, amount, MoneyKind.Dirty);
+            if (Accounts.Current != null)
+                Accounts.Current.JobIncome += amount;
         }
 
         // ----------------------------------------------------------------- the money
@@ -435,30 +482,44 @@ namespace LivingCity.Outfit
         /// nothing are not the same line as a quiet week, and the Finances page is
         /// specified to show where the money went, not merely how much is left.
         /// </summary>
-        void BookMoney(in OrderSpec spec, int payout, int cost)
+        internal bool BookMoney(in OrderSpec spec, int payout, int cost) =>
+            BookMoney(spec, payout, cost, costAlreadyPaid: false);
+
+        bool BookMoney(in OrderSpec spec, int payout, int cost, bool costAlreadyPaid)
         {
-            Accounts.Safe += payout - cost;
+            var paidCost = cost <= 0 || costAlreadyPaid ||
+                           BalanceMath.Pay(Accounts, cost, out _) == null;
+            if (!paidCost)
+                return false;
+
+            // An order cannot use the money it is about to make to finance the attempt
+            // that made it. Finish normally prepays above; keeping the same order here
+            // makes this bookkeeping seam safe for direct/headless callers too.
+            if (payout > 0)
+                BalanceMath.Receive(Accounts, payout,
+                    spec.Category == OrderCategory.Business ? MoneyKind.Clean : MoneyKind.Dirty);
 
             var sheet = Accounts.Current;
             if (sheet == null)
-                return;
+                return true;
 
             if (payout > 0)
             {
                 if (spec.Category == OrderCategory.Business)
                     sheet.LegalIncome += payout;
                 else
-                    sheet.IllegalIncome += payout;
+                    sheet.JobIncome += payout;
             }
 
             if (cost <= 0)
-                return;
+                return true;
             if (spec.Category == OrderCategory.Influence)
                 sheet.Bribes += cost;
             else if (spec.Category == OrderCategory.Business)
                 sheet.Purchases += cost;
             else
                 sheet.OtherCosts += cost;
+            return true;
         }
 
         void Record(Roster roster, Job job, OrderOutcome outcome, int money, int heat)
@@ -810,7 +871,6 @@ namespace LivingCity.Outfit
                 paid = PayTheMen(roster, out var owed, out var unpaid, out var struck);
                 sheet.WagesPaid = paid;
                 sheet.WagesShort = owed;
-                Accounts.RiskyMoney += sheet.IllegalIncome;
                 sheet.Closed = true;
 
                 // Id -1 on purpose: this line is the OUTFIT's, not one man's, and the
@@ -880,7 +940,7 @@ namespace LivingCity.Outfit
 
                 if (Accounts.Safe >= wage)
                 {
-                    Accounts.Safe -= wage;
+                    BalanceMath.Pay(Accounts, wage, out _);
                     paid += wage;
                     // A full envelope ends the run, whatever it had reached.
                     man.UnpaidSince = 0;

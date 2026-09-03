@@ -21,6 +21,8 @@ namespace LivingCity.Tests
             WagesDeriveFromTheRoster(failures);
             HiringMovesThePayroll(failures);
             BalanceArithmetic(failures);
+            RecoveredBagBooksAsAJob(failures);
+            BagBranchShapeFollowsTheNode(failures);
             TaxOnlyOnProfit(failures);
             RiskThresholds(failures);
             AssetsAreBookValue(failures);
@@ -972,6 +974,7 @@ namespace LivingCity.Tests
                 Day = 3,
                 LegalIncome = 1000,
                 IllegalIncome = 2500,
+                JobIncome = 750,
                 SalesIncome = 500,
                 Bribes = 300,
                 Purchases = 750,
@@ -981,19 +984,50 @@ namespace LivingCity.Tests
             var report = FinanceReport.For(sheet, liveWages: 900, safe: 4200,
                 riskyMoney: 0, assets: 1800);
 
-            if (report.TotalIncome != 4000)
+            if (report.TotalIncome != 4750)
                 failures.Add($"BalanceArithmetic: income {report.TotalIncome}.");
             if (report.TotalOutgoings != 2000)
                 failures.Add($"BalanceArithmetic: outgoings {report.TotalOutgoings}.");
-            if (report.Profit != 2000)
+            if (report.Profit != 2750)
                 failures.Add($"BalanceArithmetic: profit {report.Profit}.");
-            if (report.TaxDue != 600)
+            if (report.TaxDue != 825)
                 failures.Add($"BalanceArithmetic: tax due {report.TaxDue}.");
-            if (report.TotalProfit != 2000)
+            if (report.TotalProfit != 2750)
                 failures.Add($"BalanceArithmetic: total profit {report.TotalProfit} " +
                              "(no tax paid yet).");
+            if (report.JobIncome != 750 || sheet.DirtyIncome != 3250)
+                failures.Add("BalanceArithmetic: Jobs did not stay separate from Protection.");
             if (report.TotalWealth != 6000)
                 failures.Add($"BalanceArithmetic: wealth {report.TotalWealth}.");
+        }
+
+        static void RecoveredBagBooksAsAJob(List<string> failures)
+        {
+            var runner = Runner(out _);
+            var safe = runner.Accounts.Safe;
+            var risky = runner.Accounts.RiskyMoney;
+            runner.BankTake(475);
+            if (runner.Accounts.Safe != safe + 475 ||
+                runner.Accounts.RiskyMoney != risky + 475 ||
+                runner.Accounts.Current.JobIncome != 475 ||
+                runner.Accounts.Current.IllegalIncome != 0)
+                failures.Add("RecoveredBagBooksAsAJob: the take landed under Protection.");
+        }
+
+        static void BagBranchShapeFollowsTheNode(List<string> failures)
+        {
+            var crew = new Crew { Id = 27, LieutenantId = 4 };
+            if (PersonnelAlmanac.HasBagBranch(crew) ||
+                PersonnelAlmanac.BagBranchLeaves(crew) != 0 ||
+                PersonnelAlmanac.BagBranchEmptyPlaces(crew) != 0)
+                failures.Add("BAG-003: an empty crew gathered a THE BAG branch.");
+
+            crew.BagId = 8;
+            crew.EscortIds.Add(9);
+            if (!PersonnelAlmanac.HasBagBranch(crew) ||
+                PersonnelAlmanac.BagBranchLeaves(crew) != 2 ||
+                PersonnelAlmanac.BagBranchEmptyPlaces(crew) != 1)
+                failures.Add("BAG-003: collector, escort and empty place shaped the wrong branch.");
         }
 
         static void TaxOnlyOnProfit(List<string> failures)

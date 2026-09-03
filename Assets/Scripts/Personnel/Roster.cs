@@ -166,7 +166,8 @@ namespace LivingCity.Personnel
             for (var i = 0; i < Crews.Count; i++)
             {
                 var crew = Crews[i];
-                if (crew.LieutenantId == id || crew.HoodIds.Contains(id))
+                if (crew.LieutenantId == id || crew.HoodIds.Contains(id) ||
+                    crew.BagId == id || crew.EscortIds.Contains(id))
                     return crew;
             }
             return null;

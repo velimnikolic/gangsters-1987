@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using LivingCity.Outfit;
 using LivingCity.Personnel;
 using LivingCity.Territory;
 
@@ -34,8 +35,26 @@ namespace LivingCity.Tests
             ArchetypeIsStableAndTotal(failures);
             EveryBlockHasItsOwnCollectionDay(failures);
             ARoundGoesOutOnlyWhenEveryConditionHolds(failures);
+            ADeferredRoundFilesOnlyAfterConfirmation(failures);
             ADoorIsLateOnAWeeksMoneyOrAWeeksSilence(failures);
+            JobAndProtectionIncomeStaySeparate(failures);
             return failures;
+        }
+
+        static void JobAndProtectionIncomeStaySeparate(List<string> failures)
+        {
+            var runner = new CampaignRunner();
+            runner.OpenFirstSheet();
+            var raid = OrderTable.SpecOf(OrderType.Raid);
+            runner.BookMoney(raid, EconomyPrices.Raid, 0);
+            runner.BankCollection(325);
+
+            var sheet = runner.Accounts.Current;
+            if (sheet.JobIncome != EconomyPrices.Raid || sheet.IllegalIncome != 325 ||
+                sheet.DirtyIncome != EconomyPrices.Raid + 325 ||
+                BalanceMath.TotalIncome(sheet) != sheet.DirtyIncome)
+                failures.Add("BAG-001: Raid and Protection did not keep separate rows " +
+                             "inside the same dirty total.");
         }
 
         // ------------------------------------------------------------- the schedule
@@ -100,6 +119,79 @@ namespace LivingCity.Tests
                 failures.Add("SCHEDULE: the same block was collected twice in a day.");
             if (TerritoryCollectionSchedule.ShouldSend(day, open, default, 40, true, false, false))
                 failures.Add("SCHEDULE: a round went out to no block at all.");
+        }
+
+        /// <summary>Accepting an intent to leave the headquarters is not the same as
+        /// opening its round. The scheduler keeps asking until the street confirms an
+        /// actual round, then files and suppresses it exactly once for that day.</summary>
+        static void ADeferredRoundFilesOnlyAfterConfirmation(List<string> failures)
+        {
+            // Rival books open staffed; the player's campaign deliberately opens with
+            // Don Salvatore alone and therefore cannot be this pure scheduler fixture.
+            var house = Underworld.Deal(1987).Of(1);
+            if (house?.Roster == null || house.Roster.Crews.Count == 0)
+            {
+                failures.Add("SCHEDULE fixture: the staffed house has no crew.");
+                return;
+            }
+
+            Crew crew = null;
+            for (var i = 0; i < house.Roster.Crews.Count; i++)
+            {
+                var candidate = house.Roster.Crews[i];
+                RosterOps.TendCrewBag(house.Roster, candidate);
+                if (RosterOps.CollectorOf(house.Roster, candidate.Id) < 0)
+                    continue;
+                crew = candidate;
+                break;
+            }
+            if (crew == null)
+            {
+                failures.Add("SCHEDULE fixture: no crew could name a collector.");
+                return;
+            }
+            var block = new TerritoryBlockId("schedule:deferred-door");
+            if (!RosterOps.AssignBlockResponsibility(
+                    house.Roster, block, crew.LieutenantId, true).Ok)
+            {
+                failures.Add("SCHEDULE fixture: the crew could not take its block.");
+                return;
+            }
+
+            var scheduler = new TerritoryRoundScheduler
+            {
+                Owed = (_, _) => 40,
+                StopsOwing = (_, _) => 1,
+            };
+            var filed = 0;
+            scheduler.Filed = (_, _, _, _, _) => filed++;
+            var rounds = new TerritoryRoundLedger(
+                new TerritoryRacketLedger(), new TerritoryDuesLedger());
+            var attempts = 0;
+            const int campaignDay = 8;
+            var weekday = TerritoryCollectionSchedule.DayOf(block);
+
+            scheduler.Tend(house, campaignDay, weekday,
+                TerritoryCollectionSchedule.OpeningHour, rounds,
+                (_, _, _) => { attempts++; return false; });
+            if (attempts != 1 || filed != 0)
+                failures.Add("SCHEDULE: a detail at the door was filed as a round out.");
+
+            scheduler.Tend(house, campaignDay, weekday,
+                TerritoryCollectionSchedule.OpeningHour, rounds,
+                (_, _, _) => { attempts++; return false; });
+            if (attempts != 2 || filed != 0)
+                failures.Add("SCHEDULE: a deferred round consumed the day's retry.");
+
+            if (!scheduler.Confirm(house, crew, block, campaignDay) || filed != 1)
+                failures.Add("SCHEDULE: an opened deferred round was not filed once.");
+
+            scheduler.Tend(house, campaignDay, weekday,
+                TerritoryCollectionSchedule.OpeningHour, rounds,
+                (_, _, _) => { attempts++; return true; });
+            if (attempts != 2 || filed != 1 ||
+                scheduler.Confirm(house, crew, block, campaignDay))
+                failures.Add("SCHEDULE: a confirmed round was sent or filed twice.");
         }
 
         /// <summary>A door is late on a week's money OR a week's silence, and on neither

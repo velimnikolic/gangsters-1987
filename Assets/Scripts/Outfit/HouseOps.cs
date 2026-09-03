@@ -158,9 +158,16 @@ namespace LivingCity.Outfit
         /// same gate the Armory counter uses, with the family named.</summary>
         public static OpResult Purchase(House house, int price)
         {
+            return Purchase(house, price, out _);
+        }
+
+        public static OpResult Purchase(House house, int price, out int dirtyPart)
+        {
+            dirtyPart = 0;
             if (house?.Runner == null)
                 return OpResult.Fail(UI.LedgerText.ReasonFinanceUnavailable);
-            var refusal = BalanceMath.TryPurchase(house.Runner.Accounts, price);
+            var refusal = BalanceMath.TryPurchase(house.Runner.Accounts, price,
+                out dirtyPart);
             if (refusal != null)
                 return OpResult.Fail(refusal);
             house.Touch();
@@ -169,13 +176,11 @@ namespace LivingCity.Outfit
 
         /// <summary>Money back, and the purchase line with it - a sale that fell
         /// through is not a sale.</summary>
-        public static void Refund(House house, int price)
+        public static void Refund(House house, int price, int dirtyPart)
         {
             if (house?.Runner == null || price <= 0)
                 return;
-            house.Runner.Accounts.Safe += price;
-            if (house.Runner.Accounts.Current != null)
-                house.Runner.Accounts.Current.Purchases -= price;
+            BalanceMath.RefundPurchase(house.Runner.Accounts, price, dirtyPart);
             house.Touch();
         }
 

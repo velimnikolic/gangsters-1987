@@ -22,6 +22,13 @@ namespace LivingCity.Personnel
         public int LieutenantId;
         public readonly List<int> HoodIds = new List<int>();
 
+        /// <summary>The collector is a separate command node, not one of the four
+        /// tactical places in <see cref="HoodIds"/>. Escorts belong to that node and
+        /// never consume a line place either.</summary>
+        public int BagId = -1;
+        public readonly List<int> EscortIds = new List<int>();
+        public const int MaxEscorts = 2;
+
         /// <summary>How this crew runs its rounds (ECON-005). The player's one lever
         /// over collection: what share of a short payment is taken without a word, the
         /// fear a round leaves, the heat it draws.</summary>

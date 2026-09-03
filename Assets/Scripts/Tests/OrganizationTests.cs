@@ -28,9 +28,102 @@ namespace LivingCity.Tests
             FilingOfficeIsWhereCapacityIsHard(failures);
             OnlyAHoodInACrewCarriesTheBag(failures);
             TheBagIsOneMansAndTheLieutenantHandsIt(failures);
+            BagNodeAndEscortsStayAuthoritative(failures);
             TheChairPassesToTheMostLoyalLieutenant(failures);
             AHouseWithNoLieutenantHasNobodyToTakeTheChair(failures);
             return failures;
+        }
+
+        static void BagNodeAndEscortsStayAuthoritative(List<string> failures)
+        {
+            var roster = RosterSeeder.GenerateStaffed(273);
+            var crew = roster.Crews[0];
+            while (crew.HoodIds.Count < 4)
+            {
+                var hood = new Character
+                {
+                    Id = roster.NextCharacterId(), FirstName = "Bag", Surname = "Fixture",
+                    Rank = Rank.Hood, Status = CharacterStatus.Active,
+                };
+                roster.Members.Add(hood);
+                crew.HoodIds.Add(hood.Id);
+            }
+
+            var collector = crew.HoodIds[0];
+            var firstEscort = crew.HoodIds[1];
+            var secondEscort = crew.HoodIds[2];
+            var refusedEscort = crew.HoodIds[3];
+            if (!RosterOps.NameCollector(roster, crew.Id, collector).Ok ||
+                crew.BagId != collector || crew.HoodIds.Contains(collector) ||
+                roster.CrewOf(collector) != crew)
+                failures.Add("BAG NODE: collector was not moved out of the line authoritatively.");
+
+            if (!RosterOps.PostEscort(roster, crew.Id, firstEscort).Ok ||
+                !RosterOps.PostEscort(roster, crew.Id, secondEscort).Ok ||
+                crew.EscortIds.Count != Crew.MaxEscorts ||
+                crew.HoodIds.Contains(firstEscort) ||
+                roster.Find(firstEscort).Duty != Duty.Escort)
+                failures.Add("BAG NODE: escorts drifted from their duty or the line.");
+            var escorts = new List<Character>();
+            RosterOps.EscortsOf(roster, crew.Id, escorts);
+            if (escorts.Count != 2 || escorts[0].Id != firstEscort ||
+                escorts[1].Id != secondEscort)
+                failures.Add("BAG NODE: the escort query lost posting order.");
+            if (RosterOps.PostEscort(roster, crew.Id, refusedEscort).Ok)
+                failures.Add("BAG NODE: a third escort was accepted.");
+
+            var validation = new List<string>();
+            roster.Find(refusedEscort).Duty = Duty.Escort;
+            OrganizationValidator.Validate(
+                roster, new HashSet<TerritoryBlockId>(), null, validation);
+            if (!Contains(validation, "Escort duty outside a bag node"))
+                failures.Add("BAG NODE: validation missed an escort outside the node.");
+            roster.Find(refusedEscort).Duty = Duty.None;
+            validation.Clear();
+            OrganizationValidator.Validate(
+                roster, new HashSet<TerritoryBlockId>(), null, validation);
+            if (validation.Count != 0)
+                failures.Add("BAG NODE: a legal collector detail reports " + validation[0]);
+
+            var copy = Roster.Create(roster.GangId);
+            RosterSnapshot.Restore(copy, RosterSnapshot.Snapshot(roster));
+            var copied = copy.FindCrew(crew.Id);
+            if (copied == null || copied.BagId != collector ||
+                copied.EscortIds.Count != 2 || copied.EscortIds[0] != firstEscort ||
+                copied.EscortIds[1] != secondEscort)
+                failures.Add("BAG NODE: snapshot lost the collector or escorts.");
+
+            RosterOps.Kill(roster, collector);
+            if (crew.BagId >= 0 || crew.EscortIds.Count != 0 ||
+                !crew.HoodIds.Contains(firstEscort) || !crew.HoodIds.Contains(secondEscort) ||
+                roster.Find(firstEscort).Duty != Duty.None ||
+                roster.Find(secondEscort).Duty != Duty.None)
+                failures.Add("BAG NODE: a fallen collector did not clear and bench his detail.");
+
+            RosterOps.NameCollector(roster, crew.Id, firstEscort);
+            RosterOps.PostEscort(roster, crew.Id, secondEscort);
+
+            if (!RosterOps.PullEscort(roster, secondEscort).Ok ||
+                !crew.HoodIds.Contains(secondEscort) ||
+                roster.Find(secondEscort).Duty != Duty.None)
+                failures.Add("BAG NODE: pulled escort did not return to the line.");
+
+            RosterOps.PostEscort(roster, crew.Id, secondEscort);
+            RosterOps.TakeOffTheBag(roster, firstEscort);
+            if (crew.BagId >= 0 || crew.EscortIds.Count != 0 ||
+                !crew.HoodIds.Contains(firstEscort) || !crew.HoodIds.Contains(secondEscort))
+                failures.Add("BAG NODE: taking off the collector did not restore the line.");
+
+            var legacy = RosterSeeder.GenerateStaffed(262);
+            var legacyId = legacy.Crews[0].HoodIds[0];
+            legacy.Find(legacyId).Duty = Duty.Collector;
+            var legacyDto = RosterSnapshot.Snapshot(legacy);
+            legacyDto.crews[0].hasBagNode = false;
+            var migrated = Roster.Create(legacy.GangId);
+            RosterSnapshot.Restore(migrated, legacyDto);
+            if (migrated.Crews[0].BagId != legacyId ||
+                migrated.Crews[0].HoodIds.Contains(legacyId))
+                failures.Add("BAG NODE: GAN-262 save did not migrate its marked hood.");
         }
 
         static Character Stand(Roster roster, Rank rank, int loyalty, string surname)
@@ -318,6 +411,8 @@ namespace LivingCity.Tests
             // The morning pass: only a crew with ground on the paper gets a bag man.
             for (var c = 0; c < roster.Crews.Count; c++)
             {
+                if (roster.Crews[c].BagId >= 0)
+                    RosterOps.SetDuty(roster, roster.Crews[c].BagId, Duty.None);
                 roster.Crews[c].BagNamedByBoss = false;
                 for (var i = 0; i < roster.Crews[c].HoodIds.Count; i++)
                     roster.Find(roster.Crews[c].HoodIds[i]).Duty = Duty.None;
@@ -355,12 +450,9 @@ namespace LivingCity.Tests
             if (handed.Count != 1 || RosterOps.CollectorOf(roster, crew.Id) != best ||
                 crew.BagNamedByBoss)
                 failures.Add("BAG: a dead man's naming wedged the crew off the bag.");
-            roster.Find(second).Status = CharacterStatus.Active;
-            roster.Find(second).Duty = Duty.None;
 
-            // And a named man moved to another lieutenant is not this crew's ruling any
-            // more: the bag is handed out again here, and over there he is that crew's
-            // one bag man, whoever was carrying it for them.
+            // A named man moved to another lieutenant is off bag duty entirely. The old
+            // crew tends its own gap; the receiving crew keeps its current collector.
             if (roster.Crews.Count > 1)
             {
                 var other = roster.Crews[1];
@@ -374,9 +466,10 @@ namespace LivingCity.Tests
                     if (crew.BagNamedByBoss ||
                         RosterOps.CollectorOf(roster, crew.Id) == third)
                         failures.Add("BAG: a man who walked out kept his old crew's bag.");
-                    if (RosterOps.CollectorOf(roster, other.Id) != third ||
-                        roster.Find(theirs).Duty != Duty.None)
-                        failures.Add("BAG: the crew he joined was left with two bag men.");
+                    if (RosterOps.CollectorOf(roster, other.Id) != theirs ||
+                        roster.Find(third).Duty != Duty.None ||
+                        !other.HoodIds.Contains(third))
+                        failures.Add("BAG: a transfer carried bag duty into the new crew.");
                 }
             }
 
@@ -894,6 +987,12 @@ namespace LivingCity.Tests
 
             public void CollectPhysicalMappings(List<TacticalPersonnelMapping> into) =>
                 into.Add(mapping);
+
+            public bool TryLocateGroup(int leaderId, out TerritoryBlockId blockId)
+            {
+                blockId = default;
+                return false;
+            }
         }
     }
 }

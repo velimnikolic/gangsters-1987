@@ -235,6 +235,7 @@ namespace LivingCity.Gameplay
                     fronts[i].GangId != Gangs.GangCatalog.PlayerGangId)
                     continue;
                 position = fronts[i].Door;
+                blockId = fronts[i].BlockId;
                 return true;
             }
 
@@ -287,6 +288,8 @@ namespace LivingCity.Gameplay
 
         void Update()
         {
+            RegisterHeadquartersArmory();
+
             // The office answers in REAL seconds and before the clock is read: a
             // filing has to be ruled on whether or not a day clock exists in the scene.
             if (Filings.Tick(Time.deltaTime))
@@ -356,6 +359,44 @@ namespace LivingCity.Gameplay
             }
         }
 
+        void RegisterHeadquartersArmory()
+        {
+            var personnel = PersonnelDirector.Instance;
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            if (personnel == null)
+                return;
+            if (runtime?.Geography == null)
+            {
+                // Scene replacement tears the city edge down before rebuilding it.
+                // During that gap yesterday's block must not remain a usable armory.
+                personnel.ClearHeadquartersArmoryBlock();
+                return;
+            }
+
+            if (TryGetHeadquarters(out _, out var legacy) && legacy >= 0 &&
+                runtime.TryGetBlock(legacy, out var blockId))
+            {
+                personnel.SetHeadquartersArmoryBlock(blockId);
+                return;
+            }
+
+            var fronts = RoadDemo.GangFront.All;
+            for (var i = 0; i < fronts.Count; i++)
+            {
+                var front = fronts[i];
+                if (front == null || front.GangId != Gangs.GangCatalog.PlayerGangId ||
+                    !front.BusinessId.IsValid ||
+                    !runtime.Geography.TryGetBusinessBlock(front.BusinessId, out blockId))
+                    continue;
+                personnel.SetHeadquartersArmoryBlock(blockId);
+                return;
+            }
+
+            // No current front resolves to the city. Do not leave yesterday's address
+            // accepting transfers after a scene/front replacement.
+            personnel.ClearHeadquartersArmoryBlock();
+        }
+
         // ------------------------------------------------------------------- the rest
 
         /// <summary>Stores the change as pending - stances turn over at midnight, never
@@ -416,7 +457,7 @@ namespace LivingCity.Gameplay
                 if (net <= 0)
                     continue;
 
-                owner.Runner.Accounts.Safe += net;
+                BalanceMath.Receive(owner.Runner.Accounts, net, MoneyKind.Clean);
                 var sheet = owner.Runner.Accounts.Current;
                 if (sheet != null)
                     sheet.LegalIncome += net;
@@ -441,6 +482,16 @@ namespace LivingCity.Gameplay
             Runner.BankCollection(amount);
             Version++;
             Debug.Log("[Outfit] A round banked " + UI.LedgerText.Cash(amount) + ".");
+        }
+
+        /// <summary>A recovered ground bag reaches the same safe through the Jobs line.</summary>
+        public void BankTake(int amount)
+        {
+            if (amount <= 0)
+                return;
+            Runner.BankTake(amount);
+            Version++;
+            Debug.Log("[Outfit] A fallen bag banked " + UI.LedgerText.Cash(amount) + ".");
         }
 
         /// <summary>
@@ -692,7 +743,12 @@ namespace LivingCity.Gameplay
         /// </summary>
         public OpResult Purchase(int price, string what)
         {
-            var result = HouseOps.Purchase(House, price);
+            return Purchase(price, what, out _);
+        }
+
+        public OpResult Purchase(int price, string what, out int dirtyPart)
+        {
+            var result = HouseOps.Purchase(House, price, out dirtyPart);
             if (!result.Ok)
                 return result;
 
@@ -708,12 +764,12 @@ namespace LivingCity.Gameplay
         /// the safe refilled AND the open day's Purchases line reduced, so the Finances
         /// page never shows a purchase that bought nothing.
         /// </summary>
-        public void Refund(int price, string what)
+        public void Refund(int price, int dirtyPart, string what)
         {
             if (price <= 0)
                 return;
 
-            HouseOps.Refund(House, price);
+            HouseOps.Refund(House, price, dirtyPart);
             Version++;
             Debug.Log("[Outfit] Refunded " + UI.LedgerText.Cash(price) + " for " + what +
                       "; safe at " + UI.LedgerText.Cash(Accounts.Safe) + ".");

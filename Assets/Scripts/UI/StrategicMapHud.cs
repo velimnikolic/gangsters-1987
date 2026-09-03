@@ -159,6 +159,10 @@ namespace LivingCity.UI
 
         string IMapTargetingSurface.SummonHint => "";
 
+        /// <summary>The book sends the player to a place (GAN-302); this map already
+        /// knows how to stand over one.</summary>
+        void IMapTargetingSurface.FocusOn(Vector3 at) => FocusOn(at, 34f);
+
         sealed class Block
         {
             public int Id;

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LivingCity.Personnel;
 using UnityEngine;
 
 namespace RoadDemo
@@ -200,10 +201,18 @@ namespace RoadDemo
             public float HeadingFor, SpreadFor;
         }
 
+        sealed class BagWatch
+        {
+            public float OutsideFor;
+            public bool ShapeSaid, OrderSaid, OutsideSaid, FightSaid;
+        }
+
         static readonly Dictionary<CrewWalker, Watch> Men = new Dictionary<CrewWalker, Watch>();
         static readonly Dictionary<DemoCrews.Unit, float> FileFor = new Dictionary<DemoCrews.Unit, float>();
         static readonly Dictionary<DemoCrews.Unit, FormationWatch> Formations =
             new Dictionary<DemoCrews.Unit, FormationWatch>();
+        static readonly Dictionary<DemoCrews.Unit, BagWatch> Bags =
+            new Dictionary<DemoCrews.Unit, BagWatch>();
         struct FiredShot
         {
             public CrewWalker Man;
@@ -224,6 +233,7 @@ namespace RoadDemo
             Men.Clear();
             FileFor.Clear();
             Formations.Clear();
+            Bags.Clear();
             FiredThisFrame.Clear();
             _sweepIn = 5f;
         }
@@ -235,6 +245,7 @@ namespace RoadDemo
             if (dt <= 0f) return;
             foreach (var unit in arena.Units)
             {
+                TickBagUnit(arena, unit, dt);
                 TickMen(arena, unit, dt);
                 TickFormation(unit, dt);
                 TickStray(arena, unit, dt);
@@ -242,6 +253,80 @@ namespace RoadDemo
                 TickFile(unit, dt);
             }
             if ((_sweepIn -= dt) <= 0f) { _sweepIn = 5f; SweepGone(); }
+        }
+
+        /// <summary>EPIC 30's autonomous body: at most three men, no command head the
+        /// player can order, at home between its round and its one defensive sortie,
+        /// and never fighting away from the headquarters block.</summary>
+        static void TickBagUnit(DemoCrews arena, DemoCrews.Unit unit, float dt)
+        {
+            if (unit == null || !unit.IsDetachment || unit.Faction != 0)
+                return;
+            if (!Bags.TryGetValue(unit, out var watch))
+                Bags[unit] = watch = new BagWatch();
+
+            CrewWalker witness = null;
+            foreach (var man in unit.All())
+                if (man != null && man.Tf != null)
+                {
+                    witness = man;
+                    break;
+                }
+            if (witness == null)
+                return;
+
+            if (!watch.ShapeSaid && unit.Hoods.Count > Crew.MaxEscorts + 1)
+            {
+                watch.ShapeSaid = true;
+                Fault(witness, "bagcount", "bag unit fields " + unit.Hoods.Count +
+                    " men; maximum is " + (Crew.MaxEscorts + 1));
+            }
+            if (!watch.OrderSaid && (unit.Boss != null || arena.Selected == unit))
+            {
+                watch.OrderSaid = true;
+                Fault(witness, "bagorder", "bag unit exposed a player command head");
+            }
+
+            var runtime = TerritoryRuntime.Instance;
+            var roundOut = runtime != null &&
+                           runtime.TryGetRound(unit.CrewId, out _, out _, out _);
+            var comingOut = runtime != null && runtime.BagRoundPending(unit.CrewId);
+            var defending = unit.TargetUnit != null && !unit.TargetUnit.Wiped;
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            var headquarters = Vector3.zero;
+            var hasHeadquarters = outfit != null &&
+                                  outfit.TryGetHeadquarters(out headquarters, out _);
+            if (hasHeadquarters && !roundOut && !comingOut && !defending &&
+                !CrewQuarters.Billeted(unit))
+            {
+                watch.OutsideFor += dt;
+                if (!watch.OutsideSaid && watch.OutsideFor > 25f)
+                {
+                    watch.OutsideSaid = true;
+                    Fault(witness, "bagoutside",
+                        "bag unit stayed outside with no round or defence for " +
+                        watch.OutsideFor.ToString("F1") + " s");
+                }
+            }
+            else
+            {
+                watch.OutsideFor = 0f;
+                watch.OutsideSaid = false;
+            }
+
+            if (!watch.FightSaid && defending && runtime != null && hasHeadquarters &&
+                runtime.TryGetBlockAtWorld(headquarters, out var home) &&
+                (!runtime.TryGetBlockAtWorld(unit.Position, out var ours) || ours != home ||
+                 !runtime.TryGetBlockAtWorld(unit.TargetUnit.Position, out var theirs) ||
+                 theirs != home))
+            {
+                watch.FightSaid = true;
+                Fault(witness, "bagfight", "bag unit fought away from its headquarters block");
+            }
+            else if (!defending)
+            {
+                watch.FightSaid = false;
+            }
         }
 
         /// <summary>A round left this man's gun this frame (DemoCrews.OnFired). The

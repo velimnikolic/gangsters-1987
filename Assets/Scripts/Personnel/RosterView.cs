@@ -152,6 +152,15 @@ namespace LivingCity.Personnel
                     if (hood != null && Passes(hood, options))
                         Scratch.Add(hood);
                 }
+                var collector = roster.Find(crew.BagId);
+                if (collector != null && Passes(collector, options))
+                    Scratch.Add(collector);
+                for (var e = 0; e < crew.EscortIds.Count; e++)
+                {
+                    var escort = roster.Find(crew.EscortIds[e]);
+                    if (escort != null && Passes(escort, options))
+                        Scratch.Add(escort);
+                }
 
                 var anyone = Scratch.Count > 0 ||
                              (lieutenant != null && Passes(lieutenant, options));

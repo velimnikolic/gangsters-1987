@@ -162,7 +162,7 @@ namespace LivingCity.Outfit
 
                 if (accounts.Safe >= levy.Amount)
                 {
-                    accounts.Safe -= levy.Amount;
+                    BalanceMath.Pay(accounts, levy.Amount, out _);
                     if (accounts.Current != null)
                         accounts.Current.OtherCosts += levy.Amount;
                     handed += levy.Amount;

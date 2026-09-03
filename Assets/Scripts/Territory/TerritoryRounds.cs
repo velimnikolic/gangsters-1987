@@ -678,6 +678,19 @@ namespace LivingCity.Territory
 
         public void Forget() => sent.Clear();
 
+        /// <summary>Close a standing-round slip only after its round really opened.
+        /// A physical detail may first have to cross a headquarters door; that delay
+        /// is not a sent round and must not consume the block's one attempt today.</summary>
+        public bool Confirm(
+            Outfit.House house, Personnel.Crew crew, TerritoryBlockId blockId, int day)
+        {
+            if (house == null || crew == null || !blockId.IsValid)
+                return false;
+            var mine = new TerritoryGangId(house.GangId);
+            var owed = Owed != null ? Owed(mine, blockId) : 0;
+            return Confirm(house, crew, blockId, day, owed);
+        }
+
         /// <summary>
         /// Send what this house's paper says is due. <paramref name="submit"/> puts the
         /// order through the gateway and answers whether it was taken - a crew in a
@@ -725,14 +738,26 @@ namespace LivingCity.Territory
                 if (!submit(house, crew, blockId))
                     continue;
 
-                sent.Add(key);
-                Filed?.Invoke(house, roster.Find(paper[i].LeaderId), blockId, owed,
-                    StopsOwing != null ? StopsOwing(mine, blockId) : 0);
+                Confirm(house, crew, blockId, day, owed);
             }
 
             // The book only has to remember today; anything older can never match again.
             if (sent.Count > 64)
                 sent.RemoveWhere(entry => entry.day != day);
+        }
+
+        bool Confirm(
+            Outfit.House house, Personnel.Crew crew, TerritoryBlockId blockId,
+            int day, int owed)
+        {
+            var key = (crew.Id, blockId.Value, day);
+            if (!sent.Add(key))
+                return false;
+
+            var mine = new TerritoryGangId(house.GangId);
+            Filed?.Invoke(house, house.Roster?.Find(crew.LieutenantId), blockId, owed,
+                StopsOwing != null ? StopsOwing(mine, blockId) : 0);
+            return true;
         }
     }
 }

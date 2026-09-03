@@ -29,6 +29,8 @@ namespace LivingCity.Tests
             TheCityComesBackTheSameCity(failures);
             ALoadedCampaignPlaysOnTheSameWay(failures);
             NobodyIsLeftInTheCells(failures);
+            TheDocketComesBackWithIts(failures);
+            ASaveFromBeforeTheDocketStillGetsATrial(failures);
             ANewerSaveIsRefused(failures);
 
             return failures;
@@ -55,12 +57,29 @@ namespace LivingCity.Tests
             var wanted = new[]
             {
                 "safe=41250", "Hospitalized", "pending 0-9 War", "owed 5->0",
-                "skim=True", "job ",
+                "skim=True", "job ", "jobs=733",
             };
             for (var i = 0; i < wanted.Length; i++)
                 if (!before.Contains(wanted[i]))
                     failures.Add("SAVE-001: the fixture never produced [" + wanted[i] +
                                  "], so the round trip is not being asked about it.");
+
+            var hasBagDetail = false;
+            for (var g = 0; g < world.Count && !hasBagDetail; g++)
+            {
+                var house = world.Of(g);
+                for (var c = 0; house != null && c < house.Roster.Crews.Count; c++)
+                {
+                    var crew = house.Roster.Crews[c];
+                    if (crew.BagId >= 0 && crew.EscortIds.Count == Crew.MaxEscorts)
+                    {
+                        hasBagDetail = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasBagDetail)
+                failures.Add("SAVE-001: the fixture never produced a collector with two escorts.");
 
             var json = JsonUtility.ToJson(OutfitSnapshot.Snapshot(world));
             var read = JsonUtility.FromJson<UnderworldDto>(json);
@@ -194,44 +213,24 @@ namespace LivingCity.Tests
             if (second != null)
                 second.Stage = Police.PrisonStage.InTransit;
 
-            // Through the file the game actually writes.
-            var rows = new List<PrisonerDto>();
+            // THROUGH THE CONVERSION THE GAME ACTUALLY SHIPS. This fixture used to
+            // hand-roll its own copy of the DTO fields, which is precisely why nobody
+            // noticed the docket was never written at all (GAN-302): a test that
+            // rewrites the code it is guarding guards nothing.
             var escaped = new List<int>();
             pipe.CollectEscapes(escaped);
-            for (var i = 0; i < pipe.Inside.Count; i++)
-                rows.Add(new PrisonerDto
-                {
-                    characterId = pipe.Inside[i].CharacterId,
-                    deed = (int)pipe.Inside[i].Deed,
-                    takenOnDay = pipe.Inside[i].TakenOnDay,
-                    courtDay = pipe.Inside[i].CourtDay,
-                    sentenceDays = pipe.Inside[i].SentenceDays,
-                    outOnDay = pipe.Inside[i].OutOnDay,
-                    stage = (int)pipe.Inside[i].Stage,
-                });
-
             var file = new CampaignFile
             {
-                prisoners = rows.ToArray(),
+                prisoners = Save.PrisonSnapshot.Prisoners(pipe),
+                cases = Save.PrisonSnapshot.Cases(pipe),
+                nextCaseId = pipe.NextCaseId,
                 escaped = escaped.ToArray(),
                 prisonRosterSeed = pipe.RosterSeed,
             };
             var read = JsonUtility.FromJson<CampaignFile>(JsonUtility.ToJson(file));
 
             var back = new Police.PrisonPipeline();
-            var inside = new List<Police.Prisoner>();
-            for (var i = 0; read.prisoners != null && i < read.prisoners.Length; i++)
-                inside.Add(new Police.Prisoner
-                {
-                    CharacterId = read.prisoners[i].characterId,
-                    Deed = (Deed)read.prisoners[i].deed,
-                    TakenOnDay = read.prisoners[i].takenOnDay,
-                    CourtDay = read.prisoners[i].courtDay,
-                    SentenceDays = read.prisoners[i].sentenceDays,
-                    OutOnDay = read.prisoners[i].outOnDay,
-                    Stage = (Police.PrisonStage)read.prisoners[i].stage,
-                });
-            back.RestoreFrom(inside, read.escaped, read.prisonRosterSeed);
+            Save.PrisonSnapshot.Restore(back, read);
 
             if (back.RosterSeed != pipe.RosterSeed)
                 failures.Add("SAVE-005: the pipe came back on a different stream, so " +
@@ -254,7 +253,218 @@ namespace LivingCity.Tests
                              "so the next judge goes easy on him.");
         }
 
-        /// <summary>(d) A file from a later game is refused, not half-read.</summary>
+        /// <summary>
+        /// (d) THE DOCKET SURVIVES (GAN-302). The case is what a trial is decided on:
+        /// its witnesses are what the player leaned on and its counts are what the men
+        /// answer for. It was not written to the file at all, so a man loaded out of a
+        /// save was tried with no case behind him - which the trial reads as "no docket,
+        /// no defence" and converts to a conviction with no roll at all.
+        /// </summary>
+        static void TheDocketComesBackWithIts(List<string> failures)
+        {
+            var roster = new Roster { Seed = Seed };
+            var held = new Character
+            {
+                Id = roster.NextCharacterId(), FirstName = "Sal", Surname = "Rizzo",
+            };
+            var bailed = new Character
+            {
+                Id = roster.NextCharacterId(), FirstName = "Nunzio", Surname = "Alto",
+            };
+            roster.Members.Add(held);
+            roster.Members.Add(bailed);
+
+            var pipe = new Police.PrisonPipeline { RosterSeed = roster.Seed };
+            var file = pipe.OpenCase(Deed.Extortion, 0, 10, 15, "shop-4", "THE DELICATESSEN");
+            file.Witnesses.Add(new Police.Witness
+            {
+                Kind = Police.WitnessKind.Complainant, Name = "Aldo Bruni", Seed = 7,
+                X = 12.5f, Y = 0f, Z = -40.25f, BusinessId = "shop-4",
+            });
+            file.Witnesses.Add(new Police.Witness
+            {
+                Kind = Police.WitnessKind.Eyewitness, Name = "Rosa Conti", Seed = 9,
+                X = 3f, Y = 0f, Z = 7f,
+                Standing = Police.WitnessStanding.Withdrawn,
+            });
+            var complaint = pipe.OpenCase(Deed.Extortion, 0, 12, 0, "shop-9", "THE BARBER");
+
+            var inside = pipe.Book(roster, held.Id, Deed.Extortion, 10, file);
+            var out_ = pipe.Book(roster, bailed.Id, Deed.Extortion, 10, file);
+            pipe.PostBail(roster, out_, Police.PrisonPipeline.BailPrice(out_), 10);
+            pipe.SkipBail(out_);
+
+            var escaped = new List<int>();
+            pipe.CollectEscapes(escaped);
+            var written = JsonUtility.FromJson<CampaignFile>(JsonUtility.ToJson(
+                new CampaignFile
+                {
+                    prisoners = Save.PrisonSnapshot.Prisoners(pipe),
+                    cases = Save.PrisonSnapshot.Cases(pipe),
+                    nextCaseId = pipe.NextCaseId,
+                    escaped = escaped.ToArray(),
+                    prisonRosterSeed = pipe.RosterSeed,
+                }));
+
+            var back = new Police.PrisonPipeline();
+            Save.PrisonSnapshot.Restore(back, written);
+
+            if (back.Cases.Count != pipe.Cases.Count)
+            {
+                failures.Add("SAVE-006: " + pipe.Cases.Count + " cases were on the " +
+                             "docket and " + back.Cases.Count + " came back - a held " +
+                             "man with no case is convicted without a roll.");
+                return;
+            }
+
+            var restored = back.CaseOf(held.Id);
+            if (restored == null || restored.CaseId != file.CaseId)
+            {
+                failures.Add("SAVE-006: the man in the cells came back off his docket " +
+                             "number.");
+                return;
+            }
+            if (back.Find(held.Id) == null || back.Find(held.Id).CaseId != file.CaseId)
+                failures.Add("SAVE-006: his prisoner row lost the case it points at.");
+
+            if (restored.Witnesses.Count != 2)
+                failures.Add("SAVE-006: the witness list came back " +
+                             restored.Witnesses.Count + " long instead of 2.");
+            else
+            {
+                var complainant = restored.Witnesses[0];
+                if (complainant.Name != "Aldo Bruni" || complainant.Seed != 7 ||
+                    complainant.BusinessId != "shop-4" ||
+                    Mathf.Abs(complainant.X - 12.5f) > 0.001f ||
+                    Mathf.Abs(complainant.Z + 40.25f) > 0.001f)
+                    failures.Add("SAVE-006: the complainant came back a different man " +
+                                 "or standing somewhere else - the map draws his " +
+                                 "marker off that position.");
+                if (restored.Witnesses[1].Standing != Police.WitnessStanding.Withdrawn)
+                    failures.Add("SAVE-006: a witness the player had already silenced " +
+                                 "came back willing to testify.");
+            }
+
+            if (restored.Where != "THE DELICATESSEN" || restored.BusinessId != "shop-4" ||
+                restored.CourtDay != 15 || restored.OpenedDay != 10)
+                failures.Add("SAVE-006: the case came back with a different heading.");
+
+            var skipped = back.Find(bailed.Id);
+            if (skipped == null || skipped.Stage != Police.PrisonStage.Bailed)
+                failures.Add("SAVE-006: the bailed man did not come back on bail.");
+            else if (skipped.BailPaid <= 0 || !skipped.SkipOrdered)
+                failures.Add("SAVE-006: his bail money and the boss's order to skip " +
+                             "were lost - the forfeit would refund itself.");
+
+            // The verdicts a closed case collected are the archive.
+            back.CutLoose(held.Id, 16);
+            var line = back.CaseOf(held.Id) ?? restored;
+            if (line.VerdictFor(held.Id) == null)
+                failures.Add("SAVE-006: a restored case takes no verdict.");
+
+            var backAgain = new Police.PrisonPipeline();
+            Save.PrisonSnapshot.Restore(backAgain, JsonUtility.FromJson<CampaignFile>(
+                JsonUtility.ToJson(new CampaignFile
+                {
+                    prisoners = Save.PrisonSnapshot.Prisoners(back),
+                    cases = Save.PrisonSnapshot.Cases(back),
+                    nextCaseId = back.NextCaseId,
+                    escaped = new int[0],
+                    prisonRosterSeed = back.RosterSeed,
+                })));
+            var archived = backAgain.FindCase(file.CaseId);
+            if (archived == null || archived.VerdictFor(held.Id) == null ||
+                archived.VerdictFor(held.Id).Outcome != Police.CaseOutcome.CutLoose ||
+                archived.VerdictFor(held.Id).Day != 16)
+                failures.Add("SAVE-006: a verdict was lost by saving, so the ledger's " +
+                             "archive would forget what the court did.");
+
+            if (backAgain.NextCaseId <= complaint.CaseId)
+                failures.Add("SAVE-006: the next docket number would collide with a " +
+                             "case already on the books.");
+        }
+
+        /// <summary>
+        /// (e) A FILE WRITTEN BEFORE THE DOCKET (GAN-302). Version 1 kept the men and
+        /// nothing of what they were answering for. Read straight through, every one of
+        /// them lands on CaseId -1, which the trial reads as "no docket, no defence" and
+        /// converts to a conviction with no roll at all - the lawyer counts for nothing
+        /// and the case cannot be fought. The load migrates them onto a docket instead.
+        ///
+        /// The fixture is LITERAL version-1 JSON, with none of today's fields in it:
+        /// a round trip of freshly written DTOs cannot catch a compatibility failure,
+        /// because it never produces the shape the old game wrote.
+        /// </summary>
+        static void ASaveFromBeforeTheDocketStillGetsATrial(List<string> failures)
+        {
+            const string legacy =
+                "{\"version\":1,\"prisoners\":[" +
+                "{\"characterId\":4,\"deed\":0,\"takenOnDay\":8,\"courtDay\":13," +
+                "\"sentenceDays\":0,\"outOnDay\":0,\"stage\":0}," +
+                "{\"characterId\":5,\"deed\":2,\"takenOnDay\":2,\"courtDay\":7," +
+                "\"sentenceDays\":9,\"outOnDay\":16,\"stage\":4}]," +
+                "\"escaped\":[9],\"prisonRosterSeed\":1987}";
+
+            var read = JsonUtility.FromJson<CampaignFile>(legacy);
+            if (read == null || read.prisoners == null || read.prisoners.Length != 2)
+            {
+                failures.Add("SAVE-007: the legacy fixture did not parse.");
+                return;
+            }
+            if (read.version > CampaignFile.Version)
+            {
+                failures.Add("SAVE-007: a file written before the docket is refused as " +
+                             "if it came from a newer game.");
+                return;
+            }
+            if (read.cases != null && read.cases.Length > 0)
+                failures.Add("SAVE-007: the legacy fixture is not legacy - it has cases.");
+
+            var pipe = new Police.PrisonPipeline();
+            Save.PrisonSnapshot.Restore(pipe, read);
+
+            var held = pipe.Find(4);
+            if (held == null)
+            {
+                failures.Add("SAVE-007: the man in the cells was lost by the migration.");
+                return;
+            }
+            if (held.CaseId < 0 || pipe.CaseOf(4) == null)
+                failures.Add("SAVE-007: he came back with no docket behind him, so his " +
+                             "court day convicts him without a roll.");
+            var file = pipe.CaseOf(4);
+            if (file != null)
+            {
+                if (!file.AnyWilling())
+                    failures.Add("SAVE-007: a migrated case with nobody to give evidence " +
+                                 "would be dismissed outright - a gift, not a migration.");
+                if (!file.Has(Police.WitnessKind.PoliceFoundThem) ||
+                    file.Has(Police.WitnessKind.PoliceSawIt) ||
+                    file.WillingEyewitnesses() > 0)
+                    failures.Add("SAVE-007: a record that kept no scene is worth the " +
+                                 "ARRESTING officer and nothing stronger.");
+                if (file.CourtDay != held.CourtDay || file.GangId != 0)
+                    failures.Add("SAVE-007: the migrated case is heard on a different " +
+                                 "day, or against a different house, from the man on it.");
+                // And it must be beatable: that is the whole point of putting him on a
+                // docket rather than leaving him on the no-defence path.
+                var alone = Police.Verdict.ConvictionChance(
+                    file.Deed, 0, false, true, false, 0, 5);
+                if (alone >= 0.5f)
+                    failures.Add("SAVE-007: a legacy case a good lawyer cannot beat is " +
+                                 "the old conviction with extra steps (" + alone + ").");
+            }
+
+            // A man already serving is NOT put up for a trial he has had.
+            var serving = pipe.Find(5);
+            if (serving != null && serving.CaseId >= 0)
+                failures.Add("SAVE-007: a man already sentenced was given a fresh case.");
+
+            if (!pipe.EverEscaped(9))
+                failures.Add("SAVE-007: the legacy escape record was dropped.");
+        }
+
+        /// <summary>(f) A file from a later game is refused, not half-read.</summary>
         static void ANewerSaveIsRefused(List<string> failures)
         {
             var path = System.IO.Path.Combine(
@@ -339,6 +549,23 @@ namespace LivingCity.Tests
             world.Relations.SetPending(0, 9, Stance.War);
 
             them.Runner.Accounts.Safe = 9_000;
+            them.Runner.Accounts.Current.JobIncome = 733;
+
+            // A canonical bag branch. Its node and escorts are deliberately removed
+            // from HoodIds by the real roster operations before the snapshot is taken.
+            for (var i = 0; i < them.Roster.Crews.Count; i++)
+            {
+                var crew = them.Roster.Crews[i];
+                if (crew.HoodIds.Count < 3)
+                    continue;
+                var collector = crew.HoodIds[0];
+                var firstEscort = crew.HoodIds[1];
+                var secondEscort = crew.HoodIds[2];
+                if (RosterOps.NameCollector(them.Roster, crew.Id, collector).Ok &&
+                    RosterOps.PostEscort(them.Roster, crew.Id, firstEscort).Ok &&
+                    RosterOps.PostEscort(them.Roster, crew.Id, secondEscort).Ok)
+                    break;
+            }
             them.NextThinkHour = 34.5;
             return world;
         }
@@ -406,9 +633,15 @@ namespace LivingCity.Tests
                     var crew = roster.Crews[i];
                     sb.Append("  crew ").Append(crew.Id).Append(" lt=")
                       .Append(crew.LieutenantId).Append(" policy=").Append(crew.Policy)
+                      .Append(" bag=").Append(crew.BagId)
+                      .Append(" named=").Append(crew.BagNamedByBoss)
+                      .Append('/').Append(crew.BagNamedId)
                       .Append(" hoods=");
                     for (var h = 0; h < crew.HoodIds.Count; h++)
                         sb.Append(crew.HoodIds[h]).Append(',');
+                    sb.Append(" escorts=");
+                    for (var e = 0; e < crew.EscortIds.Count; e++)
+                        sb.Append(crew.EscortIds[e]).Append(',');
                     sb.Append('\n');
                 }
 
@@ -447,6 +680,7 @@ namespace LivingCity.Tests
                     sb.Append("  sheet ").Append(sheet.Day)
                       .Append(" legal=").Append(sheet.LegalIncome)
                       .Append(" illegal=").Append(sheet.IllegalIncome)
+                      .Append(" jobs=").Append(sheet.JobIncome)
                       .Append(" wages=").Append(sheet.WagesPaid)
                       .Append(" closed=").Append(sheet.Closed)
                       .Append('\n');

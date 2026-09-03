@@ -13,8 +13,8 @@ namespace RoadDemo
     /// and kept upright, so it hangs like a carried bag whatever the walk clip does
     /// with the arm. A round that ends banked takes the bag with it; a round that dies
     /// on the street - the crew wiped, scattered, retasked - drops the bag where its
-    /// man last stood and leaves it lying there a while, which is what a lost take
-    /// looks like.
+    /// man last stood. An ordinary abandoned prop fades; a dead carrier's take is
+    /// registered below and stays until somebody physically claims it.
     /// </summary>
     public sealed class BagCarry : MonoBehaviour
     {
@@ -85,29 +85,74 @@ namespace RoadDemo
             SetLayer(carry.Bag, man.Tf.gameObject.layer);
         }
 
-        /// <summary>The round is over. Banked, the bag goes over the counter with the
-        /// money; lost, it drops where the man last stood and lies there.</summary>
-        public static void Drop(int crewId, bool banked)
+        /// <summary>
+        /// The round is over. Banked, the bag goes over the counter with the money;
+        /// lost, it drops where the man last stood and lies there.
+        ///
+        /// THE MONEY IS NOT THE MODEL. A carry can legitimately fail to exist - the
+        /// carrier's rig has no humanoid left hand, or the duffel prefab did not load -
+        /// and the round is settled as lost either way. Returning early on a missing
+        /// visual used to destroy a dead collector's take outright: the wire said it
+        /// was lying in the street to be claimed and there was nothing there. So the
+        /// GROUND RECORD is made whenever the round says one is owed, and the model is
+        /// hung on it afterwards if there is one to hang.
+        /// </summary>
+        public static void Drop(int crewId, bool banked, int take = 0,
+            int ownerFaction = -1, string fallenName = "", bool persistent = false,
+            DemoCrews crews = null, Vector3? at = null)
         {
             var carry = instance != null ? instance.Of(crewId) : null;
-            if (carry == null)
-                return;
-            instance.carries.Remove(carry);
-            if (carry.Bag == null)
-                return;
+            if (carry != null)
+                instance.carries.Remove(carry);
 
-            if (banked)
+            var bag = carry != null ? carry.Bag : null;
+            var owed = !banked && persistent && take > 0;
+
+            if (banked || !owed)
             {
-                Destroy(carry.Bag.gameObject);
+                if (bag != null)
+                {
+                    if (banked) Destroy(bag.gameObject);
+                    else { Rest(bag, at); Destroy(bag.gameObject, DroppedFor); }
+                }
                 return;
             }
 
-            carry.Bag.gameObject.SetActive(true);
-            var rest = carry.Bag.position;
+            // A place to lie: where the bag was, else where the caller says the man
+            // fell. Without either there is nowhere to put it and nothing to claim.
+            var where = bag != null ? bag.position : at ?? Vector3.zero;
+            if (bag == null && !at.HasValue)
+                return;
+
+            if (bag == null)
+            {
+                // No model - the hand or the prefab was missing. The take is still the
+                // take: it lies here as a claimable thing with whatever body can be
+                // made for it, and the street's own marker draws off BagOnGround.All.
+                var prefab = DemoAssetLoad.Load<GameObject>(BagPath);
+                bag = prefab != null
+                    ? Object.Instantiate(prefab).transform
+                    : new GameObject("The take").transform;
+                bag.localScale = Vector3.one * DuffleScale;
+                foreach (var col in bag.GetComponentsInChildren<Collider>())
+                    Destroy(col);
+                foreach (var body in bag.GetComponentsInChildren<Rigidbody>())
+                    Destroy(body);
+            }
+
+            bag.gameObject.SetActive(true);
+            Rest(bag, where);
+            bag.gameObject.AddComponent<BagOnGround>().Initialize(
+                take, crewId, ownerFaction, fallenName, crews);
+        }
+
+        /// <summary>Lay it flat on the pavement where it fell.</summary>
+        static void Rest(Transform bag, Vector3? at)
+        {
+            var rest = at ?? bag.position;
             rest.y = 0.02f;
-            carry.Bag.SetPositionAndRotation(
-                rest, Quaternion.Euler(0f, carry.Bag.eulerAngles.y, 0f));
-            Destroy(carry.Bag.gameObject, DroppedFor);
+            bag.SetPositionAndRotation(
+                rest, Quaternion.Euler(0f, bag.eulerAngles.y, 0f));
         }
 
         Carry Of(int crewId)
@@ -173,5 +218,125 @@ namespace RoadDemo
             if (instance == this)
                 instance = null;
         }
+    }
+
+    /// <summary>A dead collector's take. It has no expiry: somebody reaches it and
+    /// banks it, a rival takes it, or it remains part of the street.</summary>
+    public sealed class BagOnGround : MonoBehaviour
+    {
+        const float TakeReach = 3.5f;
+        static readonly List<BagOnGround> Ground = new List<BagOnGround>();
+
+        public static IReadOnlyList<BagOnGround> All => Ground;
+        public int Take { get; private set; }
+        public int CrewId { get; private set; }
+        public int OwnerFaction { get; private set; }
+        public string FallenName { get; private set; } = "";
+
+        DemoCrews crews;
+        DemoCrews.Unit claimant;
+
+        public void Initialize(int take, int crewId, int ownerFaction,
+            string fallenName, DemoCrews source)
+        {
+            Take = Mathf.Max(0, take);
+            CrewId = crewId;
+            OwnerFaction = ownerFaction;
+            FallenName = fallenName ?? "";
+            crews = source;
+            if (!Ground.Contains(this))
+                Ground.Add(this);
+            name = "The take · $" + Take;
+        }
+
+        public bool Claim(DemoCrews source, DemoCrews.Unit unit)
+        {
+            if (source == null || unit == null || unit.Faction != 0 ||
+                unit.IsDetachment || unit.Wiped)
+                return false;
+            crews = source;
+            claimant = unit;
+            if (!crews.OrderUnit(unit, transform.position, out _))
+            {
+                claimant = null;
+                return false;
+            }
+            CrewOverlay.Announce("TAKE THE BAG · $" + Take, 3f,
+                new Color(0.9f, 0.85f, 0.65f));
+            return true;
+        }
+
+        void Update()
+        {
+            if (crews == null || Take <= 0)
+                return;
+
+            if (claimant != null)
+            {
+                if (claimant.Wiped || !crews.Units.Contains(claimant))
+                    claimant = null;
+                else if (FirstWithinReach(claimant) is { } taker)
+                {
+                    var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+                    if (outfit == null)
+                        return;
+                    BagCarry.Give(CrewId, taker);
+                    outfit.BankTake(Take);
+                    BagCarry.Drop(CrewId, banked: true);
+                    CrewOverlay.Announce(
+                        taker.DisplayName.ToUpperInvariant() + " TOOK THE BAG · $" + Take, 4f,
+                        new Color(0.65f, 0.9f, 0.65f));
+                    Destroy(gameObject);
+                    return;
+                }
+            }
+
+            for (var i = 0; i < crews.Units.Count; i++)
+            {
+                var rival = crews.Units[i];
+                if (rival == null || rival.Faction <= 0 || rival.Wiped ||
+                    FirstWithinReach(rival) == null)
+                    continue;
+                var house = LivingCity.Outfit.Underworld.Current?.Of(rival.Faction);
+                if (house != null)
+                {
+                    house.Runner.BankTake(Take);
+                    house.Touch();
+                }
+                CrewOverlay.Announce(
+                    (rival.GangName ?? "A RIVAL").ToUpperInvariant() + " TOOK THE BAG OFF " +
+                    (string.IsNullOrEmpty(FallenName)
+                        ? "OUR MEN" : FallenName.ToUpperInvariant()) + " · $" + Take, 4f,
+                    new Color(1f, 0.55f, 0.45f));
+                Destroy(gameObject);
+                return;
+            }
+        }
+
+        CrewWalker FirstWithinReach(DemoCrews.Unit unit)
+        {
+            foreach (var man in unit.All())
+            {
+                if (man == null || man.Dead || man.Tf == null ||
+                    !man.Tf.gameObject.activeInHierarchy)
+                    continue;
+                var gap = man.Tf.position - transform.position;
+                gap.y = 0f;
+                if (gap.sqrMagnitude <= TakeReach * TakeReach)
+                    return man;
+            }
+            return null;
+        }
+
+        void OnEnable()
+        {
+            if (!Ground.Contains(this))
+                Ground.Add(this);
+        }
+
+        void OnDisable() => Ground.Remove(this);
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetForPlay() => Ground.Clear();
     }
 }

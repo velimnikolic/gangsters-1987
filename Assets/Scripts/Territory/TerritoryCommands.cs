@@ -165,9 +165,16 @@ namespace LivingCity.Territory
         /// <summary>The family that filed it (ITerritoryHouseCommand).</summary>
         public TerritoryGangId House { get; set; }
 
+        /// <summary>The gateway's receipt, stamped before the street is asked to carry
+        /// the order. Most commands finish inside Submit; a bag detail can first have
+        /// to cross the headquarters door, so the runtime needs the original receipt
+        /// to close rather than inventing a second command when it finally leaves.</summary>
+        public long CommandId { get; internal set; }
+
         public CollectDuesCommand(TerritoryCommandNodeId groupId, TerritoryBlockId blockId)
         {
             House = default;
+            CommandId = 0;
             GroupId = groupId;
             BlockId = blockId;
         }
@@ -377,8 +384,18 @@ namespace LivingCity.Territory
         public TerritoryCommandResult Submit(ThreatenBusinessOwnerCommand command) =>
             Named(command) ? Record(executor.Execute(command)) : Unnamed();
 
-        public TerritoryCommandResult Submit(CollectDuesCommand command) =>
-            Named(command) ? Record(executor.Execute(command)) : Unnamed();
+        public TerritoryCommandResult Submit(CollectDuesCommand command)
+        {
+            if (!Named(command))
+                return Unnamed();
+
+            // A collection may wait for the bag detail to come through a door. Give
+            // the executor the receipt up front so that deferred attempt can resolve
+            // THIS history row when it starts or fails.
+            var commandId = nextCommandId++;
+            command.CommandId = commandId;
+            return Record(commandId, executor.Execute(command));
+        }
 
         public TerritoryCommandResult Submit(ShakeDownBlockCommand command) =>
             Named(command) ? Record(executor.Execute(command)) : Unnamed();
@@ -412,8 +429,14 @@ namespace LivingCity.Territory
 
         TerritoryCommandResult Record(TerritoryCommandExecution execution)
         {
+            return Record(nextCommandId++, execution);
+        }
+
+        TerritoryCommandResult Record(
+            long commandId, TerritoryCommandExecution execution)
+        {
             var result = new TerritoryCommandResult(
-                nextCommandId++, execution.Status, execution.Reason);
+                commandId, execution.Status, execution.Reason);
             results.Add(result.CommandId, result);
             resultOrder.Enqueue(result.CommandId);
             if (resultOrder.Count > HistoryLimit)

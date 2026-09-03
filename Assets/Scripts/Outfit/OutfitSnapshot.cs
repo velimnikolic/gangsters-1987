@@ -11,6 +11,7 @@ namespace LivingCity.Outfit
         public int day;
         public int legalIncome;
         public int illegalIncome;
+        public int jobIncome;
         public int salesIncome;
         public int bribes;
         public int purchases;
@@ -235,6 +236,7 @@ namespace LivingCity.Outfit
                     day = sheet.Day,
                     legalIncome = sheet.LegalIncome,
                     illegalIncome = sheet.IllegalIncome,
+                    jobIncome = sheet.JobIncome,
                     salesIncome = sheet.SalesIncome,
                     bribes = sheet.Bribes,
                     purchases = sheet.Purchases,
@@ -254,6 +256,7 @@ namespace LivingCity.Outfit
 
             accounts.Safe = dto.safe;
             accounts.RiskyMoney = dto.riskyMoney;
+            BalanceMath.Normalize(accounts);
             accounts.Sheets.Clear();
             for (var i = 0; dto.sheets != null && i < dto.sheets.Length; i++)
             {
@@ -263,6 +266,7 @@ namespace LivingCity.Outfit
                     Day = sheet.day,
                     LegalIncome = sheet.legalIncome,
                     IllegalIncome = sheet.illegalIncome,
+                    JobIncome = sheet.jobIncome,
                     SalesIncome = sheet.salesIncome,
                     Bribes = sheet.bribes,
                     Purchases = sheet.purchases,

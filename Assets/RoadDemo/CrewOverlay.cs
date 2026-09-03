@@ -474,6 +474,15 @@ namespace RoadDemo
                 return true;
             }
             var unit = PickAt(screen);
+            if (unit == null)
+            {
+                var detached = PickManAt(screen, includeDetachments: true);
+                if (detached >= 0 && _menUnit[detached].IsDetachment)
+                {
+                    _crews.Select(null);
+                    return true;
+                }
+            }
             // a click on the outfit's car picks the crew that owns it (or rides in it)
             if (unit == null)
             {
@@ -520,7 +529,7 @@ namespace RoadDemo
             return index >= 0 ? _menUnit[index] : null;
         }
 
-        int PickManAt(Vector2 screen)
+        int PickManAt(Vector2 screen, bool includeDetachments = false)
         {
             if (_cam == null) return -1;
             float radius = PickRadius * (_canvas != null ? _canvas.scaleFactor : 1f);
@@ -528,6 +537,8 @@ namespace RoadDemo
             int best = -1;
             for (int i = 0; i < _men.Count; i++)
             {
+                if (!includeDetachments && _menUnit[i].IsDetachment)
+                    continue;
                 var tf = _men[i].Tf;
                 if (tf == null || _men[i].Dead || _crews.IsAboard(_men[i]) ||
                     !LivingCity.Gameplay.MapVisionRegistry.IsRevealed(tf.position))
@@ -727,6 +738,10 @@ namespace RoadDemo
                 return;
             }
 
+            var groundBag = PickBagAt(up);
+            if (groundBag != null && OpenBagOrders(groundBag, up))
+                return;
+
             // the car under the click. This crew's own: get in (or out). Somebody
             // else's - a rival's - and there is nothing to board, but there is a charge
             // to lay under it, so the card opens with that one row.
@@ -765,6 +780,12 @@ namespace RoadDemo
                 OpenOrders(picked, up);
                 return;
             }
+
+            // The autonomous bag detail can be inspected on hover, but right-clicking
+            // its bodies never turns into an order to it or to the ground beneath it.
+            var detachedPick = PickManAt(up, includeDetachments: true);
+            if (detachedPick >= 0 && _menUnit[detachedPick].IsDetachment)
+                return;
 
             // OUR OWN SELECTED MEN, and only when there is something to say to them that
             // a walk order cannot say (GAN-222). A right click on one's own crew is a
@@ -879,6 +900,7 @@ namespace RoadDemo
         DemoCrews.Unit _cardTarget, _cardCrew;
         GangFront _cardFront;
         CrewCar _cardPlantCar;
+        BagOnGround _cardBag;
 
         /// <summary>The shop the card is asking about, when it is a shop. It is a
         /// SUBJECT like the other three and has to be held like one: the card puts
@@ -886,6 +908,59 @@ namespace RoadDemo
         /// went unrecorded here made the racket card open and shut inside one frame.</summary>
         LivingCity.Territory.TerritoryBusinessId _cardBusiness;
         bool _ordersOpen;
+
+        BagOnGround PickBagAt(Vector2 screen)
+        {
+            if (_cam == null)
+                return null;
+            var radius = PickRadius * (_canvas != null ? _canvas.scaleFactor : 1f);
+            var best = radius * radius;
+            BagOnGround picked = null;
+            var bags = BagOnGround.All;
+            for (var i = 0; i < bags.Count; i++)
+            {
+                var bag = bags[i];
+                if (bag == null ||
+                    !LivingCity.Gameplay.MapVisionRegistry.IsRevealed(
+                        bag.transform.position))
+                    continue;
+                var point = _cam.WorldToScreenPoint(bag.transform.position + Vector3.up * 0.25f);
+                if (point.z <= 0f)
+                    continue;
+                var d = ((Vector2)point - screen).sqrMagnitude;
+                if (d >= best)
+                    continue;
+                best = d;
+                picked = bag;
+            }
+            return picked;
+        }
+
+        bool OpenBagOrders(BagOnGround bag, Vector2 screen)
+        {
+            var crew = _crews.Selected;
+            if (bag == null || crew == null || crew.Wiped || !BuildCard())
+                return false;
+            _cardTarget = null;
+            _cardFront = null;
+            _cardPlantCar = null;
+            _cardBusiness = default;
+            _cardBag = bag;
+            _cardCrew = crew;
+            _cardShown = 0;
+            _cardTitle.text = "THE BAG · $" + bag.Take;
+            Row("TAKE THE BAG",
+                string.IsNullOrEmpty(bag.FallenName)
+                    ? "$" + bag.Take + " lying in the street"
+                    : "$" + bag.Take + " · fell with " + bag.FallenName,
+                () =>
+                {
+                    if (bag != null && _crews.Selected == crew)
+                        bag.Claim(_crews, crew);
+                });
+            LayoutAndShow(screen);
+            return true;
+        }
 
         /// <summary>Open the card over this rival. Nothing happens without a crew
         /// selected - there would be nobody to give the order to.</summary>
@@ -904,6 +979,7 @@ namespace RoadDemo
             _cardTarget = target;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardBag = null;
             _cardBusiness = default;
             _cardCrew = crew;
             _cardShown = 0;
@@ -1066,6 +1142,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = front;
             _cardPlantCar = null;
+            _cardBag = null;
             _cardBusiness = default;
             _cardCrew = crew;
             _cardShown = 0;
@@ -1180,6 +1257,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardBag = null;
             _cardBusiness = default;
             _cardCrew = crew;
             _cardShown = 0;
@@ -1236,6 +1314,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardBag = null;
             _cardBusiness = default;
             _cardCrew = crew;
             _cardShown = 0;
@@ -1269,6 +1348,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = front;
             _cardPlantCar = null;
+            _cardBag = null;
             _cardBusiness = default;
             _cardCrew = crew;
             _cardShown = 0;
@@ -1456,6 +1536,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardBag = null;
             _cardBusiness = businessId;
             _cardCrew = _crews.Selected;
             _cardShown = 0;
@@ -1675,9 +1756,10 @@ namespace RoadDemo
                     !runtime.Geography.TryGetBusinessBlock(businessId, out var roundBlock))
                     return;
                 var roundResult = runtime.Commands.Submit(
-                    new LivingCity.Territory.CollectDuesCommand(
-                        LivingCity.Territory.TerritoryCommandNodeId.Crew(crew.CrewId),
-                        roundBlock));
+                    LivingCity.Gameplay.PlayerCommands.Stamp(
+                        new LivingCity.Territory.CollectDuesCommand(
+                            LivingCity.Territory.TerritoryCommandNodeId.Crew(crew.CrewId),
+                            roundBlock)));
                 if (roundResult.Status == LivingCity.Territory.TerritoryCommandStatus.Rejected)
                 {
                     if (!string.IsNullOrEmpty(roundResult.Reason))
@@ -1701,18 +1783,19 @@ namespace RoadDemo
             if (intent == LivingCity.Territory.TerritoryRacketIntent.Approach || !atDoor)
             {
                 result = runtime.Commands.Submit(
-                    new LivingCity.Territory.ApproachBusinessCommand(
-                        LivingCity.Territory.TerritoryCommandNodeId.Crew(crew.CrewId),
-                        businessId, intent));
+                    LivingCity.Gameplay.PlayerCommands.Stamp(
+                        new LivingCity.Territory.ApproachBusinessCommand(
+                            LivingCity.Territory.TerritoryCommandNodeId.Crew(crew.CrewId),
+                            businessId, intent)));
             }
             else
             {
                 var speaker = Speaker(crew);
                 result = intent == LivingCity.Territory.TerritoryRacketIntent.Demand
-                    ? runtime.Commands.Submit(
-                        new LivingCity.Territory.DemandProtectionCommand(speaker, businessId))
-                    : runtime.Commands.Submit(
-                        new LivingCity.Territory.ThreatenBusinessOwnerCommand(speaker, businessId));
+                    ? runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
+                        new LivingCity.Territory.DemandProtectionCommand(speaker, businessId)))
+                    : runtime.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(
+                        new LivingCity.Territory.ThreatenBusinessOwnerCommand(speaker, businessId)));
             }
 
             if (result.Status == LivingCity.Territory.TerritoryCommandStatus.Rejected ||
@@ -1806,6 +1889,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = car;
+            _cardBag = null;
             _cardBusiness = default;
             _cardCrew = crew;
             _cardShown = 0;
@@ -1900,6 +1984,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardBag = null;
             _cardBusiness = default;
             _cardCrew = null;
             if (_cardRect != null) _cardRect.gameObject.SetActive(false);
@@ -1939,6 +2024,7 @@ namespace RoadDemo
             bool subject = (_cardTarget != null && !_cardTarget.Wiped) ||
                            _cardFront != null ||
                            _cardBusiness.IsValid ||
+                           _cardBag != null ||
                            (_cardPlantCar != null && _cardPlantCar.Tf != null && !_cardPlantCar.Wrecked);
 
             // And somebody to ask it of. A SHOP's card is the one that is allowed to
@@ -2177,7 +2263,7 @@ namespace RoadDemo
             else if (Time.unscaledTime >= _nextHoverAt)
             {
                 _nextHoverAt = Time.unscaledTime + HoverInterval;
-                _hovered = PickManAt(mouse.position.ReadValue());
+                _hovered = PickManAt(mouse.position.ReadValue(), includeDetachments: true);
             }
             _claimedThisFrame = false;
             // The car under the pointer, asked once: the tag over its roof, the GET IN /
@@ -2226,6 +2312,7 @@ namespace RoadDemo
 
                 var man = _men[i];
                 bool boss = _menBoss[i];
+                bool bag = _menUnit[i].IsDetachment;
                 bool rival = _menUnit[i].Faction != 0;
                 bool police = _menUnit[i].IsPolice;
                 bool lit = selected != null && _menUnit[i] == selected;
@@ -2256,8 +2343,8 @@ namespace RoadDemo
                 // outfit's own lieutenants keep theirs - those are the men being given
                 // orders - and every other family, and the police, are named only under
                 // the pointer. A selected lieutenant's name is on his card already.
-                bool named = own || _hovered == i;
-                bool tagOn = on && boss && tag != null && !lit && named;
+                bool named = bag ? _hovered == i : own || _hovered == i;
+                bool tagOn = on && (boss || bag) && tag != null && !lit && named;
                 if (tag != null && tag.enabled != tagOn) tag.enabled = tagOn;
                 if (!on)
                 {
@@ -2344,6 +2431,18 @@ namespace RoadDemo
 
         string MenTag(int i, CrewWalker man, DemoCrews.Unit unit, bool rival)
         {
+            if (unit.IsDetachment)
+            {
+                var state = TerritoryRuntime.Instance != null &&
+                            TerritoryRuntime.Instance.TryGetRound(
+                                unit.CrewId, out _, out _, out _)
+                    ? "ON THE ROUND"
+                    : CrewQuarters.Inside(unit) ? "IN THE HOUSE"
+                    : unit.TargetUnit != null ? "DEFENDING"
+                    : "OUTSIDE";
+                return "THE BAG · " + Surname(unit.Parent?.Name ?? unit.Name) +
+                       " · " + state;
+            }
             while (_menTag.Count <= i) _menTag.Add(default);
             var slot = _menTag[i];
             if (slot.text != null && slot.man == man && slot.unit == unit &&

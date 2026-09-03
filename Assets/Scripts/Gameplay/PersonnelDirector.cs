@@ -46,6 +46,11 @@ namespace LivingCity.Gameplay
             new HashSet<TerritoryBlockId>();
         OrganizationQuery organizationQuery;
         IOrganizationPhysicalSource physicalSource;
+        readonly Outfit.ArmorySites armorySites = new Outfit.ArmorySites();
+        readonly List<Outfit.InsideCrew> headquartersInside =
+            new List<Outfit.InsideCrew>();
+
+        public Outfit.ArmorySites Armories => armorySites;
 
         /// <summary>The city seed the roster was dealt from - the ledger's newspaper
         /// prints its editions off the same number, so the paper is as deterministic
@@ -215,9 +220,10 @@ namespace LivingCity.Gameplay
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
 
             var outfit = OutfitDirector.Instance;
+            var dirtyPart = 0;
             if (outfit != null)
             {
-                var paid = outfit.Purchase(price, "a man out of the paper");
+                var paid = outfit.Purchase(price, "a man out of the paper", out dirtyPart);
                 if (!paid.Ok)
                 {
                     // The money was refused, so the ad was never taken: put it back in
@@ -258,7 +264,7 @@ namespace LivingCity.Gameplay
                 man.Id = -1;
                 column.Restore(ad);
                 if (outfit != null)
-                    outfit.Refund(price, "a man out of the paper");
+                    outfit.Refund(price, dirtyPart, "a man out of the paper");
                 return result;
             }
 
@@ -484,6 +490,18 @@ namespace LivingCity.Gameplay
                 ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
                 : Commit(RosterOps.TakeOffTheBag(Roster, hoodId), "taken off the bag", hoodId);
 
+        public OpResult PostEscort(int crewId, int hoodId) =>
+            Roster == null
+                ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
+                : Commit(RosterOps.PostEscort(Roster, crewId, hoodId),
+                    "posted to the bag's detail", hoodId);
+
+        public OpResult PullEscort(int hoodId) =>
+            Roster == null
+                ? OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember)
+                : Commit(RosterOps.PullEscort(Roster, hoodId),
+                    "pulled off the bag's detail", hoodId);
+
         /// <summary>LET HIM PICK: the lieutenant hands the bag to one of his own, as
         /// well as his Organization lets him (CollectorChoice), and keeps the job of
         /// handing it out from here.</summary>
@@ -552,6 +570,28 @@ namespace LivingCity.Gameplay
             organizationQuery.BindPhysical(source);
         }
 
+        public void SetHeadquartersArmoryBlock(TerritoryBlockId blockId)
+        {
+            if (!blockId.IsValid || armorySites.Headquarters == blockId)
+                return;
+            armorySites.SetHeadquarters(blockId);
+            Version++;
+        }
+
+        public void ClearHeadquartersArmoryBlock()
+        {
+            if (armorySites.ClearHeadquarters())
+                Version++;
+        }
+
+        public Outfit.HeadquartersReport ReadHeadquarters(Outfit.Accounts accounts)
+        {
+            headquartersInside.Clear();
+            if (physicalSource is Outfit.IHeadquartersPhysicalSource source)
+                source.CollectHeadquartersInside(headquartersInside);
+            return Outfit.HeadquartersReport.For(accounts, Roster, headquartersInside);
+        }
+
         public void ValidateOrganization(List<string> failures)
         {
             OrganizationValidator.Validate(
@@ -562,6 +602,10 @@ namespace LivingCity.Gameplay
         {
             if (Roster == null)
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchMember);
+            var gate = GateAccess(Outfit.ArmoryGate.Give(
+                Roster, physicalSource, armorySites, id));
+            if (!gate.Ok)
+                return gate;
             return Commit(RosterOps.GiveEquipment(Roster, itemId, id, pin), "armed", id);
         }
 
@@ -573,6 +617,10 @@ namespace LivingCity.Gameplay
         {
             if (Roster == null)
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchItem);
+            var gate = GateAccess(Outfit.ArmoryGate.Move(
+                Roster, physicalSource, armorySites, itemId, id));
+            if (!gate.Ok)
+                return gate;
             return Commit(RosterOps.MoveEquipment(Roster, itemId, id), "handed the keys", id);
         }
 
@@ -596,6 +644,10 @@ namespace LivingCity.Gameplay
         {
             if (Roster == null)
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchItem);
+            var gate = GateAccess(Outfit.ArmoryGate.GiveToFront(
+                Roster, physicalSource, armorySites, itemId));
+            if (!gate.Ok)
+                return gate;
             var result = RosterOps.GiveEquipmentToFront(Roster, itemId);
             if (result.Ok)
             {
@@ -610,6 +662,10 @@ namespace LivingCity.Gameplay
         {
             if (Roster == null)
                 return OpResult.Fail(LivingCity.UI.LedgerText.ReasonNoSuchItem);
+            var gate = GateAccess(Outfit.ArmoryGate.Return(
+                Roster, physicalSource, armorySites, itemId));
+            if (!gate.Ok)
+                return gate;
             var result = RosterOps.ReturnEquipment(Roster, itemId);
             if (result.Ok)
             {
@@ -618,6 +674,44 @@ namespace LivingCity.Gameplay
                 Version++;
             }
             return result;
+        }
+
+        public Outfit.ArmoryAccess EquipmentAccessFor(int memberId) =>
+            Outfit.ArmoryGate.Give(Roster, physicalSource, armorySites, memberId);
+
+        public string ArmoryLocationLine(int memberId)
+        {
+            var access = EquipmentAccessFor(memberId);
+            if (access.Allowed)
+                return "AT THE FRONT";
+            if (!access.Located)
+                return LivingCity.UI.LedgerText.CrewNowhere;
+
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            var name = access.BlockId.Value;
+            if (runtime?.Geography != null &&
+                runtime.Geography.TryGetBlock(access.BlockId, out var block))
+                name = block.DisplayName;
+            var distance = Outfit.ArmorySites.Distance(runtime?.Geography,
+                access.BlockId, armorySites.Headquarters);
+            if (distance < 0)
+                return "on " + name + " · route to the front unknown";
+            return "on " + name + " · " + System.Math.Max(0, distance) +
+                   (distance == 1 ? " block out" : " blocks out");
+        }
+
+        OpResult GateAccess(Outfit.ArmoryAccess access)
+        {
+            if (access.Allowed)
+                return OpResult.Success;
+            if (!access.Located)
+                return OpResult.Fail(LivingCity.UI.LedgerText.CrewNowhere);
+
+            var name = access.BlockId.Value;
+            var geography = RoadDemo.TerritoryRuntime.Instance?.Geography;
+            if (geography != null && geography.TryGetBlock(access.BlockId, out var block))
+                name = block.DisplayName;
+            return OpResult.Fail(LivingCity.UI.LedgerText.NoArmory(name));
         }
 
         OpResult Apply(System.Func<Roster, int, OpResult> op, int id, string verb)

@@ -975,8 +975,9 @@ namespace LivingCity.UI
                                 if (runtime?.Commands == null)
                                     return;
                                 var sent = runtime.Commands.Submit(
-                                    new Territory.ApproachBusinessCommand(
-                                        node, businessId, intent));
+                                    Gameplay.PlayerCommands.Stamp(
+                                        new Territory.ApproachBusinessCommand(
+                                            node, businessId, intent)));
                                 ordersNote = sent.Status ==
                                              Territory.TerritoryCommandStatus.Rejected
                                     ? sent.Reason

@@ -152,6 +152,20 @@ namespace LivingCity.Tests
             if (state.Version != before)
                 failures.Add("Commands: move acceptance fabricated a territory state change.");
 
+            // A collection is the one physical order that may wait at a headquarters
+            // door. Its executor receives the gateway receipt before returning Pending
+            // so the later exit can close this exact history row.
+            var collection = commands.Submit(House(new CollectDuesCommand(
+                TerritoryCommandNodeId.Crew(4), BlockId)));
+            if (collection.Status != TerritoryCommandStatus.Pending ||
+                executor.LastCollectionCommandId != collection.CommandId)
+                failures.Add("Commands: a deferred collection did not carry its receipt.");
+            if (!commands.Resolve(collection.CommandId, TerritoryCommandStatus.Succeeded,
+                    "walking") ||
+                !commands.TryGet(collection.CommandId, out var resolvedCollection) ||
+                resolvedCollection.Status != TerritoryCommandStatus.Succeeded)
+                failures.Add("Commands: a deferred collection could not close its receipt.");
+
             var assigned = commands.Submit(House(new AssignBlockResponsibilityCommand(
                 BlockId,
                 new TerritoryGangId(0),
@@ -332,6 +346,7 @@ namespace LivingCity.Tests
         sealed class TestExecutor : ITerritoryCommandExecutor
         {
             readonly TerritorySimulationState state;
+            public long LastCollectionCommandId { get; private set; }
 
             public TestExecutor(TerritorySimulationState state) => this.state = state;
 
@@ -365,8 +380,11 @@ namespace LivingCity.Tests
                 TerritoryCommandExecution.Reject("Not in fixture.");
             public TerritoryCommandExecution Execute(ThreatenBusinessOwnerCommand command) =>
                 TerritoryCommandExecution.Reject("Not in fixture.");
-            public TerritoryCommandExecution Execute(CollectDuesCommand command) =>
-                TerritoryCommandExecution.Reject("Not in fixture.");
+            public TerritoryCommandExecution Execute(CollectDuesCommand command)
+            {
+                LastCollectionCommandId = command.CommandId;
+                return TerritoryCommandExecution.Pending("crossing the door");
+            }
             public TerritoryCommandExecution Execute(ShakeDownBlockCommand command) =>
                 command.GroupId.IsValid && command.BlockId.IsValid
                     ? TerritoryCommandExecution.Pending()

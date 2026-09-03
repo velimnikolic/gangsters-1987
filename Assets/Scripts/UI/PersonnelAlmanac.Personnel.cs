@@ -1321,6 +1321,15 @@ namespace LivingCity.UI
 
             y = Mathf.Min(y, -(plateH + 30f)) - 10f;
 
+            // WHAT the city wants him for, in the one table the law sheet reads
+            // (WantedLevels.Word): a chip that only says WANTED tells the boss nothing
+            // about whether a week out of sight will clear it. Below the plate, because
+            // the line above is clamped to the plate's own height.
+            if (member.Wanted)
+                y = Particular("WANTED FOR",
+                    LivingCity.Police.WantedLevels.Word(member.WantedLevel),
+                    textX, textW, y, LedgerV2.Red) - 4f;
+
             // ---- what he has signed for ----
             y = BuildKitSlots(roster, member, y);
             y -= 12f;
@@ -1602,7 +1611,12 @@ namespace LivingCity.UI
             var bailed = held != null && held.Stage == LivingCity.Police.PrisonStage.Bailed;
 
             var courtDay = held != null ? held.CourtDay : 0;
-            var state = bailed ? "ON BAIL" : "HELD";
+            // ONE VOCABULARY (GAN-302). This band printed HELD for five different
+            // stages, so a man in the back of a car and a man already in prison read
+            // the same here while the law sheet called them what they were.
+            var state = held != null
+                ? LedgerText.StageBand(held.Stage)
+                : "HELD";
             var when = courtDay > 0
                 ? "  ·  COURT DAY " + courtDay +
                   (today > 0 && courtDay > today
@@ -1881,6 +1895,7 @@ namespace LivingCity.UI
         /// open at before anybody has been picked.</summary>
         float BuildFrontDetail(Roster roster)
         {
+            var headquarters = director.ReadHeadquarters(outfit ? outfit.Accounts : null);
             var boss = roster.FindBoss();
             var bossName = boss != null ? boss.FullName : Gangs.GangCatalog.BossName;
             var plateW = Mathf.Min(128f, CardInner * 0.4f);
@@ -1902,41 +1917,33 @@ namespace LivingCity.UI
                 "BOSS · " + Gangs.GangCatalog.Names[Gangs.GangCatalog.PlayerGangId], 12f,
                 LedgerV2.Red, 5f);
 
-            var manager = roster.Find(roster.FrontId);
             var y = -70f;
-            y = Particular("THE DESK", manager != null
-                ? manager.FullName + " runs it"
+            y = Particular("THE DESK", !string.IsNullOrEmpty(headquarters.DeskManager)
+                ? headquarters.DeskManager + " runs it"
                 : "nobody runs the desk", textX, textW, y,
-                manager != null ? LedgerV2.Ink : LedgerV2.Red);
-
-            var guards = 0;
-            for (var i = 0; i < roster.Members.Count; i++)
-            {
-                var member = roster.Members[i];
-                if (member.Status == CharacterStatus.Active &&
-                    member.Id != roster.FrontId &&
-                    roster.AssignmentOf(member.Id).Kind == AssignmentKind.Pool)
-                    guards++;
-            }
-            y = Particular("ON GUARD", guards == 1 ? "1 hood at the front"
-                : guards + " hoods at the front", textX, textW, y,
-                guards > 0 ? LedgerV2.Ink : LedgerV2.Muted);
-            y = Particular("IN THE SAFE",
-                outfit ? LedgerText.Cash(outfit.Accounts.Safe) : "--", textX, textW, y);
+                !string.IsNullOrEmpty(headquarters.DeskManager) ? LedgerV2.Ink : LedgerV2.Red);
+            y = Particular("ON GUARD", headquarters.Guards == 1 ? "1 hood at the front"
+                : headquarters.Guards + " hoods at the front", textX, textW, y,
+                headquarters.Guards > 0 ? LedgerV2.Ink : LedgerV2.Muted);
+            y = Particular("IN THE SAFE", LedgerText.Cash(headquarters.Safe),
+                textX, textW, y);
+            y = Particular("DIRTY", LedgerText.Cash(headquarters.Dirty), textX, textW, y,
+                headquarters.Risk >= Outfit.RiskRating.Moderate
+                    ? LedgerV2.Red : LedgerV2.Muted);
+            y = Particular("INSIDE", Outfit.HeadquartersText.Inside(headquarters),
+                textX, textW, y, headquarters.Inside.Count > 0
+                    ? LedgerV2.Ink : LedgerV2.Muted);
 
             y = Mathf.Min(y, -(plateW * 1.22f + 40f)) - 10f;
 
             // What the front holds - the locker and the guards' hands.
             y = CardHeading("AT THE FRONT", y);
-            var anyHeld = false;
             for (var i = 0; i < roster.Equipment.Count; i++)
             {
                 var item = roster.Equipment[i];
                 if (item.OwnerId != RosterEquipment.FrontArmory)
                     continue;
                 var holder = roster.Find(item.HolderId);
-                anyHeld = true;
-
                 y = ItemLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName),
                     holder != null ? LedgerText.HeldByLine(holder.FullName) : "in the locker",
                     LedgerV2.Ink, y);
@@ -1950,19 +1957,16 @@ namespace LivingCity.UI
                     dirty = true;
                 }, red: false, size: 10f, outline: true);
             }
-            if (!anyHeld)
+            if (headquarters.LockerItems + headquarters.GuardHeldItems == 0)
                 y = ItemLine("The locker is empty.", "", LedgerV2.Muted, y);
 
             // The stock: GIVE dumps gear at the front, the guards draw it at once.
             y = CardHeading("ARMORY", y - 8f);
-            var anyStock = false;
             for (var i = 0; i < roster.Equipment.Count; i++)
             {
                 var item = roster.Equipment[i];
                 if (item.OwnerId != RosterEquipment.Unheld)
                     continue;
-                anyStock = true;
-
                 y = ItemLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName), "",
                     LedgerV2.Ink, y);
                 var itemId = item.Id;
@@ -1975,7 +1979,7 @@ namespace LivingCity.UI
                     dirty = true;
                 }, red: false, size: 10f);
             }
-            if (!anyStock)
+            if (headquarters.UnheldItems == 0)
                 y = ItemLine("The stock is empty.", "", LedgerV2.Muted, y);
 
             if (lastRefusal.Length > 0)
@@ -2063,6 +2067,9 @@ namespace LivingCity.UI
         float BuildArmoryStock(Roster roster, Character member, float y)
         {
             y = CardHeading("ARMORY · WHAT IS LEFT", y);
+            var access = director.EquipmentAccessFor(member.Id);
+            y = ItemLine(director.ArmoryLocationLine(member.Id), "",
+                access.Allowed ? LedgerV2.Ink : LedgerV2.Muted, y);
 
             var anyStock = false;
             for (var i = 0; i < roster.Equipment.Count; i++)
@@ -2076,16 +2083,24 @@ namespace LivingCity.UI
                 if (item.OwnerId == RosterEquipment.Unheld)
                 {
                     y = ItemLine(LedgerText.EquipmentLine(item.Kind, item.DisplayName), "",
-                        LedgerV2.Ink, y);
+                        access.Allowed ? LedgerV2.Ink : LedgerV2.Muted, y);
                     if (!member.Gone)
-                        LedgerV2.Button(cardContent, "GIVE", CardInner - 100f, y + 24f, 100f, 22f, () =>
-                        {
-                            lastRefusal = "";
-                            var result = director.GiveEquipment(item.Id, member.Id);
-                            if (!result.Ok)
-                                lastRefusal = result.Reason;
-                            dirty = true;
-                        }, red: false, size: 10f);
+                    {
+                        if (access.Allowed)
+                            LedgerV2.Button(cardContent, "GIVE", CardInner - 100f,
+                                y + 24f, 100f, 22f, () =>
+                                {
+                                    lastRefusal = "";
+                                    var result = director.GiveEquipment(item.Id, member.Id);
+                                    if (!result.Ok)
+                                        lastRefusal = result.Reason;
+                                    dirty = true;
+                                }, red: false, size: 10f);
+                        else
+                            LedgerV2.Button(cardContent, "SEND FOR THEM", CardInner - 130f,
+                                y + 24f, 130f, 22f, () => SendForArmory(member.Id),
+                                red: false, size: 9f, outline: true);
+                    }
                 }
                 else
                 {
@@ -2154,10 +2169,10 @@ namespace LivingCity.UI
 
             if (pendingConfirm == Confirm.Demote)
             {
-                var crew = roster.CrewOf(member.Id);
+                var demotedCrew = roster.CrewOf(member.Id);
                 Caps(cardFoot, 0f, -8f, CardInner,
                     LedgerText.DemoteConfirm(member.FirstName,
-                        crew != null ? crew.HoodIds.Count : 0) + " " +
+                        demotedCrew != null ? demotedCrew.HoodIds.Count : 0) + " " +
                     LedgerText.DemoteCost, 9.5f, LedgerV2.Red, 2f);
                 LedgerV2.Button(cardFoot, "DISBAND HIS CREW", 0f, -22f, half, buttonH, () =>
                 {
@@ -2201,23 +2216,37 @@ namespace LivingCity.UI
 
             // THE BAG. Only a hood who is actually in a crew can carry it: a man in the
             // pool walks nobody's doors, and the duty is the crew's round, not a rank.
-            var canCarry = member.Rank == Rank.Hood && roster.CrewOf(member.Id) != null;
-            var carries = canCarry && BlockRacketSeam.SourceOrStub.IsCollector(member.Id);
-            if (canCarry)
+            var crew = roster.CrewOf(member.Id);
+            var canCarry = member.Rank == Rank.Hood && crew != null;
+            var carries = canCarry && member.Duty == Duty.Collector;
+            var escorts = canCarry && member.Duty == Duty.Escort;
+            var hasBagVerb = canCarry && (carries || escorts || crew.BagId < 0 ||
+                                          crew.EscortIds.Count < Crew.MaxEscorts);
+            if (hasBagVerb)
             {
                 var manId = member.Id;
                 var onBag = carries;
+                var onDetail = escorts;
+                var crewId = crew.Id;
                 LedgerV2.Button(cardFoot,
-                    onBag ? "TAKE HIM OFF THE BAG" : "MAKE HIM A COLLECTOR",
+                    onBag ? "TAKE HIM OFF THE BAG"
+                        : onDetail ? "TAKE HIM OFF THE DETAIL"
+                        : crew.BagId >= 0 ? "PUT HIM ON THE BAG'S DETAIL"
+                        : "MAKE HIM A COLLECTOR",
                     half + 12f, -14f, half, buttonH,
                     () =>
                     {
-                        var refusal =
-                            BlockRacketSeam.ActionsOrStub.SetCollector(manId, !onBag);
+                        var refusal = onBag
+                            ? BlockRacketSeam.ActionsOrStub.TakeOffTheBag(manId)
+                            : onDetail
+                                ? BlockRacketSeam.ActionsOrStub.PullEscort(manId)
+                                : crew.BagId >= 0
+                                    ? BlockRacketSeam.ActionsOrStub.PostEscort(crewId, manId)
+                                    : BlockRacketSeam.ActionsOrStub.SetCollector(manId, true);
                         lastRefusal = refusal ?? "";
                         dirty = true;
                     },
-                    red: false, outline: !onBag);
+                    red: false, outline: !onBag && !onDetail);
             }
 
             // THE BOTTOM LINE, split in two. LOY-003's marks on the left - the choice is
@@ -2231,9 +2260,11 @@ namespace LivingCity.UI
                     (marks & ManFlag.RedFlag) != 0 ? LedgerV2.Red : LedgerV2.Lieutenant,
                     2f, TextAlignmentOptions.MidlineLeft);
 
-            if (carries)
+            if (carries || escorts)
                 LedgerV2.Mono(cardFoot, half + 12f, -(14f + buttonH + 4f), half,
-                    RoundWord(roster, member.Id), 9.5f, LedgerV2.Muted, 0.5f,
+                    carries ? RoundWord(roster, member.Id)
+                        : "guards " + (roster.Find(crew.BagId)?.Surname ?? "the collector"),
+                    9.5f, LedgerV2.Muted, 0.5f,
                     TextAlignmentOptions.MidlineRight);
         }
 
@@ -2248,29 +2279,12 @@ namespace LivingCity.UI
             var crew = roster?.CrewOf(id);
             if (crew == null)
                 return "in no crew " + DOT_ + " he walks nothing";
-
-            var blocks = roster.Organization.BlockResponsibilities;
-            var walked = 0;
-            var first = "";
-            var day = "";
-            for (var i = 0; i < blocks.Count; i++)
-            {
-                if (blocks[i].LeaderId != crew.LieutenantId || !blocks[i].BlockId.IsValid)
-                    continue;
-                walked++;
-                if (walked > 1)
-                    continue;
-                first = BlockNameOf(blocks[i].BlockId);
-                day = LivingCity.Territory.TerritoryCollectionSchedule
-                    .WordOf(blocks[i].BlockId);
-            }
-
-            if (walked == 0)
-                return "his lieutenant answers for no ground " + DOT_ + " nothing to walk";
-            if (walked == 1)
-                return "walks " + first + " " + DOT_ + " " + day.ToLowerInvariant();
-            return "walks " + first + " and " + (walked - 1) +
-                   (walked == 2 ? " other block" : " others");
+            if (BlockRacketSeam.SourceOrStub.TryGetRoundOf(id, out var roundBlock))
+                return "on the round " + DOT_ + " " + BlockNameOf(roundBlock);
+            var leader = roster.Find(crew.LieutenantId);
+            return "carries the bag for " +
+                   (leader != null ? leader.Surname + "'s ground" : "the outfit") +
+                   " " + DOT_ + " in the house between rounds";
         }
 
         static string BlockNameOf(LivingCity.Territory.TerritoryBlockId blockId)

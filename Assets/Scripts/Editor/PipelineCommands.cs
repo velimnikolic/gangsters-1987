@@ -292,6 +292,19 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_hq_tests",
+                    "Run GAN-263 contracts for the safe, headquarters report, and armory gate.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "headquarters", "tests" })]
+        public static object HeadquartersTests()
+        {
+            var failures = LivingCity.Tests.HeadquartersTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
         [CliCommand("gangsters_police_tests",
                     "Run the law & order contracts (EPICs 17-21): the fight-or-surrender " +
                     "roll, the precinct roster and its watch, the sentence table, the " +
@@ -305,6 +318,25 @@ namespace GangstersTools
                 passed = failures.Count == 0,
                 failures = failures.ToArray(),
                 contracts = LivingCity.Tests.PoliceTests.ContractNames(),
+            };
+        }
+
+        [CliCommand("gangsters_law_sheet",
+                    "Print THE LAW sheet's own rows for a staged docket (EPIC 33) and " +
+                    "judge them: the docket in order, the witnesses, the counsel's read, " +
+                    "the cells, the wanted, and the archive after a trial on paper and a " +
+                    "save-and-load. The sheet's oracle - what a contract proves here is " +
+                    "what the ledger paints.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "police", "law", "ledger" })]
+        public static object LawSheetBench()
+        {
+            var report = LivingCity.Tests.LawSheetBench.Run();
+            return new
+            {
+                passed = report.Failures.Count == 0,
+                failures = report.Failures.ToArray(),
+                sheet = report.Lines.ToArray(),
             };
         }
 
@@ -376,6 +408,20 @@ namespace GangstersTools
                 passed = failures.Count == 0,
                 failures = failures.ToArray(),
                 contracts = LivingCity.Tests.CommandTests.ContractNames(),
+            };
+        }
+
+        [CliCommand("gangsters_ledger_tests",
+                    "Run the ledger contracts for calendar, income classes, wages, " +
+                    "balance arithmetic and the order book.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "ledger", "tests" })]
+        public static object LedgerTests()
+        {
+            var failures = LivingCity.Tests.LedgerTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
             };
         }
 

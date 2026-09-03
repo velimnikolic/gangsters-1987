@@ -2,6 +2,8 @@
 using LivingCity.Gameplay;
 using LivingCity.Entities;
 using LivingCity.Personnel;
+using LivingCity.Outfit;
+using LivingCity.Territory;
 using UnityEngine;
 
 namespace RoadDemo
@@ -26,7 +28,7 @@ namespace RoadDemo
     // changes hands) the figures are re-dealt to match - new men walk in, gone men
     // walk off, a hood handed to another lieutenant walks over to him.
     public partial class DemoCrews : MonoBehaviour, IOrganizationPhysicalSource,
-                                     IMapVisionAreaSource
+                                     IHeadquartersPhysicalSource, IMapVisionAreaSource
     {
         /// <summary>One lieutenant, his root object, and his men.</summary>
         public class Unit
@@ -1466,7 +1468,8 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ orders
 
-        public void Select(Unit unit) => Selected = unit != null && unit.Faction == 0 ? unit : null;
+        public void Select(Unit unit) => Selected = unit != null && unit.Faction == 0 &&
+            !unit.IsDetachment ? unit : null;
 
         /// <summary>The house a body belongs to, or null when it belongs to none -
         /// the law, a bench scene's mob, a passer-by.</summary>
@@ -2720,6 +2723,21 @@ namespace RoadDemo
         // bench scene's mob) are left alone.
         void Sync(LivingCity.Outfit.Underworld underworld)
         {
+            // A collector struck off during a round clears the pure roster node and
+            // benches its escorts immediately. The walking body nevertheless owns the
+            // round until it banks or is wiped, so keep that exact detachment together
+            // long enough for a living escort to pick up the physical bag.
+            var activeRoundBags = new Dictionary<int, Unit>();
+            var territory = TerritoryRuntime.Instance;
+            if (territory != null)
+                for (var i = 0; i < Units.Count; i++)
+                {
+                    var unit = Units[i];
+                    if (unit != null && unit.Faction == 0 && unit.IsDetachment &&
+                        territory.TryGetRound(unit.CrewId, out _, out _, out _))
+                        activeRoundBags[unit.CrewId] = unit;
+                }
+
             // Every man every STANDING house wants on the street, whoever's he is. Ids
             // are unique across all twenty-one books by construction, so one map holds
             // the city.
@@ -2728,6 +2746,8 @@ namespace RoadDemo
             // for one - no other family walks a collector - so a crew number is key
             // enough here and cannot collide with another house's numbering.
             var bagMen = new Dictionary<int, int>();
+            var bagMemberCrew = new Dictionary<int, int>();
+            var bagCrews = new HashSet<int>();
             for (var h = 0; h < _houses.Count; h++)
             {
                 var house = underworld.Of(_houses[h]);
@@ -2742,26 +2762,34 @@ namespace RoadDemo
                     wanted[lt.Id] = (house, crew, true);
                     var tacticalHoods = 0;
 
-                    // THE BAG MAN IS NOT IN THE LINE, BUT HE IS ONE OF THE FOUR. He
-                    // stands apart in a unit of his own (below) - and he still SPENDS
-                    // one of the crew's physical places, or naming a collector would put
-                    // a fifth body on the street and make an administrative duty a way
-                    // of buying men. Read BEFORE the line is filled: he can be anywhere
-                    // on the books, and a place reserved after four men are dealt is not
-                    // a place reserved.
                     var bagId = ours ? RosterOps.CollectorOf(book, crew.Id) : -1;
                     var bagMan = bagId >= 0 ? book.Find(bagId) : null;
                     if (bagMan != null && bagMan.Status == CharacterStatus.Active)
                     {
                         bagMen[crew.Id] = bagId;
+                        bagMemberCrew[bagId] = crew.Id;
+                        bagCrews.Add(crew.Id);
                         wanted[bagId] = (house, crew, false);
-                        tacticalHoods++;
                     }
+
+                    // The post survives a collector's spell in a bed or a cell. His
+                    // active escorts therefore remain a real detachment at the house;
+                    // they do not disappear from the street projection merely because
+                    // the man they guard cannot walk today's round.
+                    if (ours)
+                        for (var e = 0; e < crew.EscortIds.Count &&
+                             e < Crew.MaxEscorts; e++)
+                        {
+                            var escort = book.Find(crew.EscortIds[e]);
+                            if (escort == null || escort.Status != CharacterStatus.Active)
+                                continue;
+                            bagMemberCrew[escort.Id] = crew.Id;
+                            bagCrews.Add(crew.Id);
+                            wanted[escort.Id] = (house, crew, false);
+                        }
 
                     foreach (int id in crew.HoodIds)
                     {
-                        // his place was reserved above, and he is not dealt into the line
-                        if (id == bagId) continue;
                         var hood = book.Find(id);
                         if (hood != null && hood.Status == CharacterStatus.Active &&
                             tacticalHoods < Crew.MaxTacticalHoods)
@@ -2770,6 +2798,16 @@ namespace RoadDemo
                             tacticalHoods++;
                         }
                     }
+
+                    // Returned escorts may now sit past the line's fourth place. They
+                    // still belong to the already-open round until it settles.
+                    if (ours && activeRoundBags.TryGetValue(crew.Id, out var walkingBag))
+                        foreach (var walker in walkingBag.All())
+                        {
+                            var hood = walker != null ? book.Find(walker.CharacterId) : null;
+                            if (hood != null && hood.Status == CharacterStatus.Active)
+                                wanted[hood.Id] = (house, crew, false);
+                        }
                 }
             }
 
@@ -2817,10 +2855,10 @@ namespace RoadDemo
                 }
             }
 
-            // THE BAG UNITS (GAN-262): one per crew of OURS with a man marked for the
-            // bag, kept across deals by crew number like the line is. A crew whose bag
-            // man was taken off it loses the unit below with the rest of the dead wood,
-            // and the man walks back into the line if he is one of the four again.
+            // THE BAG UNITS (GAN-262): one per crew of OURS with an assigned collector
+            // or escort, kept across deals by crew number like the line is. An active
+            // escort keeps the post physically present while its collector is laid up;
+            // the post disappears only when nobody assigned to it can stand there.
             // Held by crew number for the deal below: BagUnitOf refuses a unit with
             // nobody standing in it, and a bag unit has nobody in it until its man is
             // placed - asking it here would put the bag man back in the line.
@@ -2829,11 +2867,13 @@ namespace RoadDemo
             if (playerBook != null)
                 foreach (var crew in playerBook.Crews)
                 {
-                    if (!bagMen.ContainsKey(crew.Id)) continue;
+                    var carriesOn = activeRoundBags.TryGetValue(crew.Id, out var walkingBag);
+                    if (!bagCrews.Contains(crew.Id) && !carriesOn) continue;
                     var parent = liveUnits.Find(
                         u => u.Faction == 0 && !u.IsDetachment && u.CrewId == crew.Id);
                     if (parent == null) continue;
-                    var bag = Units.Find(u => u.Faction == 0 && u.IsDetachment && u.CrewId == crew.Id)
+                    var bag = carriesOn ? walkingBag
+                              : Units.Find(u => u.Faction == 0 && u.IsDetachment && u.CrewId == crew.Id)
                               ?? new Unit { CrewId = crew.Id, Faction = 0,
                                             GangName = parent.GangName, IsDetachment = true };
                     bagUnits[crew.Id] = bag;
@@ -2843,12 +2883,14 @@ namespace RoadDemo
                     bag.Hoods.Clear();
                     liveUnits.Add(bag);
 
-                    var carrier = playerBook.Find(bagMen[crew.Id]);
                     bag.Name = parent.Name + " · the bag";
                     bag.Loyalty = parent.Loyalty;
                     if (bag.Root == null)
                         bag.Root = new GameObject("Bag").transform;
-                    bag.Root.name = "Bag · " + carrier.FullName;
+                    var carrier = bagMen.TryGetValue(crew.Id, out var carrierId)
+                        ? playerBook.Find(carrierId) : null;
+                    bag.Root.name = "Bag · " +
+                                    (carrier != null ? carrier.FullName : parent.Name);
                     bag.Root.SetParent(_root, false);
                 }
 
@@ -2861,7 +2903,7 @@ namespace RoadDemo
                     if (Selected == unit) Selected = null;
                     // a crew off the books leaves no billet behind for the next crew to
                     // inherit its number and its hallway
-                    CrewQuarters.Forget(unit.CrewId);
+                    CrewQuarters.Forget(unit);
                     // whoever is still under it moves crews below; get them out first
                     foreach (var man in unit.All())
                         if (man.Tf) man.Tf.SetParent(_root, true);
@@ -2877,13 +2919,19 @@ namespace RoadDemo
             foreach (var kv in wanted)
             {
                 if (kv.Value.boss) continue;
-                // the bag man is dealt into his own unit, not the line - and only ours
-                // has one, so a rival's hood is never looked for among the bag units
+                // Collector and escorts are dealt into their own unit, never the line.
                 var bag = kv.Value.house.IsPlayer &&
-                          bagMen.TryGetValue(kv.Value.crew.Id, out var bagId) && bagId == kv.Key &&
+                          bagMemberCrew.TryGetValue(kv.Key, out var bagCrewId) &&
+                          bagCrewId == kv.Value.crew.Id &&
                           bagUnits.TryGetValue(kv.Value.crew.Id, out var into)
                     ? into
                     : null;
+                if (bag == null &&
+                    activeRoundBags.TryGetValue(kv.Value.crew.Id, out var walkingBag) &&
+                    _byCharacter.TryGetValue(kv.Key, out var walker) &&
+                    previousUnitOf.TryGetValue(walker, out var previous) &&
+                    previous == walkingBag)
+                    bag = walkingBag;
                 Place(kv.Value.house, kv.Key, kv.Value.crew, false, previousUnitOf, bag);
             }
 
@@ -2903,9 +2951,15 @@ namespace RoadDemo
                     if (unit.Root) Destroy(unit.Root.gameObject);
                     continue;
                 }
+                var changed = false;
                 foreach (var man in unit.All())
-                    if (!man.Dead && previousUnitOf.TryGetValue(man, out var was) && was != unit)
-                        MarchTo(unit, FrontDoorstep());
+                    if (!man.Dead && (!previousUnitOf.TryGetValue(man, out var was) || was != unit))
+                        changed = true;
+                var bagRuntime = TerritoryRuntime.Instance;
+                if (changed && (bagRuntime == null ||
+                    (!bagRuntime.TryGetRound(unit.CrewId, out _, out _, out _) &&
+                     !bagRuntime.BagRoundPending(unit.CrewId))))
+                    StationBagAtHeadquarters(unit);
             }
 
             if (!_initialPlayerSelectionMade)
@@ -2971,9 +3025,7 @@ namespace RoadDemo
             for (var i = 0; i < Units.Count; i++)
             {
                 var unit = Units[i];
-                // The projection is the LINE. The bag man stands apart from it by
-                // design (GAN-262) and is not a second group under the same lieutenant.
-                if (unit == null || unit.Faction != 0 || unit.IsDetachment)
+                if (unit == null || unit.Faction != 0)
                     continue;
 
                 var count = (unit.Boss != null ? 1 : 0) + unit.Hoods.Count;
@@ -2988,7 +3040,69 @@ namespace RoadDemo
                     System.Array.Resize(ref ids, at);
 
                 into.Add(new TacticalPersonnelMapping(
-                    unit.CrewId, unit.CommandParentId, ids));
+                    unit.CrewId * 2 + (unit.IsDetachment ? 1 : 0),
+                    unit.CommandParentId, ids, unit.IsDetachment));
+            }
+        }
+
+        void StationBagAtHeadquarters(Unit unit)
+        {
+            if (unit == null || !unit.IsDetachment)
+                return;
+            var front = PlayerFront();
+            if (front != null)
+            {
+                if (front.BusinessId.IsValid)
+                    CrewQuarters.Station(this, unit, front.BusinessId);
+                else
+                    CrewQuarters.Station(this, unit, front.Outside, "HQ");
+                return;
+            }
+            var outfit = OutfitDirector.Instance;
+            if (outfit != null && outfit.TryGetHeadquarters(out var hq, out _))
+                CrewQuarters.Station(this, unit, hq, "HQ");
+        }
+
+        public bool TryLocateGroup(int leaderId, out TerritoryBlockId blockId)
+        {
+            blockId = default;
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime == null)
+                return false;
+
+            for (var i = 0; i < Units.Count; i++)
+            {
+                var unit = Units[i];
+                if (unit == null || unit.Faction != 0 || unit.IsDetachment ||
+                    unit.CommandParentId != leaderId)
+                    continue;
+
+                var world = unit.Position;
+                if (CrewQuarters.Inside(unit) &&
+                    CrewQuarters.TryGetDoorstep(unit, out var doorstep))
+                    world = doorstep;
+                return runtime.TryGetBlockAtWorld(world, out blockId);
+            }
+            return false;
+        }
+
+        public void CollectHeadquartersInside(List<InsideCrew> into)
+        {
+            if (into == null)
+                return;
+            var roster = PersonnelDirector.Instance?.Roster;
+            if (roster == null)
+                return;
+
+            for (var i = 0; i < Units.Count; i++)
+            {
+                var unit = Units[i];
+                if (unit == null || unit.Faction != 0 || unit.IsDetachment ||
+                    !CrewQuarters.InsideHeadquarters(unit))
+                    continue;
+                var leader = roster.Find(unit.CommandParentId);
+                if (leader != null)
+                    into.Add(new InsideCrew(leader.Id, leader.FullName, unit.Standing()));
             }
         }
 

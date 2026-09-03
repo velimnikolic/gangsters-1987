@@ -65,7 +65,9 @@ make it call the shared service/model.
 | the canonical blocks, neighborhoods and the block graph | `Docs/territory-geography.md` |
 | every source of a business, and which provider owns it | `Docs/business-inventory.md` |
 | the racket: collector duty, the schedule, money on the wire | `Docs/racket-collections.md` |
+| the law sheet: the docket, the cells, the wanted, the counsel, the verdicts | `Docs/ledger-law-sheet.md` |
 | what everything costs (1987 dollars, Miami-anchored) | `Docs/economy-prices.md` |
+| headquarters safe, stock, report and armory gate | `Docs/headquarters.md` |
 | what the port is made of | `Docs/harbor-detail.md` |
 | the period | `Docs/1987-period-reference.md` |
 | what the game owes a credit for | `Docs/credits.md` |

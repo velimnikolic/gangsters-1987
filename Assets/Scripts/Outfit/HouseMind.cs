@@ -1060,13 +1060,8 @@ namespace LivingCity.Outfit
 
         static bool HasCollector(Roster roster, Crew crew)
         {
-            for (var i = 0; i < crew.HoodIds.Count; i++)
-            {
-                var man = roster.Find(crew.HoodIds[i]);
-                if (man != null && !man.Gone && man.Duty == Duty.Collector)
-                    return true;
-            }
-            return false;
+            var man = roster.Find(crew.BagId);
+            return man != null && !man.Gone && man.Duty == Duty.Collector;
         }
 
         static bool Filed(HouseView view, OrderType type, int crewId)

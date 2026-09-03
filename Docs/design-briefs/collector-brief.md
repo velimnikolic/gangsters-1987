@@ -13,7 +13,7 @@ Two smaller defects ride along because the same conversation found them: a robbe
 | 1 | Does the collector spend one of the crew's four street places? | **No.** He and his escort are their own body on the street; the line gets its fourth man back. More men on the street per lieutenant is intended, not an accident. |
 | 2 | Where does an escort come from? | The reserve **or** the crew's own men (bench or line). Posting a man from the reserve re-aims his loyalty like any other posting; posting one of the crew's own does not. |
 | 3 | Can the player order the bag unit? | **No.** Not while the man carries the bag. It has its own AI: inside the HQ, out on the round when the schedule says, back inside after banking, out again to defend the HQ block. Take the bag off him and he is an ordinary hood again. |
-| 4 | Finances | A new row **Jobs** (robbery, ransom cut) beside Protection; `IllegalIncome` stays as the sum so laundering and the save file keep their meaning. |
+| 4 | Finances | A new row **Jobs** (robbery, ransom cut) beside Protection; `DirtyIncome` is the derived sum used by dirty-money accounting. |
 | 5 | The Don's own block | His collector's node hangs under THE DETAIL. The collector is **not** a bodyguard: no attempt on the Don ever spends him. |
 | 6 | The collector dies on the round | A living escort picks the bag up and finishes the round. If nobody of ours is left standing, the bag lies on the ground with the day's take in it; **the man who killed him may take it** — a right-click on the bag, TAKE THE BAG, is a new order. |
 | 7 | Men inside the HQ between rounds | They count as presence on the HQ block, **and they come out to defend it** when a fight reaches the block. Taking that block gets harder; that is the point. |
@@ -32,7 +32,7 @@ Two smaller defects ride along because the same conversation found them: a robbe
 | Chain of command | `UI/PersonnelAlmanac.Command.cs` — `CommandBranch`, THE DETAIL first, one branch per lieutenant, RESERVE with PLACE / PICKED tails; `FileDetailPosting` in the ORGANIZATION partial | a sub-branch per collector, hung under its leader's card; PLACE targets it |
 | What a man is doing | `UI/PersonnelAlmanac.Organization.cs` `HoodDuty` | a collector / escort case before the detail case |
 | Personal file | `UI/PersonnelAlmanac.Personnel.cs` — MAKE HIM A COLLECTOR / TAKE HIM OFF THE BAG | a second key for the escort |
-| Money | `Outfit/Accounts.cs` `DaySheet.IllegalIncome`; `CampaignRunner.BookMoney` (jobs), `OutfitDirector.BankCollection` (rounds), the midnight `RiskyMoney += IllegalIncome`; `OutfitSnapshot` | one new field, `JobIncome`; the sum keeps its name |
+| Money | `Outfit/Accounts.cs` `DaySheet.IllegalIncome`; `CampaignRunner.BookMoney` (jobs), `OutfitDirector.BankCollection` (rounds), dirty-on-entry accounting; `OutfitSnapshot` | one new field, `JobIncome`; `DirtyIncome` derives the sum |
 | Capacity | `Personnel/Organization.cs` `CapacityOf(leader).Manpower` | counts the collector and his escort under their leader, as it already counts every man on a crew |
 | Saves | `Personnel/RosterSnapshot.cs` (`duty`, `crews`), `Outfit/OutfitSnapshot.cs` (`illegalIncome`), `gangsters_save_tests` | every new field round-trips |
 
@@ -101,7 +101,7 @@ THE DON
 
 ## 7. The money
 
-* `DaySheet` gains `JobIncome`. `BookMoney` writes a non-Business payout into it; `BankCollection` keeps writing `IllegalIncome`, which from now on means the racket rounds only. A derived `DirtyIncome => IllegalIncome + JobIncome` is what the midnight line, and anything else that meant "the dirty money of the day", reads. The Finances page prints Protection (`IllegalIncome`), Jobs (`JobIncome`), Sales, Legitimate; `TotalIncome` includes all four; the card is one row taller.
+* `DaySheet` gains `JobIncome`. `BookMoney` writes a non-Business payout into it; `BankCollection` keeps writing `IllegalIncome`, which from now on means racket rounds only. `DirtyIncome => IllegalIncome + JobIncome` is the daily dirty total; current HQ accounting marks either source dirty on receipt. The Finances page prints Protection (`IllegalIncome`), Jobs (`JobIncome`), Sales, Legitimate; `TotalIncome` includes all four; the card is one row taller.
 * EPIC 29 (HQ-001) replaces the midnight line with dirty-on-entry; when it lands, both a banked round and a job payout enter dirty. Nothing here fights that.
 * `OutfitSnapshot` carries `jobIncome`; an old save with no field loads as 0 and the sheet's sum is what it was.
 
@@ -124,3 +124,22 @@ A safe house or second premises; rival bag units on the street (EPIC 25); the ba
 * Ledger: a crew with a collector shows THE BAG under its card; PLACE from the reserve fills the escort; the Don's collector sits under THE DETAIL and reads "carries the bag", never "stands with the Don"; Finances shows a robbery under Jobs and a round under Protection.
 * Play: the bag unit is inside the HQ at 08:00, out at the scheduled hour with the escort behind the collector, back inside after banking; a click on it opens nothing; TAKE THEM INSIDE on the line and a round leaving the same door leave both billets correct.
 * Play: kill the collector on the round with the escort alive — the escort finishes it; kill both — the bag lies there, a right-click on it offers TAKE THE BAG, and the take lands under Jobs.
+
+## 11. What landed
+
+GAN-273 now has one authoritative bag node per crew (`BagId` plus up to two
+`EscortIds`), snapshot migration and validation, the nested Personnel Ledger branch and
+its PLACE / TO BAG / PULL / OFF BAG actions. The street projects that node as a separate
+unpickable three-man unit with an independent headquarters billet, scheduled `BringOut`,
+bounded and reasserted exit, post-bank return, four-times-a-second home-block defence and
+TurfMap status. An automatic round is filed and announced only once its physical ledger
+round has opened; a failed doorway exit closes the original command receipt and leaves
+the day's schedule free to retry.
+
+Rounds retain their walking escort after a collector dies so a survivor can carry on.
+When nobody survives, the take remains in a persistent ground bag; a selected line can
+claim it through TAKE THE BAG, while a rival standing over it can take it immediately.
+Recovered and other non-business takes book to Jobs; protection rounds remain under
+Protection, and dirty income is their sum. The seven headless acceptance contracts cover
+the model, commands, racket, economy, wages, save and ledger surfaces. The two Play-mode
+acceptance bullets above remain a manual visual/gameplay check and require an agreed run.

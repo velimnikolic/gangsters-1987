@@ -447,6 +447,12 @@ namespace RoadDemo
         void Update()
         {
             RegisterOrganizationBlocks();
+            TendPendingBagRounds();
+            if (Time.time >= nextBagDefenceAt)
+            {
+                nextBagDefenceAt = Time.time + BagDefenceInterval;
+                TendBagDefence();
+            }
             if (scheduler == null)
                 return;
 

@@ -1925,6 +1925,20 @@ namespace LivingCity.UI
                 return person.Status.ToString().ToLowerInvariant() + " · off the books";
             if (person.Rank != Rank.Hood)
                 return "commands a branch";
+            var roster = director != null ? director.Roster : null;
+            var member = roster != null ? roster.Find(person.Id) : null;
+            if (member != null && member.Duty == Duty.Collector)
+            {
+                if (BlockRacketSeam.SourceOrStub.TryGetRoundOf(
+                        person.Id, out var roundBlock))
+                    return "on the round · " + BlockName(roundBlock);
+                var crew = roster.CrewOf(person.Id);
+                var leader = crew != null ? roster.Find(crew.LieutenantId) : null;
+                return "carries the bag for " +
+                       (leader != null ? leader.Surname + "'s ground" : "the outfit");
+            }
+            if (member != null && member.Duty == Duty.Escort)
+                return "guards the bag";
             if (person.Assignment == AssignmentKind.Pool)
                 return "no post · earning nothing";
             if (IsOnTheDetail(person.Id))

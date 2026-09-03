@@ -67,9 +67,10 @@ namespace RoadDemo
 
             var price = PrisonPipeline.BailPrice(prisoner);
             var outfit = OutfitDirector.Instance;
+            var dirtyPart = 0;
             if (outfit != null)
             {
-                var paid = outfit.Purchase(price, "bail");
+                var paid = outfit.Purchase(price, "bail", out dirtyPart);
                 if (!paid.Ok)
                     return paid;
             }
@@ -79,7 +80,7 @@ namespace RoadDemo
             {
                 // The pipeline refused after the safe paid: unbook it exactly as it was
                 // booked, the way a refused hire is (PersonnelDirector.HireFromAd).
-                if (outfit != null) outfit.Refund(price, "bail");
+                if (outfit != null) outfit.Refund(price, dirtyPart, "bail");
                 return OpResult.Fail(LedgerText.ReasonNotInside);
             }
 
@@ -138,7 +139,8 @@ namespace RoadDemo
             if (!result.Ok)
                 return result;
 
-            Pipeline?.CutLoose(characterId);
+            Pipeline?.CutLoose(characterId,
+                outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0);
             LawWire.CutLoose(man);
             director.Touch();
             return OpResult.Success;
@@ -146,8 +148,6 @@ namespace RoadDemo
 
         /// <summary>Whether the boss may decline to carry him at all - a man in a cell
         /// or out on the outfit's own money, and nobody else.</summary>
-        public static bool CanCutLoose(Character man) =>
-            man != null && !man.Gone &&
-            (man.Status == CharacterStatus.Jailed || man.BailedUntil > 0);
+        public static bool CanCutLoose(Character man) => RosterOps.CanCutLoose(man);
     }
 }

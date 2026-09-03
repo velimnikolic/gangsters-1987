@@ -10,7 +10,7 @@ Today the headquarters is a building with "HQ" painted outside it and nothing be
 |---|---|---|
 | The front on the map | `RoadDemo/GangFront.cs` — `Role = "HQ"`, `BlockId`, `Outside` doorstep, `Books` (`FrontDossier`) | the building the popup opens over; its block is the first armory site |
 | The street popup | `RoadDemo/FrontOverlay.cs` — LEGIT / THE BUSINESS tabs from the fake books; "YOUR OWN HOUSE" for ours | gets a THE HOUSE face for the player's own front |
-| Money | `Outfit/Accounts.cs` — `Safe` (all cash), `RiskyMoney` (shadow counter, grows at midnight from `IllegalIncome`, never falls) | `Safe` stays the total in the HQ; `RiskyMoney` becomes the DIRTY share of it |
+| Money | `Outfit/Accounts.cs` — `Safe` (all cash), `RiskyMoney` (the dirty share of that same cash) | `Safe` is the total in the HQ; dirty is marked at receipt and spent first |
 | Money writes | `BalanceMath.TryPurchase`, `HouseOps.Refund`, `CampaignRunner.BookMoney`, `OutfitDirector.SettleBusinessDay` / `BankCollection`, `BusinessShutdowns` repair refund | all route through one Receive / Pay seam |
 | Gear | `Personnel/RosterEquipment.cs` — `OwnerId` = `Unheld` (−1, the stock), `FrontArmory` (−2, the HQ locker), or a lieutenant's id (his crew's deck) | the stock and the locker are both "at the HQ" |
 | Gear ops | `RosterOps.GiveEquipment / MoveEquipment / GiveEquipmentToFront / ReturnEquipment`; `PersonnelDirector` wraps them | the armory gate sits in the director, before the roster op |

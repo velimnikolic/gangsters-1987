@@ -214,6 +214,11 @@ namespace LivingCity.UI
         public static string InsufficientFunds(int price, int safe) =>
             "The safe holds " + Cash(safe) + "; that costs " + Cash(price) + ".";
 
+        public static string NoArmory(string blockName) =>
+            "his crew is on " + blockName + " · no armory there";
+
+        public const string CrewNowhere = "his crew is nowhere the book can find";
+
         /// <summary>"3" or "3.5" - halves only when earned, invariant culture so the
         /// ledger reads the same whatever the machine's locale.</summary>
         public static string Stars(int halfSteps)
@@ -285,6 +290,53 @@ namespace LivingCity.UI
 
         public const string ReasonOwnOutfit =
             "You cannot take a stance toward your own outfit.";
+
+        // ----------------------------------------------------------------- the law
+
+        /// <summary>
+        /// WHERE IN THE PIPE HE STANDS, in the book's own words, and the ONE table that
+        /// says so (GAN-302).
+        ///
+        /// The man's file used to print HELD for five different stages - a man in the
+        /// cells, a man in the back of a car and a man already in prison read the same -
+        /// while the law sheet would have needed its own words for the same states. Two
+        /// tables mean the player reads "on the road" on one page, clicks the name, and
+        /// is told HELD on the next, with nothing wrong in the data at all.
+        /// </summary>
+        public static string StageLabel(Police.PrisonStage stage) => stage switch
+        {
+            Police.PrisonStage.Held => "in the cells",
+            Police.PrisonStage.ForTransfer => "on the road",
+            Police.PrisonStage.InTransit => "on the road",
+            Police.PrisonStage.Sentenced => "held at the court",
+            Police.PrisonStage.Serving => "in prison",
+            Police.PrisonStage.Bailed => "on bail",
+            Police.PrisonStage.Skipped => "skipped bail",
+            Police.PrisonStage.Freed => "out of a wrecked transfer",
+            Police.PrisonStage.Cleared => "let go",
+            _ => "held",
+        };
+
+        /// <summary>The same word in the capitals a band head is set in.</summary>
+        public static string StageBand(Police.PrisonStage stage) =>
+            StageLabel(stage).ToUpperInvariant();
+
+        /// <summary>What became of one man on one case, for the archive.</summary>
+        public static string CaseOutcomeLine(Police.CaseVerdict verdict) =>
+            verdict == null ? "" : verdict.Outcome switch
+            {
+                Police.CaseOutcome.Convicted =>
+                    Personnel.Sentencing.IsLife(verdict.Days)
+                        ? "convicted — life"
+                        : "convicted — " + verdict.Days +
+                          (verdict.Days == 1 ? " day" : " days") +
+                          (verdict.OutOnDay > 0 ? ", out day " + verdict.OutOnDay : ""),
+                Police.CaseOutcome.Acquitted => "acquitted",
+                Police.CaseOutcome.Dismissed => "case dismissed — no witnesses",
+                Police.CaseOutcome.BailForfeit => "bail forfeit — wanted",
+                Police.CaseOutcome.CutLoose => "cut loose by the boss",
+                _ => "",
+            };
 
         // -------------------------------------------------------------------- orders
 
@@ -508,6 +560,7 @@ namespace LivingCity.UI
         public const string ReasonNotInside = "He is not in the city's hands.";
 
         public const string ReasonNoCase = "There is no case against him.";
+        public const string ReasonNoMap = "There is no map to take you to him.";
         public const string ReasonNoCounsel = "No lawyer on the books can get him a hearing.";
         public const string ReasonNoBail = "There is no bail on a charge like that.";
         public const string ReasonAlreadyBailed = "He is already out on bail.";

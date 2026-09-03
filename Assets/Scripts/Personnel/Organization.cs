@@ -134,10 +134,12 @@ namespace LivingCity.Personnel
     /// <summary>No Transform or GameObject crosses the organization query boundary.</summary>
     public readonly struct TacticalPersonnelMapping
     {
-        public TacticalPersonnelMapping(int groupId, int commandParentId, int[] personnelIds)
+        public TacticalPersonnelMapping(int groupId, int commandParentId, int[] personnelIds,
+            bool isDetachment = false)
         {
             GroupId = groupId;
             CommandParentId = commandParentId;
+            IsDetachment = isDetachment;
             PersonnelIds = personnelIds == null || personnelIds.Length == 0
                 ? Array.Empty<int>()
                 : Array.AsReadOnly((int[])personnelIds.Clone());
@@ -145,12 +147,14 @@ namespace LivingCity.Personnel
 
         public int GroupId { get; }
         public int CommandParentId { get; }
+        public bool IsDetachment { get; }
         public IReadOnlyList<int> PersonnelIds { get; }
     }
 
     public interface IOrganizationPhysicalSource
     {
         void CollectPhysicalMappings(List<TacticalPersonnelMapping> into);
+        bool TryLocateGroup(int leaderId, out TerritoryBlockId blockId);
     }
 
     /// <summary>
@@ -249,6 +253,7 @@ namespace LivingCity.Personnel
                             if (guard != null && !guard.Gone)
                                 into.Add(Person(guard));
                         }
+                        AddBagNode(branch, into);
                         continue;
                     }
 
@@ -276,6 +281,7 @@ namespace LivingCity.Personnel
                 if (hood != null && !hood.Gone)
                     into.Add(Person(hood));
             }
+            AddBagNode(crew, into);
         }
 
         public bool TryGetCommandParent(int characterId, out OrganizationPerson parent)
@@ -360,23 +366,29 @@ namespace LivingCity.Personnel
                 // and they cost him a place at his own cap.
                 var detail = Bodyguards.DetailOf(roster);
                 if (detail != null)
+                {
                     for (var i = 0; i < detail.HoodIds.Count; i++)
                     {
                         var guard = roster.Find(detail.HoodIds[i]);
                         if (guard != null && !guard.Gone && guard.Rank == Rank.Hood)
                             manpower++;
                     }
+                    manpower += LiveBagNode(detail);
+                }
             }
             else
             {
                 var crew = roster.CrewOf(leaderId);
                 if (crew != null && crew.LieutenantId == leaderId)
+                {
                     for (var i = 0; i < crew.HoodIds.Count; i++)
                     {
                         var hood = roster.Find(crew.HoodIds[i]);
                         if (hood != null && !hood.Gone && hood.Rank == Rank.Hood)
                             manpower++;
                     }
+                    manpower += LiveBagNode(crew);
+                }
             }
 
             var blocks = 0;
@@ -401,6 +413,36 @@ namespace LivingCity.Personnel
                 return;
             into.Clear();
             physical?.CollectPhysicalMappings(into);
+        }
+
+        void AddBagNode(Crew crew, List<OrganizationPerson> into)
+        {
+            if (crew == null)
+                return;
+            var collector = roster.Find(crew.BagId);
+            if (collector != null && !collector.Gone)
+                into.Add(Person(collector));
+            for (var i = 0; i < crew.EscortIds.Count; i++)
+            {
+                var escort = roster.Find(crew.EscortIds[i]);
+                if (escort != null && !escort.Gone)
+                    into.Add(Person(escort));
+            }
+        }
+
+        int LiveBagNode(Crew crew)
+        {
+            var count = 0;
+            var collector = roster.Find(crew.BagId);
+            if (collector != null && !collector.Gone && collector.Rank == Rank.Hood)
+                count++;
+            for (var i = 0; i < crew.EscortIds.Count; i++)
+            {
+                var escort = roster.Find(crew.EscortIds[i]);
+                if (escort != null && !escort.Gone && escort.Rank == Rank.Hood)
+                    count++;
+            }
+            return count;
         }
     }
 
@@ -468,6 +510,8 @@ namespace LivingCity.Personnel
 
             var crewIds = new HashSet<int>();
             var lieutenantIds = new HashSet<int>();
+            var collectorNodes = new HashSet<int>();
+            var escortNodes = new HashSet<int>();
             for (var i = 0; i < roster.Crews.Count; i++)
             {
                 var crew = roster.Crews[i];
@@ -515,6 +559,54 @@ namespace LivingCity.Personnel
                     CountParent(parentCounts, id);
                     graphParents[id] = crew.LieutenantId;
                 }
+
+                if (crew.BagId < 0)
+                {
+                    if (crew.EscortIds.Count > 0)
+                        into.Add("ORG: branch " + crew.Id +
+                                 " has bag escorts without a collector.");
+                }
+                else
+                {
+                    if (!local.Add(crew.BagId))
+                        into.Add("ORG: branch " + crew.Id + " lists collector " +
+                                 crew.BagId + " in more than one place.");
+                    if (!collectorNodes.Add(crew.BagId))
+                        into.Add("ORG: Character " + crew.BagId +
+                                 " is collector for more than one branch.");
+                    var collector = roster.Find(crew.BagId);
+                    if (collector == null)
+                        into.Add("ORG: branch " + crew.Id +
+                                 " references missing collector " + crew.BagId + ".");
+                    else if (collector.Rank != Rank.Hood || collector.Duty != Duty.Collector)
+                        into.Add("ORG: branch " + crew.Id + " collector " + crew.BagId +
+                                 " is not a Hood on Collector duty.");
+                    CountParent(parentCounts, crew.BagId);
+                    graphParents[crew.BagId] = crew.LieutenantId;
+                }
+
+                if (crew.EscortIds.Count > Crew.MaxEscorts)
+                    into.Add("ORG: branch " + crew.Id + " has " + crew.EscortIds.Count +
+                             " bag escorts; maximum is " + Crew.MaxEscorts + ".");
+                for (var e = 0; e < crew.EscortIds.Count; e++)
+                {
+                    var id = crew.EscortIds[e];
+                    if (!local.Add(id))
+                        into.Add("ORG: branch " + crew.Id + " lists escort " + id +
+                                 " in more than one place.");
+                    if (!escortNodes.Add(id))
+                        into.Add("ORG: Character " + id +
+                                 " escorts more than one bag.");
+                    var escort = roster.Find(id);
+                    if (escort == null)
+                        into.Add("ORG: branch " + crew.Id +
+                                 " references missing escort " + id + ".");
+                    else if (escort.Rank != Rank.Hood || escort.Duty != Duty.Escort)
+                        into.Add("ORG: branch " + crew.Id + " escort " + id +
+                                 " is not a Hood on Escort duty.");
+                    CountParent(parentCounts, id);
+                    graphParents[id] = crew.LieutenantId;
+                }
             }
 
             DetectCycles(graphParents, into);
@@ -527,6 +619,14 @@ namespace LivingCity.Personnel
             for (var i = 0; i < roster.Members.Count; i++)
             {
                 var member = roster.Members[i];
+                if (member != null && member.Duty == Duty.Collector &&
+                    !collectorNodes.Contains(member.Id))
+                    into.Add("ORG: Character " + member.Id +
+                             " has Collector duty outside a bag node.");
+                if (member != null && member.Duty == Duty.Escort &&
+                    !escortNodes.Contains(member.Id))
+                    into.Add("ORG: Character " + member.Id +
+                             " has Escort duty outside a bag node.");
                 if (member == null || member.Gone || member.Specialty != Specialty.None ||
                     (member.Rank != Rank.Hood && member.Rank != Rank.Lieutenant))
                     continue;
@@ -570,10 +670,13 @@ namespace LivingCity.Personnel
                 var mapping = mappings[i];
                 if (!groups.Add(mapping.GroupId))
                     into.Add("ORG: duplicate tactical group mapping " + mapping.GroupId + ".");
-                if (mapping.PersonnelIds.Count > Crew.MaxTacticalHoods + 1)
+                var physicalMaximum = mapping.IsDetachment
+                    ? Crew.MaxEscorts + 1
+                    : Crew.MaxTacticalHoods + 1;
+                if (mapping.PersonnelIds.Count > physicalMaximum)
                     into.Add("ORG: tactical group " + mapping.GroupId + " projects " +
                              mapping.PersonnelIds.Count + " Characters; maximum physical " +
-                             "projection is " + (Crew.MaxTacticalHoods + 1) + ".");
+                             "projection is " + physicalMaximum + ".");
                 var leader = roster.Find(mapping.CommandParentId);
                 // The Boss's own detail is a group on the street like any other, and its
                 // head is the Boss (RANK-003) - the same exception the branch check above
@@ -610,7 +713,7 @@ namespace LivingCity.Personnel
                         into.Add("ORG: tactical group " + mapping.GroupId + " maps Hood " +
                                  id + " outside command parent " + mapping.CommandParentId + ".");
                 }
-                if (!containsParent)
+                if (!mapping.IsDetachment && !containsParent)
                     into.Add("ORG: tactical group " + mapping.GroupId +
                              " omits its command parent " + mapping.CommandParentId + ".");
             }

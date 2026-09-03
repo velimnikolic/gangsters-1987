@@ -145,9 +145,11 @@ namespace LivingCity.Save
                     ? TerritorySnapshot.Snapshot(runtime.Racket, runtime.Dues, runtime.Rounds)
                     : new TerritoryDto(),
                 deeds = Deeds(),
-                prisoners = Prisoners(out var escaped, out var prisonSeed),
-                escaped = escaped,
-                prisonRosterSeed = prisonSeed,
+                prisoners = Save.PrisonSnapshot.Prisoners(Pipe()),
+                escaped = Escapes(),
+                prisonRosterSeed = Pipe() != null ? Pipe().RosterSeed : 0,
+                cases = Save.PrisonSnapshot.Cases(Pipe()),
+                nextCaseId = Pipe() != null ? Pipe().NextCaseId : 1,
                 shutdowns = Shutdowns(business),
                 knowledge = Knowledge(underworld),
             };
@@ -198,25 +200,8 @@ namespace LivingCity.Save
             // hold them.
             var police = Object.FindFirstObjectByType<RoadDemo.PoliceForce>();
             if (police?.Pipeline != null)
-            {
-                var inside = new List<Police.Prisoner>();
-                for (var i = 0; file.prisoners != null && i < file.prisoners.Length; i++)
-                {
-                    var row = file.prisoners[i];
-                    inside.Add(new Police.Prisoner
-                    {
-                        CharacterId = row.characterId,
-                        Deed = (Personnel.Deed)row.deed,
-                        TakenOnDay = row.takenOnDay,
-                        CourtDay = row.courtDay,
-                        SentenceDays = row.sentenceDays,
-                        OutOnDay = row.outOnDay,
-                        Stage = (Police.PrisonStage)row.stage,
-                    });
-                }
-                police.Pipeline.RestoreFrom(
-                    inside, file.escaped, file.prisonRosterSeed);
-            }
+                Save.PrisonSnapshot.Restore(police.Pipeline, file);
+
 
             var clock = Object.FindFirstObjectByType<Ambient.CityClock>();
             if (clock != null)
@@ -259,38 +244,22 @@ namespace LivingCity.Save
             return dto;
         }
 
-        static PrisonerDto[] Prisoners(out int[] escaped, out int rosterSeed)
+        /// <summary>The city's pipe, or null in a scene that keeps no prisoners.</summary>
+        static Police.PrisonPipeline Pipe()
         {
-            escaped = new int[0];
-            rosterSeed = 0;
-
             var police = Object.FindFirstObjectByType<RoadDemo.PoliceForce>();
-            var pipe = police != null ? police.Pipeline : null;
+            return police != null ? police.Pipeline : null;
+        }
+
+        /// <summary>Everybody who has ever come out of the back of a car.</summary>
+        static int[] Escapes()
+        {
+            var pipe = Pipe();
             if (pipe == null)
-                return new PrisonerDto[0];
-
-            rosterSeed = pipe.RosterSeed;
-
+                return new int[0];
             var out_ = new List<int>();
             pipe.CollectEscapes(out_);
-            escaped = out_.ToArray();
-
-            var rows = new PrisonerDto[pipe.Inside.Count];
-            for (var i = 0; i < pipe.Inside.Count; i++)
-            {
-                var man = pipe.Inside[i];
-                rows[i] = new PrisonerDto
-                {
-                    characterId = man.CharacterId,
-                    deed = (int)man.Deed,
-                    takenOnDay = man.TakenOnDay,
-                    courtDay = man.CourtDay,
-                    sentenceDays = man.SentenceDays,
-                    outOnDay = man.OutOnDay,
-                    stage = (int)man.Stage,
-                };
-            }
-            return rows;
+            return out_.ToArray();
         }
 
         static KnowledgeDto[] Knowledge(Underworld underworld)

@@ -270,18 +270,14 @@ namespace RoadDemo
                     return;
 
                 var line = runtime.crews != null ? runtime.crews.UnitOfCrew(crewId) : null;
-                // With no street under the page (a bench scene), the line is read off
-                // the books the way DemoCrews.Sync deals it: the bag man spends one of
-                // the crew's four places even though he does not stand in the line.
                 var bagId = RosterOps.CollectorOf(roster, crewId);
-                var bagMan = bagId >= 0 ? roster.Find(bagId) : null;
-                var dealt = bagMan != null && bagMan.Status == CharacterStatus.Active ? 1 : 0;
+                var dealt = 0;
                 for (var i = 0; i < crew.HoodIds.Count; i++)
                 {
                     var man = roster.Find(crew.HoodIds[i]);
                     if (man == null || man.Gone)
                         continue;
-                    var carries = man.Duty == Duty.Collector;
+                    var carries = false;
                     bool walks;
                     if (line != null)
                     {
@@ -300,6 +296,30 @@ namespace RoadDemo
                     into.Add(new CrewHandView(man.Id, man.FullName,
                         CollectorChoice.Fitness(man), walks, carries));
                 }
+                AddNodeHand(roster, crew.BagId, true, into);
+                for (var i = 0; i < crew.EscortIds.Count; i++)
+                    AddNodeHand(roster, crew.EscortIds[i], false, into);
+            }
+
+            static void AddNodeHand(Roster roster, int id, bool carries,
+                List<CrewHandView> into)
+            {
+                var man = roster.Find(id);
+                if (man == null || man.Gone)
+                    return;
+                into.Add(new CrewHandView(man.Id, man.FullName,
+                    CollectorChoice.Fitness(man), false, carries));
+            }
+
+            public void EscortsOf(int crewId, List<CrewHandView> into)
+            {
+                into?.Clear();
+                var roster = Roster();
+                var crew = roster?.FindCrew(crewId);
+                if (into == null || crew == null)
+                    return;
+                for (var i = 0; i < crew.EscortIds.Count; i++)
+                    AddNodeHand(roster, crew.EscortIds[i], false, into);
             }
 
             public void CollectDoorStandings(
@@ -557,6 +577,28 @@ namespace RoadDemo
                 if (director == null || Roster() == null)
                     return "the books are not open in this scene";
                 var result = director.TakeOffTheBag(hoodId);
+                if (result.Ok)
+                    runtime.BumpRacketSeam();
+                return result.Ok ? "" : result.Reason;
+            }
+
+            public string PostEscort(int crewId, int hoodId)
+            {
+                var director = LivingCity.Gameplay.PersonnelDirector.Instance;
+                if (director == null || Roster() == null)
+                    return "the books are not open in this scene";
+                var result = director.PostEscort(crewId, hoodId);
+                if (result.Ok)
+                    runtime.BumpRacketSeam();
+                return result.Ok ? "" : result.Reason;
+            }
+
+            public string PullEscort(int hoodId)
+            {
+                var director = LivingCity.Gameplay.PersonnelDirector.Instance;
+                if (director == null || Roster() == null)
+                    return "the books are not open in this scene";
+                var result = director.PullEscort(hoodId);
                 if (result.Ok)
                     runtime.BumpRacketSeam();
                 return result.Ok ? "" : result.Reason;

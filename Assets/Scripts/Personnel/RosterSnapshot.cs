@@ -52,6 +52,11 @@ namespace LivingCity.Personnel
         public int id;
         public int lieutenantId;
         public int[] hoodIds;
+        public bool hasBagNode;
+        public int bagId;
+        public int[] escortIds;
+        public bool bagNamedByBoss;
+        public int bagNamedId;
         public int policy;
     }
 
@@ -181,6 +186,25 @@ namespace LivingCity.Personnel
                 roster.Crews.Add(Restore(dto.crews[i]));
             for (var i = 0; dto.equipment != null && i < dto.equipment.Length; i++)
                 roster.Equipment.Add(Restore(dto.equipment[i]));
+
+            // GAN-262 saves stored the collector in HoodIds and had no bag-node
+            // discriminator. Move that marked man into the authoritative node.
+            for (var i = 0; dto.crews != null && i < dto.crews.Length &&
+                 i < roster.Crews.Count; i++)
+            {
+                if (dto.crews[i].hasBagNode)
+                    continue;
+                var crew = roster.Crews[i];
+                for (var h = 0; h < crew.HoodIds.Count; h++)
+                {
+                    var man = roster.Find(crew.HoodIds[h]);
+                    if (man == null || man.Duty != Duty.Collector)
+                        continue;
+                    crew.BagId = man.Id;
+                    crew.HoodIds.RemoveAt(h);
+                    break;
+                }
+            }
         }
 
         // ------------------------------------------------------------------- the man
@@ -286,10 +310,17 @@ namespace LivingCity.Personnel
                 id = crew.Id,
                 lieutenantId = crew.LieutenantId,
                 policy = (int)crew.Policy,
+                hasBagNode = true,
+                bagId = crew.BagId,
+                bagNamedByBoss = crew.BagNamedByBoss,
+                bagNamedId = crew.BagNamedId,
                 hoodIds = new int[crew.HoodIds.Count],
+                escortIds = new int[crew.EscortIds.Count],
             };
             for (var i = 0; i < crew.HoodIds.Count; i++)
                 dto.hoodIds[i] = crew.HoodIds[i];
+            for (var i = 0; i < crew.EscortIds.Count; i++)
+                dto.escortIds[i] = crew.EscortIds[i];
             return dto;
         }
 
@@ -300,9 +331,14 @@ namespace LivingCity.Personnel
                 Id = dto.id,
                 LieutenantId = dto.lieutenantId,
                 Policy = (CrewPolicy)dto.policy,
+                BagId = dto.hasBagNode ? dto.bagId : -1,
+                BagNamedByBoss = dto.bagNamedByBoss,
+                BagNamedId = dto.bagNamedId,
             };
             for (var i = 0; dto.hoodIds != null && i < dto.hoodIds.Length; i++)
                 crew.HoodIds.Add(dto.hoodIds[i]);
+            for (var i = 0; dto.escortIds != null && i < dto.escortIds.Length; i++)
+                crew.EscortIds.Add(dto.escortIds[i]);
             return crew;
         }
 

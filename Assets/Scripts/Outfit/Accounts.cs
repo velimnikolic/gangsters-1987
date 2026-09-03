@@ -16,7 +16,11 @@ namespace LivingCity.Outfit
 
         public int LegalIncome;
         public int IllegalIncome;
+        public int JobIncome;
         public int SalesIncome;
+
+        /// <summary>Protection rounds plus jobs: every dirty dollar booked today.</summary>
+        public int DirtyIncome => IllegalIncome + JobIncome;
 
         public int Bribes;
         public int Purchases;
@@ -61,8 +65,8 @@ namespace LivingCity.Outfit
 
         public int Safe = StartingSafe;
 
-        /// <summary>Illegal profit not yet washed through a legitimate front. Grows at
-        /// midnight; the laundering order will drain it later.</summary>
+        /// <summary>The dirty share of <see cref="Safe"/>. It is money physically in
+        /// headquarters, not a second balance: 0 &lt;= RiskyMoney &lt;= Safe.</summary>
         public int RiskyMoney;
 
         /// <summary>Oldest first; the last is today's open sheet.</summary>
@@ -100,6 +104,12 @@ namespace LivingCity.Outfit
         High,
     }
 
+    public enum MoneyKind
+    {
+        Clean,
+        Dirty,
+    }
+
     /// <summary>
     /// Every derived figure on the Finances page, computed from state at read time -
     /// the page never stores a display string. One static home so the headless suite
@@ -114,7 +124,8 @@ namespace LivingCity.Outfit
         public const int RiskModerateCeiling = 100_000;
 
         public static int TotalIncome(DaySheet sheet) =>
-            sheet == null ? 0 : sheet.LegalIncome + sheet.IllegalIncome + sheet.SalesIncome;
+            sheet == null ? 0 : sheet.LegalIncome + sheet.IllegalIncome +
+                sheet.JobIncome + sheet.SalesIncome;
 
         public static int TotalOutgoings(DaySheet sheet, int wages) =>
             wages + (sheet == null ? 0 : sheet.Bribes + sheet.Purchases + sheet.OtherCosts);
@@ -132,6 +143,73 @@ namespace LivingCity.Outfit
             : riskyMoney < RiskModerateCeiling ? RiskRating.Moderate
             : RiskRating.High;
 
+        public static int CleanOf(Accounts accounts) =>
+            accounts == null ? 0 : System.Math.Max(0, accounts.Safe - accounts.RiskyMoney);
+
+        /// <summary>Adds cash to the one physical safe and records which share is dirty.</summary>
+        public static void Receive(Accounts accounts, int amount, MoneyKind kind)
+        {
+            if (accounts == null || amount <= 0)
+                return;
+
+            Normalize(accounts);
+            accounts.Safe += amount;
+            if (kind == MoneyKind.Dirty)
+                accounts.RiskyMoney += amount;
+        }
+
+        /// <summary>Spends dirty cash first. Null means the full price was paid.</summary>
+        public static string Pay(Accounts accounts, int price, out int dirtyPart)
+        {
+            dirtyPart = 0;
+            if (accounts == null || price < 0)
+                return UI.LedgerText.ReasonNoSuchItem;
+
+            Normalize(accounts);
+            if (accounts.Safe < price)
+                return UI.LedgerText.InsufficientFunds(price, accounts.Safe);
+
+            dirtyPart = System.Math.Min(accounts.RiskyMoney, price);
+            accounts.RiskyMoney -= dirtyPart;
+            accounts.Safe -= price;
+            return null;
+        }
+
+        /// <summary>Restores a payment with its original dirty/clean composition.</summary>
+        public static void Refund(Accounts accounts, int price, int dirtyPart)
+        {
+            if (accounts == null || price <= 0)
+                return;
+
+            Normalize(accounts);
+            dirtyPart = System.Math.Max(0, System.Math.Min(price, dirtyPart));
+            accounts.Safe += price;
+            accounts.RiskyMoney += dirtyPart;
+        }
+
+        /// <summary>A raid takes only the dirty pile and leaves clean cash in place.</summary>
+        public static int Seize(Accounts accounts)
+        {
+            if (accounts == null)
+                return 0;
+
+            Normalize(accounts);
+            var seized = accounts.RiskyMoney;
+            accounts.Safe -= seized;
+            accounts.RiskyMoney = 0;
+            return seized;
+        }
+
+        /// <summary>Repairs imported/legacy state at the authoritative money seam.</summary>
+        public static void Normalize(Accounts accounts)
+        {
+            if (accounts == null)
+                return;
+            accounts.Safe = System.Math.Max(0, accounts.Safe);
+            accounts.RiskyMoney = System.Math.Max(0,
+                System.Math.Min(accounts.Safe, accounts.RiskyMoney));
+        }
+
         /// <summary>
         /// The purchase gate's pure half: null means paid (safe debited, the open
         /// day's Purchases line booked); otherwise the refusal, with the shortfall
@@ -139,15 +217,25 @@ namespace LivingCity.Outfit
         /// </summary>
         public static string TryPurchase(Accounts accounts, int price)
         {
-            if (accounts == null || price < 0)
-                return UI.LedgerText.ReasonNoSuchItem;
-            if (accounts.Safe < price)
-                return UI.LedgerText.InsufficientFunds(price, accounts.Safe);
+            return TryPurchase(accounts, price, out _);
+        }
 
-            accounts.Safe -= price;
+        public static string TryPurchase(Accounts accounts, int price, out int dirtyPart)
+        {
+            var refusal = Pay(accounts, price, out dirtyPart);
+            if (refusal != null)
+                return refusal;
             if (accounts.Current != null)
                 accounts.Current.Purchases += price;
             return null;
+        }
+
+        public static void RefundPurchase(Accounts accounts, int price, int dirtyPart)
+        {
+            Refund(accounts, price, dirtyPart);
+            if (accounts?.Current != null)
+                accounts.Current.Purchases = System.Math.Max(0,
+                    accounts.Current.Purchases - System.Math.Max(0, price));
         }
 
         /// <summary>Book value of everything the outfit holds - today the equipment
@@ -172,6 +260,7 @@ namespace LivingCity.Outfit
         public readonly bool Closed;
         public readonly int LegalIncome;
         public readonly int IllegalIncome;
+        public readonly int JobIncome;
         public readonly int SalesIncome;
         public readonly int Wages;
 
@@ -209,6 +298,7 @@ namespace LivingCity.Outfit
             Closed = sheet?.Closed ?? false;
             LegalIncome = sheet?.LegalIncome ?? 0;
             IllegalIncome = sheet?.IllegalIncome ?? 0;
+            JobIncome = sheet?.JobIncome ?? 0;
             SalesIncome = sheet?.SalesIncome ?? 0;
             Wages = wages;
             WagesShort = sheet != null && sheet.Closed ? sheet.WagesShort : 0;

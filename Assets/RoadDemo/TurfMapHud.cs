@@ -680,6 +680,25 @@ namespace RoadDemo
                 return;
             }
 
+            var bag = BagNear(ground);
+            if (bag != null)
+            {
+                _hoverBlock = default;
+                var state = TerritoryRuntime.Instance != null &&
+                            TerritoryRuntime.Instance.TryGetRound(
+                                bag.CrewId, out _, out _, out _)
+                    ? "on the round"
+                    : CrewQuarters.Inside(bag) ? "in the house"
+                    : CrewQuarters.MovingIn(bag) ? "going inside"
+                    : bag.TargetUnit != null ? "defending the block"
+                    : "outside";
+                _hoverText = "THE BAG · " + (bag.Parent?.Name ?? bag.Name) + "\n" +
+                             bag.Standing() + (bag.Standing() == 1 ? " man · " : " men · ") +
+                             state;
+                _mapChrome.ShowBlockTip(_hoverText, screen);
+                return;
+            }
+
             if (!runtime.TryGetBlockAtWorld(new Vector3(ground.x, 0f, ground.y), out var blockId) ||
                 !runtime.PlayerQuery.TryGetBlock(blockId, out var view))
             {
@@ -705,6 +724,30 @@ namespace RoadDemo
 
         LivingCity.Territory.TerritoryBlockId _hoverBlock;
         string _hoverText = "";
+
+        DemoCrews.Unit BagNear(Vector2 ground)
+        {
+            if (_crews == null)
+                return null;
+            DemoCrews.Unit nearest = null;
+            var best = 14f * 14f;
+            for (var i = 0; i < _crews.Units.Count; i++)
+            {
+                var unit = _crews.Units[i];
+                if (unit == null || unit.Faction != 0 || !unit.IsDetachment || unit.Wiped)
+                    continue;
+                var world = CrewQuarters.TryGetDoorstep(unit, out var doorstep)
+                    ? doorstep : unit.Position;
+                var dx = world.x - ground.x;
+                var dz = world.z - ground.y;
+                var sqr = dx * dx + dz * dz;
+                if (sqr >= best)
+                    continue;
+                best = sqr;
+                nearest = unit;
+            }
+            return nearest;
+        }
 
         /// <summary>Puts the boom back on the street side of the map line - what Esc
         /// means on a map that is a zoom level.</summary>
@@ -1563,6 +1606,23 @@ namespace RoadDemo
 
         string LivingCity.UI.IMapTargetingSurface.SummonHint =>
             "there is no camera to take to the plan";
+
+        /// <summary>
+        /// STAND OVER THIS PLACE (GAN-302). The boom rides to the point with its
+        /// distance kept, which is the plate's own way of looking at something.
+        ///
+        /// And the trip is ONE WAY: whatever brought the player up here, he was sent to
+        /// a spot to do something about it, so the book's return ticket is torn up. It
+        /// is opening the ledger again that would otherwise call Dismiss and drop the
+        /// map out from under the order he came to give.
+        /// </summary>
+        void LivingCity.UI.IMapTargetingSurface.FocusOn(Vector3 at)
+        {
+            if (_rig == null)
+                return;
+            _summonedFrom = null;
+            _rig.Ride(() => at);
+        }
 
         void LivingCity.UI.IMapTargetingSurface.SetTargetHighlights(
             List<Rect> worldRects, Color colour)
@@ -2673,6 +2733,7 @@ namespace RoadDemo
             DrawPickedBuilding();
             DrawMovementIndicators();
             DrawCrews();
+            DrawBagUnits();
             DrawWitnesses();
             DrawMarkers();
             DrawMarquee();
@@ -3004,6 +3065,32 @@ namespace RoadDemo
                     int capHeight = Mathf.Max(1, Mathf.RoundToInt(2f * _indicatorScale));
                     _live.Px(cx - capWidth / 2, cy + cap, capWidth, capHeight, TurfInk.Red);
                 }
+            }
+        }
+
+        /// <summary>The bag is visible but not selectable: a small diamond beside the
+        /// command dots, positioned at its billet door while its bodies are indoors.</summary>
+        void DrawBagUnits()
+        {
+            if (_crews == null || _survey?.Plan == null)
+                return;
+            for (var i = 0; i < _crews.Units.Count; i++)
+            {
+                var bag = _crews.Units[i];
+                if (bag == null || bag.Faction != 0 || !bag.IsDetachment || bag.Wiped)
+                    continue;
+                var world = CrewQuarters.TryGetDoorstep(bag, out var doorstep)
+                    ? doorstep : bag.Position;
+                var plan = _survey.Plan.ToPlan(world);
+                var cx = Mathf.RoundToInt(plan.x * TurfPlate.S);
+                var cy = Mathf.RoundToInt(plan.y * TurfPlate.S);
+                var reach = Mathf.Max(2, Mathf.RoundToInt(3f * _indicatorScale));
+                for (var y = -reach; y <= reach; y++)
+                {
+                    var half = reach - Mathf.Abs(y);
+                    _live.Px(cx - half, cy + y, half * 2 + 1, 1, TurfInk.Cabin);
+                }
+                _live.Px(cx, cy, 1, 1, TurfInk.Lamp);
             }
         }
 

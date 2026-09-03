@@ -15,19 +15,33 @@ namespace RoadDemo
     /// time on their own feet (DoorBeat's passage, held open rather than timed), and
     /// they are off the street until somebody brings them out.
     ///
-    /// Nothing else is claimed for it. Men inside are not a garrison, they do not
-    /// answer a fight at the door and they collect nothing: they are indoors, which is
-    /// the whole of what the player asked for ("udje u zgradu i to je to"). What it is
-    /// FOR is the Don - he stands on his own street like every other lieutenant now, and
-    /// a boss the player would rather not have standing in the open has somewhere to be.
+    /// Ordinary crews inside are not a garrison and do not answer a fight at the door:
+    /// they are indoors, which is the whole of the player's order. The one deliberate
+    /// exception is GAN-273's bag detail; its own runtime AI may bring it out to defend
+    /// the headquarters block, then file it back in when that block is clear.
     ///
-    /// Keyed by crew id and static, like CrewJobs beside it: the crew is the unit of
-    /// command, so a crew that loses its lieutenant and reforms under an heir stays
-    /// where it was put. Reset at SubsystemRegistration - with domain reload off a stale
-    /// crew id would billet next session's first crew in last session's building.
+    /// Keyed by crew id plus unit kind: the line and its bag detail share command paper
+    /// but occupy independent rooms and may come through the door independently.
     /// </summary>
     public static class CrewQuarters
     {
+        readonly struct UnitKey : System.IEquatable<UnitKey>
+        {
+            public readonly int CrewId;
+            public readonly bool Detachment;
+            public UnitKey(int crewId, bool detachment)
+            {
+                CrewId = crewId;
+                Detachment = detachment;
+            }
+            public bool Equals(UnitKey other) =>
+                CrewId == other.CrewId && Detachment == other.Detachment;
+            public override bool Equals(object obj) => obj is UnitKey other && Equals(other);
+            public override int GetHashCode() => CrewId * 397 ^ (Detachment ? 1 : 0);
+        }
+
+        static UnitKey Key(DemoCrews.Unit unit) =>
+            new UnitKey(unit.CrewId, unit.IsDetachment);
         /// <summary>Near enough the doorstep for the men to start going through it.
         /// A crew stood off a door spreads over several metres, so this is the crew's
         /// reach and not the beat's own stride (DoorBeat.AtTheDoor) - each man walks
@@ -65,33 +79,55 @@ namespace RoadDemo
             public bool In;
         }
 
-        static readonly Dictionary<int, Billet> Billets = new Dictionary<int, Billet>();
-        static readonly List<int> Scratch = new List<int>();
+        static readonly Dictionary<UnitKey, Billet> Billets =
+            new Dictionary<UnitKey, Billet>();
+        static readonly List<UnitKey> Scratch = new List<UnitKey>();
 
         /// <summary>The crew whose march THIS class is issuing right now. Every other
         /// march is somebody giving the crew a different job, which ends the billet
         /// (<see cref="Retasked"/>); the walk to the door must not end the very order
         /// that sent it.</summary>
-        static int _marching = -1;
+        static UnitKey? _marching;
 
         /// <summary>Is this crew off the street, inside one of our doors?</summary>
         public static bool Inside(DemoCrews.Unit unit) =>
-            unit != null && Billets.TryGetValue(unit.CrewId, out var billet) && billet.In;
+            unit != null && Billets.TryGetValue(Key(unit), out var billet) && billet.In;
+
+        public static bool InsideHeadquarters(DemoCrews.Unit unit)
+        {
+            if (unit == null || !Billets.TryGetValue(Key(unit), out var billet) || !billet.In)
+                return false;
+
+            // "HQ" is painted outside every family's front. Headquarters is therefore
+            // an identity - our actual door - never a role string a purchased rival
+            // premises can keep carrying after its deed changes hands.
+            var front = DemoCrews.PlayerFront();
+            if (front != null)
+            {
+                if (front.BusinessId.IsValid && billet.Door == front.BusinessId)
+                    return true;
+                return SameDoorstep(billet.Doorstep, front.Outside);
+            }
+
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            return outfit != null && outfit.TryGetHeadquarters(out var doorstep, out _) &&
+                   SameDoorstep(billet.Doorstep, doorstep);
+        }
 
         /// <summary>Told to go in, and not all the way in yet - walking to the door, or
         /// filing through it.</summary>
         public static bool MovingIn(DemoCrews.Unit unit) =>
-            unit != null && Billets.TryGetValue(unit.CrewId, out var billet) && !billet.In;
+            unit != null && Billets.TryGetValue(Key(unit), out var billet) && !billet.In;
 
         /// <summary>Under a move-in order at all, however far along it is.</summary>
         public static bool Billeted(DemoCrews.Unit unit) =>
-            unit != null && Billets.ContainsKey(unit.CrewId);
+            unit != null && Billets.ContainsKey(Key(unit));
 
         /// <summary>Is this crew the one behind THIS door - the question the door's own
         /// menu asks before it offers to bring them out again.</summary>
         public static bool At(DemoCrews.Unit unit, TerritoryBusinessId door) =>
             unit != null && door.IsValid &&
-            Billets.TryGetValue(unit.CrewId, out var billet) && billet.Door == door;
+            Billets.TryGetValue(Key(unit), out var billet) && billet.Door == door;
 
         /// <summary>Is anybody of ours actually behind THIS door, all the way in? The
         /// map asks it of the hideout, so the plaque can say the men are in it rather
@@ -111,9 +147,14 @@ namespace RoadDemo
         /// </summary>
         public static bool AtDoorstep(DemoCrews.Unit unit, Vector3 doorstep)
         {
-            if (unit == null || !Billets.TryGetValue(unit.CrewId, out var billet))
+            if (unit == null || !Billets.TryGetValue(Key(unit), out var billet))
                 return false;
-            var gap = billet.Doorstep - doorstep;
+            return SameDoorstep(billet.Doorstep, doorstep);
+        }
+
+        static bool SameDoorstep(Vector3 one, Vector3 other)
+        {
+            var gap = one - other;
             gap.y = 0f;
             return gap.sqrMagnitude <= SameDoorMetres * SameDoorMetres;
         }
@@ -143,7 +184,7 @@ namespace RoadDemo
         /// Null for a crew that is out on the street like any other.</summary>
         public static string Word(DemoCrews.Unit unit)
         {
-            if (unit == null || !Billets.TryGetValue(unit.CrewId, out var billet))
+            if (unit == null || !Billets.TryGetValue(Key(unit), out var billet))
                 return null;
             if (!billet.In)
                 return "GOING INSIDE";
@@ -157,7 +198,7 @@ namespace RoadDemo
         public static bool TryGetDoorstep(DemoCrews.Unit unit, out Vector3 doorstep)
         {
             doorstep = Vector3.zero;
-            if (unit == null || !Billets.TryGetValue(unit.CrewId, out var billet))
+            if (unit == null || !Billets.TryGetValue(Key(unit), out var billet))
                 return false;
             doorstep = billet.Doorstep;
             return true;
@@ -222,7 +263,8 @@ namespace RoadDemo
 
             // Another of our doors: they are not in two buildings at once. Out of that
             // one on the spot - the walk to this one is the beat the player watches.
-            if (Billets.TryGetValue(unit.CrewId, out var standing))
+            var key = Key(unit);
+            if (Billets.TryGetValue(key, out var standing))
             {
                 var same = door.IsValid
                     ? standing.Door == door
@@ -232,7 +274,7 @@ namespace RoadDemo
                 CallOut(unit);
             }
 
-            Billets[unit.CrewId] = new Billet
+            Billets[key] = new Billet
             {
                 Door = door,
                 Doorstep = doorstep,
@@ -253,6 +295,24 @@ namespace RoadDemo
         /// </summary>
         public static void BringOut(DemoCrews.Unit unit) => Empty(unit, walkOut: true);
 
+        /// <summary>True once every living man has completed the reverse doorway beat
+        /// and is visibly back on the pavement.</summary>
+        public static bool AllOutside(DemoCrews.Unit unit)
+        {
+            if (unit == null)
+                return false;
+            var found = false;
+            foreach (var man in unit.All())
+            {
+                if (man == null || man.Dead || man.Tf == null)
+                    continue;
+                found = true;
+                if (DoorBeat.Active(man) || !man.Tf.gameObject.activeInHierarchy)
+                    return false;
+            }
+            return found;
+        }
+
         /// <summary>
         /// Out NOW, because they were given something else to do. The reverse passage
         /// takes seconds and a man walking one cannot also be marching across the city -
@@ -269,7 +329,7 @@ namespace RoadDemo
         /// </summary>
         public static void Retasked(DemoCrews.Unit unit)
         {
-            if (unit == null || _marching == unit.CrewId)
+            if (unit == null || (_marching.HasValue && _marching.Value.Equals(Key(unit))))
                 return;
             Empty(unit, walkOut: false);
         }
@@ -278,14 +338,14 @@ namespace RoadDemo
         /// crew being retasked away from the order that issued it.</summary>
         static void March(DemoCrews crews, DemoCrews.Unit unit, Vector3 to)
         {
-            _marching = unit.CrewId;
+            _marching = Key(unit);
             crews.MarchTo(unit, to);
-            _marching = -1;
+            _marching = null;
         }
 
         static void Empty(DemoCrews.Unit unit, bool walkOut)
         {
-            if (unit == null || !Billets.Remove(unit.CrewId))
+            if (unit == null || !Billets.Remove(Key(unit)))
                 return;
             foreach (var man in unit.All())
             {
@@ -301,7 +361,17 @@ namespace RoadDemo
         /// <summary>Whatever the books do to a crew, its billet follows the crew id.
         /// A crew that has left the street - wiped, disbanded - leaves no billet
         /// behind for the next crew to inherit that number.</summary>
-        public static void Forget(int crewId) => Billets.Remove(crewId);
+        public static void Forget(int crewId)
+        {
+            Billets.Remove(new UnitKey(crewId, false));
+            Billets.Remove(new UnitKey(crewId, true));
+        }
+
+        public static void Forget(DemoCrews.Unit unit)
+        {
+            if (unit != null)
+                Billets.Remove(Key(unit));
+        }
 
         public static void Tick(DemoCrews crews)
         {
@@ -309,19 +379,21 @@ namespace RoadDemo
                 return;
 
             Scratch.Clear();
-            foreach (var crewId in Billets.Keys)
-                Scratch.Add(crewId);
+            foreach (var key in Billets.Keys)
+                Scratch.Add(key);
 
             for (var i = 0; i < Scratch.Count; i++)
             {
-                var crewId = Scratch[i];
-                if (!Billets.TryGetValue(crewId, out var billet))
+                var key = Scratch[i];
+                if (!Billets.TryGetValue(key, out var billet))
                     continue;
 
-                var unit = crews.UnitOfCrew(crewId);
+                var unit = key.Detachment
+                    ? crews.BagUnitOf(key.CrewId)
+                    : crews.UnitOfCrew(key.CrewId);
                 if (unit == null || unit.Wiped)
                 {
-                    Billets.Remove(crewId);
+                    Billets.Remove(key);
                     continue;
                 }
 
@@ -331,7 +403,7 @@ namespace RoadDemo
                     // a body struck off the books, a scene torn down. When the last of
                     // them is back on the street the crew is out, whatever put it out.
                     if (!AnybodyHeld(unit))
-                        Billets.Remove(crewId);
+                        Billets.Remove(key);
                     continue;
                 }
 
@@ -413,7 +485,7 @@ namespace RoadDemo
         {
             Billets.Clear();
             Scratch.Clear();
-            _marching = -1;
+            _marching = null;
         }
     }
 }
