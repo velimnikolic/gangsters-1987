@@ -150,7 +150,7 @@ namespace RoadDemo
             if (car == null || car.Tf == null) return false;
             if (!LivingCity.Gameplay.MapVisionRegistry.IsRevealed(car.Tf.position)) return false;
             if (car.Parked || car.EngineOff || car.Derelict || car.Wrecked) return false;
-            return !(car is CrewCar crew && crew.EngineDead);
+            return !car.EngineDead;
         }
 
         /// <summary>The pool's slot at this rank, made on the spot the first time it is

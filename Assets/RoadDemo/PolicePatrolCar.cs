@@ -54,6 +54,7 @@ namespace RoadDemo
         float _sceneStandOff;
         float _responseRetryAt;
         bool _sceneWanted;
+        bool _transferHalt;
 
         /// <summary>Set for the leg the car drives FORWARDS - out of the bay - where
         /// the heading is the curve's own tangent instead of a slerp between the
@@ -472,6 +473,21 @@ namespace RoadDemo
             if (Officer != null)
                 Officer.Show(State != Mode.OnScene &&
                              (State != Mode.Resting || (RestsAtKerbs && !_inTheYard)));
+            // Shared RoadCar tin means a patrol engine can die too. Brake it through
+            // the ordinary road model, finish any junction already entered, then leave
+            // a driven-round body instead of a supposedly available cruiser which can
+            // never answer its next call.
+            if (EngineDead && !Wrecked && !Derelict)
+            {
+                Halt(hard: true);
+                if (Via == null && Mathf.Abs(Speed) < 0.05f)
+                {
+                    StandDerelict();
+                    _sceneWanted = false;
+                    State = Mode.OnScene;
+                    return;
+                }
+            }
             switch (State)
             {
                 case Mode.Resting:
@@ -572,6 +588,15 @@ namespace RoadDemo
 
                 case Mode.Responding:
                     Tick(dt);
+                    if (_transferHalt)
+                    {
+                        if (Via == null && Mathf.Abs(Speed) < 0.05f)
+                        {
+                            StandDerelict();
+                            State = Mode.OnScene;
+                        }
+                        break;
+                    }
                     // The parking goal already names the nearest free legal kerb. Do
                     // not reject its completed answer through a second, unrelated
                     // radius around the shop: that made a correctly parked car pull
@@ -608,6 +633,7 @@ namespace RoadDemo
         Transform IPoliceUnit.Tf => Tf;
         Vector3 IPoliceUnit.Position => Tf.position;
         public bool Available => !_sceneWanted && !OffWatch && !Wrecked &&
+            !EngineDead && !Derelict &&
             (State == Mode.Resting || State == Mode.Undocking ||
              State == Mode.Patrolling || State == Mode.Returning ||
              State == Mode.Docking || State == Mode.Parking);
@@ -620,6 +646,7 @@ namespace RoadDemo
         /// reports OnScene.</summary>
         public void RouteTo(Vector3 scene, float standOff)
         {
+            _transferHalt = false;
             _scenePos = scene;
             _sceneStandOff = Mathf.Max(0f, standOff);
             switch (State)
@@ -650,6 +677,15 @@ namespace RoadDemo
                     BeginResponding();
                     break;
             }
+        }
+
+        /// <summary>The first round into a prisoner transfer: brake, finish any junction
+        /// already entered, then become a driven-round derelict at the roadside.</summary>
+        public void HaltTransfer()
+        {
+            _transferHalt = true;
+            _sceneWanted = false;
+            Halt(hard: true);
         }
 
         void BeginResponding()
@@ -692,6 +728,7 @@ namespace RoadDemo
         /// <summary>Done at the scene: back to the station.</summary>
         public void Release()
         {
+            _transferHalt = false;
             if (State != Mode.Responding && State != Mode.OnScene) { _sceneWanted = false; return; }
             GiveUpKerb();
             Profile = DriverProfile.Patrol;
@@ -832,6 +869,7 @@ namespace RoadDemo
         // uses RoadCar.GoTo(..., park: true), the same complete pull-in as crew cars.
         protected override float LimitTarget(float target)
         {
+            if (EngineDead) return 0f;
             if (State == Mode.Returning && CurrentEdge == _home && Progress <= _kerbS)
                 target = Mathf.Min(target, Allowed(0f, _kerbS - Progress));
             return target;

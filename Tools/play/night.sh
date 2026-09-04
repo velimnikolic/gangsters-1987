@@ -9,6 +9,8 @@
 #     Tools/play/night.sh --smoke                       120 s of MiniCoreDemo, seed 1
 #     Tools/play/night.sh --brawl --runs 5 --seed 101   a soak mode on the mini core
 #     Tools/play/night.sh --cover --runs 5              cover and the ambush on CoverDemo
+#     Tools/play/night.sh --court --runs 5              ROAD-006: all 12 cases x 5 seeds
+#     Tools/play/night.sh --court --scenario 8 --runs 1 one reproducible court case
 #
 # Exit codes are analyze.py's, so a caller reads them the same way soak.sh's caller does:
 #   0 every pass green, 1 something failed, 3 nothing ran (the editor refused to play).
@@ -16,6 +18,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="$(cd "$HERE/../.." && pwd)"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 MODE=""
 SUITES=""
@@ -26,6 +29,7 @@ SECONDS_=""
 OUT=""
 SETS=""
 SCENE=""
+COURT_SCENARIO=0
 # The brief's floor for cover first over a whole soak (EPIC 31 NIGHT-010; 85 % was the
 # last reading over thirty runs).
 COVER_FLOOR=80
@@ -40,6 +44,7 @@ while [ $# -gt 0 ]; do
         --out)     OUT="$2"; shift 2 ;;
         --sets)    SETS="$2"; shift 2 ;;
         --scene)   SCENE="$2"; shift 2 ;;
+        --scenario) COURT_SCENARIO="$2"; shift 2 ;;
         --smoke)   MODE="smoke"; shift ;;
         --car)     MODE="car"; shift ;;
         --moto)    MODE="moto"; shift ;;
@@ -48,6 +53,7 @@ while [ $# -gt 0 ]; do
         --brawl)   MODE="brawl"; shift ;;
         --cover)   MODE="cover"; shift ;;
         --ambush)  MODE="ambush"; shift ;;
+        --court)   MODE="court"; shift ;;
         --core-s1) MODE="core-s1"; shift ;;
         --core-s2) MODE="core-s2"; shift ;;
         --core-s3) MODE="core-s3"; shift ;;
@@ -62,7 +68,8 @@ if [ -z "$MODE" ]; then
     exit 2
 fi
 
-NIGHT_ROOT="${NIGHT_ROOT:-$LOCALAPPDATA/gangsters-play/night-2026-09-03}"
+PLAY_DATA_ROOT="${LOCALAPPDATA:-${TMPDIR:-/tmp}}"
+NIGHT_ROOT="${NIGHT_ROOT:-$PLAY_DATA_ROOT/gangsters-play/night-2026-09-03}"
 [ -z "$OUT" ] && OUT="$NIGHT_ROOT/$MODE-$(date +%H%M%S)"
 mkdir -p "$OUT"
 LEDGER="$OUT/soak.txt"
@@ -92,7 +99,7 @@ if [ "$MODE" = "suites" ]; then
             [ -z "$cmd" ] && continue
             RAN=$(( RAN + 1 ))
             ANSWER=$(unity command "$cmd" --json 2>&1)
-            VERDICT=$(printf '%s' "$ANSWER" | python "$HERE/suiteread.py" 2>/dev/null)
+            VERDICT=$(printf '%s' "$ANSWER" | "$PYTHON_BIN" "$HERE/suiteread.py" 2>/dev/null)
             [ -z "$VERDICT" ] && VERDICT="UNREADABLE"
             LINE="pass $pass/$PASSES $cmd: $VERDICT"
             echo "$LINE"
@@ -128,7 +135,7 @@ fi
 stop_play() {
     unity command editor_stop >/dev/null 2>&1
     for _ in $(seq 1 30); do
-        STATE=$(unity command editor_status --json 2>/dev/null | python "$HERE/suiteread.py" --playmode 2>/dev/null)
+        STATE=$(unity command editor_status --json 2>/dev/null | "$PYTHON_BIN" "$HERE/suiteread.py" --playmode 2>/dev/null)
         [ "$STATE" = "stopped" ] && return 0
         sleep 2
     done
@@ -179,6 +186,13 @@ case "$MODE" in
         SEED_FIELD="CoverDemoBuilder.layoutSeed"
         SETS="${SETS:-CoverDemoBuilder.missionAfter=12;CoverDemoBuilder.ambushRun=1;CoverDemoBuilder.rivalCrews=1;CoverDemoBuilder.rivalHoods=3;CoverDemoBuilder.outfitCrews=3}"
         VERDICT_FLAG="--crew"
+        ;;
+    court)
+        SCENE="${SCENE:-Assets/Scenes/MiniCoreDemo.unity}"
+        SECONDS_="${SECONDS_:-600}"
+        SEED_FIELD="CoreDemoBuilder.seed"
+        SETS="${SETS:-CoreDemoBuilder.courtTransferAfter=10;CoreDemoBuilder.courtTransferPatience=570;CoreDemoBuilder.rivalCrews=0;CoreDemoBuilder.outfitLieutenants=3;CoreDemoBuilder.outfitHoods=3;CoreDemoBuilder.mixedArms=1;CoreDemoBuilder.policeCars=8;CoreDemoBuilder.policeOfficers=16;CoreDemoBuilder.policeBeatPairs=2;CoreDemoBuilder.carCount=24}"
+        VERDICT_FLAG="--court"
         ;;
     brawl)
         SCENE="${SCENE:-Assets/Scenes/MiniCoreDemo.unity}"
@@ -281,7 +295,7 @@ esac
 
 # A run is given three times its own sim length in wall clock, and never less than
 # fifteen minutes: the core is a big city and its first frame is not cheap.
-WALL=$(python -c "import sys; print(max(900, int(float(sys.argv[1]) * 3)))" "$SECONDS_")
+WALL=$("$PYTHON_BIN" -c "import sys; print(max(900, int(float(sys.argv[1]) * 3)))" "$SECONDS_")
 
 # ASKED ONCE, BEFORE THE FIRST RUN, AND NEVER AGAIN. The harness marks the builder
 # dirty as it writes its own -hSet overrides, so every run after the first leaves the
@@ -305,13 +319,38 @@ fi
 # in the same breath, and the ambient traffic then passed for a car mission.
 GATE_ARGS=""
 case "$MODE" in
-    car|roadblock|moto|walk|brawl|cover|ambush|core-s1|core-s2) GATE_ARGS="--mission" ;;
+    car|roadblock|moto|walk|brawl|cover|ambush|court|core-s1|core-s2) GATE_ARGS="--mission" ;;
 esac
+
+COURT_CASES="0"
+TOTAL_RUNS="$RUNS"
+if [ "$MODE" = "court" ]; then
+    case "$RUNS" in
+        ''|*[!0-9]*) echo "[night] --runs must be a positive whole number" >&2; exit 2 ;;
+    esac
+    [ "$RUNS" -gt 0 ] || { echo "[night] --runs must be greater than zero" >&2; exit 2; }
+    case "$COURT_SCENARIO" in
+        ''|*[!0-9]*) echo "[night] --scenario must be a whole number from 0 to 12" >&2; exit 2 ;;
+    esac
+    [ "$COURT_SCENARIO" -le 12 ] || {
+        echo "[night] --scenario must be from 0 (all) to 12" >&2
+        exit 2
+    }
+    if [ "$COURT_SCENARIO" -eq 0 ]; then
+        COURT_CASES="$(seq 1 12)"
+        TOTAL_RUNS=$(( RUNS * 12 ))
+    else
+        COURT_CASES="$COURT_SCENARIO"
+    fi
+fi
 
 PASSED=0
 FAILED=""
 SKIPPED=""
+JOB=0
+for court_case in $COURT_CASES; do
 for i in $(seq 1 "$RUNS"); do
+    JOB=$(( JOB + 1 ))
     if [ "$MODE" = "smoke" ]; then
         SEED="$FIRST_SEED"
         RUN_SETS="$SETS"
@@ -321,7 +360,16 @@ for i in $(seq 1 "$RUNS"); do
         SEED=$(( FIRST_SEED + i - 1 ))
         RUN_SETS="$SETS;$SEED_FIELD=$SEED$CORE_FIX"
     fi
-    DIR=$(printf "%s/run-%02d" "$OUT" "$i")
+    RUN_VERDICT_FLAG="$VERDICT_FLAG"
+    RUN_ID="$i"
+    if [ "$MODE" = "court" ]; then
+        RUN_SETS="$RUN_SETS;CoreDemoBuilder.courtTransferScenario=$court_case"
+        RUN_VERDICT_FLAG="$VERDICT_FLAG $court_case"
+        DIR=$(printf "%s/scenario-%02d/run-%02d" "$OUT" "$court_case" "$i")
+        RUN_ID=$(printf "s%02dr%02d" "$court_case" "$i")
+    else
+        DIR=$(printf "%s/run-%02d" "$OUT" "$i")
+    fi
 
     # A RUN THAT NEVER RAN IS RUN AGAIN, ONCE, ON THE SAME SEED. Unity refusing to
     # play says nothing about the city; a seed quietly dropped from a five says
@@ -334,7 +382,7 @@ for i in $(seq 1 "$RUNS"); do
             WORD="NO RUN"; VERDICT="summary.json never appeared within ${WALL}s"
             continue
         fi
-        GATE=$(python "$HERE/rungate.py" "$DIR" $GATE_ARGS --sets "$RUN_SETS" 2>&1)
+        GATE=$("$PYTHON_BIN" "$HERE/rungate.py" "$DIR" $GATE_ARGS --sets "$RUN_SETS" 2>&1)
         GATECODE=$?
         if [ "$GATECODE" = "3" ]; then
             WORD="NO RUN"; VERDICT="$GATE"
@@ -344,7 +392,7 @@ for i in $(seq 1 "$RUNS"); do
             WORD="FAILED"; VERDICT="$GATE"
             break
         fi
-        VERDICT=$(python "$HERE/analyze.py" "$DIR" $VERDICT_FLAG 2>&1)
+        VERDICT=$("$PYTHON_BIN" "$HERE/analyze.py" "$DIR" $RUN_VERDICT_FLAG 2>&1)
         CODE=$?
         if [ "$CODE" = "3" ]; then WORD="NO RUN"; continue; fi
         if [ "$CODE" = "0" ]; then WORD="PASSED"; else WORD="FAILED"; fi
@@ -353,18 +401,24 @@ for i in $(seq 1 "$RUNS"); do
 
     case "$WORD" in
         PASSED) PASSED=$(( PASSED + 1 )) ;;
-        FAILED) FAILED="$FAILED $i" ;;
-        *)      SKIPPED="$SKIPPED $i" ;;
+        FAILED) FAILED="$FAILED $RUN_ID" ;;
+        *)      SKIPPED="$SKIPPED $RUN_ID" ;;
     esac
 
-    LINE=$(printf "run %2d/%d seed %s: %s" "$i" "$RUNS" "$SEED" "$WORD")
+    if [ "$MODE" = "court" ]; then
+        LINE=$(printf "job %2d/%d scenario %02d run %d/%d seed %s: %s" \
+            "$JOB" "$TOTAL_RUNS" "$court_case" "$i" "$RUNS" "$SEED" "$WORD")
+    else
+        LINE=$(printf "run %2d/%d seed %s: %s" "$i" "$RUNS" "$SEED" "$WORD")
+    fi
     HEAD=$(printf '%s' "$VERDICT" | head -8)
     echo "$LINE"; echo "$HEAD"
     printf "%s\n%s\n" "$LINE" "$HEAD" > "$DIR/verdict.txt"
     printf "%s\n%s\n\n" "$LINE" "$HEAD" >> "$LEDGER"
 done
+done
 
-TALLY="== $PASSED of $RUNS passed"
+TALLY="== $PASSED of $TOTAL_RUNS passed"
 [ -n "$FAILED" ] && TALLY="$TALLY; the ones that did not:$FAILED"
 [ -n "$SKIPPED" ] && TALLY="$TALLY; never ran:$SKIPPED"
 echo "$TALLY"; echo "$TALLY" >> "$LEDGER"
@@ -374,13 +428,13 @@ echo "$TALLY"; echo "$TALLY" >> "$LEDGER"
 # cover soak that failed, however clean its faults are.
 COVER_SHORT=""
 if [ "$MODE" = "cover" ] || [ "$MODE" = "ambush" ]; then
-    COVER_TALLY=$(python "$HERE/analyze.py" "$OUT" --cover-tally 2>&1)
+    COVER_TALLY=$("$PYTHON_BIN" "$HERE/analyze.py" "$OUT" --cover-tally 2>&1)
     echo "$COVER_TALLY"; echo "$COVER_TALLY" >> "$LEDGER"
     # THE COUNTS, NOT THE PRINTED PERCENTAGE. analyze.py rounds - 39 of 49 prints as
     # 80% and would clear an 80% floor at 79.6% - and a tally that measured nobody
     # prints no percentage at all, which read as "no reason to fail". Both are read
     # off the ratio itself, and a soak that measured nobody is a soak that failed.
-    COVER_SHORT=$(printf '%s' "$COVER_TALLY" | python "$HERE/coverfloor.py" "$COVER_FLOOR")
+    COVER_SHORT=$(printf '%s' "$COVER_TALLY" | "$PYTHON_BIN" "$HERE/coverfloor.py" "$COVER_FLOOR")
     if [ -n "$COVER_SHORT" ]; then
         echo "== $COVER_SHORT"; echo "== $COVER_SHORT" >> "$LEDGER"
     fi
@@ -392,5 +446,5 @@ echo "[night] $LEDGER"
 [ -n "$COVER_SHORT" ] && exit 1
 [ -n "$FAILED" ] && exit 1
 [ -n "$SKIPPED" ] && exit 3
-[ "$PASSED" = "$RUNS" ] && exit 0
+[ "$PASSED" = "$TOTAL_RUNS" ] && exit 0
 exit 1

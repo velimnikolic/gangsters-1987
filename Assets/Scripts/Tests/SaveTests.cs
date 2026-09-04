@@ -316,8 +316,14 @@ namespace LivingCity.Tests
                 return;
             }
             var second = pipe.Book(theirs.Roster, man, Deed.Affray, 20);
+            var secondCourtDay = second != null ? second.CourtDay : 0;
             if (second != null)
-                second.Stage = Police.PrisonStage.InTransit;
+            {
+                var due = new List<Police.Prisoner>();
+                pipe.DayTick(secondCourtDay, due);
+                pipe.Away(second);
+                second.Carriage = Police.CarriageStage.Riding;
+            }
 
             // THROUGH THE CONVERSION THE GAME ACTUALLY SHIPS. This fixture used to
             // hand-roll its own copy of the DTO fields, which is precisely why nobody
@@ -327,7 +333,8 @@ namespace LivingCity.Tests
             pipe.CollectEscapes(escaped);
             var file = new CampaignFile
             {
-                prisoners = Save.PrisonSnapshot.Prisoners(pipe),
+                day = secondCourtDay,
+                prisoners = Save.PrisonSnapshot.Prisoners(pipe, secondCourtDay),
                 cases = Save.PrisonSnapshot.Cases(pipe),
                 nextCaseId = pipe.NextCaseId,
                 escaped = escaped.ToArray(),
@@ -349,8 +356,9 @@ namespace LivingCity.Tests
             if (restored == null)
                 failures.Add("SAVE-005: a man in the cells was lost by saving - nothing " +
                              "will ever let him out again.");
-            else if (restored.Stage != Police.PrisonStage.InTransit ||
-                     restored.CourtDay != (second != null ? second.CourtDay : 0))
+            else if (restored.Stage != Police.PrisonStage.Held ||
+                     restored.Leg != Police.PrisonLeg.None ||
+                     restored.CourtDay != secondCourtDay + 1)
                 failures.Add("SAVE-005: he came back at the wrong point in the pipe (" +
                              restored.Stage + ", court day " + restored.CourtDay + ").");
 

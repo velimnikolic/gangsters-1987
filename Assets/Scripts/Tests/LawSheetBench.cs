@@ -112,6 +112,8 @@ namespace LivingCity.Tests
             Want(report, rows.Archive.Count == 0,
                 "LAW: and nothing has come to court.");
 
+            PrintCarriageStages(report);
+
             // ---- bail, and the day he does not turn up --------------------------
             var price = PrisonPipeline.BailPrice(out_);
             Want(report, pipe.PostBail(roster, out_, price, Today),
@@ -175,6 +177,64 @@ namespace LivingCity.Tests
                 "LAW: and his forfeit is on his case's own record.");
 
             return report;
+        }
+
+        /// <summary>Prints every live carriage word through LawSheet.Collect, rather
+        /// than contracting the label helper in isolation. This makes the CLI bench
+        /// prove the same INSIDE rows the ledger paints for EPIC 35.</summary>
+        static void PrintCarriageStages(Report report)
+        {
+            var roster = new Roster { Seed = Seed + 35 };
+            var pipe = new PrisonPipeline { RosterSeed = roster.Seed };
+            var stages = new[]
+            {
+                CarriageStage.Calling,
+                CarriageStage.WalkingOut,
+                CarriageStage.Boarding,
+                CarriageStage.Riding,
+                CarriageStage.Halted,
+                CarriageStage.WalkingIn,
+                CarriageStage.Delivered,
+                CarriageStage.Riding,
+            };
+            var legs = new[]
+            {
+                PrisonLeg.Court,
+                PrisonLeg.Court,
+                PrisonLeg.Court,
+                PrisonLeg.Court,
+                PrisonLeg.Court,
+                PrisonLeg.Court,
+                PrisonLeg.Court,
+                PrisonLeg.Prison,
+            };
+            var expected = new[]
+            {
+                "the car is coming for him",
+                "walking to the car",
+                "boarding the police car",
+                "in the car to the court",
+                "the transfer is halted",
+                "at the courthouse door",
+                "at the courthouse door",
+                "in the van out of town",
+            };
+
+            for (var i = 0; i < stages.Length; i++)
+            {
+                var member = Man(roster, "Carriage", (i + 1).ToString());
+                var prisoner = pipe.Book(roster, member.Id, Deed.Affray, Today);
+                prisoner.Carriage = stages[i];
+                prisoner.Leg = legs[i];
+            }
+
+            var rows = Read(pipe, roster, Today, 0, report, "CARRIAGE STAGES");
+            Want(report, rows.Inside.Count == expected.Length,
+                "ROAD-005/LAW: every carriage fixture reaches the INSIDE column.");
+            for (var i = 0; i < expected.Length && i < rows.Inside.Count; i++)
+                Want(report, rows.Inside[i].Stage == expected[i],
+                    "ROAD-005/LAW: " + stages[i] + " reads '" + expected[i] +
+                    "', not '" + rows.Inside[i].Stage + "'.");
         }
 
         static Character Man(Roster roster, string first, string last)

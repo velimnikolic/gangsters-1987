@@ -134,6 +134,18 @@ namespace LivingCity.Personnel
 
         /// <summary>The custody was broken before the station threshold.</summary>
         Sprung,
+
+        // ------------------------------------------------------------- EPIC 35
+        // Appended: incident kinds are serialized in the campaign wire.
+
+        /// <summary>A prisoner died before the transfer delivered him.</summary>
+        PrisonerKilled,
+
+        /// <summary>Gunfire stopped a prisoner transfer on the road.</summary>
+        TransferHalted,
+
+        /// <summary>The escort brought its prisoner across the courthouse threshold.</summary>
+        WalkedIn,
     }
 
     /// <summary>
@@ -215,6 +227,12 @@ namespace LivingCity.Personnel
                     return name + " were taken in" + place + ".";
                 case IncidentKind.Sprung:
                     return name + " were sprung before the station threshold" + place + ".";
+                case IncidentKind.PrisonerKilled:
+                    return name + " was killed in the transfer.";
+                case IncidentKind.TransferHalted:
+                    return "Gunfire stopped the transfer carrying " + name + place + ".";
+                case IncidentKind.WalkedIn:
+                    return name + " was walked through the courthouse door.";
                 case IncidentKind.CaseOpened:
                     return "The city has opened a case over " + name +
                            ", and our names are on it.";

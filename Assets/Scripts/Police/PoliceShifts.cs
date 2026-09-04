@@ -1,5 +1,21 @@
 namespace LivingCity.Police
 {
+    /// <summary>
+    /// The physical state of one prisoner carriage. This is deliberately not part of
+    /// the save format: a saved journey is restored to its owning cells/court and is
+    /// scheduled again by <see cref="PrisonPipeline"/>.
+    /// </summary>
+    public enum CarriageStage
+    {
+        Calling,
+        WalkingOut,
+        Boarding,
+        Riding,
+        Halted,
+        WalkingIn,
+        Delivered,
+    }
+
     public enum PoliceWatch
     {
         Day,
@@ -108,6 +124,20 @@ namespace LivingCity.Police
         public const int PickupOccupantLimit = 8;
         public const int EscortSeats = 2;
         public const int PrisonersPerPickup = PickupOccupantLimit - EscortSeats;
+        public const float WalkTheRestLimit = 250f;
+        public const float OccupantRollInterval = 1f;
+        public const int MaxOccupantRolls = 6;
+        // SHOOT IT UP is cleared on the first hit which halts the carrier, so the
+        // ordinary engagement gets one jeopardy roll. Re-issued fire remains bounded
+        // by MaxOccupantRolls, but each deliberate attempt keeps the user's roughly
+        // one-in-six risk instead of silently falling to three per cent.
+        public const float OccupantHitChance = 1f / 6f;
+
+        /// <summary>The old faceless-car decree is retained only for a scene that could
+        /// not spawn physical escort bodies. Once even one real escort exists, every
+        /// officer death must enter through that body's shared death channel.</summary>
+        public static int FallbackOfficerDeaths(int physicalEscortBodies) =>
+            physicalEscortBodies <= 0 ? 2 : 0;
 
         public static bool RefusesOrders(bool inCustody) => inCustody;
 
@@ -141,6 +171,41 @@ namespace LivingCity.Police
         /// escort breaks custody without an explicit resisting action.</summary>
         public static bool ShouldSpring(bool carrierWrecked, bool escortWiped) =>
             carrierWrecked || escortWiped;
+
+        /// <summary>The first round into a loaded, moving transfer stops the car. A
+        /// collection car and an already halted carriage cannot be halted twice.</summary>
+        public static bool ShouldHalt(CarriageStage stage, bool prisonerSeated,
+            bool firstRoundIntoTin) =>
+            stage == CarriageStage.Riding && prisonerSeated && firstRoundIntoTin;
+
+        /// <summary>Actors leave their seats only after the halted carrier has actually
+        /// stopped. This keeps bodies parented to a braking car rather than sliding away
+        /// from it on the frame of the shot.</summary>
+        public static bool ShouldDismount(CarriageStage stage, bool carrierStopped) =>
+            stage == CarriageStage.Halted && carrierStopped;
+
+        /// <summary>No cross-city foot march: without a fresh carrier the escort walks
+        /// only a bounded remaining leg.</summary>
+        public static bool WalkTheRest(bool freshCarrierAvailable,
+            float metresRemaining) =>
+            !freshCarrierAvailable && metresRemaining >= 0f &&
+            metresRemaining <= WalkTheRestLimit;
+
+        /// <summary>The court leg is delivered only at its walked threshold; the
+        /// off-map prison leg is delivered at the county line.</summary>
+        public static bool CanDeliver(CarriageStage stage, bool thresholdCrossed,
+            bool countyLineLeg) =>
+            (stage == CarriageStage.WalkingIn && thresholdCrossed) ||
+            (stage == CarriageStage.Riding && countyLineLeg);
+
+        /// <summary>A prisoner can be caught by friendly fire only while seated in a
+        /// halted engagement, no faster than once a second and never beyond the fixed
+        /// engagement budget.</summary>
+        public static bool InJeopardy(CarriageStage stage, bool prisonerSeated,
+            float secondsSinceLastRoll, int rolls) =>
+            stage == CarriageStage.Halted && prisonerSeated &&
+            secondsSinceLastRoll >= OccupantRollInterval &&
+            rolls < MaxOccupantRolls;
 
         /// <summary>The stationary surrender pose belongs to a man who is still held,
         /// is not in a seat, and has not yet been led somewhere.</summary>

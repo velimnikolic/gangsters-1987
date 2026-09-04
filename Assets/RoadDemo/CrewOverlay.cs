@@ -746,6 +746,57 @@ namespace RoadDemo
             return best;
         }
 
+        /// <summary>A car which can be acted on, including the force's patrol bodies.
+        /// Left-click selection and the GET IN chip keep using PickCarAt because only a
+        /// CrewCar can belong to a crew; the hostile order card is RoadCar-wide.</summary>
+        RoadCar PickTargetCarAt(Vector2 screen)
+        {
+            if (_cam == null) return null;
+            float radius = (PickRadius + 12f) *
+                           (_canvas != null ? _canvas.scaleFactor : 1f);
+            float bestD = radius * radius;
+            RoadCar best = null;
+            var ray = _cam.ScreenPointToRay(screen);
+
+            foreach (var car in _crews.Cars)
+                ConsiderTargetCar(car, screen, ray, false, ref bestD, ref best);
+
+            var force = PoliceForce.Instance;
+            var precincts = force?.Precincts;
+            for (var p = 0; precincts != null && p < precincts.Count; p++)
+                for (var i = 0; i < precincts[p].Cars.Count; i++)
+                {
+                    var car = precincts[p].Cars[i];
+                    ConsiderTargetCar(car, screen, ray,
+                        force.IsAnnouncedTransfer(car), ref bestD, ref best);
+                }
+            return best;
+        }
+
+        void ConsiderTargetCar(RoadCar car, Vector2 screen, Ray ray,
+            bool publicTransfer, ref float bestD, ref RoadCar best)
+        {
+            if (car?.Tf == null || car.Wrecked ||
+                (!publicTransfer &&
+                 !LivingCity.Gameplay.MapVisionRegistry.IsRevealed(car.Tf.position)))
+                return;
+            var p = _cam.WorldToScreenPoint(car.Position + Vector3.up * 0.9f);
+            if (p.z <= 0f) return;
+            var d = ((Vector2)p - screen).sqrMagnitude;
+            var bonnet = new Plane(Vector3.up,
+                new Vector3(0f, car.RoadY + 0.8f, 0f));
+            if (bonnet.Raycast(ray, out var enter))
+            {
+                var local = car.Tf.InverseTransformPoint(ray.GetPoint(enter));
+                if (Mathf.Abs(local.x) <= car.HalfWidth + 0.4f &&
+                    Mathf.Abs(local.z) <= car.HalfLength + 0.4f)
+                    d = 0f;
+            }
+            if (d >= bestD) return;
+            bestD = d;
+            best = car;
+        }
+
         static bool PointerOverUi() =>
             (UnityEngine.EventSystems.EventSystem.current &&
              UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject()) ||
@@ -821,10 +872,11 @@ namespace RoadDemo
             // the car under the click. This crew's own: get in (or out). Somebody
             // else's - a rival's - and there is nothing to board, but there is a charge
             // to lay under it, so the card opens with that one row.
-            var car = PickCarAt(up);
-            if (car != null)
+            var targetCar = PickTargetCarAt(up);
+            if (targetCar != null)
             {
-                if (car.Owner == _crews.Selected)
+                var car = targetCar as CrewCar;
+                if (car != null && car.Owner == _crews.Selected)
                 {
                     if (_crews.OrderCar(car))
                         ShowMark(car.Position + Vector3.up * 1.0f, MarkTint);
@@ -834,14 +886,14 @@ namespace RoadDemo
                 // any OTHER car of the outfit's: the keys change hands. The boss is
                 // pointing at a lieutenant and at a car, which is the whole order -
                 // it need not matter whose it was, and it does not.
-                else if (_crews.OnTheBooks(car))
+                else if (car != null && _crews.OnTheBooks(car))
                 {
                     if (_crews.AssignCar(car))
                         ShowMark(car.Position + Vector3.up * 1.0f, MarkTint);
                     else if (_crews.CarRefusal != null)
                         Refuse(_crews.CarRefusal);
                 }
-                else OpenCarOrders(car, up);
+                else OpenCarOrders(targetCar, up);
                 return;
             }
 
@@ -913,6 +965,17 @@ namespace RoadDemo
             if (!plane.Raycast(ray, out float enter)) return;
             var world = ray.GetPoint(enter);
 
+            // A crew already behind the wheel gets vehicle orders at a road point. The
+            // ordinary one-click walk/drive below remains unchanged for crews on foot;
+            // inside a car the card is where DRIVE HERE and the deliberate roadblock
+            // order can be distinguished without inventing a second input gesture.
+            var selectedCar = _crews.Selected.Car;
+            if (selectedCar != null && selectedCar.Occupant == _crews.Selected)
+            {
+                OpenRoadOrders(selectedCar, world, up);
+                return;
+            }
+
             // ONE CLICK IS A WALK; TWO IS A RUN. The same click twice on the same spot,
             // quickly - the way anybody hurries anything along - and the crew runs the
             // bulk of the way instead of walking it. Nothing else runs: a man is not
@@ -975,7 +1038,8 @@ namespace RoadDemo
         int _cardShown;
         DemoCrews.Unit _cardTarget, _cardCrew;
         GangFront _cardFront;
-        CrewCar _cardPlantCar;
+        RoadCar _cardPlantCar;
+        CrewCar _cardRoadCar;
         BagOnGround _cardBag;
 
         /// <summary>The shop the card is asking about, when it is a shop. It is a
@@ -1993,7 +2057,7 @@ namespace RoadDemo
 
         /// <summary>The card over a rival's CAR: lay a charge under it, to spring when
         /// they next drive it off.</summary>
-        void OpenCarOrders(CrewCar car, Vector2 screen)
+        void OpenCarOrders(RoadCar car, Vector2 screen)
         {
             var crew = _crews.Selected;
             if (crew == null || car == null) return;
@@ -2006,7 +2070,8 @@ namespace RoadDemo
             _cardBusiness = default;
             _cardCrew = crew;
             _cardShown = 0;
-            var carOwner = car.Occupant ?? car.Owner;
+            var crewCar = car as CrewCar;
+            var carOwner = crewCar != null ? crewCar.Occupant ?? crewCar.Owner : null;
             _cardTitle.text = carOwner != null
                 ? carOwner.GangName.ToUpperInvariant() + " · " + car.DisplayName.ToUpperInvariant()
                 : car.DisplayName.ToUpperInvariant();
@@ -2064,6 +2129,66 @@ namespace RoadDemo
             LayoutAndShow(screen);
         }
 
+        /// <summary>The selected crew's car at a point on the road: ordinary driving,
+        /// or the explicit cross-street ROADBLOCK order. A stood block keeps MOVE ON on
+        /// the same card, so removing both of its traffic and walking claims is never a
+        /// hidden side effect of some unrelated UI.</summary>
+        void OpenRoadOrders(CrewCar car, Vector3 point, Vector2 screen)
+        {
+            var crew = _crews.Selected;
+            if (crew == null || car == null || car.Occupant != crew) return;
+            if (!BuildCard())
+            {
+                if (_crews.OrderSelected(point, out var destination))
+                    ShowMark(destination, MarkTint);
+                return;
+            }
+
+            _cardTarget = null;
+            _cardFront = null;
+            _cardPlantCar = null;
+            _cardRoadCar = car;
+            _cardBag = null;
+            _cardBusiness = default;
+            _cardCrew = crew;
+            _cardShown = 0;
+            _cardTitle.text = car.DisplayName.ToUpperInvariant() + " · ROAD ORDERS";
+
+            Row("DRIVE HERE", "pull in at the kerb nearest this point", () =>
+            {
+                if (_crews.OrderSelected(point, out var destination))
+                    ShowMark(destination, MarkTint);
+            });
+
+            bool canBlock = car.CanRoadblockAt(point);
+            Row("BLOCK THE ROAD HERE",
+                canBlock ? "stand the car across the carriageway"
+                         : "that point is not on a usable road",
+                canBlock ? () =>
+                {
+                    // Use the shared move-order seam first: it calls off any fight and
+                    // retask standing against the same crew state as every other drive.
+                    if (_crews.OrderSelected(point, out _) && car.OrderRoadblock(point))
+                        ShowMark(point + Vector3.up * 0.6f, MarkTint);
+                }
+                : (System.Action)null,
+                lit: canBlock);
+
+            bool canMoveOn = car.IsRoadblock;
+            Row("MOVE ON",
+                canMoveOn ? "clear the roadblock and pull away"
+                          : "the car is not standing as a roadblock",
+                canMoveOn ? () =>
+                {
+                    if (car.MoveOnFromRoadblock())
+                        ShowMark(car.Position + Vector3.up * 0.6f, MarkTint);
+                }
+                : (System.Action)null,
+                lit: canMoveOn);
+
+            LayoutAndShow(screen);
+        }
+
         /// <summary>At the pointer, and never off the screen: a card that opens with
         /// half its rows past the bottom edge is a card with orders on it nobody can
         /// click.</summary>
@@ -2097,6 +2222,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardRoadCar = null;
             _cardBag = null;
             _cardBusiness = default;
             _cardCrew = null;
@@ -2138,6 +2264,7 @@ namespace RoadDemo
                            _cardFront != null ||
                            _cardBusiness.IsValid ||
                            _cardBag != null ||
+                           (_cardRoadCar != null && _cardRoadCar.Tf != null && !_cardRoadCar.Wrecked) ||
                            (_cardPlantCar != null && _cardPlantCar.Tf != null && !_cardPlantCar.Wrecked);
 
             // And somebody to ask it of. A SHOP's card is the one that is allowed to

@@ -31,9 +31,21 @@ namespace RoadDemo
         /// for the bang, for the alarm.</summary>
         public static void Blow(Vector3 at, DemoCrews crews, RoadCar car, int faction, float groundY)
         {
-            Flash(at);
-            KillCivilians(at, groundY);
-            KillCrews(at, crews, groundY);
+            var force = PoliceForce.Instance;
+            force?.BeginExplosion(car, at);
+            try
+            {
+                Flash(at);
+                KillCivilians(at, groundY);
+                KillCrews(at, crews, groundY);
+            }
+            finally
+            {
+                // The precinct attribution hint is scoped to this blast even if an
+                // optional visual/body callback throws. It must never leak into the next
+                // unrelated officer death.
+                force?.EndExplosion(car);
+            }
             if (car != null) CarShatter.Shatter(car, at);
             ShopDamage.ScorchNear(at, groundY);   // a shopfront in the blast catches fire
 
@@ -81,7 +93,7 @@ namespace RoadDemo
                 {
                     if (man == null || man.Dead || man.Tf == null) continue;
                     if ((man.Tf.position - at).sqrMagnitude > r2) continue;
-                    man.Kill();
+                    crews.KilledByBlast(man);
                 }
             }
         }

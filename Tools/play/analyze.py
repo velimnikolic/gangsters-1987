@@ -966,6 +966,96 @@ def core(dirpath, want=""):
     return 0 if ok else 1
 
 
+def court(dirpath, expected):
+    """ROAD-006's strict per-scenario reader.
+
+    The mission row names both the stable personnel id and the exact live walker id.
+    That lets this gate reject a transfer that only moved ledger state while a generic
+    pedestrian happened to walk nearby. Scenarios which reach either door must show
+    that same walker in the ordinary pedestrian trace during the matching carriage
+    stage; every scenario must reach its own explicit Done row with a clean harness.
+    """
+    trace_path = os.path.join(dirpath, "trace.jsonl")
+    summary_path = os.path.join(dirpath, "summary.json")
+    if not os.path.exists(trace_path) or not os.path.exists(summary_path):
+        print(f"== {dirpath}")
+        print("   NO RUN - trace or summary is missing")
+        return 3
+    try:
+        summary = json.load(open(summary_path, encoding="utf-8"))
+    except Exception as exc:
+        print(f"== {dirpath}\n   NO RUN - unreadable summary: {exc}")
+        return 3
+    rows = load(trace_path)
+    mission = [r for r in rows
+               if r.get("k") == "mission" and r.get("scenario") == expected]
+    scoped_faults = [r for r in rows if r.get("k") == "fault" and
+                     (r.get("tag") == "court-transfer" or
+                      r.get("fault") == "court-transfer")]
+    stages = Counter(r.get("stage") for r in mission if r.get("stage"))
+    states = Counter(r.get("state") for r in mission if r.get("state"))
+    done = [r for r in mission if r.get("state") == "Done"]
+    failed = [r for r in mission if r.get("state") == "Failed"]
+    walkers = {r.get("walker") for r in mission
+               if isinstance(r.get("walker"), int) and r.get("walker") >= 0}
+    prisoner_ids = {r.get("prisoner") for r in mission
+                    if isinstance(r.get("prisoner"), int) and r.get("prisoner") >= 0}
+    ped_rows = [r for r in rows if r.get("k") == "ped" and r.get("id") in walkers]
+    jeopardy = [r for r in rows if r.get("k") == "jeopardy" and
+                r.get("prisoner") in prisoner_ids]
+
+    def has_exact_walk(stage):
+        stage_rows = [r for r in mission if r.get("stage") == stage]
+        return bool(stage_rows) and any(
+            p.get("id") == m.get("walker") and
+            float(p.get("pace", 0)) > 0.05 and
+            abs(float(p.get("t", 0)) - float(m.get("t", 0))) <= 2.5
+            for m in stage_rows for p in ped_rows)
+
+    defects = []
+    if summary.get("why") != "done":
+        defects.append("the run ended " + repr(summary.get("why")))
+    if summary.get("errors", 0):
+        defects.append(f"{summary.get('errors')} errors")
+    if summary.get("exceptions", 0):
+        defects.append(f"{summary.get('exceptions')} exceptions")
+    if not mission:
+        defects.append(f"no mission rows for scenario {expected}")
+    if failed:
+        defects.append("the scenario entered Failed")
+    if scoped_faults:
+        defects.append(f"{len(scoped_faults)} court-transfer fault row(s)")
+    if not done:
+        defects.append("no explicit Done verdict")
+
+    # Every case except the pre-pickup bombing calls the prisoner out of the cells.
+    # Only these two cases deliberately run all the way to the courthouse door before
+    # their own verdict is decided. Scenario 11 has no courthouse by definition: its
+    # one promised visible leg is the walk out of the station.
+    if expected != 5 and not has_exact_walk("WalkingOut"):
+        defects.append("the named prisoner has no exact walking-out trace")
+    if expected in (9, 10) and not has_exact_walk("WalkingIn"):
+        defects.append("the named prisoner has no exact walking-in trace")
+
+    ok = not defects
+    last = done[-1] if done else (mission[-1] if mission else {})
+    print(f"== {dirpath}")
+    print("   " + ("PASSED" if ok else "FAULTS: " + "; ".join(defects)))
+    print(f"   scenario {expected:02d}: state={last.get('state', '?')}, "
+          f"stage={last.get('stage', '?')}, {last.get('what', '?')}")
+    print("   carriage: " + (", ".join(f"{k} x{n}" for k, n in stages.items())
+                              if stages else "no stages recorded"))
+    print(f"   exact body: walker(s) {sorted(walkers)}, {len(ped_rows)} pedestrian rows; "
+          f"faults={len(scoped_faults)}, errors="
+          f"{summary.get('errors', 0)}/{summary.get('exceptions', 0)}")
+    if jeopardy:
+        print(f"   jeopardy  : {len(jeopardy)} capped roll(s), "
+              f"{sum(1 for r in jeopardy if r.get('hit'))} hit")
+    for fault in (failed + scoped_faults)[:6]:
+        print(f"   FAULT {secs(fault.get('t', 0))} {fault.get('what', '')}")
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:]]
     if not args:
@@ -989,6 +1079,16 @@ if __name__ == "__main__":
         at = args.index("--core")
         demands = args[at + 1] if len(args) > at + 1 and not args[at + 1].startswith("--") else ""
         sys.exit(core(path, demands))
+    if "--court" in args:
+        at = args.index("--court")
+        if len(args) <= at + 1:
+            print("--court needs a scenario number from 1 to 12")
+            sys.exit(2)
+        expected = int(args[at + 1])
+        if expected < 1 or expected > 12:
+            print("--court needs a scenario number from 1 to 12")
+            sys.exit(2)
+        sys.exit(court(path, expected))
     if "--freeway" in args:
         sys.exit(freeway(path))
     if "--story" in args:

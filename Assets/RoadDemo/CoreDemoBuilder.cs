@@ -169,6 +169,18 @@ namespace RoadDemo
                  "the ledger's own $25,000, which is what the scene has always started on.")]
         public int playerSafeAtStart = -1;
 
+        [Header("Court transfer night watch")]
+        [Tooltip("ROAD-006: run one deterministic courthouse-transfer scenario in the " +
+                 "shared MiniCore city. 0 leaves ordinary play unchanged; 1-12 match " +
+                 "the numbered scenarios in the EPIC 35 brief.")]
+        [Range(0, 12)] public int courtTransferScenario;
+        [Tooltip("Sim seconds before the driver books its test prisoner. The city and " +
+                 "its outfit must have finished standing first.")]
+        [Min(0f)] public float courtTransferAfter = 10f;
+        [Tooltip("Hard ceiling for setup plus the physical transfer. A failure writes a " +
+                 "fault row to the normal drive trace.")]
+        [Min(30f)] public float courtTransferPatience = 900f;
+
         void Awake()
         {
 #if UNITY_EDITOR
@@ -298,6 +310,14 @@ namespace RoadDemo
                 mission.carBombSettle = missionCarBombSettle;
                 if (missionWalkLegs > 0) mission.walkLegs = missionWalkLegs;
                 if (missionLegPatience > 0f) mission.legPatience = missionLegPatience;
+            }
+
+            if (courtTransferScenario > 0)
+            {
+                var court = gameObject.AddComponent<CourtTransferMission>();
+                court.scenario = courtTransferScenario;
+                court.startAfter = courtTransferAfter;
+                court.patience = courtTransferPatience;
             }
 
             var rig = FindFirstObjectByType<DemoCamera>();

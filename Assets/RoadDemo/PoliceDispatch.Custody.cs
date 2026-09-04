@@ -15,12 +15,6 @@ namespace RoadDemo
     public sealed partial class PoliceDispatch
     {
         const float CustodyTransferPatience = 300f;
-        const float EscortJoinReach = 3.2f;
-        const float EscortControlReach = 6f;
-        const float EscortSeatReach = 5.5f;
-        const float DoorRouteFrom = 20f;
-        const float DoorDestinationReach = 0.8f;
-        const float BoardingRetry = 1.25f;
 
         enum CustodyStage
         {
@@ -51,8 +45,10 @@ namespace RoadDemo
             public readonly List<CustodyCar> Cars = new List<CustodyCar>();
             public readonly List<CustodyPrisoner> Prisoners =
                 new List<CustodyPrisoner>();
-            public readonly List<BoardingMan> Boarding = new List<BoardingMan>();
-            public readonly List<SeatedBody> Bodies = new List<SeatedBody>();
+            public readonly List<PrisonerCarriage.BoardingMan> Boarding =
+                new List<PrisonerCarriage.BoardingMan>();
+            public readonly List<PrisonerCarriage.SeatedBody> Bodies =
+                new List<PrisonerCarriage.SeatedBody>();
         }
 
         sealed class CustodyPrisoner
@@ -584,35 +580,23 @@ namespace RoadDemo
                 new Color(0.55f, 0.78f, 1f));
         }
 
-        static CrewWalker EscortAt(DemoCrews.Unit escort, int wanted)
-        {
-            if (escort == null || escort.Wiped) return null;
-            var at = 0;
-            CrewWalker first = null;
-            foreach (var officer in escort.All())
-            {
-                if (officer == null || officer.Dead || officer.Tf == null) continue;
-                first ??= officer;
-                if (at++ == wanted) return officer;
-            }
-            return first;
-        }
-
         void BeginPrisonerEscort(Custody custody, CustodyCar car, CrewWalker man,
             int seat, CrewWalker escort)
         {
-            if (custody == null || car?.Ride?.Tf == null || man == null || man.Tf == null)
+            var roadCar = RoadCarOf(car);
+            if (custody == null || roadCar?.Tf == null || man == null || man.Tf == null)
                 return;
-            var boarding = new BoardingMan
+            var boarding = new PrisonerCarriage.BoardingMan
             {
                 Man = man,
                 Escort = escort,
-                Car = car,
+                EscortUnit = car.Escort,
+                Car = roadCar,
                 Seat = seat,
                 Prisoner = true,
                 StartedAt = Time.time,
             };
-            if (!PrepareBoardingGeometry(boarding, man.Tf.position)) return;
+            if (!PrisonerCarriage.BeginPrisonerBoarding(boarding, _crews)) return;
             custody.Boarding.Add(boarding);
             man.Disengage();
         }
@@ -718,162 +702,10 @@ namespace RoadDemo
                 if (Time.time >= boarding.RetryAt)
                     OrderPairToRearDoor(boarding, onlyIdle: true);
             }
-            if (allSeated || AllBoarded(custody))
+            if (PrisonerCarriage.AllBoarded(custody.Boarding))
                 BeginOfficerBoarding(custody, returning: false);
             else if (Time.time >= custody.By)
                 ExtendPhysicalTransfer(custody);
-        }
-
-        static bool AllBoarded(Custody custody)
-        {
-            for (var i = 0; i < custody.Boarding.Count; i++)
-                if (!custody.Boarding[i].Seated) return false;
-            return true;
-        }
-
-        static Vector3 EscortJoinSpot(BoardingMan boarding)
-        {
-            var man = boarding.Man;
-            var car = boarding.Car.Ride.Tf;
-            var toCar = CustodyFlat(car.position - man.Tf.position);
-            if (toCar.sqrMagnitude < 0.04f) toCar = car.forward;
-            toCar.Normalize();
-            var side = Vector3.Cross(Vector3.up, toCar) *
-                       (boarding.Seat % 2 == 0 ? -1f : 1f);
-            var wanted = man.Tf.position - toCar * 0.8f + side * 1.1f;
-            wanted.y = man.Tf.position.y;
-            return WalkObstacles.ClearSpot(
-                wanted, WalkObstacles.CrewTravelRadius, 3f);
-        }
-
-        static Vector3 EscortDoorSpot(BoardingMan boarding)
-        {
-            if (boarding == null) return Vector3.zero;
-            if (!boarding.GeometryReady && boarding.Man?.Tf != null)
-                PrepareBoardingGeometry(boarding, boarding.Man.Tf.position);
-            return boarding.EscortPost;
-        }
-
-        static bool AtBoardingDoor(CrewWalker man, Vector3 door)
-        {
-            if (man?.Tf == null) return false;
-            var reach = PoliceProcedure.CustodyStoppedDoorReach;
-            return CustodyFlat(man.Tf.position - door).sqrMagnitude <= reach * reach;
-        }
-
-        static void OrderEscortToPrisoner(BoardingMan boarding)
-        {
-            if (boarding?.Escort?.Tf == null || boarding.Man?.Tf == null) return;
-            boarding.RetryAt = Time.time + BoardingRetry;
-            OrderCustodyLeg(boarding.Escort, EscortJoinSpot(boarding), run: true);
-            boarding.Escort.HoldAtGunpoint(boarding.Man);
-        }
-
-        void OrderPairToRearDoor(BoardingMan boarding, bool onlyIdle)
-        {
-            if (boarding?.Man?.Tf == null || boarding.Escort?.Tf == null) return;
-            var door = CarDoor(boarding);
-            var escortSpot = EscortDoorSpot(boarding);
-            var manAtDoor = AtBoardingDoor(boarding.Man, door);
-            var escortAtPost = CustodyFlat(
-                boarding.Escort.Tf.position - escortSpot).sqrMagnitude <=
-                DoorDestinationReach * DoorDestinationReach;
-            var retryElapsed = Time.time >= boarding.RetryAt;
-            var orderMan = !onlyIdle || CustodyPlan.ShouldRetryBoarding(
-                boarding.Man.HasOrder, manAtDoor, retryElapsed,
-                boarding.Man.RoutedLegStalled);
-            var orderEscort = !onlyIdle || CustodyPlan.ShouldRetryBoarding(
-                boarding.Escort.HasOrder, escortAtPost, retryElapsed,
-                boarding.Escort.RoutedLegStalled);
-            if (!orderMan && !orderEscort) return;
-
-            // The crew's reliable boarding rule: the person getting in owns the nearest
-            // physical door and the covering man owns a different spot outside it. They
-            // never share a handle, a waypoint or a route round the opposite flank.
-            boarding.RetryAt = Time.time + BoardingRetry;
-            if (orderMan)
-                OrderBoarderToDoor(boarding.Man, door, run: false);
-            if (orderEscort)
-                OrderCustodyLeg(boarding.Escort, escortSpot, run: false);
-            boarding.Escort.HoldAtGunpoint(boarding.Man);
-        }
-
-        static bool PrepareBoardingGeometry(BoardingMan boarding, Vector3 from)
-        {
-            var tf = boarding?.Car?.Ride?.Tf;
-            if (tf == null) return false;
-            var seats = CarBody.MeasureSeats(tf);
-            if (seats == null || seats.Length == 0) return false;
-            var width = MeasureCarHalfWidth(boarding.Car);
-
-            // Like DemoCrews.BoardingDoor, the assigned cushion and physical entry
-            // door are separate. A prisoner may use either rear door and an officer
-            // either front door, whichever is nearest when boarding begins; the choice
-            // is cached for the entire attempt and the body is seated across the cabin.
-            var firstDoor = boarding.Prisoner ? 2 : 0;
-            var lastDoor = Mathf.Min(firstDoor + 2, seats.Length);
-            if (firstDoor >= lastDoor)
-            {
-                firstDoor = Mathf.Clamp(boarding.Seat, 0, seats.Length - 1);
-                lastDoor = firstDoor + 1;
-            }
-            var chosen = firstDoor;
-            var best = float.MaxValue;
-            for (var doorSeat = firstDoor; doorSeat < lastDoor; doorSeat++)
-            {
-                var candidate = VehicleDoor(tf, seats[doorSeat], width);
-                var d = CustodyFlat(from - candidate).sqrMagnitude;
-                if (d >= best) continue;
-                best = d;
-                chosen = doorSeat;
-                boarding.Door = candidate;
-            }
-
-            var side = seats[chosen].x >= 0f ? 1f : -1f;
-            boarding.EscortPost = boarding.Door + tf.right *
-                (side * PoliceProcedure.CustodyEscortCarClearance);
-            boarding.EscortPost.y = boarding.Door.y;
-            boarding.GeometryReady = true;
-            return true;
-        }
-
-        static Vector3 VehicleDoor(Transform car, Vector3 localSeat, float halfWidth)
-        {
-            var side = localSeat.x >= 0f ? 1f : -1f;
-            var door = car.position + car.right * (side * (halfWidth + 0.9f)) +
-                       car.forward * localSeat.z;
-            door.y = car.position.y;
-            return door;
-        }
-
-        void OrderBoarderToDoor(CrewWalker man, Vector3 door, bool run)
-        {
-            if (man == null || man.Dead || man.Tf == null) return;
-            // This is the exact crew door dispatcher: sidewalk/routed for a long
-            // approach, a direct final stride at the handle, and no new order while
-            // the live one is still making progress.
-            _crews.SendToVehicleDoor(man, door);
-            man.Urgent = run;
-        }
-
-        static bool OrderCustodyLeg(CrewWalker man, Vector3 target, bool run)
-        {
-            if (man == null || man.Dead || man.Tf == null) return false;
-            var gap = CustodyFlat(target - man.Tf.position);
-            var accepted = gap.sqrMagnitude > DoorRouteFrom * DoorRouteFrom
-                ? man.OrderAcross(target)
-                : man.OrderToPoint(target);
-            if (accepted) man.Urgent = run;
-            return accepted;
-        }
-
-        static float MeasureCarHalfWidth(CustodyCar car)
-        {
-            var ride = car?.Ride;
-            if (ride is PolicePatrolCar patrol) return patrol.HalfWidth;
-            if (ride is PoliceCruiser cruiser && cruiser.Car != null)
-                return cruiser.Car.HalfWidth;
-            return 1f;
         }
 
         void BeginOfficerBoarding(Custody custody, bool returning)
@@ -888,22 +720,18 @@ namespace RoadDemo
                 {
                     if (officer == null || officer.Dead || officer.Tf == null || seat >= 2)
                         continue;
-                    officer.LowerGunpoint();
-                    var boarding = new BoardingMan
+                    var boarding = new PrisonerCarriage.BoardingMan
                     {
                         Man = officer,
-                        Car = load,
+                        EscortUnit = load.Escort,
+                        Car = RoadCarOf(load),
                         Seat = seat,
                         Prisoner = false,
-                        Started = true,
-                        StartedAt = Time.time,
-                        RetryAt = Time.time,
                     };
-                    if (!PrepareBoardingGeometry(boarding, officer.Tf.position))
+                    if (!PrisonerCarriage.BeginOfficerBoarding(boarding, _crews))
                         continue;
                     seat++;
                     custody.Boarding.Add(boarding);
-                    OrderOfficerToSeat(boarding, run: true);
                 }
             }
             custody.Stage = returning
@@ -911,67 +739,23 @@ namespace RoadDemo
             custody.By = Time.time + PoliceProcedure.OfficerBoardingSeconds;
         }
 
-        void OrderOfficerToSeat(BoardingMan boarding, bool run)
-        {
-            if (boarding?.Man?.Tf == null) return;
-            boarding.RetryAt = Time.time + BoardingRetry;
-            OrderBoarderToDoor(boarding.Man, CarDoor(boarding), run);
-        }
-
         void TickOfficerBoarding(Custody custody, bool returning)
         {
-            var allSeated = true;
             for (var i = 0; i < custody.Boarding.Count; i++)
             {
                 var boarding = custody.Boarding[i];
                 if (boarding.Seated) continue;
-                allSeated = false;
-                var man = boarding.Man;
-                if (man == null || man.Dead || man.Tf == null)
-                {
-                    boarding.Seated = true;
-                    continue;
-                }
-                var atDoor = AtBoardingDoor(man, CarDoor(boarding));
-                if (atDoor)
-                {
-                    man.LowerGunpoint();
-                    Seat(custody, boarding.Car, man, boarding.Seat, prisoner: false);
-                    boarding.Seated = true;
-                    continue;
-                }
-                if (CustodyPlan.ShouldRetryBoarding(
-                        man.HasOrder, atDoor,
-                        retryElapsed: Time.time >= boarding.RetryAt,
-                        routeStalled: man.RoutedLegStalled))
-                    OrderOfficerToSeat(boarding, run: true);
+                PrisonerCarriage.TickOfficerBoarding(boarding, _crews,
+                    _sitLoop, custody.Bodies);
             }
 
-            if (!allSeated && !AllBoarded(custody))
+            if (!PrisonerCarriage.AllBoarded(custody.Boarding))
             {
                 if (Time.time >= custody.By) ExtendPhysicalTransfer(custody);
                 return;
             }
             if (returning) DepartForNextWave(custody);
             else DepartCustody(custody);
-        }
-
-        static Vector3 CarDoor(BoardingMan boarding)
-        {
-            if (boarding == null) return Vector3.zero;
-            if (!boarding.GeometryReady && boarding.Man?.Tf != null)
-                PrepareBoardingGeometry(boarding, boarding.Man.Tf.position);
-            return boarding.Door;
-        }
-
-        void DisarmPrisoner(DemoCrews.Unit crew, CrewWalker man)
-        {
-            if (man == null || man.Dead) return;
-            man.Disarm();
-            var underworld = LivingCity.Outfit.Underworld.Current;
-            var roster = crew != null ? underworld?.Of(crew.Faction)?.Roster : null;
-            PrisonPipeline.ConfiscateWeapons(roster, man.CharacterId);
-            PersonnelDirector.Instance?.Touch();
         }
 
         void DepartCustody(Custody custody)
@@ -1036,43 +820,11 @@ namespace RoadDemo
             BoardCustody(custody);
         }
 
-        void Seat(Custody custody, CustodyCar car, CrewWalker man, int index,
-            bool prisoner)
+        static RoadCar RoadCarOf(CustodyCar car)
         {
-            var tf = car.Ride.Tf;
-            if (tf == null || man == null || man.Tf == null) return;
-            var seats = CarBody.MeasureSeats(tf);
-            // Prisoners are cargo in this pickup, not extra cabin passengers. Their
-            // source bodies stay hidden while in transit and these separate rear points
-            // keep the logical transforms packed inside the vehicle without overlap.
-            var seat = prisoner
-                ? PrisonerCargoPoint(seats, index)
-                : seats[Mathf.Clamp(index, 0, seats.Length - 1)];
-            var body = new SeatedBody
-            {
-                Man = man,
-                Parent = man.Tf.parent,
-                LocalScale = man.Tf.localScale,
-                Renderers = man.Tf.GetComponentsInChildren<Renderer>(true),
-                Car = car,
-                Prisoner = prisoner,
-            };
-            body.Shown = new bool[body.Renderers.Length];
-            for (var i = 0; i < body.Renderers.Length; i++)
-                body.Shown[i] = body.Renderers[i] != null && body.Renderers[i].enabled;
-
-            man.Disengage();
-            man.SetRiding(true);
-            man.Tf.SetParent(tf, false);
-            man.Tf.localPosition = seat;
-            man.Tf.localRotation = Quaternion.identity;
-            man.Tf.localScale = body.LocalScale;
-            if (!prisoner)
-                body.Visual = CarOccupant.Seat(tf, man.SourcePrefab, _sitLoop, seat,
-                    man.Tf.gameObject.layer);
-            for (var i = 0; i < body.Renderers.Length; i++)
-                if (body.Renderers[i] != null) body.Renderers[i].enabled = false;
-            custody.Bodies.Add(body);
+            if (car?.Ride is RoadCar roadCar) return roadCar;
+            if (car?.Ride is PoliceCruiser cruiser) return cruiser.Car;
+            return null;
         }
 
         static Vector3 PrisonerCargoPoint(Vector3[] seats, int seatIndex)
@@ -1127,8 +879,7 @@ namespace RoadDemo
                 var man = prisoner.Man;
                 if (!prisoner.InWave || prisoner.Booked || man == null || man.Dead ||
                     man.Tf == null) continue;
-                man.Surrendered = true;
-                DoorBeat.MoveIn(man, door);
+                PrisonerCarriage.WalkIntoStation(man, door);
             }
             for (var i = 0; i < custody.Cars.Count; i++)
             {
@@ -1236,26 +987,7 @@ namespace RoadDemo
 
         void RestoreBodies(Custody custody, Vector3 around)
         {
-            var prisoner = 0;
-            var escort = 0;
-            for (var i = 0; i < custody.Bodies.Count; i++)
-            {
-                var body = custody.Bodies[i];
-                if (body.Visual != null) Destroy(body.Visual.gameObject);
-                // Booking can retire the source walker before the car is unloaded.
-                // Its independent seated visual still has to be removed.
-                if (body?.Man == null || body.Man.Tf == null) continue;
-                body.Man.Tf.SetParent(body.Parent, true);
-                body.Man.Tf.localScale = body.LocalScale;
-                var n = body.Prisoner ? prisoner++ : escort++;
-                var side = body.Prisoner ? -1f : 1f;
-                body.Man.Tf.position = around + new Vector3(side * (2f + n * 0.8f), 0f,
-                    (n % 2 == 0 ? -1f : 1f) * 1.2f);
-                body.Man.SetRiding(false);
-                for (var r = 0; r < body.Renderers.Length; r++)
-                    if (body.Renderers[r] != null) body.Renderers[r].enabled = body.Shown[r];
-            }
-            custody.Bodies.Clear();
+            PrisonerCarriage.RestoreBodies(custody.Bodies, around);
         }
 
         void FinishCustody(Custody custody)

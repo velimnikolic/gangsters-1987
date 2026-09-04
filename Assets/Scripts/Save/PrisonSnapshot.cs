@@ -22,7 +22,7 @@ namespace LivingCity.Save
     /// </summary>
     public static class PrisonSnapshot
     {
-        public static PrisonerDto[] Prisoners(PrisonPipeline pipe)
+        public static PrisonerDto[] Prisoners(PrisonPipeline pipe, int today = 0)
         {
             if (pipe == null)
                 return new PrisonerDto[0];
@@ -31,6 +31,21 @@ namespace LivingCity.Save
             for (var i = 0; i < pipe.Inside.Count; i++)
             {
                 var man = pipe.Inside[i];
+                // The carriage is deliberately runtime-only. Saving its paper as
+                // InTransit would restore a man into a car which no longer exists and
+                // leave him there forever. A live leg is filed back at its physical
+                // source and put on tomorrow's call sheet instead: cells for court,
+                // courthouse custody for prison.
+                var liveCarriage = man.Carriage.HasValue &&
+                                   man.Carriage.Value != CarriageStage.Delivered;
+                var courtLeg = man.Leg != PrisonLeg.Prison;
+                var stage = liveCarriage
+                    ? courtLeg ? PrisonStage.Held : PrisonStage.Sentenced
+                    : man.Stage;
+                var courtDay = liveCarriage && courtLeg
+                    ? RetryDay(man.CourtDay, today) : man.CourtDay;
+                var prisonDay = liveCarriage && !courtLeg
+                    ? RetryDay(man.PrisonDay, today) : man.PrisonDay;
                 rows[i] = new PrisonerDto
                 {
                     characterId = man.CharacterId,
@@ -39,19 +54,26 @@ namespace LivingCity.Save
                     answer = (int)man.Answer,
                     sprung = man.Sprung,
                     takenOnDay = man.TakenOnDay,
-                    courtDay = man.CourtDay,
+                    courtDay = courtDay,
                     sentenceDays = man.SentenceDays,
                     outOnDay = man.OutOnDay,
-                    stage = (int)man.Stage,
+                    stage = (int)stage,
                     caseId = man.CaseId,
-                    leg = (int)man.Leg,
-                    prisonDay = man.PrisonDay,
+                    leg = (int)(liveCarriage ? PrisonLeg.None : man.Leg),
+                    prisonDay = prisonDay,
                     bailPaid = man.BailPaid,
                     skipOrdered = man.SkipOrdered,
                     transferFails = man.TransferFails,
                 };
             }
             return rows;
+        }
+
+        static int RetryDay(int scheduled, int today)
+        {
+            var afterSchedule = scheduled > 0 ? scheduled + 1 : 0;
+            var tomorrow = today > 0 ? today + 1 : 0;
+            return System.Math.Max(afterSchedule, tomorrow);
         }
 
         /// <summary>Every case the city has opened, open or closed - a closed one is
@@ -132,6 +154,20 @@ namespace LivingCity.Save
             {
                 var row = file.prisoners[i];
                 if (row == null) continue;
+                var restoredStage = (PrisonStage)row.stage;
+                var restoredLeg = (PrisonLeg)row.leg;
+                var orphanedJourney = restoredStage == PrisonStage.ForTransfer ||
+                                      restoredStage == PrisonStage.InTransit;
+                var prisonLeg = restoredLeg == PrisonLeg.Prison;
+                // Compatibility for a file written before ROAD-006: a serialized
+                // ForTransfer/InTransit row cannot have a serialized carriage beside
+                // it. Put that orphan back at its source exactly as new writes do.
+                if (orphanedJourney)
+                {
+                    restoredStage = prisonLeg
+                        ? PrisonStage.Sentenced : PrisonStage.Held;
+                    restoredLeg = PrisonLeg.None;
+                }
                 inside.Add(new Prisoner
                 {
                     CharacterId = row.characterId,
@@ -140,13 +176,15 @@ namespace LivingCity.Save
                     Answer = (DoorAnswer)row.answer,
                     Sprung = row.sprung,
                     TakenOnDay = row.takenOnDay,
-                    CourtDay = row.courtDay,
+                    CourtDay = orphanedJourney && !prisonLeg
+                        ? RetryDay(row.courtDay, file.day) : row.courtDay,
                     SentenceDays = row.sentenceDays,
                     OutOnDay = row.outOnDay,
-                    Stage = (PrisonStage)row.stage,
+                    Stage = restoredStage,
                     CaseId = row.caseId,
-                    Leg = (PrisonLeg)row.leg,
-                    PrisonDay = row.prisonDay,
+                    Leg = restoredLeg,
+                    PrisonDay = orphanedJourney && prisonLeg
+                        ? RetryDay(row.prisonDay, file.day) : row.prisonDay,
                     BailPaid = row.bailPaid,
                     SkipOrdered = row.skipOrdered,
                     TransferFails = row.transferFails,

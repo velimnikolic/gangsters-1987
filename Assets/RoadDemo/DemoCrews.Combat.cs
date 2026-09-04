@@ -11,6 +11,44 @@ namespace RoadDemo
     /// nothing changed in the move.</summary>
     public partial class DemoCrews
     {
+        /// <summary>
+        /// A blast killed this body. This is the same death door a bullet uses: the
+        /// body falls now, the house's roster is struck after the visible death beat,
+        /// and StreetAlarm hears exactly one death immediately.
+        /// </summary>
+        public void KilledByBlast(CrewWalker man)
+        {
+            if (man == null || man.Dead || man.Tf == null) return;
+            KillThroughStreet(man, blast: true);
+        }
+
+        /// <summary>A capped carriage-jeopardy roll found the prisoner.</summary>
+        public void KilledInTransfer(CrewWalker man, CrewWalker attacker)
+        {
+            if (man == null || man.Dead || man.Tf == null) return;
+            var from = attacker != null && attacker.Tf != null
+                ? attacker.Tf.position : man.Tf.position - man.Tf.forward * 4f;
+            CrewGore.Hit(man, from, GroundY, floor: false);
+            KillThroughStreet(man, blast: false);
+        }
+
+        void KillThroughStreet(CrewWalker man, bool blast)
+        {
+            man.Kill();
+            // A rider's pool and chalk belong beside the car after the carriage restores
+            // him, not under its moving transform here.
+            CrewGore.Death(man, GroundY, floor: !man.Riding && !IsAboard(man));
+            _deaths.Add((man, Time.time + DeathReportDelay));
+            StreetAlarm.Death(man.Tf.position,
+                man.Faction == StreetAlarm.PoliceFaction
+                    ? StreetAlarm.DeathOf.Officer
+                    : StreetAlarm.DeathOf.Gangster,
+                man.Faction);
+            if (DriveTrace.On)
+                DriveTrace.Event(blast ? "blastdeath" : "transferdeath",
+                    man.DisplayName, "death entered through the shared roster channel");
+        }
+
         // A KILL is dealt across the crew one man at a time. Kept here and cleared for
         // every deal/retarget pass: no per-frame HashSet garbage, and no ownership of
         // combat policy in whichever overlay happened to issue the order.
@@ -1421,7 +1459,7 @@ namespace RoadDemo
             // there, and no scatter cone is applied at all - the round did not go wide,
             // it went into the thing the man is sitting in. A round that misses BOTH the
             // man and the tin falls through to the cone below.
-            CrewCar tin = null;
+            RoadCar tin = null;
             CrewBike machine = null;
             var hole = Vector3.zero;
             if (live && !hit)
@@ -1473,7 +1511,7 @@ namespace RoadDemo
                 // no man to hit or miss - the tin IS the target, so every round finds
                 // it, and the damage model reads exactly the rounds it reads from a
                 // miss into a door (PutRoundIntoTin, CrewCar.TakeRound).
-                if (tin != null) PutRoundIntoTin(tin, muzzle, hole);
+                if (tin != null) PutRoundIntoTin(tin, muzzle, hole, shooter);
                 return;
             }
 
@@ -1585,7 +1623,7 @@ namespace RoadDemo
                 // check is not asked and no second impact is struck.
                 if (tin != null)
                 {
-                    PutRoundIntoTin(tin, muzzle, hole);
+                    PutRoundIntoTin(tin, muzzle, hole, shooter);
                     target.UnderFire();
                     return;
                 }
@@ -1778,7 +1816,7 @@ namespace RoadDemo
         /// is where along it - which nothing can tell from a miss anyway, and which the
         /// eye reads as scatter. What it must get right is the LENGTHWISE part, because
         /// that is what decides whether the engine took it (CrewCar.TakeRound).</summary>
-        Vector3 TinHole(CrewCar car, Vector3 muzzle)
+        Vector3 TinHole(RoadCar car, Vector3 muzzle)
         {
             var local = car.Tf.InverseTransformPoint(muzzle);
             float side = local.x >= 0f ? 1f : -1f;
@@ -1800,11 +1838,13 @@ namespace RoadDemo
         /// BEFORE the flash is lit: for a round into the tin the hole IS the round's
         /// direction, and the flash, the impact and the trace all have to agree with
         /// it (AIM-003).</summary>
-        void PutRoundIntoTin(CrewCar car, Vector3 muzzle, Vector3 at)
+        void PutRoundIntoTin(RoadCar car, Vector3 muzzle, Vector3 at,
+            CrewWalker shooter)
         {
             if (car == null || car.Tf == null) return;
             int before = car.EngineHits;
             car.TakeRound(at, muzzle);
+            PoliceForce.Instance?.RoundIntoPoliceTin(car, shooter);
             if (DriveTrace.On)
             {
                 var sb = DriveTrace.Take();

@@ -59,6 +59,13 @@ namespace LivingCity.Tests
             ("GAN315_EscortStandsClearAndTheCarParks", GAN315_EscortStandsClearAndTheCarParks),
             ("GAN315_TransferTracksOnlyPhysicalCustody", GAN315_TransferTracksOnlyPhysicalCustody),
             ("GAN315_ResponseRunsAndFlightDrawsFire", GAN315_ResponseRunsAndFlightDrawsFire),
+            ("ROAD000_BlastAccountingDoesNotDoubleCount", ROAD000_BlastAccountingDoesNotDoubleCount),
+            ("ROAD001_TheCarriageNeedsPhysicalEdges", ROAD001_TheCarriageNeedsPhysicalEdges),
+            ("ROAD002_AKilledPrisonerClosesHisCase", ROAD002_AKilledPrisonerClosesHisCase),
+            ("ROAD003_JeopardyIsCapped", ROAD003_JeopardyIsCapped),
+            ("ROAD003_PreSeatAmbushIsASpring", ROAD003_PreSeatAmbushIsASpring),
+            ("ROAD004_TheWalkHomeIsBounded", ROAD004_TheWalkHomeIsBounded),
+            ("ROAD006_ALiveJourneySavesAtItsSource", ROAD006_ALiveJourneySavesAtItsSource),
             ("HeldMeansHeldUntilAJudgeSaysOtherwise", HeldMeansHeldUntilAJudgeSaysOtherwise),
             ("TheVerdictLandsWhenTheTransferArrives", TheVerdictLandsWhenTheTransferArrives),
             ("AWreckedTransferIsAFreeManUnarmed", AWreckedTransferIsAFreeManUnarmed),
@@ -593,6 +600,188 @@ namespace LivingCity.Tests
                 "GAN-315/gunpoint: movement during a live arrest must turn cover into fire.");
         }
 
+        // ------------------------------------------------ EPIC 35: road to the courthouse
+
+        static void ROAD000_BlastAccountingDoesNotDoubleCount(List<string> failures)
+        {
+            Want(failures,
+                CustodyPlan.FallbackOfficerDeaths(0) == 2 &&
+                CustodyPlan.FallbackOfficerDeaths(1) == 0 &&
+                CustodyPlan.FallbackOfficerDeaths(2) == 0,
+                "ROAD-000: the two decree deaths exist only when no physical escort body can report itself.");
+        }
+
+        static void ROAD001_TheCarriageNeedsPhysicalEdges(List<string> failures)
+        {
+            Want(failures,
+                CustodyPlan.ShouldHalt(CarriageStage.Riding,
+                    prisonerSeated: true, firstRoundIntoTin: true) &&
+                !CustodyPlan.ShouldHalt(CarriageStage.Calling, true, true) &&
+                !CustodyPlan.ShouldHalt(CarriageStage.Riding, false, true) &&
+                !CustodyPlan.ShouldHalt(CarriageStage.Riding, true, false),
+                "ROAD-001: only the first round into a physically loaded ride may halt it.");
+            Want(failures,
+                CustodyPlan.ShouldDismount(CarriageStage.Halted,
+                    carrierStopped: true) &&
+                !CustodyPlan.ShouldDismount(CarriageStage.Halted, false) &&
+                !CustodyPlan.ShouldDismount(CarriageStage.Riding, true),
+                "ROAD-001: bodies leave their seats only after the carrier has stopped.");
+            Want(failures,
+                !CustodyPlan.CanDeliver(CarriageStage.Riding,
+                    thresholdCrossed: false, countyLineLeg: false) &&
+                CustodyPlan.CanDeliver(CarriageStage.WalkingIn,
+                    thresholdCrossed: true, countyLineLeg: false) &&
+                CustodyPlan.CanDeliver(CarriageStage.Riding,
+                    thresholdCrossed: false, countyLineLeg: true),
+                "ROAD-001: court delivery is a walked threshold; the prison leg is the county line.");
+            Want(failures,
+                (int)CarriageStage.Calling == 0 &&
+                (int)CarriageStage.WalkingOut == 1 &&
+                (int)CarriageStage.Boarding == 2 &&
+                (int)CarriageStage.Riding == 3 &&
+                (int)CarriageStage.Halted == 4 &&
+                (int)CarriageStage.WalkingIn == 5 &&
+                (int)CarriageStage.Delivered == 6 &&
+                (int)CaseOutcome.Convicted == 0 &&
+                (int)CaseOutcome.Acquitted == 1 &&
+                (int)CaseOutcome.Dismissed == 2 &&
+                (int)CaseOutcome.BailForfeit == 3 &&
+                (int)CaseOutcome.CutLoose == 4 &&
+                (int)CaseOutcome.Killed == 5,
+                "ROAD-001/002: saved case outcomes retain their old ordinals and carriage stages are append-only.");
+        }
+
+        static void ROAD002_AKilledPrisonerClosesHisCase(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var file = pipe.OpenCase(Deed.Murder, 0, 10,
+                10 + Sentencing.DaysToCourt, "road-12", "THE ROAD");
+            var prisoner = pipe.Book(roster, man.Id, Deed.Murder, 10, file);
+            var due = new List<Prisoner>();
+            pipe.DayTick(prisoner.CourtDay, due);
+            pipe.Away(prisoner);
+
+            var killed = pipe.Killed(roster, man.Id, prisoner.CourtDay);
+            var verdict = file.VerdictFor(man.Id);
+            Want(failures,
+                killed == prisoner && pipe.Find(man.Id) == null &&
+                prisoner.Stage == PrisonStage.Cleared && prisoner.Leg == PrisonLeg.None,
+                "ROAD-002: a dead rider leaves the prison pipeline without becoming freed.");
+            Want(failures,
+                verdict != null && verdict.Outcome == CaseOutcome.Killed &&
+                file.Verdicts.Count == 1 && !file.HasDefendant(man.Id) &&
+                file.Status == CaseStatus.Folded,
+                "ROAD-002: his open prosecution closes as killed, not acquitted or tried.");
+            Want(failures,
+                pipe.Freed(roster, prisoner, prisoner.CourtDay) == null &&
+                file.Verdicts.Count == 1,
+                "ROAD-002: a killed prisoner cannot later be freed or earn a second verdict.");
+            Want(failures,
+                man.Status == CharacterStatus.Jailed &&
+                man.RapSheet[man.RapSheet.Count - 1].Outcome ==
+                    Sentencing.KilledInTransferOutcome,
+                "ROAD-002: the pipeline writes the outcome but leaves roster death to the shared street channel.");
+        }
+
+        static void ROAD003_JeopardyIsCapped(List<string> failures)
+        {
+            Want(failures,
+                CustodyPlan.OccupantHitChance > 0.16f &&
+                CustodyPlan.OccupantHitChance < 0.17f,
+                "ROAD-003: one ordinary halted engagement carries roughly a one-in-six occupant risk.");
+            Want(failures,
+                CustodyPlan.InJeopardy(CarriageStage.Halted, prisonerSeated: true,
+                    secondsSinceLastRoll: CustodyPlan.OccupantRollInterval, rolls: 0) &&
+                !CustodyPlan.InJeopardy(CarriageStage.Riding, true, 10f, 0) &&
+                !CustodyPlan.InJeopardy(CarriageStage.Halted, false, 10f, 0) &&
+                !CustodyPlan.InJeopardy(CarriageStage.Halted, true,
+                    CustodyPlan.OccupantRollInterval - 0.01f, 0) &&
+                !CustodyPlan.InJeopardy(CarriageStage.Halted, true, 10f,
+                    CustodyPlan.MaxOccupantRolls),
+                "ROAD-003: friendly-fire risk is seated, timed and capped per engagement.");
+        }
+
+        static void ROAD003_PreSeatAmbushIsASpring(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var file = pipe.OpenCase(Deed.Affray, 0, 10,
+                10 + Sentencing.DaysToCourt, "road-pre-seat", "THE STATION DOOR");
+            var prisoner = pipe.Book(roster, man.Id, Deed.Affray, 10, file);
+            var due = new List<Prisoner>();
+            pipe.DayTick(prisoner.CourtDay, due);
+
+            Want(failures, prisoner.Stage == PrisonStage.ForTransfer &&
+                           pipe.Freed(roster, prisoner, prisoner.CourtDay) == null,
+                "ROAD-003: Freed must refuse a man who has not sat in the carrier.");
+            Want(failures, pipe.Sprung(roster, man.Id, prisoner.CourtDay),
+                "ROAD-003: a foot ambush before seating must use the sprung exit.");
+            Want(failures, pipe.Find(man.Id) == null &&
+                           prisoner.Stage == PrisonStage.Freed && prisoner.Sprung &&
+                           man.Status == CharacterStatus.Active &&
+                           man.WantedLevel == WantedLevels.FreedFromTransfer,
+                "ROAD-003: the sprung man must be active, out of the pipe and W2.");
+            Want(failures, file.Status == CaseStatus.Open &&
+                           file.Verdicts.Count == 0 &&
+                           file.ExtraCharges.Contains(Deed.Resisting),
+                "ROAD-003: springing leaves the case open with a resisting count.");
+        }
+
+        static void ROAD004_TheWalkHomeIsBounded(List<string> failures)
+        {
+            Want(failures,
+                CustodyPlan.WalkTheRest(freshCarrierAvailable: false,
+                    metresRemaining: CustodyPlan.WalkTheRestLimit) &&
+                !CustodyPlan.WalkTheRest(false,
+                    CustodyPlan.WalkTheRestLimit + 0.01f) &&
+                !CustodyPlan.WalkTheRest(true, 20f),
+                "ROAD-004: a short escorted leg is allowed only when no fresh carrier exists.");
+            Want(failures,
+                LivingCity.UI.LedgerText.CarriageStageLabel(
+                    CarriageStage.Halted, PrisonLeg.Court) ==
+                    "the transfer is halted" &&
+                LivingCity.UI.LedgerText.CarriageStageLabel(
+                    CarriageStage.Riding, PrisonLeg.Prison) ==
+                    "in the van out of town",
+                "ROAD-005: THE LAW reads the shared carriage stages in words.");
+        }
+
+        static void ROAD006_ALiveJourneySavesAtItsSource(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var court = pipe.Book(roster, man.Id, Deed.Affray, 10);
+            var due = new List<Prisoner>();
+            pipe.DayTick(court.CourtDay, due);
+            pipe.Away(court);
+            court.Carriage = CarriageStage.Riding;
+
+            var rows = PrisonSnapshot.Prisoners(pipe, court.CourtDay);
+            Want(failures,
+                rows.Length == 1 &&
+                rows[0].stage == (int)PrisonStage.Held &&
+                rows[0].leg == (int)PrisonLeg.None &&
+                rows[0].courtDay == court.CourtDay + 1,
+                "ROAD-006: a saved court ride returns to the cells on tomorrow's sheet.");
+
+            // The second leg has a different physical source: after sentence he waits
+            // in court custody, and a lost runtime carriage must not erase that verdict.
+            var secondRoster = BookedRoster(out var secondMan, out var secondPipe);
+            var prison = secondPipe.Book(secondRoster, secondMan.Id, Deed.Murder, 20);
+            secondPipe.DayTick(prison.CourtDay, due);
+            secondPipe.Away(prison);
+            secondPipe.Convicted(secondRoster, prison, prison.CourtDay);
+            secondPipe.DayTick(prison.PrisonDay, due);
+            secondPipe.Away(prison);
+            prison.Carriage = CarriageStage.Halted;
+
+            var prisonRows = PrisonSnapshot.Prisoners(secondPipe, prison.PrisonDay);
+            Want(failures,
+                prisonRows.Length == 1 &&
+                prisonRows[0].stage == (int)PrisonStage.Sentenced &&
+                prisonRows[0].leg == (int)PrisonLeg.None &&
+                prisonRows[0].prisonDay == prison.PrisonDay + 1,
+                "ROAD-006: a saved prison ride returns to court custody without losing its sentence.");
+        }
+
         // ------------------------------------------------------------------ the roster
 
         static void ARosterNeverGoesAboveItsStrength(List<string> failures)
@@ -764,9 +953,9 @@ namespace LivingCity.Tests
                            Sentencing.BandLow(Deed.Extortion),
                 "SENTENCE: intimidating a witness is the same band as the extortion " +
                 "it was meant to bury.");
-            Want(failures, Sentencing.DaysToCourt >= 5,
-                "SENTENCE: there must be days enough between the arrest and the court " +
-                "day to play bail, a lawyer and the witnesses in.");
+            Want(failures, Sentencing.DaysToCourt == 1,
+                "SENTENCE: a man is held one day and tried the next (ruling of " +
+                "2026-09-04) - the court leg runs on the first day tick after the arrest.");
             foreach (Deed deed in Enum.GetValues(typeof(Deed)))
             {
                 Want(failures, Sentencing.BandHigh(deed) >= Sentencing.BandLow(deed),
@@ -1062,7 +1251,9 @@ namespace LivingCity.Tests
                 OwnerId = man.Id, HolderId = man.Id,
             });
 
-            var prisoner = pipe.Book(roster, man.Id, Deed.Murder, 10);
+            var file = pipe.OpenCase(Deed.Murder, 0, 10,
+                10 + Sentencing.DaysToCourt, "road-wreck", "THE ROAD");
+            var prisoner = pipe.Book(roster, man.Id, Deed.Murder, 10, file);
             var riding = new List<Prisoner>();
             var courtDay = 10 + Sentencing.DaysToCourt;
             pipe.DayTick(courtDay, riding);
@@ -1079,6 +1270,9 @@ namespace LivingCity.Tests
             Want(failures, roster.Equipment[0].OwnerId == man.Id ||
                            roster.Equipment[0].OwnerId != RosterEquipment.Unheld,
                 "PIPE: the gun still belongs to the branch that bought it.");
+            Want(failures, file.Status == CaseStatus.Open &&
+                           file.ExtraCharges.Contains(Deed.Resisting),
+                "PIPE: a transfer escape leaves the case open with resisting on it.");
             Want(failures, pipe.EverEscaped(man.Id), "PIPE: the city remembers an escape.");
             Want(failures, pipe.Find(man.Id) == null, "PIPE: a freed man leaves the pipe.");
 

@@ -64,6 +64,9 @@ namespace RoadDemo
         // ------------------------------------------------------------------ body
 
         public Transform Tf;
+        /// <summary>The name shown on an order card. Owned cars replace it from the
+        /// ledger; civic cars keep their service name.</summary>
+        public string DisplayName = "Car";
         public float HalfLen = 2.3f;
         public float HalfWide = 0.95f;
         /// <summary>Metres from the body's origin back to the rear axle: the point that
@@ -155,6 +158,127 @@ namespace RoadDemo
             Wrecked = true;
             Speed = 0f;
             Leave();
+            OnWrecked();
+        }
+
+        /// <summary>A derived vehicle may release auxiliary static claims when its
+        /// physical body is destroyed.</summary>
+        protected virtual void OnWrecked() { }
+
+        // ------------------------------------------------------------------ the tin
+
+        /// <summary>Rounds that found something in the engine bay. Shared by every car:
+        /// police paint is no harder than an outfit car's paint.</summary>
+        public int EngineHits { get; private set; }
+
+        public static int EngineHitsToKill = 3;
+        public static float EngineChance = 0.4f;
+
+        public bool EngineDead => EngineHits >= EngineHitsToKill;
+        public bool EngineJustDied { get; private set; }
+
+        /// <summary>A round into the body. The front third may stop the engine; every
+        /// round leaves its hole on the panel it reached.</summary>
+        public void TakeRound(Vector3 at, Vector3 from)
+        {
+            if (Tf == null || Wrecked) return;
+            var local = Tf.InverseTransformPoint(at);
+            var bonnet = local.z > HalfLength * 0.34f;
+            if (bonnet && !EngineDead && Random.value < EngineChance)
+            {
+                EngineHits++;
+                if (EngineDead)
+                {
+                    EngineJustDied = true;
+                    CarSmoke.Bonnet(this);
+                }
+            }
+
+            var acrossness = Mathf.Abs(local.x) / Mathf.Max(HalfWidth, 1e-3f);
+            var alongness = Mathf.Abs(local.z) / Mathf.Max(HalfLength, 1e-3f);
+            var outward = acrossness >= alongness
+                ? Tf.right * Mathf.Sign(local.x == 0f ? 1f : local.x)
+                : Tf.forward * Mathf.Sign(local.z == 0f ? 1f : local.z);
+            CrewGore.Hole(Tf, at, outward);
+        }
+
+        public bool TakeEngineDeath()
+        {
+            if (!EngineJustDied) return false;
+            EngineJustDied = false;
+            return true;
+        }
+
+        /// <summary>Immediate recovery used by a transfer facing a full-width player
+        /// barricade. It ignores the normal near-junction jam gate: first turn round if
+        /// the sweep is available, otherwise reverse far enough to make another attempt.</summary>
+        public bool EscapeBarricade()
+        {
+            if (Wrecked || Derelict) return false;
+            // Finish clearing a junction before stopping, or simply brake if the car
+            // has not yet settled on a lane. Both are live waiting states: RouteTo
+            // wakes the car when MOVE ON opens the road again.
+            if (Road == null || Via != null)
+            {
+                BrakeForBarricade();
+                return true;
+            }
+            if (_man == Manoeuvre.UTurn || _man == Manoeuvre.Reverse)
+            {
+                _halted = false;
+                return true;
+            }
+            if (Mathf.Abs(Speed) > Profile.UTurnSpeed + 1.5f)
+            {
+                BrakeForBarricade();
+                return true;
+            }
+            _halted = false;
+            if (TryUTurn(escape: true))
+            {
+                // Once round, take the graph's long way to the destination. Leaving the
+                // ordinary in-road turn preference armed would turn straight back into
+                // the same full-width block on the following tick.
+                _turnBackFor = TurnBackPatience + 1f;
+                return true;
+            }
+            if (Sliding) return true;
+            if (TryReverse(null)) return true;
+            BrakeForBarricade();
+            return true;
+        }
+
+        void BrakeForBarricade()
+        {
+            // Unlike Halt, this keeps the destination and next-hop table. They are what
+            // the escape manoeuvre will re-plan from once the car has slowed enough to
+            // turn; clearing them here made every successful U-turn immediately turn
+            // back toward the obstruction.
+            _haltHard = true;
+            _freeGoal = null;
+            if (Via != null)
+            {
+                _haltWhenClear = true;
+                _keepGoalWhenHaltClear = true;
+                return;
+            }
+            _haltWhenClear = false;
+            _keepGoalWhenHaltClear = false;
+            _halted = true;
+            if (_man != Manoeuvre.UTurn && _man != Manoeuvre.Reverse)
+            {
+                _man = Manoeuvre.None;
+                ClearClaim();
+            }
+        }
+
+        /// <summary>Gunfire has finished this carrier as a moving vehicle. It remains a
+        /// road obstacle and can be routed around, unlike a bombed wreck.</summary>
+        public void StandDerelict()
+        {
+            Halt(hard: true);
+            if (Mathf.Abs(Speed) < 0.05f && Via == null)
+                StandDown();
         }
 
         /// <summary>What held the car back this frame, for the overlay and the sim.</summary>
@@ -698,6 +822,7 @@ namespace RoadDemo
         /// the brake - until the next order. Stood in the lane it is in everyone's
         /// way, and they go round it; that is the caller's choice.</summary>
         bool _haltWhenClear;
+        bool _keepGoalWhenHaltClear;
 
         public void Halt(bool hard)
         {
@@ -709,6 +834,7 @@ namespace RoadDemo
             if (Via != null)
             {
                 _haltWhenClear = true;
+                _keepGoalWhenHaltClear = false;
                 _haltHard = hard;
                 _hasGoal = false;
                 Route = null;
@@ -717,6 +843,7 @@ namespace RoadDemo
                 return;
             }
             _haltWhenClear = false;
+            _keepGoalWhenHaltClear = false;
             _hasGoal = false;
             Route = null;
             _turnFirst = false;
@@ -3687,7 +3814,14 @@ namespace RoadDemo
             if (Mathf.Abs(S - _boxEntryS) <= HalfLen + 0.8f) return;
             LeaveBox();
             // the stop that was asked for while we were crossing: here, clear of the box
-            if (_haltWhenClear) { _haltWhenClear = false; Halt(_haltHard); }
+            if (_haltWhenClear)
+            {
+                var keepGoal = _keepGoalWhenHaltClear;
+                _haltWhenClear = false;
+                _keepGoalWhenHaltClear = false;
+                if (keepGoal) BrakeForBarricade();
+                else Halt(_haltHard);
+            }
         }
 
         // ------------------------------------------------------------------ people
@@ -3793,17 +3927,65 @@ namespace RoadDemo
             OnPlaced(dt, Speed, 0f);
         }
 
+        // A 10x city's next-hop table is too expensive to walk in every TurfMap redraw.
+        // Keep sampled geometry until a route edge, goal or manoeuvre actually changes;
+        // callers still own their output buffers and therefore allocate nothing here.
+        readonly List<Vector3> _plannedRoutePreview = new List<Vector3>();
+        readonly List<Vector3> _plannedRouteScratch = new List<Vector3>();
+        Dictionary<RoadEdge, RoadEdge> _previewRoute;
+        Carriageway _previewRoad, _previewGoalRoad;
+        RoadEdge _previewLane, _previewGoalLane;
+        Connector _previewVia;
+        Manoeuvre _previewMan;
+        Vector3? _previewFreeGoal;
+        float _previewGoalS, _previewGoalD, _previewSpacing;
+        int _previewGoalHeading, _previewCursor;
+        bool _previewHasGoal, _previewTurnFirst, _previewBuilt, _previewValid;
+
         /// <summary>Copies the route this driver currently means to take into a caller-owned
-        /// buffer. This is a read-only view for overlays: it follows the same lane table,
-        /// junction connectors, lane shifts and turn-round decision as the driver, and
-        /// allocates nothing while it is being redrawn.</summary>
-        public bool CopyPlannedRoute(List<Vector3> into, float spacing = 4f)
+        /// buffer. The expensive lane-table walk is cached across redraws and rebuilt only
+        /// when the route, goal, road edge or active manoeuvre changes.</summary>
+        public bool CopyPlannedRoute(List<Vector3> into, float spacing = 4f,
+            bool retainLastPlan = false)
         {
             if (into == null) return false;
             into.Clear();
             if (Tf == null) return false;
 
             spacing = Mathf.Clamp(spacing, 1f, 12f);
+            if (PreviewChanged(spacing))
+            {
+                _plannedRouteScratch.Clear();
+                var rebuilt = BuildPlannedRoute(_plannedRouteScratch, spacing);
+                if (rebuilt)
+                {
+                    _plannedRoutePreview.Clear();
+                    _plannedRoutePreview.AddRange(_plannedRouteScratch);
+                    _previewCursor = 0;
+                    _previewValid = true;
+                }
+                else if (!retainLastPlan)
+                {
+                    _plannedRoutePreview.Clear();
+                    _previewCursor = 0;
+                    _previewValid = false;
+                }
+                // A transfer halted by gunfire has deliberately dropped its RoadCar
+                // goal, but the announced route is still the route the escort intends
+                // to recover. Its caller opts into retaining the last valid sample.
+                RememberPreview(spacing);
+            }
+            if (!_previewValid || _plannedRoutePreview.Count < 2) return false;
+
+            AdvancePreviewCursor(spacing);
+            PreviewAdd(into, PreviewCurrent());
+            for (var i = _previewCursor; i < _plannedRoutePreview.Count; i++)
+                PreviewAdd(into, _plannedRoutePreview[i]);
+            return into.Count > 1;
+        }
+
+        bool BuildPlannedRoute(List<Vector3> into, float spacing)
+        {
             PreviewAdd(into, PreviewCurrent());
 
             if (_freeGoal.HasValue)
@@ -3894,6 +4076,64 @@ namespace RoadDemo
 
             into.Clear();
             return false;
+        }
+
+        bool PreviewChanged(float spacing) =>
+            !_previewBuilt ||
+            !Mathf.Approximately(_previewSpacing, spacing) ||
+            _previewRoute != Route ||
+            _previewRoad != Road ||
+            _previewLane != Lane ||
+            _previewVia != Via ||
+            _previewGoalRoad != _goalRoad ||
+            _previewGoalLane != _goalLane ||
+            _previewHasGoal != _hasGoal ||
+            _previewGoalHeading != _goalHeading ||
+            !Mathf.Approximately(_previewGoalS, _goalS) ||
+            !Mathf.Approximately(_previewGoalD, _goalD) ||
+            _previewFreeGoal != _freeGoal ||
+            _previewMan != _man ||
+            _previewTurnFirst != _turnFirst;
+
+        void RememberPreview(float spacing)
+        {
+            _previewBuilt = true;
+            _previewSpacing = spacing;
+            _previewRoute = Route;
+            _previewRoad = Road;
+            _previewLane = Lane;
+            _previewVia = Via;
+            _previewGoalRoad = _goalRoad;
+            _previewGoalLane = _goalLane;
+            _previewHasGoal = _hasGoal;
+            _previewGoalHeading = _goalHeading;
+            _previewGoalS = _goalS;
+            _previewGoalD = _goalD;
+            _previewFreeGoal = _freeGoal;
+            _previewMan = _man;
+            _previewTurnFirst = _turnFirst;
+        }
+
+        void AdvancePreviewCursor(float spacing)
+        {
+            if (_previewCursor >= _plannedRoutePreview.Count) return;
+            var here = Position;
+            here.y = 0f;
+            var last = Mathf.Min(_plannedRoutePreview.Count - 1, _previewCursor + 8);
+            var nearest = _previewCursor;
+            var nearestSqr = float.MaxValue;
+            for (var i = _previewCursor; i <= last; i++)
+            {
+                var point = _plannedRoutePreview[i];
+                point.y = 0f;
+                var sqr = (point - here).sqrMagnitude;
+                if (sqr >= nearestSqr) continue;
+                nearestSqr = sqr;
+                nearest = i;
+            }
+            var catchup = Mathf.Max(8f, spacing * 2.5f);
+            if (nearestSqr <= catchup * catchup)
+                _previewCursor = nearest;
         }
 
         const float PreviewLift = 0.14f;

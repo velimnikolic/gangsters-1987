@@ -76,6 +76,11 @@ namespace RoadDemo
         List<GameObject> _officerPrefabs = new List<GameObject>();
         PedClips _clips;
         AnimationClip _sitLoop;
+
+        internal AnimationClip CarriageSitLoop => _sitLoop;
+
+        readonly Dictionary<RoadCar, int> _tinIncident =
+            new Dictionary<RoadCar, int>();
         readonly List<IPoliceUnit> _units = new List<IPoliceUnit>();
         readonly Dictionary<IPoliceUnit, PoliceLights> _lights = new Dictionary<IPoliceUnit, PoliceLights>();
         readonly List<Squad> _squads = new List<Squad>();
@@ -204,6 +209,31 @@ namespace RoadDemo
             if (LivingCity.Police.PoliceProcedure.ShotAtPoliceStartsSwarm(
                     targetIsPolice: true, defensiveReturn: defensive))
                 RaiseSwarm(beat.Position, SwarmGrade.ShotsFired, attacker);
+        }
+
+        /// <summary>A transfer and its arrest-side predecessor both need real officers,
+        /// dealt by the dispatcher's one police-body factory.</summary>
+        internal DemoCrews.Unit SpawnCarriageEscort(Vector3 at, Vector3 facing) =>
+            SpawnSquad(at, facing, 2, aboardOf: null);
+
+        internal void RetireCarriageEscort(DemoCrews.Unit escort)
+        {
+            if (escort != null && !escort.Wiped)
+                _crews?.RemoveUnit(escort);
+        }
+
+        /// <summary>The ordinary OnShot gate cannot see a car mark. This closes that
+        /// hole and de-duplicates every round after the first in one street incident.</summary>
+        internal bool ShotAtPoliceCar(RoadCar car, CrewWalker shooter)
+        {
+            if (car == null || shooter == null || _crews == null) return false;
+            var incident = StreetAlarm.IncidentNumber;
+            if (_tinIncident.TryGetValue(car, out var raised) && raised == incident)
+                return false;
+            _tinIncident[car] = incident;
+            var culprit = _crews.UnitOf(shooter);
+            RaiseSwarm(car.Position, SwarmGrade.ShotsFired, culprit);
+            return true;
         }
 
         /// <summary>The crew demo's cruiser: a CrewCar with its two officers already in

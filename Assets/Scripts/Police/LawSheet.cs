@@ -384,7 +384,10 @@ namespace LivingCity.Police
                     CharacterId = prisoner.CharacterId,
                     Name = member.FullName,
                     Charge = Sentencing.ChargeFor(prisoner.Deed),
-                    Stage = LedgerText.StageLabel(prisoner.Stage),
+                    Stage = prisoner.Carriage.HasValue
+                        ? LedgerText.CarriageStageLabel(prisoner.Carriage.Value,
+                            prisoner.Leg)
+                        : LedgerText.StageLabel(prisoner.Stage),
                     CourtDay = prisoner.CourtDay,
                     OutOnDay = prisoner.OutOnDay,
                     Life = Sentencing.IsLife(prisoner.SentenceDays),

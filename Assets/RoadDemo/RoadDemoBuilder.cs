@@ -4170,11 +4170,10 @@ namespace RoadDemo
         /// parcel for it (CoreDistrict.StandCourthouse) and a grid city would pack it out
         /// of the catalogue like any other building.
         ///
-        /// What the force needs off it is one point: where a transfer pulls in. That is
-        /// the face looking at the nearest street, a car's length out from it, which is
-        /// the same reading a station's forecourt gets. Where no court stands, nothing is
-        /// handed over and the first leg drives out of town exactly as it did - a leg does
-        /// not pretend to arrive somewhere nobody built.
+        /// What the force needs off it is two measured points: the kerb where the car
+        /// stops and the actual doorstep the prisoner must cross. Where no court stands,
+        /// nothing is handed over and the first leg drives out of town exactly as it did
+        /// - a leg does not pretend to arrive somewhere nobody built.
         /// </summary>
         void FindCourthouse(PoliceForce force)
         {
@@ -4205,21 +4204,39 @@ namespace RoadDemo
                 : outDir == Vector3.left ? b.min.x
                 : outDir == Vector3.forward ? b.max.z : b.min.z;
 
+            var kerb = new Vector3(nearest.x, b.min.y + 0.02f, nearest.z);
             var door = new Vector3(
-                outDir.x != 0f ? face + outDir.x * CourthouseSetback : b.center.x,
+                outDir.x != 0f ? face + outDir.x * CourthouseDoorstep : b.center.x,
                 b.min.y + 0.02f,
-                outDir.z != 0f ? face + outDir.z * CourthouseSetback : b.center.z);
-            force.StandCourthouse(door, "the County Courthouse");
-            Debug.Log("[RoadDemo] the county courthouse stands at " +
-                      door.ToString("F0") + "; transfers drive to it");
+                outDir.z != 0f ? face + outDir.z * CourthouseDoorstep : b.center.z);
+
+            // Both ends are places men stand during the hand-off. Ask the shared walking
+            // ledger for usable ground now, before the transfer is ever ordered there.
+            kerb = WalkObstacles.ClearSpot(kerb, WalkObstacles.Radius);
+            door = WalkObstacles.ClearSpot(door, WalkObstacles.Radius);
+
+            var span = door - kerb;
+            span.y = 0f;
+            var metres = span.magnitude;
+            force.StandCourthouse(kerb, door, "the County Courthouse");
+            Debug.Log("[RoadDemo] county courthouse transfer walk is " +
+                      metres.ToString("F1") + "m, kerb " + kerb.ToString("F1") +
+                      " to door " + door.ToString("F1"));
+            if (metres < CourthouseMinimumWalk)
+                Debug.LogWarning("[RoadDemo] county courthouse kerb-to-door walk is only " +
+                                 metres.ToString("F1") + "m; the court parcel needs at least " +
+                                 CourthouseMinimumWalk.ToString("F0") + "m for a visible hand-off");
         }
 
         /// <summary>The catalogue name of the court, matched the same way the station is.
         /// </summary>
         const string CourthouseName = CoreDistrict.CourthouseName;
 
-        /// <summary>Metres out from the court's face that a transfer pulls in.</summary>
-        const float CourthouseSetback = 6f;
+        /// <summary>The walk ends just outside the face, rather than at the car stop.</summary>
+        const float CourthouseDoorstep = 1.5f;
+
+        /// <summary>A shorter gap is logged as an authored parcel defect.</summary>
+        const float CourthouseMinimumWalk = 4f;
 
         /// <summary>
         /// HOW BIG THE CITY IS, in the two units the law is dealt in.

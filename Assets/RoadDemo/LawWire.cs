@@ -150,6 +150,18 @@ namespace RoadDemo
             File(man != null ? man.Id : -1, man != null ? man.FullName : "",
                 IncidentKind.CutLoose, "");
 
+        public static void Killed(Character man) =>
+            File(man != null ? man.Id : -1, man != null ? man.FullName : "",
+                IncidentKind.PrisonerKilled, "");
+
+        public static void TransferHalted(Character man, string where = "") =>
+            File(man != null ? man.Id : -1, man != null ? man.FullName : "",
+                IncidentKind.TransferHalted, where);
+
+        public static void WalkedIn(Character man) =>
+            File(man != null ? man.Id : -1, man != null ? man.FullName : "",
+                IncidentKind.WalkedIn, "");
+
         /// <summary>What the court did to one man - the one line the player watches
         /// the whole epic for.</summary>
         public static void Verdict(Character man, PrisonStage stage, CaseStatus status,

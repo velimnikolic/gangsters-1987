@@ -700,7 +700,8 @@ namespace RoadDemo
                 // who died in a car leaves no chalk - the car took him)
                 if (man.Tf != null)
                 {
-                    if (man.Tf.gameObject.activeSelf && !IsAboard(man)) CrewGore.Chalk(man, GroundY);
+                    if (man.Tf.gameObject.activeSelf && !IsAboard(man) && !man.Riding)
+                        CrewGore.Chalk(man, GroundY);
                     man.Tf.gameObject.SetActive(false);
                     foreach (var car in Cars) { car.Aboard.Remove(man); car.SeatOf.Remove(man); }
                 }
@@ -1629,6 +1630,12 @@ namespace RoadDemo
             }
             return false;
         }
+        /// <summary>The exact persistent street body for a roster character. Custody
+        /// carriages use this instead of inventing a passenger visual and a position
+        /// pin.</summary>
+        public CrewWalker BodyOf(int characterId) =>
+            characterId >= 0 && _byCharacter.TryGetValue(characterId, out var body)
+                ? body : null;
 
         /// <summary>A bail, acquittal, completed sentence or broken transfer returns
         /// this exact booked body to the street before Sync reads the active roster.
@@ -1660,7 +1667,7 @@ namespace RoadDemo
             if (unit == null) return;
             var force = PoliceForce.Instance;
             var bossHeld = unit.Boss != null && force != null &&
-                force.TryCustodyPosition(unit.Boss.CharacterId, out _);
+                force.KeepsCustodyAlive(unit.Boss.CharacterId);
             unit.CustodyTracked = bossHeld;
             unit.InCustody = bossHeld;
             unit.Surrendered = bossHeld;
@@ -2158,8 +2165,6 @@ namespace RoadDemo
         {
             if (car == null || car.Tf == null || car.Wrecked)
             { ShootCarRefusal = "Nothing left of it to shoot"; return false; }
-            if (car is not CrewCar)
-            { ShootCarRefusal = "Not a machine the crew can be put on"; return false; }
             if (unit == null || unit.Wiped)
             { ShootCarRefusal = "Nobody to give it to"; return false; }
             if (CustodyRefuses(unit))
@@ -2180,7 +2185,7 @@ namespace RoadDemo
         public bool OrderShootCar(RoadCar car)
         {
             if (!CanShootCar(Selected, car)) return false;
-            var machine = (CrewCar)car;
+            var machine = car;
             Unboard(Selected, "a car to shoot up");
             Selected.TargetUnit = null;
             Selected.OrderedFight = false;
@@ -2972,7 +2977,7 @@ namespace RoadDemo
             // suppress the now-active lieutenant and therefore his entire crew.
             foreach (var pair in _byCharacter)
                 if (pair.Key >= 0 && force != null &&
-                    force.TryCustodyPosition(pair.Key, out _))
+                    force.KeepsCustodyAlive(pair.Key))
                     trackedCustodyIds.Add(pair.Key);
             for (var i = 0; i < Units.Count; i++)
             {

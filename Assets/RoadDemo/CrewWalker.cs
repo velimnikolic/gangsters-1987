@@ -121,7 +121,7 @@ namespace RoadDemo
         /// at. A machine stood at the kerb with nobody in it is still worth shooting up
         /// - and it is the one mark in the town that cannot shoot back, so nothing here
         /// looks for cover or waits for it to duck.</summary>
-        public CrewCar CarMark { get; private set; }
+        public RoadCar CarMark { get; private set; }
 
         /// <summary>When he last actually LAID EYES on the man he is shooting at -
         /// the arena stamps it every frame the mark is in sight (DemoCrews.TickCombat).
@@ -1357,7 +1357,7 @@ namespace RoadDemo
         /// <summary>Put his gun on a car and walk him to it. The tin does not have to
         /// be empty - a car with men in it is shot up just as well - but nothing about
         /// this is aimed at the men: the rounds go into the machine (DemoCrews.Resolve).</summary>
-        public void ShootUp(CrewCar car)
+        public void ShootUp(RoadCar car)
         {
             if (Dead || Riding || !Carrying || Panicked) return;
             if (car == null || car.Tf == null || car.Wrecked) return;
@@ -1390,7 +1390,7 @@ namespace RoadDemo
         /// <summary>Where on a machine a man puts his rounds: the middle of it at about
         /// the height of a door. NOT its pivot - a car's origin sits on the road between
         /// its wheels, and a crew aiming at that fires into the tarmac.</summary>
-        public static Vector3 CarAim(CrewCar car) =>
+        public static Vector3 CarAim(RoadCar car) =>
             car == null || car.Tf == null ? Vector3.zero : car.Tf.position + Vector3.up * 0.9f;
 
         /// <summary>Lower the gun and stand.</summary>
@@ -4796,7 +4796,7 @@ namespace RoadDemo
         // name (the crew's chip on the top bar takes the short word, CrewStatus)
         string _statusLine;
         (Mode state, bool retreating, bool alert, CrewWalker target, bool ducked, bool inCover,
-            CrewCar carMark, string heading) _statusKey;
+            RoadCar carMark, string heading) _statusKey;
 
         public string StatusLine
         {

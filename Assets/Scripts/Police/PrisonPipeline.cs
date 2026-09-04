@@ -97,6 +97,11 @@ namespace LivingCity.Police
         /// to run - no car, the patience gone, the car's body lost (AI-006). Reset by
         /// a leg that starts, and by a verdict.</summary>
         public int TransferFails;
+
+        /// <summary>The live physical journey, when there is one. It is intentionally
+        /// absent from PrisonSnapshot: saving a transfer puts the man back at its source
+        /// and the scheduler runs it again.</summary>
+        public CarriageStage? Carriage;
     }
 
     /// <summary>
@@ -771,7 +776,7 @@ namespace LivingCity.Police
                 file.LawyerId = counsel.Id;
 
             // The shopkeeper's nerve is asked ONCE, on the morning of the trial: he has
-            // had five days of the family standing in his doorway to think it over.
+            // had the night, with the family standing in his doorway, to think it over.
             if (file != null && ComplainantStillTalks != null && !ComplainantStillTalks(file))
                 Silence(file, WitnessKind.Complainant);
 
@@ -927,6 +932,12 @@ namespace LivingCity.Police
             prisoner.Leg = PrisonLeg.None;
             _everEscaped.Add(prisoner.CharacterId);
 
+            // The case stays open, but getting out of a police transfer is itself a
+            // count the eventual judge hears. Keep it on the same deed-typed docket
+            // path as the arrest-side spring rather than burying it in prose.
+            AttachCharge(prisoner.CaseId >= 0 ? FindCase(prisoner.CaseId) : null,
+                Deed.Resisting);
+
             member.Status = CharacterStatus.Active;
             member.BackOnDay = 0;
             member.BailedUntil = 0;
@@ -949,6 +960,33 @@ namespace LivingCity.Police
         }
 
         /// <summary>
+        /// KILLED IN THE TRANSFER. The physical death reaches the roster through the
+        /// shared street death channel; this method closes only the court/pipeline side
+        /// of that same death. Keeping those doors separate prevents a blast from
+        /// striking the roster twice.
+        /// </summary>
+        public Prisoner Killed(Roster roster, int characterId, int today)
+        {
+            var prisoner = Find(characterId);
+            if (prisoner == null)
+                return null;
+
+            var member = roster?.Find(characterId);
+            var file = prisoner.CaseId >= 0 ? FindCase(prisoner.CaseId) : null;
+            _inside.Remove(prisoner);
+            prisoner.Stage = PrisonStage.Cleared;
+            prisoner.Leg = PrisonLeg.None;
+            prisoner.Carriage = CarriageStage.Delivered;
+            Note(file, characterId, CaseOutcome.Killed, today,
+                answer: prisoner.Answer, sprung: prisoner.Sprung);
+            ResolveDefendant(file, characterId, CaseStatus.Folded);
+            if (member != null)
+                RapSheet.Add(member, Stamp(today), Sentencing.ChargeFor(prisoner.Deed),
+                    Sentencing.KilledInTransferOutcome);
+            return prisoner;
+        }
+
+        /// <summary>
         /// Freed on the first, station-bound leg. There is deliberately no booking to
         /// undo: the roster remains active, while the escape and wanted truth are still
         /// recorded for the next judge.
@@ -961,6 +999,29 @@ namespace LivingCity.Police
             _everEscaped.Add(characterId);
             WantedLevels.Mark(member, WantedLevels.FreedFromTransfer, today);
             ConfiscateWeapons(roster, characterId);
+
+            // Normally this door is used before booking and there is no pipeline row
+            // to remove. A courthouse transfer creates the one deliberate exception:
+            // the man has walked out of the cells but has not yet sat in the car. Freed
+            // must still refuse him (he never rode), while Sprung releases that exact
+            // ForTransfer row and leaves the open case carrying the resisting count.
+            var transfer = Find(characterId);
+            if (transfer != null && transfer.Stage == PrisonStage.ForTransfer)
+            {
+                _inside.Remove(transfer);
+                transfer.Stage = PrisonStage.Freed;
+                transfer.Leg = PrisonLeg.None;
+                transfer.Sprung = true;
+                transfer.Carriage = null;
+                member.Status = CharacterStatus.Active;
+                member.BackOnDay = 0;
+                member.BailedUntil = 0;
+                member.ConditionNote = "";
+                AttachCharge(transfer.CaseId >= 0 ? FindCase(transfer.CaseId) : null,
+                    Deed.Resisting);
+                RapSheet.Add(member, Stamp(today), Sentencing.ChargeFor(transfer.Deed),
+                    Sentencing.EscapeOutcome);
+            }
             return true;
         }
 

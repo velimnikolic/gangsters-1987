@@ -63,6 +63,10 @@ namespace LivingCity.Police
 
         /// <summary>The boss closed the outfit's file on him while he was inside.</summary>
         CutLoose,
+
+        /// <summary>He died before the state delivered him. Appended so every serialized
+        /// outcome above keeps its value.</summary>
+        Killed,
     }
 
     /// <summary>

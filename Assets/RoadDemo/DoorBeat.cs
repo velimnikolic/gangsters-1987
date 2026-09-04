@@ -772,6 +772,46 @@ namespace RoadDemo
         public static void MoveIn(CrewWalker man, Vector3 doorstep) =>
             Visit(man, doorstep, talk: 0f, hold: true);
 
+        /// <summary>Restore a saved occupant on the far side of an authored doorstep.
+        /// Loading is state reconstruction, not a new walk across town: the body is put
+        /// inside immediately but retains an ordinary held DoorBeat, so SendOut later
+        /// performs the same visible exit as a man who originally walked in.</summary>
+        public static void RestoreInside(CrewWalker man, Vector3 doorstep)
+        {
+            if (man == null || man.Dead || man.Tf == null) return;
+            if (instance == null)
+            {
+                var go = new GameObject("Door Beat") { hideFlags = HideFlags.DontSave };
+                instance = go.AddComponent<DoorBeat>();
+            }
+
+            for (var i = instance.calls.Count - 1; i >= 0; i--)
+                if (instance.calls[i].Man == man)
+                {
+                    instance.calls[i].Swing?.SnapClosed();
+                    instance.calls.RemoveAt(i);
+                }
+
+            doorstep = Standable(doorstep);
+            man.Disengage();
+            man.EndDoorway();
+            man.SetRiding(false);
+            man.Surrendered = true;
+            man.Tf.position = doorstep;
+            man.Tf.gameObject.SetActive(false);
+            instance.calls.Add(new Call
+            {
+                Man = man,
+                Door = doorstep,
+                Home = doorstep,
+                Hold = true,
+                Inside = true,
+                Told = true,
+                Phase = VisitPhase.Inside,
+                StaySeconds = InsideSeconds,
+            });
+        }
+
         /// <summary>Is this man an occupant - PAST the threshold, and staying there? A
         /// man still walking up to the door is under the same order and not yet in it,
         /// which is the difference a crew's move-in waits on.</summary>

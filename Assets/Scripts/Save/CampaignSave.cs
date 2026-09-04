@@ -144,18 +144,20 @@ namespace LivingCity.Save
             var runtime = RoadDemo.TerritoryRuntime.Instance;
             var business = BusinessRuntime.Instance;
             var clock = Object.FindFirstObjectByType<Ambient.CityClock>();
+            var day = underworld.Player != null
+                ? underworld.Player.Runner.Campaign.Day : 1;
 
             var file = new CampaignFile
             {
                 citySeed = underworld.CitySeed,
-                day = underworld.Player != null ? underworld.Player.Runner.Campaign.Day : 1,
+                day = day,
                 hourOfDay = clock != null ? clock.Hour : 0f,
                 underworld = OutfitSnapshot.Snapshot(underworld),
                 territory = runtime != null
                     ? TerritorySnapshot.Snapshot(runtime.Racket, runtime.Dues, runtime.Rounds)
                     : new TerritoryDto(),
                 deeds = Deeds(),
-                prisoners = Save.PrisonSnapshot.Prisoners(Pipe()),
+                prisoners = Save.PrisonSnapshot.Prisoners(Pipe(), day),
                 escaped = Escapes(),
                 prisonRosterSeed = Pipe() != null ? Pipe().RosterSeed : 0,
                 cases = Save.PrisonSnapshot.Cases(Pipe()),
@@ -246,7 +248,12 @@ namespace LivingCity.Save
             // THE CELLS, after the rosters: the men have to exist before the pipe can
             // hold them.
             if (prison != null)
+            {
                 Save.PrisonSnapshot.Restore(prison, file);
+                var force = RoadDemo.PoliceForce.Instance;
+                if (force != null && force.Pipeline == prison)
+                    force.RestoreCustodyFromSave();
+            }
         }
 
         // ------------------------------------------------------------------- pieces

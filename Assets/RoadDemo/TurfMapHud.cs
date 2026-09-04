@@ -658,8 +658,27 @@ namespace RoadDemo
         void HoverBlock(Vector2 screen, bool overChrome)
         {
             var runtime = TerritoryRuntime.Instance;
-            if (overChrome || _mapChrome.MenuOpen || runtime?.PlayerQuery == null ||
+            if (overChrome || _mapChrome.MenuOpen ||
                 !TryGroundAt(screen, out var ground))
+            {
+                _mapChrome.HideBlockTip();
+                _hoverBlock = default;
+                return;
+            }
+
+            // Once the wire has put a transfer on the road it is public tactical
+            // knowledge, even through the map's ordinary fog. Give that exceptional
+            // mark a matching read: the carriage stage, rather than the block hidden
+            // underneath it, is what the pointer names.
+            if (TryTransferNear(ground, out var transferText))
+            {
+                _hoverBlock = default;
+                _hoverText = transferText;
+                _mapChrome.ShowBlockTip(_hoverText, screen);
+                return;
+            }
+
+            if (runtime?.PlayerQuery == null)
             {
                 _mapChrome.HideBlockTip();
                 _hoverBlock = default;
@@ -726,6 +745,39 @@ namespace RoadDemo
 
         LivingCity.Territory.TerritoryBlockId _hoverBlock;
         string _hoverText = "";
+
+        bool TryTransferNear(Vector2 ground, out string label)
+        {
+            label = "";
+            var force = Force;
+            PolicePatrolCar nearest = null;
+            var nearestLeg = LivingCity.Police.PrisonLeg.None;
+            var nearestStage = LivingCity.Police.CarriageStage.Calling;
+            var best = 18f * 18f;
+
+            for (var i = 0; force != null && i < force.Transfers; i++)
+            {
+                if (!force.TryGetTransfer(i, out var transfer, out var leg, out var stage) ||
+                    transfer == null || transfer.Tf == null || !TransferAnnounced(stage))
+                    continue;
+                var dx = transfer.Tf.position.x - ground.x;
+                var dz = transfer.Tf.position.z - ground.y;
+                var sqr = dx * dx + dz * dz;
+                if (sqr >= best)
+                    continue;
+                best = sqr;
+                nearest = transfer;
+                nearestLeg = leg;
+                nearestStage = stage;
+            }
+
+            if (nearest == null)
+                return false;
+
+            label = "PRISONER TRANSFER\n" +
+                    LivingCity.UI.LedgerText.CarriageStageLabel(nearestStage, nearestLeg);
+            return true;
+        }
 
         DemoCrews.Unit BagNear(Vector2 ground)
         {
@@ -2764,12 +2816,19 @@ namespace RoadDemo
             // rest and would read as one; a player who has been told a man of his is on
             // the road has to be able to find the car without hunting over the whole
             // plate, so it is drawn BIG over the ordinary mark it already has. Every one
-            // of them: two men due on the same day ride in two cars.
+            // of them: two men due on the same day ride in two cars. The announcement is
+            // also the reveal: unlike ordinary traffic this route and mark do not consult
+            // MapVisionRegistry.
             var force = Force;
             for (var i = 0; force != null && i < force.Transfers; i++)
-                if (force.TryGetTransfer(i, out var transfer, out _) &&
-                    MapVehicleVisible(transfer))
+                if (force.TryGetTransfer(i, out var transfer, out _, out var stage) &&
+                    transfer != null && transfer.Tf != null && TransferAnnounced(stage))
+                {
+                    if (transfer.CopyPlannedRoute(_movementPath,
+                            retainLastPlan: true) && _movementPath.Count > 1)
+                        DrawTransferRoute(_movementPath);
                     DrawCar(transfer, TurfInk.Ink, true);
+                }
 
             if (_crews != null)
                 foreach (var car in _crews.Cars)
@@ -2782,6 +2841,12 @@ namespace RoadDemo
 
         static bool MapVehicleVisible(RoadCar car) =>
             car != null && car.Tf != null && MapVisionRegistry.IsVisible(car.Tf.position);
+
+        static bool TransferAnnounced(LivingCity.Police.CarriageStage stage) =>
+            stage == LivingCity.Police.CarriageStage.Riding ||
+            stage == LivingCity.Police.CarriageStage.Halted ||
+            stage == LivingCity.Police.CarriageStage.WalkingIn ||
+            stage == LivingCity.Police.CarriageStage.Delivered;
 
         /// <summary>
         /// A vehicle: a body that narrows at both ends, a dark cabin, and one pale
@@ -2896,6 +2961,41 @@ namespace RoadDemo
             _live.Px(cx - reach, cy + reach, reach * 2 + 1, weight, colour);
             _live.Px(cx - reach, cy - reach, weight, reach * 2 + 1, colour);
             _live.Px(cx + reach, cy - reach, weight, reach * 2 + 1, colour);
+        }
+
+        /// <summary>The transfer's public route. It is always present once announced,
+        /// independent of the player's I-key movement overlay, and dashed so it cannot
+        /// be mistaken for an order issued to one of his own cars.</summary>
+        void DrawTransferRoute(List<Vector3> worldPath)
+        {
+            const int weight = 2;
+            Vector2 previous = RoutePixel(worldPath[0]);
+            for (var i = 1; i < worldPath.Count; i++)
+            {
+                var next = RoutePixel(worldPath[i]);
+                DrawDashedRouteLeg(previous, next, weight, TurfInk.Red);
+                previous = next;
+            }
+        }
+
+        void DrawDashedRouteLeg(Vector2 from, Vector2 to, int weight, Color32 colour)
+        {
+            if (!ClipRouteLeg(ref from, ref to))
+                return;
+
+            var delta = to - from;
+            var length = delta.magnitude;
+            if (length < 0.5f)
+                return;
+            var direction = delta / length;
+            const float dash = 5f;
+            const float gap = 4f;
+            for (var at = 0f; at < length; at += dash + gap)
+            {
+                var end = Mathf.Min(at + dash, length);
+                DrawRouteLeg(from + direction * at, from + direction * end,
+                    weight, colour);
+            }
         }
 
         Vector2 RoutePixel(Vector3 world)

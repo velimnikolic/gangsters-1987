@@ -20,12 +20,18 @@ namespace RoadDemo
     {
         public enum Mode { Parked, Driving, DriveBy }
 
+        static readonly List<CrewCar> ActiveRoadblocks = new List<CrewCar>();
+
+        /// <summary>Player cars currently standing across a carriageway. Police transfer
+        /// logic reads this through <see cref="RoadblockAhead"/>; it does not need a
+        /// parallel trigger or physics-only idea of what is blocking the street.</summary>
+        public static IReadOnlyList<CrewCar> Roadblocks => ActiveRoadblocks;
+
         public CarBody Body { get; private set; }
 
         /// <summary>The ledger equipment item this car stands for; -1 until the first
         /// deal binds it to the roster's first vehicle.</summary>
         public int ItemId = -1;
-        public string DisplayName = "Car";
 
         /// <summary>Not the outfit's at all - a police cruiser the dispatcher drives:
         /// the books never bind it, the outfit never boards it.</summary>
@@ -67,6 +73,17 @@ namespace RoadDemo
         Carriageway _driveByRoad;
         bool _localPass;
 
+        Carriageway _roadblockRoad;
+        float _roadblockS;
+        int _roadblockHeading;
+        bool _roadblockOrdered;
+        StoodCar _roadblockTraffic;
+        SidewalkPlan _roadblockWalk;
+
+        /// <summary>This body has reached its order and is now the roadblock, rather than
+        /// merely being on the way to establish one.</summary>
+        public bool IsRoadblock => _roadblockTraffic != null;
+
         protected override bool RequiresInRoadTurn =>
             DriveByTarget != null && _localPass && Road == _driveByRoad;
 
@@ -75,6 +92,9 @@ namespace RoadDemo
             Profile = DriverProfile.Gangster;
             Tag = "crew";
         }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetRoadblocks() => ActiveRoadblocks.Clear();
 
         // ------------------------------------------------------------------ setup
 
@@ -128,79 +148,6 @@ namespace RoadDemo
         public void SetWindow(int seat, bool down) => Body?.SetWindow(seat, down);
         public void CloseAllWindows() => Body?.CloseAllWindows();
 
-        // ------------------------------------------------------------------ the tin
-
-        /// <summary>Rounds that went into the engine bay. A car is not a health bar and
-        /// this is not one either: it counts the rounds that went into the FRONT of it,
-        /// and everything else a round does to a car it does to the paint.</summary>
-        public int EngineHits { get; private set; }
-
-        /// <summary>What the engine takes before it stops, and how much of a round that
-        /// went through the bonnet ever reaches anything that matters.
-        ///
-        /// A bonnet is mostly air, a radiator and a lot of tin. Most of what goes through
-        /// one goes through it. So killing a car is DELIBERATE - about thirty rounds into
-        /// the front of it - rather than a thing that happens to a crew because a fight
-        /// went on a while: at fourteen straight bonnet hits the first test run lost its
-        /// car to a rival crew's stray fire inside a minute, which is not "we shot the
-        /// engine out", it is "cars stop working".</summary>
-        public static int EngineHitsToKill = 3;
-
-        /// <summary>Of the rounds that go into the bonnet, this many find something that
-        /// turns.
-        ///
-        /// The pair of them were first set for a car that stands under fire all day, and
-        /// that car does not exist: over thirty runs of the soak the whole quarter put
-        /// 178 rounds into the outfit's tin and 22 of those into something that turns -
-        /// four in the busiest single run, against a threshold of ten. A consequence
-        /// nothing can reach is not a consequence. Three, at four rounds in ten, is about
-        /// SEVEN into the front of one car: sustained fire into a bonnet, which is what
-        /// the player asked for, and still not something a stray gets you.</summary>
-        public static float EngineChance = 0.4f;
-
-        /// <summary>Nothing under the bonnet is turning. The car rolls to a stop and
-        /// stays where it stops - DemoCrews puts the crew out of it.</summary>
-        public bool EngineDead => EngineHits >= EngineHitsToKill;
-
-        /// <summary>True on the frame the engine died, for whoever wants to say so.</summary>
-        public bool EngineJustDied { get; private set; }
-
-        /// <summary>A round into the tin. Where it went decides what it cost: the front
-        /// third is the engine bay, everything behind that is a hole in a door.</summary>
-        public void TakeRound(Vector3 at, Vector3 from)
-        {
-            if (Tf == null) return;
-            var local = Tf.InverseTransformPoint(at);
-            bool bonnet = local.z > HalfLength * 0.34f;
-            if (bonnet && !EngineDead && Random.value < EngineChance)
-            {
-                EngineHits++;
-                // the smoke is lit HERE and not where EngineJustDied is read: that flag is
-                // a one-shot for whichever caller wants to say so out loud, and a car whose
-                // engine has been shot out must look shot out to anybody who happens to be
-                // driving it, announced or not
-                if (EngineDead) { EngineJustDied = true; CarSmoke.Bonnet(this); }
-            }
-            // WHICH PANEL IT WENT THROUGH, not which way the shooter was stood. The
-            // hole lies in the tin, so what it needs is the tin's own normal: the flank
-            // it is nearest, or the front or back when the round went into an end. Read
-            // off the box the car already is, in the car's own frame.
-            float acrossness = Mathf.Abs(local.x) / Mathf.Max(HalfWidth, 1e-3f);
-            float alongness = Mathf.Abs(local.z) / Mathf.Max(HalfLength, 1e-3f);
-            var outward = acrossness >= alongness
-                ? Tf.right * Mathf.Sign(local.x == 0f ? 1f : local.x)
-                : Tf.forward * Mathf.Sign(local.z == 0f ? 1f : local.z);
-            CrewGore.Hole(Tf, at, outward);
-        }
-
-        /// <summary>Read once - the caller that says "the engine's gone" clears it.</summary>
-        public bool TakeEngineDeath()
-        {
-            if (!EngineJustDied) return false;
-            EngineJustDied = false;
-            return true;
-        }
-
         /// <summary>A crew's car brakes for everybody EXCEPT the men it is fighting.
         ///
         /// A rival's man walks into the road, stops in front of the bonnet, and the car
@@ -244,6 +191,10 @@ namespace RoadDemo
         /// Off any road, the point is the stop.</summary>
         public void ParkNear(Vector3 point)
         {
+            // Any ordinary driving order is also an unambiguous MOVE ON. The static
+            // traffic/walking claims have to leave before this RoadCar rejoins its lane.
+            if (IsRoadblock && !ResumeFromRoadblock()) return;
+            if (_roadblockOrdered) ClearRoadblockOrder();
             DriveByTarget = null;
             _driveByRoad = null;
             _localPass = false;
@@ -267,12 +218,147 @@ namespace RoadDemo
             if (!GoTo(point, park: true)) GoFree(new Vector3(point.x, RoadY, point.z));
         }
 
+        /// <summary>Can this point name an actual carriageway on which the selected car
+        /// can stand across the road? Used by the command card so an impossible order is
+        /// shown faded instead of being accepted and silently becoming a free-ground
+        /// drive.</summary>
+        public bool CanRoadblockAt(Vector3 point)
+        {
+            if (Civic || Wrecked || EngineDead || Tf == null || Net == null) return false;
+            return Net.Locate(point, out _, out _, within: 12f) != null;
+        }
+
+        /// <summary>Drive to the road point, stop, then turn the real car body across the
+        /// carriageway. On arrival it is transferred from the moving RoadCar ledger to a
+        /// StoodCar claim for traffic and one equivalent SidewalkPlan box for walkers.</summary>
+        public bool OrderRoadblock(Vector3 point)
+        {
+            if (!CanRoadblockAt(point)) return false;
+            if (IsRoadblock && !ResumeFromRoadblock()) return false;
+
+            var road = Net.Locate(point, out float s, out float d, within: 12f);
+            if (road == null) return false;
+
+            DriveByTarget = null;
+            _driveByRoad = null;
+            _localPass = false;
+            _roadblockRoad = road;
+            _roadblockS = Mathf.Clamp(s, 6f, road.Length - 6f);
+            _roadblockHeading = Road == road ? Heading : d >= 0f ? 1 : -1;
+            if (road.LaneFor(_roadblockHeading, d) == null) _roadblockHeading = -_roadblockHeading;
+            _roadblockOrdered = GoTo(road.Pose(_roadblockS, d), park: false,
+                standOff: 0f, stopAtGoal: true, wantHeading: _roadblockHeading);
+            if (_roadblockOrdered) return true;
+
+            ClearRoadblockOrder();
+            return false;
+        }
+
+        /// <summary>Remove the physical roadblock and drive far enough on to clear the
+        /// queued traffic. Safe to call when the car is not a roadblock.</summary>
+        public bool MoveOnFromRoadblock()
+        {
+            if (!IsRoadblock) return false;
+            var road = _roadblockRoad;
+            float s = _roadblockS;
+            int heading = _roadblockHeading;
+            if (!ResumeFromRoadblock()) return false;
+            ParkNear(road.Pose(Mathf.Clamp(s + heading * 30f, 6f, road.Length - 6f),
+                road.KerbD(heading, HalfWide)));
+            return true;
+        }
+
+        /// <summary>The nearest established player roadblock ahead on this same
+        /// carriageway. Crosswise bodies are deliberately detected by their road-s, not
+        /// by a loose world radius that could mistake a parallel street for this one.</summary>
+        public static bool RoadblockAhead(RoadCar traveller, float reach, out CrewCar blockade)
+        {
+            blockade = null;
+            if (traveller == null || traveller.Road == null || reach < 0f) return false;
+            float nearest = float.MaxValue;
+            for (int i = ActiveRoadblocks.Count - 1; i >= 0; i--)
+            {
+                var car = ActiveRoadblocks[i];
+                if (car == null || !car.IsRoadblock || car.Wrecked || car.Tf == null)
+                {
+                    ActiveRoadblocks.RemoveAt(i);
+                    continue;
+                }
+                if (car._roadblockRoad != traveller.Road) continue;
+                float ahead = (car._roadblockS - traveller.S) * traveller.Heading;
+                float berth = traveller.HalfLength + car.HalfWidth;
+                if (ahead < -berth || ahead > reach || ahead >= nearest) continue;
+                nearest = ahead;
+                blockade = car;
+            }
+            return blockade != null;
+        }
+
+        void EstablishRoadblock()
+        {
+            if (!_roadblockOrdered || _roadblockRoad == null || Tf == null || Wrecked) return;
+            _roadblockOrdered = false;
+
+            // Put the model at the road crown and the visible nose at right angles. It
+            // leaves the moving ledger before the static claim is added, so traffic sees
+            // exactly one car occupying this body.
+            PlaceAt(_roadblockRoad.Pose(_roadblockS, 0f), _roadblockRoad.Right);
+            Despawn();
+            StreetTraffic.Users.Remove(this);
+            Tf.SetPositionAndRotation(Tf.position,
+                Quaternion.LookRotation(_roadblockRoad.Right, Vector3.up));
+
+            _roadblockTraffic = StoodCar.Park(Tf.gameObject);
+            _roadblockWalk = new SidewalkPlan();
+            var box = SidewalkPlan.Make(new Vector2(Tf.position.x, Tf.position.z),
+                Tf.eulerAngles.y, new Vector2(HalfWide, HalfLen), solid: true);
+            _roadblockWalk.Take(box);
+            WalkObstacles.RegisterPlan(_roadblockWalk);
+            if (!ActiveRoadblocks.Contains(this)) ActiveRoadblocks.Add(this);
+        }
+
+        bool ResumeFromRoadblock()
+        {
+            if (!IsRoadblock) return true;
+            var road = _roadblockRoad;
+            float s = _roadblockS;
+            int heading = _roadblockHeading;
+            ReleaseRoadblockClaims();
+            if (road == null || Tf == null || Wrecked) return false;
+            var lane = road.LaneFor(heading, 0f) ?? road.LaneFor(-heading, 0f);
+            if (lane == null) return false;
+            heading = lane.Heading;
+            if (!PlaceAt(road.Pose(s, lane.Offset), road.Axis * heading)) return false;
+            if (!StreetTraffic.Users.Contains(this)) StreetTraffic.Users.Add(this);
+            return true;
+        }
+
+        void ReleaseRoadblockClaims()
+        {
+            _roadblockTraffic?.Forget();
+            _roadblockTraffic = null;
+            if (_roadblockWalk != null) WalkObstacles.UnregisterPlan(_roadblockWalk);
+            _roadblockWalk = null;
+            ActiveRoadblocks.Remove(this);
+            ClearRoadblockOrder();
+        }
+
+        void ClearRoadblockOrder()
+        {
+            _roadblockOrdered = false;
+            _roadblockRoad = null;
+            _roadblockS = 0f;
+            _roadblockHeading = 0;
+        }
+
         /// <summary>Shoot the place up: passes along the street past this crew, a
         /// turn-round at the end of each, until told otherwise or nobody is left;
         /// then in at the kerb.</summary>
         public void DriveBy(DemoCrews.Unit target)
         {
             if (target == null) return;
+            if (IsRoadblock && !ResumeFromRoadblock()) return;
+            if (_roadblockOrdered) ClearRoadblockOrder();
             DriveByTarget = target;
             _driveByRoad = null;
             _localPass = false;
@@ -354,6 +440,11 @@ namespace RoadDemo
 
         protected override void OnArrived()
         {
+            if (_roadblockOrdered)
+            {
+                EstablishRoadblock();
+                return;
+            }
             if (DriveByTarget != null)
             {
                 // the end of a pass: the next one runs the other way, turning inside
@@ -367,6 +458,7 @@ namespace RoadDemo
         /// already at the kerb, or the player changed his mind).</summary>
         public new void Stop()
         {
+            if (_roadblockOrdered) ClearRoadblockOrder();
             DriveByTarget = null;
             _driveByRoad = null;
             _localPass = false;
@@ -379,6 +471,8 @@ namespace RoadDemo
         /// drive-by, an errand) it is not doing any more.</summary>
         public void HardStop()
         {
+            if (IsRoadblock) return;
+            if (_roadblockOrdered) ClearRoadblockOrder();
             DriveByTarget = null;
             _driveByRoad = null;
             _localPass = false;
@@ -415,6 +509,14 @@ namespace RoadDemo
         protected override void OnPlaced(float dt, float speed, float steerDegrees)
         {
             Body?.TickWheels(dt, speed, steerDegrees);
+        }
+
+        protected override void OnWrecked()
+        {
+            // A bombed roadblock leaves wreckage visuals to CarShatter, but it must not
+            // leave an invisible static car and pedestrian box behind as a second wreck.
+            if (IsRoadblock) ReleaseRoadblockClaims();
+            else ClearRoadblockOrder();
         }
 
         /// <summary>Coming up on the mark, the car comes off the throttle.

@@ -72,11 +72,11 @@ namespace LivingCity.Personnel
         /// the convoy drives (GAN-219, PIPE-002). The sentence is not known before it:
         /// until the verdict lands his sheet says HELD and nothing else.
         ///
-        /// FIVE of them now, and that is the whole point: those five days are where
-        /// this epic is played. Bail is posted in them, the lawyer is hired in them,
-        /// and the witnesses are leaned on in them. At two days the player had time to
-        /// do exactly none of it.</summary>
-        public const int DaysToCourt = 5;
+        /// ONE of them (ruling of 2026-09-04): he is booked, he sleeps in the cells, and
+        /// the next day tick puts him in the car to the courthouse. Bail, the lawyer
+        /// and the witnesses are played in that one day - the earlier five made a held
+        /// man a week-long absence from the street.</summary>
+        public const int DaysToCourt = 1;
 
         /// <summary>What each extra count attached to a case adds, once convicted -
         /// an open complaint the crew never answered for is not free (GAN-245).</summary>
@@ -253,6 +253,9 @@ namespace LivingCity.Personnel
 
         /// <summary>The line written when he goes out of a transfer's back door.</summary>
         public const string EscapeOutcome = "Escaped custody";
+
+        /// <summary>The one rap-sheet phrase for a body recovered from a transfer.</summary>
+        public const string KilledInTransferOutcome = "Killed in the transfer";
 
         /// <summary>The line written when he was bailed and never came back.</summary>
         public const string BailForfeitOutcome = "Failed to appear — bail forfeit";

@@ -120,6 +120,9 @@ namespace LivingCity.UI
                 case IncidentKind.CaseDismissed: return "Dismissed";
                 case IncidentKind.CutLoose: return "Cut loose";
                 case IncidentKind.BagHanded: return "The bag";
+                case IncidentKind.PrisonerKilled: return "Killed in transfer";
+                case IncidentKind.TransferHalted: return "Transfer halted";
+                case IncidentKind.WalkedIn: return "At the courthouse";
                 default: return "Wire";
             }
         }
@@ -354,8 +357,27 @@ namespace LivingCity.UI
                 Police.CaseOutcome.Dismissed => "case dismissed — no witnesses",
                 Police.CaseOutcome.BailForfeit => "bail forfeit — wanted",
                 Police.CaseOutcome.CutLoose => "cut loose by the boss",
+                Police.CaseOutcome.Killed => "killed in the transfer",
                 _ => "",
             };
+
+        /// <summary>The live physical leg in the same words used by THE LAW sheet.</summary>
+        public static string CarriageStageLabel(Police.CarriageStage stage,
+            Police.PrisonLeg leg) => stage switch
+        {
+            Police.CarriageStage.Calling => "the car is coming for him",
+            Police.CarriageStage.WalkingOut => "walking to the car",
+            Police.CarriageStage.Boarding => "boarding the police car",
+            Police.CarriageStage.Riding => leg == Police.PrisonLeg.Prison
+                ? "in the van out of town"
+                : "in the car to the court",
+            Police.CarriageStage.Halted => "the transfer is halted",
+            Police.CarriageStage.WalkingIn => "at the courthouse door",
+            Police.CarriageStage.Delivered => leg == Police.PrisonLeg.Prison
+                ? "in prison"
+                : "at the courthouse door",
+            _ => "in custody",
+        };
 
         // -------------------------------------------------------------------- orders
 
