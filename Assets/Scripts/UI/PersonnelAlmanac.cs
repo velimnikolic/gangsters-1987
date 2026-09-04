@@ -644,6 +644,7 @@ namespace LivingCity.UI
             RestoreOtherCanvases();
             DismissOrganizationTransient();
             DismissBlocksTransient();
+            DismissCommandDossier();
             RefreshTargeting();
             MapTargeting.Surface?.SetTargetHighlights(null, Color.clear);
             lastCloseFrame = Time.frameCount;
@@ -668,6 +669,7 @@ namespace LivingCity.UI
             StopOrderTargeting();
             DismissOrganizationTransient();
             DismissBlocksTransient();
+            DismissCommandDossier();
             RefreshTargeting();
         }
 
@@ -720,6 +722,9 @@ namespace LivingCity.UI
         /// </summary>
         public void SetPage(LedgerPage pageKind)
         {
+            if (pageKind != LedgerPage.Command && commandDossierId >= 0)
+                DismissCommandDossier();
+
             currentPage = pageKind;
             if (System.Array.IndexOf(TabPages, pageKind) >= 0)
                 lastTab = pageKind;
@@ -810,8 +815,18 @@ namespace LivingCity.UI
                     }
                     break;
                 case LedgerPage.Command:
-                    viewport = commandViewport;
-                    content = commandContent;
+                    if (CommandDossierOpen)
+                    {
+                        if (!Over(commandDossierViewport, point))
+                            return;
+                        viewport = commandDossierViewport;
+                        content = commandDossierContent;
+                    }
+                    else
+                    {
+                        viewport = commandViewport;
+                        content = commandContent;
+                    }
                     break;
                 case LedgerPage.Blocks:
                     viewport = blocksViewport;
@@ -924,6 +939,13 @@ namespace LivingCity.UI
                 commandScroll = Mathf.Clamp(
                     commandScroll - wheel * WheelStep, 0f, maxScroll);
                 content.anchoredPosition = new Vector2(0f, commandScroll);
+            }
+            else if (viewport == commandDossierViewport)
+            {
+                commandDossierScroll = Mathf.Clamp(
+                    commandDossierScroll - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, commandDossierScroll);
+                HideHoverNote();
             }
             else if (viewport == blocksViewport)
             {
