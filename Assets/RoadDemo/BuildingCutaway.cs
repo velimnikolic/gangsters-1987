@@ -24,7 +24,8 @@ namespace RoadDemo
     /// facade is turned towards the camera, hidden whole otherwise; <see cref="Follow"/>
     /// decides that per renderer every frame the building stays cut. A wall needs no such
     /// decision: its back faces cull. A single-mesh catalogue shell has no ground-floor
-    /// renderer to spare, so the shader keeps its lowest band whole instead.
+    /// renderer to spare, so the shader keeps its lowest band whole instead; a shell that
+    /// is nothing but ground floor is never cut at all.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class BuildingCutaway : MonoBehaviour
@@ -265,7 +266,11 @@ namespace RoadDemo
                     _colliders.RemoveAt(i);
             }
 
-            _configured = tall && _renderers.Count > 0 && _colliders.Count > 0;
+            // A shell that is all ground floor - one storey, whatever its height - has
+            // nothing to fade and is never an occluder; left to the fallback it would go
+            // shadows-only and vanish, the one thing the ground floor must not do.
+            _configured = tall && _renderers.Count > 0 && _colliders.Count > 0 &&
+                          _gradientRenderers.Count > 0;
             if (_configured)
             {
                 if (_opacity == null)
@@ -425,7 +430,9 @@ namespace RoadDemo
                 {
                     Renderer = renderer,
                     Filter = piece ? renderer.GetComponent<MeshFilter>() : null,
-                    Bay = piece ? renderer.GetComponentInParent<Storefront>() : null,
+                    // Boards sleep until the shop is boarded up: look through inactive
+                    // parents, or a sleeping piece would lose its bay.
+                    Bay = piece ? renderer.GetComponentInParent<Storefront>(true) : null,
                     Enabled = renderer.enabled,
                     Shadows = renderer.shadowCastingMode,
                     Chunk = chunk,

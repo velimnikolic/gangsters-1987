@@ -1512,50 +1512,19 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// Mirrors the opacity profile only as far as pointer ownership needs it. The
-        /// ground floor is always rendered at authored opacity; every upper or rear hit
-        /// still needs the vertical/uniform alpha and roof-cut calculation.
+        /// Whether the shell is still there to be clicked where the pointer hit it. The
+        /// gradient owns the answer - the same profile the shader draws, from this
+        /// building's own ground-floor line - so the picture and the click never disagree.
         /// </summary>
         bool CutawaySurfaceVisible(RaycastHit hit)
         {
             var gradient = hit.collider != null
                 ? hit.collider.GetComponentInParent<BuildingOpacityGradient>()
                 : null;
-            if (gradient == null || !gradient.GradientMaterialsActive)
+            if (gradient == null || !gradient.GradientMaterialsActive || _cam == null)
                 return false;
-            if (gradient.IsGroundFloor(hit.point))
-                return true;
-
-            var amount = gradient.Amount;
-            float alpha;
-            if (gradient.CurrentProfile == BuildingOpacityGradient.Profile.Uniform)
-            {
-                alpha = 1f - Mathf.Clamp01(amount * 0.5f);
-            }
-            else
-            {
-                var bounds = hit.collider.bounds;
-                var start = Mathf.Clamp(
-                    BuildingOpacityGradient.DefaultGradientStartHeight,
-                    0f, Mathf.Max(0f, bounds.size.y - 0.01f));
-                var fadeHeight = Mathf.Max(0.01f, bounds.size.y - start);
-                var height = Mathf.Clamp01(
-                    (hit.point.y - (bounds.min.y + start)) / fadeHeight);
-                var vertical = 1f - height;
-                alpha = amount <= 1f
-                    ? Mathf.Lerp(1f, vertical, Mathf.Clamp01(amount))
-                    : Mathf.Clamp01(vertical - (amount - 1f));
-            }
-
-            // The shader removes roofs and balcony slabs faster beyond 100%.
-            var normalY = hit.normal.sqrMagnitude > 0.0001f
-                ? hit.normal.normalized.y
-                : 0f;
-            var upwardT = Mathf.Clamp01((normalY - 0.35f) / 0.4f);
-            var upward = upwardT * upwardT * (3f - 2f * upwardT);
-            alpha *= 1f - upward * Mathf.Clamp01((amount - 1f) * 2f);
-
-            return alpha >= CutawayPointerAlpha;
+            return gradient.SurfaceAlpha(hit.point, hit.normal, _cam.transform.position)
+                   >= CutawayPointerAlpha;
         }
 
         /// <summary>How far a click reaches into the city; past the far side of it.</summary>

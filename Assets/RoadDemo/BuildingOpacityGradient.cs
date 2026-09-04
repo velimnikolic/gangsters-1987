@@ -120,6 +120,58 @@ namespace RoadDemo
         internal bool IsGroundFloor(Vector3 worldPoint) =>
             worldPoint.y < _boundsMinY + _lastGradientStartHeight;
 
+        /// <summary>The opacity the shader gives a point of this shell's surface right now,
+        /// for the one caller that must agree with the picture: the pointer, which may not
+        /// let a facade the player sees through swallow a click. This is the fragment
+        /// profile step for step - the height gradient from this building's own start
+        /// line, the far half cleared past 100%, the roof cut, the ground floor whole.</summary>
+        internal float SurfaceAlpha(Vector3 worldPoint, Vector3 worldNormal, Vector3 cameraPosition)
+        {
+            if (!_gradientMaterialsActive || IsGroundFloor(worldPoint))
+                return 1f;
+
+            float amount = Mathf.Max(0f, _lastAmount);
+            float firstHundred = Mathf.Clamp01(amount);
+            float alpha;
+            if (_lastProfile == Profile.Uniform)
+            {
+                alpha = 1f - Mathf.Clamp01(amount * 0.5f);
+            }
+            else
+            {
+                float fadeHeight = Mathf.Max(0.01f, _boundsHeight - _lastGradientStartHeight);
+                float height01 = Mathf.Clamp01(
+                    (worldPoint.y - (_boundsMinY + _lastGradientStartHeight)) / fadeHeight);
+                float vertical = Ramp(0f, 1f, 1f - height01);
+                alpha = amount <= 1f
+                    ? Mathf.Lerp(1f, vertical, firstHundred)
+                    : Mathf.Clamp01(vertical - (amount - 1f));
+            }
+
+            var cameraPlanar = new Vector2(
+                cameraPosition.x - _boundsCenter.x, cameraPosition.z - _boundsCenter.z);
+            if (cameraPlanar.sqrMagnitude > 0.0001f)
+            {
+                cameraPlanar.Normalize();
+                var fromCenter = new Vector2(
+                    worldPoint.x - _boundsCenter.x, worldPoint.z - _boundsCenter.z);
+                float cameraSide = Vector2.Dot(fromCenter, cameraPlanar) >= 0f ? 1f : 0f;
+                alpha *= Mathf.Lerp(1f, cameraSide, firstHundred);
+            }
+
+            float normalY = worldNormal.sqrMagnitude > 0.0001f ? worldNormal.normalized.y : 0f;
+            alpha *= 1f - Ramp(0.35f, 0.75f, normalY) * Mathf.Clamp01((amount - 1f) * 2f);
+            return alpha;
+        }
+
+        /// <summary>HLSL smoothstep: the eased 0..1 ramp between two edges. Not
+        /// <see cref="Mathf.SmoothStep"/>, which interpolates between two values.</summary>
+        static float Ramp(float edge0, float edge1, float x)
+        {
+            float t = Mathf.Clamp01((x - edge0) / (edge1 - edge0));
+            return t * t * (3f - 2f * t);
+        }
+
         /// <summary>Whether a ground-floor piece - a pane, a door leaf, the room behind the
         /// glass, a display prop - belongs to a facade turned towards the camera. The wall
         /// answers that by itself (its back faces are culled); a piece has to be told, or
