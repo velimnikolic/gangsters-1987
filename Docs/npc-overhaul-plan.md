@@ -13,11 +13,18 @@ je korisnik ne potvrdi u §11.
 
 ## 0. NPC-001 popis — kapija (izmereno 2026-09-04)
 
-`gangsters_people_census --seed 1987 [--rows]` je read-only editor komanda koja radi na
+`gangsters_people_census [--seed 1987] [--rows]` je read-only editor komanda koja radi na
 glavnoj niti sa zaustavljenim editorom. Pravi plan grada i privremenu preview scenu samo za
 merenje, ne postavlja objekte u otvorenu scenu i ništa ne peče. Poslednji puni prolaz je vratio
-JSON `passed = true`, bez gate grešaka, za **1,27 s** (zahtev: manje od 30 s); `--rows`
+JSON `passed = true`, bez gate grešaka, za **1,32 s** (zahtev: manje od 30 s); `--rows`
 vraća i svaki pojedinačni izvor/projekciju.
+
+Ovo je release kapija, ne seed sweep: svaki seed osim 1987 odbija se **pre planiranja** (proba
+`--seed 4`: 0,55 s, editor je odmah zatim vratio `ready`). Unutrašnji radni rok je 25 s, sa
+proverama između dugih grupa skenova, što ostavlja pet sekundi za JSON i transport. Pored
+zbirnih brojki, `passed` vezuje FNV-1a manifeste za identitet i ishod svakog poslovnog,
+downtown i stambenog ulaza, kao i svaki legalni interval svake strane puta. Zato zamena jednog
+uspešnog i jednog neuspešnog ulaza više ne može sačuvati isti zbir i lažno proći.
 
 ### 0.1 Vrata na seedu 1987
 

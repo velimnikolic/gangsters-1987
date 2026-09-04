@@ -15,6 +15,7 @@ namespace GangstersTools
     /// <summary>Read-only measurements for NPC-001, kept out of the player assembly.</summary>
     internal static class PeopleCensusAudit
     {
+        const int CanonicalSeed = 1987;
         const float DoorReach = 18f;
         const float EndSetback = 7f;
         const float CrossingBuffer = 3f;
@@ -22,9 +23,18 @@ namespace GangstersTools
         const float BusStopLength = 12f;
         const float ApproachMargin = 2f;
         const float TypicalCarHalfLength = 2.3f;
-        const double CensusBudgetSeconds = 30d;
+        // Leave five seconds for command serialization/transport inside the ticket's
+        // externally visible 30-second ceiling.
+        const double CensusWorkBudgetSeconds = 25d;
         const int BenchmarkFrames = 64;
         const int BenchmarkWarmupFrames = 8;
+
+        // Identity-level manifests for the canonical release gate. Totals alone can stay
+        // unchanged when one door regresses and another improves, which is not a pass.
+        const string CanonicalBusinessLandingDigest = "0efdd04bbd84c125";
+        const string CanonicalDowntownLandingDigest = "37833524b4fe46b7";
+        const string CanonicalResidentialLandingDigest = "bdc9f7ed1f9c9012";
+        const string CanonicalKerbIntervalDigest = "e1f8d7b986a14c8f";
 
         static readonly int[] CrowdCounts = { 100, 240, 480 };
         static readonly FieldInfo CrowdFrame = typeof(PedestrianAgent).GetField(
@@ -82,8 +92,55 @@ namespace GangstersTools
             public readonly List<Interval> Legal = new List<Interval>();
         }
 
+        sealed class StableDigest
+        {
+            const ulong Offset = 14695981039346656037UL;
+            const ulong Prime = 1099511628211UL;
+            ulong value = Offset;
+
+            public void Add(bool item) => Add(item ? 1 : 0);
+
+            public void Add(int item)
+            {
+                unchecked
+                {
+                    AddByte((byte)item);
+                    AddByte((byte)(item >> 8));
+                    AddByte((byte)(item >> 16));
+                    AddByte((byte)(item >> 24));
+                }
+            }
+
+            public void Add(string item)
+            {
+                if (item == null) { Add(-1); return; }
+                Add(item.Length);
+                for (int index = 0; index < item.Length; index++)
+                {
+                    char character = item[index];
+                    AddByte((byte)character);
+                    AddByte((byte)(character >> 8));
+                }
+            }
+
+            void AddByte(byte item)
+            {
+                unchecked
+                {
+                    value ^= item;
+                    value *= Prime;
+                }
+            }
+
+            public string Hex => value.ToString("x16");
+        }
+
         public static object Run(int seed, bool includeRows)
         {
+            if (seed != CanonicalSeed)
+                throw new ArgumentOutOfRangeException(nameof(seed), seed,
+                    $"The NPC-001 release census is canonical-only; use seed {CanonicalSeed}. " +
+                    "Arbitrary-seed generation is not part of this 30-second gate.");
             if (EditorApplication.isPlayingOrWillChangePlaymode)
                 throw new InvalidOperationException(
                     "gangsters_people_census runs with the editor stopped; it never borrows or changes the live crowd.");
@@ -97,32 +154,32 @@ namespace GangstersTools
             var gateFailures = new List<string>();
             var core = new CoreDistrict();
             core.Plan(null, seed);
+            CheckBudget(elapsed, "core plan");
             core.Frame = DistrictFrame.Identity;
             var links = RasterPedGraph.Build(core.Raster, core.Frame);
+            CheckBudget(elapsed, "pedestrian graph");
 
             var catalog = new BusinessSiteCatalog();
             catalog.Add(new ResidentialBusinessSites(core.ResidentialBlocks, core.Frame));
             catalog.Add(new StandaloneBusinessSites(core));
             catalog.Add(new CompoundBusinessSites(core, null));
             catalog.Build();
+            CheckBudget(elapsed, "business catalogue");
 
             foreach (var problem in catalog.Problems)
                 gateFailures.Add("business site catalogue: " + problem);
 
             var business = MeasureBusinessDoors(
-                catalog, links, includeRows, seed, gateFailures);
+                catalog, links, includeRows, seed, gateFailures, elapsed);
             var downtown = MeasureDowntownDoors(
-                core, links, includeRows, seed, gateFailures);
+                core, links, includeRows, seed, gateFailures, elapsed);
             var residential = MeasureResidentialDoors(
-                core, links, includeRows, seed, gateFailures);
-            var kerb = MeasureKerb(core, includeRows, seed, gateFailures);
-            var frame = MeasureCrowdCurve(links, seed);
+                core, links, includeRows, seed, gateFailures, elapsed);
+            var kerb = MeasureKerb(core, includeRows, seed, gateFailures, elapsed);
+            var frame = MeasureCrowdCurve(links, seed, elapsed);
 
+            CheckBudget(elapsed, "complete census");
             elapsed.Stop();
-            if (elapsed.Elapsed.TotalSeconds >= CensusBudgetSeconds)
-                gateFailures.Add(
-                    $"census exceeded its {CensusBudgetSeconds:0}-second budget " +
-                    $"({elapsed.Elapsed.TotalSeconds:0.###} s)");
             var distinctFailures = gateFailures
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(failure => failure, StringComparer.Ordinal)
@@ -143,6 +200,7 @@ namespace GangstersTools
                     hydrantRadiusMetres = HydrantRadius,
                     busStopLengthMetres = BusStopLength,
                     vehicleApproachMarginMetres = ApproachMargin,
+                    workBudgetSeconds = CensusWorkBudgetSeconds,
                     crossingBufferMetres = CrossingBuffer,
                     slotPitchMetres = TypicalCarHalfLength * 2f + KerbCars.Gap,
                 },
@@ -168,19 +226,25 @@ namespace GangstersTools
 
         static object MeasureBusinessDoors(BusinessSiteCatalog catalog, List<PedLink> links,
                                            bool includeRows, int seed,
-                                           List<string> gateFailures)
+                                           List<string> gateFailures,
+                                           System.Diagnostics.Stopwatch elapsed)
         {
             int count = 0, landed = 0;
             var failures = new FailureTally();
             var rows = new List<object>();
+            var digest = new StableDigest();
+            int scanned = 0;
             foreach (var site in catalog.Sites)
             {
+                if ((scanned++ & 127) == 0) CheckBudget(elapsed, "business doors");
                 if (!site.Eligible) continue;
                 count++;
                 var point = new Vector3(site.Approach.X, 0f, site.Approach.Z);
                 bool ok = TryLand(point, links, out _, out _, out float distance);
                 string reason = ok ? "" : "no non-crossing PedLink within 18 m";
                 if (ok) landed++; else failures.Add(reason);
+                digest.Add(site.SiteId.Value);
+                digest.Add(ok);
                 if (includeRows)
                     rows.Add(new
                     {
@@ -200,10 +264,17 @@ namespace GangstersTools
                     "seed 1987 business-door baseline changed: expected " +
                     $"3581 sites / 3564 eligible / 3209 landed, measured " +
                     $"{catalog.Sites.Count} / {count} / {landed}");
+            string landingDigest = digest.Hex;
+            if (!string.Equals(landingDigest, CanonicalBusinessLandingDigest,
+                               StringComparison.Ordinal))
+                gateFailures.Add(
+                    "seed 1987 business per-site landing manifest changed: expected " +
+                    $"{CanonicalBusinessLandingDigest}, measured {landingDigest}");
             return new
             {
                 count,
                 landed,
+                landingDigest,
                 failed = count - landed,
                 failures = failures.Rows(),
                 rows = includeRows ? rows.ToArray() : null,
@@ -212,7 +283,8 @@ namespace GangstersTools
 
         static object MeasureDowntownDoors(CoreDistrict core, List<PedLink> links,
                                            bool includeRows, int seed,
-                                           List<string> gateFailures)
+                                           List<string> gateFailures,
+                                           System.Diagnostics.Stopwatch elapsed)
         {
             int shops = 0, apartmentDoors = 0, doorCapable = 0, landed = 0;
             int shopCoversExcluded = 0, wallWindowModules = 0,
@@ -221,9 +293,11 @@ namespace GangstersTools
             var rows = new List<object>();
             var blocks = new List<object>();
             var empty = new List<string>();
+            var digest = new StableDigest();
 
             for (int number = 1; number <= 16; number++)
             {
+                CheckBudget(elapsed, "downtown doors");
                 string blockName = "block-" + number.ToString("00");
                 var block = core.LayoutBlocks.FirstOrDefault(candidate => candidate.Name == blockName);
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
@@ -312,6 +386,11 @@ namespace GangstersTools
                         reason = "module door has no non-crossing PedLink within 18 m";
                     if (ok) { landed++; blockLanded++; }
                     else failures.Add(reason);
+                    digest.Add(blockName);
+                    digest.Add(instance.GetSiblingIndex());
+                    digest.Add(sourceName);
+                    digest.Add(hasDoor);
+                    digest.Add(ok);
 
                     if (includeRows)
                         rows.Add(new
@@ -349,6 +428,7 @@ namespace GangstersTools
             };
             bool correctedCountConfirmed = shops == 92 && apartmentDoors == 49;
             bool correctedEmptyListConfirmed = empty.SequenceEqual(correctedEmptyBlocks);
+            string landingDigest = digest.Hex;
             if (seed == 1987 &&
                 (!correctedCountConfirmed || !correctedEmptyListConfirmed ||
                  doorCapable != 135 || landed != 121))
@@ -358,6 +438,11 @@ namespace GangstersTools
                     $"121 landed / empty [{string.Join(", ", correctedEmptyBlocks)}], " +
                     $"measured {shops} / {apartmentDoors} / {doorCapable} / {landed} / " +
                     $"[{string.Join(", ", empty)}]");
+            if (!string.Equals(landingDigest, CanonicalDowntownLandingDigest,
+                               StringComparison.Ordinal))
+                gateFailures.Add(
+                    "seed 1987 downtown per-module landing manifest changed: expected " +
+                    $"{CanonicalDowntownLandingDigest}, measured {landingDigest}");
             return new
             {
                 count,
@@ -365,6 +450,7 @@ namespace GangstersTools
                 apartmentDoorModules = apartmentDoors,
                 doorCapable,
                 landed,
+                landingDigest,
                 failed = count - landed,
                 failures = failures.Rows(),
                 emptyBlocks = empty.ToArray(),
@@ -410,14 +496,17 @@ namespace GangstersTools
 
         static object MeasureResidentialDoors(CoreDistrict core, List<PedLink> links,
                                                bool includeRows, int seed,
-                                               List<string> gateFailures)
+                                               List<string> gateFailures,
+                                               System.Diagnostics.Stopwatch elapsed)
         {
             int count = 0, landed = 0;
             var failures = new FailureTally();
             var rows = new List<object>();
+            var digest = new StableDigest();
 
             foreach (var recipe in core.ResidentialBlocks.Blocks)
             {
+                CheckBudget(elapsed, "residential doors");
                 if (recipe?.Plan?.Spots == null) continue;
                 for (int spotIndex = 0; spotIndex < recipe.Plan.Spots.Count; spotIndex++)
                 {
@@ -433,6 +522,10 @@ namespace GangstersTools
                     if (hasPoint && !ok)
                         reason = "street entrance has no non-crossing PedLink within 18 m";
                     if (ok) landed++; else failures.Add(reason);
+                    digest.Add(recipe.Id);
+                    digest.Add(spotIndex);
+                    digest.Add(spot.Unit.Name);
+                    digest.Add(ok);
 
                     if (includeRows)
                         rows.Add(new
@@ -453,11 +546,18 @@ namespace GangstersTools
                 gateFailures.Add(
                     "seed 1987 residential-door baseline changed: expected " +
                     $"425 candidates / 425 landed, measured {count} / {landed}");
+            string landingDigest = digest.Hex;
+            if (!string.Equals(landingDigest, CanonicalResidentialLandingDigest,
+                               StringComparison.Ordinal))
+                gateFailures.Add(
+                    "seed 1987 residential per-building landing manifest changed: expected " +
+                    $"{CanonicalResidentialLandingDigest}, measured {landingDigest}");
 
             return new
             {
                 count,
                 landed,
+                landingDigest,
                 failed = count - landed,
                 failures = failures.Rows(),
                 rows = includeRows ? rows.ToArray() : null,
@@ -531,14 +631,17 @@ namespace GangstersTools
         }
 
         static object MeasureKerb(CoreDistrict core, bool includeRows, int seed,
-                                  List<string> gateFailures)
+                                  List<string> gateFailures,
+                                  System.Diagnostics.Stopwatch elapsed)
         {
             var net = RasterGraph.Build(core.Raster, core.Frame,
                 core.streetSpeed, core.boulevardSpeed, core.alleySpeed);
             var sides = new List<KerbSide>();
             float rawMetres = 0f;
+            int roadScan = 0;
             foreach (var road in net.Roads)
             {
+                if ((roadScan++ & 127) == 0) CheckBudget(elapsed, "kerb road sides");
                 if (road == null || road.Elevated) continue;
                 if (road.ParkingA) AddKerbSide(sides, road, -1, ref rawMetres);
                 if (road.ParkingB) AddKerbSide(sides, road, +1, ref rawMetres);
@@ -564,6 +667,7 @@ namespace GangstersTools
 
             var sidewalk = ReadAuthoredKerbFurniture(core, gateFailures,
                 out int footprintFallbacks);
+            CheckBudget(elapsed, "authored kerb furniture");
             int hydrants = 0, stops = 0;
             int furnitureWithoutParking = 0, parkingWithoutParking = 0,
                 fuelWithoutParking = 0, residentialWithoutParking = 0;
@@ -611,11 +715,13 @@ namespace GangstersTools
                         fuelWithoutParking++;
                 }
             float afterFuel = Length(sides);
+            CheckBudget(elapsed, "amenity approaches");
 
             int residentialYardEntrances = 0;
             float beforeResidential = afterFuel;
             foreach (var recipe in core.ResidentialBlocks.Blocks)
             {
+                CheckBudget(elapsed, "residential yard entrances");
                 if (recipe?.Plan?.Accesses == null) continue;
                 foreach (var access in recipe.Plan.Accesses)
                 {
@@ -671,6 +777,26 @@ namespace GangstersTools
                 gateFailures.Add(
                     $"seed 1987 kerb slot baseline changed: expected 7168, measured {capacity}");
 
+            var intervalManifest = new StableDigest();
+            foreach (var side in sides)
+            {
+                intervalManifest.Add(side.Road.Index);
+                intervalManifest.Add(side.Side);
+                intervalManifest.Add(side.Legal.Count);
+                foreach (var interval in side.Legal)
+                {
+                    intervalManifest.Add(Mathf.RoundToInt(interval.From * 1000f));
+                    intervalManifest.Add(Mathf.RoundToInt(interval.To * 1000f));
+                }
+            }
+            string intervalDigest = intervalManifest.Hex;
+            if (!string.Equals(intervalDigest, CanonicalKerbIntervalDigest,
+                               StringComparison.Ordinal))
+                gateFailures.Add(
+                    "seed 1987 per-road legal-kerb manifest changed: expected " +
+                    $"{CanonicalKerbIntervalDigest}, measured {intervalDigest}");
+            CheckBudget(elapsed, "kerb interval manifest");
+
             var rows = includeRows
                 ? sides.Select(side => (object)new
                 {
@@ -714,6 +840,7 @@ namespace GangstersTools
                 footprintFallbacks,
                 residentialDressingEnabled = ResidentialBlocks.Dressed,
                 legalMetres = Math.Round(legalMetres, 3),
+                intervalDigest,
                 slotPitchMetres = pitch,
                 slotCapacity = capacity,
                 slotCountAt60Percent = Mathf.RoundToInt(capacity * 0.6f),
@@ -852,7 +979,8 @@ namespace GangstersTools
             }
         }
 
-        static object[] MeasureCrowdCurve(List<PedLink> links, int seed)
+        static object[] MeasureCrowdCurve(List<PedLink> links, int seed,
+                                          System.Diagnostics.Stopwatch elapsed)
         {
             if (PedestrianAgent.Everyone.Count != 0 || CivilianAgent.All.Count != 0)
                 throw new InvalidOperationException(
@@ -898,9 +1026,11 @@ namespace GangstersTools
             {
                 foreach (int count in CrowdCounts)
                 {
+                    CheckBudget(elapsed, $"crowd benchmark setup ({count})");
                     GrowCrowd(root.transform, agents, prefab, clips, variety, life,
                               sidewalks, count, seed);
                     results.Add(MeasureCrowdCount(agents, count));
+                    CheckBudget(elapsed, $"crowd benchmark ({count})");
                 }
             }
             finally
@@ -926,6 +1056,15 @@ namespace GangstersTools
                 EditorSceneManager.ClosePreviewScene(preview);
             }
             return results.ToArray();
+        }
+
+        static void CheckBudget(System.Diagnostics.Stopwatch elapsed, string stage)
+        {
+            if (elapsed.Elapsed.TotalSeconds < CensusWorkBudgetSeconds) return;
+            throw new TimeoutException(
+                $"NPC-001 census stopped after {elapsed.Elapsed.TotalSeconds:0.###} s " +
+                $"during {stage}; its work budget is {CensusWorkBudgetSeconds:0} s " +
+                "inside the 30-second command deadline.");
         }
 
         static void GrowCrowd(Transform root, List<CivilianAgent> agents,

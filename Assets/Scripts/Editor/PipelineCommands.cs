@@ -2249,11 +2249,11 @@ namespace GangstersTools
         /// provenance and runs a disposable preview-scene benchmark.
         /// </summary>
         [CliCommand("gangsters_people_census",
-                    "Measure EPIC 39's seed-specific doors, legal kerb and current crowd " +
+                    "Measure EPIC 39's canonical seed-1987 doors, legal kerb and current crowd " +
                     "tick curve without building or changing the open scene.",
                     MainThreadRequired = true, Tags = new[] { "gangsters", "people", "audit" })]
         public static object PeopleCensus(
-            [CliArg("seed", "Deal the Core city from this seed.")] int seed = 1987,
+            [CliArg("seed", "Release-gate seed; only the canonical value 1987 is accepted.")] int seed = 1987,
             [CliArg("rows", "Include every measured door/module row, not only totals and failures.")] bool rows = false)
             => PeopleCensusAudit.Run(seed, rows);
 
