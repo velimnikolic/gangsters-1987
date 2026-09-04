@@ -1090,18 +1090,22 @@ namespace LivingCity.UI
         /// the card itself - so the head band's offset has to be added back.</summary>
         void ShowHoverNote(string note, RectTransform row)
         {
-            if (note.Length == 0 || hoverNote == null)
+            var popup = currentPage == LedgerPage.Command && CommandDossierOpen;
+            var noteRoot = popup ? commandDossierHoverNote : hoverNote;
+            var noteText = popup ? commandDossierHoverNoteText : hoverNoteText;
+            var content = popup ? commandDossierContent : cardContent;
+            if (note.Length == 0 || noteRoot == null || noteText == null || content == null)
                 return;
 
-            hoverNoteText.text = note;
-            hoverNote.gameObject.SetActive(true);
-            hoverNote.SetAsLastSibling();
+            noteText.text = note;
+            noteRoot.gameObject.SetActive(true);
+            noteRoot.SetAsLastSibling();
 
             var width = CardInner - 60f;
-            var height = hoverNoteText.GetPreferredValues(note, width - 20f, 0f).y + 20f;
-            hoverNote.sizeDelta = new Vector2(width, height);
-            hoverNote.anchoredPosition = new Vector2(CardPad + 30f,
-                row.anchoredPosition.y + cardContent.anchoredPosition.y
+            var height = noteText.GetPreferredValues(note, width - 20f, 0f).y + 20f;
+            noteRoot.sizeDelta = new Vector2(width, height);
+            noteRoot.anchoredPosition = new Vector2(CardPad + 30f,
+                row.anchoredPosition.y + content.anchoredPosition.y
                 - row.sizeDelta.y - CardHead - 2f);
         }
 
@@ -1109,6 +1113,8 @@ namespace LivingCity.UI
         {
             if (hoverNote != null)
                 hoverNote.gameObject.SetActive(false);
+            if (commandDossierHoverNote != null)
+                commandDossierHoverNote.gameObject.SetActive(false);
         }
 
         /// <summary>The pointer half of the card's hover notes: an invisible zone laid

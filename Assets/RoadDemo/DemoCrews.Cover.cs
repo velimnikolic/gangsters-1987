@@ -10,8 +10,8 @@ namespace RoadDemo
     ///
     /// * <see cref="CoverNear"/> - what a man in a fight asks, wired onto
     ///   <see cref="CrewWalker.FindCover"/>. Inside his gun's reach it searches round
-    ///   HIM. Out of reach it first takes bounded local protection, then advances by
-    ///   short protected hops; the closing shot is the fallback for an empty street.
+    ///   HIM. Out of reach it searches round a point on the fire line, and accepts
+    ///   only a flank he can SHOOT from; an empty street means he simply charges.
     /// * <see cref="FlankAround"/> - a flank round a named place, facing a named
     ///   threat. What the ambush is dealt from, and what a man whose car drove off
     ///   asks for again.
@@ -46,10 +46,16 @@ namespace RoadDemo
         /// length to reach a car's flank - at this range the fight is already had.</summary>
         const float PointBlank = 4f;
 
-        /// <summary>Each replacement has to buy this much ground toward the mark. The
-        /// route itself is still capped by CoverReach, so advancing never becomes one
-        /// long silent charge from a safe flank.</summary>
-        const float CoverAdvanceMin = 2f;
+        /// <summary>How near the mark the flank on the fire line is looked for: the
+        /// centre of the search sits this fraction of the gun's reach from the mark,
+        /// so the man arrives at a flank he can actually shoot from rather than at one
+        /// he has to leave again.</summary>
+        const float CoverRangeFactor = 0.8f;
+
+        /// <summary>How far round the fire-line centre the search runs. Never less than
+        /// this, whatever the gun: a pistol fight still has a street's worth of
+        /// furniture in it.</summary>
+        const float CoverLineReach = 6f;
 
         /// <summary>How far round the clicked anchor an ambush is dealt. The men are a
         /// crew lying in wait behind one piece of street, not a picket line.</summary>
@@ -214,9 +220,6 @@ namespace RoadDemo
             return Vector3.Dot(toThing.normalized, toThreat.normalized) >= 0.5f;
         }
 
-        internal static bool NeedsLocalDefenseModel(bool hasCover,
-            bool currentCoverShields) => !hasCover || !currentCoverShields;
-
         // ------------------------------------------------------------------ the search
 
         /// <summary>THE ONE SEARCH. Every flank in this game comes out of here.
@@ -313,10 +316,12 @@ namespace RoadDemo
         /// fighting. Wired onto <see cref="CrewWalker.FindCover"/>, so the outfit, the
         /// mobs and the police squads all fight the same way.
         ///
-        /// A FLANK BEFORE THE FIRST ROUND (COVER-001). Out of reach, a man accepts a
-        /// nearby shielding position even when he cannot shoot from it yet. From there
-        /// he advances in CoverReach-sized hops; where the street has nothing, the
-        /// existing closing fire remains available.</summary>
+        /// A FLANK HE CAN SHOOT FROM, OR NONE (the user's word, 2026-09-04: told to
+        /// kill, a man was walking to a bin outside his gun's reach - "ako nema cover
+        /// treba da se prosto zaleti"). Every flank this answers leaves the mark
+        /// inside [3, range]. Out of reach the search runs round a point ON THE FIRE
+        /// LINE, short of the mark by most of the gun's reach; a street with nothing
+        /// there answers null, and the walker's closing branch charges him in.</summary>
         Vector3? CoverNear(CrewWalker man, Vector3 target)
         {
             if (man == null || man.Tf == null) return null;
@@ -339,38 +344,30 @@ namespace RoadDemo
                 return SearchCover(man, target, p, cap, cap, 3f, range);
             }
 
-            // Out of reach, survival comes before a long silent charge to a firing
-            // flank. Take bounded local protection first; once he owns that spot the
-            // ordinary recheck leapfrogs him toward a position he can shoot from.
-            // A recorded spot is protection only against an angle it still shields.
-            // If the shooter has breached that face, search the whole local ring again
-            // (including lateral/same-distance cover) before asking only for a forward
-            // leapfrog. This is also the panic path: old, invalid cover must not make a
-            // perfectly good nearby flank invisible to the shared oracle.
-            bool hasCover = man.CoverSpot.HasValue || man.HeldCover.HasValue;
-            bool currentShields = man.CoverSpot.HasValue &&
-                man.CoverStillShields(target);
-            if (NeedsLocalDefenseModel(hasCover, currentShields))
-            {
-                var local = SearchCover(man, target, p, CoverReach, CoverReach,
-                    PointBlank, float.MaxValue);
-                if (local.HasValue) return local;
-            }
-
-            return CoverToward(man, target, dist);
+            return CoverToward(man, target, range, dist);
         }
 
-        /// <summary>A bounded forward leapfrog (COVER-002). It searches only the next
-        /// CoverReach around the man's feet, requires real progress toward the mark,
-        /// and caps the routed walk to the same distance. Repeated safe hops eventually
-        /// reach firing range without a single long, silent sprint.</summary>
-        Vector3? CoverToward(CrewWalker man, Vector3 target, float dist)
+        /// <summary>The flank ON THE FIRE LINE: the same oracle, searched from the point
+        /// between the man and his mark at <see cref="CoverRangeFactor"/> of the gun's
+        /// reach from the mark. A flank qualifies as it always did AND leaves the mark
+        /// inside [3, range], so the first round leaves from behind something. A man
+        /// whose held flank the mark has walked out of asks this again and takes the
+        /// next one he can shoot from - or, there being none, goes in.</summary>
+        Vector3? CoverToward(CrewWalker man, Vector3 target, float range, float dist)
         {
             var p = man.Tf.position;
-            float closerThan = dist - CoverAdvanceMin;
-            if (closerThan <= PointBlank) return null;
-            return SearchCover(man, target, p, CoverReach, CoverReach,
-                PointBlank, closerThan);
+            var toMan = p - target;
+            toMan.y = 0f;
+            if (toMan.sqrMagnitude < 1e-4f) return null;
+            toMan.Normalize();
+
+            // never past the man himself: the centre walks up the line toward the mark,
+            // it does not go looking behind the man's own back
+            var centre = target + toMan * Mathf.Min(range * CoverRangeFactor, dist);
+            centre.y = p.y;
+            float reach = Mathf.Max(CoverLineReach, range * 0.6f);
+            float maxWalk = Vector3.Distance(p, centre) + reach;
+            return SearchCover(man, target, centre, reach, maxWalk, 3f, range);
         }
 
         /// <summary>A flank round a named place, facing a named threat, with no gun

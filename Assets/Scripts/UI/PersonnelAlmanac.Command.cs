@@ -135,6 +135,19 @@ namespace LivingCity.UI
         internal RectTransform commandContent;
         internal float commandScroll;
 
+        /// <summary>The full PERSONNEL dossier opened over this sheet. It has its own
+        /// surface, but is painted by the one personal-file renderer so the popup and
+        /// the PERSONNEL tab can never disagree about a man.</summary>
+        int commandDossierId = -1;
+        float commandDossierScroll;
+        RectTransform commandDossierRoot, commandDossierPanel,
+            commandDossierViewport, commandDossierContent, commandDossierFoot,
+            commandDossierHoverNote;
+        TMP_Text commandDossierFileNo, commandDossierHoverNoteText;
+
+        bool CommandDossierOpen => commandDossierId >= 0 && commandDossierRoot &&
+                                   commandDossierRoot.gameObject.activeSelf;
+
         /// <summary>Whose files are open. A SET and not a selection: opening one man's
         /// file must never shut another's.</summary>
         readonly HashSet<int> commandOpenFiles = new HashSet<int>();
@@ -236,6 +249,8 @@ namespace LivingCity.UI
             commandContent.pivot = new Vector2(0f, 1f);
             commandContent.anchoredPosition = Vector2.zero;
             commandContent.sizeDelta = new Vector2(0f, CommandHeight);
+
+            BuildCommandDossierPopup(root);
         }
 
         void RebuildCommand()
@@ -262,6 +277,7 @@ namespace LivingCity.UI
                     0f, 0f, PageWidth, 24f,
                     "The command file has no authoritative Boss Character.");
                 CloseCommand(24f);
+                RebuildCommandDossier();
                 return;
             }
 
@@ -288,6 +304,169 @@ namespace LivingCity.UI
             cursor = BuildCommandWatch(cursor + 26f);
             cursor = BuildCommandOrders(cursor + 26f);
             CloseCommand(cursor);
+            RebuildCommandDossier();
+        }
+
+        /// <summary>Builds the modal furniture once. The body is populated on repaint
+        /// through RebuildCommandDossier, using the PERSONNEL page's dossier painter.</summary>
+        void BuildCommandDossierPopup(RectTransform root)
+        {
+            commandDossierRoot = NewRect("Personal file popup", root);
+            Stretch(commandDossierRoot);
+
+            var shade = Fill(commandDossierRoot, new Color(0f, 0f, 0f, 0.42f));
+            shade.raycastTarget = true;
+            var dismiss = commandDossierRoot.gameObject.AddComponent<Button>();
+            dismiss.targetGraphic = shade;
+            dismiss.transition = Selectable.Transition.None;
+            dismiss.onClick.AddListener(CloseCommandDossier);
+
+            var left = PageLeft + (PageWidth - FileW) * 0.5f;
+            commandDossierPanel = LedgerV2.Card("Personal file", commandDossierRoot,
+                left, PaneTop, FileW, PaneH);
+
+            // A click on the paper belongs to the file, not the dismissing backdrop.
+            var paperFace = PaperOf(commandDossierPanel);
+            paperFace.raycastTarget = true;
+            var paperButton = commandDossierPanel.gameObject.AddComponent<Button>();
+            paperButton.targetGraphic = paperFace;
+            paperButton.transition = Selectable.Transition.None;
+
+            var band = NewRect("Head", commandDossierPanel);
+            PlaceTopLeft(band, 0f, 0f, FileW, FileHeadH);
+            Fill(band, LedgerV2.Head);
+            var title = LedgerV2.Mono(band, FilePad,
+                -(FileHeadH - 14f) * 0.5f, FileInner - 190f,
+                "PERSONAL FILE", 10f, LedgerV2.HeadInk, 13f);
+            title.font = LedgerStyle.MonoBold;
+            commandDossierFileNo = LedgerV2.Mono(band,
+                FilePad + FileInner - 190f, -(FileHeadH - 14f) * 0.5f,
+                154f - RightInset, "", 9.5f, LedgerV2.HeadDim, 4f,
+                TextAlignmentOptions.MidlineRight);
+            var close = LedgerV2.Button(band, "X", FileW - 30f, -2f, 26f, 26f,
+                CloseCommandDossier, LedgerV2.Key.Dark, 13f);
+            close.color = LedgerV2.HeadInk;
+
+            commandDossierViewport = NewRect("Body", commandDossierPanel);
+            PlaceTopLeft(commandDossierViewport, FilePad, -FileHeadH,
+                FileInner, FileBodyMax);
+            commandDossierViewport.gameObject.AddComponent<RectMask2D>();
+
+            commandDossierContent = NewRect("Content", commandDossierViewport);
+            commandDossierContent.anchorMin = new Vector2(0f, 1f);
+            commandDossierContent.anchorMax = new Vector2(1f, 1f);
+            commandDossierContent.pivot = new Vector2(0f, 1f);
+            commandDossierContent.anchoredPosition = Vector2.zero;
+            commandDossierContent.sizeDelta = new Vector2(0f, FileBodyMax);
+
+            commandDossierFoot = NewRect("Foot", commandDossierPanel);
+            PlaceTopLeft(commandDossierFoot, FilePad,
+                -(FileHeadH + FileBodyMax), FileInner, FileFootH);
+
+            commandDossierHoverNote = NewRect("Note", commandDossierPanel);
+            PlaceTopLeft(commandDossierHoverNote, 0f, 0f, FileInner - 60f, 60f);
+            Fill(commandDossierHoverNote, LedgerV2.Head);
+            commandDossierHoverNoteText = Text("Text", commandDossierHoverNote,
+                LedgerStyle.Mono, 12f, LedgerV2.HeadInk,
+                TextAlignmentOptions.TopLeft);
+            Stretch(commandDossierHoverNoteText.rectTransform, 10f);
+            commandDossierHoverNoteText.textWrappingMode = TextWrappingModes.Normal;
+            commandDossierHoverNote.gameObject.SetActive(false);
+
+            commandDossierRoot.gameObject.SetActive(false);
+        }
+
+        /// <summary>Paint the popup with the exact renderer used by PERSONNEL. The
+        /// renderer predates reusable surfaces, so its targets are lent to the popup
+        /// for this call and restored before returning.</summary>
+        void RebuildCommandDossier()
+        {
+            if (!commandDossierRoot)
+                return;
+
+            var roster = director != null ? director.Roster : null;
+            var member = commandDossierId >= 0 && roster != null
+                ? roster.Find(commandDossierId) : null;
+            if (member == null)
+            {
+                DismissCommandDossier();
+                return;
+            }
+
+            commandDossierRoot.gameObject.SetActive(true);
+            commandDossierRoot.SetAsLastSibling();
+
+            var savedPanel = filePanel;
+            var savedViewport = cardViewport;
+            var savedContent = cardContent;
+            var savedFoot = cardFoot;
+            var savedFileNo = cardFileNo;
+            var savedHover = hoverNote;
+            var savedHoverText = hoverNoteText;
+            var savedBodyH = fileBodyH;
+            var savedScroll = cardScroll;
+            var savedSelection = selectedId;
+
+            filePanel = commandDossierPanel;
+            cardViewport = commandDossierViewport;
+            cardContent = commandDossierContent;
+            cardFoot = commandDossierFoot;
+            cardFileNo = commandDossierFileNo;
+            hoverNote = commandDossierHoverNote;
+            hoverNoteText = commandDossierHoverNoteText;
+            cardScroll = commandDossierScroll;
+            selectedId = commandDossierId;
+
+            try
+            {
+                RebuildDetail();
+                commandDossierScroll = cardScroll;
+            }
+            finally
+            {
+                filePanel = savedPanel;
+                cardViewport = savedViewport;
+                cardContent = savedContent;
+                cardFoot = savedFoot;
+                cardFileNo = savedFileNo;
+                hoverNote = savedHover;
+                hoverNoteText = savedHoverText;
+                fileBodyH = savedBodyH;
+                cardScroll = savedScroll;
+                selectedId = savedSelection;
+            }
+        }
+
+        void OpenCommandDossier(int memberId)
+        {
+            if (director == null || director.Roster == null ||
+                director.Roster.Find(memberId) == null)
+                return;
+
+            commandDossierId = memberId;
+            commandDossierScroll = 0f;
+            pendingConfirm = Confirm.None;
+            lastRefusal = "";
+            dirty = true;
+        }
+
+        void CloseCommandDossier()
+        {
+            DismissCommandDossier();
+            dirty = true;
+        }
+
+        /// <summary>Silent close used while changing leaves or shutting the book.</summary>
+        void DismissCommandDossier()
+        {
+            commandDossierId = -1;
+            commandDossierScroll = 0f;
+            pendingConfirm = Confirm.None;
+            lastRefusal = "";
+            if (commandDossierRoot)
+                commandDossierRoot.gameObject.SetActive(false);
+            if (commandDossierHoverNote)
+                commandDossierHoverNote.gameObject.SetActive(false);
         }
 
         void CloseCommand(float cursor)
@@ -1742,7 +1921,7 @@ namespace LivingCity.UI
             if (isLieutenant)
             {
                 commandKeys.Add(("HIS FULL DOSSIER", LedgerV2.Key.Outline,
-                    (UnityAction)(() => ViewPersonnelMember(id)), true));
+                    (UnityAction)(() => OpenCommandDossier(id)), true));
                 commandKeys.Add(("CLOSE HIS FILE", LedgerV2.Key.Outline,
                     (UnityAction)(() => ToggleCommandFile(id)), true));
             }
@@ -1759,7 +1938,7 @@ namespace LivingCity.UI
                     commandKeys.Add(("PULL HIM BACK", LedgerV2.Key.Red,
                         (UnityAction)(() => FileHoodRecall(id)), true));
                 commandKeys.Add(("HIS FULL DOSSIER", LedgerV2.Key.Outline,
-                    (UnityAction)(() => ViewPersonnelMember(id)), true));
+                    (UnityAction)(() => OpenCommandDossier(id)), true));
             }
 
             const float gap = 8f;
@@ -2261,10 +2440,15 @@ namespace LivingCity.UI
             });
         }
 
-        /// <summary>Esc peels one layer off this sheet: the pick, then the open files,
-        /// then the Boss's own.</summary>
+        /// <summary>Esc peels one layer off this sheet: the full dossier popup, the
+        /// pick, then the open files, then the Boss's own.</summary>
         bool CloseCommandTransient()
         {
+            if (commandDossierId >= 0)
+            {
+                CloseCommandDossier();
+                return true;
+            }
             if (organizationPickedHoodId >= 0)
             {
                 organizationPickedHoodId = -1;

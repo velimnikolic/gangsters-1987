@@ -2003,6 +2003,12 @@ namespace RoadDemo
                 Selected.Car.DriveBy(target);
                 return true;
             }
+            // THE PLAYER'S KILL IS THE CHARGE: men lying in wait get up off their
+            // flanks and go (the hide order was the hold). Here and not in SetTarget,
+            // because the ambush springing itself is also an ordered fight, and that
+            // one keeps every man on the flank he was put on.
+            foreach (var man in Selected.All())
+                if (man != null) man.LeaveHeldCover();
             SetTarget(Selected, target, ordered: true);
             return true;
         }

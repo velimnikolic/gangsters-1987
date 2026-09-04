@@ -47,7 +47,8 @@ Other people's cars are already cover for the **automatic** search: `CoverNear` 
 
 ## 4. Rule 1b — leapfrog, never the open
 
-* A man behind a flank whose mark has walked out of range does not drop to the open: he asks `CoverToward` for the **next** flank toward the mark, keeps the old one until the new one is found, and only falls back to the open close when the street has nothing.
+* A man behind a flank whose mark has walked out of range asks `CoverToward` for the **next** flank he can shoot from, keeps the old one for one poll, and then goes in when the street has nothing. **Revised 2026-09-04 (the user's word):** a flank is only ever one he can shoot from - never "local protection" out of range - and KILL with nothing to get behind is a charge.
+* **HOLD is the hide order (2026-09-04).** A man on the flank the player put him on (`HeldCover`) never leaves it for range: a mark beyond his gun he waits for, down, and only a breached flank moves him. The player's KILL takes him off it (`LeaveHeldCover`) - the hide order is the hold, the kill order is the charge.
 * The rechecks stay on the 2–3 s throttle; the "mark walked 4 m off `_coverFrom`" re-ask stays.
 
 ## 5. Rule 2 — the ambush click (sačekuša)
@@ -105,7 +106,7 @@ Peeking round a corner or over a bonnet as a pose (there is no crouch-aim clip);
 ## 10. Tickets
 
 * COVER-001 — `CoverToward`: the flank on the fire line, asked before the closing shot; the closing shot becomes the fallback; point blank rule
-* COVER-002 — Leapfrog: the next flank toward a mark out of range; the open only when the street has nothing
+* COVER-002 — Leapfrog: the next firing flank toward a mark out of range; a charge when the street has nothing. Never on a held flank (HOLD).
 * COVER-003 — The ambush pick: props and stood cars under the right click, `OrderAmbush`, one man at the anchor and the rest around it, the threat direction
 * COVER-004 — Lying in wait: `HeldCover`/`Lurking` on the walker, `Engage` keeps the held flank, the lease, the self-started fight, the surprise sight range
 * COVER-005 — Cars that leave: the anchor watch on `RoadSpeed`, re-ask around the anchor; HIDE BEHIND IT on the rival car card

@@ -2955,7 +2955,12 @@ namespace RoadDemo
         /// hovering at the range edge makes him swap props every two seconds.</summary>
         const float CoverHoldMin = 3.5f, CoverHoldMax = 5f;
 
-        const int MaxCoverHopMisses = 3;
+        /// <summary>How many polls a man behind a flank the mark has backed out of the
+        /// reach of may be told "nothing you can shoot from" before he leaves it and
+        /// goes in. One: the hold beat above is the hysteresis, and after it a null
+        /// answer means the street has no firing flank - so he charges rather than
+        /// waits behind a bin he cannot shoot from (the user's word, 2026-09-04).</summary>
+        const int MaxCoverHopMisses = 1;
 
         /// <summary>The pure firing-position contract, shared with the idle test suite.
         /// A hand-authored/legacy flank whose anchor was not recorded can only be judged
@@ -2971,6 +2976,19 @@ namespace RoadDemo
         internal static bool KeepCoverAfterRecheckModel(bool hadCover, bool foundCover,
             bool currentCoverShields, bool tooClose = false) =>
             hadCover && !foundCover && currentCoverShields && !tooClose;
+
+        /// <summary>Does the mark's range, or its drift off the chosen line, move a
+        /// man off his flank at the next poll? Never a man HOLDING the flank he was
+        /// put on (the ambush's, the hide order's): he waits there for the mark to
+        /// come into reach. A breach is judged elsewhere and moves anybody.</summary>
+        internal static bool CoverRangeMovesModel(bool holding, bool outOfReach,
+            bool unknownAngleMoved) =>
+            !holding && (outOfReach || unknownAngleMoved);
+
+        /// <summary>Fighting from the very flank he was told to hold.</summary>
+        bool HoldingFlank =>
+            _heldCover.HasValue && _coverSpot.HasValue &&
+            (_coverSpot.Value - _heldCover.Value).sqrMagnitude < 0.01f;
 
         internal static bool CoverHopShouldReleaseModel(bool outOfReach,
             int failedHops) =>
@@ -3058,6 +3076,11 @@ namespace RoadDemo
             WatchToward(_lurkThreat);
             return true;
         }
+
+        /// <summary>The player's KILL on men lying in wait: they get up and go. The
+        /// hide order is the hold; the kill order is the charge, and a man told to kill
+        /// takes cover only where he can shoot from (DemoCrews.CoverNear).</summary>
+        public void LeaveHeldCover() => DropHeldCover();
 
         /// <summary>Up, and his crew's again: the lease ran out, or he was told to be
         /// somewhere else.</summary>
@@ -3679,8 +3702,15 @@ namespace RoadDemo
                 bool committed = have && currentCoverShields && !tooClose &&
                     (!InCover || Time.time < _coverHoldUntil);
                 bool breached = have && (!currentCoverShields || tooClose);
+                // HOLD (the user's word, 2026-09-04): a man told to get behind
+                // something is told, with it, to WAIT there. On the flank the player
+                // put him on he never leaves for range - a mark beyond the gun he waits
+                // for, down; only a breached flank moves him. Everything else about
+                // the fight (the rise, the shot, the switch of mark) is unchanged.
+                bool holding = HoldingFlank;
                 bool replace = have && !committed &&
-                    (breached || (due && (outOfReach || unknownAngleMoved)));
+                    (breached || (due && CoverRangeMovesModel(holding, outOfReach,
+                        unknownAngleMoved)));
 
                 if ((!have && (!_coverLooked || due)) || replace)
                 {
@@ -3713,16 +3743,16 @@ namespace RoadDemo
                             _coverCycle = Random.Range(0.6f, 1.1f);
                         }
                     }
-                    // A failed leapfrog is not an order to step into the open. The old
-                    // spot remains protection even when the mark is beyond weapon
-                    // range; only a breached flank is retired on a null answer.
+                    // A null answer with the mark still in reach keeps the shield he
+                    // has. With the mark beyond the gun's reach it means there is no
+                    // flank he can shoot from, and after the hop budget he goes in.
                     else
                     {
                         keptOld = KeepCoverAfterRecheckModel(
                             have, foundCover: false,
                             currentCoverShields: currentCoverShields,
                             tooClose: tooClose);
-                        if (keptOld && outOfReach)
+                        if (keptOld && outOfReach && !holding)
                         {
                             _coverHopMisses++;
                             if (CoverHopShouldReleaseModel(
@@ -3840,6 +3870,10 @@ namespace RoadDemo
                     _coverCycle -= dt;
                     if (_ducked)
                     {
+                        // waiting, not fighting: a man holding his flank with the mark
+                        // beyond his gun stays down until there is a shot to come up for
+                        if (_coverCycle <= 0f && HoldingFlank && dist > range)
+                            _coverCycle = Random.Range(0.8f, 1.4f);
                         if (_coverCycle <= 0f)
                         {
                             _ducked = false;

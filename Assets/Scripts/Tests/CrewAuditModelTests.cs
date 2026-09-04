@@ -33,9 +33,9 @@ namespace LivingCity.Tests
             RoutedSteerMayStepSidewaysButNotBack(failures);
             CoverUseRequiresAUsefulShotAndShieldedAngle(failures);
             CoverApproachStaysOnTheNearFace(failures);
-            BreachedCoverReopensLocalDefense(failures);
             EmptyCoverRecheckKeepsAShieldedFlank(failures);
             FailedCoverHopsEventuallyAdvance(failures);
+            HeldFlankWaitsForRange(failures);
             RecoveredRangeResetsCoverHopBudget(failures);
             LostSightKeepsAReachedShield(failures);
             StalledFleeReplansAreBounded(failures);
@@ -161,17 +161,6 @@ namespace LivingCity.Tests
                 failures.Add("Cover geometry: a car side was accepted against a longitudinal threat.");
         }
 
-        static void BreachedCoverReopensLocalDefense(List<string> failures)
-        {
-            if (!DemoCrews.NeedsLocalDefenseModel(
-                    hasCover: false, currentCoverShields: false) ||
-                !DemoCrews.NeedsLocalDefenseModel(
-                    hasCover: true, currentCoverShields: false) ||
-                DemoCrews.NeedsLocalDefenseModel(
-                    hasCover: true, currentCoverShields: true))
-                failures.Add("Cover breach: an invalid old flank suppresses the local defensive search.");
-        }
-
         static void EmptyCoverRecheckKeepsAShieldedFlank(List<string> failures)
         {
             // A periodic search returning nothing is not an instruction to step into
@@ -233,13 +222,27 @@ namespace LivingCity.Tests
         {
             if (CrewWalker.CoverHopShouldReleaseModel(
                     outOfReach: true, failedHops: 0) ||
-                CrewWalker.CoverHopShouldReleaseModel(
-                    outOfReach: true, failedHops: 1) ||
                 !CrewWalker.CoverHopShouldReleaseModel(
-                    outOfReach: true, failedHops: 64) ||
+                    outOfReach: true, failedHops: 1) ||
                 CrewWalker.CoverHopShouldReleaseModel(
                     outOfReach: false, failedHops: 64))
                 failures.Add("Cover leapfrog: failed protected hops either release immediately or freeze forever.");
+        }
+
+        static void HeldFlankWaitsForRange(List<string> failures)
+        {
+            // The hide order is the hold: a mark beyond the gun does not move a man
+            // off the flank he was put on, nor does the mark drifting off the line.
+            // A man on a flank of his own choosing still leaves it for range.
+            if (CrewWalker.CoverRangeMovesModel(
+                    holding: true, outOfReach: true, unknownAngleMoved: true) ||
+                !CrewWalker.CoverRangeMovesModel(
+                    holding: false, outOfReach: true, unknownAngleMoved: false) ||
+                !CrewWalker.CoverRangeMovesModel(
+                    holding: false, outOfReach: false, unknownAngleMoved: true) ||
+                CrewWalker.CoverRangeMovesModel(
+                    holding: false, outOfReach: false, unknownAngleMoved: false))
+                failures.Add("Held flank: range or drift moves a man off the flank he was told to hold, or fails to move one off his own.");
         }
 
         static void RecoveredRangeResetsCoverHopBudget(List<string> failures)
