@@ -459,3 +459,90 @@ Gde se ne slažem sa pregledom: predlog da se `Late` izbaci iz `Defend` je pola 
 zakašnjela vrata JESU problem kuće, samo je odgovor naplata a ne obilazak (A23). I nalaz
 da je A17 (brža misao) suvišan stoji tek posle S7: dok obilazak može da se restartuje,
 brža misao aktivno šteti.
+
+---
+
+## 8. Kako je prošlo (2026-09-04, posle implementacije)
+
+Ceo run AI-000…AI-009 je napisan istog dana, u tri commita, bez ulaska u Play —
+korisnik testira sam. Dokaz je papirni: petnaest suite-ova zelenih i novi merač
+(AI-008) nad trideset seedova.
+
+### 8.1 Šta je merač našao (i zašto je zato i pravljen)
+
+**Nalaz 1 — rota je preskakala kuće.** `Underworld.Think` je čitao svoj round-robin
+kursor *unutar* petlje koja ga koristi kao osnovu indeksa, pa je svaka kuća koja
+odmisli pomerala tlo ostatku prolaza. Živi runtime pušta tačno JEDNU kuću po pozivu i
+to nikad nije video; merač pušta sve, i kuća 16 je od 4. dana prestala da bude pitana —
+`thinks 0` cele dane, sa slobodnom ekipom i vratima koja se mogu pitati. To je bio pravi
+bag u modelu, ne u meraču. Popravljeno; ugovor `EveryHouseDueGetsItsTurn`.
+
+**Nalaz 2 — plate, ne um.** Posle popravke rote nijedna kuća ne stoji ni na jednoj
+kadenci (0 zamrznutih kuća na 1 h, 2 h i 4 h, trideset seedova). Jedini preostali pad je
+uvek isti: **sef ispod nedelju dana plata**, 128–133 kuća-dana od trideset gradova. Vrata
+plaćaju oko $100 nedeljno, a vojnik košta oko $280 nedeljno — kuća koja popuni ekipe ne
+može da ih plati sa zemlje koju drži. **To je EPIC 24 (plate/prihod), ne um**, i zato je
+u kodu A30: rast potpisuje čoveka samo dok nedeljni prihod pokriva platni spisak.
+
+### 8.2 Kadenca (A19), izmereno na trideset seedova × 14 dana × 21 kuća
+
+| misao svakih | blokova po kući, dan 14 | vrata po kući | zamrznutih kuća | ms misli ukupno |
+|---|---|---|---|---|
+| 1 h | **2.93** | 6.02 | 0 | 117 440 |
+| 2 h | **4.15** | 5.38 | 0 | 34 441 |
+| 4 h | **4.15** | 6.74 | 0 | 15 799 |
+
+**Brža misao ne donosi više zemlje — donosi manje.** Trošak nije problem (0.6 ms po
+misli; dvadeset kuća na sat igre je ~12 ms na 60 realnih sekundi). Zemlja jeste.
+
+Mehanizam koji se uklapa sa svime što papirni grad ume da pomeri: prisustvo raste 4/sat
+po postavljenoj ekipi, a vođstvo bloka traži 40 — deset sati stajanja. `Expand` nema
+sećanje "ovu ekipu sam već poslao tamo", pa um na svaki sat može da je prepošalje na
+susedni blok koji trenutno bolje kotira, i nijedan blok ne sazri. Na 4 sata prepoštuje
+retko i blokovi sazru.
+
+**Nije menjano ništa u kodu zbog ovoga.** A19 = 1 sat stoji kako je odlučeno; ovo je
+broj za tabelu, a odluka je korisnikova. Ako hoće 2 h ili 4 h, menja se `ThinkEveryHours`
+u `HouseMindConfig` i ništa drugo. Ako hoće 1 h, onda treba pravilo "poslata ekipa se ne
+prepošalje dok ulica ne sazri" — a to je novo pravilo i traži njegovu reč.
+
+**Ograničenje merača, napisano na njemu:** papirni sat meri KNJIGE, živi harness meri
+ULICU. Tamo nema hapšenja, nema policije, nema hoda koji zapne — pa su hapšenja nula po
+konstrukciji, a razlog zbog koga je 1 h uopšte izabran (kuća koja reaguje na napad,
+obilazak koji se ne ruši) papirni sat ne može da vidi. Živa polovina je
+`gangsters_house_table`.
+
+### 8.3 Nalazi dva Codex adversarial pregleda, i šta je popravljeno
+
+Prvi pregled (nad AI-000/001/002):
+
+* **prozor odgovora je bio prazan skup.** Knjiga moći zove incident "neodgovoren" tek
+  posle 12 h, a `HouseMind.Answer` odbija incident stariji od 12 h — nije postojao
+  trenutak u kome je tier 5 mogao da odgovori. Sad pogled nosi DVA broja: otvoreno
+  (bilo koje starosti, to um može da reši) i prekoračeno (to je već koštalo moći);
+* **runda je mogla da ukrade već poslatu ekipu** — obilazak koji poručnik/raspored šalje
+  se odbija ako ekipa već nosi posao iz knjige (igračev taster i dalje sme, A2), a kad
+  se runda otvori, `CrewJobs` zaboravlja marš tako da posao ponovo krene posle nje;
+* **čuvar rundi je radio na pogrešnom satu** — bio je na BUSINESS kanalu (4 h), pa ni
+  ponovni hod (15 min) ni prekid (2 h) nisu mogli da se ispune. Prebačen na kanal
+  fizičkog prisustva; sidro se uzima pri otvaranju runde, ne pri prvom pogledu.
+
+Drugi pregled (nad AI-003…AI-009):
+
+* **odred torbe je napadao mirne ekipe** samo zato što prolaze blokom — sad prolazi kroz
+  `Engagement.May` (rat svuda, primirje na svojoj zemlji, mir nikad bez izazivanja);
+* **papirna presuda je puštala osuđenog iz nadzora** — pin se skida samo kad je čovek
+  oslobođen ili isporučen, ne kad čeka kombi za zatvor;
+* **gubitak moći od policije bio je nedostižan** — `PoliceFaction` je −1, a straža je
+  odbacivala sve negativne ubice pre policijske grane;
+* **živa putanja hapšenja nije skidala moć** — `NoteArrest` je bio samo u `TakeIn`, koju
+  niko ne zove; sad je i u `TakeInOne`, kroz koju grad stvarno privodi;
+* **broj propalih transfera se nije snimao** — reload je vraćao čoveka na početak
+  čekanja i time gasio garanciju iz A16.
+
+### 8.4 Šta čeka korisnika
+
+1. **Play-test** — `gangsters_house_probe` i `gangsters_house_table` u živom gradu.
+2. **Kadenca (A19)** — tabela u 8.2; broj je njegov.
+3. **Pretpostavke A30–A36** (§4.5) — veto ili potvrda.
+4. **EPIC 24** — vrata ne plaćaju koliko ljudi koštaju; merač to prijavljuje svaki put.

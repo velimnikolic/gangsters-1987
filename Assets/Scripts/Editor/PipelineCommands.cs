@@ -761,56 +761,125 @@ namespace GangstersTools
         }
 
         [CliCommand("gangsters_underworld_sim",
-                    "RIVAL-011's yardstick: every house on the paper clock for D days, " +
-                    "with a week-by-week line each. Notes, not a verdict - only an " +
-                    "exception, an ownership refusal or a safe under water fail it.",
+                    "AI-008's yardstick: every house on the paper clock for D days on " +
+                    "four blocks a house, the fortnight table once a day per house, and " +
+                    "a verdict that can FAIL - a house leading no block by day 14, a " +
+                    "safe under a week's payroll, a stalled round, a door demanded more " +
+                    "than three times, a house that stood still a whole day. --think " +
+                    "sets the cadence under measurement (A19); --sweep N runs N seeds " +
+                    "and reports the distribution. The paper clock measures the books; " +
+                    "the live harness measures the street.",
                     MainThreadRequired = true,
                     Tags = new[] { "gangsters", "underworld", "sim" })]
         public static object UnderworldSim(
-            int seed = 1987, int days = 90, int houses = 21, int sweep = 0)
+            int seed = 1987, int days = 14, int houses = 21, int sweep = 0,
+            [CliArg("think", "Game hours between one house's thinks; 0 is the model's own.")]
+            float think = 0f,
+            [CliArg("table", "Print the per-day table lines (they are long).")]
+            bool table = false)
         {
             if (sweep <= 0)
             {
-                var one = LivingCity.Tests.UnderworldSim.Run(seed, days, houses);
+                var one = LivingCity.Tests.UnderworldSim.Run(seed, days, houses, think);
                 return new
                 {
                     passed = one.Clean,
                     seed,
                     days,
                     houses,
+                    thinkEveryHours = think > 0f ? think : new LivingCity.Outfit.HouseMindConfig().ThinkEveryHours,
+                    limit = LivingCity.Tests.UnderworldSim.Limit,
                     negatives = one.Negatives,
+                    frozenHouseDays = one.Frozen,
                     ownershipRefusals = one.OwnershipRefusals,
+                    thinkMilliseconds = one.ThinkMilliseconds,
+                    blocksPerHouseAtDay14 = one.HousesAtFortnight > 0
+                        ? System.Math.Round(
+                            one.BlocksAtFortnight / (double)one.HousesAtFortnight, 2)
+                        : 0.0,
+                    doorsPerHouseAtDay14 = one.HousesAtFortnight > 0
+                        ? System.Math.Round(
+                            one.DoorsAtFortnight / (double)one.HousesAtFortnight, 2)
+                        : 0.0,
                     error = one.Error,
-                    lines = one.Lines.ToArray(),
+                    failures = one.Failures.ToArray(),
+                    lines = table ? one.Lines.ToArray() : new string[0],
                 };
             }
 
-            // THE SWEEP. Thirty cities, the same month in each - one seed proves
-            // nothing (the tally of thirty is the verdict).
+            // THE SWEEP. Thirty cities, the same fortnight in each - one seed proves
+            // nothing (the tally of thirty is the verdict), and the DISTRIBUTION is
+            // reported, not the mean: the question is whether ANY city still has a
+            // frozen house.
             var rows = new List<string>();
+            var failures = new List<string>();
+            var errors = new List<string>();
             var negatives = 0;
             var refused = 0;
-            var errors = new List<string>();
+            var frozenDays = 0;
+            var citiesWithAFrozenHouse = 0;
+            var citiesFailing = 0;
+            var thinkMs = 0;
+            var blocks = 0;
+            var doors = 0;
+            var counted = 0;
+            var byKind = new Dictionary<string, int>();
             for (var s = 1; s <= sweep; s++)
             {
-                var report = LivingCity.Tests.UnderworldSim.Run(s, days, houses);
+                var report = LivingCity.Tests.UnderworldSim.Run(s, days, houses, think);
                 negatives += report.Negatives;
                 refused += report.OwnershipRefusals;
+                frozenDays += report.Frozen;
+                thinkMs += report.ThinkMilliseconds;
+                blocks += report.BlocksAtFortnight;
+                doors += report.DoorsAtFortnight;
+                counted += report.HousesAtFortnight;
+                if (report.Frozen > 0)
+                    citiesWithAFrozenHouse++;
+                if (!report.Clean)
+                    citiesFailing++;
                 if (!string.IsNullOrEmpty(report.Error))
                     errors.Add("seed " + s + ": " + report.Error);
-                for (var i = 0; i < report.Lines.Count; i++)
-                    rows.Add("seed " + s + " " + report.Lines[i]);
+                for (var i = 0; i < report.Failures.Count; i++)
+                {
+                    failures.Add(report.Failures[i]);
+                    var kind = report.Failures[i].Substring(
+                        report.Failures[i].IndexOf(':') + 2);
+                    kind = kind.Split('(')[0]
+                        .Split(new[] { " - " }, StringSplitOptions.None)[0].Trim();
+                    byKind.TryGetValue(kind, out var count);
+                    byKind[kind] = count + 1;
+                }
+                if (table)
+                    rows.AddRange(report.Lines);
             }
+
+            var kinds = new List<string>();
+            foreach (var pair in byKind)
+                kinds.Add(pair.Value + " x " + pair.Key);
+            kinds.Sort();
 
             return new
             {
-                passed = errors.Count == 0 && refused == 0,
+                passed = errors.Count == 0 && refused == 0 && failures.Count == 0,
                 seeds = sweep,
                 days,
                 houses,
+                thinkEveryHours = think > 0f ? think : new LivingCity.Outfit.HouseMindConfig().ThinkEveryHours,
+                limit = LivingCity.Tests.UnderworldSim.Limit,
+                citiesFailing,
+                citiesWithAFrozenHouse,
+                frozenHouseDays = frozenDays,
                 negatives,
                 ownershipRefusals = refused,
+                thinkMilliseconds = thinkMs,
+                blocksPerHouseAtDay14 = counted > 0
+                    ? System.Math.Round(blocks / (double)counted, 2) : 0.0,
+                doorsPerHouseAtDay14 = counted > 0
+                    ? System.Math.Round(doors / (double)counted, 2) : 0.0,
+                failuresByKind = kinds.ToArray(),
                 errors = errors.ToArray(),
+                failures = failures.ToArray(),
                 lines = rows.ToArray(),
             };
         }
@@ -1030,6 +1099,192 @@ namespace GangstersTools
                 houses = houses.ToArray(),
                 rounds = rounds.ToArray(),
                 units = units.ToArray(),
+            };
+        }
+
+        /// <summary>
+        /// AI-008 PART TWO, THE LIVE HALF: the plan's §1.1 table for the running city,
+        /// one line per house, on demand - the user plays and asks; nothing here enters
+        /// Play. The same columns the paper yardstick prints, read off the real ledgers,
+        /// with the two the paper clock cannot have: arrests and rounds lost today.
+        /// </summary>
+        [CliCommand("gangsters_house_table",
+                    "AI-008: the fortnight table for the live city, one line per house " +
+                    "- men, crews, doors, blocks, money, the book, the rounds, the worst " +
+                    "door, arrests and rounds lost today, the biggest grudge, accepted " +
+                    "intents today, the phase. Reads, never repairs.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "underworld", "audit" })]
+        public static object HouseTable()
+        {
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            var runtime = UnityEngine.Object.FindAnyObjectByType<RoadDemo.TerritoryRuntime>();
+            if (underworld == null || runtime == null)
+                return new { ok = false, reason = "No underworld or territory runtime is running." };
+
+            var hour = runtime.GameHour;
+            var day = (int)(hour / 24.0) + 1;
+            var config = runtime.MindConfig;
+            var racket = runtime.Racket;
+            var control = runtime.Control;
+            var lines = new List<string>();
+            var frozen = new List<string>();
+            var rounds = runtime.Rounds != null ? runtime.Rounds.Rounds : null;
+
+            for (var g = 0; g < underworld.Count; g++)
+            {
+                var house = underworld.Of(g);
+                if (house?.Roster == null)
+                    continue;
+                var roster = house.Roster;
+                var mine = new LivingCity.Territory.TerritoryGangId(g);
+
+                int active = 0, jailed = 0, hurt = 0, dead = 0;
+                for (var i = 0; i < roster.Members.Count; i++)
+                {
+                    var man = roster.Members[i];
+                    if (man.Status == LivingCity.Personnel.CharacterStatus.Active) active++;
+                    else if (man.Status == LivingCity.Personnel.CharacterStatus.Jailed) jailed++;
+                    else if (man.Status == LivingCity.Personnel.CharacterStatus.Hospitalized ||
+                             man.Status == LivingCity.Personnel.CharacterStatus.Taken) hurt++;
+                    else dead++;
+                }
+
+                var crews = 0;
+                var full = 0;
+                for (var c = 0; c < roster.Crews.Count; c++)
+                {
+                    var crew = roster.Crews[c];
+                    if (crew.LieutenantId == roster.BossId)
+                        continue;
+                    crews++;
+                    var hoods = 0;
+                    for (var h = 0; h < crew.HoodIds.Count; h++)
+                    {
+                        var man = roster.Find(crew.HoodIds[h]);
+                        if (man != null && !man.Gone &&
+                            man.Status == LivingCity.Personnel.CharacterStatus.Active)
+                            hoods++;
+                    }
+                    if (hoods >= config.HoodsPerCrew)
+                        full++;
+                }
+
+                int paying = 0, hesitant = 0, refused = 0, worst = 0;
+                var protectedBlocks = new HashSet<string>();
+                if (racket != null)
+                {
+                    var ids = racket.Businesses;
+                    for (var i = 0; i < ids.Count; i++)
+                    {
+                        var state = racket.StateOf(ids[i], mine);
+                        if (state == LivingCity.Territory.TerritoryProtectionState.Compliant) paying++;
+                        else if (state == LivingCity.Territory.TerritoryProtectionState.Hesitant) hesitant++;
+                        else if (state == LivingCity.Territory.TerritoryProtectionState.Defiant) refused++;
+                        if (racket.TryGetRelationship(ids[i], mine, out var row) &&
+                            row.Demands > worst)
+                            worst = row.Demands;
+                    }
+                }
+
+                var led = 0;
+                var states = new List<string>();
+                if (control != null)
+                    for (var b = 0; b < control.Blocks.Count; b++)
+                        if (control.LeaderOf(control.Blocks[b]) == mine)
+                        {
+                            led++;
+                            states.Add(control.StateOf(control.Blocks[b]).ToString().Substring(0, 3));
+                        }
+
+                var jobs = 0;
+                var oldestJob = 0;
+                for (var i = 0; i < house.Runner.Book.Jobs.Count; i++)
+                {
+                    var job = house.Runner.Book.Jobs[i];
+                    if (job.Stage == LivingCity.Outfit.JobStage.Finished)
+                        continue;
+                    jobs++;
+                    if (day - job.IssuedDay > oldestJob)
+                        oldestJob = day - job.IssuedDay;
+                }
+
+                var outRounds = 0;
+                var gap = 0.0;
+                for (var r = 0; rounds != null && r < rounds.Count; r++)
+                {
+                    if (rounds[r].House != mine)
+                        continue;
+                    outRounds++;
+                    if (hour - rounds[r].LastMoveAt > gap)
+                        gap = hour - rounds[r].LastMoveAt;
+                }
+
+                var maxGrievance = 0f;
+                var against = -1;
+                var wars = 0;
+                for (var other = 0; other < underworld.Count; other++)
+                {
+                    if (other == g || underworld.Of(other) == null)
+                        continue;
+                    if (underworld.Relations.StanceBetween(g, other) == LivingCity.Outfit.Stance.War)
+                        wars++;
+                    var owed = underworld.Relations.Grievance(g, other);
+                    if (owed > maxGrievance)
+                    {
+                        maxGrievance = owed;
+                        against = other;
+                    }
+                }
+
+                var accepted = 0;
+                var history = runtime.ThinkHistory(g);
+                for (var i = 0; i < history.Count; i++)
+                    if (history[i].Day == day)
+                        accepted += history[i].Accepted;
+
+                var phase = "-";
+                if (!house.IsPlayer && !house.Finished)
+                {
+                    var view = runtime.Peek(house);
+                    if (view != null)
+                        phase = LivingCity.Outfit.HouseMind.PhaseOf(view, config).ToString();
+                }
+
+                var line = "day " + day + " house " + g + " " +
+                           LivingCity.Gangs.GangCatalog.Names[g] +
+                           " men " + active + "/" + jailed + "/" + hurt + "/" + dead +
+                           " crews " + crews + "/" + full + "full" +
+                           " doors " + paying + "/" + hesitant + "/" + refused +
+                           " blocks " + led + (states.Count > 0 ? "(" + string.Join(",", states) + ")" : "") +
+                           " safe " + house.Runner.Accounts.Safe +
+                           " payroll " + LivingCity.Outfit.Wages.DailyPayroll(roster) +
+                           " power " + runtime.PowerOf(mine) +
+                           " jobs " + jobs + "/" + oldestJob + "d" +
+                           " rounds " + outRounds + "/" + (int)gap + "h" +
+                           " worstdoor " + worst +
+                           " arrests " + runtime.CountedToday(g, "arrests") +
+                           " lost " + runtime.CountedToday(g, "lost") +
+                           " grudge " + (int)maxGrievance + (against >= 0 ? "@" + against : "") +
+                           " wars " + wars +
+                           " accepted " + accepted +
+                           " phase " + phase +
+                           (house.Finished ? " FINISHED" : "");
+                lines.Add(line);
+                if (!house.IsPlayer && !house.Finished && accepted == 0 &&
+                    phase == "Land" && hour - (day - 1) * 24.0 >= 12.0)
+                    frozen.Add("house " + g + ": ground to take and nothing accepted by " +
+                               (int)(hour - (day - 1) * 24.0) + ":00");
+            }
+
+            return new
+            {
+                ok = true,
+                gameHour = System.Math.Round(hour, 2),
+                day,
+                thinkEveryHours = config.ThinkEveryHours,
+                stoji = frozen.ToArray(),
+                lines = lines.ToArray(),
             };
         }
 

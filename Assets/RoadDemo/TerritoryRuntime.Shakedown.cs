@@ -59,6 +59,17 @@ namespace RoadDemo
             if (RoundRunning(unit.CrewId))
                 return TerritoryCommandExecution.Reject(WalkOutRefusal);
 
+            // AND A CREW ALREADY ON A JOB IS NOT SENT DOWN A BLOCK (ruling A2, the
+            // other ordering). A book job cancels a round the schedule or a mind sent;
+            // the same word has to hold when the job came first, or the walk would
+            // quietly march the men off an order they were already carrying and the
+            // job would sit dispatched for ever. THE PLAYER'S OWN KEY still may: his
+            // order outlives the lieutenant's book, which is the whole of A2.
+            if (submittingOrigin != TerritoryRoundOrigin.Player &&
+                LivingCity.Outfit.Underworld.Current?.Of(gang.Value)?.Runner
+                    .Book.CurrentFor(unit.CrewId) != null)
+                return TerritoryCommandExecution.Reject(WalkBusyRefusal);
+
             var candidates = new List<RoundStop>();
             var here = geography.BusinessesOf(blockId);
             for (var i = 0; i < here.Count; i++)
@@ -124,6 +135,7 @@ namespace RoadDemo
         internal const string ShakedownRefusal = "every door here has answered us";
         internal const string LeanRefusal = "nobody is holding out";
         internal const string WalkOutRefusal = "the men are already walking a block";
+        internal const string WalkBusyRefusal = "the men are out on an order already";
 
         /// <summary>Whether THIS house holds this door's deed - its own shop, its
         /// front, its headquarters. The one place the two block orders ask it, so the

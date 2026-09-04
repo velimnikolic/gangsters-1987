@@ -48,6 +48,7 @@ namespace LivingCity.Save
                     prisonDay = man.PrisonDay,
                     bailPaid = man.BailPaid,
                     skipOrdered = man.SkipOrdered,
+                    transferFails = man.TransferFails,
                 };
             }
             return rows;
@@ -148,6 +149,7 @@ namespace LivingCity.Save
                     PrisonDay = row.prisonDay,
                     BailPaid = row.bailPaid,
                     SkipOrdered = row.skipOrdered,
+                    TransferFails = row.transferFails,
                 });
             }
 

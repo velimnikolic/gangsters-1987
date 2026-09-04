@@ -187,6 +187,11 @@ namespace RoadDemo
             if (!taken) return false;
 
             AttachArrestPaper(unit, pipeline, file, today);
+            // ONE MAN LED AWAY IS ONE MAN'S WORTH OF FACE (AI-009, A29b). This is the
+            // door the city's own custody actually books men through
+            // (PoliceDispatch.Custody); TakeIn is the whole-unit path beside it, and
+            // neither calls the other, so nothing is counted twice.
+            TerritoryRuntime.Instance?.NoteArrest(unit.Faction, 1);
             house.Touch();
             if (unit.Faction == LivingCity.Gameplay.PlayerCommands.House.Value)
                 PersonnelDirector.Instance?.Touch();

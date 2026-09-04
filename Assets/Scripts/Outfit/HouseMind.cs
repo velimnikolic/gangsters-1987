@@ -257,6 +257,47 @@ namespace LivingCity.Outfit
             return HousePhase.War;
         }
 
+        /// <summary>
+        /// WHY THE PHASE READS WHAT IT READS, in one line - the ground still worth
+        /// asking, the neighbour worth walking onto, and whether there is a crew to
+        /// send. A house whose phase says LAND while it files nothing is a house whose
+        /// reading and whose acting disagree, and this is what names which of them is
+        /// wrong (AI-000's lesson; the probe and the yardstick both print it).
+        /// </summary>
+        public static string PhaseNote(HouseView view, HouseMindConfig config)
+        {
+            config = config ?? HouseMindConfig.Default;
+            if (view?.Roster == null)
+                return "no books";
+
+            var note = "";
+            for (var b = 0; b < view.Blocks.Count; b++)
+            {
+                var blockId = view.Blocks[b];
+                if (!AnyAskable(view, blockId))
+                    continue;
+                var walked = view.LastWalked(blockId);
+                note += "askable " + blockId.Value +
+                        (view.OurPresence(blockId) < config.DemandPresence
+                            ? " (presence " + (int)view.OurPresence(blockId) + " short)"
+                            : "") +
+                        (walked >= 0.0 && view.GameHour - walked < config.DemandCooldownHours
+                            ? " (walked " + (int)(view.GameHour - walked) + "h ago)"
+                            : "") +
+                        (view.PoliceAttention(blockId) > config.WalkAttentionCap
+                            ? " (law watching)"
+                            : "") +
+                        (CrewOn(view, blockId) == null ? " (no crew)" : "") + "; ";
+            }
+
+            var best = BestNeighbour(view, config);
+            if (best.IsValid)
+                note += "neighbour " + best.Value + " worth $" +
+                        Score(view, config, best, 1) + "; ";
+            note += CrewOn(view, default) != null ? "a crew is free" : "no crew is free";
+            return note;
+        }
+
         // ------------------------------------------------------------------- tier 1
 
         /// <summary>

@@ -56,6 +56,14 @@ namespace LivingCity.Save
         /// <summary>The boss has said he is not turning up.</summary>
         public bool skipOrdered;
 
+        /// <summary>Appended (AI-006). How many days running the transfer for his
+        /// current leg has failed to run: at TransferFailsBeforePaper the leg is
+        /// carried on paper, so a file that dropped it let a reload put a man back at
+        /// the start of the wait, and a player could defeat the anti-stall guarantee by
+        /// loading (Codex adversarial review, 2026-09-04). Zero is the old file's
+        /// value and the honest one.</summary>
+        public int transferFails;
+
         // Appended (GAN-315): how he answered at the door, and whether this custody
         // had already been broken before the station threshold.
         public int answer;

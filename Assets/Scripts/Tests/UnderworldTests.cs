@@ -35,7 +35,78 @@ namespace LivingCity.Tests
             ("ThePlayersEndIsNoticedThroughTheSweep",
                 ThePlayersEndIsNoticedThroughTheSweep),
             ("TheEndAndTheBrokeRunSurviveASave", TheEndAndTheBrokeRunSurviveASave),
+            ("EveryHouseDueGetsItsTurn", EveryHouseDueGetsItsTurn),
         };
+
+        // ------------------------------------------------------------------- the rota
+
+        /// <summary>
+        /// EVERY HOUSE THAT IS DUE GETS ITS TURN (AI-008). The rota is round-robin so
+        /// no family starves behind a busy neighbour - and its cursor must not move the
+        /// ground under its own walk: with more than one think allowed per call, the
+        /// cursor used to be re-read every step, so a house that took a turn shifted
+        /// the indexing for the rest of the pass and some houses were never reached.
+        /// One family in the yardstick's paper city stopped being asked from day four.
+        /// </summary>
+        static void EveryHouseDueGetsItsTurn(List<string> failures)
+        {
+            var world = Underworld.Deal(Seed);
+            var turns = new int[GangCatalog.GangCount];
+
+            // Every rival is due at once, and the whole city may think in one call.
+            // The hour is a real one: NextThinkHour <= 0 is the "this house has never
+            // opened its rota" sentinel, and a campaign's clock starts past midnight
+            // of day one, so nothing ever asks the underworld to think at hour nought.
+            const double Hour = 10.0;
+            for (var g = 0; g < GangCatalog.GangCount; g++)
+            {
+                var house = world.Of(g);
+                if (house != null)
+                    house.WakeNow(Hour);
+            }
+            var thought = world.Think(Hour, 1f, house => turns[house.GangId]++,
+                GangCatalog.GangCount);
+
+            var missed = 0;
+            for (var g = 0; g < GangCatalog.GangCount; g++)
+            {
+                var house = world.Of(g);
+                if (house == null || house.IsPlayer || house.Finished)
+                    continue;
+                if (turns[g] == 0)
+                    missed++;
+                if (turns[g] > 1)
+                    failures.Add("UNDERWORLD-014: house " + g + " thought " + turns[g] +
+                                 " times in one call.");
+            }
+            if (missed > 0)
+                failures.Add("UNDERWORLD-014: " + missed +
+                             " houses were due and never reached in a call that " +
+                             "allowed the whole city to think (" + thought + " thought).");
+
+            // And the player is never handed a turn: he is the mind.
+            if (turns[GangCatalog.PlayerGangId] != 0)
+                failures.Add("UNDERWORLD-014: the player's house was given a turn of mind.");
+
+            // Over many calls at one think apiece, nobody starves behind a neighbour.
+            var fair = Underworld.Deal(Seed);
+            var rounds = new int[GangCatalog.GangCount];
+            for (var call = 1; call <= GangCatalog.GangCount * 3; call++)
+            {
+                for (var g = 0; g < GangCatalog.GangCount; g++)
+                    fair.Of(g)?.WakeNow(call);
+                fair.Think(call, 1f, house => rounds[house.GangId]++);
+            }
+            for (var g = 0; g < GangCatalog.GangCount; g++)
+            {
+                var house = fair.Of(g);
+                if (house == null || house.IsPlayer || house.Finished)
+                    continue;
+                if (rounds[g] == 0)
+                    failures.Add("UNDERWORLD-014: house " + g +
+                                 " starved over three passes of the one-at-a-time rota.");
+            }
+        }
 
         public static List<string> Run()
         {

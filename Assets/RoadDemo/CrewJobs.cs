@@ -119,6 +119,18 @@ namespace RoadDemo
         public static bool MarchOutstanding(int crewId) =>
             Dispatched.ContainsKey(crewId) || Driving.ContainsKey(crewId);
 
+        /// <summary>
+        /// SOMETHING ELSE TOOK THESE MEN. The crew's travel stamp is dropped, so the
+        /// next tick of its book issues the march again rather than believing the men
+        /// are still on their way somewhere they were pulled off. Called when a round
+        /// opens over a crew that had a job out.
+        /// </summary>
+        public static void ForgetDispatch(int crewId)
+        {
+            Dispatched.Remove(crewId);
+            Driving.Remove(crewId);
+        }
+
         /// <summary>The door a crew is standing a watch on, if it is (AI-000).</summary>
         public static bool TryGetWatch(int crewId,
             out LivingCity.Territory.TerritoryBusinessId door)

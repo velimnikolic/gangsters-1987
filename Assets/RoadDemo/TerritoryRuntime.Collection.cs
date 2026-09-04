@@ -284,6 +284,18 @@ namespace RoadDemo
                     unit.IsPolice || unit.Wiped || CrewQuarters.Inside(unit) ||
                     !TryGetBlockAtWorld(unit.Position, out var block) || block != homeBlock)
                     continue;
+                // AND ONLY IF WE MAY FIGHT THEM AT ALL. Men of a house we are at peace
+                // with may walk down our street; the detail comes out for them at war,
+                // and on our own ground at truce - the three sentences the FAMILIES
+                // card prints, and nothing else (Engagement.May). Without this the
+                // detail every house now keeps started fights during peace with any
+                // crew that crossed the block (Codex adversarial review, 2026-09-04).
+                if (!LivingCity.Outfit.Engagement.May(
+                        Relations != null
+                            ? Relations.StanceBetween(house.Value, unit.Faction)
+                            : LivingCity.Outfit.Stance.Peace,
+                        oursIsTheGround: true, provoked: false))
+                    continue;
                 return unit;
             }
 
@@ -398,10 +410,21 @@ namespace RoadDemo
                 // The opening march is the first leg; the watchdog re-issues it only
                 // once a re-march interval has passed, not on its first look.
                 NextRemarchAt = lastGameHour + mindConfig.RoundRemarchHours,
+                // AND THE CLOCK STARTS WHERE THE MEN STAND (Codex adversarial review,
+                // 2026-09-04). The watchdog used to take its first anchor on its first
+                // look and reset LastMoveAt with it, so a round opened between two
+                // looks was given that much longer before anybody called it stalled.
+                LastAnchor = UnitAnchor(walkers),
+                AnchorKnown = true,
             };
             for (var i = 0; i < ordered.Count; i++)
                 body.Doors.Add(ordered[i].Door);
             bodies.Add(body);
+            // THE JOB'S ROUTE IS SPENT. Whatever CrewJobs had these men marching to,
+            // they are walking a round now; forgetting the stamp is what makes the job
+            // re-issue its own march when the round ends, instead of sitting dispatched
+            // for ever behind a walk that took its men (Codex adversarial review).
+            CrewJobs.ForgetDispatch(walkers.CrewId);
             return round;
         }
 
@@ -1625,6 +1648,7 @@ namespace RoadDemo
             }
             else if (round.Carried > 0)
             {
+                CountToday(round.House.Value, "lost");
                 // A BAG TAKEN OFF OUR MEN IS OWED FOR (D14) - if anybody was seen. The
                 // most recent house to put hands on somebody on that street is who the
                 // family blames, which is what a family would do.

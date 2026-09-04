@@ -293,9 +293,17 @@ namespace LivingCity.Outfit
                 return 0;
 
             var thought = 0;
+            // THE BASE OF THE ROTA IS READ ONCE, NOT PER STEP (AI-008 found it). The
+            // cursor moves as houses think, and using it as the loop's own base moved
+            // the ground under the walk: with maxPerCall above one, every house that
+            // took a turn shifted the indexing for the rest of the pass and some
+            // houses were never reached at all. The live runtime lets exactly one
+            // house think per call and never saw it; the yardstick lets all of them,
+            // and one family in a paper city simply stopped being asked from day four.
+            var from = thinkCursor;
             for (var i = 0; i < houses.Length && thought < maxPerCall; i++)
             {
-                var house = houses[(i + thinkCursor) % houses.Length];
+                var house = houses[(i + from) % houses.Length];
                 if (house == null || house.IsPlayer || house.Finished)
                     continue;
                 if (house.NextThinkHour <= 0.0)

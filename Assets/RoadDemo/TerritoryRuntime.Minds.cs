@@ -187,6 +187,26 @@ namespace RoadDemo
                 list.RemoveAt(0);
         }
 
+        /// <summary>
+        /// THE DAY'S COUNTS PER HOUSE (AI-008's live table): arrests and rounds lost,
+        /// keyed by (house, day) so a count never has to be reset. Memory only.
+        /// </summary>
+        readonly Dictionary<(int gang, int day, string what), int> dayCounts =
+            new Dictionary<(int, int, string), int>();
+
+        public void CountToday(int gangId, string what)
+        {
+            var key = (gangId, (int)(lastGameHour / 24.0) + 1, what);
+            dayCounts.TryGetValue(key, out var count);
+            dayCounts[key] = count + 1;
+        }
+
+        public int CountedToday(int gangId, string what) =>
+            dayCounts.TryGetValue((gangId, (int)(lastGameHour / 24.0) + 1, what),
+                out var count)
+                ? count
+                : 0;
+
         /// <summary>The refused-intent memory of one house (P4). Memory only, like the
         /// think history: a back-off that came back from a file would be a house
         /// refusing to try something for reasons nobody can see any more.</summary>
@@ -510,11 +530,12 @@ namespace RoadDemo
                     // so a guard can measure its day from the LAST one; the count of
                     // unanswered is what tier 5 still has a window on.
                     power.Collect(blockId, mine, gameHour, out var total,
-                        out var unanswered, out var oldestOpen, out var lastAt);
+                        out var overdue, out var open, out var newestOpen, out var lastAt);
                     if (total > 0)
                         incidentScratch.Add(new HouseIncident(
-                            blockId, unanswered,
-                            double.IsNaN(oldestOpen) ? lastAt : oldestOpen, lastAt));
+                            blockId, open,
+                            double.IsNaN(newestOpen) ? lastAt : newestOpen, lastAt,
+                            overdue));
                 }
                 CollectDefiances(blockId, mine, gameHour);
             }

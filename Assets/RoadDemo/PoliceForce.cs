@@ -234,7 +234,15 @@ namespace RoadDemo
                 }
                 var wasCourt = prisoner.Leg == PrisonLeg.Court;
                 Pipeline.OnPaper(roster, prisoner, today);
-                ReleaseCustodyTracking(prisoner.CharacterId);
+                // ONLY A MAN WHO IS OUT OF THE CITY'S HANDS LOSES HIS PIN. A paper
+                // conviction leaves him SENTENCED and waiting on the van, and the
+                // player must still be able to follow that drive - releasing the
+                // tracking there unlocked a jailed body and took its position off the
+                // map (Codex adversarial review, 2026-09-04).
+                if (prisoner.Stage == PrisonStage.Cleared ||
+                    prisoner.Stage == PrisonStage.Serving ||
+                    Pipeline.Find(prisoner.CharacterId) == null)
+                    ReleaseCustodyTracking(prisoner.CharacterId);
                 if (!wasCourt)
                     continue;
                 var file = prisoner.CaseId >= 0 ? Pipeline.FindCase(prisoner.CaseId) : null;

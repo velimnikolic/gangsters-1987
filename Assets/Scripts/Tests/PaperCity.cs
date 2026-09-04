@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using LivingCity.Business;
 using LivingCity.Outfit;
 using LivingCity.Personnel;
 using LivingCity.Territory;
@@ -6,9 +7,12 @@ using LivingCity.Territory;
 namespace LivingCity.Tests
 {
     /// <summary>
-    /// A CITY WITH NOTHING IN IT BUT DOORS. Two blocks a family: the street it lives on
-    /// and the one next to it, laid in a row so every block has neighbours. Four doors
-    /// each, twenty metres apart.
+    /// A CITY WITH NOTHING IN IT BUT DOORS. Four blocks a family (AI-008): the street it
+    /// lives on and three beside it, laid in one row so every block has neighbours and
+    /// the last block of one family's strip touches the first of the next's - which is
+    /// where a border is. Doors per block vary with the seed, and each door pays what
+    /// the real price table charges its trade, so a block is worth what a block is
+    /// worth and not a flat figure.
     ///
     /// Nothing here decides anything a mind or a ledger decides. It answers where things
     /// are and how far apart, and it carries an intent to the same pure calls the runtime
@@ -17,7 +21,28 @@ namespace LivingCity.Tests
     /// </summary>
     public sealed class PaperCity
     {
+        public const int BlocksPerHouse = 4;
+        public const int MinDoors = 3;
+        public const int MaxDoors = 6;
+
+        /// <summary>The generic ground-floor trades - the pool an unlabelled shopfront
+        /// is dealt from in the real city, and the rates the yardstick prices doors at.
+        /// </summary>
+        static readonly BusinessArchetypeId[] Trades =
+        {
+            BusinessArchetypeId.Grocer, BusinessArchetypeId.Butcher,
+            BusinessArchetypeId.Baker, BusinessArchetypeId.Barber,
+            BusinessArchetypeId.Tailor, BusinessArchetypeId.Laundry,
+            BusinessArchetypeId.Pharmacy, BusinessArchetypeId.Hardware,
+            BusinessArchetypeId.Bookshop, BusinessArchetypeId.RecordShop,
+            BusinessArchetypeId.Florist, BusinessArchetypeId.Newsstand,
+            BusinessArchetypeId.Cobbler, BusinessArchetypeId.Locksmith,
+            BusinessArchetypeId.PawnShop, BusinessArchetypeId.ElectricalShop,
+            BusinessArchetypeId.TravelAgent, BusinessArchetypeId.BettingShop,
+        };
+
         readonly TerritoryBlockId[] blocks;
+        readonly int[] doorsPerBlock;
         readonly Dictionary<string, float> presence = new Dictionary<string, float>();
         readonly Dictionary<int, (TerritoryGangId House, TerritoryBlockId Block)> posted =
             new Dictionary<int, (TerritoryGangId, TerritoryBlockId)>();
@@ -34,24 +59,23 @@ namespace LivingCity.Tests
         readonly Dictionary<(int gang, TerritoryBlockId block), double> walked =
             new Dictionary<(int, TerritoryBlockId), double>();
 
+        public readonly int Seed;
         public double Hour;
         public int LastDay = -1;
 
-        public HouseBackoffs BackoffsOf(int gangId)
+        public PaperCity(int houses, int seed = 1987)
         {
-            if (!backoffs.TryGetValue(gangId, out var book))
-            {
-                book = new HouseBackoffs();
-                backoffs.Add(gangId, book);
-            }
-            return book;
-        }
-
-        public PaperCity(int houses)
-        {
-            blocks = new TerritoryBlockId[houses * 2];
+            Seed = seed;
+            blocks = new TerritoryBlockId[houses * BlocksPerHouse];
+            doorsPerBlock = new int[blocks.Length];
             for (var b = 0; b < blocks.Length; b++)
+            {
                 blocks[b] = new TerritoryBlockId("block:" + b);
+                // Varied, deterministic, and never a flat four: the same seed deals
+                // the same street twice, and thirty seeds deal thirty streets.
+                doorsPerBlock[b] = MinDoors +
+                    (int)((uint)Potential.Mix(seed, b * 7 + 3) % (MaxDoors - MinDoors + 1));
+            }
         }
 
         public int Blocks => blocks.Length;
@@ -60,10 +84,28 @@ namespace LivingCity.Tests
         public TerritoryBlockId BlockAt(int index) =>
             index >= 0 && index < blocks.Length ? blocks[index] : default;
 
-        public TerritoryBlockId HomeBlockOf(int gangId) => BlockAt(gangId * 2);
+        public TerritoryBlockId HomeBlockOf(int gangId) => BlockAt(gangId * BlocksPerHouse);
+
+        /// <summary>How many doors this block has.</summary>
+        public int DoorsOn(TerritoryBlockId blockId)
+        {
+            var index = IndexOf(blockId);
+            return index < 0 ? 0 : doorsPerBlock[index];
+        }
 
         public TerritoryBusinessId Door(TerritoryBlockId blockId, int index) =>
             new TerritoryBusinessId("biz:" + blockId.Value + ":" + index);
+
+        /// <summary>What a week of protection is worth at this door - the price table's
+        /// own figure for the trade the seed dealt there.</summary>
+        public int RateOf(TerritoryBusinessId businessId) =>
+            EconomyPrices.ProtectionPerWeek(TradeOf(businessId));
+
+        BusinessArchetypeId TradeOf(TerritoryBusinessId businessId)
+        {
+            var mix = Potential.Mix(Seed, businessId.Value.GetHashCode());
+            return Trades[(int)((uint)mix % (uint)Trades.Length)];
+        }
 
         public TerritoryPoint Doorstep(TerritoryBlockId blockId, int index)
         {
@@ -79,6 +121,16 @@ namespace LivingCity.Tests
                 if (blocks[i] == blockId)
                     return i;
             return -1;
+        }
+
+        public HouseBackoffs BackoffsOf(int gangId)
+        {
+            if (!backoffs.TryGetValue(gangId, out var book))
+            {
+                book = new HouseBackoffs();
+                backoffs.Add(gangId, book);
+            }
+            return book;
         }
 
         // ------------------------------------------------------------------ standing
@@ -164,7 +216,7 @@ namespace LivingCity.Tests
             TerritoryBlockId blockId, TerritoryGangId gang)
         {
             var owed = 0;
-            for (var d = 0; d < UnderworldSim.DoorsPerBlock; d++)
+            for (var d = 0; d < DoorsOn(blockId); d++)
             {
                 var businessId = Door(blockId, d);
                 if (racket.StateOf(businessId, gang) ==
@@ -178,7 +230,7 @@ namespace LivingCity.Tests
             TerritoryGangId gang)
         {
             var count = 0;
-            for (var d = 0; d < UnderworldSim.DoorsPerBlock; d++)
+            for (var d = 0; d < DoorsOn(blockId); d++)
                 if (dues.OwedOf(Door(blockId, d), gang) > 0)
                     count++;
             return count;
@@ -206,15 +258,20 @@ namespace LivingCity.Tests
 
             defiances.Clear();
             for (var i = 0; i < viewBlocks.Count; i++)
-                for (var d = 0; d < UnderworldSim.DoorsPerBlock; d++)
+                for (var d = 0; d < DoorsOn(viewBlocks[i]); d++)
                 {
                     var businessId = Door(viewBlocks[i], d);
                     if (!racket.TryGetRelationship(businessId, mine, out var row) ||
-                        row.RefusedAt < 0.0 ||
                         row.State == TerritoryProtectionState.Compliant)
                         continue;
-                    defiances.Add(new HouseDefiance(
-                        businessId, viewBlocks[i], row.RefusedAt, row.Threats));
+                    // The runtime's own two rules (CollectDefiances): a door that
+                    // ever refused us, and a hesitant door opened at its last visit.
+                    if (row.RefusedAt >= 0.0)
+                        defiances.Add(new HouseDefiance(
+                            businessId, viewBlocks[i], row.RefusedAt, row.Threats));
+                    else if (row.State == TerritoryProtectionState.Hesitant)
+                        defiances.Add(new HouseDefiance(
+                            businessId, viewBlocks[i], row.LastInteraction, row.Threats));
                 }
 
             rivals.Clear();
@@ -267,23 +324,33 @@ namespace LivingCity.Tests
             House house)
         {
             doorScratch.Clear();
-            for (var d = 0; d < UnderworldSim.DoorsPerBlock; d++)
+            for (var d = 0; d < DoorsOn(blockId); d++)
             {
                 var businessId = Door(blockId, d);
                 racket.TryGetProtector(businessId, out var protector);
+                var owed = dues.OwedOf(businessId, mine);
+                var rate = RateOf(businessId);
+                var late = protector == mine && dues.TryGet(businessId, out var account) &&
+                           TerritoryCollectionSchedule.IsLate(
+                               owed, rate, Day, account.LastCollectedDay);
+                var lastInteraction = -1.0;
+                var demands = 0;
+                if (racket.TryGetRelationship(businessId, mine, out var row))
+                {
+                    lastInteraction = row.LastInteraction;
+                    demands = row.Demands;
+                }
                 doorScratch.Add(new HouseDoor(
-                    businessId, 1,
-                    EconomyPrices.ProtectionPerWeek(
-                        LivingCity.Business.BusinessArchetypeId.Grocer),
-                    protector, racket.StateOf(businessId, mine),
-                    dues.OwedOf(businessId, mine), false, true,
+                    businessId, 1, rate, protector, racket.StateOf(businessId, mine),
+                    owed, false, true,
                     businessId == house.Front
                         ? DoorTenure.Ours
                         : protector == mine
                             ? DoorTenure.Paying
                             : protector.IsValid
                                 ? DoorTenure.Rival
-                                : DoorTenure.Open));
+                                : DoorTenure.Open,
+                    late, lastInteraction, demands));
             }
             return doorScratch;
         }
@@ -400,7 +467,7 @@ namespace LivingCity.Tests
                 case HouseOrder.LeanOnHoldouts:
                 case HouseOrder.ShakeDownBlock:
                     var asked = 0;
-                    for (var d = 0; d < UnderworldSim.DoorsPerBlock; d++)
+                    for (var d = 0; d < DoorsOn(intent.BlockId); d++)
                     {
                         var businessId = Door(intent.BlockId, d);
                         var state = racket.StateOf(businessId, mine);
@@ -451,7 +518,7 @@ namespace LivingCity.Tests
         TerritoryBlockId BlockOf(TerritoryBusinessId businessId)
         {
             for (var b = 0; b < blocks.Length; b++)
-                for (var d = 0; d < UnderworldSim.DoorsPerBlock; d++)
+                for (var d = 0; d < doorsPerBlock[b]; d++)
                     if (Door(blocks[b], d) == businessId)
                         return blocks[b];
             return default;
@@ -468,7 +535,7 @@ namespace LivingCity.Tests
 
             var mine = new TerritoryGangId(house.GangId);
             stops.Clear();
-            for (var d = 0; d < UnderworldSim.DoorsPerBlock; d++)
+            for (var d = 0; d < DoorsOn(blockId); d++)
             {
                 var businessId = Door(blockId, d);
                 if (racket.StateOf(businessId, mine) !=
@@ -486,6 +553,7 @@ namespace LivingCity.Tests
                 TerritoryRoundKind.Collect, stops, Hour);
             if (round == null)
                 return false;
+            round.Origin = TerritoryRoundOrigin.Schedule;
 
             var home = Doorstep(HomeBlockOf(house.GangId), 0);
             clock.Send(round, stops[0].Doorstep, home, true,
@@ -503,5 +571,44 @@ namespace LivingCity.Tests
                 TerritoryOwnerProfile.Deal(seed, stop.BusinessId),
                 Presence(round.BlockId, round.House), 0f,
                 (int)CrewPolicy.Normal, (int)LieutenantArchetype.Soldier, seed, Day);
+
+        // ---------------------------------------------------------------- readings
+
+        /// <summary>The doors of the whole city as this house stands with them, for
+        /// the table: paying, hesitant, refused, and the most any one door has been
+        /// asked.</summary>
+        public void CountDoors(TerritoryRacketLedger racket, int gangId,
+            out int paying, out int hesitant, out int refused, out int worstDemands)
+        {
+            paying = 0;
+            hesitant = 0;
+            refused = 0;
+            worstDemands = 0;
+            var mine = new TerritoryGangId(gangId);
+            for (var b = 0; b < blocks.Length; b++)
+                for (var d = 0; d < doorsPerBlock[b]; d++)
+                {
+                    var businessId = Door(blocks[b], d);
+                    var state = racket.StateOf(businessId, mine);
+                    if (state == TerritoryProtectionState.Compliant) paying++;
+                    else if (state == TerritoryProtectionState.Hesitant) hesitant++;
+                    else if (state == TerritoryProtectionState.Defiant) refused++;
+                    if (racket.TryGetRelationship(businessId, mine, out var row) &&
+                        row.Demands > worstDemands)
+                        worstDemands = row.Demands;
+                }
+        }
+
+        /// <summary>Every block this house leads, in the order of the row.</summary>
+        public void BlocksLed(int gangId, List<TerritoryBlockId> into)
+        {
+            into?.Clear();
+            for (var b = 0; into != null && b < blocks.Length; b++)
+            {
+                var leader = Leader(blocks[b]);
+                if (leader.IsValid && leader.Value == gangId)
+                    into.Add(blocks[b]);
+            }
+        }
     }
 }

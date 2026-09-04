@@ -538,7 +538,16 @@ namespace RoadDemo
             // Presence arithmetic on one channel, what the block remembers on another,
             // control on a third. Fear and compliance still belong to their own tickets.
             if (tick.Channel == TerritoryTickChannel.PhysicalPresence)
+            {
                 SampleActorBlocks(tick.GameHour, tick.CadenceHours);
+                // THE ROUND WATCHDOG RUNS ON THE CLOCK IT PROMISES (Codex adversarial
+                // review, 2026-09-04). It re-marches a leg every quarter hour and gives
+                // up on a round after two, and it used to be reached only from the
+                // BUSINESS channel - every four game hours - so neither number could
+                // be honoured and a stalled round held its block off the schedule for
+                // half a day. This channel samples bodies, which is what it watches.
+                WatchRounds(tick.GameHour);
+            }
             else if (tick.Channel == TerritoryTickChannel.ResidualPresence)
                 DecayPresence(tick.GameHour, tick.CadenceHours);
             else if (tick.Channel == TerritoryTickChannel.Fear)
@@ -959,15 +968,18 @@ namespace RoadDemo
         public void NoteKill(Vector3 where, int victimFaction, int killerFaction,
             bool victimArmed, bool victimIsOfficer)
         {
-            if (power == null || victimIsOfficer || victimFaction < 0 || killerFaction < 0)
+            if (power == null || victimIsOfficer || victimFaction < 0)
                 return;
             var victim = new TerritoryGangId(victimFaction);
+            // THE LAW IS READ FIRST. StreetAlarm.PoliceFaction is -1, so a guard that
+            // threw out every negative killer threw out the police with them and the
+            // whole of A29 was unreachable (Codex adversarial review, 2026-09-04).
             if (killerFaction == StreetAlarm.PoliceFaction)
             {
                 power.Credit(victim, -power.Config.KillCredit, lastGameHour);
                 return;
             }
-            if (killerFaction == victimFaction || !victimArmed)
+            if (killerFaction < 0 || killerFaction == victimFaction || !victimArmed)
                 return;
             power.Credit(new TerritoryGangId(killerFaction), power.Config.KillCredit,
                 lastGameHour);
@@ -977,7 +989,11 @@ namespace RoadDemo
         /// less than a corpse apiece.</summary>
         public void NoteArrest(int faction, int men)
         {
-            if (power == null || faction < 0 || men <= 0)
+            if (faction < 0 || men <= 0)
+                return;
+            for (var i = 0; i < men; i++)
+                CountToday(faction, "arrests");
+            if (power == null)
                 return;
             power.Credit(new TerritoryGangId(faction),
                 -power.Config.ArrestCost * men, lastGameHour);
@@ -1829,7 +1845,6 @@ namespace RoadDemo
             PressBorders(gameHour);
             TendScheduledRounds(gameHour);
             TickPaperRounds(gameHour);
-            WatchRounds(gameHour);
         }
 
         /// <summary>

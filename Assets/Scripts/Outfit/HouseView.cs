@@ -146,19 +146,35 @@ namespace LivingCity.Outfit
     public readonly struct HouseIncident
     {
         public HouseIncident(TerritoryBlockId blockId, int unanswered, double since,
-            double lastAt = double.NaN)
+            double lastAt = double.NaN, int overdue = -1)
         {
             BlockId = blockId;
             Unanswered = unanswered;
             Since = since;
             LastAt = double.IsNaN(lastAt) ? since : lastAt;
+            Overdue = overdue < 0 ? unanswered : overdue;
         }
 
         public TerritoryBlockId BlockId { get; }
+
+        /// <summary>
+        /// How many incidents on this block nobody has answered for YET, whatever
+        /// their age. This is what a mind can still do something about, and it is a
+        /// different question from what the street has already marked the house down
+        /// for: the ledger only calls an incident unanswered once it is past the
+        /// twelve-hour window, and a view that carried only that count could never be
+        /// inside the window at the same time - so tier 5's incident answer could
+        /// never fire at all (Codex adversarial review, 2026-09-04).
+        /// </summary>
         public int Unanswered { get; }
 
-        /// <summary>The hour of the OLDEST incident still unanswered - what the answer
-        /// window is measured from.</summary>
+        /// <summary>How many are past the window and have cost the house its standing
+        /// already. Nothing can be done about these; they are the record.</summary>
+        public int Overdue { get; }
+
+        /// <summary>The hour of the NEWEST incident still unanswered - the one the
+        /// house can still come for, and what the answer window is measured from.
+        /// </summary>
         public double Since { get; }
 
         /// <summary>The hour of the LATEST incident on the block, answered or not -

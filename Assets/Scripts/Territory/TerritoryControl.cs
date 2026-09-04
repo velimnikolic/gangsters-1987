@@ -493,14 +493,35 @@ namespace LivingCity.Territory
             out int incidents,
             out int unanswered)
         {
-            Collect(blockId, gangId, gameHour, out incidents, out unanswered, out _, out _);
+            Collect(blockId, gangId, gameHour, out incidents, out unanswered, out _,
+                out _, out _);
+        }
+
+        public void Collect(
+            TerritoryBlockId blockId,
+            TerritoryGangId gangId,
+            double gameHour,
+            out int incidents,
+            out int unanswered,
+            out double newestOpenAt,
+            out double lastAt)
+        {
+            Collect(blockId, gangId, gameHour, out incidents, out unanswered, out _,
+                out newestOpenAt, out lastAt);
         }
 
         /// <summary>
-        /// The same, with the HOURS behind the number (AI-001 S1): when the oldest
-        /// still-unanswered incident happened, and when the latest incident of any
-        /// kind did. Both are NaN when there is nothing. The mind's view carries these
-        /// instead of the hour of the think, so a window can actually close.
+        /// The same, with the HOURS behind the number (AI-001 S1): when the newest
+        /// still-unanswered incident happened - the one a house can still come for -
+        /// and when the latest incident of any kind did. Both are NaN when there is
+        /// nothing. The mind's view carries these instead of the hour of the think, so
+        /// a window can actually close.
+        ///
+        /// <paramref name="open"/> is every incident nobody has answered yet, whatever
+        /// its age; <paramref name="unanswered"/> is the subset already past the window,
+        /// which is what costs the house its standing. They are different questions and
+        /// were the same number once, which left the mind unable ever to answer one in
+        /// time (Codex adversarial review, 2026-09-04).
         /// </summary>
         public void Collect(
             TerritoryBlockId blockId,
@@ -508,16 +529,18 @@ namespace LivingCity.Territory
             double gameHour,
             out int incidents,
             out int unanswered,
-            out double oldestUnansweredAt,
+            out int open,
+            out double newestOpenAt,
             out double lastAt)
         {
             incidents = 0;
             unanswered = 0;
-            oldestUnansweredAt = double.NaN;
+            open = 0;
+            newestOpenAt = double.NaN;
             lastAt = double.NaN;
             if (blocks.TryGetValue(blockId, out var row))
                 row.Count(gangId, gameHour, Config, out incidents, out unanswered,
-                    out oldestUnansweredAt, out lastAt);
+                    out open, out newestOpenAt, out lastAt);
         }
 
         /// <summary>Drop what the street has forgotten, so a long campaign does not carry
@@ -573,17 +596,18 @@ namespace LivingCity.Territory
 
             public void Count(
                 TerritoryGangId gangId, double gameHour, TerritoryControlConfig config,
-                out int incidents, out int unanswered, out double oldestUnansweredAt,
-                out double lastAt)
+                out int incidents, out int unanswered, out int open,
+                out double newestOpenAt, out double lastAt)
             {
                 incidents = 0;
                 unanswered = 0;
-                oldestUnansweredAt = double.NaN;
+                open = 0;
+                newestOpenAt = double.NaN;
                 lastAt = double.NaN;
                 for (var i = 0; i < gangs.Count; i++)
                     if (gangs[i].GangId == gangId)
                         gangs[i].Count(gameHour, config, out incidents, out unanswered,
-                            out oldestUnansweredAt, out lastAt);
+                            out open, out newestOpenAt, out lastAt);
             }
 
             public void Forget(double gameHour, TerritoryControlConfig config)
@@ -652,7 +676,8 @@ namespace LivingCity.Territory
 
             public float Coefficient(double gameHour, TerritoryControlConfig config)
             {
-                Count(gameHour, config, out var total, out var unanswered, out _, out _);
+                Count(gameHour, config, out var total, out var unanswered, out _, out _,
+                    out _);
                 if (total == 0)
                     return 1f;
                 var share = (float)unanswered / total;
@@ -668,12 +693,13 @@ namespace LivingCity.Territory
             /// </summary>
             public void Count(
                 double gameHour, TerritoryControlConfig config,
-                out int total, out int unanswered, out double oldestUnansweredAt,
-                out double lastAt)
+                out int total, out int unanswered, out int open,
+                out double newestOpenAt, out double lastAt)
             {
                 total = 0;
                 unanswered = 0;
-                oldestUnansweredAt = double.NaN;
+                open = 0;
+                newestOpenAt = double.NaN;
                 lastAt = double.NaN;
                 for (var i = 0; i < incidents.Count; i++)
                 {
@@ -684,8 +710,9 @@ namespace LivingCity.Territory
                         lastAt = incidents[i].At;
                     if (incidents[i].Answered)
                         continue;
-                    if (double.IsNaN(oldestUnansweredAt) || incidents[i].At < oldestUnansweredAt)
-                        oldestUnansweredAt = incidents[i].At;
+                    open++;
+                    if (double.IsNaN(newestOpenAt) || incidents[i].At > newestOpenAt)
+                        newestOpenAt = incidents[i].At;
                     if (gameHour - incidents[i].At > config.PowerAnswerWindowHours)
                         unanswered++;
                 }
