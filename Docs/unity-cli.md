@@ -39,8 +39,22 @@ project lock.
 
 **A compile verdict in seconds, with no harness of our own.**
 
+    Tools/play/recompile.sh        # prints COMPILED or FAILED with the error lines; exits 0 or 1
+
+**Use the script, not the two commands under it.** The raw pair
+
     unity command recompile --json
     unity command recompile_status --json     # {"status":"completed","failed":false,"errors":[]}
+
+is a trap taken three times already, because Unity **does not compile while it is
+playing**: the request is accepted and deferred, and the status then answers about the
+PREVIOUS build. A killed soak leaves the editor in Play, and three recompiles in a row
+say `completed` while the fix under test is not in the assemblies at all — recognisable
+only by the same error coming back with its OLD line numbers. The script stops Play
+first and fails if it will not stop, reads the answer to ITS OWN trigger rather than
+whatever status was left lying about, waits out the domain reload that drops the port,
+and refuses to take `up_to_date` on trust until the console has been read clean of
+`error CS` since the moment of the trigger. Each of those three was got wrong first.
 
 This is the editor's own compile — asmdef boundaries, the Editor assembly, Unity 6.5's
 obsolete-as-error rules, all of it. The offline Roslyn build in
@@ -87,9 +101,22 @@ Neither build reproduces a domain reload, and the Editor project goes stale firs
 files are added less often. For runtime code with the inclusion check done, this settles the
 question; for anything else, wait for the editor.
 
-`unity command console --json` reads the console the same way, so a run's errors come back
-without grepping `Logs/Editor.log` — which, with two editors on one project, is not ground truth
-anyway.
+**The console, since the last time anyone looked.**
+
+    python Tools/play/console.py            # errors and exceptions since the mark; 0 clean, 1 not, 2 unread
+    python Tools/play/console.py --all      # every level since the mark
+    python Tools/play/console.py --mark     # move the mark to now, print nothing
+    python Tools/play/console.py --tail 50  # the last 50, mark ignored
+
+`unity command console --json` reads the console directly, so a run's errors come back without
+grepping `Logs/Editor.log` — which, with two editors on one project, is not ground truth anyway.
+But asked plainly it answers with HISTORY: `clear_console` empties Unity's window and **not** the
+buffer this reads, so `--tail` keeps handing back thousands of old entries (once: 22 identical
+leak warnings counted across four fix cycles, all of them the same stale ones — the giveaway was
+a line number that had since moved). The only honest question is "what is new since this number",
+and the script is the number kept on disk. It also folds each stack trace to the one frame that
+names a file in this project and collapses a repeated message to `x22`, which is the difference
+between two kilobytes and thirty.
 
 **Every `Tools/…` menu, from the terminal.** The project has ~54 `[MenuItem]`s that until now
 only a mouse could reach:
@@ -106,6 +133,20 @@ before it can answer. That is the menu item's nature, not a bug in the call.
 editor through Roslyn, which answers most one-off questions without a file being written at all.
 
 ## This project's commands
+
+There are **82** of them, and `unity command` prints all 232 the editor answers with every
+description in full: 38 KB to find out whether the fear audit is `gangsters_fear_audit` or
+`gangsters_audit_fear`. Ask the index instead.
+
+    python Tools/unity/cmds.py              # the 82, names only, four to a line (2.7 KB)
+    python Tools/unity/cmds.py --gist       # ...and a line each on what they answer
+    python Tools/unity/cmds.py fear         # every match in full, with its parameters
+    python Tools/unity/cmds.py --all        # the editor's own commands as well
+
+The names are the index: `gangsters_<subject>_tests` runs an epic's contracts, `_audit` reports
+on the live city or a dealt seed, `_probe` orders the Outfit to do one thing so it can be
+watched, `_scenario_*` are the named TEST-nnn cases. The table below is the handful that build
+or draw something; everything else is a keyword away.
 
 | command | what it answers |
 |---|---|
@@ -162,6 +203,10 @@ editor for belongs here.
 - **A domain reload kills the connection.** Anything that recompiles (`package_add`, editing a
   script, some menu items) drops the server for a few seconds. Poll `unity status` until the
   state is `ready` again.
+- **`eval` runs on the main thread, so a busy editor refuses it.** `Main thread operation timed
+  out after 5000ms` means the editor had no focus or the scene was hitching, not that the command
+  is broken — on an idle editor `return 1+1;` answers in 1.5 s. Raise `--timeout` or ask again;
+  do not write a whole Editor script to route around one that failed once.
 - **The port belongs to one editor.** With two editors open on this project, `unity status`
   lists both — check the PID before sending anything that changes state.
 - **`result` is sometimes a JSON string, not an object.** `recompile_status` returns

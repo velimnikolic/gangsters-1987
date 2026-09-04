@@ -6,18 +6,26 @@ This project has `com.unity.pipeline` installed, so a **running** Unity editor h
 server that Unity's CLI talks to. Prefer it over anything that needs the editor closed:
 
     unity status                                          # port, state, PID of every open editor
-    unity command                                         # every command it answers
-    unity command recompile && unity command recompile_status --json   # a real compile verdict
-    unity command console --json                          # the editor console
+    python Tools/unity/cmds.py                            # the 82 commands this project adds (2.7 KB, not 38)
+    python Tools/unity/cmds.py fear                       # ...one of them in full, by keyword
+    Tools/play/recompile.sh                               # THE compile verdict: COMPILED / FAILED, exit 0 / 1
+    python Tools/play/console.py                          # the console since the last look, errors only
     unity command menu --path "Tools/City/Dump City Layout"            # any of the ~54 Tools menus
     unity command eval --code '...'                       # arbitrary C# in the live editor, play mode included
 
-This project's own commands: `gangsters_layout` (district roll for a seed), `gangsters_measure`
-(what a prefab really measures), `gangsters_play` (a harness run inside the open editor, no
-lockfile), `gangsters_core` and `gangsters_industry` (a quarter dealt from a seed and judged;
-`--draw` stands it up), `gangsters_business_tests` and `gangsters_business_audit` (the city's
-businesses and their gazde; `--seed N` deals a quarter and audits it with the editor idle).
-They live in `Assets/Scripts/Editor/PipelineCommands.cs`.
+Take the compile verdict from the script, never from `unity command recompile` +
+`recompile_status` by hand: Unity does not compile in Play mode, so the raw pair reports
+`completed` about the PREVIOUS build and has certified a fix that was not in the assemblies three
+times. The same for the console — `clear_console` does not empty the buffer `console` reads, so
+asked plainly it answers with history.
+
+This project's own commands live in `Assets/Scripts/Editor/PipelineCommands.cs`, and their names
+are the index: `gangsters_<subject>_tests` runs an epic's contracts, `_audit` reports on the live
+city or a dealt seed, `_probe` orders the Outfit to do one thing so it can be watched. The ones
+worth knowing by heart: `gangsters_layout` (district roll for a seed), `gangsters_measure` (what
+a prefab really measures), `gangsters_play` (a harness run inside the open editor, no lockfile),
+`gangsters_core` and `gangsters_industry` (a quarter dealt from a seed and judged; `--draw`
+stands it up). For the other 77, ask `cmds.py` by keyword rather than guessing a name.
 
 **Read `Docs/unity-cli.md` before reaching for a batch run or a hand-built offline compiler.**
 
