@@ -17,10 +17,13 @@ je korisnik ne potvrdi u §11.
 glavnoj niti sa zaustavljenim editorom. Pravi plan grada i privremenu preview scenu samo za
 merenje, ne postavlja objekte u otvorenu scenu i ništa ne peče. Kanonski poziv je
 `powershell -ExecutionPolicy Bypass -File Tools/play/census.ps1 -Rows`: skripta odmah predaje
-zadržani detached job i upisuje njegov ID u `Temp/play/people-census.job`, pa zauzet editor ili
-istek klijentskog čekanja ne gube rezultat dok je u Pipeline memoriji. `-DetachOnly` samo preda
-posao, a `-Resume <job-id>` nastavlja čekanje. Pipeline čuva poslednjih 100 završenih poslova
-jedan sat; kompilacija/domain reload prekida red i tada stari ID namerno prijavi neuspeh.
+zadržani detached job i atomski upisuje poseban receipt
+`Temp/play/people-census/<job-id>.job`, bez brisanja ranijih ID-eva. ID i `-Resume` komandu
+odmah piše na stderr, pa i greška diska ostavlja recovery handle; stdout je samo jedan JSON
+dokument, odnosno samo goli ID uz `-DetachOnly`. `-Resume` pre upisa proverava da ID pripada
+baš `gangsters_people_census`, a završen rezultat i da je za seed 1987. Pipeline čuva poslednjih
+100 završenih poslova jedan sat; kompilacija/domain reload prekida red i tada stari ID namerno
+prijavi neuspeh.
 Poslednji puni prolaz je vratio JSON `passed = true`, bez gate grešaka, za **1,65 s** rada
 (zahtev: manje od 30 s); `-Rows` vraća i svaki pojedinačni izvor/projekciju.
 
