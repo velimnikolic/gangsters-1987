@@ -64,6 +64,7 @@ namespace RoadDemo
         float _swarmSweepAt;
         Vector3 _swarmScene;
         SwarmGrade _swarmGrade;
+        bool _playerSwarm;
 
         readonly List<DemoCrews.Unit> _hunted = new List<DemoCrews.Unit>();
         static readonly List<CrewWalker> _swarmShooters = new List<CrewWalker>();
@@ -95,6 +96,11 @@ namespace RoadDemo
                 !_hunted.Contains(culprit))
                 _hunted.Add(culprit);
 
+            // The hunt is citywide simulation, but the banner is the player's news.
+            // Remember his involvement even if his crew is taken before stand-down.
+            if (PlayerHunted())
+                _playerSwarm = true;
+
             if (grade == SwarmGrade.OfficerDown)
                 for (var i = 0; i < _hunted.Count; i++)
                 {
@@ -112,18 +118,28 @@ namespace RoadDemo
 
             if (_swarm)
             {
-                if (grade == SwarmGrade.OfficerDown)
+                if (_playerSwarm && grade == SwarmGrade.OfficerDown)
                     CrewOverlay.Announce("OFFICER DOWN — EVERY CAR IN THE CITY IS COMING",
                         7f, new Color(1f, 0.45f, 0.4f));
                 SendSwarm();
                 return;
             }
             _swarm = true;
-            CrewOverlay.Announce(grade == SwarmGrade.OfficerDown
-                    ? "OFFICER DOWN — EVERY CAR IN THE CITY IS COMING"
-                    : "SHOTS AT AN OFFICER — EVERY CAR IN THE CITY IS COMING",
-                7f, new Color(1f, 0.45f, 0.4f));
+            if (_playerSwarm)
+                CrewOverlay.Announce(grade == SwarmGrade.OfficerDown
+                        ? "OFFICER DOWN — EVERY CAR IN THE CITY IS COMING"
+                        : "SHOTS AT AN OFFICER — EVERY CAR IN THE CITY IS COMING",
+                    7f, new Color(1f, 0.45f, 0.4f));
             SendSwarm();
+        }
+
+        bool PlayerHunted()
+        {
+            for (var i = 0; i < _hunted.Count; i++)
+                if (_hunted[i] != null &&
+                    _hunted[i].Faction == LivingCity.Gangs.GangCatalog.PlayerGangId)
+                    return true;
+            return false;
         }
 
         /// <summary>Cars off every roster, distance no object, up to the cap.</summary>
@@ -135,7 +151,15 @@ namespace RoadDemo
                 var car = Nearest(scene, carries: true, anyDistance: true);
                 if (car == null) break;   // the rosters are empty; nobody else is coming
                 car.RouteTo(scene, StandOff);
-                _squads.Add(new Squad { Ride = car, Men = MenOf(car), Scene = scene, State = SquadState.Sent });
+                _squads.Add(new Squad
+                {
+                    Ride = car,
+                    Men = MenOf(car),
+                    Scene = scene,
+                    State = SquadState.Sent,
+                    Incident = _incident,
+                    PlayerNews = _playerSwarm,
+                });
                 if (_lights.TryGetValue(car, out var lights)) lights.Set(true, siren: true);
                 _carsSent++;
             }
@@ -214,7 +238,8 @@ namespace RoadDemo
             foreach (var unit in _hunted)
             {
                 if (unit == null || unit.Wiped) continue;
-                away++;
+                if (unit.Faction == LivingCity.Gangs.GangCatalog.PlayerGangId)
+                    away++;
                 // A cop-killer's grade lands on HIS OWN family's book. It used to land
                 // on ours whoever shot the officer, which was the player's men being
                 // marked for a Falcone gun.
@@ -234,6 +259,10 @@ namespace RoadDemo
 
             if (LivingCity.Gameplay.PersonnelDirector.Instance != null && away > 0)
                 LivingCity.Gameplay.PersonnelDirector.Instance.Touch();
+            var tellPlayer = _playerSwarm;
+            _playerSwarm = false;
+            if (!tellPlayer)
+                return;
             CrewOverlay.Announce(away > 0
                     ? "THE SEARCH IS CALLED OFF — THEY ARE WANTED MEN NOW"
                     : "THE SEARCH IS CALLED OFF",

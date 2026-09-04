@@ -237,9 +237,9 @@ namespace LivingCity.UI
         // ---- the chrome bar ----
         RectTransform chromeRoot;
         RectTransform tabStrip;
-        readonly Image[] timeControlFaces = new Image[5];
-        readonly TMP_Text[] timeControlLabels = new TMP_Text[5];
-        readonly Button[] timeControlButtons = new Button[5];
+        readonly Image[] timeControlFaces = new Image[7];
+        readonly TMP_Text[] timeControlLabels = new TMP_Text[7];
+        readonly Button[] timeControlButtons = new Button[7];
         TMP_Text chromeClock;
 
         // Opening the ledger takes a temporary hold on the clock. If the player does
@@ -1175,10 +1175,10 @@ namespace LivingCity.UI
         /// <summary>The way out, held to the far end of the bar.</summary>
         const float CloseW = 88f;
 
-        /// <summary>Four speed rungs and HOLD, immediately beside CLOSE.</summary>
+        /// <summary>Six speed rungs and HOLD, immediately beside CLOSE.</summary>
         const float ClockReadoutW = 76f;
         const float TimeControlW = 52f;
-        const int TimeControlCount = 5;
+        const int TimeControlCount = 7;
         const float TimeControlsW = TimeControlW * TimeControlCount;
         const float TimeStripW = ClockReadoutW + TimeControlsW;
 
@@ -1270,7 +1270,7 @@ namespace LivingCity.UI
 
         void BuildTimeControls(RectTransform chrome)
         {
-            var labels = new[] { "0.5x", "1x", "2x", "4x", "HOLD" };
+            var labels = new[] { "0.5x", "1x", "2x", "4x", "8x", "16x", "HOLD" };
             var group = NewRect("Time Controls", chrome);
             PlaceTopLeft(group, FrameW - CloseW - TimeStripW, 0f,
                 TimeStripW, ChromeH);

@@ -34,7 +34,7 @@
 - [x] odluke uzete: spratovi, ugao, brownstone, zadnji red, krajevi, obim = samo forge (2026-09-04)
 - [x] contrarian prošao, nalazi ugrađeni (§9)
 - [x] epic GAN-332 sa šest tiketa
-- [ ] D1–D6 (§7) — odgovori ili podrazumevano
+- [x] D1–D6 odgovoreno (§7, 2026-09-04) — FORGE-003 čeka još samo atlas i tabelu dekora
 - [ ] FORGE-001 atlas modula
 - [ ] FORGE-002 tabela dekora
 - [ ] FORGE-003 list, presuda, sweep, testovi
@@ -166,7 +166,7 @@ prolazi kroz sve osim tri mesta: `StandUnit` (grana `StandSheet`), keš izloga i
 
 ## 1. Gramatika zgrade (šta list radi)
 
-Sve dole je **izmereno na požnjevenim kućama** osim onoga što je obeleženo *(D1–D6, §7)*.
+Sve dole je **izmereno na požnjevenim kućama**; ono obeleženo *(D1–D6)* je korisnikova odluka iz §7.
 
 ### 1.1 Ulaz i otisak
 
@@ -196,9 +196,9 @@ nemaju zidnih kolona — samo dva ugla, kao kraj `residential-05`.
 |---|---|
 | ugao | `Shop_Corner_01` (vrata na licu) ili `Shop_Corner_02` (vrata na kosini), okrenut ka kratkoj strani — **oba, odluka** |
 | zid | `Shop_01/02/04/06` (jedna ćelija), `Shop_03` (dve, nikad preko ugla), `Shop_05` (bez vrata — **nikad sam**, FRONT-001 ga pripaja komšiji sa vratima) |
-| vrata stanova | `Apartment_Door_01/02` — bar jedna kolona po redu *(D2)* |
+| vrata stanova | `Apartment_Door_01/02` — **tačno jedna** kolona po redu *(D2)* |
 
-Tenda (`Shop_Cover_0N`) po tabeli dekora; natpisi *(D4)*.
+Tenda (`Shop_Cover_0N`) i natpisi, brendirani uključeni, po tabeli dekora *(D4)*.
 
 ### 1.4 Spratovi i krov
 
@@ -210,8 +210,8 @@ iz atlasa; `Roof_Access` 1–2; `Skylight` po tabeli. Podignut deo krova nije u 
 ### 1.5 Požarne stepenice
 
 Stub na koloni: `FireEscape_03` na y=3, `_02` na srednjim, `_01` na poslednjem spratu; pivot
-modula + (0.08, 0.02), yaw modula. Udeo kolona: iz tabele dekora *(D3)*. Štrik samo između dva
-susedna stuba.
+modula + (0.08, 0.02), yaw modula. Udeo kolona: bacanje iz izmerenog raspona tabele dekora,
+**bar jedan stub na svakoj dugoj strani** *(D3)*. Štrik samo između dva susedna stuba.
 
 ### 1.6 Dekor
 
@@ -248,7 +248,8 @@ zgrada, na svakoj mašini i u CoreSim-u.
 | `RoofPair` | krovna ivica i ugao različite dubine venca |
 | `ShopAcrossCorner` | `Shop_03` preko ugaone ćelije |
 | `LoneGlass` | `Shop_05` bez susedne radnje sa vratima |
-| `NoDoor` | red bez kolone vrata stanova *(ako D2 kaže da mora)* |
+| `NoDoor` | red bez tačno jedne kolone vrata stanova *(D2)* |
+| `NoEscape` | duga strana bez ijednog stuba stepenica *(D3)* |
 | `EscapeOrder` | stub bez 03 dole / 01 gore, srednji koji nije 02 |
 | `LineLoose` | štrik čiji krajevi nisu na dva stuba |
 | `Clash` | dva propa koje tabela ne dozvoljava zajedno |
@@ -337,17 +338,16 @@ nije u proceni.
 **Uzete 2026-09-04 (korisnik):** spratova nad prizemljem 3 do 5; oba ugaona modula; brownstone se
 ignoriše; zadnji red = radnje; ugaone radnje na oba kraja; obim = samo forge.
 
-Otvoreno (D1–D6 u epicu) — podrazumevani odgovor je **moja pretpostavka, nije odobreno**; pita se,
-ne kodira:
+**D1–D6 odgovoreno (korisnik, 2026-09-04)** — forge radi po ovome, ne po pretpostavkama:
 
-| # | pitanje | podrazumevano |
+| # | pitanje | odluka |
 |---|---|---|
-| D1 | Stil po koloni: mešano 01/02/03 po koloni (kao Synty, izmereno na svih 8 prebrojanih) ili jedan stil po zgradi? | mešano, po učestalosti iz tabele |
-| D2 | Vrata stanova: bar jedna kolona po redu, najviše jedna na 5 kolona? (izmereno 0–10 po kući; `residential-08` nema nijedna) | bar jedna po redu |
-| D3 | Udeo stubova stepenica: bacanje iz izmerenog raspona 28–86 %, ili fiksno? | bacanje iz raspona |
-| D4 | Brendirani znakovi (`LargeSign_Pizza`, `Sign_Barber`, `Sign_XXX`…) govore koji je posao, a posao dodeljuje simulacija. Po tabeli, ili samo neutralni (`Sign_Attachment`, tende, bilbordi, `Sign_Hotel`)? | neutralni |
-| D5 | „3 do 5 spratova" = nad radnjama (ploča 12 / 15 / 18 m)? Synty ima 3 nad radnjama + podignut četvrti na 2–3 ćelije | nad radnjama; bez podignutog dela |
-| D6 | Jedna zgrada po listu, ili 2–3 zgrade (npr. 4+7) sa zajedničkim zidom, svaka sa svojim N i stilom? Kit nema slepi bočni zid za visinsku razliku | jedna zgrada; deoba v2 |
+| D1 | Stil po koloni | **mešano** 01/02/03 po koloni, po učestalosti iz tabele — „uvek koristimo iste ove u krug", pa mešanje drži ulicu da se ne ponavlja |
+| D2 | Vrata stanova | **tačno jedna kolona po redu** — ne više od jedne, ni manje |
+| D3 | Udeo stubova stepenica | **bacanje iz izmerenog raspona 28–86 %**, ali **svaka duga strana uvek ima bar jedan stub** |
+| D4 | Brendirani znakovi (`LargeSign_*`, `Sign_Barber`, `Sign_XXX`…) | **stavljati, naravno** — po tabeli dekora, kao Synty; dodela posla iz simulacije ostaje nezavisna i to je prihvaćeno |
+| D5 | „3 do 5 spratova" | **nad radnjama** (ploča 12 / 15 / 18 m); podignut deo krova nije u v1 |
+| D6 | Jedna zgrada ili više po listu | **jedna zgrada**; deoba na više sa zajedničkim zidom je kasnija verzija |
 
 ---
 

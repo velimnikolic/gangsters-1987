@@ -56,6 +56,20 @@ namespace RoadDemo
                     continue;
                 }
 
+                // The deed and the house book are two readings of the same premises.
+                // FrontDeeds used to write only the deed, leaving every House.Front
+                // invalid even though all of the physical HQ doors existed.
+                var house = LivingCity.Outfit.Underworld.Current?.Of(front.GangId);
+                if (house == null)
+                {
+                    pending++;
+                }
+                else if (house.Front != business)
+                {
+                    house.Front = business;
+                    house.Touch();
+                }
+
                 if (LivingCity.Business.BusinessDeeds.GangOf(business) == front.GangId)
                     continue;
 

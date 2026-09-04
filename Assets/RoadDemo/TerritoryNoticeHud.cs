@@ -191,6 +191,10 @@ namespace RoadDemo
         /// </summary>
         void OnControl(BlockControlChanged change)
         {
+            // A rival taking ground from another rival is city business, not a toast on
+            // the player's desk. Player losses have their own ControlLost line below.
+            if (change.CurrentLeader.Value != LivingCity.Gangs.GangCatalog.PlayerGangId)
+                return;
             if (TooSoon(change.BlockId))
                 return;
             var name = BlockName(change.BlockId);
@@ -223,6 +227,9 @@ namespace RoadDemo
         /// and two near-identical lines about one street in one frame read as a stutter.</summary>
         void OnContested(BlockBecameContested change)
         {
+            var player = LivingCity.Gangs.GangCatalog.PlayerGangId;
+            if (change.FirstGangId.Value != player && change.SecondGangId.Value != player)
+                return;
             if (TooSoon(change.BlockId))
                 return;
             Say(BlockName(change.BlockId) + " — contested ground now");

@@ -57,8 +57,9 @@ namespace LivingCity.UI
     /// <summary>
     /// Everything that has come in over the wire since the first morning, out of the two
     /// books that keep it: the campaign's incidents - what our men did that nobody
-    /// ordered - and the racket's door dispatches - the answer an owner gave, the front
-    /// that went in.
+    /// ordered - and OUR racket's door dispatches - the answer an owner gave, the front
+    /// that went in. Rival houses use the same simulation ledger, but their private
+    /// doorstep answers are not slips on the player's wire.
     ///
     /// The books are kept by different systems and this composes neither. It only reads
     /// them, dresses each entry the one way the design dresses a wire slip, and hands
@@ -67,6 +68,23 @@ namespace LivingCity.UI
     /// </summary>
     public static class WireBook
     {
+        /// <summary>The shared racket ledger holds every family's visits. A player-facing
+        /// wire is entitled only to the house whose book it is.</summary>
+        public static bool IsPlayerDispatch(TerritoryDoorDispatch dispatch) =>
+            dispatch.GangId.Value == Gangs.GangCatalog.PlayerGangId;
+
+        static int PreviousPlayerDoor(
+            IReadOnlyList<TerritoryDoorDispatch> doors, int index)
+        {
+            while (doors != null && index >= 0)
+            {
+                if (IsPlayerDispatch(doors[index]))
+                    return index;
+                index--;
+            }
+            return -1;
+        }
+
         /// <summary>
         /// The whole run, newest first.
         ///
@@ -100,7 +118,7 @@ namespace LivingCity.UI
             var todayCount = today != null ? today.Count : 0;
             var bookCount = book != null ? book.Count : 0;
             var incident = todayCount + bookCount - 1;
-            var door = doors != null ? doors.Count - 1 : -1;
+            var door = PreviousPlayerDoor(doors, doors != null ? doors.Count - 1 : -1);
 
             Incident At(int index) =>
                 index >= bookCount ? today[index - bookCount] : book[index];
@@ -109,7 +127,8 @@ namespace LivingCity.UI
             {
                 if (incident < 0)
                 {
-                    into.Add(Of(doors[door--]));
+                    into.Add(Of(doors[door]));
+                    door = PreviousPlayerDoor(doors, door - 1);
                     continue;
                 }
                 if (door < 0)
@@ -121,10 +140,27 @@ namespace LivingCity.UI
                 // Equal days keep the incident first: it is the campaign's own book, and
                 // a tie is not evidence of an order.
                 if (doors[door].Day > At(incident).Day)
-                    into.Add(Of(doors[door--]));
+                {
+                    into.Add(Of(doors[door]));
+                    door = PreviousPlayerDoor(doors, door - 1);
+                }
                 else
                     into.Add(Of(At(incident--)));
             }
+        }
+
+        /// <summary>Door slips belonging to the player, excluding rival traffic in the
+        /// shared simulation ledger.</summary>
+        public static int PlayerDoorCount()
+        {
+            var doors = TerritoryRuntime.Instance?.Racket?.Dispatches;
+            var count = 0;
+            if (doors == null)
+                return count;
+            for (var i = 0; i < doors.Count; i++)
+                if (IsPlayerDispatch(doors[i]))
+                    count++;
+            return count;
         }
 
         /// <summary>How many slips the books come to - the figure a head prints without
@@ -134,8 +170,37 @@ namespace LivingCity.UI
             var filed = outfit != null
                 ? outfit.Incidents.Count + outfit.IncidentBook.Count
                 : 0;
+            return filed + PlayerDoorCount();
+        }
+
+        /// <summary>
+        /// A fingerprint of only the player's door slips. AI traffic must not repaint
+        /// the strip and make an old player line animate as if it had just arrived.
+        /// </summary>
+        public static int PlayerDoorVersion()
+        {
             var doors = TerritoryRuntime.Instance?.Racket?.Dispatches;
-            return filed + (doors != null ? doors.Count : 0);
+            unchecked
+            {
+                var hash = 17;
+                if (doors == null)
+                    return hash;
+                for (var i = 0; i < doors.Count; i++)
+                {
+                    var dispatch = doors[i];
+                    if (!IsPlayerDispatch(dispatch))
+                        continue;
+                    hash = hash * 31 + dispatch.BusinessId.GetHashCode();
+                    hash = hash * 31 + dispatch.BlockId.GetHashCode();
+                    hash = hash * 31 + (int)dispatch.News;
+                    hash = hash * 31 + dispatch.GameHour.GetHashCode();
+                    hash = hash * 31 + dispatch.Amount;
+                    hash = hash * 31 + (int)dispatch.Excuse;
+                    hash = hash * 31 + dispatch.Stops;
+                    hash = hash * 31 + dispatch.Short;
+                }
+                return hash;
+            }
         }
 
         /// <summary>
@@ -150,14 +215,13 @@ namespace LivingCity.UI
         /// </summary>
         public static int Version(OutfitDirector outfit)
         {
-            var racket = TerritoryRuntime.Instance?.Racket;
             unchecked
             {
                 var hash = 17;
                 hash = hash * 31 + (outfit != null ? outfit.Campaign.Day : 0);
                 hash = hash * 31 + (outfit != null ? outfit.Incidents.Count : 0);
                 hash = hash * 31 + (outfit != null ? outfit.IncidentBook.Count : 0);
-                hash = hash * 31 + (racket != null ? racket.Version : 0);
+                hash = hash * 31 + PlayerDoorVersion();
                 return hash;
             }
         }

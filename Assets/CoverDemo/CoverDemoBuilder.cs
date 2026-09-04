@@ -147,7 +147,7 @@ namespace CoverDemo
                          StreetXMax - StreetXMin + 8f, StreetKit.OuterHalf * 2f + 8f));
             // The same clickable time strip as the city. Its day clock is frozen -
             // this bench has no campaign day to advance - while its one speed ladder
-            // still owns Time.timeScale for 0.5x/1x/2x/4x/Hold.
+            // still owns Time.timeScale for 0.5x/1x/2x/4x/8x/16x/Hold.
             var clockGo = new GameObject("Clock");
             var clock = clockGo.AddComponent<LivingCity.Ambient.CityClock>();
             clock.Configure(12f, 600f);

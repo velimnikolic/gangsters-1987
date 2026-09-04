@@ -42,6 +42,7 @@ namespace LivingCity.Tests
             NobodyRobsADoorThatPaysUs(failures);
             TheLadderTerminates(failures);
             ASlipIsStampedTheDayItHappened(failures);
+            RivalDoorSlipsStayOffThePlayersWire(failures);
             OneVisitFilesOneSlip(failures);
             MoneyReachesTheWireWithItsSum(failures);
             AShakedownWalksTheDoorsThatHaveNotAnswered(failures);
@@ -1000,6 +1001,21 @@ namespace LivingCity.Tests
                              slip.Day + ", not day 2.");
             if (Off((float)slip.HourOfDay, 6.5f))
                 failures.Add("WIRE: the slip's hour is " + slip.HourOfDay + ", not 06:30.");
+        }
+
+        /// <summary>The racket ledger is citywide; the wire on the player's desk is not.
+        /// A rival may work the same door without publishing its answer to our UI.</summary>
+        static void RivalDoorSlipsStayOffThePlayersWire(List<string> failures)
+        {
+            var player = LivingCity.Gangs.GangCatalog.PlayerGangId;
+            var ours = new TerritoryDoorDispatch(
+                Shop, Gang(player), TerritoryDoorNews.Approached, 10.0);
+            var theirs = new TerritoryDoorDispatch(
+                Shop, Gang(player + 1), TerritoryDoorNews.Approached, 10.0);
+
+            if (!LivingCity.UI.WireBook.IsPlayerDispatch(ours) ||
+                LivingCity.UI.WireBook.IsPlayerDispatch(theirs))
+                failures.Add("WIRE: a rival family's private door answer reached the player's wire.");
         }
 
         /// <summary>

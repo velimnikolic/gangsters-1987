@@ -176,7 +176,8 @@ namespace RoadDemo
                     if (Time.time >= _sayAgainAt)
                     {
                         _sayAgainAt = Time.time + AskAgain;
-                        CrewOverlay.Announce(Question, AskAgain, new Color(0.55f, 0.78f, 1f));
+                        AnnounceArrest(Question, AskAgain,
+                            new Color(0.55f, 0.78f, 1f));
                     }
                     if (Time.time < _askUntil) return;
                     // GiveUp returns false for a crew whose hands are already up. That
@@ -321,7 +322,8 @@ namespace RoadDemo
             if (foot != null) foot.Challenge(man);
             else BeginSquadChallenge(man);
             Banner();
-            CrewOverlay.Announce("AN OFFICER IS WALKING OVER", 3.5f, new Color(0.55f, 0.78f, 1f));
+            AnnounceArrest("AN OFFICER IS WALKING OVER", 3.5f,
+                new Color(0.55f, 0.78f, 1f));
         }
 
         /// <summary>
@@ -397,7 +399,8 @@ namespace RoadDemo
             if (foot != null) foot.Challenge(man);
             else BeginSquadChallenge(man);
             Banner();
-            CrewOverlay.Announce("AN OFFICER IS WALKING OVER", 3.5f, new Color(0.55f, 0.78f, 1f));
+            AnnounceArrest("AN OFFICER IS WALKING OVER", 3.5f,
+                new Color(0.55f, 0.78f, 1f));
             return true;
         }
 
@@ -554,10 +557,25 @@ namespace RoadDemo
         /// banner only touches its labels when the words have actually changed.</summary>
         void Banner()
         {
+            if (_arrestCrew == null ||
+                _arrestCrew.Faction != LivingCity.Gangs.GangCatalog.PlayerGangId)
+            {
+                ClearBanner();
+                return;
+            }
             if (_hud == null) _hud = ArrestHud.For(gameObject);
-            if (_hud == null || _arrestCrew == null) return;
+            if (_hud == null) return;
             _hud.Show(_arrestCrew.GangName,
                 SurrenderRoll.Leaning(_refusalOdds, _secondFightOdds, _answerArmed));
+        }
+
+        /// <summary>The arrest state machine runs for every family; its toast is the
+        /// player's intervention window and therefore only speaks for his crew.</summary>
+        void AnnounceArrest(string text, float seconds, Color tint)
+        {
+            if (_arrestCrew == null)
+                return;
+            CrewOverlay.AnnounceOurs(_arrestCrew.Faction, text, seconds, tint);
         }
 
         void ClearBanner()
@@ -688,7 +706,8 @@ namespace RoadDemo
             var lawAt = _arrestOfficer != null ? _arrestOfficer.Tf.position : _arrestLawman.Tf.position;
             if (Vector3.Distance(_arrestCrew.Position, lawAt) > WalksOff)
             {
-                CrewOverlay.Announce("THEY WALKED AWAY FROM IT", 3.5f, new Color(1f, 0.55f, 0.45f));
+                AnnounceArrest("THEY WALKED AWAY FROM IT", 3.5f,
+                    new Color(1f, 0.55f, 0.45f));
                 Run(ordered: true);
                 return true;
             }
@@ -707,7 +726,7 @@ namespace RoadDemo
                 _arrestCall.MenRefused = true;
                 _arrestCall.MenFought = true;
             }
-            CrewOverlay.Announce(ordered
+            AnnounceArrest(ordered
                     ? "THE CREW OPENS UP ON THE OFFICER"
                     : "THE LIEUTENANT CHOOSES TO FIGHT",
                 4.5f, new Color(1f, 0.55f, 0.45f));
@@ -742,7 +761,7 @@ namespace RoadDemo
                 _arrestCall.MenRefused = true;
                 _arrestCall.MenRan = true;
             }
-            CrewOverlay.Announce(ordered ? "THE CREW BREAKS FOR IT" : "THEY RUN",
+            AnnounceArrest(ordered ? "THE CREW BREAKS FOR IT" : "THEY RUN",
                 4.5f, new Color(1f, 0.72f, 0.35f));
             PrisonPipeline.AttachCharge(_arrestCase, Deed.Resisting);
             RememberAnswer(DoorAnswer.Run, _arrestDeed);

@@ -462,6 +462,12 @@ namespace RoadDemo
 
             lastGameHour = clock.Day * 24.0 + clock.Hour + debugTimeOffset;
             scheduler.AdvanceTo(lastGameHour);
+
+            // The rota deliberately lets only one family think per call so twenty
+            // minds never land on one frame. Poll it every frame: polling it only from
+            // the four-hour business channel made one FAMILY, rather than every
+            // family, take a turn every four hours.
+            DriveHouseMinds(lastGameHour);
         }
 
         void RegisterOrganizationBlocks()
@@ -1683,9 +1689,9 @@ namespace RoadDemo
                 Debug.Log("[Save] Day " + file.day + " restored from the file.");
             }
 
+            SweepWarnings(gameHour);
             SweepDefiance(gameHour);
             SweepProtectionSwitches();
-            DriveHouseMinds(gameHour);
             AccrueDues(gameHour);
             TendScheduledRounds(gameHour);
             TickPaperRounds(gameHour);
@@ -1798,7 +1804,7 @@ namespace RoadDemo
                     DoorBeat.VisitBusiness(actor, speaking, pending.Door, () =>
                     {
                         if (ResolveDemand(house, speaking, out var verdict, out _))
-                            AnnounceVerdict(speaking, threat: false, verdict, mouth);
+                            AnnounceVerdict(house, speaking, threat: false, verdict, mouth);
                     });
                 }
                 else if (pending.FollowUp == TerritoryRacketIntent.Threaten)
@@ -1806,7 +1812,7 @@ namespace RoadDemo
                     DoorBeat.VisitBusiness(actor, speaking, pending.Door, () =>
                     {
                         if (ResolveThreat(house, speaking, mouth, out var verdict, out _))
-                            AnnounceVerdict(speaking, threat: true, verdict, mouth);
+                            AnnounceVerdict(house, speaking, threat: true, verdict, mouth);
                     });
                 }
             }
@@ -1817,8 +1823,8 @@ namespace RoadDemo
         /// happen. Only the player's own conversations come through here; a rival's
         /// demand is his business.</summary>
         void AnnounceVerdict(
-            TerritoryBusinessId businessId, bool threat, TerritoryComplianceVerdict verdict,
-            TerritoryCharacterId actorId = default)
+            TerritoryGangId gangId, TerritoryBusinessId businessId, bool threat,
+            TerritoryComplianceVerdict verdict, TerritoryCharacterId actorId = default)
         {
             // XP-003. Every doorstep lean comes through here - the walked-in one and the
             // one a standing man is clicked into - so this is the one place the man who
@@ -1828,6 +1834,11 @@ namespace RoadDemo
             if (actorId.IsValid)
                 CrewSkill.Leaned(actorId.Value,
                     verdict == TerritoryComplianceVerdict.Accept);
+
+            // Every house resolves through this method now that rival crews work real
+            // doors. Their result belongs in the simulation, not in the player's toast.
+            if (gangId.Value != LivingCity.Gangs.GangCatalog.PlayerGangId)
+                return;
 
             var name = businessId.Value;
             if (TryGetBusinessView(businessId, out var view))
@@ -2540,7 +2551,7 @@ namespace RoadDemo
                     // the telephone by whichever of them asks first.
                     if (ResolveDemand(house, speaking,
                             DoorBeat.ClaimTelephone(walker), out var answered, out _))
-                        AnnounceVerdict(speaking, threat: false, answered, mouth);
+                        AnnounceVerdict(house, speaking, threat: false, answered, mouth);
                 });
                 return TerritoryCommandExecution.Pending(
                     "He goes in; the owner answers at the counter.");
@@ -2549,7 +2560,8 @@ namespace RoadDemo
             if (!ResolveDemand(gangId, command.BusinessId, out var verdict, out _))
                 return TerritoryCommandExecution.Reject("The demand could not be resolved.");
 
-            AnnounceVerdict(command.BusinessId, threat: false, verdict, command.ActorId);
+            AnnounceVerdict(gangId, command.BusinessId, threat: false, verdict,
+                command.ActorId);
 
             switch (verdict)
             {
@@ -2588,7 +2600,7 @@ namespace RoadDemo
                     // demand already spent this owner's telephone.
                     if (ResolveThreat(leaning, leaned, man,
                             DoorBeat.ClaimTelephone(leaner), out var answered, out _))
-                        AnnounceVerdict(leaned, threat: true, answered, man);
+                        AnnounceVerdict(leaning, leaned, threat: true, answered, man);
                 });
                 return TerritoryCommandExecution.Pending(
                     "He goes in; the owner is leaned on at the counter.");
@@ -2598,7 +2610,8 @@ namespace RoadDemo
                     out var verdict, out _))
                 return TerritoryCommandExecution.Reject("The threat could not be resolved.");
 
-            AnnounceVerdict(command.BusinessId, threat: true, verdict, command.ActorId);
+            AnnounceVerdict(gangId, command.BusinessId, threat: true, verdict,
+                command.ActorId);
 
             switch (verdict)
             {

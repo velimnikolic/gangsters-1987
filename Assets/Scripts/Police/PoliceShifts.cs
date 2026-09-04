@@ -222,6 +222,51 @@ namespace LivingCity.Police
         /// car is sent with it, and a city with nobody free on foot sends the car alone.</summary>
         public const float FootResponseCarRange = 150f;
 
+        /// <summary>Every free patrol that can hear an open gunfight joins it, whether
+        /// walking or driving. This is deliberately a radius rather than a count: an
+        /// officer passing a firefight never continues his round while another unit is
+        /// under fire.</summary>
+        public const float NearbyPoliceGunfightRange = 110f;
+
+        public static bool NearbyPoliceJoinsGunfight(
+            bool freeForEmergency, float distanceSquared) =>
+            freeForEmergency &&
+            distanceSquared <= NearbyPoliceGunfightRange * NearbyPoliceGunfightRange;
+
+        /// <summary>Dispatch summons at most one marked car to an ordinary gang
+        /// shooting. Cars already inside, or later driving into, its audible radius
+        /// volunteer independently. Officer-down/shot-at-officer swarms are the other
+        /// explicit exception and use their own force-wide cap.</summary>
+        public const int OrdinaryDispatchCarLimit = 1;
+
+        public static bool OrdinaryDispatchCarStillAllowed(int carsAlreadyResponding) =>
+            carsAlreadyResponding < OrdinaryDispatchCarLimit;
+
+        public static int OrdinaryDispatchedCars(
+            bool gunfightActive, int heatLevel, bool anyFootFree) =>
+            gunfightActive || heatLevel >= 2 || !anyFootFree
+                ? OrdinaryDispatchCarLimit
+                : 0;
+
+        /// <summary>Police opened fire on this physical crew during the shooting that
+        /// is still being counted. Its shots back at the law are local self-defence,
+        /// not a fresh attack that calls the whole city.</summary>
+        public static bool IsDefensivePoliceReturn(
+            int policeAttackedIncident, int currentIncident) =>
+            currentIncident > 0 && policeAttackedIncident == currentIncident;
+
+        public static bool PoliceInterventionCreatesDefence(
+            bool policeFiredAtCrew, bool crewWasFightingNonPolice) =>
+            policeFiredAtCrew && crewWasFightingNonPolice;
+
+        public static bool CrewMayAnswerAttacker(
+            bool attackerIsPolice, bool policeOpenedFireThisIncident) =>
+            !attackerIsPolice || policeOpenedFireThisIncident;
+
+        public static bool ShotAtPoliceStartsSwarm(
+            bool targetIsPolice, bool defensiveReturn) =>
+            targetIsPolice && !defensiveReturn;
+
         /// <summary>Whether a car goes out beside the pair: the pair is farther than
         /// <see cref="FootResponseCarRange"/>, or there is no pair to send at all.</summary>
         public static bool CarJoinsFootResponse(bool anyFootFree, float footDistanceSquared) =>

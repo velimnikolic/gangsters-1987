@@ -27,7 +27,7 @@ namespace LivingCity.Ambient
         [SerializeField] bool running = true;
 
         /// <summary>The game-speed ladder the HUD's buttons step through. Index 1 is normal.</summary>
-        static readonly float[] Speeds = { 0.5f, 1f, 2f, 4f };
+        static readonly float[] Speeds = { 0.5f, 1f, 2f, 4f, 8f, 16f };
 
         int speedIndex = 1;
         bool paused;

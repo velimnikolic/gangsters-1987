@@ -162,6 +162,13 @@ namespace RoadDemo
             /// with no fight of its own answers one it is given (TickCombat).</summary>
             public float ProvokedAt = -100f;
 
+            /// <summary>The shooting incident in which police fired at this crew while
+            /// it was already fighting another gang. Return fire during that same
+            /// incident is local self-defence: it may target the officers, but must not
+            /// turn their intervention into a city-wide swarm. A later incident starts
+            /// clean.</summary>
+            public int PoliceAttackedIncident = -1;
+
             /// <summary>The fight rounds have gone off in - fired by this crew or at
             /// it, the law's included - if it is the fight the crew is in now. Set
             /// once and never cooled by a lull: a fight is hot from its first round
@@ -2120,7 +2127,8 @@ namespace RoadDemo
             unit.FledAt = Time.time;
             unit.SeenByLawAt = Time.time;
             unit.FlightFrom = unit.Position;
-            CrewOverlay.Announce(unit.GangName.ToUpperInvariant() + " ARE RUNNING FOR IT",
+            CrewOverlay.AnnounceOurs(unit.Faction,
+                unit.GangName.ToUpperInvariant() + " ARE RUNNING FOR IT",
                 4f, new Color(0.95f, 0.9f, 0.6f));
             return true;
         }

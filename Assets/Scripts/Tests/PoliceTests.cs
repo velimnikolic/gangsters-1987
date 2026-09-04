@@ -52,6 +52,8 @@ namespace LivingCity.Tests
             ("GAN315_DispatchUsesAirDistanceNotTravelTime", GAN315_DispatchUsesAirDistanceNotTravelTime),
             ("GAN315_ComplaintWaitsForPhysicalArrival", GAN315_ComplaintWaitsForPhysicalArrival),
             ("TheNearestPairComesAndACarPastOneFifty", TheNearestPairComesAndACarPastOneFifty),
+            ("EveryNearbyPatrolJoinsAndDispatchSendsAtMostOneCar", EveryNearbyPatrolJoinsAndDispatchSendsAtMostOneCar),
+            ("PoliceFireCanBeAnsweredWithoutSummoningTheSwarm", PoliceFireCanBeAnsweredWithoutSummoningTheSwarm),
             ("AStalledPairIsAtTheSceneOrSentBack", AStalledPairIsAtTheSceneOrSentBack),
             ("GAN315_BoardingDoesNotResetALiveRoute", GAN315_BoardingDoesNotResetALiveRoute),
             ("GAN315_EscortStandsClearAndTheCarParks", GAN315_EscortStandsClearAndTheCarParks),
@@ -362,6 +364,59 @@ namespace LivingCity.Tests
                 !PoliceProcedure.FootArrivedFirst(12f, 10f) &&
                 PoliceProcedure.FootArrivedFirst(10f, 10f),
                 "RESPONSE: whoever arrived first makes the arrest, a tie to the men on foot.");
+        }
+
+        static void EveryNearbyPatrolJoinsAndDispatchSendsAtMostOneCar(
+            List<string> failures)
+        {
+            var inside = PoliceProcedure.NearbyPoliceGunfightRange - 1f;
+            var edge = PoliceProcedure.NearbyPoliceGunfightRange;
+            var outside = PoliceProcedure.NearbyPoliceGunfightRange + 1f;
+            Want(failures,
+                PoliceProcedure.NearbyPoliceJoinsGunfight(true, inside * inside) &&
+                PoliceProcedure.NearbyPoliceJoinsGunfight(true, edge * edge) &&
+                !PoliceProcedure.NearbyPoliceJoinsGunfight(true, outside * outside) &&
+                !PoliceProcedure.NearbyPoliceJoinsGunfight(false, 0f),
+                "GUNFIGHT RESPONSE: every free foot or motor patrol in earshot joins; a distant or occupied patrol does not.");
+
+            Want(failures,
+                PoliceProcedure.OrdinaryDispatchedCars(true, 0, true) == 1 &&
+                PoliceProcedure.OrdinaryDispatchedCars(true, 5, true) == 1 &&
+                PoliceProcedure.OrdinaryDispatchedCars(false, 2, true) == 1 &&
+                PoliceProcedure.OrdinaryDispatchedCars(false, 0, false) == 1 &&
+                PoliceProcedure.OrdinaryDispatchedCars(false, 0, true) == 0 &&
+                PoliceProcedure.OrdinaryDispatchCarStillAllowed(0) &&
+                !PoliceProcedure.OrdinaryDispatchCarStillAllowed(1) &&
+                !PoliceProcedure.OrdinaryDispatchCarStillAllowed(2),
+                "GUNFIGHT RESPONSE: dispatch calls no more than one car; only a quiet low-heat scene with a free pair calls none.");
+        }
+
+        static void PoliceFireCanBeAnsweredWithoutSummoningTheSwarm(
+            List<string> failures)
+        {
+            var defensive = PoliceProcedure.IsDefensivePoliceReturn(17, 17);
+            Want(failures,
+                defensive &&
+                !PoliceProcedure.IsDefensivePoliceReturn(16, 17) &&
+                !PoliceProcedure.IsDefensivePoliceReturn(-1, 17) &&
+                PoliceProcedure.PoliceInterventionCreatesDefence(
+                    policeFiredAtCrew: true, crewWasFightingNonPolice: true) &&
+                !PoliceProcedure.PoliceInterventionCreatesDefence(
+                    policeFiredAtCrew: true, crewWasFightingNonPolice: false) &&
+                !PoliceProcedure.PoliceInterventionCreatesDefence(
+                    policeFiredAtCrew: false, crewWasFightingNonPolice: true) &&
+                PoliceProcedure.CrewMayAnswerAttacker(
+                    attackerIsPolice: true, policeOpenedFireThisIncident: true) &&
+                !PoliceProcedure.CrewMayAnswerAttacker(
+                    attackerIsPolice: true, policeOpenedFireThisIncident: false) &&
+                PoliceProcedure.CrewMayAnswerAttacker(
+                    attackerIsPolice: false, policeOpenedFireThisIncident: false),
+                "POLICE RETURN FIRE: only a police attack in this same shooting incident makes the reply defensive.");
+            Want(failures,
+                !PoliceProcedure.ShotAtPoliceStartsSwarm(true, defensive) &&
+                PoliceProcedure.ShotAtPoliceStartsSwarm(true, defensiveReturn: false) &&
+                !PoliceProcedure.ShotAtPoliceStartsSwarm(false, defensiveReturn: false),
+                "POLICE RETURN FIRE: self-defence stays local, while opening fire on police still summons the swarm.");
         }
 
         /// <summary>A pair that stops getting nearer is stood at the scene if it is within

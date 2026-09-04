@@ -1015,8 +1015,8 @@ namespace LivingCity.Outfit
 
         /// <summary>
         /// Whose crew this street is. The one whose lieutenant answers for it if there is
-        /// one, and otherwise the first crew with men on their feet - the mind has no
-        /// window onto the street, so "free" is what the books can say.
+        /// one, and otherwise the first crew with men on their feet and no current job -
+        /// the mind has no window onto the street, so "free" is what the books can say.
         /// </summary>
         static Crew CrewOn(HouseView view, TerritoryBlockId blockId)
         {
@@ -1025,16 +1025,19 @@ namespace LivingCity.Outfit
                 for (var i = 0; i < roster.Crews.Count; i++)
                 {
                     var crew = roster.Crews[i];
-                    if (Active(roster, crew) >= 2 &&
+                    if (Free(view, crew) && Active(roster, crew) >= 2 &&
                         Answers(roster, crew.LieutenantId, blockId))
                         return crew;
                 }
 
             for (var i = 0; i < roster.Crews.Count; i++)
-                if (Active(roster, roster.Crews[i]) >= 2)
+                if (Free(view, roster.Crews[i]) && Active(roster, roster.Crews[i]) >= 2)
                     return roster.Crews[i];
             return null;
         }
+
+        static bool Free(HouseView view, Crew crew) =>
+            crew != null && (view.Book == null || view.Book.CurrentFor(crew.Id) == null);
 
         static bool Answers(Roster roster, int leaderId, TerritoryBlockId blockId)
         {

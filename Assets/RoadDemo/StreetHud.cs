@@ -297,8 +297,7 @@ namespace RoadDemo
             // the day moved, so door news was filed into the feed and the wire went on
             // showing whatever it had been painted with - a strip that prints the first
             // few things that ever happened and then stops for the rest of the game.
-            var racket = TerritoryRuntime.Instance?.Racket;
-            var doorNews = racket != null ? racket.Version : 0;
+            var doorNews = WireBook.PlayerDoorVersion();
 
             if (incidents == _paintedIncidents && day == _paintedCampaignDay &&
                 doorNews == _paintedDoorNews && _wireOpen == _paintedWireOpen)
@@ -902,7 +901,9 @@ namespace RoadDemo
             // The count is of REAL traffic. The placeholder line is the machine saying
             // it is working, not a message, and "1 OF 0" is a readout that contradicts
             // itself on the very first night of a campaign.
-            var filed = outfit != null ? outfit.Incidents.Count : 0;
+            var filed = outfit != null
+                ? outfit.Incidents.Count + WireBook.PlayerDoorCount()
+                : 0;
             var count = Caps(head, WireWide - 96f,
                 -(WireHeadTall - LineBox(12f)) * 0.5f, 62f,
                 filed == 0 ? "Quiet"
@@ -964,10 +965,9 @@ namespace RoadDemo
             var doors = TerritoryRuntime.Instance?.Racket?.Dispatches;
 
             // TWO books, one strip. The incidents are what OUR MEN did that nobody
-            // ordered; the dispatches are what happened AT A DOOR - the answer an owner
-            // gave, the front that went in. A boss on the map used to be told the first
-            // and never the second, so the whole racket played out in silence unless he
-            // had the ledger open on the right page.
+            // ordered; the dispatches are what happened at one of OUR doors - the answer
+            // an owner gave, the front that went in. Rival visits share the simulation's
+            // ledger but are not the player's wire.
             //
             // The two are NOT sorted against each other. They are counted on different
             // clocks - the campaign's day and the city clock's - and comparing them let
@@ -978,8 +978,13 @@ namespace RoadDemo
             var door = doors != null ? doors.Count - 1 : -1;
 
             for (var kept = 0; kept < DoorLinesKept && door >= 0 && _lines.Count < WireLines;
-                 kept++, door--)
+                 door--)
+            {
+                if (!WireBook.IsPlayerDispatch(doors[door]))
+                    continue;
                 _lines.Add(WireBook.Of(doors[door]));
+                kept++;
+            }
 
             while (incident >= 0 && _lines.Count < WireLines)
             {
@@ -989,7 +994,8 @@ namespace RoadDemo
 
             while (door >= 0 && _lines.Count < WireLines)
             {
-                _lines.Add(WireBook.Of(doors[door]));
+                if (WireBook.IsPlayerDispatch(doors[door]))
+                    _lines.Add(WireBook.Of(doors[door]));
                 door--;
             }
 

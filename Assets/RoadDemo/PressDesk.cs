@@ -296,6 +296,7 @@ namespace RoadDemo
                 ? PressKind.BossKilled : PressKind.Killing, Quarter(at));
             if (record == null) return;
             record.Names = new[] { victim.FullName ?? "" };
+            record.GangsterDeaths = 1;
             record.NamedGangId = gangId;
             var house = Underworld.Current?.Of(gangId);
             record.Models = house?.Roster != null
@@ -453,6 +454,7 @@ namespace RoadDemo
             var record = New(PressKind.WitnessDead, found != null ? found.Where : "");
             if (record == null) return;
             record.CaseId = found != null ? found.CaseId : -1;
+            record.CivilianDeaths = 1;
             record.Names = string.IsNullOrWhiteSpace(witness.Name)
                 ? System.Array.Empty<string>() : new[] { witness.Name };
             File(record);

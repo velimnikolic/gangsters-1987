@@ -102,6 +102,11 @@ namespace RoadDemo
         public static int OfficerDeaths { get; private set; }
         public static int IncidentNumber { get; private set; }
 
+        /// <summary>Whether the latest officer death came from a crew returning police
+        /// fire in this same incident. PoliceDispatch reads this synchronously from the
+        /// death event; the death still counts everywhere else.</summary>
+        public static bool LastOfficerDeathWasDefensiveReturn { get; private set; }
+
         /// <summary>The telephone's own counter. A complaint used to take the next
         /// SHOOTING incident number, which made every consumer of that number - the
         /// dispatcher's "this is a new incident" test, the one-arrest-per-incident
@@ -128,6 +133,7 @@ namespace RoadDemo
             LastShotAt = -1000f;
             IncidentStart = -1000f;
             IncidentShots = CivilianDeaths = GangDeaths = OfficerDeaths = 0;
+            LastOfficerDeathWasDefensiveReturn = false;
             IncidentNumber = 0;
             ComplaintNumber = 0;
             Kind = IncidentKind.Shooting;
@@ -199,8 +205,11 @@ namespace RoadDemo
         /// <summary>Somebody died of the shooting. <paramref name="victimFaction"/>
         /// is the house he belonged to, or -1 for a civilian and anybody nobody can
         /// name: a grudge has to have somebody to belong to.</summary>
-        public static void Death(Vector3 pos, DeathOf who, int victimFaction = -1)
+        public static void Death(Vector3 pos, DeathOf who, int victimFaction = -1,
+            bool defensivePoliceReturn = false)
         {
+            LastOfficerDeathWasDefensiveReturn =
+                who == DeathOf.Officer && defensivePoliceReturn;
             switch (who)
             {
                 case DeathOf.Civilian: CivilianDeaths++; break;

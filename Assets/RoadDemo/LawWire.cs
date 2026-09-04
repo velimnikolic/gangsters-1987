@@ -141,6 +141,7 @@ namespace RoadDemo
             CourtCase file = null)
         {
             PressDesk.Instance?.BailForfeit(man, prisoner, file);
+            if (prisoner != null && prisoner.GangId != Ours) return;
             File(man != null ? man.Id : -1, man != null ? man.FullName : "",
                 IncidentKind.BailForfeit, "");
         }
@@ -156,6 +157,7 @@ namespace RoadDemo
         {
             if (man == null) return;
             PressDesk.Instance?.Verdict(man, prisoner, file, status);
+            if (prisoner != null && prisoner.GangId != Ours) return;
             var kind = stage == PrisonStage.Sentenced
                 ? IncidentKind.Convicted
                 : status == CaseStatus.Dismissed

@@ -212,7 +212,8 @@ namespace RoadDemo
             }
 
             _custodies.Add(custody);
-            CrewOverlay.Announce("A CAR IS COMING FOR THE PRISONERS", 4f,
+            CrewOverlay.AnnounceOurs(crew.Faction,
+                "A CAR IS COMING FOR THE PRISONERS", 4f,
                 new Color(0.55f, 0.78f, 1f));
         }
 
@@ -578,7 +579,8 @@ namespace RoadDemo
             custody.Stage = CustodyStage.BoardingPrisoners;
             custody.By = Time.time + CollarPatience;
             ActivateNextPrisoners(custody);
-            CrewOverlay.Announce("THE PRISONERS ARE BOARDING", 4f,
+            CrewOverlay.AnnounceOurs(custody.Crew.Faction,
+                "THE PRISONERS ARE BOARDING", 4f,
                 new Color(0.55f, 0.78f, 1f));
         }
 
@@ -1000,7 +1002,8 @@ namespace RoadDemo
                     custody.Call.Men = null;
                 }
             }
-            CrewOverlay.Announce("THE PRISONERS ARE ON THEIR WAY TO THE STATION", 4f,
+            CrewOverlay.AnnounceOurs(custody.Crew.Faction,
+                "THE PRISONERS ARE ON THEIR WAY TO THE STATION", 4f,
                 new Color(0.55f, 0.78f, 1f));
         }
 
@@ -1136,7 +1139,8 @@ namespace RoadDemo
             }
             custody.Stage = CustodyStage.WalkingIn;
             custody.By = Time.time + CollarPatience;
-            CrewOverlay.Announce("THE PRISONERS ARE AT THE STATION", 4f,
+            CrewOverlay.AnnounceOurs(custody.Crew.Faction,
+                "THE PRISONERS ARE AT THE STATION", 4f,
                 new Color(0.55f, 0.78f, 1f));
         }
 
@@ -1224,7 +1228,8 @@ namespace RoadDemo
             }
             PersonnelDirector.Instance?.Touch();
             LawWire.Sprung(custody.Call?.Call, custody.Crew);
-            CrewOverlay.Announce("THE PRISONERS ARE SPRUNG", 5f,
+            CrewOverlay.AnnounceOurs(custody.Crew.Faction,
+                "THE PRISONERS ARE SPRUNG", 5f,
                 new Color(1f, 0.72f, 0.35f));
             FinishCustody(custody);
         }

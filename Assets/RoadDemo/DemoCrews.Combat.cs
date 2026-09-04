@@ -1483,19 +1483,31 @@ namespace RoadDemo
             // wherever the car is going: the order stands, the guns come out anyway
             var victimUnit = UnitOf(target);
             var shooterUnit = UnitOf(shooter);
-            // rounds are coming at this crew, hit or miss: it has a fight now whether it
-            // went looking for one or not, and TickCombat turns it round when the order
-            // it is under has stopped holding its fire
-            if (victimUnit != null && shooterUnit != null && !shooterUnit.IsPolice)
+            // Rounds are coming at this crew, hit or miss: it has a fight now whether it
+            // went looking for one or not. Police used to be excluded here, so a crew
+            // already fighting a gang simply absorbed police fire without answering.
+            if (victimUnit != null && shooterUnit != null)
+            {
                 victimUnit.ProvokedAt = Time.time;
+                var fightingGang = victimUnit.TargetUnit != null &&
+                    !victimUnit.TargetUnit.IsPolice;
+                if (!victimUnit.IsPolice &&
+                    LivingCity.Police.PoliceProcedure.PoliceInterventionCreatesDefence(
+                        shooterUnit.IsPolice, fightingGang))
+                    victimUnit.PoliceAttackedIncident = StreetAlarm.IncidentNumber;
+            }
             // and both crews' fights are hot now - the victim's whoever fired, the
             // law's rounds included: a crew sent at the police walks in cold until
             // the first round lands round it, not until it fires back
             HeatFight(shooterUnit);
             HeatFight(victimUnit);
 
+            var policeOpenedFireOnVictim = victimUnit != null &&
+                LivingCity.Police.PoliceProcedure.IsDefensivePoliceReturn(
+                    victimUnit.PoliceAttackedIncident, StreetAlarm.IncidentNumber);
             bool mayAnswer = victimUnit != null && shooterUnit != null &&
-                !shooterUnit.IsPolice &&
+                LivingCity.Police.PoliceProcedure.CrewMayAnswerAttacker(
+                    shooterUnit.IsPolice, policeOpenedFireOnVictim) &&
                 (IsAboard(target) || Time.time - victimUnit.OrderedAt > HoldFireAfterOrder);
             bool shooterSpotted = mayAnswer && Spotted(victimUnit, shooter);
             // AND THE FIGHT ITSELF IS ONLY EVER PICKED UP OFF SOMEBODY IN SIGHT. Being
@@ -1630,9 +1642,14 @@ namespace RoadDemo
             {
                 CrewGore.Death(target, GroundY, floor: !IsAboard(target) && !target.Riding);
                 _deaths.Add((target, Time.time + DeathReportDelay));
+                var officer = target.Faction == StreetAlarm.PoliceFaction;
+                var defensivePoliceReturn = officer && shooterUnit != null &&
+                    LivingCity.Police.PoliceProcedure.IsDefensivePoliceReturn(
+                        shooterUnit.PoliceAttackedIncident,
+                        StreetAlarm.IncidentNumber);
                 StreetAlarm.Death(target.Tf.position,
-                    target.Faction == StreetAlarm.PoliceFaction ? StreetAlarm.DeathOf.Officer : StreetAlarm.DeathOf.Gangster,
-                    target.Faction);
+                    officer ? StreetAlarm.DeathOf.Officer : StreetAlarm.DeathOf.Gangster,
+                    target.Faction, defensivePoliceReturn);
                 // a friend going down beside a man may break him: he runs, and comes
                 // back when his nerve does (the law does not run)
                 if (victimUnit != null && !victimUnit.IsPolice && !IsAboard(target))

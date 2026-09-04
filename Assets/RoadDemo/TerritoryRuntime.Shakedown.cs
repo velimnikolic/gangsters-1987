@@ -144,7 +144,7 @@ namespace RoadDemo
             if (round.Kind == TerritoryRoundKind.Lean)
             {
                 ResolveThreat(gang, businessId, mouth, out var threatened, out _);
-                AnnounceVerdict(businessId, true, threatened, mouth);
+                AnnounceVerdict(gang, businessId, true, threatened, mouth);
                 return;
             }
 
@@ -154,7 +154,7 @@ namespace RoadDemo
             racket.Approach(businessId, gang, gameHour, racketChanges, announce: false);
 
             ResolveDemand(gang, businessId, out var verdict, out _);
-            AnnounceVerdict(businessId, false, verdict, mouth);
+            AnnounceVerdict(gang, businessId, false, verdict, mouth);
 
             PolicyAndArchetype(unit, out var policyLevel, out _);
             if (TerritoryShakedown.ThreatenAfter(verdict, policyLevel))
@@ -163,7 +163,7 @@ namespace RoadDemo
                 // above already gave this owner his chance to call; a strict crew's
                 // on-the-spot threat must not queue a duplicate complaint.
                 ResolveThreat(gang, businessId, mouth, false, out var after, out _);
-                AnnounceVerdict(businessId, true, after, mouth);
+                AnnounceVerdict(gang, businessId, true, after, mouth);
             }
         }
     }

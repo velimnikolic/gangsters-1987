@@ -299,10 +299,12 @@ namespace LivingCity.Tests
         static void AHistoricalDateStillPrintsOnARealLeadMorning(List<string> failures)
         {
             var lead = Record(PressKind.OfficerKilled, weight: 100, deaths: 1);
+            var brief = Record(PressKind.Arrest, weight: 68);
+            brief.CaseId = 812;
             var page = Edition.Compose(1987, new NewsDate(1, 13), 2,
-                new[] { lead });
-            Want(failures, page.Length > 1 && ReferenceEquals(page[0].Story, lead) &&
-                           page[1].Historical,
+                new[] { brief, lead });
+            Want(failures, page.Length > 2 && ReferenceEquals(page[0].Story, lead) &&
+                           page[1].Historical && ReferenceEquals(page[2].Story, brief),
                 "PRESS-016: the city lead displaced the pinned 1987 date instead of moving it to the first brief.");
         }
 

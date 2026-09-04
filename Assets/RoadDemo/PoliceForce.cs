@@ -639,7 +639,8 @@ namespace RoadDemo
                     var besideWreck = where + Vector3.right * (2f + r * 0.8f);
                     ReleaseCustodyTracking(rider.CharacterId, besideWreck,
                         relocate: true);
-                    freed++;
+                    if (rider.GangId == LivingCity.Gangs.GangCatalog.PlayerGangId)
+                        freed++;
                 }
                 if (freed > 0)
                 {
@@ -670,31 +671,36 @@ namespace RoadDemo
             {
                 var rider = convoy.Riders[r];
                 var roster = RosterOf(rider);
+                var ours = rider.GangId == LivingCity.Gangs.GangCatalog.PlayerGangId;
                 if (convoy.Leg == PrisonLeg.Prison)
                 {
                     Pipeline.Delivered(rider);
-                    delivered++;
+                    if (ours) delivered++;
                     continue;
                 }
 
                 var file = rider.CaseId >= 0 ? Pipeline.FindCase(rider.CaseId) : null;
                 Pipeline.Tried(roster, rider, today);
-                if (rider.Stage == PrisonStage.Sentenced) sentenced++;
+                if (rider.Stage == PrisonStage.Sentenced)
+                {
+                    if (ours) sentenced++;
+                }
                 else
                 {
                     var courthouseExit = convoy.To + Vector3.right * (2f + r * 0.8f);
                     ReleaseCustodyTracking(rider.CharacterId, courthouseExit,
                         relocate: true);
-                    walked++;
+                    if (ours) walked++;
                 }
-                if (file != null && file.Status == CaseStatus.Dismissed) dismissed = true;
+                if (ours && file != null && file.Status == CaseStatus.Dismissed)
+                    dismissed = true;
                 // The wire through the one door; the BANNER is the aggregate below,
                 // because a car brings several men at once and one line per man would
                 // say the same thing four times.
                 AnnounceVerdict(roster, rider,
                     file != null ? file.Status : CaseStatus.Tried, banner: false);
             }
-            if (convoy.Riders.Count > 0)
+            if (delivered > 0 || sentenced > 0 || walked > 0)
             {
                 var director = LivingCity.Gameplay.PersonnelDirector.Instance;
                 if (director != null) director.Touch();
@@ -863,7 +869,9 @@ namespace RoadDemo
             var man = roster != null ? roster.Find(prisoner.CharacterId) : null;
             var file = prisoner.CaseId >= 0 ? Pipeline.FindCase(prisoner.CaseId) : null;
             LawWire.Verdict(man, prisoner.Stage, status, prisoner, file);
-            if (!banner) return;
+            if (!banner ||
+                prisoner.GangId != LivingCity.Gangs.GangCatalog.PlayerGangId)
+                return;
 
             if (prisoner.Stage == PrisonStage.Sentenced)
                 CrewOverlay.Announce("THE COURT HAS PASSED SENTENCE",

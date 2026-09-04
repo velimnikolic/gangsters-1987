@@ -19,11 +19,23 @@ namespace LivingCity.Tests
         {
             var failures = new List<string>();
             MoneyKeepsOneSafeAndSpendsDirtyFirst(failures);
+            ADescriptionIsNotAStreetAddress(failures);
             UnfundedOrdersDoNotResolve(failures);
             ReportCountsThePremisesOnce(failures);
             HeadquartersCanBeRepointedAndCleared(failures);
             AllFourTransfersUseThePhysicalGate(failures);
             return failures;
+        }
+
+        static void ADescriptionIsNotAStreetAddress(List<string> failures)
+        {
+            var recruit = new Job { TargetLabel = "a corner prospect" };
+            if (recruit.HasPlace)
+                failures.Add("Orders: a descriptive label was treated as world origin.");
+
+            recruit.TargetBlockId = 0;
+            if (!recruit.HasPlace)
+                failures.Add("Orders: block zero was not treated as a real street address.");
         }
 
         static void MoneyKeepsOneSafeAndSpendsDirtyFirst(List<string> failures)

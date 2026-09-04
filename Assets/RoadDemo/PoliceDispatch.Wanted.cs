@@ -278,7 +278,8 @@ namespace RoadDemo
                 RollAnswer(unit, -today);
                 beat.Challenge(man);
                 Banner();
-                CrewOverlay.Announce("AN OFFICER HAS RECOGNISED ONE OF OURS",
+                CrewOverlay.AnnounceOurs(unit.Faction,
+                    "AN OFFICER HAS RECOGNISED ONE OF OURS",
                     4f, new Color(1f, 0.55f, 0.45f));
             }
         }

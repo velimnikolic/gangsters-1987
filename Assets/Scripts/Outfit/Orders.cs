@@ -381,8 +381,7 @@ namespace LivingCity.Outfit
         /// map always carries them - the area orders take their blocks' centre - but a
         /// job built in a test does not, and a bare (0,0) would otherwise read as a
         /// point at the world origin and charge the crew a journey across the city.</summary>
-        public bool HasPlace => TargetBlockId >= 0 || BlockTargets.Count > 0 ||
-                                TargetLabel.Length > 0;
+        public bool HasPlace => TargetBlockId >= 0 || BlockTargets.Count > 0;
 
         public int TargetCount => BlockTargets.Count > 0 ? BlockTargets.Count : 1;
     }

@@ -161,6 +161,7 @@ MonoBehaviour:
   policeCars: -1
   rivalCrews: 6
   rivalHoods: 3
+  mindThinkEveryHours: 2
   startHour: 6
   realSecondsPerGameHour: 60
   greenBelt: 140

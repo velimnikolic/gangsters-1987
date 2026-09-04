@@ -40,6 +40,8 @@ namespace LivingCity.News
             {
                 page.Add(PressText.Story(regular[0]));
                 regular.RemoveAt(0);
+                if (filler[0].Historical && page.Count < count)
+                    page.Add(filler[0]);
             }
             else
             {

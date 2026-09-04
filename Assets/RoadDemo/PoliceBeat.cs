@@ -330,6 +330,17 @@ namespace RoadDemo
             State = Mode.OnScene;
         }
 
+        /// <summary>The shooting has ended but this permanent pair still owns the
+        /// scene. Drop combat state without releasing it from the pavement; the normal
+        /// scene/arrest timer decides when it returns to its beat.</summary>
+        public void SecureScene()
+        {
+            _collar = null;
+            ClearFight();
+            LowerGuns();
+            State = Mode.OnScene;
+        }
+
         public void BeginDoorway(Vector3 point)
         {
             State = Mode.Doorway;

@@ -39,6 +39,7 @@ namespace LivingCity.Tests
             TheMindNeverAsksADoorAnotherHouseHolds(failures);
             AnAttackOnOurDoorIsAnsweredInsideTheWindow(failures);
             WithNobodyFreeThereIsNoPaperAnswer(failures);
+            AWorkingCrewIsNotSentToAnotherStreet(failures);
             TheMindNeverProposesViolenceAtItsOwnDoors(failures);
             MenOnTheDoorMakeTheAttackHarder(failures);
             NobodyBuysBelowTheReserve(failures);
@@ -823,6 +824,35 @@ namespace LivingCity.Tests
             if (city.Answered)
                 failures.Add("HOUSE-008: a family with nobody on his feet still " +
                              "answered for a street.");
+        }
+
+        /// <summary>A crew already carrying a job is not also posted to fresh ground.
+        /// The street command and CrewJobs otherwise overwrite one another every frame.</summary>
+        static void AWorkingCrewIsNotSentToAnotherStreet(List<string> failures)
+        {
+            var city = new RigCity(31, 8);
+            var roster = city.House.Roster;
+            for (var i = 0; i < roster.Crews.Count; i++)
+            {
+                var crew = roster.Crews[i];
+                city.House.Runner.Issue(roster, new Job
+                {
+                    CrewId = crew.Id,
+                    Type = OrderType.Recruit,
+                    Men = 1,
+                    TargetLabel = "a man for the crew",
+                });
+            }
+
+            city.Stand(city.BlockIds[0], city.Mine, 60f);
+            var intents = new List<HouseIntent>();
+            HouseMind.Think(city.Look(), HouseMindConfig.Default, intents);
+            for (var i = 0; i < intents.Count; i++)
+                if (intents[i].Kind == HouseIntentKind.Command)
+                {
+                    failures.Add("HOUSE-009: a crew already on a job was sent to another street.");
+                    return;
+                }
         }
 
         /// <summary>

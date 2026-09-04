@@ -62,7 +62,7 @@ namespace RoadDemo
         // have to be frightened by it, only to know what it was and which way it came
         // from, and that is the whole of a beat: he turns and he goes. Anybody inside
         // this rings it in himself, at once, and does not wait on a telephone.
-        const float Earshot = 110f;
+        const float Earshot = LivingCity.Police.PoliceProcedure.NearbyPoliceGunfightRange;
         const float SceneSeconds = 90f;      // how long the law stays once it is quiet
 
         public float Heat { get; private set; }
@@ -90,6 +90,7 @@ namespace RoadDemo
         float _witnessAt = float.MinValue;
         float _witnessDelay;
         bool _called;
+        bool _playerIncident;
         int _carsSent;
         float _lastSentAt = -1000f;
         bool _officerDied;
@@ -198,7 +199,11 @@ namespace RoadDemo
         void BeatProvoked(PoliceBeat beat, DemoCrews.Unit attacker)
         {
             if (beat == null || attacker == null) return;
-            RaiseSwarm(beat.Position, SwarmGrade.ShotsFired, attacker);
+            var defensive = LivingCity.Police.PoliceProcedure.IsDefensivePoliceReturn(
+                attacker.PoliceAttackedIncident, StreetAlarm.IncidentNumber);
+            if (LivingCity.Police.PoliceProcedure.ShotAtPoliceStartsSwarm(
+                    targetIsPolice: true, defensiveReturn: defensive))
+                RaiseSwarm(beat.Position, SwarmGrade.ShotsFired, attacker);
         }
 
         /// <summary>The crew demo's cruiser: a CrewCar with its two officers already in
@@ -218,6 +223,12 @@ namespace RoadDemo
 
         void OnShot(StreetAlarm.Shot shot)
         {
+            var shooterUnit = shot.Shooter != null && _crews != null
+                ? _crews.UnitOf(shot.Shooter) : null;
+            var involvesPlayer = shot.Faction == LivingCity.Gangs.GangCatalog.PlayerGangId ||
+                (shooterUnit != null && shooterUnit.TargetUnit != null &&
+                 shooterUnit.TargetUnit.Faction == LivingCity.Gangs.GangCatalog.PlayerGangId);
+
             if (StreetAlarm.IncidentNumber != _incident)
             {
                 // a new incident: the clock to the call starts - somebody will have rung
@@ -225,6 +236,7 @@ namespace RoadDemo
                 _incident = StreetAlarm.IncidentNumber;
                 _shotHeat = 0f;
                 _called = false;
+                _playerIncident = involvesPlayer;
                 _carsSent = 0;
                 _footTried.Clear();
                 _footAnswered = false;
@@ -238,15 +250,23 @@ namespace RoadDemo
                 // round went off are the witnesses, and the crowd that gathers
                 // afterwards - or has gone home by then - is not.
                 SnapshotTheScene(shot.Pos);
-                CrewOverlay.Announce("SHOTS FIRED", 4f, new Color(1f, 0.55f, 0.45f));
+                if (_playerIncident)
+                    CrewOverlay.Announce("SHOTS FIRED", 4f,
+                        new Color(1f, 0.55f, 0.45f));
+            }
+            else if (involvesPlayer && !_playerIncident)
+            {
+                // A player can enter a fight that began between rivals. It becomes his
+                // news at that moment, without replaying any earlier AI-only traffic.
+                _playerIncident = true;
+                CrewOverlay.Announce("SHOTS FIRED", 4f,
+                    new Color(1f, 0.55f, 0.45f));
             }
             float add = Mathf.Min(ShotHeat, ShotHeatCap - _shotHeat);
             if (add > 0f) { _shotHeat += add; Heat = Mathf.Min(120f, Heat + add); }
 
             // The first round AT any officer is the escalation, not only a hit or a
             // death. The shooter's crew already carries its ordered target.
-            var shooterUnit = shot.Shooter != null && _crews != null
-                ? _crews.UnitOf(shot.Shooter) : null;
             if (shooterUnit != null && shooterUnit.TargetUnit != null &&
                 shooterUnit.TargetUnit.IsPolice)
             {
@@ -254,7 +274,11 @@ namespace RoadDemo
                 // line: the whole pair/squad answers through the shared combat model.
                 if (!shooterUnit.TargetUnit.Wiped)
                     _crews.Sic(shooterUnit.TargetUnit, shooterUnit);
-                RaiseSwarm(shot.Pos, SwarmGrade.ShotsFired, shooterUnit);
+                var defensive = LivingCity.Police.PoliceProcedure.IsDefensivePoliceReturn(
+                    shooterUnit.PoliceAttackedIncident, StreetAlarm.IncidentNumber);
+                if (LivingCity.Police.PoliceProcedure.ShotAtPoliceStartsSwarm(
+                        targetIsPolice: true, defensiveReturn: defensive))
+                    RaiseSwarm(shot.Pos, SwarmGrade.ShotsFired, shooterUnit);
             }
 
             // a patrol in earshot rings it in itself, at once - no telephone, no wait
@@ -262,10 +286,19 @@ namespace RoadDemo
             foreach (var u in _units)
                 if (u.Tf != null && (u.Position - shot.Pos).sqrMagnitude < heard * heard)
                 { _callAt = Mathf.Min(_callAt, Time.time); break; }
+
+            // Once the call is live, every FREE patrol that comes within earshot of any
+            // later round joins it too, on foot or in a car. The first dispatch used to
+            // be the only scan, so an officer could pass a fight already involving law.
+            if (_called && SendNearbyPolice(shot.Pos) && _playerIncident)
+                CrewOverlay.Announce("POLICE BACKUP RESPONDING", 4f,
+                    new Color(0.55f, 0.78f, 1f));
         }
 
         void OnDeath(Vector3 where, StreetAlarm.DeathOf who, int victimFaction)
         {
+            if (victimFaction == LivingCity.Gangs.GangCatalog.PlayerGangId)
+                _playerIncident = true;
             float add = who switch
             {
                 StreetAlarm.DeathOf.Civilian => CivilianDeathHeat,
@@ -277,7 +310,8 @@ namespace RoadDemo
             _officerDied = true;
             // and the radio call that is not an escalation but a different kind of day
             // (GAN-220): every car in the city, and a hunt that outlives the shooting
-            RaiseSwarm(where, SwarmGrade.OfficerDown);
+            if (!StreetAlarm.LastOfficerDeathWasDefensiveReturn)
+                RaiseSwarm(where, SwarmGrade.OfficerDown);
             // and the precinct is a man short until the department fills the hole
             // (GAN-226). Through here rather than through a second listener: StreetAlarm
             // is the one channel for a death, and this is already listening to it.
@@ -343,6 +377,14 @@ namespace RoadDemo
                     Send(first: false); // still going: more
             }
 
+            // A patrol car can cross the 110 m line BETWEEN two rounds. Keep watching
+            // the current shooting ground while the gunfight is live; proximity itself,
+            // not only the first dispatch or a shot callback, makes it turn in.
+            if (_called && StreetAlarm.IncidentOpen && StreetAlarm.QuietFor < 12f &&
+                SendNearbyPolice(StreetAlarm.LastShotPos) && _playerIncident)
+                CrewOverlay.Announce("POLICE BACKUP RESPONDING", 4f,
+                    new Color(0.55f, 0.78f, 1f));
+
             for (int i = _squads.Count - 1; i >= 0; i--) TickSquad(_squads[i], dt); // Done() removes
             TickFoot();
             TickPending();
@@ -355,14 +397,14 @@ namespace RoadDemo
             foreach (var kv in _lights) kv.Value.Tick(dt);
         }
 
-        // Cars by heat: none below the second level (a beat officer walks over), one,
-        // then two, three at the top; the first call always brings something.
+        // Dispatch calls one marked car at most. Cars that physically enter the 110 m
+        // fight radius volunteer separately; the officer-down swarm also has its own cap.
         int CarsWanted()
         {
-            int level = Level;
-            int cars = level <= 1 ? 0 : level == 2 ? 1 : level <= 4 ? 2 : 3;
-            if (cars == 0 && !AnyFootAvailable()) cars = 1;
-            return cars;
+            return LivingCity.Police.PoliceProcedure.OrdinaryDispatchedCars(
+                gunfightActive: StreetAlarm.QuietFor < 12f,
+                heatLevel: Level,
+                anyFootFree: AnyFootAvailable());
         }
 
         bool AnyFootAvailable()
@@ -375,7 +417,11 @@ namespace RoadDemo
         {
             var scene = StreetAlarm.Incident;
             int wanted = CarsWanted();
-            bool any = SendFoot(scene) | SendEscort(scene);
+            // Units already within earshot volunteer first. A nearby car satisfies the
+            // ordinary one-car call; cars that wander into earshot later still volunteer
+            // because that is presence at the fight, not another dispatch escalation.
+            bool any = SendNearbyPolice(scene);
+            any |= SendFoot(scene) | SendEscort(scene);
             // and the heat's cars, which stay station-local (GAN-220)
             while (_carsSent < wanted)
             {
@@ -385,7 +431,9 @@ namespace RoadDemo
                 any = true;
             }
             _lastSentAt = Time.time;
-            if (any) CrewOverlay.Announce("POLICE RESPONDING", 5f, new Color(0.55f, 0.78f, 1f));
+            if (any && _playerIncident)
+                CrewOverlay.Announce("POLICE RESPONDING", 5f,
+                    new Color(0.55f, 0.78f, 1f));
         }
 
         /// <summary>THE NEAREST PAIR COMES, WHEREVER IT IS (the user's rule, 2026-09-04):
@@ -395,25 +443,20 @@ namespace RoadDemo
         /// afterwards. A pair already tried for this incident is not tried twice.</summary>
         bool SendFoot(Vector3 scene)
         {
-            if (!FootOwed()) return false;
+            var owed = FootOwed();
+            IPoliceUnit foot = null;
+            var footD = float.MaxValue;
+            if (owed)
+                foot = Nearest(scene, carries: false, anyDistance: true,
+                    out footD, _footTried);
+
+            if (!owed) return false;
+
             var any = false;
-            var foot = Nearest(scene, carries: false, anyDistance: true, out var footD, _footTried);
-            // And EVERY man on foot who could hear it turns out, not just the nearest.
-            // Two officers a block apart both heard the same shots; one of them
-            // walking on as though he had not is the thing that reads as nobody
-            // being home.
-            foreach (var u in _units)
+            if (foot != null && foot.Available)
             {
-                if (u.Carries || !u.Available || u.Tf == null || _footTried.Contains(u)) continue;
-                if ((u.Position - scene).sqrMagnitude > Earshot * Earshot) continue;
-                u.RouteTo(scene, 6f);
-                _footTried.Add(u);
-                any = true;
-            }
-            if (foot != null)
-            {
-                // not one of those who heard it
-                if (foot.Available) { foot.RouteTo(scene, 6f); _footTried.Add(foot); }
+                // The nearest pair comes even when it began outside earshot.
+                RouteNearbyIntoResponse(foot, scene);
                 any = true;
             }
             // Past 150 m a car goes out beside him, and a city with nobody free on
@@ -424,12 +467,88 @@ namespace RoadDemo
             return any;
         }
 
+        bool SendNearbyPolice(Vector3 scene)
+        {
+            var any = false;
+            foreach (var unit in _units)
+            {
+                if (unit == null || unit.Tf == null || ResponseOwns(unit)) continue;
+
+                // An idle pair already holding this shooting scene may re-enter when
+                // another round goes off. A collar, statement or custody keeps priority;
+                // everybody merely walking/resting is free for the emergency.
+                var free = unit.Available;
+                if (!free && unit is PoliceBeat beat && unit.OnScene &&
+                    beat.Unit != null && !beat.Unit.Wiped &&
+                    beat.Unit.TargetUnit == null && !beat.Unit.Surrendered &&
+                    !FootHeldByLawWork(unit))
+                    free = true;
+
+                var distance = LivingCity.Police.PoliceProcedure.AirDistanceSquared(
+                    unit.Position.x, unit.Position.z, scene.x, scene.z);
+                if (!LivingCity.Police.PoliceProcedure.NearbyPoliceJoinsGunfight(
+                        free, distance))
+                    continue;
+
+                RouteNearbyIntoResponse(unit, scene);
+                any = true;
+            }
+            return any;
+        }
+
+        void RouteNearbyIntoResponse(IPoliceUnit unit, Vector3 scene)
+        {
+            if (unit == null || ResponseOwns(unit)) return;
+            if (unit.Carries)
+            {
+                // This is a car already driving/resting inside the fight's own audible
+                // radius. It deploys through the normal car squad path, regardless of
+                // whether dispatch has already sent its one outside response car.
+                SendCar(unit, scene);
+                return;
+            }
+
+            unit.RouteTo(scene, 6f);
+            if (!_footTried.Contains(unit)) _footTried.Add(unit);
+
+            // A permanent beat already HAS its two officers. It must enter the same
+            // Warning -> Engaging state machine as a car squad, but must neither spawn
+            // duplicate bodies on arrival nor be removed from DemoCrews afterwards.
+            if (unit is PoliceBeat beat && beat.Unit != null && !beat.Unit.Wiped)
+                _squads.Add(new Squad
+                {
+                    Ride = unit,
+                    Men = beat.Unit,
+                    Scene = scene,
+                    State = SquadState.Sent,
+                    Incident = _incident,
+                    PlayerNews = _playerIncident,
+                });
+        }
+
+        bool ResponseOwns(IPoliceUnit unit)
+        {
+            for (var i = 0; i < _squads.Count; i++)
+                if (_squads[i].Ride == unit && _squads[i].State != SquadState.Done)
+                    return true;
+            return false;
+        }
+
         /// <summary>The car a far pair needs, looked for until one is free: decided once,
         /// with the pair, but not given up on because every car in the city happened to
         /// be out at that moment.</summary>
         bool SendEscort(Vector3 scene)
         {
             if (!_escortWanted || _escortSent) return false;
+            // A replacement pair chosen after the first one stalled may itself be far
+            // away. That must not turn the escort path into a second ordinary response
+            // car after this incident has already had its one.
+            if (!LivingCity.Police.PoliceProcedure.OrdinaryDispatchCarStillAllowed(
+                    _carsSent))
+            {
+                _escortSent = true;
+                return false;
+            }
             var escort = Nearest(scene, carries: true, anyDistance: true, out _);
             if (escort == null) return false;
             SendCar(escort, scene);
@@ -479,13 +598,23 @@ namespace RoadDemo
             if (!FootOwed() && (!_escortWanted || _escortSent)) return;
             var scene = StreetAlarm.Incident;
             if (SendFoot(scene) | SendEscort(scene))
-                CrewOverlay.Announce("POLICE RESPONDING", 5f, new Color(0.55f, 0.78f, 1f));
+                if (_playerIncident)
+                    CrewOverlay.Announce("POLICE RESPONDING", 5f,
+                        new Color(0.55f, 0.78f, 1f));
         }
 
         void SendCar(IPoliceUnit car, Vector3 scene)
         {
             car.RouteTo(scene, StandOff);
-            _squads.Add(new Squad { Ride = car, Men = MenOf(car), Scene = scene, State = SquadState.Sent });
+            _squads.Add(new Squad
+            {
+                Ride = car,
+                Men = MenOf(car),
+                Scene = scene,
+                State = SquadState.Sent,
+                Incident = _incident,
+                PlayerNews = _playerIncident,
+            });
             if (_lights.TryGetValue(car, out var lights)) lights.Set(true, siren: true);
             _carsSent++;
         }
@@ -542,7 +671,12 @@ namespace RoadDemo
             public float ArrivedAt;
             public float SecuringAt;     // when its men were stood at the scene, for who was first
             public float RouteRetryAt;
+            public int Incident;
+            public bool PlayerNews;
         }
+
+        bool IsPlayerNews(Squad squad) => squad != null &&
+            (squad.PlayerNews || squad.Incident == _incident && _playerIncident);
 
         void TickSquad(Squad squad, float dt)
         {
@@ -553,8 +687,17 @@ namespace RoadDemo
                     if (!ride.OnScene) return;
                     squad.ArrivedAt = Time.time;
                     if (_lights.TryGetValue(ride, out var lights)) lights.Set(true, siren: false);
-                    CrewOverlay.Announce("POLICE ON THE SCENE", 4f, new Color(0.55f, 0.78f, 1f));
-                    if (ride is PoliceCruiser cruiser)
+                    if (IsPlayerNews(squad))
+                        CrewOverlay.Announce("POLICE ON THE SCENE", 4f,
+                            new Color(0.55f, 0.78f, 1f));
+                    if (ride is PoliceBeat beat)
+                    {
+                        // The pair walked here in its existing DemoCrews.Unit. Do not
+                        // deal a second pair beside it as the patrol-car branch does.
+                        squad.Men = beat.Unit;
+                        squad.State = SquadState.Responding;
+                    }
+                    else if (ride is PoliceCruiser cruiser)
                     {
                         // the men climb out through their doors
                         if (squad.Men != null && !squad.Men.Wiped) _crews.LeaveCar(squad.Men);
@@ -675,6 +818,11 @@ namespace RoadDemo
 
                 case SquadState.Leaving:
                 {
+                    if (ride is PoliceBeat)
+                    {
+                        Done(squad);
+                        return;
+                    }
                     if (ride is PoliceCruiser home)
                     {
                         if (squad.Men != null && !squad.Men.Wiped)
@@ -721,7 +869,9 @@ namespace RoadDemo
             if (_lights.TryGetValue(squad.Ride, out var lights)) lights.Set(false, siren: false);
             squad.Ride.Release();
             _squads.Remove(squad);
-            CrewOverlay.Announce("POLICE LEAVING THE SCENE", 4f, new Color(0.55f, 0.78f, 1f));
+            if (IsPlayerNews(squad))
+                CrewOverlay.Announce("POLICE LEAVING THE SCENE", 4f,
+                    new Color(0.55f, 0.78f, 1f));
         }
 
         static CrewWalker Lead(Squad squad) => squad == null ? null : Lead(squad.Men);
@@ -754,7 +904,9 @@ namespace RoadDemo
                 lead.Shout(3f);
             }
             foreach (var man in squad.Men.All()) if (!man.Dead && man != lead) man.HearShot(squad.Scene);
-            CrewOverlay.Announce("\"POLICE! DROP THE GUNS!\"", 3.5f, new Color(0.55f, 0.78f, 1f));
+            if (IsPlayerNews(squad))
+                CrewOverlay.Announce("\"POLICE! DROP THE GUNS!\"", 3.5f,
+                    new Color(0.55f, 0.78f, 1f));
             _crews.PoliceWarning(lead != null ? lead.Tf.position : squad.Scene, squad.Men);
         }
 
@@ -829,6 +981,16 @@ namespace RoadDemo
 
         void BeginSecuring(Squad squad)
         {
+            if (squad.Ride is PoliceBeat beat)
+            {
+                // Combat ownership ends here. Hand the permanent pair back to the
+                // existing foot-scene/arrest lifecycle instead of treating it as the
+                // temporary two-man detail spawned from a patrol car.
+                beat.SecureScene();
+                _squads.Remove(squad);
+                _footOnSceneAt[beat] = Time.time;
+                return;
+            }
             if (squad.State != SquadState.Securing) squad.SecuringAt = Time.time;
             squad.State = SquadState.Securing;
             squad.Timer = Random.Range(SceneSeconds * 0.7f, SceneSeconds * 1.3f);
@@ -966,6 +1128,14 @@ namespace RoadDemo
             foreach (var u in _units)
             {
                 if (u.Carries) continue;
+                // Warning/engagement is currently owned by TickSquad. Its ordinary
+                // ninety-second scene timer must not release it in the middle of a long
+                // fight.
+                if (ResponseOwns(u))
+                {
+                    _footOnSceneAt.Remove(u);
+                    continue;
+                }
                 // A PAIR THAT CANNOT GET THERE IS SENT BACK, and the incident is free to
                 // send the next nearest. Not a pair a telephone call, a collar or a
                 // custody still owns - those have their own patience and hand him back

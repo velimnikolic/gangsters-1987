@@ -51,7 +51,6 @@ namespace RoadDemo
                 Commands == null)
                 return;
 
-            SweepWarnings(gameHour);
             underworld.Think(gameHour, mindConfig.ThinkEveryHours, house =>
             {
                 var clock = System.Diagnostics.Stopwatch.StartNew();
@@ -502,6 +501,7 @@ namespace RoadDemo
                     if (intent.Job == null)
                         return "no order";
                     intent.Job.GangId = house.GangId;
+                    Place(intent.Job);
                     var issued = LivingCity.Outfit.Underworld.Current.Issue(intent.Job);
                     return issued.Ok ? "" : issued.Reason;
 
@@ -540,6 +540,38 @@ namespace RoadDemo
                     return Word(house, intent);
             }
             return "nothing to do";
+        }
+
+        /// <summary>
+        /// Gives a mind-built street job the same canonical doorstep and block that a
+        /// job built from the player's map already carries. The pure mind only names a
+        /// business/block; resolving that name into world coordinates belongs here at
+        /// the scene edge. Without this, an Assault, Guard or wrecking order marched to
+        /// the default point at world origin.
+        /// </summary>
+        void Place(Job job)
+        {
+            if (job == null || geography == null)
+                return;
+
+            var businessId = new TerritoryBusinessId(job.TargetBusinessId);
+            if (businessId.IsValid && geography.TryGetDoorstep(businessId, out var door))
+            {
+                job.TargetX = door.X;
+                job.TargetZ = door.Z;
+                if (geography.TryGetBusinessBlock(businessId, out var doorBlock) &&
+                    geography.TryGetBlock(doorBlock, out var doorDefinition))
+                    job.TargetBlockId = doorDefinition.LegacyBlockId;
+                return;
+            }
+
+            var blockId = new TerritoryBlockId(job.TargetLabel);
+            if (!blockId.IsValid || !geography.TryGetBlock(blockId, out var block))
+                return;
+
+            job.TargetBlockId = block.LegacyBlockId;
+            job.TargetX = block.Center.X;
+            job.TargetZ = block.Center.Z;
         }
 
         /// <summary>

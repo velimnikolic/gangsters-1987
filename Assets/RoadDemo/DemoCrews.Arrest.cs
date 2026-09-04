@@ -49,7 +49,8 @@ namespace RoadDemo
                 man.Holster();
                 man.OrderToPoint(man.Tf.position);
             }
-            CrewOverlay.Announce(unit.GangName.ToUpperInvariant() + " GIVE THEMSELVES UP",
+            CrewOverlay.AnnounceOurs(unit.Faction,
+                unit.GangName.ToUpperInvariant() + " GIVE THEMSELVES UP",
                 4f, new Color(0.95f, 0.9f, 0.6f));
             CrewSpeech.Cry(unit.Boss != null && !unit.Boss.Dead ? unit.Boss : null,
                 LivingCity.Data.VoiceLines.SurrHands);
