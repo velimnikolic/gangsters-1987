@@ -44,6 +44,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 MARK = os.path.join(ROOT, "Temp", "play", "console.mark")
+GAP = os.path.join(ROOT, "Temp", "play", "console.gap")
 LOUD = ("error", "exception", "assert")
 LINES = 40
 BUFFER = 2000
@@ -74,11 +75,21 @@ def ask(args):
 
 
 def read_mark():
+    """('absent', 0) | ('bad', 0) | ('ok', n) - and zero is a perfectly good n.
+
+    A mark of 0 is what `--mark` writes against a buffer that has captured nothing, so
+    "no mark" and "mark at zero" cannot be the same answer: the editor only reports its
+    own `dropped` overrun when a cursor is sent, and a zero that reads as absent sends
+    none. That is a whole class of eviction going unnoticed at exactly the moment - a
+    fresh buffer filling up - when it is most likely.
+    """
+    if not os.path.exists(MARK):
+        return "absent", 0
     try:
         with open(MARK) as handle:
-            return int(handle.read().strip() or 0)
+            return "ok", int(handle.read().strip())
     except (OSError, ValueError):
-        return 0
+        return "bad", 0
 
 
 def write_mark(cursor):
@@ -88,6 +99,47 @@ def write_mark(cursor):
             handle.write(str(int(cursor)))
     except OSError as problem:
         print("the mark could not be written: %s" % problem, file=sys.stderr)
+
+
+def read_gap():
+    """The seq at which a read was last known to be missing entries, or 0."""
+    try:
+        with open(GAP) as handle:
+            return int(handle.read().strip() or 0)
+    except (OSError, ValueError):
+        return 0
+
+
+def write_gap(cursor):
+    """Remember an incomplete read until somebody says they have seen it.
+
+    The mark has to advance even on an incomplete read, or a buffer that overran once
+    would be re-read and re-truncated forever with no way forward. But advancing it is
+    exactly what makes the hole invisible to the NEXT run, which then finds nothing new
+    and answers 0 - the incomplete warning would be one-shot, and a burst that lost its
+    first error would go green on the retry. So the hole outlives the mark, and only
+    `--mark` (a person saying "seen") clears it.
+    """
+    try:
+        os.makedirs(os.path.dirname(GAP), exist_ok=True)
+        with open(GAP, "w") as handle:
+            handle.write(str(int(cursor)))
+    except OSError as problem:
+        print("the gap could not be recorded: %s" % problem, file=sys.stderr)
+
+
+def clear_gap():
+    try:
+        os.remove(GAP)
+    except OSError:
+        pass
+
+
+def verdict(loud, whole, gap):
+    """0 read whole and quiet, 1 read whole and loud, 2 not read whole."""
+    if not whole or gap:
+        return 2
+    return 1 if loud else 0
 
 
 def frame(trace):
@@ -167,6 +219,28 @@ def selftest():
     assert complete({"returned": 399, "dropped": False}, 400)
     assert not complete({"returned": 400, "dropped": False}, 400), "a full window is not a whole read"
     assert not complete({"returned": 5, "dropped": True}, 400), "dropped is not a whole read"
+
+    # A gap survives the read that found it: the SECOND run, which sees a whole quiet
+    # window, must still refuse to say clean.
+    assert verdict(0, True, 0) == 0
+    assert verdict(1, True, 0) == 1
+    assert verdict(0, False, 0) == 2
+    assert verdict(0, True, 71768) == 2, "an unacknowledged gap went green on the retry"
+
+    # A mark of zero is a mark. It used to read as no mark at all, which meant no
+    # `--since`, which meant the editor never reported its own overrun.
+    keep = globals()["MARK"]
+    try:
+        globals()["MARK"] = os.path.join(ROOT, "Temp", "play", "console.selftest.mark")
+        write_mark(0)
+        assert read_mark() == ("ok", 0), read_mark()
+        with open(MARK, "w") as handle:
+            handle.write("not a number")
+        assert read_mark()[0] == "bad", read_mark()
+        os.remove(MARK)
+        assert read_mark() == ("absent", 0), read_mark()
+    finally:
+        globals()["MARK"] = keep
     print("selftest ok")
     return 0
 
@@ -191,6 +265,7 @@ def main():
         if result is None:
             return 2
         write_mark(result.get("cursor") or 0)
+        clear_gap()
         return 0
 
     # The whole buffer by default: the cost of a wide window is paid in the editor, not
@@ -200,10 +275,16 @@ def main():
     if not everything:
         call += ["--level", "error"]
     since = 0
+    gap = 0
     if not tail:
-        since = read_mark()
-        if since:
+        state, since = read_mark()
+        if state == "bad":
+            print("the mark at %s cannot be read, so nothing can be called new" % MARK,
+                  file=sys.stderr)
+            return 2
+        if state == "ok":
             call += ["--since", str(since)]
+        gap = read_gap()
 
     result = ask(call)
     if result is None:
@@ -225,18 +306,18 @@ def main():
         print("INCOMPLETE: the window came back full (%d) or dropped, so entries "
               "between the mark and the oldest line below were never read"
               % len(entries))
+    if gap:
+        print("UNREAD GAP still standing from seq %d: entries were lost there and "
+              "nobody has said they saw it. `--mark` acknowledges and clears it." % gap)
     show(kinds, traces)
     if not kinds:
         print("nothing new%s" % ("" if everything else " at error level"))
 
-    # An incomplete read still moves the mark, or every later run would re-read the same
-    # overflow and never catch up - but it says so above and answers 2, so nothing can
-    # mistake it for a clean console.
     if not tail:
         write_mark(result.get("cursor") or since)
-    if not whole:
-        return 2
-    return 1 if loud else 0
+        if not whole:
+            write_gap(since)
+    return verdict(loud, whole, gap)
 
 
 if __name__ == "__main__":
