@@ -55,6 +55,7 @@ namespace RoadDemo
         float _responseRetryAt;
         bool _sceneWanted;
         bool _transferHalt;
+        bool _retiredFromFleet;
 
         /// <summary>Set for the leg the car drives FORWARDS - out of the bay - where
         /// the heading is the curve's own tangent instead of a slerp between the
@@ -482,6 +483,7 @@ namespace RoadDemo
                 Halt(hard: true);
                 if (Via == null && Mathf.Abs(Speed) < 0.05f)
                 {
+                    _retiredFromFleet = true;
                     StandDerelict();
                     _sceneWanted = false;
                     State = Mode.OnScene;
@@ -592,6 +594,7 @@ namespace RoadDemo
                     {
                         if (Via == null && Mathf.Abs(Speed) < 0.05f)
                         {
+                            _retiredFromFleet = true;
                             StandDerelict();
                             State = Mode.OnScene;
                         }
@@ -632,8 +635,14 @@ namespace RoadDemo
 
         Transform IPoliceUnit.Tf => Tf;
         Vector3 IPoliceUnit.Position => Tf.position;
-        public bool Available => !_sceneWanted && !OffWatch && !Wrecked &&
-            !EngineDead && !Derelict &&
+        /// <summary>Still a working body in the precinct fleet. A lost car remains in
+        /// the road scene as wreckage/derelict scenery, but no dispatch or watch may
+        /// count it as an authorised cruiser.</summary>
+        public bool Fleetworthy =>
+            LivingCity.Police.PoliceFleet.CountsAsBody(
+                Wrecked, EngineDead, _retiredFromFleet);
+
+        public bool Available => !_sceneWanted && !OffWatch && Fleetworthy && !Derelict &&
             (State == Mode.Resting || State == Mode.Undocking ||
              State == Mode.Patrolling || State == Mode.Returning ||
              State == Mode.Docking || State == Mode.Parking);

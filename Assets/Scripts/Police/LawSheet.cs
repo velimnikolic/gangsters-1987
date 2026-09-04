@@ -207,6 +207,7 @@ namespace LivingCity.Police
                 var file = pipeline.Cases[i];
                 if (file == null || file.Status != CaseStatus.Open) continue;
                 if (file.GangId != gangId) continue;
+                if (PrisonPipeline.UnansweredCaseExpired(file, today)) continue;
 
                 var talks = complainantStillTalks == null || complainantStillTalks(file);
                 var row = new DocketRow
@@ -350,7 +351,8 @@ namespace LivingCity.Police
             // evidence is thrown out before any roll (PrisonPipeline.Tried), so this one
             // is a fact rather than an opinion and stands whether or not the outfit has
             // counsel on the books.
-            if (eyewitnesses == 0 && !sawIt && !foundThem && !complainant)
+            if (!file.BodyEvidence && eyewitnesses == 0 &&
+                !sawIt && !foundThem && !complainant)
                 return Verdict.NoWitnessesLeft;
 
             if (!hasCounsel)

@@ -86,6 +86,7 @@ make it call the shared service/model.
 | the canonical blocks, neighborhoods and the block graph | `Docs/territory-geography.md` |
 | every source of a business, and which provider owns it | `Docs/business-inventory.md` |
 | the residential storefront bay, baked Synty leaf and live states | `Docs/design-briefs/storefront-brief.md` |
+| the residential module forge, measured tables, sheets, faults and showroom | `Docs/residential-forge.md` |
 | the racket: collector duty, the schedule, money on the wire | `Docs/racket-collections.md` |
 | the closer threat: retargeting, reaction, bullet scatter | `Docs/design-briefs/closer-threat-brief.md` |
 | the law sheet: the docket, the cells, the wanted, the counsel, the verdicts | `Docs/ledger-law-sheet.md` |

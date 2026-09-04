@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using LivingCity.Personnel;
 using LivingCity.Police;
@@ -127,6 +128,7 @@ namespace LivingCity.Save
                     where = file.Where,
                     defendants = file.Defendants.ToArray(),
                     witnesses = witnesses,
+                    bodyEvidence = file.BodyEvidence,
                     counts = file.Counts.ToArray(),
                     extraCharges = ToInts(file.ExtraCharges),
                     openedDay = file.OpenedDay,
@@ -154,8 +156,8 @@ namespace LivingCity.Save
             {
                 var row = file.prisoners[i];
                 if (row == null) continue;
-                var restoredStage = (PrisonStage)row.stage;
-                var restoredLeg = (PrisonLeg)row.leg;
+                var restoredStage = EnumOr(row.stage, PrisonStage.Held);
+                var restoredLeg = EnumOr(row.leg, PrisonLeg.None);
                 var orphanedJourney = restoredStage == PrisonStage.ForTransfer ||
                                       restoredStage == PrisonStage.InTransit;
                 var prisonLeg = restoredLeg == PrisonLeg.Prison;
@@ -172,8 +174,11 @@ namespace LivingCity.Save
                 {
                     CharacterId = row.characterId,
                     GangId = row.gangId,
-                    Deed = (Deed)row.deed,
-                    Answer = (DoorAnswer)row.answer,
+                    // Keep a recoverable custody row even if one enum integer is
+                    // corrupt. Affray/Quiet are the least inventive legacy meanings;
+                    // unlike the raw cast, neither can explode in an exhaustive table.
+                    Deed = EnumOr(row.deed, Deed.Affray),
+                    Answer = EnumOr(row.answer, DoorAnswer.Quiet),
                     Sprung = row.sprung,
                     TakenOnDay = row.takenOnDay,
                     CourtDay = orphanedJourney && !prisonLeg
@@ -196,17 +201,22 @@ namespace LivingCity.Save
             {
                 var row = file.cases[i];
                 if (row == null) continue;
+                var deed = EnumOr(row.deed, Deed.Affray);
                 var reopened = new CourtCase
                 {
                     CaseId = row.caseId,
-                    Deed = (Deed)row.deed,
+                    Deed = deed,
                     GangId = row.gangId,
                     BusinessId = row.businessId ?? "",
                     Where = row.where ?? "",
+                    // The bool was appended without bumping version 3. Infer it for
+                    // version-3 murder rows written by the first implementation.
+                    BodyEvidence = row.bodyEvidence || deed == Deed.Murder ||
+                                   deed == Deed.CopKilling,
                     OpenedDay = row.openedDay,
                     CourtDay = row.courtDay,
                     LawyerId = row.lawyerId,
-                    Status = (CaseStatus)row.status,
+                    Status = EnumOr(row.status, CaseStatus.Open),
                     AnyTried = row.anyTried,
                 };
                 for (var d = 0; row.defendants != null && d < row.defendants.Length; d++)
@@ -214,33 +224,40 @@ namespace LivingCity.Save
                 for (var c = 0; row.counts != null && c < row.counts.Length; c++)
                     reopened.Counts.Add(row.counts[c]);
                 for (var c = 0; row.extraCharges != null && c < row.extraCharges.Length; c++)
-                    reopened.ExtraCharges.Add((Deed)row.extraCharges[c]);
+                    if (TryEnum(row.extraCharges[c], out Deed extraCharge))
+                        reopened.ExtraCharges.Add(extraCharge);
                 for (var w = 0; row.witnesses != null && w < row.witnesses.Length; w++)
                 {
                     var witness = row.witnesses[w];
-                    if (witness == null) continue;
+                    if (witness == null ||
+                        !TryEnum(witness.kind, out WitnessKind witnessKind))
+                        continue;
                     reopened.Witnesses.Add(new Witness
                     {
-                        Kind = (WitnessKind)witness.kind,
+                        Kind = witnessKind,
                         Name = witness.name ?? "",
                         Seed = witness.seed,
                         X = witness.x, Y = witness.y, Z = witness.z,
-                        Standing = (WitnessStanding)witness.standing,
+                        // An unknown standing must never be treated as testimony.
+                        Standing = EnumOr(
+                            witness.standing, WitnessStanding.Withdrawn),
                         BusinessId = witness.businessId ?? "",
                     });
                 }
                 for (var v = 0; row.verdicts != null && v < row.verdicts.Length; v++)
                 {
                     var verdict = row.verdicts[v];
-                    if (verdict == null) continue;
+                    if (verdict == null ||
+                        !TryEnum(verdict.outcome, out CaseOutcome caseOutcome))
+                        continue;
                     reopened.Verdicts.Add(new CaseVerdict
                     {
                         CharacterId = verdict.characterId,
-                        Outcome = (CaseOutcome)verdict.outcome,
+                        Outcome = caseOutcome,
                         Days = verdict.days,
                         OutOnDay = verdict.outOnDay,
                         Day = verdict.day,
-                        Answer = (DoorAnswer)verdict.answer,
+                        Answer = EnumOr(verdict.answer, DoorAnswer.Quiet),
                         Sprung = verdict.sprung,
                     });
                 }
@@ -271,6 +288,24 @@ namespace LivingCity.Save
             var result = new int[values != null ? values.Count : 0];
             for (var i = 0; i < result.Length; i++) result[i] = (int)values[i];
             return result;
+        }
+
+        /// <summary>Every enum in a campaign file began as an arbitrary JSON integer.
+        /// Validate it before it can reach an exhaustive sentence, verdict or ledger
+        /// switch. Callers either choose a conservative fallback or drop the nested
+        /// row when inventing one would manufacture evidence.</summary>
+        static T EnumOr<T>(int raw, T fallback) where T : struct =>
+            TryEnum(raw, out T value) ? value : fallback;
+
+        static bool TryEnum<T>(int raw, out T value) where T : struct
+        {
+            if (Enum.IsDefined(typeof(T), raw))
+            {
+                value = (T)Enum.ToObject(typeof(T), raw);
+                return true;
+            }
+            value = default(T);
+            return false;
         }
 
         /// <summary>

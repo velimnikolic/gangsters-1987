@@ -114,6 +114,18 @@ namespace LivingCity.Police
         }
     }
 
+    /// <summary>The precinct's fleet book counts working patrol bodies only. A wreck,
+    /// a shot-out engine and an explicitly retired derelict all remain visible street
+    /// scenery, but none may occupy an authorised-car slot or a watch position. A raw
+    /// RoadCar derelict flag is deliberately not enough: ordinary jam recovery uses it
+    /// transiently.</summary>
+    public static class PoliceFleet
+    {
+        public static bool CountsAsBody(bool wrecked, bool engineDead,
+            bool retiredDerelict) =>
+            !wrecked && !engineDead && !retiredDerelict;
+    }
+
     /// <summary>Pure custody-car arithmetic shared by the force and its contracts.
     /// The police pickup carries at most eight people: two officers in the cab and up
     /// to six prisoners secured in the rear. When several cars are free one remains
@@ -127,6 +139,13 @@ namespace LivingCity.Police
         public const float WalkTheRestLimit = 250f;
         public const float OccupantRollInterval = 1f;
         public const int MaxOccupantRolls = 6;
+        // Exceptional choreography gets a deliberately longer ceiling than an ordinary
+        // 300-second collection/drive. These are recovery edges, not arrival decrees:
+        // a stalled walk is returned still held and a completed verdict's exit is safely
+        // put back on the courthouse pavement.
+        public const float StrandedBackstopSeconds = 900f;
+        public const float WalkingBackstopSeconds = 420f;
+        public const float CourtExitBackstopSeconds = 120f;
         // SHOOT IT UP is cleared on the first hit which halts the carrier, so the
         // ordinary engagement gets one jeopardy roll. Re-issued fire remains bounded
         // by MaxOccupantRolls, but each deliberate attempt keeps the user's roughly
@@ -190,6 +209,11 @@ namespace LivingCity.Police
             float metresRemaining) =>
             !freshCarrierAvailable && metresRemaining >= 0f &&
             metresRemaining <= WalkTheRestLimit;
+
+        /// <summary>An exceptional carriage stage owns an absolute deadline which is
+        /// never extended by individual route or relief-car retries.</summary>
+        public static bool BackstopExpired(float now, float deadline) =>
+            deadline > 0f && deadline < float.PositiveInfinity && now >= deadline;
 
         /// <summary>The court leg is delivered only at its walked threshold; the
         /// off-map prison leg is delivered at the county line.</summary>

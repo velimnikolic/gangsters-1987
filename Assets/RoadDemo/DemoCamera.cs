@@ -126,9 +126,9 @@ namespace RoadDemo
         /// <summary>The key line under the top bar. The road demo's by default; a
         /// scene with other clicks to explain writes its own.</summary>
         public string hint =
-            "WASD/arrows: move   Q/E or right-click: rotate   wheel: zoom   " +
-            "click a building: card   O: lot info   click a lieutenant: select   " +
-            "right-click: send his crew   H: see through the near buildings   M: mute";
+            "Right-click: send/drive   Shift+right-click: road orders\n" +
+            "WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom\n" +
+            "Click: select/card   O: lot info   H: see through buildings   M: mute";
 
         /// <summary>Pixels the hint sits below the top of the screen (the road demo's
         /// top bar is 42 canvas-px on the 1080 reference height).</summary>
@@ -318,14 +318,16 @@ namespace RoadDemo
                         fontSize = fontSize,
                         fontStyle = FontStyle.Bold,
                         alignment = TextAnchor.MiddleLeft,
+                        wordWrap = true,
                         clipping = TextClipping.Clip
                     };
                     _hintStyle.normal.textColor = Color.white;
                 }
 
-                float height = fontSize + 18f;
-                var background = new Rect(10f, barPx + 4f,
-                    Mathf.Max(1f, UnityEngine.Screen.width - 20f), height);
+                float width = Mathf.Max(1f, UnityEngine.Screen.width - 20f);
+                float labelWidth = Mathf.Max(1f, width - 20f);
+                float height = _hintStyle.CalcHeight(new GUIContent(hint), labelWidth) + 12f;
+                var background = new Rect(10f, barPx + 4f, width, height);
                 var was = GUI.color;
                 GUI.color = new Color(0.02f, 0.025f, 0.035f, 0.82f);
                 GUI.DrawTexture(background, Texture2D.whiteTexture);

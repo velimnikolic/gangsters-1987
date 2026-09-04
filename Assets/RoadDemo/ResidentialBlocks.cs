@@ -213,7 +213,7 @@ namespace RoadDemo
             public int Units, Tiles, Props, Lamps, Palms, Stalls, Cars, Tables, Benches, Parks;
             public int BenchBlocks, BikeStations, Dividers;
             public int People;
-            public int Storefronts, StorefrontProps;
+            public int Storefronts, StorefrontBays, StorefrontProps, ClosedStorefronts;
             public int Drains, Dug, Meters, Bins, Boxes, Picnics;
             public int SurfaceFlush, SurfaceClusters, SurfaceMissing;
             public string SurfaceProfile = "";

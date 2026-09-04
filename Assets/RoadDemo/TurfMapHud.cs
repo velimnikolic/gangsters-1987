@@ -3219,7 +3219,11 @@ namespace RoadDemo
             if (force == null) return;
 
             _openCases.Clear();
-            force.Pipeline.OpenCases(LivingCity.Gangs.GangCatalog.PlayerGangId, _openCases);
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            var today = outfit != null && outfit.Campaign != null
+                ? outfit.Campaign.Day : 0;
+            force.Pipeline.OpenCases(
+                LivingCity.Gangs.GangCatalog.PlayerGangId, _openCases, today);
             for (var c = 0; c < _openCases.Count; c++)
             {
                 var file = _openCases[c];
@@ -3260,7 +3264,11 @@ namespace RoadDemo
             LivingCity.Police.Witness best = null;
             float bestD = MapWitnessPickRange * MapWitnessPickRange;
             _openCases.Clear();
-            force.Pipeline.OpenCases(LivingCity.Gangs.GangCatalog.PlayerGangId, _openCases);
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            var today = outfit != null && outfit.Campaign != null
+                ? outfit.Campaign.Day : 0;
+            force.Pipeline.OpenCases(
+                LivingCity.Gangs.GangCatalog.PlayerGangId, _openCases, today);
             for (var c = 0; c < _openCases.Count; c++)
             {
                 var file = _openCases[c];

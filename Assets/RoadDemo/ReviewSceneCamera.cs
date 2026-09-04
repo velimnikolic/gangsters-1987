@@ -24,25 +24,32 @@ namespace RoadDemo
             public readonly string ContentRoot;
             public readonly float Pitch;
             public readonly float MinDistance;
+            public readonly string Hint;
 
-            public Setup(string scene, string contentRoot, float pitch, float minDistance)
+            public Setup(string scene, string contentRoot, float pitch, float minDistance,
+                         string hint = null)
             {
                 Scene = scene;
                 ContentRoot = contentRoot;
                 Pitch = pitch;
                 MinDistance = minDistance;
+                Hint = hint;
             }
         }
 
         public static readonly Setup[] Scenes =
         {
             new Setup("ShopDemo", "SHOPS", pitch: 30f, minDistance: 4f),
+            new Setup("ForgeDemo", ForgeDemoController.ContentRootName,
+                pitch: 35f, minDistance: 7f,
+                hint: "FORGE DEMO   buttons: generate real sheets   WASD/arrows: move   " +
+                      "Q/E or right-drag: rotate   wheel: zoom"),
         };
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void InstallAfterSceneLoad() => Install(SceneManager.GetActiveScene());
 
-        /// <summary>Install once; a camera that already carries the rig is left alone.
+        /// <summary>Install once, or re-apply framing after a bench replaces its content.
         /// Returns null for a scene that is not a review scene.</summary>
         public static DemoCamera Install(Scene scene)
         {
@@ -61,16 +68,19 @@ namespace RoadDemo
                 return null;
             }
 
-            var existing = camera.GetComponent<DemoCamera>();
-            if (existing != null)
-                return existing;
-
-            var rig = camera.gameObject.AddComponent<DemoCamera>();
+            // Re-applying the setup is intentional: a review bench can replace all of its
+            // content at runtime (ForgeDemo does so from its Generate button), then ask the
+            // same shared installer to frame the new row without adding a second rig.
+            var rig = camera.GetComponent<DemoCamera>();
+            if (rig == null)
+                rig = camera.gameObject.AddComponent<DemoCamera>();
             rig.mapTransition = false;
             rig.minDistance = setup.MinDistance;
             rig.ConfigurePitch(setup.Pitch, 10f);
             rig.yaw = 0f;
             rig.showHint = true;
+            if (!string.IsNullOrEmpty(setup.Hint))
+                rig.hint = setup.Hint;
 
             if (ContentBounds(scene, setup.ContentRoot, out var bounds))
             {
@@ -93,6 +103,7 @@ namespace RoadDemo
             if (shadows == null)
                 shadows = camera.gameObject.AddComponent<DemoShadows>();
             shadows.rig = rig;
+            DemoCamera.ClaimMainCamera(camera);
             return rig;
         }
 
@@ -128,7 +139,9 @@ namespace RoadDemo
                     var renderer = renderers[i];
                     // the floating captions are not content: framing them would
                     // pull the pivot up to the headers
-                    if (renderer == null || renderer.GetComponent<TextMesh>() != null) continue;
+                    if (renderer == null || !renderer.gameObject.activeInHierarchy ||
+                        renderer.GetComponent<TextMesh>() != null)
+                        continue;
                     var candidate = renderer.bounds;
                     if (!Usable(candidate)) continue;
                     if (!found)

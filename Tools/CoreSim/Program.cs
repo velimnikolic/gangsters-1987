@@ -11,6 +11,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Globalization;
+using System.Text;
 using RoadDemo;
 using UnityEngine;
 
@@ -20,7 +22,8 @@ static class Program
     {
         int seed = 1, count = 1;
         bool synty = false, map = false, rows = false, tiles = false, stats = false, industrial = false;
-        bool park = false, sweep = false, quay = false, residential = false;
+        bool park = false, sweep = false, quay = false, residential = false, facade = false;
+        int propsPercent = ResidentialFacade.DefaultPropsPercent;
         string size = "";
         int deal = -1;
         string file = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "blocks.txt");
@@ -34,6 +37,8 @@ static class Program
                 case "--industrial": industrial = true; break;
                 case "--park": park = true; break;
                 case "--residential": residential = true; break;
+                case "--facade": facade = true; break;
+                case "--props": propsPercent = int.Parse(args[++i]); break;
                 case "--shops": ResidentialLot.ShopsPerStreet = int.Parse(args[++i]); break;
                 case "--quay": quay = true; break;
                 case "--size": size = args[++i]; break;
@@ -48,6 +53,7 @@ static class Program
                 default: Console.WriteLine("unknown " + args[i]); return 2;
             }
         }
+        if (facade) return Facades(seed, count, propsPercent);
         if (residential) return Residential(seed, count, size, map);
         if (park) return Parks(seed, count, size, map, sweep);
         if (industrial) return Industry(seed, count, deal, map, rows, stats);
@@ -157,6 +163,136 @@ static class Program
             Console.WriteLine($"{count} seeds: {clean} clean, {firstDeal} on the first deal, " +
                               $"deals needed max {dealsNeeded.Max()} mean {dealsNeeded.Average():F2}, worst faults {worst}");
         return clean == (synty ? 1 : count) ? 0 : 1;
+    }
+
+    /// <summary>
+    /// The facade forge has no dependency on blocks.txt or a Unity scene. Sweep every
+    /// permitted length/height, repeat every roll byte-for-byte and exercise every judge
+    /// verdict with a deliberately damaged copy.
+    /// </summary>
+    static int Facades(int seed, int count, int propsPercent)
+    {
+        int total = 0, clean = 0, repeated = 0;
+        var modules = new Dictionary<string, int>(StringComparer.Ordinal);
+        var decor = new Dictionary<string, int>(StringComparer.Ordinal);
+        var faults = new Dictionary<ResidentialFacade.FaultKind, int>();
+        var familyInstances = new Dictionary<string, int>(StringComparer.Ordinal);
+        var rateFailures = new List<string>();
+        bool showedFirstFault = false;
+        for (int n = 0; n < count; n++)
+            for (int length = ResidentialFacade.MinLength;
+                 length <= ResidentialFacade.MaxLength; length++)
+                for (int floors = ResidentialFacade.MinFloors;
+                     floors <= ResidentialFacade.MaxFloors; floors++)
+                {
+                    int sheetSeed = unchecked(seed + n);
+                    var a = ResidentialFacade.Roll(sheetSeed, length, floors, propsPercent);
+                    var b = ResidentialFacade.Roll(sheetSeed, length, floors, propsPercent);
+                    total++;
+                    if (Fingerprint(a) == Fingerprint(b)) repeated++;
+                    if ((a.Faults?.Length ?? 0) == 0) clean++;
+                    else if (!showedFirstFault)
+                    {
+                        foreach (var fault in a.Faults.Take(12))
+                            Console.WriteLine("   first sheet " + a.Signature + ": " + fault);
+                        showedFirstFault = true;
+                    }
+                    foreach (var fault in a.Faults ?? Array.Empty<ResidentialFacade.Fault>())
+                        faults[fault.Kind] = faults.TryGetValue(fault.Kind, out int had) ? had + 1 : 1;
+                    foreach (var piece in a.Pieces ?? Array.Empty<ResidentialFacade.Piece>())
+                        modules[piece.Module] = modules.TryGetValue(piece.Module, out int had) ? had + 1 : 1;
+                    foreach (var prop in a.Props ?? Array.Empty<ResidentialFacade.Prop>())
+                    {
+                        string name = PrefabName(prop.Prefab);
+                        decor[name] = decor.TryGetValue(name, out int had) ? had + 1 : 1;
+                    }
+                    foreach (var rate in ResidentialFacade.AuditRates(a))
+                    {
+                        familyInstances[rate.Family] =
+                            familyInstances.TryGetValue(rate.Family, out int had)
+                                ? had + rate.Actual : rate.Actual;
+                        if (!rate.Within && rateFailures.Count < 16)
+                            rateFailures.Add(a.Signature + " " + rate);
+                    }
+                }
+
+        var regression = ResidentialFacadeTests.Run();
+        // Every ready measured family remains a hard coverage gate for the canonical
+        // P100 forge. At custom density, optional buckets with measured minimum zero may
+        // legitimately saturate one another; only grammar-mandatory families are required.
+        var requiredFamilies = propsPercent == ResidentialFacade.DefaultPropsPercent
+            ? ResidentialFacade.RequiredDecorFamilies()
+            : new[] { "FireEscape", "RoofAccess" };
+        var missingFamilies = requiredFamilies
+            .Where(family => !familyInstances.TryGetValue(family, out int used) || used == 0)
+            .ToArray();
+        Console.WriteLine($"facade P{propsPercent} {total} sheets: {clean} clean, " +
+                          $"{repeated} exact repeats; " +
+                          regression.Report);
+        Console.WriteLine("   modules: " + string.Join("  ", modules.OrderByDescending(x => x.Value)
+            .Select(x => $"{x.Key} {x.Value}")));
+        Console.WriteLine("   decor: " + string.Join("  ", decor.OrderByDescending(x => x.Value)
+            .Select(x => $"{x.Key} {x.Value}")));
+        if (faults.Count > 0)
+            Console.WriteLine("   faults: " + string.Join("  ", faults.OrderByDescending(x => x.Value)
+                .Select(x => $"{x.Key} {x.Value}")));
+        Console.WriteLine($"   raw-density/policy gates: " +
+                          $"{(rateFailures.Count == 0 ? "all inside" : rateFailures.Count + " failed")}; " +
+                          $"required families: {(missingFamilies.Length == 0 ? "all used" :
+                              "missing " + string.Join(", ", missingFamilies))}");
+        foreach (var failure in rateFailures) Console.WriteLine("      " + failure);
+        return clean == total && repeated == total &&
+               regression.Clean && rateFailures.Count == 0 &&
+               missingFamilies.Length == 0 ? 0 : 1;
+    }
+
+    static string Fingerprint(ResidentialFacade.Sheet sheet)
+    {
+        var s = new StringBuilder(4096);
+        s.Append(sheet.Seed).Append('|').Append(sheet.Length).Append('|').Append(sheet.Floors)
+         .Append('|').Append(sheet.PropsPercent).Append('|').Append(sheet.Signature);
+        foreach (var p in sheet.Pieces ?? Array.Empty<ResidentialFacade.Piece>())
+            s.Append("|P:").Append(p.Module).Append(',').Append(p.I).Append(',').Append(p.J)
+             .Append(',').Append(p.Floor).Append(',').Append(p.Yaw);
+        foreach (var p in sheet.Props ?? Array.Empty<ResidentialFacade.Prop>())
+            s.Append("|D:").Append(p.Prefab).Append(',').Append(RoundTrip(p.X)).Append(',')
+             .Append(RoundTrip(p.Y)).Append(',').Append(RoundTrip(p.Z)).Append(',')
+             .Append(RoundTrip(p.Yaw)).Append(',').Append(p.Column);
+        var u = sheet.Unit;
+        if (u != null)
+        {
+            s.Append("|U:").Append(u.Name).Append(',').Append(u.CW).Append(',').Append(u.CD)
+             .Append(',').Append(RoundTrip(u.Floor)).Append(',').Append(RoundTrip(u.MaxH))
+             .Append(',').Append(u.Pieces).Append(',').Append((int)u.Kind);
+            Append(s, u.Plan); Append(s, u.Face); Append(s, u.Doors); Append(s, u.Shops);
+            Append(s, u.Stoops); Append(s, u.ShopCells); Append(s, u.Over);
+            foreach (var b in u.ShopBays ?? Array.Empty<ResidentialShopBay>())
+                s.Append("|B:").Append(b.Side).Append(',').Append(RoundTrip(b.X)).Append(',')
+                 .Append(RoundTrip(b.Z)).Append(',').Append(b.Module).Append(',')
+                 .Append(RoundTrip(b.Door.X)).Append(',').Append(RoundTrip(b.Door.Z)).Append(',')
+                 .Append(RoundTrip(b.Door.Width)).Append(',').Append(b.Door.Leaves).Append(',')
+                 .Append(RoundTrip(b.Door.Yaw));
+        }
+        foreach (var f in sheet.Faults ?? Array.Empty<ResidentialFacade.Fault>())
+            s.Append("|F:").Append((int)f.Kind).Append(',').Append(f.Column).Append(',')
+             .Append(f.Floor).Append(',').Append(f.Detail);
+        return s.ToString();
+    }
+
+    static string RoundTrip(float value) => value.ToString("R", CultureInfo.InvariantCulture);
+    static void Append<T>(StringBuilder s, T[] values)
+    {
+        s.Append('|');
+        if (values == null) { s.Append("null"); return; }
+        for (int i = 0; i < values.Length; i++) s.Append(values[i]).Append(';');
+    }
+
+    static string PrefabName(string prefab)
+    {
+        if (string.IsNullOrEmpty(prefab)) return "(empty)";
+        string name = Path.GetFileName(prefab);
+        return name.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase)
+            ? name.Substring(0, name.Length - 7) : name;
     }
 
     /// <summary>

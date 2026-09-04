@@ -35,6 +35,8 @@ namespace LivingCity.Tests
             TheDocketComesBackWithIts(failures);
             ThePublicBookComesBackWithTheCampaign(failures);
             AVersionTwoPrisonerFindsHisHouseFromTheDocket(failures);
+            BodyEvidenceSurvivesTheFile(failures);
+            BadEnumIntegersStopAtTheLoadBoundary(failures);
             ASaveFromBeforeTheDocketStillGetsATrial(failures);
             OwnerGenerationsSurviveVersionThree(failures);
             VersionTwoMeansOriginalOwners(failures);
@@ -565,6 +567,128 @@ namespace LivingCity.Tests
                 failures.Add("SAVE-010: a version-2 rival prisoner was assigned to " +
                              "the player's house instead of his docket's house.");
         }
+
+        static void BodyEvidenceSurvivesTheFile(List<string> failures)
+        {
+            var pipe = new Police.PrisonPipeline();
+            var body = RoadDemo.PoliceDispatch.OpenCivilianDeathCase(
+                pipe, new TerritoryGangId(7), 12, "biz:counter", "THE COUNTER");
+            var written = new CampaignFile
+            {
+                cases = Save.PrisonSnapshot.Cases(pipe),
+                nextCaseId = pipe.NextCaseId,
+            };
+            var read = JsonUtility.FromJson<CampaignFile>(JsonUtility.ToJson(written));
+            var back = new Police.PrisonPipeline();
+            Save.PrisonSnapshot.Restore(back, read);
+            var restored = body != null ? back.FindCase(body.CaseId) : null;
+
+            if (restored == null || !restored.BodyEvidence || !restored.AnyEvidence())
+                failures.Add("CNTR-AUDIT: a murder body disappeared across a version-3 save.");
+        }
+
+        static void BadEnumIntegersStopAtTheLoadBoundary(List<string> failures)
+        {
+            // A malformed order is discarded at restore, before an unknown type can
+            // reach OrderTable's exhaustive switches. A sound row beside it survives.
+            var source = Underworld.Deal(Seed);
+            var dto = OutfitSnapshot.Snapshot(source);
+            var runner = dto.houses[0].runner;
+            runner.jobs = new[]
+            {
+                SavedJob(70, int.MaxValue, (int)JobStage.Queued, -1),
+                SavedJob(71, (int)OrderType.Donate, int.MaxValue, -1),
+                SavedJob(72, (int)OrderType.Donate, (int)JobStage.Queued, int.MaxValue),
+                SavedJob(73, (int)OrderType.Donate, (int)JobStage.Queued, -1),
+            };
+            var restoredWorld = Underworld.Deal(Seed);
+            OutfitSnapshot.Restore(restoredWorld, dto);
+            var jobs = restoredWorld.Of(0).Runner.Book.Jobs;
+            if (jobs.Count != 1 || jobs[0].Id != 73 ||
+                jobs[0].Type != OrderType.Donate)
+                failures.Add("CNTR-AUDIT: malformed order enums entered the running book.");
+
+            // Custody is recoverable, so unsafe top-level values take conservative
+            // defaults. Nested evidence/verdict rows are dropped when defaulting them
+            // would manufacture testimony or a court result.
+            var malformed = new CampaignFile
+            {
+                version = CampaignFile.Version,
+                prisoners = new[]
+                {
+                    new PrisonerDto
+                    {
+                        characterId = 4,
+                        deed = int.MaxValue,
+                        answer = int.MaxValue,
+                        stage = int.MaxValue,
+                        leg = int.MaxValue,
+                        caseId = 1,
+                    },
+                },
+                cases = new[]
+                {
+                    new CourtCaseDto
+                    {
+                        caseId = 1,
+                        deed = int.MaxValue,
+                        gangId = 0,
+                        status = int.MaxValue,
+                        bodyEvidence = true,
+                        extraCharges = new[] { (int)Deed.Murder, int.MaxValue },
+                        witnesses = new[]
+                        {
+                            new WitnessDto { kind = int.MaxValue },
+                            new WitnessDto
+                            {
+                                kind = (int)Police.WitnessKind.Eyewitness,
+                                standing = int.MaxValue,
+                            },
+                        },
+                        verdicts = new[]
+                        {
+                            new CaseVerdictDto { outcome = int.MaxValue },
+                            new CaseVerdictDto
+                            {
+                                outcome = (int)Police.CaseOutcome.Dismissed,
+                                answer = int.MaxValue,
+                            },
+                        },
+                    },
+                },
+                nextCaseId = 2,
+            };
+            var pipe = new Police.PrisonPipeline();
+            Save.PrisonSnapshot.Restore(pipe, malformed);
+            var prisoner = pipe.Find(4);
+            var file = pipe.FindCase(1);
+            if (prisoner == null || prisoner.Deed != Deed.Affray ||
+                prisoner.Answer != Police.DoorAnswer.Quiet ||
+                prisoner.Stage != Police.PrisonStage.Held ||
+                prisoner.Leg != Police.PrisonLeg.None)
+                failures.Add("CNTR-AUDIT: malformed custody enums survived restoration.");
+            if (file == null || file.Deed != Deed.Affray ||
+                file.Status != Police.CaseStatus.Open || !file.BodyEvidence ||
+                file.ExtraCharges.Count != 1 || file.ExtraCharges[0] != Deed.Murder ||
+                file.Witnesses.Count != 1 ||
+                file.Witnesses[0].Standing != Police.WitnessStanding.Withdrawn ||
+                file.Verdicts.Count != 1 ||
+                file.Verdicts[0].Outcome != Police.CaseOutcome.Dismissed ||
+                file.Verdicts[0].Answer != Police.DoorAnswer.Quiet)
+                failures.Add("CNTR-AUDIT: malformed docket enums survived restoration.");
+        }
+
+        static JobDto SavedJob(int id, int type, int stage, int streetOutcome) =>
+            new JobDto
+            {
+                id = id,
+                crewId = 0,
+                type = type,
+                stage = stage,
+                streetOutcome = streetOutcome,
+                targetLabel = "save boundary",
+                targetBusinessId = "biz:counter",
+            };
 
         /// <summary>
         /// (e) A FILE WRITTEN BEFORE THE DOCKET (GAN-302). Version 1 kept the men and

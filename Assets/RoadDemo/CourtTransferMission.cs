@@ -357,15 +357,22 @@ namespace RoadDemo
 
         void Schedule()
         {
-            if (!_force.TryGetFreeTransferCar(out var next)) return;
+            if (!_force.TryGetFreeTransferCar(out var next))
+            {
+                if (Kind == Scenario.BombBeforePickup && _planted)
+                    Fail("the armed carrier stopped being schedulable; refusing to re-stage a live charge");
+                return;
+            }
             if (Kind == Scenario.BombBeforePickup && next != _emptyBombCar)
             {
-                // A call took the chosen car while the crew was walking to it. Re-stage
-                // against the scheduler's new first choice instead of bombing one car
-                // and silently testing another.
-                _emptyBombCar = next;
-                _positioned = false;
-                _planted = false;
+                // The charge already belongs to _emptyBombCar and waits forever until
+                // that exact car moves. Never forget it and plant a second charge when
+                // another call changes the scheduler's first choice: that would leave
+                // an armed orphan in the scene and corrupt ROAD-006's police-loss
+                // verdict. Stop with an explicit failed setup instead.
+                Fail(_planted
+                    ? "the scheduler changed cars after the charge was planted; refusing to abandon the armed car"
+                    : "the scheduler changed cars before the chosen carrier could be reserved");
                 return;
             }
             if (Kind == Scenario.NoCourthouse) _force.ClearCourthouse();

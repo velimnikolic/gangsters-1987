@@ -67,7 +67,9 @@ namespace LivingCity.Gameplay
                 ? Business.BusinessShutdownCause.SmashUp
                 : type == OrderType.Torch
                     ? Business.BusinessShutdownCause.Arson
-                    : Business.BusinessShutdownCause.None;
+                    : type == OrderType.Bomb
+                        ? Business.BusinessShutdownCause.Bomb
+                        : Business.BusinessShutdownCause.None;
             if (damageCause != Business.BusinessShutdownCause.None &&
                 business?.Shutdowns != null)
             {

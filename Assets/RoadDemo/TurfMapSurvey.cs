@@ -1866,9 +1866,8 @@ namespace RoadDemo
             if (split < 0 || split + 2 >= name.Length)
                 return false;
             string unit = name.Substring(split + 2);
-            var known = ResidentialUnits.All;
-            for (int i = 0; i < known.Length; i++)
-                if (known[i] != null && known[i].Name == unit)
+            foreach (var candidate in ResidentialUnits.Known)
+                if (candidate != null && candidate.Name == unit)
                     return true;
             return false;
         }

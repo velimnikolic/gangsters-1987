@@ -81,8 +81,14 @@ namespace RoadDemo
 
         internal AnimationClip CarriageSitLoop => _sitLoop;
 
-        readonly Dictionary<RoadCar, int> _tinIncident =
-            new Dictionary<RoadCar, int>();
+        // A car raises the police response once per shooting incident. Keeping the
+        // incident number on every car retained every RoadCar ever hit for the whole
+        // session; the authoritative StreetAlarm boundary lets this be one short-lived
+        // set instead.
+        // IDs preserve per-car deduplication even after a halted carrier leaves the
+        // dispatch list, without keeping dead RoadCar/Transform objects alive.
+        readonly HashSet<int> _tinRaised = new HashSet<int>();
+        int _tinRaisedIncident = -1;
         CourtCase _civilianDeathCase;
         int _civilianDeathIncident = -1;
         readonly List<IPoliceUnit> _units = new List<IPoliceUnit>();
@@ -161,6 +167,8 @@ namespace RoadDemo
         public void Unregister(IPoliceUnit unit)
         {
             if (unit == null) return;
+            if (_lights.TryGetValue(unit, out var lights))
+                lights.Set(lights: false, siren: false);
             _units.Remove(unit);
             _lights.Remove(unit);
             _footOnSceneAt.Remove(unit);
@@ -232,12 +240,19 @@ namespace RoadDemo
         {
             if (car == null || shooter == null || _crews == null) return false;
             var incident = StreetAlarm.IncidentNumber;
-            if (_tinIncident.TryGetValue(car, out var raised) && raised == incident)
+            BeginTinIncident(incident);
+            if (!_tinRaised.Add(car.Id))
                 return false;
-            _tinIncident[car] = incident;
             var culprit = _crews.UnitOf(shooter);
             RaiseSwarm(car.Position, SwarmGrade.ShotsFired, culprit);
             return true;
+        }
+
+        void BeginTinIncident(int incident)
+        {
+            if (_tinRaisedIncident == incident) return;
+            _tinRaisedIncident = incident;
+            _tinRaised.Clear();
         }
 
         /// <summary>The crew demo's cruiser: a CrewCar with its two officers already in
@@ -263,6 +278,7 @@ namespace RoadDemo
                 (shooterUnit != null && shooterUnit.TargetUnit != null &&
                  shooterUnit.TargetUnit.Faction == LivingCity.Gangs.GangCatalog.PlayerGangId);
 
+            BeginTinIncident(StreetAlarm.IncidentNumber);
             if (StreetAlarm.IncidentNumber != _incident)
             {
                 // a new incident: the clock to the call starts - somebody will have rung
@@ -394,10 +410,12 @@ namespace RoadDemo
         {
             if (pipeline == null || !faction.IsValid)
                 return null;
-            return pipeline.OpenCase(
+            var file = pipeline.OpenCase(
                 Deed.Murder, faction.Value, today,
                 today > 0 ? today + Sentencing.DaysToCourt : 0,
                 businessId, where);
+            file.BodyEvidence = true;
+            return file;
         }
 
         /// <summary>The institution behind the units - who is on the roster, who is on

@@ -4624,7 +4624,7 @@ namespace RoadDemo
             return best;
         }
 
-        /// <summary>The first bay no living car holds, or -1 when the yard is full. ONE
+        /// <summary>The first bay no working fleet car holds, or -1 when the yard is full. ONE
         /// CAR TO A BAY, AND NO BAY MEANS NO CAR: the row centre used to catch every car
         /// past the last bay, and twelve cars welded into one point were eighteen to
         /// thirty thousand belt refusals a run and a gridlocked city (NIGHT-013 S2,
@@ -4632,13 +4632,20 @@ namespace RoadDemo
         /// ground. Never a kerb either - that is the SpreadPatrolHomes lesson.</summary>
         static int FreeStall(StationHouse station)
         {
+            var retired = -1;
             for (int i = 0; i < station.Stalls.Count; i++)
             {
                 var holder = i < station.Holders.Count ? station.Holders[i] : null;
                 // a replacement that left for the kerbs gave its bay back (HasBay off)
-                if (holder == null || holder.Wrecked || !holder.HasBay) return i;
+                if (holder == null) return i;
+                if (!holder.HasBay) return i;
+                // Wrecks, shot-out engines and explicitly retired transfer derelicts stay
+                // in the scene as evidence/scenery, but their old assignment cannot keep
+                // the department's replacement body off the ground forever. Prefer a
+                // genuinely empty bay so a shell still in its yard is only the fallback.
+                if (!holder.Fleetworthy && retired < 0) retired = i;
             }
-            return -1;
+            return retired;
         }
 
         static void HoldStall(StationHouse station, int stall, PolicePatrolCar car)

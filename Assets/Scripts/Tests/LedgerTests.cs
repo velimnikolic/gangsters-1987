@@ -46,6 +46,7 @@ namespace LivingCity.Tests
             RecruitFloorsAgree(failures);
             CrewKitReadsVehiclesAndSkill(failures);
             AJobRunsItsCourse(failures);
+            PersonViolenceWaitsForTheStreet(failures);
             AStandingWatchPaysDaily(failures);
             PaydayFallsEveryDay(failures);
             AScriptedMonthIsRepeatable(failures);
@@ -136,6 +137,37 @@ namespace LivingCity.Tests
                 banked += lieutenant.GetPractice(taught[i]);
             if (banked <= 0)
                 failures.Add("AJobRunsItsCourse: nobody learned anything.");
+        }
+
+        static void PersonViolenceWaitsForTheStreet(List<string> failures)
+        {
+            foreach (var type in new[] { OrderType.Beating, OrderType.KillOwner })
+            {
+                var runner = Runner(out var roster);
+                var job = JobFor(roster, type);
+                job.TargetBusinessId = "biz:counter";
+                if (!runner.Issue(roster, job).Ok)
+                {
+                    failures.Add("CNTR-AUDIT: " + type + " would not issue.");
+                    continue;
+                }
+
+                // More than enough book time is not an outcome. The men may still be
+                // approaching the real threshold, so no record or world callback may
+                // be produced until the street answers.
+                runner.AdvanceHours(roster, 200f);
+                if (job.Stage != JobStage.Working || job.WorkHoursLeft != 0f ||
+                    runner.Records.Count != 0)
+                    failures.Add("CNTR-AUDIT: " + type +
+                                 " resolved from elapsed hours without a street answer.");
+
+                runner.ReportStreetOutcome(job.Id, OrderOutcome.Completed);
+                runner.AdvanceHours(roster, 0.01f);
+                if (job.Live || runner.Records.Count != 1 ||
+                    runner.Records[0].Outcome != OrderOutcome.Completed)
+                    failures.Add("CNTR-AUDIT: " + type +
+                                 " did not finish from the street's answer.");
+            }
         }
 
         static void AStandingWatchPaysDaily(List<string> failures)

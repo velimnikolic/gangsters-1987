@@ -399,6 +399,19 @@ namespace LivingCity.Outfit
             if (job.WorkHoursLeft > 0f)
                 return moved;
 
+            // THE MAN BEHIND THE COUNTER IS NEVER AN OFFICE ROLL. The estimated
+            // hours can expire while the physical crew is still driving, walking to
+            // the threshold or waiting inside. Until that visit reports its actual
+            // outcome, hold the book at zero: otherwise Finish would hand null to
+            // OrderResolution, which is permission to invent a success and apply a
+            // closure, murder or successor to a scene that never happened.
+            if (DoorOrders.IsPersonViolence(job.Type) &&
+                !job.StreetOutcome.HasValue)
+            {
+                job.WorkHoursLeft = 0f;
+                return moved;
+            }
+
             Finish(roster, crew, job, spec);
             return true;
         }

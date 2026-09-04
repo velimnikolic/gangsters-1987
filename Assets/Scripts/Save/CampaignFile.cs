@@ -147,6 +147,12 @@ namespace LivingCity.Save
         public string where;
         public int[] defendants;
         public WitnessDto[] witnesses;
+
+        /// <summary>A civilian-death file carries the body independently of its
+        /// witness list. Appended to version 3; an older version-3 JSON simply reads
+        /// false, which is its original meaning.</summary>
+        public bool bodyEvidence;
+
         public int[] counts;
         public int[] extraCharges;
         public int openedDay;

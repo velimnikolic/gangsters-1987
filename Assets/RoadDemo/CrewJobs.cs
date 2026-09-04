@@ -19,9 +19,10 @@ namespace RoadDemo
     /// already knows how to do all of it; this class never simulates a fight, it only
     /// reports what came of one.
     ///
-    /// The reporting is one-way and optional by design: a job whose street never answers
-    /// falls back to the director's own roll (OrderResolution), so a scene with no crew
-    /// simulation - the standalone ledger - still plays the game.
+    /// The reporting is one-way. Ordinary street work may still fall back to the
+    /// director's own roll in a scene with no crew simulation; violence against the
+    /// person behind a counter is stricter and waits for this wire, because neither an
+    /// assault nor a death may be invented by an office roll.
     /// </summary>
     public static class CrewJobs
     {

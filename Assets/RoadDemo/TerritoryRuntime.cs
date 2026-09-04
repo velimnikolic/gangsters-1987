@@ -1080,7 +1080,7 @@ namespace RoadDemo
         TerritoryGangId AttributeRecentViolence(Vector3 position) =>
             AttributeShooting(position).Gang;
 
-        Attribution AttributeShooting(Vector3 position)
+        Attribution AttributeShooting(Vector3 position, bool policeContests = false)
         {
             var now = Time.time;
             var found = -1;
@@ -1101,6 +1101,7 @@ namespace RoadDemo
                 if (shot.Faction == StreetAlarm.PoliceFaction)
                 {
                     police = true;
+                    if (policeContests) return default;
                     continue;
                 }
                 houses = true;
@@ -1115,10 +1116,37 @@ namespace RoadDemo
                 police && !houses);
         }
 
-        /// <summary>The police use the street's exact attribution rule when a civilian
-        /// body opens a murder file. No second shooter guess is allowed.</summary>
+        static bool ConsiderAttribution(
+            int faction, bool policeContests, ref int found)
+        {
+            if (faction == StreetAlarm.PoliceFaction)
+                return !policeContests;
+            if (faction < 0)
+                return false;
+            if (found >= 0 && found != faction)
+                return false;   // two houses were shooting; the street cannot say
+            found = faction;
+            return true;
+        }
+
+        /// <summary>The engine-free core of a body's attribution, exposed for the
+        /// contract suite. Repeated shots by one house name it; any second house or a
+        /// police round makes the death unattributable.</summary>
+        public static TerritoryGangId MurderAttribution(
+            IReadOnlyList<int> nearbyShooters)
+        {
+            var found = -1;
+            for (var i = 0; nearbyShooters != null && i < nearbyShooters.Count; i++)
+                if (!ConsiderAttribution(nearbyShooters[i], true, ref found))
+                    return default;
+            return found < 0 ? default : new TerritoryGangId(found);
+        }
+
+        /// <summary>The police require one unopposed criminal shooter when a civilian
+        /// body opens a murder file. A nearby police round is opposition, not something
+        /// silently discarded before the suspect is chosen.</summary>
         public TerritoryGangId RecentViolenceAt(Vector3 position) =>
-            AttributeRecentViolence(position);
+            AttributeShooting(position, policeContests: true).Gang;
 
         /// <summary>
         /// The authoritative way an act enters territory. Everything - the street's own

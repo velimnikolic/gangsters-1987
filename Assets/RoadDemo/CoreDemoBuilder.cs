@@ -329,7 +329,10 @@ namespace RoadDemo
                 // in the street (RoadDemoBuilder.BuildEnvironment).
                 rig.yaw = 20f;
                 rig.pitch = 55f;
-                rig.showHint = false;
+                // Road orders deliberately sit behind Shift+right-click so an ordinary
+                // drive stays one click. Keep the shared controls line visible: without
+                // it BLOCK THE ROAD HERE and MOVE ON have no discoverable input gesture.
+                rig.showHint = true;
             }
 #else
             Debug.LogError("[CoreDemo] The core loads Synty prefabs through the AssetDatabase and only runs in the editor.");

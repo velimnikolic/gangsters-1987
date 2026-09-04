@@ -102,6 +102,9 @@ namespace RoadDemo
         }
         /// <summary>Plan-owned filling stations, kept stable even if their 3D views change.</summary>
         public IReadOnlyList<CoreAmenityLayout.Site> FuelSites => _fuelSites;
+        /// <summary>The one plan-owned fire station, or null when the retained city has no
+        /// road-served parcel large enough for the complete engine hall and apron.</summary>
+        public CoreAmenityLayout.Site FireStationSite => _fireStationSite;
         /// <summary>Buildable former parking parcels reassigned to generated housing.
         /// Shallow remnants are deliberately absent: they remain ordinary street parking.</summary>
         public IReadOnlyList<CoreAmenityLayout.Site> DevelopmentSites => _developmentSites;
@@ -354,11 +357,13 @@ namespace RoadDemo
                 _parkingSites, _fuelSites, _developmentSites);
 
             PickCourthouse();
+            PickFireStation();
         }
 
         /// <summary>The parcel the courthouse takes, or null when nothing downtown is big
         /// enough for it. Local plan coordinates, like every other amenity site.</summary>
         CoreAmenityLayout.Site _courthouseSite;
+        CoreAmenityLayout.Site _fireStationSite;
 
         /// <summary>
         /// ONE COURTHOUSE, DOWNTOWN (GAN-237). The rule itself is in the shared layout so
@@ -372,6 +377,15 @@ namespace RoadDemo
             if (_courthouseSite == null)
                 Debug.Log("[Core] no parcel downtown will hold a courthouse; transfers " +
                           "drive out of town on both legs");
+        }
+
+        /// <summary>Reserve one complete road-facing fire-station parcel before the rest of
+        /// the developable remainders become housing.</summary>
+        void PickFireStation()
+        {
+            _fireStationSite = CoreAmenityLayout.PickFireStation(_developmentSites);
+            if (_fireStationSite == null)
+                Debug.Log("[Core] no road-served parcel will hold the 50 x 35 m fire station");
         }
 
         /// <summary>
@@ -702,6 +716,7 @@ namespace RoadDemo
 
             BuildLaneGraph();
             StandAmenities(quarter, host);
+            StandFireStation(quarter, host);
             StandCourthouse(quarter, host);
             BuildPavementGraph();
             InstallBascules(host, river);
@@ -719,7 +734,9 @@ namespace RoadDemo
             Debug.Log($"[Core] {_plan.Name}: {_blocks.Count} blocks, {_raster.Junctions.Count} junctions, " +
                       $"{_raster.Stretches.Count} stretches of road, {_edges.Count} lanes, " +
                       $"{_vehicles.Count} traffic cars, {_parkingSites.Count} ParkingDemo lots, " +
-                      $"{_fuelSites.Count} PumpDemo station(s), {_raster.Faults} faults.{System.Environment.NewLine}" +
+                      $"{_fuelSites.Count} PumpDemo station(s), " +
+                      $"{(_fireStationSite != null ? 1 : 0)} fire station, " +
+                      $"{_raster.Faults} faults.{System.Environment.NewLine}" +
                       string.Join(System.Environment.NewLine, _plan.Rows) + System.Environment.NewLine + _raster.Report);
         }
 
@@ -757,6 +774,7 @@ namespace RoadDemo
             // reading as vacant ground to anything counting programmes off this - and a
             // parcel with a courthouse on it is the least vacant ground in the city.
             if (_courthouseSite != null && _courthouseSite.Box.Contains(centre)) return true;
+            if (_fireStationSite != null && _fireStationSite.Box.Contains(centre)) return true;
             return CoreAmenityLayout.Contains(_developmentSites, centre);
         }
 
@@ -826,6 +844,35 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>Stand the shared fire-station block on the one parcel reserved by the
+        /// paper plan. Composition happens inactive at the origin because the shared Synty
+        /// measuring helpers work in world space; the finished block is then moved as one.</summary>
+        void StandFireStation(Transform quarter, IDistrictHost host)
+        {
+            if (_fireStationSite == null) return;
+
+            CoreAmenityLayout.FireStationPose(
+                _fireStationSite, out var localPosition, out int localYaw);
+
+            var go = new GameObject("Core Fire Station");
+            go.SetActive(false);
+            var root = go.transform;
+            var stood = FireStationBlock.Compose(
+                root, (prefab, parent) => Object.Instantiate(prefab, parent));
+            root.SetParent(quarter, false);
+            root.localPosition = localPosition;
+            root.localRotation = Quaternion.Euler(0f, localYaw, 0f);
+            go.SetActive(true);
+
+            foreach (var missing in Composer.Missing)
+                host.ReportMissing(missing);
+
+            if (stood.Shell != null)
+                host.Blocked(FireStationBlock.BoundsOf(stood.Shell), FireStationName);
+            for (int i = 0; i < stood.Vehicles.Count; i++)
+                host.Blocked(FireStationBlock.BoundsOf(stood.Vehicles[i]));
+        }
+
         /// <summary>
         /// The courthouse itself, stood on the parcel PickCourthouse kept for it. It is a
         /// building and nothing else - no interior, no cells, no clerk (GAN-219's own
@@ -868,6 +915,7 @@ namespace RoadDemo
         /// The name the sweep matches on, too - so it is a constant and not a literal at
         /// three call sites.</summary>
         public const string CourthouseName = "building-courthouse";
+        public const string FireStationName = "building-firestation";
 
         /// <summary>The outward yaw of a parcel's entry side: which way a building on it
         /// turns to face its street.</summary>
@@ -1167,6 +1215,8 @@ namespace RoadDemo
             _parkingSites.Clear();
             _fuelSites.Clear();
             _developmentSites.Clear();
+            _courthouseSite = null;
+            _fireStationSite = null;
             // Build-time geometry normally dies with its host. A detached compatibility
             // yard is still ours to clean explicitly.
             if (_yard != null && _yard.parent == null) Object.Destroy(_yard.gameObject);
@@ -1264,6 +1314,11 @@ namespace RoadDemo
         public const float CourthouseFrontage = 30f;
         public const float CourthouseDepth = 28f;
 
+        /// <summary>The complete shared block: a 42 m combined hall/quarters shell inside
+        /// a 50 m frontage, with 35 m depth for the working apron and parked appliances.</summary>
+        public const float FireStationFrontage = FireStationBlock.BlockFrontage;
+        public const float FireStationDepth = FireStationBlock.BlockDepth;
+
         /// <summary>
         /// THE PARCEL THE COURTHOUSE TAKES (GAN-237), or null when nothing will hold one.
         ///
@@ -1299,6 +1354,71 @@ namespace RoadDemo
 
             if (best != null) development.Remove(best);
             return best;
+        }
+
+        /// <summary>
+        /// Reserve one road-facing fire station from the development pool. The smallest
+        /// suitable source wins so the civic building does not consume an 85 m housing lot
+        /// when a 50 x 35 m remainder already fits it. On an oversized source only the exact
+        /// road-edge footprint becomes the station; the balance remains ordinary raster
+        /// parking rather than being falsely reported as station or housing ground.
+        /// </summary>
+        public static Site PickFireStation(List<Site> development)
+        {
+            if (development == null || development.Count == 0) return null;
+
+            Site source = null;
+            float bestArea = float.MaxValue;
+            for (int i = 0; i < development.Count; i++)
+            {
+                var candidate = development[i];
+                Dimensions(candidate.Box, candidate.Entry, out float frontage, out float depth);
+                if (frontage + 0.01f < FireStationFrontage ||
+                    depth + 0.01f < FireStationDepth)
+                    continue;
+
+                float area = candidate.Box.width * candidate.Box.height;
+                if (source != null && area >= bestArea) continue;
+                source = candidate;
+                bestArea = area;
+            }
+
+            if (source == null) return null;
+            development.Remove(source);
+            var box = FireStationFootprint(source);
+            int cells = Mathf.RoundToInt(box.width * box.height /
+                                         (CoreLayout.Cell * CoreLayout.Cell));
+            return new Site(box, source.Entry, cells);
+        }
+
+        /// <summary>The exact 50 x 35 m crop, held against the source parcel's served edge.</summary>
+        public static Rect FireStationFootprint(Site source)
+        {
+            if (source == null) return default;
+            var box = source.Box;
+            switch (source.Entry)
+            {
+                case ParkingEntrySide.North:
+                    return new Rect(
+                        box.center.x - FireStationFrontage * 0.5f,
+                        box.yMax - FireStationDepth,
+                        FireStationFrontage, FireStationDepth);
+                case ParkingEntrySide.East:
+                    return new Rect(
+                        box.xMax - FireStationDepth,
+                        box.center.y - FireStationFrontage * 0.5f,
+                        FireStationDepth, FireStationFrontage);
+                case ParkingEntrySide.West:
+                    return new Rect(
+                        box.xMin,
+                        box.center.y - FireStationFrontage * 0.5f,
+                        FireStationDepth, FireStationFrontage);
+                default:
+                    return new Rect(
+                        box.center.x - FireStationFrontage * 0.5f,
+                        box.yMin,
+                        FireStationFrontage, FireStationDepth);
+            }
         }
 
         /// <summary>Which quarter a point falls in, or the nearest one's - the same
@@ -1804,6 +1924,25 @@ namespace RoadDemo
 
             var preview = FuelStationBlock.PreviewBounds;
             var localCentre = new Vector3(preview.center.x, 0f, preview.center.y);
+            var turnedCentre = Quaternion.Euler(0f, yaw, 0f) * localCentre;
+            position = new Vector3(site.Box.center.x, 0f, site.Box.center.y) - turnedCentre;
+        }
+
+        /// <summary>Place FireStationBlock's centred local footprint over its reserved crop,
+        /// turning its +Z facade toward the road-serving side.</summary>
+        public static void FireStationPose(Site site, out Vector3 position, out int yaw)
+        {
+            switch (site.Entry)
+            {
+                case ParkingEntrySide.North: yaw = 0; break;
+                case ParkingEntrySide.East: yaw = 90; break;
+                case ParkingEntrySide.South: yaw = 180; break;
+                default: yaw = 270; break;
+            }
+
+            var localCentre = new Vector3(
+                FireStationBlock.PreviewBounds.center.x, 0f,
+                FireStationBlock.PreviewBounds.center.y);
             var turnedCentre = Quaternion.Euler(0f, yaw, 0f) * localCentre;
             position = new Vector3(site.Box.center.x, 0f, site.Box.center.y) - turnedCentre;
         }

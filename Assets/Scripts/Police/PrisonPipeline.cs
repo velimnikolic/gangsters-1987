@@ -139,6 +139,11 @@ namespace LivingCity.Police
         readonly List<Prisoner> _inside = new List<Prisoner>();
         readonly HashSet<int> _everEscaped = new HashSet<int>();
         readonly List<CourtCase> _cases = new List<CourtCase>();
+
+        /// <summary>The live docket, separately indexed from the retained archive.
+        /// TurfMap asks for it every frame; walking every closed case ever saved made
+        /// the cost of drawing one witness grow with the age of the campaign.</summary>
+        readonly List<CourtCase> _openCases = new List<CourtCase>();
         int _nextCaseId = 1;
 
         /// <summary>Days an unanswered complaint stays on the docket. A crew arrested
@@ -225,10 +230,15 @@ namespace LivingCity.Police
                 GangId = gangId,
                 BusinessId = businessId ?? "",
                 Where = where ?? "",
+                // In this simulation a murder charge is born from a reported death.
+                // Keep the corpse distinct from testimony, but do not require every
+                // caller (or an older version-3 save) to remember the same fact.
+                BodyEvidence = deed == Deed.Murder || deed == Deed.CopKilling,
                 OpenedDay = openedDay,
                 CourtDay = courtDay,
             };
             _cases.Add(file);
+            _openCases.Add(file);
             return file;
         }
 
@@ -258,7 +268,7 @@ namespace LivingCity.Police
                 if (other == file || other.Status != CaseStatus.Open) continue;
                 if (other.GangId != file.GangId) continue;
                 if (other.Defendants.Count > 0) continue;   // somebody was taken for it
-                if (!other.AnyWilling()) continue;          // nobody can put this count up
+                if (!other.AnyEvidence()) continue;         // neither witness nor body
                 if (today > 0 && other.OpenedDay > 0 &&
                     today - other.OpenedDay > ComplaintMemoryDays) continue;
 
@@ -267,6 +277,7 @@ namespace LivingCity.Police
                 // count on the case that is actually going to be heard, and the archive
                 // must not print it as a trial that happened (GAN-302).
                 other.Status = CaseStatus.Folded;
+                _openCases.Remove(other);
                 attached++;
             }
             return attached;
@@ -290,14 +301,33 @@ namespace LivingCity.Police
 
         /// <summary>Every case still open with a witness the player could do something
         /// about - what the turf map draws its markers from.</summary>
-        public void OpenCases(int gangId, List<CourtCase> into)
+        public void OpenCases(int gangId, List<CourtCase> into, int today = 0)
         {
             into?.Clear();
             if (into == null) return;
-            for (var i = 0; i < _cases.Count; i++)
-                if (_cases[i].Status == CaseStatus.Open && _cases[i].GangId == gangId)
-                    into.Add(_cases[i]);
+            for (var i = 0; i < _openCases.Count;)
+            {
+                var file = _openCases[i];
+                // Most closes happen elsewhere in the pure pipeline. Prune lazily at
+                // this read as a second line of defence, so a caller that stamped a
+                // verdict directly cannot leave the per-frame index dirty.
+                if (file == null || file.Status != CaseStatus.Open)
+                {
+                    _openCases.RemoveAt(i);
+                    continue;
+                }
+                if (file.GangId == gangId && !UnansweredCaseExpired(file, today))
+                    into.Add(file);
+                i++;
+            }
         }
+
+        /// <summary>A no-defendant file can become a count only inside the same memory
+        /// window used when complaints are attached. Past it, there is no defendant,
+        /// no future hearing and no reason to retain a permanent map/save row.</summary>
+        public static bool UnansweredCaseExpired(CourtCase file, int today) =>
+            file != null && file.Defendants.Count == 0 && today > 0 &&
+            file.OpenedDay > 0 && today - file.OpenedDay > ComplaintMemoryDays;
 
         // -------------------------------------------------------------------- the pipe
 
@@ -334,6 +364,7 @@ namespace LivingCity.Police
             _inside.Clear();
             _everEscaped.Clear();
             _cases.Clear();
+            _openCases.Clear();
             RosterSeed = rosterSeed;
 
             for (var i = 0; inside != null && i < inside.Count; i++)
@@ -345,7 +376,11 @@ namespace LivingCity.Police
             // counted for nothing the moment he loaded.
             for (var i = 0; cases != null && i < cases.Count; i++)
                 if (cases[i] != null)
+                {
                     _cases.Add(cases[i]);
+                    if (cases[i].Status == CaseStatus.Open)
+                        _openCases.Add(cases[i]);
+                }
             for (var i = 0; escaped != null && i < escaped.Count; i++)
                 _everEscaped.Add(escaped[i]);
 
@@ -558,17 +593,24 @@ namespace LivingCity.Police
         ///
         /// So an open case whose court day is a memory window behind and whose every
         /// remaining defendant is out of the pipe is FOLDED, with whatever verdicts it
-        /// collected already on it. A complaint nobody was ever taken for is untouched:
-        /// it has no defendants at all and is exactly what becomes a count later.
+        /// collected already on it. A complaint or body file with no defendant is kept
+        /// for that same memory window, then removed: once it can no longer become a
+        /// count it has no trial or verdict to preserve in the archive.
         /// </summary>
         void LapseAbandonedCases(int today)
         {
             if (today <= 0) return;
-            for (var i = 0; i < _cases.Count; i++)
+            for (var i = _cases.Count - 1; i >= 0; i--)
             {
                 var file = _cases[i];
                 if (file.Status != CaseStatus.Open) continue;
-                if (file.Defendants.Count == 0) continue;
+                if (file.Defendants.Count == 0)
+                {
+                    if (!UnansweredCaseExpired(file, today)) continue;
+                    _cases.RemoveAt(i);
+                    _openCases.Remove(file);
+                    continue;
+                }
                 if (file.CourtDay <= 0 ||
                     today - file.CourtDay <= ComplaintMemoryDays) continue;
 
@@ -578,7 +620,16 @@ namespace LivingCity.Police
                 if (anybodyToTry) continue;
 
                 file.Status = file.AnyTried ? CaseStatus.Tried : CaseStatus.Folded;
+                _openCases.Remove(file);
             }
+
+            // Verdict/collar adapters are allowed to stamp a case directly. They do
+            // not own this index, so the daily model pass also removes every closed
+            // row even if the map has not been opened since the verdict.
+            for (var i = _openCases.Count - 1; i >= 0; i--)
+                if (_openCases[i] == null ||
+                    _openCases[i].Status != CaseStatus.Open)
+                    _openCases.RemoveAt(i);
         }
 
         /// <summary>The car pulled out with him in it.</summary>
@@ -784,7 +835,7 @@ namespace LivingCity.Police
             // A CASE WITH NOBODY BEHIND IT IS NOT TRIED AT ALL. Every witness withdrawn
             // or dead and no policeman on the list, and the men walk before a single
             // roll - which is what leaning on witnesses is FOR.
-            if (file != null && !file.AnyWilling())
+            if (file != null && !file.AnyEvidence())
             {
                 Note(file, prisoner.CharacterId, CaseOutcome.Dismissed, today,
                     answer: prisoner.Answer, sprung: prisoner.Sprung);

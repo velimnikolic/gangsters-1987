@@ -164,6 +164,12 @@ namespace LivingCity.Police
         public readonly List<int> Defendants = new List<int>();
         public readonly List<Witness> Witnesses = new List<Witness>();
 
+        /// <summary>The victim's body is physical evidence even when every civilian
+        /// who saw the shooting is dead or unwilling. Set only by the civilian-death
+        /// wire: an ordinary complaint with a silenced shopkeeper does not acquire an
+        /// invisible witness and cannot become a count.</summary>
+        public bool BodyEvidence;
+
         /// <summary>Other cases folded into this one as extra counts, by their id -
         /// open complaints the same crew never answered for.</summary>
         public readonly List<int> Counts = new List<int>();
@@ -232,6 +238,10 @@ namespace LivingCity.Police
                     return true;
             return false;
         }
+
+        /// <summary>Anything the state can still put before a court. A body carries a
+        /// murder file without pretending to be a living witness.</summary>
+        public bool AnyEvidence() => BodyEvidence || AnyWilling();
 
         /// <summary>How many willing witnesses there are, for the paper and the file.</summary>
         public int WillingCount()

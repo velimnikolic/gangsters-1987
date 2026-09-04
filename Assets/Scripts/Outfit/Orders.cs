@@ -382,8 +382,9 @@ namespace LivingCity.Outfit
         public int BookDepth;
 
         /// <summary>How the street answered a Violence job, once it has. Null until
-        /// the sim reports, and the roll stands in for it if nothing ever does - a
-        /// scene with no crew simulation still has to be able to play the game.</summary>
+        /// the sim reports. Most street work may use the book's fallback roll in a
+        /// scene without a street; person-at-the-counter violence explicitly waits,
+        /// because its physical act owns the death, complaint and closure.</summary>
         public OrderOutcome? StreetOutcome;
 
         public bool Live => Stage != JobStage.Finished;

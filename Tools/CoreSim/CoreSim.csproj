@@ -21,6 +21,11 @@
     <Compile Include="..\..\Assets\RoadDemo\ParkWalk.cs" />
     <Compile Include="..\..\Assets\RoadDemo\QuayWalk.cs" />
     <Compile Include="..\..\Assets\RoadDemo\ResidentialUnits.cs" />
+    <Compile Include="..\..\Assets\RoadDemo\ResidentialUnits.Generated.cs" />
+    <Compile Include="..\..\Assets\RoadDemo\ResidentialModules.cs" />
+    <Compile Include="..\..\Assets\RoadDemo\ResidentialDecor.cs" />
+    <Compile Include="..\..\Assets\RoadDemo\ResidentialFacade.cs" />
+    <Compile Include="..\..\Assets\RoadDemo\ResidentialFacadeTests.cs" />
     <Compile Include="..\..\Assets\RoadDemo\ResidentialLot.cs" />
     <Compile Include="..\..\Assets\RoadDemo\ResidentialSurface.cs" />
   </ItemGroup>

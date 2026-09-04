@@ -43,7 +43,7 @@ family nothing personally.
 | The firing pipeline | `RoadDemo/DemoCrews.Combat.cs:1411-1430` — flash, scatter, loudness, `StreetAlarm.Report`, the `HearShot` propagation that makes rivals draw `:1424`, `CrewGore` | the shot inside goes through EPIC 37 CNTR-005's shared resolution, not a bare `StreetAlarm.Report` from `CrewJobs` |
 | The alarm | `RoadDemo/StreetAlarm.cs:173` — loudness is **metres**, floored at 5 (`:192`); a pistol is 45 m (`CrewArms.cs:109`); the police floor their own hearing at `Earshot` (`PoliceDispatch.cs:65`) | the bang; "muffled" has no mechanical meaning and is not claimed |
 | The death's fear | `RoadDemo/TerritoryRuntime.OnStreetDeath:913` files `Killing` (impact 40, `TerritoryFear.cs:154`) at severity 1.3, attributed by `AttributeRecentViolence:966`; the event is built with **no `BusinessId`** (`:936`) so the premises gains nothing | §3.2: one event, with the door named |
-| The docket | `Scripts/Police/CourtCase.cs` — `Witness.BusinessId`, `AnyWilling:222`; `PrisonPipeline.Cases:150`, `AttachOpenComplaints:229` (folds a defendant-less case by `Defendants.Count == 0`, witness standing not read), `Tried:700` (the dismissal, needs a prisoner) | what killing the complainant actually removes |
+| The docket | `Scripts/Police/CourtCase.cs` — `Witness.BusinessId`, living testimony and distinct `BodyEvidence`; `PrisonPipeline.AttachOpenComplaints` requires one or the other | what killing the complainant actually removes without erasing the new body |
 | The witness sweep | `RoadDemo/WitnessWatch.cs` — `Withdraw`, `LawWire.WitnessKilled`, the "WILL NOT BE GIVING EVIDENCE" banner | the complainant's death, printed as a witness's death already is |
 | The law sheet and map | `Scripts/Police/LawSheet.cs:323`, `TurfMapHud.cs:3127`/`:3168` | a dead complainant already reads "dead" and drops off the map |
 | The owner deal | `Scripts/Territory/TerritoryEconomy.cs:61` `Deal(citySeed, businessId, forced)` — pure hash; `TerritoryRuntime.Collection.cs:392` **caches it per business**, and `StillTalks:863` reads that cache | the successor, and the cache that must be invalidated |
@@ -96,13 +96,12 @@ case, including a rival house's**: the man is dead, he cannot testify for anybod
 that kept him alive on someone else's case would be a lie about the same fact. Standing goes to
 `Dead`, `LawWire.WitnessKilled` files, the existing banner prints.
 
-**What that actually removes, stated plainly.** A held prisoner's case with nobody willing is
-dismissed on court day (`Tried:722`). But the commoner shape — an open complaint with no
-defendants — is folded as a COUNT on the next man of that house taken within 14 days, and
-`AttachOpenComplaints:238` checks only `Defendants.Count == 0`; it never reads witness standing.
-So killing the complainant does not clear those counts today. EMPT-002 adds the missing rule: a
-case with no willing witness is not folded as a count either. Without it, the killing buys
-nothing on exactly the cases the player kills to bury.
+**What that actually removes, stated plainly.** A held prisoner's case with no evidence is
+dismissed on court day. The commoner shape — an open complaint with no defendants — may be
+folded as a COUNT on the next man of that house taken within 14 days. EMPT-002 makes that require
+actual evidence: a living witness or a body's explicit evidence flag. Killing the complainant
+therefore clears the old extortion complaint without also deleting the murder file created by
+the body. Past 14 days a no-defendant file is removed from the live docket and save entirely.
 
 **The fear.** One event, not two. `OnStreetDeath:913` already files the killing at severity 1.3;
 a second `RecordFear(Killing, 4)` would be 160 on top of 52 through a private method, over the
@@ -171,8 +170,10 @@ Ruling 3 needs words on the screen, or the player learns the rule by being wrong
 
 ### 3.5 Tests, docs, close (EMPT-005)
 
-`PoliceTests`: a dead complainant leaves every case that named him, ours and a rival's; a case
-with no willing witness is not folded as a count; a held prisoner's such case is dismissed.
+`PoliceTests`: a dead complainant leaves every case that named him, ours and a rival's; a plain
+case with no willing witness is not folded, while an evidenced body remains one murder count; a
+held prisoner's empty case is dismissed; unanswered files expire and police crossfire is not
+misattributed.
 `BusinessTests`: invariant 1 (generation 0 is bit-identical to today); the generation deal gives a
 different trait and nerve; the cache is invalidated; the three-day closure carries no bill and
 does not displace an active premises closure. `SaveTests`: a killed owner's generation survives a

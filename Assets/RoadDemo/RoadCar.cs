@@ -4117,22 +4117,57 @@ namespace RoadDemo
         void AdvancePreviewCursor(float spacing)
         {
             if (_previewCursor >= _plannedRoutePreview.Count) return;
-            var here = Position;
-            here.y = 0f;
+            // Road/S is the strongest available identity for the current sample and its
+            // surface height distinguishes an overpass from the road beneath it.
+            var here = Road != null ? PreviewRoadPoint(Road, S, D) : PreviewCurrent();
             var last = Mathf.Min(_plannedRoutePreview.Count - 1, _previewCursor + 8);
             var nearest = _previewCursor;
             var nearestSqr = float.MaxValue;
             for (var i = _previewCursor; i <= last; i++)
             {
                 var point = _plannedRoutePreview[i];
-                point.y = 0f;
                 var sqr = (point - here).sqrMagnitude;
                 if (sqr >= nearestSqr) continue;
                 nearestSqr = sqr;
                 nearest = i;
             }
             var catchup = Mathf.Max(8f, spacing * 2.5f);
-            if (nearestSqr <= catchup * catchup)
+
+            // Normally eight samples are enough and keep this redraw constant-time. If
+            // the map was closed while the car travelled farther, find the FIRST nearby
+            // cluster in the remaining route and catch up in one call. Stopping at that
+            // cluster avoids a later return leg or crossing stealing the monotonic cursor.
+            var catchupSqr = catchup * catchup;
+            if (last < _plannedRoutePreview.Count - 1 &&
+                (nearest == last || nearestSqr > catchupSqr))
+            {
+                var caught = -1;
+                var caughtSqr = float.MaxValue;
+                var rising = 0;
+                for (var i = last + 1; i < _plannedRoutePreview.Count; i++)
+                {
+                    var sqr = (_plannedRoutePreview[i] - here).sqrMagnitude;
+                    if (sqr > catchupSqr)
+                    {
+                        if (caught >= 0) break;
+                        continue;
+                    }
+                    if (sqr < caughtSqr)
+                    {
+                        caught = i;
+                        caughtSqr = sqr;
+                        rising = 0;
+                    }
+                    else if (caught >= 0 && ++rising >= 2)
+                        break;
+                }
+                if (caught >= 0)
+                {
+                    nearest = caught;
+                    nearestSqr = caughtSqr;
+                }
+            }
+            if (nearestSqr <= catchupSqr)
                 _previewCursor = nearest;
         }
 

@@ -1574,7 +1574,12 @@ namespace RoadDemo
         void IntoTheHand()
         {
             if (WeaponPrefab == null || Tf == null) return;
-            var animator = Tf.GetComponentInChildren<Animator>();
+            // A strict door visit hides the whole visitor after he crosses the
+            // threshold. Owner executions still have to use his real humanoid hand:
+            // the inside callback is deliberately fired while that hierarchy is
+            // inactive, so the default active-only lookup would leave him unarmed and
+            // turn a valid visit into a failed order.
+            var animator = Tf.GetComponentInChildren<Animator>(true);
             _armsAnimator = animator;
             Weapon = CrewArms.Attach(animator, WeaponPrefab);
             _aimArm = animator != null ? animator.GetBoneTransform(HumanBodyBones.RightUpperArm) : null;

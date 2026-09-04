@@ -102,7 +102,7 @@ namespace RoadDemo
     /// storefront is a small shop which stands in a gap in the row.</summary>
     public enum ResidentialKind { Row, Corner, Through, Island, Park, Amenity, Storefront }
 
-    public static class ResidentialUnits
+    public static partial class ResidentialUnits
     {
         public static IEnumerable<ResidentialUnit> Houses =>
             All.Where(u => !IsLot(u) && u.Kind != ResidentialKind.Storefront);

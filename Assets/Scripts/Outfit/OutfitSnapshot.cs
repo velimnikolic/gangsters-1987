@@ -307,7 +307,11 @@ namespace LivingCity.Outfit
 
             runner.Book.Jobs.Clear();
             for (var i = 0; dto.jobs != null && i < dto.jobs.Length; i++)
-                runner.Book.Jobs.Add(Restore(dto.jobs[i]));
+            {
+                var job = Restore(dto.jobs[i]);
+                if (job != null)
+                    runner.Book.Jobs.Add(job);
+            }
             runner.Book.RestoreNextJobId(dto.nextJobId);
             runner.RestoreEnding(dto.fallen, dto.fallenOnDay,
                 (OutfitEnding)dto.ending, dto.brokeNights);
@@ -407,11 +411,23 @@ namespace LivingCity.Outfit
 
         static Job Restore(JobDto dto)
         {
+            if (dto == null || !TryEnum(dto.type, out OrderType type) ||
+                !TryEnum(dto.stage, out JobStage stage))
+                return null;
+
+            OrderOutcome? streetOutcome = null;
+            if (dto.streetOutcome >= 0)
+            {
+                if (!TryEnum(dto.streetOutcome, out OrderOutcome restoredOutcome))
+                    return null;
+                streetOutcome = restoredOutcome;
+            }
+
             var job = new Job
             {
                 Id = dto.id,
                 CrewId = dto.crewId,
-                Type = (OrderType)dto.type,
+                Type = type,
                 GangId = dto.gangId,
                 TargetWorth = dto.targetWorth,
                 TargetCharacterId = dto.targetCharacterId,
@@ -422,18 +438,31 @@ namespace LivingCity.Outfit
                 TargetBusinessId = dto.targetBusinessId ?? "",
                 Men = dto.men,
                 IssuedDay = dto.issuedDay,
-                Stage = (JobStage)dto.stage,
+                Stage = stage,
                 TravelHoursLeft = dto.travelHoursLeft,
                 WorkHoursLeft = dto.workHoursLeft,
                 DaysStood = dto.daysStood,
                 BookDepth = dto.bookDepth,
-                StreetOutcome = dto.streetOutcome < 0
-                    ? (OrderOutcome?)null
-                    : (OrderOutcome)dto.streetOutcome,
+                StreetOutcome = streetOutcome,
             };
             for (var i = 0; dto.blockTargets != null && i < dto.blockTargets.Length; i++)
                 job.BlockTargets.Add(dto.blockTargets[i]);
             return job;
+        }
+
+        /// <summary>DTO integers are untrusted at the load boundary. In particular an
+        /// unknown OrderType reaches exhaustive production switches later, far from
+        /// the bad row. Reject that row here instead of planting a delayed exception in
+        /// the running book.</summary>
+        static bool TryEnum<T>(int raw, out T value) where T : struct
+        {
+            if (Enum.IsDefined(typeof(T), raw))
+            {
+                value = (T)Enum.ToObject(typeof(T), raw);
+                return true;
+            }
+            value = default(T);
+            return false;
         }
 
         // ------------------------------------------------------------- the relations

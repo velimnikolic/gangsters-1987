@@ -3106,6 +3106,101 @@ namespace GangstersTools
             };
         }
 
+        // ------------------------------------------------------------ the residential forge
+
+        [CliCommand("gangsters_forge",
+                    "Roll and report one deterministic residential facade sheet. --rebuild stands that " +
+                    "sheet in ForgeDemo; --showroom builds the complete 12-sheet gallery.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "residential", "forge" })]
+        public static object Forge(
+            [CliArg("seed", "Deterministic forge seed.")] int seed = 1987,
+            [CliArg("length", "Building length in 5 m cells (3..13).")] int length = 8,
+            [CliArg("floors", "Apartment floors above the shops (3..5).")] int floors = 4,
+            [CliArg("props", "Optional measured decoration density percent (0..200).")] int propsPercent = ResidentialFacade.DefaultPropsPercent,
+            [CliArg("rebuild", "Replace ForgeDemo with this one sheet and save it.")] bool rebuild = false,
+            [CliArg("showroom", "Build and save all 12 showroom variants; implies rebuild.")] bool showroom = false)
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("The editor is in play mode; leave it first.");
+            if (length < 3 || length > 13)
+                throw new ArgumentOutOfRangeException(nameof(length), "--length must be 3..13 cells.");
+            if (floors < 3 || floors > 5)
+                throw new ArgumentOutOfRangeException(nameof(floors), "--floors must be 3..5.");
+            if (propsPercent < ResidentialFacade.MinPropsPercent ||
+                propsPercent > ResidentialFacade.MaxPropsPercent)
+                throw new ArgumentOutOfRangeException(
+                    nameof(propsPercent),
+                    $"--props must be {ResidentialFacade.MinPropsPercent}.." +
+                    $"{ResidentialFacade.MaxPropsPercent} percent.");
+
+            var sheet = ResidentialFacade.Roll(seed, length, floors, propsPercent);
+            ForgeShowroom.Report sceneReport = null;
+            if (showroom)
+                sceneReport = ForgeShowroom.BuildGallery(seed, propsPercent);
+            else if (rebuild)
+                sceneReport = ForgeShowroom.BuildSingle(seed, length, floors, propsPercent);
+
+            int bays = sheet.Unit?.ShopBays?.Length ?? 0;
+            string[] faults = sheet.Faults == null
+                ? Array.Empty<string>()
+                : sheet.Faults.Select(fault => Convert.ToString(fault)).ToArray();
+            object unit = sheet.Unit == null
+                ? null
+                : new
+                {
+                    sheet.Unit.Name,
+                    sheet.Unit.CW,
+                    sheet.Unit.CD,
+                    kind = sheet.Unit.Kind.ToString(),
+                    sheet.Unit.MaxH,
+                    shopBays = bays,
+                    flats = bays * sheet.Floors,
+                    doors = sheet.Unit.Doors?.Sum() ?? 0,
+                    shops = sheet.Unit.Shops?.Sum() ?? 0,
+                    sheet.Unit.Pieces,
+                };
+
+            return new
+            {
+                passed = faults.Length == 0 && (sceneReport == null || sceneReport.Passed),
+                sheet.Seed,
+                sheet.Length,
+                sheet.Floors,
+                sheet.PropsPercent,
+                sheet.Signature,
+                pieces = sheet.Pieces?.Length ?? 0,
+                props = sheet.Props?.Length ?? 0,
+                faults,
+                unit,
+                rebuilt = sceneReport != null,
+                showroom,
+                scene = sceneReport,
+            };
+        }
+
+        [CliCommand("gangsters_forge_tests",
+                    "Run the shared pure GAN-332 residential-facade fault contracts.",
+                    MainThreadRequired = false,
+                    Tags = new[] { "gangsters", "residential", "forge", "tests" })]
+        public static object ForgeTests()
+        {
+            var result = ResidentialFacadeTests.Run();
+            return new
+            {
+                passed = result.Clean,
+                caught = result.Passed,
+                total = result.Total,
+                faultsPassed = result.FaultsPassed,
+                faultsTotal = result.FaultsTotal,
+                contractsPassed = result.ContractsPassed,
+                contractsTotal = result.ContractsTotal,
+                missing = result.Missing.Select(kind => kind.ToString()).ToArray(),
+                missingContracts = result.MissingContracts,
+                report = result.Report,
+            };
+        }
+
         // ------------------------------------------------------------ the residential harvest
 
         [CliCommand("gangsters_storefront",

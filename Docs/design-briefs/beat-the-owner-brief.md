@@ -69,7 +69,7 @@ name off a case (`WitnessWatch.Tick`), and neither reachable kind has a door to 
 | The telephone | `RoadDemo/TerritoryRuntime.Collection.cs:471` `MaybeRingThePrecinct` — private, two-arg, always `Deed.Extortion` (`:529`), and it is a **roll**: `ComplaintRoll.Chance` with `(1 − standing)²` (`CourtCase.cs:271`) | a public deed-carrying entry that rings BEFORE the fear is filed |
 | The complaint machinery | `RoadDemo/PoliceDispatch.Complaint.cs` — `OpenComplaintCase:773`, the pavement snapshot `SnapshotTheScene:149` / `CopySceneWitnesses:790` (taken when the receiver comes off the hook, `:326`), `TryComplaintCollar:557`, `ComplaintReach` 30 m `:41` | the case a body opens — **without** the collar |
 | The collar's suspect | `RoadDemo/PoliceDispatch.Arrest.cs` — `AccusedNear(door, faction):384` takes the nearest crew OF THAT FACTION, not the crew that fired; `_arrestDeed = call.Call.Charge:361`; `GuiltyNear:619` by contrast needs `ShootersSince` | the reason a body must NOT be routed through a CallOut |
-| The docket | `Scripts/Police/CourtCase.cs` — `AnyWilling:222`, `Verdict:363`, `Leaning:464`; `PrisonPipeline.Cases:150`, `AttachOpenComplaints:229` (folds a defendant-less case as a count worth `ExtraCountDays` 3, `Sentencing.cs:83`), `Tried:700` needs a prisoner | what a murder file is actually worth |
+| The docket | `Scripts/Police/CourtCase.cs` — living witnesses and the distinct `BodyEvidence`; `PrisonPipeline.AttachOpenComplaints` folds an evidenced defendant-less file inside the 14-day memory window, while `Tried` needs a prisoner | what a murder file is actually worth |
 | The witness's body | `RoadDemo/WitnessWatch.cs` — `Register`, `NameOf`, `OrderLean:154`, `TickLeans:179` (reach 4.5 m, patience 120 s, **never repaths**), the death sweep `Tick` | the walk-up SHOOT HIM reuses, and the sweep that takes him off the case |
 | The firing pipeline | `RoadDemo/DemoCrews.Combat.cs:1411-1430` — flash, scatter, loudness, `StreetAlarm.Report`, `HearShot` propagation (`:1424`, which is what makes rivals draw), `CrewGore`; `StrayRound:1628`; `CrewWalker.BarrelOn` private `:4046`, the running-man gate `:4038`, Carrying/Drawn `:68`/`:76` | one civilian execution, built INSIDE that pipeline |
 | The shutdown | `Scripts/Business/BusinessShutdowns.cs` — `DurationOf:54`, `RepairPriceOf:60`, `Shut:169` (an unrefused cause **overwrites** the active entry, `:190`), `DamageRefusal:212` (refuses only Arson/Bomb-active and SmashUp-on-SmashUp), `BusinessRepair.Try:350` (checks only the payer's gang), `Line:386` (a two-way ternary; Bomb already prints "smashed up"), `ShouldAccrueRacketAt:242`; the repair row `DoorMenu.ClosureOf:236` | a one-day closure that cannot be used to erase a real one |
@@ -209,11 +209,10 @@ and the collar, and `GuiltyNear` needs a crew that FIRED, within 45 m, inside 15
 cheapest way to silence a witness would be to shoot him and walk.
 
 **The neighbours open the file directly. No unit is dispatched and no collar is opened.** On
-`StreetAlarm.Death(DeathOf.Civilian)`, attribute the faction the way
-`TerritoryRuntime.OnStreetDeath:913` already does (`AttributeRecentViolence:966`, shots within
-6 s / 40 m), then call `pipeline.OpenCase(Deed.Murder, faction, today, today + DaysToCourt)` and
-copy the same scene snapshot `OpenComplaintCase` copies (`SnapshotTheScene:149`,
-`CopySceneWitnesses:790`).
+`StreetAlarm.Death(DeathOf.Civilian)`, attribute shots within 6 s / 40 m with the stricter murder
+rule: any nearby police round is a competing shooter rather than something discarded. Then call
+`pipeline.OpenCase(Deed.Murder, faction, today, today + DaysToCourt)`, mark the body's own
+evidence, and copy the same scene snapshot `OpenComplaintCase` copies.
 
 **It must not go through a `CallOut`.** A complaint's collar takes its suspect from
 `AccusedNear(door, faction):384` — *the nearest crew of that faction*, not the crew that fired —
@@ -230,7 +229,7 @@ read correctly:**
 * An unattributable death rings nobody: no name, no file, no invented defendant.
   `AttributeRecentViolence` returns `default` when two houses are shooting (`:987`), so a
   bystander caught in a two-sided firefight opens no file while one caught in a one-sided
-  drive-by does.
+  drive-by does. Police and gang fire together is ambiguous for the same reason.
 * `Explosion.cs:68` kills outright with no shot, so a car bomb or a grenade that kills
   bystanders is unattributable and rings nobody. Deliberate for now, named here so nobody reads
   it as a defect.
@@ -246,6 +245,12 @@ longer for every deed", so `ExtraCountDays` stops being a constant: a folded cou
 extortion 2, a resisting 1. The flat 3 stays as the fallback for a count whose deed is unknown.
 This is one number in `Sentencing` and it changes every folded count in the game, so it carries
 its own contract and is named here rather than smuggled in.
+
+The body is evidence in its own right; it does not masquerade as a willing witness, so killing
+the last eyewitness does not erase the murder count while killing the complainant on an ordinary
+extortion file still does. A no-defendant file is physically removed after the same 14-day
+window, and the map reads a separate open-case index, so bodies cannot grow the save or the
+per-frame witness scan for the lifetime of the campaign.
 
 **The indoor act.** `OpenComplaintCase` copies the pavement snapshot unconditionally
 (`:790`) with `SightRadius` 25 m and up to 3 eyewitnesses (`CivilianAgent.cs:1222`). A beating

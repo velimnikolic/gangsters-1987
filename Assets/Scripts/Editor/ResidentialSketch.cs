@@ -22,6 +22,7 @@ namespace LivingCity.EditorTools
         public const string DemoScene = "Assets/Scenes/ResidentialDemo.unity";
         const string Root = "RESIDENTIAL";
         const string FuelRoot = Root + " pumpdemo full functional";
+        const string FireRoot = Root + " firestation full functional";
 
         /// <summary>The blocks the demo scene stands. The large Court recipe is intentionally
         /// absent here: at its minimum 80 x 80 m it needs a dedicated courtyard programme,
@@ -83,7 +84,7 @@ namespace LivingCity.EditorTools
             Debug.Log(said);
         }
 
-        [MenuItem("Tools/City/Residential/Demo Scene (nine blocks)", priority = 42)]
+        [MenuItem("Tools/City/Residential/Demo Scene (ten blocks)", priority = 42)]
         public static void DemoMenu()
         {
             string said = Demo(FreshSeed());
@@ -102,6 +103,36 @@ namespace LivingCity.EditorTools
                 return;
             }
             string said = AddFuelBlock(scene, FreshSeed());
+            Debug.Log("[Demo] " + said);
+            EditorUtility.DisplayDialog("Residential demo", said, "OK");
+        }
+
+        [MenuItem("Tools/City/Residential/Add Full Functional Fire Station Block", priority = 44)]
+        public static void AddFireStationMenu()
+        {
+            var scene = SceneManager.GetActiveScene();
+            if (scene.path != DemoScene)
+            {
+                EditorUtility.DisplayDialog("Residential demo",
+                    "Open ResidentialDemo before adding its functional fire-station block.", "OK");
+                return;
+            }
+            string said = AddFireStationBlock(scene, FreshSeed());
+            Debug.Log("[Demo] " + said);
+            EditorUtility.DisplayDialog("Residential demo", said, "OK");
+        }
+
+        [MenuItem("Tools/City/Residential/Refresh Full Functional Fire Station Block", priority = 45)]
+        public static void RefreshFireStationMenu()
+        {
+            var scene = SceneManager.GetActiveScene();
+            if (scene.path != DemoScene)
+            {
+                EditorUtility.DisplayDialog("Residential demo",
+                    "Open ResidentialDemo before refreshing its functional fire-station block.", "OK");
+                return;
+            }
+            string said = RefreshFireStationBlock(scene, FreshSeed());
             Debug.Log("[Demo] " + said);
             EditorUtility.DisplayDialog("Residential demo", said, "OK");
         }
@@ -205,6 +236,14 @@ namespace LivingCity.EditorTools
             said.AppendLine($"pumpdemo-full  {fuel.stood}");
             index++;
 
+            // The compact precinct is a shared civic composer, not a ResidentialLot
+            // recipe. It still belongs inside this grid: the integration inserts it in
+            // the second row, moves only the car-yard root to retain the normal street,
+            // and never re-deals any of the blocks above.
+            var precinct = ResidentialPolicePrecinctSketch.EnsureInGeneratedDemo(scene);
+            said.AppendLine($"police-precinct {precinct.report}");
+            if (precinct.passed) index++;
+
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, DemoScene);
 
@@ -251,6 +290,83 @@ namespace LivingCity.EditorTools
             return fuel.root.name + " added without rebuilding the other blocks; " + fuel.stood;
         }
 
+        /// <summary>
+        /// Append the complete Synty fire station to a separate review row. This is the
+        /// same non-destructive contract as <see cref="AddFuelBlock"/>: no residential
+        /// recipe is re-dealt and a repeated call changes nothing. Its two authored fire
+        /// engines are wired to the shared RoadCar/PatrolDocking runtime in Play.
+        /// </summary>
+        public static string AddFireStationBlock(Scene scene, int seed)
+        {
+            if (!scene.IsValid() || !scene.isLoaded) return "ResidentialDemo is not loaded.";
+            foreach (var root in scene.GetRootGameObjects())
+                if (root.name.StartsWith(FireRoot, System.StringComparison.Ordinal))
+                    return root.name + " is already present; nothing was changed.";
+
+            float gap = Street * ResidentialLot.Cell;
+            float nextMinZ = NextReviewRow(scene, gap);
+            var station = ComposeFireStation(scene, seed);
+            var bounds = FireStationBlock.PreviewBounds;
+            station.root.transform.position = new Vector3(
+                gap - bounds.xMin, 0f, nextMinZ - bounds.yMin);
+            EditorSceneManager.MarkSceneDirty(scene);
+            Selection.activeGameObject = station.root;
+            return station.root.name + " added without rebuilding the other blocks; " +
+                   station.stood + ", two working fire-engine routes";
+        }
+
+        /// <summary>
+        /// Recompose only the existing fire-station root in place. This lets its shared
+        /// recipe gain props or functional wiring without regenerating a single residential
+        /// lot, moving the manually arranged review rows, or touching PumpDemo.
+        /// </summary>
+        public static string RefreshFireStationBlock(Scene scene, int seed)
+        {
+            if (!scene.IsValid() || !scene.isLoaded) return "ResidentialDemo is not loaded.";
+            GameObject existing = null;
+            foreach (var root in scene.GetRootGameObjects())
+                if (root.name.StartsWith(FireRoot, System.StringComparison.Ordinal))
+                {
+                    existing = root;
+                    break;
+                }
+            if (existing == null) return AddFireStationBlock(scene, seed);
+
+            var position = existing.transform.position;
+            var rotation = existing.transform.rotation;
+            var scale = existing.transform.localScale;
+            int sibling = existing.transform.GetSiblingIndex();
+            UnityEngine.Object.DestroyImmediate(existing);
+
+            var station = ComposeFireStation(scene, seed);
+            station.root.transform.SetPositionAndRotation(position, rotation);
+            station.root.transform.localScale = scale;
+            station.root.transform.SetSiblingIndex(sibling);
+            EditorSceneManager.MarkSceneDirty(scene);
+            Selection.activeGameObject = station.root;
+            return station.root.name + " refreshed in place; all other demo roots were left " +
+                   "untouched; " + station.stood + ", two working fire-engine routes";
+        }
+
+        static float NextReviewRow(Scene scene, float gap)
+        {
+            bool found = false;
+            float maxZ = 0f;
+            foreach (var root in scene.GetRootGameObjects())
+            {
+                if (!root.name.StartsWith(Root + " ", System.StringComparison.Ordinal)) continue;
+                var renderers = root.GetComponentsInChildren<Renderer>(true);
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    maxZ = found ? Mathf.Max(maxZ, renderers[i].bounds.max.z)
+                                 : renderers[i].bounds.max.z;
+                    found = true;
+                }
+            }
+            return found ? Mathf.Ceil(maxZ / ResidentialLot.Cell) * ResidentialLot.Cell + gap
+                         : gap;
+        }
+
         static (GameObject root, FuelStationBlock.Stood stood) ComposeFuel(Scene scene, int seed)
         {
             var root = new GameObject($"{FuelRoot} seed {seed}");
@@ -259,6 +375,19 @@ namespace LivingCity.EditorTools
             // every child has been parented. FuelStation and StreetKit both place world
             // transforms while composing.
             var stood = FuelStationBlock.Compose(root.transform, seed);
+            return (root, stood);
+        }
+
+        static (GameObject root, FireStationBlock.Stood stood) ComposeFireStation(
+            Scene scene, int seed)
+        {
+            var root = new GameObject($"{FireRoot} seed {seed}");
+            SceneManager.MoveGameObjectToScene(root, scene);
+            // Shared composers measure while they stand their children, so this block is
+            // also composed at the origin and translated only once it is complete.
+            var stood = FireStationBlock.Compose(root.transform, Raise);
+            var live = root.AddComponent<FireStationBlockRuntime>();
+            live.Configure(seed, stood.Vehicles, stood.FireEngines, stood.BayDoors);
             return (root, stood);
         }
 

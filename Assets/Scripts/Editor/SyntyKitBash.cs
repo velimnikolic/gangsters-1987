@@ -5,8 +5,8 @@ using UnityEngine;
 namespace LivingCity.EditorTools
 {
     /// <summary>
-    /// Assembles the buildings no Synty demo scene ships assembled - bank, hospital, fire
-    /// station, detached house - from the 2.5 m wall module kits, deterministically (a
+    /// Assembles the buildings no Synty demo scene ships assembled - bank, hospital and
+    /// detached houses - from the 2.5 m wall module kits, deterministically (a
     /// recipe is a table, not a random draw), and bakes each through the same
     /// SyntyKitExtractor.BakeGroup pipeline the demo lifts use: one combined mesh per
     /// material, pivot at the footprint centre, front on +Z.
@@ -20,10 +20,9 @@ namespace LivingCity.EditorTools
     public static class SyntyKitBash
     {
         const string PalmBld = "Assets/Synty/PolygonPalmCity/Prefabs/Buildings/";
-        const string PoliceBld = "Assets/Synty/PolygonPoliceStation/Prefabs/Buildings/";
         const string GenBase = "Assets/Synty/PolygonGeneric/Prefabs/Base/";
 
-        public const int Version = 3;
+        public const int Version = 4;
         const string VersionPath = SyntyKitExtractor.BuildingsDir + "/KitBashVersion.txt";
 
         const float M = 2.5f;   // the module
@@ -62,24 +61,6 @@ namespace LivingCity.EditorTools
                 name = "building-hospital", w = 9, d = 6, floors = 3,
                 wall = GenBase + "SM_Bld_Base_Wall_Window_01.prefab",
                 door = GenBase + "SM_Bld_Base_Wall_Door_Double_01.prefab", doorModules = 1,
-                roofSlab = PalmBld + "SM_Bld_Roof_Flat_01.prefab",
-                roofEdge = PalmBld + "SM_Bld_Roof_Edge_Straight_01.prefab",
-            },
-            // Front row is wall/garage/garage/wall against a 7-module facade; the engine
-            // house look does the fire-station reading on its own.
-            new()
-            {
-                name = "building-firestation", w = 7, d = 4, floors = 1,
-                wall = PoliceBld + "SM_Bld_Wall_Window_Large_01.prefab",
-                door = null,
-                frontRow = new[]
-                {
-                    (PalmBld + "SM_Bld_Wall_Trim_01.prefab", 1),
-                    (PalmBld + "SM_Bld_Wall_Door_Garage_01.prefab", 2),
-                    (PalmBld + "SM_Bld_Wall_Trim_01.prefab", 1),
-                    (PalmBld + "SM_Bld_Wall_Door_Garage_02.prefab", 2),
-                    (PalmBld + "SM_Bld_Wall_Trim_01.prefab", 1),
-                },
                 roofSlab = PalmBld + "SM_Bld_Roof_Flat_01.prefab",
                 roofEdge = PalmBld + "SM_Bld_Roof_Edge_Straight_01.prefab",
             },

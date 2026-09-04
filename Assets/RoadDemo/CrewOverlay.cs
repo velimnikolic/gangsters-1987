@@ -965,12 +965,16 @@ namespace RoadDemo
             if (!plane.Raycast(ray, out float enter)) return;
             var world = ray.GetPoint(enter);
 
-            // A crew already behind the wheel gets vehicle orders at a road point. The
-            // ordinary one-click walk/drive below remains unchanged for crews on foot;
-            // inside a car the card is where DRIVE HERE and the deliberate roadblock
-            // order can be distinguished without inventing a second input gesture.
+            // A plain right click keeps the town's core MOVE/DRIVE verb one-click, even
+            // behind the wheel. Holding SHIFT asks for the less common road-order card
+            // instead: BLOCK THE ROAD HERE and MOVE ON must be explicit choices, but
+            // must not turn every ordinary drive into a two-click modal interaction.
             var selectedCar = _crews.Selected.Car;
-            if (selectedCar != null && selectedCar.Occupant == _crews.Selected)
+            var keys = Keyboard.current;
+            bool roadOrders = keys != null &&
+                              (keys.leftShiftKey.isPressed || keys.rightShiftKey.isPressed);
+            if (roadOrders && selectedCar != null &&
+                selectedCar.Occupant == _crews.Selected)
             {
                 OpenRoadOrders(selectedCar, world, up);
                 return;
@@ -1084,6 +1088,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardRoadCar = null;
             _cardBusiness = default;
             _cardBag = bag;
             _cardCrew = crew;
@@ -1119,6 +1124,7 @@ namespace RoadDemo
             _cardTarget = target;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardRoadCar = null;
             _cardBag = null;
             _cardBusiness = default;
             _cardCrew = crew;
@@ -1282,6 +1288,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = front;
             _cardPlantCar = null;
+            _cardRoadCar = null;
             _cardBag = null;
             _cardBusiness = default;
             _cardCrew = crew;
@@ -1420,6 +1427,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardRoadCar = null;
             _cardBag = null;
             _cardBusiness = default;
             _cardCrew = crew;
@@ -1472,6 +1480,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardRoadCar = null;
             _cardBag = null;
             _cardBusiness = default;
             _cardCrew = crew;
@@ -1530,6 +1539,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = front;
             _cardPlantCar = null;
+            _cardRoadCar = null;
             _cardBag = null;
             _cardBusiness = default;
             _cardCrew = crew;
@@ -1694,6 +1704,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = null;
+            _cardRoadCar = null;
             _cardBag = null;
             _cardBusiness = businessId;
             _cardCrew = _crews.Selected;
@@ -2104,6 +2115,7 @@ namespace RoadDemo
             _cardTarget = null;
             _cardFront = null;
             _cardPlantCar = car;
+            _cardRoadCar = null;
             _cardBag = null;
             _cardBusiness = default;
             _cardCrew = crew;
@@ -2305,7 +2317,8 @@ namespace RoadDemo
                            _cardFront != null ||
                            _cardBusiness.IsValid ||
                            _cardBag != null ||
-                           (_cardRoadCar != null && _cardRoadCar.Tf != null && !_cardRoadCar.Wrecked) ||
+                           (_cardRoadCar != null && _cardRoadCar.Tf != null &&
+                            !_cardRoadCar.Wrecked && _cardRoadCar.Occupant == _cardCrew) ||
                            (_cardPlantCar != null && _cardPlantCar.Tf != null && !_cardPlantCar.Wrecked);
 
             // And somebody to ask it of. A SHOP's card is the one that is allowed to

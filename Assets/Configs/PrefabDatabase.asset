@@ -88,7 +88,6 @@ MonoBehaviour:
       - {fileID: 724572343483227218, guid: d5df29e8f75de400c9c32aa959202027, type: 3}
       - {fileID: 1267132879168039357, guid: 839106d335e2949b49a55a10dc76c6de, type: 3}
       - {fileID: 520219829752768799, guid: 45b24489d7f0c4bf08041fe450dbaf08, type: 3}
-      - {fileID: 6871741331354168810, guid: bb19718a446a448ffa99f982181dc2bc, type: 3}
       - {fileID: 8548573141037604992, guid: 0a88d434f6262457f8290989e291a8d9, type: 3}
       - {fileID: 8611283206950534538, guid: cefbcbb98a3b74f5fb5631ab84b0e56b, type: 3}
       rearPrefabs: []
@@ -1052,7 +1051,6 @@ MonoBehaviour:
   facadeYawFixes: []
   uniqueBuildings:
   - {fileID: 520219829752768799, guid: 45b24489d7f0c4bf08041fe450dbaf08, type: 3}
-  - {fileID: 6871741331354168810, guid: bb19718a446a448ffa99f982181dc2bc, type: 3}
   - {fileID: 2380803296569820005, guid: 740b9e77fe3db437a851165e131e488a, type: 3}
   - {fileID: 8548573141037604992, guid: 0a88d434f6262457f8290989e291a8d9, type: 3}
   - {fileID: 5902398185701017002, guid: e027c23a19d9c47aeb45398c7a22a616, type: 3}

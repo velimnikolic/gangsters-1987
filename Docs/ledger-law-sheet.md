@@ -47,22 +47,29 @@ No odds are ever printed as a number. The player is meant to expect the court, n
 
 **`CaseStatus.Folded`**: a case whose counts were folded into a later one (`AttachOpenComplaints`, `ReBook`), or every man of which was taken off it before a judge saw one, is `Folded` — not `Tried`. Before this, three code paths stamped `Tried` on cases nobody had been tried on, and the archive would have printed them as trials that happened.
 
-**The lapse.** A man who skips his bail stays a defendant — that is the GAN-245 ruling, and it is what lets a re-arrest fold the old charge in as a count. But `DayTick` now folds an open case whose court day is more than `ComplaintMemoryDays` behind and whose every remaining defendant is out of the pipe. Otherwise the card sat on the docket for the rest of the campaign, its witness markers on the map, for a trial that could not be listed.
+**The lapse.** A man who skips his bail stays a defendant — that is the GAN-245 ruling, and it is what lets a re-arrest fold the old charge in as a count. `DayTick` folds such a case once its court day is more than `ComplaintMemoryDays` behind and every remaining defendant is out of the pipe. A complaint or body file with no defendant gets that same full 14-day chance to become a count, then is removed: it has no verdict to archive. TurfMap reads a separate live-case index, so its witness scan is bounded by the open docket rather than every historical file.
 
 **The file is version 3; versions 1 and 2 are migrated.** Version 1 predates the docket. `PrisonSnapshot.MigrateFromBeforeTheDocket` puts each man still awaiting court onto a docket of his own with the one witness such a record actually amounts to: `PoliceFoundThem`, the weakest thing on it. Version 2 has the docket but no proprietor generations, so every counter replays generation zero. Version 3 stores only the small per-business generation integers; names and owner profiles are deterministically re-dealt from them.
 
 **Cases are saved.** They were not, at all: `PrisonPipeline.RestoreFrom` restored the prisoners and nothing else, and `PrisonerDto` carried seven of twelve fields. A man saved HELD came back with `CaseId = -1`, which the trial reads as "no docket, no defence" and converts to a conviction with no roll — every witness the player had leaned on counted for nothing the moment he loaded. `Save/PrisonSnapshot.cs` is now the ONE conversion, called by `CampaignSave` and by the contract that guards it; the fixture used to hand-roll its own copy of the DTO fields, which is exactly why nobody noticed.
 
 **A civilian body opens a murder file without a collar.** It names a house only when one recent
-shooter is uniquely attributable (six seconds, forty metres); an ambiguous, unattributed or
-police killing invents no case and no defendant. The same frozen pavement witnesses used by an
-arrest go on that file. Indoor owner beatings carry only the complainant — nobody outside becomes
-an eyewitness through a wall.
+criminal shooter is uniquely attributable (six seconds, forty metres); another house or any
+nearby police round makes it ambiguous, and an ambiguous death invents no case or defendant. The
+same frozen pavement witnesses used by an arrest go on that file, but the body is stored as its
+own evidence so the file does not vanish when those witnesses do. Indoor owner beatings carry
+only the complainant — nobody outside becomes an eyewitness through a wall.
 
 **A dead witness is gone everywhere.** Killing a proprietor marks his willing complainant name
-dead on every open case for that business, including another family's. A complaint with nobody
-willing can neither be tried nor folded onto a later arrest. Counts that can be folded keep their
-deed's weight: `floor(BandLow / 3)`, minimum one day, with three days only as the legacy fallback.
+dead on every open case for that business, including another family's. A plain complaint with
+nobody willing can neither be tried nor folded onto a later arrest; a murder body remains evidence
+without being called a witness. Counts that can be folded keep their deed's weight:
+`floor(BandLow / 3)`, minimum one day, with three days only as the legacy fallback.
+
+**Save enum integers stop at the boundary.** Unknown order types are dropped before they enter a
+crew's book; invalid custody values take conservative recoverable defaults, while invalid nested
+witness and verdict rows are discarded rather than inventing evidence or a judgment. Exhaustive
+order, deed and verdict tables therefore never receive arbitrary JSON integers.
 
 ## The jumps
 

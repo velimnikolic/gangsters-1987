@@ -135,8 +135,10 @@ namespace RoadDemo
             var rooms = shell.GetComponent<ResidentialStorefrontShell>();
             if (rooms == null) rooms = shell.gameObject.AddComponent<ResidentialStorefrontShell>();
             storefrontShellMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShellMaterial);
-            rooms.Configure(layout.Openings, storefrontShellMaterial);
-            BuildLiveStorefronts(building, unit, layout.Openings);
+            storefrontShutterMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShutterMaterial);
+            rooms.Configure(layout.Openings, plan.ClosedMask,
+                            storefrontShellMaterial, storefrontShutterMaterial);
+            BuildLiveStorefronts(building, unit, layout.Openings, stood);
 
             stood.Storefronts += layout.Openings.Length;
             yield return 0;
@@ -173,7 +175,7 @@ namespace RoadDemo
         /// <summary>Create/rebind one independently live facade per doored logical bay.</summary>
         static void BuildLiveStorefronts(
             GameObject building, ResidentialUnit unit,
-            ResidentialStorefrontOpening[] measured)
+            ResidentialStorefrontOpening[] measured, Stood stood = null)
         {
             // Named kit venues (pizzapub/radnja) keep the legacy damage and doorway path;
             // EPIC 32 addresses shop bays embedded in residential buildings only.
@@ -359,6 +361,9 @@ namespace RoadDemo
             for (int i = logical.Count; i < existing.Count; i++)
                 if (existing[i] != null && existing[i].transform.parent == building.transform)
                     existing[i].gameObject.SetActive(false);
+            if (stood != null)
+                for (int i = 0; i < logical.Count; i++)
+                    stood.StorefrontBays += logical[i].Members.Count;
         }
 
         static MeshFilter FindModuleFilter(
@@ -1054,9 +1059,8 @@ namespace RoadDemo
         static ResidentialUnit ExistingStorefrontUnit(string objectName)
         {
             if (string.IsNullOrEmpty(objectName)) return null;
-            for (int i = 0; i < ResidentialUnits.All.Length; i++)
+            foreach (var unit in ResidentialUnits.Known)
             {
-                var unit = ResidentialUnits.All[i];
                 if (objectName == unit.Name ||
                     objectName.StartsWith(unit.Name + " (", StringComparison.Ordinal))
                     return unit;

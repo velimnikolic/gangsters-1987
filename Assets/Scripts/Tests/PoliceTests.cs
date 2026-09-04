@@ -66,6 +66,8 @@ namespace LivingCity.Tests
             ("ROAD003_JeopardyIsCapped", ROAD003_JeopardyIsCapped),
             ("ROAD003_PreSeatAmbushIsASpring", ROAD003_PreSeatAmbushIsASpring),
             ("ROAD004_TheWalkHomeIsBounded", ROAD004_TheWalkHomeIsBounded),
+            ("ROAD004_DeadTinLeavesTheFleetBook", ROAD004_DeadTinLeavesTheFleetBook),
+            ("ROAD004_ExceptionalStagesHaveBackstops", ROAD004_ExceptionalStagesHaveBackstops),
             ("ROAD006_ALiveJourneySavesAtItsSource", ROAD006_ALiveJourneySavesAtItsSource),
             ("HeldMeansHeldUntilAJudgeSaysOtherwise", HeldMeansHeldUntilAJudgeSaysOtherwise),
             ("TheVerdictLandsWhenTheTransferArrives", TheVerdictLandsWhenTheTransferArrives),
@@ -95,9 +97,12 @@ namespace LivingCity.Tests
             ("TheBeatingIsMeasuredBeforeItFrightensHim", TheBeatingIsMeasuredBeforeItFrightensHim),
             ("TheOwnersDocketMakesTheBeatingTampering", TheOwnersDocketMakesTheBeatingTampering),
             ("ABodyOpensOneUncollaredMurderFile", ABodyOpensOneUncollaredMurderFile),
+            ("PoliceFireMakesABodyUnattributable", PoliceFireMakesABodyUnattributable),
             ("AnIndoorComplaintHasNoPavementWitnesses", AnIndoorComplaintHasNoPavementWitnesses),
             ("TheDeadOwnerLeavesEveryOpenCase", TheDeadOwnerLeavesEveryOpenCase),
             ("ADeadComplaintCannotBecomeACount", ADeadComplaintCannotBecomeACount),
+            ("ABodyStillBecomesOneCountWithoutWitnesses", ABodyStillBecomesOneCountWithoutWitnesses),
+            ("UnansweredFilesExpireWithTheirMemory", UnansweredFilesExpireWithTheirMemory),
             ("AHoodGetsLessAndAMarkedLieutenantMore", AHoodGetsLessAndAMarkedLieutenantMore),
             ("ALawyerCutsTheDaysButNotLife", ALawyerCutsTheDaysButNotLife),
             ("AFrightenedOwnerDoesNotRing", AFrightenedOwnerDoesNotRing),
@@ -755,6 +760,37 @@ namespace LivingCity.Tests
                 "ROAD-005: THE LAW reads the shared carriage stages in words.");
         }
 
+        static void ROAD004_DeadTinLeavesTheFleetBook(List<string> failures)
+        {
+            Want(failures,
+                PoliceFleet.CountsAsBody(wrecked: false, engineDead: false,
+                    retiredDerelict: false) &&
+                !PoliceFleet.CountsAsBody(wrecked: true, engineDead: false,
+                    retiredDerelict: false) &&
+                !PoliceFleet.CountsAsBody(wrecked: false, engineDead: true,
+                    retiredDerelict: false) &&
+                !PoliceFleet.CountsAsBody(wrecked: false, engineDead: false,
+                    retiredDerelict: true),
+                "ROAD-004: wrecks, shot-out engines and halted derelicts must not occupy fleet slots.");
+        }
+
+        static void ROAD004_ExceptionalStagesHaveBackstops(List<string> failures)
+        {
+            Want(failures,
+                CustodyPlan.StrandedBackstopSeconds > 300f &&
+                CustodyPlan.WalkingBackstopSeconds > 300f &&
+                CustodyPlan.CourtExitBackstopSeconds > 0f &&
+                CustodyPlan.StrandedBackstopSeconds < float.PositiveInfinity &&
+                CustodyPlan.WalkingBackstopSeconds < float.PositiveInfinity &&
+                CustodyPlan.CourtExitBackstopSeconds < float.PositiveInfinity,
+                "ROAD-004: hostile recovery, threshold walking and court exit need finite, explicit ceilings.");
+            Want(failures,
+                !CustodyPlan.BackstopExpired(899.99f, 900f) &&
+                CustodyPlan.BackstopExpired(900f, 900f) &&
+                !CustodyPlan.BackstopExpired(900f, float.PositiveInfinity),
+                "ROAD-004: an absolute state deadline expires once and cannot be an infinite retry clock.");
+        }
+
         static void ROAD006_ALiveJourneySavesAtItsSource(List<string> failures)
         {
             var roster = BookedRoster(out var man, out var pipe);
@@ -1118,8 +1154,26 @@ namespace LivingCity.Tests
             Want(failures,
                 file != null && file.Deed == Deed.Murder && file.GangId == 7 &&
                 file.BusinessId == "biz:counter" && file.Defendants.Count == 0 &&
-                file.CourtDay == 12 + Sentencing.DaysToCourt,
+                file.CourtDay == 12 + Sentencing.DaysToCourt && file.BodyEvidence,
                 "CNTR-004: the body did not open a defendant-less murder file at its door.");
+        }
+
+        static void PoliceFireMakesABodyUnattributable(List<string> failures)
+        {
+            var oneHouse = RoadDemo.TerritoryRuntime.MurderAttribution(
+                new[] { 7, 7 });
+            var crossfire = RoadDemo.TerritoryRuntime.MurderAttribution(
+                new[] { 7, 4 });
+            var policeAndGang = RoadDemo.TerritoryRuntime.MurderAttribution(
+                new[] { 7, RoadDemo.StreetAlarm.PoliceFaction });
+            var policeOnly = RoadDemo.TerritoryRuntime.MurderAttribution(
+                new[] { RoadDemo.StreetAlarm.PoliceFaction });
+
+            Want(failures, oneHouse.IsValid && oneHouse.Value == 7,
+                "CNTR-AUDIT: repeated fire by one house was not attributed to it.");
+            Want(failures, !crossfire.IsValid && !policeAndGang.IsValid &&
+                           !policeOnly.IsValid,
+                "CNTR-AUDIT: a body beside competing or police fire was charged to a gang.");
         }
 
         static void AnIndoorComplaintHasNoPavementWitnesses(List<string> failures)
@@ -1171,6 +1225,55 @@ namespace LivingCity.Tests
                 pipe.AttachOpenComplaints(arrest, 10) == 0 &&
                 dead.Status == CaseStatus.Open && arrest.Counts.Count == 0,
                 "EMPT-002: a complaint with nobody willing was folded into a later arrest.");
+        }
+
+        static void ABodyStillBecomesOneCountWithoutWitnesses(List<string> failures)
+        {
+            var pipe = new PrisonPipeline();
+            var body = RoadDemo.PoliceDispatch.OpenCivilianDeathCase(
+                pipe, new TerritoryGangId(7), 10, "biz:counter", "THE COUNTER");
+            body.Witnesses.Add(new Witness
+            {
+                Kind = WitnessKind.Eyewitness,
+                Standing = WitnessStanding.Dead,
+            });
+            var arrest = pipe.OpenCase(Deed.Affray, 7, 11, 12);
+
+            Want(failures, !body.AnyWilling() && body.AnyEvidence(),
+                "CNTR-AUDIT: a murder body disappeared with its last living witness.");
+            Want(failures,
+                pipe.AttachOpenComplaints(arrest, 11) == 1 &&
+                body.Status == CaseStatus.Folded && arrest.Counts.Count == 1 &&
+                pipe.FoldedCountDays(arrest) ==
+                    Sentencing.ExtraCountDays(Deed.Murder),
+                "CNTR-AUDIT: a witnessless body did not survive as exactly one murder count.");
+        }
+
+        static void UnansweredFilesExpireWithTheirMemory(List<string> failures)
+        {
+            const int opened = 10;
+            var pipe = new PrisonPipeline();
+            var body = RoadDemo.PoliceDispatch.OpenCivilianDeathCase(
+                pipe, new TerritoryGangId(7), opened, "biz:counter", "THE COUNTER");
+            var complaint = pipe.OpenCase(
+                Deed.Extortion, 7, opened, 0, "biz:other", "THE OTHER SHOP");
+            var open = new List<CourtCase>();
+
+            pipe.DayTick(opened + PrisonPipeline.ComplaintMemoryDays, null);
+            pipe.OpenCases(7, open, opened + PrisonPipeline.ComplaintMemoryDays);
+            Want(failures,
+                pipe.FindCase(body.CaseId) == body &&
+                pipe.FindCase(complaint.CaseId) == complaint &&
+                open.Contains(body) && open.Contains(complaint),
+                "CNTR-AUDIT: an unanswered file expired inside its full memory window.");
+
+            pipe.DayTick(opened + PrisonPipeline.ComplaintMemoryDays + 1, null);
+            pipe.OpenCases(7, open, opened + PrisonPipeline.ComplaintMemoryDays + 1);
+            Want(failures,
+                pipe.FindCase(body.CaseId) == null &&
+                pipe.FindCase(complaint.CaseId) == null &&
+                open.Count == 0,
+                "CNTR-AUDIT: expired defendant-less files stayed in the save/map index.");
         }
 
         static void AssaultIsWorseThanAffrayAndBetterThanMurder(List<string> failures)
@@ -2414,12 +2517,12 @@ namespace LivingCity.Tests
                            file.VerdictFor(man.Id).Outcome == CaseOutcome.BailForfeit,
                 "LAPSE: carrying the forfeit it collected, so the archive says what he did.");
 
-            // A complaint nobody was ever taken for has no defendants and is NOT swept:
-            // that one is what becomes an extra count.
+            // A complaint nobody was ever taken for can become a count only during
+            // the same memory window; after that it is neither tried nor archived.
             var complaint = pipe.OpenCase(Deed.Extortion, 0, 10, 0, "shop-9");
             pipe.DayTick(500, null);
-            Want(failures, complaint.Status == CaseStatus.Open,
-                "LAPSE: a complaint nobody answered for is left where it is.");
+            Want(failures, pipe.FindCase(complaint.CaseId) == null,
+                "LAPSE: a complaint past its count window stayed in the live/save docket.");
         }
 
         static CourtCase WordAgainstWord(PrisonPipeline pipe, int day)

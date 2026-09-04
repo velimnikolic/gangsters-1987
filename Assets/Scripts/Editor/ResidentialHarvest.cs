@@ -1299,7 +1299,7 @@ namespace LivingCity.EditorTools
             sb.AppendLine("    /// storefront is a small shop which stands in a gap in the row.</summary>");
             sb.AppendLine("    public enum ResidentialKind { Row, Corner, Through, Island, Park, Amenity, Storefront }");
             sb.AppendLine();
-            sb.AppendLine("    public static class ResidentialUnits");
+            sb.AppendLine("    public static partial class ResidentialUnits");
             sb.AppendLine("    {");
             sb.AppendLine("        public static IEnumerable<ResidentialUnit> Houses =>");
             sb.AppendLine("            All.Where(u => !IsLot(u) && u.Kind != ResidentialKind.Storefront);");
