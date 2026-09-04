@@ -96,6 +96,7 @@ namespace RoadDemo
         bool _footSent;              // a pair has been sent to this incident
         bool _escortWanted;          // the pair was far, or there was none: a car must go too
         bool _escortSent;            // and it has
+        readonly List<IPoliceUnit> _footTried = new List<IPoliceUnit>();   // sent to this incident once
         int _rank;
         readonly List<CrewWalker> _shooters = new List<CrewWalker>();
 
@@ -223,6 +224,7 @@ namespace RoadDemo
                 _called = false;
                 _carsSent = 0;
                 _footSent = false;
+                _footTried.Clear();
                 _escortWanted = false;
                 _escortSent = false;
                 _officerDied = false;
@@ -340,6 +342,7 @@ namespace RoadDemo
 
             for (int i = _squads.Count - 1; i >= 0; i--) TickSquad(_squads[i], dt); // Done() removes
             TickFoot();
+            TickPending();
             TickSwarm(dt);
             TickWanted(dt);
             TickCustody(dt);
@@ -369,46 +372,7 @@ namespace RoadDemo
         {
             var scene = StreetAlarm.Incident;
             int wanted = CarsWanted();
-            bool any = false;
-            // THE NEAREST PAIR COMES, WHEREVER IT IS (the user's rule, 2026-09-04) - on
-            // the first call, or on a later one if nobody on foot was free at the first.
-            // Measured before anybody is sent: a pair that has just been routed is no
-            // longer free and would not be found afterwards.
-            if (!_footSent)
-            {
-                var foot = Nearest(scene, carries: false, anyDistance: true, out var footD);
-                // And EVERY man on foot who could hear it turns out, not just the nearest.
-                // Two officers a block apart both heard the same shots; one of them
-                // walking on as though he had not is the thing that reads as nobody
-                // being home.
-                foreach (var u in _units)
-                {
-                    if (u.Carries || !u.Available || u.Tf == null) continue;
-                    if ((u.Position - scene).sqrMagnitude > Earshot * Earshot) continue;
-                    u.RouteTo(scene, 6f);
-                    any = true;
-                    _footSent = true;
-                }
-                if (foot != null)
-                {
-                    if (foot.Available) foot.RouteTo(scene, 6f);   // not one of those who heard it
-                    any = true;
-                    _footSent = true;
-                }
-                // Past 150 m a car goes out beside him, and a city with nobody free on
-                // foot sends the car alone - the nearest car there is, not the nearest
-                // inside the heat rule's reach. Whoever arrives first makes the arrest.
-                if (LivingCity.Police.PoliceProcedure.CarJoinsFootResponse(foot != null, footD))
-                    _escortWanted = true;
-            }
-            // The car a far pair needs is looked for on every call until one is free:
-            // decided once, with the pair, but not given up on because every car in the
-            // city happened to be out at that moment.
-            if (_escortWanted && !_escortSent)
-            {
-                var escort = Nearest(scene, carries: true, anyDistance: true, out _);
-                if (escort != null) { SendCar(escort, scene); any = true; _escortSent = true; }
-            }
+            bool any = SendFoot(scene) | SendEscort(scene);
             // and the heat's cars, which stay station-local (GAN-220)
             while (_carsSent < wanted)
             {
@@ -419,6 +383,70 @@ namespace RoadDemo
             }
             _lastSentAt = Time.time;
             if (any) CrewOverlay.Announce("POLICE RESPONDING", 5f, new Color(0.55f, 0.78f, 1f));
+        }
+
+        /// <summary>THE NEAREST PAIR COMES, WHEREVER IT IS (the user's rule, 2026-09-04):
+        /// on the call, or the moment a pair is free if none was, or again if the pair
+        /// sent could not get there (TickPending). Measured before anybody is sent: a
+        /// pair that has just been routed is no longer free and would not be found
+        /// afterwards. A pair already tried for this incident is not tried twice.</summary>
+        bool SendFoot(Vector3 scene)
+        {
+            if (_footSent) return false;
+            var any = false;
+            var foot = Nearest(scene, carries: false, anyDistance: true, out var footD, _footTried);
+            // And EVERY man on foot who could hear it turns out, not just the nearest.
+            // Two officers a block apart both heard the same shots; one of them
+            // walking on as though he had not is the thing that reads as nobody
+            // being home.
+            foreach (var u in _units)
+            {
+                if (u.Carries || !u.Available || u.Tf == null || _footTried.Contains(u)) continue;
+                if ((u.Position - scene).sqrMagnitude > Earshot * Earshot) continue;
+                u.RouteTo(scene, 6f);
+                _footTried.Add(u);
+                any = true;
+                _footSent = true;
+            }
+            if (foot != null)
+            {
+                // not one of those who heard it
+                if (foot.Available) { foot.RouteTo(scene, 6f); _footTried.Add(foot); }
+                any = true;
+                _footSent = true;
+            }
+            // Past 150 m a car goes out beside him, and a city with nobody free on
+            // foot sends the car alone - the nearest car there is, not the nearest
+            // inside the heat rule's reach. Whoever arrives first makes the arrest.
+            if (LivingCity.Police.PoliceProcedure.CarJoinsFootResponse(foot != null, footD))
+                _escortWanted = true;
+            return any;
+        }
+
+        /// <summary>The car a far pair needs, looked for until one is free: decided once,
+        /// with the pair, but not given up on because every car in the city happened to
+        /// be out at that moment.</summary>
+        bool SendEscort(Vector3 scene)
+        {
+            if (!_escortWanted || _escortSent) return false;
+            var escort = Nearest(scene, carries: true, anyDistance: true, out _);
+            if (escort == null) return false;
+            SendCar(escort, scene);
+            _escortSent = true;
+            return true;
+        }
+
+        /// <summary>What the call still owes the scene once the shooting has stopped and
+        /// Send no longer runs: the pair, if none was free or the one sent could not get
+        /// there, and the far pair's car - for as long as an arrest could still be made
+        /// over it (ArrestWindow). Not before the call itself has been made.</summary>
+        void TickPending()
+        {
+            if (!_called || StreetAlarm.QuietFor > ArrestWindow) return;
+            if (_footSent && (!_escortWanted || _escortSent)) return;
+            var scene = StreetAlarm.Incident;
+            if (SendFoot(scene) | SendEscort(scene))
+                CrewOverlay.Announce("POLICE RESPONDING", 5f, new Color(0.55f, 0.78f, 1f));
         }
 
         void SendCar(IPoliceUnit car, Vector3 scene)
@@ -436,7 +464,8 @@ namespace RoadDemo
         IPoliceUnit Nearest(Vector3 to, bool carries, bool anyDistance = false) =>
             Nearest(to, carries, anyDistance, out _);
 
-        IPoliceUnit Nearest(Vector3 to, bool carries, bool anyDistance, out float distanceSquared)
+        IPoliceUnit Nearest(Vector3 to, bool carries, bool anyDistance, out float distanceSquared,
+            List<IPoliceUnit> except = null)
         {
             IPoliceUnit best = null;
             float bestD = anyDistance
@@ -445,6 +474,7 @@ namespace RoadDemo
             foreach (var u in _units)
             {
                 if (u.Carries != carries || !u.Available || u.Tf == null) continue;
+                if (except != null && except.Contains(u)) continue;
                 var at = u.Position;
                 float d = LivingCity.Police.PoliceProcedure.AirDistanceSquared(
                     at.x, at.z, to.x, to.z);
@@ -910,7 +940,8 @@ namespace RoadDemo
                 if (u is PoliceBeat stuck && stuck.StalledOnTheWay && !FootHeldByLawWork(u))
                 {
                     u.Release();
-                    _footSent = false;
+                    if (!_footTried.Contains(u)) _footTried.Add(u);
+                    _footSent = false;   // TickPending sends the next nearest
                     continue;
                 }
                 if (u.OnScene)
