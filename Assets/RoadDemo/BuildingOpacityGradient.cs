@@ -551,8 +551,11 @@ namespace RoadDemo
             }
             material.SetColor(BaseColor, colour);
 
+            // URP/Lit carries _Cutoff = 0.5 on every material, clipping or not. Read it
+            // only when the source really clips, or a transparent source such as the shop
+            // glass (alpha 0.44) loses every fragment to a threshold it never used.
             float cutoff = 0.01f;
-            if (source)
+            if (source && ClipsAlpha(source))
             {
                 if (source.HasProperty("_Cutoff")) cutoff = source.GetFloat("_Cutoff");
                 else if (source.HasProperty("_Alpha_Clip_Threshold"))
@@ -586,6 +589,13 @@ namespace RoadDemo
                 _footprintWidth, _footprintDepth, _footprintCellSize,
                 _hasFootprint ? 1f : 0f));
             material.SetVectorArray(FootprintRows, _footprintRows);
+        }
+
+        static bool ClipsAlpha(Material source)
+        {
+            if (source.IsKeywordEnabled("_ALPHATEST_ON")) return true;
+            if (source.HasProperty("_AlphaClip")) return source.GetFloat("_AlphaClip") > 0.5f;
+            return source.HasProperty("_Cutoff") || source.HasProperty("_Alpha_Clip_Threshold");
         }
 
         static string TextureProperty(Material source)

@@ -13,6 +13,14 @@ namespace RoadDemo
     /// renderers use the shared opacity gradient; unsupported renderers retain the older
     /// shadows-only cut. Navigation, bullets, cover, sight and the building's collider keep
     /// exactly the same answer. Runtime source meshes are never read or sliced.
+    ///
+    /// The ground floor is the exception to the gradient. The shop glass, the door leaves,
+    /// the boards, the shallow rooms and the display props behind the glass never take the
+    /// gradient material: glass has to stay glass and a room behind it has to write depth,
+    /// and the gradient does neither. They are shown whole, as authored, while their facade
+    /// is the camera-facing ground floor the gradient preserves, and hidden whole otherwise;
+    /// <see cref="Follow"/> decides that per renderer every frame the building stays cut, so
+    /// the glass and the wall around it switch together as the camera comes round.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class BuildingCutaway : MonoBehaviour
@@ -20,10 +28,12 @@ namespace RoadDemo
         struct RendererState
         {
             public Renderer Renderer;
+            public MeshFilter Filter;
             public bool Enabled;
             public ShadowCastingMode Shadows;
             public MergedChunk Chunk;
-            public bool HideCompletely;
+            /// <summary>A ground-floor piece: authored materials, shown or hidden whole.</summary>
+            public bool Piece;
         }
 
         const string ProxyName = "Cutaway ground cap";
@@ -43,6 +53,8 @@ namespace RoadDemo
 
         readonly List<Renderer> _renderers = new List<Renderer>();
         readonly List<bool> _enabledAtConfigure = new List<bool>();
+        readonly List<bool> _pieceAtConfigure = new List<bool>();
+        readonly List<Renderer> _gradientRenderers = new List<Renderer>();
         readonly List<Collider> _colliders = new List<Collider>();
         readonly List<RendererState> _states = new List<RendererState>();
         readonly List<MergedChunk> _heldChunks = new List<MergedChunk>();
@@ -54,6 +66,7 @@ namespace RoadDemo
         bool _cut;
         bool _usingGradient;
         bool _keptShadows;
+        int _followedPieces;
         float _minimumHeight = DeclaredHeight;
         float _proxyHeight = 0.95f;
         float _gradientAmount;
@@ -191,8 +204,16 @@ namespace RoadDemo
                     _renderers.RemoveAt(i);
             }
             _enabledAtConfigure.Clear();
+            _pieceAtConfigure.Clear();
+            _gradientRenderers.Clear();
             for (int i = 0; i < _renderers.Count; i++)
-                _enabledAtConfigure.Add(_renderers[i] != null && _renderers[i].enabled);
+            {
+                var renderer = _renderers[i];
+                _enabledAtConfigure.Add(renderer != null && renderer.enabled);
+                bool piece = IsGroundFloorPiece(renderer);
+                _pieceAtConfigure.Add(piece);
+                if (!piece) _gradientRenderers.Add(renderer);
+            }
 
             bool tall = false;
             for (int i = 0; i < _renderers.Count; i++)
@@ -223,11 +244,23 @@ namespace RoadDemo
                 }
                 if (footprint != null)
                     _opacity.ConfigureFootprint(footprint);
-                _opacity.PrepareForRecycledBinding(_renderers);
+                // Only the shell takes the gradient. The ground-floor pieces keep the
+                // materials they were authored with and are switched whole by Follow.
+                _opacity.PrepareForRecycledBinding(_gradientRenderers);
                 RegisterRenderers();
                 if (isActiveAndEnabled) Register();
             }
             return _configured;
+        }
+
+        /// <summary>The live storefront layer - panes, leaves, boards, shards - marks its
+        /// renderers; the generated rooms and display props behind the glass are known by
+        /// name. Everything else on the building is shell and fades.</summary>
+        bool IsGroundFloorPiece(Renderer renderer)
+        {
+            if (renderer == null) return false;
+            if (renderer.TryGetComponent<StorefrontLive>(out _)) return true;
+            return ResidentialBlocks.IsGeneratedStorefrontVisual(renderer.transform, transform);
         }
 
         void OnEnable()
@@ -325,14 +358,15 @@ namespace RoadDemo
                     _states.Clear();
                     return false;
                 }
+                bool piece = i < _pieceAtConfigure.Count && _pieceAtConfigure[i];
                 _states.Add(new RendererState
                 {
                     Renderer = renderer,
+                    Filter = piece ? renderer.GetComponent<MeshFilter>() : null,
                     Enabled = renderer.enabled,
                     Shadows = renderer.shadowCastingMode,
                     Chunk = chunk,
-                    HideCompletely = ResidentialBlocks.IsGeneratedStorefrontVisual(
-                        renderer.transform, transform),
+                    Piece = piece,
                 });
                 anyDrawable |= renderer.enabled || chunk != null;
             }
@@ -361,15 +395,19 @@ namespace RoadDemo
             bool useGradient = gradientAmount > 0.001f && _opacity != null &&
                                _opacity.Ready && _opacity.RefreshBounds() && _opacity.Set(
                                    gradientAmount, BuildingOpacityGradient.Profile.Vertical);
+            _followedPieces = 0;
             for (int i = 0; i < _states.Count; i++)
             {
                 var state = _states[i];
                 var renderer = state.Renderer;
                 if (renderer == null || (!state.Enabled && state.Chunk == null)) continue;
-                if (state.HideCompletely)
+                if (state.Piece)
                 {
+                    // Hidden until the first Follow of this frame says which facade the
+                    // camera is on. Under the shadows-only fallback there is no preserved
+                    // ground floor to stand in, so the piece stays hidden with the shell.
                     renderer.enabled = false;
-                    renderer.shadowCastingMode = ShadowCastingMode.Off;
+                    if (useGradient) _followedPieces++;
                     continue;
                 }
                 if (useGradient && _opacity.Handles(renderer))
@@ -410,11 +448,40 @@ namespace RoadDemo
             return true;
         }
 
+        /// <summary>Every frame the building stays cut: show each ground-floor piece whole
+        /// while it stands on the camera-facing ground floor the gradient preserves, hide
+        /// it whole otherwise. The same rule the shader applies to the wall around it, so
+        /// the glass and its frame come and go together as the camera comes round.</summary>
+        internal void Follow(Vector3 lens)
+        {
+            if (!_cut || _followedPieces == 0 || _opacity == null) return;
+            for (int i = 0; i < _states.Count; i++)
+            {
+                var state = _states[i];
+                if (!state.Piece) continue;
+                var renderer = state.Renderer;
+                if (renderer == null || (!state.Enabled && state.Chunk == null)) continue;
+                bool show = _opacity.IsPreservedGroundFloor(PiecePoint(state), lens);
+                if (renderer.enabled != show) renderer.enabled = show;
+            }
+        }
+
+        /// <summary>Where a piece stands, from its own mesh: a hidden renderer's world
+        /// bounds are not to be trusted, and a door leaf moves when it swings.</summary>
+        static Vector3 PiecePoint(in RendererState state)
+        {
+            var mesh = state.Filter != null ? state.Filter.sharedMesh : null;
+            if (mesh != null)
+                return state.Renderer.transform.TransformPoint(mesh.bounds.center);
+            return state.Renderer.bounds.center;
+        }
+
         internal void Restore()
         {
             if (_proxy != null) _proxy.SetActive(false);
             if (_opacity != null && _opacity.GradientMaterialsActive)
                 _opacity.Set(0f);
+            _followedPieces = 0;
             if (!_cut && _states.Count == 0) return;
 
             // Restore source state before releasing a chunk. Its last Release may turn all

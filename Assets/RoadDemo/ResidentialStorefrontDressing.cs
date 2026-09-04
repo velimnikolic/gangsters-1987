@@ -89,12 +89,11 @@ namespace RoadDemo
         static Material storefrontShellMaterial;
         static Material storefrontShutterMaterial;
 
-        /// <summary>The shallow room and display silhouettes only sell the storefront
-        /// while its facade exists. They must disappear outright during a cutaway rather
-        /// than remain as free-standing semi-transparent furniture. The live Storefront
-        /// facade is deliberately not included: its panes, leaves and state visuals are
-        /// ground-floor architecture and follow the cutaway gradient, which preserves the
-        /// camera-facing ground floor.</summary>
+        /// <summary>The shallow rooms and display silhouettes behind the glass. The cutaway
+        /// treats them as it treats the live facade in front of them (which marks itself
+        /// with <see cref="StorefrontLive"/>): shown whole, in their own materials, while
+        /// their facade is the camera-facing ground floor, hidden whole otherwise - never
+        /// faded, so nothing stands about as free-standing see-through furniture.</summary>
         internal static bool IsGeneratedStorefrontVisual(Transform candidate,
                                                            Transform buildingRoot)
         {

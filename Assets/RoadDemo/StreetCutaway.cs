@@ -25,10 +25,12 @@ namespace RoadDemo
     /// the quarter had gone.
     ///
     /// <see cref="BuildingCutaway"/> groups every piece of one logical building and applies
-    /// the shared camera-facing opacity gradient. The shadow stays, the collider never
-    /// moves, and bullets, sightlines and men on foot go on treating the faded wall as the
-    /// wall it still is. If the gradient cannot be prepared, the established shadows-only
-    /// cut remains the safe fallback.
+    /// the shared camera-facing opacity gradient. The ground floor facing the lens stays
+    /// whole - its glass, its doors and the rooms behind them in the materials they were
+    /// made with - and only the shell above and behind it fades. The shadow stays, the
+    /// collider never moves, and bullets, sightlines and men on foot go on treating the
+    /// faded wall as the wall it still is. If the gradient cannot be prepared, the
+    /// established shadows-only cut remains the safe fallback.
     ///
     /// The merge is the complication. By the time the player is down in the street the
     /// block is one combined mesh and its buildings have no renderers of their own left
@@ -200,6 +202,19 @@ namespace RoadDemo
             SweepCrews();
             Sweep();
             Restore();
+            Follow();
+        }
+
+        /// <summary>The ground floor facing the lens stays whole - glass, doors, the rooms
+        /// behind the glass - and the rest of the ground floor goes with the shell. Which is
+        /// which changes as the camera comes round, so every cut building is asked again
+        /// each frame, after this frame's cuts and restores.</summary>
+        void Follow()
+        {
+            if (_gone.Count == 0) return;
+            var lens = _cam.transform.position;
+            foreach (var pair in _gone)
+                if (pair.Key != null) pair.Key.Follow(lens);
         }
 
         /// <summary>The order cursor gets one exact sample every frame. The background
