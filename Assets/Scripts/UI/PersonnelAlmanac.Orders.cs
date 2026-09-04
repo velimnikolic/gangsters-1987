@@ -670,7 +670,7 @@ namespace LivingCity.UI
             if (roster.Crews.Count == 0)
             {
                 Line(ordersContent, LedgerStyle.MonoItalic, 14.5f, LedgerV2.Muted, 4f, y,
-                    OrdersInner, 20f, "Nobody runs a crew. Promote a man on the PERSONNEL page.");
+                    OrdersInner, 20f, "Nobody runs a crew. Promote a man in CHAIN OF COMMAND.");
                 return y - 28f;
             }
 

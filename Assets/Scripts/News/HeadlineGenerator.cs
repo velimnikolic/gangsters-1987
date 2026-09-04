@@ -64,7 +64,7 @@ namespace LivingCity.News
             "FIVE-DOLLAR VIALS, MILLION-DOLLAR MISERY",
             "PAGER AND A PAYPHONE: HOW THE CORNERS WORK",
             "CITY HALL VOWS CRACKDOWN ON CRACK HOUSES",
-            "CARTEL PIPELINE RUNS THROUGH OUR DOCKS, FEDS SAY",
+            "CARTEL PIPELINE RUNS THROUGH CITY DOCKS, FEDS SAY",
             "'JUST SAY NO' BILLBOARD RISES OVER {DISTRICT}",
             "NARCOTICS SQUAD DOUBLES; OVERTIME TRIPLES",
             "SPEEDBOAT CHASE ENDS IN {KILOS}-KILO BUST",
@@ -90,7 +90,7 @@ namespace LivingCity.News
             "BERLIN WALL STANDS DESPITE THE SPEECHES",
             "PANAMA'S GENERAL DENIES CARTEL TIES",
             "COLOMBIA EXTRADITION FIGHT TURNS BLOODY",
-            "MEDELLIN'S REACH FELT FROM MIAMI TO OUR PIERS",
+            "MEDELLIN'S REACH FELT FROM MIAMI TO CITY PIERS",
             "SICILY TRIES ITS OWN: MAXI-TRIAL GRINDS ON",
             "AIDS CRISIS DEEPENS; CLINICS PLEAD FOR FUNDS",
         };
@@ -134,6 +134,12 @@ namespace LivingCity.News
         /// fill without repeating a template on one page.
         /// </summary>
         public static Headline[] FrontPage(int seed, NewsDate date, int count = FrontPageSize)
+            => FrontPage(seed, date, null, count);
+
+        /// <summary>The city-aware door. Quarter names arrive as data so this generator
+        /// stays engine-free; null or an empty list preserves the original draw table.</summary>
+        public static Headline[] FrontPage(int seed, NewsDate date,
+            IReadOnlyList<string> districts, int count = FrontPageSize)
         {
             if (count < 1) count = 1;
             if (count > 12) count = 12;
@@ -144,7 +150,12 @@ namespace LivingCity.News
             var page = new List<Headline>(count);
 
             if (NewsCalendar.TryGet(date, out var pinned))
-                page.Add(new Headline { Desk = pinned.Desk, Text = pinned.Text, Historical = true });
+                page.Add(new Headline
+                {
+                    Desk = pinned.Desk,
+                    Text = Fit(pinned.Text),
+                    Historical = true,
+                });
 
             // Walk the desks from a rolled start, one story each, skipping templates
             // already used - so a second lap stays duplicate-free.
@@ -162,7 +173,7 @@ namespace LivingCity.News
                     var template = pool[(pick + probe) % pool.Length];
                     if (!used.Add(template))
                         continue;
-                    var text = Fill(template, rng, out var gangId);
+                    var text = Fit(Fill(template, rng, districts, out var gangId));
                     page.Add(new Headline { Desk = desk, Text = text, GangId = gangId });
                     break;
                 }
@@ -219,7 +230,8 @@ namespace LivingCity.News
         /// <paramref name="gangId"/> reports the family the story ended up naming, or
         /// -1 - the picture desk prints that family's man.
         /// </summary>
-        static string Fill(string template, System.Random rng, out int gangId)
+        static string Fill(string template, System.Random rng,
+            IReadOnlyList<string> districts, out int gangId)
         {
             var text = template;
             gangId = -1;
@@ -239,7 +251,13 @@ namespace LivingCity.News
             }
 
             if (text.Contains("{DISTRICT}"))
-                text = text.Replace("{DISTRICT}", Districts[rng.Next(Districts.Length)]);
+            {
+                var source = districts != null && districts.Count > 0 ? districts : Districts;
+                var district = source[rng.Next(source.Count)];
+                text = text.Replace("{DISTRICT}",
+                    string.IsNullOrWhiteSpace(district)
+                        ? Districts[0] : district.Trim().ToUpperInvariant());
+            }
 
             if (text.Contains("{COUNT}"))
                 text = text.Replace("{COUNT}", (3 + rng.Next(27)).ToString());
@@ -248,6 +266,16 @@ namespace LivingCity.News
                 text = text.Replace("{KILOS}", (20 + rng.Next(38) * 10).ToString());
 
             return text;
+        }
+
+        static string Fit(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length <= TextBudget)
+                return text ?? "";
+            var cut = text.LastIndexOf(' ', TextBudget - 3);
+            if (cut < TextBudget / 2)
+                cut = TextBudget - 3;
+            return text.Substring(0, cut).TrimEnd(' ', ';', ',', ':') + "...";
         }
     }
 }

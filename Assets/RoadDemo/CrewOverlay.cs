@@ -99,6 +99,7 @@ namespace RoadDemo
         static readonly Color AttackTint = new Color(1f, 0.36f, 0.30f, 0.9f);
 
         static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen ||
+                                LivingCity.UI.NewspaperHud.IsOpen ||
                                 TurfMapHud.IsOpen;
 
         DemoCrews _crews;
@@ -2337,7 +2338,8 @@ namespace RoadDemo
 
             var kb = Keyboard.current;
             if (kb != null && kb.escapeKey.wasPressedThisFrame &&
-                !LivingCity.UI.PersonnelAlmanac.ClaimsEsc)
+                !LivingCity.UI.PersonnelAlmanac.ClaimsEsc &&
+                !LivingCity.UI.NewspaperHud.ClaimsEsc)
             {
                 if (_aiming) EndCoverAim(order: false);
                 else if (_ordersOpen) CloseOrders();

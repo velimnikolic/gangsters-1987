@@ -106,6 +106,8 @@ namespace LivingCity.Tests
             ("CuttingLooseTheLastDefendantClosesTheCase",
                 CuttingLooseTheLastDefendantClosesTheCase),
             ("EveryManTriedOnPaperIsReported", EveryManTriedOnPaperIsReported),
+            ("ARivalPrisonerKeepsHisHouseThroughTheVerdict",
+                ARivalPrisonerKeepsHisHouseThroughTheVerdict),
         };
 
         public static List<string> Run()
@@ -219,14 +221,20 @@ namespace LivingCity.Tests
 
         static void CarsForPrisoners(List<string> failures)
         {
-            Want(failures, CustodyPlan.CarsForPrisoners(4, 4) == 2,
-                "CUSTODY: four prisoners need two cars when the watch can spare them.");
+            Want(failures,
+                CustodyPlan.PickupOccupantLimit == 8 &&
+                CustodyPlan.EscortSeats + CustodyPlan.PrisonersPerPickup == 8,
+                "CUSTODY: a pickup must carry no more than eight people including its escort.");
+            Want(failures, CustodyPlan.CarsForPrisoners(5, 4) == 1,
+                "CUSTODY: one pickup must take a whole five-man street crew.");
             Want(failures, CustodyPlan.CarsForPrisoners(8, 3) == 2,
                 "CUSTODY: even a large arrest must leave one on-duty car free.");
             Want(failures, CustodyPlan.CarsForPrisoners(2, 1) == 1,
                 "CUSTODY: the last free car must answer the custody already waiting.");
-            Want(failures, CustodyPlan.PrisonersThisTrip(5, 2) == 4,
-                "CUSTODY: a five-man crew must send four and hold one for trip two.");
+            Want(failures, CustodyPlan.PrisonersThisTrip(6, 1) == 6,
+                "CUSTODY: six prisoners must fit behind one pickup's two officers.");
+            Want(failures, CustodyPlan.PrisonersThisTrip(7, 1) == 6,
+                "CUSTODY: one pickup must enforce its eight-person limit.");
             Want(failures, CustodyPlan.PrisonersThisTrip(1, 2) == 1,
                 "CUSTODY: the return trip must carry only the man left at the pickup.");
         }
@@ -2304,6 +2312,41 @@ namespace LivingCity.Tests
                            (tried[0].Stage == PrisonStage.Sentenced ||
                             tried[0].Stage == PrisonStage.Cleared),
                 "PAPER: a paper trial ends in a verdict, not in limbo.");
+        }
+
+        /// <summary>GAN-324: the shared city pipeline must return every defendant to
+        /// the house he belonged to when he was booked. Character ids are unique, but
+        /// keeping the house explicitly also prevents a rival's paper trial from being
+        /// attempted against the player's roster.</summary>
+        static void ARivalPrisonerKeepsHisHouseThroughTheVerdict(List<string> failures)
+        {
+            var rival = Roster.Create(7);
+            rival.Seed = 1987;
+            var man = new Character
+            {
+                Id = rival.NextCharacterId(), FirstName = "Rocco", Surname = "Serra",
+            };
+            rival.Members.Add(man);
+
+            var pipe = new PrisonPipeline { RosterSeed = rival.Seed };
+            var prisoner = pipe.Book(rival, man.Id, Deed.Affray, 10);
+            var bailed = prisoner != null && pipe.PostBail(rival, prisoner,
+                PrisonPipeline.BailPrice(prisoner), 10);
+            var player = Roster.Create(0);
+            var playerMan = new Character
+            {
+                Id = player.NextCharacterId(), FirstName = "Paul", Surname = "Vale",
+            };
+            player.Members.Add(playerMan);
+
+            Want(failures, bailed && prisoner.GangId == rival.GangId,
+                "PRESS/POLICE: a rival prisoner must keep his house id at booking.");
+            Want(failures, pipe.TryOnPaper(player, prisoner.CourtDay) == 0 &&
+                           playerMan.Status == CharacterStatus.Active &&
+                           pipe.TryOnPaper(rival, prisoner.CourtDay) == 1 &&
+                           (man.Status == CharacterStatus.Jailed ||
+                            man.Status == CharacterStatus.Active),
+                "PRESS/POLICE: the verdict must run against the prisoner's own roster.");
         }
 
         static void StandingByHimPaysAPointAWeek(List<string> failures)

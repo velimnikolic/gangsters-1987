@@ -804,6 +804,25 @@ namespace LivingCity.Tests
         static void MarkedCarsAreNotCivilianTraffic(List<string> failures)
         {
             const string fleet = Gameplay.VehicleCatalog.PoliceFleetFolder;
+            const string policePickup = "SM_Veh_Pickup_01_Preset_Police";
+            if (Gameplay.VehicleCatalog.PoliceCars.Length != 1 ||
+                Gameplay.VehicleCatalog.PoliceCars[0] != policePickup)
+                failures.Add("Fleet: live police cars must use only the marked pickup.");
+            if (RoadDemo.DriverProfile.Police.Cruise < 24f ||
+                RoadDemo.DriverProfile.Police.Cruise <= RoadDemo.DriverProfile.Hot.Cruise)
+                failures.Add("Fleet: police answering with roof lights must be faster " +
+                             "than the action traffic.");
+            if (!RoadDemo.DriverProfile.Police.EmergencyRightOfWay ||
+                RoadDemo.DriverProfile.Patrol.EmergencyRightOfWay ||
+                RoadDemo.DriverProfile.Traffic.EmergencyRightOfWay ||
+                RoadDemo.DriverProfile.Hot.EmergencyRightOfWay)
+                failures.Add("Fleet: only a police response with its roof lights on may " +
+                             "pre-empt conflicting traffic at a junction.");
+            if (RoadDemo.RoadCar.EmergencyPrioritySeconds < 4f ||
+                RoadDemo.RoadCar.EmergencyPriorityMinimumRange < 70f)
+                failures.Add("Fleet: junction traffic is not warned early enough to stop " +
+                             "for an approaching police response.");
+
             string[] pack =
             {
                 "SM_Veh_Car_01", "SM_Veh_Car_02", "SM_Veh_Van_01", "SM_Veh_Pickup_01",

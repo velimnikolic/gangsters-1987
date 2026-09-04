@@ -463,14 +463,10 @@ namespace RoadDemo
             Straighten(ground, plan.NX, plan.NZ);
             plan.Ground = ground;
 
-            // a car park is cut out of the PAVEMENT, not out of the kerb: a declared cell
-            // at the block's own edge keeps its kerb and is no part of the lot
-            for (int i = 0; i < plan.NX; i++)
-                for (int j = 0; j < plan.NZ; j++)
-                    if (plan.Park[i, j] &&
-                        !(plan.In(i + 1, j) && plan.In(i - 1, j) &&
-                          plan.In(i, j + 1) && plan.In(i, j - 1)))
-                        plan.Park[i, j] = false;
+            // A declared car park owns its whole footprint, including a row that reaches
+            // the block edge. That outer row is its circulation lane and joins the street's
+            // parking lane directly; turning it back into kerbed pavement makes the baked
+            // block wider than its catalog lot and covers the lane it should meet.
 
             Ways(plan);
 

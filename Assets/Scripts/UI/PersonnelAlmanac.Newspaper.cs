@@ -83,6 +83,10 @@ namespace LivingCity.UI
         /// <summary>The day the sheet was set for - it is only re-set when the day
         /// turns, because staging two studio photographs per repaint would be waste.</summary>
         int newsPaintedDay = -1;
+        int newsEditionDay = -1;
+        int newsPaintedEdition = -1;
+        int newsPaintedLastEdition = -1;
+        int newsPaintedPressVersion = -1;
 
         void BuildNewspaperPage(RectTransform sheet)
         {
@@ -108,6 +112,51 @@ namespace LivingCity.UI
             if (classifiedOpen)
             {
                 RebuildClassified();
+                return;
+            }
+
+            // Both the archive and the 06:00 popup go through the one compositor. The
+            // older private helpers below remain as a safe fallback while this partial
+            // class is loaded by old scene data, but production always takes this door.
+            var useSharedPainter = true;
+            if (useSharedPainter)
+            {
+                var currentDay = outfit ? outfit.Campaign.Day : 1;
+                var press = LivingCity.Outfit.Underworld.Current?.Press;
+                var latest = LatestPressEdition(press, currentDay);
+                if (newsEditionDay < 1 || currentDay != newsPaintedDay)
+                    newsEditionDay = latest;
+                else if (latest > newsPaintedLastEdition &&
+                         newsEditionDay == newsPaintedLastEdition)
+                    newsEditionDay = latest;
+                if (newsEditionDay > latest)
+                    newsEditionDay = latest;
+                var version = press != null ? press.Version : 0;
+                if (currentDay == newsPaintedDay &&
+                    newsEditionDay == newsPaintedEdition &&
+                    latest == newsPaintedLastEdition &&
+                    version == newsPaintedPressVersion && newsContent.childCount > 0)
+                    return;
+
+                newsPaintedDay = currentDay;
+                newsPaintedEdition = newsEditionDay;
+                newsPaintedLastEdition = latest;
+                newsPaintedPressVersion = version;
+                var earliest = EarliestPressEdition(press, latest);
+                var citySeed = director ? director.Seed : 42;
+                NewspaperSheet.Paint(newsContent, PageWidth, NewsH, citySeed,
+                    newsEditionDay, press?.Records, NewspaperSheet.CityQuarters(),
+                    new NewspaperSheet.Controls
+                    {
+                        Save = SaveCampaignFromLedger,
+                        Load = LoadCampaignFromLedger,
+                        Ads = () => SetClassified(true),
+                        Archive = true,
+                        HasPrevious = newsEditionDay > earliest,
+                        HasNext = newsEditionDay < latest,
+                        Previous = PreviousPressEdition,
+                        Next = NextPressEdition,
+                    });
                 return;
             }
 
@@ -218,6 +267,55 @@ namespace LivingCity.UI
                 Paragraph(newsContent, LedgerStyle.Serif, 13f, LedgerV2.Ink, x,
                     BriefTop - 26f, BriefW, BriefH - 30f, WeatherLine(date), lineSpacing: 3f);
             }
+        }
+
+        static int EarliestPressEdition(PressBook press, int currentDay)
+        {
+            // The day-one filler was delivered even when the public book has no local
+            // fact in it. Wire/filler is deterministic, so it remains a real back issue
+            // rather than making the archive arrows disappear on a quiet campaign.
+            if (press != null && press.LastEditionDay > 0)
+                return 1;
+            var earliest = currentDay;
+            for (var i = 0; press != null && i < press.Count; i++)
+            {
+                var row = press[i];
+                var edition = row.Day + (row.Hour >= Edition.PressHour ? 1 : 0);
+                if (edition < earliest) earliest = edition;
+            }
+            return Mathf.Max(1, earliest);
+        }
+
+        static int LatestPressEdition(PressBook press, int currentDay)
+        {
+            var latest = press != null ? press.LastEditionDay : 0;
+            if (latest < 1)
+                latest = currentDay;
+            return Mathf.Clamp(latest, 1, Mathf.Max(1, currentDay));
+        }
+
+        void PreviousPressEdition()
+        {
+            var currentDay = outfit ? outfit.Campaign.Day : 1;
+            var press = LivingCity.Outfit.Underworld.Current?.Press;
+            var latest = LatestPressEdition(press, currentDay);
+            var earliest = EarliestPressEdition(
+                press, latest);
+            if (newsEditionDay <= earliest) return;
+            newsEditionDay--;
+            newsPaintedEdition = -1;
+            dirty = true;
+        }
+
+        void NextPressEdition()
+        {
+            var currentDay = outfit ? outfit.Campaign.Day : 1;
+            var latest = LatestPressEdition(
+                LivingCity.Outfit.Underworld.Current?.Press, currentDay);
+            if (newsEditionDay >= latest) return;
+            newsEditionDay++;
+            newsPaintedEdition = -1;
+            dirty = true;
         }
 
         void SaveCampaignFromLedger()

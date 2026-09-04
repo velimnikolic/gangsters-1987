@@ -80,6 +80,7 @@ namespace RoadDemo
         public bool Reverses = true;        // backs off a few metres when wedged behind something
         public bool GivesWay = true;        // pulls over / holds for a car of higher priority nose to nose
         public bool RunsRed = false;        // a red light, when the box is clear
+        public bool EmergencyRightOfWay;    // roof lights on: conflicting approaches hold before the box
         public bool Fearless = false;       // gunfire does not slow him
         public bool Wanders = true;         // no route: random turns at junctions
         public int Priority = 0;            // standoffs: the higher carries on, the lower gives way
@@ -194,14 +195,16 @@ namespace RoadDemo
             RunsRed = true, Fearless = true, Priority = 2, StandoffPatience = 0.5f,
         };
 
-        /// <summary>The law: brisk, fearless, the crown and the far lane with its
-        /// lights on, a red when the box is clear; everybody else gives way to it.</summary>
+        /// <summary>The law answering a call: very fast, fearless, the crown and the
+        /// far lane with its lights on, and priority through a junction; everybody
+        /// else holds before the box. Ordinary rounds use <see cref="Patrol"/>
+        /// instead.</summary>
         public static readonly DriverProfile Police = new DriverProfile
         {
-            Name = "Police", Cruise = 14f, CruiseRamp = 15f, CruiseFreeway = 29f, ObeysLimit = false, Accel = 5f, Brake = 7f, LateralG = 3f,
-            TurnSpeed = 7f, FollowGap = 3f, TimeGap = 0.8f, Patience = 1f,
-            UsesCrown = true, UsesOpposite = true, OncomingMargin = 2f, UTurnsInRoad = true,
-            RunsRed = true, Fearless = true, Priority = 3, StandoffPatience = 0.6f,
+            Name = "Police", Cruise = 24f, CruiseRamp = 27f, CruiseFreeway = 38f, ObeysLimit = false, Accel = 10f, Brake = 11f, LateralG = 5f,
+            TurnSpeed = 10f, UTurnSpeed = 5f, FollowGap = 4f, TimeGap = 0.65f, Patience = 0f,
+            UsesCrown = true, UsesOpposite = true, OncomingMargin = 1.2f, UTurnsInRoad = true,
+            RunsRed = true, EmergencyRightOfWay = true, Fearless = true, Priority = 3, StandoffPatience = 0.35f,
         };
 
         /// <summary>A patrol car on its rounds, no call in hand: drives like the

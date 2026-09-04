@@ -283,8 +283,8 @@ namespace RoadDemo
         /// station", and what the plaque reads off.</summary>
         public Precinct Station => _precincts.Count > 0 ? _precincts[0] : null;
 
-        /// <summary>Two prisoners to a car; keep a reserve only when more than one car
-        /// is actually free.</summary>
+        /// <summary>Six prisoners in each eight-person pickup; keep a reserve only when
+        /// more than one car is actually free.</summary>
         public static int CarsForPrisoners(int prisoners, int carsOnDuty)
             => CustodyPlan.CarsForPrisoners(prisoners, carsOnDuty);
 
@@ -605,7 +605,6 @@ namespace RoadDemo
 
         void Ended(Convoy convoy, bool wrecked)
         {
-            var roster = Roster();
             var today = Today();
             if (wrecked)
             {
@@ -635,6 +634,7 @@ namespace RoadDemo
                 for (var r = 0; r < convoy.Riders.Count; r++)
                 {
                     var rider = convoy.Riders[r];
+                    var roster = RosterOf(rider);
                     if (Pipeline.Freed(roster, rider, today) == null) continue;
                     var besideWreck = where + Vector3.right * (2f + r * 0.8f);
                     ReleaseCustodyTracking(rider.CharacterId, besideWreck,
@@ -669,6 +669,7 @@ namespace RoadDemo
             for (var r = 0; r < convoy.Riders.Count; r++)
             {
                 var rider = convoy.Riders[r];
+                var roster = RosterOf(rider);
                 if (convoy.Leg == PrisonLeg.Prison)
                 {
                     Pipeline.Delivered(rider);
@@ -738,6 +739,39 @@ namespace RoadDemo
         {
             var director = LivingCity.Gameplay.PersonnelDirector.Instance;
             return director != null ? director.Roster : null;
+        }
+
+        /// <summary>The roster named by the prisoner's own row or docket. Character
+        /// ids stay opaque; ownership is never decoded from their numeric span.</summary>
+        LivingCity.Personnel.Roster RosterOf(Prisoner prisoner)
+        {
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            if (prisoner != null && underworld != null)
+            {
+                if (prisoner.GangId >= 0)
+                {
+                    var named = underworld.Of(prisoner.GangId)?.Roster;
+                    if (named != null) return named;
+                }
+
+                var file = prisoner.CaseId >= 0
+                    ? Pipeline.FindCase(prisoner.CaseId) : null;
+                if (file != null)
+                {
+                    prisoner.GangId = file.GangId;
+                    var named = underworld.Of(file.GangId)?.Roster;
+                    if (named != null) return named;
+                }
+
+                for (var gang = 0; gang < underworld.Count; gang++)
+                {
+                    var roster = underworld.Of(gang)?.Roster;
+                    if (roster?.Find(prisoner.CharacterId) == null) continue;
+                    prisoner.GangId = roster.GangId;
+                    return roster;
+                }
+            }
+            return Roster();
         }
 
         /// <summary>A car blown up or shot to pieces is off the roster. Polled rather
@@ -827,7 +861,8 @@ namespace RoadDemo
         {
             if (prisoner == null) return;
             var man = roster != null ? roster.Find(prisoner.CharacterId) : null;
-            LawWire.Verdict(man, prisoner.Stage, status);
+            var file = prisoner.CaseId >= 0 ? Pipeline.FindCase(prisoner.CaseId) : null;
+            LawWire.Verdict(man, prisoner.Stage, status, prisoner, file);
             if (!banner) return;
 
             if (prisoner.Stage == PrisonStage.Sentenced)
@@ -876,43 +911,15 @@ namespace RoadDemo
 
             // the day in court: whoever is due goes out in a car of the precinct's own,
             // and anybody the roster released leaves the pipe (GAN-219)
-            var roster = Roster();
-            if (roster != null)
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            if (underworld != null)
             {
-                if (Pipeline.RosterSeed == 0) Pipeline.RosterSeed = roster.Seed;
-                Pipeline.ComplainantStillTalks ??= StillTalks;
-                _discharged.Clear();
-                Pipeline.Discharged(roster, _discharged);
-                for (var i = 0; i < _discharged.Count; i++)
-                    ReleaseCustodyTracking(_discharged[i]);
-                if (_discharged.Count > 0)
-                {
-                    var director = LivingCity.Gameplay.PersonnelDirector.Instance;
-                    if (director != null) director.Touch();
-                }
-                CoolTheWanted(roster, today);
-
-                // BAIL IS SPENT ON THE DAY, whichever way it goes (GAN-245): a man who
-                // turns up is tried on paper with the rest of his case, and one who is
-                // hidden, out of town or told to skip forfeits the money and is looked
-                // for. Here rather than in the convoy because a bailed man is not in
-                // the back of a car - he is on the street, or he is not.
-                _forfeited.Clear();
-                _paperTried.Clear();
-                if (Pipeline.TryOnPaper(roster, today, _forfeited, _paperTried) > 0)
-                {
-                    for (var i = 0; i < _forfeited.Count; i++)
-                        LawWire.BailForfeit(roster.Find(_forfeited[i].CharacterId));
-                    for (var i = 0; i < _paperTried.Count; i++)
-                    {
-                        var paper = _paperTried[i];
-                        var file = paper.CaseId >= 0 ? Pipeline.FindCase(paper.CaseId) : null;
-                        AnnounceVerdict(roster, paper,
-                            file != null ? file.Status : CaseStatus.Tried);
-                    }
-                    var director = LivingCity.Gameplay.PersonnelDirector.Instance;
-                    if (director != null) director.Touch();
-                }
+                for (var gang = 0; gang < underworld.Count; gang++)
+                    ProcessRosterDay(underworld.Of(gang)?.Roster, today);
+            }
+            else
+            {
+                ProcessRosterDay(Roster(), today);
             }
             Pipeline.DayTick(today, _forTransfer);
             RunTransfers();
@@ -964,6 +971,49 @@ namespace RoadDemo
                 CrewOverlay.Announce(Plain(precinct.Roster.Name) + " IS BACK UP TO STRENGTH",
                     5f, new Color(0.55f, 0.78f, 1f));
             }
+        }
+
+        /// <summary>Discharge, bail and court are applied to the house that owns each
+        /// prisoner. PrisonPipeline filters its shared rows by Roster.GangId.</summary>
+        void ProcessRosterDay(LivingCity.Personnel.Roster roster, int today)
+        {
+            if (roster == null)
+                return;
+            if (Pipeline.RosterSeed == 0) Pipeline.RosterSeed = roster.Seed;
+            Pipeline.ComplainantStillTalks ??= StillTalks;
+
+            _discharged.Clear();
+            Pipeline.Discharged(roster, _discharged);
+            for (var i = 0; i < _discharged.Count; i++)
+                ReleaseCustodyTracking(_discharged[i]);
+            CoolTheWanted(roster, today);
+
+            _forfeited.Clear();
+            _paperTried.Clear();
+            var tried = Pipeline.TryOnPaper(
+                roster, today, _forfeited, _paperTried);
+            for (var i = 0; i < _forfeited.Count; i++)
+            {
+                var prisoner = _forfeited[i];
+                var file = prisoner.CaseId >= 0
+                    ? Pipeline.FindCase(prisoner.CaseId) : null;
+                LawWire.BailForfeit(roster.Find(prisoner.CharacterId), prisoner, file);
+            }
+            for (var i = 0; i < _paperTried.Count; i++)
+            {
+                var prisoner = _paperTried[i];
+                var file = prisoner.CaseId >= 0
+                    ? Pipeline.FindCase(prisoner.CaseId) : null;
+                AnnounceVerdict(roster, prisoner,
+                    file != null ? file.Status : CaseStatus.Tried);
+            }
+
+            if (_discharged.Count == 0 && tried == 0)
+                return;
+            var director = LivingCity.Gameplay.PersonnelDirector.Instance;
+            if (director != null && roster.GangId ==
+                LivingCity.Gangs.GangCatalog.PlayerGangId)
+                director.Touch();
         }
 
         /// <summary>

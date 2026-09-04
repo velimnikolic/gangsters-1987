@@ -13,8 +13,6 @@ namespace LivingCity.EditorTools
     {
         public const string ScenePath = "Assets/Scenes/StorefrontDemo.unity";
         const string SourceDir = "Assets/Synty/PolygonCity/Prefabs/Buildings/";
-        const string ShutterMaterial =
-            "Assets/Synty/PolygonMapsPrison/Materials/Concrete_Dark_01.mat";
         const string IdleClip = "Assets/Animations/People/Breathing Idle.anim";
         const string WalkClip = "Assets/Animations/People/Standard Walk.anim";
         const float Spacing = 11f;
@@ -87,15 +85,13 @@ namespace LivingCity.EditorTools
 
                 var root = new GameObject("STOREFRONT TRAFFIC DEMO");
                 SceneManager.MoveGameObjectToScene(root, demo);
-                var shutter = AssetDatabase.LoadAssetAtPath<Material>(ShutterMaterial);
                 var idle = AssetDatabase.LoadAssetAtPath<AnimationClip>(IdleClip);
                 var walk = AssetDatabase.LoadAssetAtPath<AnimationClip>(WalkClip);
-                if (shutter == null) failures.Add("roller shutter material missing");
                 if (idle == null) failures.Add("idle animation missing");
                 if (walk == null) failures.Add("walk animation missing");
 
                 for (int i = 0; i < StorefrontDoorCatalog.Count; i++)
-                    BuildStation(root.transform, demo, i, shutter, idle, walk,
+                    BuildStation(root.transform, demo, i, idle, walk,
                                  report, failures);
 
                 float minX = -5f;
@@ -128,7 +124,7 @@ namespace LivingCity.EditorTools
         }
 
         static void BuildStation(Transform root, Scene demo, int index,
-                                 Material shutter, AnimationClip idle, AnimationClip walk,
+                                 AnimationClip idle, AnimationClip walk,
                                  Report report, List<string> failures)
         {
             var profile = StorefrontDoorCatalog.At(index);
@@ -143,7 +139,7 @@ namespace LivingCity.EditorTools
 
             var display = module.GetComponent<Storefront>();
             if (display == null) display = module.AddComponent<Storefront>();
-            display.ConfigurePreview(shutter);
+            display.ConfigurePreview();
             if (display.Module != profile.Module)
                 failures.Add(profile.Module + ": storefront preview did not configure");
             if (display.LeafCount != profile.Leaves)
@@ -163,7 +159,7 @@ namespace LivingCity.EditorTools
                 {
                     entrance = shared.GetComponent<Storefront>();
                     if (entrance == null) entrance = shared.AddComponent<Storefront>();
-                    entrance.ConfigurePreview(shutter);
+                    entrance.ConfigurePreview();
                     shared.name = profile.Module + " shared entrance (SM_Bld_Shop_01)";
                     report.SharedEntrances++;
                     subtitle = "display bay / shared door";
@@ -195,20 +191,20 @@ namespace LivingCity.EditorTools
                   new Vector3(x - 2.5f, 4.25f, 0.15f), 0.10f,
                   new Color(0.08f, 0.08f, 0.09f), TextAnchor.LowerCenter);
 
-            BuildBrokenExample(station.transform, demo, profile, x, shutter,
+            BuildBrokenExample(station.transform, demo, profile, x,
                                report, failures);
         }
 
         static void BuildBrokenExample(
             Transform station, Scene demo, StorefrontDoorProfile profile, float x,
-            Material shutter, Report report, List<string> failures)
+            Report report, List<string> failures)
         {
             var module = Instantiate(profile.Module, demo, station,
                                      new Vector3(x, 0f, BrokenRowZ), failures);
             if (module == null) return;
             var storefront = module.GetComponent<Storefront>();
             if (storefront == null) storefront = module.AddComponent<Storefront>();
-            storefront.ConfigurePreview(shutter);
+            storefront.ConfigurePreview();
             module.name = profile.Module + " broken-glass review";
             ValidatePreviewPanes(module, storefront,
                                  profile.Module + " broken review", failures);

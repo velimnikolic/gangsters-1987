@@ -60,6 +60,7 @@ namespace LivingCity.Police
     public sealed class Prisoner
     {
         public int CharacterId;
+        public int GangId = -1;
         public Deed Deed;
         public DoorAnswer Answer;
         public bool Sprung;
@@ -374,6 +375,7 @@ namespace LivingCity.Police
             var prisoner = new Prisoner
             {
                 CharacterId = characterId,
+                GangId = roster.GangId,
                 Deed = deed,
                 Answer = answer,
                 Sprung = sprung || EverEscaped(characterId),
@@ -419,6 +421,7 @@ namespace LivingCity.Police
             var old = prisoner.CaseId >= 0 ? FindCase(prisoner.CaseId) : null;
 
             prisoner.Deed = worse;
+            prisoner.GangId = roster.GangId;
             prisoner.Answer = SurrenderRoll.MostSerious(prisoner.Answer, answer);
             prisoner.Sprung = prisoner.Sprung || sprung || EverEscaped(prisoner.CharacterId);
             prisoner.Stage = PrisonStage.Held;
@@ -656,11 +659,13 @@ namespace LivingCity.Police
             for (var i = _inside.Count - 1; i >= 0; i--)
             {
                 var prisoner = _inside[i];
+                if (prisoner.GangId >= 0 && prisoner.GangId != roster.GangId)
+                    continue;
                 if (prisoner.Stage != PrisonStage.Bailed) continue;
                 if (prisoner.CourtDay <= 0 || prisoner.CourtDay > today) continue;
 
                 var member = roster.Find(prisoner.CharacterId);
-                if (member == null) { _inside.RemoveAt(i); continue; }
+                if (member == null) continue;
 
                 var runs = prisoner.SkipOrdered || member.OutOfTown ||
                            member.Gone || member.WantedLevel > 0;
@@ -934,10 +939,14 @@ namespace LivingCity.Police
             var count = 0;
             for (var i = _inside.Count - 1; i >= 0; i--)
             {
+                if (_inside[i].GangId >= 0 && _inside[i].GangId != roster.GangId)
+                    continue;
                 if (_inside[i].Stage == PrisonStage.Bailed)
                     continue;
                 var member = roster.Find(_inside[i].CharacterId);
-                if (member == null || member.Status != CharacterStatus.Jailed)
+                if (member == null)
+                    continue;
+                if (member.Status != CharacterStatus.Jailed)
                 {
                     released?.Add(_inside[i].CharacterId);
                     _inside.RemoveAt(i);

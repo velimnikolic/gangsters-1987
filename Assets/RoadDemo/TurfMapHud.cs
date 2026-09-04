@@ -468,7 +468,8 @@ namespace RoadDemo
             // The plan is up for exactly as long as the boom is past the line - and
             // never under the book, which owns the whole screen when it is open.
             bool want = _rig != null && _rig.MapOut &&
-                        !LivingCity.UI.PersonnelAlmanac.IsOpen;
+                        !LivingCity.UI.PersonnelAlmanac.IsOpen &&
+                        !LivingCity.UI.NewspaperHud.IsOpen;
             if (want != IsOpen)
                 Show(want);
 
@@ -486,7 +487,8 @@ namespace RoadDemo
             // camera back down in the street, which is the only thing that can close a
             // map that IS a zoom level.
             var keyboard = Keyboard.current;
-            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame &&
+                !LivingCity.UI.NewspaperHud.ClaimsEsc)
             {
                 if (_mapChrome != null && _mapChrome.MenuOpen)
                     _mapChrome.CloseMenu();

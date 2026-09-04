@@ -13,9 +13,6 @@ namespace LivingCity.EditorTools
     {
         public const string ScenePath = "Assets/Scenes/StorefrontBench.unity";
         const string SourceDir = "Assets/Synty/PolygonCity/Prefabs/Buildings/";
-        const string ShutterMaterial =
-            "Assets/Synty/PolygonMapsPrison/Materials/Concrete_Dark_01.mat";
-
         static readonly StorefrontState[] States =
         {
             StorefrontState.Intact,
@@ -23,7 +20,6 @@ namespace LivingCity.EditorTools
             StorefrontState.Smashed,
             StorefrontState.Burning,
             StorefrontState.Boarded,
-            StorefrontState.Shuttered,
         };
 
         public sealed class Report
@@ -75,8 +71,6 @@ namespace LivingCity.EditorTools
                 RenderSettings.fog = false;
                 var root = new GameObject("STOREFRONT BENCH");
                 SceneManager.MoveGameObjectToScene(root, bench);
-                var shutter = AssetDatabase.LoadAssetAtPath<Material>(ShutterMaterial);
-
                 float span = (StorefrontDoorCatalog.Count - 1) * 13f;
                 for (int i = 0; i < StorefrontDoorCatalog.Count; i++)
                 {
@@ -104,7 +98,7 @@ namespace LivingCity.EditorTools
                     live.transform.position = new Vector3(x, 0f, 0f);
                     var storefront = live.GetComponent<Storefront>();
                     if (storefront == null) storefront = live.AddComponent<Storefront>();
-                    storefront.ConfigurePreview(shutter);
+                    storefront.ConfigurePreview();
                     storefront.SetPreviewState(StorefrontState.Open);
                     Label(root.transform, profile.Module + " · Open",
                         new Vector3(x - 2.5f, 4.2f, 0f));
@@ -126,7 +120,7 @@ namespace LivingCity.EditorTools
                         sample.transform.SetParent(root.transform, true);
                         sample.transform.position = new Vector3(x, 0f, -10f);
                         var storefront = sample.AddComponent<Storefront>();
-                        storefront.ConfigurePreview(shutter);
+                        storefront.ConfigurePreview();
                         storefront.SetPreviewState(States[i]);
                         Label(root.transform, States[i].ToString(),
                             new Vector3(x - 2.5f, 4.2f, -10f));

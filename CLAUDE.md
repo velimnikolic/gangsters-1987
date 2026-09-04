@@ -29,13 +29,26 @@ Do not run `gangsters_play` over a scene the user is currently trying to inspect
 for that harness run. It drives Play mode fast for automation, so it can make manual testing
 unusable.
 
-## Review the C# when the user says commit, and not before
+## Finish a task, commit it, then review the commit twice
 
-The `code-review-unity` skill runs **once, at commit time**: when the user says "commit", the
-pending `.cs` is reviewed first, the real findings are fixed or reported tersely, and then the
-commit is made. Nothing gates a harness run, a soak or an editor verb during development, and
-there is no hook - the old review gate (`.claude/hooks/unity-review-gate.sh`) was removed on
-2026-08-26 at the user's word. Keep replies short: what was done, what is left.
+When a task is finished, the work is committed first and reviewed after — the review no longer
+gates the commit.
+
+1. Stage the files explicitly and commit on `main` (attribution rules apply). Keep the sha.
+2. `code-review-unity` over that commit's C#, not the working tree:
+   `git show --stat HEAD` then `git diff HEAD~1 HEAD -- "*.cs"`.
+3. The Codex adversarial review over the same commit. `/codex:adversarial-review` carries
+   `disable-model-invocation`, so call its companion script directly:
+
+       node "$(ls -d ~/.claude/plugins/cache/openai-codex/codex/*/scripts)/codex-companion.mjs" adversarial-review --base HEAD~1 --wait
+
+   Use `--background` instead of `--wait` when the commit is large, and report when it lands.
+4. Report both verdicts tersely — what was found, what was fixed. Real findings go in a
+   follow-up commit; do not amend or rewrite the reviewed one.
+
+Nothing gates a harness run, a soak or an editor verb during development, and there is no hook —
+the old review gate (`.claude/hooks/unity-review-gate.sh`) was removed on 2026-08-26. Keep replies
+short: what was done, what is left.
 
 ## Every commit lands on main
 
@@ -68,6 +81,7 @@ make it call the shared service/model.
 | the racket: collector duty, the schedule, money on the wire | `Docs/racket-collections.md` |
 | the closer threat: retargeting, reaction, bullet scatter | `Docs/design-briefs/closer-threat-brief.md` |
 | the law sheet: the docket, the cells, the wanted, the counsel, the verdicts | `Docs/ledger-law-sheet.md` |
+| the city wire: public-record gates, the 06:00 paper and its archive | `Docs/newspaper.md` |
 | how a campaign ends: the three, and what is not one of them | `Docs/game-over.md` |
 | what everything costs (1987 dollars, Miami-anchored) | `Docs/economy-prices.md` |
 | headquarters safe, stock, report and armory gate | `Docs/headquarters.md` |

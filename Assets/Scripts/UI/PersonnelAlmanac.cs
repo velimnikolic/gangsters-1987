@@ -202,17 +202,17 @@ namespace LivingCity.UI
         /// workflow can reach them in code.</summary>
         static readonly string[] TabNames =
         {
-            "THE PAPER", "PERSONNEL", "CHAIN OF COMMAND", "BLOCKS", "FINANCES",
-            "ARMORY", "FAMILIES", "THE LAW",
+            "THE PAPER", "CHAIN OF COMMAND", "BLOCKS", "FINANCES", "ARMORY",
+            "FAMILIES", "THE LAW",
         };
 
         /// <summary>Tab navigation is explicit because the page enum also contains
         /// tab-less working pages.</summary>
         static readonly LedgerPage[] TabPages =
         {
-            LedgerPage.Newspaper, LedgerPage.Personnel, LedgerPage.Command,
-            LedgerPage.Blocks, LedgerPage.Finances, LedgerPage.Armory,
-            LedgerPage.Diplomacy, LedgerPage.Law,
+            LedgerPage.Newspaper, LedgerPage.Command, LedgerPage.Blocks,
+            LedgerPage.Finances, LedgerPage.Armory, LedgerPage.Diplomacy,
+            LedgerPage.Law,
         };
 
         /// <summary>What a real file's tabs say: the sheet is one leaf of a numbered
@@ -381,6 +381,11 @@ namespace LivingCity.UI
         {
             var keyboard = Keyboard.current;
             if (keyboard == null)
+                return;
+
+            // P belongs to the morning paper while that sheet is up; its handler closes
+            // the sheet and opens this book on THE PAPER without a second toggle here.
+            if (NewspaperHud.ClaimsPaperKey)
                 return;
 
             if (!IsOpen && keyboard.pKey.wasPressedThisFrame &&
@@ -606,6 +611,15 @@ namespace LivingCity.UI
         /// canvas; the page it lands on is still the book's own business.</summary>
         public void Open() => OpenAtPage(lastTab);
 
+        /// <summary>The morning sheet's P-key continuation.</summary>
+        public void OpenPaper()
+        {
+            // The loose morning sheet always continues into that same newly delivered
+            // edition, even if the archive was left open on an older day.
+            newsEditionDay = -1;
+            OpenAtPage(LedgerPage.Newspaper);
+        }
+
         /// <summary>
         /// Opens the same modal folder at a specific leaf. Normal P-key entry reopens on
         /// the tab the book was left on; map targeting names its own working page.
@@ -722,6 +736,11 @@ namespace LivingCity.UI
         /// </summary>
         public void SetPage(LedgerPage pageKind)
         {
+            // The Personnel leaf has been retired. Keep its enum slot stable for the
+            // later page IDs, but send any stale caller to the sheet that owns dossiers.
+            if (pageKind == LedgerPage.Personnel)
+                pageKind = LedgerPage.Command;
+
             if (pageKind != LedgerPage.Command && commandDossierId >= 0)
                 DismissCommandDossier();
 
@@ -1097,7 +1116,6 @@ namespace LivingCity.UI
 
             // ---- the pages, in tab order; each is a full-sheet root ----
             BuildNewspaperPage(paper);
-            BuildPersonnelPage(paper);
             BuildBlocksPage(paper);
             BuildFinancesPage(paper);
             BuildArmoryPage(paper);

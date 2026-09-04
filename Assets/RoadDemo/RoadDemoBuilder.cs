@@ -451,8 +451,8 @@ namespace RoadDemo
         Vector3 _paveSize, _paveOffset;
         float _paveTop;
         /// <summary>The marked cruisers the patrol fleet draws from - the approved
-        /// pair (VehicleCatalog.PoliceCars), one per stall in turn, so a station yard
-        /// is a fleet rather than one car photocopied down the row.</summary>
+        /// pickup (VehicleCatalog.PoliceCars), used in every stall so all marked police
+        /// vehicles in the city have the requested body.</summary>
         readonly List<GameObject> _policeCarPrefabs = new List<GameObject>();
         readonly List<GameObject> _officerPrefabs = new List<GameObject>();
         /// <summary>
@@ -3487,6 +3487,10 @@ namespace RoadDemo
 
             SpawnRivals();
 
+            // The public record sits on the dispatcher's host and subscribes after the
+            // crowd and law, so its witness snapshot sees their reaction to the shot.
+            gameObject.AddComponent<PressDesk>();
+
             // and, for a headless run, the thing that plays all of them at once
             if (monkey)
             {
@@ -4085,9 +4089,9 @@ namespace RoadDemo
         const float StationYardMetres = 60f;
 
         /// <summary>The marked cars a block bake parked outside a station, by the names
-        /// of the approved fleet (VehicleCatalog.PoliceCars) - the same two presets the
-        /// live patrols drive, which is why standing both is a duplicate rather than a
-        /// busy yard.</summary>
+        /// of the approved fleet (VehicleCatalog.PoliceCars) - the same pickup the live
+        /// patrols drive, which is why a baked one is reused as a live car rather than
+        /// duplicated.</summary>
         static void CollectParkedCruisers(Transform root, Vector3 house, List<Transform> into)
         {
             foreach (Transform child in root)

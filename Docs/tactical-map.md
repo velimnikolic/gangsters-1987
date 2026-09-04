@@ -110,7 +110,8 @@ ownership or generated residential geometry changes, and after the camera moves 
 enough that the current crop would become stale. Crews are pooled UI `Image`s in the
 family's ink; the camera's frame is four hairlines. It borrows the full map's
 heightfield rather than sampling the island twice. Off while the full map or the book
-has the screen.
+has the screen. The key at the right of its caption folds the card down to that band;
+the `+` on the folded band opens the same live card again.
 
 ## Things that bit
 

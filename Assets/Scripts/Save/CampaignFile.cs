@@ -28,6 +28,7 @@ namespace LivingCity.Save
     public sealed class PrisonerDto
     {
         public int characterId;
+        public int gangId = -1;
         public int deed;
         public int takenOnDay;
         public int courtDay;
@@ -59,6 +60,33 @@ namespace LivingCity.Save
         // had already been broken before the station threshold.
         public int answer;
         public bool sprung;
+    }
+
+    /// <summary>One public fact in the retained city newspaper archive.</summary>
+    [Serializable]
+    public sealed class PressDto
+    {
+        public int day;
+        public float hour;
+        public int kind;
+        public string where;
+        public string business;
+        public int[] factions;
+        public int namedGangId = -1;
+        public int attribution;
+        public int witnesses;
+        public int gangsterDeaths;
+        public int civilianDeaths;
+        public int officerDeaths;
+        public int shots;
+        public string[] names;
+        public string[] models;
+        public int deed;
+        public int sentenceDays;
+        public int caseId = -1;
+        public int incidentNumber = -1;
+        public int outcome;
+        public int weight;
     }
 
     /// <summary>One name on a case's witness list, as it went to disk. The position is
@@ -147,11 +175,14 @@ namespace LivingCity.Save
         /// cases were saved - and <see cref="PrisonSnapshot.Restore"/> migrates it
         /// rather than reading a man onto a docket number that does not exist.
         /// </summary>
-        public const int Version = 2;
+        public const int Version = 3;
 
         /// <summary>The last version written before the docket was part of the
         /// file.</summary>
         public const int VersionBeforeDocket = 1;
+
+        /// <summary>The last file version written before the city press book.</summary>
+        public const int VersionBeforePress = 2;
 
         public int version = Version;
         public int citySeed;
@@ -189,5 +220,10 @@ namespace LivingCity.Save
         public DeedDto[] deeds;
         public ShutdownDto[] shutdowns;
         public KnowledgeDto[] knowledge;
+
+        /// <summary>The citywide public record and the last edition already handed to
+        /// the player. Top-level because neither belongs to one house.</summary>
+        public PressDto[] press;
+        public int lastEditionDay;
     }
 }

@@ -137,6 +137,10 @@ namespace LivingCity.Save
             if (underworld == null)
                 return null;
 
+            // A save is a public cut-off too: retain the incident as it stands and let
+            // any later shots open a continuation after the snapshot.
+            RoadDemo.PressDesk.Instance?.FlushOpenIncident();
+
             var runtime = RoadDemo.TerritoryRuntime.Instance;
             var business = BusinessRuntime.Instance;
             var clock = Object.FindFirstObjectByType<Ambient.CityClock>();
@@ -158,6 +162,8 @@ namespace LivingCity.Save
                 nextCaseId = Pipe() != null ? Pipe().NextCaseId : 1,
                 shutdowns = Shutdowns(business),
                 knowledge = Knowledge(underworld),
+                press = PressSnapshot.Snapshot(underworld.Press),
+                lastEditionDay = underworld.Press.LastEditionDay,
             };
             // The physical first leg is intentionally not serialized. Its dispatcher
             // writes only the accepted recovery rule into this snapshot: unbooked men
@@ -207,6 +213,7 @@ namespace LivingCity.Save
 
             var underworld = Underworld.Ensure(file.citySeed);
             OutfitSnapshot.Restore(underworld, file.underworld);
+            PressSnapshot.Restore(underworld.Press, file);
 
             if (runtime != null)
                 TerritorySnapshot.Restore(

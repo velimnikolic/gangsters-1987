@@ -78,6 +78,7 @@ namespace RoadDemo
         public static void RanFromTheOfficer(StreetAlarm.Complaint? call,
             DemoCrews.Unit crew)
         {
+            PressDesk.Instance?.RanFromPolice(call, crew);
             if (!IsOurs(call, crew)) return;
             File(-1, CrewName(crew), IncidentKind.RanFromTheOfficer, Scene(call));
         }
@@ -85,18 +86,21 @@ namespace RoadDemo
         public static void FiredOnTheOfficer(StreetAlarm.Complaint? call,
             DemoCrews.Unit crew)
         {
+            PressDesk.Instance?.FiredOnPolice(call, crew);
             if (!IsOurs(call, crew)) return;
             File(-1, CrewName(crew), IncidentKind.FiredOnTheOfficer, Scene(call));
         }
 
         public static void TakenIn(StreetAlarm.Complaint? call, DemoCrews.Unit crew)
         {
+            PressDesk.Instance?.Arrest(call, crew);
             if (!IsOurs(call, crew)) return;
             File(-1, CrewName(crew), IncidentKind.TakenIn, Scene(call));
         }
 
         public static void Sprung(StreetAlarm.Complaint? call, DemoCrews.Unit crew)
         {
+            PressDesk.Instance?.CustodyBroken(call, crew);
             if (!IsOurs(call, crew)) return;
             File(-1, CrewName(crew), IncidentKind.Sprung, Scene(call));
         }
@@ -104,6 +108,7 @@ namespace RoadDemo
         /// <summary>A uniform in the doorway and nobody to take in.</summary>
         public static void StatementTaken(StreetAlarm.Complaint call)
         {
+            PressDesk.Instance?.Statement(call);
             if (call.Faction != Ours) return;
             File(-1, Named(call.Where, "the door"), IncidentKind.StatementTaken, "");
         }
@@ -112,6 +117,7 @@ namespace RoadDemo
         /// about it start here.</summary>
         public static void CaseOpened(CourtCase file)
         {
+            PressDesk.Instance?.CaseOpened(file);
             if (file == null || file.GangId != Ours) return;
             File(-1, Named(file.Where, "last night"), IncidentKind.CaseOpened, "");
         }
@@ -121,16 +127,23 @@ namespace RoadDemo
             File(-1, witness != null ? witness.Name : "", IncidentKind.WitnessWithdrawn, "");
 
         /// <summary>He will not be giving evidence.</summary>
-        public static void WitnessKilled(Witness witness) =>
+        public static void WitnessKilled(Witness witness)
+        {
+            PressDesk.Instance?.WitnessKilled(witness);
             File(-1, witness != null ? witness.Name : "", IncidentKind.WitnessKilled, "");
+        }
 
         public static void BailPosted(Character man) =>
             File(man != null ? man.Id : -1, man != null ? man.FullName : "",
                 IncidentKind.BailPosted, "");
 
-        public static void BailForfeit(Character man) =>
+        public static void BailForfeit(Character man, Prisoner prisoner = null,
+            CourtCase file = null)
+        {
+            PressDesk.Instance?.BailForfeit(man, prisoner, file);
             File(man != null ? man.Id : -1, man != null ? man.FullName : "",
                 IncidentKind.BailForfeit, "");
+        }
 
         public static void CutLoose(Character man) =>
             File(man != null ? man.Id : -1, man != null ? man.FullName : "",
@@ -138,9 +151,11 @@ namespace RoadDemo
 
         /// <summary>What the court did to one man - the one line the player watches
         /// the whole epic for.</summary>
-        public static void Verdict(Character man, PrisonStage stage, CaseStatus status)
+        public static void Verdict(Character man, PrisonStage stage, CaseStatus status,
+            Prisoner prisoner = null, CourtCase file = null)
         {
             if (man == null) return;
+            PressDesk.Instance?.Verdict(man, prisoner, file, status);
             var kind = stage == PrisonStage.Sentenced
                 ? IncidentKind.Convicted
                 : status == CaseStatus.Dismissed

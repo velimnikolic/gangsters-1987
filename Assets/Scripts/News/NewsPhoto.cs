@@ -60,7 +60,7 @@ namespace LivingCity.News
         /// the force's own marked body (VehicleCatalog.PoliceCars): the paper photographs
         /// what is actually parked at the kerb.</summary>
         const string OfficerModel = "SM_Chr_Officer_Male_01_AI";
-        const string PoliceCarModel = "SM_Veh_Sedan_01_Preset_Police";
+        const string PoliceCarModel = "SM_Veh_Pickup_01_Preset_Police";
 
         /// <summary>Faces that are not gang faces - the suits, the street, the law.
         /// Held to that literally: nothing here is on GangLooks' cast tables, so the
@@ -97,7 +97,7 @@ namespace LivingCity.News
             "FILE PHOTO: THE MAN POLICE WANT TO TALK TO",
             "A FACE KNOWN TO THE ORGANIZED CRIME BUREAU",
             "PHOTOGRAPHED LEAVING THE COURTHOUSE YESTERDAY",
-            "OUR PHOTOGRAPHER REACHED THE SCENE FIRST",
+            "A PHOTOGRAPHER REACHED THE SCENE FIRST",
         };
 
         static readonly string[] DrugWarCaptions =
@@ -118,7 +118,7 @@ namespace LivingCity.News
         static readonly string[] WorldCaptions =
         {
             "A DIPLOMAT ARRIVES FOR A SECOND SESSION",
-            "OUR CORRESPONDENT CABLED THIS PICTURE",
+            "A CORRESPONDENT CABLED THIS PICTURE",
             "THE DELEGATION LEFT WITHOUT COMMENT",
         };
 

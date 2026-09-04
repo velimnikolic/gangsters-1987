@@ -2878,6 +2878,20 @@ namespace RoadDemo
             // and nowhere else, because to a driver it is the same question the light
             // asks - and asked FIRST, since no light on earth waves you past a barrier.
             if (node.Toll != null && !node.Toll.MayPass(this)) { Why = "toll"; return false; }
+
+            // ROTATION CLOSES THE CROSSING APPROACHES BEFORE THE POLICE GET THERE.
+            // Merely letting the response car run a red is not right of way: cars on
+            // somebody else's green keep claiming the box in front of it, so it waits
+            // for them all exactly as if it had obeyed the light. A lower-priority
+            // driver now sees the response while there is still ample stopping room
+            // and holds at his own line. Cars on the same or a non-crossing movement
+            // continue, so they clear the responder's route rather than sealing it.
+            if (YieldsToEmergencyAt(node))
+            {
+                Why = "emergency vehicle";
+                return false;
+            }
+
             var sig = node.Signal;
             if (sig != null)
             {
@@ -2885,11 +2899,13 @@ namespace RoadDemo
                 bool yellow = sig.YellowFor(Lane.NorthSouth);
                 if (green)
                 {
-                    if (_turn == Turn.Left && OncomingPriority(node)) { Why = "left: oncoming"; return false; }
+                    if (!Profile.EmergencyRightOfWay && _turn == Turn.Left && OncomingPriority(node))
+                    { Why = "left: oncoming"; return false; }
                 }
                 else if (yellow)
                 {
-                    if (stopDist > Speed * Speed / (2f * Brake) + 2f) { Why = "yellow"; return false; }
+                    if (!Profile.EmergencyRightOfWay && stopDist > Speed * Speed / (2f * Brake) + 2f)
+                    { Why = "yellow"; return false; }
                 }
                 else
                 {
@@ -2914,26 +2930,27 @@ namespace RoadDemo
                     // the traffic on its own, with no machine in it at all, refuses
                     // nothing whatever.
                     //
-                    // So the rule is the blunt one, which is also the honest one: a red
-                    // is run across a DESERTED junction and no other. That is exactly
-                    // the case the player was complaining about - a machine sat alone at
-                    // a light in an empty street in the middle of a drive-by - and it
-                    // costs nothing, because where there is traffic the machine now does
-                    // what it always did and waits for the green.
-                    if (ConflictApproaching(node, 4f) || !BoxDeserted(node))
+                    // So the non-emergency rule is the blunt one: a red is run across a
+                    // DESERTED junction and no other. A response under roof lights is a
+                    // different contract: YieldsToEmergencyAt makes the conflicting arms
+                    // hold in advance, while the Inside check below still keeps the pickup
+                    // out of a body already physically clearing the box.
+                    if (!Profile.EmergencyRightOfWay &&
+                        (ConflictApproaching(node, 4f) || !BoxDeserted(node)))
                     { Why = "red: traffic"; return false; }
                 }
             }
             else
             {
                 // no lights: give way to what is already coming at the box on a crossing path
-                if (_turn == Turn.Left && OncomingPriority(node)) { Why = "left: oncoming"; return false; }
+                if (!Profile.EmergencyRightOfWay && _turn == Turn.Left && OncomingPriority(node))
+                { Why = "left: oncoming"; return false; }
                 // THE TURN-ROUND GIVES WAY TO EVERYBODY COMING. Its half circle takes the
                 // whole box (LaneNet), and the check below sees only cars already IN the
                 // box: two that commit to it in the same second from two roads both find
                 // it empty and meet in the middle (DEPOT-004 S2 seed 102, twice). The car
                 // turning round is the one with time to spare, so it is the one that waits.
-                if (_via != null && _via.UTurn && ConflictApproaching(node, 3f))
+                if (!Profile.EmergencyRightOfWay && _via != null && _via.UTurn && ConflictApproaching(node, 3f))
                 { Why = "u-turn: traffic"; return false; }
             }
             // the connectors in use
@@ -2963,6 +2980,56 @@ namespace RoadDemo
             }
             Why = "";
             return true;
+        }
+
+        /// <summary>How early a responding police car reserves a conflicting movement.
+        /// Four seconds at its actual top pace, plus a car length of warning, lets normal
+        /// traffic brake at its usual rate instead of discovering the lightbar at the
+        /// stop line. Seventy metres is the floor while the pickup is still accelerating
+        /// or briefly held behind a queue.</summary>
+        public static readonly float EmergencyPrioritySeconds = 4f;
+        public static readonly float EmergencyPriorityMinimumRange = 70f;
+
+        bool YieldsToEmergencyAt(RoadNode node)
+        {
+            if (Profile.EmergencyRightOfWay || _via == null) return false;
+
+            for (int i = 0; i < node.Incoming.Count; i++)
+            {
+                var edge = node.Incoming[i];
+                for (int k = 0; k < edge.Cars.Count; k++)
+                {
+                    var response = edge.Cars[k];
+                    if (response == this || response.Parked || response.Derelict || response.Wrecked ||
+                        !response.Profile.EmergencyRightOfWay)
+                        continue;
+
+                    float distance = edge.Length - response.Progress - response.HalfLen;
+                    float range = Mathf.Max(EmergencyPriorityMinimumRange,
+                        Mathf.Max(Mathf.Abs(response.Speed), response.TopSpeed) * EmergencyPrioritySeconds +
+                        response.HalfLen);
+                    if (distance > range) continue;
+
+                    var his = response._via ??
+                              (response._next != null ? node.ConnectorFor(edge, response._next) : null);
+                    if (his != null)
+                    {
+                        // Following the same approach lets the road ahead empty. A route
+                        // that the conflict table proves independent need not be stopped.
+                        if (his.From == _via.From) continue;
+                        if (his.Index < _via.Conflicts.Length && !_via.Conflicts[his.Index]) continue;
+                    }
+                    else if (edge == Lane)
+                    {
+                        // During the response car's first planning frame its connector
+                        // may not exist yet. Do not stop the lane it needs to drain.
+                        continue;
+                    }
+
+                    return true;
+                }
+            }
+            return false;
         }
 
         // The pace through a turn: the profile's, and no more than the bend's radius

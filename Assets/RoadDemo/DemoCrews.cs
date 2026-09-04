@@ -978,6 +978,9 @@ namespace RoadDemo
             // The one thing the campaign cannot say for itself: that it is over
             // (RANK-002). It watches the runner and paints nothing until it has to.
             gameObject.AddComponent<OutfitEnd>();
+            // Every campaign begins with the morning edition and receives one at the
+            // 06:00 cut thereafter. It is a modal sheet outside the ledger.
+            gameObject.AddComponent<LivingCity.UI.NewspaperHud>();
             // last onto the click chain, so the front card is asked first and hands the
             // click straight back to the crews if a man was standing in front of the door
             gameObject.AddComponent<FrontOverlay>().Init();

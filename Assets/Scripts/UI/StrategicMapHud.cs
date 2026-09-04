@@ -270,7 +270,7 @@ namespace LivingCity.UI
             // to nobody, exactly as InteractionController stands down for it. There is
             // no exception any more: the war-room split that kept this map live beside
             // the book is retired, and the file now covers the glass.
-            if (PersonnelAlmanac.IsOpen)
+            if (PersonnelAlmanac.IsOpen || NewspaperHud.IsOpen)
                 return;
 
             if (!PersonnelAlmanac.IsOpen && keyboard.mKey.wasPressedThisFrame)
@@ -284,7 +284,8 @@ namespace LivingCity.UI
 
             // Yield on ClaimsEsc, not IsOpen: the book may have closed THIS frame, and
             // that press already belonged to it.
-            if (keyboard.escapeKey.wasPressedThisFrame && !PersonnelAlmanac.ClaimsEsc)
+            if (keyboard.escapeKey.wasPressedThisFrame &&
+                !PersonnelAlmanac.ClaimsEsc && !NewspaperHud.ClaimsEsc)
             {
                 Close();
                 return;

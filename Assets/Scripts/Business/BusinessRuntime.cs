@@ -173,22 +173,6 @@ namespace LivingCity.Business
             return directory != null && directory.TryGet(businessId, out record);
         }
 
-        /// <summary>Real shutter truth: operational closure, or outside trading hours.</summary>
-        public bool ShouldShutter(TerritoryBusinessId businessId)
-        {
-            if (!businessId.IsValid)
-                return false;
-            if (TryGetShutdown(businessId, out _))
-                return true;
-            if (TryGetBusiness(businessId, out var record) &&
-                record.State != BusinessOperationalState.Trading)
-                return true;
-            var clock = LivingCity.Ambient.DayClock.Current;
-            if (clock == null)
-                return false;
-            return clock.Hour < 8f || clock.Hour >= 22f;
-        }
-
         public string OwnerNameOf(BusinessRecord record) =>
             record != null && directory != null &&
             directory.TryGetOwner(record.OwnerId, out var owner)

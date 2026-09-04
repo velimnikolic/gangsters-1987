@@ -100,6 +100,7 @@ namespace RoadDemo
         /// able to intervene as one watching it from the street.</summary>
         static bool Blocked =>
             LivingCity.UI.PersonnelAlmanac.IsOpen ||
+            LivingCity.UI.NewspaperHud.IsOpen ||
             LivingCity.UI.StrategicMapHud.InputBlocked;
 
         Collar _collar = Collar.None;

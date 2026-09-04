@@ -135,9 +135,8 @@ namespace LivingCity.UI
         internal RectTransform commandContent;
         internal float commandScroll;
 
-        /// <summary>The full PERSONNEL dossier opened over this sheet. It has its own
-        /// surface, but is painted by the one personal-file renderer so the popup and
-        /// the PERSONNEL tab can never disagree about a man.</summary>
+        /// <summary>The full personnel dossier opened over this sheet. It has its own
+        /// surface and is painted by the one personal-file renderer.</summary>
         int commandDossierId = -1;
         float commandDossierScroll;
         RectTransform commandDossierRoot, commandDossierPanel,
@@ -993,9 +992,23 @@ namespace LivingCity.UI
             remark.overflowMode = TextOverflowModes.Ellipsis;
             y += Mathf.Min(42f, remark.preferredHeight) + 11f;
 
-            var close = Caps(card, BossPadSide, -y, 140f, "CLOSE", 9.5f, LedgerV2.Boss, 8f);
+            var actionW = (inner - 8f) * 0.5f;
+            if (member != null)
+            {
+                var bossId = member.Id;
+                var dossier = Caps(card, BossPadSide, -y, actionW,
+                    "HIS FULL DOSSIER", 9.5f, LedgerV2.HeadPaper, 8f);
+                dossier.font = LedgerStyle.MonoBold;
+                NameKey(card, BossPadSide, -y, actionW, LineBox(9.5f),
+                    () => OpenCommandDossier(bossId));
+            }
+
+            var closeX = member != null ? BossPadSide + actionW + 8f : BossPadSide;
+            var closeW = member != null ? actionW : inner;
+            var close = Caps(card, closeX, -y, closeW, "CLOSE", 9.5f,
+                LedgerV2.Boss, 8f, TextAlignmentOptions.MidlineRight);
             close.font = LedgerStyle.MonoBold;
-            NameKey(card, BossPadSide, -y, 140f, LineBox(9.5f), ToggleCommandBoss);
+            NameKey(card, closeX, -y, closeW, LineBox(9.5f), ToggleCommandBoss);
             return y + LineBox(9.5f);
         }
 

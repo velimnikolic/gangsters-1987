@@ -57,7 +57,6 @@ namespace LivingCity.EditorTools
         const string PalmProp = "Assets/Synty/PolygonPalmCity/Prefabs/Props/";
         const string GangBld = "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/";
         const string GangVeh = "Assets/Synty/PolygonGangWarfare/Prefabs/Vehicles/";
-        const string CopVeh = "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/";
 
         /// <summary>The painted bays: a flat 10 x 5 m piece of the PolygonCity road kit
         /// with three bays across it, stretched to YardParkingPlan.RowDepth so a car
@@ -188,23 +187,18 @@ namespace LivingCity.EditorTools
         /// forecourt is nearly full because that is the stock.
         ///
         /// The lists are longer than what survives: everything here is measured against the
-        /// bay on load, so the police van and the pickup drop out on length by themselves.
+        /// bay on load, so oversized vehicles drop out on length by themselves.
         /// Whatever is left of a fleet is topped up with ordinary traffic - staff cars park
         /// at a station too - and a fleet that loses every vehicle falls back to it whole.
         /// </summary>
         static readonly (Fleet fleet, float share, float fill, string[] paths)[] Fleets =
         {
-            // The two marked cars are the force's (VehicleCatalog.PoliceCars) - the
-            // other packs' cruisers are deliberately absent, so a station yard is the
-            // same fleet the patrols drive. The van and the two bikes are not cars and
-            // stay: a yard with nothing but cruisers in it reads as a showroom.
+            // The marked pickup is the force's whole vehicle fleet
+            // (VehicleCatalog.PoliceCars): a station yard and the live patrols show the
+            // same one body, never a sedan or another police-pack vehicle.
             (Fleet.Police, 0.8f, 0.8f, new[]
             {
-                PalmVeh + "SM_Veh_Sedan_01_Preset_Police",
                 PalmVeh + "SM_Veh_Pickup_01_Preset_Police",
-                CopVeh + "SM_Veh_Van_01",
-                CopVeh + "SM_Veh_Motorbike_01",
-                CopVeh + "SM_Veh_Motorbike_02",
             }),
             (Fleet.Emergency, 0.35f, 0.7f, new[]
             {

@@ -1,4 +1,5 @@
 using LivingCity.Gangs;
+using LivingCity.News;
 using LivingCity.Personnel;
 
 namespace LivingCity.Outfit
@@ -61,6 +62,9 @@ namespace LivingCity.Outfit
         /// whether they are at war.
         /// </summary>
         public HouseRelations Relations { get; } = new HouseRelations();
+
+        /// <summary>The public record shared by every house in the city.</summary>
+        public PressBook Press { get; } = new PressBook();
 
         public int Count => houses.Length;
 

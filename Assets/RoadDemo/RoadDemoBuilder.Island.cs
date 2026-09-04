@@ -112,6 +112,12 @@ namespace RoadDemo
         /// the tile it simply never shows; the sidewalk's own 10 cm kerb hides the
         /// step at the shoulder.</summary>
         public const float RoadBed = -0.06f;
+        /// <summary>A quiet, opaque bed below paved city ground. Authored basement
+        /// entrances and subway stairs deliberately have no street-level tile over them,
+        /// but the sea is one plane under the whole island; without this bed that plane
+        /// shows through every opening deeper than <see cref="WaterY"/>. Ten centimetres
+        /// above the water keeps those openings visibly sunken and dry.</summary>
+        public const float DryUrbanBedY = WaterY + 0.10f;
         /// <summary>The seabed's depth off the beach; well below the water.</summary>
         const float SeabedY = -5f;
         /// <summary>How far past the coast the ground mesh (and the sea) run.</summary>
@@ -501,8 +507,8 @@ namespace RoadDemo
                       $"over {(x1 - x0):F0} x {(z1 - z0):F0} m");
         }
 
-        /// <summary>One tile of the ground. False if it was all city and all paving and
-        /// there was nothing to draw.</summary>
+        /// <summary>One tile of the ground. False if it contains neither island terrain
+        /// nor the dry bed kept below paved city ground.</summary>
         bool GroundTile(float x0, float x1, float z0, float z1, int index)
         {
             int nx = Mathf.CeilToInt((x1 - x0) / GroundStep), nz = Mathf.CeilToInt((z1 - z0) / GroundStep);
@@ -517,6 +523,8 @@ namespace RoadDemo
                 }
             var grass = new List<int>();
             var sand = new List<int>();
+            var dryVerts = new List<Vector3>();
+            var dry = new List<int>();
             for (int j = 0; j < nz; j++)
                 for (int i = 0; i < nx; i++)
                 {
@@ -531,9 +539,27 @@ namespace RoadDemo
                     // The ordinary grid fully tiles this rectangle. A primary structure
                     // such as Core does not: its own reservation publishes an exact paved
                     // mask so Outside cells keep real island ground.
-                    if (!HasPrimaryStructure &&
-                        cx > _gx0 && cx < _gx1 && cz > _gz0 && cz < _gz1) continue;
-                    if (_reservations.InPaved(cx, cz, GroundStep * 0.5f)) continue;
+                    bool ordinaryCity = !HasPrimaryStructure &&
+                        cx > _gx0 && cx < _gx1 && cz > _gz0 && cz < _gz1;
+                    bool paved = _reservations.InPaved(cx, cz, GroundStep * 0.5f);
+                    if (ordinaryCity || paved)
+                    {
+                        // The sea spans the whole island. Keep an opaque bed below city
+                        // surfaces so deliberately open basement/subway cells reveal dry
+                        // ground rather than that sea plane. Real rivers and harbour basins
+                        // remain open water.
+                        if (!_reservations.InWater(cx, cz))
+                        {
+                            int dryBase = verts.Length + dryVerts.Count;
+                            dryVerts.Add(new Vector3(i * GroundStep, DryUrbanBedY, j * GroundStep));
+                            dryVerts.Add(new Vector3(i * GroundStep, DryUrbanBedY, (j + 1) * GroundStep));
+                            dryVerts.Add(new Vector3((i + 1) * GroundStep, DryUrbanBedY, j * GroundStep));
+                            dryVerts.Add(new Vector3((i + 1) * GroundStep, DryUrbanBedY, (j + 1) * GroundStep));
+                            dry.Add(dryBase); dry.Add(dryBase + 1); dry.Add(dryBase + 2);
+                            dry.Add(dryBase + 2); dry.Add(dryBase + 1); dry.Add(dryBase + 3);
+                        }
+                        continue;
+                    }
                     int a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
                     float low = Mathf.Min(verts[a].y, verts[b].y, verts[c].y, verts[d].y);
                     var into = low < BeachLine ? sand : grass;
@@ -541,13 +567,18 @@ namespace RoadDemo
                     into.Add(b); into.Add(c); into.Add(d);
                 }
 
-            if (grass.Count == 0 && sand.Count == 0) return false;
+            if (grass.Count == 0 && sand.Count == 0 && dry.Count == 0) return false;
+
+            var allVerts = new Vector3[verts.Length + dryVerts.Count];
+            System.Array.Copy(verts, allVerts, verts.Length);
+            dryVerts.CopyTo(allVerts, verts.Length);
 
             var mesh = new Mesh { name = "Island Ground " + index, indexFormat = IndexFormat.UInt32 };
-            mesh.vertices = verts;
-            mesh.subMeshCount = 2;
+            mesh.vertices = allVerts;
+            mesh.subMeshCount = 3;
             mesh.SetTriangles(grass, 0);
             mesh.SetTriangles(sand, 1);
+            mesh.SetTriangles(dry, 2);
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
 
@@ -556,13 +587,21 @@ namespace RoadDemo
             go.transform.position = new Vector3(x0, 0f, z0);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
-            mr.sharedMaterials = new[] { GrassMaterial(), SandMaterial() };
+            mr.sharedMaterials = new[] { GrassMaterial(), SandMaterial(), DryUrbanBedMaterial() };
             mr.shadowCastingMode = ShadowCastingMode.On;
             go.isStatic = true;
             return true;
         }
 
-        Material _grassMat, _sandMat;
+        Material _grassMat, _sandMat, _dryUrbanBedMat;
+
+        Material DryUrbanBedMaterial()
+        {
+            if (_dryUrbanBedMat != null) return _dryUrbanBedMat;
+            _dryUrbanBedMat = ForecourtSet.Asphalt();
+            if (_dryUrbanBedMat != null) _dryUrbanBedMat.name = "Dry urban subgrade";
+            return _dryUrbanBedMat;
+        }
 
         /// <summary>PalmCity's triplanar ground as it comes: grass on top.</summary>
         Material GrassMaterial()

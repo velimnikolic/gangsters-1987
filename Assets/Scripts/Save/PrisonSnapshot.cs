@@ -34,6 +34,7 @@ namespace LivingCity.Save
                 rows[i] = new PrisonerDto
                 {
                     characterId = man.CharacterId,
+                    gangId = man.GangId,
                     deed = (int)man.Deed,
                     answer = (int)man.Answer,
                     sprung = man.Sprung,
@@ -133,6 +134,7 @@ namespace LivingCity.Save
                 inside.Add(new Prisoner
                 {
                     CharacterId = row.characterId,
+                    GangId = row.gangId,
                     Deed = (Deed)row.deed,
                     Answer = (DoorAnswer)row.answer,
                     Sprung = row.sprung,
@@ -205,6 +207,18 @@ namespace LivingCity.Save
                 docket.Add(reopened);
             }
 
+            // Version 2 knew the gang on the docket but not on the prisoner row. Carry
+            // that ownership across before any multi-house day pass can touch him.
+            for (var i = 0; i < inside.Count; i++)
+                if ((file.version <= CampaignFile.VersionBeforePress ||
+                     inside[i].GangId < 0) && inside[i].CaseId >= 0)
+                    for (var c = 0; c < docket.Count; c++)
+                        if (docket[c].CaseId == inside[i].CaseId)
+                        {
+                            inside[i].GangId = docket[c].GangId;
+                            break;
+                        }
+
             if (file.version <= CampaignFile.VersionBeforeDocket)
                 MigrateFromBeforeTheDocket(inside, docket);
 
@@ -275,6 +289,7 @@ namespace LivingCity.Save
                 });
                 docket.Add(file);
                 man.CaseId = file.CaseId;
+                man.GangId = file.GangId;
             }
         }
     }

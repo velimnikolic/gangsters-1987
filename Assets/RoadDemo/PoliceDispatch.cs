@@ -1052,6 +1052,7 @@ namespace RoadDemo
         public void RouteTo(Vector3 scene, float standOff)
         {
             _sent = true;
+            Car.CivicResponse = true;
             var toScene = Flat(scene - Car.Position);
             var lane = Car.Net?.NearestLane(scene, out _, 12f);
             var along = lane != null ? Flat(lane.Dir) : toScene;
@@ -1068,6 +1069,7 @@ namespace RoadDemo
         public void Release()
         {
             _sent = false;
+            Car.CivicResponse = false;
             Car.ParkNear(_home);
         }
     }

@@ -158,6 +158,8 @@ namespace RoadDemo
         /// <summary>The lot plan going over the city - paper, because that is what
         /// the overlay is drawn as.</summary>
         public static AudioClip Paper => Load<AudioClip>(Root + "Ui/paper_rustle.wav");
+        /// <summary>The morning edition landing on the desk.</summary>
+        public static AudioClip Newspaper => Load<AudioClip>(Root + "Ui/newspaper_slap.wav");
 
         static AudioClip[] _engines, _voices, _screams, _radio;
 

@@ -88,6 +88,7 @@ namespace RoadDemo
             public CustodyCar Car;
             public int Seat;
             public bool Prisoner;
+            public bool Activated;
             public bool Started;
             public bool Seated;
             public float StartedAt;
@@ -163,7 +164,7 @@ namespace RoadDemo
                 By = Time.time + CollarPatience + CustodyTransferPatience,
             };
 
-            // Fill the back seats from the hoods first.  The lieutenant is the unit's
+            // Fill the pickup's prisoner load from the hoods first. The lieutenant is the unit's
             // stable physical anchor, so leaving him with the final odd man keeps the
             // crew alive at the pickup while the first four cross the city.  Booking
             // him first would make Sync retire the whole physical unit and strand the
@@ -193,7 +194,7 @@ namespace RoadDemo
                 AddCustodyCar(custody, carrier, arrestingSquad);
 
             var living = LivingPrisoners(crew, _custodyMen);
-            var wanted = Mathf.Max(1, (living + 1) / 2);
+            var wanted = Mathf.Max(1, CustodyPlan.CarsNeeded(living));
             if (Force != null && custody.Cars.Count < wanted)
             {
                 Force.CollectCustodyCars(crew.Position, living, _custodyCars);
@@ -290,13 +291,12 @@ namespace RoadDemo
                 case CustodyStage.WaitingForCars:
                     var waiting = WaitingPrisoners(custody);
                     if (waiting == 0) { FinishBookedCustody(custody); return; }
-                    var wanted = (waiting + 1) / 2;
+                    var wanted = CustodyPlan.CarsNeeded(waiting);
                     if (custody.Cars.Count < wanted)
                         FindMoreCustodyCars(custody, waiting);
-                    // One car can make another trip.  The station keeps one on duty,
-                    // so a five-man crew commonly has four rear seats now and one man
-                    // held by the beat for the next run; waiting for an impossible
-                    // third carrier would turn the reserve rule into a deadlock.
+                    // One pickup can make another trip. The station keeps one car on
+                    // duty, so waiting for an unavailable extra carrier must never turn
+                    // the reserve rule into a deadlock.
                     if (custody.Cars.Count == 0 || !AllAtScene(custody))
                     {
                         if (Time.time >= custody.By)
@@ -394,7 +394,7 @@ namespace RoadDemo
         void FindMoreCustodyCars(Custody custody, int prisoners)
         {
             if (Force == null || custody == null) return;
-            var wanted = (prisoners + 1) / 2;
+            var wanted = CustodyPlan.CarsNeeded(prisoners);
             var before = custody.Cars.Count;
             Force.CollectCustodyCars(custody.Crew.Position, prisoners, _custodyCars);
             for (var i = 0; i < _custodyCars.Count && custody.Cars.Count < wanted; i++)
@@ -554,7 +554,7 @@ namespace RoadDemo
             for (var i = 0; i < custody.Cars.Count; i++)
             {
                 var load = custody.Cars[i];
-                for (var p = 0; p < 2 && loaded < tripCapacity; p++)
+                for (var p = 0; p < CustodyPlan.PrisonersPerPickup && loaded < tripCapacity; p++)
                 {
                     CustodyPrisoner record = null;
                     while (prisonerAt < custody.Prisoners.Count)
@@ -568,7 +568,7 @@ namespace RoadDemo
                     if (record == null) break;
                     record.InWave = true;
                     BeginPrisonerEscort(custody, load, record.Man, 2 + p,
-                        EscortAt(load.Escort, p));
+                        EscortAt(load.Escort, p % CustodyPlan.EscortSeats));
                     loaded++;
                 }
             }
@@ -577,6 +577,7 @@ namespace RoadDemo
 
             custody.Stage = CustodyStage.BoardingPrisoners;
             custody.By = Time.time + CollarPatience;
+            ActivateNextPrisoners(custody);
             CrewOverlay.Announce("THE PRISONERS ARE BOARDING", 4f,
                 new Color(0.55f, 0.78f, 1f));
         }
@@ -612,17 +613,44 @@ namespace RoadDemo
             if (!PrepareBoardingGeometry(boarding, man.Tf.position)) return;
             custody.Boarding.Add(boarding);
             man.Disengage();
-            OrderEscortToPrisoner(boarding);
+        }
+
+        /// <summary>Two officers load the pickup in pairs. A named escort finishes one
+        /// prisoner before taking the next, so assigning six men to the rear does not
+        /// overwrite the officer's walk order six times in the same frame.</summary>
+        static void ActivateNextPrisoners(Custody custody)
+        {
+            if (custody == null) return;
+            for (var i = 0; i < custody.Boarding.Count; i++)
+            {
+                var next = custody.Boarding[i];
+                if (!next.Prisoner || next.Seated || next.Activated || next.Escort == null)
+                    continue;
+                var busy = false;
+                for (var earlier = 0; earlier < custody.Boarding.Count; earlier++)
+                {
+                    var current = custody.Boarding[earlier];
+                    if (current == next || current.Escort != next.Escort ||
+                        !current.Activated || current.Seated) continue;
+                    busy = true;
+                    break;
+                }
+                if (busy) continue;
+                next.Activated = true;
+                OrderEscortToPrisoner(next);
+            }
         }
 
         void TickPrisonerBoarding(Custody custody)
         {
+            ActivateNextPrisoners(custody);
             var allSeated = true;
             for (var i = 0; i < custody.Boarding.Count; i++)
             {
                 var boarding = custody.Boarding[i];
                 if (boarding.Seated) continue;
                 allSeated = false;
+                if (!boarding.Activated) continue;
                 var man = boarding.Man;
                 if (man == null || man.Dead || man.Tf == null)
                 {
@@ -1011,7 +1039,12 @@ namespace RoadDemo
             var tf = car.Ride.Tf;
             if (tf == null || man == null || man.Tf == null) return;
             var seats = CarBody.MeasureSeats(tf);
-            var seat = seats[Mathf.Clamp(index, 0, seats.Length - 1)];
+            // Prisoners are cargo in this pickup, not extra cabin passengers. Their
+            // source bodies stay hidden while in transit and these separate rear points
+            // keep the logical transforms packed inside the vehicle without overlap.
+            var seat = prisoner
+                ? PrisonerCargoPoint(seats, index)
+                : seats[Mathf.Clamp(index, 0, seats.Length - 1)];
             var body = new SeatedBody
             {
                 Man = man,
@@ -1031,11 +1064,23 @@ namespace RoadDemo
             man.Tf.localPosition = seat;
             man.Tf.localRotation = Quaternion.identity;
             man.Tf.localScale = body.LocalScale;
-            body.Visual = CarOccupant.Seat(tf, man.SourcePrefab, _sitLoop, seat,
-                man.Tf.gameObject.layer);
+            if (!prisoner)
+                body.Visual = CarOccupant.Seat(tf, man.SourcePrefab, _sitLoop, seat,
+                    man.Tf.gameObject.layer);
             for (var i = 0; i < body.Renderers.Length; i++)
                 if (body.Renderers[i] != null) body.Renderers[i].enabled = false;
             custody.Bodies.Add(body);
+        }
+
+        static Vector3 PrisonerCargoPoint(Vector3[] seats, int seatIndex)
+        {
+            var slot = Mathf.Clamp(seatIndex - CustodyPlan.EscortSeats, 0,
+                CustodyPlan.PrisonersPerPickup - 1);
+            var rear = seats[Mathf.Min(4, seats.Length - 1)];
+            return new Vector3(
+                slot % 2 == 0 ? -0.32f : 0.32f,
+                rear.y,
+                rear.z - (slot / 2) * 0.18f);
         }
 
         bool AllAtStation(Custody custody)

@@ -344,7 +344,7 @@ namespace AirportDemo
         public const string Bus = TownVeh + "SM_Veh_Bus_01.prefab";
         public const string Ambulance = CityVeh + "SM_Veh_Car_Ambo_01.prefab";
         public const string Taxi = CityVeh + "SM_Veh_Car_Taxi_01.prefab";
-        public const string PoliceCar = CityVeh + "SM_Veh_Car_Police_01.prefab";
+        public const string PoliceCar = PalmVeh + "SM_Veh_Pickup_01_Preset_Police.prefab";
         public const string Limousine = PalmVeh + "SM_Veh_Limousine_01.prefab";
         /// <summary>The panel van the night run comes in: no windows behind the cab,
         /// which in 1987 is the whole specification.</summary>

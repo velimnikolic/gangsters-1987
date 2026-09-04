@@ -658,6 +658,73 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_news_tests",
+                    "Run EPIC 35 contracts for the public-record gate, attribution, " +
+                    "06-to-06 editions, newspaper copy, determinism and v2/v3 saves.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "news", "tests" })]
+        public static object NewsTests()
+        {
+            var failures = LivingCity.Tests.NewsTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+                contracts = LivingCity.Tests.NewsTests.ContractNames(),
+            };
+        }
+
+        [CliCommand("gangsters_press",
+                    "Print and proof an EPIC 35 edition staged as quiet, shootout, " +
+                    "arrest or arson.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "news", "audit" })]
+        public static object PressBench(
+            [CliArg("seed", "City seed used by the newspaper compositor.")] int seed = 7,
+            [CliArg("stage", "quiet | shootout | arrest | arson")] string stage = "quiet")
+        {
+            var records = LivingCity.Tests.NewsTests.Stage(stage);
+            if (records == null)
+                return new
+                {
+                    passed = false,
+                    seed,
+                    stage,
+                    failures = new[]
+                    {
+                        "Unknown stage '" + stage +
+                        "'. Use quiet, shootout, arrest or arson.",
+                    },
+                    headlines = Array.Empty<object>(),
+                };
+
+            var edition = LivingCity.News.Edition.Compose(seed,
+                LivingCity.News.NewsDate.FromClockDay(1), 2, records);
+            var failures = LivingCity.Tests.NewsTests.Proof(edition);
+            var expected = string.Equals(stage, "quiet",
+                StringComparison.OrdinalIgnoreCase) ? 0 : 1;
+            var local = edition.Count(row => row.Story != null);
+            if (local != expected)
+                failures.Add("PRESS BENCH: " + stage + " staged " + expected +
+                             " public record(s), but printed " + local + ".");
+
+            return new
+            {
+                passed = failures.Count == 0,
+                seed,
+                stage,
+                failures = failures.ToArray(),
+                headlines = edition.Select(row => new
+                {
+                    desk = row.Desk.ToString(),
+                    headline = row.Text,
+                    copy = row.Blurb,
+                    source = row.Story != null ? row.Story.Kind.ToString() :
+                             row.Historical ? "1987 wire" : "wire",
+                }).ToArray(),
+            };
+        }
+
         [CliCommand("gangsters_save",
                     "Write the running campaign to a file (default: the autosave).",
                     MainThreadRequired = true, Tags = new[] { "gangsters", "save" })]
@@ -2750,7 +2817,6 @@ namespace GangstersTools
                 report.Buildings,
                 report.Openings,
                 report.Displays,
-                report.Closed,
                 report.RemovedGeneratedProps,
                 report.RemovedLongPieces,
                 report.Failures,

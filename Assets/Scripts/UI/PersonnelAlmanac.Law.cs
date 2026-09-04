@@ -627,9 +627,8 @@ namespace LivingCity.UI
             PlaceTopLeft(hit, x, y, w, h);
             RowButton(hit, ClickSurface(hit), () =>
             {
-                SelectMember(characterId);
-                SetPage(LedgerPage.Personnel);
-                dirty = true;
+                SetPage(LedgerPage.Command);
+                OpenCommandDossier(characterId);
             });
         }
     }

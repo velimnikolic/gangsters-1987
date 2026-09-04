@@ -658,6 +658,12 @@ def build():
     shot("Ui/paper_rustle.wav",
          "Cinematic Sound Design - Paper Foley/Newspaper Static Foley Rummage.wav",
          at=0.30, length=1.60, peak_db=-8.0, fout=0.25)
+    # The morning edition landing flat on the desk: a shorter, harder phrase from
+    # the same Sonniss newspaper recording, kept separate from the map's rustle so
+    # opening the paper has a recognisable beat of its own.
+    shot("Ui/newspaper_slap.wav",
+         "Cinematic Sound Design - Paper Foley/Newspaper Static Foley Rummage.wav",
+         at=2.10, length=0.72, hp=55, peak_db=-4.0, fout=0.10)
     shot("Ui/map_open.wav",
          "Cinematic Sound Design - Paper Foley/A4 Printing Paper Rattle Page Turn Tail.wav",
          at=0.0, length=1.10, peak_db=-7.0, fout=0.20)

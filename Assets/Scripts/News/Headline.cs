@@ -13,6 +13,8 @@ namespace LivingCity.News
         World,      // Gorbachev, Berlin, cartel homelands
         Business,   // the Dow, junk bonds, cash-only miracles
         Culture,    // what 1987 watched, wore and listened to
+        City,       // public records from this city
+        Courts,     // charges, warrants and verdicts
     }
 
     /// <summary>
@@ -38,6 +40,14 @@ namespace LivingCity.News
         /// for the text-only majority - a front page carries two or three pictures, not
         /// six. See <see cref="HeadlineGenerator.PhotosPerPage"/>.</summary>
         public NewsPhoto Photo = NewsPhoto.None;
+
+        /// <summary>The public record behind a local story. Null for calendar and
+        /// generated wire copy.</summary>
+        public PressRecord Story;
+
+        /// <summary>Copy set under the head. Local stories carry their own factual
+        /// paragraph; generated stories leave this empty for the UI's desk copy.</summary>
+        public string Blurb = "";
     }
 
     /// <summary>

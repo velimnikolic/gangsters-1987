@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Text;
 using LivingCity.Business;
+using LivingCity.News;
 using LivingCity.Outfit;
 using LivingCity.Personnel;
 using LivingCity.Save;
@@ -32,6 +33,8 @@ namespace LivingCity.Tests
             AnActiveShutdownComesBackThroughCampaignApply(failures);
             NobodyIsLeftInTheCells(failures);
             TheDocketComesBackWithIts(failures);
+            ThePublicBookComesBackWithTheCampaign(failures);
+            AVersionTwoPrisonerFindsHisHouseFromTheDocket(failures);
             ASaveFromBeforeTheDocketStillGetsATrial(failures);
             ANewerSaveIsRefused(failures);
 
@@ -485,6 +488,71 @@ namespace LivingCity.Tests
             if (backAgain.NextCaseId <= complaint.CaseId)
                 failures.Add("SAVE-006: the next docket number would collide with a " +
                              "case already on the books.");
+        }
+
+        /// <summary>EPIC 35. The newspaper is a city book, not one family's runner,
+        /// and its explicit top-level DTO must retain both the facts and the delivery
+        /// latch that prevents a loaded morning from printing twice.</summary>
+        static void ThePublicBookComesBackWithTheCampaign(List<string> failures)
+        {
+            var before = new PressBook();
+            before.Add(new PressRecord
+            {
+                Day = 30,
+                Hour = 2.75f,
+                Kind = PressKind.Verdict,
+                Where = "The Flats",
+                Factions = new[] { 7 },
+                NamedGangId = 7,
+                Attribution = PressAttribution.Named,
+                Names = new[] { "Sal Rizzo" },
+                Models = new[] { "SM_Chr_Goon_01_AI" },
+                Deed = Deed.Extortion,
+                CaseId = 41,
+                Outcome = (int)Police.CaseOutcome.Convicted,
+                SentenceDays = 365,
+                Weight = 73,
+            });
+            before.LastEditionDay = 29;
+
+            var file = JsonUtility.FromJson<CampaignFile>(JsonUtility.ToJson(
+                new CampaignFile
+                {
+                    day = 30,
+                    press = PressSnapshot.Snapshot(before),
+                    lastEditionDay = before.LastEditionDay,
+                }));
+            var after = new PressBook();
+            PressSnapshot.Restore(after, file);
+
+            if (after.Count != 1 || after.LastEditionDay != 29 ||
+                after[0].Day != 30 || Mathf.Abs(after[0].Hour - 2.75f) > 0.001f ||
+                after[0].Kind != PressKind.Verdict || after[0].CaseId != 41 ||
+                after[0].Factions.Length != 1 || after[0].Factions[0] != 7 ||
+                after[0].Names.Length != 1 || after[0].Names[0] != "Sal Rizzo")
+                failures.Add("SAVE-009: the public press book or its last-edition " +
+                             "latch changed in the campaign file.");
+        }
+
+        /// <summary>Version 2 had a gang on each docket but no gang on a prisoner row.
+        /// Missing JSON fields may deserialize as zero, so migration deliberately takes
+        /// the docket's owner instead of trusting the new field's apparent default.</summary>
+        static void AVersionTwoPrisonerFindsHisHouseFromTheDocket(List<string> failures)
+        {
+            const string legacy =
+                "{\"version\":2,\"prisoners\":[{" +
+                "\"characterId\":700000,\"deed\":0,\"takenOnDay\":10," +
+                "\"courtDay\":15,\"stage\":0,\"caseId\":41}]," +
+                "\"cases\":[{\"caseId\":41,\"deed\":0,\"gangId\":7," +
+                "\"defendants\":[700000],\"openedDay\":10,\"courtDay\":15," +
+                "\"status\":0}],\"nextCaseId\":42}";
+            var file = JsonUtility.FromJson<CampaignFile>(legacy);
+            var pipe = new Police.PrisonPipeline();
+            Save.PrisonSnapshot.Restore(pipe, file);
+            var prisoner = pipe.Find(700000);
+            if (prisoner == null || prisoner.GangId != 7)
+                failures.Add("SAVE-010: a version-2 rival prisoner was assigned to " +
+                             "the player's house instead of his docket's house.");
         }
 
         /// <summary>

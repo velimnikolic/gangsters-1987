@@ -99,11 +99,16 @@ namespace LivingCity.Police
     }
 
     /// <summary>Pure custody-car arithmetic shared by the force and its contracts.
-    /// Two prisoners fit in a car. When several are free one remains available for the
-    /// next call; when only one is free, the custody already waiting is that call and
-    /// must not be left at the kerb forever.</summary>
+    /// The police pickup carries at most eight people: two officers in the cab and up
+    /// to six prisoners secured in the rear. When several cars are free one remains
+    /// available for the next call; when only one is free, the custody already waiting
+    /// is that call and must not be left at the kerb forever.</summary>
     public static class CustodyPlan
     {
+        public const int PickupOccupantLimit = 8;
+        public const int EscortSeats = 2;
+        public const int PrisonersPerPickup = PickupOccupantLimit - EscortSeats;
+
         public static bool RefusesOrders(bool inCustody) => inCustody;
 
         /// <summary>The HUD/body anchor exists only while the city physically holds
@@ -151,11 +156,17 @@ namespace LivingCity.Police
         public static bool MustCoverPrisoner(bool inCustody, bool booked, bool riding) =>
             inCustody && !booked && !riding;
 
+        public static int CarsNeeded(int prisoners)
+        {
+            if (prisoners <= 0) return 0;
+            return (prisoners + PrisonersPerPickup - 1) / PrisonersPerPickup;
+        }
+
         public static int CarsForPrisoners(int prisoners, int carsOnDuty)
         {
             if (prisoners <= 0 || carsOnDuty <= 0)
                 return 0;
-            var wanted = (prisoners + 1) / 2;
+            var wanted = CarsNeeded(prisoners);
             var usable = carsOnDuty == 1 ? 1 : carsOnDuty - 1;
             return System.Math.Min(wanted, usable);
         }
@@ -165,7 +176,7 @@ namespace LivingCity.Police
         public static int PrisonersThisTrip(int prisoners, int assignedCars)
         {
             if (prisoners <= 0 || assignedCars <= 0) return 0;
-            return System.Math.Min(prisoners, assignedCars * 2);
+            return System.Math.Min(prisoners, assignedCars * PrisonersPerPickup);
         }
     }
 

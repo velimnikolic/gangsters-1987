@@ -50,6 +50,12 @@ namespace RoadDemo
         /// way at once. The arena sets it each frame; a drive-by is hot on its own.</summary>
         public bool Hot;
 
+        /// <summary>A civic car is answering a call with its roof lights on. Kept
+        /// separate from <see cref="Hot"/>, which the crew fight loop owns: a police
+        /// car uses the fast response profile only for this leg, then returns to an
+        /// ordinary patrol pace.</summary>
+        public bool CivicResponse;
+
         const float PassOvershoot = 22f;    // metres past the target before the turn-round
 
         /// <summary>How far off a carriageway the mark may stand and still have a street
@@ -241,7 +247,9 @@ namespace RoadDemo
             DriveByTarget = null;
             _driveByRoad = null;
             _localPass = false;
-            Profile = Civic ? DriverProfile.Police : Hot ? DriverProfile.Hot : DriverProfile.Gangster;
+            Profile = Civic
+                ? (CivicResponse ? DriverProfile.Police : DriverProfile.Patrol)
+                : Hot ? DriverProfile.Hot : DriverProfile.Gangster;
             if (!OnRoad || Net == null)
             {
                 GoFree(new Vector3(point.x, RoadY, point.z));
@@ -399,7 +407,7 @@ namespace RoadDemo
             if (Tf == null) return;
             Body?.TickDoors(dt);
             // who is driving this frame: the law its own way, the outfit hot or cold
-            Profile = Civic ? DriverProfile.Police
+            Profile = Civic ? (CivicResponse ? DriverProfile.Police : DriverProfile.Patrol)
                 : DriveByTarget != null || Hot ? DriverProfile.Hot : DriverProfile.Gangster;
             base.Tick(dt);
         }

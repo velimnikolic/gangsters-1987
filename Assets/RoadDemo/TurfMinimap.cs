@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
 namespace RoadDemo
@@ -55,6 +57,7 @@ namespace RoadDemo
         /// map with no caption is a picture; the band is what makes it a reading.
         /// </summary>
         const float BandTall = 18f;
+        const float CollapseWide = 20f, CollapseGap = 6f;
         const float ViewOverscan = 1.25f;
         const float RedrawPanShare = 0.08f;
         const float RedrawZoomShare = 1.08f;
@@ -85,7 +88,7 @@ namespace RoadDemo
         readonly TurfMapSurvey _survey = new TurfMapSurvey();
 
         Canvas _canvas;
-        RectTransform _card, _view, _sheetPose, _sheetRect, _band;
+        RectTransform _card, _view, _sheetPose, _sheetRect, _band, _cityRule;
 
         /// <summary>The corner plate goes dark with the rest of the street HUD: the
         /// same wash the full map lays over its own paper, and the same shared table
@@ -93,7 +96,8 @@ namespace RoadDemo
         /// be the one piece of paper on the screen still lit at midnight.</summary>
         readonly HudNight _night = new HudNight();
         Image _nightInk;
-        TMPro.TMP_Text _bandPlace, _bandHolder;
+        TMPro.TMP_Text _bandPlace, _bandHolder, _collapseLabel;
+        bool _collapsed;
         string _shownPlace = "", _shownHolder = "";
         Texture2D _paper;
         readonly Color32[] _uploadPixels = new Color32[
@@ -160,6 +164,7 @@ namespace RoadDemo
 
         public TurfMapSurvey Survey => _survey;
         public bool Printed => _printed;
+        public bool Collapsed => _collapsed;
         public Rect RequestedView => WantedView();
         public int Draws => _draws;
         public int Uploads => _uploads;
@@ -214,6 +219,17 @@ namespace RoadDemo
             scaler.referenceResolution = new Vector2(1280f, 720f);
             scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             scaler.matchWidthOrHeight = 1f;
+            go.AddComponent<GraphicRaycaster>();
+
+            // This canvas used to be display-only. The collapse key makes it the one
+            // interactive part of the corner plate, so it must be able to stand up in
+            // the small map benches where no other HUD has created the pointer stack.
+            if (!EventSystem.current)
+            {
+                var events = new GameObject("EventSystem");
+                events.AddComponent<EventSystem>();
+                events.AddComponent<InputSystemUIInputModule>();
+            }
 
             // Keep the corner plate opaque with the rest of the screen-edge HUD.
             go.AddComponent<CanvasGroup>().alpha = HudNight.Alpha;
@@ -238,8 +254,8 @@ namespace RoadDemo
 
             // The one rule the design keeps: down the edge that faces the city, so the
             // corner reads as a card laid on the street and not a hole cut in it.
-            LivingCity.UI.LedgerKit.VRule(_card, 0f, 0f,
-                CardTall + BandTall, LivingCity.UI.LedgerV2.Ink, 1f);
+            _cityRule = LivingCity.UI.LedgerKit.VRule(_card, 0f, 0f,
+                CardTall + BandTall, LivingCity.UI.LedgerV2.Ink, 1f).rectTransform;
 
             _paper = new Texture2D(
                 TurfPlate.RW / UploadDownsample,
@@ -291,6 +307,8 @@ namespace RoadDemo
 
             _night.Register(_card);
 
+            ApplyCollapsedLayout();
+
             _canvas.gameObject.SetActive(false);
         }
 
@@ -330,11 +348,54 @@ namespace RoadDemo
             _bandPlace.overflowMode = TMPro.TextOverflowModes.Ellipsis;
 
             var holderY = -(BandTall - LivingCity.UI.LedgerKit.LineBox(10.8f)) * 0.5f;
-            _bandHolder = LivingCity.UI.LedgerKit.Caps(_band, CardWide - 130f, holderY, 122f,
+            float holderX = CardWide - 130f;
+            float holderWide = CardWide - CollapseWide - CollapseGap - holderX;
+            _bandHolder = LivingCity.UI.LedgerKit.Caps(_band, holderX, holderY, holderWide,
                 "", 10.8f, LivingCity.UI.LedgerV2.HeadDim, 10f,
                 TMPro.TextAlignmentOptions.MidlineRight);
             _bandHolder.font = LivingCity.UI.LedgerStyle.Mono;
             _bandHolder.overflowMode = TMPro.TextOverflowModes.Ellipsis;
+
+            _collapseLabel = LivingCity.UI.LedgerV2.Button(_band, "\u2212",
+                CardWide - CollapseWide, 0f, CollapseWide, BandTall, ToggleCollapsed,
+                LivingCity.UI.LedgerV2.Key.Dark, 12f);
+            // A key label normally centres the font's whole ascender/descender box.
+            // These are mathematical marks, so centre their visible geometry instead;
+            // the true minus also shares the plus sign's optical axis.
+            _collapseLabel.alignment = TMPro.TextAlignmentOptions.Midline;
+            _collapseLabel.color = LivingCity.UI.LedgerStyle.RailGold;
+            _collapseLabel.transform.parent.name = "Collapse minimap";
+        }
+
+        void ToggleCollapsed()
+        {
+            _collapsed = !_collapsed;
+            ApplyCollapsedLayout();
+        }
+
+        /// <summary>Fold the postcard down to its caption band. The key stays on that
+        /// band, so hiding the map never hides the way back.</summary>
+        void ApplyCollapsedLayout()
+        {
+            if (_card == null)
+                return;
+
+            _card.sizeDelta = new Vector2(CardWide + Border * 2f,
+                (_collapsed ? 0f : CardTall) + Border * 2f + BandTall);
+            if (_view != null)
+                _view.gameObject.SetActive(!_collapsed);
+            if (_cityRule != null)
+            {
+                var size = _cityRule.sizeDelta;
+                size.y = _collapsed ? BandTall : CardTall + BandTall;
+                _cityRule.sizeDelta = size;
+            }
+            if (_collapseLabel != null)
+            {
+                _collapseLabel.text = _collapsed ? "+" : "\u2212";
+                _collapseLabel.transform.parent.name = _collapsed
+                    ? "Expand minimap" : "Collapse minimap";
+            }
         }
 
         /// <summary>Rewrite the caption when the camera has walked into somewhere else.
@@ -514,15 +575,8 @@ namespace RoadDemo
 
             if (_canvas.gameObject.activeSelf != want)
                 _canvas.gameObject.SetActive(want);
-            if (!want || !_printed)
+            if (!want)
                 return;
-
-            RefreshBand();
-
-            // The card's chrome is built once and only ever re-lettered, so there is
-            // nothing to re-register: crossing it is the whole of the night's work.
-            _night.Relight();
-            PaintNight();
 
             var pivot = _rig != null
                 ? new Vector2(_rig.pivot.x, _rig.pivot.z)
@@ -538,6 +592,16 @@ namespace RoadDemo
                 _lastPitch = pitch;
                 _lastMotionAt = Time.unscaledTime;
             }
+
+            RefreshBand();
+
+            // The caption is still on screen when the postcard is folded, so its
+            // chrome keeps crossing day and night even while the drawing stands down.
+            _night.Relight();
+            PaintNight();
+
+            if (_collapsed || !_printed)
+                return;
 
             if (_state == Idle)
             {

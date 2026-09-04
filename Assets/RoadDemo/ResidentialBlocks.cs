@@ -213,7 +213,7 @@ namespace RoadDemo
             public int Units, Tiles, Props, Lamps, Palms, Stalls, Cars, Tables, Benches, Parks;
             public int BenchBlocks, BikeStations, Dividers;
             public int People;
-            public int Storefronts, StorefrontProps, ClosedStorefronts;
+            public int Storefronts, StorefrontProps;
             public int Drains, Dug, Meters, Bins, Boxes, Picnics;
             public int SurfaceFlush, SurfaceClusters, SurfaceMissing;
             public string SurfaceProfile = "";
@@ -244,7 +244,7 @@ namespace RoadDemo
                 if (People > 0) extra.Add($"{People} ambient figure(s)");
                 if (Storefronts > 0)
                     extra.Add($"{Storefronts} dressed storefront(s), " +
-                              $"{StorefrontProps} display(s), {ClosedStorefronts} closed");
+                              $"{StorefrontProps} display(s)");
                 if (SurfaceFlush + SurfaceClusters > 0)
                     extra.Add($"surface {SurfaceProfile}: {SurfaceFlush} flush/{SurfaceClusters} cluster(s)");
                 return

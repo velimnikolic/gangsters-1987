@@ -59,7 +59,11 @@ namespace RoadDemo
             deck = default;
             walls = default;
 
-            float wide = slope.Wide * 0.5f, along = slope.Long * 0.5f, foot = slope.Foot;
+            float wide = slope.Wide * 0.5f, along = slope.Long * 0.5f;
+            // A basement may have been authored below the island-wide sea plane. The dry
+            // urban bed hides that plane without closing the opening at street level, so
+            // the ramp meets the same bed instead of disappearing through it at its foot.
+            float foot = Mathf.Max(slope.Foot, RoadDemoBuilder.DryUrbanBedY);
             if (wide <= 0f || along <= 0f || foot >= 0f) return;
 
             // the four corners of the running surface: the low pair at the yard's floor, the

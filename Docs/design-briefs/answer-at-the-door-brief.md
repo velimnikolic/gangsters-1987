@@ -177,14 +177,15 @@ the walk-up, as today.
   other arrest, chase and complaint in the city for the length of a car trip) and `_collar`
   returns to `None`. The officers stand over the crew; the crew stands with its guns away
   (`Surrendered`; player orders refused with `HandsUpRefusal`).
-* The custody sends cars to the **crew's** position (`RouteTo(pos, StandOff)`): one car per two
-  prisoners (a `PolicePatrolCar` seats four; its two officers ride in front), `ceil(n/2)`
-  cars, capped at what the precinct can spare (`CarsOnDuty` minus one — a five-man crew does
-  not empty the station). Men who do not fit wait with hands up for the next car. The
+* The custody sends pickups to the **crew's** position (`RouteTo(pos, StandOff)`). A pickup has
+  an eight-person limit: its two officers ride in front and as many as six prisoners are secured
+  in the rear. A normal five-man street crew therefore needs one vehicle. Cars are still capped
+  at what the precinct can spare (`CarsOnDuty` minus one); men beyond the available capacity
+  wait with hands up for the next trip. The
   `WalksOff` test is off for a crew in custody; `CallOut.HomeBy` in `Arresting` covers the
   car's trip, not 64 s.
-* The car arrives; its men get out and stand by the doors; the prisoners walk to the car and
-  are seated as `CarOccupant.Seat` bodies in the back (the `CrewWalker` bodies leave the street
+* The car arrives; its men get out and stand by the doors; the prisoners walk to the car in
+  escorted pairs and disappear into its rear cargo load (the `CrewWalker` bodies leave the street
   at the car door, as squad men do today; the custody keeps their `CharacterId`s). The beat
   pair is released back to its round (ruling 6). The car's men get back in; the car
   `Release()`s home.

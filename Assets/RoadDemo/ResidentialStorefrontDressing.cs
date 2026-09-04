@@ -12,8 +12,6 @@ namespace RoadDemo
         const string StorefrontShellName = "storefront shallow interiors";
         const string StorefrontShellMaterial =
             "Assets/Synty/PolygonCoffeeShop/Materials/Background.mat";
-        const string StorefrontShutterMaterial =
-            "Assets/Synty/PolygonMapsPrison/Materials/Concrete_Dark_01.mat";
         const string StorefrontGlassMaterial =
             "Assets/Synty/PolygonCity/Materials/Misc/Glass_01.mat";
         const string StorefrontWallMaterial =
@@ -40,24 +38,11 @@ namespace RoadDemo
 
         internal readonly struct StorefrontDecorationPlan
         {
-            public readonly int ClosedMask;
             public readonly int[] Styles;
 
-            public StorefrontDecorationPlan(int closedMask, int[] styles)
+            public StorefrontDecorationPlan(int[] styles)
             {
-                ClosedMask = closedMask;
                 Styles = styles;
-            }
-
-            public int Closed
-            {
-                get
-                {
-                    int n = 0;
-                    for (int i = 0; i < Styles.Length && i < 31; i++)
-                        if ((ClosedMask & (1 << i)) != 0) n++;
-                    return n;
-                }
             }
         }
 
@@ -87,7 +72,6 @@ namespace RoadDemo
         static readonly Dictionary<string, StorefrontLayout> StorefrontLayouts =
             new Dictionary<string, StorefrontLayout>(StringComparer.Ordinal);
         static Material storefrontShellMaterial;
-        static Material storefrontShutterMaterial;
 
         /// <summary>The shallow rooms and display silhouettes behind the glass. The cutaway
         /// treats them as it treats the live facade in front of them (which marks itself
@@ -151,13 +135,10 @@ namespace RoadDemo
             var rooms = shell.GetComponent<ResidentialStorefrontShell>();
             if (rooms == null) rooms = shell.gameObject.AddComponent<ResidentialStorefrontShell>();
             storefrontShellMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShellMaterial);
-            storefrontShutterMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShutterMaterial);
-            rooms.Configure(layout.Openings, plan.ClosedMask,
-                            storefrontShellMaterial, storefrontShutterMaterial);
+            rooms.Configure(layout.Openings, storefrontShellMaterial);
             BuildLiveStorefronts(building, unit, layout.Openings);
 
             stood.Storefronts += layout.Openings.Length;
-            stood.ClosedStorefronts += plan.Closed;
             yield return 0;
 
             for (int i = 0; i < plan.Styles.Length; i++)
@@ -319,7 +300,6 @@ namespace RoadDemo
             building.GetComponentsInChildren(true, filters);
             Material fallbackGlass = DemoAssetLoad.Load<Material>(StorefrontGlassMaterial);
             Material fallbackWall = DemoAssetLoad.Load<Material>(StorefrontWallMaterial);
-            storefrontShutterMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShutterMaterial);
 
             var existing = new List<Storefront>();
             building.GetComponentsInChildren(true, existing);
@@ -368,7 +348,7 @@ namespace RoadDemo
                     bay.Door.Yaw,
                     live.Footprint,
                     live.Openings.ToArray(), walls.ToArray(), glasses.ToArray(),
-                    glassMaterial, storefrontShutterMaterial, wallMaterial);
+                    glassMaterial, wallMaterial);
                 // Refresh and authoring passes reuse inactive surplus children. Configure
                 // them before enabling so OnEnable sees the new bay, not the old lease.
                 if (!storefront.gameObject.activeSelf)
@@ -476,7 +456,7 @@ namespace RoadDemo
             int count = Mathf.Clamp(openings.Length, 0, 30);
             var styles = new int[count];
             for (int i = 0; i < count; i++) styles[i] = -1;
-            if (count == 0) return new StorefrontDecorationPlan(0, styles);
+            if (count == 0) return new StorefrontDecorationPlan(styles);
 
             var dice = new StorefrontDice(seed);
             var groups = new List<List<int>>(count);
@@ -493,7 +473,6 @@ namespace RoadDemo
                 groups[at].Add(i);
             }
 
-            int closed = 0;
             var openGroups = new List<int>(groups.Count);
             for (int group = 0; group < groups.Count; group++)
                 openGroups.Add(group);
@@ -547,7 +526,7 @@ namespace RoadDemo
                             StorefrontInteriorProps.Length;
                 styles[at] = style;
             }
-            return new StorefrontDecorationPlan(closed, styles);
+            return new StorefrontDecorationPlan(styles);
         }
 
         static int StorefrontSeed(int planSeed, string key, int i, int j, int turn)
@@ -899,9 +878,7 @@ namespace RoadDemo
             if (rooms == null)
                 rooms = shell.gameObject.AddComponent<ResidentialStorefrontShell>();
             storefrontShellMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShellMaterial);
-            storefrontShutterMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShutterMaterial);
-            rooms.Configure(openings, plan.ClosedMask,
-                storefrontShellMaterial, storefrontShutterMaterial);
+            rooms.Configure(openings, storefrontShellMaterial);
             BuildLiveStorefronts(building, unit, openings);
             BuildingCutaway.Prepare(building, unit);
         }
@@ -1103,7 +1080,6 @@ namespace RoadDemo
             public int Buildings;
             public int Openings;
             public int Displays;
-            public int Closed;
             public int RemovedGeneratedProps;
             public int RemovedLongPieces;
             public string[] Failures = Array.Empty<string>();
@@ -1158,9 +1134,7 @@ namespace RoadDemo
                     StorefrontHierarchyKey(building.transform), 0, 0, 0);
                 var plan = PlanStorefronts(openings, seed);
                 storefrontShellMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShellMaterial);
-                storefrontShutterMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShutterMaterial);
-                oldShell.Configure(openings, plan.ClosedMask,
-                    storefrontShellMaterial, storefrontShutterMaterial);
+                oldShell.Configure(openings, storefrontShellMaterial);
                 BuildLiveStorefronts(building, unit, openings);
 
                 int displays = 0;
@@ -1176,7 +1150,6 @@ namespace RoadDemo
                 report.Buildings++;
                 report.Openings += openings.Length;
                 report.Displays += displays;
-                report.Closed += plan.Closed;
                 report.RemovedGeneratedProps += removed;
                 report.RemovedLongPieces += longPieces;
             }

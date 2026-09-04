@@ -410,6 +410,8 @@ namespace LivingCity.Gameplay
                     continue;
                 // The keeper is taken. The flat is already sealed by the pure pass; this
                 // is the man, through the same door a street collar uses.
+                var keeper = RosterOrNull()?.Find(raid.KeeperId);
+                RoadDemo.PressDesk.Instance?.FlatRaid(raid, keeper, house.GangId);
                 Personnel.RosterOps.ClearKeeper(RosterOrNull(), raid.KeeperId);
                 Personnel.RosterOps.Jail(RosterOrNull(), raid.KeeperId,
                     Campaign.Day + Property.FlatDay.SealedDays);
@@ -606,6 +608,7 @@ namespace LivingCity.Gameplay
                 case OrderType.BuyPremises:
                     Business.BusinessDeeds.SetGang(
                         businessId, whose.Value, job.TargetBlockId);
+                    RoadDemo.PressDesk.Instance?.PremisesBought(businessId, whose.Value);
                     Version++;
                     break;
 
@@ -613,9 +616,11 @@ namespace LivingCity.Gameplay
                 // RACK-011 seam - so a raided or smashed premises is frightened of the
                 // family that did it, not merely poorer on the outfit's own sheet.
                 case OrderType.Raid:
-                    RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
+                    if (RoadDemo.TerritoryRuntime.Instance?.ResolveEscalation(
                         whose, businessId, Territory.TerritoryEscalationKind.Assault,
-                        DoorOrders.ViolenceSeverity(job.Type));
+                        DoorOrders.ViolenceSeverity(job.Type)) == true)
+                        RoadDemo.PressDesk.Instance?.BusinessAssault(
+                            businessId, whose.Value);
                     break;
 
                 case OrderType.SmashUp:
@@ -675,6 +680,8 @@ namespace LivingCity.Gameplay
                 if (man == null || man.Gone)
                     continue;
 
+                RoadDemo.PressDesk.Instance?.PaperKilling(
+                    man, house.GangId, new Vector3(job.TargetX, 0f, job.TargetZ));
                 HouseOps.Kill(house, man.Id);
 
                 // His street hears it, and it is the ordering family's name on it.

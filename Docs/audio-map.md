@@ -95,6 +95,12 @@ Requires `numpy`, `scipy`, `soundfile`.
 | `radio_call_1..3` | 344 Audio, British Police Radio - band-limited to 400-2800 Hz |
 | `radio_squelch`, `radio_static` | Epic Stock Media, Fake Advertisements |
 
+### Interface
+
+| Clip | Source |
+| --- | --- |
+| `newspaper_slap` | Sonniss, Cinematic Sound Design - Newspaper Static Foley Rummage; short hard phrase for the 06:00 sheet |
+
 ### Weapons - one set per gun the armoury sells, and they are meant to be LOUD
 
 The guns are the one thing in `Assets/Audio` that is not simply levelled. A report

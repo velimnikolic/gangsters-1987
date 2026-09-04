@@ -41,25 +41,22 @@ namespace LivingCity.Tests
             var first = ResidentialBlocks.PlanStorefronts(openings, 1987);
             var repeat = ResidentialBlocks.PlanStorefronts(openings, 1987);
 
-            if (first.ClosedMask != repeat.ClosedMask ||
-                first.Styles.Length != repeat.Styles.Length)
+            if (first.Styles.Length != repeat.Styles.Length)
             {
                 failures.Add("storefront dressing changed for the same seed");
                 return;
             }
 
-            int props = 0, open = 0;
+            int props = 0;
             for (int i = 0; i < first.Styles.Length; i++)
             {
                 if (first.Styles[i] != repeat.Styles[i])
                     failures.Add($"storefront opening {i} changed style for the same seed");
                 if (first.Styles[i] >= 0) props++;
-                if ((first.ClosedMask & (1 << i)) == 0) open++;
             }
 
-            if (open == 0) failures.Add("storefront dressing closed every opening");
-            if (props != open)
-                failures.Add($"storefront dressing covered {props} of {open} open facades");
+            if (props != openings)
+                failures.Add($"storefront dressing covered {props} of {openings} facades");
         }
 
         static void CornerStorefrontCoversBothFacesAndKeepsEntranceClear(
@@ -79,8 +76,6 @@ namespace LivingCity.Tests
                     entrance: true, corner: true),
             };
             var plan = ResidentialBlocks.PlanStorefronts(corner, 1987);
-            if (plan.ClosedMask != 0)
-                failures.Add("the only corner business was left closed");
             if (plan.Styles[0] < 0 || plan.Styles[1] < 0)
                 failures.Add("a two-sided corner shop did not dress both main facades");
             if (plan.Styles[2] >= 0)

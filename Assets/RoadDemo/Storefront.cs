@@ -14,13 +14,12 @@ namespace RoadDemo
         Smashed,
         Burning,
         Boarded,
-        Shuttered,
     }
 
     /// <summary>
     /// The disposable view of one logical residential shop bay. The simulation owns the
     /// business and its damage; this component owns only the independently live facade:
-    /// glass, Synty's cut-out leaves, boards, fire anchor and roller shutter.
+    /// glass, Synty's cut-out leaves, boards and fire anchor.
     /// </summary>
     [ExecuteAlways]
     [DisallowMultipleComponent]
@@ -47,17 +46,14 @@ namespace RoadDemo
         [SerializeField] Mesh[] doorlessWalls = Array.Empty<Mesh>();
         [SerializeField] Material paneMaterial;
         [SerializeField] Material facadeMaterial;
-        [SerializeField] Material rollerMaterial;
         [SerializeField] bool authoringPreview;
         [SerializeField] StorefrontState authoringState;
 
         [NonSerialized] TerritoryBusinessId businessId;
         [NonSerialized] StorefrontState damageState;
-        [NonSerialized] bool shuttered;
         [NonSerialized] float doorAmount;
         [NonSerialized] float doorTarget;
         [NonSerialized] float burningUntil;
-        [NonSerialized] float nextStatePoll;
         [NonSerialized] Transform damageVisual;
 
         readonly List<Transform> leaves = new List<Transform>(2);
@@ -66,13 +62,11 @@ namespace RoadDemo
 
         Transform panesRoot;
         GameObject boards;
-        GameObject shutter;
         ShopEntrance entrance;
         BuildingDoor buildingDoor;
 
         public StorefrontState State => damageState != StorefrontState.Intact
             ? damageState
-            : shuttered ? StorefrontState.Shuttered
             : doorAmount > 0.001f ? StorefrontState.Open
             : StorefrontState.Intact;
         public TerritoryBusinessId BusinessId => businessId;
@@ -107,9 +101,10 @@ namespace RoadDemo
             string moduleName, Vector3 door, float yaw, Rect footprint,
             ResidentialStorefrontOpening[] measured, MeshFilter[] walls,
             MeshRenderer[] authoredGlass, Material glassMaterial,
-            Material shutterMaterial, Material wallMaterial)
+            Material wallMaterial)
         {
             ClearRuntimeMeshes();
+            RemoveLegacyShutter();
             module = moduleName ?? string.Empty;
             doorLocal = door;
             doorYaw = yaw;
@@ -124,7 +119,6 @@ namespace RoadDemo
             sourceGlass = authoredGlass ?? Array.Empty<MeshRenderer>();
             paneMaterial = glassMaterial;
             facadeMaterial = wallMaterial;
-            rollerMaterial = shutterMaterial;
             doorlessWalls = new Mesh[sourceWalls.Length];
             for (int i = 0; i < sourceWalls.Length; i++)
             {
@@ -138,13 +132,12 @@ namespace RoadDemo
             RebuildPanes(glassMaterial);
             RebuildLeaves(glassMaterial, wallMaterial);
             RebuildBoards(wallMaterial);
-            RebuildShutter(shutterMaterial);
             EnsureDoorMarkers();
             ApplyState();
         }
 
         /// <summary>Authoring-bench entry point; production instances use measured bays.</summary>
-        public void ConfigurePreview(Material shutterMaterial)
+        public void ConfigurePreview()
         {
             string source = StorefrontDoorCatalog.Normalise(gameObject.name);
             if (!StorefrontDoorCatalog.TryGet(source, out var profile)) return;
@@ -193,7 +186,7 @@ namespace RoadDemo
                 : new Rect(-2.5f, -2.5f, 5f, 5f);
             Configure(source, profile.Centre, profile.Yaw, footprint,
                 measured.ToArray(), walls.ToArray(), glass.ToArray(),
-                glassMaterial, shutterMaterial, wallMaterial);
+                glassMaterial, wallMaterial);
         }
 
         public void SetPreviewState(StorefrontState state)
@@ -206,7 +199,6 @@ namespace RoadDemo
         void ApplyPreviewState(StorefrontState state)
         {
             damageState = StorefrontState.Intact;
-            shuttered = false;
             doorAmount = doorTarget = 0f;
             if (damageVisual == null)
                 for (int i = 0; i < transform.childCount; i++)
@@ -234,9 +226,6 @@ namespace RoadDemo
                 case StorefrontState.Boarded:
                     BoardUp();
                     break;
-                case StorefrontState.Shuttered:
-                    Shutter(true);
-                    break;
             }
             ApplyLeaves(doorAmount);
             ApplyState();
@@ -246,7 +235,6 @@ namespace RoadDemo
         {
             businessId = id;
             RefreshPersistentState();
-            RefreshShutter();
         }
 
         public void Open()
@@ -346,13 +334,6 @@ namespace RoadDemo
             burningUntil = 0f;
             ClearDamageVisual();
             ApplyState();
-            RefreshShutter();
-        }
-
-        public void Shutter(bool on)
-        {
-            shuttered = on;
-            ApplyState();
         }
 
         public void SnapClosed()
@@ -366,6 +347,7 @@ namespace RoadDemo
 
         void OnEnable()
         {
+            RemoveLegacyShutter();
             ReapplySourceOverrides();
             bool needsRebuild = panesRoot == null ||
                 panesRoot.GetComponentInChildren<MeshFilter>(true)?.sharedMesh == null;
@@ -375,7 +357,6 @@ namespace RoadDemo
                 RebuildPanes(paneMaterial);
                 RebuildLeaves(paneMaterial, facadeMaterial);
                 RebuildBoards(facadeMaterial);
-                RebuildShutter(rollerMaterial);
                 EnsureDoorMarkers();
             }
             // Generated review rows keep their authored state in Play mode too. Live
@@ -399,10 +380,6 @@ namespace RoadDemo
                 burningUntil > 0f && Time.time >= burningUntil)
                 BoardUp();
 
-            if (!Application.isPlaying || !businessId.IsValid || Time.time < nextStatePoll)
-                return;
-            nextStatePoll = Time.time + 0.5f;
-            RefreshShutter();
         }
 
         void RefreshPersistentState()
@@ -411,13 +388,6 @@ namespace RoadDemo
             if (ShopDamage.IsBusinessBurned(businessId)) BoardUp();
             else if (ShopDamage.IsBusinessSmashed(businessId)) Smash();
             else if (!ShopDamage.IsBusinessDamaged(businessId)) Repair();
-        }
-
-        void RefreshShutter()
-        {
-            var business = LivingCity.Business.BusinessRuntime.Instance;
-            bool closed = business != null && business.ShouldShutter(businessId);
-            Shutter(closed);
         }
 
         void ReapplySourceOverrides()
@@ -572,25 +542,6 @@ namespace RoadDemo
             filter.sharedMesh = LocalFacadeMesh("Storefront boards", rects, 0.10f);
         }
 
-        void RebuildShutter(Material material)
-        {
-            shutter = ChildObject("Shutter");
-            var filter = Component<MeshFilter>(shutter);
-            var renderer = Component<MeshRenderer>(shutter);
-            if (shutter.GetComponent<StorefrontLive>() == null)
-                shutter.AddComponent<StorefrontLive>();
-            renderer.sharedMaterial = material;
-            renderer.shadowCastingMode = ShadowCastingMode.Off;
-            var rects = new List<Vector4>(12);
-            float half = frontageWidth * 0.5f;
-            for (int i = 0; i < 12; i++)
-            {
-                float y0 = 0.08f + i * 0.225f;
-                rects.Add(new Vector4(-half, half, y0, y0 + 0.205f));
-            }
-            filter.sharedMesh = LocalFacadeMesh("Storefront shutter", rects, 0.04f);
-        }
-
         Mesh LocalFacadeMesh(string name, List<Vector4> rects, float outset)
         {
             Vector3 outward = OutwardLocal();
@@ -638,8 +589,6 @@ namespace RoadDemo
             bool glassOn = damageState == StorefrontState.Intact;
             if (panesRoot != null) panesRoot.gameObject.SetActive(glassOn);
             if (boards != null) boards.SetActive(damageState == StorefrontState.Boarded);
-            if (shutter != null) shutter.SetActive(
-                shuttered && damageState == StorefrontState.Intact);
         }
 
         void ApplyLeaves(float amount)
@@ -669,6 +618,19 @@ namespace RoadDemo
             if (Application.isPlaying) Destroy(damageVisual.gameObject);
             else DestroyImmediate(damageVisual.gameObject);
             damageVisual = null;
+        }
+
+        void RemoveLegacyShutter()
+        {
+            var legacy = transform.Find("Shutter");
+            if (legacy == null) return;
+            var filter = legacy.GetComponent<MeshFilter>();
+            var mesh = filter != null ? filter.sharedMesh : null;
+            if (Application.isPlaying) Destroy(legacy.gameObject);
+            else DestroyImmediate(legacy.gameObject);
+            if (mesh == null || (mesh.hideFlags & HideFlags.HideAndDontSave) == 0) return;
+            if (Application.isPlaying) Destroy(mesh);
+            else DestroyImmediate(mesh);
         }
 
         /// <summary>Which way one of this bay's live pieces faces, in the bay's own frame:

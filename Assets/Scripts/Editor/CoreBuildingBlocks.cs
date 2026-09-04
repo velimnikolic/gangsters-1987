@@ -122,11 +122,11 @@ namespace LivingCity.EditorTools
             // the warehouse is a walled yard the pack drew whole, gate and markings and
             // all: the pavement rings it and keeps out
             new Recipe("warehouse-block", "building-warehouse", ownGround: true),
-            // three tiles of band on the station, not two: its car park wants a row of bays
-            // AND a lane to get out along, and ten metres will not hold both (2026-08-26,
-            // the user: "parking spoljasnji mora ima prolaz da prodju ova kola policijska").
-            // Fifteen holds bays, lane and kerb, and the ramp gets a gentler grade with it
-            new Recipe("police-station-block", "building-policestation", band: 3),
+            // The station uses the shared ten-metre band. Its declared car park owns both
+            // rows at the north edge: bays against the wall and a circulation lane that
+            // joins the street's parking lane. A third pavement row would extend beyond
+            // the catalog lot and cover that street lane.
+            new Recipe("police-station-block", "building-policestation"),
             new Recipe("nightclub-block", "building-nightclub"),
         };
 
@@ -160,7 +160,7 @@ namespace LivingCity.EditorTools
         /// Declared, like the gate, and for a plainer reason: nothing on a building says
         /// where the cars belonging to it should stand. What CAN be read is where there is
         /// room, and the police station has exactly one such place - the strip of band
-        /// between its north wall and the kerb, east of the yard ramp, twenty metres of it
+        /// between its north wall and the street, east of the yard ramp, twenty metres of it
         /// (2026-08-26, the user: "mozemo malo da usecemo pavement i da imamo parking za
         /// police kola"). Cars nose in off the street facing the building, which is what
         /// the kerb is dropped in front of the lot for.
@@ -172,9 +172,9 @@ namespace LivingCity.EditorTools
         static readonly Dictionary<string, (Vector3 At, Vector2 Size, int Yaw, string[] Fleet)> Parks =
             new Dictionary<string, (Vector3, Vector2, int, string[])>
             {
-                // TWO rows: the bays against the north wall and the lane in front of them,
-                // with the block's own kerb still outside that. x 0..20 leaves the yard ramp
-                // its own fifteen metres to the west
+                // TWO rows: the bays against the north wall and the lane in front of them.
+                // The lane is the block edge and meets the street parking strip directly;
+                // x 0..20 leaves the yard ramp its own fifteen metres to the west.
                 ["building-policestation"] = (new Vector3(10f, 0f, 25f), new Vector2(20f, 10f),
                                               180, LivingCity.Gameplay.VehicleCatalog.PoliceCars),
             };

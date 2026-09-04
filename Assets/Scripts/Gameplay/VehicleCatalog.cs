@@ -48,11 +48,10 @@ namespace LivingCity.Gameplay
             "SM_Veh_Motorbike_02",
         };
 
-        /// <summary>What the law drives. The marked cars, and the only bodies a patrol,
+        /// <summary>What the law drives. The marked pickup is the only body a patrol,
         /// a dispatch answer or a station forecourt is dealt.</summary>
         public static readonly string[] PoliceCars =
         {
-            "SM_Veh_Sedan_01_Preset_Police",
             "SM_Veh_Pickup_01_Preset_Police",
         };
 
@@ -65,7 +64,8 @@ namespace LivingCity.Gameplay
             "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles/";
 
         /// <summary>Marked bodies that live outside that pack - the palm city's two
-        /// presets (the fleet the patrols actually drive, <see cref="PoliceCars"/>) and
+        /// presets (of which the pickup is the fleet patrols actually drive,
+        /// <see cref="PoliceCars"/>) and
         /// the city pack's own cruiser. Named here so a scan that only ever sees a
         /// prefab name still knows them.</summary>
         static readonly string[] Liveried =

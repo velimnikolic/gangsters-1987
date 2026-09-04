@@ -2279,7 +2279,7 @@ namespace LivingCity.UI
             if (member.Rank == Rank.Boss)
             {
                 Caps(cardFoot, 0f, -20f, CardInner,
-                    "root command · managed in the organization file",
+                    "root command · managed in chain of command",
                     10f, LedgerV2.Label, 3f, TextAlignmentOptions.Center);
                 return;
             }
