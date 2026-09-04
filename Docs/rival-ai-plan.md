@@ -227,7 +227,7 @@ posle popravki; vratiti na 4 h (D7) ako merenje pokaže da je svejedno.
 | # | popravka | gde | uzrok |
 |---|---|---|---|
 | S1 | Guard ima kraj I ne prepisuje se: incident nosi PRAVO vreme u pogled (`power` ledger ima `At`), `Home` dobija prozor kao `Answer`, straža se broji po VRATIMA a ne po ekipi (`Filed` po `TargetBusinessId`), i um je skida (`Cancel`) kad prozor istekne. Broj se meri prema 72 h pamćenja / 12 h odgovora, ne prema 24 (A22) | `TerritoryRuntime.Minds.Look`, `HouseMind.Home/Answer`, nova namera `Cancel` | U1 |
-| S2 | **Runda ima čuvara i ponovni hod**: noga koja ne stigne se ponovo maršira, pa posle `RoundStallHours` (A3 = 2 h bez pomaka) prekida. Kuka u `CrewJobs.March` (posao prekida rundu) ostaje kao sporedna, ne kao glavna popravka — merenje je pokazalo da runde umiru NA PUTU, ne od posla | `TerritoryRuntime.Collection.NextStop/WatchRounds`, `CrewJobs` | U2 |
+| S2 | **Runda ima čuvara i ponovni hod**: noga koja ne stigne se ponovo maršira, pa posle `RoundStallHours` (A3 = 2 h bez pomaka) prekida. Kuka u `CrewJobs.March` (posao prekida rundu) ostaje sporedna i **poštuje A2: rundu koju je igrač naredio tasterom ne dira nikad**, samo stajaću i onu koju je poslao um | `TerritoryRuntime.Collection.NextStop/WatchRounds`, `CrewJobs` | U2 |
 | S3 | Donov odred nije kandidat za naredbe; sme samo Guard na svom ulazu | `HouseMind.CrewOn` (preskoči ekipu čiji je poručnik Boss) | U6 |
 | S3b | S3 mora da pokrije i `CrewFor` (tier 4), ne samo `CrewOn`: `CrewFor` pada na `crews[0]` i tako i dalje markira torbara u Donovom odredu i daje Donu blok na papir | `HouseMind.CrewFor` | U6 |
 | S4 | Kad kuća ostane bez kapa a ima ≥ 2 vojnika: um unapređuje najboljeg (`Promote`) i pravi ekipu; ako nema vojnika: Recruit sa Donovog odreda (jedini izuzetak od S3). `Promote` ume da bude odbijen (`LieutenantCap`) — bez P4 se predlaže zauvek | `HouseMind.Replace` | U6, U8 |
@@ -279,7 +279,7 @@ posle popravki; vratiti na 4 h (D7) ako merenje pokaže da je svejedno.
 | # | pitanje | predlog | odluka korisnika | šta to znači za kod |
 |---|---|---|---|---|
 | A1 | Guard traje dok pretnja pamti (24 h) pa se skida sam? | da | **da** | S1 kako je |
-| A2 | Runda linije: prekida je posao iz knjige, ili posao čeka rundu? | prekida | **prekida** | S2 kako je |
+| A2 | Runda linije: prekida je posao iz knjige, ili posao čeka rundu? | prekida | **prekida — ali NE ako si je ti naredio.** "Ako sam ja kao user naredio ne sme; ako je poručnik naredio, onda kao i drugim AI" | runda pamti KO ju je poslao. Obilazak koji je igrač pokrenuo tasterom je nedodirljiv; stajaću rundu koju je poslao raspored/poručnik (`SubmitScheduledRound`) i svaku rundu uma prekida novi posao. Isti princip koji već postoji kod torbe (`Crew.BagNamedByBoss` — bosova reč nadjačava poručnikovu) |
 | A3 | Čuvar rundi bez pomaka: posle koliko sati se prekida? | 6 h | **2 h** | `RoundStallHours = 2` u `HouseMindConfig`; runda u kojoj se ništa nije pomerilo 2 sata igre se prekida |
 | A4 | Donov odred ne dobija naredbe osim Guard na svom ulazu? | da | **"Don nek sedi u kuću uglavnom"** | Donov odred ne dobija NIJEDNU naredbu uma; izlazi samo kad ulica sama brani ulaz (postojeće pravilo odbrane ulaza). Straža na ulazu nije Donov posao nego kapoov |
 | A5 | Kuća bez kapa: unapredi vojnika, ili regrutuje sa Donovog odreda? | unapredi ako ≥ 2 | **unapredi kapa** | uvek `Promote` najboljeg vojnika po Leadership-u; regrutacija tek kad nema NIJEDNOG vojnika (nema koga da unapredi) — pretpostavka, ne odluka |
@@ -300,8 +300,8 @@ posle popravki; vratiti na 4 h (D7) ako merenje pokaže da je svejedno.
 
 | # | pitanje | predlog | odluka |
 |---|---|---|---|
-| A18 | Koliko zamerke daje granica po danu (`BorderPressurePerDay`)? Lestvica: upozorenje 10, pretnja 20, račun 30, uzimanje vrata 40, napad na kolektora 50, napad na radnju 60 | 5 na dan → upozorenje 2. dana granice, uzimanje vrata 8. dana, rat moguć od 12. dana (uz D15: 14 dana plata i jači) | |
-| A19 | Koliko brzo misli (`ThinkEveryHours`)? | 1 h; pola sata tek ako merenje AI-008 pokaže da 1 h negde kasni | |
+| A18 | Koliko zamerke daje granica po danu (`BorderPressurePerDay`)? Lestvica: upozorenje 10, pretnja 20, račun 30, uzimanje vrata 40, napad na kolektora 50, napad na radnju 60; opadanje 2/dan | 4 na dan **po graničnom bloku**, i **plafon 40** na ono što granica sama može da nakupi | **ODLUČENO: 4 na dan po graničnom bloku.** Jedna granica → neto 2/dan → uzimanje vrata oko 20. dana; dve → 6/dan → oko 7. dana; tri → 10/dan → oko 4. dana. **Plafon 40 ide uz to** (upisan sa predlogom; reci ako ga ne želiš): sama geografija te dovede najviše do "uzmi im vrata" i tu stane, a sve iznad se zarađuje delima (uzeta vrata 10, napadnuta radnja 15, izgubljena runda 20, ubijen čovek 35). Tako rat nikad ne dolazi od sata nego od onoga što se desilo |
+| A19 | Koliko brzo misli (`ThinkEveryHours`)? | 1 h | **ODLUČENO: 1 sat igre.** I to postaje podrazumevana vrednost MODELA umesto sadašnjih 4, a `CoreDemoBuilder.mindThinkEveryHours` override se sklanja da broj stoji na jednom mestu. AI-008 i dalje meri 4/2/1 na trideset seedova; ako merenje kaže drugačije, menja se broj u tabeli, ne kod |
 | A20 | Kad Donov odred ipak izlazi: samo kad je rival fizički na bloku ulaza (postojeće), ili nikad? | samo odbrana ulaza, kako ulica već radi | |
 
 ### 4.2 Pitanja iz contrarian pregleda (2026-09-04)
@@ -310,8 +310,97 @@ posle popravki; vratiti na 4 h (D7) ako merenje pokaže da je svejedno.
 |---|---|---|---|
 | A21 | Hlađenje "ista vrata ne pitaj 24 h": u zajedničkom `WorthAsking` (menja i tvoj SHAKE DOWN THE BLOCK — preskakao bi vrata pitana skoro) ili samo u umu? | samo u umu; tvoj obilazak ostaje kakav je | |
 | A22 | Straža: koliko posle poslednjeg incidenta na bloku se skida? Izvor pamti 72 h, "neodgovoren" postaje posle 12 h | 24 h posle POSLEDNJEG incidenta (ne posle prvog), i jedna straža po vratima | |
-| A23 | Kad su vrata `Late` a nema runde: um šalje naplatu sam, ili čeka nedeljni raspored? | šalje sam (inače Defend gori do sledeće nedelje) | |
-| A24 | Odbijena namera se ne ponavlja koliko misli? | 6 misli (12 h na kadenci od 2 h) | |
+| A22b | **Da li straža koja stoji na vratima RAČUNA kao odgovor na incident?** Danas ne — jedini odgovor je nasilje te kuće na tom bloku (`NotePower`) ili čuvari koji stvarno krenu na napadača (`NoteGuardsEngaged`). Neodgovoren incident posle 12 h obara `power` te kuće na tom bloku, a `power` MNOŽI ceo rezultat kontrole (`(presence + fear + compliance) × power`, pod do 0.5) | da, usko | **DA.** Korisnikov razlog, 2026-09-04: *"pa ja ne mogu da upucam ako su pobegli"* — posle udri-i-beži nema koga da upucaš, pa je postojeće pravilo neispunjivo. Straža odgovara SAMO incidente na bloku na kome stoji i samo dok stoji |
+
+### 4.3 Moć: odluke i otvoreno (2026-09-04)
+
+**A25 ODLUČENO: odmazda odgovara, i spirala se HOĆE.** Korisnik: *"spirala je dobra stvar
+i zelim je."* Udarac po njihovom bloku odgovara incident koji ta kuća ima protiv mene;
+moj udarac njima upisuje incident, oni moraju da uzvrate, i to je rat. Ne ublažavati.
+Ostaje samo tehnička obaveza: knjiga moći mora da pamti KO je izazvao incident.
+
+**A28 NOVO — moć raste od ubijanja.** Korisnik: *"treba kad ubijem ljude da mi skoci i
+power, jer mocan sam i sposoban; ne samo strah, iako su dve razlicite stvari."* Danas je
+moć SAMO kazna: `Coefficient = max(0.5, 1 − udeoNeodgovorenih × 0.5)`, plafon 1
+(`TerritoryControl.cs:446-453`). Treba joj druga strana — zasluga za dobijene tuče.
+
+Podela koju predlažem, jer je korisnik sam razdvojio pojmove: **strah je šta je ulica
+videla, moć je šta si dokazao.** Ubijeni civil ili radnjar diže strah i ne diže moć;
+pobijena naoružana ekipa druge kuće diže oboje.
+
+**A26 se time menja u pitanje o dva prenosa**, ne jedno: nosi li se na moju teritoriju
+STRAH (ugled) ili MOĆ (kompetencija), ili oboje.
+
+| # | pitanje | predlog |
+|---|---|---|
+| A28a | Koliki je plafon moći? Danas 1, pod 0.5 | **ODLUČENO: postoji plafon i on je uzak.** Korisnik: *"ako je max moc 100 ubijanje ga ne dize preko 25"* — ubijanje samo po sebi te vodi najviše do četvrtine skale. To je i odgovor na moje upozorenje o grudvi: ubijanje je sporedan doprinos, ne glavni. **Tačni brojevi su za kasnije, ovo je MVP** (korisnikove reči). Za MVP je dovoljno da doprinos od ubijanja postoji i da je odsečen na četvrtinu skale |
+| A28b | Čiji mrtvi se broje? | naoružani ljudi DRUGE KUĆE. Ne civili, ne radnjari, **ne policajci** — mrtav pandur ne čini te sposobnim nego lovljenim (i već nosi najteži policijski ponder) |
+| A28c | Koliko brzo opada zasluga? | dani, ne meseci. Strah od ubistva ima poluživot 504 h; zasluga za moć mora da bude znatno kraća ili se grudva |
+| A28d | Važi na bloku gde se desilo, ili na svim blokovima koje kuća drži? | na bloku puno, na ostalim blokovima kuće umanjeno — to je isto pitanje kao A26 |
+| A28e | Broje li se mrtvi SLABIJE kuće isto kao mrtvi jače? | ne. Prebiti slabića ne dokazuje ništa; puna zasluga samo protiv kuće koja je jednaka ili jača (`TheirEndurance`) |
+
+**Rizik koji moram da imenujem: to su DVE različite spirale.** Spirala rata koju hoćeš
+(udri–uzvrati) je drama i ona je dobra. Ali moć MNOŽI ceo rezultat kontrole, pa ako
+ubijanje diže moć dobijaš i drugu: veća moć → veća kontrola → veća poslušnost → više
+para → više ljudi → više ubijanja. Ta druga može da odluči kampanju do treće nedelje.
+Plafon (A28a), brzo opadanje (A28c) i pravilo "samo protiv jednakog ili jačeg" (A28e) su
+tri kočnice; koliko ih hoćeš je tvoja odluka.
+
+**A29 ODLUČENO: policija obara moć, ali sa njom nema spirale.** Korisnik: *"policija ne
+treba da ulazi u racunicu"*, pa odmah precizirano: *"ako mi ubije ljude policija treba da
+mi padne power, ali ne treba da imam spiralu s policijom."*
+
+To je čistije od "policija napolje" i savršeno leži na podeli iz A28. **Moć je šta si
+dokazao.** Dobiti tuču protiv druge kuće dokazuje da si sposoban; biti pokošen od zakona
+dokazuje suprotno. Zato:
+
+* policija ubije MOJE ljude → **moja moć pada, direktno**. To NIJE incident koji čeka
+  odgovor, jer odgovora nema — to je gubitak ugleda koji se ne briše, nego samo bledi;
+* **nikakva zamerka prema policiji, nikakva lestvica, nikakva odmazda.** Policija nikad
+  ne postaje meta koja vraća moć;
+* ubijanje policajaca ne donosi ni gram moći (to je već A28b).
+
+Time se usput sam od sebe popravlja i postojeći bag: danas
+`AttributeRecentViolence` **preskače policijske hice** (`TerritoryRuntime.cs:991-992`),
+pa kad ostane samo policijska vatra atribucija vraća PRAZNO, a `NotePower` sa praznim
+akterom ne nađe vlasnika koji se poklapa i **upiše incident SVIMA na bloku** — i kućama
+koje su samo gledale. Po novom pravilu udarac pogađa samo kuću čiji su ljudi pali, a ne
+svakoga ko tu drži radnju.
+
+**Zamka koja ostaje:** `AttributeRecentViolence` vraća isto prazno i kad su pucale DVE
+kuće ("ulica ne ume da kaže ko"). To nije isti slučaj — tuča dve bande na mojoj ulici
+jeste račun koji mi neko duguje. Atribucija mora da razlikuje "bila je policija" od "ne
+zna se koja kuća", što danas ne radi. To je deo posla, ne detalj.
+
+| # | pitanje | predlog |
+|---|---|---|
+| A29a | Koliko moći odnese jedan moj čovek koga ubije policija? | isto koliko donosi jedan njihov ubijeni naoružani čovek u A28, samo sa suprotnim znakom — jedna skala, dva smera |
+| A29b | Da li i HAPŠENJE cele ekipe obara moć, ili samo mrtvi? | da, umanjeno. Ulica je videla da su ti ljudi odvedeni; to je isto gubitak obraza, samo manji od leša |
+
+### 4.4 Otvoreno posle A22b (korisnikove ideje, 2026-09-04)
+
+| # | pitanje | ima li smisla | problemi koje vidim |
+|---|---|---|---|
+| A25 | **Da li odmazda na NJIHOVOM bloku odgovara incident na MOM bloku?** | **DA (odlučeno)** | Obavezno uz nju: (1) **knjiga moći mora da pamti KO te je udario** — `Incident` danas ima samo `At` i `Answered` (`TerritoryControl.cs:483-487`); jeftino, ne snima se. (2) **Čisti se samo blok na kome TA kuća ima neodgovoren incident**, inače jedna odmazda opere ceo grad. (3) Spirala se hoće (A25). (4) Policija ispada iz računice sama od sebe kroz A29. (5) Rok od 12 h ostaje |
+| A26 | **Da li se reputacija prenosi na moje blokove?** ("ako odem kod njih i pobijem im 20 ljudi, onda moji blokovi budu prepadnutiji jer sam ja jako zajeban") — vidi A28d, isto pitanje sad stoji i za MOĆ, ne samo za strah | Da, ali strah i moć su dva odvojena prenosa | Strah se danas širi samo GEOGRAFSKI: ceo blok oseti 0.35 incidenta na jednoj radnji, blokovi koji ga DODIRUJU čuju 0.10 (`TerritoryFear.cs:122-123`, potvrđeno merenjem: 48 → 4.8). Ne postoji ništa što nosi ugled kuće na njenu udaljenu teritoriju. Trebalo bi: figura ugleda po kući iz njenog SKORAŠNJEG JAVNOG nasilja bilo gde, ograničena i sa opadanjem, koja dodaje bonus strahu na blokovima koje drži. Rizici: (1) postaje dominantna strategija ako nema plafona; (2) farmljenje — klanje da se broj drži napunjen; traži opadajući prinos po kući-žrtvi i po danu; (3) mora da traži SVEDOKE (`Visibility`), jer je strah ono što je ulica videla; (4) cena već postoji — ubistvo ima najteži policijski ponder (1.2). Ako se radi, to je zaseban tiket AI-009, ne deo sanacije |
+| A27 | **Igraču se `power` nigde ne prikazuje.** Ništa u UI ne čita ni `Coefficient` ni broj neodgovorenih — proveren `Scripts/UI` i `CrewOverlay` | prikazati | **ODLUČENO: na FAMILIES tabu, red po kući i za nas.** Korisnik: *"treba na families tabu da prikazemo moc za svaku porodicu (i za nasu)."* Sheet je `PersonnelAlmanac.Diplomacy.cs`: `FamilyCard` već ima `CardRow` mehanizam (STANDING i ostali redovi), a igračeva traka je `BuildOwnLine`. Prikaz 0–100, jer tako korisnik i misli o broju. **Time se sam od sebe odlučuje i A28d:** da bi kuća imala JEDAN broj moći, moć mora da ima kućni deo, ne samo po bloku. Blok fajl i dalje može da nosi detalj ("neodgovoreno: 2 · rok do 18:00") |
+| A23 | Kad su vrata `Late` a nema runde: um šalje naplatu sam, ili čeka nedeljni raspored? | šalje sam (inače Defend gori do sledeće nedelje) | **šalje sam** (tiket AI-003): `Defend` na `Late` vratima upisuje `CollectDues`, ne obilazak |
+| A24 | Odbijena namera se ne ponavlja koliko misli? | 6 misli (12 h na kadenci od 2 h) | **12 sati igre**, ne misli (tiket AI-005): `RefusalBackoffHours = 12`, ključ = vrsta namere + meta; odbijanje koje ne može da prođe (nema kaucije za ubistvo policajca) je trajno dok se slučaj ne promeni |
+
+### 4.5 Pretpostavke iz implementacije (2026-09-04, čekaju veto)
+
+Ono što je kod morao da odluči, a D-tabela nije rekla. Svaka je upisana ovde da bi mogla
+da se poništi promenom broja ili reda, ne čitanjem koda.
+
+| # | pitanje | šta je urađeno | zašto |
+|---|---|---|---|
+| A30 | **Do koje granice kuća regrutuje (L1)?** Rezerva (D9, 7 dana plata) gleda samo u sef | Rast (tier 8 `Grow`) potpisuje čoveka SAMO ako nedeljni prihod od vrata koja plaćaju pokriva nedelju plata POSLE potpisa (`WeeklyTake ≥ 7 × payroll`); isto za unapređenje novog kapa. Tier 3 `Replace` (popuna ispod `MinHoods = 2`) ostaje samo na rezervi | papirni sweep od 30 dana sa samim pravilom rezerve: kuće 2, 4, 6 i 7 potpisale do cilja, sef spao na $20–40, 12–17 ljudi dezertiralo za mesec. Kuća koja "raste do zemlje koju drži" ne može da raste preko onoga što zemlja plaća |
+| A31 | **Kaucija: koliko sme da košta?** | kapo: sef posle kaucije ≥ 3 dana plata (`MergeBelowDays`); vojnik: ≥ 7 dana (`ReserveDays`). Advokat: ≥ 7 dana | tiket AI-005 kaže "kapo uvek, vojnik kad rezerva dozvoli" — "uvek" je ograničeno na to da kuća sutra ima od čega da plati ljude |
+| A32 | **Odakle rival uzima advokata?** | `HireMarket.CounselFor`: isti deal, isti cenovnik i ista tabela plata kao oglas u novinama, ali NE sa igračeve kolone (20 kuća bi je ispraznilo pre nego što je pročita); čovek se deli po kući i danu | "kroz ista vrata kao igračev ledger" — ista vrata za cenu i pravilo potpisa; stranica novina ostaje igračeva |
+| A33 | **Straža po vratima ili po bloku (S1)?** | po vratima (`Filed` po `TargetBusinessId`); skida se 24 h posle POSLEDNJEG incidenta/pretnje na bloku; posao bez ekipe (`CrewId` bez ekipe, C6) se odmah otkazuje | tiket AI-001 |
+| A34 | **Šta je "faza" (C3/C5)?** | `HouseMind.PhaseOf`: LAND dok ima vrata koja se još mogu pitati ili sused sa `Score > 0`; MEN dok je ispod cilja ili ima praznih ruku; WAR inače. Izvodi se svaku misao, ne čuva se | tiket AI-004 |
+| A35 | **Kolebljiva vrata na lestvici (Z4)?** | `Hesitant` ulazi u `Defiances` sa satom poslednjeg razgovora; posle 24 h JEDNA pretnja, pa mir; obilazak bloka ih ne broji kao "ima šta da se pita" (Z2), ali ih izvršilac i dalje pita kad prolazi (A21 — obilazak igrača ostaje) | tiket AI-003 |
+| A36 | **Prag pažnje policije za obilazak bloka (C1)?** | `WalkAttentionCap = 40` na skali do 100 | broj bez merenja; AI-008 meri hapšenja po kući po danu |
 
 ---
 

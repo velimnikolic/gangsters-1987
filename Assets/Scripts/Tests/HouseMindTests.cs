@@ -102,6 +102,12 @@ namespace LivingCity.Tests
             readonly List<HouseThreat> threats = new List<HouseThreat>();
             readonly List<TerritoryBlockId> seen = new List<TerritoryBlockId>();
 
+            /// <summary>The same two memories the runtime keeps for a house (P4 and
+            /// A21): what it was refused, and when it last walked a block.</summary>
+            readonly HouseBackoffs backoffs = new HouseBackoffs();
+            readonly Dictionary<TerritoryBlockId, double> walked =
+                new Dictionary<TerritoryBlockId, double>();
+
             /// <summary>The city's own seed, so the shopkeepers and their answers are
             /// this run's and not one fixture's. Thirty seeds that all deal the same
             /// owner would prove nothing about thirty cities.</summary>
@@ -315,6 +321,10 @@ namespace LivingCity.Tests
                     Threats = threats,
                     QuietThinks = House.QuietThinks,
                     LastRefusals = refused,
+                    BackoffLook = key => backoffs.Blocked(key, Hour),
+                    RoundLook = crewId => Rounds.RoundRunning(crewId),
+                    WalkedLook = blockId =>
+                        walked.TryGetValue(blockId, out var at) ? at : -1.0,
                     GameHour = Hour,
                     Day = Day + 1,
                 };
@@ -406,6 +416,15 @@ namespace LivingCity.Tests
                         Bought++;
                         return RosterOps.GiveEquipment(
                             House.Roster, item.Id, intent.CharacterId).Reason;
+
+                    case HouseIntentKind.Cancel:
+                        return House.Runner.Cancel(House.Roster, intent.CharacterId).Reason;
+
+                    case HouseIntentKind.Bail:
+                        return "there is no station in a paper city";
+
+                    case HouseIntentKind.Retain:
+                        return "there is no courthouse in a paper city";
                 }
                 return "nothing to do";
             }
@@ -417,6 +436,35 @@ namespace LivingCity.Tests
                     case HouseOrder.OperateInBlock:
                         posted[intent.CrewId] = intent.BlockId;
                         return "";
+
+                    case HouseOrder.ShakeDownBlock:
+                        // The whole block in one walk (Z1): every door still worth
+                        // asking gets the question, the same rule the street's walk
+                        // uses to pick its stops.
+                        var asked = 0;
+                        var doors = DoorsOn(intent.BlockId);
+                        for (var i = 0; i < doors.Count; i++)
+                        {
+                            if (!TerritoryShakedown.WorthAsking(
+                                    Racket.StateOf(doors[i], Mine), doors[i] == House.Front))
+                                continue;
+                            Changes.Clear();
+                            Racket.Approach(doors[i], Mine, Hour, Changes, false);
+                            Racket.Demand(doors[i], Mine, Asking(doors[i]), Hour, out _,
+                                Changes);
+                            asked++;
+                        }
+                        if (asked == 0)
+                            return "every door here has answered us";
+                        Demanded = true;
+                        walked[intent.BlockId] = Hour;
+                        return "";
+
+                    case HouseOrder.CollectDues:
+                        return Send(House, House.Roster.FindCrew(intent.CrewId),
+                            intent.BlockId)
+                            ? ""
+                            : "nothing owed there";
 
                     case HouseOrder.ApproachBusiness:
                         Changes.Clear();
@@ -500,6 +548,7 @@ namespace LivingCity.Tests
                     House.OpenTheRota(Hour, config.ThinkEveryHours, 21);
                 House.NextThinkHour = Hour + config.ThinkEveryHours;
 
+                backoffs.Sweep(Hour);
                 HouseMind.Think(Look(), config, intents);
                 refused.Clear();
                 var done = 0;
@@ -507,13 +556,17 @@ namespace LivingCity.Tests
                 {
                     var refusal = Carry(intents[i]);
                     done++;
-                    if (!string.IsNullOrEmpty(refusal))
-                        refused.Add(intents[i] + ": " + refusal);
+                    if (string.IsNullOrEmpty(refusal))
+                        continue;
+                    refused.Add(intents[i] + ": " + refusal);
+                    backoffs.Note(intents[i].Key, refusal, Hour, config);
                 }
             }
 
             bool Send(House house, Crew crew, TerritoryBlockId blockId)
             {
+                if (crew == null || Rounds.RoundRunning(crew.Id))
+                    return false;
                 var stops = new List<TerritoryRoundStop>();
                 var here = DoorsOn(blockId);
                 for (var i = 0; i < here.Count; i++)

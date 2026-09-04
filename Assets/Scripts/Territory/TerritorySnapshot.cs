@@ -49,6 +49,7 @@ namespace LivingCity.Territory
         public int carried;
         public int missed;
         public int stage;
+        public int origin;
         public double openedAt;
         public double lastMoveAt;
         public bool inTheDoor;
@@ -120,6 +121,7 @@ namespace LivingCity.Territory
                 carried = round.Carried,
                 missed = round.Missed,
                 stage = (int)round.Stage,
+                origin = (int)round.Origin,
                 openedAt = round.OpenedAt,
                 lastMoveAt = round.LastMoveAt,
                 inTheDoor = round.InTheDoor,
@@ -152,6 +154,7 @@ namespace LivingCity.Territory
                     Carried = dto.carried,
                     Missed = dto.missed,
                     Stage = (TerritoryRoundStage)dto.stage,
+                    Origin = (TerritoryRoundOrigin)dto.origin,
                     OpenedAt = dto.openedAt,
                     LastMoveAt = dto.lastMoveAt,
                     InTheDoor = dto.inTheDoor,

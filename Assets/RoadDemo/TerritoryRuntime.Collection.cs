@@ -38,9 +38,18 @@ namespace RoadDemo
 
         readonly List<RoundBody> bodies = new List<RoundBody>();
         readonly List<TerritoryRoundStop> stopScratch = new List<TerritoryRoundStop>();
-        const float PendingBagRoundTimeout = 20f;
-        const float PendingBagRoundReassert = 1f;
+
+        /// <summary>GAME HOURS, not real seconds (AI-003 review finding C2): the
+        /// harness clock and the user's Play must agree on how long a detail is given
+        /// to clear its door. Twenty seconds at sixty seconds to the hour, as before.
+        /// </summary>
+        const float PendingBagRoundTimeoutHours = 20f / 60f;
+        const float PendingBagRoundReassertHours = 1f / 60f;
         const float BagDefenceInterval = 0.25f;
+
+        /// <summary>How far the men have to make on the ground for the round's own
+        /// clock to count it as movement (AI-002 S2).</summary>
+        const float RoundMoveMetres = 1.5f;
 
         /// <summary>Quiet seconds on the headquarters block before the detail files
         /// back inside.</summary>
@@ -49,8 +58,8 @@ namespace RoadDemo
         sealed class PendingBagRound
         {
             public CollectDuesCommand Command;
-            public float Deadline;
-            public float ReassertAt;
+            public double DeadlineHour;
+            public double ReassertAtHour;
             public int ScheduledDay = -1;
 
             /// <summary>
@@ -65,6 +74,13 @@ namespace RoadDemo
 
         readonly List<PendingBagRound> pendingBagRounds =
             new List<PendingBagRound>();
+
+        /// <summary>WHO IS SUBMITTING RIGHT NOW (AI-002, ruling A2). The gateway hands
+        /// a command with no word of who built it, so the two doors that are not the
+        /// player's - the schedule and a mind - set this around their submit, the way
+        /// scheduledSubmitDay is set, and a round opened inside reads it. Player is
+        /// the resting value: a key press is the only thing left.</summary>
+        TerritoryRoundOrigin submittingOrigin = TerritoryRoundOrigin.Player;
         /// <summary>Last real HQ threat per bag detail. Only these timestamps buy the
         /// post-fight street grace; an idle detail with no billet goes straight home.</summary>
         readonly Dictionary<int, float> bagThreatSeenAt = new Dictionary<int, float>();
@@ -120,7 +136,7 @@ namespace RoadDemo
                     continue;
                 }
 
-                if (Time.time >= pending.Deadline)
+                if (lastGameHour >= pending.DeadlineHour)
                 {
                     pendingBagRounds.RemoveAt(i);
                     FailPendingBagRound(pending, "The bag detail could not clear the door.");
@@ -132,11 +148,11 @@ namespace RoadDemo
                     // Roster sync may have re-stationed a newly projected detail while
                     // its command was waiting. Keep the exit intent authoritative and
                     // bounded instead of leaving the crew pending forever.
-                    if (Time.time >= pending.ReassertAt)
+                    if (lastGameHour >= pending.ReassertAtHour)
                     {
                         if (CrewQuarters.Billeted(bag))
                             CrewQuarters.BringOut(bag);
-                        pending.ReassertAt = Time.time + PendingBagRoundReassert;
+                        pending.ReassertAtHour = lastGameHour + PendingBagRoundReassertHours;
                     }
                     continue;
                 }
@@ -299,6 +315,13 @@ namespace RoadDemo
             /// crew stays where it stands while its bag man walks.</summary>
             public DemoCrews.Unit Walkers;
             public readonly List<Vector3> Doors = new List<Vector3>();
+
+            /// <summary>Where the walkers last stood when the watchdog looked, and when
+            /// the next re-march may go (AI-002 S2). Real ground made is what keeps a
+            /// round's own clock moving between doors.</summary>
+            public Vector3 LastAnchor;
+            public bool AnchorKnown;
+            public double NextRemarchAt;
 
             public Vector3 Door(int index) =>
                 index >= 0 && index < Doors.Count ? Doors[index] : Vector3.zero;
@@ -756,8 +779,8 @@ namespace RoadDemo
                 var queued = new PendingBagRound
                 {
                     Command = command,
-                    Deadline = Time.time + PendingBagRoundTimeout,
-                    ReassertAt = Time.time + PendingBagRoundReassert,
+                    DeadlineHour = lastGameHour + PendingBagRoundTimeoutHours,
+                    ReassertAtHour = lastGameHour + PendingBagRoundReassertHours,
                     ScheduledDay = scheduledSubmitDay,
                 };
                 if (command.CommandId > 0) queued.Receipts.Add(command.CommandId);
@@ -779,6 +802,7 @@ namespace RoadDemo
             if (round == null)
                 return TerritoryCommandExecution.Reject(
                     "Nothing on that block owes us anything yet.");
+            round.Origin = submittingOrigin;
             BumpRacketSeam();
             // The duffel is the collection job's equipment, not loot spawned by the
             // first shop. This exact hood carries it from departure until the round
@@ -922,13 +946,105 @@ namespace RoadDemo
             if (house.IsPlayer && crews.BagUnitOf(crew.Id) == null)
                 return false;
 
-            Commands.Submit(new CollectDuesCommand(
-                    TerritoryCommandNodeId.Crew(crew.Id), blockId)
-                { House = new TerritoryGangId(house.GangId) });
+            var previousOrigin = submittingOrigin;
+            submittingOrigin = TerritoryRoundOrigin.Schedule;
+            try
+            {
+                Commands.Submit(new CollectDuesCommand(
+                        TerritoryCommandNodeId.Crew(crew.Id), blockId)
+                    { House = new TerritoryGangId(house.GangId) });
+            }
+            finally
+            {
+                submittingOrigin = previousOrigin;
+            }
             // Pending can mean either "the route is walking" or only "the detail is
             // crossing the door". The physical ledger is the distinction. Scheduler
             // filing waits for the former; the deferred path confirms it on OpenRound.
             return RoundRunning(crew.Id);
+        }
+
+        /// <summary>
+        /// A BOOK JOB TOOK THE CREW (AI-002, ruling A2). CrewJobs says so the moment it
+        /// sends a crew on its first travel leg; every round of that crew the player
+        /// did not start with a key is abandoned, the bag with it. A detachment's round
+        /// is the bag man's own and an order to the line was never an order to him
+        /// (GAN-262), so it is left alone here as it is everywhere.
+        /// </summary>
+        public void BookJobTookTheCrew(int crewId)
+        {
+            if (roundLedger == null)
+                return;
+            var walking = roundLedger.Rounds;
+            for (var i = walking.Count - 1; i >= 0; i--)
+            {
+                var round = walking[i];
+                if (round.CrewId != crewId || !round.Cancellable)
+                    continue;
+                var body = BodyOf(round);
+                if (body != null && body.Walkers != null && body.Walkers.IsDetachment)
+                    continue;
+                roundLedger.Abandon(round, lastGameHour);
+                roundScheduler?.Release(crewId, round.BlockId);
+            }
+        }
+
+        /// <summary>One round on the street as the probe reads it (AI-000): the round
+        /// itself, whether its bag man is still of the men walking it, where the men
+        /// physically are, where they are walking to, and the metres between.</summary>
+        public readonly struct RoundReading
+        {
+            public RoundReading(TerritoryRound round, int crewId, bool carrierWalks,
+                bool walkersStand, Vector3 walkersAt, Vector3 walkingTo, float metres,
+                bool billeted)
+            {
+                Round = round;
+                CrewId = crewId;
+                CarrierWalks = carrierWalks;
+                WalkersStand = walkersStand;
+                WalkersAt = walkersAt;
+                WalkingTo = walkingTo;
+                Metres = metres;
+                Billeted = billeted;
+            }
+
+            public TerritoryRound Round { get; }
+            public int CrewId { get; }
+            public bool CarrierWalks { get; }
+            public bool WalkersStand { get; }
+            public Vector3 WalkersAt { get; }
+            public Vector3 WalkingTo { get; }
+            public float Metres { get; }
+            public bool Billeted { get; }
+        }
+
+        /// <summary>Every round with a body on the street, described. Rounds on the
+        /// paper clock have no body and are read off <see cref="Rounds"/> directly.
+        /// </summary>
+        public void DescribeRounds(List<RoundReading> into)
+        {
+            into?.Clear();
+            if (into == null)
+                return;
+            for (var i = 0; i < bodies.Count; i++)
+            {
+                var body = bodies[i];
+                var round = body.Round;
+                var walkers = body.Walkers;
+                var stand = walkers != null && !walkers.Wiped && crews != null &&
+                            crews.Units.Contains(walkers);
+                var at = stand ? UnitAnchor(walkers) : Vector3.zero;
+                var to = round.Stage == TerritoryRoundStage.Walking && round.HasStop
+                    ? body.Door(round.StopIndex)
+                    : HomeDoor(round.House);
+                var gap = stand ? Vector3.Distance(at, to) : -1f;
+                into.Add(new RoundReading(
+                    round, round.CrewId,
+                    body.Collector != null && !body.Collector.Dead &&
+                    Holds(walkers, body.Collector),
+                    stand, at, to, gap,
+                    walkers != null && CrewQuarters.Billeted(walkers)));
+            }
         }
 
         /// <summary>A ROUND THAT GOES OUT BY ITSELF HAS TO SAY SO. It is the one thing in
@@ -1601,7 +1717,10 @@ namespace RoadDemo
                 }
 
                 if (standing)
+                {
+                    WatchTheWalk(body, walkers, gameHour);
                     continue;
+                }
                 if (carrierDown && round.Carried > 0)
                 {
                     body.LeaveBagOnGround = true;
@@ -1609,6 +1728,62 @@ namespace RoadDemo
                 }
                 roundLedger.Abandon(round, gameHour);
             }
+        }
+
+        /// <summary>
+        /// THE WATCHDOG AND THE RE-MARCH (AI-002 S2, ruling A3). The measured rounds
+        /// died on the way: NextStop marched the walkers once per leg, and a walk that
+        /// failed - pathing, a fight, the police, a retask - was never repeated,
+        /// measured or ended, while the scheduler refused to send the block's next
+        /// collection because a round was "running".
+        ///
+        /// Ground the men make keeps the round's own clock moving. A leg whose walkers
+        /// are alive, standing and not yet at the door is marched again every
+        /// RoundRemarchHours. A round that has not moved at all for RoundStallHours is
+        /// abandoned, the block goes back on the schedule, and the ledger says a round
+        /// was lost if the bag had anything in it. A man inside a shop is DoorBeat's
+        /// business and is left alone.
+        /// </summary>
+        void WatchTheWalk(RoundBody body, DemoCrews.Unit walkers, double gameHour)
+        {
+            var round = body.Round;
+            if (round.Finished || round.InTheDoor)
+                return;
+
+            var anchor = UnitAnchor(walkers);
+            if (!body.AnchorKnown ||
+                (anchor - body.LastAnchor).sqrMagnitude > RoundMoveMetres * RoundMoveMetres)
+            {
+                body.AnchorKnown = true;
+                body.LastAnchor = anchor;
+                round.LastMoveAt = gameHour;
+            }
+
+            if (gameHour - round.LastMoveAt > mindConfig.RoundStallHours)
+            {
+                roundLedger.Abandon(round, gameHour);
+                roundScheduler?.Release(round.CrewId, round.BlockId);
+                return;
+            }
+
+            if (gameHour < body.NextRemarchAt)
+                return;
+            body.NextRemarchAt = gameHour + mindConfig.RoundRemarchHours;
+
+            var to = round.Stage == TerritoryRoundStage.HeadingHome
+                ? HomeDoor(round.House)
+                : round.HasStop ? body.Door(round.StopIndex) : Vector3.zero;
+            if (to == Vector3.zero)
+                return;
+            var reach = round.Stage == TerritoryRoundStage.HeadingHome
+                ? HomeRadius
+                : approachRadiusMetres;
+            if ((anchor - to).sqrMagnitude <= reach * reach)
+                return;
+
+            // Do not re-open the stop; only re-issue the walk. A refused march is a
+            // stalled round the watchdog above ends in its own time.
+            crews.MarchTo(walkers, to);
         }
     }
 }

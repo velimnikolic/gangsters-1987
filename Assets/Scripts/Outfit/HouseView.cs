@@ -9,9 +9,12 @@ namespace LivingCity.Outfit
     {
         public HouseDoor(TerritoryBusinessId businessId, int tier, int weeklyRate,
             TerritoryGangId protector, TerritoryProtectionState standing, int owed,
-            bool shut, bool trades, DoorTenure tenure, bool late = false)
+            bool shut, bool trades, DoorTenure tenure, bool late = false,
+            double lastInteraction = -1.0, int demands = 0)
         {
             Late = late;
+            LastInteraction = lastInteraction;
+            Demands = demands;
             BusinessId = businessId;
             Tier = tier;
             WeeklyRate = weeklyRate;
@@ -52,7 +55,55 @@ namespace LivingCity.Outfit
         /// with late doors is a street somebody has stopped walking.</summary>
         public bool Late { get; }
 
+        /// <summary>The last hour our men stood at this counter, or negative when they
+        /// never have - the door's own history, read off the relationship row (AI-003).
+        /// </summary>
+        public double LastInteraction { get; }
+
+        /// <summary>How many times we have asked this door to pay. The measure counts
+        /// it; the mind stops at it.</summary>
+        public int Demands { get; }
+
         public bool Unprotected => !Protector.IsValid;
+    }
+
+    /// <summary>
+    /// One of ours in the city's hands, as the house can read it off its own books and
+    /// the court's own answer (AI-005): who, what rank, what the court wants to let him
+    /// out, and why it will not - in the ledger's own words, so a mind is refused
+    /// exactly as the player's POST BAIL row is.
+    /// </summary>
+    public readonly struct HouseCell
+    {
+        public HouseCell(int characterId, Rank rank, int bailPrice, string refusal,
+            int heldSinceDay)
+        {
+            CharacterId = characterId;
+            Rank = rank;
+            BailPrice = bailPrice;
+            Refusal = refusal ?? "";
+            HeldSinceDay = heldSinceDay;
+        }
+
+        public int CharacterId { get; }
+        public Rank Rank { get; }
+
+        /// <summary>What the court asks, or 0 where there is no bail at any price.
+        /// </summary>
+        public int BailPrice { get; }
+
+        /// <summary>Why bail is refused today, or empty when it would be taken.
+        /// </summary>
+        public string Refusal { get; }
+
+        public int HeldSinceDay { get; }
+
+        public bool Bailable => string.IsNullOrEmpty(Refusal) && BailPrice > 0;
+
+        /// <summary>The court would list a hearing if the house had a lawyer. Read
+        /// here, off the ledger's own wording, so the mind never names a ledger.
+        /// </summary>
+        public bool NeedsCounsel => Refusal == UI.LedgerText.ReasonNoCounsel;
     }
 
     /// <summary>
@@ -86,19 +137,34 @@ namespace LivingCity.Outfit
         public bool AtOurFront { get; }
     }
 
-    /// <summary>Trouble on ground we hold that nobody has answered for.</summary>
+    /// <summary>
+    /// Trouble on ground we hold that nobody has answered for. Both hours are the
+    /// power ledger's own and never "now" (AI-001, review finding on S1): the view
+    /// used to stamp every incident with the hour of the think, so no window could
+    /// ever close and a guard was re-filed for ever.
+    /// </summary>
     public readonly struct HouseIncident
     {
-        public HouseIncident(TerritoryBlockId blockId, int unanswered, double since)
+        public HouseIncident(TerritoryBlockId blockId, int unanswered, double since,
+            double lastAt = double.NaN)
         {
             BlockId = blockId;
             Unanswered = unanswered;
             Since = since;
+            LastAt = double.IsNaN(lastAt) ? since : lastAt;
         }
 
         public TerritoryBlockId BlockId { get; }
         public int Unanswered { get; }
+
+        /// <summary>The hour of the OLDEST incident still unanswered - what the answer
+        /// window is measured from.</summary>
         public double Since { get; }
+
+        /// <summary>The hour of the LATEST incident on the block, answered or not -
+        /// what a guard's stand is measured from (ruling A22: the watch comes off
+        /// twenty-four hours after the last incident, not the first).</summary>
+        public double LastAt { get; }
     }
 
     /// <summary>
@@ -149,6 +215,7 @@ namespace LivingCity.Outfit
         static readonly TerritoryGangId[] NoRivals = new TerritoryGangId[0];
         static readonly HouseDefiance[] NoDefiances = new HouseDefiance[0];
         static readonly string[] NoRefusals = new string[0];
+        static readonly HouseCell[] NoCells = new HouseCell[0];
 
         public TerritoryGangId House;
         public Roster Roster;
@@ -195,6 +262,33 @@ namespace LivingCity.Outfit
         /// A mind that keeps proposing a refused thing is a mind with a bug, and this is
         /// how it finds out.</summary>
         public IReadOnlyList<string> LastRefusals = NoRefusals;
+
+        /// <summary>Whether an intent with this key was refused recently enough that
+        /// the house is not asking again yet (AI-005 P4, <see cref="HouseBackoffs"/>).
+        /// Null means nothing is held back.</summary>
+        public System.Func<string, bool> BackoffLook;
+
+        /// <summary>Whether this crew has a round out on the street - a collection, a
+        /// shakedown or a lean still walking (AI-002 S7). A crew on a walk is not free,
+        /// and the mind must not tear a walk down to start it again.</summary>
+        public System.Func<int, bool> RoundLook;
+
+        /// <summary>The hour our men last walked this block door to door, or negative
+        /// when they never have (AI-003, ruling A21: the cooldown lives in the mind).
+        /// </summary>
+        public System.Func<TerritoryBlockId, double> WalkedLook;
+
+        /// <summary>Men of ours in the cells, with the court's answer on each
+        /// (AI-005).</summary>
+        public IReadOnlyList<HouseCell> Cells = NoCells;
+
+        /// <summary>Whether the house has a lawyer on its books, standing up or not.
+        /// </summary>
+        public bool HasCounsel;
+
+        /// <summary>What counsel would cost to retain this morning, or 0 when the
+        /// market has nobody to offer.</summary>
+        public int CounselPrice;
 
         public double GameHour;
         public int Day;
@@ -243,5 +337,12 @@ namespace LivingCity.Outfit
         /// <summary>What we believe they could last. Never the truth.</summary>
         public int TheirEndurance(TerritoryGangId other) =>
             EnduranceLook != null ? EnduranceLook(other) : 0;
+
+        public bool Blocked(string key) => BackoffLook != null && BackoffLook(key);
+
+        public bool RoundOut(int crewId) => RoundLook != null && RoundLook(crewId);
+
+        public double LastWalked(TerritoryBlockId blockId) =>
+            WalkedLook != null ? WalkedLook(blockId) : -1.0;
     }
 }

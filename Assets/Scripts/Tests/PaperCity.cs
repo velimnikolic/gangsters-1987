@@ -28,8 +28,24 @@ namespace LivingCity.Tests
         readonly List<TerritoryRoundStop> stops = new List<TerritoryRoundStop>();
         readonly List<Character> bag = new List<Character>();
 
+        /// <summary>The two memories the runtime keeps per house: what it was refused
+        /// (P4) and when it last walked a block (A21).</summary>
+        readonly Dictionary<int, HouseBackoffs> backoffs = new Dictionary<int, HouseBackoffs>();
+        readonly Dictionary<(int gang, TerritoryBlockId block), double> walked =
+            new Dictionary<(int, TerritoryBlockId), double>();
+
         public double Hour;
         public int LastDay = -1;
+
+        public HouseBackoffs BackoffsOf(int gangId)
+        {
+            if (!backoffs.TryGetValue(gangId, out var book))
+            {
+                book = new HouseBackoffs();
+                backoffs.Add(gangId, book);
+            }
+            return book;
+        }
 
         public PaperCity(int houses)
         {
@@ -171,9 +187,12 @@ namespace LivingCity.Tests
         // ----------------------------------------------------------------- the view
 
         public HouseView Look(Underworld world, TerritoryRacketLedger racket,
-            TerritoryDuesLedger dues, House house, HouseMindConfig config)
+            TerritoryDuesLedger dues, House house, HouseMindConfig config,
+            TerritoryRoundLedger rounds = null)
         {
             var mine = new TerritoryGangId(house.GangId);
+            var backoff = BackoffsOf(house.GangId);
+            backoff.Sweep(Hour);
 
             viewBlocks.Clear();
             viewBlocks.Add(HomeBlockOf(house.GangId));
@@ -234,6 +253,10 @@ namespace LivingCity.Tests
                 Rivals = rivals,
                 Defiances = defiances,
                 QuietThinks = house.QuietThinks,
+                BackoffLook = key => backoff.Blocked(key, Hour),
+                RoundLook = crewId => rounds != null && rounds.RoundRunning(crewId),
+                WalkedLook = blockId =>
+                    walked.TryGetValue((house.GangId, blockId), out var at) ? at : -1.0,
                 GameHour = Hour,
                 Day = Day + 1,
             };
@@ -333,6 +356,15 @@ namespace LivingCity.Tests
 
                 case HouseIntentKind.Warn:
                     return "";
+
+                case HouseIntentKind.Cancel:
+                    return house.Runner.Cancel(house.Roster, intent.CharacterId).Reason;
+
+                case HouseIntentKind.Bail:
+                    return "there is no station in a paper city";
+
+                case HouseIntentKind.Retain:
+                    return "there is no courthouse in a paper city";
             }
             return "nothing to do";
         }
@@ -367,18 +399,36 @@ namespace LivingCity.Tests
 
                 case HouseOrder.LeanOnHoldouts:
                 case HouseOrder.ShakeDownBlock:
+                    var asked = 0;
                     for (var d = 0; d < UnderworldSim.DoorsPerBlock; d++)
                     {
                         var businessId = Door(intent.BlockId, d);
                         var state = racket.StateOf(businessId, mine);
-                        if (state == TerritoryProtectionState.Compliant)
-                            continue;
+                        var ours = businessId == house.Front;
                         if (intent.Order == HouseOrder.LeanOnHoldouts)
+                        {
+                            if (!TerritoryShakedown.IsHoldout(state, ours))
+                                continue;
                             racket.Threaten(businessId, mine, Hour);
+                        }
                         else
+                        {
+                            if (!TerritoryShakedown.WorthAsking(state, ours))
+                                continue;
+                            racket.Approach(businessId, mine, Hour, null, false);
                             racket.Demand(
                                 businessId, mine, Asking(businessId, mine), Hour, out _);
+                            if (book != null && book.AskedADoor < 0)
+                                book.AskedADoor = Day;
+                        }
+                        asked++;
                     }
+                    if (asked == 0)
+                        return intent.Order == HouseOrder.LeanOnHoldouts
+                            ? "nobody is holding out"
+                            : "every door here has answered us";
+                    if (intent.Order == HouseOrder.ShakeDownBlock)
+                        walked[(house.GangId, intent.BlockId)] = Hour;
                     return "";
 
                 case HouseOrder.CollectDues:
@@ -413,7 +463,7 @@ namespace LivingCity.Tests
             TerritoryRacketLedger racket, TerritoryDuesLedger dues,
             TerritoryRoundLedger rounds, TerritoryPaperClock clock)
         {
-            if (house == null || crew == null)
+            if (house == null || crew == null || rounds.RoundRunning(crew.Id))
                 return false;
 
             var mine = new TerritoryGangId(house.GangId);

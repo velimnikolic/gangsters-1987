@@ -31,6 +31,19 @@ namespace LivingCity.Outfit
 
         /// <summary>A word to another family, printed in both books.</summary>
         Warn,
+
+        /// <summary>A job taken off a lieutenant's book, through CampaignRunner.Cancel -
+        /// the call the player's own key already makes. The guard comes off (AI-001).
+        /// </summary>
+        Cancel,
+
+        /// <summary>A man of ours out of a cell on the house's money, through the same
+        /// pipe the ledger's POST BAIL row uses (AI-005 P1).</summary>
+        Bail,
+
+        /// <summary>Counsel on retainer, off the same market the classified column
+        /// deals from and at the same price (AI-005 P1).</summary>
+        Retain,
     }
 
     /// <summary>
@@ -189,6 +202,29 @@ namespace LivingCity.Outfit
                 characterId, crewId, default, default, TerritoryRacketIntent.Approach,
                 Duty.None, CrewPolicy.Normal, kind, listing, price);
 
+        /// <summary>A job called off. <paramref name="jobId"/> rides in CharacterId's
+        /// seat - the struct has no job-number field of its own, and a second int for
+        /// one intent kind is not worth a wider struct.</summary>
+        public static HouseIntent CallOff(int jobId, int crewId, int tier, string reason) =>
+            new HouseIntent(HouseIntentKind.Cancel, tier, reason, HouseOrder.None, null,
+                jobId, crewId, default, default, TerritoryRacketIntent.Approach,
+                Duty.None, CrewPolicy.Normal);
+
+        /// <summary>Post bail for a man of ours. The price is what the court asked and
+        /// is repeated here so the trace can print what the house was ready to pay.
+        /// </summary>
+        public static HouseIntent PostBail(int characterId, int price, int tier,
+            string reason) =>
+            new HouseIntent(HouseIntentKind.Bail, tier, reason, HouseOrder.None, null,
+                characterId, -1, default, default, TerritoryRacketIntent.Approach,
+                Duty.None, CrewPolicy.Normal, EquipmentKind.Pistol, "", price);
+
+        /// <summary>Retain counsel, at the market's own price.</summary>
+        public static HouseIntent RetainCounsel(int price, int tier, string reason) =>
+            new HouseIntent(HouseIntentKind.Retain, tier, reason, HouseOrder.None, null,
+                -1, -1, default, default, TerritoryRacketIntent.Approach, Duty.None,
+                CrewPolicy.Normal, EquipmentKind.Pistol, "counsel", price);
+
         /// <summary>One line for the trace and the family's own book.</summary>
         public override string ToString() =>
             Kind == HouseIntentKind.Command
@@ -196,5 +232,47 @@ namespace LivingCity.Outfit
                 : Kind == HouseIntentKind.Job
                     ? "Job " + (Job != null ? Job.Type.ToString() : "?")
                     : Kind.ToString();
+
+        /// <summary>
+        /// WHAT THIS INTENT IS, AND WHAT IT IS AIMED AT - the key a refusal is
+        /// remembered under (<see cref="HouseBackoffs"/>). Two intents with the same
+        /// key are the same request; a refused bail for one man must not silence a
+        /// bail for another, and a refused walk on one block must not silence the
+        /// next block over.
+        /// </summary>
+        public string Key
+        {
+            get
+            {
+                switch (Kind)
+                {
+                    case HouseIntentKind.Command:
+                        return "cmd:" + Order + ":" + CrewId + ":" +
+                               (BusinessId.IsValid ? BusinessId.Value : "") + ":" +
+                               (BlockId.IsValid ? BlockId.Value : "") + ":" + FollowUp;
+                    case HouseIntentKind.Job:
+                        return Job == null
+                            ? "job:?"
+                            : "job:" + Job.Type + ":" + Job.CrewId + ":" +
+                              (Job.TargetBusinessId ?? "") + ":" + (Job.TargetLabel ?? "");
+                    case HouseIntentKind.Buy:
+                        return "buy:" + Kit + ":" + CharacterId + ":" + CrewId;
+                    case HouseIntentKind.SetStance:
+                        return "stance:" + Other.Value + ":" + Stance;
+                    case HouseIntentKind.Warn:
+                        return "warn:" + Other.Value + ":" + Listing;
+                    case HouseIntentKind.AssignBlock:
+                        return "block:" + CharacterId + ":" +
+                               (BlockId.IsValid ? BlockId.Value : "");
+                    case HouseIntentKind.Bail:
+                        return "bail:" + CharacterId + ":" + Price;
+                    case HouseIntentKind.Retain:
+                        return "retain";
+                    default:
+                        return Kind + ":" + CharacterId + ":" + CrewId + ":" + Duty +
+                               ":" + Policy;
+                }
+            }
+        }
     }
 }

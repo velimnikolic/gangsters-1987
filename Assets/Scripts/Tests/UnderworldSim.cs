@@ -159,7 +159,7 @@ namespace LivingCity.Tests
                 {
                     if (house.GangId >= houses)
                         return;
-                    var view = city.Look(world, racket, dues, house, config);
+                    var view = city.Look(world, racket, dues, house, config, rounds);
                     HouseMind.Think(view, config, relations, intents);
 
                     var done = 0;
@@ -174,6 +174,8 @@ namespace LivingCity.Tests
                         if (string.IsNullOrEmpty(refusal))
                             continue;
                         refusals.Add(refusal);
+                        city.BackoffsOf(house.GangId).Note(
+                            intents[i].Key, refusal, city.Hour, config);
 
                         // THE ONE REFUSAL THAT IS A BUG. A mind proposing something the
                         // gateway forbids for ownership is a mind reaching past its view.

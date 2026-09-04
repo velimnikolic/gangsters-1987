@@ -815,6 +815,249 @@ namespace GangstersTools
             };
         }
 
+        /// <summary>
+        /// AI-000. THE HOUSE PROBE: a mind trace in an ordinary Play. Per house the
+        /// last think with its refusals and the fifty before it, every job on the book
+        /// and whether its crew still exists, every round with its stall metres, and
+        /// every unit's Surrendered / Billeted state - the per-unit line being the point,
+        /// because a partially arrested crew standing frozen at a door and a failed walk
+        /// are indistinguishable in a save file and need opposite fixes. Reads and never
+        /// repairs.
+        /// </summary>
+        [CliCommand("gangsters_house_probe",
+                    "AI-000: per house, the last thinks with the gateway's refusals, " +
+                    "the phase, the book (orphan jobs marked), every round with its " +
+                    "stall metres, and every unit's Surrendered/Billeted state. Reads, " +
+                    "never repairs.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "underworld", "audit" })]
+        public static object HouseProbe(
+            [CliArg("house", "One gang id to narrow to; -1 for every house.")] int house = -1,
+            [CliArg("thinks", "How many of the last thinks to print per house.")] int thinks = 5)
+        {
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            var runtime = UnityEngine.Object.FindAnyObjectByType<RoadDemo.TerritoryRuntime>();
+            var crews = UnityEngine.Object.FindAnyObjectByType<RoadDemo.DemoCrews>();
+            if (underworld == null)
+                return new { ok = false, reason = "No underworld is dealt; is a scene playing?" };
+
+            var hour = runtime != null ? runtime.GameHour : 0.0;
+            var config = runtime != null ? runtime.MindConfig : LivingCity.Outfit.HouseMindConfig.Default;
+            var houses = new List<object>();
+            var scores = new List<(LivingCity.Territory.TerritoryBlockId block, int score, bool open)>();
+            var holds = new List<(string key, double until)>();
+            for (var g = 0; g < underworld.Count; g++)
+            {
+                var one = underworld.Of(g);
+                if (one == null || (house >= 0 && g != house))
+                    continue;
+                var roster = one.Roster;
+
+                int active = 0, jailed = 0, hurt = 0, dead = 0, wanted = 0;
+                for (var i = 0; roster != null && i < roster.Members.Count; i++)
+                {
+                    var man = roster.Members[i];
+                    if (man.Status == LivingCity.Personnel.CharacterStatus.Active) active++;
+                    else if (man.Status == LivingCity.Personnel.CharacterStatus.Jailed) jailed++;
+                    else if (man.Status == LivingCity.Personnel.CharacterStatus.Hospitalized ||
+                             man.Status == LivingCity.Personnel.CharacterStatus.Taken) hurt++;
+                    else dead++;
+                    if (!man.Gone && man.WantedLevel > 0) wanted++;
+                }
+
+                var jobs = new List<object>();
+                var book = one.Runner.Book;
+                for (var i = 0; i < book.Jobs.Count; i++)
+                {
+                    var job = book.Jobs[i];
+                    jobs.Add(new
+                    {
+                        id = job.Id,
+                        type = job.Type.ToString(),
+                        stage = job.Stage.ToString(),
+                        crew = job.CrewId,
+                        issuedDay = job.IssuedDay,
+                        target = string.IsNullOrEmpty(job.TargetBusinessId)
+                            ? job.TargetLabel : job.TargetBusinessId,
+                        orphan = roster?.FindCrew(job.CrewId) == null,
+                    });
+                }
+
+                var history = runtime != null ? runtime.ThinkHistory(g) : null;
+                var last = new List<object>();
+                var acceptedToday = 0;
+                var today = (int)(hour / 24.0) + 1;
+                for (var i = 0; history != null && i < history.Count; i++)
+                {
+                    var record = history[i];
+                    if (record.Day == today)
+                        acceptedToday += record.Accepted;
+                    if (i < history.Count - System.Math.Max(0, thinks))
+                        continue;
+                    var lines = new List<string>();
+                    for (var l = 0; l < record.Lines.Count; l++)
+                        lines.Add((record.Lines[l].Carried ? "OK  " : "NO  ") +
+                                  record.Lines[l].Intent + " · " + record.Lines[l].Reason);
+                    last.Add(new
+                    {
+                        hour = System.Math.Round(record.Hour, 1),
+                        day = record.Day,
+                        tier = record.Tier,
+                        ms = System.Math.Round(record.Milliseconds, 2),
+                        lines = lines.ToArray(),
+                    });
+                }
+
+                var phase = "";
+                var neighbours = new List<string>();
+                var cells = new List<string>();
+                if (runtime != null && !one.IsPlayer)
+                {
+                    var view = runtime.Peek(one);
+                    if (view != null)
+                    {
+                        phase = LivingCity.Outfit.HouseMind.PhaseOf(view, config).ToString();
+                        LivingCity.Outfit.HouseMind.NeighbourScores(view, config, scores);
+                        for (var i = 0; i < scores.Count; i++)
+                            neighbours.Add(scores[i].block.Value + " " + scores[i].score +
+                                           (scores[i].open ? " open" : " held"));
+                        for (var i = 0; i < view.Cells.Count; i++)
+                            cells.Add(view.Cells[i].Rank + " #" + view.Cells[i].CharacterId +
+                                      " since day " + view.Cells[i].HeldSinceDay + " · $" +
+                                      view.Cells[i].BailPrice + " · " +
+                                      (view.Cells[i].Bailable ? "bailable" : view.Cells[i].Refusal));
+                    }
+                    runtime.CollectBackoffs(g, holds);
+                }
+                var heldBack = new List<string>();
+                for (var i = 0; i < holds.Count; i++)
+                    heldBack.Add(holds[i].key + " until " +
+                                 (double.IsPositiveInfinity(holds[i].until)
+                                     ? "the case changes"
+                                     : System.Math.Round(holds[i].until, 1).ToString()));
+
+                houses.Add(new
+                {
+                    gang = g,
+                    name = LivingCity.Gangs.GangCatalog.Names[g],
+                    player = one.IsPlayer,
+                    finished = one.Finished,
+                    extinct = one.Extinct,
+                    headless = one.Headless,
+                    safe = one.Runner.Accounts.Safe,
+                    payroll = LivingCity.Outfit.Wages.DailyPayroll(roster),
+                    endurance = LivingCity.Outfit.HouseRelations.Endurance(
+                        one.Runner.Accounts.Safe, LivingCity.Outfit.Wages.DailyPayroll(roster)),
+                    men = new { active, jailed, hurt, dead, wanted },
+                    crews = roster != null ? roster.Crews.Count : 0,
+                    phase,
+                    nextThinkHour = System.Math.Round(one.NextThinkHour, 1),
+                    thinks = runtime != null ? runtime.ThinksOf(g) : 0,
+                    acceptedToday,
+                    quietThinks = one.QuietThinks,
+                    jobs = jobs.ToArray(),
+                    lastThinks = last.ToArray(),
+                    neighbours = neighbours.ToArray(),
+                    cells = cells.ToArray(),
+                    heldBack = heldBack.ToArray(),
+                });
+            }
+
+            var rounds = new List<object>();
+            if (runtime != null)
+            {
+                var readings = new List<RoadDemo.TerritoryRuntime.RoundReading>();
+                runtime.DescribeRounds(readings);
+                var seen = new HashSet<LivingCity.Territory.TerritoryRound>();
+                for (var i = 0; i < readings.Count; i++)
+                {
+                    var r = readings[i];
+                    seen.Add(r.Round);
+                    if (house >= 0 && r.Round.House.Value != house)
+                        continue;
+                    rounds.Add(RoundRow(r.Round, hour, "street", r.WalkersStand, r.CarrierWalks,
+                        r.Metres, r.Billeted));
+                }
+                var all = runtime.Rounds != null ? runtime.Rounds.Rounds : null;
+                for (var i = 0; all != null && i < all.Count; i++)
+                {
+                    if (seen.Contains(all[i]) || (house >= 0 && all[i].House.Value != house))
+                        continue;
+                    rounds.Add(RoundRow(all[i], hour, "paper", false, false, -1f, false));
+                }
+            }
+
+            var units = new List<object>();
+            if (crews != null)
+                for (var i = 0; i < crews.Units.Count; i++)
+                {
+                    var unit = crews.Units[i];
+                    if (unit == null || unit.IsPolice || unit.Faction < 0)
+                        continue;
+                    if (house >= 0 && unit.Faction != house)
+                        continue;
+                    units.Add(new
+                    {
+                        faction = unit.Faction,
+                        crew = unit.CrewId,
+                        detachment = unit.IsDetachment,
+                        alive = unit.Standing(),
+                        wiped = unit.Wiped,
+                        surrendered = unit.Surrendered,
+                        inCustody = unit.InCustody,
+                        retreated = unit.Retreated,
+                        fleeing = unit.Fleeing,
+                        billeted = RoadDemo.CrewQuarters.Billeted(unit),
+                        inside = RoadDemo.CrewQuarters.Inside(unit),
+                        marchOut = RoadDemo.CrewJobs.MarchOutstanding(unit.CrewId),
+                        guarding = RoadDemo.CrewJobs.TryGetWatch(unit.CrewId, out var door)
+                            ? door.Value : "",
+                        at = new
+                        {
+                            x = System.Math.Round(unit.Position.x, 1),
+                            z = System.Math.Round(unit.Position.z, 1),
+                        },
+                    });
+                }
+
+            return new
+            {
+                ok = true,
+                gameHour = System.Math.Round(hour, 2),
+                day = (int)(hour / 24.0) + 1,
+                thinkEveryHours = config.ThinkEveryHours,
+                lastThinkMs = runtime != null ? runtime.ThinkMilliseconds : 0f,
+                houses = houses.ToArray(),
+                rounds = rounds.ToArray(),
+                units = units.ToArray(),
+            };
+        }
+
+        static object RoundRow(LivingCity.Territory.TerritoryRound round, double hour,
+            string clock, bool walkersStand, bool carrierWalks, float metres, bool billeted) =>
+            new
+            {
+                house = round.House.Value,
+                crew = round.CrewId,
+                kind = round.Kind.ToString(),
+                origin = round.Origin.ToString(),
+                clock,
+                block = round.BlockId.Value,
+                stop = round.StopIndex + "/" + round.Stops.Count,
+                stage = round.Stage.ToString(),
+                carried = round.Carried,
+                missed = round.Missed,
+                openedAt = System.Math.Round(round.OpenedAt, 1),
+                lastMoveAt = System.Math.Round(round.LastMoveAt, 1),
+                stalledHours = System.Math.Round(hour - round.LastMoveAt, 2),
+                inTheDoor = round.InTheDoor,
+                collector = round.CollectorId,
+                carrierWalks,
+                walkersStand,
+                billeted,
+                metresToStop = System.Math.Round(metres, 1),
+            };
+
         [CliCommand("gangsters_loyalty_tests",
                     "Run EPIC 15 contracts for loyalty, promotion and betrayal: who a " +
                     "man answers to, what moves it, who walks and who goes with him.",
@@ -1743,6 +1986,21 @@ namespace GangstersTools
                 failures = failures.ToArray(),
             };
         }
+
+        /// <summary>
+        /// The EPIC 39 gate: count every usable doorstep, the legal kerb and the cost of
+        /// the existing crowd before any of those systems is changed. The implementation
+        /// lives beside the command rather than in runtime code because it reads prefab
+        /// provenance and runs a disposable preview-scene benchmark.
+        /// </summary>
+        [CliCommand("gangsters_people_census",
+                    "Measure EPIC 39's seed-specific doors, legal kerb and current crowd " +
+                    "tick curve without building or changing the open scene.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "people", "audit" })]
+        public static object PeopleCensus(
+            [CliArg("seed", "Deal the Core city from this seed.")] int seed = 1987,
+            [CliArg("rows", "Include every measured door/module row, not only totals and failures.")] bool rows = false)
+            => PeopleCensusAudit.Run(seed, rows);
 
         [CliCommand("gangsters_economy_tests",
                     "Run EPIC 9 contracts: the dues meter, owner profiles, payment rolls, the " +

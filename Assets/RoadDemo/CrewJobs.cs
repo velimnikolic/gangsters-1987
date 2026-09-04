@@ -91,6 +91,45 @@ namespace RoadDemo
             return null;
         }
 
+        /// <summary>
+        /// WHETHER A HOUSE HAS MEN STANDING ON A DOOR OF THIS BLOCK (ruling A22b). A
+        /// standing guard answers the incidents on the block it stands on, and only
+        /// while it stands - the power ledger asks this before it files one. The block
+        /// of each guarded door is the caller's to resolve; this only knows doors.
+        /// </summary>
+        public static bool HouseGuards(DemoCrews crews, int faction,
+            System.Func<LivingCity.Territory.TerritoryBusinessId, bool> onTheBlock)
+        {
+            if (crews == null || onTheBlock == null)
+                return false;
+            foreach (var pair in Guarding)
+            {
+                var unit = crews.UnitOfCrew(pair.Key);
+                if (unit == null || unit.Wiped || unit.Faction != faction)
+                    continue;
+                if (onTheBlock(pair.Value.Door))
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>Whether this crew has a travel leg out that the street has not yet
+        /// answered - marched or driving toward its job. The probe prints it (AI-000).
+        /// </summary>
+        public static bool MarchOutstanding(int crewId) =>
+            Dispatched.ContainsKey(crewId) || Driving.ContainsKey(crewId);
+
+        /// <summary>The door a crew is standing a watch on, if it is (AI-000).</summary>
+        public static bool TryGetWatch(int crewId,
+            out LivingCity.Territory.TerritoryBusinessId door)
+        {
+            door = default;
+            if (!Guarding.TryGetValue(crewId, out var watch))
+                return false;
+            door = watch.Door;
+            return true;
+        }
+
         public static void Tick(DemoCrews crews)
         {
             var outfit = OutfitDirector.Instance;
@@ -220,6 +259,9 @@ namespace RoadDemo
                     Driving[crewId] = job.Id;
                     Sicced.Remove(crewId);
                     Marks.Remove(crewId);
+                    // A BOOK JOB TAKES THE CREW OFF ITS ROUND (AI-002, ruling A2) -
+                    // unless the player started that round with a key.
+                    TerritoryRuntime.Instance?.BookJobTookTheCrew(crewId);
                 }
 
                 // DriveTo already chooses the reachable kerb nearest the address. Once
@@ -242,6 +284,10 @@ namespace RoadDemo
             Dispatched[crewId] = job.Id;
             Sicced.Remove(crewId);
             Marks.Remove(crewId);
+            // A BOOK JOB TAKES THE CREW OFF ITS ROUND (AI-002, ruling A2) - unless the
+            // player started that round with a key. Secondary to the watchdog: the
+            // measured rounds died on the way, not under a job.
+            TerritoryRuntime.Instance?.BookJobTookTheCrew(crewId);
         }
 
         static void Work(DemoCrews crews, LivingCity.Outfit.House house,

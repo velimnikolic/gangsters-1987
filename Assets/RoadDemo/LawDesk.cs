@@ -92,6 +92,50 @@ namespace RoadDemo
         }
 
         /// <summary>
+        /// POST BAIL FOR ANY HOUSE'S MAN (AI-005 P1). The same pipe, the same refusals
+        /// and the same price as the ledger's row above; the money leaves the named
+        /// house's own safe through HouseOps, and only the player's wire hears of it.
+        /// The player's row keeps its own door so the director's bookkeeping - the
+        /// Purchases line, the version bump - is untouched.
+        /// </summary>
+        public static OpResult PostBail(LivingCity.Outfit.House house, int characterId)
+        {
+            var pipeline = Pipeline;
+            var roster = house?.Roster;
+            if (pipeline == null || roster == null)
+                return OpResult.Fail(LedgerText.ReasonNoCase);
+            if (house.IsPlayer)
+                return PostBail(characterId);
+
+            var prisoner = pipeline.Find(characterId);
+            var refusal = pipeline.BailRefusal(prisoner, Lawyer.SkillOf(roster));
+            if (refusal != null)
+                return OpResult.Fail(refusal);
+
+            var price = PrisonPipeline.BailPrice(prisoner);
+            var paid = LivingCity.Outfit.HouseOps.Purchase(house, price, out var dirtyPart);
+            if (!paid.Ok)
+                return paid;
+
+            var today = Today();
+            if (!pipeline.PostBail(roster, prisoner, price, today))
+            {
+                LivingCity.Outfit.HouseOps.Refund(house, price, dirtyPart);
+                return OpResult.Fail(LedgerText.ReasonNotInside);
+            }
+
+            PoliceForce.Instance?.ReleaseCustodyTracking(characterId);
+            house.Touch();
+            return OpResult.Success;
+        }
+
+        static int Today()
+        {
+            var outfit = OutfitDirector.Instance;
+            return outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0;
+        }
+
+        /// <summary>
         /// SKIP BAIL. Nothing happens until his court day - the money is written off
         /// then, not now, so a boss who changes his mind still has a man to send.
         /// </summary>

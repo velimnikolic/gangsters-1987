@@ -181,7 +181,24 @@ namespace LivingCity.Outfit
         /// specialty before the rank, so his ask is the lawyer's wage plus the market
         /// premium and nothing about a crew enters into it.
         /// </summary>
-        HireAd DealLawyer(Roster roster, System.Random rng, int seed, int day, int slot)
+        /// <summary>
+        /// COUNSEL FOR A HOUSE THAT DOES NOT READ THE PAPER (AI-005 P1, ruling A14).
+        /// A rival family retains a lawyer off the same market at the same price - the
+        /// same deal, the same floors, the same wage table - but not off the column:
+        /// the column is the player's page, and twenty houses taking its one lawyer a
+        /// week would empty it before he read it. Dealt against the house's own books
+        /// and its own day, so the man the mind priced is the man it signs.
+        /// </summary>
+        public static HireAd CounselFor(Roster roster, int seed, int day)
+        {
+            if (roster == null)
+                return null;
+            var rng = new System.Random(Mix(
+                Mix(seed + SeedOffsets.Personnel, day), roster.GangId * 31 + 7));
+            return DealLawyer(roster, rng, seed, day, AdsPerEdition + roster.GangId);
+        }
+
+        static HireAd DealLawyer(Roster roster, System.Random rng, int seed, int day, int slot)
         {
             var man = RosterSeeder.Deal(roster, rng, AdvertisedCeilingHalfSteps,
                 Potential.Mix(Potential.StreamFor(seed, -2), day * AdsPerEdition + slot));

@@ -52,6 +52,13 @@ namespace RoadDemo
             if (unit == null)
                 return TerritoryCommandExecution.Reject(refusal);
 
+            // ONE WALK AT A TIME (AI-002 S7). A crew already walking a block is not
+            // sent round it again: the second order used to tear the first walk down
+            // and start it over, which is how the same doors were asked every think.
+            // The same refusal a second SEND on a round gets, in the seam's words.
+            if (RoundRunning(unit.CrewId))
+                return TerritoryCommandExecution.Reject(WalkOutRefusal);
+
             var candidates = new List<RoundStop>();
             var here = geography.BusinessesOf(blockId);
             for (var i = 0; i < here.Count; i++)
@@ -101,6 +108,9 @@ namespace RoadDemo
                 return TerritoryCommandExecution.Reject(kind == TerritoryRoundKind.Lean
                     ? LeanRefusal
                     : ShakedownRefusal);
+            round.Origin = submittingOrigin;
+            if (kind == TerritoryRoundKind.ShakeDown)
+                NoteWalked(gang, blockId, lastGameHour);
             BumpRacketSeam();
 
             return TerritoryCommandExecution.Pending(kind == TerritoryRoundKind.Lean
@@ -113,6 +123,7 @@ namespace RoadDemo
         /// and a command that refuses can never disagree about why.</summary>
         internal const string ShakedownRefusal = "every door here has answered us";
         internal const string LeanRefusal = "nobody is holding out";
+        internal const string WalkOutRefusal = "the men are already walking a block";
 
         /// <summary>Whether THIS house holds this door's deed - its own shop, its
         /// front, its headquarters. The one place the two block orders ask it, so the

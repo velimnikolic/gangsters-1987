@@ -137,6 +137,8 @@ namespace RoadDemo
                         : TerritoryRacketIntent.Demand);
                 asked++;
             }
+            if (asked > 0 && kind == TerritoryRoundKind.ShakeDown)
+                NoteWalked(mine, blockId, lastGameHour);
             return asked > 0 ? "" : "every door there has answered";
         }
 

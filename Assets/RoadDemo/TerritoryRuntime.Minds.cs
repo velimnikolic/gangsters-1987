@@ -40,8 +40,73 @@ namespace RoadDemo
         /// RIVAL-008's physical count is decided from.</summary>
         public float ThinkMilliseconds { get; private set; }
 
+        /// <summary>One intent of one think, as the probe prints it: what was asked,
+        /// why (or why it was refused), and whether the gateway took it (AI-000).
+        /// </summary>
+        public readonly struct HouseThinkLine
+        {
+            public HouseThinkLine(string intent, string reason, bool carried)
+            {
+                Intent = intent;
+                Reason = reason;
+                Carried = carried;
+            }
+
+            public string Intent { get; }
+            public string Reason { get; }
+            public bool Carried { get; }
+        }
+
+        /// <summary>One turn of mind, remembered: when, which tier acted, what it cost,
+        /// and every intent with the gateway's own verdict on it.</summary>
+        public sealed class HouseThinkRecord
+        {
+            public double Hour;
+            public int Day;
+            public int Tier;
+            public float Milliseconds;
+            public readonly List<HouseThinkLine> Lines = new List<HouseThinkLine>();
+
+            /// <summary>How many of the lines were taken. A house whose every think
+            /// is refused reads green on every other column (AI-001's measure).</summary>
+            public int Accepted
+            {
+                get
+                {
+                    var taken = 0;
+                    for (var i = 0; i < Lines.Count; i++)
+                        if (Lines[i].Carried)
+                            taken++;
+                    return taken;
+                }
+            }
+        }
+
         /// <summary>
-        /// THE FAMILIES TAKE THEIR TURN. Every four game hours a house reads the street
+        /// THE LAST FIFTY THINKS OF EVERY HOUSE (AI-000). Memory only, never saved
+        /// (review finding C5): QuietThinks is already left out of the file, and a
+        /// history that came back empty after a load would read as a house that had
+        /// stopped. The harness trace writes the same lines to disk; this is what an
+        /// ordinary Play can be asked afterwards.
+        /// </summary>
+        public const int ThinksKept = 50;
+
+        readonly Dictionary<int, List<HouseThinkRecord>> thinkHistory =
+            new Dictionary<int, List<HouseThinkRecord>>();
+
+        static readonly List<HouseThinkRecord> NoThinks = new List<HouseThinkRecord>();
+
+        public IReadOnlyList<HouseThinkRecord> ThinkHistory(int gangId) =>
+            thinkHistory.TryGetValue(gangId, out var list) ? list : NoThinks;
+
+        /// <summary>How many thinks each house has taken since the scene woke.</summary>
+        readonly Dictionary<int, int> thinksOf = new Dictionary<int, int>();
+
+        public int ThinksOf(int gangId) =>
+            thinksOf.TryGetValue(gangId, out var count) ? count : 0;
+
+        /// <summary>
+        /// THE FAMILIES TAKE THEIR TURN. Every game hour (A19) a house reads the street
         /// and files what it wants; at most three of its intents are executed, in order.
         /// </summary>
         void DriveHouseMinds(double gameHour)
@@ -58,6 +123,7 @@ namespace RoadDemo
                 var tier = HouseMind.Think(
                     view, mindConfig, Relations?.Config, intents);
                 Thinks++;
+                thinksOf[house.GangId] = ThinksOf(house.GangId) + 1;
 
                 var refused = Refusals(house.GangId);
                 refused.Clear();
@@ -66,6 +132,13 @@ namespace RoadDemo
                 // one. Three of them running are what tier 8 waits for (D22).
                 house.NoteThink(tier > 0 && tier < HouseMind.TierInvest);
 
+                var record = new HouseThinkRecord
+                {
+                    Hour = gameHour,
+                    Day = view.Day,
+                    Tier = tier,
+                };
+
                 var done = 0;
                 for (var i = 0; i < intents.Count && done < mindConfig.MaxIntentsPerThink;
                      i++)
@@ -73,10 +146,21 @@ namespace RoadDemo
                     var intent = intents[i];
                     var refusal = Carry(house, intent);
                     done++;
-                    if (!string.IsNullOrEmpty(refusal))
+                    var taken = string.IsNullOrEmpty(refusal);
+                    if (!taken)
+                    {
                         refused.Add(intent + ": " + refusal);
+                        // P4 (AI-005, ruling A24): a refused intent is not proposed
+                        // again for twelve game hours, keyed by what it was and what
+                        // it was aimed at. The memory is the runtime's; the mind only
+                        // reads it through the view.
+                        Backoffs(house.GangId).Note(
+                            intent.Key, refusal, gameHour, mindConfig);
+                    }
+                    record.Lines.Add(new HouseThinkLine(
+                        intent.ToString(), taken ? intent.Reason : refusal, taken));
                     DriveTrace.House(house.GangId, intent.Tier, intent.ToString(),
-                        string.IsNullOrEmpty(refusal) ? intent.Reason : refusal,
+                        taken ? intent.Reason : refusal,
                         house.Runner.Accounts.Safe, view.DailyPayroll,
                         (float)clock.Elapsed.TotalMilliseconds);
                 }
@@ -86,7 +170,36 @@ namespace RoadDemo
                         house.Runner.Accounts.Safe, view.DailyPayroll,
                         (float)clock.Elapsed.TotalMilliseconds);
                 ThinkMilliseconds = (float)clock.Elapsed.TotalMilliseconds;
+                record.Milliseconds = ThinkMilliseconds;
+                Remember(house.GangId, record);
             });
+        }
+
+        void Remember(int gangId, HouseThinkRecord record)
+        {
+            if (!thinkHistory.TryGetValue(gangId, out var list))
+            {
+                list = new List<HouseThinkRecord>(ThinksKept + 1);
+                thinkHistory.Add(gangId, list);
+            }
+            list.Add(record);
+            if (list.Count > ThinksKept)
+                list.RemoveAt(0);
+        }
+
+        /// <summary>The refused-intent memory of one house (P4). Memory only, like the
+        /// think history: a back-off that came back from a file would be a house
+        /// refusing to try something for reasons nobody can see any more.</summary>
+        readonly Dictionary<int, HouseBackoffs> backoffs = new Dictionary<int, HouseBackoffs>();
+
+        HouseBackoffs Backoffs(int gangId)
+        {
+            if (!backoffs.TryGetValue(gangId, out var book))
+            {
+                book = new HouseBackoffs();
+                backoffs.Add(gangId, book);
+            }
+            return book;
         }
 
         /// <summary>
@@ -284,6 +397,19 @@ namespace RoadDemo
 
         // -------------------------------------------------------------------- the view
 
+        /// <summary>The view as the mind would read it this instant, for the probe
+        /// (AI-000). Reads and repairs nothing; the scratch lists are the same ones a
+        /// think fills, so it is not to be held across a frame.</summary>
+        public HouseView Peek(House house) =>
+            house == null || geography == null || racket == null
+                ? null
+                : Look(house, lastGameHour);
+
+        /// <summary>What a house's refusals are holding back right now (P4), for the
+        /// probe.</summary>
+        public void CollectBackoffs(int gangId, List<(string key, double until)> into) =>
+            Backoffs(gangId).Collect(into);
+
         /// <summary>
         /// The street as this family can see it. Its own books, and then only what a man
         /// standing on the corner could work out: who holds a door, what a week there is
@@ -343,13 +469,23 @@ namespace RoadDemo
                 var blockId = viewBlocks[i];
                 if (power != null)
                 {
-                    power.Collect(blockId, mine, gameHour, out _, out var unanswered);
-                    if (unanswered > 0)
-                        incidentScratch.Add(
-                            new HouseIncident(blockId, unanswered, gameHour));
+                    // THE LEDGER'S OWN HOURS, never the hour of the think (S1). An
+                    // incident is in the view while the street remembers it at all,
+                    // so a guard can measure its day from the LAST one; the count of
+                    // unanswered is what tier 5 still has a window on.
+                    power.Collect(blockId, mine, gameHour, out var total,
+                        out var unanswered, out var oldestOpen, out var lastAt);
+                    if (total > 0)
+                        incidentScratch.Add(new HouseIncident(
+                            blockId, unanswered,
+                            double.IsNaN(oldestOpen) ? lastAt : oldestOpen, lastAt));
                 }
                 CollectDefiances(blockId, mine, gameHour);
             }
+
+            var backoff = Backoffs(house.GangId);
+            backoff.Sweep(gameHour);
+            CollectCells(house, gameHour);
 
             return new HouseView
             {
@@ -362,6 +498,12 @@ namespace RoadDemo
                 Blocks = viewBlocks,
                 NeighbourLook = blockId => geography.Neighbours(blockId),
                 DoorLook = blockId => Doors(blockId, mine, gameHour),
+                BackoffLook = key => backoff.Blocked(key, gameHour),
+                RoundLook = crewId => RoundRunning(crewId) || BagRoundPending(crewId),
+                WalkedLook = blockId => LastWalked(mine, blockId),
+                Cells = cellScratch,
+                HasCounsel = Lawyer.OnBooks(house.Roster) != null,
+                CounselPrice = CounselPriceFor(house, gameHour),
                 PresenceLook = blockId =>
                     presence != null ? presence.TotalOf(blockId, mine) : 0f,
                 FearLook = blockId =>
@@ -453,17 +595,27 @@ namespace RoadDemo
                            TerritoryCollectionSchedule.IsLate(
                                owed, rate, (int)(gameHour / 24.0),
                                account.LastCollectedDay);
+                // The door's own history with us, off the relationship row (AI-003):
+                // when we last stood at its counter and how often we have asked.
+                var lastInteraction = -1.0;
+                var demands = 0;
+                if (racket.TryGetRelationship(businessId, mine, out var row))
+                {
+                    lastInteraction = row.LastInteraction;
+                    demands = row.Demands;
+                }
                 built.Add(new HouseDoor(
                     businessId, TierOf(businessId), rate, protector,
                     racket.StateOf(businessId, mine), owed,
                     !RacketCanAccrueAt(businessId, gameHour),
-                    IsRacketable(businessId), tenure, late));
+                    IsRacketable(businessId), tenure, late, lastInteraction, demands));
             }
             return built;
         }
 
-        /// <summary>Doors on this block that told this family no and have not been
-        /// answered - what the mind's threat and lean steps read.</summary>
+        /// <summary>Doors on this block that told this family no, or would not say yes,
+        /// and have not been answered - what the mind's threat and lean steps read.
+        /// </summary>
         void CollectDefiances(
             TerritoryBlockId blockId, TerritoryGangId mine, double gameHour)
         {
@@ -471,16 +623,90 @@ namespace RoadDemo
             for (var i = 0; i < here.Count; i++)
             {
                 var businessId = here[i].BusinessId;
+                if (!racket.TryGetRelationship(businessId, mine, out var row) ||
+                    row.State == TerritoryProtectionState.Compliant)
+                    continue;
                 // A door that has EVER refused us and does not pay us. The threat that
                 // follows moves it off Defiant, and a man who has said no once is still a
                 // man who has said no.
-                if (!racket.TryGetRelationship(businessId, mine, out var row) ||
-                    row.RefusedAt < 0.0 ||
-                    row.State == TerritoryProtectionState.Compliant)
+                if (row.RefusedAt >= 0.0)
+                {
+                    defianceScratch.Add(new HouseDefiance(
+                        businessId, blockId, row.RefusedAt, row.Threats));
                     continue;
-                defianceScratch.Add(
-                    new HouseDefiance(businessId, blockId, row.RefusedAt, row.Threats));
+                }
+                // A HESITANT DOOR IS ON THE LADDER TOO (Z4, ruling A8): one threat a
+                // day after the ask, then it is left until there is a war. A
+                // hesitation never writes RefusedAt, so it is opened at the hour we
+                // last stood there.
+                if (row.State == TerritoryProtectionState.Hesitant)
+                    defianceScratch.Add(new HouseDefiance(
+                        businessId, blockId, row.LastInteraction, row.Threats));
             }
+        }
+
+        // ------------------------------------------------------------------ the law
+
+        readonly List<HouseCell> cellScratch = new List<HouseCell>();
+
+        /// <summary>
+        /// Men of this house in the city's hands, with the court's own answer on each
+        /// (AI-005). Read through LawDesk - the same pipe and the same refusals the
+        /// player's POST BAIL row gets - so a mind is told no in exactly the words the
+        /// ledger would print.
+        /// </summary>
+        void CollectCells(House house, double gameHour)
+        {
+            cellScratch.Clear();
+            var roster = house?.Roster;
+            var pipeline = LawDesk.Pipeline;
+            if (roster == null || pipeline == null)
+                return;
+            var skill = Lawyer.SkillOf(roster);
+            for (var i = 0; i < roster.Members.Count; i++)
+            {
+                var man = roster.Members[i];
+                if (man.Gone || man.Status != CharacterStatus.Jailed || man.OutOfTown)
+                    continue;
+                var prisoner = pipeline.Find(man.Id);
+                if (prisoner == null)
+                    continue;
+                cellScratch.Add(new HouseCell(
+                    man.Id, man.Rank, LivingCity.Police.PrisonPipeline.BailPrice(prisoner),
+                    pipeline.BailRefusal(prisoner, skill), prisoner.TakenOnDay));
+            }
+        }
+
+        /// <summary>What counsel costs this house this morning: the market's own
+        /// figure for a lawyer dealt against its books, or 0 when it already keeps
+        /// one.</summary>
+        static int CounselPriceFor(House house, double gameHour)
+        {
+            if (house?.Roster == null || Lawyer.OnBooks(house.Roster) != null)
+                return 0;
+            // The campaign's own day, the same one Carry deals the man on, so the
+            // price the mind weighed is the price the signing pays.
+            var ad = HireMarket.CounselFor(
+                house.Roster, house.Runner.Seed, house.Runner.Campaign.Day);
+            return ad != null ? ad.Down : 0;
+        }
+
+        // ----------------------------------------------------------------- the walks
+
+        /// <summary>When each house last walked each block door to door (A21). The
+        /// mind reads it; the player's own key does not.</summary>
+        readonly Dictionary<(int gang, string block), double> walked =
+            new Dictionary<(int, string), double>();
+
+        double LastWalked(TerritoryGangId mine, TerritoryBlockId blockId) =>
+            blockId.IsValid && walked.TryGetValue((mine.Value, blockId.Value), out var at)
+                ? at
+                : -1.0;
+
+        void NoteWalked(TerritoryGangId gang, TerritoryBlockId blockId, double gameHour)
+        {
+            if (gang.IsValid && blockId.IsValid)
+                walked[(gang.Value, blockId.Value)] = gameHour;
         }
 
         // ---------------------------------------------------------------- the doing
@@ -538,6 +764,19 @@ namespace RoadDemo
 
                 case HouseIntentKind.Warn:
                     return Word(house, intent);
+
+                case HouseIntentKind.Cancel:
+                    // The player's own key: CampaignRunner.Cancel. The street's watch
+                    // table is cleared when the crew's book empties (CrewJobs.SendHome).
+                    return house.Runner.Cancel(house.Roster, intent.CharacterId).Reason;
+
+                case HouseIntentKind.Bail:
+                    return LawDesk.PostBail(house, intent.CharacterId).Reason;
+
+                case HouseIntentKind.Retain:
+                    return HouseOps.Retain(house, HireMarket.CounselFor(
+                        house.Roster, house.Runner.Seed,
+                        house.Runner.Campaign.Day)).Reason;
             }
             return "nothing to do";
         }
@@ -699,31 +938,42 @@ namespace RoadDemo
 
             var group = TerritoryCommandNodeId.Crew(intent.CrewId);
             TerritoryCommandResult result;
-            switch (intent.Order)
+            // A ROUND A MIND FILES IS A MIND'S ROUND (ruling A2): a book job may take
+            // the crew off it. Set around the submit like scheduledSubmitDay.
+            var previousOrigin = submittingOrigin;
+            submittingOrigin = TerritoryRoundOrigin.Mind;
+            try
             {
-                case HouseOrder.OperateInBlock:
-                    result = Commands.Submit(
-                        new OperateInBlockCommand(group, intent.BlockId) { House = mine });
-                    break;
-                case HouseOrder.ApproachBusiness:
-                    result = Commands.Submit(
-                        new ApproachBusinessCommand(group, intent.BusinessId,
-                            intent.FollowUp) { House = mine });
-                    break;
-                case HouseOrder.LeanOnHoldouts:
-                    result = Commands.Submit(
-                        new LeanOnHoldoutsCommand(group, intent.BlockId) { House = mine });
-                    break;
-                case HouseOrder.ShakeDownBlock:
-                    result = Commands.Submit(
-                        new ShakeDownBlockCommand(group, intent.BlockId) { House = mine });
-                    break;
-                case HouseOrder.CollectDues:
-                    result = Commands.Submit(
-                        new CollectDuesCommand(group, intent.BlockId) { House = mine });
-                    break;
-                default:
-                    return "no such order";
+                switch (intent.Order)
+                {
+                    case HouseOrder.OperateInBlock:
+                        result = Commands.Submit(
+                            new OperateInBlockCommand(group, intent.BlockId) { House = mine });
+                        break;
+                    case HouseOrder.ApproachBusiness:
+                        result = Commands.Submit(
+                            new ApproachBusinessCommand(group, intent.BusinessId,
+                                intent.FollowUp) { House = mine });
+                        break;
+                    case HouseOrder.LeanOnHoldouts:
+                        result = Commands.Submit(
+                            new LeanOnHoldoutsCommand(group, intent.BlockId) { House = mine });
+                        break;
+                    case HouseOrder.ShakeDownBlock:
+                        result = Commands.Submit(
+                            new ShakeDownBlockCommand(group, intent.BlockId) { House = mine });
+                        break;
+                    case HouseOrder.CollectDues:
+                        result = Commands.Submit(
+                            new CollectDuesCommand(group, intent.BlockId) { House = mine });
+                        break;
+                    default:
+                        return "no such order";
+                }
+            }
+            finally
+            {
+                submittingOrigin = previousOrigin;
             }
 
             return result.Status == TerritoryCommandStatus.Rejected

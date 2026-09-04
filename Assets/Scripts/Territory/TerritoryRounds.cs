@@ -48,6 +48,29 @@ namespace LivingCity.Territory
         Lost,
     }
 
+    /// <summary>
+    /// WHO SENT THE ROUND (AI-002, ruling A2 - the user's word of 2026-09-04: "ako sam
+    /// ja kao user naredio ne sme; ako je poručnik naredio, onda kao i drugim AI"). A
+    /// walk the player started with a key is untouchable: no book job cancels it. A
+    /// standing round the schedule sent, or a round a mind filed, behaves like any
+    /// other house's and is cancelled by a new job on that crew. Carried on the round
+    /// itself, not on the crew, so it survives a handover - the same principle the bag
+    /// keeps through Crew.BagNamedByBoss: the boss's word outlives the lieutenant's.
+    /// </summary>
+    public enum TerritoryRoundOrigin
+    {
+        /// <summary>The player pressed a key. The default, so a round restored from a
+        /// file written before origins existed is left alone.</summary>
+        Player,
+
+        /// <summary>The standing weekly round, sent by the schedule off the paper.
+        /// </summary>
+        Schedule,
+
+        /// <summary>A house's own mind filed it.</summary>
+        Mind,
+    }
+
     /// <summary>One door on a round, and the pavement spot outside it.</summary>
     public readonly struct TerritoryRoundStop
     {
@@ -84,8 +107,18 @@ namespace LivingCity.Territory
         public int Carried;
         public int Missed;
         public TerritoryRoundStage Stage = TerritoryRoundStage.Walking;
+        public TerritoryRoundOrigin Origin = TerritoryRoundOrigin.Player;
         public double OpenedAt;
+
+        /// <summary>The last hour anything about this round MOVED: a door reached, a
+        /// door settled, the cursor advanced - and, on the street, the men themselves
+        /// making ground (AI-002 S2). The watchdog abandons a round this falls too far
+        /// behind on.</summary>
         public double LastMoveAt;
+
+        /// <summary>Whether a book job may take this round's crew off it (ruling A2).
+        /// </summary>
+        public bool Cancellable => Origin != TerritoryRoundOrigin.Player;
 
         /// <summary>He is inside this stop's shop. The arrival sampling runs several
         /// times a second and the conversation takes seconds, so without this the same
@@ -677,6 +710,17 @@ namespace LivingCity.Territory
             int, int> Filed;
 
         public void Forget() => sent.Clear();
+
+        /// <summary>A round that was sent and then lost gives the block its attempt
+        /// back (AI-002 S2): the next tick may send it again today rather than next
+        /// week.</summary>
+        public void Release(int crewId, TerritoryBlockId blockId)
+        {
+            if (!blockId.IsValid)
+                return;
+            sent.RemoveWhere(entry =>
+                entry.crewId == crewId && entry.blockId == blockId.Value);
+        }
 
         /// <summary>Close a standing-round slip only after its round really opened.
         /// A physical detail may first have to cross a headquarters door; that delay

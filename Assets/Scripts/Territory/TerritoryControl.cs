@@ -339,10 +339,31 @@ namespace LivingCity.Territory
             out int incidents,
             out int unanswered)
         {
+            Collect(blockId, gangId, gameHour, out incidents, out unanswered, out _, out _);
+        }
+
+        /// <summary>
+        /// The same, with the HOURS behind the number (AI-001 S1): when the oldest
+        /// still-unanswered incident happened, and when the latest incident of any
+        /// kind did. Both are NaN when there is nothing. The mind's view carries these
+        /// instead of the hour of the think, so a window can actually close.
+        /// </summary>
+        public void Collect(
+            TerritoryBlockId blockId,
+            TerritoryGangId gangId,
+            double gameHour,
+            out int incidents,
+            out int unanswered,
+            out double oldestUnansweredAt,
+            out double lastAt)
+        {
             incidents = 0;
             unanswered = 0;
+            oldestUnansweredAt = double.NaN;
+            lastAt = double.NaN;
             if (blocks.TryGetValue(blockId, out var row))
-                row.Count(gangId, gameHour, Config, out incidents, out unanswered);
+                row.Count(gangId, gameHour, Config, out incidents, out unanswered,
+                    out oldestUnansweredAt, out lastAt);
         }
 
         /// <summary>Drop what the street has forgotten, so a long campaign does not carry
@@ -398,13 +419,17 @@ namespace LivingCity.Territory
 
             public void Count(
                 TerritoryGangId gangId, double gameHour, TerritoryControlConfig config,
-                out int incidents, out int unanswered)
+                out int incidents, out int unanswered, out double oldestUnansweredAt,
+                out double lastAt)
             {
                 incidents = 0;
                 unanswered = 0;
+                oldestUnansweredAt = double.NaN;
+                lastAt = double.NaN;
                 for (var i = 0; i < gangs.Count; i++)
                     if (gangs[i].GangId == gangId)
-                        gangs[i].Count(gameHour, config, out incidents, out unanswered);
+                        gangs[i].Count(gameHour, config, out incidents, out unanswered,
+                            out oldestUnansweredAt, out lastAt);
             }
 
             public void Forget(double gameHour, TerritoryControlConfig config)
@@ -445,7 +470,7 @@ namespace LivingCity.Territory
 
             public float Coefficient(double gameHour, TerritoryControlConfig config)
             {
-                Count(gameHour, config, out var total, out var unanswered);
+                Count(gameHour, config, out var total, out var unanswered, out _, out _);
                 if (total == 0)
                     return 1f;
                 var share = (float)unanswered / total;
@@ -455,20 +480,31 @@ namespace LivingCity.Territory
             /// <summary>
             /// An incident still inside its answer window is not yet a failure - the house
             /// has time to come. Only what is past the window and unanswered counts against.
+            /// The two hours are what a mind measures its windows from: the oldest
+            /// incident nobody has answered yet (inside its window or past it), and the
+            /// latest incident of any kind.
             /// </summary>
             public void Count(
                 double gameHour, TerritoryControlConfig config,
-                out int total, out int unanswered)
+                out int total, out int unanswered, out double oldestUnansweredAt,
+                out double lastAt)
             {
                 total = 0;
                 unanswered = 0;
+                oldestUnansweredAt = double.NaN;
+                lastAt = double.NaN;
                 for (var i = 0; i < incidents.Count; i++)
                 {
                     if (gameHour - incidents[i].At > config.PowerMemoryHours)
                         continue;
                     total++;
-                    if (!incidents[i].Answered &&
-                        gameHour - incidents[i].At > config.PowerAnswerWindowHours)
+                    if (double.IsNaN(lastAt) || incidents[i].At > lastAt)
+                        lastAt = incidents[i].At;
+                    if (incidents[i].Answered)
+                        continue;
+                    if (double.IsNaN(oldestUnansweredAt) || incidents[i].At < oldestUnansweredAt)
+                        oldestUnansweredAt = incidents[i].At;
+                    if (gameHour - incidents[i].At > config.PowerAnswerWindowHours)
                         unanswered++;
                 }
             }

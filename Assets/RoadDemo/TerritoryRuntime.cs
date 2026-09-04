@@ -1045,11 +1045,30 @@ namespace RoadDemo
                 }
 
                 power.Incident(value.BlockId, protector, value.GameHour);
+
+                // A STANDING GUARD ANSWERS (ruling A22b, the user's word of 2026-09-04:
+                // "pa ja ne mogu da upucam ako su pobegli"). Men already posted on a
+                // door of THIS block have answered for it the moment it happens - and
+                // only for this block, and only while they stand. A house that posts
+                // nobody and hits nobody still loses its standing on the window.
+                if (HouseGuardsBlock(protector, value.BlockId))
+                {
+                    power.Answered(value.BlockId, protector, value.GameHour);
+                    continue;
+                }
+
                 // FOUR HOURS IS A CADENCE, NOT A DELAY (D7). A family hears about its
                 // own shop being wrecked when it happens, not at its next turn.
                 WakeHouse(protector, value.GameHour);
             }
         }
+
+        /// <summary>Whether this house has a crew standing a watch on any door of this
+        /// block right now (A22b).</summary>
+        bool HouseGuardsBlock(TerritoryGangId house, TerritoryBlockId blockId) =>
+            crews != null && geography != null && house.IsValid &&
+            CrewJobs.HouseGuards(crews, house.Value, door =>
+                geography.TryGetBusinessBlock(door, out var at) && at == blockId);
 
         /// <summary>
         /// A threat that actually landed: a crew stood in front of an owner and said it.

@@ -168,10 +168,6 @@ namespace RoadDemo
         [Tooltip("What the player's safe holds when the city stands up. Below 0 leaves " +
                  "the ledger's own $25,000, which is what the scene has always started on.")]
         public int playerSafeAtStart = -1;
-        [Tooltip("Game hours between one house's turns of mind. 0 leaves the model's own " +
-                 "figure (4). Twenty houses think one at a time in rota, so a run that " +
-                 "wants every family to have thought needs this short or the clock long.")]
-        [Min(0f)] public float mindThinkEveryHours = 0f;
 
         void Awake()
         {
@@ -205,7 +201,8 @@ namespace RoadDemo
                 TerritoryRuntime.OwnerTraitOverride == null)
                 Debug.LogWarning($"[CoreDemo] '{ownerTraitOverride}' is not one of the six " +
                                  "owner traits; the city deals its own men.");
-            TerritoryRuntime.MindThinkEveryHoursOverride = Mathf.Max(0f, mindThinkEveryHours);
+            // The mind's cadence is the MODEL's own number (HouseMindConfig, ruling
+            // A19) and lives in one place; the scene no longer overrides it.
             TerritoryRuntime.PlayerSafeAtStartOverride = playerSafeAtStart;
 
             var district = new CoreDistrict

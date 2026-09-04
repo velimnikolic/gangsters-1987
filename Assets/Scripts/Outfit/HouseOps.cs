@@ -58,6 +58,37 @@ namespace LivingCity.Outfit
             return OpResult.Success;
         }
 
+        /// <summary>
+        /// COUNSEL ON RETAINER (AI-005 P1, ruling A14). The signing money leaves this
+        /// house's own safe first and the man follows: a specialist takes no rank, no
+        /// crew and no place in the chain of command, and starts drawing the price he
+        /// printed. The same shape as the ledger's HIRE on a lawyer's ad
+        /// (PersonnelDirector.HireFromAd), with the house named.
+        /// </summary>
+        public static OpResult Retain(House house, HireAd ad)
+        {
+            if (house?.Roster == null || house.Runner == null)
+                return OpResult.Fail(UI.LedgerText.ReasonNoSuchMember);
+            if (ad?.Man == null || ad.Specialty == Specialty.None)
+                return OpResult.Fail(UI.LedgerText.ReasonNoSuchMember);
+            if (Lawyer.OnBooks(house.Roster) != null)
+                return OpResult.Fail("the house already keeps counsel");
+
+            var refusal = BalanceMath.TryPurchase(house.Runner.Accounts, ad.Down);
+            if (refusal != null)
+                return OpResult.Fail(refusal);
+
+            var man = ad.Man;
+            man.Id = house.Roster.NextCharacterId();
+            man.Rank = Rank.Hood;
+            man.Specialty = ad.Specialty;
+            man.WageAsked = ad.Daily;
+            house.Roster.Members.Add(man);
+            Career.Joined(man, house.Roster.Day, "retained by the house");
+            house.Touch();
+            return OpResult.Success;
+        }
+
         public static OpResult AssignToCrew(House house, int id, int crewId,
             List<PersonalityChange> changes = null) =>
             Commit(house, house?.Roster != null
