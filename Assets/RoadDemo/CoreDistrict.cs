@@ -81,6 +81,10 @@ namespace RoadDemo
         public ResidentialBlockModel ResidentialBlocks => _homes;
         /// <summary>Immutable quarters and named blocks produced by the accepted layout.</summary>
         public CoreTerritoryPlan Territory => _plan?.Territory;
+        /// <summary>The accepted poses of the authored Core blocks. This is plan data,
+        /// exposed read-only so audits can carry source-prefab module coordinates into the
+        /// district frame without instantiating the blocks.</summary>
+        public IReadOnlyList<CoreLayout.Block> LayoutBlocks => _blocks;
         /// <summary>The seed used by every pure sub-plan, exposed for shared read-only adapters.</summary>
         public int LayoutSeed => _seed;
         /// <summary>Plan-owned public car parks, available to shared map/gameplay adapters

@@ -54,8 +54,8 @@ false; complete amenity lots remain owned by their one-site venue/compound provi
 than being split by decorative meshes. Where the old system had a street-front address,
 exactly one representative retains that stable ID and `frontage` role; other bays use
 position-stable IDs. Older generated tables fall back through `ShopCells`/`ShopRuns` and
-split visual runs into 5 m bays. Seed 1987 audit: 3,263 sites, 3,246 eligible/populated
-businesses, 3,213 from the residential provider, no failures.
+split visual runs into 5 m bays. Seed 1987 audit (rerun 2026-09-04): 3,581 sites, 3,564
+eligible/populated businesses, 3,531 from the residential provider, no failures.
 
 ---
 
@@ -137,6 +137,7 @@ unity command gangsters_business_audit --json                 # the live city, i
 unity command gangsters_business_audit --seed 2 --rows --json  # every site, one row each
 ```
 
-Seed 1987 deals 631 sites, 614 of them eligible and populated, 17 reported unsupported (the
-sixteen harvested downtown blocks and the police station). Seed 2 additionally exercises the
-car yard, two filling stations and the fairground.
+Seed 1987 deals 3,581 sites, 3,564 of them eligible and populated, and 17 reported unsupported
+(the sixteen harvested downtown blocks and the police station). The older 631 / 614 figures
+were stale and are superseded by the 2026-09-04 audit above. Seed 2 additionally exercises
+the car yard, two filling stations and the fairground.

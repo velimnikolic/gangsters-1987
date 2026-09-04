@@ -156,6 +156,10 @@ namespace RoadDemo
             public Vector2 C;        // centre, world XZ
             public Vector2 H;        // half extents in the box's own frame
             public Vector2 Ax, Az;   // the box's own axes, world XZ
+            /// <summary>Optional prefab provenance. Footprint fills it so read-only
+            /// consumers can distinguish a hydrant or stop from otherwise identical
+            /// measured street props; boxes made from bare geometry leave it empty.</summary>
+            public string SourceName;
             public bool Solid;       // stops a walker
             public bool KeepClear;   // a reservation, not a prop: refuses props, blocks nobody
             public bool Tall;        // a trunk or a post: the box is the bit at knee height,
@@ -216,6 +220,7 @@ namespace RoadDemo
                 foot.Centre.x * cos + foot.Centre.y * sin,
                 -foot.Centre.x * sin + foot.Centre.y * cos);
             box = Make(new Vector2(pos.x, pos.z) + off, yaw, foot.Half, foot.Solid);
+            box.SourceName = prefab.name;
             box.Tall = foot.Tall;
             return true;
         }

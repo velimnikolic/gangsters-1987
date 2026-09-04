@@ -23,6 +23,30 @@ namespace RoadDemo
         static int _frames;
         static float _since;
 
+        /// <summary>Clear the accumulated section sample. The people census uses this
+        /// before and after its preview-scene curve so its figures are the same sections
+        /// the live update report labels, without leaking a partial sample into Play.</summary>
+        public static void Reset()
+        {
+            for (int i = 0; i < Slots; i++)
+            {
+                Ticks[i] = 0;
+                Bytes[i] = 0;
+                Names[i] = null;
+            }
+            _mark = 0;
+            _byteMark = 0;
+            _frames = 0;
+            _since = 0f;
+        }
+
+        /// <summary>Average milliseconds in one marked section of the current sample.</summary>
+        public static double MillisecondsPerFrame(int slot)
+        {
+            if (slot < 0 || slot >= Slots || _frames == 0) return 0.0;
+            return Ticks[slot] * (1000.0 / System.Diagnostics.Stopwatch.Frequency) / _frames;
+        }
+
         /// <summary>A frame begins: the clock starts at the first section.</summary>
         public static void Frame()
         {
@@ -73,9 +97,7 @@ namespace RoadDemo
             Debug.Log($"[Tick] {total:F1} ms/frame, {totalBytes / 1024.0 / _frames:F1} KB/frame " +
                       $"over {_frames} frames ({counts}):{sb}");
 
-            for (int i = 0; i < Slots; i++) { Ticks[i] = 0; Bytes[i] = 0; }
-            _frames = 0;
-            _since = 0f;
+            Reset();
         }
     }
 }

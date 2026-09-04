@@ -353,7 +353,10 @@ namespace RoadDemo
         }
 
         public Transform Tf;
-        public float Speed = 1.5f;
+        /// <summary>The stock civilian pace. Named so game-time audits do not have to
+        /// duplicate the literal which drives the actual walker.</summary>
+        public const float DefaultSpeedMetresPerSecond = 1.5f;
+        public float Speed = DefaultSpeedMetresPerSecond;
         protected bool AuthoredLongGunWardrobe { get; private set; }
         protected bool AuthoredSidearmWardrobe { get; private set; }
         protected bool AuthoredBasicWardrobe { get; private set; }

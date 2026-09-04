@@ -150,12 +150,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::RoadDemo.CoreDemoBuilder
   newSeedEveryPlay: 0
   seed: 1987
-  carCount: 40
+  carCount: 120
   streetSpeed: 9
   boulevardSpeed: 13
   alleySpeed: 5
   bikeCount: 4
-  pedestrianCount: 100
+  pedestrianCount: 400
   police: 1
   policeBeatPairs: -1
   policeCars: -1

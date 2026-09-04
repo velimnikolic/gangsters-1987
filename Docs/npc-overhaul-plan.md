@@ -5,12 +5,87 @@ Stanje na dan 2026-09-04, posle odluka korisnika (§11), samopregleda (§13) i *
 šta od mašinerije već postoji, model po kom ljudi i kola dobijaju razlog da budu tamo gde
 jesu, katalog ideja, faze, presudu i pitanja. Građa perioda: `Docs/1987-period-reference.md`.
 
-Sve brojke u §1 su **izmerene** u kodu 2026-09-04 (fajl:linija u zagradi). Sve brojke u §4,
-§5 i §7 su **moje polazne vrednosti** — nijedna nije pravilo dok je korisnik ne potvrdi u §11.
+Sve brojke u §0 i §1 su **izmerene** u kodu 2026-09-04 (fajl:linija ili komanda u
+zagradi). Sve brojke u §4, §5 i §7 su **moje polazne vrednosti** — nijedna nije pravilo dok
+je korisnik ne potvrdi u §11.
 
 ---
 
-## 0. Ugovor (šta je traženo)
+## 0. NPC-001 popis — kapija (izmereno 2026-09-04)
+
+`gangsters_people_census --seed 1987 [--rows]` je read-only editor komanda koja radi na
+glavnoj niti sa zaustavljenim editorom. Pravi plan grada i privremenu preview scenu samo za
+merenje, ne postavlja objekte u otvorenu scenu i ništa ne peče. Poslednji puni prolaz je vratio
+JSON `passed = true` za **1,44 s** (zahtev: manje od 30 s); `--rows true` vraća i svaki
+pojedinačni izvor/projekciju.
+
+### 0.1 Vrata na seedu 1987
+
+| izvor | kandidati | fizička vrata | na `PedLink` ≤ 18 m | neuspeh |
+|---|---:|---:|---:|---:|
+| upotrebljivi poslovni sajtovi (`Approach`) | 3.564 | 3.564 | 3.209 | 355 |
+| direktni moduli `block-01…16` | 141 | 135 | 121 | 20 |
+| ulazi `ApartmentBuildings` | 425 | 425 | 425 | 0 |
+
+Svih 355 poslovnih neuspeha nema nezebrin `PedLink` u 18 m. U centru 14 fizičkih vrata
+nema takvu vezu, a šest `SM_Bld_Shop_05` modula su samo prozor (`Leaves = 0`) i nemaju
+fizička vrata.
+
+**Odgovor na K1/C4:** centar nije nula i faza 2 se ne prekraja u „bez centra", ali se vrata
+ne smeju izvoditi kao zamišljeni lobi po zgradi. Autoritativni direktni prefab izvori daju
+**92 `SM_Bld_Shop*` modula + 49 `SM_Bld_Apartment_Door*` modula**; nema nijednog
+`SM_Bld_Wall_Window*`. Jedanaest `SM_Bld_Shop_Cover*` dekoracija je namerno isključeno.
+Preliminarni pregled 84/46 bio je pogrešan. Tačno prazni blokovi su **02, 03, 08, 14, 15,
+16**; blok 07 ima jedan shop i devet stambenih ulaza, svih deset uspešno naleže na graf.
+
+### 0.2 Legalni ivičnjak
+
+| mera | rezultat |
+|---|---:|
+| strane sa parking pojasom | 978 |
+| sirova dužina | 60.626 m |
+| 7 m od krajeva/raskrsnica | −13.692 m |
+| dodatno za zebre + 3 m | 0 m (već unutar prethodnog isključenja) |
+| 17 hidranata, poluprečnik 4,6 m | −86,305 m dodatno |
+| autobuska stajališta u autorstvu | 0 |
+| legalna dužina | **46.847,695 m** |
+| slotovi na koraku 6 m | **7.313** |
+| cilj na 60 % | **4.388** |
+
+Četiri prepoznata hidranta nisu mogla da se upare sa parking stranom u 10 m i ostaju izričito
+prijavljena; nema tihog footprint fallbacka. Generisani residential dressing nije uključen u
+ovu meru.
+
+### 0.3 Današnji trošak gomile
+
+Medijana pet uzastopnih prolaza; svaki ima 8 zagrevnih + 64 merena frejma, Unity 6000.5.6f1,
+AMD Ryzen 9 9900X3D. Brojke čitaju iste `TickTimer` sekcije 3 (`civilians`) i 4 (`crowd`) kao
+živi update.
+
+| tela | civilians ms/frejm | crowd ms/frejm | ukupno ms/frejm |
+|---:|---:|---:|---:|
+| 100 | 0,1374 | 0,0045 | 0,1420 |
+| 240 | 0,3448 | 0,0132 | 0,3581 |
+| 480 | 0,7126 | 0,0312 | 0,7451 |
+
+Današnja brzina pešaka (1,5 m/s) na satu gde sat igre traje 60 realnih sekundi znači
+**90 m po satu igre**. To je činjenica koju D20 i faza odlazaka moraju rešiti, ne nova
+pretpostavka o dometu.
+
+### 0.4 Registar, proba gustoće i stanje kapije
+
+`gangsters_business_audit --seed 1987 --json` razrešava protivrečnost 631 / 3.263:
+autoritativno je **3.581 sajt, 3.564 upotrebljiva i popunjena**, uz 17 namerno nepodržanih
+(16 pečenih downtown blokova + policijska stanica). Upotrebljivi izvori su residential 3.531,
+venue 32 i compound 1; audit nema grešaka.
+
+`MiniCoreDemo` je za najjeftiniji vizuelni test podešen na **400 pešaka / 120 kola**.
+Automatski harness se nad korisnikovom otvorenom scenom ne pokreće. **Kapija još nije
+otvorena:** čeka se korisnikova presuda da li ova gustina već deluje živo, a zatim trenutni
+30-run soak baseline pre prve promene ponašanja. Nijedan kasniji NPC tiket ne počinje pre oba
+ishoda.
+
+### Ugovor (šta je traženo)
 
 1. **Grad deluje prazno.** Ljudi i kola treba da ga napune tako da oko poveruje.
 2. **NPC kola parkirana po ivičnjacima**, po celom gradu, ne samo na parkinzima.
@@ -30,8 +105,9 @@ Sve brojke u §1 su **izmerene** u kodu 2026-09-04 (fajl:linija u zagradi). Sve 
 
 ### 1.1 Gomila u CoreDemo / MiniCoreDemo
 
-- **100 pešaka** po sceni (`CoreDemoBuilder.cs:32`, `MiniCoreDemo.unity:158`), bez skaliranja
-  na veličinu grada (`scaleLifeToCity = false`, `CoreDemoBuilder.cs:252`). Deljeni su
+- **100 pešaka** ostaje polazni `CoreDemo` broj (`CoreDemoBuilder.cs:32`); `MiniCoreDemo` je
+  za NPC-001 vizuelnu probu privremeno podignut na **400** (`MiniCoreDemo.unity`). Nema
+  skaliranja na veličinu grada (`scaleLifeToCity = false`, `CoreDemoBuilder.cs:252`). Deljeni su
   **jednoliko po deonici trotoara** (`RoadDemoBuilder.cs:3396-3418`): ćošak od 5 m i
   bulevar od 90 m imaju istu šansu da dobiju čoveka. Nema mere „ljudi po metru", nema
   razlike centar/rub/park.
@@ -70,8 +146,8 @@ restoran ≤ 6, klupa ≤ 2, kafe ≤ 2), tačke kanti (`BinAnchors`), strana vr
 
 ### 1.3 Saobraćaj i parkiranje
 
-- **40 kola** u obe Core scene (`CoreDemo.unity:152`, `MiniCoreDemo.unity:153`), jedan
-  spawner (`RoadDemoBuilder.SpawnCars`, `:3821-3884`): po jedno kolo na 18 m trake,
+- **40 kola** ostaje polazni `CoreDemo` broj; `MiniCoreDemo` je za NPC-001 probu podignut na
+  **120**. Jedan spawner (`RoadDemoBuilder.SpawnCars`, `:3821-3884`) daje po jedno kolo na 18 m trake,
   round-robin preko izmešanih traka dok se ne dosegne broj. Bez dopune: zaglavljeno kolo
   posle 60 s nestane (`RoadCar.Vanish`) i flota se samo smanjuje.
 - **Civilna kola nemaju cilj.** `DriverProfile.Traffic` (`DriverProfile.cs:112`): `Wanders`,
@@ -126,8 +202,8 @@ restoran ≤ 6, klupa ≤ 2, kafe ≤ 2), tačke kanti (`BinAnchors`), strana vr
   butcher, baker, barber, tailor, laundry, pharmacy, hardware, bookshop, record shop,
   florist, newsstand, cobbler, locksmith, pawn, electrical, travel, betting), 5 imenovanih
   (pub, pizzeria, cafe, diner, restaurant), 5 zabave (nightclub, casino, hotel, gym,
-  fairground), 2 forecourt (car yard, fuel), 5 industrije/luke. **Seed 1987: 3.263 sajta,
-  3.246 upotrebljivih** (`Docs/business-inventory.md:57`). Svaki ima **`Approach`** (tačka
+  fairground), 2 forecourt (car yard, fuel), 5 industrije/luke. **Seed 1987: 3.581 sajt,
+  3.564 upotrebljiva** (`gangsters_business_audit`, 2026-09-04). Svaki ima **`Approach`** (tačka
   gde čovek prilazi) i `ApproachOutward`; svaki ima **gazdu na papiru** (`BusinessOwner`: ime,
   starost Young/Middle/Old, seed portreta) — **bez tela u svetu**. Nema radnog vremena, nema
   osoblja, nema mušterija kao pojma. Stanje `Trading/Shut/Ruined`; izlog
@@ -185,7 +261,7 @@ instalira samo personnel/outfit/almanah i vraća se (`:44-54`).
 
 1. **Nema uzroka ni posledice.** Čovek se pojavi ni od kud, luta, i nikad ne stigne. Kolo
    vozi u krug. Oko traži *odakle* i *kuda*; kad ih nema, čita statiste.
-2. **Broj je pogrešna poluga.** 100 ljudi na 146 stambenih blokova + 3.263 radnje je pusto
+2. **Broj je pogrešna poluga.** 100 ljudi na 146 stambenih blokova + 3.564 radnje je pusto
    ma kako se delilo; 1.000 ljudi bez razloga bi bio *pun* grad koji i dalje deluje lažno
    (i skupo: svih N svaki frejm). Prazno nije mali broj — prazno je **isti broj svuda i
    uvek**.
@@ -195,7 +271,7 @@ instalira samo personnel/outfit/almanah i vraća se (`:44-54`).
    kola su rekviziti na parkinzima. Ulica bez parkiranih kola je ulica bez stanovnika.
 5. **Ambijentalni ljudi su nameštaj.** Posađeni po seedu bez dolaska i odlaska; ne pripadaju
    ni gomili ni mestu.
-6. **Radnja nema čoveka.** 3.263 gazde na papiru, nula na vratima. Reketaš ulazi u praznu
+6. **Radnja nema čoveka.** 3.564 gazde na papiru, nula na vratima. Reketaš ulazi u praznu
    radnju; policija dolazi jer je „a shopkeeper" telefonirao — a njega niko nije video.
 
 ---
@@ -260,9 +336,10 @@ već nadživljava telo (`WitnessWatch`). Od tada:
 
 ### 4.2 Vrata i portali
 
-- **Core objavljuje vrata u `CityLife`** — sve što `CoreOutfitDoors` već projektuje (3.246
-  sajtova sa `Approach`), plus **geometrijski izvedena vrata za 16 blokova centra**
-  (`ShopDoors`/`FacadeFinder`), plus **ulazi stambenih zgrada** (jedna vrata po
+- **Core objavljuje vrata u `CityLife`** — upotrebljivi poslovni sajtovi sa `Approach`
+  (3.564 kandidata; §0 meri koje projekcije stvarno naležu), plus **vrata direktnih izvornih
+  modula u 16 blokova centra** (`StorefrontDoorCatalog` + `SM_Bld_Apartment_Door`), plus
+  **ulazi stambenih zgrada** (jedna vrata po
   `ApartmentBuilding`, na strani ulice, izmereno iz jedinice — nedostajuća tačka koju
   `residential-building-generator-plan.md` §1.1 ionako uvodi kao „ulaz").
 - **Portal** = mesto gde telo sme da nastane ili nestane u prozoru kamere: vrata, kolo
@@ -450,7 +527,7 @@ da budu pretpostavka (K2, O4, O5, O7).
 
 | faza | šta | izlaz koji se može pogledati |
 |---|---|---|
-| **0. Popis (kapija)** | popis vrata na seedu 1987 **razdvojen po izvoru** (poslovni sajtovi / blokovi centra / ulazi stambenih zgrada), metri legalnog ivičnjaka i broj slotova pri 60 %, ms po frejmu gomile danas, i **proba gustine** (400 pešaka / 120 kola, samo pogled) | tabela u ovom dokumentu; ništa u igri. **Ako centar da nulu vrata, faza 2 se prekraja pre nego što počne.** |
+| **0. Popis (kapija)** | popis vrata na seedu 1987 **razdvojen po izvoru** (poslovni sajtovi / blokovi centra / ulazi stambenih zgrada), metri legalnog ivičnjaka i broj slotova pri 60 %, ms po frejmu gomile danas, i **proba gustine** (400 pešaka / 120 kola, samo pogled) | tabela u §0; komanda ništa ne postavlja niti peče, a dve vrednosti `MiniCoreDemo` služe samo vizuelnoj probi. Centar daje 121 projekciju, pa faza 2 ne pada na K1. |
 | **1. Adrese i vrata** | Core objavljuje vrata u `CityLife`; **`People.HomeDoorFor(id)` / `WorkDoorFor(id)` dobijaju stabilan interfejs** koji u ovoj fazi vraća vrata izvučena hešom iz objavljenog spiska — faza 4 menja SAMO podlogu, ne interfejs; deca van gomile | svaki čovek na ulici ima adresu na koju može da se vrati |
 | **2. Odlasci** | civil dobija odlazak vrata→vrata Dijkstrom; ulazak kroz `DoorBeat`; izlazak iz *istih* vrata; sat gasi i pali odlaske po plimi (kriva × budžet); **svako trajanje u satima igre, ne u sekundama** | ljudi izlaze iz radnji i ulaze u njih; grad je u 03:00 prazan a u 12:00 pun |
 | **3. Ivičnjak** | legalni spanovi + slotovi + polaganje parkiranih kola po plimi; civilno kolo sa `GoTo(park)`; **nadmetanje za slot u `RoadCar` (sledeći slot → obilazak bloka → odustajanje iza ruba) je poseban tiket, ne pretpostavka** | ulice pune kola, saobraćaj ih obilazi, 0 gridloka na 30 runova |
@@ -506,7 +583,8 @@ tome da li deluje živo — brojke su sud o tome da li je ispravno.
 - `CivilianAgent.SnapshotWitnesses` vraća i adresu/posao kad ih svedok ima (novine biraju
   hoće li — D14).
 - `CrowdLooks`: deca izlaze iz filtera gomile (D6).
-- `Docs/business-inventory.md`: dve protivrečne brojke (631 / 3.263) — popraviti usput.
+- `Docs/business-inventory.md`: protivrečne brojke 631 / 3.263 razrešene su ponovljenim
+  auditom na 3.581 / 3.564 (§0); dokument je usklađen.
 
 ---
 
@@ -590,10 +668,10 @@ da je telo budžet a čovek podatak je jedina koja preživljava 33 M temena po f
 `block-01…16` ne objavljuju nijedan sajt, pa nema markera da se pita; `FacadeFinder` nalazi
 koja je strana pročelje **date zgrade**, ne otkriva lokale u pečenoj mreži. Segmentacija
 pečenog bloka na lokale je posao inventara biznisa, ne prolaza za vrata.
-**Popravka:** faza 0 broji vrata **po izvoru**; za centar se meri jeftinija varijanta —
-**jedna ulazna vrata po zgradi** (kancelarijski lobi), koja `FacadeFinder` ume da izvede po
-instanci zgrade. Ako ni to ne da broj, centar u ovom epiku ostaje bez gazdi i to se kaže
-naglas umesto da se otkrije u fazi 2.
+**Popravka (izmerena u §0):** faza 0 broji direktne prefab instance **po izvoru**, ne
+zamišljene zgrade. `StorefrontDoorCatalog` daje prag shop modula, a
+`SM_Bld_Apartment_Door` sopstveni pivot. Dobijeno je 121 projekcija na graf, pa centar nije
+izbačen iz faze 2; 20 neuspeha ostaje eksplicitno, umesto da ih `FacadeFinder` sakrije.
 
 **K2 — „sledeci slot pa obiđi blok“ ne postoji.** `RoadCar` ima samo odustajanje posle 25 s
 (`RoadCar.cs:989`) sa rezervom od 22 m (`:999`), a izbor slota odbija cilj dalji od 45 m
@@ -638,8 +716,9 @@ deljenja (`RoadDemoBuilder.cs:786`), a plan odozgo dodaje Dijkstru po odlasku.
 
 **O8 — dijagnoza možda štedi na pogrešnom mestu.** Plan tvrdi da prazno nije mali broj.
 Moguće je da je delom ipak broj.
-**Popravka:** proba gustine (400 pešaka / 120 kola) je stavka faze 0 — pet minuta u editoru,
-nijedna linija koda. Ako to već izgleda živo, prioriteti epika se menjaju.
+**Popravka:** proba gustine (400 pešaka / 120 kola) je stavka faze 0 — dve vrednosti u
+`MiniCoreDemo` i pet minuta pogleda u editoru. Ako to već izgleda živo, prioriteti epika se
+menjaju.
 
 ### Presuda
 
@@ -691,13 +770,13 @@ po njemu.
 
 **C4 — popravka iz K1 je bila prazna, a pravi odgovor stoji u repou nepročitan.** „Jedna vrata
 po zgradi" pretpostavlja zgrade u pečenom bloku; `block-01.prefab` je **171 modul** (krovovi,
-ploče, spratovi), pa bi vrata završila na krovu. Ali `ResidentialHarvest` (`:1053`) prepoznaje
-modul izloga po imenu izvornog prefaba (`SM_Bld_Shop*`, `SM_Bld_Wall_Window*`), i te veze su
-žive i u blokovima centra. Prebrojano: **84 modula izloga i 46 stambenih ulaza** kroz šesnaest
-blokova; **šest blokova (02, 03, 07, 08, 14, 15, 16) nema ništa**, a 03 i 08 nemaju nijedan
-`SM_Bld_*`. Centar dakle nije ni prazan ni ogroman. Uz to §4.2 **precenjuje** šta nasleđuje:
+ploče, spratovi), pa bi vrata završila na krovu. `ResidentialHarvest` upućuje na pravi šav:
+ime izvornog prefaba direktne instance. Preliminarni ručni broj 84 shop / 46
+`SM_Bld_Wall_Window` i spisak sa blokom 07 bili su pogrešni; izvršni popis iz §0 nalazi
+**92 shop + 49 `SM_Bld_Apartment_Door`**, nula `SM_Bld_Wall_Window`, i šest stvarno praznih
+blokova (02, 03, 08, 14, 15, 16). Uz to §4.2 **precenjuje** šta nasleđuje:
 `CoreOutfitDoors` (`RoadDemoBuilder.CoreFronts.cs:57-77`) uzima samo sajtove sa
-`Role == FrontageRole`, ne svih 3.246.
+`Role == FrontageRole`, ne svih 3.564.
 
 ### Ozbiljni
 
@@ -713,9 +792,9 @@ blokova; **šest blokova (02, 03, 07, 08, 14, 15, 16) nema ništa**, a 03 i 08 n
 
 ### Sitno, ali važno
 
-* **m12 — protivrečnost 631 / 3.263 je noseća, ne fusnota.** Od nje zavisi najveći broj u epiku
-  (oko 3.200 gazdi). Rešava se u fazi 0 kroz `gangsters_business_audit --seed 1987 --json`, pre
-  nego što se registar dimenzioniše.
+* **m12 — protivrečnost 631 / 3.263 je noseća, ne fusnota.** Razrešena je u §0 kroz
+  `gangsters_business_audit --seed 1987 --json`: 3.581 sajt / 3.564 upotrebljiva pre nego
+  što se registar dimenzioniše.
 * **m13 — `HomeDoorFor` treba da vrati ADRESU, ne vrata.** `DemoDoor.Building` je živ objekat na
   bloku koji se strimuje, a u fazi 1 jedini id koji telo ima je runtime broj koji se menja pri
   recikliranju. Interfejs je `Address HomeOf(PersonId)` (id sajta ili zgrade plus strana), a
