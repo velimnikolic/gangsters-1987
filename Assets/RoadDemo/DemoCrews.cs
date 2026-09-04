@@ -1572,6 +1572,12 @@ namespace RoadDemo
         {
             var unit = UnitOf(man);
             if (unit == null || !unit.OrderedFight) return CrewWalker.FightPart.Defends;
+            // A MAN SHOT AT BY A THIRD CREW IS DEFENDING HIMSELF, whatever his crew was
+            // sent to do: the closer threat handed him a mark outside the ordered
+            // fight, and the pistol must not wait on rifles that are busy elsewhere
+            // while somebody else keeps shooting him.
+            if (man.Target != null && UnitOf(man.Target) != unit.TargetUnit)
+                return CrewWalker.FightPart.Defends;
             // UNTIL THE SHOOTING STARTS, EVERYBODY WALKS (the user's word, 2026-09-04:
             // sent at a crew two hundred metres off, "ovi s pistoljima odma odu u
             // zaklon cim izdam naredbu"). A crew sent to a fight goes to it as one;

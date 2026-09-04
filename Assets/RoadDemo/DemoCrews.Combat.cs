@@ -1167,7 +1167,10 @@ namespace RoadDemo
                 {
                     if (a.Dead) continue;
                     foreach (var b in other.All())
-                        if (!b.Dead && b.Armed && !IsAboard(b) &&
+                        // on his feet and in the fight: not a rider, not a passenger,
+                        // not a man off on a raid, not one with his hands up or running
+                        if (CanEngageOnFoot(b) && b.Armed && !b.Surrendered &&
+                            !b.Retreating &&
                             (a.Tf.position - b.Tf.position).sqrMagnitude < r2 &&
                             !Concealed(b, a.Tf.position) &&
                             InSight(a.Tf.position, b.Tf.position))
