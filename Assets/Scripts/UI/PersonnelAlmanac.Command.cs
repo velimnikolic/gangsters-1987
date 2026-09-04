@@ -156,6 +156,11 @@ namespace LivingCity.UI
         /// sheet is a counter, not a file.</summary>
         int commandArmsOpenId = -1;
 
+        /// <summary>Whose motorcycle drawer is open. Wheels belong to a branch rather
+        /// than to the hood the quartermaster puts at the bars, so this drawer exists
+        /// only on the Boss and lieutenant files.</summary>
+        int commandMotorcyclesOpenId = -1;
+
         bool commandBossOpen;
 
         /// <summary>FOLLOW-006's sentence for the open Boss card, measured before the
@@ -165,7 +170,7 @@ namespace LivingCity.UI
         bool commandReadyRoom;
 
         /// <summary>What the last order said when the roster answered it on the spot -
-        /// the arming refusals and purchases that never reach the filing office.</summary>
+        /// the equipment refusals and purchases that never reach the filing office.</summary>
         string commandNote = "";
 
         readonly List<OrganizationPerson> commandReserve =
@@ -935,6 +940,19 @@ namespace LivingCity.UI
                 carried == "nothing" ? LedgerV2.Boss : LedgerV2.HeadCream));
             var carryIndex = facts.Count - 1;
 
+            // A machine is branch stock, not something the Don literally carries. It
+            // gets its own drawer beside the gun drawer: bought here or taken off the
+            // shelf, it is signed to his detail and the crew's best driver holds it.
+            var motorcycles = member != null ? MotorcycleLine(member.Id) : "--";
+            var motorcyclesOpen = member != null &&
+                                  commandMotorcyclesOpenId == member.Id;
+            facts.Add(("MOTORCYCLE",
+                member != null
+                    ? motorcycles + (motorcyclesOpen ? "  ▴" : "  ▾")
+                    : motorcycles,
+                motorcycles == "none" ? LedgerV2.Boss : LedgerV2.HeadCream));
+            var motorcycleIndex = facts.Count - 1;
+
             // The design's auto-fit grid: columns of at least 150 with a 20-unit
             // gutter, and each cell reads label-left, figure-right.
             var columns = Mathf.Max(1, Mathf.FloorToInt((inner + 20f) / 170f));
@@ -953,10 +971,13 @@ namespace LivingCity.UI
                 label.overflowMode = TextOverflowModes.Ellipsis;
                 LedgerV2.Figure(card, cx + cell - figureW, -cy, figureW,
                     facts[i].Value, 11.5f, facts[i].Ink);
-                if (i == carryIndex && member != null)
+                if ((i == carryIndex || i == motorcycleIndex) && member != null)
                 {
                     var bossId = member.Id;
-                    NameKey(card, cx, -cy, cell, 22f, () => ToggleCommandArms(bossId));
+                    NameKey(card, cx, -cy, cell, 22f,
+                        i == carryIndex
+                            ? (UnityAction)(() => ToggleCommandArms(bossId))
+                            : () => ToggleCommandMotorcycles(bossId));
                 }
             }
             y += (facts.Count + columns - 1) / columns * 22f + 11f;
@@ -975,9 +996,12 @@ namespace LivingCity.UI
                 y += LineBox(10.5f) + 11f;
             }
 
-            // The counter's own paper, pulled out of the dark folder.
+            // The counter's own paper, pulled out of the dark folder. Only one drawer
+            // is open at once, so a gun list and a motorcycle list never stack.
             if (member != null && commandArmsOpenId == member.Id)
                 y = FileArmsMenu(card, member, BossPadSide, y, inner) + 11f;
+            else if (member != null && commandMotorcyclesOpenId == member.Id)
+                y = FileMotorcycleMenu(card, member, BossPadSide, y, inner) + 11f;
 
             // What he IS, in the clerk's words - Personality's own bands, plus the one
             // line no lieutenant's file can carry.
@@ -1450,10 +1474,12 @@ namespace LivingCity.UI
             y = FileFacts(host, member, person, isLieutenant, pad, y, inner);
             y = FileWarning(host, member, isLieutenant, pad, y, inner);
 
-            // The gun drawer, if he has pulled it out - it belongs under CARRIES, which
-            // is the line that opened it.
+            // The equipment drawer he pulled out. A hood has only CARRIES; a lieutenant
+            // also has the motorcycle stock that belongs to his whole branch.
             if (commandArmsOpenId == member.Id)
                 y = FileArmsMenu(host, member, pad, y + 4f, inner);
+            else if (isLieutenant && commandMotorcyclesOpenId == member.Id)
+                y = FileMotorcycleMenu(host, member, pad, y + 4f, inner);
 
             y = FileTrades(host, member, pad, y + 8f, inner);
             y = TraitChips(host, member, pad, y + 8f, inner, "", LedgerV2.Body,
@@ -1482,6 +1508,7 @@ namespace LivingCity.UI
             var idle = !isLieutenant && !HasPost(person);
             var memberId = member.Id;
             var armsOpen = commandArmsOpenId == memberId;
+            var motorcyclesOpen = commandMotorcyclesOpenId == memberId;
 
             // CARRIES is the one fact on the file that is also a DRAWER: what he holds
             // is the question the answer to which is bought, so the line that states it
@@ -1510,6 +1537,18 @@ namespace LivingCity.UI
                     member.Loyalty < Loyalty.WatchBand ? LedgerV2.Red : LedgerV2.Ink,
                     null),
             };
+
+            // Wheels can only be signed to somebody who runs a branch. Keep this off a
+            // hood's file: the crew owns the motorcycle even when its best driver is the
+            // hood whose name the quartermaster writes in HolderId.
+            if (isLieutenant)
+            {
+                var motorcycles = MotorcycleLine(memberId);
+                facts.Insert(3, ("MOTORCYCLE",
+                    motorcycles + (motorcyclesOpen ? "  ▴" : "  ▾"),
+                    motorcycles == "none" ? LedgerV2.Red : LedgerV2.Ink,
+                    (UnityAction)(() => ToggleCommandMotorcycles(memberId))));
+            }
 
             // FOLLOW-004. How long he has been exactly what he is - the input to the
             // one loyalty rule the player could act on, and red from the day it starts
@@ -1841,8 +1880,113 @@ namespace LivingCity.UI
                     })));
             }
 
+            return DrawCommandEquipmentMenu(host, x, y, w, "Gun drawer", "Gun ");
+        }
+
+        /// <summary>The motorcycle drawer on a command head's file. It mirrors the gun
+        /// drawer exactly: machines already signed to this branch may be returned,
+        /// unissued machines may be taken off the shelf, and a new one may be bought and
+        /// signed over in the same click. Unlike a gun, no machine is pinned to the man;
+        /// ownership stays with the branch and NormalizeArms chooses its best driver.</summary>
+        float FileMotorcycleMenu(Transform host, Character member, float x, float y, float w)
+        {
+            var roster = director != null ? director.Roster : null;
+            if (roster == null || member == null)
+                return y;
+
+            var memberId = member.Id;
+            var memberName = member.FullName;
+            commandArms.Clear();
+
+            // Every machine on this branch's deed, regardless of which hood currently
+            // holds its keys. HolderId follows Driving; OwnerId is what this panel edits.
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var held = roster.Equipment[i];
+                if (held.Kind != EquipmentKind.Motorcycle || held.OwnerId != memberId)
+                    continue;
+                var heldId = held.Id;
+                var heldName = held.DisplayName;
+                commandArms.Add((heldName, "TAKE IT BACK", LedgerV2.Muted,
+                    LedgerV2.Ink, true, (UnityAction)(() =>
+                    {
+                        var result = director.ReturnEquipment(heldId);
+                        commandNote = result.Ok
+                            ? heldName + " taken back from " + memberName
+                            : result.Reason;
+                        commandMotorcyclesOpenId = -1;
+                        dirty = true;
+                    })));
+            }
+
+            // Bought but not yet assigned. Six visible rows are enough to empty any
+            // larger lock-up a page at a time without letting stock bury the catalogue.
+            var shelved = 0;
+            for (var i = 0; i < roster.Equipment.Count && shelved < 6; i++)
+            {
+                var item = roster.Equipment[i];
+                if (item.Kind != EquipmentKind.Motorcycle ||
+                    item.OwnerId != RosterEquipment.Unheld)
+                    continue;
+                shelved++;
+                var itemId = item.Id;
+                var itemName = item.DisplayName;
+                commandArms.Add((itemName, "OFF THE SHELF", LedgerV2.Green,
+                    LedgerV2.Green, true, (UnityAction)(() =>
+                    {
+                        var result = director.GiveEquipment(itemId, memberId);
+                        commandNote = result.Ok
+                            ? itemName + " signed out to " + memberName
+                            : result.Reason;
+                        commandMotorcyclesOpenId = -1;
+                        dirty = true;
+                    })));
+            }
+
+            // The same four machines the armory counter sells. A successful purchase is
+            // immediately signed to this branch, which is the point of buying it here.
+            var safe = outfit ? outfit.Accounts.Safe : 0;
+            for (var i = 0; i < Outfit.ArmoryCatalog.Motorcycles.Length; i++)
+            {
+                var listing = Outfit.ArmoryCatalog.Motorcycles[i];
+                commandArms.Add((listing.DisplayName, LedgerText.Cash(listing.Price),
+                    LedgerV2.Red, LedgerV2.Dotted, outfit && safe >= listing.Price,
+                    (UnityAction)(() =>
+                    {
+                        var bought = outfit
+                            ? outfit.Purchase(listing.Price, listing.DisplayName)
+                            : OpResult.Fail(LedgerText.ReasonNoSuchItem);
+                        if (!bought.Ok)
+                        {
+                            commandNote = bought.Reason;
+                            dirty = true;
+                            return;
+                        }
+                        var stock = director.AddEquipment(listing.Kind,
+                            listing.DisplayName, listing.Price);
+                        var given = stock != null
+                            ? director.GiveEquipment(stock.Id, memberId)
+                            : OpResult.Fail(LedgerText.ReasonNoSuchItem);
+                        commandNote = given.Ok
+                            ? listing.DisplayName + " bought and signed out to " +
+                              memberName
+                            : listing.DisplayName + " bought · " + given.Reason;
+                        commandMotorcyclesOpenId = -1;
+                        dirty = true;
+                    })));
+            }
+
+            return DrawCommandEquipmentMenu(host, x, y, w,
+                "Motorcycle drawer", "Motorcycle ");
+        }
+
+        /// <summary>The common paper and rows under either equipment dropdown. The two
+        /// menus differ only in what their rows do; they should not differ by a pixel.</summary>
+        float DrawCommandEquipmentMenu(Transform host, float x, float y, float w,
+            string drawerName, string rowPrefix)
+        {
             var rowH = LineBox(12.5f) + 7f;
-            var drawer = NewRect("Gun drawer", host);
+            var drawer = NewRect(drawerName, host);
             PlaceTopLeft(drawer, x, -y, w, rowH * commandArms.Count);
             Fill(drawer, LedgerV2.PanelBand);
             Frame(drawer, 1f, LedgerV2.Rule);
@@ -1850,7 +1994,7 @@ namespace LivingCity.UI
             for (var i = 0; i < commandArms.Count; i++)
             {
                 var entry = commandArms[i];
-                var row = NewRect("Gun " + entry.Title, drawer);
+                var row = NewRect(rowPrefix + entry.Title, drawer);
                 PlaceTopLeft(row, 0f, -(i * rowH), w, rowH);
                 var face = Fill(row, new Color(0f, 0f, 0f, 0f));
                 face.raycastTarget = true;
@@ -2420,6 +2564,8 @@ namespace LivingCity.UI
                 commandOpenFiles.Add(id);
             else if (commandArmsOpenId == id)
                 commandArmsOpenId = -1;
+            else if (commandMotorcyclesOpenId == id)
+                commandMotorcyclesOpenId = -1;
             commandNote = "";
             dirty = true;
         }
@@ -2428,6 +2574,18 @@ namespace LivingCity.UI
         void ToggleCommandArms(int id)
         {
             commandArmsOpenId = commandArmsOpenId == id ? -1 : id;
+            if (commandArmsOpenId >= 0)
+                commandMotorcyclesOpenId = -1;
+            commandNote = "";
+            dirty = true;
+        }
+
+        /// <summary>The motorcycle drawer under a Boss or lieutenant's command file.</summary>
+        void ToggleCommandMotorcycles(int id)
+        {
+            commandMotorcyclesOpenId = commandMotorcyclesOpenId == id ? -1 : id;
+            if (commandMotorcyclesOpenId >= 0)
+                commandArmsOpenId = -1;
             commandNote = "";
             dirty = true;
         }
@@ -2468,9 +2626,10 @@ namespace LivingCity.UI
                 dirty = true;
                 return true;
             }
-            if (commandArmsOpenId >= 0)
+            if (commandArmsOpenId >= 0 || commandMotorcyclesOpenId >= 0)
             {
                 commandArmsOpenId = -1;
+                commandMotorcyclesOpenId = -1;
                 dirty = true;
                 return true;
             }
@@ -2649,6 +2808,32 @@ namespace LivingCity.UI
                 return "--";
             var line = CarryingLine(roster, member, out var issued);
             return issued || !member.Gone ? line : "nothing";
+        }
+
+        /// <summary>The motorcycle stock owned by this command head. The rider written
+        /// in HolderId may be one of his hoods; the deed stays on OwnerId and that is the
+        /// fact the Boss/lieutenant panel is displaying and changing.</summary>
+        string MotorcycleLine(int leaderId)
+        {
+            var roster = director != null ? director.Roster : null;
+            if (roster == null)
+                return "--";
+
+            var count = 0;
+            string first = null;
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var item = roster.Equipment[i];
+                if (item.Kind != EquipmentKind.Motorcycle || item.OwnerId != leaderId)
+                    continue;
+                count++;
+                if (first == null)
+                    first = string.IsNullOrEmpty(item.DisplayName)
+                        ? "Motorcycle" : item.DisplayName;
+            }
+            return count == 0 ? "none"
+                 : count == 1 ? first
+                 : count + " motorcycles";
         }
 
         string AnswersTo(Character member)

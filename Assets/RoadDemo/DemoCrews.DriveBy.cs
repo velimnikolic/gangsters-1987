@@ -40,55 +40,6 @@ namespace RoadDemo
         /// its own property off the street and must never take anybody else's.</summary>
         readonly HashSet<CrewBike> _ledgerBikes = new HashSet<CrewBike>();
 
-        /// <summary>A motorcycle the outfit owns, as against one a demo scene stood.
-        /// The street uses this to decide whether a click may hand its keys to the
-        /// selected crew.</summary>
-        public bool OnTheBooks(CrewBike bike) => bike != null && bike.ItemId >= 0;
-
-        /// <summary>Why the last attempt to hand a motorcycle to a crew was refused.</summary>
-        public string BikeRefusal { get; private set; }
-
-        /// <summary>Hand this outfit motorcycle to the selected crew's lieutenant.
-        ///
-        /// Cars have had this street shortcut from the beginning: select a crew, click
-        /// one of the outfit's cars, and the ledger moves the keys. A bought motorcycle
-        /// stood at the same kerb but could not be clicked at all, leaving it unissued
-        /// and making MOTO DRIVE-BY permanently unavailable. The book remains the
-        /// authority here too; the next bind turns this same machine over to its new
-        /// crew.</summary>
-        public bool AssignBike(CrewBike bike)
-        {
-            BikeRefusal = null;
-            if (Selected == null || bike == null) return false;
-            if (CustodyRefuses(Selected)) { BikeRefusal = InCustodyRefusal; return false; }
-            if (Selected.Faction != 0) return false;
-            if (!OnTheBooks(bike))
-            {
-                BikeRefusal = "That motorcycle is not on the books";
-                return false;
-            }
-            if (RaidOf(bike) != null || bike.Rider != null || bike.Pillion != null)
-            {
-                BikeRefusal = "The motorcycle is already out";
-                return false;
-            }
-
-            var director = PersonnelDirector.Instance;
-            var roster = director != null ? director.Roster : null;
-            if (roster == null) { BikeRefusal = "No ledger to sign"; return false; }
-            var crew = roster.FindCrew(Selected.CrewId);
-            if (crew == null) { BikeRefusal = "That crew is not in the book"; return false; }
-
-            var result = director.MoveEquipment(bike.ItemId, crew.LieutenantId);
-            if (!result.Ok)
-            {
-                BikeRefusal = string.IsNullOrEmpty(result.Reason)
-                    ? "The keys stay where they are" : result.Reason;
-                return false;
-            }
-            return true;
-        }
-
         /// <summary>The motorcycle this crew owns per the ledger, or null.</summary>
         public CrewBike BikeOf(Unit unit) => BikeOf(unit, null);
 

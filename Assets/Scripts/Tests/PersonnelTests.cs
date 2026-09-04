@@ -832,8 +832,9 @@ namespace LivingCity.Tests
         }
 
         /// <summary>The Don runs a branch too - his detail - and on day one it is the
-        /// only one on the books. The opening car has to be able to reach it, or the
-        /// outfit starts with a vehicle nobody in the world is allowed to drive.</summary>
+        /// only one on the books. The opening car and a motorcycle assigned from his
+        /// CHAIN OF COMMAND drawer have to be able to reach it, or the outfit starts
+        /// with wheels nobody in the world is allowed to drive.</summary>
         static void TheDonsDetailTakesTheKeys(List<string> failures)
         {
             var roster = RosterSeeder.Generate(1987);
@@ -856,6 +857,14 @@ namespace LivingCity.Tests
             if (car.OwnerId != boss.Id || car.HolderId != boss.Id)
                 failures.Add("TheDonsDetailTakesTheKeys: the deal took the car back off " +
                              "the only branch the outfit has.");
+
+            var motorcycle = MakeItem(roster, EquipmentKind.Motorcycle);
+            var motorcycleGranted = RosterOps.GiveEquipment(roster, motorcycle.Id, boss.Id);
+            RosterOps.NormalizeArms(roster);
+            if (!motorcycleGranted.Ok || motorcycle.OwnerId != boss.Id ||
+                motorcycle.HolderId != boss.Id)
+                failures.Add("TheDonsDetailTakesTheKeys: the Boss drawer could not sign " +
+                             "a motorcycle to his detail.");
 
             // a hood is still refused, detail or no detail
             var hood = Make(roster, "Corner", "Hood");
@@ -1058,17 +1067,6 @@ namespace LivingCity.Tests
 
             if (LedgerText.EquipmentLabel(EquipmentKind.Motorcycle).Length == 0)
                 failures.Add("MotorcycleIsWheelsAndNotAGun: the kind has no ledger label.");
-
-            // The street's motorcycle click uses MoveEquipment, just like the car
-            // click. A held machine must therefore be transferable directly between
-            // crews; requiring a recall first would leave the visible kerb interaction
-            // unable to complete its one order.
-            var second = Make(roster, "Mickey", "Doyle", Rank.Lieutenant);
-            MakeCrew(roster, second);
-            var moved = RosterOps.MoveEquipment(roster, bike.Id, second.Id);
-            if (!moved.Ok || bike.OwnerId != second.Id)
-                failures.Add("MotorcycleIsWheelsAndNotAGun: the street could not hand " +
-                             "the machine to another crew.");
         }
 
         static void FrontArmsTheGuards(List<string> failures)
