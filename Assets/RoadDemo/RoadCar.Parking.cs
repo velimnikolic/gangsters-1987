@@ -12,6 +12,15 @@ namespace RoadDemo
         float _kerbHold;      // seconds stood at the kerb short of the spot
         const float KerbParkReach = 1.2f;
 
+        /// <summary>An extra claim book for a specialised car. The road itself knows
+        /// bodies and manoeuvre claims, but not destinations selected by another car
+        /// that is still across town.</summary>
+        protected virtual bool ParkingSpotAvailable(Vector3 at) => true;
+
+        /// <summary>The parking chooser may move a requested point into another gap as
+        /// traffic changes. Specialised cars can keep their destination claim in step.</summary>
+        protected virtual void ParkingSpotSelected(Vector3 at) { }
+
         // The free stretch of kerb nearest the spot the car was sent to, long enough
         // to stand in: the claims in the kerb band (cars parked there, a prop) leave
         // gaps; the nearest gap within reach has the spot moved into it. Nothing near:
@@ -53,12 +62,28 @@ namespace RoadDemo
                     float a = end, b = t.x;
                     if (b - a >= need)
                     {
-                        float centre = Mathf.Clamp(_goalS, a + HalfLen + 0.8f, b - HalfLen - 0.8f);
-                        float dist = Mathf.Abs(centre - _goalS);
-                        // 2 m clear ahead: the overshoot that asks for a turn needs -3,
-                        // so a spot picked here can never flip the goal behind the car
-                        bool behind = aheadOnly && (centre - S) * h < 2f;
-                        if (!behind && dist < bestDist) { bestDist = dist; bestS = centre; bestFrom = h > 0 ? a : b; }
+                        float min = a + HalfLen + 0.8f, max = b - HalfLen - 0.8f;
+                        // Ordinarily the first try is the old answer: the point in this
+                        // gap closest to the requested s. A fleet claim may reject it,
+                        // in which case walk out through the SAME free gap instead of
+                        // pretending the whole kerb is occupied.
+                        for (int step = 0; step <= 15; step++)
+                            for (int direction = 0; direction < 2; direction++)
+                            {
+                                if (step == 0 && direction == 1) continue;
+                                float offset = step * 3f * (direction == 0 ? 1f : -1f);
+                                float centre = Mathf.Clamp(_goalS + offset, min, max);
+                                float dist = Mathf.Abs(centre - _goalS);
+                                // 2 m clear ahead: the overshoot that asks for a turn
+                                // needs -3, so a re-pick cannot flip the goal behind us.
+                                bool behind = aheadOnly && (centre - S) * h < 2f;
+                                if (behind || dist >= bestDist) continue;
+                                var at = road.Pose(centre, kerb);
+                                if (!ParkingSpotAvailable(at)) continue;
+                                bestDist = dist;
+                                bestS = centre;
+                                bestFrom = h > 0 ? a : b;
+                            }
                     }
                 }
                 end = Mathf.Max(end, t.y);
@@ -77,6 +102,7 @@ namespace RoadDemo
             _goalS = bestS;
             _goalD = kerb;
             _spotFrom = bestFrom;
+            ParkingSpotSelected(road.Pose(bestS, kerb));
             return true;
         }
 

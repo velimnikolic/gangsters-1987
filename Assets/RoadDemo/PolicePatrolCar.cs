@@ -120,6 +120,7 @@ namespace RoadDemo
             var at = start.Start + start.Dir * startS;
             Tf.SetPositionAndRotation(at, Quaternion.LookRotation(start.Dir));
             Spawn(start, startS);
+            if (!Fleet.Contains(this)) Fleet.Add(this);
         }
 
         /// <summary>Whether this car has a bay of its own to go home to.</summary>
@@ -178,8 +179,56 @@ namespace RoadDemo
         public Vector3 RestSpot { get; private set; }
         public bool HasRestSpot { get; private set; }
 
+        // A road's occupancy knows who is parked there NOW. This is the other half:
+        // where a response or a resting patrol is still driving to. Dispatch can send
+        // eight cars in one frame, before any one of them has occupied its destination.
+        Vector3 _reservedKerb;
+        bool _hasReservedKerb;
+
+        /// <summary>The empty space KerbSlotNear itself requires ahead of a parked body.
+        /// Keeping the same room between destinations also leaves each car a pull-out.</summary>
+        const float ReservedPullOutRoom = 4f;
+
         /// <summary>Every patrol car in the city, for the spread.</summary>
         static readonly List<PolicePatrolCar> Fleet = new List<PolicePatrolCar>();
+
+        bool KerbUnclaimed(Vector3 at)
+        {
+            for (int i = 0; i < Fleet.Count; i++)
+            {
+                var other = Fleet[i];
+                if (other == null || other == this || other.Wrecked || other.Tf == null ||
+                    !other._hasReservedKerb) continue;
+                float room = HalfLen + other.HalfLen + ReservedPullOutRoom;
+                float dx = at.x - other._reservedKerb.x;
+                float dz = at.z - other._reservedKerb.z;
+                if (dx * dx + dz * dz < room * room) return false;
+            }
+            return true;
+        }
+
+        void ReserveKerb(Vector3 at)
+        {
+            _reservedKerb = at;
+            _hasReservedKerb = true;
+        }
+
+        void GiveUpKerb()
+        {
+            _hasReservedKerb = false;
+        }
+
+        protected override bool ParkingSpotAvailable(Vector3 at) => KerbUnclaimed(at);
+
+        protected override void ParkingSpotSelected(Vector3 at)
+        {
+            ReserveKerb(at);
+            if (State == Mode.Parking)
+            {
+                RestSpot = at;
+                HasRestSpot = true;
+            }
+        }
 
         /// <summary>Kerb candidates drawn per choice. Eight uniform draws over the lane
         /// graph and the farthest of them from the rest of the fleet is a spread that
@@ -220,6 +269,7 @@ namespace RoadDemo
             PlaceAt(at, facing * Vector3.forward);
             RestSpot = at;
             HasRestSpot = true;
+            ReserveKerb(at);
             State = Mode.Resting;
             _restTimer = firstRest;
             if (!Fleet.Contains(this)) Fleet.Add(this);
@@ -236,6 +286,7 @@ namespace RoadDemo
             _responseRetryAt = 0f;
             _parkingBy = Time.time + ParkingPatience;
             HasRestSpot = false;
+            GiveUpKerb();
         }
 
         /// <summary>
@@ -248,6 +299,8 @@ namespace RoadDemo
         void SetRestGoal()
         {
             _responseRetryAt = Time.time + 1.25f;
+            HasRestSpot = false;
+            GiveUpKerb();
             var net = Net ?? LaneNet.Active;
             if (net == null || _allEdges == null || _allEdges.Count == 0) return;
 
@@ -264,11 +317,17 @@ namespace RoadDemo
             if (best == null) return;
 
             var near = best.Start + best.Dir * (best.Length * 0.5f);
-            if (!CrewCars.KerbSlotNear(net, near, HalfLen, HalfWide, out var kerb, out _))
+            if (!CrewCars.KerbSlotNear(net, near, HalfLen, HalfWide, KerbUnclaimed,
+                    out var kerb, out _))
                 return;   // no legal kerb on that street: the next tick draws again
             RestSpot = kerb;
             HasRestSpot = true;
-            GoTo(kerb, park: true);
+            ReserveKerb(kerb);
+            if (!GoTo(kerb, park: true))
+            {
+                HasRestSpot = false;
+                GiveUpKerb();
+            }
         }
 
         /// <summary>Metres to the nearest other car's kerb (or the one it is driving
@@ -292,6 +351,7 @@ namespace RoadDemo
         void LeaveTheKerb()
         {
             HasRestSpot = false;
+            GiveUpKerb();
             BackOnTheRound();   // pulls out of the kerb itself
         }
 
@@ -318,6 +378,8 @@ namespace RoadDemo
             // and stood there for ever, patrolling in name only
             if (HasGoal) Stop();
             if (Parked) PullOut();
+            HasRestSpot = false;
+            GiveUpKerb();
             State = Mode.Patrolling;
             // off the watch, the next corner is the end of the round
             _waypointsLeft = OffWatch ? 0 : Random.Range(_waypointRange.x, _waypointRange.y + 1);
@@ -594,6 +656,8 @@ namespace RoadDemo
         {
             State = Mode.Responding;
             _sceneWanted = false;
+            HasRestSpot = false;
+            GiveUpKerb();
             Profile = DriverProfile.Police;   // the lights on: brisk, the crown, a red when the box is clear
             SetResponseGoal();
         }
@@ -601,20 +665,24 @@ namespace RoadDemo
         void SetResponseGoal()
         {
             _responseRetryAt = Time.time + 1.25f;
+            GiveUpKerb();
             _waypoint = null;
             _routeToWaypoint = null;
             var net = Net ?? LaneNet.Active;
             var hasKerb = CrewCars.KerbSlotNear(net, _scenePos,
-                HalfLen, HalfWide, out var kerb, out _);
+                HalfLen, HalfWide, KerbUnclaimed, out var kerb, out _);
             if (!hasKerb)
                 hasKerb = CrewCars.NearestLegalKerbSlot(net, _scenePos,
-                    HalfLen, HalfWide, out kerb, out _);
+                    HalfLen, HalfWide, KerbUnclaimed, out kerb, out _);
 
             // The selected world point is already the closest clear slot, so applying
             // another stand-off would move the goal away from it. The old scene goal is
             // retained only as a defensive fallback for a network with no legal kerb.
             if (hasKerb)
-                GoTo(kerb, park: true);
+            {
+                ReserveKerb(kerb);
+                if (!GoTo(kerb, park: true)) GiveUpKerb();
+            }
             else
                 GoTo(_scenePos,
                     park: LivingCity.Police.PoliceProcedure.ResponseCarsParkAtKerb,
@@ -625,6 +693,7 @@ namespace RoadDemo
         public void Release()
         {
             if (State != Mode.Responding && State != Mode.OnScene) { _sceneWanted = false; return; }
+            GiveUpKerb();
             Profile = DriverProfile.Patrol;
             if (RestsAtKerbs && !HoldAtKerb)
             {

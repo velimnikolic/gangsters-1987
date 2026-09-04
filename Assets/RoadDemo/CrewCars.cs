@@ -140,7 +140,16 @@ namespace RoadDemo
         public static bool KerbSlotNear(LaneNet net, Vector3 near, float halfLength, float halfWidth,
             out Vector3 pos, out Quaternion rot)
             => KerbSlot(net, near, halfLength, halfWidth,
-                NearbyRoadReach, MaxRoadCandidates, out pos, out rot);
+                NearbyRoadReach, MaxRoadCandidates, null, out pos, out rot);
+
+        /// <summary>The nearby free kerb, subject also to a caller's claim book. Road
+        /// occupancy can only see cars that are already there; a convoy choosing its
+        /// destinations in one frame uses this overload so it does not hand every car
+        /// the same still-empty piece of kerb.</summary>
+        public static bool KerbSlotNear(LaneNet net, Vector3 near, float halfLength, float halfWidth,
+            System.Predicate<Vector3> accepts, out Vector3 pos, out Quaternion rot)
+            => KerbSlot(net, near, halfLength, halfWidth,
+                NearbyRoadReach, MaxRoadCandidates, accepts, out pos, out rot);
 
         /// <summary>The closest legal free kerb in the road network. A police response
         /// uses this only when every normal nearby candidate is occupied: continuing to
@@ -148,10 +157,16 @@ namespace RoadDemo
         public static bool NearestLegalKerbSlot(LaneNet net, Vector3 near,
             float halfLength, float halfWidth, out Vector3 pos, out Quaternion rot)
             => KerbSlot(net, near, halfLength, halfWidth,
-                float.PositiveInfinity, int.MaxValue, out pos, out rot);
+                float.PositiveInfinity, int.MaxValue, null, out pos, out rot);
+
+        public static bool NearestLegalKerbSlot(LaneNet net, Vector3 near,
+            float halfLength, float halfWidth, System.Predicate<Vector3> accepts,
+            out Vector3 pos, out Quaternion rot)
+            => KerbSlot(net, near, halfLength, halfWidth,
+                float.PositiveInfinity, int.MaxValue, accepts, out pos, out rot);
 
         static bool KerbSlot(LaneNet net, Vector3 near, float halfLength, float halfWidth,
-            float nearbyRoadReach, int maxRoadCandidates,
+            float nearbyRoadReach, int maxRoadCandidates, System.Predicate<Vector3> accepts,
             out Vector3 pos, out Quaternion rot)
         {
             pos = near;
@@ -193,7 +208,7 @@ namespace RoadDemo
                 {
                     int side = which == 0 ? preferred : -preferred;
                     if (!TrySide(candidate.Road, candidate.S, side, near,
-                            halfLength, halfWidth, out var at, out var facing))
+                            halfLength, halfWidth, accepts, out var at, out var facing))
                         continue;
                     float dx = at.x - near.x, dz = at.z - near.z;
                     float distanceSq = dx * dx + dz * dz;
@@ -208,7 +223,8 @@ namespace RoadDemo
         }
 
         static bool TrySide(Carriageway road, float s0, int side, Vector3 near,
-            float halfLength, float halfWidth, out Vector3 pos, out Quaternion rot)
+            float halfLength, float halfWidth, System.Predicate<Vector3> accepts,
+            out Vector3 pos, out Quaternion rot)
         {
             pos = near;
             rot = Quaternion.identity;
@@ -231,8 +247,10 @@ namespace RoadDemo
                             s + halfLength + PullOutRoom, d0, d1))
                         continue;
                     var p = road.Pose(s, kerb);
+                    p.y = near.y;
+                    if (accepts != null && !accepts(p)) continue;
                     var axis = road.DirAt(s) * side;
-                    pos = new Vector3(p.x, near.y, p.z);
+                    pos = p;
                     rot = Quaternion.LookRotation(axis, Vector3.up);
                     return true;
                 }

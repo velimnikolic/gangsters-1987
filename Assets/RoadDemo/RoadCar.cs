@@ -951,7 +951,7 @@ namespace RoadDemo
             bool parkingHere = _hasGoal && _goalPark && Road == _goalRoad && Heading == _goalHeading &&
                                (_goalS - S) * Heading > -6f && (_goalS - S) * Heading < 40f;
             if (_man == Manoeuvre.None && !Sliding && !Parked && !_halted && Lane != null &&
-                Mathf.Abs(D - _laneD) > 0.5f && !parkingHere)
+                Mathf.Abs(D - _laneD) > 0.5f && !parkingHere && Time.time >= _yieldUntil)
             {
                 // Stood at a KERB, rather than merely off the line by a foot: that is a
                 // pull-out, and a pull-out asks things a bare slide does not - the lane
@@ -1016,19 +1016,40 @@ namespace RoadDemo
                     }
                     else
                     {
-                        if (DriveTrace.On)
-                            DriveTrace.Event("man", "car " + Id, $"gave up looking - taking the kerb at s={Mathf.Clamp(want, lo, hi):F0}", ManFields());
-                        _parkTrying = 0f;   // and if this kerb cannot be had either, try again
-                        _goalUTurns = 0;    // a fresh goal, ahead of the car: fresh turns
-                        _goalRoad = road;
-                        _goalHeading = Heading;
-                        _goalLane = Lane;
-                        _goalS = Mathf.Clamp(want, lo, hi);
-                        _goalD = road.KerbDOnSide(D, HalfWide);
-                        _goalStop = true;
-                        Route = null;
-                        _next = null;
-                        _committed = false;
+                        float fallbackS = Mathf.Clamp(want, lo, hi);
+                        float fallbackD = road.KerbDOnSide(D, HalfWide);
+                        var fallbackAt = road.Pose(fallbackS, fallbackD);
+                        if (!ParkingSpotAvailable(fallbackAt))
+                        {
+                            // Another ordered car is already making for this empty-looking
+                            // length. Give the order back to its caller for a fresh kerb
+                            // instead of retaining this goal and chasing it round the block.
+                            _parkTrying = 0f;
+                            _hasGoal = false;
+                            Route = null;
+                            _next = null;
+                            _committed = false;
+                            if (DriveTrace.On)
+                                DriveTrace.Event("man", "car " + Id,
+                                    "kerb ahead already claimed - asking for another", ManFields());
+                        }
+                        else
+                        {
+                            if (DriveTrace.On)
+                                DriveTrace.Event("man", "car " + Id, $"gave up looking - taking the kerb at s={fallbackS:F0}", ManFields());
+                            _parkTrying = 0f;   // and if this kerb cannot be had either, try again
+                            _goalUTurns = 0;    // a fresh goal, ahead of the car: fresh turns
+                            _goalRoad = road;
+                            _goalHeading = Heading;
+                            _goalLane = Lane;
+                            _goalS = fallbackS;
+                            _goalD = fallbackD;
+                            _goalStop = true;
+                            Route = null;
+                            _next = null;
+                            _committed = false;
+                            ParkingSpotSelected(fallbackAt);
+                        }
                     }
                 }
             }
@@ -1942,6 +1963,7 @@ namespace RoadDemo
         {
             if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "abort " + _man, ManFields());
             if (_man == Manoeuvre.PullIn || _man == Manoeuvre.PullOut) return;
+            bool laneReturn = _man == Manoeuvre.None && Sliding;
             _man = Manoeuvre.None;
             ClearClaim();
             // GIVING UP A PASS MEANS COMING BACK IN. Only a car still crossing over was
@@ -1952,7 +1974,12 @@ namespace RoadDemo
             // are let into the box on lines that do not cross, and the one in the lane
             // turns straight into it - two cars locked together for 154 seconds, and six
             // thousand refused steps, in the run that found this.
-            if (Sliding && Mathf.Abs(D - _dFrom) < 0.4f) { _sLen = 0f; D = _dFrom; }
+            // A plain slide with no named manoeuvre is the automatic return to the lane.
+            // If its angled body is what has wedged, end that angle where the car stands;
+            // laying the same return again here merely repeats the collision. The yield
+            // below lets it move clear before lane keeping asks again.
+            if (laneReturn) _sLen = 0f;
+            else if (Sliding && Mathf.Abs(D - _dFrom) < 0.4f) { _sLen = 0f; D = _dFrom; }
             else if (Mathf.Abs(D - _laneD) > 0.3f) Slide(_laneD, SlideLength(Mathf.Abs(D - _laneD), Mathf.Abs(Speed)));
             _yieldUntil = Time.time + 2.5f;
         }
@@ -2058,6 +2085,12 @@ namespace RoadDemo
             float now = Time.time;
             bool stopped = Mathf.Abs(Speed) < 0.4f;
 
+            // The belt's unbroken counter is deliberately short-lived: its little shove
+            // can buy one clear frame. Remember recent refusals as long as the car is
+            // still standing, or a deep overlap resets its own recovery for ever.
+            _wedgedFor = now - _beltAt < BeltMemory && Mathf.Abs(Speed) < 0.15f
+                ? _wedgedFor + dt : 0f;
+
             // WEDGED IN THE MIDDLE OF A MANOEUVRE. The swing has met something the plan
             // did not see - a body standing in the far lane at a red, most often, reached
             // by the corner of a car turned across the crown - and nothing inside the
@@ -2066,12 +2099,14 @@ namespace RoadDemo
             // the scene runs (1489 refused steps in seventy-five seconds, in the run that
             // found this). The manoeuvre is given up instead, which puts the car back on
             // its own lane - the one place it is certainly standing in nobody.
-            if (_beltFor > 1.5f && Road != null &&
-                _man != Manoeuvre.None && _man != Manoeuvre.UTurn && _man != Manoeuvre.Reverse)
+            bool lateralWedge = Sliding ||
+                (_man != Manoeuvre.None && _man != Manoeuvre.UTurn && _man != Manoeuvre.Reverse);
+            if (_wedgedFor > 1.5f && Road != null && lateralWedge)
             {
                 if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "gave up " + _man + ": wedged", ManFields());
                 AbortLateral();
                 _beltFor = 0f;
+                _wedgedFor = 0f;
             }
             // AND WEDGED WITH NO MANOEUVRE TO GIVE UP: driving straight, with a body
             // inside ours. The shove across the road (Place) cannot help - the overlap is
@@ -2080,10 +2115,11 @@ namespace RoadDemo
             // says so: Derelict is how the street is told to plan round a thing that is
             // not going to move, and it is better than two vehicles standing in each
             // other for fifty seconds with a quarter queued behind them.
-            else if (_beltFor > 3f && Road != null && _man == Manoeuvre.None &&
+            else if (_wedgedFor > 3f && Road != null && _man == Manoeuvre.None &&
                      Mathf.Abs(Speed) < 0.15f && !Parked)
             {
                 _beltFor = 0f;
+                _wedgedFor = 0f;
                 _backedFor = null;                       // this is an emergency, not a tactic
                 if (_blocker != null && TryReverse(_blocker))
                 {
