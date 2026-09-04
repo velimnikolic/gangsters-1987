@@ -10,8 +10,9 @@ namespace RoadDemo
     ///
     /// * <see cref="CoverNear"/> - what a man in a fight asks, wired onto
     ///   <see cref="CrewWalker.FindCover"/>. Inside his gun's reach it searches round
-    ///   HIM. Out of reach it searches round a point on the fire line, and accepts
-    ///   only a flank he can SHOOT from; an empty street means he simply charges.
+    ///   HIM. Out of reach a man SENT to the fight accepts only a flank he can SHOOT
+    ///   from (on the fire line), and an empty street means he simply charges; a man
+    ///   the fight came to gets behind the nearest thing first, whatever the range.
     /// * <see cref="FlankAround"/> - a flank round a named place, facing a named
     ///   threat. What the ambush is dealt from, and what a man whose car drove off
     ///   asks for again.
@@ -316,12 +317,18 @@ namespace RoadDemo
         /// fighting. Wired onto <see cref="CrewWalker.FindCover"/>, so the outfit, the
         /// mobs and the police squads all fight the same way.
         ///
-        /// A FLANK HE CAN SHOOT FROM, OR NONE (the user's word, 2026-09-04: told to
-        /// kill, a man was walking to a bin outside his gun's reach - "ako nema cover
-        /// treba da se prosto zaleti"). Every flank this answers leaves the mark
-        /// inside [3, range]. Out of reach the search runs round a point ON THE FIRE
-        /// LINE, short of the mark by most of the gun's reach; a street with nothing
-        /// there answers null, and the walker's closing branch charges him in.</summary>
+        /// SENT TO A FIGHT: A FLANK HE CAN SHOOT FROM, OR NONE (the user's word,
+        /// 2026-09-04: told to kill, a man was walking to a bin outside his gun's
+        /// reach - "ako nema cover treba da se prosto zaleti"). Out of reach the
+        /// search runs round a point ON THE FIRE LINE, short of the mark by most of
+        /// the gun's reach; a street with nothing there answers null, and the
+        /// walker's closing branch charges him in.
+        ///
+        /// THE FIGHT CAME TO HIM: SHOOT, AND GET BEHIND SOMETHING NOW ("kad smo
+        /// napadnuti treba da pucamo i nadjemo zaklon sto pre"). Out of reach he takes
+        /// the nearest flank round him he can shoot from, failing that the nearest
+        /// that merely shields him, and only then asks the fire line. The walker
+        /// keeps him behind it while the mark is beyond his gun (WaitsForRange).</summary>
         Vector3? CoverNear(CrewWalker man, Vector3 target)
         {
             if (man == null || man.Tf == null) return null;
@@ -342,6 +349,15 @@ namespace RoadDemo
                 // an enemy stood four away.
                 float cap = Mathf.Min(CoverReach, Mathf.Max(3f, dist * 0.9f));
                 return SearchCover(man, target, p, cap, cap, 3f, range);
+            }
+
+            if (!FightOrdered(man))
+            {
+                var near = SearchCover(man, target, p, CoverReach, CoverReach, 3f, range);
+                if (near.HasValue) return near;
+                var shield = SearchCover(man, target, p, CoverReach, CoverReach,
+                    PointBlank, float.MaxValue);
+                if (shield.HasValue) return shield;
             }
 
             return CoverToward(man, target, range, dist);

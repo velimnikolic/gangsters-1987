@@ -36,6 +36,7 @@ namespace LivingCity.Tests
             EmptyCoverRecheckKeepsAShieldedFlank(failures);
             FailedCoverHopsEventuallyAdvance(failures);
             HeldFlankWaitsForRange(failures);
+            AttackedManWaitsForRange(failures);
             RecoveredRangeResetsCoverHopBudget(failures);
             LostSightKeepsAReachedShield(failures);
             StalledFleeReplansAreBounded(failures);
@@ -245,6 +246,17 @@ namespace LivingCity.Tests
                 CrewWalker.CoverRangeMovesModel(
                     holding: false, outOfReach: false, unknownAngleMoved: false))
                 failures.Add("Held flank: range or drift moves a man off the flank he was told to hold, or fails to move one off his own.");
+        }
+
+        static void AttackedManWaitsForRange(List<string> failures)
+        {
+            // A man the fight came to stays behind what he has while the mark is
+            // beyond his gun; only a man sent to a fight, off any held flank, leaves
+            // his shield to close the range.
+            if (!CrewWalker.WaitsForRangeModel(holdingFlank: false, fightOrdered: false) ||
+                !CrewWalker.WaitsForRangeModel(holdingFlank: true, fightOrdered: true) ||
+                CrewWalker.WaitsForRangeModel(holdingFlank: false, fightOrdered: true))
+                failures.Add("Attacked man: a fight that came to him sends him out of cover for range, or a sent man waits.");
         }
 
         static void RecoveredRangeResetsCoverHopBudget(List<string> failures)

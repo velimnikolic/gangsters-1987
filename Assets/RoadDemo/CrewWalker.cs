@@ -2821,6 +2821,13 @@ namespace RoadDemo
         /// pavement's furniture.</summary>
         public static System.Func<CrewWalker, Vector3, Vector3?> FindCover;
 
+        /// <summary>Is this man's fight one he was SENT to (the player's KILL, the
+        /// dispatcher's Sic), or one that came to him? Set by whoever owns the units.
+        /// Unset, every fight counts as ordered.</summary>
+        public static System.Func<CrewWalker, bool> FightIsOrdered;
+
+        bool FightOrdered => FightIsOrdered == null || FightIsOrdered(this);
+
         /// <summary>The same oracle asked the ambush's way: a flank round THERE, facing
         /// a threat from THAT way, with no gun range asked of it (man, centre, threat
         /// point, reach). What a man whose car pulled out from under him asks for
@@ -2990,6 +2997,17 @@ namespace RoadDemo
         bool HoldingFlank =>
             _heldCover.HasValue && _coverSpot.HasValue &&
             (_coverSpot.Value - _heldCover.Value).sqrMagnitude < 0.01f;
+
+        /// <summary>Does a mark beyond his gun keep him behind what he has, rather
+        /// than send him on? On the flank he was told to hold, always. In a fight
+        /// that came to him (the user's word, 2026-09-04: "kad smo napadnuti treba da
+        /// pucamo i nadjemo zaklon sto pre"), also: he shoots when there is a shot and
+        /// stays behind something in the meantime. Only a man SENT to a fight leaves
+        /// his shield to close the range.</summary>
+        internal static bool WaitsForRangeModel(bool holdingFlank, bool fightOrdered) =>
+            holdingFlank || !fightOrdered;
+
+        bool WaitsForRange => WaitsForRangeModel(HoldingFlank, FightOrdered);
 
         internal static bool CoverHopShouldReleaseModel(bool outOfReach,
             int failedHops) =>
@@ -3724,7 +3742,7 @@ namespace RoadDemo
                 // put him on he never leaves for range - a mark beyond the gun he waits
                 // for, down; only a breached flank moves him. Everything else about
                 // the fight (the rise, the shot, the switch of mark) is unchanged.
-                bool holding = HoldingFlank;
+                bool holding = WaitsForRange;
                 bool replace = have && !committed &&
                     (breached || (due && CoverRangeMovesModel(holding, outOfReach,
                         unknownAngleMoved)));
@@ -3888,7 +3906,7 @@ namespace RoadDemo
                     // waiting, not fighting: a man holding his flank with the mark
                     // beyond his gun is down - put down if he was up, and kept down
                     // until there is a shot to come up for
-                    if (HoldingFlank && dist > range)
+                    if (WaitsForRange && dist > range)
                     {
                         if (!_ducked || _coverCycle <= 0f)
                             _coverCycle = Random.Range(0.8f, 1.4f);

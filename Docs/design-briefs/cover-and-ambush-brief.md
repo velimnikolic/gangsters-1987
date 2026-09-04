@@ -48,6 +48,7 @@ Other people's cars are already cover for the **automatic** search: `CoverNear` 
 ## 4. Rule 1b — leapfrog, never the open
 
 * A man behind a flank whose mark has walked out of range asks `CoverToward` for the **next** flank he can shoot from, keeps the old one through one empty poll, and goes in on the second. **Revised 2026-09-04 (the user's word):** a flank is only ever one he can shoot from - never "local protection" out of range - and KILL with nothing to get behind is a charge.
+* **A fight that came to him (2026-09-04, the user's word: "kad smo napadnuti treba da pucamo i nadjemo zaklon sto pre").** A man who was not SENT to his fight (`Unit.OrderedFight` false: shot at, a fight picked up) takes the nearest flank round him whatever the range - a firing one first, a merely shielding one second - and stays behind it while the mark is beyond his gun. Only KILL/Sic men leave a shield to close the range.
 * **HOLD is the hide order (2026-09-04).** A man on the flank the player put him on (`HeldCover`) never leaves it for range: a mark beyond his gun he waits for, down, and only a breached flank moves him. The player's KILL takes him off it (`LeaveHeldCover`) - the hide order is the hold, the kill order is the charge.
 * The rechecks stay on the 2–3 s throttle; the "mark walked 4 m off `_coverFrom`" re-ask stays.
 

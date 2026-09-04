@@ -983,6 +983,7 @@ namespace RoadDemo
             MapVisionRegistry.RegisterArea(this);
             PersonnelDirector.Instance?.SetOrganizationPhysicalSource(this);
             CrewWalker.FindCover = CoverNear;
+            CrewWalker.FightIsOrdered = FightOrdered;
             // and the ambush's own question - a flank round THERE, facing THAT way -
             // which a man asks again for himself when the car he was behind drives off
             CrewWalker.FindFlankAround = FlankAround;
@@ -1201,6 +1202,9 @@ namespace RoadDemo
             if (CrewWalker.FindFlankAround != null &&
                 ReferenceEquals(CrewWalker.FindFlankAround.Target, this))
                 CrewWalker.FindFlankAround = null;
+            if (CrewWalker.FightIsOrdered != null &&
+                ReferenceEquals(CrewWalker.FightIsOrdered.Target, this))
+                CrewWalker.FightIsOrdered = null;
             if (Active == this) Active = null;
         }
 
@@ -1551,6 +1555,16 @@ namespace RoadDemo
             foreach (var unit in Units)
                 if (unit.Boss == man || unit.Hoods.Contains(man)) return unit;
             return null;
+        }
+
+        /// <summary>Was this man SENT to his fight (KILL, Sic, the ambush springing
+        /// itself) or did it come to him? What the walker's cover asks, so a man who
+        /// was shot at gets behind something whatever the range, and a man sent to
+        /// kill takes only a flank he can shoot from.</summary>
+        bool FightOrdered(CrewWalker man)
+        {
+            var unit = UnitOf(man);
+            return unit != null && unit.OrderedFight;
         }
 
         /// <summary>A bail, acquittal, completed sentence or broken transfer returns
