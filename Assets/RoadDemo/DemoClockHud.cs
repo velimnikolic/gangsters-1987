@@ -4,6 +4,7 @@ using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
+using LivingCity.Gameplay;
 using LivingCity.UI;
 
 namespace RoadDemo
@@ -57,6 +58,7 @@ namespace RoadDemo
         RectTransform _timeScrubber;
         Slider _timeSlider;
         TMP_Text _scrubTime;
+        TMP_Text _fogText;
         int _scrubMinute = -1;
 
         public void Init(LivingCity.Ambient.CityClock clock)
@@ -125,7 +127,7 @@ namespace RoadDemo
         /// shared CityClock in either representation.</summary>
         void BuildTimeScrubber()
         {
-            const float width = 460f, height = 46f;
+            const float width = 460f, height = 78f;
 
             _timeScrubber = DemoUi.NewRect("Time Scrubber", transform);
             _timeScrubber.anchorMin = _timeScrubber.anchorMax = _timeScrubber.pivot =
@@ -170,6 +172,21 @@ namespace RoadDemo
                 TextAlignmentOptions.MidlineRight);
             LedgerKit.PlaceTopLeft(_scrubTime.rectTransform, 386f, -12f, 64f, 22f);
 
+            var fog = DemoUi.NewRect("Fog Of War", _timeScrubber);
+            LedgerKit.PlaceTopLeft(fog, 10f, -46f, width - 20f, 22f);
+            var fogFace = LedgerKit.Fill(fog, Key);
+            fogFace.raycastTarget = true;
+            LedgerKit.Frame(fog, 0.5f, Rule);
+            var fogButton = fog.gameObject.AddComponent<Button>();
+            fogButton.targetGraphic = fogFace;
+            fogButton.onClick.AddListener(ToggleFogOfWar);
+
+            _fogText = Line(fog, "", LedgerStyle.Condensed, 10f, Red,
+                TextAlignmentOptions.Center);
+            _fogText.characterSpacing = 10f;
+            DemoUi.Fill(_fogText.rectTransform);
+            RefreshFogControl();
+
             _timeScrubber.gameObject.SetActive(false);
         }
 
@@ -177,6 +194,19 @@ namespace RoadDemo
         {
             if (_clock != null)
                 _clock.SetHour(hour);
+        }
+
+        void ToggleFogOfWar()
+        {
+            MapVisionRegistry.SetFogOfWarEnabled(!MapVisionRegistry.FogOfWarEnabled);
+            RefreshFogControl();
+        }
+
+        void RefreshFogControl()
+        {
+            if (_fogText != null)
+                _fogText.text = "FOG OF WAR: " +
+                    (MapVisionRegistry.FogOfWarEnabled ? "ON" : "OFF");
         }
 
         TMP_Text Line(Transform parent, string text, TMP_FontAsset face, float size,

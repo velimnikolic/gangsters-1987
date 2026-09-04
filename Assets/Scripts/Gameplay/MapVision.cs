@@ -41,6 +41,16 @@ namespace LivingCity.Gameplay
         static readonly List<IMapVisionAreaSource> RegisteredAreas =
             new List<IMapVisionAreaSource>();
 
+        /// <summary>
+        /// The one runtime switch for every fog-of-war consumer. The T debug panel can
+        /// turn it off without disabling or unregistering the actual vision sources,
+        /// so turning it back on immediately restores the real visibility picture.
+        /// </summary>
+        public static bool FogOfWarEnabled { get; private set; } = true;
+
+        public static void SetFogOfWarEnabled(bool enabled) =>
+            FogOfWarEnabled = enabled;
+
         public static IReadOnlyList<IMapVisionSource> Sources => Registered;
 
         public static void Register(IMapVisionSource source)
@@ -75,6 +85,9 @@ namespace LivingCity.Gameplay
         {
             get
             {
+                if (!FogOfWarEnabled)
+                    return false;
+
                 for (var i = 0; i < RegisteredAreas.Count; i++)
                     if (RegisteredAreas[i].VisionActive)
                         return true;
@@ -87,6 +100,9 @@ namespace LivingCity.Gameplay
 
         public static bool IsVisible(Vector3 worldPosition)
         {
+            if (!FogOfWarEnabled)
+                return true;
+
             for (var i = 0; i < RegisteredAreas.Count; i++)
             {
                 var source = RegisteredAreas[i];
@@ -122,6 +138,7 @@ namespace LivingCity.Gameplay
         {
             Registered.Clear();
             RegisteredAreas.Clear();
+            FogOfWarEnabled = true;
         }
     }
 
