@@ -2578,13 +2578,16 @@ namespace RoadDemo
         /// and a run once a second.</summary>
         const float RunToFight = 1.8f, RunOffFight = 1.25f;
 
-        /// <summary>Metres to a flank worth running for, with rounds in the air.</summary>
-        const float RunToCover = 5f;
+        /// <summary>Metres to a flank worth running for, with rounds in the air. A man
+        /// runs for cover FLAT OUT and nearly all the way (the user's word, 2026-09-04:
+        /// "treba da trce najbrze sto mogu do zaklona"); only the last strides are
+        /// taken at a walk, so he does not overshoot the bin.</summary>
+        const float RunToCover = 2.5f;
 
         /// <summary>Metres out from a flank a man under fire finishes the walk to it
         /// bent double. Inside RunToCover on purpose - the crouch and the run are
         /// exclusive, so the two figures must not overlap.</summary>
-        const float CrouchWithin = 4f;
+        const float CrouchWithin = 2f;
 
         // ------------------------------------------------------------------ the car
 
@@ -3894,9 +3897,13 @@ namespace RoadDemo
                     _keepingLow = _underFire > 0 && HasPose(PoseCrouchWalk) &&
                                   gap.magnitude <= CrouchWithin;
                     // a bin two streets' width off with rounds in the air is got to at
-                    // a run; one at his elbow is stepped behind
+                    // a SPRINT - the flat-out clip, the one a man running for his life
+                    // uses - and one at his elbow is stepped behind
+                    bool runForIt = !_keepingLow && gap.magnitude > RunToCover;
+                    if (runForIt && !_runningLeg) BreakIntoSprint();
+                    else if (!runForIt) _sprinting = false;
                     bool coverRouteFailed = TickCombatStride(dt, spot, 0.4f, hurry: true,
-                        run: RunWhile(!_keepingLow && gap.magnitude > RunToCover));
+                        run: RunWhile(runForIt));
                     // no way through to it (the car has rolled on, something else
                     // stands in the way): he fights from where he is instead
                     if (coverRouteFailed)

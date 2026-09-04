@@ -162,6 +162,11 @@ namespace RoadDemo
             /// with no fight of its own answers one it is given (TickCombat).</summary>
             public float ProvokedAt = -100f;
 
+            /// <summary>When a man of this crew last fired. With ProvokedAt, whether
+            /// the crew's fight is HOT - rounds in the air either way - which is when
+            /// a crew sent to a fight starts looking for something to get behind.</summary>
+            public float ShotAt = -100f;
+
             /// <summary>A rival crew that has had enough - its boss down and one man
             /// left - and is getting off the street.</summary>
             public bool Retreated;
@@ -1567,10 +1572,26 @@ namespace RoadDemo
         {
             var unit = UnitOf(man);
             if (unit == null || !unit.OrderedFight) return CrewWalker.FightPart.Defends;
+            // UNTIL THE SHOOTING STARTS, EVERYBODY WALKS (the user's word, 2026-09-04:
+            // sent at a crew two hundred metres off, "ovi s pistoljima odma odu u
+            // zaklon cim izdam naredbu"). A crew sent to a fight goes to it as one;
+            // the pistol takes its place behind something only once there are rounds
+            // in the air for it to hide from.
+            if (!FightHot(unit)) return CrewWalker.FightPart.Closes;
             return Outranged(man, unit)
                 ? CrewWalker.FightPart.Waits
                 : CrewWalker.FightPart.Closes;
         }
+
+        /// <summary>Rounds in the air within the last few seconds, fired by this crew
+        /// or at it. Before this a crew sent to a fight looks for nothing to get
+        /// behind; after it the cover rules are the cover rules.</summary>
+        bool FightHot(Unit unit) =>
+            Time.time - Mathf.Max(unit.ShotAt, unit.ProvokedAt) < FightHotFor;
+
+        /// <summary>How long after the last round a fight stays hot. A lull longer
+        /// than this and the crew moves up again.</summary>
+        const float FightHotFor = 8f;
 
         /// <summary>Is a crewmate still on his feet in this fight carrying a longer
         /// gun than his? Half a metre of reach is the same gun.</summary>
