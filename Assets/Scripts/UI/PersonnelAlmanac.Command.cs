@@ -1118,23 +1118,21 @@ namespace LivingCity.UI
             // still says exactly what was committed.
             const string hireLabel = "HIRE A MAN";
             var hireW = MonoWidth(hireLabel, 9.5f, 2f) + 18f;
-            {
-                var bagCrew = branch.CrewId;
-                var bagName = branch.Name;
-                var hire = LedgerV2.Button(card, hireLabel, w - BranchPad - hireW, -y,
-                    hireW, 21f,
-                    branch.IsDetail
-                        ? (UnityAction)(() => FileRecruitToDetail())
-                        : branch.IsBag
-                            ? () => FileRecruitToBag(bagCrew, bagName)
-                            : () => FileRecruit(leaderId),
-                    LedgerV2.Key.Outline, 9.5f);
-                hire.enableAutoSizing = true;
-                hire.fontSizeMin = 7.5f;
-                hire.fontSizeMax = 9.5f;
-                SetActionEnabled(hire, BranchTakesAnotherMan(branch));
-                hireW += 12f;
-            }
+            var bagCrew = branch.CrewId;
+            var bagName = branch.Name;
+            var hire = LedgerV2.Button(card, hireLabel, w - BranchPad - hireW, -y,
+                hireW, 21f,
+                branch.IsDetail
+                    ? (UnityAction)FileRecruitToDetail
+                    : branch.IsBag
+                        ? () => FileRecruitToBag(bagCrew, bagName)
+                        : () => FileRecruit(leaderId),
+                LedgerV2.Key.Outline, 9.5f);
+            hire.enableAutoSizing = true;
+            hire.fontSizeMin = 7.5f;
+            hire.fontSizeMax = 9.5f;
+            SetActionEnabled(hire, BranchTakesAnotherMan(branch));
+            hireW += 12f;
 
             var textW = Mathf.Max(80f, w - BranchPad * 2f - hireW);
 
@@ -2145,17 +2143,9 @@ namespace LivingCity.UI
                     }
                 }
 
-                var hired = director.RecruitHood(out var newId);
-                if (!hired.Ok)
-                    return Outfit.FilingRuling.Refuse(hired.Reason);
-
-                var recruit = roster.Find(newId);
-                var name = recruit != null ? recruit.FullName : "the new man";
-                var refusal = BlockRacketSeam.ActionsOrStub.PostEscort(crewId, newId);
-                return string.IsNullOrEmpty(refusal)
-                    ? Outfit.FilingRuling.Grant(name + " guards " + who + "'s bag")
-                    : Outfit.FilingRuling.Grant(
-                        name + " reported · " + refusal + ", so he waits in the pool");
+                return SignAndPlace(
+                    id => BlockRacketSeam.ActionsOrStub.PostEscort(crewId, id),
+                    name => name + " guards " + who + "'s bag");
             });
         }
 

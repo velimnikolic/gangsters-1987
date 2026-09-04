@@ -412,6 +412,32 @@ namespace LivingCity.UI
         }
 
         /// <summary>
+        /// The half every HIRE A MAN order has in common, wherever the key was pressed:
+        /// the signing money out of the safe, the man's own name off the roster, and
+        /// then the one posting that key stands for.
+        ///
+        /// <paramref name="place"/> answers empty where the posting held and the
+        /// refusal where it did not - a man who cannot be placed is never thrown away,
+        /// he reports to the pool and the ruling says why. The branch's own refusals
+        /// belong BEFORE this call, while the money is still in the safe.
+        /// </summary>
+        Outfit.FilingRuling SignAndPlace(System.Func<int, string> place,
+            System.Func<string, string> granted)
+        {
+            var hired = director.RecruitHood(out var newId);
+            if (!hired.Ok)
+                return Outfit.FilingRuling.Refuse(hired.Reason);
+
+            var recruit = director.Roster != null ? director.Roster.Find(newId) : null;
+            var name = recruit != null ? recruit.FullName : "the new man";
+            var refusal = place(newId);
+            return string.IsNullOrEmpty(refusal)
+                ? Outfit.FilingRuling.Grant(granted(name))
+                : Outfit.FilingRuling.Grant(
+                    name + " reported · " + refusal + ", so he waits in the pool");
+        }
+
+        /// <summary>
         /// HIRE A MAN struck on THE DETAIL: the signing money, and then the new man
         /// stands in front of the Don from that day. One order for both halves, so a
         /// guard signed for the detail is never left idle in the reserve.
@@ -435,18 +461,13 @@ namespace LivingCity.UI
                         Outfit.OutfitFilingRules.ManRefusal(boss.Name, manpower) +
                         " · nobody hired");
 
-                var hired = director.RecruitHood(out var newId);
-                if (!hired.Ok)
-                    return Outfit.FilingRuling.Refuse(hired.Reason);
-
-                var recruit = director.Roster != null ? director.Roster.Find(newId) : null;
-                var name = recruit != null ? recruit.FullName : "the new man";
-                var placed = director.AssignToDetail(newId);
-                return placed.Ok
-                    ? Outfit.FilingRuling.Grant(name + " stands with the Don from today")
-                    : Outfit.FilingRuling.Grant(
-                        name + " reported · " + placed.Reason +
-                        ", so he waits in the pool");
+                return SignAndPlace(
+                    id =>
+                    {
+                        var placed = director.AssignToDetail(id);
+                        return placed.Ok ? "" : placed.Reason;
+                    },
+                    name => name + " stands with the Don from today");
             });
         }
 
@@ -477,21 +498,17 @@ namespace LivingCity.UI
                             manpower.Maximum + ") · nobody hired");
                 }
 
-                var hired = director.RecruitHood(out var newId);
-                if (!hired.Ok)
-                    return Outfit.FilingRuling.Refuse(hired.Reason);
-
-                var recruit = director.Roster != null ? director.Roster.Find(newId) : null;
-                var name = recruit != null ? recruit.FullName : "the new man";
                 if (!target.IsValid || target.Rank != Rank.Lieutenant)
-                    return Outfit.FilingRuling.Grant(
-                        name + " reported · idle until you place him");
+                    return SignAndPlace(id => "",
+                        name => name + " reported · idle until you place him");
 
-                var placed = SubmitHoodAssignment(newId, target);
-                return placed.Ok
-                    ? Outfit.FilingRuling.Grant(name + " reports to " + target.Name)
-                    : Outfit.FilingRuling.Grant(
-                        name + " reported · " + placed.Reason + ", so he waits in the pool");
+                return SignAndPlace(
+                    id =>
+                    {
+                        var placed = SubmitHoodAssignment(id, target);
+                        return placed.Ok ? "" : placed.Reason;
+                    },
+                    name => name + " reports to " + target.Name);
             });
         }
 
