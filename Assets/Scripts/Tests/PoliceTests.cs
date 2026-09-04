@@ -52,6 +52,7 @@ namespace LivingCity.Tests
             ("GAN315_DispatchUsesAirDistanceNotTravelTime", GAN315_DispatchUsesAirDistanceNotTravelTime),
             ("GAN315_ComplaintWaitsForPhysicalArrival", GAN315_ComplaintWaitsForPhysicalArrival),
             ("TheNearestPairComesAndACarPastOneFifty", TheNearestPairComesAndACarPastOneFifty),
+            ("AStalledPairIsAtTheSceneOrSentBack", AStalledPairIsAtTheSceneOrSentBack),
             ("GAN315_BoardingDoesNotResetALiveRoute", GAN315_BoardingDoesNotResetALiveRoute),
             ("GAN315_EscortStandsClearAndTheCarParks", GAN315_EscortStandsClearAndTheCarParks),
             ("GAN315_TransferTracksOnlyPhysicalCustody", GAN315_TransferTracksOnlyPhysicalCustody),
@@ -353,6 +354,19 @@ namespace LivingCity.Tests
                 !PoliceProcedure.FootArrivedFirst(12f, 10f) &&
                 PoliceProcedure.FootArrivedFirst(10f, 10f),
                 "RESPONSE: whoever arrived first makes the arrest, a tie to the men on foot.");
+        }
+
+        /// <summary>A pair that stops getting nearer is stood at the scene if it is within
+        /// a street of it, and sent back - the next pair sent - if it is not.</summary>
+        static void AStalledPairIsAtTheSceneOrSentBack(List<string> failures)
+        {
+            Want(failures,
+                !PoliceProcedure.StalledOnTheWay(24f) && PoliceProcedure.StalledOnTheWay(26f),
+                "RESPONSE: a pair is stuck after 25 s without a metre of progress, not before.");
+            Want(failures,
+                PoliceProcedure.StalledPairIsAtTheScene(45f) &&
+                !PoliceProcedure.StalledPairIsAtTheScene(46f),
+                "RESPONSE: a stuck pair inside 45 m is at the scene; farther out it is sent back.");
         }
 
         static void GAN315_BoardingDoesNotResetALiveRoute(List<string> failures)

@@ -34,6 +34,8 @@ namespace RoadDemo
         float _provokedAt = -1000f;
         float _fightSeenAt = -1000f;
         float _routeRetryAt;
+        float _bestGap = float.MaxValue;   // nearest the response has got to its scene
+        float _progressAt;                 // when it last got a metre nearer
         DemoCrews.Unit _fightTarget;
         CrewWalker _collar;
 
@@ -93,6 +95,12 @@ namespace RoadDemo
         /// <summary>When the pair reached the scene it was sent to; who was there first
         /// decides who makes the arrest.</summary>
         public float ArrivedAt { get; private set; } = -1000f;
+        /// <summary>The scene it was last sent to; the collar only considers the law
+        /// stood at THIS incident's scene.</summary>
+        public Vector3 Scene => _scene;
+        /// <summary>Responding, and not a metre nearer for a while, and too far off to
+        /// count as there: the dispatcher's to send back.</summary>
+        public bool StalledOnTheWay { get; private set; }
         /// <summary>A pair off the watch still answers what is in front of it while it
         /// is on the street (the user, 2026-09-04: men stood on a corner a block away
         /// who do not come read as no police at all); a pair that has gone in is home.
@@ -179,18 +187,33 @@ namespace RoadDemo
                     break;
 
                 case Mode.Responding:
+                {
                     var reach = Mathf.Max(4f, _standOff);
-                    if (Flat(Position - _scene).sqrMagnitude <= reach * reach)
+                    var gap = Flat(Position - _scene).magnitude;
+                    if (gap < _bestGap - 1f) { _bestGap = gap; _progressAt = Time.time; }
+                    // AS NEAR AS HE CAN GET. A scene on a roadway among parked cars or
+                    // inside a yard has no spot to stand on at the point itself. A pair
+                    // that has stopped getting nearer is stood at the scene if it is
+                    // within a street of it, and stalled - the dispatcher's to send back
+                    // - if it is not. Without this a pair stood twenty metres short
+                    // retried the same route for the rest of the campaign.
+                    var stalled = LivingCity.Police.PoliceProcedure.StalledOnTheWay(
+                        Time.time - _progressAt);
+                    if (gap <= reach ||
+                        (stalled && LivingCity.Police.PoliceProcedure.StalledPairIsAtTheScene(gap)))
                     {
                         StopWhereTheyStand();
                         State = Mode.OnScene;
                         ArrivedAt = Time.time;
+                        StalledOnTheWay = false;
                     }
-                    else if (!AnyoneMoving() && Time.time >= _routeRetryAt)
+                    else
                     {
-                        TryResponseRoute();
+                        StalledOnTheWay = stalled;
+                        if (!AnyoneMoving() && Time.time >= _routeRetryAt) TryResponseRoute();
                     }
                     break;
+                }
             }
         }
 
@@ -208,6 +231,9 @@ namespace RoadDemo
             _scene = scene;
             _standOff = standOff;
             State = Mode.Responding;
+            _bestGap = float.MaxValue;
+            _progressAt = Time.time;
+            StalledOnTheWay = false;
             TryResponseRoute();
         }
 
@@ -234,6 +260,7 @@ namespace RoadDemo
             foreach (var man in Unit.All())
                 if (man != null) man.ObeysSignals = true;
             _collar = null;
+            StalledOnTheWay = false;
             ClearFight();
             LowerGuns();
             if (_hasStation)

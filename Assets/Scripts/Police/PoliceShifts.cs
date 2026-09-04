@@ -223,6 +223,24 @@ namespace LivingCity.Police
         public static bool FootArrivedFirst(float footArrivedAt, float squadArrivedAt) =>
             footArrivedAt <= squadArrivedAt;
 
+        /// <summary>A PAIR THAT STOPS GETTING NEARER. Seconds without a metre of progress
+        /// towards the scene after which the response is judged stuck: a scene on a
+        /// roadway among parked cars or inside a yard has no spot to stand on at the
+        /// point itself, and a pair retrying the same route for the rest of the campaign
+        /// was a pair the city had lost.</summary>
+        public const float FootResponseStallSeconds = 25f;
+
+        /// <summary>Metres from the scene inside which a stuck pair counts as stood at it
+        /// - as near as it can get, and near enough to put the question; farther out it
+        /// is sent back and the next nearest pair is sent.</summary>
+        public const float FootResponseCloseEnough = 45f;
+
+        public static bool StalledOnTheWay(float secondsSinceProgress) =>
+            secondsSinceProgress > FootResponseStallSeconds;
+
+        public static bool StalledPairIsAtTheScene(float gapMetres) =>
+            gapMetres <= FootResponseCloseEnough;
+
         /// <summary>A movement order while the arrest window is live is resistance,
         /// and converts the held aim into an ordinary combat engagement.</summary>
         public static bool ShouldOpenFireOnFlight(

@@ -226,6 +226,12 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>Whether a responder's scene is this incident's: within an arrest's
+        /// reach of where the shooting is, which drifts with the later shots.</summary>
+        static bool AtThisScene(Vector3 scene, Vector3 incident) =>
+            LivingCity.Police.PoliceProcedure.AirDistanceSquared(
+                scene.x, scene.z, incident.x, incident.z) <= ArrestReach * ArrestReach;
+
         /// <summary>What the officer says, once the gun is out and he is stood over his
         /// man. No keys after it any more: the men answer it themselves.</summary>
         const string Question = "\"POLICE! HANDS UP - YOU'RE UNDER ARREST\"";
@@ -242,11 +248,16 @@ namespace RoadDemo
             // WHOEVER GOT THERE FIRST PUTS THE QUESTION (the user's rule, 2026-09-04).
             // The pair and the car both come to a scene now, and the one that has been
             // stood at it longer makes the arrest - not the pair by preference.
+            // And only the law stood at THIS scene. A pair or a squad still holding an
+            // older scene across town - the scene hold outlives the incident gap - is
+            // not a candidate, or it would win the question on its earlier arrival and
+            // then find nobody to put it to.
+            var here = StreetAlarm.Incident;
             PoliceBeat foot = null;
             var footAt = float.MaxValue;
             foreach (var u in _units)
                 if (!u.Carries && u.OnScene && u is PoliceBeat beat && beat.Tf != null &&
-                    beat.ArrivedAt < footAt)
+                    AtThisScene(beat.Scene, here) && beat.ArrivedAt < footAt)
                 { foot = beat; footAt = beat.ArrivedAt; }
 
             // CONF-001: THE CAR PUTS THE SAME QUESTION. A squad that drove to a
@@ -260,6 +271,7 @@ namespace RoadDemo
             foreach (var squad in _squads)
             {
                 if (squad.State != SquadState.Securing) continue;
+                if (!AtThisScene(squad.Scene, here)) continue;
                 var lead = Lead(squad);
                 if (lead == null || lead.Tf == null) continue;
                 if (squad.SecuringAt >= squadAt) continue;

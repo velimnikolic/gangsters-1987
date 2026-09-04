@@ -94,7 +94,8 @@ namespace RoadDemo
         float _lastSentAt = -1000f;
         bool _officerDied;
         bool _footSent;              // a pair has been sent to this incident
-        bool _escortSent;            // and the car that goes out beside a far pair
+        bool _escortWanted;          // the pair was far, or there was none: a car must go too
+        bool _escortSent;            // and it has
         int _rank;
         readonly List<CrewWalker> _shooters = new List<CrewWalker>();
 
@@ -222,6 +223,7 @@ namespace RoadDemo
                 _called = false;
                 _carsSent = 0;
                 _footSent = false;
+                _escortWanted = false;
                 _escortSent = false;
                 _officerDied = false;
                 _callAt = Time.time + NobodyRang;
@@ -396,12 +398,16 @@ namespace RoadDemo
                 // Past 150 m a car goes out beside him, and a city with nobody free on
                 // foot sends the car alone - the nearest car there is, not the nearest
                 // inside the heat rule's reach. Whoever arrives first makes the arrest.
-                if (!_escortSent && LivingCity.Police.PoliceProcedure.CarJoinsFootResponse(
-                        foot != null, footD))
-                {
-                    var escort = Nearest(scene, carries: true, anyDistance: true, out _);
-                    if (escort != null) { SendCar(escort, scene); any = true; _escortSent = true; }
-                }
+                if (LivingCity.Police.PoliceProcedure.CarJoinsFootResponse(foot != null, footD))
+                    _escortWanted = true;
+            }
+            // The car a far pair needs is looked for on every call until one is free:
+            // decided once, with the pair, but not given up on because every car in the
+            // city happened to be out at that moment.
+            if (_escortWanted && !_escortSent)
+            {
+                var escort = Nearest(scene, carries: true, anyDistance: true, out _);
+                if (escort != null) { SendCar(escort, scene); any = true; _escortSent = true; }
             }
             // and the heat's cars, which stay station-local (GAN-220)
             while (_carsSent < wanted)
@@ -897,6 +903,16 @@ namespace RoadDemo
             foreach (var u in _units)
             {
                 if (u.Carries) continue;
+                // A PAIR THAT CANNOT GET THERE IS SENT BACK, and the incident is free to
+                // send the next nearest. Not a pair a telephone call, a collar or a
+                // custody still owns - those have their own patience and hand him back
+                // themselves.
+                if (u is PoliceBeat stuck && stuck.StalledOnTheWay && !FootHeldByLawWork(u))
+                {
+                    u.Release();
+                    _footSent = false;
+                    continue;
+                }
                 if (u.OnScene)
                 {
                     // A scene timer may send an idle beat home; it may not take the
