@@ -1,4 +1,6 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 
 namespace LivingCity.Ambient
 {
@@ -26,10 +28,27 @@ namespace LivingCity.Ambient
         [Tooltip("Untick to freeze the clock where it is - useful for judging one particular hour.")]
         [SerializeField] bool running = true;
 
-        /// <summary>The game-speed ladder the HUD's buttons step through. Index 1 is normal.</summary>
-        static readonly float[] Speeds = { 0.5f, 1f, 2f, 4f, 8f, 16f };
+        /// <summary>
+        /// The game-speed ladder every clock face in the game prints, in the order it
+        /// prints it: 1x first, then a doubling per rung. The number keys pick the rungs
+        /// by that order - 1 is 1x, 2 is 2x, 3 is 4x, 4 is 8x - so the key and the button
+        /// under it are always the same answer. No half speed: the ladder starts at the
+        /// speed the game is played at.
+        /// </summary>
+        static readonly float[] Speeds = { 1f, 2f, 4f, 8f, 16f };
 
-        int speedIndex = 1;
+        /// <summary>The number-key row, rung for rung with <see cref="Speeds"/>.</summary>
+        static readonly Key[] SpeedKeys =
+        {
+            Key.Digit1, Key.Digit2, Key.Digit3, Key.Digit4, Key.Digit5,
+        };
+
+        static readonly Key[] SpeedKeypadKeys =
+        {
+            Key.Numpad1, Key.Numpad2, Key.Numpad3, Key.Numpad4, Key.Numpad5,
+        };
+
+        int speedIndex;
         bool paused;
 
         /// <summary>Hour of the day in [0, 24). Fractional: 8.5 is half past eight.</summary>
@@ -136,6 +155,8 @@ namespace LivingCity.Ambient
 
         void Update()
         {
+            ReadTimeKeys();
+
             if (!running)
                 return;
 
@@ -148,6 +169,53 @@ namespace LivingCity.Ambient
                 Day += Mathf.FloorToInt(advanced / HoursPerDay);
 
             Hour = Mathf.Repeat(advanced, HoursPerDay);
+        }
+
+        /// <summary>
+        /// THE TIME KEYS, and they live on the clock rather than on any one HUD: the
+        /// street, the turf map and the book all show the same rung, so they all have to
+        /// read the same keys. Space holds the city and lets it go again; 1-5 pick a rung
+        /// off the ladder and let a held city go at that rung.
+        /// </summary>
+        void ReadTimeKeys()
+        {
+            var kb = Keyboard.current;
+            if (kb == null || Typing)
+                return;
+
+            // Space with the left button down is the camera's drag-pan on the scenes that
+            // have one (IsometricCameraController). A pan must not also stop the city.
+            var mouse = Mouse.current;
+            if (kb.spaceKey.wasPressedThisFrame &&
+                (mouse == null || !mouse.leftButton.isPressed))
+                Paused = !paused;
+
+            for (var i = 0; i < Speeds.Length; i++)
+            {
+                if (!kb[SpeedKeys[i]].wasPressedThisFrame &&
+                    !kb[SpeedKeypadKeys[i]].wasPressedThisFrame)
+                    continue;
+                // Naming a speed is also the way off a hold: the player who wants the city
+                // moving again at 4x should not have to unpause it first.
+                paused = false;
+                SetSpeed(i);
+                break;
+            }
+        }
+
+        /// <summary>The book has one typed line in it (the blueprint's room name). While
+        /// the caret is in it a 4 is a character, not a speed.</summary>
+        static bool Typing
+        {
+            get
+            {
+                var focused = EventSystem.current
+                    ? EventSystem.current.currentSelectedGameObject
+                    : null;
+                return focused &&
+                       focused.TryGetComponent(out TMPro.TMP_InputField field) &&
+                       field.isFocused;
+            }
         }
 
         /// <summary>Jumps the clock. Used by the editor scrubber and by anything that skips ahead.</summary>

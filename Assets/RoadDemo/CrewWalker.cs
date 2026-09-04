@@ -420,9 +420,7 @@ namespace RoadDemo
         /// </summary>
         protected override bool GraphStepClear(Vector3 from, Vector3 to)
         {
-            if (State != Mode.Walking && State != Mode.Homing) return true;
-            return !WalkObstacles.Standing(to, WalkObstacles.Radius) &&
-                   !WalkObstacles.BlocksStanding(from, to, WalkObstacles.Radius);
+            return base.GraphStepClear(from, to);
         }
 
         /// <summary>A stale graph link is abandoned before any movement is committed.

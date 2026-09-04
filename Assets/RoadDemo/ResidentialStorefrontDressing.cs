@@ -135,9 +135,7 @@ namespace RoadDemo
             var rooms = shell.GetComponent<ResidentialStorefrontShell>();
             if (rooms == null) rooms = shell.gameObject.AddComponent<ResidentialStorefrontShell>();
             storefrontShellMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShellMaterial);
-            storefrontShutterMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShutterMaterial);
-            rooms.Configure(layout.Openings, plan.ClosedMask,
-                            storefrontShellMaterial, storefrontShutterMaterial);
+            rooms.Configure(layout.Openings, storefrontShellMaterial);
             BuildLiveStorefronts(building, unit, layout.Openings, stood);
 
             stood.Storefronts += layout.Openings.Length;

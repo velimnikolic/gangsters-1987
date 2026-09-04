@@ -35,6 +35,7 @@ namespace RoadDemo
 
         /// <summary>Free slots per station, or null where nothing was sampled.</summary>
         public int[] Free;
+        internal int LiveClearanceVersion = -1;
 
         public static float SlotLateral(int k) => (k - (Slots - 1) / 2) * SlotStep;
 
@@ -1060,8 +1061,12 @@ namespace RoadDemo
             {
                 float step = Mathf.Clamp(_push, -1f, 1f) * 0.35f * dt;
                 float moved = Mathf.Clamp(_shuffle + step, -0.7f, 0.7f);
-                Tf.position += right * (moved - _shuffle);
-                _shuffle = moved;
+                var to = Tf.position + right * (moved - _shuffle);
+                if (GraphStepClear(Tf.position, to))
+                {
+                    Tf.position = to;
+                    _shuffle = moved;
+                }
             }
             if (!Joining)
                 Tf.rotation = Quaternion.Slerp(Tf.rotation, Quaternion.LookRotation(ahead), 3f * dt);
@@ -2078,17 +2083,47 @@ namespace RoadDemo
         protected virtual float GraphPace(bool gated) => gated ? Speed * CrossHustle : Speed;
 
         /// <summary>
-        /// Last-moment proof for a graph step. The ordinary crowd keeps its sampled
-        /// PedLink clearance and therefore returns true at no per-frame cost. A derived
-        /// ordered walker can opt into the live obstacle ledger, which matters for
-        /// streamed blocks that did not exist when PedLink.Free was baked.
+        /// Prove the actual step against the live furniture. Streamed blocks may
+        /// arrive after the graph's clearance was sampled, for civilians as well as crews.
         /// </summary>
-        protected virtual bool GraphStepClear(Vector3 from, Vector3 to) => true;
+        protected virtual bool GraphStepClear(Vector3 from, Vector3 to) =>
+            !WalkObstacles.Standing(to, WalkObstacles.Radius) &&
+            !WalkObstacles.BlocksStanding(from, to, WalkObstacles.Radius);
 
         /// <summary>Called without committing metre, lateral or transform when the
         /// live proof rejects a graph step. A derived ordered walker may hand the
         /// remaining trip to another route system.</summary>
-        protected virtual void GraphStepBlocked(Vector3 wanted) { }
+        protected virtual void GraphStepBlocked(Vector3 wanted)
+        {
+            if (_link == null || Tf == null) return;
+            if (_link.LiveClearanceVersion != WalkObstacles.Version)
+            {
+                WalkObstacles.SampleWalk(_link, WalkObstacles.Radius);
+                _link.LiveClearanceVersion = WalkObstacles.Version;
+            }
+            // Get onto the newly sampled clear line before advancing into the prop.
+            // If the entire corridor is closed, turn back to the last graph junction.
+            var lateral = Mathf.Clamp(_link.FreeLine(_t, FreeLineAhead, _lane), -1.9f, 1.9f);
+            var right = new Vector3(LinkDirection.z, 0f, -LinkDirection.x);
+            var shift = Mathf.Clamp(lateral - _lateral,
+                -2.4f * Time.deltaTime, 2.4f * Time.deltaTime);
+            var to = Tf.position + right * shift;
+            if (Mathf.Abs(shift) > 0.001f && GraphStepClear(Tf.position, to))
+            {
+                Tf.position = to;
+                _lateral += shift;
+                _graphBlockedAt = -1f;
+                return;
+            }
+            if (_graphBlockedAt < 0f) _graphBlockedAt = Time.time;
+            if (Time.time - _graphBlockedAt >= 2f)
+            {
+                ReverseCourse();
+                _graphBlockedAt = -1f;
+            }
+        }
+
+        float _graphBlockedAt = -1f;
 
         /// <summary>Pure commit gate used by Move: rejected geometry cannot advance a
         /// link metre or report arrival. Kept as a model seam so the endpoint regression
@@ -2126,6 +2161,7 @@ namespace RoadDemo
                     return;
                 }
                 _t = committedT;
+                _graphBlockedAt = -1f;
                 var arrived = _link.To;
                 _cameFrom = _link.From;
                 if (OnArrived(arrived))
@@ -2162,6 +2198,7 @@ namespace RoadDemo
                     return;
                 }
                 _t = committedT;
+                _graphBlockedAt = -1f;
                 _lateral = nextLateral;
                 // a join owns his heading while it runs (SpendJoin); the rest of the
                 // time he eases onto the line of the stretch as he always has

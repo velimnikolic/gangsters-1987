@@ -3469,6 +3469,12 @@ namespace RoadDemo
                 return;
             }
 
+            // Door holds belong to the old posting. A promoted hood or a newly named
+            // collector must leave it before the new unit can command his body.
+            if (!fresh && previousUnitOf.TryGetValue(man, out var formerUnit) &&
+                formerUnit != unit)
+                DoorBeat.Evict(man);
+
             // the book recasts a man when his rank changes (a lieutenant sits for
             // his photograph in a suit) - the same face must walk the street, so
             // the body is swapped on the spot

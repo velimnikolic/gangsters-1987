@@ -35,6 +35,8 @@ namespace RoadDemo
             public RoadCar Car;
             public int Seat;
             public bool Prisoner;
+            // A pickup queues several prisoners per escort before starting their routes.
+            public bool Activated;
             public bool Started;
             public bool Seated;
             public float StartedAt;
@@ -407,6 +409,7 @@ namespace RoadDemo
             if (boarding?.Man?.Tf == null || boarding.Car?.Tf == null) return false;
             if (!PrepareBoardingGeometry(boarding, boarding.Man.Tf.position))
                 return false;
+            boarding.Activated = true;
             boarding.Man.Disengage();
             OrderEscortToPrisoner(boarding, crews);
             return true;

@@ -178,6 +178,12 @@ namespace RoadDemo
                 if (unit.Surrendered) { _hunted.RemoveAt(i); continue; }             // taken
             }
 
+            if (_hunted.Count == 0)
+            {
+                StandDown();
+                return;
+            }
+
             if (Time.time >= _swarmSweepAt)
             {
                 _swarmSweepAt = Time.time + SwarmSweep;
@@ -206,20 +212,32 @@ namespace RoadDemo
             foreach (var unit in _hunted)
             {
                 if (unit == null || unit.Wiped) continue;
-                var at = unit.Position;
-                foreach (var u in _units)
+                foreach (var man in unit.All())
                 {
-                    if (u.Tf == null) continue;
-                    if ((u.Position - at).sqrMagnitude <= SwarmEyes * SwarmEyes) return true;
-                }
-                foreach (var squad in _squads)
-                {
-                    if (squad.Men == null || squad.Men.Wiped) continue;
-                    if ((squad.Men.Position - at).sqrMagnitude <= SwarmEyes * SwarmEyes) return true;
+                    if (man == null || man.Dead || man.Tf == null ||
+                        !man.Tf.gameObject.activeInHierarchy || DoorBeat.Held(man)) continue;
+                    var at = man.Tf.position;
+                    foreach (var u in _units)
+                    {
+                        if (u.Tf == null || !u.Tf.gameObject.activeInHierarchy) continue;
+                        if (SeesHunted(u.Position, at)) return true;
+                    }
+                    foreach (var squad in _squads)
+                    {
+                        if (squad.Men == null || squad.Men.Wiped) continue;
+                        foreach (var officer in squad.Men.All())
+                            if (officer != null && !officer.Dead && officer.Tf != null &&
+                                officer.Tf.gameObject.activeInHierarchy &&
+                                SeesHunted(officer.Tf.position, at)) return true;
+                    }
                 }
             }
             return false;
         }
+
+        static bool SeesHunted(Vector3 observer, Vector3 target) =>
+            (observer - target).sqrMagnitude <= SwarmEyes * SwarmEyes &&
+            WalkObstacles.Sees(observer, target);
 
         /// <summary>
         /// SWARM-003/004. The cars go home to their OWN stations and the patrol rhythm

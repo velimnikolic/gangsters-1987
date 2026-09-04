@@ -383,8 +383,11 @@ namespace RoadDemo
 
         static void Empty(DemoCrews.Unit unit, bool walkOut)
         {
-            if (unit == null || !Billets.Remove(Key(unit)))
+            if (unit == null)
                 return;
+            // Membership can change while a man is held behind a door. His doorway
+            // call survives that move even when the former unit's billet does not.
+            Billets.Remove(Key(unit));
             foreach (var man in unit.All())
             {
                 if (man == null)
@@ -445,8 +448,15 @@ namespace RoadDemo
                     // a body struck off the books, a scene torn down. When the last of
                     // them is back on the street the crew is out, whatever put it out.
                     if (!AnybodyHeld(unit))
+                    {
                         Billets.Remove(key);
-                    continue;
+                        continue;
+                    }
+                    // A roster sync may add escorts to a detail already indoors.
+                    // File those newcomers through the same door as the collector.
+                    if (EverybodyHeld(unit)) continue;
+                    billet.In = false;
+                    billet.MarchedAt = Time.time;
                 }
 
                 FileIn(crews, unit, billet);
@@ -520,6 +530,14 @@ namespace RoadDemo
                 if (man != null && !man.Dead && DoorBeat.Held(man))
                     return true;
             return false;
+        }
+
+        static bool EverybodyHeld(DemoCrews.Unit unit)
+        {
+            foreach (var man in unit.All())
+                if (man != null && !man.Dead && man.Tf != null && !DoorBeat.Held(man))
+                    return false;
+            return true;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]

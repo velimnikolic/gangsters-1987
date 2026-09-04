@@ -65,35 +65,6 @@ namespace RoadDemo
             public DemoCrews.Unit Escort;
         }
 
-        sealed class SeatedBody
-        {
-            public CrewWalker Man;
-            public Transform Parent;
-            public Vector3 LocalScale;
-            public Renderer[] Renderers;
-            public bool[] Shown;
-            public CarOccupant Visual;
-            public CustodyCar Car;
-            public bool Prisoner;
-        }
-
-        sealed class BoardingMan
-        {
-            public CrewWalker Man;
-            public CrewWalker Escort;
-            public CustodyCar Car;
-            public int Seat;
-            public bool Prisoner;
-            public bool Activated;
-            public bool Started;
-            public bool Seated;
-            public float StartedAt;
-            public float RetryAt;
-            public bool GeometryReady;
-            public Vector3 Door;
-            public Vector3 EscortPost;
-        }
-
         readonly List<Custody> _custodies = new List<Custody>();
         readonly List<PolicePatrolCar> _custodyCars = new List<PolicePatrolCar>();
         readonly List<CrewWalker> _custodyMen = new List<CrewWalker>();
@@ -565,7 +536,7 @@ namespace RoadDemo
                     if (record == null) break;
                     record.InWave = true;
                     BeginPrisonerEscort(custody, load, record.Man, 2 + p,
-                        EscortAt(load.Escort, p % CustodyPlan.EscortSeats));
+                        PrisonerCarriage.EscortAt(load.Escort, p % CustodyPlan.EscortSeats));
                     loaded++;
                 }
             }
@@ -596,7 +567,6 @@ namespace RoadDemo
                 Prisoner = true,
                 StartedAt = Time.time,
             };
-            if (!PrisonerCarriage.BeginPrisonerBoarding(boarding, _crews)) return;
             custody.Boarding.Add(boarding);
             man.Disengage();
         }
@@ -604,12 +574,17 @@ namespace RoadDemo
         /// <summary>Two officers load the pickup in pairs. A named escort finishes one
         /// prisoner before taking the next, so assigning six men to the rear does not
         /// overwrite the officer's walk order six times in the same frame.</summary>
-        static void ActivateNextPrisoners(Custody custody)
+        void ActivateNextPrisoners(Custody custody)
         {
             if (custody == null) return;
             for (var i = 0; i < custody.Boarding.Count; i++)
             {
                 var next = custody.Boarding[i];
+                if (next.Man == null || next.Man.Dead || next.Man.Tf == null)
+                {
+                    next.Seated = true;
+                    continue;
+                }
                 if (!next.Prisoner || next.Seated || next.Activated || next.Escort == null)
                     continue;
                 var busy = false;
@@ -622,85 +597,20 @@ namespace RoadDemo
                     break;
                 }
                 if (busy) continue;
-                next.Activated = true;
-                OrderEscortToPrisoner(next);
+                PrisonerCarriage.BeginPrisonerBoarding(next, _crews);
             }
         }
 
         void TickPrisonerBoarding(Custody custody)
         {
             ActivateNextPrisoners(custody);
-            var allSeated = true;
             for (var i = 0; i < custody.Boarding.Count; i++)
             {
                 var boarding = custody.Boarding[i];
                 if (boarding.Seated) continue;
-                allSeated = false;
                 if (!boarding.Activated) continue;
-                var man = boarding.Man;
-                if (man == null || man.Dead || man.Tf == null)
-                {
-                    boarding.Seated = true;
-                    continue;
-                }
-
-                if (boarding.Escort == null || boarding.Escort.Dead ||
-                    boarding.Escort.Tf == null)
-                    boarding.Escort = EscortAt(boarding.Car.Escort, 0);
-                var escort = boarding.Escort;
-                if (escort == null || escort.Dead || escort.Tf == null)
-                    continue;
-
-                var door = CarDoor(boarding);
-                escort.HoldAtGunpoint(man);
-                if (!boarding.Started)
-                {
-                    if (CustodyFlat(escort.Tf.position - man.Tf.position).sqrMagnitude <=
-                        EscortJoinReach * EscortJoinReach)
-                    {
-                        boarding.Started = true;
-                        boarding.StartedAt = Time.time;
-                        OrderPairToRearDoor(boarding, onlyIdle: false);
-                    }
-                    else if (CustodyPlan.ShouldRetryBoarding(
-                                 escort.HasOrder, atDestination: false,
-                                 retryElapsed: Time.time >= boarding.RetryAt,
-                                 routeStalled: escort.RoutedLegStalled))
-                        OrderEscortToPrisoner(boarding);
-                    continue;
-                }
-
-                // A transient spread while both men are walking round the car is not a
-                // lost escort. Stopping and restarting the pair here used to erase both
-                // walkers' remembered avoidance side every 1.25 seconds, so they chose a
-                // different end of the car for ever. Only an idle, genuinely lost escort
-                // stops the prisoner and rejoins him.
-                if (CustodyFlat(escort.Tf.position - man.Tf.position).sqrMagnitude >
-                    EscortControlReach * EscortControlReach)
-                {
-                    if ((!escort.HasOrder || escort.RoutedLegStalled) &&
-                        Time.time >= boarding.RetryAt)
-                    {
-                        if (man.HasOrder) man.OrderToPoint(man.Tf.position);
-                        boarding.Started = false;
-                        OrderEscortToPrisoner(boarding);
-                    }
-                    continue;
-                }
-
-                var atDoor = AtBoardingDoor(man, door);
-                var escortBeside = CustodyFlat(escort.Tf.position - man.Tf.position)
-                                   .sqrMagnitude <= EscortSeatReach * EscortSeatReach;
-                if (CustodyPlan.CanSeatPrisoner(atDoor, escortBeside))
-                {
-                    DisarmPrisoner(custody.Crew, man);
-                    Seat(custody, boarding.Car, man, boarding.Seat, prisoner: true);
-                    boarding.Seated = true;
-                    continue;
-                }
-
-                if (Time.time >= boarding.RetryAt)
-                    OrderPairToRearDoor(boarding, onlyIdle: true);
+                PrisonerCarriage.TickPrisonerBoarding(boarding, _crews,
+                    _sitLoop, custody.Bodies, custody.Crew);
             }
             if (PrisonerCarriage.AllBoarded(custody.Boarding))
                 BeginOfficerBoarding(custody, returning: false);
