@@ -346,6 +346,13 @@ namespace RoadDemo
             // a bin, and one at arm's length is not somebody you take your eyes off.
             if (dist <= PointBlank) return null;
 
+            // A CREW SENT TO A FIGHT LOOKS FOR NOTHING UNTIL THE SHOOTING STARTS (the
+            // user's word, 2026-09-04: "treba da traze zaklon kad krene pucacina").
+            // Two hundred metres off, a flank is a place to be out of the fight in;
+            // inside his reach, the first round leaves from where he stands.
+            var unit = UnitOf(man);
+            if (unit != null && unit.OrderedFight && !FightHot(unit)) return null;
+
             if (dist <= range)
             {
                 // inside his reach: round HIM, exactly as it always was. Never further
@@ -354,12 +361,6 @@ namespace RoadDemo
                 float cap = Mathf.Min(CoverReach, Mathf.Max(3f, dist * 0.9f));
                 return SearchCover(man, target, p, cap, cap, 3f, range);
             }
-
-            // A CREW SENT TO A FIGHT LOOKS FOR NOTHING UNTIL THE SHOOTING STARTS (the
-            // user's word, 2026-09-04: "treba da traze zaklon kad krene pucacina").
-            // Two hundred metres off, a flank is a place to be out of the fight in.
-            var unit = UnitOf(man);
-            if (unit != null && unit.OrderedFight && !FightHot(unit)) return null;
 
             var part = PartOf(man);
             if (part != CrewWalker.FightPart.Closes)

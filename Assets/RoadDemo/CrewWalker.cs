@@ -3900,7 +3900,9 @@ namespace RoadDemo
                     // a SPRINT - the flat-out clip, the one a man running for his life
                     // uses - and one at his elbow is stepped behind
                     bool runForIt = !_keepingLow && gap.magnitude > RunToCover;
-                    if (runForIt && !_runningLeg) BreakIntoSprint();
+                    // a man already jogging at the enemy when the fight turns hot
+                    // is upgraded to the sprint the same as one stood still
+                    if (runForIt && !_sprinting && HasPose(PoseSprint)) BreakIntoSprint();
                     else if (!runForIt) _sprinting = false;
                     bool coverRouteFailed = TickCombatStride(dt, spot, 0.4f, hurry: true,
                         run: RunWhile(runForIt));
@@ -3908,6 +3910,7 @@ namespace RoadDemo
                     // stands in the way): he fights from where he is instead
                     if (coverRouteFailed)
                     {
+                        _sprinting = false;
                         _coverSpot = null;
                         _coverAnchor = null;
                         _coverAnchorAt = null;
@@ -3929,6 +3932,7 @@ namespace RoadDemo
                     // the same code below. That trade is the whole of it.
                     bool justArrived = !InCover;
                     InCover = true;
+                    _sprinting = false;   // the sprint was for the flank, and he is at it
                     if (justArrived)
                         _coverHoldUntil = Time.time +
                             Random.Range(CoverHoldMin, CoverHoldMax);
@@ -3983,6 +3987,9 @@ namespace RoadDemo
             _wasClosing = closing;
             if (closing)
             {
+                // the sprint is the run FOR COVER; closing on a man is the jog, with
+                // the gun up and the answering fire below
+                _sprinting = false;
                 // He does not walk into a fight with the gun down. Inside his reach he
                 // fires as he comes on - slower and worse than a man stood squared up,
                 // but the alternative is what the lab watched three times over: a crew

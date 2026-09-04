@@ -162,10 +162,13 @@ namespace RoadDemo
             /// with no fight of its own answers one it is given (TickCombat).</summary>
             public float ProvokedAt = -100f;
 
-            /// <summary>When a man of this crew last fired. With ProvokedAt, whether
-            /// the crew's fight is HOT - rounds in the air either way - which is when
-            /// a crew sent to a fight starts looking for something to get behind.</summary>
-            public float ShotAt = -100f;
+            /// <summary>The fight rounds have gone off in - fired by this crew or at
+            /// it, the law's included - if it is the fight the crew is in now. Set
+            /// once and never cooled by a lull: a fight is hot from its first round
+            /// to its end, and a NEW target (SetTarget) starts cold again. This is
+            /// when a crew sent to a fight starts looking for something to get
+            /// behind (FightHot).</summary>
+            public Unit HotFight;
 
             /// <summary>A rival crew that has had enough - its boss down and one man
             /// left - and is getting off the street.</summary>
@@ -1589,15 +1592,20 @@ namespace RoadDemo
                 : CrewWalker.FightPart.Closes;
         }
 
-        /// <summary>Rounds in the air within the last few seconds, fired by this crew
-        /// or at it. Before this a crew sent to a fight looks for nothing to get
-        /// behind; after it the cover rules are the cover rules.</summary>
+        /// <summary>Has a round gone off in the fight this crew is in - fired by it or
+        /// at it? Before this a crew sent to a fight looks for nothing to get behind;
+        /// after it the cover rules are the cover rules, for the rest of that fight.</summary>
         bool FightHot(Unit unit) =>
-            Time.time - Mathf.Max(unit.ShotAt, unit.ProvokedAt) < FightHotFor;
+            unit.TargetUnit != null && unit.HotFight == unit.TargetUnit;
 
-        /// <summary>How long after the last round a fight stays hot. A lull longer
-        /// than this and the crew moves up again.</summary>
-        const float FightHotFor = 8f;
+        /// <summary>A round left this crew's guns or landed round it: the fight it is
+        /// in is hot from here on. Nothing if it has no fight yet - the one it picks
+        /// up on the next combat tick starts hot through the same call on its next
+        /// round, or as a fight that came to it, which asks no heat.</summary>
+        static void HeatFight(Unit unit)
+        {
+            if (unit != null && unit.TargetUnit != null) unit.HotFight = unit.TargetUnit;
+        }
 
         /// <summary>Is a crewmate still on his feet in this fight carrying a longer
         /// gun than his? Half a metre of reach is the same gun.</summary>

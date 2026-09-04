@@ -1488,8 +1488,11 @@ namespace RoadDemo
             // it is under has stopped holding its fire
             if (victimUnit != null && shooterUnit != null && !shooterUnit.IsPolice)
                 victimUnit.ProvokedAt = Time.time;
-            // and the shooter's own crew has a hot fight now, whoever it was sent at
-            if (shooterUnit != null) shooterUnit.ShotAt = Time.time;
+            // and both crews' fights are hot now - the victim's whoever fired, the
+            // law's rounds included: a crew sent at the police walks in cold until
+            // the first round lands round it, not until it fires back
+            HeatFight(shooterUnit);
+            HeatFight(victimUnit);
 
             bool mayAnswer = victimUnit != null && shooterUnit != null &&
                 !shooterUnit.IsPolice &&
