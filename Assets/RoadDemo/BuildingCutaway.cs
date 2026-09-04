@@ -25,7 +25,8 @@ namespace RoadDemo
     /// decides that per renderer every frame the building stays cut. A wall needs no such
     /// decision: its back faces cull. A single-mesh catalogue shell has no ground-floor
     /// renderer to spare, so the shader keeps its lowest band whole instead; a shell that
-    /// is nothing but ground floor is never cut at all.
+    /// is nothing but ground floor is never cut at all, though it stays registered so that
+    /// a ground sample inside it reads as indoors.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class BuildingCutaway : MonoBehaviour
@@ -266,23 +267,27 @@ namespace RoadDemo
                     _colliders.RemoveAt(i);
             }
 
-            // A shell that is all ground floor - one storey, whatever its height - has
-            // nothing to fade and is never an occluder; left to the fallback it would go
-            // shadows-only and vanish, the one thing the ground floor must not do.
-            _configured = tall && _renderers.Count > 0 && _colliders.Count > 0 &&
-                          _gradientRenderers.Count > 0;
+            _configured = tall && _renderers.Count > 0 && _colliders.Count > 0;
             if (_configured)
             {
-                if (_opacity == null)
+                // A shell that is all ground floor - one storey, whatever its height - has
+                // nothing to fade and Cut leaves it alone. It is still registered: a ground
+                // sample that lands inside it must read as indoors, or the sweep would cast
+                // from its floor and cut the buildings in front of it.
+                if (_gradientRenderers.Count > 0)
                 {
-                    _opacity = GetComponent<BuildingOpacityGradient>();
-                    if (_opacity == null) _opacity = gameObject.AddComponent<BuildingOpacityGradient>();
+                    if (_opacity == null)
+                    {
+                        _opacity = GetComponent<BuildingOpacityGradient>();
+                        if (_opacity == null) _opacity = gameObject.AddComponent<BuildingOpacityGradient>();
+                    }
+                    if (footprint != null)
+                        _opacity.ConfigureFootprint(footprint);
+                    // Only the shell above the ground floor takes the gradient. The ground
+                    // floor keeps the materials it was authored with; its pieces are
+                    // switched whole by Follow.
+                    _opacity.PrepareForRecycledBinding(_gradientRenderers);
                 }
-                if (footprint != null)
-                    _opacity.ConfigureFootprint(footprint);
-                // Only the shell takes the gradient. The ground-floor pieces keep the
-                // materials they were authored with and are switched whole by Follow.
-                _opacity.PrepareForRecycledBinding(_gradientRenderers);
                 RegisterRenderers();
                 if (isActiveAndEnabled) Register();
             }
@@ -388,12 +393,17 @@ namespace RoadDemo
 
         /// <summary>Switch the visual state. Mesh renderers use the recyclable gradient;
         /// if it is unavailable, the former shadows-only treatment remains the fallback.
-        /// False means the chunk merge has not finished and the caller should ask again on
-        /// its next sweep.</summary>
+        /// False means there is nothing to do now: the chunk merge has not finished and the
+        /// caller should ask again on its next sweep, or the shell is all ground floor and
+        /// stands whole whatever the camera does.</summary>
         internal bool Cut(bool keepShadows, float proxyHeight,
                           float gradientAmount = DefaultGradientAmount)
         {
             if (!_configured) return false;
+            // Nothing above the ground floor to fade. Not cut, so a click still lands on
+            // it; left to the fallback it would go shadows-only and vanish, the one thing
+            // the ground floor must not do.
+            if (_gradientRenderers.Count == 0) return false;
             proxyHeight = Mathf.Clamp(proxyHeight, 0.35f, 1.5f);
             gradientAmount = Mathf.Clamp(gradientAmount, 0f, 2f);
             if (_cut && _keptShadows == keepShadows &&
