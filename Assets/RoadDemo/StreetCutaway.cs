@@ -82,6 +82,26 @@ namespace RoadDemo
         /// city-view config owns the production default.</summary>
         public bool on = true;
 
+        /// <summary>The T debug panel reads and changes the same switch as H.</summary>
+        public bool OcclusionEnabled => on;
+
+        /// <summary>Changes the cutaway and immediately restores every facade when it
+        /// is turned off, so the debug control has no one-frame visual lag.</summary>
+        public void SetOcclusionEnabled(bool enabled)
+        {
+            if (on == enabled)
+                return;
+
+            on = enabled;
+            if (!on)
+            {
+                _cutting = false;
+                ShowEverything();
+                _known.Clear();
+            }
+            Debug.Log($"[RoadDemo] the cutaway is {(on ? "on" : "off")}");
+        }
+
         const float Chest = 1.2f;              // sample height: what a man on the pavement is
         const float Radius = 0.9f;             // fat enough that the cast is a person, not a pin
         const float BackOffset = 2f;           // a cast started inside a wall skips that wall; start behind the sample
@@ -150,10 +170,7 @@ namespace RoadDemo
         {
             var kb = Keyboard.current;
             if (kb != null && kb.hKey.wasPressedThisFrame)
-            {
-                on = !on;
-                Debug.Log($"[RoadDemo] the cutaway is {(on ? "on" : "off")}");
-            }
+                SetOcclusionEnabled(!on);
 
             if (_cam == null || rig == null) return;
 

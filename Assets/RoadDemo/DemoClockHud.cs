@@ -59,12 +59,16 @@ namespace RoadDemo
         Slider _timeSlider;
         TMP_Text _scrubTime;
         TMP_Text _fogText;
+        StreetCutaway _occlusion;
+        Button _occlusionButton;
+        TMP_Text _occlusionText;
         int _scrubMinute = -1;
 
         public void Init(LivingCity.Ambient.CityClock clock)
         {
             _clock = clock;
             _rig = FindAnyObjectByType<DemoCamera>();
+            _occlusion = FindAnyObjectByType<StreetCutaway>();
             Build();
         }
 
@@ -127,7 +131,7 @@ namespace RoadDemo
         /// shared CityClock in either representation.</summary>
         void BuildTimeScrubber()
         {
-            const float width = 460f, height = 78f;
+            const float width = 460f, height = 110f;
 
             _timeScrubber = DemoUi.NewRect("Time Scrubber", transform);
             _timeScrubber.anchorMin = _timeScrubber.anchorMax = _timeScrubber.pivot =
@@ -187,6 +191,21 @@ namespace RoadDemo
             DemoUi.Fill(_fogText.rectTransform);
             RefreshFogControl();
 
+            var occlusion = DemoUi.NewRect("Occlusion", _timeScrubber);
+            LedgerKit.PlaceTopLeft(occlusion, 10f, -78f, width - 20f, 22f);
+            var occlusionFace = LedgerKit.Fill(occlusion, Key);
+            occlusionFace.raycastTarget = true;
+            LedgerKit.Frame(occlusion, 0.5f, Rule);
+            _occlusionButton = occlusion.gameObject.AddComponent<Button>();
+            _occlusionButton.targetGraphic = occlusionFace;
+            _occlusionButton.onClick.AddListener(ToggleOcclusion);
+
+            _occlusionText = Line(occlusion, "", LedgerStyle.Condensed, 10f, Red,
+                TextAlignmentOptions.Center);
+            _occlusionText.characterSpacing = 10f;
+            DemoUi.Fill(_occlusionText.rectTransform);
+            RefreshOcclusionControl();
+
             _timeScrubber.gameObject.SetActive(false);
         }
 
@@ -207,6 +226,26 @@ namespace RoadDemo
             if (_fogText != null)
                 _fogText.text = "FOG OF WAR: " +
                     (MapVisionRegistry.FogOfWarEnabled ? "ON" : "OFF");
+        }
+
+        void ToggleOcclusion()
+        {
+            if (_occlusion == null)
+                return;
+
+            _occlusion.SetOcclusionEnabled(!_occlusion.OcclusionEnabled);
+            RefreshOcclusionControl();
+        }
+
+        void RefreshOcclusionControl()
+        {
+            bool available = _occlusion != null;
+            if (_occlusionButton != null)
+                _occlusionButton.interactable = available;
+            if (_occlusionText != null)
+                _occlusionText.text = available
+                    ? "OCCLUSION: " + (_occlusion.OcclusionEnabled ? "ON" : "OFF")
+                    : "OCCLUSION: N/A";
         }
 
         TMP_Text Line(Transform parent, string text, TMP_FontAsset face, float size,
@@ -351,6 +390,9 @@ namespace RoadDemo
 
             if (showScrubber)
             {
+                // H and this button own the same switch; keep the label honest when
+                // the keyboard changed it while the debug panel was already open.
+                RefreshOcclusionControl();
                 _timeSlider.SetValueWithoutNotify(_clock.Hour);
                 int scrubMinute = Mathf.FloorToInt(_clock.Hour * 60f) % (24 * 60);
                 if (scrubMinute != _scrubMinute)
