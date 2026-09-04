@@ -95,7 +95,8 @@ namespace LivingCity.Gameplay
             };
             runner.BossFell += () =>
             {
-                Debug.LogWarning("[Outfit] THE DON IS DEAD - day " + Campaign.Day +
+                Debug.LogWarning("[Outfit] " + Outfit.EndingText.Headline(Runner.Ending) +
+                                 " - day " + Campaign.Day +
                                  ". The outfit is finished; nothing advances from here.");
                 Version++;
                 if (PersonnelDirector.Instance)
@@ -129,10 +130,11 @@ namespace LivingCity.Gameplay
         public List<OrderRecord> Records => Runner.Records;
         public List<Improvement> Rises => Runner.Rises;
         public List<Decline> Declines => Runner.Declines;
-        /// <summary>The campaign is over - the Don is dead. The scene edge presents
-        /// it; the sim decided it.</summary>
+        /// <summary>The campaign is over. The scene edge presents it; the sim decided
+        /// it, and <see cref="Ending"/> says which of the three ends it was.</summary>
         public bool Fallen => Runner.Fallen;
         public int FallenOnDay => Runner.FallenOnDay;
+        public Outfit.OutfitEnding Ending => Runner.Ending;
 
         public List<Incident> Incidents => Runner.Incidents;
         public List<Incident> LastNight => Runner.LastNight;

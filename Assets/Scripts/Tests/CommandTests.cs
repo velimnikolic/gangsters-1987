@@ -26,6 +26,10 @@ namespace LivingCity.Tests
             ("TheSpanOfControlBindsPromotion", TheSpanOfControlBindsPromotion),
             ("TheDonsDeathEndsIt", TheDonsDeathEndsIt),
             ("DeathReachesTheRosterByOnePathOnly", DeathReachesTheRosterByOnePathOnly),
+            ("ALifeSentenceEndsIt", ALifeSentenceEndsIt),
+            ("AServableTermDoesNot", AServableTermDoesNot),
+            ("ThreeBrokeNightsCloseTheBooks", ThreeBrokeNightsCloseTheBooks),
+            ("ARivalHouseIsNotWoundUpByABadFortnight", ARivalHouseIsNotWoundUpByABadFortnight),
             ("ADetailStandsBetweenHimAndIt", ADetailStandsBetweenHimAndIt),
             ("HisOwnMenFallInBehindHim", HisOwnMenFallInBehindHim),
             ("ADetailOfCowardsIsNoDetailAtAll", ADetailOfCowardsIsNoDetailAtAll),
@@ -364,6 +368,134 @@ namespace LivingCity.Tests
             if (quiet.Fallen)
                 failures.Add("DeathReachesTheRosterByOnePathOnly: losing a lieutenant " +
                              "ended the campaign.");
+        }
+
+        // ------------------------------------------------- the other two endings
+        //
+        // The user's word of 2026-09-04, asked as questions and answered as three
+        // rules: out of money, the Don shot, the Don sentenced. Nothing else ends the
+        // player's campaign, and none of it ends a rival's.
+
+        static void ALifeSentenceEndsIt(List<string> failures)
+        {
+            var roster = new Roster();
+            var boss = MakeBoss(roster, 8, 8);
+            var runner = new Outfit.CampaignRunner();
+            runner.DayTick(roster);
+
+            // The cell alone is not it: the sentence is.
+            boss.Status = CharacterStatus.Jailed;
+            boss.BackOnDay = Sentencing.Life;
+            runner.DayTick(roster);
+
+            if (!runner.Fallen)
+                failures.Add("ALifeSentenceEndsIt: the Don got life and the campaign " +
+                             "carried on.");
+            if (runner.Ending != Outfit.OutfitEnding.TheDonGoesDown)
+                failures.Add("ALifeSentenceEndsIt: the end was filed as " +
+                             runner.Ending + ".");
+        }
+
+        static void AServableTermDoesNot(List<string> failures)
+        {
+            var roster = new Roster();
+            var boss = MakeBoss(roster, 8, 8);
+            var runner = new Outfit.CampaignRunner();
+            runner.DayTick(roster);
+
+            // Twelve days is a term a house waits out under his heir.
+            boss.Status = CharacterStatus.Jailed;
+            boss.BackOnDay = runner.Campaign.Day + 12;
+            runner.DayTick(roster);
+            runner.DayTick(roster);
+
+            if (runner.Fallen)
+                failures.Add("AServableTermDoesNot: a Don doing twelve days ended the " +
+                             "campaign.");
+        }
+
+        static void ThreeBrokeNightsCloseTheBooks(List<string> failures)
+        {
+            var roster = new Roster();
+            MakeBoss(roster, 8, 8);
+            MakeHood(roster);
+            var runner = new Outfit.CampaignRunner();
+            runner.OpenFirstSheet();
+
+            var announced = 0;
+            runner.BossFell += () => announced++;
+
+            runner.Accounts.Safe = 0;
+
+            // Ticked well past the third night on purpose: the contract is that it
+            // ends on the night the count reaches the bar, whichever midnight that is,
+            // and never on a night before it.
+            for (var tick = 0; tick < 12 && !runner.Fallen; tick++)
+            {
+                runner.DayTick(roster);
+                if (runner.Fallen && runner.BrokeNights != Outfit.CampaignRunner.BrokeNightsThatEndIt)
+                    failures.Add($"ThreeBrokeNightsCloseTheBooks: it ended on broke " +
+                                 $"night {runner.BrokeNights}.");
+            }
+
+            if (!runner.Fallen)
+                failures.Add("ThreeBrokeNightsCloseTheBooks: the safe was empty a " +
+                             "fortnight and the outfit is still trading.");
+            if (runner.Ending != Outfit.OutfitEnding.TheBooksAreClosed)
+                failures.Add("ThreeBrokeNightsCloseTheBooks: the end was filed as " +
+                             runner.Ending + ".");
+            if (announced != 1)
+                failures.Add($"ThreeBrokeNightsCloseTheBooks: the end was announced " +
+                             $"{announced} times.");
+
+            // AND A NIGHT THAT PAYS RESETS THE RUN. The same outfit, topped up before
+            // the count can reach the bar, is still standing.
+            var solvent = new Roster();
+            MakeBoss(solvent, 8, 8);
+            MakeHood(solvent);
+            var kept = new Outfit.CampaignRunner();
+            kept.OpenFirstSheet();
+            for (var tick = 0; tick < 12; tick++)
+            {
+                kept.Accounts.Safe =
+                    kept.BrokeNights >= Outfit.CampaignRunner.BrokeNightsThatEndIt - 1
+                        ? 5_000
+                        : 0;
+                kept.DayTick(solvent);
+            }
+            if (kept.Fallen)
+                failures.Add("ThreeBrokeNightsCloseTheBooks: a night that paid every " +
+                             "man did not reset the run.");
+        }
+
+        static void ARivalHouseIsNotWoundUpByABadFortnight(List<string> failures)
+        {
+            var roster = new Roster();
+            var boss = MakeBoss(roster, 8, 8);
+            MakeHood(roster);
+            var rival = new Outfit.CampaignRunner { GangId = 7 };
+            rival.OpenFirstSheet();
+
+            rival.Accounts.Safe = 0;
+            for (var night = 0; night < Outfit.CampaignRunner.BrokeNightsThatEndIt + 4; night++)
+                rival.DayTick(roster);
+            if (rival.Fallen)
+                failures.Add("ARivalHouseIsNotWoundUpByABadFortnight: a broke rival " +
+                             "wound itself up.");
+
+            boss.Status = CharacterStatus.Jailed;
+            boss.BackOnDay = Sentencing.Life;
+            rival.DayTick(roster);
+            if (rival.Fallen)
+                failures.Add("ARivalHouseIsNotWoundUpByABadFortnight: a rival Don's " +
+                             "life sentence ended his house.");
+
+            // What DOES finish a rival is the one rule it shares with the player.
+            RosterOps.Kill(roster, boss.Id);
+            rival.DayTick(roster);
+            if (!rival.Fallen || rival.Ending != Outfit.OutfitEnding.TheDonIsDead)
+                failures.Add("ARivalHouseIsNotWoundUpByABadFortnight: a rival Don shot " +
+                             "with nobody behind him did not finish the house.");
         }
 
         // -------------------------------------------------------------- the detail

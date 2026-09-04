@@ -207,27 +207,66 @@ namespace LivingCity.Outfit
         /// struck off, and the house plays on under a new man. What ends a campaign is
         /// a Don shot with NOBODY of rank behind him - the whole command gone, not one
         /// bullet. The rule is the same for the player and for the twenty families.
+        ///
+        /// The player answers for two more (2026-09-04): a Don sentenced to life, and
+        /// three nights running with an empty safe and nobody paid.
+        /// <see cref="Ending"/> says which of the three it was.
         /// </summary>
         public bool Fallen { get; private set; }
 
         /// <summary>The day the outfit ended; 0 while it has not.</summary>
         public int FallenOnDay { get; private set; }
 
+        /// <summary>WHICH of the three ends it was, for the leaf that has to say so.
+        /// <see cref="OutfitEnding.None"/> while the campaign is running.</summary>
+        public OutfitEnding Ending { get; private set; }
+
+        /// <summary>
+        /// Nights running on which the safe closed at nothing AND not one envelope was
+        /// handed out. Reset by any night that put money in a man's hand.
+        ///
+        /// It is the safe AND the payroll on purpose, and it is what the player was
+        /// asked and what he answered: an empty safe and nobody paid. An outfit that
+        /// met its whole bill and happens to end the night at nought has just had a
+        /// tight week; an outfit whose last man walked has no bill left to fail, and a
+        /// Don sitting alone over an empty safe is as finished as one whose men are
+        /// still there going unpaid - this counts both.
+        /// </summary>
+        public int BrokeNights { get; private set; }
+
+        /// <summary>
+        /// How many of those in a row close the books. Three, the same number a hood
+        /// deserts after (<see cref="Wages.DesertAfterUnpaidNights"/>) and deliberately
+        /// so: the end arrives on the night the outfit would start walking out anyway,
+        /// rather than a week into a corpse that still had a cursor (the user's word,
+        /// 2026-09-04).
+        /// </summary>
+        public const int BrokeNightsThatEndIt = Wages.DesertAfterUnpaidNights;
+
         /// <summary>Raised once, when the campaign ends. The scene edge presents it;
         /// the sim never touches a screen.</summary>
         public event System.Action BossFell;
 
         /// <summary>
-        /// Has the outfit lost its head FOR GOOD? Death reaches the roster through
-        /// exactly one path (RosterOps.Kill) and succession happens inside it, so by
-        /// the time this is asked the books already name whoever took the chair: a Boss
-        /// still reading Dead here is a house that had no lieutenant to give it one.
-        /// This is the only place that needs to notice, and it notices before anything
-        /// else in the tick moves.
-        ///
-        /// It is checked at both doors time comes through, so nothing resolves after
-        /// the Don goes down - not a job finishing at ten to midnight, not the
+        /// IS IT OVER? The one gate, asked at every door time comes through, so nothing
+        /// resolves after the end - not a job finishing at ten to midnight, not the
         /// midnight pass itself.
+        ///
+        /// Three ways in, and no fourth without the user's word (2026-09-04):
+        ///
+        /// 1. THE DON IS DEAD with nobody of rank behind him. Death reaches the roster
+        ///    through exactly one path (RosterOps.Kill) and succession happens inside
+        ///    it, so by the time this is asked the books already name whoever took the
+        ///    chair: a Boss still reading Dead here is a house that had no lieutenant
+        ///    to give it one. This one finishes a rival house too.
+        /// 2. THE DON GOES DOWN - convicted and not coming out. A term he can serve is
+        ///    not the end; his heir runs the family until the discharge pass returns
+        ///    him.
+        /// 3. THE BOOKS ARE CLOSED - <see cref="BrokeNightsThatEndIt"/> nights running
+        ///    with an empty safe and nobody paid.
+        ///
+        /// The last two are the PLAYER's alone. A raid, a lost hood, a lost street and
+        /// an empty turf map end nothing, by the same word.
         /// </summary>
         bool CampaignOver(Roster roster)
         {
@@ -237,10 +276,39 @@ namespace LivingCity.Outfit
                 return false;
 
             var boss = roster.FindBoss();
-            if (boss == null || boss.Status != CharacterStatus.Dead)
+            if (boss == null)
                 return false;
 
+            if (boss.Status == CharacterStatus.Dead)
+                return Finish(OutfitEnding.TheDonIsDead);
+
+            // AND THE TWO THE PLAYER ALONE ANSWERS FOR. A rival house is finished by
+            // its books being empty or its chair being empty (House.Finished) and by
+            // nothing else, so neither of these may fire for the twenty: a city that
+            // wound itself up every time a family had a bad fortnight would be a city
+            // of three families by the spring.
+            if (GangId != Gangs.GangCatalog.PlayerGangId)
+                return false;
+
+            // HE IS NOT COMING OUT. A term he can serve is not the end of the outfit -
+            // his heir runs it until the discharge pass gives him back - so the test is
+            // the sentence itself and not the cell (the user's word, 2026-09-04).
+            if (boss.Status == CharacterStatus.Jailed &&
+                Sentencing.IsLife(boss.BackOnDay))
+                return Finish(OutfitEnding.TheDonGoesDown);
+
+            if (BrokeNights >= BrokeNightsThatEndIt)
+                return Finish(OutfitEnding.TheBooksAreClosed);
+
+            return false;
+        }
+
+        /// <summary>Latches the end, once, and tells the scene which one it was. Always
+        /// returns true, so every test above can end on one line.</summary>
+        bool Finish(OutfitEnding ending)
+        {
             Fallen = true;
+            Ending = ending;
             FallenOnDay = Campaign.Day;
             BossFell?.Invoke();
             return true;
@@ -902,9 +970,21 @@ namespace LivingCity.Outfit
                 // later, or never. Once for the batch, not once per man.
                 if (struck > 0)
                     RosterMoved?.Invoke();
+
+                // OUT OF MONEY (the user's word, 2026-09-04). A night that ended with
+                // nothing in the safe and a man unpaid is a broke night; three of them
+                // running and the outfit is finished. Counted here because this is the
+                // one place that knows both halves at once, and read at once rather
+                // than at the next midnight so the end is dated the night it happened
+                // and no morning opens on a dead outfit.
+                if (Accounts.Safe <= 0 && paid <= 0)
+                    BrokeNights++;
+                else
+                    BrokeNights = 0;
             }
 
             Accounts.Open(Campaign.Day);
+            CampaignOver(roster);
             return paid;
         }
 

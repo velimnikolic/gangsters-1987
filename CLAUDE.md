@@ -68,6 +68,7 @@ make it call the shared service/model.
 | the racket: collector duty, the schedule, money on the wire | `Docs/racket-collections.md` |
 | the closer threat: retargeting, reaction, bullet scatter | `Docs/design-briefs/closer-threat-brief.md` |
 | the law sheet: the docket, the cells, the wanted, the counsel, the verdicts | `Docs/ledger-law-sheet.md` |
+| how a campaign ends: the three, and what is not one of them | `Docs/game-over.md` |
 | what everything costs (1987 dollars, Miami-anchored) | `Docs/economy-prices.md` |
 | headquarters safe, stock, report and armory gate | `Docs/headquarters.md` |
 | what the port is made of | `Docs/harbor-detail.md` |

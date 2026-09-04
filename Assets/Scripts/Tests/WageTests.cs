@@ -400,8 +400,6 @@ namespace LivingCity.Tests
         static void FiveShortNightsAndTheLieutenantGoesOver(List<string> failures)
         {
             var runner = ShortNight(out var roster, out _);
-            // Nothing at all in the safe, so even the lieutenant goes without.
-            runner.Accounts.Safe = 0;
 
             var lieutenantId = -1;
             foreach (var member in roster.Members)
@@ -411,8 +409,32 @@ namespace LivingCity.Tests
                     break;
                 }
 
+            // ENOUGH FOR ONE HOOD AND NEVER FOR HIM. The lieutenants are paid first,
+            // so a safe holding the cheapest envelope in the house passes over him
+            // every night and still hands somebody something.
+            //
+            // A safe at NOTHING no longer reaches the fifth night at all: three of
+            // those in a row is the end of the outfit now (the user's word,
+            // 2026-09-04, CommandTests.ThreeBrokeNightsCloseTheBooks), and a campaign
+            // that is over pays nobody. The rule this contract is about is the one
+            // that bites an outfit still trading, which is exactly this one.
+            var cheapest = int.MaxValue;
+            foreach (var member in roster.Members)
+            {
+                var wage = Wages.WageFor(member, roster.Day);
+                if (wage > 0 && wage < cheapest)
+                    cheapest = wage;
+            }
+
             for (var night = 0; night <= Wages.DefectAfterUnpaidNights; night++)
+            {
+                runner.Accounts.Safe = cheapest;
                 runner.DayTick(roster, false);
+            }
+
+            if (runner.Fallen)
+                failures.Add("FiveShortNightsAndTheLieutenantGoesOver: the outfit was " +
+                             "wound up for being broke while it was still paying a man.");
 
             var lieutenant = roster.Find(lieutenantId);
             if (lieutenant == null || lieutenant.Status != CharacterStatus.Deserted)

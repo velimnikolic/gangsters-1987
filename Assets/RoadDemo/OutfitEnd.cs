@@ -1,4 +1,5 @@
 using LivingCity.Gameplay;
+using LivingCity.Outfit;
 using LivingCity.Personnel;
 using LivingCity.UI;
 using TMPro;
@@ -32,6 +33,10 @@ namespace RoadDemo
     {
         const int SortingOrder = 400;
         const float LeafW = 560f;
+        /// <summary>The headline's point size, and the longest headline that prints at
+        /// it across a leaf this wide.</summary>
+        const float HeadPoints = 46f;
+        const int HeadFitsAt = 16;
         const float LeafH = 300f;
 
         public static OutfitEnd Instance { get; private set; }
@@ -150,8 +155,19 @@ namespace RoadDemo
             kicker.characterSpacing = 14f;
             kicker.alignment = TextAlignmentOptions.Center;
 
-            var head = Line(leaf, LedgerStyle.Condensed, 46f, LedgerV2.Ink,
-                34f, -48f, LeafW - 68f, LineBox(46f), "THE DON IS DEAD");
+            var ending = outfit != null ? outfit.Runner.Ending : OutfitEnding.TheDonIsDead;
+
+            // The three headlines are not the same length, and a condensed 46 pt line
+            // that does not fit the leaf does not shrink - TMP wraps it and then drops
+            // the whole line, so the end would print with no headline at all. Cut the
+            // point size to the longest word count the leaf can actually hold.
+            var headline = EndingText.Headline(ending);
+            var headSize = headline.Length <= HeadFitsAt
+                ? HeadPoints
+                : HeadPoints * HeadFitsAt / headline.Length;
+
+            var head = Line(leaf, LedgerStyle.Condensed, headSize, LedgerV2.Ink,
+                34f, -48f, LeafW - 68f, LineBox(HeadPoints), headline);
             head.characterSpacing = 2f;
             head.alignment = TextAlignmentOptions.Center;
 
@@ -159,16 +175,12 @@ namespace RoadDemo
 
             var named = Line(leaf, LedgerStyle.Serif, 17f, LedgerV2.Body,
                 34f, -128f, LeafW - 68f, LineBox(17f, 2),
-                boss != null
-                    ? boss.FullName + " was shot dead on day " + day + "."
-                    : "The head of the family was shot dead on day " + day + ".");
+                EndingText.Standfirst(ending, boss != null ? boss.FullName : "", day));
             named.alignment = TextAlignmentOptions.Center;
 
             var closing = Paragraph(leaf, LedgerStyle.Serif, 14f, LedgerV2.Muted,
                 48f, -172f, LeafW - 96f, LineBox(14f, 3),
-                "There is nobody to give the next order. The books close where they " +
-                "stand: no round is collected, no man is paid, and no street changes " +
-                "hands from here.");
+                EndingText.Closing(ending));
             closing.alignment = TextAlignmentOptions.Center;
 
             // What the outfit was worth when it ended - the only figures still true.
