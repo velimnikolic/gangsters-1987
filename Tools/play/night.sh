@@ -256,6 +256,22 @@ case "$MODE" in
         ;;
 esac
 
+# MiniCoreDemo is deliberately serialized at NPC-001's visual stress density
+# (400 pedestrians / 120 cars). Unattended regression modes keep the historical
+# 100 / 40 baseline unless a caller names either setting explicitly.
+append_core_default() { # field value
+    case ";$SETS;" in
+        *";$1="*) ;;
+        *) SETS="${SETS:+$SETS;}$1=$2" ;;
+    esac
+}
+case "$SCENE" in
+    *MiniCoreDemo*)
+        append_core_default CoreDemoBuilder.pedestrianCount 100
+        append_core_default CoreDemoBuilder.carCount 40
+        ;;
+esac
+
 # THE FIXED SEED, ALWAYS. The core deals a fresh city every Play unless it is told
 # not to, and a soak whose city changes under it compares nothing with nothing.
 CORE_FIX=""

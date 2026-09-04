@@ -16,8 +16,8 @@ je korisnik ne potvrdi u §11.
 `gangsters_people_census --seed 1987 [--rows]` je read-only editor komanda koja radi na
 glavnoj niti sa zaustavljenim editorom. Pravi plan grada i privremenu preview scenu samo za
 merenje, ne postavlja objekte u otvorenu scenu i ništa ne peče. Poslednji puni prolaz je vratio
-JSON `passed = true` za **1,44 s** (zahtev: manje od 30 s); `--rows true` vraća i svaki
-pojedinačni izvor/projekciju.
+JSON `passed = true`, bez gate grešaka, za **1,27 s** (zahtev: manje od 30 s); `--rows`
+vraća i svaki pojedinačni izvor/projekciju.
 
 ### 0.1 Vrata na seedu 1987
 
@@ -48,13 +48,19 @@ Preliminarni pregled 84/46 bio je pogrešan. Tačno prazni blokovi su **02, 03, 
 | dodatno za zebre + 3 m | 0 m (već unutar prethodnog isključenja) |
 | 17 hidranata, poluprečnik 4,6 m | −86,305 m dodatno |
 | autobuska stajališta u autorstvu | 0 |
-| legalna dužina | **46.847,695 m** |
-| slotovi na koraku 6 m | **7.313** |
-| cilj na 60 % | **4.388** |
+| 3 prilaza javnim parkinzima, otvor + 2 m | −33 m dodatno |
+| prilazi pumpama | 0 (seed 1987 nije smestio pogodnu pumpu) |
+| 162 ulaza stambenih dvorišta | −641 m dodatno |
+| legalna dužina | **46.173,695 m** |
+| slotovi na koraku 6 m | **7.168** |
+| cilj na 60 % | **4.301** |
 
 Četiri prepoznata hidranta nisu mogla da se upare sa parking stranom u 10 m i ostaju izričito
-prijavljena; nema tihog footprint fallbacka. Generisani residential dressing nije uključen u
-ovu meru.
+prijavljena; nema tihog footprint fallbacka. Sva tri parking prilaza i sva 162 dvorišna ulaza
+upareni su sa parking stranom. `fuelStations = 5` je maksimum, ne obećan broj: puni plan na
+seedu 1987 nema parcelu koja prima ceo `FuelStationBlock`, pa je izmereno nula prilaza pumpi.
+Generisani residential dressing je isključen; komanda bi pala umesto da prećuti njegova
+proceduralna autobuska stajališta ako se taj prekidač uključi.
 
 ### 0.3 Današnji trošak gomile
 
@@ -80,8 +86,10 @@ autoritativno je **3.581 sajt, 3.564 upotrebljiva i popunjena**, uz 17 namerno n
 venue 32 i compound 1; audit nema grešaka.
 
 `MiniCoreDemo` je za najjeftiniji vizuelni test podešen na **400 pešaka / 120 kola**.
-Automatski harness se nad korisnikovom otvorenom scenom ne pokreće. **Kapija još nije
-otvorena:** čeka se korisnikova presuda da li ova gustina već deluje živo, a zatim trenutni
+`Tools/play/night.sh` za nenavedene vrednosti izričito vraća istorijski regresijski baseline
+na 100/40, pa vizuelna proba ne menja postojeće smoke/night scenarije; eksplicitni `--sets`
+i dalje ima prednost. Automatski harness se nad korisnikovom otvorenom scenom ne pokreće.
+**Kapija još nije otvorena:** čeka se korisnikova presuda da li ova gustina već deluje živo, a zatim trenutni
 30-run soak baseline pre prve promene ponašanja. Nijedan kasniji NPC tiket ne počinje pre oba
 ishoda.
 
@@ -170,8 +178,9 @@ restoran ≤ 6, klupa ≤ 2, kafe ≤ 2), tačke kanti (`BinAnchors`), strana vr
   * `StaticRoadUser` (`LaneNet.cs:1251`) — napisan, nula pozivalaca.
 - **Ko već parkira:** policija (od 2026-09-04 živi na ivičnjaku, farthest-point po
   blokovima, `policeRestAtKerbs`), krew kola, 3 parkinga × 5 „putnika" (`ParkingLot`: boks →
-  vožnja 16–30 s → nazad u boks), 5 pumpi × 3 mušterije (`FuelCustomer`: jedini pravi
-  „odvezi se negde, parkiraj, izađi, plati, vrati se"), motori (4 + 2 na stalku).
+  vožnja 16–30 s → nazad u boks), do 5 pumpi × 3 mušterije (`FuelCustomer`: jedini pravi
+  „odvezi se negde, parkiraj, izađi, plati, vrati se"; seed 1987 trenutno smesti nula
+  pogodnih pumpi), motori (4 + 2 na stalku).
 - **Zabeležena opasnost:** *„a parked patrol is a registered obstacle and the spread of them
   gridlocked the ambient traffic"* (`RoadDemoBuilder.cs:4492`) — to je bio stari raspored NA
   traci; današnji ide u pojas od 2.5 m. Svejedno se meri (§8).

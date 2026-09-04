@@ -20,7 +20,9 @@ namespace GangstersTools
         const float CrossingBuffer = 3f;
         const float HydrantRadius = 4.6f;
         const float BusStopLength = 12f;
+        const float ApproachMargin = 2f;
         const float TypicalCarHalfLength = 2.3f;
+        const double CensusBudgetSeconds = 30d;
         const int BenchmarkFrames = 64;
         const int BenchmarkWarmupFrames = 8;
 
@@ -92,6 +94,7 @@ namespace GangstersTools
                     "The people census no longer matches the crowd's measured static state.");
 
             var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            var gateFailures = new List<string>();
             var core = new CoreDistrict();
             core.Plan(null, seed);
             core.Frame = DistrictFrame.Identity;
@@ -103,16 +106,31 @@ namespace GangstersTools
             catalog.Add(new CompoundBusinessSites(core, null));
             catalog.Build();
 
-            var business = MeasureBusinessDoors(catalog, links, includeRows);
-            var downtown = MeasureDowntownDoors(core, links, includeRows);
-            var residential = MeasureResidentialDoors(core, links, includeRows);
-            var kerb = MeasureKerb(core, includeRows);
+            foreach (var problem in catalog.Problems)
+                gateFailures.Add("business site catalogue: " + problem);
+
+            var business = MeasureBusinessDoors(
+                catalog, links, includeRows, seed, gateFailures);
+            var downtown = MeasureDowntownDoors(
+                core, links, includeRows, seed, gateFailures);
+            var residential = MeasureResidentialDoors(
+                core, links, includeRows, seed, gateFailures);
+            var kerb = MeasureKerb(core, includeRows, seed, gateFailures);
             var frame = MeasureCrowdCurve(links, seed);
 
             elapsed.Stop();
+            if (elapsed.Elapsed.TotalSeconds >= CensusBudgetSeconds)
+                gateFailures.Add(
+                    $"census exceeded its {CensusBudgetSeconds:0}-second budget " +
+                    $"({elapsed.Elapsed.TotalSeconds:0.###} s)");
+            var distinctFailures = gateFailures
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(failure => failure, StringComparer.Ordinal)
+                .ToArray();
             return new
             {
-                passed = catalog.Problems.Count == 0,
+                passed = distinctFailures.Length == 0,
+                failures = distinctFailures,
                 seed,
                 measuredOn = DateTime.UtcNow.ToString("yyyy-MM-dd"),
                 elapsedMs = Math.Round(elapsed.Elapsed.TotalMilliseconds, 1),
@@ -124,6 +142,7 @@ namespace GangstersTools
                     kerbEndSetbackMetres = EndSetback,
                     hydrantRadiusMetres = HydrantRadius,
                     busStopLengthMetres = BusStopLength,
+                    vehicleApproachMarginMetres = ApproachMargin,
                     crossingBufferMetres = CrossingBuffer,
                     slotPitchMetres = TypicalCarHalfLength * 2f + KerbCars.Gap,
                 },
@@ -148,7 +167,8 @@ namespace GangstersTools
         }
 
         static object MeasureBusinessDoors(BusinessSiteCatalog catalog, List<PedLink> links,
-                                           bool includeRows)
+                                           bool includeRows, int seed,
+                                           List<string> gateFailures)
         {
             int count = 0, landed = 0;
             var failures = new FailureTally();
@@ -174,6 +194,12 @@ namespace GangstersTools
                         reason,
                     });
             }
+            if (seed == 1987 &&
+                (catalog.Sites.Count != 3581 || count != 3564 || landed != 3209))
+                gateFailures.Add(
+                    "seed 1987 business-door baseline changed: expected " +
+                    $"3581 sites / 3564 eligible / 3209 landed, measured " +
+                    $"{catalog.Sites.Count} / {count} / {landed}");
             return new
             {
                 count,
@@ -185,7 +211,8 @@ namespace GangstersTools
         }
 
         static object MeasureDowntownDoors(CoreDistrict core, List<PedLink> links,
-                                           bool includeRows)
+                                           bool includeRows, int seed,
+                                           List<string> gateFailures)
         {
             int shops = 0, apartmentDoors = 0, doorCapable = 0, landed = 0;
             int shopCoversExcluded = 0, wallWindowModules = 0,
@@ -204,8 +231,11 @@ namespace GangstersTools
                 int blockShops = 0, blockApartments = 0, blockLanded = 0;
                 if (block == null || prefab == null)
                 {
-                    failures.Add(block == null ? "authored block absent from accepted layout"
-                                               : "authored block prefab missing");
+                    string missing = block == null
+                        ? "authored block absent from accepted layout"
+                        : "authored block prefab missing";
+                    failures.Add(missing);
+                    gateFailures.Add(blockName + ": " + missing);
                     empty.Add(blockName);
                     blocks.Add(new
                     {
@@ -312,6 +342,22 @@ namespace GangstersTools
             }
 
             int count = shops + apartmentDoors;
+            var correctedEmptyBlocks = new[]
+            {
+                "block-02", "block-03", "block-08",
+                "block-14", "block-15", "block-16",
+            };
+            bool correctedCountConfirmed = shops == 92 && apartmentDoors == 49;
+            bool correctedEmptyListConfirmed = empty.SequenceEqual(correctedEmptyBlocks);
+            if (seed == 1987 &&
+                (!correctedCountConfirmed || !correctedEmptyListConfirmed ||
+                 doorCapable != 135 || landed != 121))
+                gateFailures.Add(
+                    "seed 1987 downtown-door baseline changed: expected " +
+                    "92 shops / 49 apartment modules / 135 physical doors / " +
+                    $"121 landed / empty [{string.Join(", ", correctedEmptyBlocks)}], " +
+                    $"measured {shops} / {apartmentDoors} / {doorCapable} / {landed} / " +
+                    $"[{string.Join(", ", empty)}]");
             return new
             {
                 count,
@@ -322,21 +368,26 @@ namespace GangstersTools
                 failed = count - landed,
                 failures = failures.Rows(),
                 emptyBlocks = empty.ToArray(),
-                reviewCountConfirmed = shops == 84 && apartmentDoors == 46,
-                reviewEmptyListConfirmed = empty.SequenceEqual(new[]
+                provisionalReviewCountConfirmed = shops == 84 && apartmentDoors == 46,
+                provisionalReviewEmptyListConfirmed = empty.SequenceEqual(new[]
                 {
                     "block-02", "block-03", "block-07", "block-08",
                     "block-14", "block-15", "block-16",
                 }),
+                correctedCountConfirmed,
+                correctedEmptyListConfirmed,
                 review = new
                 {
-                    expectedShopModules = 84,
-                    expectedApartmentDoorModules = 46,
-                    expectedEmptyBlocks = new[]
+                    provisionalShopModules = 84,
+                    provisionalApartmentDoorModules = 46,
+                    provisionalEmptyBlocks = new[]
                     {
                         "block-02", "block-03", "block-07", "block-08",
                         "block-14", "block-15", "block-16",
                     },
+                    correctedShopModules = 92,
+                    correctedApartmentDoorModules = 49,
+                    correctedEmptyBlocks,
                     shopCoversExcluded,
                     wallWindowModules,
                     apartmentDoorSourceModules,
@@ -358,7 +409,8 @@ namespace GangstersTools
             sourceName.IndexOf("Shop_Cover", StringComparison.OrdinalIgnoreCase) < 0;
 
         static object MeasureResidentialDoors(CoreDistrict core, List<PedLink> links,
-                                               bool includeRows)
+                                               bool includeRows, int seed,
+                                               List<string> gateFailures)
         {
             int count = 0, landed = 0;
             var failures = new FailureTally();
@@ -397,6 +449,11 @@ namespace GangstersTools
                 }
             }
 
+            if (seed == 1987 && (count != 425 || landed != 425))
+                gateFailures.Add(
+                    "seed 1987 residential-door baseline changed: expected " +
+                    $"425 candidates / 425 landed, measured {count} / {landed}");
+
             return new
             {
                 count,
@@ -428,15 +485,7 @@ namespace GangstersTools
                 reason = "plan has no pedestrian access side";
                 return false;
             }
-            int i, j;
-            switch (side)
-            {
-                case 0: i = at; j = 0; break;
-                case 1: i = recipe.Plan.W - 1; j = at; break;
-                case 2: i = at; j = recipe.Plan.D - 1; break;
-                default: i = 0; j = at; break;
-            }
-            if (i < 0 || j < 0 || i >= recipe.Plan.W || j >= recipe.Plan.D ||
+            if (!TryResidentialRingCell(recipe, side, at, out int i, out int j) ||
                 recipe.Plan.Ground[i, j] != ResidentialLot.Use.Walkway)
             {
                 reason = "pedestrian access does not land on a planned pavement cell";
@@ -452,7 +501,37 @@ namespace GangstersTools
             return true;
         }
 
-        static object MeasureKerb(CoreDistrict core, bool includeRows)
+        static bool TryResidentialRingCell(ResidentialBlockRecipe recipe, int side, int at,
+                                           out int i, out int j)
+        {
+            i = j = -1;
+            if (recipe?.Plan == null || side < 0 || side > 3 || at < 0) return false;
+            switch (side)
+            {
+                case 0: i = at; j = 0; break;
+                case 1: i = recipe.Plan.W - 1; j = at; break;
+                case 2: i = at; j = recipe.Plan.D - 1; break;
+                default: i = 0; j = at; break;
+            }
+            return i >= 0 && j >= 0 && i < recipe.Plan.W && j < recipe.Plan.D;
+        }
+
+        static bool TryResidentialAccessPoint(ResidentialBlockRecipe recipe, int side, int at,
+                                              DistrictFrame frame, out Vector3 point)
+        {
+            point = default;
+            if (!TryResidentialRingCell(recipe, side, at, out int i, out int j))
+                return false;
+            float cell = ResidentialLot.Cell;
+            point = frame.ToWorld(new Vector3(
+                recipe.LocalBounds.xMin + (i + 0.5f) * cell,
+                0f,
+                recipe.LocalBounds.yMin + (j + 0.5f) * cell));
+            return true;
+        }
+
+        static object MeasureKerb(CoreDistrict core, bool includeRows, int seed,
+                                  List<string> gateFailures)
         {
             var net = RasterGraph.Build(core.Raster, core.Frame,
                 core.streetSpeed, core.boulevardSpeed, core.alleySpeed);
@@ -483,15 +562,18 @@ namespace GangstersTools
             }
             float afterCrossings = Length(sides);
 
-            var sidewalk = ReadAuthoredKerbFurniture(core, out int footprintFallbacks);
-            int hydrants = 0, stops = 0, unmatched = 0;
+            var sidewalk = ReadAuthoredKerbFurniture(core, gateFailures,
+                out int footprintFallbacks);
+            int hydrants = 0, stops = 0;
+            int furnitureWithoutParking = 0, parkingWithoutParking = 0,
+                fuelWithoutParking = 0, residentialWithoutParking = 0;
             float beforeHydrants = Length(sides);
             foreach (var box in sidewalk.Boxes)
             {
                 if (!string.Equals(KerbFurnitureTag(box.SourceName), "hydrant",
                                    StringComparison.Ordinal)) continue;
                 hydrants++;
-                if (!ExcludeFurniture(sides, box.C, HydrantRadius)) unmatched++;
+                if (!ExcludeAt(sides, box.C, HydrantRadius)) furnitureWithoutParking++;
             }
             float afterHydrants = Length(sides);
             float beforeStops = afterHydrants;
@@ -500,15 +582,94 @@ namespace GangstersTools
                 if (!string.Equals(KerbFurnitureTag(box.SourceName), "bus-stop",
                                    StringComparison.Ordinal)) continue;
                 stops++;
-                if (!ExcludeFurniture(sides, box.C, BusStopLength * 0.5f)) unmatched++;
+                if (!ExcludeAt(sides, box.C, BusStopLength * 0.5f))
+                    furnitureWithoutParking++;
+            }
+            float afterStops = Length(sides);
+
+            int parkingApproaches = 0;
+            float beforeParking = afterStops;
+            foreach (var site in core.ParkingSites)
+            {
+                parkingApproaches++;
+                var point = AmenityFrontagePoint(site, 0f);
+                if (!ExcludeAt(sides, point,
+                               ParkingBlockPlan.GateWidth * 0.5f + ApproachMargin))
+                    parkingWithoutParking++;
+            }
+            float afterParking = Length(sides);
+
+            int fuelApproaches = 0;
+            float beforeFuel = afterParking;
+            foreach (var site in core.FuelSites)
+                foreach (float along in new[] { -FuelStation.MouthX, FuelStation.MouthX })
+                {
+                    fuelApproaches++;
+                    var point = AmenityFrontagePoint(site, along);
+                    if (!ExcludeAt(sides, point,
+                                   FuelStation.MouthHalf + ApproachMargin))
+                        fuelWithoutParking++;
+                }
+            float afterFuel = Length(sides);
+
+            int residentialYardEntrances = 0;
+            float beforeResidential = afterFuel;
+            foreach (var recipe in core.ResidentialBlocks.Blocks)
+            {
+                if (recipe?.Plan?.Accesses == null) continue;
+                foreach (var access in recipe.Plan.Accesses)
+                {
+                    if (access == null || !access.Vehicle) continue;
+                    residentialYardEntrances++;
+                    if (!TryResidentialAccessPoint(
+                            recipe, access.Side, access.At, core.Frame, out var point))
+                    {
+                        gateFailures.Add(
+                            $"{recipe.Id}: invalid residential vehicle access " +
+                            $"side {access.Side}, cell {access.At}");
+                        continue;
+                    }
+                    if (!ExcludeAt(sides, new Vector2(point.x, point.z),
+                                   ResidentialLot.Cell * 0.5f))
+                        residentialWithoutParking++;
+                }
             }
             float legalMetres = Length(sides);
+
+            if (footprintFallbacks != 0)
+                gateFailures.Add(
+                    $"{footprintFallbacks} kerb-furniture footprint fallback(s) used");
+            if (ResidentialBlocks.Dressed)
+                gateFailures.Add(
+                    "generated residential dressing is enabled, but its composed bus " +
+                    "stops cannot be measured from the plan-only census");
+            if (seed == 1987 &&
+                (sides.Count != 978 || hydrants != 17 || stops != 0 ||
+                 parkingApproaches != 3 || fuelApproaches != 0 ||
+                 residentialYardEntrances != 162 ||
+                 furnitureWithoutParking != 4 || parkingWithoutParking != 0 ||
+                 fuelWithoutParking != 0 || residentialWithoutParking != 0 ||
+                 Mathf.Abs(rawMetres - 60626f) > 0.01f ||
+                 Mathf.Abs((beforeEnds - afterEnds) - 13692f) > 0.01f ||
+                 Mathf.Abs((beforeHydrants - afterHydrants) - 86.305f) > 0.01f ||
+                 Mathf.Abs((beforeParking - afterParking) - 33f) > 0.01f ||
+                 Mathf.Abs((beforeResidential - legalMetres) - 641f) > 0.01f ||
+                 Mathf.Abs(legalMetres - 46173.695f) > 0.01f))
+                gateFailures.Add(
+                    "seed 1987 kerb-source baseline changed: expected 978 parking " +
+                    "sides / 17 hydrants / 0 authored bus stops / 3 parking approaches / " +
+                    "0 fuel approaches / 162 residential yard entrances / 46173.695 legal m, " +
+                    $"measured {sides.Count} / {hydrants} / {stops} / {parkingApproaches} / " +
+                    $"{fuelApproaches} / {residentialYardEntrances} / {legalMetres:0.###}");
 
             float pitch = TypicalCarHalfLength * 2f + KerbCars.Gap;
             int capacity = 0;
             foreach (var side in sides)
                 foreach (var interval in side.Legal)
                     capacity += Mathf.FloorToInt(interval.Length / pitch);
+            if (seed == 1987 && capacity != 7168)
+                gateFailures.Add(
+                    $"seed 1987 kerb slot baseline changed: expected 7168, measured {capacity}");
 
             var rows = includeRows
                 ? sides.Select(side => (object)new
@@ -534,16 +695,46 @@ namespace GangstersTools
                 hydrants,
                 hydrantExcludedAdditionalMetres = Math.Round(beforeHydrants - afterHydrants, 3),
                 busStops = stops,
-                busStopExcludedAdditionalMetres = Math.Round(beforeStops - legalMetres, 3),
-                unmatchedFurniture = unmatched,
+                busStopExcludedAdditionalMetres = Math.Round(beforeStops - afterStops, 3),
+                parkingApproaches,
+                parkingApproachExcludedAdditionalMetres =
+                    Math.Round(beforeParking - afterParking, 3),
+                fuelApproaches,
+                fuelApproachExcludedAdditionalMetres = Math.Round(beforeFuel - afterFuel, 3),
+                residentialYardEntrances,
+                residentialYardEntranceExcludedAdditionalMetres =
+                    Math.Round(beforeResidential - legalMetres, 3),
+                sourcesWithoutAdjacentParking = new
+                {
+                    furniture = furnitureWithoutParking,
+                    parkingApproaches = parkingWithoutParking,
+                    fuelApproaches = fuelWithoutParking,
+                    residentialYardEntrances = residentialWithoutParking,
+                },
                 footprintFallbacks,
+                residentialDressingEnabled = ResidentialBlocks.Dressed,
                 legalMetres = Math.Round(legalMetres, 3),
                 slotPitchMetres = pitch,
                 slotCapacity = capacity,
                 slotCountAt60Percent = Mathf.RoundToInt(capacity * 0.6f),
-                source = "authored hydrants/stops are tagged into SidewalkPlan from existing prefab instances; generated residential dressing is disabled",
+                source = "authored hydrants/stops come from SidewalkPlan; parking/fuel approaches and residential yard entrances come from plan data",
                 rows,
             };
+        }
+
+        static Vector2 AmenityFrontagePoint(CoreAmenityLayout.Site site, float along)
+        {
+            switch (site.Entry)
+            {
+                case ParkingEntrySide.East:
+                    return new Vector2(site.Box.xMax, site.Box.center.y + along);
+                case ParkingEntrySide.North:
+                    return new Vector2(site.Box.center.x - along, site.Box.yMax);
+                case ParkingEntrySide.West:
+                    return new Vector2(site.Box.xMin, site.Box.center.y - along);
+                default:
+                    return new Vector2(site.Box.center.x + along, site.Box.yMin);
+            }
         }
 
         static void AddKerbSide(List<KerbSide> sides, Carriageway road, int side,
@@ -555,7 +746,9 @@ namespace GangstersTools
             rawMetres += road.Length;
         }
 
-        static SidewalkPlan ReadAuthoredKerbFurniture(CoreDistrict core, out int fallbacks)
+        static SidewalkPlan ReadAuthoredKerbFurniture(CoreDistrict core,
+                                                      List<string> gateFailures,
+                                                      out int fallbacks)
         {
             var plan = new SidewalkPlan();
             fallbacks = 0;
@@ -563,7 +756,11 @@ namespace GangstersTools
             {
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(
                     CoreLayout.BlocksDir + block.Name + ".prefab");
-                if (prefab == null) continue;
+                if (prefab == null)
+                {
+                    gateFailures.Add(block.Name + ": authored block prefab missing");
+                    continue;
+                }
                 // The direct children are the authored instance list. Descendants are
                 // implementation detail inside each source prefab, not more furniture.
                 foreach (Transform instance in prefab.transform)
@@ -603,12 +800,12 @@ namespace GangstersTools
             return null;
         }
 
-        static bool ExcludeFurniture(List<KerbSide> sides, Vector2 furniture, float radius)
+        static bool ExcludeAt(List<KerbSide> sides, Vector2 source, float radius)
         {
             KerbSide best = null;
             float bestS = 0f;
             float bestDistance = float.MaxValue;
-            var point = new Vector3(furniture.x, 0f, furniture.y);
+            var point = new Vector3(source.x, 0f, source.y);
             foreach (var side in sides)
             {
                 side.Road.Project(point, out float projected, out float across);
