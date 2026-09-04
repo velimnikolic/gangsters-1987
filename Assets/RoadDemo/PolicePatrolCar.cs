@@ -137,7 +137,7 @@ namespace RoadDemo
         /// swinging in or already in its bay: the place a load of prisoners is walked
         /// in from. A bay is not the condition; the kerb is.</summary>
         public bool AtHomeKerb =>
-            State == Mode.Docking || State == Mode.Resting ||
+            State == Mode.Docking || (State == Mode.Resting && HasBay) ||
             (State == Mode.Returning && CurrentEdge == _home &&
              Progress >= _kerbS - KerbQueueReach);
 
@@ -292,8 +292,7 @@ namespace RoadDemo
         void LeaveTheKerb()
         {
             HasRestSpot = false;
-            BackOnTheRound();
-            PullOut();
+            BackOnTheRound();   // pulls out of the kerb itself
         }
 
         /// <summary>Asked for a bay at the moment the car reaches its station's kerb with
@@ -632,8 +631,7 @@ namespace RoadDemo
                 // nothing to take to the station: the round goes on from here, and
                 // ends at whichever kerb the spread gives it
                 HasRestSpot = false;
-                BackOnTheRound();
-                PullOut();
+                BackOnTheRound();   // pulls out of the scene kerb itself
                 return;
             }
             State = Mode.Returning;
