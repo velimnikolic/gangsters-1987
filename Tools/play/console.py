@@ -105,16 +105,21 @@ def write_mark(cursor):
     that started earlier finishes with an older cursor in hand, and writing it would
     hand the other reader's already-read entries back as new - harmless - or, worse,
     move the mark behind a gap that was just recorded. Forward only costs one read.
+
+    Answers whether this cursor is now the mark - false when a newer one already was,
+    which is also the caller's warning that it is not the reader speaking last.
     """
     state, standing = read_mark()
     if state == "ok" and standing >= int(cursor):
-        return
+        return False
     try:
         os.makedirs(os.path.dirname(MARK), exist_ok=True)
         with open(MARK, "w") as handle:
             handle.write(str(int(cursor)))
     except OSError as problem:
         print("the mark could not be written: %s" % problem, file=sys.stderr)
+        return False
+    return True
 
 
 def read_gap():
@@ -322,7 +327,22 @@ def main():
         result = ask(["--tail", "1"])
         if result is None:
             return 2
-        write_mark(result.get("cursor") or 0)
+        cursor = result.get("cursor") or 0
+        state, mark_now = read_mark()
+        covered = state != "ok" or cursor >= mark_now
+        write_mark(cursor)
+        # "SEEN" ONLY COVERS WHAT THIS READER SAW. If another session moved the mark on
+        # past this cursor while this call was in flight, it may have recorded a hole
+        # out there too - and clearing it here would bury entries that are already
+        # behind the mark, where no later read can reach them. A gap this
+        # acknowledgement cannot prove it covers is left standing; run --mark again and
+        # it will cover it.
+        standing, gap_at = read_gap()
+        if standing and (not covered or gap_at > cursor):
+            print("a gap at seq %s is NOT covered by this mark (cursor %d) and stays "
+                  "standing" % ("(unreadable)" if gap_at < 0 else gap_at, cursor),
+                  file=sys.stderr)
+            return 2
         clear_gap()
         return 0
 

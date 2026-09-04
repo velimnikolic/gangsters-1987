@@ -123,7 +123,9 @@ incomplete** — a marked window that came back full has older entries outside i
 the ones nearest the mark, which is where the cause of a burst lives. A reader that moves the
 mark gets one chance at every line, so an incomplete read says so and never passes for a clean
 one — and the hole **outlives the mark**: it is remembered in `Temp/play/console.gap` and every
-later read keeps answering 2 until `--mark` says it has been seen. Otherwise the warning would be
+later read keeps answering 2 until `--mark` says it has been seen — and `--mark` clears only a
+gap its own read demonstrably covers, so the other session in this checkout cannot have its hole
+acknowledged away by yours. Otherwise the warning would be
 one-shot and the retry, finding nothing newer, would go green over a burst whose first error was
 the thing that got lost. `python Tools/play/console.py --selftest` holds all of that down without
 an editor.
