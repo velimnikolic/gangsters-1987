@@ -73,25 +73,35 @@ function Assert-CensusJobIdentity(
     [string] $ExpectedJobId,
     [switch] $RequireResult
 ) {
-    if ($Reply.success -ne $true) {
+    if ($null -eq $Reply -or $null -eq $Reply.PSObject.Properties["success"] -or
+        $Reply.success -isnot [System.Boolean] -or -not $Reply.success) {
         throw "Pipeline did not report success for job $ExpectedJobId."
     }
 
-    if ($null -eq $Reply.data) {
+    if ($Reply.data -isnot [System.Management.Automation.PSCustomObject]) {
         throw "Pipeline returned no job data for $ExpectedJobId."
     }
 
-    $actualJobId = [string]$Reply.data.jobId
+    if ($Reply.data.jobId -isnot [System.String]) {
+        throw "Pipeline returned a non-string job ID for $ExpectedJobId."
+    }
+    $actualJobId = $Reply.data.jobId
     if ($actualJobId -cne $ExpectedJobId) {
         throw "Pipeline returned job '$actualJobId' while '$ExpectedJobId' was requested."
     }
 
-    $actualCommand = [string]$Reply.data.command
+    if ($Reply.data.command -isnot [System.String]) {
+        throw "Job $ExpectedJobId returned a non-string command name."
+    }
+    $actualCommand = $Reply.data.command
     if ($actualCommand -cne $censusCommand) {
         throw "Job $ExpectedJobId belongs to '$actualCommand', not '$censusCommand'."
     }
 
-    $state = [string]$Reply.data.state
+    if ($Reply.data.state -isnot [System.String]) {
+        throw "Job $ExpectedJobId returned a non-string state."
+    }
+    $state = $Reply.data.state
     if (@("queued", "running", "completed", "failed", "canceled") -cnotcontains $state) {
         throw "Job $ExpectedJobId returned unknown state '$state'."
     }
@@ -103,7 +113,7 @@ function Assert-CensusJobIdentity(
     }
 
     $result = $Reply.data.result
-    if ($null -eq $result) {
+    if ($result -isnot [System.Management.Automation.PSCustomObject]) {
         throw "Completed census job $ExpectedJobId returned no result."
     }
 
@@ -113,16 +123,19 @@ function Assert-CensusJobIdentity(
         }
     }
 
-    if ($null -eq $result.failures -or $result.failures -isnot [System.Array]) {
+    if ($result.passed -isnot [System.Boolean]) {
+        throw "Census job $ExpectedJobId returned a non-Boolean 'passed' field."
+    }
+    if ($result.failures -isnot [System.Array]) {
         throw "Census job $ExpectedJobId returned a non-array 'failures' field."
     }
     foreach ($section in @("doors", "kerb", "crowdTick", "businessRegistry")) {
-        if ($null -eq $result.$section) {
-            throw "Census job $ExpectedJobId returned a null '$section' field."
+        if ($result.$section -isnot [System.Management.Automation.PSCustomObject]) {
+            throw "Census job $ExpectedJobId returned a non-object '$section' field."
         }
     }
 
-    if ($result.seed -ne 1987) {
+    if ($result.seed -isnot [System.Int32] -or $result.seed -ne 1987) {
         throw "Census job $ExpectedJobId returned seed '$($result.seed)', not canonical seed 1987."
     }
 }
@@ -267,6 +280,6 @@ if ($terminalState -ne "completed") {
 }
 
 $result = $terminalReply.data.result
-if ($result.passed -ne $true -or @($result.failures).Count -ne 0) { exit 1 }
+if (-not $result.passed -or $result.failures.Count -ne 0) { exit 1 }
 if (-not $checkpointSaved) { exit 2 }
 exit 0
