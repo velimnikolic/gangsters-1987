@@ -93,10 +93,12 @@ namespace RoadDemo
         int _carsSent;
         float _lastSentAt = -1000f;
         bool _officerDied;
-        bool _footSent;              // a pair has been sent to this incident
         bool _escortWanted;          // the pair was far, or there was none: a car must go too
         bool _escortSent;            // and it has
-        readonly List<IPoliceUnit> _footTried = new List<IPoliceUnit>();   // sent to this incident once
+        // The pairs sent to this incident. Whether it is still owed one is read off
+        // them (FootOwed), not off a flag: a flag set on the order outlived a pair that
+        // was wiped, and was cleared by a stall on somebody else's scene.
+        readonly List<IPoliceUnit> _footTried = new List<IPoliceUnit>();
         int _rank;
         readonly List<CrewWalker> _shooters = new List<CrewWalker>();
 
@@ -223,7 +225,6 @@ namespace RoadDemo
                 _shotHeat = 0f;
                 _called = false;
                 _carsSent = 0;
-                _footSent = false;
                 _footTried.Clear();
                 _escortWanted = false;
                 _escortSent = false;
@@ -392,7 +393,7 @@ namespace RoadDemo
         /// afterwards. A pair already tried for this incident is not tried twice.</summary>
         bool SendFoot(Vector3 scene)
         {
-            if (_footSent) return false;
+            if (!FootOwed()) return false;
             var any = false;
             var foot = Nearest(scene, carries: false, anyDistance: true, out var footD, _footTried);
             // And EVERY man on foot who could hear it turns out, not just the nearest.
@@ -406,14 +407,12 @@ namespace RoadDemo
                 u.RouteTo(scene, 6f);
                 _footTried.Add(u);
                 any = true;
-                _footSent = true;
             }
             if (foot != null)
             {
                 // not one of those who heard it
                 if (foot.Available) { foot.RouteTo(scene, 6f); _footTried.Add(foot); }
                 any = true;
-                _footSent = true;
             }
             // Past 150 m a car goes out beside him, and a city with nobody free on
             // foot sends the car alone - the nearest car there is, not the nearest
@@ -436,6 +435,26 @@ namespace RoadDemo
             return true;
         }
 
+        /// <summary>Whether this incident is still owed a pair: none of those sent has
+        /// reached its scene (answered - and a pair released after the scene hold has
+        /// still answered), and none is on its way to it. A wiped pair is neither; a
+        /// stalled one is neither; a pair sent on somewhere else by a telephone call is
+        /// on its way to a different scene.</summary>
+        bool FootOwed()
+        {
+            var here = StreetAlarm.Incident;
+            for (var i = 0; i < _footTried.Count; i++)
+            {
+                if (!(_footTried[i] is PoliceBeat beat) || beat.Unit == null || beat.Unit.Wiped)
+                    continue;
+                if (beat.ArrivedAt >= StreetAlarm.IncidentStart) return false;
+                if (beat.State == PoliceBeat.Mode.Responding && !beat.StalledOnTheWay &&
+                    AtThisScene(beat.Scene, here))
+                    return false;
+            }
+            return true;
+        }
+
         /// <summary>What the call still owes the scene once the shooting has stopped and
         /// Send no longer runs: the pair, if none was free or the one sent could not get
         /// there, and the far pair's car - for as long as an arrest could still be made
@@ -443,7 +462,7 @@ namespace RoadDemo
         void TickPending()
         {
             if (!_called || StreetAlarm.QuietFor > ArrestWindow) return;
-            if (_footSent && (!_escortWanted || _escortSent)) return;
+            if (!FootOwed() && (!_escortWanted || _escortSent)) return;
             var scene = StreetAlarm.Incident;
             if (SendFoot(scene) | SendEscort(scene))
                 CrewOverlay.Announce("POLICE RESPONDING", 5f, new Color(0.55f, 0.78f, 1f));
@@ -940,8 +959,9 @@ namespace RoadDemo
                 if (u is PoliceBeat stuck && stuck.StalledOnTheWay && !FootHeldByLawWork(u))
                 {
                     u.Release();
+                    // not the nearest again; TickPending sends the next if the scene is
+                    // still owed one
                     if (!_footTried.Contains(u)) _footTried.Add(u);
-                    _footSent = false;   // TickPending sends the next nearest
                     continue;
                 }
                 if (u.OnScene)
