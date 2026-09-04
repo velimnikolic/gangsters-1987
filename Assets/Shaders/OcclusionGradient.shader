@@ -72,9 +72,6 @@ Shader "LivingCity/Occlusion Gradient"
                 float _BoundsMinY;
                 float _BoundsHeight;
                 float4 _BoundsCenter;
-                float4x4 _FootprintWorldToLocal;
-                float4 _FootprintGrid;
-                float4 _FootprintRows[3];
             CBUFFER_END
 
             struct Attributes
@@ -112,99 +109,6 @@ Shader "LivingCity/Occlusion Gradient"
                 return output;
             }
 
-            int FootprintRowMask(int j)
-            {
-                int pack = j >> 2;
-                int lane = j & 3;
-                return (int)round(_FootprintRows[pack][lane]);
-            }
-
-            bool FootprintOccupied(int i, int j)
-            {
-                int width = (int)round(_FootprintGrid.x);
-                int depth = (int)round(_FootprintGrid.y);
-                if (i < 0 || j < 0 || i >= width || j >= depth) return false;
-                return (FootprintRowMask(j) & (1 << i)) != 0;
-            }
-
-            bool FindFootprintCell(float2 position, out int foundI, out int foundJ)
-            {
-                float cellSize = _FootprintGrid.z;
-                int2 baseCell = (int2)floor(position / cellSize);
-                if (FootprintOccupied(baseCell.x, baseCell.y))
-                {
-                    foundI = baseCell.x;
-                    foundJ = baseCell.y;
-                    return true;
-                }
-
-                foundI = -1;
-                foundJ = -1;
-                float bestDistance = 1e20;
-                [unroll]
-                for (int dj = -1; dj <= 1; dj++)
-                {
-                    [unroll]
-                    for (int di = -1; di <= 1; di++)
-                    {
-                        int i = baseCell.x + di;
-                        int j = baseCell.y + dj;
-                        if (!FootprintOccupied(i, j)) continue;
-                        float2 boxMin = float2(i, j) * cellSize;
-                        float2 boxMax = boxMin + cellSize;
-                        float2 delta = position - clamp(position, boxMin, boxMax);
-                        float distance = dot(delta, delta);
-                        if (distance >= bestDistance) continue;
-                        bestDistance = distance;
-                        foundI = i;
-                        foundJ = j;
-                    }
-                }
-                float slack = cellSize * 0.45;
-                return foundI >= 0 && bestDistance <= slack * slack;
-            }
-
-            half FootprintAxisPreserve(float coordinate, int i, int j,
-                                       bool alongX, float cameraComponent)
-            {
-                int nearStep = cameraComponent >= 0.0 ? 1 : -1;
-                int nearI = i + (alongX ? nearStep : 0);
-                int nearJ = j + (alongX ? 0 : nearStep);
-                if (FootprintOccupied(nearI, nearJ)) return 0.0h;
-
-                int behindI = i - (alongX ? nearStep : 0);
-                int behindJ = j - (alongX ? 0 : nearStep);
-                if (FootprintOccupied(behindI, behindJ)) return 1.0h;
-
-                float centre = ((alongX ? i : j) + 0.5) * _FootprintGrid.z;
-                return step(0.0, (coordinate - centre) * nearStep);
-            }
-
-            half FootprintPreserve(float3 positionWS, half boundsHalf)
-            {
-                if (_FootprintGrid.w < 0.5) return boundsHalf;
-
-                float3 position = mul(_FootprintWorldToLocal, float4(positionWS, 1.0)).xyz;
-                int i, j;
-                if (!FindFootprintCell(position.xz, i, j)) return boundsHalf;
-
-                float3 camera = mul(
-                    _FootprintWorldToLocal, float4(_WorldSpaceCameraPos.xyz, 1.0)).xyz;
-                float2 centre = _FootprintGrid.xy * _FootprintGrid.z * 0.5;
-                float2 view = camera.xz - centre;
-                float2 axis = abs(view);
-                if (max(axis.x, axis.y) < 0.0001) return 1.0h;
-
-                half preserve = 0.0h;
-                if (axis.x > 0.0001 && axis.x >= axis.y * 0.2)
-                    preserve = max(preserve, FootprintAxisPreserve(
-                        position.x, i, j, true, view.x));
-                if (axis.y > 0.0001 && axis.y >= axis.x * 0.2)
-                    preserve = max(preserve, FootprintAxisPreserve(
-                        position.z, i, j, false, view.y));
-                return preserve;
-            }
-
             half4 GradientFragment(Varyings input) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(input);
@@ -235,11 +139,9 @@ Shader "LivingCity/Occlusion Gradient"
                 half uniformAlpha = 1.0h - saturate(_FadeAmount * 0.5h);
                 half profileAlpha = lerp(uniformAlpha, gradedAlpha, step(0.5h, _GradientMode));
 
-                // The camera-facing half contains the foreground shops: one whole shop
-                // row when the shell has two rows, or the near half of a single row. Its
-                // GROUND FLOOR must remain exactly as authored. The upper storeys still
-                // take the normal height cut, while the rear half is fully clear from
-                // 100% onward so it cannot ghost through the front facade.
+                // Above the ground floor the rear half is fully clear from 100% onward,
+                // so it cannot ghost through the front facade; the front half takes the
+                // normal height cut.
                 float2 cameraPlanar = _WorldSpaceCameraPos.xz - _BoundsCenter.xz;
                 float cameraPlanarInvLength = rsqrt(max(dot(cameraPlanar, cameraPlanar), 0.0001));
                 half cameraSide = step(0.0, dot(input.positionWS.xz - _BoundsCenter.xz,
@@ -255,16 +157,15 @@ Shader "LivingCity/Occlusion Gradient"
                     saturate((_FadeAmount - 1.0h) * 2.0h);
                 profileAlpha *= 1.0h - horizontalCut;
 
-                // Apply this last so neither the height gradient nor the roof/slab cut can
-                // touch the foreground ground floor. Everything above the ground-floor
-                // line continues to use the ordinary occlusion profile.
+                // Apply this last so neither the height gradient, the rear clear nor the
+                // roof/slab cut can touch the ground floor: the whole of it stays exactly
+                // as authored. Back faces are culled, so every ground-floor fragment that
+                // reaches here is a wall turned towards the camera - the one the player
+                // is owed whole - and the ground floor of the far side never draws.
+                // Everything above the ground-floor line uses the ordinary profile.
                 half groundFloor = 1.0h - step(
                     _BoundsMinY + _GradientStartHeight, input.positionWS.y);
-                half footprintPreserve = 0.0h;
-                [branch]
-                if (groundFloor > 0.0h)
-                    footprintPreserve = FootprintPreserve(input.positionWS, cameraSide);
-                profileAlpha = lerp(profileAlpha, 1.0h, footprintPreserve * groundFloor);
+                profileAlpha = lerp(profileAlpha, 1.0h, groundFloor);
 
                 half alpha = albedo.a * profileAlpha;
                 clip(alpha - 0.001h);

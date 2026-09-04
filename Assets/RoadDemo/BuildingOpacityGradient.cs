@@ -29,7 +29,6 @@ namespace RoadDemo
         const float ActiveThreshold = 0.001f;
         const int MaxFootprintWidth = 24;
         const int MaxFootprintDepth = 12;
-        const int FootprintRowPacks = MaxFootprintDepth / 4;
         public const float DefaultGradientStartHeight = 5f;
 
         static readonly int BaseMap = Shader.PropertyToID("_BaseMap");
@@ -41,9 +40,11 @@ namespace RoadDemo
         static readonly int BoundsMinY = Shader.PropertyToID("_BoundsMinY");
         static readonly int BoundsHeight = Shader.PropertyToID("_BoundsHeight");
         static readonly int BoundsCenter = Shader.PropertyToID("_BoundsCenter");
-        static readonly int FootprintWorldToLocal = Shader.PropertyToID("_FootprintWorldToLocal");
-        static readonly int FootprintGrid = Shader.PropertyToID("_FootprintGrid");
-        static readonly int FootprintRows = Shader.PropertyToID("_FootprintRows");
+        static readonly Vector2Int[] CellSides =
+        {
+            new Vector2Int(1, 0), new Vector2Int(-1, 0),
+            new Vector2Int(0, 1), new Vector2Int(0, -1),
+        };
         static Shader _sharedShader;
 
         sealed class RendererState
@@ -59,7 +60,6 @@ namespace RoadDemo
             new Dictionary<Material, Material>();
         readonly List<Material> _materialScratch = new List<Material>();
         readonly int[] _footprintRowMasks = new int[MaxFootprintDepth];
-        readonly Vector4[] _footprintRows = new Vector4[FootprintRowPacks];
 
         Shader _shader;
         Material _nullSourceVariant;
@@ -85,11 +85,11 @@ namespace RoadDemo
 
         /// <summary>Give this building its authored occupied-cell plan. It is deliberately
         /// separate from renderer discovery: eaves, balconies and an L-shaped shell do not
-        /// describe which ground cells are actually building.</summary>
+        /// describe which ground cells are actually building. The plan tells a ground-floor
+        /// piece which facade it belongs to.</summary>
         internal void ConfigureFootprint(ResidentialUnit unit)
         {
             System.Array.Clear(_footprintRowMasks, 0, _footprintRowMasks.Length);
-            System.Array.Clear(_footprintRows, 0, _footprintRows.Length);
             _footprintWidth = 0;
             _footprintDepth = 0;
             _footprintCellSize = 0f;
@@ -107,57 +107,62 @@ namespace RoadDemo
                     for (int i = 0; i < unit.CW; i++)
                         if (unit.Wall(i, j)) mask |= 1 << i;
                     _footprintRowMasks[j] = mask;
-                    int pack = j >> 2;
-                    int lane = j & 3;
-                    var packed = _footprintRows[pack];
-                    packed[lane] = mask;
-                    _footprintRows[pack] = packed;
                     _hasFootprint |= mask != 0;
                 }
             }
-
-            ApplyBoundsToVariants();
         }
 
-        /// <summary>Whether a world point is on the camera-facing ground-floor strip.
-        /// A two-cell-deep arm keeps its entire front cell; a one-cell-deep arm keeps only
-        /// its near half. Each visible axis is evaluated independently so both arms of an
-        /// L remain continuous through their inside corner.</summary>
-        internal bool IsPreservedGroundFloor(Vector3 worldPoint, Vector3 cameraPosition)
+        /// <summary>Whether a world point lies on the ground floor, which the gradient
+        /// draws exactly as authored - the whole of it, on every side the camera can see.</summary>
+        internal bool IsGroundFloor(Vector3 worldPoint) =>
+            worldPoint.y < _boundsMinY + _lastGradientStartHeight;
+
+        /// <summary>Whether a ground-floor piece - a pane, a door leaf, the room behind the
+        /// glass, a display prop - belongs to a facade turned towards the camera. The wall
+        /// answers that by itself (its back faces are culled); a piece has to be told, or
+        /// the double-sided room of a shop on the far side would hang in the air behind the
+        /// cleared upper floors. Its facade is the open side of its plan cell it is
+        /// displaced towards; a building without a plan falls back to its camera-facing half.</summary>
+        internal bool GroundFloorPieceFacesCamera(Vector3 worldPoint, Vector3 cameraPosition)
         {
-            if (worldPoint.y >= _boundsMinY + _lastGradientStartHeight)
+            if (!IsGroundFloor(worldPoint))
                 return false;
+
+            if (_hasFootprint && TryFootprintCell(worldPoint, out int i, out int j,
+                                                  out Vector3 localPoint))
+            {
+                var fromCell = new Vector2(
+                    localPoint.x - (i + 0.5f) * _footprintCellSize,
+                    localPoint.z - (j + 0.5f) * _footprintCellSize);
+                Vector2Int facade = default;
+                float best = float.NegativeInfinity;
+                for (int side = 0; side < CellSides.Length; side++)
+                {
+                    var step = CellSides[side];
+                    if (Occupied(i + step.x, j + step.y))
+                        continue;
+                    float along = fromCell.x * step.x + fromCell.y * step.y;
+                    if (along <= best) continue;
+                    best = along;
+                    facade = step;
+                }
+                if (facade != default)
+                {
+                    Vector3 outward = transform.TransformDirection(
+                        new Vector3(facade.x, 0f, facade.y));
+                    return Vector3.Dot(outward, cameraPosition - worldPoint) > 0f;
+                }
+            }
 
             var toCamera = new Vector2(
                 cameraPosition.x - _boundsCenter.x,
                 cameraPosition.z - _boundsCenter.z);
             if (toCamera.sqrMagnitude < 0.0001f)
                 return true;
-            toCamera.Normalize();
-
             var fromCenter = new Vector2(
                 worldPoint.x - _boundsCenter.x,
                 worldPoint.z - _boundsCenter.z);
-            bool boundsHalf = Vector2.Dot(fromCenter, toCamera) >= 0f;
-            if (!_hasFootprint || !TryFootprintCell(worldPoint, out int i, out int j,
-                                                    out Vector3 localPoint))
-                return boundsHalf;
-
-            Vector3 localCamera = transform.InverseTransformPoint(cameraPosition);
-            var localView = new Vector2(
-                localCamera.x - _footprintWidth * _footprintCellSize * 0.5f,
-                localCamera.z - _footprintDepth * _footprintCellSize * 0.5f);
-            float ax = Mathf.Abs(localView.x);
-            float az = Mathf.Abs(localView.y);
-            if (ax < 0.0001f && az < 0.0001f)
-                return true;
-
-            bool preserve = false;
-            if (ax > 0.0001f && ax >= az * 0.2f)
-                preserve |= AxisPreserves(localPoint.x, i, j, alongX: true, localView.x);
-            if (az > 0.0001f && az >= ax * 0.2f)
-                preserve |= AxisPreserves(localPoint.z, i, j, alongX: false, localView.y);
-            return preserve;
+            return Vector2.Dot(fromCenter, toCamera) >= 0f;
         }
 
         bool TryFootprintCell(Vector3 worldPoint, out int foundI, out int foundJ,
@@ -192,24 +197,6 @@ namespace RoadDemo
             }
             float slack = _footprintCellSize * 0.45f;
             return foundI >= 0 && bestDistance <= slack * slack;
-        }
-
-        bool AxisPreserves(float coordinate, int i, int j, bool alongX,
-                           float cameraComponent)
-        {
-            int nearStep = cameraComponent >= 0f ? 1 : -1;
-            int nearI = i + (alongX ? nearStep : 0);
-            int nearJ = j + (alongX ? 0 : nearStep);
-            if (Occupied(nearI, nearJ))
-                return false;
-
-            int behindI = i - (alongX ? nearStep : 0);
-            int behindJ = j - (alongX ? 0 : nearStep);
-            if (Occupied(behindI, behindJ))
-                return true;
-
-            float centre = ((alongX ? i : j) + 0.5f) * _footprintCellSize;
-            return (coordinate - centre) * nearStep >= 0f;
         }
 
         bool Occupied(int i, int j) =>
@@ -442,10 +429,11 @@ namespace RoadDemo
         /// Sets the visual treatment. Amount zero is the untouched opaque building.
         /// In Vertical mode, the shell stays opaque below <paramref name="gradientStartHeight"/>;
         /// amount one (100%) then grades from alpha 1 there to alpha 0 at the roof. Amount
-        /// two (200%) continues the wipe below the pavement. Only the ground floor in the
-        /// camera-facing half remains at its authored opacity; its upper storeys keep the
-        /// normal cut, and the opposite half is fully clear from 100% onward. Uniform uses
-        /// the same control range outside that preserved ground-floor area.
+        /// two (200%) continues the wipe below the pavement. The ground floor - everything
+        /// below <paramref name="gradientStartHeight"/> - always stays at its authored
+        /// opacity, whole, on every side turned towards the camera; the upper storeys keep
+        /// the cut, and above the ground floor the far half is fully clear from 100% onward.
+        /// Uniform uses the same control range above the ground floor.
         /// </summary>
         public bool Set(float amount, Profile profile = Profile.Vertical,
                         float gradientStartHeight = DefaultGradientStartHeight)
@@ -584,11 +572,6 @@ namespace RoadDemo
             material.SetFloat(BoundsHeight, _boundsHeight);
             material.SetVector(BoundsCenter, new Vector4(_boundsCenter.x, _boundsCenter.y,
                 _boundsCenter.z, 1f));
-            material.SetMatrix(FootprintWorldToLocal, transform.worldToLocalMatrix);
-            material.SetVector(FootprintGrid, new Vector4(
-                _footprintWidth, _footprintDepth, _footprintCellSize,
-                _hasFootprint ? 1f : 0f));
-            material.SetVectorArray(FootprintRows, _footprintRows);
         }
 
         static bool ClipsAlpha(Material source)

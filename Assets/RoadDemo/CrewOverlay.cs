@@ -1513,8 +1513,8 @@ namespace RoadDemo
 
         /// <summary>
         /// Mirrors the opacity profile only as far as pointer ownership needs it. The
-        /// camera-facing ground floor is always rendered at authored opacity; every upper
-        /// or rear hit still needs the vertical/uniform alpha and roof-cut calculation.
+        /// ground floor is always rendered at authored opacity; every upper or rear hit
+        /// still needs the vertical/uniform alpha and roof-cut calculation.
         /// </summary>
         bool CutawaySurfaceVisible(RaycastHit hit)
         {
@@ -1523,8 +1523,7 @@ namespace RoadDemo
                 : null;
             if (gradient == null || !gradient.GradientMaterialsActive)
                 return false;
-            if (_cam != null && gradient.IsPreservedGroundFloor(
-                    hit.point, _cam.transform.position))
+            if (gradient.IsGroundFloor(hit.point))
                 return true;
 
             var amount = gradient.Amount;

@@ -18,9 +18,10 @@ namespace RoadDemo
     /// the boards, the shallow rooms and the display props behind the glass never take the
     /// gradient material: glass has to stay glass and a room behind it has to write depth,
     /// and the gradient does neither. They are shown whole, as authored, while their facade
-    /// is the camera-facing ground floor the gradient preserves, and hidden whole otherwise;
-    /// <see cref="Follow"/> decides that per renderer every frame the building stays cut, so
-    /// the glass and the wall around it switch together as the camera comes round.
+    /// is turned towards the camera, and hidden whole otherwise; <see cref="Follow"/>
+    /// decides that per renderer every frame the building stays cut, so the glass and the
+    /// wall around it - which the shader keeps whole on every side the camera can see -
+    /// come and go together as the camera comes round.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class BuildingCutaway : MonoBehaviour
@@ -449,9 +450,10 @@ namespace RoadDemo
         }
 
         /// <summary>Every frame the building stays cut: show each ground-floor piece whole
-        /// while it stands on the camera-facing ground floor the gradient preserves, hide
-        /// it whole otherwise. The same rule the shader applies to the wall around it, so
-        /// the glass and its frame come and go together as the camera comes round.</summary>
+        /// while its facade is turned towards the camera, hide it whole otherwise. The wall
+        /// around it does the same by itself - the shader keeps the whole ground floor and
+        /// culls its back faces - so the glass and its frame come and go together as the
+        /// camera comes round.</summary>
         internal void Follow(Vector3 lens)
         {
             if (!_cut || _followedPieces == 0 || _opacity == null) return;
@@ -461,7 +463,7 @@ namespace RoadDemo
                 if (!state.Piece) continue;
                 var renderer = state.Renderer;
                 if (renderer == null || (!state.Enabled && state.Chunk == null)) continue;
-                bool show = _opacity.IsPreservedGroundFloor(PiecePoint(state), lens);
+                bool show = _opacity.GroundFloorPieceFacesCamera(PiecePoint(state), lens);
                 if (renderer.enabled != show) renderer.enabled = show;
             }
         }

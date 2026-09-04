@@ -45,7 +45,8 @@ namespace RoadDemo
     /// review scene which is saved and reopened can recreate the same shallow rooms even
     /// though Unity does not serialize runtime meshes. The open front is the building's
     /// own glass; behind it is only an opaque back wall. There is no horizontal geometry
-    /// which could read as loose boards from the game's high camera.
+    /// which could read as loose boards from the game's high camera. Closed businesses add
+    /// shallow roller-shutter slats in a second submesh of their facade.
     ///
     /// One renderer per facade, not one for the whole unit: the street cutaway shows the
     /// camera-facing ground floor exactly as authored and hides the rest, and it decides
@@ -57,6 +58,8 @@ namespace RoadDemo
     {
         const string FacePrefix = "rooms ";
         const string MeshName = "Residential storefront shallow rooms";
+        const float ShutterInset = 0.16f;
+        const int ShutterSlats = 12;
 
         sealed class Face
         {
@@ -69,8 +72,10 @@ namespace RoadDemo
 
         [SerializeField] ResidentialStorefrontOpening[] openings =
             Array.Empty<ResidentialStorefrontOpening>();
+        [SerializeField] int closedMask;
 
         Material material;
+        Material shutterMaterial;
         readonly List<Face> faces = new List<Face>(4);
         readonly List<int> keys = new List<int>(4);
 
@@ -78,15 +83,27 @@ namespace RoadDemo
         readonly List<Vector3> normals = new List<Vector3>(320);
         readonly List<Vector2> uvs = new List<Vector2>(320);
         readonly List<int> shellTriangles = new List<int>(480);
+        readonly List<int> shutterTriangles = new List<int>(480);
 
+        /// <summary>Rooms only; no bay is closed.</summary>
         internal void Configure(ResidentialStorefrontOpening[] measured,
                                 Material shellMaterial)
+        {
+            Configure(measured, 0, shellMaterial, null);
+        }
+
+        /// <summary>Rooms behind every pane, and roller-shutter slats over the panes whose
+        /// bit is set in <paramref name="closed"/>.</summary>
+        internal void Configure(ResidentialStorefrontOpening[] measured, int closed,
+                                Material shellMaterial, Material rollerMaterial)
         {
             measured ??= Array.Empty<ResidentialStorefrontOpening>();
             if (openings.Length != measured.Length) openings = new ResidentialStorefrontOpening[measured.Length];
             Array.Copy(measured, openings, measured.Length);
+            closedMask = closed;
 
             material = shellMaterial;
+            shutterMaterial = rollerMaterial;
             Rebuild();
         }
 
@@ -124,17 +141,20 @@ namespace RoadDemo
 
         void Rebuild()
         {
-            // A review scene saved before the split kept its material on the root
+            // A review scene saved before the split kept its materials on the root
             // renderer; a rebuild after a domain reload has nothing else to dress with.
-            if (material == null && TryGetComponent<MeshRenderer>(out var legacy) &&
-                legacy.sharedMaterial != null)
-                material = legacy.sharedMaterial;
+            if (material == null && TryGetComponent<MeshRenderer>(out var legacy))
+            {
+                var kept = legacy.sharedMaterials;
+                if (kept.Length > 0) material = kept[0];
+                if (kept.Length > 1 && shutterMaterial == null) shutterMaterial = kept[1];
+            }
             RetireSingleShell();
 
             keys.Clear();
             for (int i = 0; i < openings.Length; i++)
             {
-                if (openings[i].Entrance) continue;
+                if (!HasRoom(i) && !HasShutter(i)) continue;
                 int key = FaceKey(openings[i]);
                 if (!keys.Contains(key)) keys.Add(key);
             }
@@ -148,20 +168,29 @@ namespace RoadDemo
                 normals.Clear();
                 uvs.Clear();
                 shellTriangles.Clear();
+                shutterTriangles.Clear();
                 for (int i = 0; i < openings.Length; i++)
-                    if (!openings[i].Entrance && FaceKey(openings[i]) == keys[n])
-                        AddRoom(openings[i]);
+                {
+                    if (FaceKey(openings[i]) != keys[n]) continue;
+                    if (HasRoom(i)) AddRoom(openings[i]);
+                    if (HasShutter(i)) AddShutter(openings[i]);
+                }
 
                 var mesh = face.Mesh;
+                bool shuttered = shutterTriangles.Count > 0;
                 mesh.Clear(false);
                 mesh.SetVertices(vertices);
                 mesh.SetNormals(normals);
                 mesh.SetUVs(0, uvs);
-                mesh.subMeshCount = 1;
+                mesh.subMeshCount = shuttered ? 2 : 1;
                 mesh.SetTriangles(shellTriangles, 0, true);
+                if (shuttered) mesh.SetTriangles(shutterTriangles, 1, true);
                 mesh.RecalculateBounds();
                 face.Filter.sharedMesh = mesh;
-                if (material != null) face.Drawn.sharedMaterial = material;
+                if (material != null)
+                    face.Drawn.sharedMaterials = shuttered
+                        ? new[] { material, shutterMaterial != null ? shutterMaterial : material }
+                        : new[] { material };
                 face.Drawn.enabled = vertices.Count > 0;
                 face.Object.SetActive(true);
                 faces.Add(face);
@@ -178,6 +207,10 @@ namespace RoadDemo
                 if (!used && child.gameObject.activeSelf) child.gameObject.SetActive(false);
             }
         }
+
+        bool HasRoom(int i) => !openings[i].Entrance;
+
+        bool HasShutter(int i) => i < 31 && (closedMask & (1 << i)) != 0;
 
         /// <summary>The facade a pane belongs to: which way it looks and how deep into the
         /// plan its wall stands, so the notch of an L and the outer wall it faces the same
@@ -259,6 +292,31 @@ namespace RoadDemo
                     shellTriangles, new Vector2(width, height));
         }
 
+        void AddShutter(ResidentialStorefrontOpening opening)
+        {
+            Vector3 outward = Flat(opening.Outward, Vector3.forward);
+            Vector3 right = Flat(opening.Right, Vector3.Cross(Vector3.up, outward));
+            float width = Mathf.Clamp(opening.Width - 0.22f, 1.15f, 12f);
+            float height = Mathf.Clamp(opening.Height - 0.18f, 2f, 2.9f);
+            Vector3 bottom = opening.Front - outward * ShutterInset + Vector3.up * 0.09f;
+            Vector3 half = right * (width * 0.5f);
+            float pitch = height / ShutterSlats;
+
+            for (int i = 0; i < ShutterSlats; i++)
+            {
+                float y0 = i * pitch + 0.012f;
+                float y1 = (i + 1) * pitch - 0.012f;
+                // The alternating millimetre relief catches the street light and makes
+                // the otherwise flat panel read as a roller shutter.
+                Vector3 relief = outward * ((i & 1) == 0 ? 0.008f : 0f);
+                Vector3 a = bottom - half + Vector3.up * y0 + relief;
+                Vector3 b = bottom + half + Vector3.up * y0 + relief;
+                Vector3 c = bottom + half + Vector3.up * y1 + relief;
+                Vector3 d = bottom - half + Vector3.up * y1 + relief;
+                AddQuad(a, b, c, d, outward, shutterTriangles, new Vector2(width, pitch));
+            }
+        }
+
         static Vector3 Flat(Vector3 value, Vector3 fallback)
         {
             value.y = 0f;
@@ -289,10 +347,16 @@ namespace RoadDemo
 
         void OnDestroy()
         {
-            for (int i = 0; i < faces.Count; i++)
+            // Every facade child, not only the ones the last rebuild used: a child put to
+            // sleep by a rebind with fewer facades still holds a mesh nothing else frees.
+            for (int i = 0; i < transform.childCount; i++)
             {
-                var mesh = faces[i].Mesh;
-                if (mesh == null) continue;
+                var child = transform.GetChild(i);
+                if (!child.name.StartsWith(FacePrefix, StringComparison.Ordinal)) continue;
+                var filter = child.GetComponent<MeshFilter>();
+                var mesh = filter != null ? filter.sharedMesh : null;
+                if (mesh == null || mesh.name != MeshName) continue;
+                filter.sharedMesh = null;
                 if (Application.isPlaying) Destroy(mesh);
                 else DestroyImmediate(mesh);
             }
