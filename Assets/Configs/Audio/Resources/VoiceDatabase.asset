@@ -198,12 +198,12 @@ MonoBehaviour:
       - {fileID: 8300000, guid: 66013685a3389435e9c9b13df178db8c, type: 3}
     - key: VOX_RKT_TORCH
       takes:
-      - {fileID: 8300000, guid: bd71f8eda849746f0bc64d6bfe1b1e38, type: 3}
+      - {fileID: 8300000, guid: d6e77943c7a4a9549bc8bf5546316ed4, type: 3}
       - {fileID: 8300000, guid: b8e427e2f36224ed5815ae34dd58a872, type: 3}
     - key: VOX_SEL_CAR
       takes:
-      - {fileID: 8300000, guid: b67b057f0447b4d1295a7dea145e7e52, type: 3}
-      - {fileID: 8300000, guid: b43b72f2901ff49cb93886e36defb163, type: 3}
+      - {fileID: 8300000, guid: 8433b15d5c8ef384e90b6d076bcbbfcc, type: 3}
+      - {fileID: 8300000, guid: ad97f76025c38684d88cc821dc32008c, type: 3}
     - key: VOX_SEL_FEW
       takes:
       - {fileID: 8300000, guid: fbb1ce7bc14e1468a9daca2f2a439b0b, type: 3}
@@ -213,22 +213,22 @@ MonoBehaviour:
       - {fileID: 8300000, guid: 01a37314febf04a35800ebe757266a45, type: 3}
     - key: VOX_SEL_INSIDE
       takes:
-      - {fileID: 8300000, guid: f98dc9044f18f422e8708405c008534d, type: 3}
+      - {fileID: 8300000, guid: ae7f8ed432478614c872e9b4c6592618, type: 3}
       - {fileID: 8300000, guid: 8799c43af3f354500beba397124c55e2, type: 3}
     - key: VOX_SEL_READY
       takes:
-      - {fileID: 8300000, guid: cbad234e8cd3240a5a6b824b1e5a9714, type: 3}
-      - {fileID: 8300000, guid: 5b3e87bb50f054a7194219e5452f015e, type: 3}
-      - {fileID: 8300000, guid: 6480200589fea4072919ad1733d3c935, type: 3}
-      - {fileID: 8300000, guid: a00ab298138eb43c0a6e071e21af8503, type: 3}
+      - {fileID: 8300000, guid: 19a4e62af6a0a52479e222eb0a2c38b6, type: 3}
+      - {fileID: 8300000, guid: a4c3933ad9fb6f84daa5ec06659d510d, type: 3}
+      - {fileID: 8300000, guid: 37d826bec5876304f8bc0531ed5e8950, type: 3}
+      - {fileID: 8300000, guid: d618530f9c46d90498d5e2ccb4ee512b, type: 3}
     - key: VOX_SEL_ROUND
       takes:
-      - {fileID: 8300000, guid: 64ce4106211634f08978c7aaf303fe23, type: 3}
+      - {fileID: 8300000, guid: 44d82df5efe5a1248a73eb613ebfd81a, type: 3}
     - key: VOX_SPOT_CONTACT
       takes:
-      - {fileID: 8300000, guid: 3603af691f3ea4c96b71c558ff4cadb3, type: 3}
-      - {fileID: 8300000, guid: 118d3d664a40c4f9181d08ae27540482, type: 3}
-      - {fileID: 8300000, guid: 111b8582b82fd45b3ab5797a9f0dd620, type: 3}
+      - {fileID: 8300000, guid: e1a22619c56e1494bad34d19f7fccb95, type: 3}
+      - {fileID: 8300000, guid: 55cb5b820f602b148bfea037d0fd5f79, type: 3}
+      - {fileID: 8300000, guid: 5a5f42b4ca018c7499536b096cde28b3, type: 3}
       - {fileID: 8300000, guid: 3106b409206c741389d54b3325951472, type: 3}
     - key: VOX_SURR_HANDS
       takes:
@@ -237,13 +237,13 @@ MonoBehaviour:
       - {fileID: 8300000, guid: 7cd40bda4f12a4df1bff62781bdcd437, type: 3}
     - key: VOX_WARN_CALL
       takes:
-      - {fileID: 8300000, guid: e1aad7eb1e10641f3bd2e62905b6f5e3, type: 3}
-      - {fileID: 8300000, guid: 5744cb6944efc4f39b35ff81d8cdbbd9, type: 3}
-      - {fileID: 8300000, guid: 20e527b4646a245769da6cbed0504cc8, type: 3}
+      - {fileID: 8300000, guid: 51a6383b994aec743a228b29ff58495d, type: 3}
+      - {fileID: 8300000, guid: fa3f080fb562fe048b9c27340c39f152, type: 3}
+      - {fileID: 8300000, guid: a4b1f88ec2d33d6408d1ef23d4ee57a3, type: 3}
     - key: VOX_WIN_OVER
       takes:
       - {fileID: 8300000, guid: 9860ef203c4c74fad88483dad24e7d82, type: 3}
-      - {fileID: 8300000, guid: 4666142bce78449a299691be26de2f2b, type: 3}
+      - {fileID: 8300000, guid: be429cd99ebad994ca2f91566c6f256a, type: 3}
       - {fileID: 8300000, guid: 178231ba3ace94a8b9a112498573aaea, type: 3}
   - id: VB02
     actor: Syndicate - Top G
@@ -253,76 +253,76 @@ MonoBehaviour:
     lines:
     - key: VOX_DOWN_CRY
       takes:
-      - {fileID: 8300000, guid: 595522c78cecd4b288961483d45d0a7a, type: 3}
-      - {fileID: 8300000, guid: bbb80997077e946f0aa138c85681626d, type: 3}
+      - {fileID: 8300000, guid: ca91f46f30b4cb845b7cde47e3513854, type: 3}
+      - {fileID: 8300000, guid: fc3df7485c97f644780b35b432af72bc, type: 3}
       - {fileID: 8300000, guid: afb426f9e669f4298801e3e4b7b4c57d, type: 3}
       - {fileID: 8300000, guid: 5c35e9507c54946658bbfccb98831e1c, type: 3}
     - key: VOX_DROP_GOT
       takes:
-      - {fileID: 8300000, guid: c1f121a806ef24d6eb04177706e68b42, type: 3}
-      - {fileID: 8300000, guid: d18897b3750c84096941341f2edef50d, type: 3}
-      - {fileID: 8300000, guid: 312932f1381294038bc3a6e9badc06d7, type: 3}
-      - {fileID: 8300000, guid: 6d02a5169deb341e4a60a23dae4c0e65, type: 3}
+      - {fileID: 8300000, guid: 695aeec5a6bf4f344a794bc858967341, type: 3}
+      - {fileID: 8300000, guid: 519ba2ac2d028ea498a1924bc5e3c099, type: 3}
+      - {fileID: 8300000, guid: ada5f30b0be432d4d88fca6a5efd296f, type: 3}
+      - {fileID: 8300000, guid: fe63047205c38ac4e973bd35dcdbc611, type: 3}
     - key: VOX_FIGHT_CURSE
       takes:
       - {fileID: 8300000, guid: 1c6db0e5718fb43c483152cfacd00eaa, type: 3}
-      - {fileID: 8300000, guid: 6dc98e157ca774de790acc6598b44e33, type: 3}
-      - {fileID: 8300000, guid: ec9cc3fd7a6734a1fa59a587b77c9dc1, type: 3}
+      - {fileID: 8300000, guid: 5547cda7801542c4282fb7ece1c6f53e, type: 3}
+      - {fileID: 8300000, guid: ed5845f02e76f184e9621f8742d343c9, type: 3}
       - {fileID: 8300000, guid: d517c1d90c76d4a30a3ddb6a5fbdfe1d, type: 3}
       - {fileID: 8300000, guid: 0be8bba2026c24ee587f2d8f8934f88f, type: 3}
-      - {fileID: 8300000, guid: 5d35c1b9f41c241a18e16a143b85ee6b, type: 3}
-      - {fileID: 8300000, guid: 6c5ee4799d90847cc903486727aaab54, type: 3}
-      - {fileID: 8300000, guid: f9f815b69d84347c083198a1f35f5606, type: 3}
+      - {fileID: 8300000, guid: 61cd0e9f1199a3c45b14b35421e2486d, type: 3}
+      - {fileID: 8300000, guid: 5c315d2fe3ee31243abe840515375875, type: 3}
+      - {fileID: 8300000, guid: b85bf45ac0c09db4ca53aebe7c468f56, type: 3}
     - key: VOX_HIT_BAD
       takes:
-      - {fileID: 8300000, guid: e45c6d5ea315a480f93d6c63cb3af83f, type: 3}
+      - {fileID: 8300000, guid: 9dc5dfb2334efcf4ca2c7acea6c95619, type: 3}
       - {fileID: 8300000, guid: e80b8c0b273e749b59dede6d2335e28f, type: 3}
       - {fileID: 8300000, guid: de825144cc23248b79758955728be6a5, type: 3}
     - key: VOX_HIT_TAKE
       takes:
-      - {fileID: 8300000, guid: bf8e14ddd8d224f6388d2a339167ac82, type: 3}
-      - {fileID: 8300000, guid: 8bd00750b8c9d4ee98f60557ec5c05d0, type: 3}
-      - {fileID: 8300000, guid: 0a98469640709479bb2d8c5b2ff6a9db, type: 3}
-      - {fileID: 8300000, guid: 8e64bc893cc804804b130db669f2efe9, type: 3}
-      - {fileID: 8300000, guid: 3a4a83a56f5b34cc6acdd5fab4e72f99, type: 3}
-      - {fileID: 8300000, guid: a0fb73cab823242199ef62f4b053c409, type: 3}
+      - {fileID: 8300000, guid: 58be48a8238b1a947955eee352840687, type: 3}
+      - {fileID: 8300000, guid: e529c57ff43eb86468437faad93617e6, type: 3}
+      - {fileID: 8300000, guid: 85ed5973be3f13949acf3d570d55692a, type: 3}
+      - {fileID: 8300000, guid: 6b60bd8f7785087468e113b36f67fe1b, type: 3}
+      - {fileID: 8300000, guid: db1d2a68cc70b154d9fa9f918da409c9, type: 3}
+      - {fileID: 8300000, guid: 3391147122f7a8f41b4b158d72df53d5, type: 3}
     - key: VOX_LAW_HEAT
       takes:
-      - {fileID: 8300000, guid: 728d76b1800324a63a9e63b97875ff3f, type: 3}
-      - {fileID: 8300000, guid: 96a59e81509954d44a82c6c876d534d1, type: 3}
+      - {fileID: 8300000, guid: 2a912abac557754438e6b492d918dcbc, type: 3}
+      - {fileID: 8300000, guid: f7fe15c3b065d8a43a708193a71be151, type: 3}
       - {fileID: 8300000, guid: 3f788104d83d1414ea227718d3d77b85, type: 3}
     - key: VOX_LOSS_MAN
       takes:
-      - {fileID: 8300000, guid: 7b8e0e88355ee40b080c4ddab265dc2a, type: 3}
+      - {fileID: 8300000, guid: 4e6772ff46ee9d3419a06579325945e1, type: 3}
       - {fileID: 8300000, guid: 0e8a674f0af4841c2995eb090f89f88a, type: 3}
-      - {fileID: 8300000, guid: 8f42f57a1c6714173b1fe93d1c462ccd, type: 3}
-      - {fileID: 8300000, guid: 51c02d6b471d94f8b990b0cf33461c52, type: 3}
+      - {fileID: 8300000, guid: 3e558144a9be2b7498e2015d6caa197f, type: 3}
+      - {fileID: 8300000, guid: 4679e3af5e4dd314c869714044d5929d, type: 3}
     - key: VOX_NO_ARMS
       takes:
       - {fileID: 8300000, guid: 855d5effed2eb45ef8ff88b4da71d6b8, type: 3}
     - key: VOX_NO_GENERIC
       takes:
-      - {fileID: 8300000, guid: 8b6b01c6eda1d42f09c6ab1aa87eb776, type: 3}
-      - {fileID: 8300000, guid: 1b824f8dd800e4210a8ac1d9f56463bf, type: 3}
-      - {fileID: 8300000, guid: e167b1f5f6b894adda78ba9d97ef1b2f, type: 3}
+      - {fileID: 8300000, guid: f8aa8ff30dd9b8247a1f49862e4b2405, type: 3}
+      - {fileID: 8300000, guid: f2630a3a3c01b53419dea34d160bf984, type: 3}
+      - {fileID: 8300000, guid: 8b067daa069853f4dad1da255776d4f9, type: 3}
     - key: VOX_NO_MEN
       takes:
       - {fileID: 8300000, guid: 7b093dfece0b340f18497a4a7668ddd2, type: 3}
     - key: VOX_NO_REACH
       takes:
-      - {fileID: 8300000, guid: acb1450fcd8bb450dab425a40b5f1361, type: 3}
+      - {fileID: 8300000, guid: f9d5c73aaf147174fb3a2bf9c2eeb881, type: 3}
     - key: VOX_ORD_AWAY
       takes:
-      - {fileID: 8300000, guid: 7f968f7abee534168bf553b63cd17d2e, type: 3}
-      - {fileID: 8300000, guid: a64113e472a2b486f819620c8ddccc3a, type: 3}
+      - {fileID: 8300000, guid: 6e99e67a6fdc08846809817b43fdba53, type: 3}
+      - {fileID: 8300000, guid: 8bf31a041f308644d9dec6df2e0c3108, type: 3}
     - key: VOX_ORD_BAG
       takes:
-      - {fileID: 8300000, guid: 49b99d86e7d4a408eb7e1628703a12e9, type: 3}
-      - {fileID: 8300000, guid: ea4b1951770374269bb42cae36b6ace0, type: 3}
+      - {fileID: 8300000, guid: 3aa1b958b88ff0f46bde81533e72151c, type: 3}
+      - {fileID: 8300000, guid: 759c026b9570ba14787a258a727625d5, type: 3}
     - key: VOX_ORD_BOARD
       takes:
-      - {fileID: 8300000, guid: 5cd3de5eaafca443285cb53afc346f9a, type: 3}
-      - {fileID: 8300000, guid: 4a654cf72b1bd4acc98ce210e98739be, type: 3}
+      - {fileID: 8300000, guid: 0ee04a82783d48f41862757f652878a8, type: 3}
+      - {fileID: 8300000, guid: f2be2968825126046801fc9d01642b4b, type: 3}
     - key: VOX_ORD_CARBOMB
       takes:
       - {fileID: 8300000, guid: 343fe51710bb742848a1049e769204de, type: 3}
@@ -330,153 +330,153 @@ MonoBehaviour:
       - {fileID: 8300000, guid: 88c8b60a39cd5400e8f6277be04b68f6, type: 3}
     - key: VOX_ORD_COVER
       takes:
-      - {fileID: 8300000, guid: 80b83ec376de04d27870d2927c3b66ff, type: 3}
-      - {fileID: 8300000, guid: af7d7ad8676d24998a872a5079ec2ebb, type: 3}
+      - {fileID: 8300000, guid: 2f59116bf6f1b0d41bc3cd467d4d72a8, type: 3}
+      - {fileID: 8300000, guid: 30f9227e3d84d034091c76ee4f0a399d, type: 3}
       - {fileID: 8300000, guid: 7d8b4029c715e43e997052b2424f89b8, type: 3}
     - key: VOX_ORD_DOORBOMB
       takes:
-      - {fileID: 8300000, guid: 040ec50edf17549888e824f654da8908, type: 3}
+      - {fileID: 8300000, guid: 4f1d6ce05aeb4c743a6398d81908488e, type: 3}
       - {fileID: 8300000, guid: 828283955e3b04ee3bb8013dd346b646, type: 3}
     - key: VOX_ORD_DRIVEBY
       takes:
-      - {fileID: 8300000, guid: 5c87d13ec9208433694cff5e9aaa0224, type: 3}
+      - {fileID: 8300000, guid: 55dce3e53eec10240a0bc763608c8c82, type: 3}
       - {fileID: 8300000, guid: a136e33d550f64a24b2991b17d61a1e8, type: 3}
       - {fileID: 8300000, guid: 3ecfcfc1899ad4fa09697ac5f967fb03, type: 3}
     - key: VOX_ORD_FLEE
       takes:
-      - {fileID: 8300000, guid: abfbc0ce74f9949a380e55dd19bb91c7, type: 3}
-      - {fileID: 8300000, guid: 751a75682f46642bfbcde37cefa09a9c, type: 3}
-      - {fileID: 8300000, guid: 67b11e566c2e04e5d8c8bab541f3a5dc, type: 3}
+      - {fileID: 8300000, guid: 5bdba7975a9fb3d48b44cd455375c0d6, type: 3}
+      - {fileID: 8300000, guid: df794fc5919f18946a22c75d4676fa4d, type: 3}
+      - {fileID: 8300000, guid: adaa62c0028629745a3eb98d65bedac8, type: 3}
     - key: VOX_ORD_GRENADE
       takes:
-      - {fileID: 8300000, guid: 8f122432f72d340cf96bf196b3932523, type: 3}
-      - {fileID: 8300000, guid: ef42973a143184e3e8f3e9a21f19b698, type: 3}
-      - {fileID: 8300000, guid: 4230e3e50e9794547ae63ee0b13daaf0, type: 3}
+      - {fileID: 8300000, guid: e57287e55dabd154ab2b0353841b3161, type: 3}
+      - {fileID: 8300000, guid: 71d4c7960bf28394b834580ef7240175, type: 3}
+      - {fileID: 8300000, guid: 0db3987cff55fb6489ddc3b0568890ec, type: 3}
     - key: VOX_ORD_INSIDE
       takes:
       - {fileID: 8300000, guid: eb145af16f26845e1a8dcee4a7d1ed75, type: 3}
       - {fileID: 8300000, guid: 501db578711124bbe9edeee3a02855cd, type: 3}
     - key: VOX_ORD_KILL
       takes:
-      - {fileID: 8300000, guid: ab4d7b415327b4b64af1d12f0f50a504, type: 3}
-      - {fileID: 8300000, guid: 369cace4b6c154768994e411df7d0208, type: 3}
-      - {fileID: 8300000, guid: bf6402315c7474d77aaeca4ee7ef011c, type: 3}
+      - {fileID: 8300000, guid: fc1a4d81009b76441bac5c0f2ea16e6d, type: 3}
+      - {fileID: 8300000, guid: 859aae988d62fda438a02db5d1f520e0, type: 3}
+      - {fileID: 8300000, guid: 67f4eec3947d14245a3a2d769625384d, type: 3}
     - key: VOX_ORD_MOVE
       takes:
-      - {fileID: 8300000, guid: 9139132f809ff47e7b4203273eff7a01, type: 3}
-      - {fileID: 8300000, guid: 6406de40df2c548409d822c5a01a7368, type: 3}
-      - {fileID: 8300000, guid: 831d922a1112e4e7785ab1000320a0c4, type: 3}
+      - {fileID: 8300000, guid: 56ef240e00f0fe6449c14acb3dce381a, type: 3}
+      - {fileID: 8300000, guid: dca01899f4305b44e8fac7f36cf2f126, type: 3}
+      - {fileID: 8300000, guid: 7f2ee5a9e512c2b40bea8046743cb06c, type: 3}
     - key: VOX_ORD_OUT
       takes:
-      - {fileID: 8300000, guid: 783f8d36a337340329345c9ab200c22d, type: 3}
-      - {fileID: 8300000, guid: 8ff95a51b7c0d47a982426d2de57db7b, type: 3}
+      - {fileID: 8300000, guid: 96513371620124a4490a35532665b6a6, type: 3}
+      - {fileID: 8300000, guid: e3396edb253ea2f40a472893cd0b882a, type: 3}
     - key: VOX_ORD_OUTSIDE
       takes:
-      - {fileID: 8300000, guid: 2e0448b72abb44b1986b97356deeb9f3, type: 3}
-      - {fileID: 8300000, guid: 98a99b6c3e99c4e1596dc781281cb56d, type: 3}
+      - {fileID: 8300000, guid: 023284023279b544cb4b781174bbe60a, type: 3}
+      - {fileID: 8300000, guid: b6cae2861fb7584419d1d10ee42d2993, type: 3}
     - key: VOX_ORD_RUN
       takes:
-      - {fileID: 8300000, guid: 241e48add72374661b11e30f54225555, type: 3}
-      - {fileID: 8300000, guid: 4e6a45fee88024f828f36c07d16f2113, type: 3}
-      - {fileID: 8300000, guid: cd979e8ab8de44b5c997ce90f69dd201, type: 3}
+      - {fileID: 8300000, guid: 2963301822b2ea94999bd4d61096920c, type: 3}
+      - {fileID: 8300000, guid: 5fb702831f8987847b135d8e16d87cd0, type: 3}
+      - {fileID: 8300000, guid: 1dadd6f356015614f9b9d2d97018492e, type: 3}
     - key: VOX_ORD_SHOOTCAR
       takes:
-      - {fileID: 8300000, guid: 6a6f9667f4db9460db1af467fb6e4099, type: 3}
-      - {fileID: 8300000, guid: a755b3444fc204a3da05785b1e36ea94, type: 3}
+      - {fileID: 8300000, guid: 70f864888a5b2e44e8f4e5158cced651, type: 3}
+      - {fileID: 8300000, guid: 89e6905953c720a4a8ee71bd2091fc24, type: 3}
     - key: VOX_ORD_WITNESS
       takes:
-      - {fileID: 8300000, guid: ebbb0677e65784117a3f8fdba1d05a8f, type: 3}
-      - {fileID: 8300000, guid: fc457f68761f841338b4320277aaa7bc, type: 3}
+      - {fileID: 8300000, guid: 7b310b91450aff14ebad1c90acaee9d5, type: 3}
+      - {fileID: 8300000, guid: ab73dc8259d5669438a09bb08ea41983, type: 3}
     - key: VOX_PIN_HELD
       takes:
-      - {fileID: 8300000, guid: 0515fb87867fc434585c0c4449a5a2bc, type: 3}
-      - {fileID: 8300000, guid: 69b13db65456544df89173c739792de0, type: 3}
-      - {fileID: 8300000, guid: 5424030a5171a426d9e13028f8607f61, type: 3}
+      - {fileID: 8300000, guid: 82e0221871462c34c88a18c3c21a7b07, type: 3}
+      - {fileID: 8300000, guid: c81468ca9bef2ea44b9bfe2e1adb3117, type: 3}
+      - {fileID: 8300000, guid: ef92dfcf410063c4e80e1cad635dcf5e, type: 3}
     - key: VOX_RKT_APPROACH
       takes:
-      - {fileID: 8300000, guid: 8a542ad7abbb740fba1beb749e3745ef, type: 3}
-      - {fileID: 8300000, guid: fea975759836f4042985d1eb40df755c, type: 3}
+      - {fileID: 8300000, guid: ec6558011a89a7648bd2d4a69eadfc52, type: 3}
+      - {fileID: 8300000, guid: b6b626829bb2b9448b8bdc0c31e4930a, type: 3}
     - key: VOX_RKT_COLLECT
       takes:
-      - {fileID: 8300000, guid: 43e54221462624ed5a42cc5131cbcd5a, type: 3}
-      - {fileID: 8300000, guid: 2630a3015f9844216bbfcfd49d75b0fd, type: 3}
+      - {fileID: 8300000, guid: 57aa5a6e0a3dd40448ef22584df8c183, type: 3}
+      - {fileID: 8300000, guid: b4040e12e216ec049bcaff0341c5d012, type: 3}
     - key: VOX_RKT_DEMAND
       takes:
-      - {fileID: 8300000, guid: a8dfa57d9ab7f4d23ab445ee78c34665, type: 3}
-      - {fileID: 8300000, guid: 1b5043e5ae6254f718d20120877f0235, type: 3}
+      - {fileID: 8300000, guid: b1d4cff1a36412947afdce9bdb851086, type: 3}
+      - {fileID: 8300000, guid: dc8108c30c829704899d7e51a1f35113, type: 3}
     - key: VOX_RKT_GUARD
       takes:
-      - {fileID: 8300000, guid: 168470969481440e6822977aab83f2fb, type: 3}
-      - {fileID: 8300000, guid: 251f5e9f29a5444fd97e71f30eea2ebb, type: 3}
+      - {fileID: 8300000, guid: d1641d1f8fa7b1942b106092fd247802, type: 3}
+      - {fileID: 8300000, guid: 8f4aafd1ba3237340b37287b863975a6, type: 3}
     - key: VOX_RKT_HOLDOUT
       takes:
-      - {fileID: 8300000, guid: 89b6aabc8d5204077ae833f8b65bdbbd, type: 3}
-      - {fileID: 8300000, guid: 1b091ee7c32c74c82a6e4bc53b8da468, type: 3}
+      - {fileID: 8300000, guid: 6de272994467a344d856da454676e0a5, type: 3}
+      - {fileID: 8300000, guid: 6212c67c5939bc149a31303842084dbb, type: 3}
     - key: VOX_RKT_ROB
       takes:
-      - {fileID: 8300000, guid: e5b9adce621884870a345c767a939592, type: 3}
-      - {fileID: 8300000, guid: f77b6e89dd9194d6ebbce6efc1e5a222, type: 3}
+      - {fileID: 8300000, guid: 379070a9abec04c4f94cc9ca4d4797ec, type: 3}
+      - {fileID: 8300000, guid: e52b0671351e0734d82fd8c147d2f262, type: 3}
     - key: VOX_RKT_SHAKE
       takes:
-      - {fileID: 8300000, guid: 51c2deb51b77e4518b8d25133d261cc6, type: 3}
-      - {fileID: 8300000, guid: 601c361fcdf87417e955ab1eb9e3b040, type: 3}
+      - {fileID: 8300000, guid: 9913b105a41dd614f85bfde1ee907540, type: 3}
+      - {fileID: 8300000, guid: 906173962da5d0245badf1c1a7c96eb1, type: 3}
     - key: VOX_RKT_SMASH
       takes:
-      - {fileID: 8300000, guid: 9992d3fb812c74ce89998fdf83693674, type: 3}
-      - {fileID: 8300000, guid: 572eedddb82d841b0bf4d1fa8609ebdf, type: 3}
+      - {fileID: 8300000, guid: b67393be88a7e5945b5ac7c696b9b1ad, type: 3}
+      - {fileID: 8300000, guid: 4ebb951bab8c2ff4a97d0fc5cba3acbc, type: 3}
     - key: VOX_RKT_THREAT
       takes:
-      - {fileID: 8300000, guid: 9eb23342049074ccba814ed4f01534ca, type: 3}
-      - {fileID: 8300000, guid: a1708713b6d4a4f24b8e34dce0716436, type: 3}
+      - {fileID: 8300000, guid: ba3e04d0336e862489ef0ff171fab7a8, type: 3}
+      - {fileID: 8300000, guid: 15fae5ca03bc1bb4aa9f57e7f75f5b0a, type: 3}
     - key: VOX_RKT_TORCH
       takes:
-      - {fileID: 8300000, guid: 2339957980bb141ffa4b8f41ce21990d, type: 3}
-      - {fileID: 8300000, guid: 6fa9e9bea7838448a9fddc0eac65c46f, type: 3}
+      - {fileID: 8300000, guid: efe458d094604ee459afe9f3bc5b49e4, type: 3}
+      - {fileID: 8300000, guid: 81e5fcab35c3e3b49a6997c93be6b279, type: 3}
     - key: VOX_SEL_CAR
       takes:
-      - {fileID: 8300000, guid: 2d39a8186be2c4912b3b2edbc2e2eccc, type: 3}
-      - {fileID: 8300000, guid: 36aba4a23a6214bf6a27a2c6a931ca02, type: 3}
+      - {fileID: 8300000, guid: 3876851ebe4249b43a343093832050b7, type: 3}
+      - {fileID: 8300000, guid: 9c61251c41103ad408cc5c1c478caf56, type: 3}
     - key: VOX_SEL_FEW
       takes:
-      - {fileID: 8300000, guid: b404aa421a73c4fc48aa574c46875a1a, type: 3}
+      - {fileID: 8300000, guid: 434ff38856f5d6a4c8066a2c8bef0ce6, type: 3}
     - key: VOX_SEL_HURT
       takes:
-      - {fileID: 8300000, guid: 04085c4e473f9493aa4517b2a06b4571, type: 3}
-      - {fileID: 8300000, guid: d6ad53e4378cf4c77913db1006966f0e, type: 3}
+      - {fileID: 8300000, guid: 19ded6532365a994c8ea46b4b261215a, type: 3}
+      - {fileID: 8300000, guid: ae27aea4f1adc974d86313e90b19a75f, type: 3}
     - key: VOX_SEL_INSIDE
       takes:
-      - {fileID: 8300000, guid: 58d69976638e248e79d3267df8bf7116, type: 3}
-      - {fileID: 8300000, guid: 9700d08d1a6cf46ae9fb94a45b3cf8c1, type: 3}
+      - {fileID: 8300000, guid: 020f2ffba0c97fb4ead8d54574ee541a, type: 3}
+      - {fileID: 8300000, guid: 06157d24837a1964ba71b88d1a12c830, type: 3}
     - key: VOX_SEL_READY
       takes:
-      - {fileID: 8300000, guid: 79933630f484c456d9424f22bdc1b743, type: 3}
-      - {fileID: 8300000, guid: f224eb9d60ea34020805d5298e7d81b9, type: 3}
-      - {fileID: 8300000, guid: 94dd47c2e627849d1a3a6ea9f120989c, type: 3}
-      - {fileID: 8300000, guid: 23bb90064a49f4e7e87ccfa17206a9c2, type: 3}
+      - {fileID: 8300000, guid: 1d5fda8b2e0ba2e4e8aea62ea219ce1c, type: 3}
+      - {fileID: 8300000, guid: f1973dc09b508b94eb7edd6bf3178ed8, type: 3}
+      - {fileID: 8300000, guid: ceb10360322de4248b3ab9163f89d695, type: 3}
+      - {fileID: 8300000, guid: fe2f5e658a4235042bc15b6ec30a1cda, type: 3}
     - key: VOX_SEL_ROUND
       takes:
-      - {fileID: 8300000, guid: 548e178da4c1c49c092bce25f036e0d4, type: 3}
+      - {fileID: 8300000, guid: 0b96a919eca654b4a819680ef96f3df8, type: 3}
     - key: VOX_SPOT_CONTACT
       takes:
-      - {fileID: 8300000, guid: 06875dec19542492f917630fcbecdb8b, type: 3}
-      - {fileID: 8300000, guid: 88ad835dfb0954279aad7d6355efba25, type: 3}
-      - {fileID: 8300000, guid: 08748384f0fd242c58fd01867cc16e8b, type: 3}
-      - {fileID: 8300000, guid: 48af6ebc08281405aa30cdc1605add9b, type: 3}
+      - {fileID: 8300000, guid: 2d86212eb6f785645a99d4f2f2b9a1bd, type: 3}
+      - {fileID: 8300000, guid: 3683d91231b4368469cbecca4d684737, type: 3}
+      - {fileID: 8300000, guid: 6cedd12a96f0d084fae877e67c23ff9c, type: 3}
+      - {fileID: 8300000, guid: 92191f13afbc9c442b1e9ea947cf6217, type: 3}
     - key: VOX_SURR_HANDS
       takes:
-      - {fileID: 8300000, guid: 7f609167a64fa4be2880fcf79a90c96a, type: 3}
-      - {fileID: 8300000, guid: 9a7f53b5accd64a7ba06ea0b41029535, type: 3}
-      - {fileID: 8300000, guid: 2475f36287cef4d92922a9ef2a68dc21, type: 3}
+      - {fileID: 8300000, guid: 1e934c6b45931b641b4554200dfc1c61, type: 3}
+      - {fileID: 8300000, guid: 3b2aa5642c6f80645af62a2d98097c0b, type: 3}
+      - {fileID: 8300000, guid: 8f1623f2e9e52834983d37703f1f099e, type: 3}
     - key: VOX_WARN_CALL
       takes:
-      - {fileID: 8300000, guid: 0eca2490a7ec74ae59e15c6f5bfd9344, type: 3}
-      - {fileID: 8300000, guid: 71f3c07b20609408c809ef24505b1b90, type: 3}
-      - {fileID: 8300000, guid: d51016e0534e34e9287432c3c526d190, type: 3}
+      - {fileID: 8300000, guid: 825e7e46c2da590459548f392ada9624, type: 3}
+      - {fileID: 8300000, guid: df0d0487aba54bd4ea7cb73d6b1dee79, type: 3}
+      - {fileID: 8300000, guid: faa132bfce6201d44a27a61f112b1d10, type: 3}
     - key: VOX_WIN_OVER
       takes:
-      - {fileID: 8300000, guid: 4ce8ed67469c849e68e28c57caa3cf2d, type: 3}
-      - {fileID: 8300000, guid: 12e892f3d697f451aa46b7e0ede8a517, type: 3}
-      - {fileID: 8300000, guid: c8f8ac45b0a2b4a10a8c19fe767c95f5, type: 3}
+      - {fileID: 8300000, guid: ae091f57ff3df6f44bd2eb110a8ac0b2, type: 3}
+      - {fileID: 8300000, guid: 94b0c796a5e114b4a8844da7be03d6d6, type: 3}
+      - {fileID: 8300000, guid: 689ad7860d31c114d9016cbb156d3eb4, type: 3}
   - id: VB03
     actor: Pauly - Brooklyn Wise Guy
     age: 1
@@ -485,230 +485,230 @@ MonoBehaviour:
     lines:
     - key: VOX_DOWN_CRY
       takes:
-      - {fileID: 8300000, guid: 937eea7c83a8147a6832cbcfada68475, type: 3}
-      - {fileID: 8300000, guid: 0c0e7dc0064874cb4bdb024cd834c7d6, type: 3}
-      - {fileID: 8300000, guid: 0413eec7c4ee94c719111f02a1f365bf, type: 3}
-      - {fileID: 8300000, guid: d79bc41805dd843d1b7bb03ab0e5640d, type: 3}
+      - {fileID: 8300000, guid: 3f00c0f1b356d3e43a987ccaeb8e1ba3, type: 3}
+      - {fileID: 8300000, guid: b60e12c7d206b4448921331295ed4b9c, type: 3}
+      - {fileID: 8300000, guid: 264730c5649218c4c8085b04b899039a, type: 3}
+      - {fileID: 8300000, guid: 00f703a346ee6a44992e5e08e10c7604, type: 3}
     - key: VOX_DROP_GOT
       takes:
-      - {fileID: 8300000, guid: 11d324c9f6f57410e99a439b480cbc3a, type: 3}
-      - {fileID: 8300000, guid: 53735b8b64aeb46e8b26e49c43ec524e, type: 3}
-      - {fileID: 8300000, guid: 88edc472b285a427bb00b036992c6ecc, type: 3}
-      - {fileID: 8300000, guid: 1a2fa7476a6954b849a797b4e1f4f5c5, type: 3}
+      - {fileID: 8300000, guid: 428b36985fbb4f743abd63e2d1786d82, type: 3}
+      - {fileID: 8300000, guid: 844eb2995e1620749bb74d06bea2a8ce, type: 3}
+      - {fileID: 8300000, guid: e4f09be159576da428a86ee234106be2, type: 3}
+      - {fileID: 8300000, guid: c06bab70ec48e324d8115fe10a2fe69e, type: 3}
     - key: VOX_FIGHT_CURSE
       takes:
-      - {fileID: 8300000, guid: 04bbafdf426794a69af8ad4f87852a9b, type: 3}
-      - {fileID: 8300000, guid: 2d1f30c9aaf9d49d8bef325c0ed0ecf3, type: 3}
-      - {fileID: 8300000, guid: 8bb79645f4faf496c9406d5c34aa16f8, type: 3}
-      - {fileID: 8300000, guid: 09e4c573ffacf4aa3bff5c9ee8932cd9, type: 3}
-      - {fileID: 8300000, guid: e5d85e86522844a60b819a0732d34065, type: 3}
-      - {fileID: 8300000, guid: 47ba95e306fcb475496a65ee4c9209b9, type: 3}
-      - {fileID: 8300000, guid: e339b8037831b4a6881e863abb0e65e9, type: 3}
-      - {fileID: 8300000, guid: 1e985244135ca409991c3e426d5356fb, type: 3}
+      - {fileID: 8300000, guid: 468ed62267283484287428a41d2fca5c, type: 3}
+      - {fileID: 8300000, guid: a28fb943d41d0d148b2026b7513032cb, type: 3}
+      - {fileID: 8300000, guid: 65352437f626f9546834692b3d67fc17, type: 3}
+      - {fileID: 8300000, guid: ffe0ebd542d7c1c46bf82258fae14f00, type: 3}
+      - {fileID: 8300000, guid: 9ed842f76d9954841911ff27eb137c00, type: 3}
+      - {fileID: 8300000, guid: 26781c3ca4d79984f8507a3e0d4b68da, type: 3}
+      - {fileID: 8300000, guid: 4b4d28f3d94113c4a9a3c695613edfc2, type: 3}
+      - {fileID: 8300000, guid: 3c1d15ef5ab3cea45b64c70f9bcc9533, type: 3}
     - key: VOX_HIT_BAD
       takes:
-      - {fileID: 8300000, guid: f3996c175775d461f99c82cb1517d411, type: 3}
-      - {fileID: 8300000, guid: 580f2fc691bfe4a42bbebe0448035bd6, type: 3}
-      - {fileID: 8300000, guid: f8210520c457041a9ac6ff36b8e0f72e, type: 3}
+      - {fileID: 8300000, guid: 95ed3873ede107d4395633e32a8b3dff, type: 3}
+      - {fileID: 8300000, guid: 42509bd38a99d2f499ceea02b9181fee, type: 3}
+      - {fileID: 8300000, guid: ba2debf7af57aaf45aa243c04ceaa4ac, type: 3}
     - key: VOX_HIT_TAKE
       takes:
-      - {fileID: 8300000, guid: d9a11e5fcc1664fefa46ef078b6d8249, type: 3}
-      - {fileID: 8300000, guid: 63d3221a692c14d1da2b56540e270039, type: 3}
-      - {fileID: 8300000, guid: 2b613faa3994549e9be6cd8ad73b601a, type: 3}
-      - {fileID: 8300000, guid: 7bbbcffa6c0af44f89ddd7a26ca9578f, type: 3}
-      - {fileID: 8300000, guid: b408fcfb0c3c245fc8859de0c56058ac, type: 3}
-      - {fileID: 8300000, guid: 8f2467ea25a8f4edab80bfecd1bcf1a4, type: 3}
+      - {fileID: 8300000, guid: 1e28de0e22a138a4698f79add1431891, type: 3}
+      - {fileID: 8300000, guid: 9c2aa12e0f0ad294692e03e03cb5ef28, type: 3}
+      - {fileID: 8300000, guid: ced0f0aba1087e540a6130efe30feeae, type: 3}
+      - {fileID: 8300000, guid: 6704bdabc5879904bbbbde025d5971a7, type: 3}
+      - {fileID: 8300000, guid: b8205de3698eb7e43a87402101dee519, type: 3}
+      - {fileID: 8300000, guid: b4d1bf2fc99c1eb4abfd334f36aada80, type: 3}
     - key: VOX_LAW_HEAT
       takes:
-      - {fileID: 8300000, guid: 4a4da91b64079468888b326a49581c17, type: 3}
-      - {fileID: 8300000, guid: 3a5c63771116c4a709e96449dabb034c, type: 3}
-      - {fileID: 8300000, guid: 64c244cb58d7740bd8fc3d2570808887, type: 3}
+      - {fileID: 8300000, guid: b4c37585279c59443822222e79ee475d, type: 3}
+      - {fileID: 8300000, guid: d7f4745a3b823a846a465a112f06aac1, type: 3}
+      - {fileID: 8300000, guid: c9620ae984ec56d41b6d356eb770476f, type: 3}
     - key: VOX_LOSS_MAN
       takes:
-      - {fileID: 8300000, guid: db1594196887e4504a2c1bef0b860648, type: 3}
-      - {fileID: 8300000, guid: beb30384364ab44f6acbb35f87d6ed46, type: 3}
-      - {fileID: 8300000, guid: dcfe54ecd05d4461aa5d9c18a62b820c, type: 3}
-      - {fileID: 8300000, guid: c9c3344a3b21d408cab06534455d3858, type: 3}
+      - {fileID: 8300000, guid: 4838f30ab6a0b1a408a18f940438b16e, type: 3}
+      - {fileID: 8300000, guid: 0eaecd4884a3613489c3e77dcb52f197, type: 3}
+      - {fileID: 8300000, guid: 017417bd1eb9b4944a91669710db26a1, type: 3}
+      - {fileID: 8300000, guid: f696dc8064abfcd4e9694c62d888ab65, type: 3}
     - key: VOX_NO_ARMS
       takes:
-      - {fileID: 8300000, guid: 7771b9344db494be38fc1ab7a5c569b2, type: 3}
+      - {fileID: 8300000, guid: e99765d83104bf54face276962b60ef2, type: 3}
     - key: VOX_NO_GENERIC
       takes:
-      - {fileID: 8300000, guid: fb651579f37cd43188720f029eeb39e9, type: 3}
-      - {fileID: 8300000, guid: 81adae0471cb44eb195a9605b7a7611a, type: 3}
-      - {fileID: 8300000, guid: ec5dceb6145884cee804190f01043bcc, type: 3}
+      - {fileID: 8300000, guid: 9f48f717213441f4896ead657833f286, type: 3}
+      - {fileID: 8300000, guid: f26da6c769716874782c6d32b3be16c5, type: 3}
+      - {fileID: 8300000, guid: 513cbf176dd0d7a419e2cae8b59a77dd, type: 3}
     - key: VOX_NO_MEN
       takes:
-      - {fileID: 8300000, guid: 6a6e1851cd6c945b5a8c7bcc8d1990ca, type: 3}
+      - {fileID: 8300000, guid: 0828e63dde07e0042af129cc6390f193, type: 3}
     - key: VOX_NO_REACH
       takes:
-      - {fileID: 8300000, guid: dcfdf424a13904e7caeb0f88f2dd1a1e, type: 3}
+      - {fileID: 8300000, guid: bbb302939b179d042a00d09ae9fed13e, type: 3}
     - key: VOX_ORD_AWAY
       takes:
-      - {fileID: 8300000, guid: 8d56b2d178edc4ed3a64d3c214a36474, type: 3}
-      - {fileID: 8300000, guid: bf40a21bd97f94ad580cc22bbeb95493, type: 3}
+      - {fileID: 8300000, guid: 0c9bc1a3ca02f63458cfa9480b8beb26, type: 3}
+      - {fileID: 8300000, guid: 551d89136d70a714a80b9f6c26fcf820, type: 3}
     - key: VOX_ORD_BAG
       takes:
-      - {fileID: 8300000, guid: fccc22225456943d8878cd0942df9b15, type: 3}
-      - {fileID: 8300000, guid: 6d230a267b24a40148a1e49fb28a30ae, type: 3}
+      - {fileID: 8300000, guid: d685ae9e5ea5011469e1aa9a5a84e841, type: 3}
+      - {fileID: 8300000, guid: 66141283615aba4409c7557b880f5712, type: 3}
     - key: VOX_ORD_BOARD
       takes:
-      - {fileID: 8300000, guid: 3dc70fce069cd4e9e8c1e9ddd68c12d2, type: 3}
-      - {fileID: 8300000, guid: b6efbaf92fff24879b40d0ce9146db74, type: 3}
+      - {fileID: 8300000, guid: 649a424f20590d543a2a005b063cdaa6, type: 3}
+      - {fileID: 8300000, guid: cd40c1f18415f8c4d8c25f10d7d65d29, type: 3}
     - key: VOX_ORD_CARBOMB
       takes:
-      - {fileID: 8300000, guid: f7aff898165ca4ee7a135acfb9bfa798, type: 3}
-      - {fileID: 8300000, guid: 1400d10083fa44b2e9a3c32346b4f21d, type: 3}
-      - {fileID: 8300000, guid: afcd819e0f1244f59a019828df1480f6, type: 3}
+      - {fileID: 8300000, guid: 3af41ea2482657e4995fccb796bdf28c, type: 3}
+      - {fileID: 8300000, guid: 93cdce63bdc9453408fb273daa0c3bcf, type: 3}
+      - {fileID: 8300000, guid: 733a228397c161d498d2f04d6a88ce87, type: 3}
     - key: VOX_ORD_COVER
       takes:
-      - {fileID: 8300000, guid: 909107c37fa7640f0be8a460b3e85675, type: 3}
-      - {fileID: 8300000, guid: ab9bb458f0f9049b1b4930311def0cfe, type: 3}
-      - {fileID: 8300000, guid: d1a3abf2c6ba14feaba268506e152818, type: 3}
+      - {fileID: 8300000, guid: 074a4a52194041341ad47af8eeb1c649, type: 3}
+      - {fileID: 8300000, guid: 00fda9d194cf2a44d8b59aeef6a203f0, type: 3}
+      - {fileID: 8300000, guid: 7a6e95ecd2f2d30429a25932be429e8f, type: 3}
     - key: VOX_ORD_DOORBOMB
       takes:
-      - {fileID: 8300000, guid: d0e67914cc8fb4db5b1462fa63cc5eb7, type: 3}
-      - {fileID: 8300000, guid: c58f261e0b6834abc938653e234a5318, type: 3}
+      - {fileID: 8300000, guid: 4c40eec641a27964382c666360f70649, type: 3}
+      - {fileID: 8300000, guid: ef5aff4b2d94ac149872b4b5a68e6b21, type: 3}
     - key: VOX_ORD_DRIVEBY
       takes:
-      - {fileID: 8300000, guid: d018fe55d18de43ddaee639cc974aaef, type: 3}
-      - {fileID: 8300000, guid: 600387b3d2d0a4bcb93e39caff887ad9, type: 3}
-      - {fileID: 8300000, guid: 7bba76bb0f47947a68f421a242901222, type: 3}
+      - {fileID: 8300000, guid: 37e66d927033da548a411a9058b256a1, type: 3}
+      - {fileID: 8300000, guid: 7ddd47992df4b32448fa9f9b528b0037, type: 3}
+      - {fileID: 8300000, guid: d42cd790c1b5b92459233d8252a9c866, type: 3}
     - key: VOX_ORD_FLEE
       takes:
-      - {fileID: 8300000, guid: c6905ecb90c84414cbc9045f44606aaa, type: 3}
-      - {fileID: 8300000, guid: 87895d5fb502048f68a4599ee97ac240, type: 3}
-      - {fileID: 8300000, guid: 927e5f48ec8374569beaca1102bf9294, type: 3}
+      - {fileID: 8300000, guid: fe5fadc0400b3ca4ebfc16419f7ba2ea, type: 3}
+      - {fileID: 8300000, guid: efe70fc668255dd4599e1172be71ecaf, type: 3}
+      - {fileID: 8300000, guid: e418158b9735c814293441ec5d3d1521, type: 3}
     - key: VOX_ORD_GRENADE
       takes:
-      - {fileID: 8300000, guid: d01624c7f30834a85a224d6ddc9e1ec0, type: 3}
-      - {fileID: 8300000, guid: d8fbb684ba71847e997d10560fa0fa3e, type: 3}
-      - {fileID: 8300000, guid: 3d7bd7a44ea6a436a81a30984d1d158c, type: 3}
+      - {fileID: 8300000, guid: b8f51f9364277cf4c8db7bf44abd6dde, type: 3}
+      - {fileID: 8300000, guid: 7bf86e6c6050a6649a35469cf633db28, type: 3}
+      - {fileID: 8300000, guid: c117b447b18549f48bafe4dc563943c1, type: 3}
     - key: VOX_ORD_INSIDE
       takes:
-      - {fileID: 8300000, guid: 19ba20fd2800c4c49978a0ce17fd33ee, type: 3}
-      - {fileID: 8300000, guid: 60058e2877997490ca3a3f262dd3d2e7, type: 3}
+      - {fileID: 8300000, guid: 099cd1bccbaceae409088ad7a0892801, type: 3}
+      - {fileID: 8300000, guid: a3aac5af19a78b144b4061fbf2b4cd57, type: 3}
     - key: VOX_ORD_KILL
       takes:
-      - {fileID: 8300000, guid: bdf2ed9fce43a4a38b466b42b784f009, type: 3}
-      - {fileID: 8300000, guid: 9f9907d0e291a42ac9358d371abe8454, type: 3}
-      - {fileID: 8300000, guid: 165dbe72c68014b0da3f41e9017dae2f, type: 3}
+      - {fileID: 8300000, guid: fad44ff0e4b2ed944ad71ab44c68a533, type: 3}
+      - {fileID: 8300000, guid: e4d7bc6fe65efdc4b89f8a04f65c91cb, type: 3}
+      - {fileID: 8300000, guid: 750da4bad886b6149bfb555b1be3c8f9, type: 3}
     - key: VOX_ORD_MOVE
       takes:
-      - {fileID: 8300000, guid: 2c2cfce4a61b643088554e6ea911f4c7, type: 3}
-      - {fileID: 8300000, guid: fd72f0f565e564d7fa34df2180e600e9, type: 3}
-      - {fileID: 8300000, guid: 3a05cf496aeba49ed9be3bae82330ef4, type: 3}
+      - {fileID: 8300000, guid: 6d70df7c812ee21428e053c8e2e2e18f, type: 3}
+      - {fileID: 8300000, guid: f551190877fecd04f9e255e5eff034c9, type: 3}
+      - {fileID: 8300000, guid: 9f17178e2a083404c9c2b640788b9032, type: 3}
     - key: VOX_ORD_OUT
       takes:
-      - {fileID: 8300000, guid: ec991be8dff5d4002bcc6350cc54b3b9, type: 3}
-      - {fileID: 8300000, guid: 7fbda338caea04fefb142232be7ff721, type: 3}
+      - {fileID: 8300000, guid: 50536737d148b434385e5b404e28971f, type: 3}
+      - {fileID: 8300000, guid: c589737bb97c5b244b46374fa425ba46, type: 3}
     - key: VOX_ORD_OUTSIDE
       takes:
-      - {fileID: 8300000, guid: 61f39961a00dd464e9298147d8ad3a04, type: 3}
-      - {fileID: 8300000, guid: 2de3a3b24f7ff4de6834101344e8c5a8, type: 3}
+      - {fileID: 8300000, guid: ede7f54dad6951b47a1ebb1e677ee06f, type: 3}
+      - {fileID: 8300000, guid: ea0c4868dd8573a4f919ae82d7d27045, type: 3}
     - key: VOX_ORD_RUN
       takes:
-      - {fileID: 8300000, guid: c3674d2c7c8544a7c8bd55232094ecfc, type: 3}
-      - {fileID: 8300000, guid: b1d57921edfab463ca593f50887e721e, type: 3}
-      - {fileID: 8300000, guid: 515e7562167ce46ae872f9e21807e7e3, type: 3}
+      - {fileID: 8300000, guid: 005434bcf23e1d1419d3654f66773817, type: 3}
+      - {fileID: 8300000, guid: b20c83290614d7e4da15f7c31d134dd0, type: 3}
+      - {fileID: 8300000, guid: 6a9fdff54d95826499fe12c74351dd4c, type: 3}
     - key: VOX_ORD_SHOOTCAR
       takes:
-      - {fileID: 8300000, guid: 9a72b7c5e64b84e5fbe262f3b3d033f2, type: 3}
-      - {fileID: 8300000, guid: 2c668c9a1226c43b3b24ffdfdf624730, type: 3}
+      - {fileID: 8300000, guid: 27c44e09e2706fc449a1051748eafd41, type: 3}
+      - {fileID: 8300000, guid: c3dfbf61752d5584eb808892a0b4bbda, type: 3}
     - key: VOX_ORD_WITNESS
       takes:
-      - {fileID: 8300000, guid: 27b3786ef1489442082e36be01e63c13, type: 3}
-      - {fileID: 8300000, guid: c07bb8ac64246410caced4b7357ace97, type: 3}
+      - {fileID: 8300000, guid: 6a858c7403e66bd4490c7cd853d2b50a, type: 3}
+      - {fileID: 8300000, guid: 06a40d8130fde614db49afa7dc2c464f, type: 3}
     - key: VOX_PIN_HELD
       takes:
-      - {fileID: 8300000, guid: 681c4c79623d64a3ba81b63fa02ddb5e, type: 3}
-      - {fileID: 8300000, guid: b3e6ff4f985064bcaaa8ad3a74020e34, type: 3}
-      - {fileID: 8300000, guid: 59b160c5ad458428382b10ca1d5d8191, type: 3}
+      - {fileID: 8300000, guid: 027ede7db58bfc8448fbea6858764dca, type: 3}
+      - {fileID: 8300000, guid: f24b27d55f72e5f4fa5c8b666419c298, type: 3}
+      - {fileID: 8300000, guid: eaf6b41aefc0a034bad3afb8dc186d35, type: 3}
     - key: VOX_RKT_APPROACH
       takes:
-      - {fileID: 8300000, guid: 3c7c525d52abd4816be4d12c7394acfb, type: 3}
-      - {fileID: 8300000, guid: 3bb4666dc4a1549928cd3da2939724e4, type: 3}
+      - {fileID: 8300000, guid: a4d2d261077c4c2488697b40f204eb2c, type: 3}
+      - {fileID: 8300000, guid: 2bb793f71cc43d545b187827f63320d2, type: 3}
     - key: VOX_RKT_COLLECT
       takes:
-      - {fileID: 8300000, guid: 42e548343fba64474a452507347a5517, type: 3}
-      - {fileID: 8300000, guid: 7f9f1742ae87c4c1e9d0b7b92243d3ca, type: 3}
+      - {fileID: 8300000, guid: 6ab1d80c0ef8deb4680a0755b1a60ec0, type: 3}
+      - {fileID: 8300000, guid: f671929d5390177438eeeda1082bf884, type: 3}
     - key: VOX_RKT_DEMAND
       takes:
-      - {fileID: 8300000, guid: 9aecba0c7576643d39bf07043dcc7d17, type: 3}
-      - {fileID: 8300000, guid: 51127d5e4cac84b6c847ba0cf0acd3cd, type: 3}
+      - {fileID: 8300000, guid: a392acb1033952d42a001714ffac5c75, type: 3}
+      - {fileID: 8300000, guid: c57231fdd1676784fb001ed80dd811ad, type: 3}
     - key: VOX_RKT_GUARD
       takes:
-      - {fileID: 8300000, guid: 03a24895c75b64e149aa34ce2417eca9, type: 3}
-      - {fileID: 8300000, guid: 4ef0b9beda36a46a3a04bca3363a63d8, type: 3}
+      - {fileID: 8300000, guid: ca91af73d425a034aad362d4f5c6eed8, type: 3}
+      - {fileID: 8300000, guid: 41d26172a8fa5134bb352bc17c381808, type: 3}
     - key: VOX_RKT_HOLDOUT
       takes:
-      - {fileID: 8300000, guid: b3b178824b3ba4eaaa91c700dbcfaf9d, type: 3}
-      - {fileID: 8300000, guid: 8f7b0c56359734a519fb5dbf52ce0931, type: 3}
+      - {fileID: 8300000, guid: f4a21a35b424e8a449f98480959897f3, type: 3}
+      - {fileID: 8300000, guid: de4a228cb4e97664aaadfeed5565eedd, type: 3}
     - key: VOX_RKT_ROB
       takes:
-      - {fileID: 8300000, guid: 4407cef404567434a8716f3181ca4c54, type: 3}
-      - {fileID: 8300000, guid: f0f998bfb824043208a885a5294d7e19, type: 3}
+      - {fileID: 8300000, guid: 050562e37188d544fbe85f11ccc10f1f, type: 3}
+      - {fileID: 8300000, guid: a884f41b7866ee847bfa203cde995a08, type: 3}
     - key: VOX_RKT_SHAKE
       takes:
-      - {fileID: 8300000, guid: b7bfb3d46e5624226adb4a67d590b8f4, type: 3}
-      - {fileID: 8300000, guid: 77b61a801a63946de897a7e7a847fc20, type: 3}
+      - {fileID: 8300000, guid: 56baf2998dcfbe2428723e83d4d79163, type: 3}
+      - {fileID: 8300000, guid: 7ddac0415fb0a784b9d55af30ea2558d, type: 3}
     - key: VOX_RKT_SMASH
       takes:
-      - {fileID: 8300000, guid: ac452c46263e44553beed2b815dd34cc, type: 3}
-      - {fileID: 8300000, guid: b8b531f02e9b84dd8bcf47cbd15043d2, type: 3}
+      - {fileID: 8300000, guid: 361ba6a155baeb144801f7ac7500dcf7, type: 3}
+      - {fileID: 8300000, guid: 314f12b935750044a87957eae76aea99, type: 3}
     - key: VOX_RKT_THREAT
       takes:
-      - {fileID: 8300000, guid: 292b72d725e134226a6116059842a1ef, type: 3}
-      - {fileID: 8300000, guid: 3161a5e4f4c82413fb223db681adf059, type: 3}
+      - {fileID: 8300000, guid: bd86089c33816724ab92da303d081d8c, type: 3}
+      - {fileID: 8300000, guid: d0b3a79123ede664f80cbebfd52cd1d2, type: 3}
     - key: VOX_RKT_TORCH
       takes:
-      - {fileID: 8300000, guid: 6747d5e021f964397a4b32d74f94208b, type: 3}
-      - {fileID: 8300000, guid: 9f90272f145d44587a17ff59cdddaaa8, type: 3}
+      - {fileID: 8300000, guid: c2cc3e51538e79f4da120cfb56ac24c4, type: 3}
+      - {fileID: 8300000, guid: b5d77ed6ba6465d4989e21be5590e1b5, type: 3}
     - key: VOX_SEL_CAR
       takes:
-      - {fileID: 8300000, guid: 6c74af0c67dbf4b79931ce00f4ecd089, type: 3}
-      - {fileID: 8300000, guid: adeaa3c2d39f24d0689bfb99fe4acc35, type: 3}
+      - {fileID: 8300000, guid: 7271e197caf864d4a99b50df06354894, type: 3}
+      - {fileID: 8300000, guid: 93dcef4b3f656aa419e24d78373d709c, type: 3}
     - key: VOX_SEL_FEW
       takes:
-      - {fileID: 8300000, guid: 06fb3bcf96a9440cc805130044d965ed, type: 3}
+      - {fileID: 8300000, guid: b533c67c673cbbe4588c90134ba242e3, type: 3}
     - key: VOX_SEL_HURT
       takes:
-      - {fileID: 8300000, guid: 9ba53d23ee8a14e3d867b44f4a4b6752, type: 3}
-      - {fileID: 8300000, guid: 55c7881019003480ba465be8a6c337d8, type: 3}
+      - {fileID: 8300000, guid: 04fa05f0861a52048993d6ff8664c511, type: 3}
+      - {fileID: 8300000, guid: 4929e51a7eec00a4fbb24b5f0ecd52ff, type: 3}
     - key: VOX_SEL_INSIDE
       takes:
-      - {fileID: 8300000, guid: 134df209e0f754262aa474ed505c8738, type: 3}
-      - {fileID: 8300000, guid: f231e89a8662c4aeb8e12381c7db79a9, type: 3}
+      - {fileID: 8300000, guid: ed70a0a67dba0ea4c857e3a59431d84c, type: 3}
+      - {fileID: 8300000, guid: 8716823c0e4d6d54fba51f33b0827c26, type: 3}
     - key: VOX_SEL_READY
       takes:
-      - {fileID: 8300000, guid: 03a349735739744b496e1257e955d273, type: 3}
-      - {fileID: 8300000, guid: aa9cefc5c256a47cbbc213a0f9638010, type: 3}
-      - {fileID: 8300000, guid: 672306c6b2dc44e65a2260f584b843cc, type: 3}
-      - {fileID: 8300000, guid: 0dbc2b36c4b064ae4ae2b0a6a9ffd882, type: 3}
+      - {fileID: 8300000, guid: b825e3867a3e30e42a1f8e7e26de79d1, type: 3}
+      - {fileID: 8300000, guid: 507bc3dbf06643146b5f0ef2f42705de, type: 3}
+      - {fileID: 8300000, guid: a7c5714af308fbe40811d8b8cb3eb868, type: 3}
+      - {fileID: 8300000, guid: 69bb4e7313364a74e91bee765ff655c2, type: 3}
     - key: VOX_SEL_ROUND
       takes:
-      - {fileID: 8300000, guid: ebde833e4ca594cf4ae0deb8bc76f6a0, type: 3}
+      - {fileID: 8300000, guid: 60f2ea90fee71f740bffc84655955aab, type: 3}
     - key: VOX_SPOT_CONTACT
       takes:
-      - {fileID: 8300000, guid: 503f3df7f1ae944048c1b4e18459e6aa, type: 3}
-      - {fileID: 8300000, guid: 132d16606028b4de48a5fde6cdddb8b2, type: 3}
-      - {fileID: 8300000, guid: 06e4533f587474374ad6c3acbb72abee, type: 3}
-      - {fileID: 8300000, guid: 62317c6f0ffb24553b92bd8304482ad8, type: 3}
+      - {fileID: 8300000, guid: 01d4e0a442fce354c805513702a55277, type: 3}
+      - {fileID: 8300000, guid: 27d94282897082641be3401b80d640d8, type: 3}
+      - {fileID: 8300000, guid: 4c71739af1e59e94e945146de8662f41, type: 3}
+      - {fileID: 8300000, guid: 731ec8a92094e9443980584cf5656f16, type: 3}
     - key: VOX_SURR_HANDS
       takes:
-      - {fileID: 8300000, guid: c5151518f2b6d473ea88dc9ac4775ce8, type: 3}
-      - {fileID: 8300000, guid: f6f0d9535960f4d4b85ba31d4103f64e, type: 3}
-      - {fileID: 8300000, guid: 086ed1194dcb543778cf846d9fd175dd, type: 3}
+      - {fileID: 8300000, guid: 457302152ae439c439f9f88ffe310fcf, type: 3}
+      - {fileID: 8300000, guid: b4904598a8cb2e74eaa9d1daac191a32, type: 3}
+      - {fileID: 8300000, guid: c3d01f7d013ae4649b48b7c3af6e0130, type: 3}
     - key: VOX_WARN_CALL
       takes:
-      - {fileID: 8300000, guid: 83fdbf5b40d36484583572556f869bec, type: 3}
-      - {fileID: 8300000, guid: ec3d999af8caa42879fc09f4d162bade, type: 3}
-      - {fileID: 8300000, guid: 39b278f7477de42248d690e16456c99c, type: 3}
+      - {fileID: 8300000, guid: 2891a87606dfad14a83a72ae2aebeef2, type: 3}
+      - {fileID: 8300000, guid: 327f116363b3dc74eb5822800f9d9d26, type: 3}
+      - {fileID: 8300000, guid: fc5633869d38eff46b05283f2f160c1c, type: 3}
     - key: VOX_WIN_OVER
       takes:
-      - {fileID: 8300000, guid: 995384dc515d449beab7d6e1aab1fe72, type: 3}
-      - {fileID: 8300000, guid: 9761de1440be544c2a231003b0191cbc, type: 3}
-      - {fileID: 8300000, guid: 9661e9cd13cb84ea6a3bc6a9f5c3b7a1, type: 3}
+      - {fileID: 8300000, guid: 4bd76d08a0c1d044ebab0a770aa23511, type: 3}
+      - {fileID: 8300000, guid: 1daa12f9e555e3049a33c0ef8e2c4cde, type: 3}
+      - {fileID: 8300000, guid: 804595770ba2daf46815f792ad01a083, type: 3}
   - id: VB04
     actor: Dante - Dark Mafia
     age: 1
@@ -717,230 +717,230 @@ MonoBehaviour:
     lines:
     - key: VOX_DOWN_CRY
       takes:
-      - {fileID: 8300000, guid: 99b07ff4091e84283a179f42f7949802, type: 3}
-      - {fileID: 8300000, guid: d1ead5a2855564ab1a031b37dde3a6ec, type: 3}
-      - {fileID: 8300000, guid: cfb9cfb27943c4ba0bef67382fb69011, type: 3}
-      - {fileID: 8300000, guid: add23a26c52824552a1694fccde6a5c1, type: 3}
+      - {fileID: 8300000, guid: a911bdc6e5e097f4193cedc631ec1099, type: 3}
+      - {fileID: 8300000, guid: b76fe7d94f1b75c42be9e8e4b0fd84de, type: 3}
+      - {fileID: 8300000, guid: 8ef723a34c696144cbe011bdb1978a42, type: 3}
+      - {fileID: 8300000, guid: 0d5c697eb1c43e24e8b1be7c3e601a85, type: 3}
     - key: VOX_DROP_GOT
       takes:
-      - {fileID: 8300000, guid: 7a8c58f392a644d2aac9b4570da10c79, type: 3}
-      - {fileID: 8300000, guid: 97b75e5deb54745e4b323f407057f7d2, type: 3}
-      - {fileID: 8300000, guid: 9712c75ef2a1e41068d66b864bfbb0a1, type: 3}
-      - {fileID: 8300000, guid: 3105eb9d88d054bf6b22d32a1970e768, type: 3}
+      - {fileID: 8300000, guid: 8e88813b8b78c5143a2db7def940f07e, type: 3}
+      - {fileID: 8300000, guid: bb23f6cb411b527409476919725befd3, type: 3}
+      - {fileID: 8300000, guid: 5772e8cfa2bcae64aa3611d5cac9eddc, type: 3}
+      - {fileID: 8300000, guid: 23658f1144e567d44945bfe262865333, type: 3}
     - key: VOX_FIGHT_CURSE
       takes:
-      - {fileID: 8300000, guid: c949b9bbf55044fab83b87693346a424, type: 3}
-      - {fileID: 8300000, guid: 0cbeb4c19fa7a4e4cbbf4f92a08c1a3d, type: 3}
-      - {fileID: 8300000, guid: fff110438b6af4b5f896bd9d97f58970, type: 3}
-      - {fileID: 8300000, guid: 2cbd3be9d31ab40adac7a01ce86203df, type: 3}
-      - {fileID: 8300000, guid: e716ec5cca7334f8e88ee6b4ec5994b9, type: 3}
-      - {fileID: 8300000, guid: 3daba9d5f83c94065822f80bd2481592, type: 3}
-      - {fileID: 8300000, guid: b89f62cea7d6c4ad0b7df6ba0d629143, type: 3}
-      - {fileID: 8300000, guid: 6805bad94cbcf4da79c8b724c96cc4ce, type: 3}
+      - {fileID: 8300000, guid: e56465dee9871ee44980038cca73dbff, type: 3}
+      - {fileID: 8300000, guid: 419a561d4ae72304296adff9dcf38974, type: 3}
+      - {fileID: 8300000, guid: 82857cc959cc58849b0278c6bdb8fed3, type: 3}
+      - {fileID: 8300000, guid: a80bca073970e94499611e78697ce147, type: 3}
+      - {fileID: 8300000, guid: 868582eed80a9f045a74804832ddd942, type: 3}
+      - {fileID: 8300000, guid: 8f856aea462aadc418ca85f510628068, type: 3}
+      - {fileID: 8300000, guid: a3d8517f34ff5c54fa43747f2e00204a, type: 3}
+      - {fileID: 8300000, guid: a70708617e225fa4bbbc58940f343563, type: 3}
     - key: VOX_HIT_BAD
       takes:
-      - {fileID: 8300000, guid: 0443860a8b9f34d64a57acfbc7620810, type: 3}
-      - {fileID: 8300000, guid: 1ba90e6bbccac4494adf3258804a72ee, type: 3}
-      - {fileID: 8300000, guid: 88fa8dc1b26874d68a394395278b338c, type: 3}
+      - {fileID: 8300000, guid: 17d35ec066cdc2743864b2f51dc2e88b, type: 3}
+      - {fileID: 8300000, guid: 78a301065508c7e4d88734403fb0917b, type: 3}
+      - {fileID: 8300000, guid: 34590673f78960b4a942a0d5f187d61c, type: 3}
     - key: VOX_HIT_TAKE
       takes:
-      - {fileID: 8300000, guid: 6aa6ce1fca5f6487aa248cf1f1584baa, type: 3}
-      - {fileID: 8300000, guid: ab0f6165325554e61b4b752424ff4b4d, type: 3}
-      - {fileID: 8300000, guid: caa6536ac25ff4cd5b60eacf1c6d101f, type: 3}
-      - {fileID: 8300000, guid: ef1a1bb678e4f4a579b9275305997431, type: 3}
-      - {fileID: 8300000, guid: ca08bd5926ada4e619c2518a01c09076, type: 3}
-      - {fileID: 8300000, guid: 6c28a42af20e142b29f7ae80b8689cda, type: 3}
+      - {fileID: 8300000, guid: 8bb5d14bedebc3849a0edc752af3e5e1, type: 3}
+      - {fileID: 8300000, guid: a2e3e2a120060344e933ede08ccb3e77, type: 3}
+      - {fileID: 8300000, guid: 7cd335798277a0847ad2c4211d15ec2a, type: 3}
+      - {fileID: 8300000, guid: 3424f700cf49a5546a3edb8119242215, type: 3}
+      - {fileID: 8300000, guid: d8b332f14af2685449026504ff800527, type: 3}
+      - {fileID: 8300000, guid: 285ba97e3f1206444aa943abbb8638e2, type: 3}
     - key: VOX_LAW_HEAT
       takes:
-      - {fileID: 8300000, guid: 2a0c7c334193c4ce8aa8a9e207d0195c, type: 3}
-      - {fileID: 8300000, guid: d90d66ec14ed54edead007e2386eaf6e, type: 3}
-      - {fileID: 8300000, guid: 6027f3b1d77ae45678859b36adc3f540, type: 3}
+      - {fileID: 8300000, guid: 454917f0833b2c84ba2c3e4fff2b6efe, type: 3}
+      - {fileID: 8300000, guid: e3b10cbc9968bd849b1f50bc1a3d6108, type: 3}
+      - {fileID: 8300000, guid: 671a9160c30c8a247ac8d91fa2b3cb0b, type: 3}
     - key: VOX_LOSS_MAN
       takes:
-      - {fileID: 8300000, guid: 4e9b34bc904fb4050b9a2a9601e33bf4, type: 3}
-      - {fileID: 8300000, guid: dec50ba6b0e4b47c993bff972dc36aba, type: 3}
-      - {fileID: 8300000, guid: f7ca198ed8fdf4b04bfcdc0d31dc9f37, type: 3}
-      - {fileID: 8300000, guid: e45ce6fea41c8473cadd6df61ee2e994, type: 3}
+      - {fileID: 8300000, guid: 741fa4a13358f814092a41c46f00a28f, type: 3}
+      - {fileID: 8300000, guid: f0b9dd57a6e29cc44881e46dd3ed815d, type: 3}
+      - {fileID: 8300000, guid: 860c5bac8bef9c549ae15491e57eeea3, type: 3}
+      - {fileID: 8300000, guid: f77dce5dd450b85428ca601f176f7b8b, type: 3}
     - key: VOX_NO_ARMS
       takes:
-      - {fileID: 8300000, guid: c166326e7b8f843b9b2bb63a6bc65533, type: 3}
+      - {fileID: 8300000, guid: 4b6c62006af95d64bad2dccc72c42989, type: 3}
     - key: VOX_NO_GENERIC
       takes:
-      - {fileID: 8300000, guid: 91976afd87f084b22b993878f1adc2b9, type: 3}
-      - {fileID: 8300000, guid: 2ed2dbe91060d42c8afc2957e7df9247, type: 3}
-      - {fileID: 8300000, guid: ea0f9b1677f5445afb845e56769a09ee, type: 3}
+      - {fileID: 8300000, guid: bb2c0db15eaa2414790c1ae491f90938, type: 3}
+      - {fileID: 8300000, guid: 1f888cd50a7047a488b7253ecc6a5dc3, type: 3}
+      - {fileID: 8300000, guid: f1df24b0d9552d7439578f637117a923, type: 3}
     - key: VOX_NO_MEN
       takes:
-      - {fileID: 8300000, guid: 684172ec0f0544d70a64e192c9ecd6d3, type: 3}
+      - {fileID: 8300000, guid: 63a5f30ccad592d4aa9c1bf219226e23, type: 3}
     - key: VOX_NO_REACH
       takes:
-      - {fileID: 8300000, guid: 1cf05cab2dcbe4806916e85113f2bda6, type: 3}
+      - {fileID: 8300000, guid: 8fd7f73e70ccaa948875ea224aea95b3, type: 3}
     - key: VOX_ORD_AWAY
       takes:
-      - {fileID: 8300000, guid: 4d633cc600b96406ebcd805c62d6702d, type: 3}
-      - {fileID: 8300000, guid: 19f4a5afed9954e3196f5d123b289b0d, type: 3}
+      - {fileID: 8300000, guid: bf2556cd8e8b8c144bd3a217fb83a682, type: 3}
+      - {fileID: 8300000, guid: af560f71928012749b065cfdf1841d61, type: 3}
     - key: VOX_ORD_BAG
       takes:
-      - {fileID: 8300000, guid: cff987dad2eb744569fb2bd1fa299376, type: 3}
-      - {fileID: 8300000, guid: f1137f6c8d95349188cad5ae42ff5a9f, type: 3}
+      - {fileID: 8300000, guid: c00456c298b8b2341a9b5650060ee394, type: 3}
+      - {fileID: 8300000, guid: e64d8ee44f3e3fc4e92003032bad7a38, type: 3}
     - key: VOX_ORD_BOARD
       takes:
-      - {fileID: 8300000, guid: 9c772effce5c447e3ba82a41c82ae345, type: 3}
-      - {fileID: 8300000, guid: 4e2b51b8a48014750bf8311dd246a483, type: 3}
+      - {fileID: 8300000, guid: 301b7cff0d0e9ca4aa59cb845e8135cc, type: 3}
+      - {fileID: 8300000, guid: d56188b4e8784c34aa4f8982b5cc19d6, type: 3}
     - key: VOX_ORD_CARBOMB
       takes:
-      - {fileID: 8300000, guid: 4a50b60cd1f464053ba32aaee0e75b89, type: 3}
-      - {fileID: 8300000, guid: 8538334eb79af4e75885785b356338d4, type: 3}
-      - {fileID: 8300000, guid: 9b53fd1fbbc744809853d963fcd92cc3, type: 3}
+      - {fileID: 8300000, guid: 6a8ca290df2847f4eaf50dc6c098cea1, type: 3}
+      - {fileID: 8300000, guid: 6a8b277da10931b48ab7e79e068d7c37, type: 3}
+      - {fileID: 8300000, guid: 8d6dbf6df8036d5478788cb89184c392, type: 3}
     - key: VOX_ORD_COVER
       takes:
-      - {fileID: 8300000, guid: d7a4d8821a8ee4995abf075cf2cfdad4, type: 3}
-      - {fileID: 8300000, guid: b0d1b4bddbbcc4ed7beb9652d8400b4b, type: 3}
-      - {fileID: 8300000, guid: f274e9ec53c044d0f9243f7e27a78bd5, type: 3}
+      - {fileID: 8300000, guid: 82ab9d117c78851479dc6fc0df93ad3a, type: 3}
+      - {fileID: 8300000, guid: cc5aa159fa628b44fabab16142e51419, type: 3}
+      - {fileID: 8300000, guid: 43a19527134866e469fd75d7433aa9d2, type: 3}
     - key: VOX_ORD_DOORBOMB
       takes:
-      - {fileID: 8300000, guid: da9331fd3519f4ce08f815f07796180d, type: 3}
-      - {fileID: 8300000, guid: b54d08fe4778542d18cfa0e306d5322a, type: 3}
+      - {fileID: 8300000, guid: d4abce3379bfd7b4d8fd6be4f9eb7265, type: 3}
+      - {fileID: 8300000, guid: 0376af6096a85f04a9d04cb09ea76903, type: 3}
     - key: VOX_ORD_DRIVEBY
       takes:
-      - {fileID: 8300000, guid: 02fa8df21b0ea416991ad68a2109d49a, type: 3}
-      - {fileID: 8300000, guid: 2512e116add1c4dfd8975c067a3a75dc, type: 3}
-      - {fileID: 8300000, guid: 3ccba7716bd1b4c738032ba9d77b15ed, type: 3}
+      - {fileID: 8300000, guid: ccbaafffbcd51584b97f2468a9aa9f50, type: 3}
+      - {fileID: 8300000, guid: ff3e059ddcd8c2f488e46e7e5bfe64a5, type: 3}
+      - {fileID: 8300000, guid: 615ca1d8de0d6864faa207893f02b9ec, type: 3}
     - key: VOX_ORD_FLEE
       takes:
-      - {fileID: 8300000, guid: 2a47b84d0001242adbf4af9fc6a1df51, type: 3}
-      - {fileID: 8300000, guid: 5f2e3e0386e20495ab8cb7d0a357d6c1, type: 3}
-      - {fileID: 8300000, guid: dd9b9796063b0491ab8e98052b8e2881, type: 3}
+      - {fileID: 8300000, guid: 385e6d566d2eebf438c216843ba5fbc8, type: 3}
+      - {fileID: 8300000, guid: 884ae25968cdda34d83889513be86d8b, type: 3}
+      - {fileID: 8300000, guid: e031d7e3c74c3784994596a48b3ee085, type: 3}
     - key: VOX_ORD_GRENADE
       takes:
-      - {fileID: 8300000, guid: 328ff59098e81428683c4f5e80f7a64d, type: 3}
-      - {fileID: 8300000, guid: 9f19c6bff9a134b2e889211851446e1b, type: 3}
-      - {fileID: 8300000, guid: 07e90b2d1ac144505976216195536bce, type: 3}
+      - {fileID: 8300000, guid: 444be143795da2a4ba551ca6a3f763e1, type: 3}
+      - {fileID: 8300000, guid: 018c3e7989e0d6144834365595affd49, type: 3}
+      - {fileID: 8300000, guid: ffc02a1ff24918349aaf91109db0dfda, type: 3}
     - key: VOX_ORD_INSIDE
       takes:
-      - {fileID: 8300000, guid: d6823e896d299467a8ef4e4fab5b24fd, type: 3}
-      - {fileID: 8300000, guid: 9c85c298597e240e298c133260d39a57, type: 3}
+      - {fileID: 8300000, guid: 8e3c0a9f29721ec4d8888d96489889e4, type: 3}
+      - {fileID: 8300000, guid: cdad7c112bca61740baffeedb94068a8, type: 3}
     - key: VOX_ORD_KILL
       takes:
-      - {fileID: 8300000, guid: 0fb95a89e9b80483987b980eb920a719, type: 3}
-      - {fileID: 8300000, guid: f071071cb6e3744d09d72ac64b6659ab, type: 3}
-      - {fileID: 8300000, guid: 58a0128b724974e78a8ef6be476c8716, type: 3}
+      - {fileID: 8300000, guid: 9ab9f9e8f0f9fe14fa46a7a304b8dbd4, type: 3}
+      - {fileID: 8300000, guid: 237f9049624ffe84aa6d0d665919e679, type: 3}
+      - {fileID: 8300000, guid: 7a8b40b9dc0de1547a6e6f8d6f44e273, type: 3}
     - key: VOX_ORD_MOVE
       takes:
-      - {fileID: 8300000, guid: fd09aaecbdb2a48fcacbf52c42baf2e8, type: 3}
-      - {fileID: 8300000, guid: 33b7e60ef76034297a57e2bbfd4d263f, type: 3}
-      - {fileID: 8300000, guid: bd9459cfc8eec45bb8d8d0849e3705cb, type: 3}
+      - {fileID: 8300000, guid: f79ba77e528ca0c4294bfd6bc8ce087c, type: 3}
+      - {fileID: 8300000, guid: 96e813695c51da943b696fe3a09800f4, type: 3}
+      - {fileID: 8300000, guid: fb841904e0351a3439c6c0ac0f8eb8d6, type: 3}
     - key: VOX_ORD_OUT
       takes:
-      - {fileID: 8300000, guid: 701ff5e8686cb4010b8c7d1e973fbd12, type: 3}
-      - {fileID: 8300000, guid: b234e3bb6adfa4ee48f84d3cb1928d97, type: 3}
+      - {fileID: 8300000, guid: 29ac5d902fc0a66449f8b2990e94d9cd, type: 3}
+      - {fileID: 8300000, guid: 44b0012ae1a23ab4e8c95a7885e85afd, type: 3}
     - key: VOX_ORD_OUTSIDE
       takes:
-      - {fileID: 8300000, guid: 37ef61df1531e4f1688d55c0bfd1644b, type: 3}
-      - {fileID: 8300000, guid: bdcae7a5877db4b0294fba041107942c, type: 3}
+      - {fileID: 8300000, guid: 5fcc2340094f9824ea9e0d1fe92b5243, type: 3}
+      - {fileID: 8300000, guid: 74ca56c9a1c7e844aa98bc6c8aaae796, type: 3}
     - key: VOX_ORD_RUN
       takes:
-      - {fileID: 8300000, guid: aadb28bf335c944d0a774ebde14f8f5a, type: 3}
-      - {fileID: 8300000, guid: abaf244f576624fe892c89085a9fbee2, type: 3}
-      - {fileID: 8300000, guid: 6f906c871d41444e09a22ec7bb805f71, type: 3}
+      - {fileID: 8300000, guid: 966c423b10fd9c9488b3aa2d713d1ed9, type: 3}
+      - {fileID: 8300000, guid: f19e5173fb70bf849bb4c18c73e2383c, type: 3}
+      - {fileID: 8300000, guid: b64bfe2fe09a57f438cd70af06710bbd, type: 3}
     - key: VOX_ORD_SHOOTCAR
       takes:
-      - {fileID: 8300000, guid: 21a6ff33e9705489faa7cc587bb90929, type: 3}
-      - {fileID: 8300000, guid: 75c60a6ff5e424ee7b157b80ee5a9349, type: 3}
+      - {fileID: 8300000, guid: 887996e15b5b6744484e545751a2a459, type: 3}
+      - {fileID: 8300000, guid: a0d2c6751f661854787a951a896a5a7e, type: 3}
     - key: VOX_ORD_WITNESS
       takes:
-      - {fileID: 8300000, guid: d26b900e288614a06be990ae0cb0a1a7, type: 3}
-      - {fileID: 8300000, guid: aabf5c25df4f443f0aae9ee48879a308, type: 3}
+      - {fileID: 8300000, guid: 4e3f92e1b20b7b8479cf14fccfc5ca69, type: 3}
+      - {fileID: 8300000, guid: fd9faa9085416754fa0ede4b534329d5, type: 3}
     - key: VOX_PIN_HELD
       takes:
-      - {fileID: 8300000, guid: f838930696d45410984ee650fc5c1995, type: 3}
-      - {fileID: 8300000, guid: 46aee52672a984ebb948e47395330ebb, type: 3}
-      - {fileID: 8300000, guid: 06602190e01dc4cf8a6d68ba8bc61fa3, type: 3}
+      - {fileID: 8300000, guid: 9ad2a096374123f43a61ad0796d5af90, type: 3}
+      - {fileID: 8300000, guid: a522116e072021e49bb7db3dc1891a4d, type: 3}
+      - {fileID: 8300000, guid: 55e0761b4846402449719c3cad95500e, type: 3}
     - key: VOX_RKT_APPROACH
       takes:
-      - {fileID: 8300000, guid: 139151400d79e436f9c9d8722f88f3b2, type: 3}
-      - {fileID: 8300000, guid: 76805557eeafd4e10acad4d00112279b, type: 3}
+      - {fileID: 8300000, guid: 536900126f62c6f4fb735b9dba2505e5, type: 3}
+      - {fileID: 8300000, guid: e1331dd28127945409815f829c38233f, type: 3}
     - key: VOX_RKT_COLLECT
       takes:
-      - {fileID: 8300000, guid: 445d16711f18e4b90ae5559c3a94f3f2, type: 3}
-      - {fileID: 8300000, guid: 05dd45e859e904d68855bde76668087e, type: 3}
+      - {fileID: 8300000, guid: eec68d31b362dd0409fb400e41900de3, type: 3}
+      - {fileID: 8300000, guid: edd6648fc38b47541b39b466af178161, type: 3}
     - key: VOX_RKT_DEMAND
       takes:
-      - {fileID: 8300000, guid: e9d2e3e6a571048dbbfbe7dece201be0, type: 3}
-      - {fileID: 8300000, guid: f5af6fb6e152a4fc8936996861f366c0, type: 3}
+      - {fileID: 8300000, guid: 7f146b25465dd874884953307e0347ef, type: 3}
+      - {fileID: 8300000, guid: 21132d6543c07d040899f2ed085872c0, type: 3}
     - key: VOX_RKT_GUARD
       takes:
-      - {fileID: 8300000, guid: 96e482d3793894974afd14fc2edb81db, type: 3}
-      - {fileID: 8300000, guid: eeb1c70d8e95f4852b1b760f097d2fa5, type: 3}
+      - {fileID: 8300000, guid: 20dedb04ccfc7414dacae1066ea2dd88, type: 3}
+      - {fileID: 8300000, guid: a624493b2c2972448ae61303a1c50bb1, type: 3}
     - key: VOX_RKT_HOLDOUT
       takes:
-      - {fileID: 8300000, guid: 822a1bbb99bdb481583d0975d92ecb49, type: 3}
-      - {fileID: 8300000, guid: 5119c3ee96256410f935af941d6db36b, type: 3}
+      - {fileID: 8300000, guid: 8abc88a4f7e678f44854024033963960, type: 3}
+      - {fileID: 8300000, guid: 83962a213da8d894193bbf01c541c0a4, type: 3}
     - key: VOX_RKT_ROB
       takes:
-      - {fileID: 8300000, guid: eb23e1d2a38fb4153abcdd8073b211ad, type: 3}
-      - {fileID: 8300000, guid: 997363637ed824d969f4eb7d34a85487, type: 3}
+      - {fileID: 8300000, guid: 7f863262bc522bc4e8f7f00126c15e5e, type: 3}
+      - {fileID: 8300000, guid: e5223b48b08fbf246b51c4fabe91efde, type: 3}
     - key: VOX_RKT_SHAKE
       takes:
-      - {fileID: 8300000, guid: 0d86441d2a9c543bfa8281ec7173726b, type: 3}
-      - {fileID: 8300000, guid: 08263001e30c04669aa2b305a54f2480, type: 3}
+      - {fileID: 8300000, guid: be04ca0d6c5d7a943b7a8d069b4029ad, type: 3}
+      - {fileID: 8300000, guid: f06c30b9cd439f1438448d1677a92d41, type: 3}
     - key: VOX_RKT_SMASH
       takes:
-      - {fileID: 8300000, guid: e54d8c2f34c574f88b2d8d8597399a6f, type: 3}
-      - {fileID: 8300000, guid: c93cc67fa625b4f53bca1211cc74eeff, type: 3}
+      - {fileID: 8300000, guid: 44868cc3793067a4da2d5d5daddc174f, type: 3}
+      - {fileID: 8300000, guid: 415120eca1c73bd4e901b10de1092341, type: 3}
     - key: VOX_RKT_THREAT
       takes:
-      - {fileID: 8300000, guid: 95a6db3b2b8c94d43bff823fe66a6165, type: 3}
-      - {fileID: 8300000, guid: 4c7e40e18598649edab94b9858438ff9, type: 3}
+      - {fileID: 8300000, guid: 47f18da427e871e46a5d0ff83a150090, type: 3}
+      - {fileID: 8300000, guid: 560da888033b1a747b17240f4055470e, type: 3}
     - key: VOX_RKT_TORCH
       takes:
-      - {fileID: 8300000, guid: 7931fdd9f948f4046a1e658a5b986142, type: 3}
-      - {fileID: 8300000, guid: fd3a64b41f01c4d8eb1d3001793fe9ce, type: 3}
+      - {fileID: 8300000, guid: 1370f7bae6cb1e1409e6292bc8657f59, type: 3}
+      - {fileID: 8300000, guid: 1729561e569111845b955ab1d400d564, type: 3}
     - key: VOX_SEL_CAR
       takes:
-      - {fileID: 8300000, guid: 295eb61de8f3641dd990a4e68ff79a73, type: 3}
-      - {fileID: 8300000, guid: 7dcb1d65424324af89dd9695eb29ce5f, type: 3}
+      - {fileID: 8300000, guid: 02ecc2cdb846c6a459699f1150ac60ad, type: 3}
+      - {fileID: 8300000, guid: 94533cc2d294d46438224e76dc2e3229, type: 3}
     - key: VOX_SEL_FEW
       takes:
-      - {fileID: 8300000, guid: 1fbdea130ec5d45dd905107c7ceebdc4, type: 3}
+      - {fileID: 8300000, guid: fbc2f2f916b09464b932c133ae67f114, type: 3}
     - key: VOX_SEL_HURT
       takes:
-      - {fileID: 8300000, guid: be701a982c1104d1fa79df9d2d76cb99, type: 3}
-      - {fileID: 8300000, guid: 4e26d681c795f4927a9976a9cb2aa636, type: 3}
+      - {fileID: 8300000, guid: 80dfc73c9d6f680458cec967c573321a, type: 3}
+      - {fileID: 8300000, guid: ab6bd68b625d2cc4da6e1ede1307530a, type: 3}
     - key: VOX_SEL_INSIDE
       takes:
-      - {fileID: 8300000, guid: 49535d533bc04421cbc864bd4139655d, type: 3}
-      - {fileID: 8300000, guid: 36de4fbc1f5db4996a2c8475546dd488, type: 3}
+      - {fileID: 8300000, guid: 301ffc1af4c6cd748af988f91ab30fe3, type: 3}
+      - {fileID: 8300000, guid: cf3a520d5dd63b14899f92e9382b9e1a, type: 3}
     - key: VOX_SEL_READY
       takes:
-      - {fileID: 8300000, guid: 65d4ab2bb4d91483b8f2ae230b9db09b, type: 3}
-      - {fileID: 8300000, guid: 3163c951529634044a96309d39e76a43, type: 3}
-      - {fileID: 8300000, guid: 92e44a8844f4f4b44a09f8246f8fe3b0, type: 3}
-      - {fileID: 8300000, guid: 05aa9402ed130487cb3606da7616a6f4, type: 3}
+      - {fileID: 8300000, guid: 49c019a6acee1894094f792c46732645, type: 3}
+      - {fileID: 8300000, guid: 89987dcb558e3374abc6d31fd43dd7b0, type: 3}
+      - {fileID: 8300000, guid: df6c16e97837d17408305616365a9d9b, type: 3}
+      - {fileID: 8300000, guid: c1fd609440e2d614a869ec98444aff2b, type: 3}
     - key: VOX_SEL_ROUND
       takes:
-      - {fileID: 8300000, guid: 3c36af6f91b1c43a6be8980d713484fa, type: 3}
+      - {fileID: 8300000, guid: 2783fd878e120a8409abc8c46c46320e, type: 3}
     - key: VOX_SPOT_CONTACT
       takes:
-      - {fileID: 8300000, guid: d2b43aefbf98c47889ee4c1a86e05c2c, type: 3}
-      - {fileID: 8300000, guid: c5b65ee35f1324bff9fac7b8fbdf6801, type: 3}
-      - {fileID: 8300000, guid: 5541663d0ceb34a28ad20bcdfedf6061, type: 3}
-      - {fileID: 8300000, guid: 8c6f9aabeba174502aa4e8fb650a9a1b, type: 3}
+      - {fileID: 8300000, guid: 13c67d5012a5f2d4aa55cd2e7cc8652e, type: 3}
+      - {fileID: 8300000, guid: 832ac97c8001ee743b4d3e61e2877c84, type: 3}
+      - {fileID: 8300000, guid: 215fbd3429ad5c5408c461b7c885acac, type: 3}
+      - {fileID: 8300000, guid: e9e9c825ace9c194a87e5628ff9b4116, type: 3}
     - key: VOX_SURR_HANDS
       takes:
-      - {fileID: 8300000, guid: c183069fd6be945edb07385285fff88a, type: 3}
-      - {fileID: 8300000, guid: 3596e552df5254ef1a831cfeebec2dae, type: 3}
-      - {fileID: 8300000, guid: f666d389ae9254b24840cacb20af7c40, type: 3}
+      - {fileID: 8300000, guid: 99d2b14706d2a1b4fa66e87c684edb94, type: 3}
+      - {fileID: 8300000, guid: 2ce6dfc48841d7545b18aa57f8a096d5, type: 3}
+      - {fileID: 8300000, guid: 07d074f4c901b5244becf0c9b62bc04d, type: 3}
     - key: VOX_WARN_CALL
       takes:
-      - {fileID: 8300000, guid: 98f86e43f0ed244c7a8e3866c2654d96, type: 3}
-      - {fileID: 8300000, guid: a4ae98e61be78490bb646fc76537b73b, type: 3}
-      - {fileID: 8300000, guid: ba81b0717f09a4b818bbcaea8bc12236, type: 3}
+      - {fileID: 8300000, guid: 24a24cefad3075d4090c480e95cf3f4b, type: 3}
+      - {fileID: 8300000, guid: 031f756c341f2a647aa75339f3890f0f, type: 3}
+      - {fileID: 8300000, guid: 414b3410118c30d46ba98a738d9082ce, type: 3}
     - key: VOX_WIN_OVER
       takes:
-      - {fileID: 8300000, guid: d81d6eed8f4f14fb8abf4efa6e9dfa88, type: 3}
-      - {fileID: 8300000, guid: 22c8d82aa5c484301a73281b75da11e6, type: 3}
-      - {fileID: 8300000, guid: a3249e3761eb44b4dbaa99afb92f7e36, type: 3}
+      - {fileID: 8300000, guid: e87acdce704c1c44692503b2a744f514, type: 3}
+      - {fileID: 8300000, guid: 1519194d6ef0ba0439a1e08e73cde0a7, type: 3}
+      - {fileID: 8300000, guid: 73dff87ce35970d4594223e1c4d0cafc, type: 3}
   - id: VB05
     actor: David - Deep Southern
     age: 1
@@ -949,230 +949,230 @@ MonoBehaviour:
     lines:
     - key: VOX_DOWN_CRY
       takes:
-      - {fileID: 8300000, guid: 931c04c28051c4903ba280d9d4a78e02, type: 3}
-      - {fileID: 8300000, guid: eb88eda5879f244da98a159dae413ecb, type: 3}
-      - {fileID: 8300000, guid: 1ac87d8da4a734b429df078f701355c5, type: 3}
-      - {fileID: 8300000, guid: d95314c9e6b754895ae00f0be55ce44f, type: 3}
+      - {fileID: 8300000, guid: 72863473e0ca1664f872aa549591f1f7, type: 3}
+      - {fileID: 8300000, guid: bfb876ec0bd28554a8f69cd72b523412, type: 3}
+      - {fileID: 8300000, guid: c18b2a514baea8f4685467ec1545ff2d, type: 3}
+      - {fileID: 8300000, guid: c3353b9679eb56e4a84976823889101a, type: 3}
     - key: VOX_DROP_GOT
       takes:
-      - {fileID: 8300000, guid: a3a374a33bf9145ba9724a9a185b91c6, type: 3}
-      - {fileID: 8300000, guid: cf586acefb8b7440d8eefed6cdfb4daf, type: 3}
-      - {fileID: 8300000, guid: eccb5cd52768349d4b0b91bfaf35d4b7, type: 3}
-      - {fileID: 8300000, guid: cc3700796321b41b28c80815e4669edb, type: 3}
+      - {fileID: 8300000, guid: 7eca99dd82dc4394bb8ca21e7e7ec3e1, type: 3}
+      - {fileID: 8300000, guid: d27004a14c018654b84379a89b769c82, type: 3}
+      - {fileID: 8300000, guid: 551632bcbe225bb4ba4e5429e01e7a2e, type: 3}
+      - {fileID: 8300000, guid: a064073362e4c23428d114bb40607fe6, type: 3}
     - key: VOX_FIGHT_CURSE
       takes:
-      - {fileID: 8300000, guid: 86608b4e18a874da2896720b50642255, type: 3}
-      - {fileID: 8300000, guid: 74be42d6c236a43de9dcebdde5537a99, type: 3}
-      - {fileID: 8300000, guid: c2dd83fad4f7f446fba56a034d769f53, type: 3}
-      - {fileID: 8300000, guid: ff44e358441284495aba359492739c69, type: 3}
-      - {fileID: 8300000, guid: 42774b2648ac04200aadd7fa0fdc4b5e, type: 3}
-      - {fileID: 8300000, guid: 00f63428d142547bc80ada4e0aef5091, type: 3}
-      - {fileID: 8300000, guid: 414c8d15df22f40289c129587c5ecdb2, type: 3}
-      - {fileID: 8300000, guid: a0a6ce29648264da1aa390403679cf8c, type: 3}
+      - {fileID: 8300000, guid: 1ad5f6d5277f0ba4d87ea543e1e49ef0, type: 3}
+      - {fileID: 8300000, guid: d357eb289926e624cb483b7b63c9c752, type: 3}
+      - {fileID: 8300000, guid: 3e0ee42582da1ce46aea233616334563, type: 3}
+      - {fileID: 8300000, guid: 633bb094bd0ba134aa04221521c12885, type: 3}
+      - {fileID: 8300000, guid: 9883f26a2b3f9034dab9394d39119cda, type: 3}
+      - {fileID: 8300000, guid: 69cc039f1e0f2234086770c6e0bf7d5e, type: 3}
+      - {fileID: 8300000, guid: 01dc6cd24b5d01f41b566e5277ce054c, type: 3}
+      - {fileID: 8300000, guid: ea43d5315e7260745a7dfdd73c5675af, type: 3}
     - key: VOX_HIT_BAD
       takes:
-      - {fileID: 8300000, guid: e3426fb114c6f48859badc597b8222fd, type: 3}
-      - {fileID: 8300000, guid: 1dd1fa76ea91d4fc0a0212317e9f15e1, type: 3}
-      - {fileID: 8300000, guid: d9b583963e12143319e6889630bd79b7, type: 3}
+      - {fileID: 8300000, guid: 8da24f1101340564aa220019548a7689, type: 3}
+      - {fileID: 8300000, guid: 03767fb97fabaa444a1aa4deb85072b0, type: 3}
+      - {fileID: 8300000, guid: f7d8f2e48fcebc34cb4a496b31674bb3, type: 3}
     - key: VOX_HIT_TAKE
       takes:
-      - {fileID: 8300000, guid: b75a65c0271b64229815f5dc180cafec, type: 3}
-      - {fileID: 8300000, guid: 7458b224788ae4e1eb41a79bb9a42e09, type: 3}
-      - {fileID: 8300000, guid: 072f985ac85a74a4f98e5d5769fd939f, type: 3}
-      - {fileID: 8300000, guid: 8ed79b8ec7ffd40d6b530111d5d9933a, type: 3}
-      - {fileID: 8300000, guid: 73a1a8171e96a44ba8b750d280563067, type: 3}
-      - {fileID: 8300000, guid: 54e5206478d124ed3b1312b140adcc45, type: 3}
+      - {fileID: 8300000, guid: a0c8ccbe225b85045ae5159caa9b154b, type: 3}
+      - {fileID: 8300000, guid: 0b321a9076d4ff1498f9e3840b34cd99, type: 3}
+      - {fileID: 8300000, guid: 895c25ef921f35e4a9bf3b79dd4b7caa, type: 3}
+      - {fileID: 8300000, guid: 4b34d181d3400fd4cb7425d0576c1163, type: 3}
+      - {fileID: 8300000, guid: d0d7d8651d205af47b268bf6c2afae21, type: 3}
+      - {fileID: 8300000, guid: a2ac92fab6cd3354f861fa95ed3a829f, type: 3}
     - key: VOX_LAW_HEAT
       takes:
-      - {fileID: 8300000, guid: 775394659d08147caa4876233cc579e1, type: 3}
-      - {fileID: 8300000, guid: 4f68492660e604d55ade8a07e614fc24, type: 3}
-      - {fileID: 8300000, guid: a363c7ceb90ca41688f0b2660cd5aafd, type: 3}
+      - {fileID: 8300000, guid: 489e9d20d4a93a948b3d82516a48efa9, type: 3}
+      - {fileID: 8300000, guid: 972961cb4bc061e48b68d7fd6f380d7b, type: 3}
+      - {fileID: 8300000, guid: 53a96ec77a88559499a6ef0df63eb89c, type: 3}
     - key: VOX_LOSS_MAN
       takes:
-      - {fileID: 8300000, guid: 50b7eb48870034584b2df746500d3d08, type: 3}
-      - {fileID: 8300000, guid: a448b62804dc7466199e85af2b6e20b6, type: 3}
-      - {fileID: 8300000, guid: 342664bac586c4e33b24e61257961594, type: 3}
-      - {fileID: 8300000, guid: 7010b3fcfc29542b4bde1f6959a2dd0b, type: 3}
+      - {fileID: 8300000, guid: 73c1ac2e5f6145947a4549f56d82120f, type: 3}
+      - {fileID: 8300000, guid: e45d06fab6fad46418ef73c9f03be09f, type: 3}
+      - {fileID: 8300000, guid: ad7cb8c51c0cb144481a199ca747e24d, type: 3}
+      - {fileID: 8300000, guid: d94dd16666b3e364685283f658edff38, type: 3}
     - key: VOX_NO_ARMS
       takes:
-      - {fileID: 8300000, guid: 4714f2718399246ea983fd32810bb518, type: 3}
+      - {fileID: 8300000, guid: ebf4e1b95f6af52459c93d1250e8ac35, type: 3}
     - key: VOX_NO_GENERIC
       takes:
-      - {fileID: 8300000, guid: a83d320bed8d541bb8dd4cd4ab26bdef, type: 3}
-      - {fileID: 8300000, guid: 5b7cecef59ae6472488b551be481542b, type: 3}
-      - {fileID: 8300000, guid: a3a9b6c5240dc46c88544ab4b1d0f697, type: 3}
+      - {fileID: 8300000, guid: 95749bd435d8f8c4f8acd7e502de08c2, type: 3}
+      - {fileID: 8300000, guid: c0876a8cd1ee5bc4995125e46c6665fc, type: 3}
+      - {fileID: 8300000, guid: 531ccd9e18f810347b7bca5925b08d56, type: 3}
     - key: VOX_NO_MEN
       takes:
-      - {fileID: 8300000, guid: 58ddbbe5d6e644bdaa66325b0ebdd755, type: 3}
+      - {fileID: 8300000, guid: f22621ded9e503c49a5abecabb775711, type: 3}
     - key: VOX_NO_REACH
       takes:
-      - {fileID: 8300000, guid: c5f4984c9f2e5489cab2840a3c765dbc, type: 3}
+      - {fileID: 8300000, guid: 7e9335e2c0160e74caa8cb741e1cfeee, type: 3}
     - key: VOX_ORD_AWAY
       takes:
-      - {fileID: 8300000, guid: 1d1e937df44ea47f2bdd913339869a21, type: 3}
-      - {fileID: 8300000, guid: 6f989c8677bd04d95bb6fd8f370f6058, type: 3}
+      - {fileID: 8300000, guid: abe89f12c47ef4644a9fd3ae6d699f7d, type: 3}
+      - {fileID: 8300000, guid: c7f2e2f838e164d4698874993fc6417f, type: 3}
     - key: VOX_ORD_BAG
       takes:
-      - {fileID: 8300000, guid: dcadb81a4afce42179fa23077e5860ad, type: 3}
-      - {fileID: 8300000, guid: e0a2100a2c69f4d209b569ce298f91b7, type: 3}
+      - {fileID: 8300000, guid: a30650ac4cf8bcb4a86ab7a9cb851890, type: 3}
+      - {fileID: 8300000, guid: cc8df528b6b5e4748acb1f06b4e1e4ac, type: 3}
     - key: VOX_ORD_BOARD
       takes:
-      - {fileID: 8300000, guid: f11d5307f48c1408e82bf675b6239bf8, type: 3}
-      - {fileID: 8300000, guid: 03ee35c3d6ddb4f57980bbf50d3bab91, type: 3}
+      - {fileID: 8300000, guid: 11924879ecf6f214d89b668b925f83db, type: 3}
+      - {fileID: 8300000, guid: 7aa2834ceba6a8e4cb2e887ea0341119, type: 3}
     - key: VOX_ORD_CARBOMB
       takes:
-      - {fileID: 8300000, guid: d960b564e34d84dfbaba4dd6f4393d8a, type: 3}
-      - {fileID: 8300000, guid: 0d3480941441a4501a9b4145fa073633, type: 3}
-      - {fileID: 8300000, guid: e14e628026b0644a4a5b6ada5a49acda, type: 3}
+      - {fileID: 8300000, guid: febb64fc810548b42aa9c4284d46f806, type: 3}
+      - {fileID: 8300000, guid: 0050966639b16b649ae7b1f709dec36b, type: 3}
+      - {fileID: 8300000, guid: ddd60caad59dbef44a4ee5b9879fcb10, type: 3}
     - key: VOX_ORD_COVER
       takes:
-      - {fileID: 8300000, guid: d3176fe41b2974d34ba3413bb8847f86, type: 3}
-      - {fileID: 8300000, guid: 099a148a3a79544e0816b665ca62d3b1, type: 3}
-      - {fileID: 8300000, guid: 2f638fba49cb841f09fb1027103e6ec8, type: 3}
+      - {fileID: 8300000, guid: 6160b6197d8b8694da0512d4a8aad4e3, type: 3}
+      - {fileID: 8300000, guid: 16f0346a6d5e3cb4ab5711a147600b60, type: 3}
+      - {fileID: 8300000, guid: 645474f85afc6644bbf1ebe8b1ac8b96, type: 3}
     - key: VOX_ORD_DOORBOMB
       takes:
-      - {fileID: 8300000, guid: 82c030a25c385460ebd51bc0a7a168c8, type: 3}
-      - {fileID: 8300000, guid: df7297db7fb6849c6b03fdce5417d594, type: 3}
+      - {fileID: 8300000, guid: 183769a2cac2f46429dcc4fe8ff6391d, type: 3}
+      - {fileID: 8300000, guid: dc58ef3a7947e344dbd7a51c4bb30cfb, type: 3}
     - key: VOX_ORD_DRIVEBY
       takes:
-      - {fileID: 8300000, guid: a884a06b3335a488d9fc18fb3edf9099, type: 3}
-      - {fileID: 8300000, guid: fd8d7be6286314e20b40cd6acb8b04d5, type: 3}
-      - {fileID: 8300000, guid: fade2d01506c849debba4d83c18f743c, type: 3}
+      - {fileID: 8300000, guid: 283f476a1bd86dc459a5e15f191ec6a9, type: 3}
+      - {fileID: 8300000, guid: 382b8d8c029b65d4b8a8c2e0ff877d30, type: 3}
+      - {fileID: 8300000, guid: ec3a919c892e30143843ae8cc4ce2287, type: 3}
     - key: VOX_ORD_FLEE
       takes:
-      - {fileID: 8300000, guid: edbf45176a0194850bc039a9fbe711ef, type: 3}
-      - {fileID: 8300000, guid: 88133ab905ab84afc99ea231d2ca55b2, type: 3}
-      - {fileID: 8300000, guid: 4dfcc0d0d9ced469197ce154db0c6286, type: 3}
+      - {fileID: 8300000, guid: 4a4df0ec7a0fa2847a19068dd80bb188, type: 3}
+      - {fileID: 8300000, guid: 745e539d36570234fb83254ee4d8b60c, type: 3}
+      - {fileID: 8300000, guid: f5b590d3bdf7ba946a4969578112fb73, type: 3}
     - key: VOX_ORD_GRENADE
       takes:
-      - {fileID: 8300000, guid: 28226bb3455c54361896c4a824303975, type: 3}
-      - {fileID: 8300000, guid: 9fde8709341ac428f94c12a2c2cd69d9, type: 3}
-      - {fileID: 8300000, guid: c5091fe551dd5450ea786961b825c20a, type: 3}
+      - {fileID: 8300000, guid: fb9e4a30820fa0b4e89023008ab15641, type: 3}
+      - {fileID: 8300000, guid: 21710b6e66ac6cd409f8b08b7157e8a1, type: 3}
+      - {fileID: 8300000, guid: 4ca2026185bb96f48b671c85cce8daa2, type: 3}
     - key: VOX_ORD_INSIDE
       takes:
-      - {fileID: 8300000, guid: 18b1c1204d6a14783853b173525d4283, type: 3}
-      - {fileID: 8300000, guid: 6ad0f20e4db064348a2c6761752f5930, type: 3}
+      - {fileID: 8300000, guid: 5493d09e8dda1b540a4a9a7b55288952, type: 3}
+      - {fileID: 8300000, guid: bae1c2dcb0d4bfe4693ff04fa8f5f9d7, type: 3}
     - key: VOX_ORD_KILL
       takes:
-      - {fileID: 8300000, guid: 0358f4531dec74d77874c9954c40b8d0, type: 3}
-      - {fileID: 8300000, guid: 9398254ffcf4c40be8bfa22051278688, type: 3}
-      - {fileID: 8300000, guid: fb18fafa579184b119a8f69cfb80f224, type: 3}
+      - {fileID: 8300000, guid: 0f0b14bb7fb1db54c8a7a82288cfaf44, type: 3}
+      - {fileID: 8300000, guid: dbd88513b61d18547bc179e5e3a55aa5, type: 3}
+      - {fileID: 8300000, guid: cd3b8e6892a46a34ba5d93d8fbd330f6, type: 3}
     - key: VOX_ORD_MOVE
       takes:
-      - {fileID: 8300000, guid: d5cd3a30ce6004aa48dfe6a5015095f0, type: 3}
-      - {fileID: 8300000, guid: 5b539f2b9b94e46f8a2000fd42050769, type: 3}
-      - {fileID: 8300000, guid: 230e6cba7b8374b9f8df0c2b99ad850f, type: 3}
+      - {fileID: 8300000, guid: b34d3792e4cce9a4392090a164463ceb, type: 3}
+      - {fileID: 8300000, guid: b2ecf11a16dca9144b00fd58b5dd3820, type: 3}
+      - {fileID: 8300000, guid: 28ea37399ea09af42a61f80ba9d9f4e3, type: 3}
     - key: VOX_ORD_OUT
       takes:
-      - {fileID: 8300000, guid: 6b40509e90f0345678fec7411ea86dc0, type: 3}
-      - {fileID: 8300000, guid: 5eb9b5b7a22a0437c864aef13b6e2f35, type: 3}
+      - {fileID: 8300000, guid: a8013eb3451c23e45a95f35cb7acf60e, type: 3}
+      - {fileID: 8300000, guid: 780ab0b0818693842a25340f45045eab, type: 3}
     - key: VOX_ORD_OUTSIDE
       takes:
-      - {fileID: 8300000, guid: ddab9453b0459443787c8e642a452af6, type: 3}
-      - {fileID: 8300000, guid: 20fbbc0288be64007895ac2d23b8afff, type: 3}
+      - {fileID: 8300000, guid: a8328d1656e91a448a5cebbcbd730ae3, type: 3}
+      - {fileID: 8300000, guid: 912c071a4a313be45b7760c84db41860, type: 3}
     - key: VOX_ORD_RUN
       takes:
-      - {fileID: 8300000, guid: cce690ed1b4714db1a76462268558b2a, type: 3}
-      - {fileID: 8300000, guid: 7b0bc1eae016f4653a2da106c1ea770d, type: 3}
-      - {fileID: 8300000, guid: a4281f6b477ec4c78a888334dfd053be, type: 3}
+      - {fileID: 8300000, guid: f4565bf209fde244286d0b15e8e3adaf, type: 3}
+      - {fileID: 8300000, guid: 68573afb0da494549bc5ee53578532c9, type: 3}
+      - {fileID: 8300000, guid: 8d95befa2c8e88248b5e1980c6f05f57, type: 3}
     - key: VOX_ORD_SHOOTCAR
       takes:
-      - {fileID: 8300000, guid: 1c67f7826dc884ac39e025e7e4f0ee51, type: 3}
-      - {fileID: 8300000, guid: a54d0164a7a294eb48294603ddecb27a, type: 3}
+      - {fileID: 8300000, guid: c7510c482b3352846a03a6e0c15bc7ab, type: 3}
+      - {fileID: 8300000, guid: 71e05d484df1f0548a875512ecec2b36, type: 3}
     - key: VOX_ORD_WITNESS
       takes:
-      - {fileID: 8300000, guid: 6a8b76da555f24ff79b7b0a99521f7c5, type: 3}
-      - {fileID: 8300000, guid: feab42d9a1bf2444190b47862545746a, type: 3}
+      - {fileID: 8300000, guid: 0bdc6661f0cfea94bb6ebe3402d94561, type: 3}
+      - {fileID: 8300000, guid: 880094c5bd51deb419c56228d6ba1eee, type: 3}
     - key: VOX_PIN_HELD
       takes:
-      - {fileID: 8300000, guid: 3602f66d01ae341b7a6b3a0a78343a89, type: 3}
-      - {fileID: 8300000, guid: b924cfee044884a6280d5bb557d942be, type: 3}
-      - {fileID: 8300000, guid: b787a9e32f2e648b48f7cc9d953831c2, type: 3}
+      - {fileID: 8300000, guid: b7349009e505a594dbba611ed4169a0c, type: 3}
+      - {fileID: 8300000, guid: 32cb653e64443cd458a1ab244a46b90e, type: 3}
+      - {fileID: 8300000, guid: 19e13efa1118e0545b45f6b64eed03bb, type: 3}
     - key: VOX_RKT_APPROACH
       takes:
-      - {fileID: 8300000, guid: 84fddfaa2c78b46c8b2675ef04003060, type: 3}
-      - {fileID: 8300000, guid: e6812b095af6d435d8abcca71fff621a, type: 3}
+      - {fileID: 8300000, guid: bcd2a48051dda534eb4eab51397435c5, type: 3}
+      - {fileID: 8300000, guid: 9829ecc84acf857409efc940cfb18d0c, type: 3}
     - key: VOX_RKT_COLLECT
       takes:
-      - {fileID: 8300000, guid: 7b35bc9c3158e492fbe1ba653a6a21fc, type: 3}
-      - {fileID: 8300000, guid: 57bace44b41d14148bfb98c0ba8ebc82, type: 3}
+      - {fileID: 8300000, guid: 077353428fd346f4281021beec13ea9e, type: 3}
+      - {fileID: 8300000, guid: 2a03e735b984fad4384eeeb24143c527, type: 3}
     - key: VOX_RKT_DEMAND
       takes:
-      - {fileID: 8300000, guid: 8830904114f904621affb4de7536a67c, type: 3}
-      - {fileID: 8300000, guid: e41c72563f5da4a1eb6009264963be49, type: 3}
+      - {fileID: 8300000, guid: 08f456e2689d7c44d9e6a41d39d433b6, type: 3}
+      - {fileID: 8300000, guid: 6d377dc39cf57a44582dbffd7257d689, type: 3}
     - key: VOX_RKT_GUARD
       takes:
-      - {fileID: 8300000, guid: 542f4c1bf7dff497c9645b0534a9fb9c, type: 3}
-      - {fileID: 8300000, guid: 15f2bc9742b664c179793643b780a166, type: 3}
+      - {fileID: 8300000, guid: decbe8be04dd3ab42821d69eab9d9c3c, type: 3}
+      - {fileID: 8300000, guid: 619c59a228ead6d4eb9afe1842ae3e44, type: 3}
     - key: VOX_RKT_HOLDOUT
       takes:
-      - {fileID: 8300000, guid: 302a2273510844622a92e26c8d238b67, type: 3}
-      - {fileID: 8300000, guid: ef5c02058bbbe419c8a5bbb01aac07d6, type: 3}
+      - {fileID: 8300000, guid: 079e6787a877dba4186c24468ff69b38, type: 3}
+      - {fileID: 8300000, guid: f0d972fbc55e46f4ba31ee82ffdfdfe2, type: 3}
     - key: VOX_RKT_ROB
       takes:
-      - {fileID: 8300000, guid: 968134eb7bdc74d559bc0a84f47b9e77, type: 3}
-      - {fileID: 8300000, guid: 35961cdfb0fbc43d6917edd6f81ded32, type: 3}
+      - {fileID: 8300000, guid: ad66dded8d51ef8429919e7bd2c2054e, type: 3}
+      - {fileID: 8300000, guid: 8bec6004073a52546974f51705a7736b, type: 3}
     - key: VOX_RKT_SHAKE
       takes:
-      - {fileID: 8300000, guid: 1a304ba61a3a043739974363bc7c1729, type: 3}
-      - {fileID: 8300000, guid: bc7edd0defb094617a0eb126eced6410, type: 3}
+      - {fileID: 8300000, guid: 2b023f886805b694dae679dc91351530, type: 3}
+      - {fileID: 8300000, guid: a5e02069f3347d944848f15de0e7f404, type: 3}
     - key: VOX_RKT_SMASH
       takes:
-      - {fileID: 8300000, guid: defece8b6e14a4f5188d02db6a3a4bd5, type: 3}
-      - {fileID: 8300000, guid: 2ffeac643c6164766b5fb0facb3a9d68, type: 3}
+      - {fileID: 8300000, guid: c318d1a37d061144bbd5b7a08aeb6f91, type: 3}
+      - {fileID: 8300000, guid: b372d5ed5b6f31b43a4447886f327526, type: 3}
     - key: VOX_RKT_THREAT
       takes:
-      - {fileID: 8300000, guid: 66d9a0d4c8c8a4dcb9e035080a78d233, type: 3}
-      - {fileID: 8300000, guid: 419a9599c4d004bbdadcb2822f377a50, type: 3}
+      - {fileID: 8300000, guid: aa2ee06abf23c60458a5f31f5f3315d6, type: 3}
+      - {fileID: 8300000, guid: f7100e7933196d841a817a0172f8d2a1, type: 3}
     - key: VOX_RKT_TORCH
       takes:
-      - {fileID: 8300000, guid: 0ce41f618fa9c4413ba998c9912f6c0e, type: 3}
-      - {fileID: 8300000, guid: d098cb696b6cc4f24a385727672d06df, type: 3}
+      - {fileID: 8300000, guid: cb359d5b4478f8c41a5369ffca457cf0, type: 3}
+      - {fileID: 8300000, guid: 262b33f50e93d6841b2ba1f6e11dd223, type: 3}
     - key: VOX_SEL_CAR
       takes:
-      - {fileID: 8300000, guid: b19de3b8846bd40ac9485de26ee3571f, type: 3}
-      - {fileID: 8300000, guid: 9248aff03caec456a93087b894efaacd, type: 3}
+      - {fileID: 8300000, guid: b73e67581798d174cbc6a25f31fd1eea, type: 3}
+      - {fileID: 8300000, guid: 299a836453fc04b48a3d1a22c74b3e3b, type: 3}
     - key: VOX_SEL_FEW
       takes:
-      - {fileID: 8300000, guid: 019a2f093062a44dcbd19a544215757a, type: 3}
+      - {fileID: 8300000, guid: cb106504e0613e647be1e91af3fa0ca6, type: 3}
     - key: VOX_SEL_HURT
       takes:
-      - {fileID: 8300000, guid: 3b10d58ab25dc4ad9a5ecc32b33c7546, type: 3}
-      - {fileID: 8300000, guid: 26e2dff291fc745e2b2ce7be69145264, type: 3}
+      - {fileID: 8300000, guid: 1eff08b9de0bfe048800c0b43b5b485d, type: 3}
+      - {fileID: 8300000, guid: dec09f7fe1cfc614895037c42a5ea151, type: 3}
     - key: VOX_SEL_INSIDE
       takes:
-      - {fileID: 8300000, guid: d3dce2ca59f184a8caa379d926d58e47, type: 3}
-      - {fileID: 8300000, guid: ff3287c7413a7420ab4ca515ec7058c2, type: 3}
+      - {fileID: 8300000, guid: d104cb9cd1a413447978e34429bfef7b, type: 3}
+      - {fileID: 8300000, guid: 922bdb3be24eb0e42b41ba502bdb03a5, type: 3}
     - key: VOX_SEL_READY
       takes:
-      - {fileID: 8300000, guid: c848bd5a7e0c845fdba5869a493150ff, type: 3}
-      - {fileID: 8300000, guid: b5d74036c1f6d4fb2893be6cd78aaaf1, type: 3}
-      - {fileID: 8300000, guid: 49f10e00f720444a89d3e391561397d2, type: 3}
-      - {fileID: 8300000, guid: 98bc07787aa4b44b08e7fe41120c3a4a, type: 3}
+      - {fileID: 8300000, guid: 31629e3fb8448e24fa1c1af2b691e615, type: 3}
+      - {fileID: 8300000, guid: 26c67bd933a42764fbc6e25e14e63a3f, type: 3}
+      - {fileID: 8300000, guid: 779aeef4dfd20b6478a800ae48a2bbaa, type: 3}
+      - {fileID: 8300000, guid: c4e1a0eae51a9ba43928a2744fb1f83d, type: 3}
     - key: VOX_SEL_ROUND
       takes:
-      - {fileID: 8300000, guid: e90c284a190904ddaa09872629183951, type: 3}
+      - {fileID: 8300000, guid: b21da5efbce7d92429523533a2c7ac9b, type: 3}
     - key: VOX_SPOT_CONTACT
       takes:
-      - {fileID: 8300000, guid: b528a81db855a416d9466b29b3f46150, type: 3}
-      - {fileID: 8300000, guid: ce53602d1d4454527a2a93153a965377, type: 3}
-      - {fileID: 8300000, guid: c1d10b3b4a19942dd90a0bd195cc858a, type: 3}
-      - {fileID: 8300000, guid: f660e5d3a71c24491a00362cb6cbb90d, type: 3}
+      - {fileID: 8300000, guid: 1b4f78941d520a04b90334aa0e4c8a90, type: 3}
+      - {fileID: 8300000, guid: e42064cb43f976d4db37ade9ed8e02e5, type: 3}
+      - {fileID: 8300000, guid: 10e8e28270b32a440ba26e7aa5cdfcd5, type: 3}
+      - {fileID: 8300000, guid: 1b5e270274f181e4db66bb50d1b3a36f, type: 3}
     - key: VOX_SURR_HANDS
       takes:
-      - {fileID: 8300000, guid: 2929f14c9538f4d09b2ad696784fa6f2, type: 3}
-      - {fileID: 8300000, guid: 925611908a19647ed85f67c39c200e26, type: 3}
-      - {fileID: 8300000, guid: 7f32c2ec0d081432190b54b1917540f4, type: 3}
+      - {fileID: 8300000, guid: 826a4e7e779f51948b46f0efddd29471, type: 3}
+      - {fileID: 8300000, guid: c751c9cfcec741c4db3162a1ae09d24d, type: 3}
+      - {fileID: 8300000, guid: 726b1eb9eca00c043b92692b13e49137, type: 3}
     - key: VOX_WARN_CALL
       takes:
-      - {fileID: 8300000, guid: f912c6167838a4e23b5ed82014fcd672, type: 3}
-      - {fileID: 8300000, guid: fe9bb7c9080be440e86247afcab933b3, type: 3}
-      - {fileID: 8300000, guid: 92d95dc01dc2244e0aeafb9fcc219556, type: 3}
+      - {fileID: 8300000, guid: 24b4b6d07122fb64eb0528a0a37be767, type: 3}
+      - {fileID: 8300000, guid: 0ff0f8e103ce87e4a83e615e176fda97, type: 3}
+      - {fileID: 8300000, guid: 1d5e9241fa1ee1e4da7ff8623c583888, type: 3}
     - key: VOX_WIN_OVER
       takes:
-      - {fileID: 8300000, guid: a9c0378f5726641b1872822fb22f8b67, type: 3}
-      - {fileID: 8300000, guid: ca8c1f5a91a1b47afad950d5b12bcaf1, type: 3}
-      - {fileID: 8300000, guid: 893d431d27bcb409abcd7df3778bc37f, type: 3}
+      - {fileID: 8300000, guid: 1f2c6fa0c13d1f741a0e4e19a7609688, type: 3}
+      - {fileID: 8300000, guid: b108a31c025d96a4b91ab06e10bd9c33, type: 3}
+      - {fileID: 8300000, guid: 29ec5ae4e5f01a3428ecc611d60574e9, type: 3}
   - id: VB06
     actor: Antonio - Grumpy Grandpa
     age: 2
@@ -1181,230 +1181,230 @@ MonoBehaviour:
     lines:
     - key: VOX_DOWN_CRY
       takes:
-      - {fileID: 8300000, guid: c75e13323a84b48578be3149e5b94b1a, type: 3}
-      - {fileID: 8300000, guid: be7ab99812d654842befd55e0534a36a, type: 3}
-      - {fileID: 8300000, guid: dacd9d9f7ad234ed7b06f72c87785f9a, type: 3}
-      - {fileID: 8300000, guid: 89460fef62d9f4baf875e3bd8448fc6c, type: 3}
+      - {fileID: 8300000, guid: d6365d1c663d38e4fb96bb24b6180ae9, type: 3}
+      - {fileID: 8300000, guid: 2ca5da4927a8fb74d9254ee46924496f, type: 3}
+      - {fileID: 8300000, guid: 53a5582276344c8478854dd737e501a1, type: 3}
+      - {fileID: 8300000, guid: f16f09da1639402459a2f1226b4664f7, type: 3}
     - key: VOX_DROP_GOT
       takes:
-      - {fileID: 8300000, guid: 0083020b6dfb84f519c3bafea12bd122, type: 3}
-      - {fileID: 8300000, guid: 2a93b5d2e380a4a2a827e01b27220c7e, type: 3}
-      - {fileID: 8300000, guid: e1e86298599d346ca9840174c381a7de, type: 3}
-      - {fileID: 8300000, guid: 68f96526a7fb24b0f9228d693c8842f9, type: 3}
+      - {fileID: 8300000, guid: e9d2d2ec0d2d4914887d40f962a6510e, type: 3}
+      - {fileID: 8300000, guid: 1e175b524e1b9b64a8ed4ac0bcf72623, type: 3}
+      - {fileID: 8300000, guid: 0778a8fb9a42caa49ba23060f2380780, type: 3}
+      - {fileID: 8300000, guid: dbe53ef7c81d0984b928dd0ade71fcfb, type: 3}
     - key: VOX_FIGHT_CURSE
       takes:
-      - {fileID: 8300000, guid: e4fbe4c2103d140369a8a3f37d121833, type: 3}
-      - {fileID: 8300000, guid: 20af1cc67983c432983cfcaca83d3ffd, type: 3}
-      - {fileID: 8300000, guid: 01c22aad73fa74948933e4e0d5688f9f, type: 3}
-      - {fileID: 8300000, guid: 852106a05b16348c19fe93cb104438c0, type: 3}
-      - {fileID: 8300000, guid: 8d94c213748534f24ab783efd72020eb, type: 3}
-      - {fileID: 8300000, guid: 4ff13bbd9f20b4d7db52da461dcaded2, type: 3}
-      - {fileID: 8300000, guid: f5aa2720cbca143d793bff9fde3093e4, type: 3}
-      - {fileID: 8300000, guid: cb24af6e3e6af439cb1f4475bcdd5245, type: 3}
+      - {fileID: 8300000, guid: a038d24bccb668e468da9456c1e0f362, type: 3}
+      - {fileID: 8300000, guid: dbc1980e40e4a194382f49b9cde21cdb, type: 3}
+      - {fileID: 8300000, guid: a0de7ea2bb98a2545ad386837ab4b3d4, type: 3}
+      - {fileID: 8300000, guid: 771d79c50dd3fec48b2f2dcd1fa45559, type: 3}
+      - {fileID: 8300000, guid: 64c31f7738b53c344a1c74e1d1e72125, type: 3}
+      - {fileID: 8300000, guid: 17e447dc36406f64b9a558007532585f, type: 3}
+      - {fileID: 8300000, guid: 39438e25d25954049ae35c10a7c2e0e2, type: 3}
+      - {fileID: 8300000, guid: 089b758741e2a6148be214b5449821e0, type: 3}
     - key: VOX_HIT_BAD
       takes:
-      - {fileID: 8300000, guid: 1f5f3f6308243407a9ab94626eaeab73, type: 3}
-      - {fileID: 8300000, guid: cc6f5a0d0d2fa4e8c8108456fdc532e2, type: 3}
-      - {fileID: 8300000, guid: f358ca54f1f244c688a81f0b35a2af30, type: 3}
+      - {fileID: 8300000, guid: 9f98219eeb1fbcd48bdb3d8ff1871e41, type: 3}
+      - {fileID: 8300000, guid: d3cfe1728b6cf5248837fc9650635bab, type: 3}
+      - {fileID: 8300000, guid: 606166dbe0f47df418748c98e6a6abff, type: 3}
     - key: VOX_HIT_TAKE
       takes:
-      - {fileID: 8300000, guid: ca3c6119beafc4ae6a23a6c058a05065, type: 3}
-      - {fileID: 8300000, guid: dad7a088a191c4507afef78eea706eeb, type: 3}
-      - {fileID: 8300000, guid: abdd0bce9cc7346e9ba47bb34347cd39, type: 3}
-      - {fileID: 8300000, guid: e130561f2a78645efa17e2404bd6d7ae, type: 3}
-      - {fileID: 8300000, guid: d97a049058a4d4ce1a47a0b153c91bd3, type: 3}
-      - {fileID: 8300000, guid: 1b0d190b1039e4befa22e526970f934f, type: 3}
+      - {fileID: 8300000, guid: 52e749e545fe33b4686099892ca8a914, type: 3}
+      - {fileID: 8300000, guid: 44072bc844b37e1468ad7aa9a4475f79, type: 3}
+      - {fileID: 8300000, guid: 7fbe125c6b084e7459271416001f10df, type: 3}
+      - {fileID: 8300000, guid: fde6ae1c30fd6e84a80ecd84f1177a60, type: 3}
+      - {fileID: 8300000, guid: e9b2bc7c2237bdf43bbd42ea0334ed5d, type: 3}
+      - {fileID: 8300000, guid: ef405b42e6ea4944a9463ea8c7b97db8, type: 3}
     - key: VOX_LAW_HEAT
       takes:
-      - {fileID: 8300000, guid: 8590270243e864b30b6f5fed2a64143b, type: 3}
-      - {fileID: 8300000, guid: f9037b8c973944a4e92f3cba1eb1c80f, type: 3}
-      - {fileID: 8300000, guid: bfbbe4a7c10b6443098acdc8c10905ae, type: 3}
+      - {fileID: 8300000, guid: a735d8e35b635644a8896f335a0f5c1a, type: 3}
+      - {fileID: 8300000, guid: 6d6df172b3b3dff49b570ef90afbc97e, type: 3}
+      - {fileID: 8300000, guid: ddb8bd3e6fc2885478fa3960e5fef5f4, type: 3}
     - key: VOX_LOSS_MAN
       takes:
-      - {fileID: 8300000, guid: 619a3cd601d1f4da7b93e922b9b2fd58, type: 3}
-      - {fileID: 8300000, guid: c17874e27c9b248ee8e0d584ec7bd2aa, type: 3}
-      - {fileID: 8300000, guid: 3f286eefd23a64a98a8585c14c6fda86, type: 3}
-      - {fileID: 8300000, guid: 15a21ce7d155c469eb95135b007298b3, type: 3}
+      - {fileID: 8300000, guid: 98d1c83ab7cfa1a409e2e7e3f84a765f, type: 3}
+      - {fileID: 8300000, guid: 339065724c77b124b9981e17456e7752, type: 3}
+      - {fileID: 8300000, guid: 906892e2d96b72744a7c44679694d746, type: 3}
+      - {fileID: 8300000, guid: f7a739b6ad1db434ab103a2fc22b5d52, type: 3}
     - key: VOX_NO_ARMS
       takes:
-      - {fileID: 8300000, guid: cebbbcae857e84e6494784f3ac8f8ce2, type: 3}
+      - {fileID: 8300000, guid: 287ffd7a2184e4b458e6c017182230c0, type: 3}
     - key: VOX_NO_GENERIC
       takes:
-      - {fileID: 8300000, guid: 1a64cee1c861a4212b7194da5e079daf, type: 3}
-      - {fileID: 8300000, guid: 470a2450986ef4a4bb58ea302753dafc, type: 3}
-      - {fileID: 8300000, guid: 10cfc195a4d494ad097dde6f211ebef8, type: 3}
+      - {fileID: 8300000, guid: 215a993f082ee6d4a8deb17c868773e2, type: 3}
+      - {fileID: 8300000, guid: 1aef4ee77b8d7f742ad408f6c470fba5, type: 3}
+      - {fileID: 8300000, guid: ee8684bdbdac5db4c9dff1d142d79809, type: 3}
     - key: VOX_NO_MEN
       takes:
-      - {fileID: 8300000, guid: c1ef6f631b4d34378b556f15727c2929, type: 3}
+      - {fileID: 8300000, guid: ac90c256177bc924cbcae43c39003d00, type: 3}
     - key: VOX_NO_REACH
       takes:
-      - {fileID: 8300000, guid: 5f0f6c5ee186a44b38ea499566fe3180, type: 3}
+      - {fileID: 8300000, guid: f1d7f24348c720f439d254a2f56a3681, type: 3}
     - key: VOX_ORD_AWAY
       takes:
-      - {fileID: 8300000, guid: c220582aa610d4c3bbe1042ce027c89d, type: 3}
-      - {fileID: 8300000, guid: 219cf1615a5c34a0bb81114adb43d371, type: 3}
+      - {fileID: 8300000, guid: 87023eedb54db08489e0aef93f0d9d5f, type: 3}
+      - {fileID: 8300000, guid: b21dbe2c93217f0449d54b3cdc25e415, type: 3}
     - key: VOX_ORD_BAG
       takes:
-      - {fileID: 8300000, guid: d9c3e375a7c0b4e0da4f6bee89b2e11f, type: 3}
-      - {fileID: 8300000, guid: 1c18a0b65f80d45359d40f7d771118a9, type: 3}
+      - {fileID: 8300000, guid: 4a8cbc1830da6d340ba315a6d4ccbcc9, type: 3}
+      - {fileID: 8300000, guid: 85844078c4d2c1740a84c5271a946c27, type: 3}
     - key: VOX_ORD_BOARD
       takes:
-      - {fileID: 8300000, guid: 5cbd0c02a9b784bbcb08ae96fdcad3d2, type: 3}
-      - {fileID: 8300000, guid: 3cd9d6a2e6265404f8ea737b46784e0d, type: 3}
+      - {fileID: 8300000, guid: 016d470bf2e7e8e4bb98d385a4bc74b6, type: 3}
+      - {fileID: 8300000, guid: db344e631c8c95b4cb91f4191735e636, type: 3}
     - key: VOX_ORD_CARBOMB
       takes:
-      - {fileID: 8300000, guid: e444a7b9d08e7402ebaff5ec14128c73, type: 3}
-      - {fileID: 8300000, guid: 3fa3683828e64458e83470aead840252, type: 3}
-      - {fileID: 8300000, guid: f5cfb9dfa6cd043b0adaf8d18e038e0d, type: 3}
+      - {fileID: 8300000, guid: 8b3f05e9b3bbc834aa74dce1796b20db, type: 3}
+      - {fileID: 8300000, guid: 84a0436b007398c4ca98cb120d6c4e75, type: 3}
+      - {fileID: 8300000, guid: b15c9c684ff016d4da8d0929058898f9, type: 3}
     - key: VOX_ORD_COVER
       takes:
-      - {fileID: 8300000, guid: f4e2482e30bce40f2bccbf1c37e58ea0, type: 3}
-      - {fileID: 8300000, guid: 59d146d5b1eff47ebb99df0ad2e2147a, type: 3}
-      - {fileID: 8300000, guid: aaae603b975eb4f4cb12fe2b410d4820, type: 3}
+      - {fileID: 8300000, guid: d86c0abbbf2b37f49be7514b18a1c021, type: 3}
+      - {fileID: 8300000, guid: cd61df5e6a9a4274d9f7ddc1756fcabe, type: 3}
+      - {fileID: 8300000, guid: 09e3035d2cd1b4e47abf4ca53ea2c05b, type: 3}
     - key: VOX_ORD_DOORBOMB
       takes:
-      - {fileID: 8300000, guid: 1f9045a15a0cd4535b3128d1f253306b, type: 3}
-      - {fileID: 8300000, guid: bc33aeb17e0104d0b88f5b30f05c68a7, type: 3}
+      - {fileID: 8300000, guid: 60bb355c16e05ff40aad6cd424c31963, type: 3}
+      - {fileID: 8300000, guid: 0296be2501eee2d43be2f6acff033a35, type: 3}
     - key: VOX_ORD_DRIVEBY
       takes:
-      - {fileID: 8300000, guid: 99380eefdda5648d4bac04cd3194a4e7, type: 3}
-      - {fileID: 8300000, guid: 9f14690f5c95f4e66800c9725568eefc, type: 3}
-      - {fileID: 8300000, guid: 22b8fda245d794677b579f1443e4224e, type: 3}
+      - {fileID: 8300000, guid: 1a1ebc26e9c23f343adc1c29c7d9d792, type: 3}
+      - {fileID: 8300000, guid: 9df3bdd13b0f59e4fab97f24d0281419, type: 3}
+      - {fileID: 8300000, guid: dba32c45c8c24da4b83352bd78e17757, type: 3}
     - key: VOX_ORD_FLEE
       takes:
-      - {fileID: 8300000, guid: 9b938280df3be4179842f3d7543b0a9a, type: 3}
-      - {fileID: 8300000, guid: 230cf0f5660de479aabdfd6c475cacac, type: 3}
-      - {fileID: 8300000, guid: 929a6978dc8e8462a80ffc42609351f2, type: 3}
+      - {fileID: 8300000, guid: dcaf4dc8384e65147a52e1bc5461cf66, type: 3}
+      - {fileID: 8300000, guid: 9873ab00c819ce14dac29ca21c388dc0, type: 3}
+      - {fileID: 8300000, guid: d11d04f244ff7d84da97f16459c771d7, type: 3}
     - key: VOX_ORD_GRENADE
       takes:
-      - {fileID: 8300000, guid: 825500fc91416421a96e66d13b8826a5, type: 3}
-      - {fileID: 8300000, guid: 1349e8f9d0a724ee78c77658bdb956cc, type: 3}
-      - {fileID: 8300000, guid: 073a4dcd333d34e6ca504ab2bcfd12d0, type: 3}
+      - {fileID: 8300000, guid: c7bafb90e4f97dd4582c3f5ebbb6a83b, type: 3}
+      - {fileID: 8300000, guid: 2557c72bf2e03534098498376b15d608, type: 3}
+      - {fileID: 8300000, guid: f394bdef06990cc4983edb5db791459c, type: 3}
     - key: VOX_ORD_INSIDE
       takes:
-      - {fileID: 8300000, guid: 1c397434bb4f340ec9e4c185a01019a9, type: 3}
-      - {fileID: 8300000, guid: 5dc650af985984d87a391f6516557199, type: 3}
+      - {fileID: 8300000, guid: b5d09a2957b4be34d9c6378a0272ad57, type: 3}
+      - {fileID: 8300000, guid: c7733d0358f00614c99c766288c6cbc4, type: 3}
     - key: VOX_ORD_KILL
       takes:
-      - {fileID: 8300000, guid: 718f3a87ef25c4d698ce6d102420e2ed, type: 3}
-      - {fileID: 8300000, guid: 3cbff972b24c44e89961f7e00dac93ad, type: 3}
-      - {fileID: 8300000, guid: 55414bdd0186442de8df445f38952cda, type: 3}
+      - {fileID: 8300000, guid: 4c7a071fd6c636545ab786c12f1ecaa5, type: 3}
+      - {fileID: 8300000, guid: e832239a0f50ad84ebe7e7cc4c15f1bb, type: 3}
+      - {fileID: 8300000, guid: b4a58e5324e6eeb48ac91a45b711e66c, type: 3}
     - key: VOX_ORD_MOVE
       takes:
-      - {fileID: 8300000, guid: f5bbe3706fcbe4421879849e13e839e2, type: 3}
-      - {fileID: 8300000, guid: 07fe1ac41c60748178ebb6b39d01df8c, type: 3}
-      - {fileID: 8300000, guid: f13dc051cebf340c28f85e8383ec6575, type: 3}
+      - {fileID: 8300000, guid: 50dd3d3a255480141b9f1294f3df1e67, type: 3}
+      - {fileID: 8300000, guid: bc58bf002daf895499a8feba714d55c4, type: 3}
+      - {fileID: 8300000, guid: 2005e44a13471eb43be558494708bc25, type: 3}
     - key: VOX_ORD_OUT
       takes:
-      - {fileID: 8300000, guid: 21d5171b8438c41e480b680c6df0b20b, type: 3}
-      - {fileID: 8300000, guid: 2a90b14bb25b249f298abf636d4edf54, type: 3}
+      - {fileID: 8300000, guid: 38d84bccc7d32a54380434b2561147be, type: 3}
+      - {fileID: 8300000, guid: 3729cc09f3f1faa429fe6ac6ecdfa32a, type: 3}
     - key: VOX_ORD_OUTSIDE
       takes:
-      - {fileID: 8300000, guid: 84b65e09c94154f2c921f7dec3dffe8a, type: 3}
-      - {fileID: 8300000, guid: e2223b83e34e84d739974e7dad5ae7c7, type: 3}
+      - {fileID: 8300000, guid: 115c2488eb5950e4e9991f64e5f75540, type: 3}
+      - {fileID: 8300000, guid: 5d46807022f85524894e209e2b70792d, type: 3}
     - key: VOX_ORD_RUN
       takes:
-      - {fileID: 8300000, guid: 0bd8bf0ec93594b0389f71eeae1adac2, type: 3}
-      - {fileID: 8300000, guid: 823cf6d6993804b018f2da33f95704cf, type: 3}
-      - {fileID: 8300000, guid: 507a9e700d3634203b231f5a02539ece, type: 3}
+      - {fileID: 8300000, guid: 608ca4e85a7e62545a91c89482aab04b, type: 3}
+      - {fileID: 8300000, guid: 78b038c1b439b104bb524a62ef68be35, type: 3}
+      - {fileID: 8300000, guid: 67f766278d342314ba3e3c800db0071e, type: 3}
     - key: VOX_ORD_SHOOTCAR
       takes:
-      - {fileID: 8300000, guid: d3b54265e655b4e8eb9e0fe7c72cc3c0, type: 3}
-      - {fileID: 8300000, guid: 63fdb28258d4c40e582609f7c55115e7, type: 3}
+      - {fileID: 8300000, guid: 71c4be5cd001347418f305336aecedd8, type: 3}
+      - {fileID: 8300000, guid: a7e38ca948f9ba749adfd3b05eea2ab3, type: 3}
     - key: VOX_ORD_WITNESS
       takes:
-      - {fileID: 8300000, guid: 206321d438078441b94b2e61589e9168, type: 3}
-      - {fileID: 8300000, guid: bcc9d7d455fa746d98f04b6236c42ee8, type: 3}
+      - {fileID: 8300000, guid: d462942afa3d94344aebdcf37a7cfc69, type: 3}
+      - {fileID: 8300000, guid: 32eef535472b4f54cb8948368ca15e0c, type: 3}
     - key: VOX_PIN_HELD
       takes:
-      - {fileID: 8300000, guid: 19facf43158c4483f9bef9e18ec56f3e, type: 3}
-      - {fileID: 8300000, guid: 6d0617e0686ad49b18356462929bf41f, type: 3}
-      - {fileID: 8300000, guid: da1fb2d41725b43d2ac450edf4d5fe49, type: 3}
+      - {fileID: 8300000, guid: d6e7326e7c571034cbeed6c6c3b0c4f7, type: 3}
+      - {fileID: 8300000, guid: 77525321254183f4683ac4a820cea07e, type: 3}
+      - {fileID: 8300000, guid: f6b8d502669fd434bae4d48cfa2ae11b, type: 3}
     - key: VOX_RKT_APPROACH
       takes:
-      - {fileID: 8300000, guid: d13bf0d55638148b1bd3256dc41a1f17, type: 3}
-      - {fileID: 8300000, guid: 45a7562be3b2747f58d314f41c88dc25, type: 3}
+      - {fileID: 8300000, guid: 4ab3b2dba6ac15a4c88abea4399d54e6, type: 3}
+      - {fileID: 8300000, guid: d8f7b7b385782c84b8dcc3b31d0b9519, type: 3}
     - key: VOX_RKT_COLLECT
       takes:
-      - {fileID: 8300000, guid: 2bfa466b54bf3413fac4cde614ab68b2, type: 3}
-      - {fileID: 8300000, guid: 621e643c81f0a4c39844ce4e06e0aaf4, type: 3}
+      - {fileID: 8300000, guid: a24f6a0e13aebcc45a46629c376d2ec1, type: 3}
+      - {fileID: 8300000, guid: a34af81ee1b46284eaf365b1cdff0b12, type: 3}
     - key: VOX_RKT_DEMAND
       takes:
-      - {fileID: 8300000, guid: 5c8e0ccaa57a346b594a7ee5017c923b, type: 3}
-      - {fileID: 8300000, guid: 7607b94f3c8f94bf99e368ac224b4624, type: 3}
+      - {fileID: 8300000, guid: 682028dc40154dc4f8350fe174caace7, type: 3}
+      - {fileID: 8300000, guid: 59546ab0518192e44a2e90392614bfbc, type: 3}
     - key: VOX_RKT_GUARD
       takes:
-      - {fileID: 8300000, guid: af82d0a3d8f214f118f6bd5346e6523e, type: 3}
-      - {fileID: 8300000, guid: 8cfb13b04ffc645c2aa501ad811eb361, type: 3}
+      - {fileID: 8300000, guid: 6ce3d805c1025f44b8a131e6cf33c760, type: 3}
+      - {fileID: 8300000, guid: 807cd6df51b91bb4781db4050f060a91, type: 3}
     - key: VOX_RKT_HOLDOUT
       takes:
-      - {fileID: 8300000, guid: 46699bdfe619843cbaa84e21e6b31119, type: 3}
-      - {fileID: 8300000, guid: 3ee6983be122c46f18a98aa1e7a5c9b5, type: 3}
+      - {fileID: 8300000, guid: 041cd86106f7f084a892a5e905223098, type: 3}
+      - {fileID: 8300000, guid: 3e137b3d284186e4ba92fcc9805148e4, type: 3}
     - key: VOX_RKT_ROB
       takes:
-      - {fileID: 8300000, guid: 0ff0b1286ae9549639a7f6f6528ce4f7, type: 3}
-      - {fileID: 8300000, guid: 7ecd16c15dc374d9ca029a3821ed7641, type: 3}
+      - {fileID: 8300000, guid: beb62c9176e90bc4cb776847d86175f8, type: 3}
+      - {fileID: 8300000, guid: 7f9e49399c10690468640c3cd266ae2e, type: 3}
     - key: VOX_RKT_SHAKE
       takes:
-      - {fileID: 8300000, guid: 9845f2362b1f549c4960e26a86fc362e, type: 3}
-      - {fileID: 8300000, guid: 8afc0c89b5ab044b2afbed2b07b26abf, type: 3}
+      - {fileID: 8300000, guid: fd3a906dd5c67cf49859dfad2e7825c3, type: 3}
+      - {fileID: 8300000, guid: e2305148ab012e745bfbca9ac1290edc, type: 3}
     - key: VOX_RKT_SMASH
       takes:
-      - {fileID: 8300000, guid: 9cfd95662a14c4439992a3287ac7d8d5, type: 3}
-      - {fileID: 8300000, guid: 4a73c024bff9a4173a1e361aa16ca7a7, type: 3}
+      - {fileID: 8300000, guid: fc2143dde3be9b84599b0f93f7c41587, type: 3}
+      - {fileID: 8300000, guid: ea55ab97f9a208641a2143089cd91aba, type: 3}
     - key: VOX_RKT_THREAT
       takes:
-      - {fileID: 8300000, guid: b30c5f25d10c848e69553e9d93b5ae92, type: 3}
-      - {fileID: 8300000, guid: 6e4ac768f35ce49bdba5e12c9c363caa, type: 3}
+      - {fileID: 8300000, guid: 070edc12faf71b049822392eedfff50d, type: 3}
+      - {fileID: 8300000, guid: a564fafdeeae6d54980b878751e0af05, type: 3}
     - key: VOX_RKT_TORCH
       takes:
-      - {fileID: 8300000, guid: 9c7b5e676e3514e0ba661e97d7ee427d, type: 3}
-      - {fileID: 8300000, guid: 9e4763f7db8fa4465be679d8903a01fe, type: 3}
+      - {fileID: 8300000, guid: 1fc4a8a5b30ab94428d9594c29f24797, type: 3}
+      - {fileID: 8300000, guid: 122835731463a734a8cd7154663380f8, type: 3}
     - key: VOX_SEL_CAR
       takes:
-      - {fileID: 8300000, guid: b01c17f3552854659948415442fd2399, type: 3}
-      - {fileID: 8300000, guid: 15134a5fa93d04b908ee58ab70ab5415, type: 3}
+      - {fileID: 8300000, guid: 4c8c01eead17cef45abfebb32ec0381b, type: 3}
+      - {fileID: 8300000, guid: 2e7a5709ea6aec4488672c8debf9f47c, type: 3}
     - key: VOX_SEL_FEW
       takes:
-      - {fileID: 8300000, guid: a6f61d1c62fb447dcae8210ff105030f, type: 3}
+      - {fileID: 8300000, guid: 417795cad1cbaf24b88c7944b2b4fc3e, type: 3}
     - key: VOX_SEL_HURT
       takes:
-      - {fileID: 8300000, guid: 272fba75ee81842d39939adf3cebfa0a, type: 3}
-      - {fileID: 8300000, guid: 0c89321750937402e9f34e5b67be7a01, type: 3}
+      - {fileID: 8300000, guid: ed492a854f5afb141b948c8b5495a573, type: 3}
+      - {fileID: 8300000, guid: 94c6b3f3ae597844c825077f95c95e25, type: 3}
     - key: VOX_SEL_INSIDE
       takes:
-      - {fileID: 8300000, guid: b4d044f33d4774ef2bf20d3ba7db1e0b, type: 3}
-      - {fileID: 8300000, guid: 142eab280dcfb478aa5b9347a1a175b7, type: 3}
+      - {fileID: 8300000, guid: 41bc70a15bdab834087deda6d65951bf, type: 3}
+      - {fileID: 8300000, guid: 685a0e465bd0b844f913053c5765358e, type: 3}
     - key: VOX_SEL_READY
       takes:
-      - {fileID: 8300000, guid: db0867a04ec174e2d919f1e5db5864a1, type: 3}
-      - {fileID: 8300000, guid: d578f21d030614e1ead47540a970b892, type: 3}
-      - {fileID: 8300000, guid: a0fe47b40b84740e2a09224f291a5d36, type: 3}
-      - {fileID: 8300000, guid: 33d5ce54ffcc74d3d841bbefc3ec7b89, type: 3}
+      - {fileID: 8300000, guid: 45b270efc58d2c248b057d776c75889c, type: 3}
+      - {fileID: 8300000, guid: b5183f77b7976ef46bd68863c1a41597, type: 3}
+      - {fileID: 8300000, guid: 8c206fb2bfbe4c24aa550574cead47cc, type: 3}
+      - {fileID: 8300000, guid: 9ebf30f0ff094344c9091c504d9261f7, type: 3}
     - key: VOX_SEL_ROUND
       takes:
-      - {fileID: 8300000, guid: a4c4cf707120e4dafa767d50ca39a131, type: 3}
+      - {fileID: 8300000, guid: 1a304ced19e8a9f46a8c335a509a2506, type: 3}
     - key: VOX_SPOT_CONTACT
       takes:
-      - {fileID: 8300000, guid: 00eccc09abed74a0fb0e16ca2eac6fd0, type: 3}
-      - {fileID: 8300000, guid: 1573f320b0e9d40a484e09efa851d998, type: 3}
-      - {fileID: 8300000, guid: 8e68adb97a0584af69a4556311c1c885, type: 3}
-      - {fileID: 8300000, guid: 10a43fa43e8b5477186f175fa77a78e1, type: 3}
+      - {fileID: 8300000, guid: e33821cbfa323b34cb277e44a4aa8d40, type: 3}
+      - {fileID: 8300000, guid: 901e7cafcfcf1454f9e1a2a67bf548db, type: 3}
+      - {fileID: 8300000, guid: 2b883062dad7a2f4bbf77d0bb26a4d3d, type: 3}
+      - {fileID: 8300000, guid: e83cca33e55506c4db5fcee0e4f71df7, type: 3}
     - key: VOX_SURR_HANDS
       takes:
-      - {fileID: 8300000, guid: 8e527e001375840bd9d7a4b69533f4dd, type: 3}
-      - {fileID: 8300000, guid: 7c5a49f3eed414efe92c1a3ce25a0636, type: 3}
-      - {fileID: 8300000, guid: f56fd2bef63ee4df48c1c319ed88a168, type: 3}
+      - {fileID: 8300000, guid: 7d2897e5ccd92904896cac9f2b306254, type: 3}
+      - {fileID: 8300000, guid: 989d9c541fa491345aab295e470d5f3d, type: 3}
+      - {fileID: 8300000, guid: 02b27eb37e4824a469f685e78dfa6116, type: 3}
     - key: VOX_WARN_CALL
       takes:
-      - {fileID: 8300000, guid: 2d107acea663b4f39b08065ff9cd8872, type: 3}
-      - {fileID: 8300000, guid: 523d974fc566441ebac243667129db5d, type: 3}
-      - {fileID: 8300000, guid: d863d178016434bcaa522bdc13b1406b, type: 3}
+      - {fileID: 8300000, guid: 0282fa65bafd3114e80a24d4ea642598, type: 3}
+      - {fileID: 8300000, guid: f6375ae1426fd3c42b9859ef2fc168ca, type: 3}
+      - {fileID: 8300000, guid: d940c9b32f660204ab1adb68622055f2, type: 3}
     - key: VOX_WIN_OVER
       takes:
-      - {fileID: 8300000, guid: c5c13726bfc2749dcb98acd5356a01b6, type: 3}
-      - {fileID: 8300000, guid: 1b4037ff95e824b69b779e33ad7e9e36, type: 3}
-      - {fileID: 8300000, guid: b910ef3eff6a64a73b0bd1370fc51391, type: 3}
+      - {fileID: 8300000, guid: 7c419bfa36177194cb6fe098cef509ad, type: 3}
+      - {fileID: 8300000, guid: 370a94b934afeb647bf78b6f2a2a0a99, type: 3}
+      - {fileID: 8300000, guid: 8d488475254db9d4c869dba541273c8f, type: 3}
   - id: VB07
     actor: Jerry B. - NY Italian
     age: 2
@@ -1413,230 +1413,230 @@ MonoBehaviour:
     lines:
     - key: VOX_DOWN_CRY
       takes:
-      - {fileID: 8300000, guid: ee38b81797f344e3485a170028d19d61, type: 3}
-      - {fileID: 8300000, guid: 1a19237abc9484ad08b7bd946f3c3bbf, type: 3}
-      - {fileID: 8300000, guid: 365656fb1a4134560bab22dc268f9059, type: 3}
-      - {fileID: 8300000, guid: a424b0baf743b47a7b134db6ca30c7cb, type: 3}
+      - {fileID: 8300000, guid: 3484273d4ff77c9419716a38c0e9b867, type: 3}
+      - {fileID: 8300000, guid: c223504c81615d0419c49f1238a51ca6, type: 3}
+      - {fileID: 8300000, guid: 41c00fdfe798faf449c4e0e0eaad57ff, type: 3}
+      - {fileID: 8300000, guid: fe224d32a3aa2a74482a0f5735e80e31, type: 3}
     - key: VOX_DROP_GOT
       takes:
-      - {fileID: 8300000, guid: b1b3236e3432f44b4af787bcc69ec071, type: 3}
-      - {fileID: 8300000, guid: a184040cc565445ae97363c334415d3e, type: 3}
-      - {fileID: 8300000, guid: b5cdf41596c544a83b9e02fe1227a300, type: 3}
-      - {fileID: 8300000, guid: 4188256df0df244fa95817c8c1c10314, type: 3}
+      - {fileID: 8300000, guid: 0a9146222d0c00f4490f00504883c0bb, type: 3}
+      - {fileID: 8300000, guid: eb7c3a0595983d54ca71f627c5b4577c, type: 3}
+      - {fileID: 8300000, guid: 4a9fa0fdd4cc796459d5679bb853eafb, type: 3}
+      - {fileID: 8300000, guid: 81a45531712642a41a458cc83ab3b1d5, type: 3}
     - key: VOX_FIGHT_CURSE
       takes:
-      - {fileID: 8300000, guid: 1d4ff39d9c9894dce9b9497936d4d01d, type: 3}
-      - {fileID: 8300000, guid: 3f5c1be83e7634d8db985c3e9b571e6f, type: 3}
-      - {fileID: 8300000, guid: eb6e4397af0f04c7fb029b816e8b0ff9, type: 3}
-      - {fileID: 8300000, guid: 19c4537ffc12443f89099b052783d774, type: 3}
-      - {fileID: 8300000, guid: 4d5df3bca6b7a49fbbf6d547f551d66d, type: 3}
-      - {fileID: 8300000, guid: 13d2aacce318548b5ac79ef5863d99c5, type: 3}
-      - {fileID: 8300000, guid: a88b71f75ecdd41a5addbb0db0b59ec6, type: 3}
-      - {fileID: 8300000, guid: b56d07291e07943e995b51e1e66414a7, type: 3}
+      - {fileID: 8300000, guid: ce2b901aa7d7f0948b506d4db3a68c00, type: 3}
+      - {fileID: 8300000, guid: 592c43389cbb3e54594e459938a49ed6, type: 3}
+      - {fileID: 8300000, guid: 0dc9189624847ff40a61d82ee86ea62f, type: 3}
+      - {fileID: 8300000, guid: bfd7ad11b8097a9458c8fca8f850dbe3, type: 3}
+      - {fileID: 8300000, guid: b0c8d21bbff392d45818dd7ac44bff89, type: 3}
+      - {fileID: 8300000, guid: a1423a9624468c14aa96e75432a00437, type: 3}
+      - {fileID: 8300000, guid: 5927d56634e3319439b330339824ebdf, type: 3}
+      - {fileID: 8300000, guid: 50d5ce11929e33a45a7bc0b441db20cd, type: 3}
     - key: VOX_HIT_BAD
       takes:
-      - {fileID: 8300000, guid: d3024f69ca794483c81b15491cedd19d, type: 3}
-      - {fileID: 8300000, guid: 4d51707afc42540eda82fdb027a53cc1, type: 3}
-      - {fileID: 8300000, guid: 15e86a82d68f14800ad0ccd6bb9dbe7f, type: 3}
+      - {fileID: 8300000, guid: 1d33b2f39cc322e47899ef9a5972a154, type: 3}
+      - {fileID: 8300000, guid: 4a103f823126a22489ddfc9b94f75231, type: 3}
+      - {fileID: 8300000, guid: 8ae450dec5ca8ec4e94acfb31646f027, type: 3}
     - key: VOX_HIT_TAKE
       takes:
-      - {fileID: 8300000, guid: a73208dff489b4d61b86a72beeefbae6, type: 3}
-      - {fileID: 8300000, guid: 54c66390b37e94fd99f24bf297929db6, type: 3}
-      - {fileID: 8300000, guid: 56acd0fa2651f4e14ad7bee57e6086a0, type: 3}
-      - {fileID: 8300000, guid: ec9932826c12b4dada1949768c1662eb, type: 3}
-      - {fileID: 8300000, guid: 3a2f8256058ea4e8ba8a069dd89e6fce, type: 3}
-      - {fileID: 8300000, guid: fd8f5ab293e1e412caa876eab85ea064, type: 3}
+      - {fileID: 8300000, guid: e0fbd94df5339bc439477de08718d334, type: 3}
+      - {fileID: 8300000, guid: f39e757795d7c054eb02c63a9d5da259, type: 3}
+      - {fileID: 8300000, guid: b11506c05b8304145b3d98fbfd7e6c24, type: 3}
+      - {fileID: 8300000, guid: 15b8813dbc4e08e4f8acc97aff31a57b, type: 3}
+      - {fileID: 8300000, guid: 6d5052f9d8e62b5428651d1fdd9d609a, type: 3}
+      - {fileID: 8300000, guid: d4e9dfa6d94acd04ea9b769333cec3eb, type: 3}
     - key: VOX_LAW_HEAT
       takes:
-      - {fileID: 8300000, guid: d972b71c043564887aedc089f3b23292, type: 3}
-      - {fileID: 8300000, guid: 7cd9870a543b14c74b7bdf6c0576b567, type: 3}
-      - {fileID: 8300000, guid: ed823fb9e376b42fab2f0c39cb4a46fa, type: 3}
+      - {fileID: 8300000, guid: aae7918a58b67854584fd435e5dbe9af, type: 3}
+      - {fileID: 8300000, guid: dcbab37c515b2324398152ce5134359a, type: 3}
+      - {fileID: 8300000, guid: e9d99155ec2e22c489d908eae4777153, type: 3}
     - key: VOX_LOSS_MAN
       takes:
-      - {fileID: 8300000, guid: 25be9dcd9d7e746ad93445efc1f2584b, type: 3}
-      - {fileID: 8300000, guid: 0c0a31ecb084e4ad6b0c9acb0a83c06c, type: 3}
-      - {fileID: 8300000, guid: bb88d956c72474ccd8f1739bb3863d6b, type: 3}
-      - {fileID: 8300000, guid: ee9fc4a75ca1a445ebff829826dca55e, type: 3}
+      - {fileID: 8300000, guid: cf971e7e1b3536042b245cdda779e9db, type: 3}
+      - {fileID: 8300000, guid: e0b910212e9cbc74fb62c84b43b455bd, type: 3}
+      - {fileID: 8300000, guid: 7203bd8866ddcac4f9b1713796ac5da0, type: 3}
+      - {fileID: 8300000, guid: ebb9d6568c040004d9603944b466415f, type: 3}
     - key: VOX_NO_ARMS
       takes:
-      - {fileID: 8300000, guid: 7297e7aaa5761487e9439e2979a7375e, type: 3}
+      - {fileID: 8300000, guid: 43ef62f052d82a247870fb65c6cf5322, type: 3}
     - key: VOX_NO_GENERIC
       takes:
-      - {fileID: 8300000, guid: f837f358a2f1b44d290c522674035d41, type: 3}
-      - {fileID: 8300000, guid: e9e73f5caa0b1433a95ab8e4b3aed5ef, type: 3}
-      - {fileID: 8300000, guid: 8bfbe4bb11bc8454b92ce08134149f8c, type: 3}
+      - {fileID: 8300000, guid: e530d242a6c414449a2442b01208ba98, type: 3}
+      - {fileID: 8300000, guid: 0c82612a8fecf4d498b7683dd24bf73c, type: 3}
+      - {fileID: 8300000, guid: 54a83ffdfffe2a845a8322b208549291, type: 3}
     - key: VOX_NO_MEN
       takes:
-      - {fileID: 8300000, guid: 82341f5fa81114fca900e1fe857f9b36, type: 3}
+      - {fileID: 8300000, guid: 7ecd44d72931c314daeeea818e6a33d5, type: 3}
     - key: VOX_NO_REACH
       takes:
-      - {fileID: 8300000, guid: 10c78cb03beb2464ebce02bde8dc8534, type: 3}
+      - {fileID: 8300000, guid: f8187c515ac0cc248a69aed39b89744f, type: 3}
     - key: VOX_ORD_AWAY
       takes:
-      - {fileID: 8300000, guid: d08b146c69575413a8a05ab75fafea2d, type: 3}
-      - {fileID: 8300000, guid: b945add2951064054a9bcdbdc344811e, type: 3}
+      - {fileID: 8300000, guid: 4ec09ed699b7e54478499b3cc6221407, type: 3}
+      - {fileID: 8300000, guid: efb108ebf8cc6c34987c8be653ae7b90, type: 3}
     - key: VOX_ORD_BAG
       takes:
-      - {fileID: 8300000, guid: ef7188c5e897e476b9db820973af4766, type: 3}
-      - {fileID: 8300000, guid: f7872cc0b545c4a348eea5c0e5f5684e, type: 3}
+      - {fileID: 8300000, guid: a3fbc7b8a804af4408f4e5294f787533, type: 3}
+      - {fileID: 8300000, guid: 0efa686b47ae846449e2cdb61d89eda7, type: 3}
     - key: VOX_ORD_BOARD
       takes:
-      - {fileID: 8300000, guid: 93ecfb12cb475437eaf91a7e24ce39cd, type: 3}
-      - {fileID: 8300000, guid: 10804adb23fe540e6952d1ba592c8e8c, type: 3}
+      - {fileID: 8300000, guid: db3f8860662b7b84bab493490f5d116f, type: 3}
+      - {fileID: 8300000, guid: 11d18e074402bef4382a1bb6337864a9, type: 3}
     - key: VOX_ORD_CARBOMB
       takes:
-      - {fileID: 8300000, guid: 437d91c6571d44db09c720a81b6d3b7f, type: 3}
-      - {fileID: 8300000, guid: 8d28600aa18bc49c1ac2c4588363b430, type: 3}
-      - {fileID: 8300000, guid: dab287083d5854a71835e2eed88571cd, type: 3}
+      - {fileID: 8300000, guid: 4d5441611f206c040a0205e601639a7d, type: 3}
+      - {fileID: 8300000, guid: 79fe52ef169eff14abea2e8f068eecf4, type: 3}
+      - {fileID: 8300000, guid: 95a279db53ba9c34dbce9f8cbbd28e4f, type: 3}
     - key: VOX_ORD_COVER
       takes:
-      - {fileID: 8300000, guid: 3df2fd6ff1d8f4eb6b784e616db359c3, type: 3}
-      - {fileID: 8300000, guid: 93274a34efde04956900d027caa15cde, type: 3}
-      - {fileID: 8300000, guid: c4e3087c2178e4e808ee15b166e4b379, type: 3}
+      - {fileID: 8300000, guid: a12cba8037a186c4e9954a302dbf4bef, type: 3}
+      - {fileID: 8300000, guid: 11168ce1af0f8d4479cfcc53bbfd884d, type: 3}
+      - {fileID: 8300000, guid: 233e9a726d28cf146a8cd8a746b83655, type: 3}
     - key: VOX_ORD_DOORBOMB
       takes:
-      - {fileID: 8300000, guid: b8713566a770e4e999644fc5bded6b33, type: 3}
-      - {fileID: 8300000, guid: 1b6e3e96aee3a47f1b17f70c5fdc9a1a, type: 3}
+      - {fileID: 8300000, guid: 6436167948940f140a7a0d98d84db7a3, type: 3}
+      - {fileID: 8300000, guid: a557bb84654ec5a42b1e7e8433c1d78c, type: 3}
     - key: VOX_ORD_DRIVEBY
       takes:
-      - {fileID: 8300000, guid: 9847358af37814bee973da8f926db846, type: 3}
-      - {fileID: 8300000, guid: a3f217a15e80f4295a67503481ff7da2, type: 3}
-      - {fileID: 8300000, guid: 92d16c08b38e4481e944789ff152d31f, type: 3}
+      - {fileID: 8300000, guid: 75dda9e79e5c66e4dbcfb6c8dffcde47, type: 3}
+      - {fileID: 8300000, guid: 2173856866806a94dbb54d394a326554, type: 3}
+      - {fileID: 8300000, guid: 6f94fbd7ff66f6c42b22774ea655ae0d, type: 3}
     - key: VOX_ORD_FLEE
       takes:
-      - {fileID: 8300000, guid: 0e5a751c4a9684f65929c1916cd530a3, type: 3}
-      - {fileID: 8300000, guid: d6d144c4cbdc8423b9cfb6e4778c4721, type: 3}
-      - {fileID: 8300000, guid: 9f3170514af9d4259b57ff6c3c5d2245, type: 3}
+      - {fileID: 8300000, guid: 4370669f54449a0418a818cfcf87a6c2, type: 3}
+      - {fileID: 8300000, guid: f7532e65f306aab4bb891053deae4c79, type: 3}
+      - {fileID: 8300000, guid: 6711225a43a793b40b8991eff3ec24bf, type: 3}
     - key: VOX_ORD_GRENADE
       takes:
-      - {fileID: 8300000, guid: 1adbfe001727740b19bf2d7eee7ff200, type: 3}
-      - {fileID: 8300000, guid: eedf5e04c903b4729b9c8ca49f9ed3e5, type: 3}
-      - {fileID: 8300000, guid: 58e07a133b37b4ae585bca88d87c3c00, type: 3}
+      - {fileID: 8300000, guid: 1f251ee8785eea243b707c6a0e570a8f, type: 3}
+      - {fileID: 8300000, guid: 08314d59ca810af48bb4d8d563ad1c19, type: 3}
+      - {fileID: 8300000, guid: f9bf36a4c434f5a4f946be28c43a239c, type: 3}
     - key: VOX_ORD_INSIDE
       takes:
-      - {fileID: 8300000, guid: 687730121dcd446e4946128e3e341f7a, type: 3}
-      - {fileID: 8300000, guid: 95f1083e137a04344812bfb880a3e8f1, type: 3}
+      - {fileID: 8300000, guid: 3600e95135b19cc41873230df1d4131c, type: 3}
+      - {fileID: 8300000, guid: 7d4128c7223a09e4699b4be5164df504, type: 3}
     - key: VOX_ORD_KILL
       takes:
-      - {fileID: 8300000, guid: 82b837128cad44acd8be4fa001ea3680, type: 3}
-      - {fileID: 8300000, guid: 3d0799a41cdff4b0e9d6383e3fb12566, type: 3}
-      - {fileID: 8300000, guid: d5690c143f3e64b00a2f7d387b2c51bd, type: 3}
+      - {fileID: 8300000, guid: d7da108128e1ceb49afa64d494719803, type: 3}
+      - {fileID: 8300000, guid: 0b429616d8d2d7d4da8805b21094b66e, type: 3}
+      - {fileID: 8300000, guid: effd81aeb40254141add84b03d92f0e9, type: 3}
     - key: VOX_ORD_MOVE
       takes:
-      - {fileID: 8300000, guid: a8eb2054d417e413a8572df903b5e6de, type: 3}
-      - {fileID: 8300000, guid: 41e8bd52fdbcd435a8558515ef72721e, type: 3}
-      - {fileID: 8300000, guid: 0e3d28b078c7d45d6b6a7faec466fda3, type: 3}
+      - {fileID: 8300000, guid: 277615cdba7321940a44b0cc46060c7a, type: 3}
+      - {fileID: 8300000, guid: e178e5a71f17568429475a718b94119a, type: 3}
+      - {fileID: 8300000, guid: 6318439e6cfccb149bff1155b9002762, type: 3}
     - key: VOX_ORD_OUT
       takes:
-      - {fileID: 8300000, guid: 718db679d95df464a908a3417aeb39f6, type: 3}
-      - {fileID: 8300000, guid: 22da8ac1bc2174f20aa768516e472111, type: 3}
+      - {fileID: 8300000, guid: a6578107f18c763418d557eba6fd254c, type: 3}
+      - {fileID: 8300000, guid: 9f040b8be120fa3428b6c669806608a1, type: 3}
     - key: VOX_ORD_OUTSIDE
       takes:
-      - {fileID: 8300000, guid: 1bcaa3e93c4c64daab84b9e29aef5e6d, type: 3}
-      - {fileID: 8300000, guid: 276ec3b7aaca5436a8c8696a05de3eee, type: 3}
+      - {fileID: 8300000, guid: 0c08134ffcead6a4cbeddea576607be3, type: 3}
+      - {fileID: 8300000, guid: 2339bae19ed14bb4193f11bb02cba3c8, type: 3}
     - key: VOX_ORD_RUN
       takes:
-      - {fileID: 8300000, guid: e1bdaa0e2306149469f3311d8d3c47f4, type: 3}
-      - {fileID: 8300000, guid: 526295ccc65394fceb5f2e87a5f87f1c, type: 3}
-      - {fileID: 8300000, guid: d2b4ab22b7df04aaaaef3222f1ec49d7, type: 3}
+      - {fileID: 8300000, guid: 6fcc87a8f9fa46540a8588fbc758bfa3, type: 3}
+      - {fileID: 8300000, guid: 7f23c33ce9d59a0499b9bd345827381c, type: 3}
+      - {fileID: 8300000, guid: 7aeec90ab1bd56d469f366bf0555ad60, type: 3}
     - key: VOX_ORD_SHOOTCAR
       takes:
-      - {fileID: 8300000, guid: 787750f50fcd7480085bc77a7c7f38cd, type: 3}
-      - {fileID: 8300000, guid: f4a9a15d69ddc4764ace7b84586fa562, type: 3}
+      - {fileID: 8300000, guid: 6e8bca02f42a5634ab519bd8f20e508d, type: 3}
+      - {fileID: 8300000, guid: 1e6462e0996824f4ca1ef37ec8760dea, type: 3}
     - key: VOX_ORD_WITNESS
       takes:
-      - {fileID: 8300000, guid: af8a01509bb7d41cdbabc2c004099df3, type: 3}
-      - {fileID: 8300000, guid: 0fc64b56e0fb14ea3bb51bb7fce7012e, type: 3}
+      - {fileID: 8300000, guid: 9047103ecf5b0b843975d488f1b4bd06, type: 3}
+      - {fileID: 8300000, guid: 04935089dc0e31e40bf5e55dc0451ee6, type: 3}
     - key: VOX_PIN_HELD
       takes:
-      - {fileID: 8300000, guid: 74d2991c3010c44d69ac38a728d61f04, type: 3}
-      - {fileID: 8300000, guid: 65bb4f3e7bc4b44608db4be31fd79ac3, type: 3}
-      - {fileID: 8300000, guid: ceb7932774cf34e0782a58e4a556f773, type: 3}
+      - {fileID: 8300000, guid: 2ac3ba2c427f5544396e98438e436c29, type: 3}
+      - {fileID: 8300000, guid: 0abe41bad5da3c14d941d65d7a6a8b44, type: 3}
+      - {fileID: 8300000, guid: 310004897d22431479c8069b203e1f2f, type: 3}
     - key: VOX_RKT_APPROACH
       takes:
-      - {fileID: 8300000, guid: 2113e6b5307f34bb9b3a6a9ad4e93d5c, type: 3}
-      - {fileID: 8300000, guid: aaab257f88b5d4d24add0fda5d1a8d15, type: 3}
+      - {fileID: 8300000, guid: da26cd3751753ae40b84778c4342674c, type: 3}
+      - {fileID: 8300000, guid: 02a23d74c2d52be478690a977efd2df1, type: 3}
     - key: VOX_RKT_COLLECT
       takes:
-      - {fileID: 8300000, guid: f982a7145e9cf4c5887c7c5535c1ec05, type: 3}
-      - {fileID: 8300000, guid: 26cf6dcaf24c342bc9208f1491ae84fd, type: 3}
+      - {fileID: 8300000, guid: aa15defc02ca23d4dbee38c5877dd8d7, type: 3}
+      - {fileID: 8300000, guid: 9ac0e5c4762afdf4c863f94532a0fd31, type: 3}
     - key: VOX_RKT_DEMAND
       takes:
-      - {fileID: 8300000, guid: 966927eb8d5d64fa1a8d2b518fb6771b, type: 3}
-      - {fileID: 8300000, guid: 62913e1b7e5bf4ca09ba8c31dc8faa49, type: 3}
+      - {fileID: 8300000, guid: b0804e1bb60454a45989d7b959abaa10, type: 3}
+      - {fileID: 8300000, guid: ae64a95b24a47b24fa55d302c31c06e1, type: 3}
     - key: VOX_RKT_GUARD
       takes:
-      - {fileID: 8300000, guid: cb55e528362fd4e889f74bf046bfc1cb, type: 3}
-      - {fileID: 8300000, guid: 0bbc39efcccaa46eebea000850f29c1d, type: 3}
+      - {fileID: 8300000, guid: d07d8ec5893da524c90947fbdcc56d1d, type: 3}
+      - {fileID: 8300000, guid: 7d5c39608c55b6f448a9f4daa7ca19c9, type: 3}
     - key: VOX_RKT_HOLDOUT
       takes:
-      - {fileID: 8300000, guid: 8593c69929738465f83783abac1bf344, type: 3}
-      - {fileID: 8300000, guid: f40a64b47f7fb4c88ba386fb14a75c4c, type: 3}
+      - {fileID: 8300000, guid: f5175bd23a2d3ef48a6b91be52426740, type: 3}
+      - {fileID: 8300000, guid: 7d1db2b316429ec4482f29017b5e4cf9, type: 3}
     - key: VOX_RKT_ROB
       takes:
-      - {fileID: 8300000, guid: 25d36f08423024c1b8cddf4ae5c1f238, type: 3}
-      - {fileID: 8300000, guid: 36849ebc229c44cd09bdb9c883c0c578, type: 3}
+      - {fileID: 8300000, guid: 383ac5fd872273d4896ed27b0821b84b, type: 3}
+      - {fileID: 8300000, guid: e35a51e3139f6fd4488aea4f0911b320, type: 3}
     - key: VOX_RKT_SHAKE
       takes:
-      - {fileID: 8300000, guid: cc093d72061a94589b2520d354179b7a, type: 3}
-      - {fileID: 8300000, guid: 9bd068245da8f4a8fb622aad24e4e19c, type: 3}
+      - {fileID: 8300000, guid: 536d7e7b46cc5144a952dba297400640, type: 3}
+      - {fileID: 8300000, guid: 3720bd629dd2dc44b9394c92fae0a602, type: 3}
     - key: VOX_RKT_SMASH
       takes:
-      - {fileID: 8300000, guid: d3b5718ebbf0b43548ae2dd4efde5497, type: 3}
-      - {fileID: 8300000, guid: 90ab651eb3c614cb5aa74d8d58af5397, type: 3}
+      - {fileID: 8300000, guid: 6afc1be688a1ffc46828777697e79a9c, type: 3}
+      - {fileID: 8300000, guid: 25cf216d9a2f7a140a8dbbee085f1380, type: 3}
     - key: VOX_RKT_THREAT
       takes:
-      - {fileID: 8300000, guid: 7362fdfb1e8954f69a2bbf3d88597ee7, type: 3}
-      - {fileID: 8300000, guid: 535004788f63e4930998dd4d623f3a78, type: 3}
+      - {fileID: 8300000, guid: 1bbc10c034f4e8045971c6c21d3bbdc2, type: 3}
+      - {fileID: 8300000, guid: c2ff2324c99298446b23e6587b359d2d, type: 3}
     - key: VOX_RKT_TORCH
       takes:
-      - {fileID: 8300000, guid: 8887dc4831dc14762b354676e9635c8a, type: 3}
-      - {fileID: 8300000, guid: 7e1d07835a8574270841927b4ce1d67b, type: 3}
+      - {fileID: 8300000, guid: 18f9d04bc887a2444806d8d9edc25404, type: 3}
+      - {fileID: 8300000, guid: b782cf73015594c4aa2749d6f0cc5ae5, type: 3}
     - key: VOX_SEL_CAR
       takes:
-      - {fileID: 8300000, guid: 9ae1d5993c7f24030bd533566642234b, type: 3}
-      - {fileID: 8300000, guid: 3b97b3a2e9b834ad58ebfa2887425dff, type: 3}
+      - {fileID: 8300000, guid: 9eff259649311e74babf45b2459429de, type: 3}
+      - {fileID: 8300000, guid: e0cd26c3f390ef44bb1ced87e8dd7f66, type: 3}
     - key: VOX_SEL_FEW
       takes:
-      - {fileID: 8300000, guid: b2cab5fc1dd34417982d4ded912ee63e, type: 3}
+      - {fileID: 8300000, guid: 48c9e560231892646a9261619e4b8d03, type: 3}
     - key: VOX_SEL_HURT
       takes:
-      - {fileID: 8300000, guid: 2729fe0bb563f47c6bcbf6b6914172f0, type: 3}
-      - {fileID: 8300000, guid: 30e58a19c0cab4613969b6fff8cd4179, type: 3}
+      - {fileID: 8300000, guid: f3d42871ab468b74d9d5dec352d0b8ca, type: 3}
+      - {fileID: 8300000, guid: d379de6dfe1e12f42a505e5c2425cf84, type: 3}
     - key: VOX_SEL_INSIDE
       takes:
-      - {fileID: 8300000, guid: e721b6fc191e94e2bb38ffa1d59d208c, type: 3}
-      - {fileID: 8300000, guid: ef827586c39db43e8a54926de5ebf94e, type: 3}
+      - {fileID: 8300000, guid: bedaacd656660e340a5dff211768771c, type: 3}
+      - {fileID: 8300000, guid: 36270677c4f6365478bf6cd2757999a8, type: 3}
     - key: VOX_SEL_READY
       takes:
-      - {fileID: 8300000, guid: d596c791b3a7b4e298bd0a279b2ab853, type: 3}
-      - {fileID: 8300000, guid: c0dae1fd97b224259b9d3ec194e853b3, type: 3}
-      - {fileID: 8300000, guid: c2cf697aea47d4d4ea7f2fa3c1cc3a39, type: 3}
-      - {fileID: 8300000, guid: 7abc2f2bb9f2d43c9a16eddd40342870, type: 3}
+      - {fileID: 8300000, guid: 989b65daf68856e4aa821f5cc6f0747c, type: 3}
+      - {fileID: 8300000, guid: 06f8785589426024c861972d83375f7a, type: 3}
+      - {fileID: 8300000, guid: fec0cb0aca9ade340b4ae440bb2e6694, type: 3}
+      - {fileID: 8300000, guid: a1c839fd822da4c4fa0d0c95aae93ae0, type: 3}
     - key: VOX_SEL_ROUND
       takes:
-      - {fileID: 8300000, guid: 8f7e0f720cab2485b85389ff7f78a414, type: 3}
+      - {fileID: 8300000, guid: 8c5cc7ab25797fd4c8d6cb2360f8e08d, type: 3}
     - key: VOX_SPOT_CONTACT
       takes:
-      - {fileID: 8300000, guid: 347d1a4c69e4042a0a758e92f3be8195, type: 3}
-      - {fileID: 8300000, guid: 8dbd74f946dc14fa3b5efdb287ff595e, type: 3}
-      - {fileID: 8300000, guid: 11141450d50254fb8b89309ce892b2ef, type: 3}
-      - {fileID: 8300000, guid: b45107eeece734e128b4cda741740854, type: 3}
+      - {fileID: 8300000, guid: 4d9b2db7e6242b34c94d5f6227fb83c0, type: 3}
+      - {fileID: 8300000, guid: e3aa03833855599449d217c59d07110f, type: 3}
+      - {fileID: 8300000, guid: 9583db5d956bda2429d3446c5d18e025, type: 3}
+      - {fileID: 8300000, guid: 05261300b42687046b1a4c043097b5fb, type: 3}
     - key: VOX_SURR_HANDS
       takes:
-      - {fileID: 8300000, guid: 4000c9867fd364603823dce2ad222378, type: 3}
-      - {fileID: 8300000, guid: e8a276095c14149d0b0dcc4cdbfc5fd7, type: 3}
-      - {fileID: 8300000, guid: 1189b84437a9047d6a9093ac21e6629e, type: 3}
+      - {fileID: 8300000, guid: f70f8058a39b9ac48a2fc7b40d68c789, type: 3}
+      - {fileID: 8300000, guid: c72b01ee7c3fc3b479c7ec53ff51151b, type: 3}
+      - {fileID: 8300000, guid: 1de9a4fe66369b84095ae69b38ccc14a, type: 3}
     - key: VOX_WARN_CALL
       takes:
-      - {fileID: 8300000, guid: fe29ffdcc41c74adea1f348e7aa199f0, type: 3}
-      - {fileID: 8300000, guid: a61b6857bb598484cb52df0b4f0e36fb, type: 3}
-      - {fileID: 8300000, guid: f7e9f79f8e99f4eeda710140a99c073b, type: 3}
+      - {fileID: 8300000, guid: 3a23ad6ec49f104468010bc5e9a92a2d, type: 3}
+      - {fileID: 8300000, guid: 51a1ed5a820d47641b4deae0b56987b8, type: 3}
+      - {fileID: 8300000, guid: 3912455d2c96ca345a31d3b029aa59c0, type: 3}
     - key: VOX_WIN_OVER
       takes:
-      - {fileID: 8300000, guid: c6978e93763594337a09005dc8b0023f, type: 3}
-      - {fileID: 8300000, guid: 60ab714014b5c492088bf686230b58b1, type: 3}
-      - {fileID: 8300000, guid: b848102f5661d40299f039593d2fcd15, type: 3}
+      - {fileID: 8300000, guid: e6802177c2daa7344aa064b0f4fe1f38, type: 3}
+      - {fileID: 8300000, guid: 6080ed13990321e4d88e427b50c26acb, type: 3}
+      - {fileID: 8300000, guid: fdb34cdc47c373e4684782fa211efccc, type: 3}
   - id: VB08
     actor: Austin - Deep Raspy
     age: 1
@@ -1645,230 +1645,230 @@ MonoBehaviour:
     lines:
     - key: VOX_DOWN_CRY
       takes:
-      - {fileID: 8300000, guid: d3f7896e16df74ce288d204f45931da7, type: 3}
-      - {fileID: 8300000, guid: 0bc44b29c3b834e3daec6dc3b9b6a230, type: 3}
-      - {fileID: 8300000, guid: 2feea80cfe02d47109ee6de5ce2bfc0a, type: 3}
-      - {fileID: 8300000, guid: 9c9e7d9286b5e437e9cb53cbe34922a3, type: 3}
+      - {fileID: 8300000, guid: d52fc06f753369e418d0bd99baf0c76f, type: 3}
+      - {fileID: 8300000, guid: f73f9a9a67f01704ebb7b1ba3eb37c42, type: 3}
+      - {fileID: 8300000, guid: b88f1d5eceaf16b498d4629130173bc3, type: 3}
+      - {fileID: 8300000, guid: 04b4bc702184f3241b83c36b233ebe1c, type: 3}
     - key: VOX_DROP_GOT
       takes:
-      - {fileID: 8300000, guid: 1fb5ce68d7ac1442b8efaae1953be752, type: 3}
-      - {fileID: 8300000, guid: 042bd81124ad6435c87fcde6e9fe4812, type: 3}
-      - {fileID: 8300000, guid: 8cc03f2b34d764a2d9e929ce43b133fb, type: 3}
-      - {fileID: 8300000, guid: bb575a7c0fb144d848c56b62783dd4fb, type: 3}
+      - {fileID: 8300000, guid: 59840cfce980b0b4ca59bca4787c95a0, type: 3}
+      - {fileID: 8300000, guid: 27723de21d2ae8a43877e43b0a9d50fd, type: 3}
+      - {fileID: 8300000, guid: 0bf528846763ef746bcc0b1a8c747ade, type: 3}
+      - {fileID: 8300000, guid: 125cff2d03b96ee449313df095e8c28a, type: 3}
     - key: VOX_FIGHT_CURSE
       takes:
-      - {fileID: 8300000, guid: 8e9b6f0ce159f472d9591fb5fdac8c85, type: 3}
-      - {fileID: 8300000, guid: 3de9eb4ed51d54d15a99f568ea929278, type: 3}
-      - {fileID: 8300000, guid: 454e2817bc5144996a527c0bc53d79c3, type: 3}
-      - {fileID: 8300000, guid: 94a527bbd60924e14a5e00747d132fde, type: 3}
-      - {fileID: 8300000, guid: 94cb38082a0c24147ac2b704eea3ec24, type: 3}
-      - {fileID: 8300000, guid: c26106b4f979d4ff6821314f7b94e94a, type: 3}
-      - {fileID: 8300000, guid: 97ca010abdf2d421490ef81a041de543, type: 3}
-      - {fileID: 8300000, guid: 6de0483967b1840d29ab968eca60a611, type: 3}
+      - {fileID: 8300000, guid: 200ed43ec22cae043bc7db6a1006a99e, type: 3}
+      - {fileID: 8300000, guid: a848b53f6026a3e4f9519293cf1531d3, type: 3}
+      - {fileID: 8300000, guid: efb28f4ecc7299b4bb4756cc292a0c96, type: 3}
+      - {fileID: 8300000, guid: c666c53a5c1c36e44bdb271587d50459, type: 3}
+      - {fileID: 8300000, guid: 21cf33f289a663444a4a419fd6421b4d, type: 3}
+      - {fileID: 8300000, guid: 4eae1820605dbe94d9c4ef608cf4e3ad, type: 3}
+      - {fileID: 8300000, guid: f9440c39b70df1b40ab7cb3c131e4366, type: 3}
+      - {fileID: 8300000, guid: cc9cd15d49c9db942a3816e4f028fa0c, type: 3}
     - key: VOX_HIT_BAD
       takes:
-      - {fileID: 8300000, guid: 470b3d8116cc2460d9a7baba2bafac68, type: 3}
-      - {fileID: 8300000, guid: 84f9b7b48933a4a428e75426052e05ef, type: 3}
-      - {fileID: 8300000, guid: 2e2ac80582135401187db389561a564f, type: 3}
+      - {fileID: 8300000, guid: 17b9c925a1e520a459bb3db46c099d8a, type: 3}
+      - {fileID: 8300000, guid: 2116d06a315ce304d80c6a96e5f1e8bf, type: 3}
+      - {fileID: 8300000, guid: 0a352fca3e5b666488481de676058864, type: 3}
     - key: VOX_HIT_TAKE
       takes:
-      - {fileID: 8300000, guid: fedea227d089a4de5b4303296e51f6ae, type: 3}
-      - {fileID: 8300000, guid: 5d556835c7654464d98f06b0c37aa529, type: 3}
-      - {fileID: 8300000, guid: eb94b0213023746b79a220619346d5c2, type: 3}
-      - {fileID: 8300000, guid: 925881b59957943659d621015c6c94d7, type: 3}
-      - {fileID: 8300000, guid: 1edd0024a3c3545339049e5c9bda2d4c, type: 3}
-      - {fileID: 8300000, guid: 47e53d0ecc67f45c9a11706fd9e1db24, type: 3}
+      - {fileID: 8300000, guid: b6896ada9f14b4a479830173967a294d, type: 3}
+      - {fileID: 8300000, guid: 695cf12378867d748aa82936e0c49eb3, type: 3}
+      - {fileID: 8300000, guid: 2a1014351a1b1dc4986a30809079d6ba, type: 3}
+      - {fileID: 8300000, guid: 91a523fefc7f3584ea33a762563f96a0, type: 3}
+      - {fileID: 8300000, guid: b806e01166e30fb458d48b64a478a7ae, type: 3}
+      - {fileID: 8300000, guid: dcf2d0970a5fd5c48b1a61d21e859c58, type: 3}
     - key: VOX_LAW_HEAT
       takes:
-      - {fileID: 8300000, guid: b803f572bf85e45efaa6a49e8281860a, type: 3}
-      - {fileID: 8300000, guid: dc760752ca82d412597b0b2f0a20b058, type: 3}
-      - {fileID: 8300000, guid: e413506c071254018b05a95012c14aa6, type: 3}
+      - {fileID: 8300000, guid: 3d487c915e44dca47964e00e5eec47b0, type: 3}
+      - {fileID: 8300000, guid: adbb7790859765f4e9ee1726beff82fa, type: 3}
+      - {fileID: 8300000, guid: d8e5cd12b3c4b7d469cb8f020b224acd, type: 3}
     - key: VOX_LOSS_MAN
       takes:
-      - {fileID: 8300000, guid: e9c2194a27d8c485492e3e1fbd279314, type: 3}
-      - {fileID: 8300000, guid: bb24070d4e50144b4a20422b8a157b3b, type: 3}
-      - {fileID: 8300000, guid: c3b83b5ae2028418da9ae611da4a8784, type: 3}
-      - {fileID: 8300000, guid: 0eaae6fbbef404c319cbc3e06eba2fd0, type: 3}
+      - {fileID: 8300000, guid: 65f3b6b5eec011c45a4eb2698b52d27c, type: 3}
+      - {fileID: 8300000, guid: 2324ba789c0e19049af4a39283891055, type: 3}
+      - {fileID: 8300000, guid: ebf63a328bfb0114885e613f9606ccc1, type: 3}
+      - {fileID: 8300000, guid: 873495336d2944748af5fc5172ba36d7, type: 3}
     - key: VOX_NO_ARMS
       takes:
-      - {fileID: 8300000, guid: 10011932683b44dffb753cb742234035, type: 3}
+      - {fileID: 8300000, guid: 931de7fea0c6a224e812e8ca013b4bf1, type: 3}
     - key: VOX_NO_GENERIC
       takes:
-      - {fileID: 8300000, guid: 8cd8fe468e62d48efb37979e702be3a9, type: 3}
-      - {fileID: 8300000, guid: cd3772e366af243a39f7e223e181bfef, type: 3}
-      - {fileID: 8300000, guid: abd4beca618174cbfa3915dc1826bdea, type: 3}
+      - {fileID: 8300000, guid: cf987b47340cae74fa49974f2fe6acc2, type: 3}
+      - {fileID: 8300000, guid: eeda695d415f9044ea2cf4a3a122f972, type: 3}
+      - {fileID: 8300000, guid: f471a192b033d9e4e94589564bb8909c, type: 3}
     - key: VOX_NO_MEN
       takes:
-      - {fileID: 8300000, guid: 06ea0229c02cd4facb11ac763f679028, type: 3}
+      - {fileID: 8300000, guid: c37fd272efe53604baae4d83f4219ea5, type: 3}
     - key: VOX_NO_REACH
       takes:
-      - {fileID: 8300000, guid: a2f97539417424f9ebf584d48e94c6d7, type: 3}
+      - {fileID: 8300000, guid: b4be31e266a6d774a82fc24f0a25b7f9, type: 3}
     - key: VOX_ORD_AWAY
       takes:
-      - {fileID: 8300000, guid: 6b9dcdc47e12d44288086a1058ee08a5, type: 3}
-      - {fileID: 8300000, guid: 22bd49c4da82440fc898c34fe92f6c8c, type: 3}
+      - {fileID: 8300000, guid: 5481fffc0cb090d45bf7007832547d8f, type: 3}
+      - {fileID: 8300000, guid: fa6456d469a757e4bab45669b06815c4, type: 3}
     - key: VOX_ORD_BAG
       takes:
-      - {fileID: 8300000, guid: 19f1b83c7d76241819bf73bf6c4284a2, type: 3}
-      - {fileID: 8300000, guid: eada85f9d053e48a0b9492efdb6ba0ef, type: 3}
+      - {fileID: 8300000, guid: 5a49304dff3f37b4f8111554621e284a, type: 3}
+      - {fileID: 8300000, guid: b1afc7bca2f38b84fa7ecc8a4a218333, type: 3}
     - key: VOX_ORD_BOARD
       takes:
-      - {fileID: 8300000, guid: 87bc5541b3f6d4aa5b3c2833653f937f, type: 3}
-      - {fileID: 8300000, guid: 303d1ed120c604cad8995aa54710714d, type: 3}
+      - {fileID: 8300000, guid: 307b5ff338fe2be429dd2e504fd773e6, type: 3}
+      - {fileID: 8300000, guid: 70481f23bf437b844ba3e155846eaffc, type: 3}
     - key: VOX_ORD_CARBOMB
       takes:
-      - {fileID: 8300000, guid: 53ca1cd36d0a14f199b28aa2030b1d7e, type: 3}
-      - {fileID: 8300000, guid: cafcc3f87efe0449f856c7362cf658b0, type: 3}
-      - {fileID: 8300000, guid: 391ea8f5f6d7c43738c804da88b8d5b8, type: 3}
+      - {fileID: 8300000, guid: a314e54ad37fbc347a18e4d577f1cbd6, type: 3}
+      - {fileID: 8300000, guid: 06c95dc1a03783d42a70da2bab50c6bf, type: 3}
+      - {fileID: 8300000, guid: e1369f19e171ea3459d7527cc88628dc, type: 3}
     - key: VOX_ORD_COVER
       takes:
-      - {fileID: 8300000, guid: 59f5fadddb8594732b5b5bd800702ae8, type: 3}
-      - {fileID: 8300000, guid: 29b83b4d889634bd6b7d1b43fcd3858a, type: 3}
-      - {fileID: 8300000, guid: 66d568f7bab19459580cadb858cc546f, type: 3}
+      - {fileID: 8300000, guid: 224250a668a158b42a391a6ab458271e, type: 3}
+      - {fileID: 8300000, guid: 8ea6e9d06a116bd4c8a96bb7788dcf00, type: 3}
+      - {fileID: 8300000, guid: 611a12a3794518343ad45b3942dff990, type: 3}
     - key: VOX_ORD_DOORBOMB
       takes:
-      - {fileID: 8300000, guid: ed55c26700b7c48ab887d3000a749c47, type: 3}
-      - {fileID: 8300000, guid: 73d98f9bc1a5e456fb9f58629870555c, type: 3}
+      - {fileID: 8300000, guid: 2945519c853c07544a0f060d9304beef, type: 3}
+      - {fileID: 8300000, guid: 83ee02e4906976b4bb6653c0f8bc44f4, type: 3}
     - key: VOX_ORD_DRIVEBY
       takes:
-      - {fileID: 8300000, guid: ad34694bd1cb54c5d9e4d3674321d186, type: 3}
-      - {fileID: 8300000, guid: 72bc64d39d7b7475ebbf6c54ddfe7e73, type: 3}
-      - {fileID: 8300000, guid: fd7ffc38900de4debbebe31d0f53ef7b, type: 3}
+      - {fileID: 8300000, guid: 4141e76e1a4df0540ad87aea918349cc, type: 3}
+      - {fileID: 8300000, guid: 8bbec91a4a783844fab5cddae7863ccc, type: 3}
+      - {fileID: 8300000, guid: a888d81e13bcb6a4fa8b07d9957b4f34, type: 3}
     - key: VOX_ORD_FLEE
       takes:
-      - {fileID: 8300000, guid: af9b24682a63d4b72bc0dfdf84b07035, type: 3}
-      - {fileID: 8300000, guid: 22e40a21fd85440daa5880ce01559ec3, type: 3}
-      - {fileID: 8300000, guid: 8119ce597983f490a8671c9839b66467, type: 3}
+      - {fileID: 8300000, guid: 5452f13f6deb93d4cb23b86244882d6c, type: 3}
+      - {fileID: 8300000, guid: 0922ea5c25fc1f24b82682c4348245b4, type: 3}
+      - {fileID: 8300000, guid: 5d55ae2c45538a445a7ffaa06edde133, type: 3}
     - key: VOX_ORD_GRENADE
       takes:
-      - {fileID: 8300000, guid: cab8bb2db998442318d31c1bd222e053, type: 3}
-      - {fileID: 8300000, guid: b0e6a099c865f4451b9d729b7bb4fe58, type: 3}
-      - {fileID: 8300000, guid: dd34375ebe00e4ef9a49578508510998, type: 3}
+      - {fileID: 8300000, guid: 2191183cbce13b743a85007c8c0fdb6a, type: 3}
+      - {fileID: 8300000, guid: 4f014d6192b08fe43814b4c164784d2b, type: 3}
+      - {fileID: 8300000, guid: 0510770b35f16e24d912e9d5c0e06622, type: 3}
     - key: VOX_ORD_INSIDE
       takes:
-      - {fileID: 8300000, guid: ff32305d7df2441a183d0d470d9dca6b, type: 3}
-      - {fileID: 8300000, guid: 4a30ca9ebe76245cea54a39e9bd46973, type: 3}
+      - {fileID: 8300000, guid: 5eb98607548601742ba3f419329bf1f5, type: 3}
+      - {fileID: 8300000, guid: 7246be44717a1f049bf88edd1b82593f, type: 3}
     - key: VOX_ORD_KILL
       takes:
-      - {fileID: 8300000, guid: ce7d8c4873c5d4163871ab9d576cf5f3, type: 3}
-      - {fileID: 8300000, guid: feb4de0e983044bfcbd483e14e12f923, type: 3}
-      - {fileID: 8300000, guid: 53d55911af54c49e3b68f5d869780216, type: 3}
+      - {fileID: 8300000, guid: ad1d47f28012d00408b58ecddc8615eb, type: 3}
+      - {fileID: 8300000, guid: 317a32d9e1264bf4baaee09cac51f235, type: 3}
+      - {fileID: 8300000, guid: 2d08be3ed9cbaae43982c0fb78312de5, type: 3}
     - key: VOX_ORD_MOVE
       takes:
-      - {fileID: 8300000, guid: 51b24c2229a354b31b8d2ee2ed8882ec, type: 3}
-      - {fileID: 8300000, guid: 9a26b4d77f9604dd481a5ea14e0569c8, type: 3}
-      - {fileID: 8300000, guid: 091a18e7d7cae494b9b2a746d092ad61, type: 3}
+      - {fileID: 8300000, guid: 4b7ba085a207cfd408a35afe4b459171, type: 3}
+      - {fileID: 8300000, guid: c4233161f4d308e47a5259c007c96f2a, type: 3}
+      - {fileID: 8300000, guid: f64166ec83ed34049983d0626335f2d2, type: 3}
     - key: VOX_ORD_OUT
       takes:
-      - {fileID: 8300000, guid: 63391f17ff18340cd84ae29d89361ad2, type: 3}
-      - {fileID: 8300000, guid: 64e336322351d494498f38f7421aed33, type: 3}
+      - {fileID: 8300000, guid: be67b95a9fa61b045ba499d76b91797c, type: 3}
+      - {fileID: 8300000, guid: cd179cab6957b5e4fa6b63603feb9c0e, type: 3}
     - key: VOX_ORD_OUTSIDE
       takes:
-      - {fileID: 8300000, guid: 9e9589456306b423cbbc7e34c8bb6844, type: 3}
-      - {fileID: 8300000, guid: c8aa4f0e15efb4ef1a294fd94f14d7bc, type: 3}
+      - {fileID: 8300000, guid: ac0143b6031631343a658d1c9afc5b43, type: 3}
+      - {fileID: 8300000, guid: 13d428f0416c66f4bb8f863f1bc6c33f, type: 3}
     - key: VOX_ORD_RUN
       takes:
-      - {fileID: 8300000, guid: 91d1d00768d7746afb8b6a8b9e6da6f5, type: 3}
-      - {fileID: 8300000, guid: 863faa83f0c63470d9e4cef9a2e26a4f, type: 3}
-      - {fileID: 8300000, guid: 7835ef1daf25b45af923201ea7552428, type: 3}
+      - {fileID: 8300000, guid: 88580da770739c0449baf2dea414992e, type: 3}
+      - {fileID: 8300000, guid: 24d2f03f39b29c645acb1053deac80a6, type: 3}
+      - {fileID: 8300000, guid: e526d036217697941a1a13121cae6acd, type: 3}
     - key: VOX_ORD_SHOOTCAR
       takes:
-      - {fileID: 8300000, guid: 9712a738c6c7a4d19b7acc629e119c29, type: 3}
-      - {fileID: 8300000, guid: a55e08988dda5442c9eb0296dff0ca55, type: 3}
+      - {fileID: 8300000, guid: a48b4caa56080b648860c89d51a4d9d9, type: 3}
+      - {fileID: 8300000, guid: 30deb504f6d15d640a354b0b87120f7c, type: 3}
     - key: VOX_ORD_WITNESS
       takes:
-      - {fileID: 8300000, guid: fac3bd3d753524342922f170a9988dc5, type: 3}
-      - {fileID: 8300000, guid: a3d1af49931344e0781c88216d009c42, type: 3}
+      - {fileID: 8300000, guid: 9609e55b195e973438ee84b7c441e72b, type: 3}
+      - {fileID: 8300000, guid: 9c859e15c740bac4c8fcb2bc966fc146, type: 3}
     - key: VOX_PIN_HELD
       takes:
-      - {fileID: 8300000, guid: 58e46a5e8dda04e28b9fb3057da135b7, type: 3}
-      - {fileID: 8300000, guid: 078db343b8da046449f5de319f55bdae, type: 3}
-      - {fileID: 8300000, guid: be959baabcf6c400f9892587e43cdf6d, type: 3}
+      - {fileID: 8300000, guid: 1c389386599a13b42bc637aefcfad8a4, type: 3}
+      - {fileID: 8300000, guid: 5e9f2b7593d69c141b5f63e51340610a, type: 3}
+      - {fileID: 8300000, guid: 6282be36cd8352a4eb0584c8496e078a, type: 3}
     - key: VOX_RKT_APPROACH
       takes:
-      - {fileID: 8300000, guid: f496d8ecec5524cd3a0fb021d2ff3e60, type: 3}
-      - {fileID: 8300000, guid: 269ae94b61d1a425496f60db62328f8d, type: 3}
+      - {fileID: 8300000, guid: 57ff0f6473a0bcb4e87548203befe9e4, type: 3}
+      - {fileID: 8300000, guid: 006ee7c94bcc912408158a218230b00d, type: 3}
     - key: VOX_RKT_COLLECT
       takes:
-      - {fileID: 8300000, guid: eae7678425c5e4907b54ee8d21fecf0b, type: 3}
-      - {fileID: 8300000, guid: aa4466e259d384d91bc3784e34911168, type: 3}
+      - {fileID: 8300000, guid: 23f9d2bfc900cba4d9ef3eb0a1103ad0, type: 3}
+      - {fileID: 8300000, guid: 54e1d48e70c71f7498d3e4e0e5b91b3c, type: 3}
     - key: VOX_RKT_DEMAND
       takes:
-      - {fileID: 8300000, guid: 04a7fc4cb28a64cef8a4d4b6d810969f, type: 3}
-      - {fileID: 8300000, guid: 42d927a95b096485ab4abf10b3d67978, type: 3}
+      - {fileID: 8300000, guid: 03b7ef6587666924eb45400f3a5cb5c0, type: 3}
+      - {fileID: 8300000, guid: 5f34fe0fd6aa99c4fb389b9a1a065368, type: 3}
     - key: VOX_RKT_GUARD
       takes:
-      - {fileID: 8300000, guid: 7bbc650947bcd4cf59298c708d027c2a, type: 3}
-      - {fileID: 8300000, guid: 1290ef685af7644239ae45a328ea41a4, type: 3}
+      - {fileID: 8300000, guid: 00f195a1a940a3f4e907eb360b2e8a3e, type: 3}
+      - {fileID: 8300000, guid: 4cd701d46712b7546b7def4940f9b839, type: 3}
     - key: VOX_RKT_HOLDOUT
       takes:
-      - {fileID: 8300000, guid: b8da619b6240d4346bc367ef7acb5143, type: 3}
-      - {fileID: 8300000, guid: 640b66fe08da248d5883b3ed60b02a6d, type: 3}
+      - {fileID: 8300000, guid: f4268abc4f718144ab5401bd926d172f, type: 3}
+      - {fileID: 8300000, guid: 9af20bd138dd1b4478e3b08690e302a0, type: 3}
     - key: VOX_RKT_ROB
       takes:
-      - {fileID: 8300000, guid: 11f1e55f8153b4e49a1f57dd370194bd, type: 3}
-      - {fileID: 8300000, guid: fcf471c34862c40c8adfb1fe4e5eebda, type: 3}
+      - {fileID: 8300000, guid: 4c8bacfb824f5a74daf26db96c2e888d, type: 3}
+      - {fileID: 8300000, guid: feedf47d7cd4fef48b242eef8a2df5ad, type: 3}
     - key: VOX_RKT_SHAKE
       takes:
-      - {fileID: 8300000, guid: 3ed4d36ece8354036b4e0d82266230ed, type: 3}
-      - {fileID: 8300000, guid: 0b3bd026a21144445aa8a9bf5a1a08f6, type: 3}
+      - {fileID: 8300000, guid: cf7d82026c3df9f4ab7ce59615db7c66, type: 3}
+      - {fileID: 8300000, guid: 3ae2449587303c443922079c31dc06e0, type: 3}
     - key: VOX_RKT_SMASH
       takes:
-      - {fileID: 8300000, guid: 7ff329d80b8a94aa283bdd5c0d89b573, type: 3}
-      - {fileID: 8300000, guid: 09f467c437872407a8ea30e16a850bc9, type: 3}
+      - {fileID: 8300000, guid: d53f452fa9ee30d4ebb8238278397e5e, type: 3}
+      - {fileID: 8300000, guid: fbae7722d6623bc4ca824e5c648ced24, type: 3}
     - key: VOX_RKT_THREAT
       takes:
-      - {fileID: 8300000, guid: f16a6a012d9e94057bfb53ea6cac15ef, type: 3}
-      - {fileID: 8300000, guid: 4010a269e4ac34340896680ea29e04ad, type: 3}
+      - {fileID: 8300000, guid: 6ffc8326b943a1d45937436893571317, type: 3}
+      - {fileID: 8300000, guid: 205a71c81cf195b45886c09853b45d78, type: 3}
     - key: VOX_RKT_TORCH
       takes:
-      - {fileID: 8300000, guid: c54065fa2e64b42d5b11cbd639fd54de, type: 3}
-      - {fileID: 8300000, guid: f6e35ea0f0deb4348b7b3504dd091381, type: 3}
+      - {fileID: 8300000, guid: f5b7137aca4b9a446b2af3f9b6aa47dc, type: 3}
+      - {fileID: 8300000, guid: f7d602e1672e37543ad20dddbc76e72f, type: 3}
     - key: VOX_SEL_CAR
       takes:
-      - {fileID: 8300000, guid: ee8ce558e033e4b99be67d59f2977b3e, type: 3}
-      - {fileID: 8300000, guid: b3289eb4af02041978d1f8c4d5a25934, type: 3}
+      - {fileID: 8300000, guid: 502f3aaf59da6c546b18b8a4ae6a04b4, type: 3}
+      - {fileID: 8300000, guid: 801d3fcd31e192347a276ec7e27d54c2, type: 3}
     - key: VOX_SEL_FEW
       takes:
-      - {fileID: 8300000, guid: 3af2cbf6e45c74fc4975524ba57bcf51, type: 3}
+      - {fileID: 8300000, guid: ce66f927d65c3e345a6fc5837bdcb1b6, type: 3}
     - key: VOX_SEL_HURT
       takes:
-      - {fileID: 8300000, guid: 029a9b6ece2684bb3832f01bee4b6cc7, type: 3}
-      - {fileID: 8300000, guid: 98e8d2659c8ca4ea1961dba028c19a3e, type: 3}
+      - {fileID: 8300000, guid: ccd212954a1bc3b40b1e1819cebde45f, type: 3}
+      - {fileID: 8300000, guid: 8521e930495c1a446b4010311a7d079e, type: 3}
     - key: VOX_SEL_INSIDE
       takes:
-      - {fileID: 8300000, guid: 98bfb046b186848a1952feb60b3a78b8, type: 3}
-      - {fileID: 8300000, guid: 762a1986047544cc4abe1ea7041e3f8b, type: 3}
+      - {fileID: 8300000, guid: 988064c2878ef3246aba8f9109eea8ef, type: 3}
+      - {fileID: 8300000, guid: c3bd023924c9f0b45bc7977789b9024b, type: 3}
     - key: VOX_SEL_READY
       takes:
-      - {fileID: 8300000, guid: 4f81e45e00b0246e08245bf3635b5d50, type: 3}
-      - {fileID: 8300000, guid: eb83bb280b2be4ddebdcbb6728e05331, type: 3}
-      - {fileID: 8300000, guid: 5fbca6505148e40578db24ec89667a71, type: 3}
-      - {fileID: 8300000, guid: 642300dcfc4bb44c0aa42dd008e69724, type: 3}
+      - {fileID: 8300000, guid: fdc9213bf5f918540a2ce5bcc9c7ceb2, type: 3}
+      - {fileID: 8300000, guid: 5921a06e3ccf85a40b41715f9ddaea18, type: 3}
+      - {fileID: 8300000, guid: 2a31836779b61f84386b2879412f452a, type: 3}
+      - {fileID: 8300000, guid: 678ed64e00a18204b9fea8c1717f76d5, type: 3}
     - key: VOX_SEL_ROUND
       takes:
-      - {fileID: 8300000, guid: d67ca521bb8d9424d8e40daf9027b93f, type: 3}
+      - {fileID: 8300000, guid: c35d0f10b04b9e3469d4c658eaab24a1, type: 3}
     - key: VOX_SPOT_CONTACT
       takes:
-      - {fileID: 8300000, guid: 96fd9b100725f4628b0ea6e05c053722, type: 3}
-      - {fileID: 8300000, guid: 4950d55313370476e80fead4be4dbce4, type: 3}
-      - {fileID: 8300000, guid: 4f7aaad2367f64feaa808d903aa32b12, type: 3}
-      - {fileID: 8300000, guid: 72c0240d21d614964bc5cd1c1dd32364, type: 3}
+      - {fileID: 8300000, guid: 9305571f3058db540bca75ddbacbf92c, type: 3}
+      - {fileID: 8300000, guid: 90a270ba054fb4841908aa309b4e85b7, type: 3}
+      - {fileID: 8300000, guid: aa0f7a14a46ded24f9ec7ef262883923, type: 3}
+      - {fileID: 8300000, guid: 5e6395327e206c548a76129fe6bb0fc9, type: 3}
     - key: VOX_SURR_HANDS
       takes:
-      - {fileID: 8300000, guid: 71d0eff518c9f40d08ebb3b086567ca9, type: 3}
-      - {fileID: 8300000, guid: feff165e8a92f4d4f8fe77aa917ac297, type: 3}
-      - {fileID: 8300000, guid: 91e2ebfa5ee534e8dabb23123b6b0646, type: 3}
+      - {fileID: 8300000, guid: c9c6d8daf82d6fb42b64f64ab55dbb92, type: 3}
+      - {fileID: 8300000, guid: 28146f98cf0f16f4ea66fba8315f1f6b, type: 3}
+      - {fileID: 8300000, guid: 9e0478a4ed892674591abfaf75f6e030, type: 3}
     - key: VOX_WARN_CALL
       takes:
-      - {fileID: 8300000, guid: e2a5e8eddaba84838a67c5dcc0091424, type: 3}
-      - {fileID: 8300000, guid: b2df0e96ef6604dda8ecbb1df6c682d8, type: 3}
-      - {fileID: 8300000, guid: 5ccf2c58a625643c59cc0d681a74b6ae, type: 3}
+      - {fileID: 8300000, guid: a24f14d3d96988f48a4ec2ecc431e908, type: 3}
+      - {fileID: 8300000, guid: 8797158acded35c41b9e24ce2544ff25, type: 3}
+      - {fileID: 8300000, guid: 11eb88797dcb3614caa8c472b08a3c74, type: 3}
     - key: VOX_WIN_OVER
       takes:
-      - {fileID: 8300000, guid: c3067b54d31b84772be92a89cb3fb682, type: 3}
-      - {fileID: 8300000, guid: 34347a0b1a0744fa9b2754363f04532d, type: 3}
-      - {fileID: 8300000, guid: c923c2d9f165242fdb09e9369b1dc554, type: 3}
+      - {fileID: 8300000, guid: a3e04b0b8db451344a2af9417a1146c9, type: 3}
+      - {fileID: 8300000, guid: 706460fed7fd8724d8582298dad7908c, type: 3}
+      - {fileID: 8300000, guid: 7de88b0e78a76204fa2536bccc485caa, type: 3}
   - id: VBOF
     actor: Gotham Boss
     age: 2
@@ -1877,82 +1877,82 @@ MonoBehaviour:
     lines:
     - key: VOX_JOB_ADJUSTPROTECTION
       takes:
-      - {fileID: 8300000, guid: ce6d9e8ae08d24e5183a083ae25b68a1, type: 3}
+      - {fileID: 8300000, guid: 965b49b3477a60a499148c61614ba10e, type: 3}
     - key: VOX_JOB_AMBUSH
       takes:
-      - {fileID: 8300000, guid: 9293d5b0e5c4148fe8ac76f113b55d0d, type: 3}
+      - {fileID: 8300000, guid: 87a2dcd55c6216949961b378db16052b, type: 3}
     - key: VOX_JOB_ASSAULT
       takes:
-      - {fileID: 8300000, guid: 20061e5c99b7f4e3a9f3396663e55a47, type: 3}
+      - {fileID: 8300000, guid: 8d71554b15d97fb4abdfbdebf0e3c53d, type: 3}
     - key: VOX_JOB_AUDIT
       takes:
-      - {fileID: 8300000, guid: ae4d3e2e4510c4628aade95f7e1f590a, type: 3}
+      - {fileID: 8300000, guid: 881de4086dd244c489959e23219ef690, type: 3}
     - key: VOX_JOB_BOMB
       takes:
-      - {fileID: 8300000, guid: ccf92d038d01a4cfa8d81a33434f61ca, type: 3}
+      - {fileID: 8300000, guid: 1ed023e4eb539984ebb19a22ab0a537f, type: 3}
     - key: VOX_JOB_BRIBE
       takes:
-      - {fileID: 8300000, guid: cb565490c1edd43ac9e21237fc9bf641, type: 3}
+      - {fileID: 8300000, guid: 7664f42e009da1a48b84210bbe2ff66b, type: 3}
     - key: VOX_JOB_BUYPREMISES
       takes:
-      - {fileID: 8300000, guid: 6500f1b6e89c0492db9b3944f9cec0d6, type: 3}
+      - {fileID: 8300000, guid: 446f9ed4c23c4ce4795745de612ea54a, type: 3}
     - key: VOX_JOB_COLLECTPROTECTION
       takes:
-      - {fileID: 8300000, guid: 267429c3889cd4779b375ee6f0510a56, type: 3}
+      - {fileID: 8300000, guid: d0a01a7701bb01a4cb3b8dc218af686c, type: 3}
     - key: VOX_JOB_DONATE
       takes:
-      - {fileID: 8300000, guid: 9917efda777e94b2eaf1a39f0e6b1ca2, type: 3}
+      - {fileID: 8300000, guid: 04a08290ccadb0446921ae7c0c88b74b, type: 3}
     - key: VOX_JOB_EMPLOYPOLICE
       takes:
-      - {fileID: 8300000, guid: 6dfc32e1604424aa587a41ec4d1e4158, type: 3}
+      - {fileID: 8300000, guid: fd464d4ef90e0e845b9c3759a66ce942, type: 3}
     - key: VOX_JOB_EXPLORE
       takes:
-      - {fileID: 8300000, guid: 393d52ad6a7ba4b7fa2d703f6634ef53, type: 3}
+      - {fileID: 8300000, guid: c99d2e4a8613a574187081b47cfdf954, type: 3}
     - key: VOX_JOB_EXTORT
       takes:
-      - {fileID: 8300000, guid: 5eed9db87994d4204bcf9f00c07afdaf, type: 3}
+      - {fileID: 8300000, guid: c897f3252fa950a4dbb52b2b6e6a3c8c, type: 3}
     - key: VOX_JOB_GUARD
       takes:
-      - {fileID: 8300000, guid: 841554e86bdd94b27a1701fb3ce26f0b, type: 3}
+      - {fileID: 8300000, guid: 4853869f15f95cc4d88cab255cd2032f, type: 3}
     - key: VOX_JOB_INTIMIDATE
       takes:
-      - {fileID: 8300000, guid: 063e57d632130467d9962d7ade0a8b7e, type: 3}
+      - {fileID: 8300000, guid: 5d9ba97670c61ff4c8edfcede4fbf80b, type: 3}
     - key: VOX_JOB_KIDNAP
       takes:
-      - {fileID: 8300000, guid: afe032cec97c8433e88f26726d1530ee, type: 3}
+      - {fileID: 8300000, guid: d5c8afc4e659ec741bc511a221180d92, type: 3}
     - key: VOX_JOB_KILL
       takes:
-      - {fileID: 8300000, guid: f780918cbab9246288bf0b5b20f802da, type: 3}
+      - {fileID: 8300000, guid: a63cbb4843430eb45afae4ab1bfe45bf, type: 3}
     - key: VOX_JOB_PATROL
       takes:
-      - {fileID: 8300000, guid: a6147c399de01422f8f726b3d8006b90, type: 3}
+      - {fileID: 8300000, guid: 487c7ba576da6ef4394aabf88579f904, type: 3}
     - key: VOX_JOB_RAID
       takes:
-      - {fileID: 8300000, guid: e68952b89e37844079a1fff589b0fd91, type: 3}
+      - {fileID: 8300000, guid: d0c91f88ae1721d419ece937bcbe0698, type: 3}
     - key: VOX_JOB_RECRUIT
       takes:
-      - {fileID: 8300000, guid: 8c0cb5f1453b846baaf20b566cc1cdde, type: 3}
+      - {fileID: 8300000, guid: 4448b8c2d399f014fae705ff4788ef5a, type: 3}
     - key: VOX_JOB_RUNBUSINESS
       takes:
-      - {fileID: 8300000, guid: c02b0431c92cb4e78933ab8b0461cab3, type: 3}
+      - {fileID: 8300000, guid: d76dde284bd60be43bf9588b3314e635, type: 3}
     - key: VOX_JOB_SETUPBUSINESS
       takes:
-      - {fileID: 8300000, guid: bc23a966c82b5449e9e25017aa9c65e8, type: 3}
+      - {fileID: 8300000, guid: 9380ce72736c77d42b2db7fb15dffcf0, type: 3}
     - key: VOX_JOB_SMASHUP
       takes:
-      - {fileID: 8300000, guid: e32d5196d5a704afcb5a8dcba662b580, type: 3}
+      - {fileID: 8300000, guid: 7aafc135fb75a274dbbcb3866501a0c4, type: 3}
     - key: VOX_JOB_TORCH
       takes:
-      - {fileID: 8300000, guid: ddb2b7ee8be7347f38e0121fb149258c, type: 3}
+      - {fileID: 8300000, guid: cf28a506cf7733b4296785786ad95c2a, type: 3}
     - key: VOX_RKT_BUY
       takes:
-      - {fileID: 8300000, guid: 066427062aada4033b2e5543b8477910, type: 3}
+      - {fileID: 8300000, guid: fe04c728ec8575542af40188d0942ef0, type: 3}
     - key: VOX_RKT_HIDEOUT_01
       takes:
-      - {fileID: 8300000, guid: 6e0d6e9d6e00a4f31a42c242de0c44e0, type: 3}
+      - {fileID: 8300000, guid: 9bc3cfe6544c5034c9825277a293ce59, type: 3}
     - key: VOX_RKT_HIDEOUT_02
       takes:
-      - {fileID: 8300000, guid: 830c634dcb5574e4488928ce1faf61c6, type: 3}
+      - {fileID: 8300000, guid: 641c26a5e93cd564c8defcf306524818, type: 3}
     - key: VOX_RKT_REPAIR
       takes:
-      - {fileID: 8300000, guid: 6b52562a8f708494a86cc0c0c89608a3, type: 3}
+      - {fileID: 8300000, guid: 2cb9624b609591546a02676700428f24, type: 3}
