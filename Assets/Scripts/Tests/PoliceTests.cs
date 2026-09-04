@@ -51,6 +51,7 @@ namespace LivingCity.Tests
             ("GAN315_OneUniformAndAFastDispatch", GAN315_OneUniformAndAFastDispatch),
             ("GAN315_DispatchUsesAirDistanceNotTravelTime", GAN315_DispatchUsesAirDistanceNotTravelTime),
             ("GAN315_ComplaintWaitsForPhysicalArrival", GAN315_ComplaintWaitsForPhysicalArrival),
+            ("TheNearestPairComesAndACarPastOneFifty", TheNearestPairComesAndACarPastOneFifty),
             ("GAN315_BoardingDoesNotResetALiveRoute", GAN315_BoardingDoesNotResetALiveRoute),
             ("GAN315_EscortStandsClearAndTheCarParks", GAN315_EscortStandsClearAndTheCarParks),
             ("GAN315_TransferTracksOnlyPhysicalCustody", GAN315_TransferTracksOnlyPhysicalCustody),
@@ -332,6 +333,26 @@ namespace LivingCity.Tests
                 !PoliceProcedure.CanProcessComplaintArrival(unitOnScene: false) &&
                 PoliceProcedure.CanProcessComplaintArrival(unitOnScene: true),
                 "GAN-315/arrest: entering the shop's search radius must not skip the actual on-scene arrival.");
+        }
+
+        /// <summary>The user's rule of 2026-09-04: the nearest pair comes wherever it
+        /// is; past 150 m a car goes out beside it; whoever arrives first arrests.</summary>
+        static void TheNearestPairComesAndACarPastOneFifty(List<string> failures)
+        {
+            var near = 100f * 100f;
+            var far = 151f * 151f;
+            Want(failures,
+                !PoliceProcedure.CarJoinsFootResponse(anyFootFree: true, near) &&
+                PoliceProcedure.CarJoinsFootResponse(anyFootFree: true, far),
+                "RESPONSE: a pair inside 150 m goes alone; past it a car goes out beside him.");
+            Want(failures,
+                PoliceProcedure.CarJoinsFootResponse(anyFootFree: false, 0f),
+                "RESPONSE: nobody free on foot sends the car by itself.");
+            Want(failures,
+                PoliceProcedure.FootArrivedFirst(10f, 12f) &&
+                !PoliceProcedure.FootArrivedFirst(12f, 10f) &&
+                PoliceProcedure.FootArrivedFirst(10f, 10f),
+                "RESPONSE: whoever arrived first makes the arrest, a tie to the men on foot.");
         }
 
         static void GAN315_BoardingDoesNotResetALiveRoute(List<string> failures)

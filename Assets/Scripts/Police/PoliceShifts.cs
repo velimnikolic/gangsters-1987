@@ -206,6 +206,23 @@ namespace LivingCity.Police
         /// completed its response route and reported a physical on-scene arrival.</summary>
         public static bool CanProcessComplaintArrival(bool unitOnScene) => unitOnScene;
 
+        /// <summary>THE NEAREST PAIR COMES, WHEREVER IT IS (the user's rule, 2026-09-04).
+        /// There is no reach a pair has to be inside to answer; past this many metres a
+        /// car is sent with it, and a city with nobody free on foot sends the car alone.</summary>
+        public const float FootResponseCarRange = 150f;
+
+        /// <summary>Whether a car goes out beside the pair: the pair is farther than
+        /// <see cref="FootResponseCarRange"/>, or there is no pair to send at all.</summary>
+        public static bool CarJoinsFootResponse(bool anyFootFree, float footDistanceSquared) =>
+            !anyFootFree ||
+            footDistanceSquared > FootResponseCarRange * FootResponseCarRange;
+
+        /// <summary>WHOEVER GETS THERE FIRST MAKES THE ARREST (the same rule). The pair
+        /// and the car both stood at the scene: the one that arrived earlier puts the
+        /// question, and a tie goes to the men on foot.</summary>
+        public static bool FootArrivedFirst(float footArrivedAt, float squadArrivedAt) =>
+            footArrivedAt <= squadArrivedAt;
+
         /// <summary>A movement order while the arrest window is live is resistance,
         /// and converts the held aim into an ordinary combat engagement.</summary>
         public static bool ShouldOpenFireOnFlight(

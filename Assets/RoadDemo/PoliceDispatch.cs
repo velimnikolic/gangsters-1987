@@ -49,12 +49,12 @@ namespace RoadDemo
         const float NobodyRang = 45f;        // seconds until somebody has rung regardless
         const float StandOff = 20f;          // metres short of the scene a car pulls up
         const float WarnRange = 26f;         // metres from the scene an officer shouts from
-        // Only the law that HAPPENS to be near a fight turns out for it - a patrol a
-        // couple of blocks off. There is no city-wide dispatch pulling a car across the
-        // whole map to a scene it could never see: if nobody is near, nobody comes until
-        // a patrol's own beat carries it close. (The reach of the response, not of the
-        // patrols - the cars are already spread over the city; this is who answers.)
-        const float ResponseRange = 150f;    // metres a unit must be within to answer a scene
+        // The heat's cars are the law that HAPPENS to be near a fight - a patrol a
+        // couple of blocks off; there is no city-wide dispatch pulling a third car across
+        // the map to a scene it could never see. The PAIR is the exception (the user's
+        // rule, 2026-09-04): the nearest pair comes wherever it is, and past
+        // PoliceProcedure.FootResponseCarRange a car comes with it, over the whole city.
+        const float ResponseRange = 150f;    // metres a heat car must be within to answer a scene
         // WHAT A MAN OF THE LAW HEARS. A block and the street round it - further than
         // the report itself carries to the crowd (CrewArms Loudness: 45 m for a .38,
         // 80 for a rifle), and deliberately so. Loudness is what a passer-by READS: how
@@ -93,6 +93,8 @@ namespace RoadDemo
         int _carsSent;
         float _lastSentAt = -1000f;
         bool _officerDied;
+        bool _footSent;              // a pair has been sent to this incident
+        bool _escortSent;            // and the car that goes out beside a far pair
         int _rank;
         readonly List<CrewWalker> _shooters = new List<CrewWalker>();
 
@@ -219,6 +221,8 @@ namespace RoadDemo
                 _shotHeat = 0f;
                 _called = false;
                 _carsSent = 0;
+                _footSent = false;
+                _escortSent = false;
                 _officerDied = false;
                 _callAt = Time.time + NobodyRang;
                 // WHO SAW IT IS DECIDED NOW (GAN-245), not when an officer eventually
@@ -364,44 +368,69 @@ namespace RoadDemo
             var scene = StreetAlarm.Incident;
             int wanted = CarsWanted();
             bool any = false;
-            if (first)
+            // THE NEAREST PAIR COMES, WHEREVER IT IS (the user's rule, 2026-09-04) - on
+            // the first call, or on a later one if nobody on foot was free at the first.
+            // Measured before anybody is sent: a pair that has just been routed is no
+            // longer free and would not be found afterwards.
+            if (!_footSent)
             {
-                // EVERY man on foot who could hear it turns out, not just the nearest.
+                var foot = Nearest(scene, carries: false, anyDistance: true, out var footD);
+                // And EVERY man on foot who could hear it turns out, not just the nearest.
                 // Two officers a block apart both heard the same shots; one of them
                 // walking on as though he had not is the thing that reads as nobody
-                // being home. Out of earshot it is the nearest man only - he is coming
-                // because he was told, and one man is what a telephone call sends.
+                // being home.
                 foreach (var u in _units)
                 {
                     if (u.Carries || !u.Available || u.Tf == null) continue;
                     if ((u.Position - scene).sqrMagnitude > Earshot * Earshot) continue;
                     u.RouteTo(scene, 6f);
                     any = true;
+                    _footSent = true;
                 }
-                if (!any)
+                if (foot != null)
                 {
-                    var foot = Nearest(scene, carries: false);
-                    if (foot != null) { foot.RouteTo(scene, 6f); any = true; }
+                    if (foot.Available) foot.RouteTo(scene, 6f);   // not one of those who heard it
+                    any = true;
+                    _footSent = true;
+                }
+                // Past 150 m a car goes out beside him, and a city with nobody free on
+                // foot sends the car alone - the nearest car there is, not the nearest
+                // inside the heat rule's reach. Whoever arrives first makes the arrest.
+                if (!_escortSent && LivingCity.Police.PoliceProcedure.CarJoinsFootResponse(
+                        foot != null, footD))
+                {
+                    var escort = Nearest(scene, carries: true, anyDistance: true, out _);
+                    if (escort != null) { SendCar(escort, scene); any = true; _escortSent = true; }
                 }
             }
+            // and the heat's cars, which stay station-local (GAN-220)
             while (_carsSent < wanted)
             {
                 var car = Nearest(scene, carries: true);
                 if (car == null) break;
-                car.RouteTo(scene, StandOff);
-                _squads.Add(new Squad { Ride = car, Men = MenOf(car), Scene = scene, State = SquadState.Sent });
-                if (_lights.TryGetValue(car, out var lights)) lights.Set(true, siren: true);
-                _carsSent++;
+                SendCar(car, scene);
                 any = true;
             }
             _lastSentAt = Time.time;
             if (any) CrewOverlay.Announce("POLICE RESPONDING", 5f, new Color(0.55f, 0.78f, 1f));
         }
 
-        /// <summary><paramref name="anyDistance"/> is the swarm and nothing else
-        /// (GAN-220): response is station-LOCAL by a deliberate rule, and a dead officer
-        /// is the one sanctioned exception to it.</summary>
-        IPoliceUnit Nearest(Vector3 to, bool carries, bool anyDistance = false)
+        void SendCar(IPoliceUnit car, Vector3 scene)
+        {
+            car.RouteTo(scene, StandOff);
+            _squads.Add(new Squad { Ride = car, Men = MenOf(car), Scene = scene, State = SquadState.Sent });
+            if (_lights.TryGetValue(car, out var lights)) lights.Set(true, siren: true);
+            _carsSent++;
+        }
+
+        /// <summary>Within <see cref="ResponseRange"/> unless <paramref name="anyDistance"/>:
+        /// the heat's cars are station-LOCAL by a deliberate rule (GAN-220), while the
+        /// pair, the car that goes out beside a far pair, and the swarm after a dead
+        /// officer are found over the whole city.</summary>
+        IPoliceUnit Nearest(Vector3 to, bool carries, bool anyDistance = false) =>
+            Nearest(to, carries, anyDistance, out _);
+
+        IPoliceUnit Nearest(Vector3 to, bool carries, bool anyDistance, out float distanceSquared)
         {
             IPoliceUnit best = null;
             float bestD = anyDistance
@@ -415,6 +444,7 @@ namespace RoadDemo
                     at.x, at.z, to.x, to.z);
                 if (d < bestD) { bestD = d; best = u; }
             }
+            distanceSquared = best != null ? bestD : float.MaxValue;
             return best;
         }
 
@@ -441,6 +471,7 @@ namespace RoadDemo
             public float MoveAlongIn;
             public float Reassess;
             public float ArrivedAt;
+            public float SecuringAt;     // when its men were stood at the scene, for who was first
             public float RouteRetryAt;
         }
 
@@ -729,6 +760,7 @@ namespace RoadDemo
 
         void BeginSecuring(Squad squad)
         {
+            if (squad.State != SquadState.Securing) squad.SecuringAt = Time.time;
             squad.State = SquadState.Securing;
             squad.Timer = Random.Range(SceneSeconds * 0.7f, SceneSeconds * 1.3f);
             squad.MoveAlongIn = 2f;

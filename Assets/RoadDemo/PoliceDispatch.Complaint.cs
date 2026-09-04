@@ -77,6 +77,9 @@ namespace RoadDemo
             public float RingAt;
             public float GiveUpAt;
             public IPoliceUnit Unit;
+            /// <summary>The car sent out beside a far pair. Whichever of the two pulls
+            /// up first becomes <see cref="Unit"/>; the other is turned round.</summary>
+            public IPoliceUnit Backup;
             public DemoCrews.Unit Men;      // the men a CAR brought, when a car answered
             public CallStage Stage = CallStage.Ringing;
             public float StatementBy;
@@ -366,17 +369,33 @@ namespace RoadDemo
         /// complaint is not a gunfight: nobody is running, and a car that takes four
         /// minutes to cross the city is still an answer.
         ///
-        /// Nearest is the shortest X/Z chord on the map. A faster but farther car does
-        /// not jump a beat pair standing across the road; the call is then given the
-        /// patience that the selected unit's trip actually needs.
+        /// Nearest is the shortest X/Z chord on the map, and it is the nearest PAIR
+        /// (the user's rule, 2026-09-04): a car never jumps a beat pair, however far the
+        /// pair is. Past PoliceProcedure.FootResponseCarRange the nearest car goes out
+        /// beside the pair and whichever pulls up first answers the door; a city with
+        /// nobody free on foot sends the car alone. The call is then given the patience
+        /// that the pair's trip actually needs.
         /// </summary>
         bool SendToDoor(CallOut call)
         {
-            var unit = NearestToAnswer(call.Call.Pos, out var trip);
+            var door = call.Call.Pos;
+            var unit = NearestToAnswer(door, carries: false, out var trip, out var footD);
+            IPoliceUnit backup = null;
+            if (unit == null)
+                unit = NearestToAnswer(door, carries: true, out trip, out _);
+            else if (PoliceProcedure.CarJoinsFootResponse(anyFootFree: true, footD))
+                backup = NearestToAnswer(door, carries: true, out _, out _);
             if (unit == null) return false;
 
-            unit.RouteTo(call.Call.Pos, 5f);
+            unit.RouteTo(door, 5f);
             call.Unit = unit;
+            if (backup != null)
+            {
+                backup.RouteTo(door, 5f);
+                call.Backup = backup;
+                if (_lights.TryGetValue(backup, out var backupLights))
+                    backupLights.Set(true, siren: false);
+            }
             call.Stage = CallStage.Walking;
             // THE CLOCK STARTS WHEN HE DOES, AND IT IS AS LONG AS THE TRIP. GiveUpAt was
             // set at the ring and was a flat minute and a half, so a unit sent from the
@@ -397,16 +416,19 @@ namespace RoadDemo
         const float FootPace = 2.6f;
         const float CarPace = 8f;
 
-        /// <summary>The physically nearest free unit to this door by overhead-map
-        /// straight line. Returns the selected unit's expected trip duration.</summary>
-        IPoliceUnit NearestToAnswer(Vector3 door, out float trip)
+        /// <summary>The physically nearest free unit of one kind - on foot or in a car -
+        /// to this door by overhead-map straight line. Returns the selected unit's
+        /// expected trip duration and its distance squared.</summary>
+        IPoliceUnit NearestToAnswer(Vector3 door, bool carries, out float trip,
+            out float distanceSquared)
         {
             IPoliceUnit best = null;
             float bestDistance = float.MaxValue;
             for (var i = 0; i < _units.Count; i++)
             {
                 var unit = _units[i];
-                if (unit == null || !unit.Available || unit.Tf == null) continue;
+                if (unit == null || unit.Carries != carries || !unit.Available ||
+                    unit.Tf == null) continue;
                 var at = unit.Position;
                 var distance = PoliceProcedure.AirDistanceSquared(
                     at.x, at.z, door.x, door.z);
@@ -420,6 +442,7 @@ namespace RoadDemo
                 ? Mathf.Sqrt(bestDistance) * 1.35f /
                   (best.Carries ? CarPace : FootPace)
                 : 0f;
+            distanceSquared = best != null ? bestDistance : float.MaxValue;
             return best;
         }
 
@@ -444,6 +467,24 @@ namespace RoadDemo
             var unit = call.Unit;
             if (unit == null || unit.Tf == null) { Close(call); return; }
             if (Time.time > call.GiveUpAt) { Close(call); return; }
+            // THE RACE. The car sent out beside a far pair answers the door if it pulls
+            // up first, and the pair is turned round; the pair arriving first sends the
+            // car back. Either way one unit holds the call from here (the user's rule).
+            if (call.Backup != null)
+            {
+                if (call.Backup.Tf == null) call.Backup = null;
+                else if (call.Backup.OnScene && !unit.OnScene)
+                {
+                    HandBack(unit);
+                    call.Unit = unit = call.Backup;
+                    call.Backup = null;
+                }
+                else if (unit.OnScene)
+                {
+                    HandBack(call.Backup);
+                    call.Backup = null;
+                }
+            }
             // Passing inside the complaint's broad 30 m search radius is not arrival.
             // The old radius shortcut advanced the call while the beat was still
             // Responding; from one approach it happened to be beside the doorstep, and
@@ -757,12 +798,16 @@ namespace RoadDemo
         /// <summary>The unit goes back to whatever it was doing, lights off.</summary>
         void Release(CallOut call)
         {
-            if (call.Unit != null)
-            {
-                if (_lights.TryGetValue(call.Unit, out var lights)) lights.Set(false, siren: false);
-                call.Unit.Release();
-            }
+            if (call.Unit != null) HandBack(call.Unit);
+            if (call.Backup != null) { HandBack(call.Backup); call.Backup = null; }
             call.Stage = CallStage.Done;
+        }
+
+        /// <summary>Back to its beat or its round, lights off.</summary>
+        void HandBack(IPoliceUnit unit)
+        {
+            if (_lights.TryGetValue(unit, out var lights)) lights.Set(false, siren: false);
+            unit.Release();
         }
 
         /// <summary>

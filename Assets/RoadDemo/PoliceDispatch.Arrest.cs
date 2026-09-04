@@ -239,33 +239,42 @@ namespace RoadDemo
             if (StreetAlarm.QuietFor > ArrestWindow) return;
             if (StreetAlarm.IncidentNumber == _askedIncident) return;
 
+            // WHOEVER GOT THERE FIRST PUTS THE QUESTION (the user's rule, 2026-09-04).
+            // The pair and the car both come to a scene now, and the one that has been
+            // stood at it longer makes the arrest - not the pair by preference.
             PoliceBeat foot = null;
+            var footAt = float.MaxValue;
             foreach (var u in _units)
-                if (!u.Carries && u.OnScene && u is PoliceBeat beat) { foot = beat; break; }
+                if (!u.Carries && u.OnScene && u is PoliceBeat beat && beat.Tf != null &&
+                    beat.ArrivedAt < footAt)
+                { foot = beat; footAt = beat.ArrivedAt; }
 
+            // CONF-001: THE CAR PUTS THE SAME QUESTION. A squad that drove to a
+            // shooting, got out and taped the scene off used to stand at it saying
+            // nothing, so an arrest only ever happened where a beat officer happened
+            // to be walking. Its lead crosses the street exactly as the beat man
+            // does - the only difference is which body it is.
             CrewWalker lawman = null;
             DemoCrews.Unit squadMen = null;
-            Vector3 from;
-            if (foot != null && foot.Tf != null) from = foot.Tf.position;
-            else
+            var squadAt = float.MaxValue;
+            foreach (var squad in _squads)
             {
-                // CONF-001: THE CAR PUTS THE SAME QUESTION. A squad that drove to a
-                // shooting, got out and taped the scene off used to stand at it saying
-                // nothing, so an arrest only ever happened where a beat officer happened
-                // to be walking. Its lead crosses the street exactly as the beat man
-                // does - the only difference is which body it is.
-                foreach (var squad in _squads)
-                {
-                    if (squad.State != SquadState.Securing) continue;
-                    var lead = Lead(squad);
-                    if (lead == null || lead.Tf == null) continue;
-                    lawman = lead;
-                    squadMen = squad.Men;
-                    break;
-                }
-                if (lawman == null) return;
-                from = lawman.Tf.position;
+                if (squad.State != SquadState.Securing) continue;
+                var lead = Lead(squad);
+                if (lead == null || lead.Tf == null) continue;
+                if (squad.SecuringAt >= squadAt) continue;
+                lawman = lead;
+                squadMen = squad.Men;
+                squadAt = squad.SecuringAt;
             }
+            if (foot != null && lawman != null)
+            {
+                if (LivingCity.Police.PoliceProcedure.FootArrivedFirst(footAt, squadAt))
+                { lawman = null; squadMen = null; }
+                else foot = null;
+            }
+            if (foot == null && lawman == null) return;
+            var from = foot != null ? foot.Tf.position : lawman.Tf.position;
 
             var crew = GuiltyNear(from);
             if (crew == null || crew.InCustody || crew.Surrendered) return;

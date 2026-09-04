@@ -90,7 +90,15 @@ namespace RoadDemo
         public Vector3 Position => Unit != null ? Unit.Position : Vector3.zero;
         public bool Carries => false;
         public bool OnScene => State == Mode.OnScene;
-        public bool Available => Unit != null && !Unit.Wiped && !OffWatch &&
+        /// <summary>When the pair reached the scene it was sent to; who was there first
+        /// decides who makes the arrest.</summary>
+        public float ArrivedAt { get; private set; } = -1000f;
+        /// <summary>A pair off the watch still answers what is in front of it while it
+        /// is on the street (the user, 2026-09-04: men stood on a corner a block away
+        /// who do not come read as no police at all); a pair that has gone in is home.
+        /// TargetUnit and Surrendered are the crew's own combat truth.</summary>
+        public bool Available => Unit != null && !Unit.Wiped &&
+            !(OffWatch && State == Mode.Inside) &&
             Unit.TargetUnit == null && !Unit.Surrendered &&
             (State == Mode.Inside || State == Mode.WalkOut ||
              State == Mode.Patrolling || State == Mode.Returning ||
@@ -176,6 +184,7 @@ namespace RoadDemo
                     {
                         StopWhereTheyStand();
                         State = Mode.OnScene;
+                        ArrivedAt = Time.time;
                     }
                     else if (!AnyoneMoving() && Time.time >= _routeRetryAt)
                     {
