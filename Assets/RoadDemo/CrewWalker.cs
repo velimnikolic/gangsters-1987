@@ -1550,6 +1550,27 @@ namespace RoadDemo
             IntoTheHand();
         }
 
+        /// <summary>Plant his feet before a point-blank civilian execution. A running
+        /// man never fires: his current route is ended, he faces the mark, then draws.</summary>
+        public bool StandForExecution(Vector3 at)
+        {
+            if (Dead || Riding || Surrendered || !Carrying || Tf == null)
+                return false;
+            OrderToPoint(Tf.position);
+            _legs.Clear();
+            _connectorLegs.Clear();
+            _pendingAcrossPlan = false;
+            _runningLeg = false;
+            _sprinting = false;
+            State = Mode.Standing;
+            var toward = at - Tf.position;
+            toward.y = 0f;
+            if (toward.sqrMagnitude > 0.001f)
+                Tf.rotation = Quaternion.LookRotation(toward.normalized, Vector3.up);
+            DrawGun();
+            return Armed;
+        }
+
         void IntoTheHand()
         {
             if (WeaponPrefab == null || Tf == null) return;

@@ -231,7 +231,8 @@ namespace RoadDemo
             // The act a complaint is about is the EXTORTION VISIT, and it happened just
             // now - so this call owns the pavement read taken now, not the people standing
             // there when the officer finally walks up half a minute later.
-            SnapshotTheScene(call.Pos, queued.Witnesses);
+            if (ComplaintHasPavementWitnesses(call))
+                SnapshotTheScene(call.Pos, queued.Witnesses);
             _calls.Add(queued);
             // The banner is the PLAYER'S news. A shopkeeper who rang about somebody
             // else's family is a thing that happened in the city, not a thing that
@@ -242,6 +243,11 @@ namespace RoadDemo
                 4.5f, new Color(1f, 0.85f, 0.55f));
             LawWire.ComplaintRung(call);
         }
+
+        /// <summary>An act beyond the threshold has a complainant, but nobody on the
+        /// pavement is allowed to become an eyewitness through a wall.</summary>
+        public static bool ComplaintHasPavementWitnesses(StreetAlarm.Complaint call) =>
+            !call.Indoors;
 
         /// <summary>The delay, 0..1, off the complaint's own stream. Deterministic like
         /// everything else that decides an outcome: the same city on the same morning

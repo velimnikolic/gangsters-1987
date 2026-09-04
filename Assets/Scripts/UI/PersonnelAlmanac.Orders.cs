@@ -203,15 +203,46 @@ namespace LivingCity.UI
         /// </summary>
         int DraftedWorth(Outfit.OrderType type)
         {
-            // A collection round is worth what the drafted blocks' shops ACTUALLY owe -
-            // never one shop near the centroid multiplied by the block count, which
-            // booked a fuel station's rate six times over for six blocks of barbers.
-            if (type == Outfit.OrderType.CollectProtection)
-                return CollectRoundWorthPerBlock();
+            // Exhaustive on purpose: a new order must say whether the draft reads a
+            // money figure. The old broad `type != Run && type != Buy` silently treated
+            // every future value as free/no-worth work.
+            switch (type)
+            {
+                // A collection round is worth what the drafted blocks' shops ACTUALLY
+                // owe - never one shop near the centroid times the number of blocks.
+                case Outfit.OrderType.CollectProtection:
+                    return CollectRoundWorthPerBlock();
+                case Outfit.OrderType.RunBusiness:
+                case Outfit.OrderType.BuyPremises:
+                    break;
 
-            if (type != Outfit.OrderType.RunBusiness &&
-                type != Outfit.OrderType.BuyPremises)
-                return 0;
+                case Outfit.OrderType.Extort:
+                case Outfit.OrderType.Intimidate:
+                case Outfit.OrderType.AdjustProtection:
+                case Outfit.OrderType.Assault:
+                case Outfit.OrderType.SmashUp:
+                case Outfit.OrderType.Raid:
+                case Outfit.OrderType.Torch:
+                case Outfit.OrderType.Bomb:
+                case Outfit.OrderType.Kill:
+                case Outfit.OrderType.Kidnap:
+                case Outfit.OrderType.Patrol:
+                case Outfit.OrderType.Guard:
+                case Outfit.OrderType.Ambush:
+                case Outfit.OrderType.Explore:
+                case Outfit.OrderType.SetUpBusiness:
+                case Outfit.OrderType.Audit:
+                case Outfit.OrderType.Recruit:
+                case Outfit.OrderType.Bribe:
+                case Outfit.OrderType.EmployPolice:
+                case Outfit.OrderType.Donate:
+                case Outfit.OrderType.Beating:
+                case Outfit.OrderType.KillOwner:
+                    return 0;
+                default:
+                    throw new System.ArgumentOutOfRangeException(nameof(type), type,
+                        "Every order needs an explicit drafted-worth decision.");
+            }
             if (!TryDraftedBusiness(out var businessId, out _))
                 return 0;
 
@@ -457,8 +488,11 @@ namespace LivingCity.UI
             // to rob, wreck, torch or bomb the very premises whose tribute we collect.
             if (found)
             {
+                var runtime = RoadDemo.TerritoryRuntime.Instance;
+                var us = new Territory.TerritoryGangId(Gangs.GangCatalog.PlayerGangId);
                 var refusal = Outfit.DoorOrders.Refusal(
-                    spec.Type, Gameplay.DoorHolder.Read(best.Id, best.Marker, out _));
+                    spec.Type, Gameplay.DoorHolder.Read(best.Id, best.Marker, out _),
+                    runtime == null || runtime.DoorInGoodStanding(best.Id, us));
                 if (refusal != null)
                 {
                     ordersNote = refusal;
@@ -952,7 +986,11 @@ namespace LivingCity.UI
                         Gameplay.DoorHolder.Read(businessId),
                         racketable: true, hasCrew: true, atDoor: false,
                         Gameplay.DoorJobs.AskingPrice(businessId), racketRows,
-                        closure: DoorMenu.ClosureOf(businessId));
+                        closure: DoorMenu.ClosureOf(businessId),
+                        inGoodStanding: RoadDemo.TerritoryRuntime.Instance
+                            .DoorInGoodStanding(
+                                businessId, new Territory.TerritoryGangId(
+                                    Gangs.GangCatalog.PlayerGangId)));
 
                     // EVERY available row, not the first: since the approach carries the
                     // intent, a demand or a threat given from the desk is one order too -
@@ -994,32 +1032,36 @@ namespace LivingCity.UI
                 {
                     // The draft was checked when the ground was picked; the door can have
                     // changed hands while the book was open, and filing is the moment that
-                    // binds. Same table, same answer as the block file's own key.
+                    // binds. Door work is assembled at the one gateway used by the street
+                    // card and probes too, including its shut-counter guard.
                     var door = new Territory.TerritoryBusinessId(draftBusinessId);
-                    if (door.IsValid)
+                    Outfit.Job job;
+                    if (Outfit.DoorOrders.NeedsDoor(issueSpec.Type))
                     {
-                        var refusal = Outfit.DoorOrders.Refusal(
-                            issueSpec.Type, Gameplay.DoorHolder.Read(door));
-                        if (refusal != null)
+                        if (!Gameplay.DoorJobs.TryBuild(
+                                door, issueSpec.Type, crewId, draftMen,
+                                out job, out var refusal))
                         {
                             ordersNote = refusal;
                             dirty = true;
                             return;
                         }
                     }
-
-                    var job = new Outfit.Job
+                    else
                     {
-                        CrewId = crewId,
-                        Type = issueSpec.Type,
-                        Men = draftMen,
-                        TargetBlockId = draftBlockId,
-                        TargetX = draftX,
-                        TargetZ = draftZ,
-                        TargetLabel = draftLabel,
-                        TargetWorth = DraftedWorth(issueSpec.Type),
-                        TargetBusinessId = draftBusinessId,
-                    };
+                        job = new Outfit.Job
+                        {
+                            CrewId = crewId,
+                            Type = issueSpec.Type,
+                            Men = draftMen,
+                            TargetBlockId = draftBlockId,
+                            TargetX = draftX,
+                            TargetZ = draftZ,
+                            TargetLabel = draftLabel,
+                            TargetWorth = DraftedWorth(issueSpec.Type),
+                            TargetBusinessId = draftBusinessId,
+                        };
+                    }
                     job.BlockTargets.AddRange(draftBlocks);
 
                     var result = outfit.IssueOrder(job);

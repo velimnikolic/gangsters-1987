@@ -15,6 +15,7 @@ namespace LivingCity.Tests
             var failures = new List<string>();
             DurationsAndBoundaryAreExact(failures);
             DamageCannotRepeatButSmashCanEscalateToArson(failures);
+            PersonClosuresAreTimedFreeAndCannotEraseDamage(failures);
             ClosedDaysAddNoRacketDebt(failures);
             ClosedDoorDoesNotBecomeAMissOrStopTheRound(failures);
             OnlyTheOwnerCanRepairAndPaymentIsOnce(failures);
@@ -59,6 +60,40 @@ namespace LivingCity.Tests
             if (shutdowns.Shut(id, BusinessShutdownCause.Arson, 48d) ||
                 shutdowns.Shut(id, BusinessShutdownCause.SmashUp, 48d))
                 failures.Add("WAR-001: a torched premises accepted another damage job.");
+        }
+
+        static void PersonClosuresAreTimedFreeAndCannotEraseDamage(List<string> failures)
+        {
+            Make(out _, out var id, out var beating);
+            if (!beating.Shut(id, BusinessShutdownCause.Beating, 10d) ||
+                !beating.TryGet(id, 10d, out var hurt) ||
+                hurt.RecoveryAt != 34d || hurt.RepairPrice != 0 ||
+                !BusinessShutdownText.Line(hurt).Contains("owner is in hospital"))
+                failures.Add("CNTR-003: a beating is not a one-day, no-repair owner closure.");
+
+            Make(out _, out id, out var death);
+            if (!death.Shut(id, BusinessShutdownCause.Death, 10d) ||
+                !death.TryGet(id, 10d, out var dead) ||
+                dead.RecoveryAt != 82d || dead.RepairPrice != 0 ||
+                !BusinessShutdownText.Line(dead).Contains("owner is dead"))
+                failures.Add("EMPT-002: an owner's death is not a three-day, no-repair closure.");
+
+            Make(out _, out id, out var damaged);
+            damaged.Shut(id, BusinessShutdownCause.SmashUp, 10d);
+            if (damaged.Shut(id, BusinessShutdownCause.Beating, 12d) ||
+                damaged.Shut(id, BusinessShutdownCause.Death, 12d) ||
+                !damaged.TryGet(id, 12d, out var still) ||
+                still.Cause != BusinessShutdownCause.SmashUp || still.RecoveryAt != 82d)
+                failures.Add("CNTR-003: a person closure erased an active premises closure.");
+
+            var accounts = new Accounts { Safe = 10_000 };
+            accounts.Open(1);
+            Make(out _, out id, out var free);
+            free.Shut(id, BusinessShutdownCause.Beating, 0d);
+            var refusal = BusinessRepair.Try(free, id, 0, 0, 1d, accounts, out var charged);
+            if (refusal != "there is nothing to repair" || charged != 0 ||
+                accounts.Safe != 10_000 || !free.IsShutAt(id, 1d))
+                failures.Add("CNTR-003: a zero-price owner closure could be repaired for free.");
         }
 
         static void ClosedDaysAddNoRacketDebt(List<string> failures)

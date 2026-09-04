@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using LivingCity.Personnel;
 using LivingCity.Police;
 using LivingCity.Save;
+using LivingCity.Territory;
 
 namespace LivingCity.Tests
 {
@@ -88,6 +89,15 @@ namespace LivingCity.Tests
             // ------------------------------------------------ GAN-245: the complaint,
             // the trial, the lawyer, bail, the witnesses and the sale
             ("TheBandsAreLonger", TheBandsAreLonger),
+            ("EveryDeedHasAnExplicitContract", EveryDeedHasAnExplicitContract),
+            ("TheBatteryHasItsOwnTerms", TheBatteryHasItsOwnTerms),
+            ("AFoldedCountKeepsItsDeedsWeight", AFoldedCountKeepsItsDeedsWeight),
+            ("TheBeatingIsMeasuredBeforeItFrightensHim", TheBeatingIsMeasuredBeforeItFrightensHim),
+            ("TheOwnersDocketMakesTheBeatingTampering", TheOwnersDocketMakesTheBeatingTampering),
+            ("ABodyOpensOneUncollaredMurderFile", ABodyOpensOneUncollaredMurderFile),
+            ("AnIndoorComplaintHasNoPavementWitnesses", AnIndoorComplaintHasNoPavementWitnesses),
+            ("TheDeadOwnerLeavesEveryOpenCase", TheDeadOwnerLeavesEveryOpenCase),
+            ("ADeadComplaintCannotBecomeACount", ADeadComplaintCannotBecomeACount),
             ("AHoodGetsLessAndAMarkedLieutenantMore", AHoodGetsLessAndAMarkedLieutenantMore),
             ("ALawyerCutsTheDaysButNotLife", ALawyerCutsTheDaysButNotLife),
             ("AFrightenedOwnerDoesNotRing", AFrightenedOwnerDoesNotRing),
@@ -967,6 +977,202 @@ namespace LivingCity.Tests
             }
         }
 
+        /// <summary>CNTR-001's first sweep. Adding a deed is deliberately a failing
+        /// change until every one of the five quiet default tables has been named.</summary>
+        static void EveryDeedHasAnExplicitContract(List<string> failures)
+        {
+            var expected = new Dictionary<Deed, (int Low, int High, int Bail, float Base,
+                string Charge)>
+            {
+                [Deed.Affray] = (6, 10, 5_000, Verdict.AffrayBase,
+                    "Affray - discharging firearms in the street"),
+                [Deed.Murder] = (15, 25, 25_000, Verdict.MurderBase, "Murder"),
+                [Deed.CopKilling] = (Sentencing.Life, Sentencing.Life, 0,
+                    Verdict.CopKillingBase, "Murder of a police officer"),
+                [Deed.Extortion] = (8, 14, 2_000, Verdict.ExtortionBase, "Extortion"),
+                [Deed.WitnessTampering] = (8, 14, 2_000, Verdict.ExtortionBase,
+                    "Intimidating a witness"),
+                [Deed.AssaultOnOfficer] = (11, 14, 15_000,
+                    Verdict.AssaultOnOfficerBase, "Assault on a police officer"),
+                [Deed.Resisting] = (2, 4, 5_000, Verdict.ResistingBase,
+                    "Resisting arrest"),
+                [Deed.Battery] = (10, 16, 4_000, Verdict.BatteryBase,
+                    "Assault and battery"),
+            };
+
+            var values = (Deed[])Enum.GetValues(typeof(Deed));
+            Want(failures, values.Length == expected.Count,
+                "CNTR-001: the Deed enum changed without updating its exhaustive contract.");
+            for (var i = 0; i < values.Length; i++)
+            {
+                var deed = values[i];
+                if (!expected.TryGetValue(deed, out var row))
+                {
+                    failures.Add("CNTR-001: " + deed + " fell through the deed tables.");
+                    continue;
+                }
+                Want(failures,
+                    Sentencing.BandLow(deed) == row.Low &&
+                    Sentencing.BandHigh(deed) == row.High &&
+                    Sentencing.Bail(deed) == row.Bail &&
+                    Math.Abs(Verdict.BaseFor(deed) - row.Base) < 0.0001f &&
+                    Sentencing.ChargeFor(deed) == row.Charge,
+                    "CNTR-001: " + deed + " does not match its complete deed contract.");
+            }
+        }
+
+        static void TheBatteryHasItsOwnTerms(List<string> failures)
+        {
+            Want(failures,
+                Sentencing.BandLow(Deed.Battery) == 10 &&
+                Sentencing.BandHigh(Deed.Battery) == 16 &&
+                Sentencing.Bail(Deed.Battery) == 4_000 &&
+                Math.Abs(Verdict.BaseFor(Deed.Battery) - 0.30f) < 0.0001f,
+                "CNTR-001: Battery is not 10-16 days, $4,000 bail and base 0.30.");
+            Want(failures,
+                Sentencing.BandLow(Deed.Battery) > Sentencing.BandLow(Deed.Extortion) &&
+                Sentencing.BandHigh(Deed.Battery) < Sentencing.BandHigh(Deed.Murder),
+                "CNTR-001: Battery does not sit strictly above extortion and below murder.");
+        }
+
+        static void AFoldedCountKeepsItsDeedsWeight(List<string> failures)
+        {
+            Want(failures,
+                Sentencing.ExtraCountDays(Deed.Murder) == 5 &&
+                Sentencing.ExtraCountDays(Deed.Battery) == 3 &&
+                Sentencing.ExtraCountDays(Deed.Extortion) == 2 &&
+                Sentencing.ExtraCountDays(Deed.Resisting) == 1 &&
+                Sentencing.ExtraCountDays(null) == Sentencing.UnknownCountDays,
+                "CNTR-004: folded counts are not floor(BandLow / 3), with legacy fallback 3.");
+
+            var pipe = new PrisonPipeline();
+            var heard = pipe.OpenCase(Deed.Extortion, 0, 10, 11);
+            var murder = pipe.OpenCase(Deed.Murder, 0, 9, 0);
+            var battery = pipe.OpenCase(Deed.Battery, 0, 9, 0);
+            heard.Counts.Add(murder.CaseId);
+            heard.Counts.Add(battery.CaseId);
+            heard.ExtraCharges.Add(Deed.Resisting);
+            Want(failures, pipe.FoldedCountDays(heard) == 9,
+                "CNTR-004: the pipeline flattened deed-typed counts instead of adding 5+3+1.");
+        }
+
+        static void TheBeatingIsMeasuredBeforeItFrightensHim(List<string> failures)
+        {
+            var config = TerritoryFearConfig.Default;
+            var block = new TerritoryBlockId("block:counter");
+            var business = new TerritoryBusinessId("biz:counter");
+            var gang = new TerritoryGangId(0);
+
+            var publicFear = new TerritoryFearLedger(config);
+            publicFear.Record(new TerritoryFearEvent(
+                gang, block, TerritoryFearCategory.Assault, 2.5f,
+                TerritoryFearVisibility.Public, 10d, business));
+            var after = publicFear.BusinessFear(block, business, gang, 10d);
+
+            var seenFear = new TerritoryFearLedger(config);
+            seenFear.Record(new TerritoryFearEvent(
+                gang, block, TerritoryFearCategory.Assault, 2.5f,
+                TerritoryFearVisibility.Seen, 10d, business));
+            var seen = seenFear.BusinessFear(block, business, gang, 10d);
+
+            Want(failures, after >= Verdict.TestifyFearCap && seen < Verdict.TestifyFearCap,
+                "CNTR-003: severity 2.5 Public does not clear the testimony cap while Seen stays below it.");
+            var beforeCall = ComplaintRoll.Chance(0.5f, 0f, false, false);
+            var afterCall = ComplaintRoll.Chance(
+                0.5f, ComplaintRoll.Standing(after, config.FearCap, 0f), false, false);
+            Want(failures, beforeCall > afterCall,
+                "CNTR-003: the post-beating standing did not suppress the telephone, so call-before-fear cannot be observed.");
+        }
+
+        static void TheOwnersDocketMakesTheBeatingTampering(List<string> failures)
+        {
+            var pipe = new PrisonPipeline();
+            var file = pipe.OpenCase(Deed.Extortion, 0, 10, 0,
+                "", "THE COUNTER");
+            file.Witnesses.Add(new Witness
+            {
+                Kind = WitnessKind.Complainant,
+                BusinessId = "biz:counter",
+                Name = "Milo Varga",
+            });
+
+            Want(failures,
+                RoadDemo.WitnessWatch.DeedForBeating(pipe, "biz:counter", 0) ==
+                    Deed.WitnessTampering &&
+                RoadDemo.WitnessWatch.DeedForBeating(pipe, "biz:counter", 7) ==
+                    Deed.Battery &&
+                RoadDemo.WitnessWatch.DeedForBeating(pipe, "biz:other", 0) ==
+                    Deed.Battery,
+                "CNTR-003: only this willing owner on this house's open docket makes the beating tampering.");
+        }
+
+        static void ABodyOpensOneUncollaredMurderFile(List<string> failures)
+        {
+            var pipe = new PrisonPipeline();
+            var none = RoadDemo.PoliceDispatch.OpenCivilianDeathCase(
+                pipe, default, 12, "biz:counter", "THE COUNTER");
+            var file = RoadDemo.PoliceDispatch.OpenCivilianDeathCase(
+                pipe, new TerritoryGangId(7), 12, "biz:counter", "THE COUNTER");
+            Want(failures, none == null && pipe.Cases.Count == 1,
+                "CNTR-004: an unattributed body opened a file, or one attributed body did not open exactly one.");
+            Want(failures,
+                file != null && file.Deed == Deed.Murder && file.GangId == 7 &&
+                file.BusinessId == "biz:counter" && file.Defendants.Count == 0 &&
+                file.CourtDay == 12 + Sentencing.DaysToCourt,
+                "CNTR-004: the body did not open a defendant-less murder file at its door.");
+        }
+
+        static void AnIndoorComplaintHasNoPavementWitnesses(List<string> failures)
+        {
+            var indoors = new RoadDemo.StreetAlarm.Complaint { Indoors = true };
+            var outside = new RoadDemo.StreetAlarm.Complaint { Indoors = false };
+            Want(failures,
+                !RoadDemo.PoliceDispatch.ComplaintHasPavementWitnesses(indoors) &&
+                RoadDemo.PoliceDispatch.ComplaintHasPavementWitnesses(outside),
+                "CNTR-004: an indoor act still snapshots people through the shop wall.");
+        }
+
+        static void TheDeadOwnerLeavesEveryOpenCase(List<string> failures)
+        {
+            var pipe = new PrisonPipeline();
+            var ours = pipe.OpenCase(Deed.Extortion, 0, 10, 0, "biz:counter");
+            var theirs = pipe.OpenCase(Deed.Extortion, 7, 10, 0, "biz:counter");
+            var alreadySilent = pipe.OpenCase(Deed.Extortion, 4, 10, 0, "biz:counter");
+            var elsewhere = pipe.OpenCase(Deed.Extortion, 0, 10, 0, "biz:other");
+            foreach (var file in new[] { ours, theirs, alreadySilent, elsewhere })
+                file.Witnesses.Add(new Witness
+                {
+                    Kind = WitnessKind.Complainant,
+                    BusinessId = file.BusinessId,
+                    Name = file.BusinessId,
+                });
+            alreadySilent.Witnesses[0].Standing = WitnessStanding.Withdrawn;
+
+            var killed = RoadDemo.WitnessWatch.OwnerKilled(pipe, "biz:counter");
+            Want(failures,
+                killed == 3 && !ours.AnyWilling() && !theirs.AnyWilling() &&
+                alreadySilent.Witnesses[0].Standing == WitnessStanding.Dead &&
+                elsewhere.AnyWilling(),
+                "EMPT-002: the dead proprietor did not leave every matching open case, ours and a rival's.");
+        }
+
+        static void ADeadComplaintCannotBecomeACount(List<string> failures)
+        {
+            var pipe = new PrisonPipeline();
+            var dead = pipe.OpenCase(Deed.Extortion, 0, 9, 0, "biz:counter");
+            dead.Witnesses.Add(new Witness
+            {
+                Kind = WitnessKind.Complainant,
+                BusinessId = "biz:counter",
+                Standing = WitnessStanding.Dead,
+            });
+            var arrest = pipe.OpenCase(Deed.Affray, 0, 10, 11);
+            Want(failures,
+                pipe.AttachOpenComplaints(arrest, 10) == 0 &&
+                dead.Status == CaseStatus.Open && arrest.Counts.Count == 0,
+                "EMPT-002: a complaint with nobody willing was folded into a later arrest.");
+        }
+
         static void AssaultIsWorseThanAffrayAndBetterThanMurder(List<string> failures)
         {
             Want(failures,
@@ -1041,7 +1247,7 @@ namespace LivingCity.Tests
                 Rank.Lieutenant, false, 0, 2);
             var single = Sentencing.Days(Deed.Extortion, new Random(5), false,
                 Rank.Lieutenant, false, 0, 0);
-            Want(failures, counts == single + 2 * Sentencing.ExtraCountDays,
+            Want(failures, counts == single + 2 * Sentencing.UnknownCountDays,
                 "SENTENCE: each attached count is worth its own days.");
         }
 
@@ -1081,7 +1287,7 @@ namespace LivingCity.Tests
                 Rank.Lieutenant, false, 0, 0);
             var three = Sentencing.Days(Deed.Extortion, new Random(41), false,
                 Rank.Lieutenant, false, 0, 2);
-            Want(failures, three == one + Sentencing.ExtraCountDays * 2,
+            Want(failures, three == one + Sentencing.UnknownCountDays * 2,
                 "ANSWER: deed-typed extra charges must reach the sentence count.");
         }
 

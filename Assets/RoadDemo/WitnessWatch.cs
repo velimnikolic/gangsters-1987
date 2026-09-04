@@ -106,15 +106,7 @@ namespace RoadDemo
                 if (pair.Body == null) { _pairs.RemoveAt(i); continue; }
                 if (pair.Body.Dead)
                 {
-                    if (pair.Name.Standing == WitnessStanding.WillTestify)
-                    {
-                        pair.Name.Standing = WitnessStanding.Dead;
-                        LawWire.WitnessKilled(pair.Name);
-                        CrewOverlay.Announce(
-                            pair.Name.Name.ToUpperInvariant() +
-                            " WILL NOT BE GIVING EVIDENCE",
-                            4.5f, new Color(1f, 0.55f, 0.45f));
-                    }
+                    KillName(pair.Name);
                     _pairs.RemoveAt(i);
                 }
             }
@@ -143,6 +135,9 @@ namespace RoadDemo
             public CivilianAgent Body;
             public int Faction;
             public float By;
+            public bool Kill;
+            public Vector3 LastDestination;
+            public float RepathAt;
         }
 
         static readonly List<Lean> _leans = new List<Lean>();
@@ -165,6 +160,33 @@ namespace RoadDemo
                 Body = body,
                 Faction = crew.Faction,
                 By = Time.time + LeanPatience,
+                LastDestination = body.Tf != null ? body.Tf.position : Vector3.zero,
+                RepathAt = Time.time + 0.75f,
+            });
+        }
+
+        /// <summary>
+        /// SHOOT HIM. This is the violent twin of a lean: the card supplies the first
+        /// walk, this watch keeps correcting that walk as the witness moves, and only
+        /// the shared crew-combat path is allowed to fire the point-blank round.
+        /// </summary>
+        public static void OrderKill(DemoCrews.Unit crew, Witness witness,
+            CivilianAgent body)
+        {
+            if (crew == null || witness == null || body == null) return;
+            for (var i = 0; i < _leans.Count; i++)
+                if (_leans[i].Crew == crew)
+                    return;
+            _leans.Add(new Lean
+            {
+                Crew = crew,
+                Name = witness,
+                Body = body,
+                Faction = crew.Faction,
+                By = Time.time + LeanPatience,
+                Kill = true,
+                LastDestination = body.Tf != null ? body.Tf.position : Vector3.zero,
+                RepathAt = Time.time + 0.75f,
             });
         }
 
@@ -190,11 +212,114 @@ namespace RoadDemo
                 var man = DemoCrews.NearestOf(lean.Crew, lean.Body.Tf.position);
                 if (man == null || man.Tf == null) continue;
                 if ((man.Tf.position - lean.Body.Tf.position).sqrMagnitude >
-                    LeanReach * LeanReach) continue;
+                    LeanReach * LeanReach)
+                {
+                    // A witness is not a pin in the map. Correct the quiet walk when he
+                    // has moved, and periodically even when a previously valid route was
+                    // blocked after it was issued.
+                    var destination = lean.Body.Tf.position;
+                    if (Time.time >= lean.RepathAt &&
+                        ((destination - lean.LastDestination).sqrMagnitude > 0.25f ||
+                         !man.HasOrder))
+                    {
+                        var crews = DemoCrews.Active;
+                        if (crews != null && crews.OrderUnit(
+                                lean.Crew, destination, out var accepted,
+                                run: false, speak: false))
+                            lean.LastDestination = accepted;
+                        lean.RepathAt = Time.time + 0.75f;
+                    }
+                    continue;
+                }
+
+                if (lean.Kill)
+                {
+                    var crews = DemoCrews.Active;
+                    if (crews == null ||
+                        !crews.ExecuteCivilian(man, lean.Body, lean.Body.Tf.position))
+                        continue;
+                    _leans.RemoveAt(i);
+                    continue;
+                }
 
                 _leans.RemoveAt(i);
                 Said(lean);
             }
+        }
+
+        /// <summary>
+        /// What the owner beating becomes on the docket. An open complaint by this
+        /// proprietor against this same family makes it witness tampering; without that
+        /// exact relationship it is ordinary battery.
+        /// </summary>
+        public static LivingCity.Personnel.Deed DeedForBeating(
+            PrisonPipeline pipeline, string businessId, int gangId)
+        {
+            if (pipeline != null && !string.IsNullOrEmpty(businessId))
+                for (var f = 0; f < pipeline.Cases.Count; f++)
+                {
+                    var file = pipeline.Cases[f];
+                    if (file == null || file.Status != CaseStatus.Open ||
+                        file.GangId != gangId)
+                        continue;
+                    for (var w = 0; w < file.Witnesses.Count; w++)
+                    {
+                        var witness = file.Witnesses[w];
+                        if (witness != null && witness.Willing &&
+                            witness.Kind == WitnessKind.Complainant &&
+                            witness.BusinessId == businessId)
+                            return LivingCity.Personnel.Deed.WitnessTampering;
+                    }
+                }
+            return LivingCity.Personnel.Deed.Battery;
+        }
+
+        public static LivingCity.Personnel.Deed DeedForBeating(
+            string businessId, int gangId) =>
+            DeedForBeating(PoliceForce.Instance != null ? PoliceForce.Instance.Pipeline : null,
+                businessId, gangId);
+
+        /// <summary>
+        /// The proprietor was killed behind his counter. He is not one case's special
+        /// witness: every still-open case against every family that relied on him loses
+        /// that complainant at once.
+        /// </summary>
+        public static int OwnerKilled(PrisonPipeline pipeline, string businessId)
+        {
+            if (pipeline == null || string.IsNullOrEmpty(businessId)) return 0;
+            var killed = 0;
+            for (var f = 0; f < pipeline.Cases.Count; f++)
+            {
+                var file = pipeline.Cases[f];
+                if (file == null || file.Status != CaseStatus.Open) continue;
+                for (var w = 0; w < file.Witnesses.Count; w++)
+                {
+                    var witness = file.Witnesses[w];
+                    if (witness == null || witness.Standing == WitnessStanding.Dead ||
+                        witness.Kind != WitnessKind.Complainant ||
+                        witness.BusinessId != businessId)
+                        continue;
+                    KillName(witness, evenIfSilent: true);
+                    killed++;
+                }
+            }
+            return killed;
+        }
+
+        public static int OwnerKilled(string businessId) =>
+            OwnerKilled(PoliceForce.Instance != null ? PoliceForce.Instance.Pipeline : null,
+                businessId);
+
+        static void KillName(Witness witness, bool evenIfSilent = false)
+        {
+            if (witness == null || witness.Standing == WitnessStanding.Dead ||
+                (!evenIfSilent && !witness.Willing))
+                return;
+            witness.Standing = WitnessStanding.Dead;
+            LawWire.WitnessKilled(witness);
+            CrewOverlay.Announce(
+                witness.Name.ToUpperInvariant() + " WILL NOT BE GIVING EVIDENCE",
+                4.5f, new Color(1f, 0.55f, 0.45f));
         }
 
         /// <summary>

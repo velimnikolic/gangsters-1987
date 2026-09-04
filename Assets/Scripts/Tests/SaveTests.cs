@@ -36,6 +36,9 @@ namespace LivingCity.Tests
             ThePublicBookComesBackWithTheCampaign(failures);
             AVersionTwoPrisonerFindsHisHouseFromTheDocket(failures);
             ASaveFromBeforeTheDocketStillGetsATrial(failures);
+            OwnerGenerationsSurviveVersionThree(failures);
+            VersionTwoMeansOriginalOwners(failures);
+            SuccessorReplayOrderDoesNotMatter(failures);
             ANewerSaveIsRefused(failures);
 
             return failures;
@@ -642,6 +645,90 @@ namespace LivingCity.Tests
             if (!pipe.EverEscaped(9))
                 failures.Add("SAVE-007: the legacy escape record was dropped.");
         }
+
+        static void OwnerGenerationsSurviveVersionThree(List<string> failures)
+        {
+            var file = new CampaignFile
+            {
+                version = CampaignFile.Version,
+                citySeed = Seed,
+                ownerGenerations = new[]
+                {
+                    new OwnerGenerationDto { businessId = "biz:one", generation = 1 },
+                    new OwnerGenerationDto { businessId = "biz:two", generation = 3 },
+                },
+            };
+            var read = JsonUtility.FromJson<CampaignFile>(JsonUtility.ToJson(file));
+            var generations = CampaignSave.OwnerGenerationMap(read);
+            if (read == null || read.version != 3 || generations.Count != 2 ||
+                !generations.TryGetValue(new TerritoryBusinessId("biz:one"), out var one) ||
+                one != 1 ||
+                !generations.TryGetValue(new TerritoryBusinessId("biz:two"), out var two) ||
+                two != 3)
+                failures.Add("EMPT-003: owner generations did not survive a version-3 campaign file.");
+        }
+
+        static void VersionTwoMeansOriginalOwners(List<string> failures)
+        {
+            const string old = "{\"version\":2,\"citySeed\":1987," +
+                               "\"ownerGenerations\":[{\"businessId\":\"biz:one\"," +
+                               "\"generation\":9}]}";
+            var read = JsonUtility.FromJson<CampaignFile>(old);
+            if (read == null || read.version != CampaignFile.VersionBeforeOwnerGenerations ||
+                CampaignSave.OwnerGenerationMap(read).Count != 0)
+                failures.Add("EMPT-003: a version-2 file did not migrate to generation zero.");
+        }
+
+        static void SuccessorReplayOrderDoesNotMatter(List<string> failures)
+        {
+            var forward = ReplaySuccessors(reverse: false);
+            var reverse = ReplaySuccessors(reverse: true);
+            if (forward[0] != reverse[0] || forward[1] != reverse[1] ||
+                string.IsNullOrEmpty(forward[0]) || string.IsNullOrEmpty(forward[1]))
+                failures.Add("EMPT-003: replay order swapped deterministic successor names.");
+        }
+
+        static string[] ReplaySuccessors(bool reverse)
+        {
+            var sites = new[]
+            {
+                SuccessorSite("one"),
+                SuccessorSite("two"),
+            };
+            var directory = new BusinessDirectory();
+            var ids = new TerritoryBusinessId[sites.Length];
+            for (var i = 0; i < sites.Length; i++)
+            {
+                var ownerId = BusinessIdentity.Owner(sites[i].SiteId);
+                directory.RegisterOwner(ownerId, BusinessOwnerKind.Individual,
+                    "Original " + i, BusinessOwnerAge.Middle, i);
+                ids[i] = directory.Register(
+                    sites[i].SiteId, BusinessArchetypeId.Grocer, "Shop " + i,
+                    ownerId, BusinessSiteSize.Small, 1_200, "save").Id;
+            }
+
+            for (var n = 0; n < sites.Length; n++)
+            {
+                var i = reverse ? sites.Length - 1 - n : n;
+                BusinessSuccession.Replace(directory, sites[i], ids[i], Seed, i + 1);
+            }
+
+            var names = new string[sites.Length];
+            for (var i = 0; i < sites.Length; i++)
+            {
+                directory.TryGet(ids[i], out var business);
+                if (business != null && directory.TryGetOwner(business.OwnerId, out var owner))
+                    names[i] = owner.DisplayName;
+            }
+            return names;
+        }
+
+        static BusinessSite SuccessorSite(string key) => new BusinessSite(
+            "save", "successors", key,
+            new TerritoryBounds(0f, 0f, 10f, 10f),
+            new TerritoryPoint(5f, 0f), new TerritoryPoint(0f, -1f),
+            BusinessSignage.None, BusinessSiteSize.Small, default, 0,
+            "Shop " + key, "frontage", 0);
 
         /// <summary>(f) A file from a later game is refused, not half-read.</summary>
         static void ANewerSaveIsRefused(List<string> failures)

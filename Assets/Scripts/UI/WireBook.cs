@@ -359,11 +359,13 @@ namespace LivingCity.UI
                 case TerritoryDoorNews.PaidShort:
                     return LedgerStyle.PenAmber;
                 case TerritoryDoorNews.RoundBanked:
+                case TerritoryDoorNews.Reopened:
                     return LedgerStyle.GreenOk;
                 case TerritoryDoorNews.RoundOut:
                     return LedgerStyle.TelexPlain;
                 case TerritoryDoorNews.Wrecked:
                 case TerritoryDoorNews.Beaten:
+                case TerritoryDoorNews.OwnerBeaten:
                 case TerritoryDoorNews.Threatened:
                     return LedgerStyle.Ballpoint;
                 default:

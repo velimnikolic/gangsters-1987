@@ -163,6 +163,7 @@ namespace LivingCity.Save
                 cases = Save.PrisonSnapshot.Cases(Pipe()),
                 nextCaseId = Pipe() != null ? Pipe().NextCaseId : 1,
                 shutdowns = Shutdowns(business),
+                ownerGenerations = OwnerGenerations(business),
                 knowledge = Knowledge(underworld),
                 press = PressSnapshot.Snapshot(underworld.Press),
                 lastEditionDay = underworld.Press.LastEditionDay,
@@ -225,6 +226,9 @@ namespace LivingCity.Save
                 BusinessDeeds.SetGang(
                     new TerritoryBusinessId(file.deeds[i].businessId),
                     file.deeds[i].gangId, file.deeds[i].legacyBlockId);
+
+            if (business != null)
+                business.RestoreOwnerGenerations(OwnerGenerationMap(file));
 
             if (business?.Shutdowns != null && file.shutdowns != null)
             {
@@ -290,6 +294,42 @@ namespace LivingCity.Save
                     recoveryAt = rows[i].RecoveryAt,
                 };
             return dto;
+        }
+
+        static OwnerGenerationDto[] OwnerGenerations(BusinessRuntime business)
+        {
+            if (business == null)
+                return new OwnerGenerationDto[0];
+            var rows = new List<KeyValuePair<TerritoryBusinessId, int>>();
+            business.CollectOwnerGenerations(rows);
+            var dto = new OwnerGenerationDto[rows.Count];
+            for (var i = 0; i < rows.Count; i++)
+                dto[i] = new OwnerGenerationDto
+                {
+                    businessId = rows[i].Key.Value,
+                    generation = rows[i].Value,
+                };
+            return dto;
+        }
+
+        /// <summary>Version 2 carried no successor rows, which means generation zero
+        /// everywhere. Invalid/zero rows in later files mean the same thing.</summary>
+        public static Dictionary<TerritoryBusinessId, int> OwnerGenerationMap(
+            CampaignFile file)
+        {
+            var generations = new Dictionary<TerritoryBusinessId, int>();
+            if (file == null || file.version <= CampaignFile.VersionBeforeOwnerGenerations)
+                return generations;
+            for (var i = 0; file != null && file.ownerGenerations != null &&
+                            i < file.ownerGenerations.Length; i++)
+            {
+                var row = file.ownerGenerations[i];
+                if (row == null) continue;
+                var id = new TerritoryBusinessId(row.businessId);
+                if (id.IsValid && row.generation > 0)
+                    generations[id] = row.generation;
+            }
+            return generations;
         }
 
         /// <summary>The city's pipe, or null in a scene that keeps no prisoners.</summary>

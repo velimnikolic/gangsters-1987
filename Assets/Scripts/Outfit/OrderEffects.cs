@@ -30,6 +30,8 @@ namespace LivingCity.Outfit
                 case OrderType.Torch:
                 case OrderType.Bomb:
                 case OrderType.Kill:
+                case OrderType.Beating:
+                case OrderType.KillOwner:
                     return true;
 
                 // Men on a door do something now (D10).

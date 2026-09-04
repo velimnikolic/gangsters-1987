@@ -1458,14 +1458,9 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// LEAN ON THE WITNESS. One row, because there is one thing to say to him that
-        /// an attack order does not already say - the crew walks over and has a word,
-        /// and either he has remembered nothing or he rings the precinct about the men
-        /// who came to see him.
-        ///
-        /// Killing him is the ordinary attack order and is deliberately NOT on this
-        /// card: it is a murder, with its own witnesses, and it must not read as a menu
-        /// item beside a conversation.
+        /// THE WITNESS CARD. The first row is a word in his ear. SHOOT HIM is deliberately
+        /// separate, red, and plain about the consequence: both begin with the same quiet
+        /// walk, but only the latter enters DemoCrews' shared combat machinery.
         /// </summary>
         void OpenWitnessOrders(CivilianAgent body, Vector2 screen)
         {
@@ -1504,6 +1499,26 @@ namespace RoadDemo
                     ShowMark(destination, AttackTint);
                 },
                 lit: !already);
+
+            Row("SHOOT HIM",
+                already
+                    ? "they are already on their way to somebody"
+                    : "a murder in the open · whoever is on the pavement sees it",
+                already ? (System.Action)null : () =>
+                {
+                    if (body.Tf == null) return;
+                    if (!_crews.OrderUnit(crew, body.Tf.position, out var destination,
+                            run: false, speak: false))
+                    {
+                        Refuse(_crews.OrderRefusal);
+                        return;
+                    }
+                    WitnessWatch.OrderKill(crew, witness, body);
+                    CrewSpeech.Say(crew, LivingCity.Data.VoiceLines.OrdKill);
+                    ShowMark(destination, AttackTint);
+                },
+                lit: !already,
+                danger: true);
 
             LayoutAndShow(screen);
         }
@@ -1769,7 +1784,8 @@ namespace RoadDemo
                     : "nothing owed yet · dues accrue daily at midnight",
                 LivingCity.UI.DoorMenu.ClosureOf(businessId),
                 CrewQuarters.State(crew, businessId),
-                LivingCity.Territory.TerritoryHideout.Is(businessId));
+                LivingCity.Territory.TerritoryHideout.Is(businessId),
+                runtime.DoorInGoodStanding(businessId, gang));
 
             for (var i = 0; i < _racketOrders.Count; i++)
             {
@@ -2033,13 +2049,35 @@ namespace RoadDemo
         /// <summary>What the crew says when it is given one of the door's jobs. The deed
         /// and the repair are money and paper, so they have no street line at all - the
         /// desk answers those, through IssueOrder's own announcement.</summary>
-        static string DoorJobVoice(LivingCity.Outfit.OrderType type) => type switch
+        public static string DoorJobVoice(LivingCity.Outfit.OrderType type) => type switch
         {
             LivingCity.Outfit.OrderType.SmashUp => LivingCity.Data.VoiceLines.RktSmash,
             LivingCity.Outfit.OrderType.Torch => LivingCity.Data.VoiceLines.RktTorch,
             LivingCity.Outfit.OrderType.Raid => LivingCity.Data.VoiceLines.RktRob,
             LivingCity.Outfit.OrderType.Guard => LivingCity.Data.VoiceLines.RktGuard,
-            _ => null,
+            LivingCity.Outfit.OrderType.Beating => LivingCity.Data.VoiceLines.OrdWitness,
+            LivingCity.Outfit.OrderType.KillOwner => LivingCity.Data.VoiceLines.OrdKill,
+            LivingCity.Outfit.OrderType.Extort or
+            LivingCity.Outfit.OrderType.Intimidate or
+            LivingCity.Outfit.OrderType.CollectProtection or
+            LivingCity.Outfit.OrderType.AdjustProtection or
+            LivingCity.Outfit.OrderType.Assault or
+            LivingCity.Outfit.OrderType.Bomb or
+            LivingCity.Outfit.OrderType.Kill or
+            LivingCity.Outfit.OrderType.Kidnap or
+            LivingCity.Outfit.OrderType.Patrol or
+            LivingCity.Outfit.OrderType.Ambush or
+            LivingCity.Outfit.OrderType.Explore or
+            LivingCity.Outfit.OrderType.BuyPremises or
+            LivingCity.Outfit.OrderType.SetUpBusiness or
+            LivingCity.Outfit.OrderType.RunBusiness or
+            LivingCity.Outfit.OrderType.Audit or
+            LivingCity.Outfit.OrderType.Recruit or
+            LivingCity.Outfit.OrderType.Bribe or
+            LivingCity.Outfit.OrderType.EmployPolice or
+            LivingCity.Outfit.OrderType.Donate => null,
+            _ => throw new System.ArgumentOutOfRangeException(nameof(type), type,
+                "Every order needs an explicit street voice decision."),
         };
 
         /// <summary>Whoever of the crew is nearest the front of it does the talking.</summary>
@@ -2204,13 +2242,16 @@ namespace RoadDemo
         /// <summary>One line on the card. A row with no action is a row that is THERE
         /// and cannot be taken - drawn faded, and its note says why rather than the
         /// row quietly not existing.</summary>
-        void Row(string label, string note, System.Action run, bool lit = true)
+        void Row(string label, string note, System.Action run, bool lit = true,
+            bool danger = false)
         {
             while (_cardRows.Count <= _cardShown) _cardRows.Add(BuildRow());
             var row = _cardRows[_cardShown++];
             row.Label.text = label;
             row.Note.text = note;
-            row.Label.color = lit ? TurfContextMenuStyle.Body : TurfContextMenuStyle.Disabled;
+            row.Label.color = lit
+                ? (danger ? AttackTint : TurfContextMenuStyle.Body)
+                : TurfContextMenuStyle.Disabled;
             row.Note.color = lit ? TurfContextMenuStyle.Note : TurfContextMenuStyle.Disabled;
             row.Face.color = TurfContextMenuStyle.Clear;
             row.Run = run;

@@ -116,6 +116,43 @@ namespace LivingCity.Business
                 "City Hall", BusinessOwnerAge.None,
                 BusinessIdentity.MixSeed(citySeed, BusinessIdentity.StableHash(CityHallKey)));
 
+        /// <summary>A successor dealt without the city's running uniqueness set. His
+        /// name and portrait are a pure function of seed, site and generation, so load
+        /// order cannot swap two dead proprietors' replacements.</summary>
+        public static BusinessOwnerRecord Successor(
+            BusinessDirectory directory, BusinessSite site, int citySeed, int generation)
+        {
+            if (directory == null)
+                throw new ArgumentNullException(nameof(directory));
+            if (site == null)
+                throw new ArgumentNullException(nameof(site));
+            generation = Math.Max(1, generation);
+            var seed = BusinessIdentity.MixSeed(
+                citySeed + LivingCity.Generation.SeedOffsets.Business,
+                site.SiteId, unchecked(OwnerStream + generation * 7919));
+            var rng = new System.Random(seed);
+            var female = rng.Next(100) < FemaleOwnerChance;
+            var age = AgeBand(rng.Next(100));
+            var firstNames = female
+                ? PedestrianIdentity.AllFemaleNames
+                : PedestrianIdentity.AllMaleNames;
+            var name = firstNames[rng.Next(firstNames.Count)] + " " +
+                PedestrianIdentity.AllSurnames[
+                    rng.Next(PedestrianIdentity.AllSurnames.Count)];
+            return directory.RegisterOwner(
+                BusinessIdentity.Owner(site.SiteId, generation),
+                BusinessOwnerKind.Individual, name, age, seed);
+        }
+
+        public static string SuccessorName(
+            BusinessSite site, int citySeed, int generation)
+        {
+            if (site == null)
+                return "";
+            var directory = new BusinessDirectory();
+            return Successor(directory, site, citySeed, generation).DisplayName;
+        }
+
         static BusinessOwnerAge AgeBand(int roll) =>
             roll < 22 ? BusinessOwnerAge.Young
             : roll < 72 ? BusinessOwnerAge.Middle
@@ -149,6 +186,36 @@ namespace LivingCity.Business
                 : name + " " + initial + ".";
             takenNames.Add(name);
             return name;
+        }
+    }
+
+    /// <summary>
+    /// The one atomic successor seam used both at the killing and while replaying a
+    /// save: deal the same man, register the minted identity, move the deed, then evict
+    /// whatever owner profile was cached for this door.
+    /// </summary>
+    public static class BusinessSuccession
+    {
+        /// <summary>The one sentence shared by both live door surfaces. The successor
+        /// gets a fresh identity; the building keeps its standing and fear.</summary>
+        public const string MemoryLine =
+            "NEW MAN AT THE COUNTER · the street's memory of us here is his to inherit";
+
+        public static BusinessOwnerRecord Replace(
+            BusinessDirectory directory, BusinessSite site,
+            LivingCity.Territory.TerritoryBusinessId businessId,
+            int citySeed, int generation,
+            Action<LivingCity.Territory.TerritoryBusinessId> invalidateProfile = null)
+        {
+            if (directory == null || site == null || !businessId.IsValid || generation <= 0 ||
+                !directory.TryGet(businessId, out var business) ||
+                business.SiteId != site.SiteId)
+                return null;
+            var owner = BusinessOwners.Successor(directory, site, citySeed, generation);
+            if (owner == null || !directory.SetOwner(businessId, owner.Id))
+                return null;
+            invalidateProfile?.Invoke(businessId);
+            return owner;
         }
     }
 }

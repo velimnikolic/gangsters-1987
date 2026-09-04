@@ -71,6 +71,7 @@ namespace LivingCity.UI
             /// <summary>Is this the one address a running man makes for (GAN-235)?</summary>
             public bool IsHideout;
             public TerritoryProtectionState Standing;
+            public bool InGoodStanding;
             public int TakePerDay;
             public int BuyPrice;
             public TerritoryDoorClosure Closure;
@@ -87,6 +88,8 @@ namespace LivingCity.UI
             /// <summary>The seed his face is dealt from. His own, off the deed
             /// (BusinessOwners), so the same city shows the same man twice.</summary>
             public int PortraitSeed;
+
+            public int OwnerGeneration;
 
             /// <summary>The model to photograph when the owner is a man the game already
             /// dresses - a house's boss. Empty for a shopkeeper, whose face is dealt off
@@ -185,12 +188,16 @@ namespace LivingCity.UI
                     door.OwnerKind = deed.Kind;
                     door.PortraitSeed = deed.PortraitSeed;
                 }
+                door.OwnerGeneration = business.OwnerGenerationOf(id);
             }
 
             // What kind of man he is: the profile the demand is already weighed against
             // (TerritoryOwnerProfile), read rather than chosen.
             if (runtime != null)
+            {
                 door.Trait = runtime.OwnerProfileOf(id).Trait;
+                door.InGoodStanding = runtime.DoorInGoodStanding(id, us);
+            }
 
             // The DEED first - the deed book is the record and the marker only a view of
             // it, so a street that is streamed out still reads as held.
@@ -247,7 +254,7 @@ namespace LivingCity.UI
             return new TerritoryDoorClosure(
                 true,
                 BusinessShutdownText.Line(shutdown),
-                repairVisible: ours,
+                repairVisible: ours && shutdown.RepairPrice > 0,
                 repairAvailable: affordable,
                 repairPrice: shutdown.RepairPrice,
                 cause: shutdown.Cause);
@@ -765,7 +772,13 @@ namespace LivingCity.UI
                 largeCopy ? 11f : 9f,
                 LedgerV2.HeadDim, 0.5f);
 
-            return plateH + (largeCopy ? 13f : 10f);
+            if (!house && door.OwnerGeneration > 0)
+                LedgerV2.Mono(panel, x, -(top + plateH + 4f), width,
+                    BusinessSuccession.MemoryLine,
+                    largeCopy ? 10.5f : 9f, LedgerStyle.RedPen, 0.5f);
+
+            return plateH + (largeCopy ? 13f : 10f) +
+                   (!house && door.OwnerGeneration > 0 ? 24f : 0f);
         }
 
         /// <summary>What the deed makes him.</summary>
@@ -1101,7 +1114,8 @@ namespace LivingCity.UI
                 MenAtDoor(door.Id), door.BuyPrice, orders,
                 closure: door.Closure,
                 quarters: RoadDemo.CrewQuarters.State(StreetUnit(going), door.Id),
-                isHideout: door.IsHideout);
+                isHideout: door.IsHideout,
+                inGoodStanding: door.InGoodStanding);
 
             for (var i = 0; i < orders.Count; i++)
             {

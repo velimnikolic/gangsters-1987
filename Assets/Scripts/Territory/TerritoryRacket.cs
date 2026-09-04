@@ -348,6 +348,12 @@ namespace LivingCity.Territory
         /// <summary>A standing round left on its own - the block's day came round and a
         /// man on the bag walked out to it without being told.</summary>
         RoundOut,
+
+        /// <summary>The proprietor himself was beaten behind the counter.</summary>
+        OwnerBeaten,
+
+        /// <summary>A successor opened the same door after the proprietor's death.</summary>
+        Reopened,
     }
 
     /// <summary>One line of door news, filed the hour it happened.</summary>
@@ -357,7 +363,7 @@ namespace LivingCity.Territory
             TerritoryBusinessId businessId, TerritoryGangId gangId,
             TerritoryDoorNews news, double gameHour)
             : this(businessId, gangId, news, gameHour, 0,
-                TerritoryPaymentExcuse.None, default, 0, 0)
+                TerritoryPaymentExcuse.None, default, 0, 0, "")
         {
         }
 
@@ -367,7 +373,7 @@ namespace LivingCity.Territory
             TerritoryBusinessId businessId, TerritoryGangId gangId,
             TerritoryDoorNews news, double gameHour, int amount,
             TerritoryPaymentExcuse excuse, TerritoryBlockId blockId, int stops,
-            int shortCount)
+            int shortCount, string detail = "")
         {
             BusinessId = businessId;
             GangId = gangId;
@@ -378,6 +384,7 @@ namespace LivingCity.Territory
             BlockId = blockId;
             Stops = stops;
             Short = shortCount;
+            Detail = detail ?? "";
         }
 
         /// <summary>Dollars: what he paid on a Short, what he owes on a Missed, what the
@@ -396,6 +403,8 @@ namespace LivingCity.Territory
 
         /// <summary>How many doors came up short or missed on the round.</summary>
         public int Short { get; }
+
+        public string Detail { get; }
 
         public TerritoryBusinessId BusinessId { get; }
 
@@ -570,12 +579,23 @@ namespace LivingCity.Territory
         /// <summary>Files one line and moves the version the surfaces watch.</summary>
         void File(
             TerritoryBusinessId businessId, TerritoryGangId gangId,
-            TerritoryDoorNews news, double gameHour)
+            TerritoryDoorNews news, double gameHour, string detail = "")
         {
             if (dispatches.Count >= DispatchesKept)
                 dispatches.RemoveAt(0);
-            dispatches.Add(new TerritoryDoorDispatch(businessId, gangId, news, gameHour));
+            dispatches.Add(new TerritoryDoorDispatch(
+                businessId, gangId, news, gameHour, 0,
+                TerritoryPaymentExcuse.None, default, 0, 0, detail));
             Version++;
+        }
+
+        public void FileDoorEvent(
+            TerritoryBusinessId businessId, TerritoryGangId gangId,
+            TerritoryDoorNews news, double gameHour, string detail = "")
+        {
+            if (!businessId.IsValid || !gangId.IsValid)
+                return;
+            File(businessId, gangId, news, gameHour, detail);
         }
 
         /// <summary>
@@ -742,7 +762,8 @@ namespace LivingCity.Territory
             TerritoryGangId gangId,
             TerritoryEscalationKind kind,
             double gameHour,
-            List<TerritoryProtectionChange> changes = null)
+            List<TerritoryProtectionChange> changes = null,
+            TerritoryDoorNews? news = null)
         {
             if (!businessId.IsValid || !gangId.IsValid)
                 return;
@@ -754,13 +775,15 @@ namespace LivingCity.Territory
             if (entry.State == TerritoryProtectionState.Compliant)
             {
                 row.Note(entry, kind + " against a paying shop", gameHour, 0f, Config);
-                FileEscalation(businessId, gangId, kind, gameHour);
+                if (news.HasValue) File(businessId, gangId, news.Value, gameHour);
+                else FileEscalation(businessId, gangId, kind, gameHour);
                 return;
             }
 
             row.Move(entry, TerritoryProtectionState.Intimidated, gameHour,
                 kind.ToString().ToLowerInvariant(), 0f, Config, changes);
-            FileEscalation(businessId, gangId, kind, gameHour);
+            if (news.HasValue) File(businessId, gangId, news.Value, gameHour);
+            else FileEscalation(businessId, gangId, kind, gameHour);
         }
 
         /// <summary>

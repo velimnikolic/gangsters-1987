@@ -443,30 +443,42 @@ namespace RoadDemo
 
             var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
             var today = outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0;
-            var file = pipeline.OpenCase(_arrestDeed, crew.Faction, today,
-                today > 0 ? today + Sentencing.DaysToCourt : 0);
+            var reusedBodyFile = _arrestDeed == Deed.Murder &&
+                                 _civilianDeathIncident == StreetAlarm.IncidentNumber &&
+                                 _civilianDeathCase != null &&
+                                 _civilianDeathCase.Status == CaseStatus.Open &&
+                                 _civilianDeathCase.GangId == crew.Faction;
+            var file = reusedBodyFile
+                ? _civilianDeathCase
+                : pipeline.OpenCase(_arrestDeed, crew.Faction, today,
+                    today > 0 ? today + Sentencing.DaysToCourt : 0);
 
             // THE PEOPLE WHO WERE THERE WHEN IT HAPPENED - taken when the first round
             // went off (SnapshotTheScene), not now. An arrest can be made a hundred and
             // fifty seconds after the shooting stopped, by which time the men who saw it
             // have walked home and a fresh crowd has drifted over to look at the chalk.
-            CopySceneWitnesses(file, StreetAlarm.IncidentNumber);
+            if (!reusedBodyFile)
+                CopySceneWitnesses(file, StreetAlarm.IncidentNumber);
 
             // WHAT THE LAW ITSELF SAW, recorded while the squad was actually looking at
             // it (BeginWarning / PickFight). Read at arrest time it was always false:
             // the squad that makes the arrest is by definition Securing a quiet street
             // by then.
             var sawTheAct = _lawSawIncident == StreetAlarm.IncidentNumber;
-            file.Witnesses.Add(new Witness
-            {
-                Kind = sawTheAct ? WitnessKind.PoliceSawIt : WitnessKind.PoliceFoundThem,
-                Name = "The arresting officer",
-                Seed = StreetAlarm.IncidentNumber,
-                X = StreetAlarm.Incident.x, Y = StreetAlarm.Incident.y,
-                Z = StreetAlarm.Incident.z,
-            });
+            var officerKind = sawTheAct
+                ? WitnessKind.PoliceSawIt : WitnessKind.PoliceFoundThem;
+            if (!file.Has(officerKind))
+                file.Witnesses.Add(new Witness
+                {
+                    Kind = officerKind,
+                    Name = "The arresting officer",
+                    Seed = StreetAlarm.IncidentNumber,
+                    X = StreetAlarm.Incident.x, Y = StreetAlarm.Incident.y,
+                    Z = StreetAlarm.Incident.z,
+                });
 
-            LawWire.CaseOpened(file);
+            if (!reusedBodyFile)
+                LawWire.CaseOpened(file);
             return file;
         }
 

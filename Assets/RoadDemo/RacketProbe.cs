@@ -10,7 +10,10 @@ namespace RoadDemo
     /// The racket, driven by nobody. It gives the orders a player gives against a
     /// shopfront - SMASH IT UP at one door, SMASH IT UP at a second, then DEMAND
     /// PROTECTION at a third - and watches what the city does about them, so a report
-    /// about the doorstep chain is a measurement rather than a reading of the code.
+    /// about the doorstep chain is a measurement rather than a reading of the code. Its
+    /// alternate proprietor scenarios file BEAT THE OWNER or KILL THE OWNER at a clean
+    /// door and measure the inside visit, fear, closure, docket and succession through
+    /// those same production seams.
     ///
     /// It watches the MEN as well as the orders, because the complaint that started it
     /// was about movement: every frame it measures each man's step against the step his
@@ -48,6 +51,12 @@ namespace RoadDemo
         /// the men are still at the first. Two live jobs in one lieutenant's book.</summary>
         public bool overlap;
 
+        /// <summary>Run the owner-beating acceptance instead of the smash/torch ladder.</summary>
+        public bool beating;
+
+        /// <summary>Run the owner-killing acceptance instead of the smash/torch ladder.</summary>
+        public bool killing;
+
         public bool Finished { get; private set; }
         public string Verdict { get; private set; } = "";
 
@@ -78,6 +87,11 @@ namespace RoadDemo
         float _stepAt;
         DemoCrews _crews;
         DemoCrews.Unit _ours;
+        float _fearBefore;
+        int _casesBefore;
+        int _dispatchesBefore;
+        int _ownerGenerationBefore;
+        string _ownerBefore = "";
 
         void Update()
         {
@@ -111,6 +125,30 @@ namespace RoadDemo
                     return;
                 }
                 _crews.Select(_ours);
+            }
+
+            if (beating)
+            {
+                switch (_step)
+                {
+                    case 0: Pick(); break;
+                    case 1: Beat(); break;
+                    case 2: AwaitBeating(); break;
+                    default: Give(""); break;
+                }
+                return;
+            }
+
+            if (killing)
+            {
+                switch (_step)
+                {
+                    case 0: Pick(); break;
+                    case 1: KillOwner(); break;
+                    case 2: AwaitKilling(); break;
+                    default: Give(""); break;
+                }
+                return;
             }
 
             switch (_step)
@@ -179,12 +217,27 @@ namespace RoadDemo
 
             best.Sort((a, b) => a.D.CompareTo(b.D));
             _doors.Clear();
-            for (var i = 0; i < best.Count && _doors.Count < 3; i++)
-                _doors.Add(best[i].Id);
-
-            if (_doors.Count < 3)
+            var wanted = beating || killing ? 1 : 3;
+            for (var i = 0; i < best.Count && _doors.Count < wanted; i++)
             {
-                Give("fewer than three shops within reach - nothing to run against");
+                if (beating || killing)
+                {
+                    var type = killing ? OrderType.KillOwner : OrderType.Beating;
+                    if (!LivingCity.Gameplay.DoorJobs.TryBuild(
+                            best[i].Id, type, _ours.CrewId,
+                            Mathf.Max(1, _ours.Standing()), out _, out _))
+                        continue;
+                }
+                _doors.Add(best[i].Id);
+            }
+
+            if (_doors.Count < wanted)
+            {
+                Give(beating
+                    ? "no clean owner within reach will take a beating order"
+                    : killing
+                        ? "no clean owner within reach will take a killing order"
+                        : "fewer than three shops within reach - nothing to run against");
                 return;
             }
 
@@ -195,6 +248,206 @@ namespace RoadDemo
         }
 
         // ----------------------------------------------------------------- the orders
+
+        void Beat()
+        {
+            var id = _doors[0];
+            if (!LivingCity.Gameplay.DoorJobs.TryBuild(
+                    id, OrderType.Beating, _ours.CrewId, Mathf.Max(1, _ours.Standing()),
+                    out var job, out var refusal))
+            {
+                Give("BEAT THE OWNER was refused after the probe had accepted its door: " +
+                     refusal);
+                return;
+            }
+
+            var runtime = TerritoryRuntime.Instance;
+            var us = LivingCity.Gameplay.PlayerCommands.House;
+            _fearBefore = runtime != null ? runtime.BusinessFearOf(id, us) : 0f;
+            _casesBefore = LawDesk.Pipeline != null ? LawDesk.Pipeline.Cases.Count : 0;
+            _dispatchesBefore = runtime?.Racket != null ? runtime.Racket.Dispatches.Count : 0;
+
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            var result = outfit != null ? outfit.IssueOrder(job) : default;
+            Say("BEAT THE OWNER filed on " + NameOf(id) + ": " +
+                (result.Ok ? "issued" : "REFUSED - " + result.Reason));
+            if (!result.Ok)
+            {
+                Give("the order book refused a beating the door gateway accepted");
+                return;
+            }
+            Advance();
+        }
+
+        void AwaitBeating()
+        {
+            var id = _doors[0];
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            if (business != null && business.TryGetShutdown(id, out var shut) &&
+                shut.Cause == LivingCity.Business.BusinessShutdownCause.Beating)
+            {
+                var runtime = TerritoryRuntime.Instance;
+                var us = LivingCity.Gameplay.PlayerCommands.House;
+                var fear = runtime != null ? runtime.BusinessFearOf(id, us) : 0f;
+                var cases = LawDesk.Pipeline != null ? LawDesk.Pipeline.Cases.Count : 0;
+                var dispatches = runtime?.Racket != null
+                    ? runtime.Racket.Dispatches.Count
+                    : 0;
+                Say("the owner came back out after " + (_clock - _stepAt).ToString("0.0") +
+                    " s · fear " + _fearBefore.ToString("0.00") + " -> " +
+                    fear.ToString("0.00") + " · cases " + _casesBefore + " -> " + cases +
+                    " · wire " + _dispatchesBefore + " -> " + dispatches);
+
+                if (shut.RecoveryAt - shut.StartedAt != 24d)
+                {
+                    Give("the beating did not close the shop for exactly one day");
+                    return;
+                }
+                if (shut.RepairPrice != 0)
+                {
+                    Give("the owner's hospital day carries a repair bill");
+                    return;
+                }
+                if (ShopDamage.IsBusinessDamaged(id))
+                {
+                    Give("beating the man damaged the premises");
+                    return;
+                }
+                if (fear - _fearBefore < 55f)
+                {
+                    Give("the beating left less than the testimony fear cap at its door");
+                    return;
+                }
+                Give("");
+                return;
+            }
+
+            if (_clock - _stepAt < patience)
+                return;
+
+            Give("a filed beating never completed inside the shop");
+        }
+
+        void KillOwner()
+        {
+            var id = _doors[0];
+            if (!LivingCity.Gameplay.DoorJobs.TryBuild(
+                    id, OrderType.KillOwner, _ours.CrewId, Mathf.Max(1, _ours.Standing()),
+                    out var job, out var refusal))
+            {
+                Give("KILL THE OWNER was refused after the probe had accepted its door: " +
+                     refusal);
+                return;
+            }
+
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            if (business == null || !business.Directory.TryGet(id, out var record))
+            {
+                Give("the accepted door has no business record");
+                return;
+            }
+
+            var runtime = TerritoryRuntime.Instance;
+            var us = LivingCity.Gameplay.PlayerCommands.House;
+            _ownerBefore = business.OwnerNameOf(record);
+            _ownerGenerationBefore = business.OwnerGenerationOf(id);
+            _fearBefore = runtime != null ? runtime.BusinessFearOf(id, us) : 0f;
+            _casesBefore = LawDesk.Pipeline != null ? LawDesk.Pipeline.Cases.Count : 0;
+            _dispatchesBefore = runtime?.Racket != null ? runtime.Racket.Dispatches.Count : 0;
+
+            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
+            var result = outfit != null ? outfit.IssueOrder(job) : default;
+            Say("KILL THE OWNER filed on " + NameOf(id) + " (" + _ownerBefore + "): " +
+                (result.Ok ? "issued" : "REFUSED - " + result.Reason));
+            if (!result.Ok)
+            {
+                Give("the order book refused a killing the door gateway accepted");
+                return;
+            }
+            Advance();
+        }
+
+        void AwaitKilling()
+        {
+            var id = _doors[0];
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            if (business != null && business.TryGetShutdown(id, out var shut) &&
+                shut.Cause == LivingCity.Business.BusinessShutdownCause.Death)
+            {
+                if (!business.Directory.TryGet(id, out var record))
+                {
+                    Give("the killed owner's business disappeared from the directory");
+                    return;
+                }
+
+                var runtime = TerritoryRuntime.Instance;
+                var us = LivingCity.Gameplay.PlayerCommands.House;
+                var owner = business.OwnerNameOf(record);
+                var generation = business.OwnerGenerationOf(id);
+                var fear = runtime != null ? runtime.BusinessFearOf(id, us) : 0f;
+                var cases = LawDesk.Pipeline != null ? LawDesk.Pipeline.Cases.Count : 0;
+                var dispatches = runtime?.Racket != null
+                    ? runtime.Racket.Dispatches.Count
+                    : 0;
+                Say("the shot landed and " + _ownerBefore + " was replaced by " + owner +
+                    " after " + (_clock - _stepAt).ToString("0.0") + " s · fear " +
+                    _fearBefore.ToString("0.00") + " -> " + fear.ToString("0.00") +
+                    " · generation " + _ownerGenerationBefore + " -> " + generation +
+                    " · cases " + _casesBefore + " -> " + cases + " · wire " +
+                    _dispatchesBefore + " -> " + dispatches);
+
+                if (shut.RecoveryAt - shut.StartedAt != 72d)
+                {
+                    Give("the death did not close the shop for exactly three days");
+                    return;
+                }
+                if (shut.RepairPrice != 0 || ShopDamage.IsBusinessDamaged(id))
+                {
+                    Give("the proprietor's death was filed as damage to the premises");
+                    return;
+                }
+                if (generation != _ownerGenerationBefore + 1 ||
+                    string.IsNullOrWhiteSpace(owner) || owner == _ownerBefore)
+                {
+                    Give("the dead proprietor was not replaced by a new minted owner");
+                    return;
+                }
+                if (fear - _fearBefore <= 60.75f)
+                {
+                    Give("the killing left no more fear at the door than the beating");
+                    return;
+                }
+
+                var murder = false;
+                var pipeline = LawDesk.Pipeline;
+                if (pipeline != null)
+                {
+                    for (var i = _casesBefore; i < pipeline.Cases.Count; i++)
+                    {
+                        var file = pipeline.Cases[i];
+                        if (file.Deed == LivingCity.Personnel.Deed.Murder &&
+                            file.BusinessId == id.Value && file.Defendants.Count == 0)
+                        {
+                            murder = true;
+                            break;
+                        }
+                    }
+                }
+                if (!murder)
+                {
+                    Give("the body left no defendant-less murder file at its door");
+                    return;
+                }
+
+                Give("");
+                return;
+            }
+
+            if (_clock - _stepAt < patience)
+                return;
+
+            Give("a filed owner killing never completed inside the shop");
+        }
 
         void Order(int which, string word)
         {

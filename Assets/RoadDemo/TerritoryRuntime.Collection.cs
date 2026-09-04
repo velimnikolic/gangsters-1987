@@ -452,9 +452,45 @@ namespace RoadDemo
 
             var business = LivingCity.Business.BusinessRuntime.Instance;
             var seed = business != null && business.Populated ? business.CitySeed : 1987;
-            profile = TerritoryOwnerProfile.Deal(seed, businessId, OwnerTraitOverride);
+            var generation = business != null
+                ? business.OwnerGenerationOf(businessId) : 0;
+            profile = TerritoryOwnerProfile.Deal(
+                seed, businessId, generation, OwnerTraitOverride);
             ownerProfiles[businessId] = profile;
             return profile;
+        }
+
+        /// <summary>A successor is a different man. Drop only his cached character;
+        /// fear and racket standing remain keyed to the door and are untouched.</summary>
+        public void ForgetOwnerProfile(TerritoryBusinessId businessId) =>
+            ownerProfiles.Remove(businessId);
+
+        /// <summary>The order gate's reading of a paying door. It uses the same dues
+        /// and newest-slip inputs as the block file, so BEAT cannot disagree by surface.</summary>
+        public bool DoorInGoodStanding(
+            TerritoryBusinessId businessId, TerritoryGangId gangId)
+        {
+            if (racket == null || !businessId.IsValid || !gangId.IsValid)
+                return false;
+            TerritoryDoorDispatch? last = null;
+            var slips = racket.Dispatches;
+            for (var i = slips.Count - 1; i >= 0; i--)
+                if (slips[i].BusinessId == businessId && slips[i].GangId == gangId)
+                {
+                    last = slips[i];
+                    break;
+                }
+
+            TerritoryDuesAccount account = default;
+            var hasDues = dues != null && dues.TryGet(businessId, out account) &&
+                          account.GangId == gangId;
+            return TerritoryDoorStandings.InGoodStanding(
+                racket.StateOf(businessId, gangId), last, hasDues,
+                hasDues ? dues.OwedOf(businessId, gangId) : 0,
+                hasDues ? account.WeeklyRate : 0,
+                hasDues ? account.LastCollectedDay : -1,
+                hasDues ? account.MissedInARow : 0,
+                (int)(lastGameHour / 24.0) + 1);
         }
 
         /// <summary>What this place pays a week, off the price table - never a flat
@@ -524,11 +560,19 @@ namespace RoadDemo
         /// </summary>
         void MaybeRingThePrecinct(
             TerritoryGangId gangId, TerritoryBusinessId businessId)
+            => RingAbout(gangId, businessId, LivingCity.Personnel.Deed.Extortion);
+
+        /// <summary>Give the owner one telephone roll about a named deed. The caller
+        /// chooses whether pavement witnesses could see it; the roll always reads the
+        /// standing that exists at the instant this method is called.</summary>
+        public bool RingAbout(
+            TerritoryGangId gangId, TerritoryBusinessId businessId,
+            LivingCity.Personnel.Deed deed, bool indoors = false)
         {
             if (!businessId.IsValid || !gangId.IsValid)
-                return;
+                return false;
             if (!TryGetBusinessApproach(businessId, out var door))
-                return;
+                return false;
 
             var owner = OwnerProfileOf(businessId);
             // THE FAMILY'S STANDING ON HIS STREET: what the block fears of it, or how
@@ -575,12 +619,14 @@ namespace RoadDemo
                     LivingCity.Police.ComplaintRoll.StreamFor(
                         citySeed, businessId.Value, day,
                         NextComplaintTry(businessId.Value, day))))
-                return;
+                return false;
 
             var name = businessId.Value;
             if (TryGetBusinessView(businessId, out var view))
                 name = view.BusinessName;
-            StreetAlarm.Complain(door, gangId.Value, businessId.Value, name, lastGameHour);
+            StreetAlarm.Complain(
+                door, gangId.Value, businessId.Value, name, lastGameHour, deed, indoors);
+            return true;
         }
 
         /// <summary>How many times each shop has been leaned on today, and which day

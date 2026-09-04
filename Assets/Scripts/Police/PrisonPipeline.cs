@@ -244,7 +244,7 @@ namespace LivingCity.Police
         /// <summary>
         /// Folds every open complaint against this crew, inside the memory window, into
         /// the case that is actually going to be heard. Each one is worth
-        /// <see cref="Sentencing.ExtraCountDays"/> on a conviction, and each one is
+        /// a deed-weighted surcharge on a conviction, and each one is
         /// closed by being folded - a count cannot be charged twice.
         /// </summary>
         public int AttachOpenComplaints(CourtCase file, int today)
@@ -258,6 +258,7 @@ namespace LivingCity.Police
                 if (other == file || other.Status != CaseStatus.Open) continue;
                 if (other.GangId != file.GangId) continue;
                 if (other.Defendants.Count > 0) continue;   // somebody was taken for it
+                if (!other.AnyWilling()) continue;          // nobody can put this count up
                 if (today > 0 && other.OpenedDay > 0 &&
                     today - other.OpenedDay > ComplaintMemoryDays) continue;
 
@@ -816,11 +817,12 @@ namespace LivingCity.Police
             ResolveDefendant(file, prisoner.CharacterId, CaseStatus.Tried);
             if (counsel != null) counsel.CasesLost++;
 
+            var countDays = FoldedCountDays(file);
             var days = Sentencing.Days(prisoner.Deed, rng,
                 EverEscaped(prisoner.CharacterId), member.Rank,
                 Notability.Marked(member, today), lawyerSkill,
                 file != null ? file.Counts.Count + file.ExtraCharges.Count : 0,
-                prisoner.Answer);
+                prisoner.Answer, countDays);
 
             prisoner.SentenceDays = days;
             prisoner.OutOnDay = Sentencing.IsLife(days) ? Sentencing.Life : today + days;
@@ -841,6 +843,23 @@ namespace LivingCity.Police
                 prisoner.Answer, prisoner.Sprung);
             RapSheet.Add(member, Stamp(today), Sentencing.ChargeFor(prisoner.Deed),
                 Sentencing.Verdict(days, Sentencing.IsLife(days) ? 0 : prisoner.OutOnDay));
+        }
+
+        /// <summary>The attached docket keeps the gravity of each deed. A missing
+        /// legacy case ID has no deed to read and therefore retains the old flat value.</summary>
+        public int FoldedCountDays(CourtCase file)
+        {
+            if (file == null)
+                return 0;
+            var days = 0;
+            for (var i = 0; i < file.Counts.Count; i++)
+            {
+                var count = FindCase(file.Counts[i]);
+                days += Sentencing.ExtraCountDays(count != null ? (Deed?)count.Deed : null);
+            }
+            for (var i = 0; i < file.ExtraCharges.Count; i++)
+                days += Sentencing.ExtraCountDays(file.ExtraCharges[i]);
+            return days;
         }
 
         /// <summary>The old door, kept for the callers that only ever wanted the

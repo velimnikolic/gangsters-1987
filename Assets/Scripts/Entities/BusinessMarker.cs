@@ -211,6 +211,14 @@ namespace LivingCity.Entities
             get
             {
                 var owner = Owner?.DisplayName ?? OwnerName;
+                var business = BusinessRuntime.Instance;
+                var generation = 0;
+                if (business != null && business.Populated && BusinessId.IsValid &&
+                    business.Directory.TryGet(BusinessId, out var record))
+                {
+                    owner = business.OwnerNameOf(record);
+                    generation = business.OwnerGenerationOf(BusinessId);
+                }
                 var runtime = RoadDemo.TerritoryRuntime.Instance;
                 if (runtime != null && BusinessId.IsValid &&
                     runtime.TryGetBusinessView(BusinessId, out var view))
@@ -223,6 +231,8 @@ namespace LivingCity.Entities
                     // and when it last paid, straight off the ledger.
                     if (view.PaysLine.Length > 0)
                         line += "\n" + view.PaysLine;
+                    if (generation > 0)
+                        line += "\n" + BusinessSuccession.MemoryLine;
                     return line;
                 }
 
@@ -261,6 +271,8 @@ namespace LivingCity.Entities
                     if (business.TryGetShutdown(BusinessId, out var shutdown))
                         key ^= (long)shutdown.RemainingDays << 20;
                 }
+                if (business != null && BusinessId.IsValid)
+                    key ^= (long)business.OwnerGenerationOf(BusinessId) << 28;
                 return key;
             }
         }

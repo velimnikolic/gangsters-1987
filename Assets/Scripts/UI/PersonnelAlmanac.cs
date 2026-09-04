@@ -2367,7 +2367,7 @@ namespace LivingCity.UI
                         break;
                     }
 
-                var body = TerritoryStandingVocabulary.Default.Describe(dispatch.News, name);
+                var body = TerritoryStandingVocabulary.Default.Describe(dispatch, name, "");
                 if (shown == 0)
                 {
                     telexBusinessTarget = dispatch.BusinessId;
@@ -2389,6 +2389,7 @@ namespace LivingCity.UI
                     return TelexVoice.Urgent;
                 case TerritoryDoorNews.Wrecked:
                 case TerritoryDoorNews.Beaten:
+                case TerritoryDoorNews.OwnerBeaten:
                 case TerritoryDoorNews.Threatened:
                     return TelexVoice.Warn;
                 default:

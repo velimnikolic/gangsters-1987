@@ -43,6 +43,7 @@ namespace RoadDemo
         public const float DoorVolume = 0.35f;
         public const float UiVolume = 0.35f;
         public const float ScreamVolume = 0.7f;
+        public const float PunchVolume = 0.78f;
         public const float SirenVolume = 0.55f;
 
         /// <summary>The gun, and it is meant to be the loudest thing in the city -
@@ -121,6 +122,12 @@ namespace RoadDemo
                                 Load<AudioClip>(Root + "People/hurt_m.wav"),
                                 Load<AudioClip>(Root + "People/hurt_f.wav"));
 
+        /// <summary>Three distinct blows heard from behind the closed shop door.</summary>
+        public static AudioClip[] Punches =>
+            _punches ??= Gather(Load<AudioClip>(Root + "Weapons/punch_2.wav"),
+                                Load<AudioClip>(Root + "Weapons/punch_3.wav"),
+                                Load<AudioClip>(Root + "Weapons/punch_4.wav"));
+
         // -------------------------------------------------------------- the police
 
         /// <summary>The patrol car's wail - a Federal Signal style sweep, the
@@ -161,7 +168,7 @@ namespace RoadDemo
         /// <summary>The morning edition landing on the desk.</summary>
         public static AudioClip Newspaper => Load<AudioClip>(Root + "Ui/newspaper_slap.wav");
 
-        static AudioClip[] _engines, _voices, _screams, _radio;
+        static AudioClip[] _engines, _voices, _screams, _punches, _radio;
 
         public static AudioClip Pick(AudioClip[] clips) =>
             clips == null || clips.Length == 0 ? null : clips[Random.Range(0, clips.Length)];

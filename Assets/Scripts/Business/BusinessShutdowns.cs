@@ -15,6 +15,12 @@ namespace LivingCity.Business
         /// <summary>Powder. A week shut, the same as a fire, and the same repair bill -
         /// a blown-out front is a blown-out front however it went (D12).</summary>
         Bomb,
+
+        /// <summary>The proprietor is in hospital. The building itself is intact.</summary>
+        Beating,
+
+        /// <summary>The proprietor is dead and the successor has not opened yet.</summary>
+        Death,
     }
 
     /// <summary>
@@ -30,7 +36,9 @@ namespace LivingCity.Business
             int smashRepairPrice = 1_000,
             int arsonRepairPrice = 5_000,
             double bombHours = 7d * 24d,
-            int bombRepairPrice = 5_000)
+            int bombRepairPrice = 5_000,
+            double beatingHours = 24d,
+            double deathHours = 3d * 24d)
         {
             SmashHours = Math.Max(0d, smashHours);
             ArsonHours = Math.Max(0d, arsonHours);
@@ -38,6 +46,8 @@ namespace LivingCity.Business
             ArsonRepairPrice = Math.Max(0, arsonRepairPrice);
             BombHours = Math.Max(0d, bombHours);
             BombRepairPrice = Math.Max(0, bombRepairPrice);
+            BeatingHours = Math.Max(0d, beatingHours);
+            DeathHours = Math.Max(0d, deathHours);
         }
 
         public double SmashHours { get; }
@@ -50,17 +60,23 @@ namespace LivingCity.Business
         public double BombHours { get; }
 
         public int BombRepairPrice { get; }
+        public double BeatingHours { get; }
+        public double DeathHours { get; }
 
         public double DurationOf(BusinessShutdownCause cause) =>
             cause == BusinessShutdownCause.Arson ? ArsonHours
             : cause == BusinessShutdownCause.Bomb ? BombHours
             : cause == BusinessShutdownCause.SmashUp ? SmashHours
+            : cause == BusinessShutdownCause.Beating ? BeatingHours
+            : cause == BusinessShutdownCause.Death ? DeathHours
             : 0d;
 
         public int RepairPriceOf(BusinessShutdownCause cause) =>
             cause == BusinessShutdownCause.Arson ? ArsonRepairPrice
             : cause == BusinessShutdownCause.Bomb ? BombRepairPrice
             : cause == BusinessShutdownCause.SmashUp ? SmashRepairPrice
+            : cause == BusinessShutdownCause.Beating ? 0
+            : cause == BusinessShutdownCause.Death ? 0
             : 0;
 
         public static BusinessShutdownConfig Default { get; } =
@@ -219,6 +235,12 @@ namespace LivingCity.Business
             if (!entries.TryGetValue(businessId, out var entry) ||
                 !IsActive(entry, gameHour))
                 return null;
+
+            // Nobody can be hurt behind an already empty counter, and a short person
+            // closure may never erase a longer, paid premises closure.
+            if (cause == BusinessShutdownCause.Beating ||
+                cause == BusinessShutdownCause.Death)
+                return "nobody behind the counter";
             // A shop already blown out or burned out cannot be damaged again until it
             // reopens: there is nothing left standing to damage.
             if (entry.Cause == BusinessShutdownCause.Arson ||
@@ -362,6 +384,8 @@ namespace LivingCity.Business
                 return "the business is not closed";
             if (payerGangId != ownerGangId)
                 return "we protect this place, but we do not own its deed";
+            if (status.RepairPrice <= 0)
+                return "there is nothing to repair";
 
             var refusal = BalanceMath.TryPurchase(accounts, status.RepairPrice,
                 out var dirtyPart);
@@ -385,9 +409,15 @@ namespace LivingCity.Business
     {
         public static string Line(BusinessShutdownStatus status)
         {
-            var cause = status.Cause == BusinessShutdownCause.Arson
-                ? "burned out"
-                : "smashed up";
+            var cause = status.Cause switch
+            {
+                BusinessShutdownCause.SmashUp => "smashed up",
+                BusinessShutdownCause.Arson => "burned out",
+                BusinessShutdownCause.Bomb => "blown out",
+                BusinessShutdownCause.Beating => "the owner is in hospital",
+                BusinessShutdownCause.Death => "the owner is dead",
+                _ => "closed",
+            };
             var days = status.RemainingDays;
             return "closed - " + cause + " - reopens in " + days +
                    (days == 1 ? " day" : " days");

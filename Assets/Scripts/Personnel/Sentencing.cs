@@ -31,6 +31,9 @@ namespace LivingCity.Personnel
 
         /// <summary>Running from an officer who had put the question.</summary>
         Resisting,
+
+        /// <summary>Putting a man in hospital without killing him.</summary>
+        Battery,
     }
 
     /// <summary>
@@ -80,7 +83,7 @@ namespace LivingCity.Personnel
 
         /// <summary>What each extra count attached to a case adds, once convicted -
         /// an open complaint the crew never answered for is not free (GAN-245).</summary>
-        public const int ExtraCountDays = 3;
+        public const int UnknownCountDays = 3;
 
         /// <summary>What a hood's sentence is scaled by, percent: sitna riba. He was
         /// the man holding the door, and the court knows it.</summary>
@@ -112,9 +115,11 @@ namespace LivingCity.Personnel
             Deed.AssaultOnOfficer => 11,
             Deed.Extortion => 8,
             Deed.WitnessTampering => 8,
+            Deed.Battery => 10,
             Deed.Affray => 6,
             Deed.Resisting => 2,
-            _ => 6,
+            _ => throw new System.ArgumentOutOfRangeException(nameof(deed), deed,
+                "Every deed needs an explicit low sentence band."),
         };
 
         /// <summary>The high end of a deed's band.</summary>
@@ -125,9 +130,11 @@ namespace LivingCity.Personnel
             Deed.AssaultOnOfficer => 14,
             Deed.Extortion => 14,
             Deed.WitnessTampering => 14,
+            Deed.Battery => 16,
             Deed.Affray => 10,
             Deed.Resisting => 4,
-            _ => 10,
+            _ => throw new System.ArgumentOutOfRangeException(nameof(deed), deed,
+                "Every deed needs an explicit high sentence band."),
         };
 
         /// <summary>The charge that stays on the front of the file when a fresh act is
@@ -163,7 +170,7 @@ namespace LivingCity.Personnel
         /// </summary>
         public static int Days(Deed deed, System.Random rng, bool everEscaped,
             Rank rank, bool marked, int lawyerSkill, int extraCounts,
-            DoorAnswer answer = DoorAnswer.Quiet)
+            DoorAnswer answer = DoorAnswer.Quiet, int extraCountDays = -1)
         {
             if (deed == Deed.CopKilling)
                 return Life;
@@ -182,7 +189,9 @@ namespace LivingCity.Personnel
             if (answer == DoorAnswer.Run)
                 days += ResistSurcharge;
             if (extraCounts > 0)
-                days += extraCounts * ExtraCountDays;
+                days += extraCountDays >= 0
+                    ? extraCountDays
+                    : extraCounts * UnknownCountDays;
 
             if (rank == Rank.Hood)
             {
@@ -214,8 +223,10 @@ namespace LivingCity.Personnel
             Deed.Resisting => "Resisting arrest",
             Deed.Extortion => "Extortion",
             Deed.WitnessTampering => "Intimidating a witness",
+            Deed.Battery => "Assault and battery",
             Deed.Affray => "Affray - discharging firearms in the street",
-            _ => "Affray - discharging firearms in the street",
+            _ => throw new System.ArgumentOutOfRangeException(nameof(deed), deed,
+                "Every deed needs explicit charge wording."),
         };
 
         /// <summary>
@@ -233,8 +244,10 @@ namespace LivingCity.Personnel
             Deed.Affray => 5_000,
             Deed.Extortion => 2_000,
             Deed.WitnessTampering => 2_000,
+            Deed.Battery => 4_000,
             Deed.Resisting => 5_000,
-            _ => 2_000,
+            _ => throw new System.ArgumentOutOfRangeException(nameof(deed), deed,
+                "Every deed needs an explicit bail decision."),
         };
 
         /// <summary>How it ended, for the outcome column. Free text by design (see
@@ -244,6 +257,12 @@ namespace LivingCity.Personnel
                 ? "Convicted — life"
                 : "Convicted — " + days + (days == 1 ? " day" : " days") +
                   (outOnDay > 0 ? ", out day " + outOnDay : "");
+
+        /// <summary>A folded case keeps the weight of the deed that opened it. Unknown
+        /// legacy counts retain the old flat three-day value.</summary>
+        public static int ExtraCountDays(Deed? deed) =>
+            deed.HasValue ? System.Math.Max(1, BandLow(deed.Value) / 3)
+                          : UnknownCountDays;
 
         /// <summary>The line written when the prosecution had nothing to put up.</summary>
         public const string DismissedOutcome = "Case dismissed — no witnesses";

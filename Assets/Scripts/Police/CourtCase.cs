@@ -372,6 +372,7 @@ namespace LivingCity.Police
         public const float CopKillingBase = 0.95f;
         public const float AssaultOnOfficerBase = 0.75f;
         public const float ResistingBase = 0.45f;
+        public const float BatteryBase = 0.30f;
 
         /// <summary>What each eyewitness is worth, and how many of them the court
         /// bothers to count. A third man who saw the same thing is not a third case.</summary>
@@ -410,10 +411,12 @@ namespace LivingCity.Police
             Deed.Murder => MurderBase,
             Deed.AssaultOnOfficer => AssaultOnOfficerBase,
             Deed.Resisting => ResistingBase,
+            Deed.Battery => BatteryBase,
             Deed.Affray => AffrayBase,
             Deed.Extortion => ExtortionBase,
             Deed.WitnessTampering => ExtortionBase,
-            _ => ExtortionBase,
+            _ => throw new System.ArgumentOutOfRangeException(nameof(deed), deed,
+                "Every deed needs an explicit verdict base."),
         };
 
         /// <summary>What the odds are that this defendant goes down.</summary>

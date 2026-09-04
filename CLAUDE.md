@@ -91,6 +91,8 @@ make it call the shared service/model.
 | the law sheet: the docket, the cells, the wanted, the counsel, the verdicts | `Docs/ledger-law-sheet.md` |
 | the city wire: public-record gates, the 06:00 paper and its archive | `Docs/newspaper.md` |
 | how a campaign ends: the three, and what is not one of them | `Docs/game-over.md` |
+| beating the proprietor and ordering a witness killed | `Docs/design-briefs/beat-the-owner-brief.md` |
+| killing and replacing the proprietor while the door remembers | `Docs/design-briefs/kill-the-owner-brief.md` |
 | what everything costs (1987 dollars, Miami-anchored) | `Docs/economy-prices.md` |
 | headquarters safe, stock, report and armory gate | `Docs/headquarters.md` |
 | what the port is made of | `Docs/harbor-detail.md` |

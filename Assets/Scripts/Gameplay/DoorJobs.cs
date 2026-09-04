@@ -46,16 +46,28 @@ namespace LivingCity.Gameplay
                 return false;
             }
 
-            refusal = DoorOrders.Refusal(type, DoorHolder.Read(id));
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            var ours = PlayerCommands.House;
+            var inGoodStanding = runtime == null ||
+                runtime.DoorInGoodStanding(id, ours);
+            refusal = DoorOrders.Refusal(
+                type, DoorHolder.Read(id), inGoodStanding);
             if (refusal != null)
                 return false;
+
+            var business = Business.BusinessRuntime.Instance;
+            var shut = business != null && business.TryGetShutdown(id, out _);
+            refusal = PersonClosureRefusal(type, shut);
+            if (refusal != null)
+            {
+                return false;
+            }
 
             var damageCause = type == OrderType.SmashUp
                 ? Business.BusinessShutdownCause.SmashUp
                 : type == OrderType.Torch
                     ? Business.BusinessShutdownCause.Arson
                     : Business.BusinessShutdownCause.None;
-            var business = Business.BusinessRuntime.Instance;
             if (damageCause != Business.BusinessShutdownCause.None &&
                 business?.Shutdowns != null)
             {
@@ -72,7 +84,6 @@ namespace LivingCity.Gameplay
                 return false;
             }
 
-            var runtime = RoadDemo.TerritoryRuntime.Instance;
             var label = id.Value;
             if (runtime != null && runtime.TryGetBusinessView(id, out var view) &&
                 !string.IsNullOrEmpty(view.BusinessName))
@@ -106,5 +117,12 @@ namespace LivingCity.Gameplay
             };
             return true;
         }
+
+        /// <summary>The gateway's person-order guard, split out so the headless racket
+        /// contract can pin the rule without inventing a second BusinessRuntime.</summary>
+        public static string PersonClosureRefusal(OrderType type, bool shut) =>
+            shut && DoorOrders.IsPersonViolence(type)
+                ? "nobody behind the counter"
+                : null;
     }
 }

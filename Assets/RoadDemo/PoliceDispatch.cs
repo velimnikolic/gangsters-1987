@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using LivingCity.Personnel;
+using LivingCity.Police;
+using LivingCity.Territory;
 using UnityEngine;
 
 namespace RoadDemo
@@ -81,6 +83,8 @@ namespace RoadDemo
 
         readonly Dictionary<RoadCar, int> _tinIncident =
             new Dictionary<RoadCar, int>();
+        CourtCase _civilianDeathCase;
+        int _civilianDeathIncident = -1;
         readonly List<IPoliceUnit> _units = new List<IPoliceUnit>();
         readonly Dictionary<IPoliceUnit, PoliceLights> _lights = new Dictionary<IPoliceUnit, PoliceLights>();
         readonly List<Squad> _squads = new List<Squad>();
@@ -336,6 +340,8 @@ namespace RoadDemo
                 _ => GangDeathHeat,
             };
             Heat = Mathf.Min(120f, Heat + add);
+            if (who == StreetAlarm.DeathOf.Civilian)
+                OpenCivilianDeathCase(where);
             if (who != StreetAlarm.DeathOf.Officer) return;
             _officerDied = true;
             // and the radio call that is not an escalation but a different kind of day
@@ -346,6 +352,52 @@ namespace RoadDemo
             // (GAN-226). Through here rather than through a second listener: StreetAlarm
             // is the one channel for a death, and this is already listening to it.
             if (Force != null) Force.OfficerDown(where);
+        }
+
+        /// <summary>A body is a docket even when nobody is collared. It never becomes
+        /// a CallOut: the file names only the house the recent gunfire can attribute.</summary>
+        void OpenCivilianDeathCase(Vector3 where)
+        {
+            var pipeline = Force != null ? Force.Pipeline : null;
+            var runtime = TerritoryRuntime.Instance;
+            if (pipeline == null || runtime == null)
+                return;
+            var faction = runtime.RecentViolenceAt(where);
+            if (!faction.IsValid)
+                return;
+
+            var businessId = "";
+            var name = "";
+            if (runtime.TryGetBusinessNear(where, 4f, out var atDoor))
+            {
+                businessId = atDoor.Value;
+                if (runtime.TryGetBusinessView(atDoor, out var view))
+                    name = view.BusinessName;
+            }
+            var today = Today();
+            var file = OpenCivilianDeathCase(
+                pipeline, faction, today, businessId, name);
+            if (file == null)
+                return;
+            CopySceneWitnesses(file, StreetAlarm.IncidentNumber);
+            _civilianDeathCase = file;
+            _civilianDeathIncident = StreetAlarm.IncidentNumber;
+            LawWire.CaseOpened(file);
+        }
+
+        /// <summary>The engine-free decision under the death listener: only a uniquely
+        /// attributed house earns a murder file, and the file itself names no innocent
+        /// defendant merely because another crew is later found nearby.</summary>
+        public static CourtCase OpenCivilianDeathCase(
+            PrisonPipeline pipeline, TerritoryGangId faction, int today,
+            string businessId = "", string where = "")
+        {
+            if (pipeline == null || !faction.IsValid)
+                return null;
+            return pipeline.OpenCase(
+                Deed.Murder, faction.Value, today,
+                today > 0 ? today + Sentencing.DaysToCourt : 0,
+                businessId, where);
         }
 
         /// <summary>The institution behind the units - who is on the roster, who is on

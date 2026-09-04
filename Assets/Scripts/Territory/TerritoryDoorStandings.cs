@@ -31,6 +31,23 @@
         public const int Unvisited = 7;
         public const int Other = 8;
 
+        /// <summary>Whether a paying door is fully square with this house. A compliant
+        /// relationship alone is not enough: the latest envelope may be short or late.</summary>
+        public static bool InGoodStanding(
+            TerritoryProtectionState state, TerritoryDoorDispatch? lastNews,
+            bool hasDues, int owed, int weeklyRate, int lastCollectedDay,
+            int missedInARow, int campaignDay)
+        {
+            if (state != TerritoryProtectionState.Compliant)
+                return false;
+            if (hasDues && TerritoryCollectionSchedule.IsLate(
+                    owed, weeklyRate, campaignDay, lastCollectedDay))
+                return false;
+            return missedInARow < 1 &&
+                   (!lastNews.HasValue ||
+                    lastNews.Value.News != TerritoryDoorNews.PaidShort);
+        }
+
         /// <summary>
         /// Reads one door.
         /// </summary>

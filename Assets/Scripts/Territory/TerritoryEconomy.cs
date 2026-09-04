@@ -60,11 +60,20 @@ namespace LivingCity.Territory
         /// is a city of that kind of man and not a city of one identical man.</summary>
         public static TerritoryOwnerProfile Deal(int citySeed, TerritoryBusinessId businessId,
                                                  TerritoryOwnerTrait? forced = null)
+            => Deal(citySeed, businessId, 0, forced);
+
+        /// <summary>The proprietor generation. Generation zero deliberately follows the
+        /// old hash path exactly; only successors fold their generation into the deal.</summary>
+        public static TerritoryOwnerProfile Deal(
+            int citySeed, TerritoryBusinessId businessId, int generation,
+            TerritoryOwnerTrait? forced = null)
         {
             if (!businessId.IsValid)
                 return Neutral;
 
             var h = Hash(citySeed, businessId.Value);
+            if (generation > 0)
+                h = HashGeneration(h, generation);
             var trait = forced ?? (TerritoryOwnerTrait)(int)(h % 6UL);
             var nerve = Unit(h >> 8);
             var greed = Unit(h >> 24);
@@ -97,6 +106,20 @@ namespace LivingCity.Territory
                 h = (h ^ (ulong)(uint)seed) * 1099511628211UL;
                 for (var i = 0; i < id.Length; i++)
                     h = (h ^ id[i]) * 1099511628211UL;
+            }
+            return h;
+        }
+
+        static ulong HashGeneration(ulong h, int generation)
+        {
+            unchecked
+            {
+                var value = (uint)generation;
+                for (var i = 0; i < 4; i++)
+                {
+                    h = (h ^ (byte)value) * 1099511628211UL;
+                    value >>= 8;
+                }
             }
             return h;
         }

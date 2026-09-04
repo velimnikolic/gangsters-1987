@@ -658,6 +658,34 @@ namespace LivingCity.Gameplay
                         DoorOrders.ViolenceSeverity(job.Type));
                     RoadDemo.ShopDamage.ScorchBusiness(businessId);
                     break;
+
+                // THE MAN, NOT THE WINDOWS. The telephone comes first while the beaten
+                // proprietor's own standing is still the fact being read; then the
+                // street remembers the assault, and only then does the counter go dark
+                // for a day. A zero-price person closure cannot replace older premises
+                // damage (BusinessShutdownLedger owns that rule).
+                case OrderType.Beating:
+                {
+                    var runtime = RoadDemo.TerritoryRuntime.Instance;
+                    var deed = RoadDemo.WitnessWatch.DeedForBeating(
+                        businessId.Value, whose.Value);
+                    runtime?.RingAbout(whose, businessId, deed, indoors: true);
+                    runtime?.ResolveEscalation(
+                        whose, businessId, Territory.TerritoryEscalationKind.Assault,
+                        2.5f, Territory.TerritoryFearVisibility.Public,
+                        Territory.TerritoryDoorNews.OwnerBeaten);
+                    ShutBusiness(businessId, Business.BusinessShutdownCause.Beating);
+                    break;
+                }
+
+                // The shot and its dead witnesses were already put onto StreetAlarm by
+                // the strict inside callback. This is the persistent aftermath: three
+                // dark days and the next deterministic proprietor behind the same door.
+                case OrderType.KillOwner:
+                    ShutBusiness(businessId, Business.BusinessShutdownCause.Death);
+                    Business.BusinessRuntime.Instance?.AdvanceOwner(businessId);
+                    Version++;
+                    break;
             }
         }
 

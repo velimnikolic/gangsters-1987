@@ -49,14 +49,26 @@ No odds are ever printed as a number. The player is meant to expect the court, n
 
 **The lapse.** A man who skips his bail stays a defendant — that is the GAN-245 ruling, and it is what lets a re-arrest fold the old charge in as a count. But `DayTick` now folds an open case whose court day is more than `ComplaintMemoryDays` behind and whose every remaining defendant is out of the pipe. Otherwise the card sat on the docket for the rest of the campaign, its witness markers on the map, for a trial that could not be listed.
 
-**The file is version 2, and a version 1 file is migrated.** A save written before the docket existed keeps the men and nothing of what they were answering for. Read straight through, every one of them lands on `CaseId = -1` — the "no docket, no defence" path, a conviction with no roll, no lawyer counted and no case the player could have fought. `PrisonSnapshot.MigrateFromBeforeTheDocket` puts each man still awaiting a court day onto a docket number of his own with the one witness such a record actually amounts to: `PoliceFoundThem`, the weakest thing on the docket by design. Nothing is invented for the prosecution — a legacy case is the easiest kind there is to beat, and `SAVE-007` asserts exactly that against **literal version-1 JSON**, because a round trip of freshly written DTOs can never produce the shape the old game wrote.
+**The file is version 3; versions 1 and 2 are migrated.** Version 1 predates the docket. `PrisonSnapshot.MigrateFromBeforeTheDocket` puts each man still awaiting court onto a docket of his own with the one witness such a record actually amounts to: `PoliceFoundThem`, the weakest thing on it. Version 2 has the docket but no proprietor generations, so every counter replays generation zero. Version 3 stores only the small per-business generation integers; names and owner profiles are deterministically re-dealt from them.
 
 **Cases are saved.** They were not, at all: `PrisonPipeline.RestoreFrom` restored the prisoners and nothing else, and `PrisonerDto` carried seven of twelve fields. A man saved HELD came back with `CaseId = -1`, which the trial reads as "no docket, no defence" and converts to a conviction with no roll — every witness the player had leaned on counted for nothing the moment he loaded. `Save/PrisonSnapshot.cs` is now the ONE conversion, called by `CampaignSave` and by the contract that guards it; the fixture used to hand-roll its own copy of the DTO fields, which is exactly why nobody noticed.
+
+**A civilian body opens a murder file without a collar.** It names a house only when one recent
+shooter is uniquely attributable (six seconds, forty metres); an ambiguous, unattributed or
+police killing invents no case and no defendant. The same frozen pavement witnesses used by an
+arrest go on that file. Indoor owner beatings carry only the complainant — nobody outside becomes
+an eyewitness through a wall.
+
+**A dead witness is gone everywhere.** Killing a proprietor marks his willing complainant name
+dead on every open case for that business, including another family's. A complaint with nobody
+willing can neither be tried nor folded onto a later arrest. Counts that can be folded keep their
+deed's weight: `floor(BandLow / 3)`, minimum one day, with three days only as the legacy fallback.
 
 ## The jumps
 
 * A **name** anywhere on the sheet opens that man's PERSONNEL file.
 * **LEAN ON HIM** on a witness closes the book and puts the map on him. The order itself is given on the street, through the crew's existing LEAN ON THE WITNESS card — the sheet files nothing. The jump goes through `IMapTargetingSurface.FocusOn`, never through `TurfMapHud` by name, and it is **one-way**: the return trip is deliberately torn up, or opening the ledger again would call `Dismiss` and drop the map out from under the order the player came to give.
+* On that witness's street card, **SHOOT HIM** walks and repaths to the moving body, plants the gunman before he draws, and resolves one round through `DemoCrews.Combat`; the ordinary death sweep removes the name from the docket.
 * **THE COLUMN** on an empty counsel box turns to THE PAPER's classified tape.
 
 ## Traps this sheet cost

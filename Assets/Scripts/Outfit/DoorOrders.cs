@@ -41,6 +41,8 @@ namespace LivingCity.Outfit
             type == OrderType.Raid ||
             type == OrderType.Torch ||
             type == OrderType.Bomb ||
+            type == OrderType.Beating ||
+            type == OrderType.KillOwner ||
             type == OrderType.BuyPremises ||
             type == OrderType.SetUpBusiness ||
             type == OrderType.RunBusiness ||
@@ -55,11 +57,19 @@ namespace LivingCity.Outfit
 
         /// <summary>The four that land on the premises itself - the register emptied, the
         /// front boarded, the place burnt, the place blown.</summary>
-        public static bool IsViolence(OrderType type) =>
+        public static bool IsPremisesViolence(OrderType type) =>
             type == OrderType.Raid ||
             type == OrderType.SmashUp ||
             type == OrderType.Torch ||
             type == OrderType.Bomb;
+
+        /// <summary>Violence aimed at the person behind the counter, not the premises.</summary>
+        public static bool IsPersonViolence(OrderType type) =>
+            type == OrderType.Beating || type == OrderType.KillOwner;
+
+        /// <summary>All violence, retained as the broad question existing callers ask.</summary>
+        public static bool IsViolence(OrderType type) =>
+            IsPremisesViolence(type) || IsPersonViolence(type);
 
         /// <summary>
         /// How heavily one act lands on the man it was done to. The fear ledger knows
@@ -87,6 +97,7 @@ namespace LivingCity.Outfit
                 // but it still has to CARRY, because a man robbed by the family whose
                 // men are standing outside has been given the whole argument at once.
                 case OrderType.Raid: return 1.5f;
+                case OrderType.Beating: return 2.5f;
                 default: return 1f;
             }
         }
@@ -95,7 +106,8 @@ namespace LivingCity.Outfit
         /// Why this order cannot be given against this door, in the planner's own voice,
         /// or null when it can. The planner explains; the report never does.
         /// </summary>
-        public static string Refusal(OrderType type, DoorTenure tenure)
+        public static string Refusal(
+            OrderType type, DoorTenure tenure, bool inGoodStanding = true)
         {
             if (tenure == DoorTenure.Ours && IsHostile(type))
                 return "That door is on our own paper - only a guard can be put on it.";
@@ -103,8 +115,14 @@ namespace LivingCity.Outfit
             // A shop that pays us for peace is the outfit's own income. Robbing it takes
             // a week's tribute out of the till it comes from, and wrecking it takes the
             // till; either way the family is charging protection against itself.
-            if (tenure == DoorTenure.Paying && IsViolence(type))
+            if (tenure == DoorTenure.Paying && IsPremisesViolence(type))
                 return "That door pays us for peace - we do not rob the takings we collect.";
+
+            if (tenure == DoorTenure.Paying && type == OrderType.KillOwner)
+                return "That door pays us - a short envelope is beaten, not buried.";
+
+            if (tenure == DoorTenure.Paying && type == OrderType.Beating && inGoodStanding)
+                return "That door paid in full and on time - there is no message to send.";
 
             return null;
         }

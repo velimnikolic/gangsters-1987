@@ -137,6 +137,16 @@ namespace LivingCity.Business
         public static BusinessOwnerId Owner(BusinessSiteId siteId) =>
             new BusinessOwnerId("own|" + siteId.Value);
 
+        /// <summary>The proprietor generation on a site. Generation zero deliberately
+        /// mints the original ID byte-for-byte; successors get a stable suffix here,
+        /// at the one identity mint, never at a call site.</summary>
+        public static BusinessOwnerId Owner(BusinessSiteId siteId, int generation) =>
+            generation <= 0
+                ? Owner(siteId)
+                : new BusinessOwnerId(string.Format(
+                    CultureInfo.InvariantCulture, "own|{0}|generation:{1}",
+                    siteId.Value, generation));
+
         /// <summary>A shared owner - the harbour company behind several sheds, the city
         /// behind its civic premises. Keyed by name so that two sites naming the same firm
         /// resolve to one deed.</summary>

@@ -1491,20 +1491,7 @@ namespace RoadDemo
             var line = cone > 0f ? Scatter(aim, cone)
                      : intoTin ? Toward(muzzle, hole, aim)
                      : aim;
-            Flash(muzzle, line, follow, shooter != null ? shooter.WeaponKind
-                                                       : EquipmentKind.Pistol);
-            // the street hears it: the crowd, the traffic, the police - and every man of
-            // every crew in earshot with nothing on his hands turns and draws
-            StreetAlarm.Report(muzzle, shooter, shooter.Faction, stats.Loudness);
-            float ear2 = stats.Loudness * stats.Loudness;
-            // a copy again, and of the crews as well as their men: hearing a shot can put
-            // a man on the run (and the law on the street), and either changes these lists
-            _heard.Clear();
-            foreach (var unit in Units)
-                foreach (var man in unit.All())
-                    if (man != shooter && !man.Dead && man.Tf && (man.Tf.position - muzzle).sqrMagnitude < ear2)
-                        _heard.Add(man);
-            foreach (var man in _heard) man.HearShot(muzzle);
+            EmitRound(shooter, muzzle, line, follow, stats.Loudness, showFlash: true);
             if (!live)
             {
                 // NOBODY TO ROLL AGAINST AND STILL A MARK. A man put on a machine has
@@ -1718,6 +1705,69 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>One point-blank round into a civilian, or into the unseen proprietor
+        /// behind a counter. It shares the ordinary round's flash, report, bang and
+        /// hear-shot propagation; only the guaranteed point-blank wound is specialised.</summary>
+        public bool ExecuteCivilian(
+            CrewWalker shooter, CivilianAgent target, Vector3 targetPoint)
+        {
+            if (shooter == null || shooter.Dead || shooter.Tf == null ||
+                !shooter.Carrying || (target != null && target.Dead))
+                return false;
+            if (!shooter.StandForExecution(target != null && target.Tf != null
+                    ? target.Tf.position : targetPoint))
+                return false;
+
+            var muzzle = shooter.MuzzlePosition;
+            var wound = target != null && target.Tf != null
+                ? target.Tf.position + Vector3.up * 1.2f
+                : targetPoint + Vector3.up * 1.2f;
+            var line = wound - muzzle;
+            if (line.sqrMagnitude < 0.001f)
+                line = shooter.MuzzleForward;
+            else
+                line.Normalize();
+            var visible = shooter.Tf.gameObject.activeInHierarchy;
+            EmitRound(
+                shooter, muzzle, line,
+                visible ? CrewArms.MuzzleOf(shooter.Weapon) ?? shooter.Tf : null,
+                shooter.Ballistics.Loudness, visible);
+
+            if (target != null)
+            {
+                var from = shooter.Tf.position;
+                target.TakeHit(Mathf.Max(1, target.Health), from);
+                CrewGore.Hit(target, from, GroundY);
+                if (target.Dead) CrewGore.Death(target, GroundY);
+            }
+            else
+            {
+                LivingCity.Ambient.BloodFx.PlayHit(wound, line, fatal: true);
+            }
+            return true;
+        }
+
+        /// <summary>The shared physical report of a round. Combat exchanges and ordered
+        /// executions both pass here, so nobody can be shot without the street hearing
+        /// it and nearby crews reacting.</summary>
+        void EmitRound(CrewWalker shooter, Vector3 muzzle, Vector3 line,
+            Transform follow, float loudness, bool showFlash)
+        {
+            Flash(muzzle, line, follow,
+                shooter != null ? shooter.WeaponKind : EquipmentKind.Pistol,
+                showFlash);
+            StreetAlarm.Report(muzzle, shooter,
+                shooter != null ? shooter.Faction : -1, loudness);
+            var ear2 = loudness * loudness;
+            _heard.Clear();
+            foreach (var unit in Units)
+                foreach (var man in unit.All())
+                    if (man != shooter && !man.Dead && man.Tf &&
+                        (man.Tf.position - muzzle).sqrMagnitude < ear2)
+                        _heard.Add(man);
+            foreach (var man in _heard) man.HearShot(muzzle);
+        }
+
         // A round that missed its man carries on: a bystander stood in its way past him
         // may take it - the same wounds as anyone, and a killing the police weigh heaviest.
         //
@@ -1863,11 +1913,12 @@ namespace RoadDemo
         // The flash rides whatever fired it - the gun in the hand, the car under
         // the window - so it stays on the muzzle of a moving car; the particles the
         // pack simulates in world space (the smoke) trail behind, as smoke does.
-        void Flash(Vector3 muzzle, Vector3 forward, Transform follow, EquipmentKind kind)
+        void Flash(Vector3 muzzle, Vector3 forward, Transform follow, EquipmentKind kind,
+            bool show = true)
         {
             var rotation = Quaternion.LookRotation(forward);
             float calibre = MuzzleCalibre(kind);
-            if (MuzzleFlashPrefab)
+            if (show && MuzzleFlashPrefab)
             {
                 var flash = CombatFx(MuzzleFlashPrefab, muzzle,
                     rotation, follow);
@@ -1895,7 +1946,7 @@ namespace RoadDemo
                     flash, calibre * 0.72f);
                 Destroy(flash, Mathf.Max(0.2f, live));
             }
-            if (GunSmokePrefab)
+            if (show && GunSmokePrefab)
             {
                 var smoke = CombatFx(GunSmokePrefab, muzzle, rotation, follow);
                 bool rapid = kind == EquipmentKind.MachinePistol ||

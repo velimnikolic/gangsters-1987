@@ -134,7 +134,10 @@ namespace LivingCity.Data
             Outfit.OrderType.Bribe => "VOX_JOB_BRIBE",
             Outfit.OrderType.EmployPolice => "VOX_JOB_EMPLOYPOLICE",
             Outfit.OrderType.Donate => "VOX_JOB_DONATE",
-            _ => null,
+            Outfit.OrderType.Beating => OrdWitness,
+            Outfit.OrderType.KillOwner => OrdKill,
+            _ => throw new System.ArgumentOutOfRangeException(nameof(type), type,
+                "Every order needs an explicit office voice decision."),
         };
     }
 }

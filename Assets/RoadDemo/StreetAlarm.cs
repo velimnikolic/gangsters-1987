@@ -56,6 +56,10 @@ namespace RoadDemo
             /// standing there: Extortion for a shopkeeper's call, WitnessTampering when
             /// the man who rang was a witness somebody came to see.</summary>
             public Deed Charge;
+
+            /// <summary>The act happened beyond the threshold. People on the pavement
+            /// heard the aftermath, but did not see the act itself.</summary>
+            public bool Indoors;
         }
 
         /// <summary>What KIND of incident the current number is. A complaint is not a
@@ -155,7 +159,8 @@ namespace RoadDemo
         /// recorded here is the moment the receiver came off the hook.
         /// </summary>
         public static Complaint Complain(Vector3 pos, int faction, string businessId,
-            string where, double gameHour, Deed charge = Deed.Extortion)
+            string where, double gameHour, Deed charge = Deed.Extortion,
+            bool indoors = false)
         {
             ComplaintNumber++;
             Kind = IncidentKind.Complaint;
@@ -169,6 +174,7 @@ namespace RoadDemo
                 GameHour = gameHour,
                 Number = ComplaintNumber,
                 Charge = charge,
+                Indoors = indoors,
             };
             LastComplaint = call;
             OnComplaint?.Invoke(call);

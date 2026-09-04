@@ -208,6 +208,8 @@ namespace LivingCity.UI
             Territory.TerritoryDoorNews.RoundBanked => "Banked",
             Territory.TerritoryDoorNews.RoundLost => "Lost",
             Territory.TerritoryDoorNews.RoundOut => "Round out",
+            Territory.TerritoryDoorNews.OwnerBeaten => "Owner beaten",
+            Territory.TerritoryDoorNews.Reopened => "Reopened",
             _ => "Lost the door",
         };
 
@@ -406,7 +408,10 @@ namespace LivingCity.UI
             Outfit.OrderType.Bribe => "Bribe",
             Outfit.OrderType.EmployPolice => "Employ Police",
             Outfit.OrderType.Donate => "Donate",
-            _ => "",
+            Outfit.OrderType.Beating => "Beat the Owner",
+            Outfit.OrderType.KillOwner => "Kill the Owner",
+            _ => throw new System.ArgumentOutOfRangeException(nameof(type), type,
+                "Every order needs an explicit ledger label."),
         };
 
         public static string CategoryLabel(Outfit.OrderCategory category) => category switch

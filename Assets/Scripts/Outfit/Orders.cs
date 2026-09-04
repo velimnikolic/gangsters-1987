@@ -55,6 +55,10 @@ namespace LivingCity.Outfit
         Bribe,
         EmployPolice,
         Donate,
+
+        // Appended so saved order values keep their meaning.
+        Beating,
+        KillOwner,
     }
 
     /// <summary>How a job is decided when the crew has done the hours.</summary>
@@ -168,6 +172,10 @@ namespace LivingCity.Outfit
             new OrderSpec(OrderType.Kidnap, OrderCategory.Violence, TargetMode.Point,
                 14f, JobResolution.Street, CharacterAttribute.Combat, 6,
                 payout: EconomyPrices.KidnapCut, heat: 9),
+            new OrderSpec(OrderType.Beating, OrderCategory.Violence, TargetMode.Point,
+                6f, JobResolution.Street, CharacterAttribute.Combat, 6, heat: 4),
+            new OrderSpec(OrderType.KillOwner, OrderCategory.Violence, TargetMode.Point,
+                8f, JobResolution.Street, CharacterAttribute.Combat, 6, heat: 12),
 
             // Defense & Reconnaissance - a watch is stood, never finished.
             new OrderSpec(OrderType.Patrol, OrderCategory.Defense, TargetMode.Area,
@@ -237,6 +245,7 @@ namespace LivingCity.Outfit
                 case OrderType.SmashUp:
                 case OrderType.Torch:
                 case OrderType.Bomb:
+                case OrderType.Beating:
                     return Activity.Leaning;
 
                 case OrderType.Assault:
@@ -244,6 +253,7 @@ namespace LivingCity.Outfit
                 case OrderType.Kill:
                 case OrderType.Kidnap:
                 case OrderType.Ambush:
+                case OrderType.KillOwner:
                     return Activity.AttackOnARival;
 
                 case OrderType.Patrol:
@@ -268,7 +278,8 @@ namespace LivingCity.Outfit
                     return Activity.Negotiation;
 
                 default:
-                    return Activity.BlockPatrol;
+                    throw new System.ArgumentOutOfRangeException(nameof(type), type,
+                        "Every order needs an explicit activity.");
             }
         }
     }

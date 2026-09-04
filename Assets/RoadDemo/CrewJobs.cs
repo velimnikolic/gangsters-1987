@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using LivingCity.Gameplay;
@@ -337,6 +338,15 @@ namespace RoadDemo
             if (SetUpon(crews, unit, job))
                 return;
 
+            // THESE ORDERS ARE AGAINST THE PERSON BEHIND THE COUNTER. They resolve only
+            // after a strict physical threshold crossing and never fall through to the
+            // generic street-fight target search below.
+            if (job.Type == OrderType.Beating || job.Type == OrderType.KillOwner)
+            {
+                VisitOwner(crews, house, unit, job);
+                return;
+            }
+
             if (job.Type == OrderType.Raid)
                 EnterOnce(crews, house, unit, job);
             else if (job.Type == OrderType.SmashUp)
@@ -448,6 +458,80 @@ namespace RoadDemo
             if (house == null || job == null || job.StreetOutcome.HasValue)
                 return;
             house.Runner.ReportStreetOutcome(job.Id, OrderOutcome.Completed);
+        }
+
+        static void Failed(LivingCity.Outfit.House house, Job job)
+        {
+            if (house == null || job == null || job.StreetOutcome.HasValue)
+                return;
+            house.Runner.ReportStreetOutcome(job.Id, OrderOutcome.Failed);
+        }
+
+        /// <summary>
+        /// The proprietor jobs' strict threshold. A missing/unreachable real entrance is
+        /// a failed order with no telephone, fear, death, or closure; all consequence is
+        /// downstream of the inside callback.
+        /// </summary>
+        static void VisitOwner(DemoCrews crews, LivingCity.Outfit.House house,
+            DemoCrews.Unit unit, Job job)
+        {
+            if (!job.HasPlace || Entered.TryGetValue(unit.CrewId, out var did) &&
+                    did == job.Id)
+                return;
+
+            var door = new Vector3(job.TargetX, crews.GroundY, job.TargetZ);
+            var lead = LeadAt(unit, door, ArrivedWithin);
+            if (lead == null)
+                return;
+
+            var businessId = new LivingCity.Territory.TerritoryBusinessId(
+                job.TargetBusinessId);
+            var told = house;
+            var done = job;
+            var accepted = DoorBeat.TryVisitBusiness(
+                lead, businessId, door,
+                whenInside: () =>
+                {
+                    if (done.Type == OrderType.Beating)
+                    {
+                        crews.StartCoroutine(BeatInside(crews, told, done, door));
+                        return;
+                    }
+
+                    // One point-blank round, emitted by the exact same combat path as a
+                    // pavement execution. The unseen body then goes down the public
+                    // death wire at this door; every case that depended on him hears it.
+                    if (!crews.ExecuteCivilian(lead, null, door))
+                    {
+                        Failed(told, done);
+                        return;
+                    }
+                    StreetAlarm.Death(door, StreetAlarm.DeathOf.Civilian);
+                    WitnessWatch.OwnerKilled(done.TargetBusinessId);
+                    Done(told, done);
+                },
+                whenFailed: () => Failed(told, done));
+
+            if (!accepted)
+            {
+                Failed(house, job);
+                return;
+            }
+            Entered[unit.CrewId] = job.Id;
+        }
+
+        static IEnumerator BeatInside(DemoCrews crews,
+            LivingCity.Outfit.House house, Job job, Vector3 door)
+        {
+            var punches = DemoSounds.Punches;
+            for (var i = 0; i < punches.Length; i++)
+            {
+                DemoAudio.At(punches[i], door, DemoSounds.PunchVolume, 0.04f);
+                yield return new WaitForSeconds(0.22f);
+            }
+            DemoAudio.At(DemoSounds.Pick(DemoSounds.Screams), door,
+                DemoSounds.ScreamVolume, 0.035f);
+            Done(house, job);
         }
 
         /// <summary>A smash-up is two clear blows, then the frontage is visibly broken.

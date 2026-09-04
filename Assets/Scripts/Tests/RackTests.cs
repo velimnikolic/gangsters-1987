@@ -40,11 +40,13 @@ namespace LivingCity.Tests
             TheCardSaysWhereTheShopStands(failures);
             EverySurfaceOffersTheSameOrders(failures);
             NobodyRobsADoorThatPaysUs(failures);
+            TheCounterOrdersHaveOneContract(failures);
             TheLadderTerminates(failures);
             ASlipIsStampedTheDayItHappened(failures);
             RivalDoorSlipsStayOffThePlayersWire(failures);
             OneVisitFilesOneSlip(failures);
             MoneyReachesTheWireWithItsSum(failures);
+            TheDoorRemembersItsSuccessor(failures);
             AShakedownWalksTheDoorsThatHaveNotAnswered(failures);
             TheHideoutIsNamedOverOurOwnDoor(failures);
 
@@ -355,6 +357,7 @@ namespace LivingCity.Tests
                      {
                          Outfit.OrderType.Raid, Outfit.OrderType.SmashUp,
                          Outfit.OrderType.Torch, Outfit.OrderType.Bomb,
+                         Outfit.OrderType.Beating, Outfit.OrderType.KillOwner,
                          Outfit.OrderType.BuyPremises,
                      })
             {
@@ -535,6 +538,111 @@ namespace LivingCity.Tests
                 failures.Add("ORDER: our own premises were offered for sale to us.");
         }
 
+        static void TheCounterOrdersHaveOneContract(List<string> failures)
+        {
+            var beating = Outfit.OrderTable.SpecOf(Outfit.OrderType.Beating);
+            var killing = Outfit.OrderTable.SpecOf(Outfit.OrderType.KillOwner);
+            if (beating.Type != Outfit.OrderType.Beating ||
+                beating.Category != Outfit.OrderCategory.Violence ||
+                beating.Mode != Outfit.TargetMode.Point || beating.HoursPerTarget != 6f ||
+                beating.Resolution != Outfit.JobResolution.Street ||
+                beating.PrimaryAttribute != Personnel.CharacterAttribute.Combat ||
+                beating.PrimaryFloorHalfSteps != 6 || beating.Heat != 4 ||
+                Outfit.OrderTable.ActivityOf(beating.Type) != Personnel.Activity.Leaning ||
+                !Outfit.OrderEffects.Built(beating.Type))
+                failures.Add("CNTR-002: BEAT THE OWNER does not match its 6h/Combat-6/heat-4 street contract.");
+            if (killing.Type != Outfit.OrderType.KillOwner ||
+                killing.Category != Outfit.OrderCategory.Violence ||
+                killing.Mode != Outfit.TargetMode.Point || killing.HoursPerTarget != 8f ||
+                killing.Resolution != Outfit.JobResolution.Street ||
+                killing.PrimaryAttribute != Personnel.CharacterAttribute.Combat ||
+                killing.PrimaryFloorHalfSteps != 6 || killing.Heat != 12 ||
+                Outfit.OrderTable.ActivityOf(killing.Type) != Personnel.Activity.AttackOnARival ||
+                !Outfit.OrderEffects.Built(killing.Type))
+                failures.Add("EMPT-001: KILL THE OWNER does not match its 8h/Combat-6/heat-12 street contract.");
+
+            if (!Outfit.DoorOrders.IsPersonViolence(Outfit.OrderType.Beating) ||
+                !Outfit.DoorOrders.IsPersonViolence(Outfit.OrderType.KillOwner) ||
+                Outfit.DoorOrders.IsPremisesViolence(Outfit.OrderType.Beating) ||
+                !Outfit.DoorOrders.IsViolence(Outfit.OrderType.KillOwner))
+                failures.Add("CNTR-002: person violence was not split from premises violence.");
+
+            if (Outfit.DoorOrders.Refusal(
+                    Outfit.OrderType.Beating, Outfit.DoorTenure.Paying, true) == null ||
+                Outfit.DoorOrders.Refusal(
+                    Outfit.OrderType.Beating, Outfit.DoorTenure.Paying, false) != null ||
+                Outfit.DoorOrders.Refusal(
+                    Outfit.OrderType.KillOwner, Outfit.DoorTenure.Paying, true) == null ||
+                Outfit.DoorOrders.Refusal(
+                    Outfit.OrderType.KillOwner, Outfit.DoorTenure.Paying, false) == null ||
+                Outfit.DoorOrders.Refusal(
+                    Outfit.OrderType.Beating, Outfit.DoorTenure.Ours, false) == null ||
+                Outfit.DoorOrders.Refusal(
+                    Outfit.OrderType.KillOwner, Outfit.DoorTenure.Ours, false) == null)
+                failures.Add("CNTR-002/EMPT-001: paying and own-door refusals do not follow the two person-order rules.");
+
+            var shortSlip = new TerritoryDoorDispatch(
+                new TerritoryBusinessId("biz:counter"), new TerritoryGangId(0),
+                TerritoryDoorNews.PaidShort, 24d);
+            if (!TerritoryDoorStandings.InGoodStanding(
+                    TerritoryProtectionState.Compliant, null, false,
+                    0, 0, -1, 0, 4) ||
+                TerritoryDoorStandings.InGoodStanding(
+                    TerritoryProtectionState.Compliant, shortSlip, true,
+                    20, 100, 3, 0, 4) ||
+                TerritoryDoorStandings.InGoodStanding(
+                    TerritoryProtectionState.Compliant, null, true,
+                    100, 100, 3, 0, 4))
+                failures.Add("CNTR-002: good standing does not distinguish square, short and late paying doors.");
+
+            if (Gameplay.DoorJobs.PersonClosureRefusal(
+                    Outfit.OrderType.Beating, true) != "nobody behind the counter" ||
+                Gameplay.DoorJobs.PersonClosureRefusal(
+                    Outfit.OrderType.KillOwner, true) != "nobody behind the counter" ||
+                Gameplay.DoorJobs.PersonClosureRefusal(
+                    Outfit.OrderType.SmashUp, true) != null)
+                failures.Add("CNTR-002: the gateway does not reject only person orders at a shut counter.");
+
+            var values = (Outfit.OrderType[])Enum.GetValues(typeof(Outfit.OrderType));
+            if (values.Length != 25)
+                failures.Add("CNTR-001: OrderType changed without updating the exhaustive order contract.");
+            for (var i = 0; i < values.Length; i++)
+            {
+                var type = values[i];
+                var spec = Outfit.OrderTable.SpecOf(type);
+                if (spec.Type != type || string.IsNullOrEmpty(UI.LedgerText.OrderLabel(type)) ||
+                    string.IsNullOrEmpty(Data.VoiceLines.ForOrder(type)))
+                    failures.Add("CNTR-001: " + type +
+                                 " fell through a spec, label or office-voice table.");
+                // This is allowed to be null, but the exhaustive production switch will
+                // throw here if a new type has not made that explicit decision.
+                RoadDemo.CrewOverlay.DoorJobVoice(type);
+            }
+
+            var rows = new List<TerritoryRacketOrder>();
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, Outfit.DoorTenure.Open,
+                true, true, true, 10_000, rows);
+            var beatAt = IndexOf(rows, TerritoryRacketOrders.BeatLabel);
+            var threatAt = IndexOf(rows, TerritoryRacketOrders.ThreatenLabel);
+            var smashAt = IndexOf(rows, TerritoryRacketOrders.SmashLabel);
+            var killAt = IndexOf(rows, TerritoryRacketOrders.KillOwnerLabel);
+            var guardAt = IndexOf(rows, TerritoryRacketOrders.GuardLabel);
+            if (!(threatAt >= 0 && beatAt == threatAt + 1 && smashAt == beatAt + 1 &&
+                  killAt >= 0 && guardAt == killAt + 1))
+                failures.Add("CNTR-002/EMPT-001: the two counter rows are not in their shared door-list positions.");
+
+            var shut = new TerritoryDoorClosure(
+                true, "closed", false, false, 0,
+                LivingCity.Business.BusinessShutdownCause.Beating);
+            TerritoryRacketOrders.For(
+                TerritoryProtectionState.Unaffiliated, Outfit.DoorTenure.Open,
+                true, true, true, 10_000, rows, closure: shut);
+            if (Offers(rows, Outfit.OrderType.Beating, true) ||
+                Offers(rows, Outfit.OrderType.KillOwner, true))
+                failures.Add("CNTR-002: a shut counter still offers violence against its absent owner.");
+        }
+
         static void EverySurfaceOffersTheSameOrders(List<string> failures)
         {
             var rows = new List<TerritoryRacketOrder>();
@@ -698,10 +806,12 @@ namespace LivingCity.Tests
             if (!Named(rows, TerritoryRacketOrders.ApproachLabel) ||
                 !Named(rows, TerritoryRacketOrders.DemandLabel) ||
                 !Named(rows, TerritoryRacketOrders.ThreatenLabel) ||
+                !Named(rows, TerritoryRacketOrders.BeatLabel) ||
                 !Named(rows, TerritoryRacketOrders.CollectLabel) ||
                 !Named(rows, TerritoryRacketOrders.SmashLabel) ||
                 !Named(rows, TerritoryRacketOrders.TorchLabel) ||
                 !Named(rows, TerritoryRacketOrders.RobLabel) ||
+                !Named(rows, TerritoryRacketOrders.KillOwnerLabel) ||
                 !Named(rows, TerritoryRacketOrders.GuardLabel) ||
                 !Named(rows, TerritoryRacketOrders.BuyLabel))
                 failures.Add("ORDER: a door row the ledger has is missing from the list.");
@@ -818,6 +928,14 @@ namespace LivingCity.Tests
                 if (rows[i].Label == label)
                     return true;
             return false;
+        }
+
+        static int IndexOf(List<TerritoryRacketOrder> rows, string label)
+        {
+            for (var i = 0; i < rows.Count; i++)
+                if (rows[i].Label == label)
+                    return i;
+            return -1;
         }
 
         // ------------------------------------------------------------------- RACK-013
@@ -1085,6 +1203,23 @@ namespace LivingCity.Tests
             if (round.Day != 2)
                 failures.Add("MONEY: a round slip filed at hour 27 is stamped day " +
                              round.Day + ".");
+        }
+
+        static void TheDoorRemembersItsSuccessor(List<string> failures)
+        {
+            const string card =
+                "NEW MAN AT THE COUNTER · the street's memory of us here is his to inherit";
+            if (LivingCity.Business.BusinessSuccession.MemoryLine != card)
+                failures.Add("SUCCESSION: the card and block-file memory line drifted.");
+
+            var slip = new TerritoryDoorDispatch(
+                Shop, Gang(0), TerritoryDoorNews.Reopened, 72.0, 0,
+                TerritoryPaymentExcuse.None, default, 0, 0, "Milo Costa");
+            var words = TerritoryStandingVocabulary.Default.Describe(
+                slip, "The Grill", "");
+            if (words !=
+                "THE GRILL REOPENS UNDER MILO COSTA — THE DOOR PAYS AS IT PAID")
+                failures.Add("SUCCESSION: the reopened door reads \"" + words + "\".");
         }
 
         /// <summary>

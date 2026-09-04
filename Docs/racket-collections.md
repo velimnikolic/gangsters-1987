@@ -242,6 +242,21 @@ TRADES HERE column. First match wins, and the order is the priority a boss reads
 `SeverityOf` is 2 for red (Refused, Late), 1 for amber (Wavering, Short), 0 for the rest.
 The **ink is not decided here**: the page colours by kind.
 
+## What may be done to the man
+
+The shared door list distinguishes violence against the premises from violence against the
+proprietor. **BEAT THE OWNER** sits after THREATEN THE OWNER: a man crosses the real threshold,
+three blows and a cry are heard inside, the proprietor gets his telephone roll before the new
+fear is filed, and the counter closes for one day. A paying door refuses it only while it is in
+good standing; a short or late envelope leaves the row open. **KILL THE OWNER** sits immediately
+above SIT ON IT and is refused at every paying door. Both are refused at our own door and at any
+shut counter, through `DoorJobs` as well as the visible list.
+
+The two acts do not rewrite the racket. Fear and standing belong to the door, not to the man
+behind it. A dead proprietor is replaced immediately from `(city seed, site, generation)` and,
+after the three-day closure, the wire names the new man with the rule the card already shows:
+**NEW MAN AT THE COUNTER · the street's memory of us here is his to inherit**.
+
 ## The two block orders
 
 `TerritoryShakedown` (pure) says who a block order reaches:

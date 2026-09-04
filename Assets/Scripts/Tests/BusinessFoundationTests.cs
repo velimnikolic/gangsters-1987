@@ -28,6 +28,7 @@ namespace LivingCity.Tests
             SiteEnumerationIsProviderOrderIndependent(failures);
             ArchetypeCatalogueIsTotal(failures);
             OwnersAreDeterministicAndSurviveTransfer(failures);
+            SuccessorsArePureAndMinted(failures);
             PopulationIsDeterministicAndComplete(failures);
             AddingOneSiteLeavesTheRestAlone(failures);
             CompoundsAreOneBusinessWithAGate(failures);
@@ -230,6 +231,48 @@ namespace LivingCity.Tests
                 failures.Add("BIZ-008: selling a business changed its identity.");
             if (record.OwnerId != buyer.Id)
                 failures.Add("BIZ-008: the deed did not move to the buyer.");
+        }
+
+        static void SuccessorsArePureAndMinted(List<string> failures)
+        {
+            var site = Site(BusinessProviders.Residential, "successor", "counter");
+            var businessId = BusinessIdentity.Business(site.SiteId);
+            var oldProfile = TerritoryOwnerProfile.Deal(Seed, businessId);
+            var generationZero = TerritoryOwnerProfile.Deal(Seed, businessId, 0);
+            if (oldProfile.Trait != generationZero.Trait ||
+                oldProfile.Nerve != generationZero.Nerve ||
+                oldProfile.Greed != generationZero.Greed ||
+                oldProfile.Connections != generationZero.Connections)
+                failures.Add("EMPT-003: generation zero changed the existing owner's deal.");
+
+            var successorProfile = TerritoryOwnerProfile.Deal(Seed, businessId, 1);
+            if (successorProfile.Trait == oldProfile.Trait &&
+                successorProfile.Nerve == oldProfile.Nerve)
+                failures.Add("EMPT-003: a successor kept both the dead owner's trait and nerve.");
+
+            var forwardName = BusinessOwners.SuccessorName(site, Seed, 1);
+            // Ask unrelated generations between the two reads: no taken-name set or draw
+            // order is allowed to leak into the answer.
+            BusinessOwners.SuccessorName(
+                Site(BusinessProviders.Residential, "successor", "other"), Seed, 3);
+            var reverseName = BusinessOwners.SuccessorName(site, Seed, 1);
+            if (string.IsNullOrEmpty(forwardName) || forwardName != reverseName)
+                failures.Add("EMPT-003: the successor's name depends on replay order.");
+
+            var directory = new BusinessDirectory();
+            var original = BusinessOwners.ForSite(
+                directory, site, BusinessArchetypes.Get(BusinessArchetypeId.Grocer),
+                Seed, new HashSet<string>());
+            var record = directory.Register(
+                site.SiteId, BusinessArchetypeId.Grocer, "Successor Shop", original.Id,
+                BusinessSiteSize.Small, 1_200, site.ProviderId);
+            var invalidated = default(TerritoryBusinessId);
+            var successor = BusinessSuccession.Replace(
+                directory, site, record.Id, Seed, 1, id => invalidated = id);
+            if (successor == null ||
+                successor.Id != BusinessIdentity.Owner(site.SiteId, 1) ||
+                record.OwnerId != successor.Id || invalidated != record.Id)
+                failures.Add("EMPT-003: replacing the owner did not mint, set and invalidate through one seam.");
         }
 
         // ------------------------------------------------------------------ BIZ-009/010

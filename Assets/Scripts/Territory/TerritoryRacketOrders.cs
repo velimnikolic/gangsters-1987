@@ -198,11 +198,13 @@ namespace LivingCity.Territory
         public const string ApproachLabel = "GO TO THE DOOR";
         public const string DemandLabel = "DEMAND PROTECTION";
         public const string ThreatenLabel = "THREATEN THE OWNER";
+        public const string BeatLabel = "BEAT THE OWNER";
         public const string CollectLabel = "COLLECT THE TAKE";
         public const string SmashLabel = "SMASH IT UP";
         public const string TorchLabel = "TORCH IT";
         public const string RobLabel = "ROB IT";
         public const string GuardLabel = "SIT ON IT";
+        public const string KillOwnerLabel = "KILL THE OWNER";
         public const string BuyLabel = "BUY IT OUTRIGHT";
         public const string RepairLabel = "PAY FOR REPAIRS";
         public const string MoveInLabel = "TAKE THEM INSIDE";
@@ -258,7 +260,8 @@ namespace LivingCity.Territory
             string collectionNote = null,
             TerritoryDoorClosure closure = default,
             TerritoryQuartersState quarters = TerritoryQuartersState.None,
-            bool isHideout = false)
+            bool isHideout = false,
+            bool inGoodStanding = true)
         {
             if (into == null)
                 return;
@@ -299,6 +302,12 @@ namespace LivingCity.Territory
                     : atDoor ? "lean on him, then ask again"
                     : "they walk to his door and lean on him"),
                 open && !paying));
+
+            Door(OrderType.Beating, BeatLabel,
+                tenure == DoorTenure.Paying && !inGoodStanding
+                    ? "he came up short · the man, not the glass"
+                    : "the man, not the glass · his windows keep, his shop shuts a day");
+            Door(OrderType.SmashUp, SmashLabel, "wreck the front · he rebuilds or he pays");
 
             // A paying shop is not demanded from - it is COLLECTED from: the crew walks
             // the block's paying doors and carries the take home (ECON-004).
@@ -373,12 +382,12 @@ namespace LivingCity.Territory
             // The wrecking is part of the LADDER, not a separate trade: an owner who
             // only wavers under a threat is the man a smashed front is meant to settle,
             // so it stands open from the first visit.
-            Door(OrderType.SmashUp, SmashLabel, "wreck the front · he rebuilds or he pays");
             Door(OrderType.Torch, TorchLabel, "burn him out");
             Door(OrderType.Raid, RobLabel, "empty the till · a one-night take, not a round");
+            Door(OrderType.KillOwner, KillOwnerLabel, "he rang · nobody rings twice");
             Door(OrderType.Guard, GuardLabel, "our men stand on his door");
 
-            var deed = DoorOrders.Refusal(OrderType.BuyPremises, tenure);
+            var deed = DoorOrders.Refusal(OrderType.BuyPremises, tenure, inGoodStanding);
             var buyRefusal = deed ?? (hasCrew ? null : "nobody is picked to send");
             into.Add(new TerritoryRacketOrder(
                 OrderType.BuyPremises, BuyLabel,
@@ -394,7 +403,7 @@ namespace LivingCity.Territory
                 // to send. Work FILED with the office is still men walking somewhere, so
                 // a key with no crew behind it must fade here rather than be taken, sat
                 // on for a second and refused where the reader never looks.
-                var refusal = DoorOrders.Refusal(type, tenure)
+                var refusal = DoorOrders.Refusal(type, tenure, inGoodStanding)
                               ?? DamageRefusal(type, closure)
                               ?? (hasCrew ? null : "nobody is picked to send");
                 into.Add(new TerritoryRacketOrder(
@@ -406,6 +415,8 @@ namespace LivingCity.Territory
         {
             if (!closure.Shut)
                 return null;
+            if (DoorOrders.IsPersonViolence(type))
+                return "nobody behind the counter";
             if (type == OrderType.SmashUp)
                 return closure.Cause == BusinessShutdownCause.Arson
                     ? "the premises are burned out"

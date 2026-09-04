@@ -433,15 +433,17 @@ namespace GangstersTools
 
         [CliCommand("gangsters_racket_probe",
                     "Drive the doorstep chain with nobody at the keyboard: two SMASH IT UP " +
-                    "orders and a DEMAND PROTECTION, watching whether the fronts go in, " +
-                    "what the wire says, and whether any man teleports or vanishes.",
+                    "orders and a DEMAND PROTECTION, or one BEAT/KILL THE OWNER acceptance, " +
+                    "watching what lands and whether any man teleports or vanishes.",
                     MainThreadRequired = true, Tags = new[] { "gangsters", "gameplay" })]
         public static object RacketProbe(
             [CliArg("run", "True starts a fresh probe; false reads the verdict of the last one.")] bool run = true,
             [CliArg("patience", "Sim seconds one order is given to come off.")] float patience = 90f,
             [CliArg("after", "Sim seconds before the first order.")] float after = 4f,
             [CliArg("overlap", "File the second smash without waiting for the first to land.")] bool overlap = false,
-            [CliArg("far", "Only pick doors at least this many metres from the crew.")] float far = 0f)
+            [CliArg("far", "Only pick doors at least this many metres from the crew.")] float far = 0f,
+            [CliArg("beating", "Run BEAT THE OWNER instead of the smash/torch ladder.")] bool beating = false,
+            [CliArg("killing", "Run KILL THE OWNER instead of the smash/torch ladder.")] bool killing = false)
         {
             var prior = Object.FindAnyObjectByType<RoadDemo.RacketProbe>();
             if (!run)
@@ -459,6 +461,8 @@ namespace GangstersTools
             probe.startAfter = Mathf.Max(0f, after);
             probe.overlap = overlap;
             probe.atLeastMetres = Mathf.Max(0f, far);
+            probe.beating = beating && !killing;
+            probe.killing = killing;
             return new { running = true, finished = false,
                 verdict = "running - poll gangsters_racket_probe --run false" };
         }

@@ -25,6 +25,8 @@ namespace LivingCity.Business
         BusinessSiteCatalog catalog;
         BusinessPopulationReport report;
         int citySeed;
+        readonly Dictionary<TerritoryBusinessId, int> ownerGenerations =
+            new Dictionary<TerritoryBusinessId, int>();
 
         readonly Dictionary<string, List<BusinessSite>> byPlan =
             new Dictionary<string, List<BusinessSite>>(System.StringComparer.Ordinal);
@@ -36,6 +38,71 @@ namespace LivingCity.Business
         public BusinessPopulationReport Report => report;
         public int CitySeed => citySeed;
         public bool Populated => directory != null;
+
+        public int OwnerGenerationOf(TerritoryBusinessId businessId) =>
+            ownerGenerations.TryGetValue(businessId, out var generation)
+                ? generation : 0;
+
+        /// <summary>Replace the dead proprietor immediately. Only the generation is
+        /// persistent; the owner record is replayed from seed and site on load.</summary>
+        public BusinessOwnerRecord AdvanceOwner(TerritoryBusinessId businessId)
+        {
+            if (!TryGetBusiness(businessId, out var record) || catalog == null ||
+                !catalog.TryGet(record.SiteId, out var site))
+                return null;
+            var generation = OwnerGenerationOf(businessId) + 1;
+            var owner = BusinessSuccession.Replace(
+                directory, site, businessId, citySeed, generation,
+                id => RoadDemo.TerritoryRuntime.Instance?.ForgetOwnerProfile(id));
+            if (owner == null)
+                return null;
+            ownerGenerations[businessId] = generation;
+            return owner;
+        }
+
+        /// <summary>Restore all generations over a freshly dealt directory. Missing
+        /// rows, including every version-2 save, mean the original proprietor.</summary>
+        public void RestoreOwnerGenerations(
+            IReadOnlyDictionary<TerritoryBusinessId, int> generations)
+        {
+            ownerGenerations.Clear();
+            if (directory == null || catalog == null)
+                return;
+            var ids = directory.BusinessIds;
+            for (var i = 0; i < ids.Count; i++)
+            {
+                var id = ids[i];
+                if (!directory.TryGet(id, out var record) ||
+                    !catalog.TryGet(record.SiteId, out var site))
+                    continue;
+                var generation = generations != null &&
+                    generations.TryGetValue(id, out var saved)
+                        ? Mathf.Max(0, saved) : 0;
+                if (generation == 0)
+                {
+                    directory.SetOwner(id, BusinessIdentity.Owner(record.SiteId, 0));
+                    RoadDemo.TerritoryRuntime.Instance?.ForgetOwnerProfile(id);
+                    continue;
+                }
+                var owner = BusinessSuccession.Replace(
+                    directory, site, id, citySeed, generation,
+                    key => RoadDemo.TerritoryRuntime.Instance?.ForgetOwnerProfile(key));
+                if (owner != null)
+                {
+                    ownerGenerations[id] = generation;
+                }
+            }
+        }
+
+        public void CollectOwnerGenerations(
+            List<KeyValuePair<TerritoryBusinessId, int>> into)
+        {
+            if (into == null) return;
+            into.Clear();
+            foreach (var pair in ownerGenerations)
+                if (pair.Value > 0) into.Add(pair);
+            into.Sort((a, b) => string.CompareOrdinal(a.Key.Value, b.Key.Value));
+        }
 
         void Awake()
         {
@@ -129,6 +196,12 @@ namespace LivingCity.Business
             if (change.Kind == BusinessShutdownChangeKind.Repaired ||
                 change.Kind == BusinessShutdownChangeKind.Expired)
                 ShopDamage.RepairBusiness(change.BusinessId);
+            if (change.Kind == BusinessShutdownChangeKind.Expired &&
+                change.Cause == BusinessShutdownCause.Death &&
+                OwnerGenerationOf(change.BusinessId) > 0 &&
+                TryGetBusiness(change.BusinessId, out var record))
+                RoadDemo.TerritoryRuntime.Instance?.FileReopened(
+                    change.BusinessId, OwnerNameOf(record));
         }
 
         void IndexByPlan()

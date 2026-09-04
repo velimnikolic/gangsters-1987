@@ -122,6 +122,10 @@ Temporary property-damage repairs (GAN-223): **$1,000** after a Smash Up and **$
 after arson. These are owner-only early-reopening costs; waiting for the 3-day / 7-day
 shutdown costs no cash, but the skipped protection take is never recovered.
 
+Violence against the proprietor is different damage: a beating closes the counter for
+**one day**, an owner's death for **three days**, and neither carries a repair bill. There is
+nothing in the frontage to buy back; the lost trading and protection days are the price.
+
 ## 4. Vehicles (street prices, no paperwork)
 
 | Armory item | $ | Real anchor | Code today (`ArmoryCatalog.cs`) |
@@ -172,6 +176,7 @@ why it must carry proportional heat/risk when the system lands.
 | Judge / case fix | **2,000–10,000** | Greylord: $100 traffic to thousands for felonies |
 | Bail, felony | **10,000** (drug felony to $37,500) | BJS |
 | Bail — extortion / intimidating a witness | **2,000** | the low end of the BJS felony series; a shakedown charge with one complainant behind it |
+| Bail — assault and battery | **4,000** | a 10–16 day beating charge: above extortion, below a murder |
 | Bail — affray | **5,000** | firearms in the street, still short of a body |
 | Bail — murder | **25,000** | BJS murder bail runs to the high tens of thousands |
 | Bail — killing a policeman | **none, at any price** | no judge in 1987 Miami bails one |

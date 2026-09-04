@@ -946,6 +946,8 @@ namespace RoadDemo
                 LivingCity.Outfit.Underworld.Current?.Relations.Note(
                     victimFaction, shooter.Value,
                     LivingCity.Outfit.GrievanceKind.ManKilled);
+            var businessId = default(TerritoryBusinessId);
+            TryGetBusinessNear(position, 4f, out businessId);
             RecordFear(new TerritoryFearEvent(
                 shooter,
                 blockId,
@@ -953,7 +955,8 @@ namespace RoadDemo
                 severity,
                 // A body in the street is a public fact whoever saw the shot.
                 TerritoryFearVisibility.Public,
-                lastGameHour), attribution.PoliceOnly);
+                lastGameHour,
+                businessId), attribution.PoliceOnly);
         }
 
         /// <summary>
@@ -1111,6 +1114,11 @@ namespace RoadDemo
                 found < 0 ? default : new TerritoryGangId(found),
                 police && !houses);
         }
+
+        /// <summary>The police use the street's exact attribution rule when a civilian
+        /// body opens a murder file. No second shooter guess is allowed.</summary>
+        public TerritoryGangId RecentViolenceAt(Vector3 position) =>
+            AttributeRecentViolence(position);
 
         /// <summary>
         /// The authoritative way an act enters territory. Everything - the street's own
@@ -1668,7 +1676,8 @@ namespace RoadDemo
             TerritoryBusinessId businessId,
             TerritoryEscalationKind kind,
             float severity = 1f,
-            TerritoryFearVisibility visibility = TerritoryFearVisibility.Public)
+            TerritoryFearVisibility visibility = TerritoryFearVisibility.Public,
+            TerritoryDoorNews? news = null)
         {
             if (racket == null || fear == null || geography == null || !gangId.IsValid ||
                 !IsRacketable(businessId) ||
@@ -1684,7 +1693,8 @@ namespace RoadDemo
                     wronged.Value, gangId.Value,
                     LivingCity.Outfit.GrievanceKind.DoorAttacked);
 
-            racket.Escalate(businessId, gangId, kind, lastGameHour, racketChanges);
+            racket.Escalate(
+                businessId, gangId, kind, lastGameHour, racketChanges, news);
             NoteConnectedHeat(businessId);
             RecordFear(new TerritoryFearEvent(
                 gangId,
@@ -1699,6 +1709,19 @@ namespace RoadDemo
             fear.AnswerDefiance(gangId, businessId);
             PublishRacket(blockId);
             return true;
+        }
+
+        /// <summary>The same door opens under a successor. Fear and standing stay on
+        /// the building; this adds only the shared wire line.</summary>
+        public void FileReopened(TerritoryBusinessId businessId, string ownerName)
+        {
+            if (racket == null || !businessId.IsValid)
+                return;
+            var gang = racket.TryGetProtector(businessId, out var protector)
+                ? protector : LivingCity.Gameplay.PlayerCommands.House;
+            racket.FileDoorEvent(
+                businessId, gang, TerritoryDoorNews.Reopened,
+                lastGameHour, ownerName);
         }
 
         /// <summary>

@@ -23,6 +23,14 @@ namespace LivingCity.Save
         public double recoveryAt;
     }
 
+    /// <summary>The successor generation currently behind one business door.</summary>
+    [Serializable]
+    public sealed class OwnerGenerationDto
+    {
+        public string businessId;
+        public int generation;
+    }
+
     /// <summary>One man the city is holding, and where in the pipe he stands.</summary>
     [Serializable]
     public sealed class PrisonerDto
@@ -192,6 +200,9 @@ namespace LivingCity.Save
         /// <summary>The last file version written before the city press book.</summary>
         public const int VersionBeforePress = 2;
 
+        /// <summary>The last version before successor generations were persisted.</summary>
+        public const int VersionBeforeOwnerGenerations = 2;
+
         public int version = Version;
         public int citySeed;
 
@@ -227,6 +238,7 @@ namespace LivingCity.Save
         public TerritoryDto territory;
         public DeedDto[] deeds;
         public ShutdownDto[] shutdowns;
+        public OwnerGenerationDto[] ownerGenerations;
         public KnowledgeDto[] knowledge;
 
         /// <summary>The citywide public record and the last edition already handed to

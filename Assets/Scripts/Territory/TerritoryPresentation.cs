@@ -347,6 +347,10 @@ namespace LivingCity.Territory
                     return "WE SMASHED UP " + name;
                 case TerritoryDoorNews.Beaten:
                     return "SOMEBODY WAS PUT ON THE GROUND AT " + name;
+                case TerritoryDoorNews.OwnerBeaten:
+                    return "THE OWNER OF " + name + " WAS BEATEN BEHIND HIS OWN COUNTER";
+                case TerritoryDoorNews.Reopened:
+                    return name + " REOPENS UNDER A NEW PROPRIETOR — THE DOOR PAYS AS IT PAID";
                 case TerritoryDoorNews.StoppedPaying:
                     return name + " HAS STOPPED PAYING US";
                 default:
@@ -383,6 +387,12 @@ namespace LivingCity.Territory
                 case TerritoryDoorNews.RoundOut:
                     return "THE ROUND ON " + where + " IS OUT - " + dispatch.Stops +
                            " DOORS, $" + dispatch.Amount + " OWED";
+                case TerritoryDoorNews.Reopened:
+                    return name + " REOPENS UNDER " +
+                           (string.IsNullOrWhiteSpace(dispatch.Detail)
+                               ? "A NEW PROPRIETOR"
+                               : dispatch.Detail.ToUpperInvariant()) +
+                           " — THE DOOR PAYS AS IT PAID";
                 default:
                     return Describe(dispatch.News, shop);
             }
