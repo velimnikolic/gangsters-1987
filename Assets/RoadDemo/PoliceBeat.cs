@@ -234,6 +234,7 @@ namespace RoadDemo
             _bestGap = float.MaxValue;
             _progressAt = Time.time;
             StalledOnTheWay = false;
+            ArrivedAt = -1000f;   // an arrival belongs to the trip it ends, not the pair
             TryResponseRoute();
         }
 

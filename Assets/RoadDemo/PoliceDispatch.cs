@@ -96,9 +96,10 @@ namespace RoadDemo
         bool _escortWanted;          // the pair was far, or there was none: a car must go too
         bool _escortSent;            // and it has
         // The pairs sent to this incident. Whether it is still owed one is read off
-        // them (FootOwed), not off a flag: a flag set on the order outlived a pair that
+        // them (FootOwed), not off a flag set on the order: that outlived a pair that
         // was wiped, and was cleared by a stall on somebody else's scene.
         readonly List<IPoliceUnit> _footTried = new List<IPoliceUnit>();
+        bool _footAnswered;          // one of them was seen stood at this scene
         int _rank;
         readonly List<CrewWalker> _shooters = new List<CrewWalker>();
 
@@ -226,6 +227,7 @@ namespace RoadDemo
                 _called = false;
                 _carsSent = 0;
                 _footTried.Clear();
+                _footAnswered = false;
                 _escortWanted = false;
                 _escortSent = false;
                 _officerDied = false;
@@ -436,21 +438,33 @@ namespace RoadDemo
         }
 
         /// <summary>Whether this incident is still owed a pair: none of those sent has
-        /// reached its scene (answered - and a pair released after the scene hold has
-        /// still answered), and none is on its way to it. A wiped pair is neither; a
-        /// stalled one is neither; a pair sent on somewhere else by a telephone call is
-        /// on its way to a different scene.</summary>
+        /// been seen stood at THIS scene (answered - once, for the incident, so a pair
+        /// released after the scene hold or sent on elsewhere has still answered), and
+        /// none is on its way to it. Read off where the pair is and what it is doing,
+        /// not off its arrival time, which belongs to the pair and not to this incident:
+        /// a pair that reached a shop door after the shooting began has not answered
+        /// the shooting. A wiped pair is neither; a stalled one is neither; a pair sent
+        /// on somewhere else by a telephone call is on its way to a different scene.</summary>
         bool FootOwed()
         {
+            if (_footAnswered) return false;
             var here = StreetAlarm.Incident;
             for (var i = 0; i < _footTried.Count; i++)
             {
-                if (!(_footTried[i] is PoliceBeat beat) || beat.Unit == null || beat.Unit.Wiped)
+                if (!(_footTried[i] is PoliceBeat beat) || beat.Unit == null || beat.Unit.Wiped ||
+                    !AtThisScene(beat.Scene, here))
                     continue;
-                if (beat.ArrivedAt >= StreetAlarm.IncidentStart) return false;
-                if (beat.State == PoliceBeat.Mode.Responding && !beat.StalledOnTheWay &&
-                    AtThisScene(beat.Scene, here))
-                    return false;
+                switch (beat.State)
+                {
+                    case PoliceBeat.Mode.OnScene:
+                    case PoliceBeat.Mode.Arresting:
+                    case PoliceBeat.Mode.Doorway:
+                        _footAnswered = true;
+                        return false;
+                    case PoliceBeat.Mode.Responding:
+                        if (!beat.StalledOnTheWay) return false;
+                        break;
+                }
             }
             return true;
         }
