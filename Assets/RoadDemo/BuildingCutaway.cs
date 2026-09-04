@@ -14,14 +14,17 @@ namespace RoadDemo
     /// shadows-only cut. Navigation, bullets, cover, sight and the building's collider keep
     /// exactly the same answer. Runtime source meshes are never read or sliced.
     ///
-    /// The ground floor is the exception to the gradient. The shop glass, the door leaves,
-    /// the boards, the shallow rooms and the display props behind the glass never take the
-    /// gradient material: glass has to stay glass and a room behind it has to write depth,
-    /// and the gradient does neither. They are shown whole, as authored, while their facade
-    /// is turned towards the camera, and hidden whole otherwise; <see cref="Follow"/>
-    /// decides that per renderer every frame the building stays cut, so the glass and the
-    /// wall around it - which the shader keeps whole on every side the camera can see -
-    /// come and go together as the camera comes round.
+    /// The ground floor is the exception to the gradient. It has to look exactly as it
+    /// does with the cutaway off, and the gradient's lighting is not the city's, so the
+    /// ground-floor walls of a modular shell (the storey-sized modules standing on the
+    /// base, see <see cref="GroundFloorTop"/>) keep their authored materials untouched and
+    /// the gradient starts at their top. The shop glass, the door leaves, the boards, the
+    /// shallow rooms and the display props behind the glass keep theirs too - glass has to
+    /// stay glass and a room behind it has to write depth - and are shown whole while their
+    /// facade is turned towards the camera, hidden whole otherwise; <see cref="Follow"/>
+    /// decides that per renderer every frame the building stays cut. A wall needs no such
+    /// decision: its back faces cull. A single-mesh catalogue shell has no ground-floor
+    /// renderer to spare, so the shader keeps its lowest band whole instead.
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class BuildingCutaway : MonoBehaviour
@@ -35,6 +38,10 @@ namespace RoadDemo
             public MergedChunk Chunk;
             /// <summary>A ground-floor piece: authored materials, shown or hidden whole.</summary>
             public bool Piece;
+            /// <summary>The live bay a piece belongs to, which knows which way it faces.</summary>
+            public Storefront Bay;
+            /// <summary>A ground-floor wall: authored materials, never touched.</summary>
+            public bool GroundFloor;
         }
 
         const string ProxyName = "Cutaway ground cap";
@@ -43,6 +50,13 @@ namespace RoadDemo
         const float GroundCapSink = 0.01f;
         const float GroundCapOverhang = 0.04f;
         const float FallbackMinimumPlanSpan = 2f;
+        // The ground floor of a modular shell is read off its renderers: Synty builds a
+        // storey per module, so the modules standing on the base and no taller than a
+        // storey are the ground floor, and their top is where the gradient starts. A
+        // single-mesh catalogue building has no such module and keeps the default line.
+        const float StoreyTolerance = 0.25f;
+        const float MaxStoreyHeight = 5.5f;
+        const float GroundFloorSlack = 1f;
         public const float DeclaredHeight = 3.5f;
         public const float DefaultGradientAmount = 1.42f;
 
@@ -55,6 +69,7 @@ namespace RoadDemo
         readonly List<Renderer> _renderers = new List<Renderer>();
         readonly List<bool> _enabledAtConfigure = new List<bool>();
         readonly List<bool> _pieceAtConfigure = new List<bool>();
+        readonly List<bool> _groundFloorAtConfigure = new List<bool>();
         readonly List<Renderer> _gradientRenderers = new List<Renderer>();
         readonly List<Collider> _colliders = new List<Collider>();
         readonly List<RendererState> _states = new List<RendererState>();
@@ -68,6 +83,7 @@ namespace RoadDemo
         bool _usingGradient;
         bool _keptShadows;
         int _followedPieces;
+        float _groundFloorTopLocal = BuildingOpacityGradient.DefaultGradientStartHeight;
         float _minimumHeight = DeclaredHeight;
         float _proxyHeight = 0.95f;
         float _gradientAmount;
@@ -206,14 +222,28 @@ namespace RoadDemo
             }
             _enabledAtConfigure.Clear();
             _pieceAtConfigure.Clear();
-            _gradientRenderers.Clear();
             for (int i = 0; i < _renderers.Count; i++)
             {
                 var renderer = _renderers[i];
                 _enabledAtConfigure.Add(renderer != null && renderer.enabled);
-                bool piece = IsGroundFloorPiece(renderer);
-                _pieceAtConfigure.Add(piece);
-                if (!piece) _gradientRenderers.Add(renderer);
+                _pieceAtConfigure.Add(IsGroundFloorPiece(renderer));
+            }
+
+            // The ground floor keeps its authored materials, wall and glass alike: the
+            // gradient's own lighting is not the city's, and the player is owed the
+            // ground floor exactly as it looks with the cutaway off. Only what rises
+            // above it fades.
+            float groundFloorTop = GroundFloorTop();
+            _groundFloorTopLocal = groundFloorTop - transform.position.y;
+            _groundFloorAtConfigure.Clear();
+            _gradientRenderers.Clear();
+            for (int i = 0; i < _renderers.Count; i++)
+            {
+                var renderer = _renderers[i];
+                bool groundFloor = !_pieceAtConfigure[i] &&
+                                   renderer.bounds.max.y <= groundFloorTop + GroundFloorSlack;
+                _groundFloorAtConfigure.Add(groundFloor);
+                if (!_pieceAtConfigure[i] && !groundFloor) _gradientRenderers.Add(renderer);
             }
 
             bool tall = false;
@@ -256,12 +286,43 @@ namespace RoadDemo
 
         /// <summary>The live storefront layer - panes, leaves, boards, shards - marks its
         /// renderers; the generated rooms and display props behind the glass are known by
-        /// name. Everything else on the building is shell and fades.</summary>
+        /// name. Everything else on the building is shell.</summary>
         bool IsGroundFloorPiece(Renderer renderer)
         {
             if (renderer == null) return false;
             if (renderer.TryGetComponent<StorefrontLive>(out _)) return true;
             return ResidentialBlocks.IsGeneratedStorefrontVisual(renderer.transform, transform);
+        }
+
+        /// <summary>The world height where the ground floor ends: the top of the tallest
+        /// storey-sized shell renderer standing on the building's base. A shell with no
+        /// such module - one catalogue mesh from pavement to roof - gets the default line
+        /// above its base, and the shader keeps that band whole instead.</summary>
+        float GroundFloorTop()
+        {
+            float baseY = float.PositiveInfinity;
+            for (int i = 0; i < _renderers.Count; i++)
+            {
+                if (_pieceAtConfigure[i]) continue;
+                var bounds = _renderers[i].bounds;
+                if (bounds.size.y < 1.5f) continue;             // a slab is not a storey
+                baseY = Mathf.Min(baseY, bounds.min.y);
+            }
+            if (float.IsPositiveInfinity(baseY)) baseY = transform.position.y;
+
+            float top = float.NegativeInfinity;
+            for (int i = 0; i < _renderers.Count; i++)
+            {
+                if (_pieceAtConfigure[i]) continue;
+                var bounds = _renderers[i].bounds;
+                if (bounds.min.y > baseY + StoreyTolerance || bounds.size.y > MaxStoreyHeight ||
+                    bounds.size.y < 1.5f)
+                    continue;
+                top = Mathf.Max(top, bounds.max.y);
+            }
+            return float.IsNegativeInfinity(top)
+                ? baseY + BuildingOpacityGradient.DefaultGradientStartHeight
+                : top;
         }
 
         void OnEnable()
@@ -364,10 +425,12 @@ namespace RoadDemo
                 {
                     Renderer = renderer,
                     Filter = piece ? renderer.GetComponent<MeshFilter>() : null,
+                    Bay = piece ? renderer.GetComponentInParent<Storefront>() : null,
                     Enabled = renderer.enabled,
                     Shadows = renderer.shadowCastingMode,
                     Chunk = chunk,
                     Piece = piece,
+                    GroundFloor = i < _groundFloorAtConfigure.Count && _groundFloorAtConfigure[i],
                 });
                 anyDrawable |= renderer.enabled || chunk != null;
             }
@@ -393,15 +456,23 @@ namespace RoadDemo
                 _heldChunks.Add(chunk);
             }
 
+            // The gradient starts where this building's ground floor ends, measured at
+            // configure time relative to the root, since a pooled building moves after it
+            // is prepared; RefreshBounds has just read the final world bounds.
             bool useGradient = gradientAmount > 0.001f && _opacity != null &&
                                _opacity.Ready && _opacity.RefreshBounds() && _opacity.Set(
-                                   gradientAmount, BuildingOpacityGradient.Profile.Vertical);
+                                   gradientAmount, BuildingOpacityGradient.Profile.Vertical,
+                                   transform.position.y + _groundFloorTopLocal - _opacity.ShellBaseY);
             _followedPieces = 0;
             for (int i = 0; i < _states.Count; i++)
             {
                 var state = _states[i];
                 var renderer = state.Renderer;
                 if (renderer == null || (!state.Enabled && state.Chunk == null)) continue;
+                // A ground-floor wall stays exactly as it is. Its back faces cull, so what
+                // draws is the side turned towards the camera. Without the gradient the
+                // building falls back to shadows only, ground floor included.
+                if (state.GroundFloor && useGradient) continue;
                 if (state.Piece)
                 {
                     // Hidden until the first Follow of this frame says which facade the
@@ -463,7 +534,16 @@ namespace RoadDemo
                 if (!state.Piece) continue;
                 var renderer = state.Renderer;
                 if (renderer == null || (!state.Enabled && state.Chunk == null)) continue;
-                bool show = _opacity.GroundFloorPieceFacesCamera(PiecePoint(state), lens);
+                var point = PiecePoint(state);
+                bool show;
+                // The bay knows its own facade - a chamfer door faces its diagonal, not
+                // the nearest wall of the plan. Rooms and props sit on cardinal facades
+                // and are read off the plan.
+                if (state.Bay != null && state.Bay.TryOutward(renderer, out var outwardLocal))
+                    show = _opacity.IsGroundFloor(point) && Vector3.Dot(
+                        state.Bay.transform.TransformDirection(outwardLocal), lens - point) > 0f;
+                else
+                    show = _opacity.GroundFloorPieceFacesCamera(point, lens);
                 if (renderer.enabled != show) renderer.enabled = show;
             }
         }

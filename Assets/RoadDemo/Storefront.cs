@@ -671,6 +671,27 @@ namespace RoadDemo
             damageVisual = null;
         }
 
+        /// <summary>Which way one of this bay's live pieces faces, in the bay's own frame:
+        /// a pane faces its measured opening, everything else - leaves, boards, damage -
+        /// faces the door. The street cutaway asks, so a chamfer door is judged by its own
+        /// forty-five degrees and not by the nearest wall of the plan.</summary>
+        internal bool TryOutward(Renderer piece, out Vector3 outwardLocal)
+        {
+            outwardLocal = Vector3.zero;
+            if (piece == null) return false;
+            var at = piece.transform;
+            if (panesRoot != null && at.parent == panesRoot)
+            {
+                int index = at.GetSiblingIndex();
+                if (index < 0 || index >= openings.Length) return false;
+                outwardLocal = Flat(openings[index].Outward, OutwardLocal());
+                return true;
+            }
+            if (!at.IsChildOf(transform)) return false;
+            outwardLocal = OutwardLocal();
+            return true;
+        }
+
         Vector3 OutwardLocal() =>
             Quaternion.Euler(0f, doorYaw, 0f) * Vector3.forward;
 

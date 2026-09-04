@@ -80,6 +80,9 @@ namespace RoadDemo
 
         public bool Ready => _prepared && _states.Count > 0;
         public bool GradientMaterialsActive => _gradientMaterialsActive;
+        /// <summary>The world base of the shell renderers, as of the last bounds refresh;
+        /// the gradient start height is measured up from here.</summary>
+        internal float ShellBaseY => _boundsMinY;
         public float Amount => Mathf.Max(0f, _lastAmount);
         public Profile CurrentProfile => _lastProfile;
 
