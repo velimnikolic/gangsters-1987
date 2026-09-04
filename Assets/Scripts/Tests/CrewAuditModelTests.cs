@@ -222,8 +222,10 @@ namespace LivingCity.Tests
         {
             if (CrewWalker.CoverHopShouldReleaseModel(
                     outOfReach: true, failedHops: 0) ||
-                !CrewWalker.CoverHopShouldReleaseModel(
+                CrewWalker.CoverHopShouldReleaseModel(
                     outOfReach: true, failedHops: 1) ||
+                !CrewWalker.CoverHopShouldReleaseModel(
+                    outOfReach: true, failedHops: 2) ||
                 CrewWalker.CoverHopShouldReleaseModel(
                     outOfReach: false, failedHops: 64))
                 failures.Add("Cover leapfrog: failed protected hops either release immediately or freeze forever.");

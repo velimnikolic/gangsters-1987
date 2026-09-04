@@ -2957,10 +2957,11 @@ namespace RoadDemo
 
         /// <summary>How many polls a man behind a flank the mark has backed out of the
         /// reach of may be told "nothing you can shoot from" before he leaves it and
-        /// goes in. One: the hold beat above is the hysteresis, and after it a null
-        /// answer means the street has no firing flank - so he charges rather than
-        /// waits behind a bin he cannot shoot from (the user's word, 2026-09-04).</summary>
-        const int MaxCoverHopMisses = 1;
+        /// goes in. Two: the first null may be a claim, a berth or a route that is
+        /// busy this second, so he keeps the shield through it; the second means the
+        /// street has no firing flank, and he charges rather than waits behind a bin
+        /// he cannot shoot from (the user's word, 2026-09-04).</summary>
+        const int MaxCoverHopMisses = 2;
 
         /// <summary>The pure firing-position contract, shared with the idle test suite.
         /// A hand-authored/legacy flank whose anchor was not recorded can only be judged
@@ -3080,7 +3081,23 @@ namespace RoadDemo
         /// <summary>The player's KILL on men lying in wait: they get up and go. The
         /// hide order is the hold; the kill order is the charge, and a man told to kill
         /// takes cover only where he can shoot from (DemoCrews.CoverNear).</summary>
-        public void LeaveHeldCover() => DropHeldCover();
+        public void LeaveHeldCover()
+        {
+            if (!_heldCover.HasValue) return;
+            DropHeldCover();
+            // DropHeldCover takes the anchor watch off him; a fight's cover left
+            // standing without it would outlive the car it was behind. KILL is the
+            // charge anyway: the spot goes with the flank, and the next tick asks
+            // the street again from where he stands.
+            _coverSpot = null;
+            _coverAnchorAt = null;
+            _coverHoldUntil = 0f;
+            _coverHopMisses = 0;
+            _coverLooked = false;
+            _coverRecheckAt = 0f;
+            InCover = false;
+            ClearCombatWay();
+        }
 
         /// <summary>Up, and his crew's again: the lease ran out, or he was told to be
         /// somewhere else.</summary>
@@ -3868,12 +3885,17 @@ namespace RoadDemo
                         _coverHoldUntil = Time.time +
                             Random.Range(CoverHoldMin, CoverHoldMax);
                     _coverCycle -= dt;
+                    // waiting, not fighting: a man holding his flank with the mark
+                    // beyond his gun is down - put down if he was up, and kept down
+                    // until there is a shot to come up for
+                    if (HoldingFlank && dist > range)
+                    {
+                        if (!_ducked || _coverCycle <= 0f)
+                            _coverCycle = Random.Range(0.8f, 1.4f);
+                        _ducked = true;
+                    }
                     if (_ducked)
                     {
-                        // waiting, not fighting: a man holding his flank with the mark
-                        // beyond his gun stays down until there is a shot to come up for
-                        if (_coverCycle <= 0f && HoldingFlank && dist > range)
-                            _coverCycle = Random.Range(0.8f, 1.4f);
                         if (_coverCycle <= 0f)
                         {
                             _ducked = false;
