@@ -712,6 +712,43 @@ namespace RoadDemo
             return best;
         }
 
+        /// <summary>The outfit's motorcycle under the pointer. Bought machines have no
+        /// colliders (RoadBike strips the prefab's runtime parts), so they need the same
+        /// screen-and-footprint pick the outfit's cars use. Only a bike on the ledger
+        /// answers: a passing civilian motorcycle is traffic, not stock to reassign.</summary>
+        CrewBike PickBikeAt(Vector2 screen)
+        {
+            if (_cam == null) return null;
+            float radius = (PickRadius + 12f) * (_canvas != null ? _canvas.scaleFactor : 1f);
+            float bestD = radius * radius;
+            CrewBike best = null;
+            var ray = _cam.ScreenPointToRay(screen);
+            foreach (var bike in _crews.Bikes)
+            {
+                if (!_crews.OnTheBooks(bike) || bike.Tf == null ||
+                    !LivingCity.Gameplay.MapVisionRegistry.IsRevealed(bike.Tf.position))
+                    continue;
+                var p = _cam.WorldToScreenPoint(bike.Position + Vector3.up * 0.7f);
+                if (p.z <= 0f) continue;
+                float d = ((Vector2)p - screen).sqrMagnitude;
+
+                // A click anywhere on the narrow body counts as a click dead on its
+                // middle. The extra hand of air is what makes the tank and tail easy to
+                // hit without letting a nearby car steal the click.
+                var body = new Plane(Vector3.up,
+                    new Vector3(0f, bike.RoadY + 0.6f, 0f));
+                if (body.Raycast(ray, out float enter))
+                {
+                    var local = bike.Tf.InverseTransformPoint(ray.GetPoint(enter));
+                    if (Mathf.Abs(local.x) <= bike.HalfWidth + 0.3f &&
+                        Mathf.Abs(local.z) <= bike.HalfLength + 0.3f)
+                        d = 0f;
+                }
+                if (d < bestD) { bestD = d; best = bike; }
+            }
+            return best;
+        }
+
         static bool PointerOverUi() =>
             (UnityEngine.EventSystems.EventSystem.current &&
              UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject()) ||
@@ -770,6 +807,20 @@ namespace RoadDemo
             var groundBag = PickBagAt(up);
             if (groundBag != null && OpenBagOrders(groundBag, up))
                 return;
+
+            // A bought motorcycle is handed over exactly like a bought car: select
+            // the crew, then point at the machine. This has to run before the car pick
+            // because both queues stand along the same kerb and the bike is the smaller
+            // target under the pointer.
+            var bike = PickBikeAt(up);
+            if (bike != null)
+            {
+                if (_crews.AssignBike(bike))
+                    ShowMark(bike.Position + Vector3.up * 0.8f, MarkTint);
+                else if (_crews.BikeRefusal != null)
+                    Refuse(_crews.BikeRefusal);
+                return;
+            }
 
             // the car under the click. This crew's own: get in (or out). Somebody
             // else's - a rival's - and there is nothing to board, but there is a charge

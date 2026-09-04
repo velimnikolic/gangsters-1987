@@ -1058,6 +1058,17 @@ namespace LivingCity.Tests
 
             if (LedgerText.EquipmentLabel(EquipmentKind.Motorcycle).Length == 0)
                 failures.Add("MotorcycleIsWheelsAndNotAGun: the kind has no ledger label.");
+
+            // The street's motorcycle click uses MoveEquipment, just like the car
+            // click. A held machine must therefore be transferable directly between
+            // crews; requiring a recall first would leave the visible kerb interaction
+            // unable to complete its one order.
+            var second = Make(roster, "Mickey", "Doyle", Rank.Lieutenant);
+            MakeCrew(roster, second);
+            var moved = RosterOps.MoveEquipment(roster, bike.Id, second.Id);
+            if (!moved.Ok || bike.OwnerId != second.Id)
+                failures.Add("MotorcycleIsWheelsAndNotAGun: the street could not hand " +
+                             "the machine to another crew.");
         }
 
         static void FrontArmsTheGuards(List<string> failures)
