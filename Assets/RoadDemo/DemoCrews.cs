@@ -983,7 +983,7 @@ namespace RoadDemo
             MapVisionRegistry.RegisterArea(this);
             PersonnelDirector.Instance?.SetOrganizationPhysicalSource(this);
             CrewWalker.FindCover = CoverNear;
-            CrewWalker.FightIsOrdered = FightOrdered;
+            CrewWalker.PartInFight = PartOf;
             // and the ambush's own question - a flank round THERE, facing THAT way -
             // which a man asks again for himself when the car he was behind drives off
             CrewWalker.FindFlankAround = FlankAround;
@@ -1202,9 +1202,9 @@ namespace RoadDemo
             if (CrewWalker.FindFlankAround != null &&
                 ReferenceEquals(CrewWalker.FindFlankAround.Target, this))
                 CrewWalker.FindFlankAround = null;
-            if (CrewWalker.FightIsOrdered != null &&
-                ReferenceEquals(CrewWalker.FightIsOrdered.Target, this))
-                CrewWalker.FightIsOrdered = null;
+            if (CrewWalker.PartInFight != null &&
+                ReferenceEquals(CrewWalker.PartInFight.Target, this))
+                CrewWalker.PartInFight = null;
             if (Active == this) Active = null;
         }
 
@@ -1557,14 +1557,32 @@ namespace RoadDemo
             return null;
         }
 
-        /// <summary>Was this man SENT to his fight (KILL, Sic, the ambush springing
-        /// itself) or did it come to him? What the walker's cover asks, so a man who
-        /// was shot at gets behind something whatever the range, and a man sent to
-        /// kill takes only a flank he can shoot from.</summary>
-        bool FightOrdered(CrewWalker man)
+        /// <summary>A man's part in his fight, as the walker's cover and closing ask
+        /// it. Was he SENT (KILL, Sic, the ambush springing itself) or did the fight
+        /// come to him - and, sent, is he the longest gun of his crew still standing,
+        /// or does he wait on the ones who are? A shot-at man gets behind something
+        /// whatever the range; the crew's rifles take the flank they can shoot from
+        /// or go in; the pistol beside them waits until they are done.</summary>
+        CrewWalker.FightPart PartOf(CrewWalker man)
         {
             var unit = UnitOf(man);
-            return unit != null && unit.OrderedFight;
+            if (unit == null || !unit.OrderedFight) return CrewWalker.FightPart.Defends;
+            return Outranged(man, unit)
+                ? CrewWalker.FightPart.Waits
+                : CrewWalker.FightPart.Closes;
+        }
+
+        /// <summary>Is a crewmate still on his feet in this fight carrying a longer
+        /// gun than his? Half a metre of reach is the same gun.</summary>
+        bool Outranged(CrewWalker man, Unit unit)
+        {
+            float mine = man.Ballistics.Range;
+            foreach (var other in unit.All())
+            {
+                if (other == man || !CanEngageOnFoot(other) || other.Surrendered) continue;
+                if (other.Ballistics.Range > mine + 0.5f) return true;
+            }
+            return false;
         }
 
         /// <summary>A bail, acquittal, completed sentence or broken transfer returns

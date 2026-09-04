@@ -253,10 +253,18 @@ namespace LivingCity.Tests
             // A man the fight came to stays behind what he has while the mark is
             // beyond his gun; only a man sent to a fight, off any held flank, leaves
             // his shield to close the range.
-            if (!CrewWalker.WaitsForRangeModel(holdingFlank: false, fightOrdered: false) ||
-                !CrewWalker.WaitsForRangeModel(holdingFlank: true, fightOrdered: true) ||
-                CrewWalker.WaitsForRangeModel(holdingFlank: false, fightOrdered: true))
-                failures.Add("Attacked man: a fight that came to him sends him out of cover for range, or a sent man waits.");
+            if (!CrewWalker.WaitsForRangeModel(holdingFlank: false, part: CrewWalker.FightPart.Defends) ||
+                !CrewWalker.WaitsForRangeModel(holdingFlank: false, part: CrewWalker.FightPart.Waits) ||
+                !CrewWalker.WaitsForRangeModel(holdingFlank: true, part: CrewWalker.FightPart.Closes) ||
+                CrewWalker.WaitsForRangeModel(holdingFlank: false, part: CrewWalker.FightPart.Closes))
+                failures.Add("Attacked man: a fight that came to him sends him out of cover for range, or the closer waits.");
+
+            // With nothing to get behind, the man the fight came to walks in firing;
+            // the pistol waiting on his crew's rifles holds his ground instead.
+            if (!CrewWalker.ClosesOpenGroundModel(CrewWalker.FightPart.Defends) ||
+                !CrewWalker.ClosesOpenGroundModel(CrewWalker.FightPart.Closes) ||
+                CrewWalker.ClosesOpenGroundModel(CrewWalker.FightPart.Waits))
+                failures.Add("Open ground: the outranged man charges, or the attacked man stands out of reach.");
         }
 
         static void RecoveredRangeResetsCoverHopBudget(List<string> failures)

@@ -602,11 +602,23 @@ namespace RoadDemo
                 // business, and a crew is not put at war with the police by a stray round.
                 if (unit.TargetUnit == null && !unit.IsPolice)
                 {
+                    // MEN COMING AT YOU WITH THEIR GUNS OUT ARE A PROVOCATION (the
+                    // user's word, 2026-09-04: "neprijateljski crew vidi manje od
+                    // nasih"). A crew SENT at this one - the player's KILL, a Sic -
+                    // walks up with the pieces drawn; the first round used to be the
+                    // first thing this crew noticed, at any distance, while the
+                    // outfit had closed on it from the whole of its sight. Now a
+                    // drawn gun in sight, inside the same SightRange the outfit
+                    // works with, is a shot as far as this crew's nerve goes.
+                    var coming = EnemyComing(unit);
+                    if (coming != null) unit.ProvokedAt = Time.time;
                     var provoked = Time.time - unit.ProvokedAt < FightBack &&
                                    Time.time - unit.OrderedAt > HoldFireAfterOrder;
-                    var seen = EnemyWithin(
-                        unit, provoked ? DefendRange : AlertRange, provoked,
-                        noPolice: true);
+                    var seen = coming != null && provoked
+                        ? coming
+                        : EnemyWithin(
+                            unit, provoked ? DefendRange : AlertRange, provoked,
+                            noPolice: true);
                     if (seen != null) SetTarget(unit, seen);
                 }
 
@@ -1140,6 +1152,30 @@ namespace RoadDemo
         }
 
         // ------------------------------------------------------------------ the round
+
+        /// <summary>A crew with an ORDER on this one, one of whose men is on foot with
+        /// his gun out, in sight of one of these men inside SightRange. Never the
+        /// law, never a car going by, never a man lying in wait.</summary>
+        Unit EnemyComing(Unit unit)
+        {
+            float r2 = SightRange * SightRange;
+            foreach (var other in Units)
+            {
+                if (other == unit || other.Faction == unit.Faction || other.Wiped) continue;
+                if (other.IsPolice || other.TargetUnit != unit || !other.OrderedFight) continue;
+                foreach (var a in unit.All())
+                {
+                    if (a.Dead) continue;
+                    foreach (var b in other.All())
+                        if (!b.Dead && b.Armed && !IsAboard(b) &&
+                            (a.Tf.position - b.Tf.position).sqrMagnitude < r2 &&
+                            !Concealed(b, a.Tf.position) &&
+                            InSight(a.Tf.position, b.Tf.position))
+                            return other;
+                }
+            }
+            return null;
+        }
 
         Unit EnemyWithin(Unit unit, float range, bool provoked, bool noPolice = false)
         {

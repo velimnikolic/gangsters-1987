@@ -2821,12 +2821,28 @@ namespace RoadDemo
         /// pavement's furniture.</summary>
         public static System.Func<CrewWalker, Vector3, Vector3?> FindCover;
 
-        /// <summary>Is this man's fight one he was SENT to (the player's KILL, the
-        /// dispatcher's Sic), or one that came to him? Set by whoever owns the units.
-        /// Unset, every fight counts as ordered.</summary>
-        public static System.Func<CrewWalker, bool> FightIsOrdered;
+        /// <summary>What a man's part in his fight is, as far as the range goes.</summary>
+        public enum FightPart
+        {
+            /// <summary>Sent to the fight, and the longest gun of his crew still
+            /// standing: he takes a flank he can shoot from, or he goes in.</summary>
+            Closes,
+            /// <summary>Sent to the fight, but outranged by a crewmate still standing
+            /// (the user's word, 2026-09-04: "lik s pistoljem ne treba da se zalece
+            /// kao debil ... da ceka da poginu ovi sto imaju puske pa onda"): he gets
+            /// behind something and waits for the long guns to be done, or for the
+            /// mark to come to him.</summary>
+            Waits,
+            /// <summary>The fight came to him: nearest cover whatever the range, and
+            /// the closing shot when the street has nothing.</summary>
+            Defends,
+        }
 
-        bool FightOrdered => FightIsOrdered == null || FightIsOrdered(this);
+        /// <summary>The arena's answer to what this man's part is. Unset, every man
+        /// closes.</summary>
+        public static System.Func<CrewWalker, FightPart> PartInFight;
+
+        FightPart Part => PartInFight == null ? FightPart.Closes : PartInFight(this);
 
         /// <summary>The same oracle asked the ambush's way: a flank round THERE, facing
         /// a threat from THAT way, with no gun range asked of it (man, centre, threat
@@ -3001,13 +3017,20 @@ namespace RoadDemo
         /// <summary>Does a mark beyond his gun keep him behind what he has, rather
         /// than send him on? On the flank he was told to hold, always. In a fight
         /// that came to him (the user's word, 2026-09-04: "kad smo napadnuti treba da
-        /// pucamo i nadjemo zaklon sto pre"), also: he shoots when there is a shot and
-        /// stays behind something in the meantime. Only a man SENT to a fight leaves
-        /// his shield to close the range.</summary>
-        internal static bool WaitsForRangeModel(bool holdingFlank, bool fightOrdered) =>
-            holdingFlank || !fightOrdered;
+        /// pucamo i nadjemo zaklon sto pre"), and outranged by a crewmate still up,
+        /// also: he shoots when there is a shot and stays behind something in the
+        /// meantime. Only the man whose part is to CLOSE leaves his shield for range.</summary>
+        internal static bool WaitsForRangeModel(bool holdingFlank, FightPart part) =>
+            holdingFlank || part != FightPart.Closes;
 
-        bool WaitsForRange => WaitsForRangeModel(HoldingFlank, FightOrdered);
+        /// <summary>With nothing to get behind, does he walk in firing? A man the fight
+        /// came to does - standing in the open out of reach is worse than the closing
+        /// shot. A man waiting on his crew's long guns does not: he holds his ground
+        /// with the gun up and lets the fight come to him.</summary>
+        internal static bool ClosesOpenGroundModel(FightPart part) =>
+            part != FightPart.Waits;
+
+        bool WaitsForRange => WaitsForRangeModel(HoldingFlank, Part);
 
         internal static bool CoverHopShouldReleaseModel(bool outOfReach,
             int failedHops) =>
@@ -3948,6 +3971,7 @@ namespace RoadDemo
             // back into his reach.
             bool mounted = Target.Riding || Target.Astride;
             bool closing = !mounted && !_coverSpot.HasValue &&
+                           ClosesOpenGroundModel(Part) &&
                            (_wasClosing ? dist > range * RangeFactor : dist > range);
             _wasClosing = closing;
             if (closing)

@@ -328,7 +328,11 @@ namespace RoadDemo
         /// napadnuti treba da pucamo i nadjemo zaklon sto pre"). Out of reach he takes
         /// the nearest flank round him he can shoot from, failing that the nearest
         /// that merely shields him, and only then asks the fire line. The walker
-        /// keeps him behind it while the mark is beyond his gun (WaitsForRange).</summary>
+        /// keeps him behind it while the mark is beyond his gun (WaitsForRange).
+        ///
+        /// OUTRANGED BY HIS OWN CREW: the same nearest flank, and never the fire line -
+        /// a pistol walking up the line to its own reach is the charge by another
+        /// name. He waits on the long guns (CrewWalker.FightPart.Waits).</summary>
         Vector3? CoverNear(CrewWalker man, Vector3 target)
         {
             if (man == null || man.Tf == null) return null;
@@ -351,13 +355,15 @@ namespace RoadDemo
                 return SearchCover(man, target, p, cap, cap, 3f, range);
             }
 
-            if (!FightOrdered(man))
+            var part = PartOf(man);
+            if (part != CrewWalker.FightPart.Closes)
             {
                 var near = SearchCover(man, target, p, CoverReach, CoverReach, 3f, range);
                 if (near.HasValue) return near;
                 var shield = SearchCover(man, target, p, CoverReach, CoverReach,
                     PointBlank, float.MaxValue);
                 if (shield.HasValue) return shield;
+                if (part == CrewWalker.FightPart.Waits) return null;
             }
 
             return CoverToward(man, target, range, dist);
