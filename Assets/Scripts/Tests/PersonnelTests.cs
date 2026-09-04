@@ -1067,6 +1067,16 @@ namespace LivingCity.Tests
 
             if (LedgerText.EquipmentLabel(EquipmentKind.Motorcycle).Length == 0)
                 failures.Add("MotorcycleIsWheelsAndNotAGun: the kind has no ledger label.");
+
+            // The 3D map's right-click uses MoveEquipment, exactly as its car click.
+            // A held machine therefore transfers directly between crew deeds without
+            // making the player return it to the shelf first.
+            var second = Make(roster, "Mickey", "Doyle", Rank.Lieutenant);
+            MakeCrew(roster, second);
+            var moved = RosterOps.MoveEquipment(roster, bike.Id, second.Id);
+            if (!moved.Ok || bike.OwnerId != second.Id)
+                failures.Add("MotorcycleIsWheelsAndNotAGun: the map could not hand " +
+                             "the machine to another crew.");
         }
 
         static void FrontArmsTheGuards(List<string> failures)
