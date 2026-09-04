@@ -303,6 +303,36 @@ namespace LivingCity.Outfit
             return false;
         }
 
+        /// <summary>
+        /// NOTICE THE END, from outside the two doors time comes through.
+        ///
+        /// The underworld does not work a house that is finished, and a Don shot with
+        /// nobody behind him makes his house <see cref="House.Finished"/> the instant he
+        /// is struck off - so the sweep skipped the player's runner before it could ever
+        /// observe its own ending, and the black leaf that says the campaign is over
+        /// never went up. Asked once per sweep, ahead of that skip.
+        /// </summary>
+        /// <returns>True when the campaign is over, latched or just now.</returns>
+        public bool NoticeTheEnd(Roster roster) => CampaignOver(roster);
+
+        /// <summary>
+        /// Puts a loaded campaign back where the save left it. The end and the run of
+        /// broke nights are BOOKS, not derivations - nothing in a restored roster says
+        /// the safe was empty the last two midnights, and nothing in it distinguishes a
+        /// Don who died from one who died a fortnight before the file was written - so
+        /// a load that did not carry them let a finished campaign go on trading.
+        /// A file written before any of this existed restores as a running campaign,
+        /// which is exactly what it was.
+        /// </summary>
+        public void RestoreEnding(bool fallen, int fallenOnDay, OutfitEnding ending,
+            int brokeNights)
+        {
+            Fallen = fallen;
+            FallenOnDay = fallenOnDay;
+            Ending = ending;
+            BrokeNights = brokeNights < 0 ? 0 : brokeNights;
+        }
+
         /// <summary>Latches the end, once, and tells the scene which one it was. Always
         /// returns true, so every test above can end on one line.</summary>
         bool Finish(OutfitEnding ending)

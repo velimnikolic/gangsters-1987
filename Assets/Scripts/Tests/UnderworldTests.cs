@@ -32,6 +32,9 @@ namespace LivingCity.Tests
             ("OneDealPerCity", OneDealPerCity),
             ("ACityDealsOnlyTheHousesItStands", ACityDealsOnlyTheHousesItStands),
             ("TheStreetListsOnlyDealtHouses", TheStreetListsOnlyDealtHouses),
+            ("ThePlayersEndIsNoticedThroughTheSweep",
+                ThePlayersEndIsNoticedThroughTheSweep),
+            ("TheEndAndTheBrokeRunSurviveASave", TheEndAndTheBrokeRunSurviveASave),
         };
 
         public static List<string> Run()
@@ -48,6 +51,132 @@ namespace LivingCity.Tests
             for (var i = 0; i < Contracts.Length; i++)
                 names[i] = Contracts[i].Name;
             return names;
+        }
+
+        // -------------------------------------------------------------- the ending
+
+        /// <summary>
+        /// THE END HAS TO BE NOTICED BY THE THING THAT ACTUALLY RUNS. The player's
+        /// campaign is never ticked directly in the game - the underworld sweeps all
+        /// twenty-one - and the sweep skips a finished house. A Don shot with nobody
+        /// behind him makes his house finished on the instant, so the skip used to
+        /// close over the runner before it could observe its own ending: Fallen stayed
+        /// false for ever and the black leaf, which waits on exactly that flag, never
+        /// went up. Driven through the sweep and not through CampaignRunner, because
+        /// the direct call is the one path this bug could hide from.
+        /// </summary>
+        static void ThePlayersEndIsNoticedThroughTheSweep(List<string> failures)
+        {
+            var underworld = Underworld.Deal(Seed);
+            var house = underworld.Player;
+
+            // A Don and three hoods: killing him leaves men on the books and no man of
+            // rank to take the chair, which is the shape the end is made of.
+            var book = Roster.Create(house.GangId);
+            var don = new Character
+            {
+                Id = book.NextCharacterId(), FirstName = "The", Surname = "Don",
+                Rank = Rank.Boss, Loyalty = 50,
+            };
+            book.Members.Add(don);
+            book.Organization.BossId = don.Id;
+            for (var i = 0; i < 3; i++)
+            {
+                var guard = new Character
+                {
+                    Id = book.NextCharacterId(), FirstName = "G", Surname = "uard" + i,
+                    Rank = Rank.Hood, Loyalty = 60 + i,
+                };
+                book.Members.Add(guard);
+                book.Organization.BossHoodIds.Add(guard.Id);
+            }
+            Bodyguards.FallIn(book);
+            house.Restock(book);
+
+            var announced = 0;
+            house.Runner.BossFell += () => announced++;
+
+            RosterOps.Kill(book, book.BossId);
+            if (!house.Finished)
+            {
+                failures.Add("TheEndIsNoticed: the fixture did not leave a finished " +
+                             "house, so it proves nothing.");
+                return;
+            }
+
+            underworld.AdvanceHours(1f);
+
+            if (!house.Runner.Fallen)
+                failures.Add("TheEndIsNoticed: the player's Don was shot with nobody " +
+                             "behind him and the campaign never latched its end.");
+            if (house.Runner.Ending != OutfitEnding.TheDonIsDead)
+                failures.Add("TheEndIsNoticed: the end was filed as " +
+                             house.Runner.Ending + ".");
+            if (announced != 1)
+                failures.Add($"TheEndIsNoticed: the end was announced {announced} times " +
+                             "through the sweep.");
+
+            // And it stays said once, however long the sweep runs over it.
+            underworld.AdvanceHours(1f);
+            underworld.DayTick();
+            if (announced != 1)
+                failures.Add($"TheEndIsNoticed: the end kept happening ({announced}).");
+        }
+
+        /// <summary>
+        /// A CAMPAIGN THAT ENDED STAYS ENDED, AND A BROKE RUN IS NOT FORGIVEN BY A
+        /// RELOAD. Neither the ending nor the count of broke nights can be worked out
+        /// again from a restored roster - nothing in it says the safe was empty the
+        /// last two midnights - so a save that dropped them handed back a live outfit
+        /// with a clean slate, which is the one thing a game over must not be.
+        /// </summary>
+        static void TheEndAndTheBrokeRunSurviveASave(List<string> failures)
+        {
+            var underworld = Underworld.Deal(Seed);
+            var player = underworld.Player;
+
+            // Two broke nights on the clock, and no end yet.
+            player.Runner.OpenFirstSheet();
+            player.Runner.Accounts.Safe = 0;
+            var guard = 0;
+            while (player.Runner.BrokeNights < CampaignRunner.BrokeNightsThatEndIt - 1 &&
+                   guard++ < 12)
+                underworld.DayTick();
+            var midRun = player.Runner.BrokeNights;
+            if (midRun < 1 || player.Runner.Fallen)
+            {
+                failures.Add("TheEndSurvivesASave: the fixture is not part-way through " +
+                             "a broke run.");
+                return;
+            }
+
+            var reloaded = Underworld.Deal(Seed);
+            OutfitSnapshot.Restore(reloaded, OutfitSnapshot.Snapshot(underworld));
+            if (reloaded.Player.Runner.BrokeNights != midRun)
+                failures.Add($"TheEndSurvivesASave: {midRun} broke nights came back as " +
+                             $"{reloaded.Player.Runner.BrokeNights}.");
+
+            // And now the end itself, on the far side of the same round trip.
+            guard = 0;
+            while (!player.Runner.Fallen && guard++ < 12)
+                underworld.DayTick();
+            if (!player.Runner.Fallen)
+            {
+                failures.Add("TheEndSurvivesASave: the outfit never went broke.");
+                return;
+            }
+
+            var after = Underworld.Deal(Seed);
+            OutfitSnapshot.Restore(after, OutfitSnapshot.Snapshot(underworld));
+            if (!after.Player.Runner.Fallen)
+                failures.Add("TheEndSurvivesASave: a finished campaign loaded as a " +
+                             "live one.");
+            if (after.Player.Runner.Ending != player.Runner.Ending)
+                failures.Add("TheEndSurvivesASave: the end came back as " +
+                             after.Player.Runner.Ending + " instead of " +
+                             player.Runner.Ending + ".");
+            if (after.Player.Runner.FallenOnDay != player.Runner.FallenOnDay)
+                failures.Add("TheEndSurvivesASave: the day it ended did not survive.");
         }
 
         // ------------------------------------------------------------------ the deal

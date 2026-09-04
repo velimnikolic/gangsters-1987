@@ -66,6 +66,14 @@ namespace LivingCity.Outfit
         public int nextJobId;
         public AccountsDto accounts;
         public JobDto[] jobs;
+
+        /// <summary>How the campaign ended and when, and the run of broke nights it
+        /// was on. All four default to a running campaign, which is what every file
+        /// written before the endings existed was.</summary>
+        public bool fallen;
+        public int fallenOnDay;
+        public int ending;
+        public int brokeNights;
     }
 
     [Serializable]
@@ -277,6 +285,10 @@ namespace LivingCity.Outfit
                 nextJobId = runner.Book.PeekNextJobId,
                 accounts = Snapshot(runner.Accounts),
                 jobs = new JobDto[runner.Book.Jobs.Count],
+                fallen = runner.Fallen,
+                fallenOnDay = runner.FallenOnDay,
+                ending = (int)runner.Ending,
+                brokeNights = runner.BrokeNights,
             };
             for (var i = 0; i < runner.Book.Jobs.Count; i++)
                 dto.jobs[i] = Snapshot(runner.Book.Jobs[i]);
@@ -297,6 +309,8 @@ namespace LivingCity.Outfit
             for (var i = 0; dto.jobs != null && i < dto.jobs.Length; i++)
                 runner.Book.Jobs.Add(Restore(dto.jobs[i]));
             runner.Book.RestoreNextJobId(dto.nextJobId);
+            runner.RestoreEnding(dto.fallen, dto.fallenOnDay,
+                (OutfitEnding)dto.ending, dto.brokeNights);
         }
 
         // -------------------------------------------------------------- the accounts

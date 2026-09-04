@@ -235,7 +235,16 @@ namespace LivingCity.Outfit
             for (var i = 0; i < houses.Length; i++)
             {
                 var house = houses[i];
-                if (house == null || house.Finished)
+                if (house == null)
+                    continue;
+                // THE END IS NOTICED BEFORE THE DOOR SHUTS ON IT. A Don shot with
+                // nobody of rank behind him makes his house Finished at once, and a
+                // finished house is not worked - so the skip below used to run before
+                // the runner could ever observe its own ending, and the player's
+                // campaign latched nothing while the black leaf waited on a flag that
+                // was never going to be set.
+                house.Runner.NoticeTheEnd(house.Roster);
+                if (house.Finished)
                     continue;
                 if (house.Runner.AdvanceHours(house.Roster, hours))
                 {
@@ -321,7 +330,10 @@ namespace LivingCity.Outfit
             for (var i = 0; i < houses.Length; i++)
             {
                 var house = houses[i];
-                if (house == null || house.Finished)
+                if (house == null)
+                    continue;
+                house.Runner.NoticeTheEnd(house.Roster);
+                if (house.Finished)
                     continue;
                 var paid = house.Runner.DayTick(house.Roster, payTribute: house.IsPlayer);
                 house.Touch();

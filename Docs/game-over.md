@@ -54,6 +54,13 @@ the outfit ended on: men left on the books and dollars in the safe.
 | the black leaf | `Assets/RoadDemo/OutfitEnd.cs` |
 | the contracts | `CommandTests`: `TheDonsDeathEndsIt`, `ALifeSentenceEndsIt`, `AServableTermDoesNot`, `ThreeBrokeNightsCloseTheBooks`, `ARivalHouseIsNotWoundUpByABadFortnight` |
 
-The end is **not saved**. `CampaignSave` has never carried `Fallen`, and it does not
-carry the broke-night count either, so a campaign loaded from a file starts its count
-again. Worth closing when the save file next grows.
+The end **is** saved: the ending, the day it happened and the run of broke nights all
+go into the file and come back out of it, so a reload cannot forgive a bankruptcy or
+resurrect a finished campaign. A file written before any of this existed loads as a
+running campaign, which is what it was.
+
+The end is also **noticed by the sweep**, not only by the runner. Nothing ticks the
+player's campaign directly in the game - the underworld works all twenty-one houses -
+and that sweep steps over a finished house. A Don shot with nobody behind him makes his
+house finished on the instant, so the end has to be observed before the sweep closes
+over it, or the leaf waits on a flag nobody will ever set.
