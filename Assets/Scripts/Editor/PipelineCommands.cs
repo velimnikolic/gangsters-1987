@@ -776,11 +776,16 @@ namespace GangstersTools
             [CliArg("think", "Game hours between one house's thinks; 0 is the model's own.")]
             float think = 0f,
             [CliArg("table", "Print the per-day table lines (they are long).")]
-            bool table = false)
+            bool table = false,
+            [CliArg("growthDays", "A30: days of payroll the doors must cover before a " +
+                                  "house signs a man. -1 leaves the model's own figure, " +
+                                  "0 lifts the gate.")]
+            int growthDays = -1)
         {
             if (sweep <= 0)
             {
-                var one = LivingCity.Tests.UnderworldSim.Run(seed, days, houses, think);
+                var one = LivingCity.Tests.UnderworldSim.Run(
+                    seed, days, houses, think, growthDays);
                 return new
                 {
                     passed = one.Clean,
@@ -826,7 +831,8 @@ namespace GangstersTools
             var byKind = new Dictionary<string, int>();
             for (var s = 1; s <= sweep; s++)
             {
-                var report = LivingCity.Tests.UnderworldSim.Run(s, days, houses, think);
+                var report = LivingCity.Tests.UnderworldSim.Run(
+                    s, days, houses, think, growthDays);
                 negatives += report.Negatives;
                 refused += report.OwnershipRefusals;
                 frozenDays += report.Frozen;

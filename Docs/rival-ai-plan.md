@@ -477,53 +477,61 @@ to nikad nije video; merač pušta sve, i kuća 16 je od 4. dana prestala da bud
 `thinks 0` cele dane, sa slobodnom ekipom i vratima koja se mogu pitati. To je bio pravi
 bag u modelu, ne u meraču. Popravljeno; ugovor `EveryHouseDueGetsItsTurn`.
 
-**Nalaz 2 — plate, ne um.** Posle popravke rote nijedna kuća ne stoji ni na jednoj
-kadenci (0 zamrznutih kuća na 1 h, 2 h i 4 h, trideset seedova). Jedini preostali pad je
-uvek isti: **sef ispod nedelju dana plata**, 128–133 kuća-dana od trideset gradova. Vrata
-plaćaju oko $100 nedeljno, a vojnik košta oko $280 nedeljno — kuća koja popuni ekipe ne
-može da ih plati sa zemlje koju drži. **To je EPIC 24 (plate/prihod), ne um**, i zato je
-u kodu A30: rast potpisuje čoveka samo dok nedeljni prihod pokriva platni spisak.
+**Nalaz 2 — MERAČ JE BIO PET PUTA MANJI OD GRADA, i moj prvi zaključak o platama je
+zbog toga bio pogrešan.** Korisnik, 2026-09-04: *"jedan blok ima uvek oko 15 radnji."*
+Provera (`gangsters_geography_audit`, seed 1987): **3564 radnje na 197 blokova — medijana
+15, prosek 18**, jedan blok od osam prazan, najbogatiji 48. Papirni grad je delio 3 do 6.
+Sad deli po izmerenim decilima pravog grada.
 
-### 8.2 Kadenca (A19) i pravilo „jedna ulica po ekipi"
+Sa pravim blokovima kuća naplaćuje **33 do 43 radnje**, ne šest. Prvi izveštaj je rekao
+da vrata ne mogu da plate ljude; to je bila posledica premalog merača.
 
-**Korisnikova odluka, 2026-09-04: ostaje jedan sat, i dodaje se pravilo da se ekipa
-fokusira na jednu ulicu.** Oboje je urađeno.
+### 8.2 Kadenca (A19), pravilo „jedna ulica po ekipi", i kapija rasta (A30)
 
-Pravilo: ekipa koju je um poslao na ulicu nije kandidat za otvaranje NOVE zemlje dok ta
-ulica ne postane naša ili dok na njoj ne ostane nijedna vrata koja se mogu pitati. Druga
-slobodna ekipa i dalje sme da ide dalje, pa kuća sa ljudima ne staje. Um to vidi kroz
-novo polje pogleda: gde stoji koja moja ekipa (`CrewBlockLook`) — najobičnija stvar koju
-kuća zna o sebi.
+**Korisnikova odluka: ostaje jedan sat, i ekipa se fokusira na jednu ulicu.** Oboje
+urađeno. Pravilo: ekipa koju je um poslao na ulicu nije kandidat za otvaranje NOVE
+zemlje dok ta ulica ne postane naša ili dok na njoj ne ostane nijedna vrata koja se mogu
+pitati. Druga slobodna ekipa i dalje sme dalje. Um to vidi kroz novo polje pogleda: gde
+stoji koja moja ekipa.
 
-**Merilo je usput moralo da se popravi.** Papirni grad je vodstvo bloka računao SAMO po
-prisustvu (40 = tvoj blok), pa je nagrađivao ekipu koja stoji i ništa ne radi. Sad računa
-pravu formulu kontrole — prisustvo, strah i UDEO VRATA KOJA PLAĆAJU, kroz
-`TerritoryControlReading` — pa su brojevi ispod na pravom merilu i nisu uporedivi sa
-prvom verzijom ove tabele.
+**Merilo je usput moralo da se popravi dvaput.** Vodstvo bloka se računalo samo po
+prisustvu (nagrada za ekipu koja stoji i ne radi ništa) — sad ide kroz pravu formulu
+kontrole, sa udelom vrata koja plaćaju. I blokovi su dobili pravu veličinu (8.1).
 
-30 seedova × 14 dana × 21 kuća, sa pravilom:
+30 seedova × 14 dana × 21 kuća, na pravim blokovima:
 
-| misao svakih | blokova po kući, dan 14 | vrata po kući | zamrznutih kuća | ms misli |
-|---|---|---|---|---|
-| 1 h | 2.42 | 5.97 | 0 | 127 900 |
-| 2 h | 2.82 | 8.46 | 0 | 60 710 |
-| 4 h | 3.06 | 8.33 | 0 | 16 947 |
+| misao | kapija rasta A30 | blokova po kući | vrata po kući | kuća-dana bez para | „stoji" |
+|---|---|---|---|---|---|
+| 1 h | 7 dana | 2.33 | 33.2 | 118 | 0 |
+| 1 h | isključena | 2.90 | 52.1 | **379** | 1 |
+| 4 h | 7 dana | 2.77 | 43.5 | 58 | 7 |
+| 4 h | isključena | 3.09 | 52.9 | **254** | 18 |
 
-**Pravilo je pomoglo, ali razlika nije zatvorena.** Na starom merilu je 1 sat podigao
-zemlju sa 2.93 na 3.14. Na pravom merilu 1 sat i dalje drži manje od 4 sata.
+**A30 se potvrdila i sa pravim blokovima.** Bez nje kuće uzmu mnogo više zemlje (52
+vrata) i odu u minus tri do četiri puta češće. Kapija menja zemlju za solventnost, i to
+je bila njena svrha. Broj (7 dana) je sad u `HouseMindConfig.GrowthIncomeDays` i meri se
+sa `--growthDays`.
 
-**Šta je isključeno merenjem** (da se ne bi pogađalo): ekipa i ljudi su isti na obe
-kadence (1.5 naspram 1.6 ekipa, 7.5 naspram 7.3 aktivnih ljudi 14. dana), faze su iste
-(14 kuća ZEMLJA, 6 LJUDI), nijedna namera se ne odbija (prihvaćeno = predloženo), i na
-sat vremena kuća prihvati ČETIRI PUTA više naredbi nego na četiri sata. Dakle: brža
-kuća radi četiri puta više i postiže manje. Mehanizam nije dokazan.
+**Brža misao i dalje drži manje zemlje**, i sa pravim blokovima i sa pravim merilom.
+Mehanizam nije dokazan. Isključeno merenjem: ekipe, ljudi, faze, odbijanja — sve isto na
+obe kadence, a kuća na sat prihvati četiri puta više naredbi. Ništa se ne tunira dok se
+ne zna zašto (GAN-394).
 
-**Probano i odbačeno:** oštrija verzija pravila — ekipa ostaje dok ulica ne postane naša,
-sa danom počeka — je GORA: vrata po kući padnu sa 5.97 na 2.81, jer ekipe sede na
-zemlji koju ne mogu da uzmu. Ostavljena je blaža verzija.
+**Probano i odbačeno:** oštrija verzija pravila fokusa (ekipa ostaje dok ulica ne postane
+naša, dan počeka) — vrata po kući padnu na pola, jer ljudi sede na zemlji koju ne mogu
+da uzmu.
 
-**Ostaje otvoreno i ide u follow-up:** zašto brža misao postiže manje kad radi više.
-Ništa se ne tunira dok se ne zna.
+### 8.2b Plate protiv prihoda — ispravka prvog izveštaja
+
+Sa pravim blokovima ovo NIJE opšti problem kakvim sam ga prijavio:
+
+* na sat vremena: **118 kuća-dana od 8400 (1.4 %)**, i to samo **26 kuća od 600 (4.3 %)**;
+* na četiri sata: 58 kuća-dana (0.7 %), 19 kuća od 600 (3.2 %).
+
+Dakle ne pada svaka kuća — pada manjina, i kad počne da pada, pada sve dublje (po danima:
+3, 7, 11, 16, 18, 18, 21, 24 od 7. do 14. dana). To je kuća koja je izgubila zemlju ili
+je nikad nije uzela, a ne cenovnik koji ne valja. Vredi pogledati u EPIC 24, ali nije
+hitno i nije prepreka.
 
 ### 8.3 Nalazi dva Codex adversarial pregleda, i šta je popravljeno
 

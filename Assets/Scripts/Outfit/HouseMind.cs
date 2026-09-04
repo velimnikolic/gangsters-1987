@@ -83,6 +83,19 @@ namespace LivingCity.Outfit
         /// abandoned and the block goes back on the schedule.</summary>
         public float RoundStallHours = 2f;
 
+        /// <summary>
+        /// A30. Days of payroll the doors' weekly take must cover before a house signs
+        /// another man - the brake on a family recruiting itself broke. Zero lifts it
+        /// and leaves only the reserve rule (D9), which looks at the safe and not at
+        /// the income.
+        ///
+        /// It was written when the yardstick's blocks held three to six shops. A real
+        /// block holds about fifteen (the user, 2026-09-04), so the gate binds far less
+        /// often than the figure that justified it suggested. Measured both ways in
+        /// GAN-394.
+        /// </summary>
+        public int GrowthIncomeDays = 7;
+
         /// <summary>S2. A leg whose walkers have not arrived is marched again this
         /// often, in game hours (a quarter of an hour is fifteen real seconds).</summary>
         public float RoundRemarchHours = 0.25f;
@@ -824,7 +837,8 @@ namespace LivingCity.Outfit
                 if (Hoods(roster, crew) >= config.HoodsPerCrew)
                     continue;
                 if (!CanSign(view, config) ||
-                    weeklyTake < 7 * (view.DailyPayroll + Outfit.Wages.HoodBase))
+                    weeklyTake < config.GrowthIncomeDays *
+                        (view.DailyPayroll + Outfit.Wages.HoodBase))
                     return false;
                 if (Filed(view, OrderType.Recruit, crew.Id))
                     continue;
@@ -839,7 +853,8 @@ namespace LivingCity.Outfit
                 return false;
             if (WorkingHoods(view) < config.HoodsPerCrew + 2)
                 return false;
-            if (weeklyTake < 7 * (view.DailyPayroll + Outfit.Wages.LieutenantBase))
+            if (weeklyTake < config.GrowthIncomeDays *
+                    (view.DailyPayroll + Outfit.Wages.LieutenantBase))
                 return false;
 
             var best = BestHood(view, includeDetail: false);

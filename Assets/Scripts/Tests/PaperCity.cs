@@ -22,8 +22,21 @@ namespace LivingCity.Tests
     public sealed class PaperCity
     {
         public const int BlocksPerHouse = 4;
-        public const int MinDoors = 3;
-        public const int MaxDoors = 6;
+
+        /// <summary>
+        /// HOW MANY SHOPS A BLOCK HOLDS, read off the real city rather than invented
+        /// (the user's correction, 2026-09-04: "jedan blok ima uvek oko 15 radnji").
+        /// `gangsters_geography_audit` on seed 1987 counts 3564 business sites over 197
+        /// blocks: median 15, mean 18, one block in eight holding none at all and the
+        /// richest holding 48. This ladder is that distribution's deciles.
+        ///
+        /// The first yardstick dealt three to six a block - three to five times too
+        /// small - and every figure read off it about what a family can afford was
+        /// wrong in the same direction.
+        /// </summary>
+        static readonly int[] DoorsLadder = { 1, 8, 14, 15, 15, 17, 20, 32, 35, 41 };
+
+        public static int MedianDoors => 15;
 
         /// <summary>The generic ground-floor trades - the pool an unlabelled shopfront
         /// is dealt from in the real city, and the rates the yardstick prices doors at.
@@ -84,10 +97,10 @@ namespace LivingCity.Tests
             for (var b = 0; b < blocks.Length; b++)
             {
                 blocks[b] = new TerritoryBlockId("block:" + b);
-                // Varied, deterministic, and never a flat four: the same seed deals
-                // the same street twice, and thirty seeds deal thirty streets.
-                doorsPerBlock[b] = MinDoors +
-                    (int)((uint)Potential.Mix(seed, b * 7 + 3) % (MaxDoors - MinDoors + 1));
+                // Varied, deterministic, and the real city's own spread: the same seed
+                // deals the same street twice, and thirty seeds deal thirty streets.
+                doorsPerBlock[b] = DoorsLadder[
+                    (int)((uint)Potential.Mix(seed, b * 7 + 3) % (uint)DoorsLadder.Length)];
             }
         }
 

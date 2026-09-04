@@ -97,12 +97,13 @@ namespace LivingCity.Tests
                 AskedADoor + "/" + BankedABag + "/" + PaidTheMen + "/" + Answered;
         }
 
-        public static Report Run(int seed, int days, int houses, float thinkHours = 0f)
+        public static Report Run(int seed, int days, int houses, float thinkHours = 0f,
+            int growthDays = -1)
         {
             var report = new Report();
             try
             {
-                Simulate(seed, days, houses, thinkHours, report);
+                Simulate(seed, days, houses, thinkHours, growthDays, report);
             }
             catch (System.Exception error)
             {
@@ -112,7 +113,7 @@ namespace LivingCity.Tests
         }
 
         static void Simulate(int seed, int days, int houses, float thinkHours,
-            Report report)
+            int growthDays, Report report)
         {
             if (houses < 1)
                 houses = 1;
@@ -128,6 +129,8 @@ namespace LivingCity.Tests
             var config = new HouseMindConfig();
             if (thinkHours > 0f)
                 config.ThinkEveryHours = thinkHours;
+            if (growthDays >= 0)
+                config.GrowthIncomeDays = growthDays;
             var relations = world.Relations.Config;
             var racket = new TerritoryRacketLedger();
             var dues = new TerritoryDuesLedger();
@@ -257,9 +260,13 @@ namespace LivingCity.Tests
                     (round, stop) => city.Stop(racket, dues, round, stop, seed),
                     null);
 
-                // A round the paper clock has left behind (AI-002's measure).
+                // A round the paper clock has left behind (AI-002's measure). Only one
+                // still WALKING its doors: the leg home crosses the whole city on foot
+                // and the paper clock marks no movement until it arrives, so a round
+                // heading home reads as stalled when it is only far away.
                 for (var r = 0; r < rounds.Rounds.Count; r++)
-                    if (city.Hour - rounds.Rounds[r].LastMoveAt > config.RoundStallHours + 1.0)
+                    if (rounds.Rounds[r].Stage == TerritoryRoundStage.Walking &&
+                        city.Hour - rounds.Rounds[r].LastMoveAt > config.RoundStallHours + 1.0)
                         Fail(report, "seed " + seed + " day " + city.Day + " house " +
                                      rounds.Rounds[r].House.Value +
                                      ": a round has not moved for " +
