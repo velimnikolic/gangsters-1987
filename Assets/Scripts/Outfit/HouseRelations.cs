@@ -26,6 +26,11 @@ namespace LivingCity.Outfit
         /// <summary>They have one of ours in a cellar somewhere (RIVAL-009 step 6).
         /// </summary>
         ManTaken,
+
+        /// <summary>They lead the block next to ours and there is nowhere else left
+        /// to grow (AI-007, ruling A13: "i sama granica"). Filed once a day per
+        /// bordering block, and capped - geography alone never starts a war.</summary>
+        BorderPressure,
     }
 
     /// <summary>
@@ -80,6 +85,20 @@ namespace LivingCity.Outfit
         /// unpaid levy is worth: an insult with a price on it.</summary>
         public int ManTaken = 25;
 
+        /// <summary>
+        /// A18, the user's number of 2026-09-04: four a day PER BORDERING BLOCK, so a
+        /// squeezed house escalates and a house with one neighbour barely does (one
+        /// border nets two after decay and reaches the retake rung around day 20; two
+        /// net six, day 7; three net ten, day 4). And CAPPED at the retake rung: the
+        /// border alone carries a family to "take a door back off them" and stops
+        /// there. Everything above has to be earned by things that happened - a door
+        /// switched, a door attacked, a round lost, a man killed - so every war has a
+        /// story behind it, by construction rather than by tuning.
+        /// </summary>
+        public int BorderPressurePerDay = 4;
+
+        public int BorderPressureCap = 40;
+
         /// <summary>D15. A house declares war only if it can pay its men through one,
         /// and sues for peace when it cannot or when it has lost too many.</summary>
         public int MinWarDays = 14;
@@ -101,6 +120,7 @@ namespace LivingCity.Outfit
                 case GrievanceKind.ManKilled: return ManKilled;
                 case GrievanceKind.WarningIgnored: return WarningIgnored;
                 case GrievanceKind.ManTaken: return ManTaken;
+                case GrievanceKind.BorderPressure: return BorderPressurePerDay;
                 default: return TributeUnpaid;
             }
         }
@@ -209,6 +229,35 @@ namespace LivingCity.Outfit
             value += Config.AmountOf(kind);
             grievances[key] = value > 100f ? 100f : value;
             quietSince.Remove(Pair(aggrieved, offender));
+        }
+
+        /// <summary>
+        /// THE BORDER ITSELF (A13/A18). A day of standing next to a house that leads
+        /// the block beside ours, with nowhere else to grow: BorderPressurePerDay per
+        /// bordering block, and never past BorderPressureCap - a grudge already at or
+        /// above the cap is not touched, and one below it is raised to the cap at most.
+        /// Everything above the cap has to be earned by acts.
+        /// </summary>
+        /// <returns>What was actually added.</returns>
+        public int NoteBorder(int aggrieved, int offender, int borderingBlocks)
+        {
+            if (aggrieved == offender || aggrieved < 0 || offender < 0 ||
+                borderingBlocks <= 0)
+                return 0;
+            var key = Owed(aggrieved, offender);
+            grievances.TryGetValue(key, out var value);
+            if (value >= Config.BorderPressureCap)
+                return 0;
+            var added = Config.BorderPressurePerDay * borderingBlocks;
+            var raised = value + added;
+            if (raised > Config.BorderPressureCap)
+            {
+                added = (int)(Config.BorderPressureCap - value);
+                raised = Config.BorderPressureCap;
+            }
+            grievances[key] = raised;
+            quietSince.Remove(Pair(aggrieved, offender));
+            return added;
         }
 
         public LadderStep StepOf(int aggrieved, int offender) =>

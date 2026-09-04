@@ -48,9 +48,122 @@ namespace LivingCity.Tests
             AnAuditEndsEverySkim(failures);
             PowderShutsAShopForAWeek(failures);
             AManTakenComesBackInABed(failures);
+            ARefusedIntentWaitsTwelveHours(failures);
+            TheWatchComesOffAfterADay(failures);
+            TheDonsDetailIsGivenNoOrders(failures);
             TheMvpRunsForEverySeed(failures);
 
             return failures;
+        }
+
+        // ------------------------------------------------------------- AI-001 / AI-005
+
+        /// <summary>P4 (A24). A refused key is held for twelve game hours and no more;
+        /// a refusal nothing can cure is held until the case changes.</summary>
+        static void ARefusedIntentWaitsTwelveHours(List<string> failures)
+        {
+            var config = HouseMindConfig.Default;
+            var book = new HouseBackoffs();
+            book.Note("bail:7:5000", "no money", 10.0, config);
+            if (!book.Blocked("bail:7:5000", 10.0 + config.RefusalBackoffHours - 0.5))
+                failures.Add("HOUSE-012: a refused intent was asked again inside the window.");
+            if (book.Blocked("bail:7:5000", 10.0 + config.RefusalBackoffHours + 0.5))
+                failures.Add("HOUSE-012: a refused intent was still held after the window.");
+            if (book.Blocked("bail:8:5000", 11.0))
+                failures.Add("HOUSE-012: a refusal for one man silenced another.");
+
+            book.Note("bail:9:0", LivingCity.UI.LedgerText.ReasonNoBail, 10.0, config);
+            if (!book.Blocked("bail:9:0", 10.0 + 24.0 * 365.0))
+                failures.Add("HOUSE-012: no bail on the charge was retried a year later.");
+            book.Sweep(10.0 + 24.0 * 365.0);
+            if (book.Count != 1)
+                failures.Add("HOUSE-012: the sweep kept " + book.Count +
+                             " keys; only the permanent one should stand.");
+        }
+
+        /// <summary>S1 (A1/A22). A guard filed for an attack on the front comes off
+        /// once the block has been quiet for GuardStandsHours, through the same Cancel
+        /// the player's key uses - and is never filed twice for one door.</summary>
+        static void TheWatchComesOffAfterADay(List<string> failures)
+        {
+            var city = new RigCity(37, 6);
+            var config = HouseMindConfig.Default;
+            city.Stand(city.BlockIds[0], city.Mine, 60f);
+            city.Hour = 24.0;
+            city.Attack(city.BlockIds[0], new TerritoryGangId(9));
+
+            var intents = new List<HouseIntent>();
+            HouseMind.Think(city.Look(), config, intents);
+            Job guard = null;
+            for (var i = 0; i < intents.Count; i++)
+                if (intents[i].Kind == HouseIntentKind.Job && intents[i].Job != null &&
+                    intents[i].Job.Type == OrderType.Guard)
+                    guard = intents[i].Job;
+            if (guard == null)
+            {
+                failures.Add("HOUSE-013: an attack at the front filed no guard.");
+                return;
+            }
+            city.Carry(HouseIntent.Work(guard, HouseMind.TierSurvive, ""));
+
+            // The same attack, still fresh: no second guard on the same door.
+            city.Attack(city.BlockIds[0], new TerritoryGangId(9));
+            HouseMind.Think(city.Look(), config, intents);
+            for (var i = 0; i < intents.Count; i++)
+                if (intents[i].Kind == HouseIntentKind.Job && intents[i].Job != null &&
+                    intents[i].Job.Type == OrderType.Guard)
+                    failures.Add("HOUSE-013: a second guard was filed on a guarded door.");
+
+            // A day of quiet later: the watch is called off.
+            city.Hour += config.GuardStandsHours + 1.0;
+            HouseMind.Think(city.Look(), config, intents);
+            var cancelled = false;
+            for (var i = 0; i < intents.Count; i++)
+                if (intents[i].Kind == HouseIntentKind.Cancel &&
+                    intents[i].CharacterId == guard.Id)
+                    cancelled = true;
+            if (!cancelled)
+                failures.Add("HOUSE-013: the watch was never taken off after a quiet day.");
+        }
+
+        /// <summary>S3/S3b (A4). The Don's own detail - the crew whose lieutenant is the
+        /// Boss - is never handed an order, a block or a bag, whatever the tier.</summary>
+        static void TheDonsDetailIsGivenNoOrders(List<string> failures)
+        {
+            var config = HouseMindConfig.Default;
+            var intents = new List<HouseIntent>();
+            for (var seed = 1; seed <= 6; seed++)
+            {
+                var city = new RigCity(seed * 3, 2 + seed);
+                var roster = city.House.Roster;
+                Bodyguards.FallIn(roster);
+                var detail = Bodyguards.DetailOf(roster);
+                if (detail == null)
+                    continue;
+                city.Stand(city.BlockIds[0], city.Mine, 60f);
+                city.Attack(city.BlockIds[0], new TerritoryGangId(19));
+
+                for (var think = 0; think < 30; think++)
+                {
+                    city.Hour += 1.0;
+                    HouseMind.Think(city.Look(), config, intents);
+                    for (var i = 0; i < intents.Count; i++)
+                    {
+                        var intent = intents[i];
+                        var crewId = intent.Kind == HouseIntentKind.Job && intent.Job != null
+                            ? intent.Job.CrewId
+                            : intent.CrewId;
+                        var toTheDon = crewId == detail.Id ||
+                                       (intent.Kind == HouseIntentKind.AssignBlock &&
+                                        intent.CharacterId == roster.BossId) ||
+                                       (intent.Kind == HouseIntentKind.SetDuty &&
+                                        detail.HoodIds.Contains(intent.CharacterId));
+                        if (toTheDon && intent.Kind != HouseIntentKind.Cancel)
+                            failures.Add("HOUSE-014: seed " + seed + " gave the Don's detail " +
+                                         intent + " (" + intent.Reason + ").");
+                    }
+                }
+            }
         }
 
         // ------------------------------------------------------------------- the city

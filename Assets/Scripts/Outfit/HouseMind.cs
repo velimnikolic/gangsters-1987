@@ -376,6 +376,11 @@ namespace LivingCity.Outfit
                     continue;
                 if (view.GameHour - incident.Since > config.AnswerWindowHours)
                     continue;
+                // Men already on a door of that block have answered for it (A22b);
+                // a second crew on a second door of the same street is not an answer,
+                // it is the house standing still on two corners.
+                if (BlockGuarded(view, incident.BlockId))
+                    continue;
 
                 var crew = CrewOn(view, incident.BlockId);
                 if (crew == null)
@@ -1163,6 +1168,46 @@ namespace LivingCity.Outfit
                 "there is money on that street and nobody holding it"));
         }
 
+        /// <summary>
+        /// THE BORDER (AI-007 R1, ruling A13). The houses that lead a block next to
+        /// one we lead, and over how many of our blocks each of them does - read only
+        /// once the house has nowhere open left to take, which is the user's order of
+        /// things: take the free city first, and only then resent the neighbour. The
+        /// runtime files it as grievance once a day (A18); the mind only reads.
+        /// </summary>
+        public static void Borders(HouseView view, HouseMindConfig config,
+            List<(TerritoryGangId neighbour, int blocks)> into)
+        {
+            into?.Clear();
+            if (into == null || view?.Roster == null)
+                return;
+            config = config ?? HouseMindConfig.Default;
+            if (PhaseOf(view, config) == HousePhase.Land)
+                return;
+
+            for (var b = 0; b < view.Blocks.Count; b++)
+            {
+                var blockId = view.Blocks[b];
+                if (view.Leader(blockId) != view.House)
+                    continue;
+                var neighbours = view.Neighbours(blockId);
+                for (var n = 0; n < neighbours.Count; n++)
+                {
+                    var them = view.Leader(neighbours[n]);
+                    if (!them.IsValid || them == view.House)
+                        continue;
+                    var at = -1;
+                    for (var i = 0; i < into.Count && at < 0; i++)
+                        if (into[i].neighbour == them)
+                            at = i;
+                    if (at < 0)
+                        into.Add((them, 1));
+                    else
+                        into[at] = (them, into[at].blocks + 1);
+                }
+            }
+        }
+
         /// <summary>The open neighbour with the best score, or invalid when none
         /// clears zero (Z3: if none ever does, the numbers go to the user).</summary>
         static TerritoryBlockId BestNeighbour(HouseView view, HouseMindConfig config)
@@ -1640,6 +1685,20 @@ namespace LivingCity.Outfit
                 if (jobs[i].Type == OrderType.Guard &&
                     jobs[i].Stage != JobStage.Finished &&
                     jobs[i].TargetBusinessId == door.Value)
+                    return true;
+            return false;
+        }
+
+        /// <summary>Whether a watch of ours is filed on any door of this block.</summary>
+        static bool BlockGuarded(HouseView view, TerritoryBlockId blockId)
+        {
+            if (view.Book == null || !blockId.IsValid)
+                return false;
+            var jobs = view.Book.Jobs;
+            for (var i = 0; i < jobs.Count; i++)
+                if (jobs[i].Type == OrderType.Guard &&
+                    jobs[i].Stage != JobStage.Finished &&
+                    jobs[i].TargetLabel == blockId.Value)
                     return true;
             return false;
         }

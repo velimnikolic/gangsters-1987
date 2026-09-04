@@ -92,8 +92,16 @@ namespace LivingCity.Territory
             float powerFloor = 0.5f,
             float powerPenalty = 0.5f,
             float powerMemoryHours = 72f,
-            float powerAnswerWindowHours = 12f)
+            float powerAnswerWindowHours = 12f,
+            float killCredit = 0.05f,
+            float killCreditCap = 0.25f,
+            float killCreditDecayPerDay = 0.05f,
+            float arrestCost = 0.025f)
         {
+            KillCredit = Math.Max(0f, killCredit);
+            KillCreditCap = Math.Max(0f, killCreditCap);
+            KillCreditDecayPerDay = Math.Max(0f, killCreditDecayPerDay);
+            ArrestCost = Math.Max(0f, arrestCost);
             PresenceWeight = Math.Max(0f, presenceWeight);
             FearWeight = Math.Max(0f, fearWeight);
             ComplianceWeight = Math.Max(0f, complianceWeight);
@@ -151,6 +159,46 @@ namespace LivingCity.Territory
 
         /// <summary>How long a house has to answer before the street calls it unanswered.</summary>
         public float PowerAnswerWindowHours { get; }
+
+        /// <summary>
+        /// POWER IS WHAT YOU PROVED (AI-009, rulings A28/A29, the user's rule of
+        /// 2026-09-04: "strah je šta je ulica videla, moć je šta si dokazao"). One armed
+        /// man of another house killed is worth this much standing to the house that
+        /// killed him; one man of ours killed by the law costs the same with the sign
+        /// reversed (A29a) - one scale, two directions. The user set the brake himself:
+        /// killing alone never carries a house past a quarter of the scale
+        /// (<see cref="KillCreditCap"/>, "ako je max moć 100 ubijanje ga ne diže preko
+        /// 25"). The credit fades in DAYS, not months (A28c), or it snowballs. The
+        /// exact figures are post-MVP tuning in the user's own words; these are the
+        /// MVP's and live in the D-table.
+        /// </summary>
+        public float KillCredit { get; }
+
+        public float KillCreditCap { get; }
+
+        public float KillCreditDecayPerDay { get; }
+
+        /// <summary>A29b: a man of ours led away in handcuffs is a loss of face too,
+        /// smaller than a corpse.</summary>
+        public float ArrestCost { get; }
+
+        /// <summary>The most a coefficient can read: a house that answers for
+        /// everything and has proved itself on top of that.</summary>
+        public float PowerCeiling => 1f + KillCreditCap;
+
+        /// <summary>
+        /// THE FIGURE ON THE FAMILIES CARD (A27). The user reasons about power as
+        /// 0-100; the ledger multiplies control by a coefficient in
+        /// [PowerFloor, PowerCeiling]. The mapping, written in the D-table (A28a): a
+        /// house that answers for its ground and has proved nothing reads 75, the floor
+        /// reads 25, and killing carries it up to 100 and never past. Shown as an
+        /// integer so the card does not flicker.
+        /// </summary>
+        public int Display(float coefficient)
+        {
+            var figure = (int)Math.Round((coefficient - 0.25f) * 100f);
+            return figure < 0 ? 0 : figure > 100 ? 100 : figure;
+        }
 
         public static TerritoryControlConfig Default { get; } = new TerritoryControlConfig();
 
@@ -289,6 +337,13 @@ namespace LivingCity.Territory
             new Dictionary<TerritoryBlockId, BlockRow>();
         readonly List<TerritoryBlockId> blockIds = new List<TerritoryBlockId>();
 
+        /// <summary>THE HOUSE'S OWN STANDING (A28/A29): what it has proved, city-wide,
+        /// fading by the day. Kept apart from the per-block incidents because a
+        /// killing on their ground is a thing about the HOUSE, and because the FAMILIES
+        /// card wants one figure per family (A27, which decided A28d).</summary>
+        readonly Dictionary<TerritoryGangId, Standing> standings =
+            new Dictionary<TerritoryGangId, Standing>();
+
         public TerritoryPowerLedger(TerritoryControlConfig config = null) =>
             Config = config ?? TerritoryControlConfig.Default;
 
@@ -296,13 +351,23 @@ namespace LivingCity.Territory
 
         public IReadOnlyList<TerritoryBlockId> Blocks => blockIds;
 
-        /// <summary>Something was done to what this family protects here.</summary>
+        /// <summary>Something was done to what this family protects here, by nobody
+        /// the street could name.</summary>
         public void Incident(
-            TerritoryBlockId blockId, TerritoryGangId gangId, double gameHour)
+            TerritoryBlockId blockId, TerritoryGangId gangId, double gameHour) =>
+            Incident(blockId, gangId, default, gameHour);
+
+        /// <summary>Something was done to what this family protects here, and the
+        /// street knows whose men did it (A25). An invalid <paramref name="by"/> is
+        /// "two houses were shooting and nobody can say which" - still a bill somebody
+        /// owes, only one no reprisal can clear.</summary>
+        public void Incident(
+            TerritoryBlockId blockId, TerritoryGangId gangId, TerritoryGangId by,
+            double gameHour)
         {
             if (!blockId.IsValid || !gangId.IsValid)
                 return;
-            Row(blockId).Gang(gangId).Add(gameHour);
+            Row(blockId).Gang(gangId).Add(gameHour, by);
         }
 
         /// <summary>
@@ -319,16 +384,105 @@ namespace LivingCity.Territory
         }
 
         /// <summary>
+        /// A REPRISAL ON THEIR GROUND ANSWERS WHAT THEY DID ON MINE (A25, the user's
+        /// word: "spirala je dobra stvar i želim je"). <paramref name="striker"/> hit a
+        /// block <paramref name="struck"/> protects; every incident still open against
+        /// the striker that the struck house caused, on whichever block, is answered.
+        /// ONLY those: an incident somebody else caused, or one nobody could name, is
+        /// not laundered by hitting the wrong family. The window stays - a bill past
+        /// twelve hours is already lost standing, and the reprisal does not buy it back.
+        /// </summary>
+        /// <returns>How many incidents it answered.</returns>
+        public int Reprisal(TerritoryGangId striker, TerritoryGangId struck, double gameHour)
+        {
+            if (!striker.IsValid || !struck.IsValid || striker == struck)
+                return 0;
+            var answered = 0;
+            for (var i = 0; i < blockIds.Count; i++)
+                answered += blocks[blockIds[i]].AnswerCausedBy(striker, struck, gameHour, Config);
+            return answered;
+        }
+
+        /// <summary>
+        /// STANDING PROVED OR LOST (A28/A29). Positive for a rival's armed man killed;
+        /// negative for a man of ours the law killed or led away. Capped both ways at
+        /// KillCreditCap and fading by KillCreditDecayPerDay - the three brakes the
+        /// review asked for against the second spiral (more power, more control, more
+        /// money, more men, more killing).
+        /// </summary>
+        public void Credit(TerritoryGangId gangId, float amount, double gameHour)
+        {
+            if (!gangId.IsValid || amount == 0f)
+                return;
+            var now = StandingOf(gangId, gameHour) + amount;
+            var cap = Config.KillCreditCap;
+            standings[gangId] = new Standing(
+                now > cap ? cap : now < -cap ? -cap : now, gameHour);
+        }
+
+        /// <summary>What the house has proved, as of this hour: the credit less what
+        /// the days since have taken off it, toward nothing from either side.</summary>
+        public float StandingOf(TerritoryGangId gangId, double gameHour)
+        {
+            if (!standings.TryGetValue(gangId, out var standing))
+                return 0f;
+            var days = (gameHour - standing.At) / 24.0;
+            if (days < 0.0)
+                days = 0.0;
+            var faded = (float)(days * Config.KillCreditDecayPerDay);
+            if (standing.Value > 0f)
+                return standing.Value > faded ? standing.Value - faded : 0f;
+            return -standing.Value > faded ? standing.Value + faded : 0f;
+        }
+
+        /// <summary>
         /// What this family's word is worth here: one when it answers for its ground,
-        /// falling toward the floor as the unanswered pile up, and climbing back as the
-        /// street forgets.
+        /// falling toward the floor as the unanswered pile up, climbing back as the
+        /// street forgets - and lifted or lowered by what the house has proved of
+        /// itself lately, between the floor and the ceiling.
         /// </summary>
         public float Coefficient(
             TerritoryBlockId blockId, TerritoryGangId gangId, double gameHour)
         {
-            if (!blocks.TryGetValue(blockId, out var row))
-                return 1f;
-            return row.Coefficient(gangId, gameHour, Config);
+            var block = blocks.TryGetValue(blockId, out var row)
+                ? row.Coefficient(gangId, gameHour, Config)
+                : 1f;
+            return Clamp(block + StandingOf(gangId, gameHour));
+        }
+
+        /// <summary>
+        /// ONE FIGURE FOR THE WHOLE HOUSE (A27): the mean of its coefficient over the
+        /// blocks the caller names - the ones it protects doors on - or its bare
+        /// standing on top of one when it protects nothing yet. The card prints
+        /// <see cref="TerritoryControlConfig.Display"/> of this.
+        /// </summary>
+        public float HouseCoefficient(
+            TerritoryGangId gangId, IReadOnlyList<TerritoryBlockId> protectedBlocks,
+            double gameHour)
+        {
+            if (protectedBlocks == null || protectedBlocks.Count == 0)
+                return Clamp(1f + StandingOf(gangId, gameHour));
+            var sum = 0f;
+            for (var i = 0; i < protectedBlocks.Count; i++)
+                sum += Coefficient(protectedBlocks[i], gangId, gameHour);
+            return sum / protectedBlocks.Count;
+        }
+
+        float Clamp(float coefficient) =>
+            coefficient < Config.PowerFloor ? Config.PowerFloor
+            : coefficient > Config.PowerCeiling ? Config.PowerCeiling
+            : coefficient;
+
+        readonly struct Standing
+        {
+            public Standing(float value, double at)
+            {
+                Value = value;
+                At = at;
+            }
+
+            public float Value { get; }
+            public double At { get; }
         }
 
         /// <summary>The incidents behind the number, for the inspector.</summary>
@@ -441,6 +595,15 @@ namespace LivingCity.Territory
                         gangs.RemoveAt(i);
                 }
             }
+
+            public int AnswerCausedBy(TerritoryGangId gangId, TerritoryGangId by,
+                double gameHour, TerritoryControlConfig config)
+            {
+                for (var i = 0; i < gangs.Count; i++)
+                    if (gangs[i].GangId == gangId)
+                        return gangs[i].AnswerCausedBy(by, gameHour, config);
+                return 0;
+            }
         }
 
         sealed class GangRow
@@ -452,8 +615,8 @@ namespace LivingCity.Territory
             public TerritoryGangId GangId { get; }
             public bool IsEmpty => incidents.Count == 0;
 
-            public void Add(double gameHour) =>
-                incidents.Add(new Incident { At = gameHour, Answered = false });
+            public void Add(double gameHour, TerritoryGangId by) =>
+                incidents.Add(new Incident { At = gameHour, Answered = false, By = by });
 
             public void Answer(double gameHour, TerritoryControlConfig config)
             {
@@ -466,6 +629,25 @@ namespace LivingCity.Territory
                     incident.Answered = true;
                     incidents[i] = incident;
                 }
+            }
+
+            /// <summary>Only the incidents THIS house caused, still inside their
+            /// window (A25).</summary>
+            public int AnswerCausedBy(TerritoryGangId by, double gameHour,
+                TerritoryControlConfig config)
+            {
+                var answered = 0;
+                for (var i = 0; i < incidents.Count; i++)
+                {
+                    var incident = incidents[i];
+                    if (incident.Answered || !incident.By.IsValid || incident.By != by ||
+                        gameHour - incident.At > config.PowerAnswerWindowHours)
+                        continue;
+                    incident.Answered = true;
+                    incidents[i] = incident;
+                    answered++;
+                }
+                return answered;
             }
 
             public float Coefficient(double gameHour, TerritoryControlConfig config)
@@ -520,6 +702,10 @@ namespace LivingCity.Territory
             {
                 public double At;
                 public bool Answered;
+
+                /// <summary>Whose men did it, or invalid when the street could not
+                /// say (A25). Not saved: the power ledger never was.</summary>
+                public TerritoryGangId By;
             }
         }
     }

@@ -892,15 +892,15 @@ namespace RoadDemo
 
             // The law's own shots frighten a street and bring more law, but they make no
             // family feared: an unattributed act stays unattributed.
-            var gangId = shot.Faction == StreetAlarm.PoliceFaction
-                ? default
-                : new TerritoryGangId(shot.Faction);
+            var police = shot.Faction == StreetAlarm.PoliceFaction;
+            var gangId = police ? default : new TerritoryGangId(shot.Faction);
 
             for (var i = 0; i < pendingIncidents.Count; i++)
             {
                 var pending = pendingIncidents[i];
                 if (pending.Incident != StreetAlarm.IncidentNumber ||
-                    pending.BlockId != blockId || pending.GangId != gangId)
+                    pending.BlockId != blockId || pending.GangId != gangId ||
+                    pending.PoliceOnly != police)
                     continue;
                 pending.Shots++;
                 pendingIncidents[i] = pending;
@@ -908,7 +908,7 @@ namespace RoadDemo
             }
 
             pendingIncidents.Add(new PendingIncident(
-                StreetAlarm.IncidentNumber, blockId, gangId, 1, lastGameHour));
+                StreetAlarm.IncidentNumber, blockId, gangId, 1, lastGameHour, police));
             NoteStreetThreat(gangId, blockId, shot.Pos, lastGameHour);
         }
 
@@ -926,7 +926,8 @@ namespace RoadDemo
             var severity = who == StreetAlarm.DeathOf.Officer ? 1.6f
                 : who == StreetAlarm.DeathOf.Civilian ? 1.3f
                 : 1f;
-            var shooter = AttributeRecentViolence(position);
+            var attribution = AttributeShooting(position);
+            var shooter = attribution.Gang;
             NoteStreetThreat(shooter, blockId, position, lastGameHour);
 
             // A MAN OF THEIRS KILLED BY MEN OF OURS IS OWED FOR (D14). The house that
@@ -937,13 +938,78 @@ namespace RoadDemo
                     victimFaction, shooter.Value,
                     LivingCity.Outfit.GrievanceKind.ManKilled);
             RecordFear(new TerritoryFearEvent(
-                AttributeRecentViolence(position),
+                shooter,
                 blockId,
                 TerritoryFearCategory.Killing,
                 severity,
                 // A body in the street is a public fact whoever saw the shot.
                 TerritoryFearVisibility.Public,
-                lastGameHour));
+                lastGameHour), attribution.PoliceOnly);
+        }
+
+        /// <summary>
+        /// POWER IS WHAT YOU PROVED (AI-009, A28/A29). A man went down and the street
+        /// knows whose bullet it was: a rival's armed man killed by a house's men is
+        /// standing proved for that house; a man of a house killed by the law is
+        /// standing lost by that house, directly, with no incident to answer and no
+        /// grievance against the police - there is no spiral with the law. A dead
+        /// civilian, shopkeeper or officer raises fear and not power (A28b). Called by
+        /// the street at the moment of death, before the books are told.
+        /// </summary>
+        public void NoteKill(Vector3 where, int victimFaction, int killerFaction,
+            bool victimArmed, bool victimIsOfficer)
+        {
+            if (power == null || victimIsOfficer || victimFaction < 0 || killerFaction < 0)
+                return;
+            var victim = new TerritoryGangId(victimFaction);
+            if (killerFaction == StreetAlarm.PoliceFaction)
+            {
+                power.Credit(victim, -power.Config.KillCredit, lastGameHour);
+                return;
+            }
+            if (killerFaction == victimFaction || !victimArmed)
+                return;
+            power.Credit(new TerritoryGangId(killerFaction), power.Config.KillCredit,
+                lastGameHour);
+        }
+
+        /// <summary>A29b: men of a house led away by the law cost it standing too,
+        /// less than a corpse apiece.</summary>
+        public void NoteArrest(int faction, int men)
+        {
+            if (power == null || faction < 0 || men <= 0)
+                return;
+            power.Credit(new TerritoryGangId(faction),
+                -power.Config.ArrestCost * men, lastGameHour);
+        }
+
+        readonly List<TerritoryBlockId> protectedScratch = new List<TerritoryBlockId>();
+
+        /// <summary>
+        /// ONE POWER FIGURE FOR A HOUSE, 0-100 (A27): its coefficient over the blocks
+        /// it protects doors on, or its bare standing where it protects none yet, put
+        /// through the D-table's mapping. The FAMILIES card prints it.
+        /// </summary>
+        public int PowerOf(TerritoryGangId house)
+        {
+            if (power == null || !house.IsValid)
+                return power != null ? power.Config.Display(1f) : 75;
+            protectedScratch.Clear();
+            if (racket != null && geography != null)
+            {
+                var ids = racket.Businesses;
+                for (var i = 0; i < ids.Count; i++)
+                {
+                    if (!racket.TryGetProtector(ids[i], out var protector) ||
+                        protector != house)
+                        continue;
+                    if (geography.TryGetBusinessBlock(ids[i], out var blockId) &&
+                        !protectedScratch.Contains(blockId))
+                        protectedScratch.Add(blockId);
+                }
+            }
+            return power.Config.Display(
+                power.HouseCoefficient(house, protectedScratch, lastGameHour));
         }
 
         /// <summary>
@@ -971,11 +1037,36 @@ namespace RoadDemo
         const float AttributionSeconds = 6f;
         const float AttributionRange = 40f;
 
+        /// <summary>
+        /// WHO WAS SHOOTING HERE JUST NOW, as the street can tell it (A29). Three
+        /// answers, not two: one house; nobody the street can name because two houses
+        /// were firing (a bill somebody still owes); or only the law (a bill nobody
+        /// owes, and nobody is charged for). The old reading folded the last two into
+        /// one blank, and a police-only shooting was charged to every house on the
+        /// block - the ones that only watched included.
+        /// </summary>
+        readonly struct Attribution
+        {
+            public Attribution(TerritoryGangId gang, bool policeOnly)
+            {
+                Gang = gang;
+                PoliceOnly = policeOnly;
+            }
+
+            public TerritoryGangId Gang { get; }
+            public bool PoliceOnly { get; }
+        }
+
         /// <summary>The one faction that was shooting here just now, or nobody.</summary>
-        TerritoryGangId AttributeRecentViolence(Vector3 position)
+        TerritoryGangId AttributeRecentViolence(Vector3 position) =>
+            AttributeShooting(position).Gang;
+
+        Attribution AttributeShooting(Vector3 position)
         {
             var now = Time.time;
             var found = -1;
+            var police = false;
+            var houses = false;
             for (var i = recentShots.Count - 1; i >= 0; i--)
             {
                 var shot = recentShots[i];
@@ -989,13 +1080,20 @@ namespace RoadDemo
                     AttributionRange * AttributionRange)
                     continue;
                 if (shot.Faction == StreetAlarm.PoliceFaction)
+                {
+                    police = true;
                     continue;
+                }
+                houses = true;
                 if (found >= 0 && found != shot.Faction)
-                    return default;   // two houses were shooting; the street cannot say
-                found = shot.Faction;
+                    found = -2;   // two houses were shooting; the street cannot say
+                else if (found != -2)
+                    found = shot.Faction;
             }
 
-            return found < 0 ? default : new TerritoryGangId(found);
+            return new Attribution(
+                found < 0 ? default : new TerritoryGangId(found),
+                police && !houses);
         }
 
         /// <summary>
@@ -1003,13 +1101,13 @@ namespace RoadDemo
         /// violence, a resolved threat, an unanswered refusal - comes through here, and
         /// the event stream hears about it in the same breath.
         /// </summary>
-        float RecordFear(TerritoryFearEvent value)
+        float RecordFear(TerritoryFearEvent value, bool policeOnly = false)
         {
             if (fear == null || !value.BlockId.IsValid)
                 return 0f;
 
             var impact = fear.Record(value);
-            NotePower(value);
+            NotePower(value, policeOnly);
             fearDirty.Add(value.BlockId);
             events.Publish(new FearEventRecorded(
                 value.BlockId, value.GangId, value.SourceActorId, impact, value.GameHour));
@@ -1022,8 +1120,15 @@ namespace RoadDemo
         /// name; the family that DID it has answered for its own ground. That is the whole
         /// of Power in Phase 1: a house that never comes when its shops are hit is worth
         /// less on that street than one that does, whatever else it has going for it.
+        ///
+        /// Two rulings of 2026-09-04 on top (AI-009): violence that was ONLY the law's
+        /// charges nobody - the loss lands on the house whose men fell, through
+        /// NoteKill, and there is no spiral with the police (A29); and a house that
+        /// hits a block another family protects has thereby answered everything that
+        /// family did on its own ground (A25, the reprisal), which is the spiral the
+        /// user wants.
         /// </summary>
-        void NotePower(TerritoryFearEvent value)
+        void NotePower(TerritoryFearEvent value, bool policeOnly)
         {
             if (power == null || racket == null || geography == null || !value.BlockId.IsValid)
                 return;
@@ -1031,6 +1136,8 @@ namespace RoadDemo
                 value.Category != TerritoryFearCategory.PropertyDamage &&
                 value.Category != TerritoryFearCategory.Shot &&
                 value.Category != TerritoryFearCategory.Killing)
+                return;
+            if (policeOnly)
                 return;
 
             BlockBusinesses(value.BlockId);
@@ -1044,7 +1151,9 @@ namespace RoadDemo
                     continue;
                 }
 
-                power.Incident(value.BlockId, protector, value.GameHour);
+                power.Incident(value.BlockId, protector, value.GangId, value.GameHour);
+                if (value.GangId.IsValid)
+                    power.Reprisal(value.GangId, protector, value.GameHour);
 
                 // A STANDING GUARD ANSWERS (ruling A22b, the user's word of 2026-09-04:
                 // "pa ja ne mogu da upucam ako su pobegli"). Men already posted on a
@@ -1143,7 +1252,7 @@ namespace RoadDemo
                     pending.Shots >= publicIncidentShots
                         ? TerritoryFearVisibility.Public
                         : TerritoryFearVisibility.Seen,
-                    pending.GameHour));
+                    pending.GameHour), pending.PoliceOnly);
             }
 
             fearChanges.Clear();
@@ -1237,14 +1346,19 @@ namespace RoadDemo
         {
             public PendingIncident(
                 int incident, TerritoryBlockId blockId, TerritoryGangId gangId,
-                int shots, double gameHour)
+                int shots, double gameHour, bool policeOnly = false)
             {
                 Incident = incident;
                 BlockId = blockId;
                 GangId = gangId;
                 Shots = shots;
                 GameHour = gameHour;
+                PoliceOnly = policeOnly;
             }
+
+            /// <summary>The law's own fire, and only the law's (A29): frightening, and
+            /// charged to no house on the block.</summary>
+            public bool PoliceOnly { get; }
 
             public int Incident { get; }
             public TerritoryBlockId BlockId { get; }
@@ -1712,6 +1826,7 @@ namespace RoadDemo
             SweepDefiance(gameHour);
             SweepProtectionSwitches();
             AccrueDues(gameHour);
+            PressBorders(gameHour);
             TendScheduledRounds(gameHour);
             TickPaperRounds(gameHour);
             WatchRounds(gameHour);

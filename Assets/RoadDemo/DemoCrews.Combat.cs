@@ -1643,6 +1643,10 @@ namespace RoadDemo
                 CrewGore.Death(target, GroundY, floor: !IsAboard(target) && !target.Riding);
                 _deaths.Add((target, Time.time + DeathReportDelay));
                 var officer = target.Faction == StreetAlarm.PoliceFaction;
+                // POWER IS WHAT YOU PROVED (AI-009): the street knows whose bullet
+                // it was, and says so before the books are told.
+                TerritoryRuntime.Instance?.NoteKill(target.Tf.position, target.Faction,
+                    shooter.Faction, target.Armed, officer);
                 var defensivePoliceReturn = officer && shooterUnit != null &&
                     LivingCity.Police.PoliceProcedure.IsDefensivePoliceReturn(
                         shooterUnit.PoliceAttackedIncident,

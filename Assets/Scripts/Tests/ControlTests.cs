@@ -27,9 +27,112 @@ namespace LivingCity.Tests
             AStreetDoesNotChangeItsMindOnOneReading(failures);
             GroundIsWonAndLostByItsInputsAlone(failures);
             AHouseThatNeverAnswersIsWorthLess(failures);
+            AReprisalClearsOnlyWhatThatHouseOwes(failures);
+            KillingProvesPowerUpToTheCapAndTheLawTakesItBack(failures);
             AQuarterIsWhatItsStreetsAddUpTo(failures);
 
             return failures;
+        }
+
+        // ------------------------------------------------------------------- AI-009
+
+        /// <summary>
+        /// A25. Hitting the attacker's own ground answers what THAT house did on mine -
+        /// and only that: an incident somebody else caused, or one nobody could name,
+        /// is not laundered by hitting the wrong family.
+        /// </summary>
+        static void AReprisalClearsOnlyWhatThatHouseOwes(List<string> failures)
+        {
+            var config = TerritoryControlConfig.Default;
+            var power = new TerritoryPowerLedger(config);
+            var after = config.PowerAnswerWindowHours + 1.0;
+
+            // House 7 hit my block A; house 9 hit my block B; nobody could say who hit
+            // block B a second time.
+            power.Incident(BlockA, Gang(0), Gang(7), 0);
+            power.Incident(BlockB, Gang(0), Gang(9), 0);
+            power.Incident(BlockB, Gang(0), default, 0);
+
+            // I hit house 7's ground an hour later.
+            var answered = power.Reprisal(Gang(0), Gang(7), 1.0);
+            if (answered != 1)
+                failures.Add("AI-009: the reprisal answered " + answered +
+                             " incidents, not the one house 7 owed.");
+            if (Off(power.Coefficient(BlockA, Gang(0), after), 1f))
+                failures.Add("AI-009: the reprisal did not clear house 7's bill on block A.");
+            if (!(power.Coefficient(BlockB, Gang(0), after) < 1f))
+                failures.Add("AI-009: hitting house 7 laundered what house 9 did on block B.");
+
+            // Past the window it is standing already lost; the reprisal buys nothing.
+            var late = new TerritoryPowerLedger(config);
+            late.Incident(BlockA, Gang(0), Gang(7), 0);
+            if (late.Reprisal(Gang(0), Gang(7), after) != 0)
+                failures.Add("AI-009: a reprisal after the window answered an old bill.");
+
+            // A reprisal against nobody, or against oneself, answers nothing.
+            if (power.Reprisal(Gang(0), Gang(0), 1.0) != 0 ||
+                power.Reprisal(Gang(0), default, 1.0) != 0)
+                failures.Add("AI-009: a reprisal against nobody answered something.");
+        }
+
+        /// <summary>
+        /// A28/A29. A rival's armed man killed is standing proved, never past the cap
+        /// the user set ("ne diže preko 25"); a man of ours the law killed is standing
+        /// lost by the same measure; both fade by the day; and the FAMILIES figure maps
+        /// the floor, the neutral house and the ceiling to 25, 75 and 100.
+        /// </summary>
+        static void KillingProvesPowerUpToTheCapAndTheLawTakesItBack(List<string> failures)
+        {
+            var config = TerritoryControlConfig.Default;
+            var power = new TerritoryPowerLedger(config);
+
+            power.Credit(Gang(3), config.KillCredit, 0);
+            if (!(power.Coefficient(BlockA, Gang(3), 0) > 1f))
+                failures.Add("AI-009: a kill proved nothing.");
+
+            for (var i = 0; i < 40; i++)
+                power.Credit(Gang(3), config.KillCredit, 0);
+            var top = power.Coefficient(BlockA, Gang(3), 0);
+            if (Off(top, config.PowerCeiling))
+                failures.Add("AI-009: forty kills carried a house past the cap (" + top + ").");
+            if (config.Display(top) != 100)
+                failures.Add("AI-009: the ceiling does not read 100 (" +
+                             config.Display(top) + ").");
+            if (config.Display(1f) != 75)
+                failures.Add("AI-009: a house that has proved nothing does not read 75 (" +
+                             config.Display(1f) + ").");
+            if (config.Display(config.PowerFloor) != 25)
+                failures.Add("AI-009: the floor does not read 25 (" +
+                             config.Display(config.PowerFloor) + ").");
+
+            // It fades in days, not months, and toward nothing.
+            var days = config.KillCreditCap / config.KillCreditDecayPerDay + 1f;
+            if (Off(power.Coefficient(BlockA, Gang(3), days * 24.0), 1f))
+                failures.Add("AI-009: the credit did not fade back to neutral in " + days +
+                             " days.");
+
+            // The law takes it back, directly, with no incident to answer.
+            var law = new TerritoryPowerLedger(config);
+            law.Credit(Gang(3), -config.KillCredit, 0);
+            if (!(law.Coefficient(BlockA, Gang(3), 0) < 1f))
+                failures.Add("AI-009: a man the law killed cost the house nothing.");
+            for (var i = 0; i < 40; i++)
+                law.Credit(Gang(3), -config.KillCredit, 0);
+            if (law.Coefficient(BlockA, Gang(3), 0) < 1f - config.KillCreditCap - 0.001f)
+                failures.Add("AI-009: the law dragged a house past the cap the other way.");
+            law.Collect(BlockA, Gang(3), 0, out var incidents, out _);
+            if (incidents != 0)
+                failures.Add("AI-009: a police killing filed an incident to answer.");
+
+            // One figure for the house: the mean over its protected blocks.
+            var house = new TerritoryPowerLedger(config);
+            house.Incident(BlockA, Gang(5), 0);
+            var after = config.PowerAnswerWindowHours + 1.0;
+            var mean = house.HouseCoefficient(Gang(5), new[] { BlockA, BlockB }, after);
+            var expected = (house.Coefficient(BlockA, Gang(5), after) +
+                            house.Coefficient(BlockB, Gang(5), after)) * 0.5f;
+            if (Off(mean, expected))
+                failures.Add("AI-009: the house figure is not the mean of its blocks.");
         }
 
         // ------------------------------------------------------------------- CTRL-001/006

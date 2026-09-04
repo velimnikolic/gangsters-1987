@@ -307,9 +307,16 @@ namespace RoadDemo
             {
                 // MEN ON THE DOOR. They are there; the address is theirs until the order
                 // comes off. Nothing else happens on a Guard - a watch is stood.
-                Guarding[unit.CrewId] = (
-                    job.Id, new LivingCity.Territory.TerritoryBusinessId(
-                        job.TargetBusinessId));
+                var door = new LivingCity.Territory.TerritoryBusinessId(job.TargetBusinessId);
+                var stood = Guarding.TryGetValue(unit.CrewId, out var watch) &&
+                            watch.JobId == job.Id;
+                Guarding[unit.CrewId] = (job.Id, door);
+                // THE MEN ARRIVED (A22b): whatever was still open against the house on
+                // this block inside its window is answered the moment the watch is
+                // stood, not only what happens after.
+                if (!stood)
+                    TerritoryRuntime.Instance?.NoteGuardStanding(
+                        door, new LivingCity.Territory.TerritoryGangId(unit.Faction));
                 return;
             }
 

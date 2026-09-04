@@ -220,50 +220,11 @@ namespace RoadDemo
         {
             if (crews == null)
                 return;
-            var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
-            if (outfit == null || !outfit.TryGetHeadquarters(out var hq, out _))
-                return;
-            var hqMapped = TryGetBlockAtWorld(hq, out var hqBlock);
-
-            DemoCrews.Unit threat = null;
-            if (hqMapped)
-                for (var i = 0; i < crews.Units.Count; i++)
-                {
-                    var unit = crews.Units[i];
-                    if (unit == null || unit.Faction <= 0 || unit.IsPolice || unit.Wiped ||
-                        CrewQuarters.Inside(unit) ||
-                        !TryGetBlockAtWorld(unit.Position, out var block) || block != hqBlock)
-                        continue;
-                    threat = unit;
-                    break;
-                }
-
-            // The other trigger is a fight already under way at home, even when its
-            // opponent is the law or is not otherwise a rival crew the scan above
-            // would choose. Both sides must still be on the headquarters block: the
-            // bag detail defends the doorstep; it never chases a fight into the next
-            // street.
-            if (threat == null && hqMapped)
-                for (var i = 0; i < crews.Units.Count; i++)
-                {
-                    var ours = crews.Units[i];
-                    var target = ours?.TargetUnit;
-                    if (ours == null || ours.Faction != 0 || ours.IsDetachment ||
-                        ours.Wiped || CrewQuarters.Inside(ours) ||
-                        target == null || target.Wiped || CrewQuarters.Inside(target) ||
-                        !TryGetBlockAtWorld(ours.Position, out var ourBlock) ||
-                        ourBlock != hqBlock ||
-                        !TryGetBlockAtWorld(target.Position, out var targetBlock) ||
-                        targetBlock != hqBlock)
-                        continue;
-                    threat = target;
-                    break;
-                }
 
             for (var i = 0; i < crews.Units.Count; i++)
             {
                 var bag = crews.Units[i];
-                if (bag == null || bag.Faction != 0 || !bag.IsDetachment || bag.Wiped)
+                if (bag == null || bag.Faction < 0 || !bag.IsDetachment || bag.Wiped)
                     continue;
                 if (TryGetRound(bag.CrewId, out _, out _, out _) ||
                     BagRoundPending(bag.CrewId))
@@ -271,6 +232,10 @@ namespace RoadDemo
                     bagThreatSeenAt.Remove(bag.CrewId);
                     continue;
                 }
+
+                // EVERY HOUSE'S DETAIL DEFENDS ITS OWN DOORSTEP (AI-003, A9): the
+                // player's at his headquarters, a family's at its front.
+                var threat = ThreatAtHome(new TerritoryGangId(bag.Faction));
 
                 if (threat != null)
                 {
@@ -297,6 +262,46 @@ namespace RoadDemo
                 if (crews.StationBagAtHeadquarters(bag))
                     bagThreatSeenAt.Remove(bag.CrewId);
             }
+        }
+
+        /// <summary>
+        /// Somebody a house's bag detail has to come out for: a crew of another house
+        /// standing on the home block, or a fight already under way there between the
+        /// house's own line and anybody - the law included. Both sides must be on the
+        /// home block; the detail defends the doorstep and never chases a fight into
+        /// the next street.
+        /// </summary>
+        DemoCrews.Unit ThreatAtHome(TerritoryGangId house)
+        {
+            var home = HomeDoor(house);
+            if (home == Vector3.zero || !TryGetBlockAtWorld(home, out var homeBlock))
+                return null;
+
+            for (var i = 0; i < crews.Units.Count; i++)
+            {
+                var unit = crews.Units[i];
+                if (unit == null || unit.Faction < 0 || unit.Faction == house.Value ||
+                    unit.IsPolice || unit.Wiped || CrewQuarters.Inside(unit) ||
+                    !TryGetBlockAtWorld(unit.Position, out var block) || block != homeBlock)
+                    continue;
+                return unit;
+            }
+
+            for (var i = 0; i < crews.Units.Count; i++)
+            {
+                var ours = crews.Units[i];
+                var target = ours?.TargetUnit;
+                if (ours == null || ours.Faction != house.Value || ours.IsDetachment ||
+                    ours.Wiped || CrewQuarters.Inside(ours) ||
+                    target == null || target.Wiped || CrewQuarters.Inside(target) ||
+                    !TryGetBlockAtWorld(ours.Position, out var ourBlock) ||
+                    ourBlock != homeBlock ||
+                    !TryGetBlockAtWorld(target.Position, out var targetBlock) ||
+                    targetBlock != homeBlock)
+                    continue;
+                return target;
+            }
+            return null;
         }
 
         /// <summary>The physical half of a round: the men walking it, the man who
@@ -390,6 +395,9 @@ namespace RoadDemo
             var body = new RoundBody
             {
                 Round = round, Collector = collector, Walkers = walkers,
+                // The opening march is the first leg; the watchdog re-issues it only
+                // once a re-march interval has passed, not on its first look.
+                NextRemarchAt = lastGameHour + mindConfig.RoundRemarchHours,
             };
             for (var i = 0; i < ordered.Count; i++)
                 body.Doors.Add(ordered[i].Door);
@@ -741,12 +749,13 @@ namespace RoadDemo
                 return TerritoryCommandExecution.Reject(
                     "Nothing on that block owes us anything yet.");
 
-            // Our line never walks collection orders. Its autonomous bag detail comes
-            // out of the headquarters and owns the route. Rival paper still falls back
-            // to the physical line where that family has no detached projection.
-            if (command.House == LivingCity.Gameplay.PlayerCommands.House)
+            // NO LINE WALKS A COLLECTION, whose ever it is (AI-003, ruling A9): the
+            // crew's bag detail comes out of its own front and owns the route, for
+            // every house alike. A house whose crew has no man on the bag is refused
+            // in the same words the player is, and its mind marks one (tier 4).
             {
-                var roster = LivingCity.Outfit.Underworld.Current?.Player?.Roster;
+                var roster = LivingCity.Outfit.Underworld.Current?
+                    .Of(command.House.Value)?.Roster;
                 var assignedId = LivingCity.Personnel.RosterOps.CollectorOf(
                     roster, unit.CrewId);
                 var assigned = roster?.Find(assignedId);
@@ -756,10 +765,9 @@ namespace RoadDemo
                         "The crew's collector is not available to walk the round.");
             }
             var walkers = crews.BagUnitOf(unit.CrewId);
-            if (command.House == LivingCity.Gameplay.PlayerCommands.House && walkers == null)
+            if (walkers == null)
                 return TerritoryCommandExecution.Reject(
                     "The crew has no bag detail on the street.");
-            walkers ??= unit;
             var collector = CollectorOf(walkers);
             if (collector == null)
                 return TerritoryCommandExecution.Reject(
@@ -940,10 +948,10 @@ namespace RoadDemo
         {
             // A STANDING ROUND NEEDS THE BAG MAN ON THE STREET (GAN-262), in his own
             // unit: a mark on the books with nobody standing under it sends nothing.
-            // Only our own crews deal a man out into a bag unit at all - a family's
-            // round is walked by its line, or by the paper clock, and asking after a
-            // detachment they never form would stop their rounds for good.
-            if (house.IsPlayer && crews.BagUnitOf(crew.Id) == null)
+            // Every house deals its bag men out since AI-003 (A9); a house the city
+            // never stood up has no unit at all and its round is the paper clock's.
+            if (crews.BagUnitOf(crew.Id) == null &&
+                Stands(new TerritoryGangId(house.GangId)))
                 return false;
 
             var previousOrigin = submittingOrigin;

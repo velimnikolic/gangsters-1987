@@ -27,8 +27,53 @@ namespace LivingCity.Tests
             APeacePairFightsOnlyWhenProvoked(failures);
             NobodyReadsAnotherHousesBooks(failures);
             AKillingOnPaperStrikesTheRightManOff(failures);
+            TheBorderIsAGrievanceAndNeverAWar(failures);
 
             return failures;
+        }
+
+        // ------------------------------------------------------------------- AI-007
+
+        /// <summary>
+        /// A13/A18. A day on the border is worth the table's figure per bordering
+        /// block, it is directed, and it is CAPPED at the retake rung: geography alone
+        /// carries a house to "take a door back off them" and stops there. Everything
+        /// above has to be earned by acts.
+        /// </summary>
+        static void TheBorderIsAGrievanceAndNeverAWar(List<string> failures)
+        {
+            var config = HouseRelationsConfig.Default;
+            var book = new HouseRelations(config);
+
+            var added = book.NoteBorder(1, 2, 2);
+            if (added != config.BorderPressurePerDay * 2 ||
+                System.Math.Abs(book.Grievance(1, 2) - added) > 0.001f)
+                failures.Add("RELATIONS-009: two bordering blocks were worth " + added +
+                             ", not " + config.BorderPressurePerDay * 2 + ".");
+            if (book.Grievance(2, 1) != 0f)
+                failures.Add("RELATIONS-009: the border put a grudge on the wrong side.");
+
+            for (var day = 0; day < 60; day++)
+                book.NoteBorder(1, 2, 3);
+            if (book.Grievance(1, 2) > config.BorderPressureCap + 0.001f)
+                failures.Add("RELATIONS-009: the border alone climbed past the cap to " +
+                             book.Grievance(1, 2) + ".");
+            if (book.StepOf(1, 2) > LadderStep.RetakeBusiness)
+                failures.Add("RELATIONS-009: geography alone reached " + book.StepOf(1, 2) +
+                             "; a war needs acts.");
+
+            // An act on top of the border DOES climb past it.
+            book.Note(1, 2, GrievanceKind.ManKilled);
+            if (!(book.Grievance(1, 2) > config.BorderPressureCap))
+                failures.Add("RELATIONS-009: a killing on top of the border was capped too.");
+
+            // And once past the cap the border adds nothing more.
+            if (book.NoteBorder(1, 2, 3) != 0)
+                failures.Add("RELATIONS-009: the border kept adding above the cap.");
+
+            // A house with nothing to file files nothing.
+            if (book.NoteBorder(1, 1, 3) != 0 || book.NoteBorder(1, 4, 0) != 0)
+                failures.Add("RELATIONS-009: a border with oneself, or of no blocks, counted.");
         }
 
         // ------------------------------------------------------------------ RIVAL-007

@@ -38,7 +38,8 @@ namespace LivingCity.UI
         /// belongs on its own card - and FOLLOW-002 added the fifth, because a house
         /// that has absorbed one of our lieutenants and his men is a standing fact
         /// about it and the paper's line about that night scrolls away in a week.</summary>
-        const float FamilyCardH = 294f;
+        // One row taller since the POWER row (AI-009, A27).
+        const float FamilyCardH = 316f;
 
         static float FamiliesTop = FamilyMineY - FamilyMineH - 10f;
         static float FamiliesHeight = 452f;
@@ -206,10 +207,12 @@ namespace LivingCity.UI
                 var name = Line(strip, LedgerStyle.Condensed, 20f, LedgerV2.Ink, 92f, -6f,
                     620f, 26f, gang.Name.ToUpperInvariant() + " · YOURS");
                 name.characterSpacing = 3f;
+                var ownPower = PowerFigure(gang.Id);
                 Line(strip, LedgerStyle.Mono, 13f, LedgerV2.Muted, 92f, -30f, 620f, 20f,
                     "Boss: " + (boss != null ? boss.FullName : Gangs.GangCatalog.BossName) +
                     "  ·  " + held +
-                    (held == 1 ? " building" : " buildings") + " on the map");
+                    (held == 1 ? " building" : " buildings") + " on the map" +
+                    (ownPower < 0 ? "" : "  ·  Power " + ownPower + "/100"));
 
                 var mine = Gangs.GangRegistry.FrontBusinessOf(gang.Id);
                 var myBooks = Gangs.GangRegistry.FrontBooksOf(gang.Id);
@@ -312,12 +315,19 @@ namespace LivingCity.UI
             CardRow(card, pad, -142f, inner, "CAPOS",
                 capos > 0 ? capos.ToString() : "not known", LedgerV2.Ink);
 
+            // POWER, 0-100 (AI-009, ruling A27): what the house has proved on the
+            // streets it is paid for, read off the same ledger that scales its control.
+            var power = PowerFigure(gang.Id);
+            CardRow(card, pad, -164f, inner, "POWER",
+                power < 0 ? "not known" : power.ToString(),
+                power < 0 ? LedgerV2.Muted : power < 50 ? LedgerV2.Red : LedgerV2.Ink);
+
             // FOLLOW-002. What this house has taken off us: the men who walked out of
             // our own book and through its door. Always printed, "nobody" and all, so
             // the card is one fixed grid rather than a layout that moves under the
             // reader when a lieutenant breaks.
             var taken = outfit ? outfit.Runner.MenLostTo(gang.Id) : 0;
-            CardRow(card, pad, -164f, inner, "TAKEN",
+            CardRow(card, pad, -186f, inner, "TAKEN",
                 taken == 0 ? "nobody of ours"
                     : taken == 1 ? "one of our men"
                         : taken + " of our men",
@@ -329,7 +339,7 @@ namespace LivingCity.UI
             var levy = outfit ? outfit.Tribute.For(gang.Id) : null;
             var today = outfit ? outfit.Campaign.Day : 1;
             var hourNow = cityClock ? cityClock.Hour : 0f;
-            CardRow(card, pad, -186f, inner, "OWED",
+            CardRow(card, pad, -208f, inner, "OWED",
                 levy == null || levy.Amount <= 0
                     ? "nothing — you are not under them"
                     : LedgerText.Cash(levy.Amount) + " · " +
@@ -345,9 +355,9 @@ namespace LivingCity.UI
             // either one names the door.
             var front = Gangs.GangRegistry.FrontBusinessOf(gang.Id);
             var books = Gangs.GangRegistry.FrontBooksOf(gang.Id);
-            Rule(card, pad, -210f, inner, LedgerV2.Rule);
+            Rule(card, pad, -232f, inner, LedgerV2.Rule);
             var note = Paragraph(card, LedgerStyle.SerifItalic, 13.5f, LedgerV2.PaperBlue,
-                pad, -218f, inner, 38f,
+                pad, -240f, inner, 38f,
                 front ? front.BusinessName + " is the door."
                 : books != null
                     ? books.Sign +
@@ -365,7 +375,7 @@ namespace LivingCity.UI
                 var choice = (Outfit.Stance)s;
                 var gangId = gang.Id;
                 var button = LedgerV2.Button(card, LedgerText.StanceLabel(choice),
-                    pad + s * (buttonW + 4f), -256f, buttonW, 26f, () =>
+                    pad + s * (buttonW + 4f), -278f, buttonW, 26f, () =>
                     {
                         if (outfit)
                             outfit.SetStance(gangId, choice);
@@ -373,6 +383,17 @@ namespace LivingCity.UI
                     }, red: choice == Outfit.Stance.War, size: 10f,
                     outline: choice != effective);
             }
+        }
+
+        /// <summary>A house's power, 0-100, off the territory runtime's own ledger
+        /// (AI-009); negative in a scene with no territory, and the row says so.
+        /// </summary>
+        static int PowerFigure(int gangId)
+        {
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            return runtime != null
+                ? runtime.PowerOf(new Territory.TerritoryGangId(gangId))
+                : -1;
         }
 
         /// <summary>One line of a card's particulars: the label on the left, the answer

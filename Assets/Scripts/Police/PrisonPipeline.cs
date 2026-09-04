@@ -92,6 +92,11 @@ namespace LivingCity.Police
         /// his court day rather than the moment the order is given, so a player who
         /// changes his mind before then still has a man to send.</summary>
         public bool SkipOrdered;
+
+        /// <summary>How many days running the transfer for his current leg has failed
+        /// to run - no car, the patience gone, the car's body lost (AI-006). Reset by
+        /// a leg that starts, and by a verdict.</summary>
+        public int TransferFails;
     }
 
     /// <summary>
@@ -135,6 +140,16 @@ namespace LivingCity.Police
         /// inside the fortnight answers for it as an extra count; after that the
         /// precinct has other things to think about.</summary>
         public const int ComplaintMemoryDays = 14;
+
+        /// <summary>
+        /// THE COURT THAT NEVER SITS (AI-006, ruling A16: "papirni transfer posle 2
+        /// propala dana"). A transfer that failed to run this many days running is
+        /// carried on paper - no convoy, the man put in front of the judge, or the van
+        /// delivered - so a precinct with every car busy cannot hold a man in the
+        /// cells for ever a day at a time. Counted per prisoner per leg, and it applies
+        /// to BOTH legs and to the player's own men exactly as to the twenty houses.
+        /// </summary>
+        public const int TransferFailsBeforePaper = 2;
 
         /// <summary>The seed the sentence and verdict rolls come off. Set once from the
         /// roster.</summary>
@@ -463,9 +478,11 @@ namespace LivingCity.Police
         /// - and the caller decides whether there is a car to run it in. A precinct with
         /// no car free sends no convoy today, and the man simply waits for tomorrow.
         /// </summary>
-        public void DayTick(int today, List<Prisoner> wantTransfer)
+        public void DayTick(int today, List<Prisoner> wantTransfer,
+            List<Prisoner> onPaper = null)
         {
             wantTransfer?.Clear();
+            onPaper?.Clear();
             for (var i = 0; i < _inside.Count; i++)
             {
                 var prisoner = _inside[i];
@@ -475,7 +492,7 @@ namespace LivingCity.Police
                         continue;
                     prisoner.Stage = PrisonStage.ForTransfer;
                     prisoner.Leg = PrisonLeg.Court;
-                    wantTransfer?.Add(prisoner);
+                    Route(prisoner, wantTransfer, onPaper);
                     continue;
                 }
 
@@ -485,10 +502,43 @@ namespace LivingCity.Police
                     continue;
                 prisoner.Stage = PrisonStage.ForTransfer;
                 prisoner.Leg = PrisonLeg.Prison;
-                wantTransfer?.Add(prisoner);
+                Route(prisoner, wantTransfer, onPaper);
             }
 
             LapseAbandonedCases(today);
+        }
+
+        /// <summary>A leg that has failed enough days running goes on paper (AI-006);
+        /// a caller that hands no paper list gets it as a convoy as before.</summary>
+        static void Route(Prisoner prisoner, List<Prisoner> wantTransfer,
+            List<Prisoner> onPaper)
+        {
+            if (onPaper != null && prisoner.TransferFails >= TransferFailsBeforePaper)
+                onPaper.Add(prisoner);
+            else
+                wantTransfer?.Add(prisoner);
+        }
+
+        /// <summary>
+        /// THE LEG CARRIED ON PAPER (AI-006). No car ran for him twice; the court leg
+        /// puts him in front of the judge today, the prison leg delivers him. The same
+        /// verdict roll and the same paper as a man off the back of a convoy - only
+        /// the road is skipped, and with it the player's chance at the car.
+        /// </summary>
+        public void OnPaper(Roster roster, Prisoner prisoner, int today)
+        {
+            if (roster == null || prisoner == null ||
+                prisoner.Stage != PrisonStage.ForTransfer)
+                return;
+            prisoner.TransferFails = 0;
+            if (prisoner.Leg == PrisonLeg.Prison)
+            {
+                prisoner.Stage = PrisonStage.InTransit;
+                Delivered(prisoner);
+                return;
+            }
+            prisoner.Stage = PrisonStage.InTransit;
+            Tried(roster, prisoner, today);
         }
 
         /// <summary>
@@ -541,6 +591,8 @@ namespace LivingCity.Police
             if (prisoner == null) return;
             if (prisoner.Stage != PrisonStage.InTransit &&
                 prisoner.Stage != PrisonStage.ForTransfer) return;
+            // One more day the road did not run for him (AI-006).
+            prisoner.TransferFails++;
             if (prisoner.Leg == PrisonLeg.Prison)
             {
                 prisoner.Stage = PrisonStage.Sentenced;
@@ -769,6 +821,8 @@ namespace LivingCity.Police
             prisoner.OutOnDay = Sentencing.IsLife(days) ? Sentencing.Life : today + days;
             prisoner.Stage = PrisonStage.Sentenced;
             prisoner.Leg = PrisonLeg.None;
+            // A new leg, a fresh count of failed days (AI-006).
+            prisoner.TransferFails = 0;
             // AND THE VAN IS BOOKED. He is held at the court overnight and driven out of
             // town in the morning; the road between is the player's last chance at him.
             prisoner.PrisonDay = today > 0 ? today + Sentencing.DaysToPrison : 0;

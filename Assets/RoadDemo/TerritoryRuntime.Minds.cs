@@ -395,6 +395,42 @@ namespace RoadDemo
             return list;
         }
 
+        // ------------------------------------------------------------------ the border
+
+        int lastBorderDay = -1;
+        readonly List<(TerritoryGangId neighbour, int blocks)> borderScratch =
+            new List<(TerritoryGangId, int)>();
+
+        /// <summary>
+        /// THE BORDER IS A GRIEVANCE (AI-007, rulings A13/A18). Once a day, every house
+        /// with a mind that has nowhere open left to take files BorderPressure against
+        /// each neighbour leading a block beside its own, per bordering block, capped
+        /// at the retake rung. The player's own grudges are his to hold; the twenty
+        /// houses hold theirs against him like against anybody.
+        /// </summary>
+        void PressBorders(double gameHour)
+        {
+            var day = (int)(gameHour / 24.0);
+            if (day == lastBorderDay)
+                return;
+            var first = lastBorderDay < 0;
+            lastBorderDay = day;
+            if (first || Relations == null || geography == null || racket == null)
+                return;
+
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            for (var g = 0; underworld != null && g < underworld.Count; g++)
+            {
+                var house = underworld.Of(g);
+                if (house == null || house.IsPlayer || house.Finished)
+                    continue;
+                HouseMind.Borders(Look(house, gameHour), mindConfig, borderScratch);
+                for (var i = 0; i < borderScratch.Count; i++)
+                    Relations.NoteBorder(house.GangId, borderScratch[i].neighbour.Value,
+                        borderScratch[i].blocks);
+            }
+        }
+
         // -------------------------------------------------------------------- the view
 
         /// <summary>The view as the mind would read it this instant, for the probe
@@ -826,6 +862,21 @@ namespace RoadDemo
                 return;
             power.Answered(blockId, house, lastGameHour);
             RecordRetaliation(blockId, house);
+        }
+
+        /// <summary>
+        /// THE WATCH IS STOOD (ruling A22b). A crew has reached the door it was sent to
+        /// sit on: every incident against its house on that block still inside the
+        /// answer window is answered by it - a guard posted an hour after the shooting
+        /// is the house coming when called, not the house arriving late.
+        /// </summary>
+        public void NoteGuardStanding(TerritoryBusinessId door, TerritoryGangId house)
+        {
+            if (power == null || geography == null || !house.IsValid)
+                return;
+            if (!geography.TryGetBusinessBlock(door, out var blockId))
+                return;
+            power.Answered(blockId, house, lastGameHour);
         }
 
         /// <summary>

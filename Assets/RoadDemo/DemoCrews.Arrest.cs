@@ -143,6 +143,8 @@ namespace RoadDemo
             unit.InCustody = false;
 
             AttachArrestPaper(unit, pipeline, file, today);
+            // Men led away are a loss of face for the house (AI-009, A29b).
+            TerritoryRuntime.Instance?.NoteArrest(unit.Faction, taken);
 
             // and the street re-deals without them: Sync keeps only Active men, so the
             // bodies go the same way a discharged man's does, through the books

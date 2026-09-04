@@ -210,6 +210,42 @@ namespace RoadDemo
         readonly List<Precinct> _precincts = new List<Precinct>();
         readonly List<PoliceLossRecord> _filled = new List<PoliceLossRecord>();
         readonly List<Prisoner> _forTransfer = new List<Prisoner>();
+
+        /// <summary>The men whose leg goes on paper today (AI-006): the convoy failed
+        /// to run for them TransferFailsBeforePaper days running.</summary>
+        readonly List<Prisoner> _onPaper = new List<Prisoner>();
+
+        /// <summary>
+        /// THE COURT SITS WITHOUT A CAR (AI-006, ruling A16). A man the road has
+        /// failed twice is tried, or delivered, on paper this morning - the player's
+        /// men and the twenty houses' alike - and the wire prints the verdict as it
+        /// would off a convoy. The one thing lost is the road, and the chance at it.
+        /// </summary>
+        void CarryOnPaper(int today)
+        {
+            for (var i = 0; i < _onPaper.Count; i++)
+            {
+                var prisoner = _onPaper[i];
+                var roster = RosterOf(prisoner);
+                if (roster == null)
+                {
+                    Pipeline.BackToTheCells(prisoner, today);
+                    continue;
+                }
+                var wasCourt = prisoner.Leg == PrisonLeg.Court;
+                Pipeline.OnPaper(roster, prisoner, today);
+                ReleaseCustodyTracking(prisoner.CharacterId);
+                if (!wasCourt)
+                    continue;
+                var file = prisoner.CaseId >= 0 ? Pipeline.FindCase(prisoner.CaseId) : null;
+                AnnounceVerdict(roster, prisoner,
+                    file != null ? file.Status : CaseStatus.Tried);
+                if (roster.GangId == LivingCity.Gangs.GangCatalog.PlayerGangId)
+                    CrewOverlay.Announce("NO CAR COULD BE SPARED · HE WAS TRIED WITHOUT ONE",
+                        5f, new Color(0.55f, 0.78f, 1f));
+            }
+            _onPaper.Clear();
+        }
         readonly List<Convoy> _convoys = new List<Convoy>();
         readonly Dictionary<int, Vector3> _custodyPins =
             new Dictionary<int, Vector3>();
@@ -929,8 +965,9 @@ namespace RoadDemo
             {
                 ProcessRosterDay(Roster(), today);
             }
-            Pipeline.DayTick(today, _forTransfer);
+            Pipeline.DayTick(today, _forTransfer, _onPaper);
             RunTransfers();
+            CarryOnPaper(today);
 
             if (!known) return;   // the first day merely learns what day it is
 

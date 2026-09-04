@@ -110,7 +110,81 @@ namespace LivingCity.Tests
             ("EveryManTriedOnPaperIsReported", EveryManTriedOnPaperIsReported),
             ("ARivalPrisonerKeepsHisHouseThroughTheVerdict",
                 ARivalPrisonerKeepsHisHouseThroughTheVerdict),
+            ("TwoFailedTransfersPutHimBeforeTheJudgeOnPaper",
+                TwoFailedTransfersPutHimBeforeTheJudgeOnPaper),
         };
+
+        // ------------------------------------------------------------------- AI-006
+
+        /// <summary>
+        /// A16. A transfer that failed to run TransferFailsBeforePaper days running is
+        /// carried on paper: the man is put in front of the judge without a car, gets
+        /// the same verdict he would off a convoy, and the same rule then carries the
+        /// van to the prison. Before that many failures he simply waits, as he did.
+        /// </summary>
+        static void TwoFailedTransfersPutHimBeforeTheJudgeOnPaper(List<string> failures)
+        {
+            var roster = BookedRoster(out var man, out var pipe);
+            var prisoner = pipe.Book(roster, man.Id, Deed.Affray, 10);
+            var wanted = new List<Prisoner>();
+            var paper = new List<Prisoner>();
+
+            var courtDay = 10 + Sentencing.DaysToCourt;
+            var day = courtDay;
+            for (var fail = 0; fail < PrisonPipeline.TransferFailsBeforePaper; fail++)
+            {
+                pipe.DayTick(day, wanted, paper);
+                Want(failures, wanted.Count == 1 && paper.Count == 0,
+                    "PIPE-006: he rides a car while the road has failed him only " + fail +
+                    " times.");
+                pipe.BackToTheCells(prisoner, day);
+                day++;
+            }
+
+            pipe.DayTick(day, wanted, paper);
+            Want(failures, wanted.Count == 0 && paper.Count == 1,
+                "PIPE-006: after " + PrisonPipeline.TransferFailsBeforePaper +
+                " failed days the leg did not go on paper.");
+            Want(failures, prisoner.Leg == PrisonLeg.Court,
+                "PIPE-006: the paper leg is not the court leg.");
+
+            pipe.OnPaper(roster, prisoner, day);
+            Want(failures, prisoner.Stage == PrisonStage.Sentenced ||
+                           prisoner.Stage == PrisonStage.Cleared,
+                "PIPE-006: the paper transfer did not put him before a judge (" +
+                prisoner.Stage + ").");
+            Want(failures, prisoner.TransferFails == 0,
+                "PIPE-006: a verdict did not reset the failed-days count.");
+
+            if (prisoner.Stage != PrisonStage.Sentenced)
+                return;
+
+            // The second leg, the same rule.
+            day = prisoner.PrisonDay;
+            for (var fail = 0; fail < PrisonPipeline.TransferFailsBeforePaper; fail++)
+            {
+                pipe.DayTick(day, wanted, paper);
+                Want(failures, wanted.Count == 1 && paper.Count == 0,
+                    "PIPE-006: the van still runs while it has failed only " + fail +
+                    " times.");
+                pipe.BackToTheCells(prisoner, day);
+                day++;
+            }
+            pipe.DayTick(day, wanted, paper);
+            Want(failures, paper.Count == 1 && prisoner.Leg == PrisonLeg.Prison,
+                "PIPE-006: the prison leg did not go on paper after two failed days.");
+            pipe.OnPaper(roster, prisoner, day);
+            Want(failures, prisoner.Stage == PrisonStage.Serving,
+                "PIPE-006: the paper van did not deliver him (" + prisoner.Stage + ").");
+
+            // A caller that hands no paper list gets the old behaviour exactly.
+            var old = BookedRoster(out var other, out var oldPipe);
+            var held = oldPipe.Book(old, other.Id, Deed.Affray, 10);
+            held.TransferFails = 99;
+            oldPipe.DayTick(10 + Sentencing.DaysToCourt, wanted);
+            Want(failures, wanted.Count == 1,
+                "PIPE-006: with no paper list the man was neither sent nor listed.");
+        }
 
         public static List<string> Run()
         {
