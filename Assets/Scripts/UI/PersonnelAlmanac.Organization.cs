@@ -411,6 +411,45 @@ namespace LivingCity.UI
             });
         }
 
+        /// <summary>
+        /// HIRE A MAN struck on THE DETAIL: the signing money, and then the new man
+        /// stands in front of the Don from that day. One order for both halves, so a
+        /// guard signed for the detail is never left idle in the reserve.
+        ///
+        /// The Boss's cap is read BEFORE the money leaves the safe - the detail eats his
+        /// own manpower, and a full Boss must not pay a signing to be told so.
+        /// </summary>
+        void FileRecruitToDetail()
+        {
+            FileOrder("A man requested for the Boss's own detail. " +
+                      LedgerText.Cash(director != null ? director.HoodRecruitmentCost : 0) +
+                      " committed.", () =>
+            {
+                var query = director != null ? director.Organization : null;
+                if (query == null || !query.TryGetBoss(out var boss))
+                    return Outfit.FilingRuling.Refuse(LedgerText.ReasonNoBoss);
+
+                var manpower = query.CapacityOf(boss.Id).Manpower;
+                if (!Outfit.OutfitFilingRules.AcceptsAnotherMan(manpower))
+                    return Outfit.FilingRuling.Refuse(
+                        Outfit.OutfitFilingRules.ManRefusal(boss.Name, manpower) +
+                        " · nobody hired");
+
+                var hired = director.RecruitHood(out var newId);
+                if (!hired.Ok)
+                    return Outfit.FilingRuling.Refuse(hired.Reason);
+
+                var recruit = director.Roster != null ? director.Roster.Find(newId) : null;
+                var name = recruit != null ? recruit.FullName : "the new man";
+                var placed = director.AssignToDetail(newId);
+                return placed.Ok
+                    ? Outfit.FilingRuling.Grant(name + " stands with the Don from today")
+                    : Outfit.FilingRuling.Grant(
+                        name + " reported · " + placed.Reason +
+                        ", so he waits in the pool");
+            });
+        }
+
         void FileRecruit(int leaderId)
         {
             var leader = leaderId >= 0 ? Leader(leaderId) : default;

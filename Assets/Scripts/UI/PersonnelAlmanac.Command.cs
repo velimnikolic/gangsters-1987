@@ -1055,6 +1055,31 @@ namespace LivingCity.UI
 
         // ---------------------------------------------------------------- the branch
 
+        /// <summary>
+        /// Whether this branch can take one more man at all - the answer the HIRE A MAN
+        /// key on its head wears. It is the same rule the filing office applies when the
+        /// order reaches it, asked a moment earlier so the reader can SEE that a full
+        /// branch is full rather than spending the signing money to be told.
+        ///
+        /// A bag is bounded by its escort places; every other branch is bounded by the
+        /// manpower of the man whose card it is - and THE DETAIL's card carries the
+        /// Boss's own id, so a guard is measured against the Boss's cap, which is
+        /// exactly where the detail's men are counted.
+        /// </summary>
+        bool BranchTakesAnotherMan(CommandBranch branch)
+        {
+            if (director == null || branch == null)
+                return false;
+            if (branch.IsBag)
+                return branch.CrewId >= 0 && branch.BagSlotsUsed < Crew.MaxEscorts;
+
+            var query = director.Organization;
+            if (query == null)
+                return false;
+            return Outfit.OutfitFilingRules.AcceptsAnotherMan(
+                query.CapacityOf(branch.LeaderId).Manpower);
+        }
+
         /// <summary>One branch: the man who runs it, what he can hold, his own file if
         /// it is open, and every man on his rail. Answers the height it took, measured
         /// from <paramref name="top"/>.</summary>
@@ -1079,18 +1104,35 @@ namespace LivingCity.UI
             var leaderId = branch.LeaderId;
 
             // The hire key keeps the right of the head; the name block takes the rest.
-            var hireW = 0f;
-            if (!branch.IsDetail && !branch.IsBag)
+            //
+            // EVERY branch head carries it, and it reads HIRE A MAN - the same words
+            // the reserve's own key is cut with, because it is the same act. Where the
+            // key stands is who the man is signed FOR: on THE DETAIL he walks straight
+            // in front of the Don, on a bag he walks onto the collector's escort, on a
+            // lieutenant he reports to that lieutenant. Nobody is signed into the pool
+            // and then dragged across the sheet to the branch that wanted him.
+            //
+            // No sum on the key. What a man costs to sign is not one flat figure - the
+            // recruiting money is only the first of it, and quoting it beside the word
+            // HIRE reads as the price of the man, which it is not. The filed order
+            // still says exactly what was committed.
+            const string hireLabel = "HIRE A MAN";
+            var hireW = MonoWidth(hireLabel, 9.5f, 2f) + 18f;
             {
-                // No sum on the key. What a man costs to sign is not one flat
-                // figure - the recruiting money is only the first of it, and quoting
-                // it beside the word HIRE reads as the price of the man, which it is
-                // not. The filed order still says exactly what was committed.
-                const string hireLabel = "HIRE";
-                hireW = MonoWidth(hireLabel, 9.5f, 2f) + 18f;
+                var bagCrew = branch.CrewId;
+                var bagName = branch.Name;
                 var hire = LedgerV2.Button(card, hireLabel, w - BranchPad - hireW, -y,
-                    hireW, 21f, () => FileRecruit(leaderId), LedgerV2.Key.Outline, 9.5f);
-                SetActionEnabled(hire, director != null);
+                    hireW, 21f,
+                    branch.IsDetail
+                        ? (UnityAction)(() => FileRecruitToDetail())
+                        : branch.IsBag
+                            ? () => FileRecruitToBag(bagCrew, bagName)
+                            : () => FileRecruit(leaderId),
+                    LedgerV2.Key.Outline, 9.5f);
+                hire.enableAutoSizing = true;
+                hire.fontSizeMin = 7.5f;
+                hire.fontSizeMax = 9.5f;
+                SetActionEnabled(hire, BranchTakesAnotherMan(branch));
                 hireW += 12f;
             }
 
@@ -2059,6 +2101,63 @@ namespace LivingCity.UI
         readonly List<(string Title, string Note, Color NoteInk, Color Dot, bool Live,
             UnityAction Do)> commandArms =
             new List<(string, string, Color, Color, bool, UnityAction)>();
+
+        /// <summary>
+        /// HIRE A MAN struck on a collector's own card: the signing money, and then the
+        /// new man walks straight onto that bag's escort. One act, one order - the
+        /// hiring and the posting are ruled on together, so a man signed for the bag is
+        /// never left standing in the reserve waiting to be dragged there by hand.
+        ///
+        /// Both refusals that can leave the outfit poorer for nothing are taken BEFORE
+        /// the money moves: a full escort, and a crew head who cannot hold another man.
+        /// If the posting still fails after the man is signed, he is not thrown away -
+        /// he reports to the pool and the ruling says why.
+        /// </summary>
+        void FileRecruitToBag(int crewId, string collectorName)
+        {
+            var who = string.IsNullOrEmpty(collectorName) ? "the collector" : collectorName;
+            FileOrder("A man requested for " + who + "'s bag. " +
+                      LedgerText.Cash(director != null ? director.HoodRecruitmentCost : 0) +
+                      " committed.", () =>
+            {
+                var roster = director != null ? director.Roster : null;
+                var crew = roster != null ? roster.FindCrew(crewId) : null;
+                if (crew == null)
+                    return Outfit.FilingRuling.Refuse(LedgerText.ReasonNoSuchCrew);
+                if (crew.BagId < 0)
+                    return Outfit.FilingRuling.Refuse("nobody carries that bag");
+                if (crew.EscortIds.Count >= Crew.MaxEscorts)
+                    return Outfit.FilingRuling.Refuse(
+                        "his escort is full · " + Crew.MaxEscorts +
+                        " men · nobody hired");
+
+                var query = director.Organization;
+                if (query != null && crew.LieutenantId >= 0)
+                {
+                    var manpower = query.CapacityOf(crew.LieutenantId).Manpower;
+                    if (!Outfit.OutfitFilingRules.AcceptsAnotherMan(manpower))
+                    {
+                        var head = roster.Find(crew.LieutenantId);
+                        return Outfit.FilingRuling.Refuse(
+                            Outfit.OutfitFilingRules.ManRefusal(
+                                head != null ? head.FullName : "his crew", manpower) +
+                            " · nobody hired");
+                    }
+                }
+
+                var hired = director.RecruitHood(out var newId);
+                if (!hired.Ok)
+                    return Outfit.FilingRuling.Refuse(hired.Reason);
+
+                var recruit = roster.Find(newId);
+                var name = recruit != null ? recruit.FullName : "the new man";
+                var refusal = BlockRacketSeam.ActionsOrStub.PostEscort(crewId, newId);
+                return string.IsNullOrEmpty(refusal)
+                    ? Outfit.FilingRuling.Grant(name + " guards " + who + "'s bag")
+                    : Outfit.FilingRuling.Grant(
+                        name + " reported · " + refusal + ", so he waits in the pool");
+            });
+        }
 
         void FileBagPosting(int branchCrew, int hoodId)
         {
