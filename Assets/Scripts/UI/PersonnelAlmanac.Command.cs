@@ -1070,15 +1070,39 @@ namespace LivingCity.UI
         {
             if (director == null || branch == null)
                 return false;
-            if (branch.IsBag)
-                return branch.CrewId >= 0 && branch.BagSlotsUsed < Crew.MaxEscorts;
-
             var query = director.Organization;
             if (query == null)
                 return false;
-            return Outfit.OutfitFilingRules.AcceptsAnotherMan(
-                query.CapacityOf(branch.LeaderId).Manpower);
+
+            // A bag's key is measured against the crew it hangs under, not against
+            // itself: an escort is one of that crew's men before he is one of the
+            // collector's, so a crew at its cap cannot take another escort however many
+            // places stand empty beside the bag.
+            var head = branch.LeaderId;
+            var posted = 0;
+            if (branch.IsBag)
+            {
+                var crew = director.Roster != null
+                    ? director.Roster.FindCrew(branch.CrewId)
+                    : null;
+                if (crew == null || crew.LieutenantId < 0)
+                    return false;
+                head = crew.LieutenantId;
+                posted = crew.EscortIds.Count;
+            }
+            return BranchTakesAnotherMan(branch.IsBag, posted,
+                query.CapacityOf(head).Manpower);
         }
+
+        /// <summary>
+        /// The same rule as a pure read, so the ledger's contract tests can make it
+        /// without a Canvas: every branch is bounded by the manpower of the man whose
+        /// crew it is, and a bag is bounded by its escort places on top of that.
+        /// </summary>
+        internal static bool BranchTakesAnotherMan(bool isBag, int escortsPosted,
+            in CapacityMeasure headManpower) =>
+            (!isBag || escortsPosted < Crew.MaxEscorts) &&
+            Outfit.OutfitFilingRules.AcceptsAnotherMan(headManpower);
 
         /// <summary>One branch: the man who runs it, what he can hold, his own file if
         /// it is open, and every man on his rail. Answers the height it took, measured

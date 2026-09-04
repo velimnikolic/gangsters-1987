@@ -23,6 +23,7 @@ namespace LivingCity.Tests
             BalanceArithmetic(failures);
             RecoveredBagBooksAsAJob(failures);
             BagBranchShapeFollowsTheNode(failures);
+            HireKeyDiesWhenTheBranchIsFull(failures);
             TaxOnlyOnProfit(failures);
             RiskThresholds(failures);
             AssetsAreBookValue(failures);
@@ -1033,6 +1034,30 @@ namespace LivingCity.Tests
                 PersonnelAlmanac.BagBranchLeaves(crew) != 1 ||
                 PersonnelAlmanac.BagBranchEmptyPlaces(crew) != 1)
                 failures.Add("BAG-003: escort and empty place shaped the wrong branch.");
+        }
+
+        /// <summary>
+        /// The HIRE A MAN key on a branch head says what the filing office would say.
+        /// The bag is the case that bit: an escort joins the CREW before he takes his
+        /// place beside the collector, so a crew at its manpower cap cannot take one
+        /// however many escort places stand empty.
+        /// </summary>
+        static void HireKeyDiesWhenTheBranchIsFull(List<string> failures)
+        {
+            var room = new CapacityMeasure(3, 6);
+            var full = new CapacityMeasure(6, 6);
+
+            if (!PersonnelAlmanac.BranchTakesAnotherMan(false, 0, room))
+                failures.Add("HIRE-001: a branch with room drew a dead key.");
+            if (PersonnelAlmanac.BranchTakesAnotherMan(false, 0, full))
+                failures.Add("HIRE-001: a branch at its cap offered to hire.");
+            if (!PersonnelAlmanac.BranchTakesAnotherMan(true, 0, room))
+                failures.Add("HIRE-001: an empty bag under a crew with room drew a dead key.");
+            if (PersonnelAlmanac.BranchTakesAnotherMan(true, Crew.MaxEscorts, room))
+                failures.Add("HIRE-001: a full escort offered another man.");
+            if (PersonnelAlmanac.BranchTakesAnotherMan(true, 0, full))
+                failures.Add("HIRE-001: an empty escort place under a crew at its cap " +
+                             "offered a man the office would refuse.");
         }
 
         static void TaxOnlyOnProfit(List<string> failures)
