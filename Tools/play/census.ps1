@@ -91,7 +91,16 @@ function Assert-CensusJobIdentity(
         throw "Job $ExpectedJobId belongs to '$actualCommand', not '$censusCommand'."
     }
 
+    $state = [string]$Reply.data.state
+    if (@("queued", "running", "completed", "failed", "canceled") -cnotcontains $state) {
+        throw "Job $ExpectedJobId returned unknown state '$state'."
+    }
+
     if (-not $RequireResult) { return }
+
+    if ($state -cne "completed") {
+        throw "Census job $ExpectedJobId is '$state', not completed."
+    }
 
     $result = $Reply.data.result
     if ($null -eq $result) {
@@ -101,6 +110,15 @@ function Assert-CensusJobIdentity(
     foreach ($property in @("passed", "failures", "seed", "doors", "kerb", "crowdTick", "businessRegistry")) {
         if ($null -eq $result.PSObject.Properties[$property]) {
             throw "Census job $ExpectedJobId returned no '$property' field."
+        }
+    }
+
+    if ($null -eq $result.failures -or $result.failures -isnot [System.Array]) {
+        throw "Census job $ExpectedJobId returned a non-array 'failures' field."
+    }
+    foreach ($section in @("doors", "kerb", "crowdTick", "businessRegistry")) {
+        if ($null -eq $result.$section) {
+            throw "Census job $ExpectedJobId returned a null '$section' field."
         }
     }
 
@@ -157,6 +175,9 @@ function Save-CensusJobReceipt([string] $JobId) {
     }
 }
 
+$terminalReply = $null
+$terminalBody = $null
+
 if ([string]::IsNullOrWhiteSpace($Resume)) {
     $arguments = @(
         "command", "--project-path", $project, "--detach", $censusCommand,
@@ -175,7 +196,7 @@ if ([string]::IsNullOrWhiteSpace($Resume)) {
     Assert-CensusJobIdentity $submission.Reply $jobId
 }
 else {
-    $jobId = $Resume.Trim()
+    $jobId = $Resume.Trim().ToLowerInvariant()
     if ($jobId -notmatch '^[0-9a-fA-F]{32}$') {
         throw "-Resume must be the 32-character hexadecimal Pipeline job ID."
     }
@@ -188,6 +209,10 @@ else {
     Assert-CensusJobIdentity $status.Reply $jobId `
         -RequireResult:($status.Reply.data.state -eq "completed")
     Write-CensusDiagnostic "validated retained census job $jobId"
+    if (@("completed", "failed", "canceled") -ccontains [string]$status.Reply.data.state) {
+        $terminalReply = $status.Reply
+        $terminalBody = $status.Body
+    }
 }
 
 $checkpointSaved = Save-CensusJobReceipt $jobId
@@ -198,43 +223,50 @@ if ($DetachOnly) {
     exit 0
 }
 
-$waitArguments = @(
-    "job", "wait", $jobId,
-    "--timeout", [string]$TimeoutSeconds,
-    "--project-path", $project, "--json"
-)
+if ($null -eq $terminalReply) {
+    $waitArguments = @(
+        "job", "wait", $jobId,
+        "--timeout", [string]$TimeoutSeconds,
+        "--project-path", $project, "--json"
+    )
 
-$wait = Invoke-UnityRaw $waitArguments
-$waitBody = $wait.Lines -join [Environment]::NewLine
-if ($wait.ExitCode -ne 0) {
-    Write-CensusDiagnostic "waiting stopped, but job $jobId remains retained; use -Resume $jobId.`n$waitBody"
-    exit $wait.ExitCode
+    $wait = Invoke-UnityRaw $waitArguments
+    $terminalBody = $wait.Lines -join [Environment]::NewLine
+    if ($wait.ExitCode -ne 0) {
+        Write-CensusDiagnostic "waiting stopped, but job $jobId remains retained; use -Resume $jobId.`n$terminalBody"
+        exit $wait.ExitCode
+    }
+
+    try {
+        $terminalReply = $terminalBody | ConvertFrom-Json
+    }
+    catch {
+        Write-CensusDiagnostic "wait returned invalid JSON; job $jobId remains queryable.`n$terminalBody"
+        exit 1
+    }
 }
 
 try {
-    $waitReply = $waitBody | ConvertFrom-Json
-}
-catch {
-    Write-CensusDiagnostic "wait returned invalid JSON; job $jobId remains queryable.`n$waitBody"
-    exit 1
-}
-
-try {
-    Assert-CensusJobIdentity $waitReply $jobId `
-        -RequireResult:($waitReply.data.state -eq "completed")
+    Assert-CensusJobIdentity $terminalReply $jobId `
+        -RequireResult:($terminalReply.data.state -eq "completed")
 }
 catch {
     Write-CensusDiagnostic $_.Exception.Message
     exit 1
 }
 
-Write-Output $waitBody
-if ($waitReply.data.state -ne "completed") {
-    Write-CensusDiagnostic "job $jobId is '$($waitReply.data.state)', not completed; use -Resume $jobId."
-    exit 6
+Write-Output $terminalBody
+$terminalState = [string]$terminalReply.data.state
+if ($terminalState -ne "completed") {
+    if (@("queued", "running") -ccontains $terminalState) {
+        Write-CensusDiagnostic "job $jobId is '$terminalState', not completed; use -Resume $jobId."
+        exit 6
+    }
+    Write-CensusDiagnostic "job $jobId ended in terminal state '$terminalState'."
+    exit 1
 }
 
-$result = $waitReply.data.result
+$result = $terminalReply.data.result
 if ($result.passed -ne $true -or @($result.failures).Count -ne 0) { exit 1 }
 if (-not $checkpointSaved) { exit 2 }
 exit 0

@@ -21,9 +21,10 @@ zadržani detached job i atomski upisuje poseban receipt
 `Temp/play/people-census/<job-id>.job`, bez brisanja ranijih ID-eva. ID i `-Resume` komandu
 odmah piše na stderr, pa i greška diska ostavlja recovery handle; stdout je samo jedan JSON
 dokument, odnosno samo goli ID uz `-DetachOnly`. `-Resume` pre upisa proverava da ID pripada
-baš `gangsters_people_census`, a završen rezultat i da je za seed 1987. Pipeline čuva poslednjih
-100 završenih poslova jedan sat; kompilacija/domain reload prekida red i tada stari ID namerno
-prijavi neuspeh.
+baš `gangsters_people_census`, a završen rezultat i da je za seed 1987. Ako status već kaže
+`completed`, taj provereni JSON vraća odmah, bez drugog backend poziva i novog race prozora.
+Pipeline čuva poslednjih 100 završenih poslova jedan sat; kompilacija/domain reload prekida red
+i tada stari ID namerno prijavi neuspeh.
 Poslednji puni prolaz je vratio JSON `passed = true`, bez gate grešaka, za **1,65 s** rada
 (zahtev: manje od 30 s); `-Rows` vraća i svaki pojedinačni izvor/projekciju.
 
