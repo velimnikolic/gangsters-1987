@@ -188,6 +188,9 @@ GAN-220 (roj), GAN-222 (bekstvo i poternica). Otkazani: GAN-217, GAN-218, GAN-22
   tri završetka (mrtav / uhapšen / pobegao), stajanje po tišini od 2 minuta.
 - Bekstvo: naredba RUN FOR IT na kartici svoje ekipe; skrivanje TEK kad je potera
   prekinuta (12 s van očiju), kroz vrata koja porodica drži (`CrewQuarters`).
+  Klik na zemlju tokom bega samo PREUSMERAVA trk (ostaje trk, potera i skrivanje
+  ostaju); beg gasi STOP RUNNING na istoj kartici, ulazak kroz vrata ili zaseda.
+  KILL na policiju tokom bega radi (kartica policije) i ne gasi beg.
   SEND HIM OUT OF TOWN za W3 — 14 dana van table, bez plate.
 - Turf mapa: pločica snage stanice, i "NO LAW — precinct empty" kad je prazna.
 

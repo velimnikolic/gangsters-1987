@@ -1864,6 +1864,11 @@ namespace RoadDemo
         {
             if (unit == null || unit.IsPolice || unit.Wiped || unit.Boss == null)
                 return false;
+            // Booking removes the lieutenant from the ACTIVE roster, but his custody
+            // tracker remains a first-class HUD row so the player can follow the court
+            // transport without regaining command authority.
+            if (unit.CustodyTracked)
+                return true;
             if (unit.Faction != 0)
                 return true;
             if (roster == null)

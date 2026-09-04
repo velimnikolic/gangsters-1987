@@ -86,6 +86,7 @@ namespace RoadDemo
 
             var man = roster.Find(characterId);
             LawWire.BailPosted(man);
+            PoliceForce.Instance?.ReleaseCustodyTracking(characterId);
             director.Touch();
             return OpResult.Success;
         }
@@ -142,6 +143,7 @@ namespace RoadDemo
             Pipeline?.CutLoose(characterId,
                 outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0);
             LawWire.CutLoose(man);
+            PoliceForce.Instance?.ReleaseCustodyTracking(characterId);
             director.Touch();
             return OpResult.Success;
         }

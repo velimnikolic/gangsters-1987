@@ -99,11 +99,37 @@ namespace LivingCity.Police
     }
 
     /// <summary>Pure custody-car arithmetic shared by the force and its contracts.
-    /// Two prisoners fit in a car, but an arrest may never empty the whole watch:
-    /// one working car remains free for the next call.</summary>
+    /// Two prisoners fit in a car. When several are free one remains available for the
+    /// next call; when only one is free, the custody already waiting is that call and
+    /// must not be left at the kerb forever.</summary>
     public static class CustodyPlan
     {
         public static bool RefusesOrders(bool inCustody) => inCustody;
+
+        /// <summary>The HUD/body anchor exists only while the city physically holds
+        /// the man. Bail, an acquittal, a broken transfer and a missed appearance all
+        /// put him back on the street; a served sentence is removed from the pipeline
+        /// altogether and is handled by the same release edge.</summary>
+        public static bool TracksStage(PrisonStage stage) =>
+            stage == PrisonStage.Held ||
+            stage == PrisonStage.ForTransfer ||
+            stage == PrisonStage.InTransit ||
+            stage == PrisonStage.Sentenced ||
+            stage == PrisonStage.Serving;
+
+        /// <summary>A transfer may remove a man from the street roster only after his
+        /// own body has crossed the precinct threshold. A choreography timeout is not
+        /// booking and must leave him visible and trackable in custody.</summary>
+        public static bool CanBook(bool crossedStationThreshold) =>
+            crossedStationThreshold;
+
+        /// <summary>A live leg owns its steering memory until it finishes. The custody
+        /// controller retries only an idle or genuinely stalled man who is still short
+        /// of his destination; a timer alone never resets a route making progress.</summary>
+        public static bool ShouldRetryBoarding(
+            bool hasOrder, bool atDestination, bool retryElapsed,
+            bool routeStalled = false) =>
+            !atDestination && retryElapsed && (!hasOrder || routeStalled);
 
         /// <summary>A routine transfer is never an escape because two actors briefly
         /// spread out while walking round a car. Only a destroyed carrier or a wiped
@@ -127,10 +153,11 @@ namespace LivingCity.Police
 
         public static int CarsForPrisoners(int prisoners, int carsOnDuty)
         {
-            if (prisoners <= 0 || carsOnDuty <= 1)
+            if (prisoners <= 0 || carsOnDuty <= 0)
                 return 0;
             var wanted = (prisoners + 1) / 2;
-            return System.Math.Min(wanted, carsOnDuty - 1);
+            var usable = carsOnDuty == 1 ? 1 : carsOnDuty - 1;
+            return System.Math.Min(wanted, usable);
         }
 
         /// <summary>How many men fit in the cars actually assigned to this trip.  Any
@@ -150,7 +177,34 @@ namespace LivingCity.Police
         public const float ComplaintDelayMinimum = 1.5f;
         public const float ComplaintDelayMaximum = 3.5f;
         public const float OfficerBoardingSeconds = 8f;
+        public const float CustodyCarStandOff = 3f;
+        public const float CustodyEscortCarClearance = 3f;
+        public const float CustodyStoppedDoorReach = 2.8f;
+        public const bool ResponseCarsParkAtKerb = true;
         public const bool RunToScene = true;
+
+        /// <summary>A response car may unload only after its road goal is complete and
+        /// its body is genuinely at the kerb. Distance back to the shop is deliberately
+        /// absent: the selected slot is already the closest free one and the officers
+        /// finish the approach on foot.</summary>
+        public static bool ResponseCarArrived(bool goalComplete, bool parkedAtKerb) =>
+            goalComplete && parkedAtKerb;
+
+        /// <summary>The dispatcher's meaning of nearest: the shortest overhead-map
+        /// chord in X/Z. Roads, estimated vehicle speed and elevation never bias which
+        /// free unit gets the call; walkers can cut directly across a street.</summary>
+        public static float AirDistanceSquared(
+            float ax, float az, float bx, float bz)
+        {
+            var x = ax - bx;
+            var z = az - bz;
+            return x * x + z * z;
+        }
+
+        /// <summary>A dispatched complaint cannot advance merely because its unit
+        /// passed through a broad radius around the shop. The vehicle or beat must have
+        /// completed its response route and reported a physical on-scene arrival.</summary>
+        public static bool CanProcessComplaintArrival(bool unitOnScene) => unitOnScene;
 
         /// <summary>A movement order while the arrest window is live is resistance,
         /// and converts the held aim into an ordinary combat engagement.</summary>

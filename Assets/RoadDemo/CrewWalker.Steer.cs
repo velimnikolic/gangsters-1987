@@ -25,6 +25,12 @@ namespace RoadDemo
         Vector3 _routedStrideGoal;
         bool _routedStrideRequested;
 
+        /// <summary>The current authored free-ground leg has stopped buying progress.
+        /// Custody may redraw its fixed car-side corridor at that point; a merely live
+        /// order is not proof that a walker circling a road user is still getting nearer.</summary>
+        public bool RoutedLegStalled => State == Mode.Striding &&
+            (_stall > 0.7f || _wander > 4f);
+
         /// <summary>The route audit's read-only view of this frame's actual stride
         /// intent. A timestamp, rather than sticky state, keeps standing/aiming frames
         /// from inheriting yesterday's waypoint.</summary>

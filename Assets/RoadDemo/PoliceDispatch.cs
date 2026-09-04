@@ -410,7 +410,9 @@ namespace RoadDemo
             foreach (var u in _units)
             {
                 if (u.Carries != carries || !u.Available || u.Tf == null) continue;
-                float d = (u.Position - to).sqrMagnitude;
+                var at = u.Position;
+                float d = LivingCity.Police.PoliceProcedure.AirDistanceSquared(
+                    at.x, at.z, to.x, to.z);
                 if (d < bestD) { bestD = d; best = u; }
             }
             return best;

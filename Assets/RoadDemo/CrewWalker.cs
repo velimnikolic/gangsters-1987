@@ -647,10 +647,10 @@ namespace RoadDemo
 
         /// <summary>Walk straight to this point over open ground - the empty floor's
         /// order. Off the graph only; on it the sidewalks are the way.</summary>
-        public void OrderToPoint(Vector3 point, float delay = 0f)
+        public bool OrderToPoint(Vector3 point, float delay = 0f)
         {
-            if (Spilling) return;   // in the air off a machine: he is the spill's until he lands
-            if (Dead) return;
+            if (Spilling) return false;   // in the air off a machine: he is the spill's until he lands
+            if (Dead || Tf == null) return false;
             ClearFallingIn();
             ClearFleeIntent();
             ClearSharedCorridor();
@@ -677,6 +677,7 @@ namespace RoadDemo
             _preferredSteerSide = 0;
             BeginLeg();
             State = Mode.Striding;
+            return true;
         }
 
         /// <summary>
@@ -2301,7 +2302,10 @@ namespace RoadDemo
             {
                 EndChat();
                 if (Take != CrewKit.HandsUp)
-                    PlayTake(CrewKit.HandsUp, loop: true, speed: 1f, at: 0f);
+                    // played ONCE and held on its last frame - the arms come up and
+                    // then stay up. Looped, the take is a two-handed wave, and the man
+                    // signalled cheerfully at the officer taking him in.
+                    PlayTake(CrewKit.HandsUp, loop: false, speed: 1f, at: 0f);
                 TickBlend(dt);
                 return;
             }

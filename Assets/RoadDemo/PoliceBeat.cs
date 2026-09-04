@@ -92,7 +92,8 @@ namespace RoadDemo
         public bool OnScene => State == Mode.OnScene;
         public bool Available => Unit != null && !Unit.Wiped && !OffWatch &&
             Unit.TargetUnit == null && !Unit.Surrendered &&
-            (State == Mode.Inside || State == Mode.Patrolling || State == Mode.Returning ||
+            (State == Mode.Inside || State == Mode.WalkOut ||
+             State == Mode.Patrolling || State == Mode.Returning ||
              State == Mode.Ritual);
 
         public bool StoodOver
@@ -201,9 +202,10 @@ namespace RoadDemo
             TryResponseRoute();
         }
 
-        /// <summary>The response uses the exact same WalkRoute/formation transaction as
-        /// the player's crew. A failed route is retried; it is never mistaken for having
-        /// arrived at the shop. Every accepted leg is urgent, so officers run.</summary>
+        /// <summary>The response uses the exact same direct-ground WalkRoute/formation
+        /// transaction as the player's crew: it may cut across the carriageway and only
+        /// bends around real static obstacles. A failed route is retried; it is never
+        /// mistaken for arrival. Every accepted leg is urgent, so officers run.</summary>
         void TryResponseRoute()
         {
             if (Unit == null || Unit.Wiped || _crews == null) return;

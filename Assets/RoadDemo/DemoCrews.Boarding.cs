@@ -248,6 +248,17 @@ namespace RoadDemo
             SendToDoor(man, door, delay, graph);
         }
 
+        /// <summary>The authoritative crew walk to a physical vehicle door, also used
+        /// by police custody once it has locked the boarder's nearest door. Keeping the
+        /// long-route/final-stride decision here prevents the two boarding systems from
+        /// drifting back into different car approaches.</summary>
+        internal void SendToVehicleDoor(CrewWalker man, Vector3 door,
+            float delay = 0f, bool graph = false)
+        {
+            if (man == null || man.Dead || man.Tf == null) return;
+            SendToDoor(man, door, delay, graph);
+        }
+
         void SendToDoor(CrewWalker man, Vector3 door, float delay = 0f, bool graph = false)
         {
             var gap = door - man.Tf.position;

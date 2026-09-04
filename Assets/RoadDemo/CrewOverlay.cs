@@ -1232,6 +1232,26 @@ namespace RoadDemo
                     }));
             }
 
+            // THE OTHER END OF THE RUN. A click on the ground while they run only
+            // redirects it (DemoCrews.MoveUnit), so the card is where the run is
+            // called off: the flag comes down and they stand where they are, exactly
+            // as a Guard order would have them.
+            if (crew.Fleeing)
+            {
+                actions.Add(new CrewEnemyAction("STOP RUNNING",
+                    "the run is over where they stand · a click on the ground only turns it",
+                    () =>
+                    {
+                        _crews.EndFlight(crew);
+                        if (!_crews.OrderUnit(crew, crew.Position, out _, run: false,
+                                speak: false))
+                            Refuse(_crews.OrderRefusal);
+                        else
+                            Announce(crew.GangName.ToUpperInvariant() + " STOP RUNNING",
+                                3.5f, new Color(0.95f, 0.9f, 0.6f));
+                    }));
+            }
+
             var director = LivingCity.Gameplay.PersonnelDirector.Instance;
             var roster = director != null ? director.Roster : null;
             var outfit = LivingCity.Gameplay.OutfitDirector.Instance;

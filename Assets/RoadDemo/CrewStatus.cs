@@ -26,6 +26,16 @@ namespace RoadDemo
             if (boss.Dead)
                 return "DOWN";
 
+            // Custody keeps the crew's HUD identity after the body crosses the station
+            // threshold. A later court/prison convoy supplies its moving position. This
+            // is status, never authority: every command still refuses while InCustody.
+            if (unit.InCustody)
+            {
+                var laterTransfer = unit.CustodyTracked && PoliceForce.Instance != null &&
+                                    PoliceForce.Instance.CustodyInTransit(boss.CharacterId);
+                return boss.Riding || laterTransfer ? "IN POLICE CAR" : "IN CUSTODY";
+            }
+
             // Indoors is not a state of his feet - his body is switched off inside one
             // of our own buildings and would otherwise read as STANDING BY on the
             // pavement he walked in from (CrewQuarters).

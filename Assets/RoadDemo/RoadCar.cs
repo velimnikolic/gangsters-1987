@@ -732,6 +732,13 @@ namespace RoadDemo
         public bool AtGoal => !_hasGoal && Mathf.Abs(Speed) < 0.05f;
         public bool HasGoal => _hasGoal;
 
+        /// <summary>Actually tucked against a kerb, rather than merely carrying the
+        /// legacy <see cref="Parked"/> flag after a parking goal stopped in its lane.
+        /// A car held just short by the vehicle occupying its chosen slot is still at
+        /// the kerb; a lane centre is several metres away and cannot pass this test.</summary>
+        public bool ParkedAtKerb => Parked && Road != null &&
+            Mathf.Abs(D - Road.KerbDOnSide(D, HalfWide)) <= KerbParkReach;
+
         /// <summary>The goal reached and the car stopped: for a subclass to hear.</summary>
         protected virtual void OnArrived() { }
 
@@ -1249,7 +1256,7 @@ namespace RoadDemo
                     // could not swing out past the same vehicle, ordered back it could
                     // not finish coming in. Six orders in a row died in that spot.
                     if (_goalPark && _man == Manoeuvre.None && Mathf.Abs(Speed) < 0.2f &&
-                        toGoal > 0f && toGoal < 30f && Mathf.Abs(D - _goalD) < 1.2f)
+                        toGoal > 0f && toGoal < 30f && Mathf.Abs(D - _goalD) < KerbParkReach)
                     {
                         _kerbHold += dt;
                         if (_kerbHold > 2.5f)

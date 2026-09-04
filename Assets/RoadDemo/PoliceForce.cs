@@ -146,6 +146,59 @@ namespace RoadDemo
             return true;
         }
 
+        /// <summary>The HUD position of one man while the city physically holds him.
+        /// Release transitions retire this pin before the active roster is projected
+        /// back onto the street.</summary>
+        public void PinCustody(int characterId, Vector3 at)
+        {
+            if (characterId >= 0) _custodyPins[characterId] = at;
+        }
+
+        public bool TryCustodyPosition(int characterId, out Vector3 at)
+        {
+            if (!_custodyPins.TryGetValue(characterId, out at)) return false;
+            var prisoner = Pipeline.Find(characterId);
+            if (prisoner != null && CustodyPlan.TracksStage(prisoner.Stage))
+                return true;
+            // A stale dictionary entry must never keep a released roster member hidden
+            // or command-locked. Transition sites remove it physically as well; this
+            // model check is the invariant if a future release path forgets that call.
+            at = default;
+            return false;
+        }
+
+        /// <summary>End the physical custody lifetime. With no relocation the held
+        /// station body comes back through its own door; court and wreck exits supply
+        /// the actual point at which the man was released.</summary>
+        public bool ReleaseCustodyTracking(int characterId, Vector3 at,
+            bool relocate)
+        {
+            var wasTracked = _custodyPins.Remove(characterId);
+            DemoCrews.Active?.ReleaseCustodyTracking(characterId, at, relocate);
+            return wasTracked;
+        }
+
+        public bool ReleaseCustodyTracking(int characterId)
+        {
+            _custodyPins.TryGetValue(characterId, out var at);
+            return ReleaseCustodyTracking(characterId, at, relocate: false);
+        }
+
+        /// <summary>True only after the man has actually been loaded into a later
+        /// court/prison transfer. A car travelling to collect him does not count.</summary>
+        public bool CustodyInTransit(int characterId)
+        {
+            for (var i = 0; i < _convoys.Count; i++)
+            {
+                var convoy = _convoys[i];
+                if (convoy == null || !convoy.Loaded) continue;
+                for (var r = 0; r < convoy.Riders.Count; r++)
+                    if (convoy.Riders[r].CharacterId == characterId)
+                        return true;
+            }
+            return false;
+        }
+
         /// <summary>Every dial in one place (replacement days, the watch hours and the
         /// share of the precinct each watch puts out).</summary>
         public readonly PoliceRosterConfig Config = new PoliceRosterConfig();
@@ -158,6 +211,8 @@ namespace RoadDemo
         readonly List<PoliceLossRecord> _filled = new List<PoliceLossRecord>();
         readonly List<Prisoner> _forTransfer = new List<Prisoner>();
         readonly List<Convoy> _convoys = new List<Convoy>();
+        readonly Dictionary<int, Vector3> _custodyPins =
+            new Dictionary<int, Vector3>();
         readonly List<LostBeat> _lostBeats = new List<LostBeat>();
 
         PoliceDispatch _dispatch;
@@ -228,25 +283,41 @@ namespace RoadDemo
         /// station", and what the plaque reads off.</summary>
         public Precinct Station => _precincts.Count > 0 ? _precincts[0] : null;
 
-        /// <summary>Two prisoners to a car, while one on-duty car remains free.</summary>
+        /// <summary>Two prisoners to a car; keep a reserve only when more than one car
+        /// is actually free.</summary>
         public static int CarsForPrisoners(int prisoners, int carsOnDuty)
             => CustodyPlan.CarsForPrisoners(prisoners, carsOnDuty);
 
-        /// <summary>Nearest precinct's free cars for the first leg into the station.</summary>
+        /// <summary>The nearest free custody cars in the whole force, measured by the
+        /// overhead-map chord to the prisoners. Registration/list order and road-route
+        /// length must never send a farther car past an available one beside the scene.</summary>
         public void CollectCustodyCars(Vector3 near, int prisoners,
             List<PolicePatrolCar> into)
         {
             into?.Clear();
             if (into == null) return;
-            var precinct = Nearest(near);
-            if (precinct == null) return;
-            var free = 0;
-            for (var i = 0; i < precinct.Cars.Count; i++)
-                if (precinct.Cars[i] != null && precinct.Cars[i].Available) free++;
-            var count = CarsForPrisoners(prisoners, free);
-            for (var i = 0; i < precinct.Cars.Count && into.Count < count; i++)
-                if (precinct.Cars[i] != null && precinct.Cars[i].Available)
-                    into.Add(precinct.Cars[i]);
+            for (var p = 0; p < _precincts.Count; p++)
+                for (var i = 0; i < _precincts[p].Cars.Count; i++)
+                {
+                    var car = _precincts[p].Cars[i];
+                    if (car != null && car.Available && car.Tf != null)
+                        into.Add(car);
+                }
+
+            into.Sort((left, right) =>
+            {
+                var a = left.Tf.position;
+                var b = right.Tf.position;
+                var da = PoliceProcedure.AirDistanceSquared(
+                    a.x, a.z, near.x, near.z);
+                var db = PoliceProcedure.AirDistanceSquared(
+                    b.x, b.z, near.x, near.z);
+                return da.CompareTo(db);
+            });
+
+            var count = CarsForPrisoners(prisoners, into.Count);
+            if (into.Count > count)
+                into.RemoveRange(count, into.Count - count);
         }
 
         /// <summary>An officer went down. Told through the dispatcher, which already
@@ -400,6 +471,8 @@ namespace RoadDemo
 
                 var convoy = Riding(precinct, car, prisoner.Leg);
                 convoy.Riders.Add(prisoner);
+                PinCustody(prisoner.CharacterId,
+                    convoy.Loaded ? convoy.Car.Position : convoy.Pickup);
             }
             _forTransfer.Clear();
         }
@@ -452,7 +525,10 @@ namespace RoadDemo
         {
             convoy.Loaded = true;
             for (var r = 0; r < convoy.Riders.Count; r++)
+            {
                 Pipeline.Away(convoy.Riders[r]);
+                PinCustody(convoy.Riders[r].CharacterId, convoy.Car.Position);
+            }
             convoy.By = Time.time + TransferPatience;
             convoy.Car.RouteTo(convoy.To, 0f);
             if (convoy.Car.Tf != null)
@@ -480,6 +556,7 @@ namespace RoadDemo
             {
                 var convoy = _convoys[i];
                 var car = convoy.Car;
+                UpdateCustodyPins(convoy);
                 // A CAR THAT VANISHED IS NOT AN AMBUSH. Only a WRECK frees the men -
                 // somebody has to have done it. A body destroyed for any other reason (a
                 // scene torn down, a rebuild) would otherwise open the doors of every
@@ -487,7 +564,10 @@ namespace RoadDemo
                 if (car == null || car.Tf == null)
                 {
                     for (var r = 0; r < convoy.Riders.Count; r++)
+                    {
                         Pipeline.BackToTheCells(convoy.Riders[r], Today());
+                        PinCustody(convoy.Riders[r].CharacterId, convoy.Pickup);
+                    }
                     _convoys.RemoveAt(i);
                     continue;
                 }
@@ -504,11 +584,23 @@ namespace RoadDemo
                 {
                     // it never got there: back to the cells, and the car goes home
                     for (var r = 0; r < convoy.Riders.Count; r++)
+                    {
                         Pipeline.BackToTheCells(convoy.Riders[r], Today());
+                        PinCustody(convoy.Riders[r].CharacterId, convoy.Pickup);
+                    }
                     Release(convoy);
                     _convoys.RemoveAt(i);
                 }
             }
+        }
+
+        void UpdateCustodyPins(Convoy convoy)
+        {
+            if (convoy == null) return;
+            var at = convoy.Loaded && convoy.Car != null
+                ? convoy.Car.Position : convoy.Pickup;
+            for (var r = 0; r < convoy.Riders.Count; r++)
+                PinCustody(convoy.Riders[r].CharacterId, at);
         }
 
         void Ended(Convoy convoy, bool wrecked)
@@ -541,7 +633,14 @@ namespace RoadDemo
 
                 var freed = 0;
                 for (var r = 0; r < convoy.Riders.Count; r++)
-                    if (Pipeline.Freed(roster, convoy.Riders[r], today) != null) freed++;
+                {
+                    var rider = convoy.Riders[r];
+                    if (Pipeline.Freed(roster, rider, today) == null) continue;
+                    var besideWreck = where + Vector3.right * (2f + r * 0.8f);
+                    ReleaseCustodyTracking(rider.CharacterId, besideWreck,
+                        relocate: true);
+                    freed++;
+                }
                 if (freed > 0)
                 {
                     var director = LivingCity.Gameplay.PersonnelDirector.Instance;
@@ -580,7 +679,13 @@ namespace RoadDemo
                 var file = rider.CaseId >= 0 ? Pipeline.FindCase(rider.CaseId) : null;
                 Pipeline.Tried(roster, rider, today);
                 if (rider.Stage == PrisonStage.Sentenced) sentenced++;
-                else walked++;
+                else
+                {
+                    var courthouseExit = convoy.To + Vector3.right * (2f + r * 0.8f);
+                    ReleaseCustodyTracking(rider.CharacterId, courthouseExit,
+                        relocate: true);
+                    walked++;
+                }
                 if (file != null && file.Status == CaseStatus.Dismissed) dismissed = true;
                 // The wire through the one door; the BANNER is the aggregate below,
                 // because a car brings several men at once and one line per man would
@@ -711,6 +816,7 @@ namespace RoadDemo
         /// hang a replacement off.</summary>
         readonly List<Prisoner> _forfeited = new List<Prisoner>();
         readonly List<Prisoner> _paperTried = new List<Prisoner>();
+        readonly List<int> _discharged = new List<int>();
 
         /// <summary>What the court did to one man, said once - on the wire and over the
         /// street. ONE door for it, because a verdict reached on paper at the day tick
@@ -775,7 +881,15 @@ namespace RoadDemo
             {
                 if (Pipeline.RosterSeed == 0) Pipeline.RosterSeed = roster.Seed;
                 Pipeline.ComplainantStillTalks ??= StillTalks;
-                Pipeline.Discharged(roster);
+                _discharged.Clear();
+                Pipeline.Discharged(roster, _discharged);
+                for (var i = 0; i < _discharged.Count; i++)
+                    ReleaseCustodyTracking(_discharged[i]);
+                if (_discharged.Count > 0)
+                {
+                    var director = LivingCity.Gameplay.PersonnelDirector.Instance;
+                    if (director != null) director.Touch();
+                }
                 CoolTheWanted(roster, today);
 
                 // BAIL IS SPENT ON THE DAY, whichever way it goes (GAN-245): a man who

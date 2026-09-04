@@ -139,6 +139,20 @@ namespace RoadDemo
         /// up where he left it rather than at the end of the street.</summary>
         public static bool KerbSlotNear(LaneNet net, Vector3 near, float halfLength, float halfWidth,
             out Vector3 pos, out Quaternion rot)
+            => KerbSlot(net, near, halfLength, halfWidth,
+                NearbyRoadReach, MaxRoadCandidates, out pos, out rot);
+
+        /// <summary>The closest legal free kerb in the road network. A police response
+        /// uses this only when every normal nearby candidate is occupied: continuing to
+        /// search real kerbs is preferable to declaring a stopped traffic lane a park.</summary>
+        public static bool NearestLegalKerbSlot(LaneNet net, Vector3 near,
+            float halfLength, float halfWidth, out Vector3 pos, out Quaternion rot)
+            => KerbSlot(net, near, halfLength, halfWidth,
+                float.PositiveInfinity, int.MaxValue, out pos, out rot);
+
+        static bool KerbSlot(LaneNet net, Vector3 near, float halfLength, float halfWidth,
+            float nearbyRoadReach, int maxRoadCandidates,
+            out Vector3 pos, out Quaternion rot)
         {
             pos = near;
             rot = Quaternion.identity;
@@ -149,7 +163,7 @@ namespace RoadDemo
             // the next corner had an empty legal kerb. Rank the nearby surface roads and
             // try both sides, still choosing the closest free physical slot.
             Candidates.Clear();
-            float reachSq = NearbyRoadReach * NearbyRoadReach;
+            float reachSq = nearbyRoadReach * nearbyRoadReach;
             for (int i = 0; i < net.Roads.Count; i++)
             {
                 var road = net.Roads[i];
@@ -170,7 +184,7 @@ namespace RoadDemo
 
             bool found = false;
             float bestDistanceSq = float.MaxValue;
-            int roadCount = Mathf.Min(MaxRoadCandidates, Candidates.Count);
+            int roadCount = Mathf.Min(maxRoadCandidates, Candidates.Count);
             for (int i = 0; i < roadCount; i++)
             {
                 var candidate = Candidates[i];

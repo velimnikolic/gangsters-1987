@@ -927,18 +927,24 @@ namespace LivingCity.Police
         /// off the roster's own discharge, which is the one place a man stands up.
         /// A man out on bail is NOT swept: he is Active on purpose and still owes the
         /// court a morning.</summary>
-        public void Discharged(Roster roster)
+        public int Discharged(Roster roster, List<int> released = null)
         {
             if (roster == null)
-                return;
+                return 0;
+            var count = 0;
             for (var i = _inside.Count - 1; i >= 0; i--)
             {
                 if (_inside[i].Stage == PrisonStage.Bailed)
                     continue;
                 var member = roster.Find(_inside[i].CharacterId);
                 if (member == null || member.Status != CharacterStatus.Jailed)
+                {
+                    released?.Add(_inside[i].CharacterId);
                     _inside.RemoveAt(i);
+                    count++;
+                }
             }
+            return count;
         }
 
         /// <summary>The boss cut him loose: the outfit's file is closed, and the city

@@ -366,9 +366,9 @@ namespace RoadDemo
         /// complaint is not a gunfight: nobody is running, and a car that takes four
         /// minutes to cross the city is still an answer.
         ///
-        /// Nearest is measured in TIME rather than metres - a car eight hundred metres
-        /// off arrives before a man on foot three hundred - and the call is given the
-        /// patience that trip actually needs.
+        /// Nearest is the shortest X/Z chord on the map. A faster but farther car does
+        /// not jump a beat pair standing across the road; the call is then given the
+        /// patience that the selected unit's trip actually needs.
         /// </summary>
         bool SendToDoor(CallOut call)
         {
@@ -392,33 +392,34 @@ namespace RoadDemo
             return true;
         }
 
-        /// <summary>Metres a second a unit is worth on the way to a complaint: an officer
-        /// jogs, a car drives a city with lights and no siren. Rough on purpose - it
-        /// decides which unit is SENT and how long the call waits for it, not how fast
-        /// anybody actually moves.</summary>
+        /// <summary>Metres a second used only to size the selected unit's timeout. It
+        /// never participates in selection; nearest always means nearest in space.</summary>
         const float FootPace = 2.6f;
         const float CarPace = 8f;
 
-        /// <summary>The unit that can be at this door soonest, of every unit the city has
-        /// free. Returns the trip it is expected to take.</summary>
+        /// <summary>The physically nearest free unit to this door by overhead-map
+        /// straight line. Returns the selected unit's expected trip duration.</summary>
         IPoliceUnit NearestToAnswer(Vector3 door, out float trip)
         {
             IPoliceUnit best = null;
-            float bestTrip = float.MaxValue;
+            float bestDistance = float.MaxValue;
             for (var i = 0; i < _units.Count; i++)
             {
                 var unit = _units[i];
                 if (unit == null || !unit.Available || unit.Tf == null) continue;
-                var gap = unit.Position - door;
-                gap.y = 0f;
-                // the graph is never the straight line; a third again is what a city
-                // block grid costs a trip across it
-                float t = gap.magnitude * 1.35f / (unit.Carries ? CarPace : FootPace);
-                if (t >= bestTrip) continue;
-                bestTrip = t;
+                var at = unit.Position;
+                var distance = PoliceProcedure.AirDistanceSquared(
+                    at.x, at.z, door.x, door.z);
+                if (distance >= bestDistance) continue;
+                bestDistance = distance;
                 best = unit;
             }
-            trip = best != null ? bestTrip : 0f;
+            // The road/obstacle detour estimate is only a timeout for the winner. It
+            // must never change who wins the dispatch race.
+            trip = best != null
+                ? Mathf.Sqrt(bestDistance) * 1.35f /
+                  (best.Carries ? CarPace : FootPace)
+                : 0f;
             return best;
         }
 
@@ -443,9 +444,12 @@ namespace RoadDemo
             var unit = call.Unit;
             if (unit == null || unit.Tf == null) { Close(call); return; }
             if (Time.time > call.GiveUpAt) { Close(call); return; }
-            if (!unit.OnScene &&
-                (unit.Position - call.Call.Pos).sqrMagnitude > ComplaintReach * ComplaintReach)
-                return;
+            // Passing inside the complaint's broad 30 m search radius is not arrival.
+            // The old radius shortcut advanced the call while the beat was still
+            // Responding; from one approach it happened to be beside the doorstep, and
+            // from another it stood at the corner and skipped the collar entirely.
+            // Wait for the unit's own route state to prove that it physically arrived.
+            if (!PoliceProcedure.CanProcessComplaintArrival(unit.OnScene)) return;
 
             // A car has to put a man on the pavement before there is anybody to speak to.
             if (unit.Carries && call.Men == null)
@@ -503,7 +507,7 @@ namespace RoadDemo
                     var toDoor = lead.Tf.position - call.Call.Pos;
                     toDoor.y = 0f;
                     var gap = toDoor.magnitude;
-                    if (gap > DoorstepReach && gap <= ClosingMax)
+                    if (gap > DoorstepReach)
                     {
                         var doorstep = call.Call.Pos + toDoor / gap * 2f;
                         _crews.MarchTo(call.Men, doorstep,

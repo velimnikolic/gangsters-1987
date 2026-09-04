@@ -271,6 +271,7 @@ namespace RoadDemo
         static Vector3? FocusOf(DemoCrews.Unit unit)
         {
             if (unit == null) return null;
+            if (unit.CustodyTracked) return unit.Position;
             if (unit.Car != null && unit.Car.Tf != null) return unit.Car.Position;
             if (unit.Boss != null && unit.Boss.Tf != null) return unit.Boss.Tf.position;
             foreach (var man in unit.All())

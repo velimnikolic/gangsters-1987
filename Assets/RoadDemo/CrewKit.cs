@@ -393,11 +393,21 @@ namespace RoadDemo
         static AnimationClip plead;
 
         /// <summary>Both hands held over the head for as long as the law owns the man.
-        /// Unlike Plead this is an authored loop, so a long wait for a carrier cannot
-        /// silently hand him back to an ordinary idle.</summary>
+        ///
+        /// THE ENTER, NOT THE LOOP. This is the raise (1.40 s: the arms come up and
+        /// stop with both hands a good 40 cm over the head), played once and HELD on
+        /// its last frame - which is what a held take does with a clip that does not
+        /// loop. The wave's Loop take was the obvious pick and was wrong: measured, it
+        /// keeps the hands high but swings each of them 0.4 m side to side for ever, so
+        /// a man at gunpoint stood there WAVING at the officer arresting him. A man
+        /// with a gun on him holds still.
+        ///
+        /// The hold is also what makes the wait safe: a long one for a carrier cannot
+        /// silently hand him back to an ordinary idle, exactly as an authored loop
+        /// would not have.</summary>
         public static AnimationClip HandsUp => handsUp != null ? handsUp
             : handsUp = IdleClip(
-                ActDir + "Wave/Stances/A_POLY_IDL_Wave_Double_Loop_Masc");
+                ActDir + "Wave/Stances/A_POLY_IDL_Wave_Double_Enter_Masc");
         static AnimationClip handsUp;
 
         /// <summary>Down on the knees with the hands together - what a share of the

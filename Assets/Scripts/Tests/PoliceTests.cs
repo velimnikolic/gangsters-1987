@@ -49,6 +49,11 @@ namespace LivingCity.Tests
             ("GAN315_OfficerReturnsToTheCarPromptly", GAN315_OfficerReturnsToTheCarPromptly),
             ("GAN315_ShopStatementRequiresARealEntry", GAN315_ShopStatementRequiresARealEntry),
             ("GAN315_OneUniformAndAFastDispatch", GAN315_OneUniformAndAFastDispatch),
+            ("GAN315_DispatchUsesAirDistanceNotTravelTime", GAN315_DispatchUsesAirDistanceNotTravelTime),
+            ("GAN315_ComplaintWaitsForPhysicalArrival", GAN315_ComplaintWaitsForPhysicalArrival),
+            ("GAN315_BoardingDoesNotResetALiveRoute", GAN315_BoardingDoesNotResetALiveRoute),
+            ("GAN315_EscortStandsClearAndTheCarParks", GAN315_EscortStandsClearAndTheCarParks),
+            ("GAN315_TransferTracksOnlyPhysicalCustody", GAN315_TransferTracksOnlyPhysicalCustody),
             ("GAN315_ResponseRunsAndFlightDrawsFire", GAN315_ResponseRunsAndFlightDrawsFire),
             ("HeldMeansHeldUntilAJudgeSaysOtherwise", HeldMeansHeldUntilAJudgeSaysOtherwise),
             ("TheVerdictLandsWhenTheTransferArrives", TheVerdictLandsWhenTheTransferArrives),
@@ -216,8 +221,8 @@ namespace LivingCity.Tests
                 "CUSTODY: four prisoners need two cars when the watch can spare them.");
             Want(failures, CustodyPlan.CarsForPrisoners(8, 3) == 2,
                 "CUSTODY: even a large arrest must leave one on-duty car free.");
-            Want(failures, CustodyPlan.CarsForPrisoners(2, 1) == 0,
-                "CUSTODY: the last working car must remain available for another call.");
+            Want(failures, CustodyPlan.CarsForPrisoners(2, 1) == 1,
+                "CUSTODY: the last free car must answer the custody already waiting.");
             Want(failures, CustodyPlan.PrisonersThisTrip(5, 2) == 4,
                 "CUSTODY: a five-man crew must send four and hold one for trip two.");
             Want(failures, CustodyPlan.PrisonersThisTrip(1, 2) == 1,
@@ -301,6 +306,107 @@ namespace LivingCity.Tests
                 PoliceProcedure.ComplaintDelayMaximum <= 4f &&
                 PoliceProcedure.ComplaintDelayMinimum < PoliceProcedure.ComplaintDelayMaximum,
                 "GAN-315/response: a shop call must leave dispatch inside four seconds.");
+        }
+
+        static void GAN315_DispatchUsesAirDistanceNotTravelTime(List<string> failures)
+        {
+            var footAcrossTheRoad = PoliceProcedure.AirDistanceSquared(
+                ax: 20f, az: 0f, bx: 0f, bz: 0f);
+            var fasterCarFartherAway = PoliceProcedure.AirDistanceSquared(
+                ax: 40f, az: 0f, bx: 0f, bz: 0f);
+            var footTravelTime = Math.Sqrt(footAcrossTheRoad) / 2.6;
+            var carTravelTime = Math.Sqrt(fasterCarFartherAway) / 8.0;
+
+            Want(failures,
+                footAcrossTheRoad < fasterCarFartherAway &&
+                carTravelTime < footTravelTime,
+                "GAN-315/dispatch: the nearer foot patrol must win even when a farther car has a shorter ETA.");
+            Want(failures,
+                PoliceProcedure.AirDistanceSquared(3f, 4f, 0f, 0f) == 25f,
+                "GAN-315/dispatch: nearest must be the direct overhead-map chord.");
+        }
+
+        static void GAN315_ComplaintWaitsForPhysicalArrival(List<string> failures)
+        {
+            Want(failures,
+                !PoliceProcedure.CanProcessComplaintArrival(unitOnScene: false) &&
+                PoliceProcedure.CanProcessComplaintArrival(unitOnScene: true),
+                "GAN-315/arrest: entering the shop's search radius must not skip the actual on-scene arrival.");
+        }
+
+        static void GAN315_BoardingDoesNotResetALiveRoute(List<string> failures)
+        {
+            Want(failures,
+                !CustodyPlan.ShouldRetryBoarding(
+                    hasOrder: true, atDestination: false, retryElapsed: true) &&
+                !CustodyPlan.ShouldRetryBoarding(
+                    hasOrder: false, atDestination: true, retryElapsed: true) &&
+                !CustodyPlan.ShouldRetryBoarding(
+                    hasOrder: false, atDestination: false, retryElapsed: false) &&
+                CustodyPlan.ShouldRetryBoarding(
+                    hasOrder: true, atDestination: false, retryElapsed: true,
+                    routeStalled: true) &&
+                CustodyPlan.ShouldRetryBoarding(
+                    hasOrder: false, atDestination: false, retryElapsed: true),
+                "GAN-315/boarding: retry only an idle or genuinely stalled route, never one still progressing.");
+        }
+
+        static void GAN315_EscortStandsClearAndTheCarParks(List<string> failures)
+        {
+            Want(failures,
+                PoliceProcedure.CustodyEscortCarClearance >= 3f,
+                "GAN-315/escort: the covering officer must stand clear of the prisoner's car door.");
+            Want(failures,
+                PoliceProcedure.ResponseCarsParkAtKerb &&
+                PoliceProcedure.CustodyCarStandOff <= 3f,
+                "GAN-315/car: the nearest carrier must park at the kerb close to the pickup.");
+            Want(failures,
+                !PoliceProcedure.ResponseCarArrived(
+                    goalComplete: true, parkedAtKerb: false) &&
+                !PoliceProcedure.ResponseCarArrived(
+                    goalComplete: false, parkedAtKerb: true) &&
+                PoliceProcedure.ResponseCarArrived(
+                    goalComplete: true, parkedAtKerb: true),
+                "GAN-315/car: a lane stop is not arrival, while a completed real kerb park is.");
+        }
+
+        static void GAN315_TransferTracksOnlyPhysicalCustody(List<string> failures)
+        {
+            Want(failures,
+                !CustodyPlan.CanBook(crossedStationThreshold: false) &&
+                CustodyPlan.CanBook(crossedStationThreshold: true),
+                "GAN-315/HUD: a timeout at the car may not remove the prisoner before the station threshold.");
+
+            var bailRoster = BookedRoster(out var bailedMan, out var bailPipe);
+            var bailed = bailPipe.Book(bailRoster, bailedMan.Id, Deed.Affray, 10);
+            var trackedWhileHeld = bailed != null &&
+                CustodyPlan.TracksStage(bailed.Stage);
+            var bailReleased = bailPipe.PostBail(bailRoster, bailed,
+                PrisonPipeline.BailPrice(bailed), 10);
+
+            var courtRoster = BookedRoster(out var clearedMan, out var courtPipe);
+            var emptyCase = courtPipe.OpenCase(Deed.Extortion, 0, 10, 15,
+                "shop-release", "THE SHOP");
+            var cleared = courtPipe.Book(courtRoster, clearedMan.Id,
+                Deed.Extortion, 10, emptyCase);
+            courtPipe.Tried(courtRoster, cleared, 15);
+
+            var wreckRoster = BookedRoster(out var freedMan, out var wreckPipe);
+            var freed = wreckPipe.Book(wreckRoster, freedMan.Id, Deed.Murder, 10);
+            var transfer = new List<Prisoner>();
+            wreckPipe.DayTick(freed.CourtDay, transfer);
+            wreckPipe.Away(freed);
+            wreckPipe.Freed(wreckRoster, freed, freed.CourtDay);
+
+            Want(failures,
+                trackedWhileHeld && bailReleased &&
+                bailed.Stage == PrisonStage.Bailed &&
+                !CustodyPlan.TracksStage(bailed.Stage) &&
+                cleared.Stage == PrisonStage.Cleared &&
+                !CustodyPlan.TracksStage(cleared.Stage) &&
+                freed.Stage == PrisonStage.Freed &&
+                !CustodyPlan.TracksStage(freed.Stage),
+                "GAN-315/HUD: tracking must last through physical custody and end on every street-release stage.");
         }
 
         static void GAN315_ResponseRunsAndFlightDrawsFire(List<string> failures)

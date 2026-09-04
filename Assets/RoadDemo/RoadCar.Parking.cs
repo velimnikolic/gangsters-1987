@@ -10,6 +10,7 @@ namespace RoadDemo
         float _spotFrom;      // road-s where the free kerb stretch the car is parking in begins (travel sense)
         float _spotCheck;
         float _kerbHold;      // seconds stood at the kerb short of the spot
+        const float KerbParkReach = 1.2f;
 
         // The free stretch of kerb nearest the spot the car was sent to, long enough
         // to stand in: the claims in the kerb band (cars parked there, a prop) leave

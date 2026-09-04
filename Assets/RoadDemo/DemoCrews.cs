@@ -178,9 +178,14 @@ namespace RoadDemo
             public CourtCase ArrestCase;
             public Deed ArrestDeed = Deed.Affray;
 
-            /// <summary>From hands-up until the station threshold. The crew stays in
-            /// the organization and on every map, but no player order may move it.</summary>
+            /// <summary>From hands-up through the tracked custody journey. The crew stays
+            /// in the organization and on every map, but no player order may move it.</summary>
             public bool InCustody;
+
+            /// <summary>Keep this arrested crew's HUD identity after booking. The live
+            /// body can be inside the cells; its map position is then supplied by the
+            /// custody pipeline and follows any later court/prison transfer.</summary>
+            public bool CustodyTracked;
 
             /// <summary>A first-leg custody was broken. Kept until the next booking so
             /// the prisoner's saved record and eventual verdict retain the fact.</summary>
@@ -285,6 +290,18 @@ namespace RoadDemo
             {
                 get
                 {
+                    if (CustodyTracked)
+                    {
+                        var tracked = Boss;
+                        if (tracked == null)
+                            foreach (var man in All())
+                                if (man != null && man.CharacterId >= 0)
+                                { tracked = man; break; }
+                        if (tracked != null && PoliceForce.Instance != null &&
+                            PoliceForce.Instance.TryCustodyPosition(
+                                tracked.CharacterId, out var custodyAt))
+                            return custodyAt;
+                    }
                     if (Boss != null && !Boss.Dead && Boss.Tf) return Boss.Tf.position;
                     foreach (var m in All())
                         if (m != null && !m.Dead && m.Tf) return m.Tf.position;
@@ -1536,6 +1553,42 @@ namespace RoadDemo
             return null;
         }
 
+        /// <summary>A bail, acquittal, completed sentence or broken transfer returns
+        /// this exact booked body to the street before Sync reads the active roster.
+        /// Pins are per character, while command custody belongs to the lieutenant:
+        /// releasing one hood must not accidentally unlock a still-held boss.</summary>
+        public void ReleaseCustodyTracking(int characterId, Vector3 at,
+            bool relocate)
+        {
+            if (!_byCharacter.TryGetValue(characterId, out var man) || man == null)
+                return;
+
+            DoorBeat.Evict(man);
+            man.SetRiding(false);
+            man.Disengage();
+            man.Surrendered = false;
+            if (man.Tf != null && !man.Dead)
+            {
+                if (!man.Tf.gameObject.activeSelf)
+                    man.Tf.gameObject.SetActive(true);
+                if (relocate)
+                {
+                    at = WalkObstacles.ClearSpot(at, WalkObstacles.Radius);
+                    at.y = man.Tf.position.y;
+                    man.Tf.position = at;
+                }
+            }
+
+            var unit = UnitOf(man);
+            if (unit == null) return;
+            var force = PoliceForce.Instance;
+            var bossHeld = unit.Boss != null && force != null &&
+                force.TryCustodyPosition(unit.Boss.CharacterId, out _);
+            unit.CustodyTracked = bossHeld;
+            unit.InCustody = bossHeld;
+            unit.Surrendered = bossHeld;
+        }
+
         /// <summary>The outfit's crew carrying this crew number, if it is still standing
         /// on the street. The books name a crew and the surfaces that order one about -
         /// the block file, the paper map, the billet - have to find its men.</summary>
@@ -1606,9 +1659,13 @@ namespace RoadDemo
             if (unit == null || unit.Boss == null || unit.Boss.Dead) return false;
             if (CustodyRefuses(unit)) { OrderRefusal = InCustodyRefusal; return false; }
             if (unit.Surrendered) { OrderRefusal = HandsUpRefusal; return false; }
-            // an ordinary move order ends a run: the player has told them to go
-            // somewhere, which is not the same as telling them to get away
-            unit.Fleeing = false;
+            // A MOVE DURING A RUN REDIRECTS THE RUN; IT DOES NOT END IT (the user's word,
+            // 2026-09-04). It used to: one click on the ground with the law behind them
+            // dropped the flag, and with it the pursuit (FollowSighting), the walk to
+            // ground (TickFlight) and the run itself - the men slowed to a walk into a
+            // second arrest. A running crew told where to run keeps running there. The
+            // run ends through a door, on STOP RUNNING (CrewOverlay), or on an ambush.
+            if (unit.Fleeing) run = true;
             CallOffRaids(unit, "a move order");
             NoteRetask(unit);
             unit.TargetUnit = null;
@@ -1978,9 +2035,9 @@ namespace RoadDemo
             foreach (var man in unit.All())
                 if (man != null && !man.Dead) man.Disengage();
 
-            // the walk order FIRST: an ordinary move ends a flight (below), so the flags
-            // are set on the far side of it or they would be cleared by the very order
-            // that starts the run
+            // the walk order FIRST, the flags after it: the order is what puts them on
+            // the road, and one that is refused - custody, hands up, no ground to stand
+            // on - must not leave a crew flagged as running that never moved
             if (!OrderUnit(unit, run, out _, run: true, speak: false)) return false;
             CrewSpeech.Say(unit, LivingCity.Data.VoiceLines.OrdFlee);
             unit.Fleeing = true;
@@ -1998,7 +2055,8 @@ namespace RoadDemo
         const float FleeDistance = 70f;
 
         /// <summary>The run is over - they went inside, they were caught, or the player
-        /// gave them something else to do.</summary>
+        /// told them to stop (STOP RUNNING). A plain move order does NOT end it; it
+        /// redirects the run (MoveUnit).</summary>
         public void EndFlight(Unit unit)
         {
             if (unit != null) unit.Fleeing = false;
@@ -2816,6 +2874,49 @@ namespace RoadDemo
         // bench scene's mob) are left alone.
         void Sync(LivingCity.Outfit.Underworld underworld)
         {
+            // A booked prisoner leaves the ACTIVE roster, but the user still owns his
+            // HUD identity and must be able to follow the later drive to court. Preserve
+            // the exact arrested unit and its walkers as tracking anchors instead of
+            // letting the ordinary active-roster projection destroy them.
+            var trackedCustodies = new List<Unit>();
+            var trackedCustodyIds = new HashSet<int>();
+            var force = PoliceForce.Instance;
+            // Pins are per prisoner. A lieutenant can be bailed while one of his hoods
+            // remains in the cells; protecting the whole old Unit in that case used to
+            // suppress the now-active lieutenant and therefore his entire crew.
+            foreach (var pair in _byCharacter)
+                if (pair.Key >= 0 && force != null &&
+                    force.TryCustodyPosition(pair.Key, out _))
+                    trackedCustodyIds.Add(pair.Key);
+            for (var i = 0; i < Units.Count; i++)
+            {
+                var unit = Units[i];
+                var bossPinned = unit != null && unit.Boss != null &&
+                    trackedCustodyIds.Contains(unit.Boss.CharacterId);
+                // Before the station threshold there is deliberately no pipeline pin:
+                // the live walker is the HUD position. Preserve that active arrest as
+                // a whole. Once the boss has a pin, protection becomes per prisoner.
+                var liveArrest = unit != null && unit.InCustody &&
+                    unit.CustodyTracked && !bossPinned;
+                if (!bossPinned && !liveArrest)
+                {
+                    if (unit != null && unit.CustodyTracked)
+                    {
+                        unit.CustodyTracked = false;
+                        unit.InCustody = false;
+                        unit.Surrendered = false;
+                    }
+                    continue;
+                }
+                unit.CustodyTracked = true;
+                unit.InCustody = true;
+                trackedCustodies.Add(unit);
+                if (liveArrest)
+                    foreach (var man in unit.All())
+                        if (man != null && man.CharacterId >= 0)
+                            trackedCustodyIds.Add(man.CharacterId);
+            }
+
             // A collector struck off during a round clears the pure roster node and
             // benches its escorts immediately. The walking body nevertheless owns the
             // round until it banks or is wiped, so keep that exact detachment together
@@ -2851,13 +2952,15 @@ namespace RoadDemo
                 foreach (var crew in book.Crews)
                 {
                     var lt = book.Find(crew.LieutenantId);
-                    if (lt == null || lt.Status != CharacterStatus.Active) continue;
+                    if (lt == null || lt.Status != CharacterStatus.Active ||
+                        trackedCustodyIds.Contains(lt.Id)) continue;
                     wanted[lt.Id] = (house, crew, true);
                     var tacticalHoods = 0;
 
                     var bagId = ours ? RosterOps.CollectorOf(book, crew.Id) : -1;
                     var bagMan = bagId >= 0 ? book.Find(bagId) : null;
-                    if (bagMan != null && bagMan.Status == CharacterStatus.Active)
+                    if (bagMan != null && bagMan.Status == CharacterStatus.Active &&
+                        !trackedCustodyIds.Contains(bagMan.Id))
                     {
                         bagMen[crew.Id] = bagId;
                         bagMemberCrew[bagId] = crew.Id;
@@ -2874,7 +2977,8 @@ namespace RoadDemo
                              e < Crew.MaxEscorts; e++)
                         {
                             var escort = book.Find(crew.EscortIds[e]);
-                            if (escort == null || escort.Status != CharacterStatus.Active)
+                            if (escort == null || escort.Status != CharacterStatus.Active ||
+                                trackedCustodyIds.Contains(escort.Id))
                                 continue;
                             bagMemberCrew[escort.Id] = crew.Id;
                             bagCrews.Add(crew.Id);
@@ -2885,6 +2989,7 @@ namespace RoadDemo
                     {
                         var hood = book.Find(id);
                         if (hood != null && hood.Status == CharacterStatus.Active &&
+                            !trackedCustodyIds.Contains(hood.Id) &&
                             tacticalHoods < Crew.MaxTacticalHoods)
                         {
                             wanted[id] = (house, crew, false);
@@ -2898,7 +3003,8 @@ namespace RoadDemo
                         foreach (var walker in walkingBag.All())
                         {
                             var hood = walker != null ? book.Find(walker.CharacterId) : null;
-                            if (hood != null && hood.Status == CharacterStatus.Active)
+                            if (hood != null && hood.Status == CharacterStatus.Active &&
+                                !trackedCustodyIds.Contains(hood.Id))
                                 wanted[hood.Id] = (house, crew, false);
                         }
                 }
@@ -2907,7 +3013,9 @@ namespace RoadDemo
             // men no longer on a crew leave the street (the fallen stay where they fell)
             var gone = new List<int>();
             foreach (var kv in _byCharacter)
-                if (!wanted.ContainsKey(kv.Key) && !kv.Value.Dead) gone.Add(kv.Key);
+                if (!wanted.ContainsKey(kv.Key) &&
+                    !trackedCustodyIds.Contains(kv.Key) && !kv.Value.Dead)
+                    gone.Add(kv.Key);
             foreach (int id in gone) RemoveMan(id);
 
             // units follow the crews; membership is rebuilt from scratch below
@@ -2986,6 +3094,10 @@ namespace RoadDemo
                                     (carrier != null ? carrier.FullName : parent.Name);
                     bag.Root.SetParent(_root, false);
                 }
+
+            for (var i = 0; i < trackedCustodies.Count; i++)
+                if (!liveUnits.Contains(trackedCustodies[i]))
+                    liveUnits.Add(trackedCustodies[i]);
 
             // the law's squads and whatever a bench scene stood by hand: nobody's books,
             // and none of this pass's business

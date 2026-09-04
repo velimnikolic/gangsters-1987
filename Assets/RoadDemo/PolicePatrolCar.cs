@@ -48,11 +48,11 @@ namespace RoadDemo
         float _t;
         Quaternion _fromRot, _toRot;
 
-        // the call: the lane the scene is on, where along it to stop, and a call that
+        // the call: its physical position, the requested clearance and a call that
         // came while the car was in its stall or swinging in or out of it
-        RoadEdge _sceneEdge;
-        float _sceneS;
         Vector3 _scenePos;
+        float _sceneStandOff;
+        float _responseRetryAt;
         bool _sceneWanted;
 
         /// <summary>Set for the leg the car drives FORWARDS - out of the bay - where
@@ -186,8 +186,12 @@ namespace RoadDemo
                 Tf.gameObject.SetActive(true);
                 Tf.SetPositionAndRotation(_kerb, Quaternion.LookRotation(_home.Dir));
             }
-            BackOnTheRound();
             Spawn(_home, _kerbS);
+            // A call may have selected this rolling reserve while it was in the yard.
+            // Preserve that call across the spawn instead of sending the car on a random
+            // patrol and leaving _sceneWanted latched for ever.
+            if (_sceneWanted) BeginResponding();
+            else BackOnTheRound();
         }
 
         /// <summary>The officer at the wheel (CarOccupant), set by the builder. Shown
@@ -292,12 +296,20 @@ namespace RoadDemo
 
                 case Mode.Responding:
                     Tick(dt);
-                    if (CurrentEdge == _sceneEdge && Progress >= _sceneS - 0.4f && Speed < 0.2f)
+                    // The parking goal already names the nearest free legal kerb. Do
+                    // not reject its completed answer through a second, unrelated
+                    // radius around the shop: that made a correctly parked car pull
+                    // out and drive past the prisoners again. A fake lane-centre
+                    // "Parked" state is still rejected.
+                    if (LivingCity.Police.PoliceProcedure.ResponseCarArrived(
+                            AtGoal, ParkedAtKerb))
                         State = Mode.OnScene;
+                    else if (!HasGoal && Time.time >= _responseRetryAt)
+                        SetResponseGoal();
                     break;
 
                 case Mode.OnScene:
-                    break; // stood in the lane, doors open, men out; the traffic queues behind
+                    break; // parked at the kerb, doors open, men out
             }
         }
 
@@ -306,31 +318,20 @@ namespace RoadDemo
         Transform IPoliceUnit.Tf => Tf;
         Vector3 IPoliceUnit.Position => Tf.position;
         public bool Available => !_sceneWanted && !OffWatch && !Wrecked &&
-            (State == Mode.Resting || State == Mode.Patrolling || State == Mode.Returning);
+            (State == Mode.Resting || State == Mode.Undocking ||
+             State == Mode.Patrolling || State == Mode.Returning ||
+             State == Mode.Docking);
         bool IPoliceUnit.Available => Available;
         bool IPoliceUnit.OnScene => State == Mode.OnScene;
         bool IPoliceUnit.Carries => true;
 
-        /// <summary>Sent to a shooting: the lane nearest the scene, stopping short of
-        /// it - routed there like a patrol waypoint, at the wheel of the same car.</summary>
+        /// <summary>Sent to a scene through the shared road-car goal. The car routes to
+        /// the nearest reachable kerb, pulls fully out of the running lane and only then
+        /// reports OnScene.</summary>
         public void RouteTo(Vector3 scene, float standOff)
         {
             _scenePos = scene;
-            RoadEdge best = null;
-            float bestS = 0f, bestD = float.MaxValue;
-            foreach (var e in _allEdges)
-            {
-                if (e.Length < 12f) continue;
-                float s = Mathf.Clamp(Vector3.Dot(scene - e.Start, e.Dir), 0f, e.Length);
-                var p = e.Start + e.Dir * s;
-                float d = (p - scene).sqrMagnitude;
-                if (d < bestD) { bestD = d; best = e; bestS = s; }
-            }
-            if (best == null) return;
-            _sceneEdge = best;
-            _sceneS = Mathf.Clamp(bestS - standOff, 6f, best.Length - 4f);
-            _routeToWaypoint = RouteToward(_allEdges, best);
-            _waypoint = best;
+            _sceneStandOff = Mathf.Max(0f, standOff);
             switch (State)
             {
                 case Mode.Resting:
@@ -340,6 +341,7 @@ namespace RoadDemo
                     break;
                 case Mode.Patrolling:
                 case Mode.Returning:
+                case Mode.Responding:
                 // AND A CAR STOOD AT A SCENE CAN BE SENT ON TO THE NEXT ONE. Without this
                 // a transfer that pulled in to collect its man could never leave again:
                 // every other caller gates on Available, which OnScene is not, so nothing
@@ -355,6 +357,30 @@ namespace RoadDemo
             State = Mode.Responding;
             _sceneWanted = false;
             Profile = DriverProfile.Police;   // the lights on: brisk, the crown, a red when the box is clear
+            SetResponseGoal();
+        }
+
+        void SetResponseGoal()
+        {
+            _responseRetryAt = Time.time + 1.25f;
+            _waypoint = null;
+            _routeToWaypoint = null;
+            var net = Net ?? LaneNet.Active;
+            var hasKerb = CrewCars.KerbSlotNear(net, _scenePos,
+                HalfLen, HalfWide, out var kerb, out _);
+            if (!hasKerb)
+                hasKerb = CrewCars.NearestLegalKerbSlot(net, _scenePos,
+                    HalfLen, HalfWide, out kerb, out _);
+
+            // The selected world point is already the closest clear slot, so applying
+            // another stand-off would move the goal away from it. The old scene goal is
+            // retained only as a defensive fallback for a network with no legal kerb.
+            if (hasKerb)
+                GoTo(kerb, park: true);
+            else
+                GoTo(_scenePos,
+                    park: LivingCity.Police.PoliceProcedure.ResponseCarsParkAtKerb,
+                    standOff: _sceneStandOff);
         }
 
         /// <summary>Done at the scene: back to the station.</summary>
@@ -365,6 +391,9 @@ namespace RoadDemo
             _waypoint = null;
             _routeToWaypoint = null;
             Profile = DriverProfile.Patrol;
+            // Parking at a scene leaves the car off its lane. A real road goal pulls
+            // it out again and carries it back to the station kerb.
+            GoTo(_kerb, park: false);
         }
 
         protected override bool Fearless => true;
@@ -450,7 +479,7 @@ namespace RoadDemo
                 }
             }
 
-            if ((State == Mode.Patrolling || State == Mode.Responding) && _routeToWaypoint != null &&
+            if (State == Mode.Patrolling && _routeToWaypoint != null &&
                 _routeToWaypoint.TryGetValue(CurrentEdge, out var toward) && toward != null)
                 return toward;
 
@@ -481,14 +510,12 @@ namespace RoadDemo
             _routeToWaypoint = null;
         }
 
-        // Rolling to a stop at the kerb is a speed clamp, exactly how the demo's
-        // cars already brake for signals.
+        // Returning to the station retains the old station-kerb clamp. Scene response
+        // uses RoadCar.GoTo(..., park: true), the same complete pull-in as crew cars.
         protected override float LimitTarget(float target)
         {
             if (State == Mode.Returning && CurrentEdge == _home && Progress <= _kerbS)
                 target = Mathf.Min(target, Allowed(0f, _kerbS - Progress));
-            if (State == Mode.Responding && CurrentEdge == _sceneEdge)
-                target = Mathf.Min(target, Allowed(0f, _sceneS - Progress));
             return target;
         }
 
