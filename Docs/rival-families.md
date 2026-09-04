@@ -33,10 +33,20 @@ The street, as anybody standing on it could work it out:
   paper the premises is on
 * `OurPresence(block)`, `OurFear(block)`, `ControlState(block)`, `Leader(block)`,
   `PoliceAttention(block)`
-* `Incidents` — trouble on our ground nobody has answered for
+* `Incidents` — trouble on our ground, with the power ledger's REAL hours: when the
+  oldest unanswered one happened and when the latest of any kind did (AI-001; the view
+  used to stamp them with the hour of the think, so no window could ever close)
 * `Defiances` — doors that have said no to us and do not pay us, with the hour and how
-  many times we have leant on them since
-* `StanceToward(house)`, `LastRefusals`, `GameHour`, `Day`
+  many times we have leant on them since — and, since AI-003, the hesitant doors too,
+  opened at the hour we last stood there
+* each door's `LastInteraction` and `Demands` — its own history with us
+* `Cells` — men of ours in the city's hands, with the court's bail price and its refusal
+  in the ledger's own words; `HasCounsel`, `CounselPrice`
+* `RoundOut(crew)` — whether the crew has a walk on the street; `LastWalked(block)` —
+  when we last walked a block door to door; `Blocked(key)` — whether the gateway refused
+  this exact thing inside the last twelve hours (`HouseBackoffs`)
+* `StanceToward(house)`, `Ladder(house)`, `TheirEndurance(house)`, `LastRefusals`,
+  `GameHour`, `Day`
 
 **Not in the view, and never to be added:** another house's roster, safe or order book; a
 shopkeeper's personality; any roll. A mind that could read those would be playing a
@@ -60,51 +70,91 @@ candidate — plus any due collection, because tier 4 never waits behind a war.
 | 8 | buy | ✔ |
 | 9 | idle | — |
 
+Before the tiers, two things every think does: **the watch comes off** — any `Guard`
+whose block has been quiet for `GuardStandsHours`, and any job whose crew no longer
+exists, is called off through the same `Cancel` the player's key uses (AI-001) — and
+**tier 4's paper** is put right. Every intent leaves through one door, `Propose`, which
+drops it if the gateway refused the same key inside `RefusalBackoffHours` (P4).
+
+**The Don's own detail** — the crew whose lieutenant is the Boss — is never a candidate
+for anything (S3/S3b, ruling A4: "Don nek sedi u kuću"); the street's own defence of the
+front is the whole of "mostly". A crew with a wanted man in it is not sent to a door
+either (P3), and a crew with a round out is not free (S7).
+
 **Tier 1.** Men who shot at ours were seen within `HqAlarmMetres` of the front inside
-`ThreatMemoryHours`, or the front's own block carries an incident: a crew sits on the
-front. Nothing else happens that think.
+`ThreatMemoryHours`, or the front's own block had an incident inside `GuardStandsHours`:
+a crew sits on the front. One front, one guard — the watch is counted by the DOOR it
+stands on, not by the crew, which is where `Guard ×2` came from.
 
-**Tier 2.** Under three days of payroll, a family with two crews puts them together: the
-smaller lieutenant's hoods move across, then he is broken back to hood. One intent per
-think, because a lieutenant has to be a hood before anybody can put him in a crew.
+**Tier 2.** Under three days of payroll, a family with two working crews puts them
+together: the smaller lieutenant's hoods move across, then he is broken back to hood. One
+intent per think, because a lieutenant has to be a hood before anybody can put him in a
+crew.
 
-**Tier 3.** A crew under `MinHoods` active hoods files a `Recruit` order — the same order
-the player files, resolved the same way, with the man landing in the recruiting crew. It
-files only if the safe still holds a week's wages once the new man is on the payroll too.
+**Tier 3.** A house with no working capo promotes its best hood by Leadership (S4, ruling
+A5); only a house with no hood at all signs one, on the Don's detail — the one paper job
+that crew is ever given. A crew under `MinHoods` files a `Recruit` order — the same order
+the player files, resolved the same way — if the safe still holds a week's wages once the
+new man is on the payroll too. Then the law (AI-005): with a man inside and no lawyer the
+house retains counsel off the same market at the same price; then it posts bail for a capo
+(three days of wages left) or a hood (the full reserve). A case with no bail on it is
+refused once and never asked again.
 
 **Tier 4.** The scheduler (`TerritoryRoundScheduler`) sends the rounds. The mind only
 makes sure the paper is there for it to read: a man on the bag in every crew that protects
-doors, and its lieutenant answering for the blocks those doors are on.
+doors, and its lieutenant answering for the blocks those doors are on. Since AI-003 every
+house's bag man gets a body and a billet in his own front, like the player's (A9).
 
 **Tier 5.** An attack on a door the family is paid for has a window
 (`AnswerWindowHours`), and a house that lets the window close is worth less on that
 street for as long as the street remembers. Their men still about and one of ours near
-enough: `Assault`. Nobody to chase: `Guard` at the door — sitting on it is an answer too.
+enough: `Assault`. Nobody to chase: `Guard` at the door — a standing guard answers the
+incidents on its block while it stands (A22b), and a block one watch already covers gets
+no second crew.
 
 The same tier works the ladder at a door that said no: one `Threaten`, then one
 `LeanOnHoldouts`, and then the crew's own policy decides — Strict or Brutal puts the
 shutters in (`SmashUp`), Normal takes the till (`Raid`), Lenient files the refusal and
-walks away. Never at our own doors and never at a door that pays us.
+walks away. A door that would not say yes gets ONE threat after a day and is then left
+until there is a war (Z4, ruling A8). Never at our own doors and never at a door that
+pays us.
 
-**Tier 6.** A street we lead that is `Contested`, or whose doors have gone wavering or
-late, is walked before anybody looks at a new one: `OperateInBlock` while it is contested,
-`ShakeDownBlock` when the doors are loose.
+**Tier 6.** A street we lead that is `Contested` is stood on (`OperateInBlock`) before
+anybody looks at a new one. A street whose paying doors have gone LATE gets a collection
+sent by the mind itself (`CollectDues`, ruling A23) — only a collection cures lateness.
+Hesitant doors no longer count as loose; the ladder has them.
 
-**Tier 8.** Only with a week's wages still in the safe after the price, and only after
-`QuietThinks` thinks running with nothing louder to do: a car for a crew on foot, then a
-gun for a hood with empty hands — through the same `HouseOps.Purchase` the ledger's shop
-uses.
+**The feud** (tier 6 too). The ladder one step at a time; war declared only with
+`MinWarDays` of wages and against a house believed weaker; nobody starts a war with a
+capo in a cell or a wanted man out (R4). `Retake` — asking at a door another house
+protects — needs the RetakeBusiness rung AND full strength (the WAR phase) AND a weaker
+house (R2).
 
-**Tier 7.** First it asks on ground it already stands on: the best unprotected door that
-`TerritoryRacketOrders.For` would offer DEMAND against — the same rule that lights the
-player's own key. A door that has refused is never asked again; it gets one THREAT, then
-one LEAN, and is then left alone (RIVAL-006 escalates). Then, and only when every block
-the family leads is `Controlled` or better with at least half its doors paying, it walks
-onto the best neighbouring block: `score = expected take − hops × HopCostDollars −
-attention × HeatCostPerPoint`.
+**Tier 7.** On a block the family stands on, the WHOLE block is walked in one order —
+`ShakeDownBlock`, every door nobody holds, the same order and executor the player has
+(Z1, ruling A6) — never twice inside `DemandCooldownHours` (A21) and never onto a block
+the law is watching above `WalkAttentionCap` (C1). Only when there is no door left on our
+ground that may still be asked (Z2, ruling A7 — not the old "half the doors paying") does
+it walk onto the best neighbouring block: `score = expected take − hops ×
+HopCostDollars − attention × HeatCostPerPoint`. A contested street still keeps it home.
 
-A mind never asks at a door another house protects. Taking one off a family is a decision
-about that family, and RIVAL-007 makes it.
+**Tier 8.** Growth first (AI-004): one crew per block led plus one, each filled to
+`HoodsPerCrew` (bound to `Crew.MaxTacticalHoods`), signing while the reserve holds and
+while the doors' weekly take covers the payroll after the signing (A30); with two blocks
+and men to spare, the best hood by Leadership is promoted and his crew takes the next
+block. Then buying: a gun for every empty hand FIRST, then a car per crew (L3), with a
+week's wages still in the safe after the price — and without waiting for `QuietThinks`
+once the house is past the LAND phase (A12).
+
+**The phase** (`HouseMind.PhaseOf`, derived every think, never stored): LAND while there
+is a door on our ground worth asking or a neighbour worth walking onto; MEN while there is
+not and the house is under its target size or has empty hands; WAR once it is full and
+armed. The border (AI-007) is read off it: once past LAND, every neighbour leading a block
+beside one of ours is filed `BorderPressure` once a day, per bordering block, capped at
+the retake rung — geography alone never starts a war.
+
+A mind never asks at a door another house protects outside the feud. Taking one off a
+family is a decision about that family.
 
 ## The numbers (the epic's D-table)
 
@@ -112,21 +162,38 @@ They live in `HouseMindConfig` and nowhere else — never a literal in a method.
 
 | what | value | row |
 |---|---|---|
-| think every | 4 game hours | D7 |
+| think every | 1 game hour | A19 |
 | intents executed per think | 3 | D7 / D22 |
 | a hop of travel | $100 | D8 |
 | a point of police attention | $20 | D8 |
 | reserve before spending | 7 days of payroll | D9 |
 | merge crews below | 3 days of payroll | D9 |
 | a crew is short below | 2 hoods | D9 |
+| a crew is filled to | 4 hoods (`Crew.MaxTacticalHoods`) | A10 |
+| crews wanted | 1 per block led + 1 | A11 |
+| growth signs only while | weekly take ≥ 7 × payroll after the signing | A30 |
 | presence before a demand | 25 | D17 |
 | between a refusal and the threat | 24 hours | D17 |
-| doors paying before expanding | half | D17 |
+| a block walked door to door again after | 24 hours | A21 |
+| no block walk above police attention | 40 of 100 | C1 |
 | a door on the paper clock | 2 minutes | D17 |
 | an attack stays worth answering | 12 hours | D10 |
+| the guard comes off after the last incident | 24 hours | A22 |
 | how long the street remembers who shot | 24 hours | D22 |
 | close enough to alarm the front | 60 m | D22 |
-| quiet thinks before buying | 3 | D22 |
+| quiet thinks before buying (LAND phase only) | 3 | D22 / A12 |
+| a refused intent is not asked again for | 12 game hours | A24 |
+| a round with no movement is abandoned after | 2 game hours | A3 |
+| a leg not yet arrived is marched again every | 15 game minutes | S2 |
+| the border is worth, per bordering block per day | 4, capped at 40 | A18 |
+| a transfer goes on paper after | 2 failed days | A16 |
+| a rival's armed man killed is worth | +0.05 of power, capped at +0.25, −0.05 a day | A28 |
+| a man of ours the law killed costs | −0.05 of power; an arrest −0.025 a man | A29 |
+| POWER on the FAMILIES card | (coefficient − 0.25) × 100: floor 25, neutral 75, top 100 | A27 / A28a |
+
+The relations numbers are in `HouseRelationsConfig`, the power numbers in
+`TerritoryControlConfig`, and the court's in `PrisonPipeline`; the plan's D-table
+(`Docs/rival-ai-plan.md` §4) carries every one of them with the user's word beside it.
 
 ## Men on the door
 
@@ -139,20 +206,37 @@ address in `CrewJobs`, and:
   the guard lieutenant's Combat half-steps come straight off the attacker's hand. A
   failure at a guarded door puts one of the attackers in a bed for `MisfireDays`;
 * **either way** — the door's open incident counts `Answered` and the block gets a
-  `SuccessfulRetaliation`: the house came when it was called.
+  `SuccessfulRetaliation`: the house came when it was called;
+* **and merely standing there answers** (ruling A22b, "pa ja ne mogu da upucam ako su
+  pobegli"): the moment the men reach the door, every incident against their house on
+  that block still inside its window is answered, and every incident filed there while
+  they stand is answered as it is filed. Only that block, only while they stand.
 
 The player's own SIT ON IT row gets all of it for free — it is the same code.
 
+## Power
+
+Power is the third pillar of control — `(presence + fear + compliance) × power` — and
+since AI-009 it has two sides, on the user's rule: **fear is what the street saw; power
+is what you proved.** An incident against a house on a block it protects is filed with
+WHO caused it; unanswered past twelve hours it counts against, and a reprisal on the
+attacker's own ground answers what that house did on ours — only that house's bills, on
+whichever block, which is the spiral the user wants. A rival's armed man killed is
+standing proved for the house that killed him; a man of ours the law killed, or led
+away, is standing lost — directly, with no incident to answer and no grievance against
+the police, because there is no spiral with the law. Both fade by the day and neither
+carries a house past a quarter of the scale. Violence that was only the law's charges
+nobody. The FAMILIES card prints POWER 0–100 for every house and for ours.
+
 ## Wake-ups
 
-Four hours is a cadence for deciding what to do next, not a delay a family will sit
-through while its shops are wrecked. `House.WakeNow(hour)` brings the next think forward,
-and the runtime calls it when the power ledger files an incident against a house and when
-a defiance opens against one.
+An hour is a cadence for deciding what to do next, not a delay a family will sit through
+while its shops are wrecked. `House.WakeNow(hour)` brings the next think forward, and the
+runtime calls it when the power ledger files an incident against a house and when a
+defiance opens against one.
 
-The cadence is staggered: a house's first think is at `gangId × 4h / 21`, so twenty-one
-minds never land on one frame. `House.WakeNow(hour)` brings one forward (RIVAL-006 hooks
-it). **The player's house has no mind.** He is the mind.
+The cadence is staggered: a house's first think is at `gangId × 1h / 21`, so twenty-one
+minds never land on one frame. **The player's house has no mind.** He is the mind.
 
 ## Reading what a house did
 
@@ -164,9 +248,28 @@ Every executed intent writes one `DriveTrace` row of kind `"house"`:
 ```
 
 A think that found nothing writes `"intent":"-","why":"no candidate"`. A refused intent
-writes the gateway's own refusal in `why` — and the refusal comes back to the mind in
-`LastRefusals` on its next think, so a mind that keeps proposing a refused thing is a mind
-with a bug you can see.
+writes the gateway's own refusal in `why` — and the refusal is remembered under the
+intent's key for twelve game hours (`HouseBackoffs`), so the same refused thing is not
+proposed again at noon.
+
+The trace is the harness's. In an ordinary Play, ask the running editor instead:
+
+```
+unity command gangsters_house_probe                 # every house
+unity command gangsters_house_probe --house 3       # one, with its last five thinks
+unity command gangsters_house_probe --thinks 50     # the whole ring buffer
+unity command gangsters_house_table                 # the fortnight table, one line a house
+```
+
+The probe (AI-000) prints, per house, the last thinks with the gateway's own verdict on
+every intent, the phase, the book with orphan jobs marked, what the house is holding back
+after a refusal, its men in the cells; per round, the stage, `LastMoveAt`, whether the
+bag man still walks it, where the walkers physically are and how far from the door; and
+per unit, `Surrendered`, `InCustody`, `Retreated`, `Fleeing`, whether it is billeted and
+whether a march is outstanding. It reads and never repairs. The table prints the §1.1
+columns of the plan for the live city, with the two the paper clock cannot have — arrests
+and rounds lost today — and names any house with ground to take that has had nothing
+accepted by noon.
 
 ## The proof
 
@@ -184,7 +287,10 @@ must, inside fourteen game days:
 7. pay its men out of that money
 8. answer for a door it protects when somebody wrecks it
 
-The command answers `mvp`: days-to-complete and dollars banked, per seed.
+The command answers `mvp`: days-to-complete and dollars banked, per seed. Since the
+2026-09-04 run it also asserts the twelve-hour back-off, that the watch comes off after a
+quiet day and is never filed twice on one door, and that the Don's detail is given
+nothing.
 
 ## Where the houses stand with one another
 
@@ -382,24 +488,39 @@ A file from a **newer** version is refused with a printed reason, never half-rea
 One seed proves nothing; thirty is the verdict.
 
 ```
-unity command gangsters_underworld_sim --seed 1987 --days 90 --houses 21 --json
-unity command gangsters_underworld_sim --sweep 30 --days 90 --houses 21 --json > sweep.json
-python Tools/sim/underworld_tally.py sweep.json
+unity command gangsters_underworld_sim --seed 1987 --days 14 --houses 21 --table --json
+unity command gangsters_underworld_sim --sweep 30 --days 14 --houses 21 --json
+unity command gangsters_underworld_sim --sweep 30 --days 14 --houses 21 --think 4 --json
 ```
 
-The sim runs every house on the paper clock over a bench city - two blocks a family, four
-doors each - and prints one line per house per week: safe, payroll, doors paying, blocks
-led, men (active/hurt/jailed/dead), wars, what it has banked, and the day each of the
-eight MVP steps first happened (`lost/signed/deployed/street/asked/banked/paid/answered`,
-`-1` for never).
+The sim (AI-008) runs every house on the paper clock over a bench city of FOUR blocks a
+family in one row - so every block has real neighbours and the last block of one strip
+touches the next family's home - with three to six doors a block by the seed, each priced
+at the real table's rate for its trade. It prints the plan's §1.1 table once a day per
+house: men (active/jailed/hurt/dead), crews and how many are full, doors
+(paying/hesitant/refused), blocks led, safe, payroll, banked this week, jobs and the
+oldest's age, rounds out and the oldest gap, the worst door's demands, rounds lost, the
+biggest grudge and against whom, wars, the intents accepted that day, the phase, and the
+day each of the eight MVP steps first happened.
 
-**These are notes, not a verdict.** Only three things make the sim fail: an exception, an
-order refused for ownership (which would mean a mind is reaching past its view), and it
-counts negative safes rather than failing on them - EPIC 24 owns the short envelope.
+**It can fail**, and that is the point. A house that led no block by day 14; a safe under
+a week's payroll from day 7; a round the clock has left behind by more than
+`RoundStallHours`; a door demanded more than three times; and a "stoji" - a house with
+ground still to take that had not one intent accepted all day. A house in the MEN or WAR
+phase with no money to spend is WAITING, not standing, and is not failed for it: the wage
+table asks about three doors a hood and the bench gives a house eighteen, which is EPIC
+24's question.
 
-Two things the yardstick cannot see, by construction: nobody attacks anybody on the paper
-city (no incidents are filed there), so the ANSWER step and the war ladder never fire in
-it. Those are `gangsters_house_tests`' and `gangsters_relations_tests`' business.
+`--think` sets the cadence under measurement (A19) so the tally can be taken at 4, 2 and
+1 hour; the sweep reports the DISTRIBUTION - how many cities failed, how many had a frozen
+house, the failures by kind - and not the mean.
+
+What the yardstick cannot see, by construction and written on its face: **the paper clock
+measures the books; the live harness measures the street.** Nobody is arrested, shot or
+stalled on a pavement here, so arrests read zero, no incident is ever filed, and the
+ANSWER step, the guard, the court and the war ladder are `gangsters_house_tests`',
+`gangsters_police_tests`' and `gangsters_relations_tests`' business - and the live
+city's, through `gangsters_house_table`.
 
 ## See also
 
