@@ -180,6 +180,17 @@ namespace RoadDemo
                  "dealt straight onto the road already patrolling, and queues for a bay " +
                  "when it comes home rather than resting at a kerb.")]
         [Min(0)] public int policePatrolCarsPerQuarter = 5;
+
+        [Tooltip("The fleet lives on the street: every car is put down parked at a legal " +
+                 "kerb, spread over the city's blocks, rests there between rounds and " +
+                 "answers calls from there. The station only spawns a replacement, takes " +
+                 "a prisoner in at its door and starts a transfer. Off, the fleet docks in " +
+                 "the station's bays as it used to (the swing, the kerb lease).")]
+        public bool policeRestAtKerbs = true;
+        [Tooltip("Seconds a car stands at its kerb between rounds when the fleet lives on " +
+                 "the street. Long on purpose: the cars are meant to be seen parked over " +
+                 "the blocks and to go round now and then, not to circulate.")]
+        public Vector2 policeKerbRestSeconds = new Vector2(90f, 240f);
         public Vector2 policeRestSeconds = new Vector2(6f, 16f);
         // waypoints per patrol, drawn across the whole map (cars) or the beat
         // radius (officers) - each one is a routed trip, not a wandered block
@@ -4258,6 +4269,15 @@ namespace RoadDemo
             // quarters are authorised between them is dealt into whatever bays the city
             // has, and what is left over goes onto the road already patrolling.
             int fleet = PatrolCarsWanted();
+            if (policeRestAtKerbs)
+            {
+                // the yard is measured (the kerb, the bays) for the replacement and the
+                // prisoner door, but nobody is put in it: the whole fleet goes to the kerbs
+                for (int i = 0; i < _stations.Count; i++)
+                    if (_stations[i].Forecourt) FindYardKerb(_stations[i], fleet);
+                SpawnKerbPatrolCars(policeRoot, markers, fleet);
+                return;
+            }
             int docked = 0;
             for (int i = 0; i < _stations.Count; i++)
             {
@@ -4266,6 +4286,96 @@ namespace RoadDemo
                 docked += SpawnPatrolCars(policeRoot, markers, station, fleet - docked);
             }
             SpawnRollingPatrolCars(policeRoot, markers, fleet - docked);
+        }
+
+        /// <summary>
+        /// THE FLEET ON THE STREET (the user's call, 2026-09-04). Every authorised car is
+        /// put down parked at a legal kerb - clear of the junctions, pulled fully out of
+        /// the lane, the same slot a response car takes at a scene - and the slots are
+        /// dealt farthest-point over the long streets so the cars sit one to a block
+        /// rather than in a row outside the station. Each rests, goes on its round and
+        /// parks again wherever the spread puts it (PolicePatrolCar.SetRestGoal); the
+        /// station is its home only for a prisoner and a replacement.
+        /// </summary>
+        void SpawnKerbPatrolCars(Transform parent, List<IPatrolMarker> markers, int count)
+        {
+            if (count <= 0 || _policeCarPrefabs.Count == 0) return;
+
+            var yards = new List<StationHouse>();
+            for (int i = 0; i < _stations.Count; i++)
+                if (_stations[i].CarHome != null) yards.Add(_stations[i]);
+            if (yards.Count == 0)
+            {
+                Debug.Log("[RoadDemo] no police forecourt in the city; " + count +
+                          " authorised patrol cars stay on the roster");
+                return;
+            }
+            var net = LaneNet.Active;
+            if (net == null) return;
+
+            var streets = new List<RoadEdge>();
+            foreach (var e in _edges)
+                if (!e.Auxiliary && e.Length >= 30f) streets.Add(e);
+            if (streets.Count == 0) return;
+
+            var routeHome = new Dictionary<StationHouse, Dictionary<RoadEdge, RoadEdge>>();
+            var taken = new List<Vector3>();
+            var made = 0;
+            for (int i = 0; i < count; i++)
+            {
+                // the body first: the slot is measured to its own length
+                var probe = streets[(i * 7919 + spacingSeed) % streets.Count];
+                var seat = probe.Start + probe.Dir * (probe.Length * 0.5f);
+                var car = NewPatrolCarBody(parent, _policeCars.Count, seat,
+                    Quaternion.LookRotation(probe.Dir));
+                if (car == null) break;
+
+                // farthest-point over the streets, and the first legal slot down that list
+                streets.Sort((a, b) => Spread(b, taken).CompareTo(Spread(a, taken)));
+                var found = false;
+                Vector3 kerb = seat;
+                Quaternion facing = Quaternion.identity;
+                for (int k = 0; k < streets.Count && !found; k++)
+                {
+                    var mid = streets[k].Start + streets[k].Dir * (streets[k].Length * 0.5f);
+                    found = CrewCars.KerbSlotNear(net, mid, car.HalfLen, car.HalfWide,
+                        out kerb, out facing);
+                }
+                if (!found)
+                {
+                    if (Application.isPlaying) Destroy(car.Tf.gameObject);
+                    else DestroyImmediate(car.Tf.gameObject);
+                    break;
+                }
+                taken.Add(kerb);
+
+                var house = NearestHouse(yards, kerb);
+                if (!routeHome.TryGetValue(house, out var toHome))
+                    routeHome[house] = toHome = PolicePatrolCar.RouteToward(_edges, house.CarHome);
+                car.InitAtKerb(kerb, facing, house.CarHome, house.CarHomeS, _edges, toHome,
+                    policeKerbRestSeconds, policePatrolWaypoints,
+                    Random.Range(policeKerbRestSeconds.x, policeKerbRestSeconds.y));
+                _policeCars.Add(car);
+                house.Cars.Add(car);
+                StreetTraffic.Users.Add(car);
+                markers.Add(car);
+                made++;
+            }
+            Debug.Log($"[RoadDemo] {made} of {count} patrol cars put down at kerbs over the city");
+        }
+
+        /// <summary>Metres from this street's middle to the nearest kerb already dealt;
+        /// a street nobody has yet is as far as the map is wide.</summary>
+        static float Spread(RoadEdge street, List<Vector3> taken)
+        {
+            var mid = street.Start + street.Dir * (street.Length * 0.5f);
+            var nearest = float.MaxValue;
+            for (int i = 0; i < taken.Count; i++)
+            {
+                var d = (taken[i] - mid).sqrMagnitude;
+                if (d < nearest) nearest = d;
+            }
+            return nearest;
         }
 
         /// <summary>
@@ -4390,6 +4500,10 @@ namespace RoadDemo
                     station.CarHome, station.CarHomeS,
                     station.Stalls[stall].position, station.Stalls[stall].rotation);
                 if (car == null) return null;
+                // spawned in the bay, and in the kerb model it leaves it for good on its
+                // first undock (the bay frees itself: FreeStall reads HasBay)
+                car.RestsAtKerbs = policeRestAtKerbs;
+                car.KerbRestSeconds = policeKerbRestSeconds;
                 HoldStall(station, stall, car);
                 _policeCars.Add(car);
                 station.Cars.Add(car);
@@ -4500,7 +4614,8 @@ namespace RoadDemo
             for (int i = 0; i < station.Stalls.Count; i++)
             {
                 var holder = i < station.Holders.Count ? station.Holders[i] : null;
-                if (holder == null || holder.Wrecked) return i;
+                // a replacement that left for the kerbs gave its bay back (HasBay off)
+                if (holder == null || holder.Wrecked || !holder.HasBay) return i;
             }
             return -1;
         }
@@ -4528,13 +4643,14 @@ namespace RoadDemo
             }
         }
 
-        int SpawnPatrolCars(
-            Transform parent, List<IPatrolMarker> markers, StationHouse station, int wanted)
+        /// <summary>The yard's kerb and its bays, measured once: the nearest lane point to
+        /// the stall row, where the fleet undocks onto the graph and rolls to a stop
+        /// coming home, and where a prisoner is walked in from. Kept past the build - a
+        /// car the department sends to replace a wreck docks exactly here
+        /// (PoliceForce.MakeCar). False for a forecourt with no lane near it.</summary>
+        bool FindYardKerb(StationHouse station, int wanted)
         {
-            if (_policeCarPrefabs.Count == 0 || wanted <= 0) return 0;
-
-            // the kerb: the nearest lane point, where the fleet undocks onto the
-            // graph and rolls to a stop coming home
+            if (station.CarHome != null) return true;
             RoadEdge home = null;
             float homeS = 0f, bestD = float.MaxValue;
             foreach (var e in _edges)
@@ -4550,14 +4666,21 @@ namespace RoadDemo
             {
                 Debug.LogWarning("[RoadDemo] no lane near a police forecourt; that " +
                                  "station's fleet stays parked");
-                return 0;
+                return false;
             }
-
-            // kept past the build: a car the department sends to replace a wreck docks
-            // exactly where these did (PoliceForce.MakeCar)
             station.CarHome = home;
             station.CarHomeS = homeS;
             LayStallRow(station, wanted);
+            return true;
+        }
+
+        int SpawnPatrolCars(
+            Transform parent, List<IPatrolMarker> markers, StationHouse station, int wanted)
+        {
+            if (_policeCarPrefabs.Count == 0 || wanted <= 0) return 0;
+            if (!FindYardKerb(station, wanted)) return 0;
+            var home = station.CarHome;
+            var homeS = station.CarHomeS;
 
             // WHERE THE FLEET RESTS. Scattering resting cars over the city jams the
             // traffic: a patrol left at a kerb is a registered obstacle, and even set off

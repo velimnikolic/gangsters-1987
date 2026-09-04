@@ -979,6 +979,11 @@ namespace RoadDemo
         void DepartForNextWave(Custody custody)
         {
             for (var i = 0; i < custody.Cars.Count; i++)
+                // the men are in the back: the car drives to the station kerb, stops
+                // there whether or not a bay is free, and waits to be unloaded. Set
+                // BEFORE the release, which is what reads it to pick the station over
+                // the round.
+                if (load.Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = true;
             {
                 var ride = custody.Cars[i].Ride;
                 if (ride == null) continue;
@@ -1040,8 +1045,9 @@ namespace RoadDemo
                 var ride = custody.Cars[i].Ride;
                 if (ride is PolicePatrolCar patrol)
                 {
-                    if (patrol.State != PolicePatrolCar.Mode.Docking &&
-                        patrol.State != PolicePatrolCar.Mode.Resting) return false;
+                    // the kerb is the threshold, not the bay: a car that found every
+                    // bay held used to go back round the city with its load
+                    if (!patrol.AtHomeKerb) return false;
                 }
                 else if (ride is PoliceCruiser cruiser)
                 {
@@ -1124,6 +1130,7 @@ namespace RoadDemo
                 BeginReturnForNextWave(custody);
             else
                 FinishBookedCustody(custody);
+                if (custody.Cars[i].Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = false;
             return true;
         }
 
@@ -1245,3 +1252,5 @@ namespace RoadDemo
         }
     }
 }
+                // whatever ended it, nothing is in the back any more
+                if (load.Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = false;
