@@ -15,14 +15,26 @@ je korisnik ne potvrdi u §11.
 
 `gangsters_people_census [--seed 1987] [--rows]` je read-only editor komanda koja radi na
 glavnoj niti sa zaustavljenim editorom. Pravi plan grada i privremenu preview scenu samo za
-merenje, ne postavlja objekte u otvorenu scenu i ništa ne peče. Poslednji puni prolaz je vratio
-JSON `passed = true`, bez gate grešaka, za **1,32 s** (zahtev: manje od 30 s); `--rows`
-vraća i svaki pojedinačni izvor/projekciju.
+merenje, ne postavlja objekte u otvorenu scenu i ništa ne peče. Kanonski poziv je
+`powershell -ExecutionPolicy Bypass -File Tools/play/census.ps1 -Rows`: skripta odmah predaje
+zadržani detached job i upisuje njegov ID u `Temp/play/people-census.job`, pa zauzet editor ili
+istek klijentskog čekanja ne gube rezultat dok je u Pipeline memoriji. `-DetachOnly` samo preda
+posao, a `-Resume <job-id>` nastavlja čekanje. Pipeline čuva poslednjih 100 završenih poslova
+jedan sat; kompilacija/domain reload prekida red i tada stari ID namerno prijavi neuspeh.
+Poslednji puni prolaz je vratio JSON `passed = true`, bez gate grešaka, za **1,65 s** rada
+(zahtev: manje od 30 s); `-Rows` vraća i svaki pojedinačni izvor/projekciju.
+
+Adversarial proba je stavila `-Rows` iza 35 main-thread census poslova. Predaja je vratila i
+zapisala ID za 0,24 s; čekanje od dve sekunde završilo je kodom 6 dok je posao bio `queued` i
+dalo tačnu `-Resume` komandu. Ponovno spajanje na isti ID je posle ukupno 63,01 s vratilo
+`completed`, `passed = true`, svih nula gate grešaka i pune retke. Dakle red duži od uobičajenog
+30-sekundnog transportnog roka više ne može pretvoriti zdrav census u izgubljen rezultat.
 
 Ovo je release kapija, ne seed sweep: svaki seed osim 1987 odbija se **pre planiranja** (proba
-`--seed 4`: 0,55 s, editor je odmah zatim vratio `ready`). Unutrašnji radni rok je 25 s, sa
-proverama između dugih grupa skenova, što ostavlja pet sekundi za JSON i transport. Pored
-zbirnih brojki, `passed` vezuje FNV-1a manifeste za identitet i ishod svakog poslovnog,
+`--seed 4`: 0,55 s, editor je odmah zatim vratio `ready`). Unutrašnji radni rok je 25 s od
+početka izvršavanja, sa proverama između dugih grupa skenova. Red čekanja i prenos namerno su
+odvojeni od tog roka: detached job preživi oba i ostaje dostupan preko svog ID-a. Pored zbirnih
+brojki, `passed` vezuje FNV-1a manifeste za identitet i ishod svakog poslovnog,
 downtown i stambenog ulaza, kao i svaki legalni interval svake strane puta. Zato zamena jednog
 uspešnog i jednog neuspešnog ulaza više ne može sačuvati isti zbir i lažno proći.
 
