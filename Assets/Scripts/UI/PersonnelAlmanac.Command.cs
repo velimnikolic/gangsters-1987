@@ -326,8 +326,7 @@ namespace LivingCity.UI
                 left, PaneTop, FileW, PaneH);
 
             // A click on the paper belongs to the file, not the dismissing backdrop.
-            var paperFace = PaperOf(commandDossierPanel);
-            paperFace.raycastTarget = true;
+            var paperFace = ClickSurface(commandDossierPanel);
             var paperButton = commandDossierPanel.gameObject.AddComponent<Button>();
             paperButton.targetGraphic = paperFace;
             paperButton.transition = Selectable.Transition.None;

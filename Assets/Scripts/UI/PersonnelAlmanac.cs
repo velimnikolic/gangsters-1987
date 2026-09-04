@@ -1098,11 +1098,11 @@ namespace LivingCity.UI
             // ---- the pages, in tab order; each is a full-sheet root ----
             BuildNewspaperPage(paper);
             BuildPersonnelPage(paper);
-            BuildCommandPage(paper);
             BuildBlocksPage(paper);
             BuildFinancesPage(paper);
             BuildArmoryPage(paper);
             BuildDiplomacyPage(paper);
+            BuildCommandPage(paper);
             BuildLawPage(paper);
             BuildOrdersPage(paper);
             BuildBlueprintPage(paper);
