@@ -1,7 +1,7 @@
 # Plan: grad koji živi — NPC overhaul (ljudi, rutine, parkirana kola)
 
 **EPIC 39 — GAN-354** (tiketi NPC-001…020, GAN-356…380).
-Stanje na dan 2026-09-04, posle odluka korisnika (§11) i pregleda (§13). Pokriva zašto grad deluje prazno,
+Stanje na dan 2026-09-04, posle odluka korisnika (§11), samopregleda (§13) i **nezavisnog contrarian pregleda (§14), koji je oborio tri nosece pretpostavke.** Pokriva zašto grad deluje prazno,
 šta od mašinerije već postoji, model po kom ljudi i kola dobijaju razlog da budu tamo gde
 jesu, katalog ideja, faze, presudu i pitanja. Građa perioda: `Docs/1987-period-reference.md`.
 
@@ -524,8 +524,10 @@ L1–L8 (`city-performance-plan.md`) — ovde samo budžet tela i tick; rivali i
 
 **Korisnik 2026-09-04: „sve se slažem" — svih 19 odluka po predlogu.** Predlozi u desnoj
 koloni su od tog časa pravila; brojke u njima ostaju polazne vrednosti koje se menjaju po
-slici, ali kroz podatak, ne kroz kod. Redosled koji je tražio: contrarian pregled (§13), pa
-epik u Linear-u, pa faze.
+slici, ali kroz podatak, ne kroz kod. Redosled koji je tražio: pregled, pa epik u Linear-u, pa faze.
+
+**D20–D22 su NOVE i čekaju odluku** — otvorio ih je nezavisni pregled (§14). Uz svaku stoji
+moja polazna pretpostavka da posao ne stane; nijedna nije pravilo dok je ne potvrdiš.
 
 | # | pitanje | odluka (= predlog) |
 |---|---|---|
@@ -548,6 +550,9 @@ epik u Linear-u, pa faze.
 | **D17** | Kabriolet (`Convertable_01`) i Town pikap ulaze u civilni bazen? | da |
 | **D18** | **Linear**: otvoriti EPIC sa tiketima NPC-000… po fazama posle ovih odluka? | da |
 | **D19** | **Prolaznik bez adrese** (došao autobusom, podzemnom, sa ruba) koji se zatekne kraj pucnjave: dobija adresu u trenutku snimka (stan po hashu u najbližem stambenom bloku), ili ne može biti svedok? | dobija adresu — svaki svedok ima dom (§0.6) |
+| **D20** | **Dužina šetnje (nalaz C1).** Čovek prelazi **90 m po satu igre**, pa se odlazak od 500 m ne može prepešačiti. Tri izlaza: (a) **portal je prečica** — pešači se samo poslednja deonica do ~90 m, ostatak se **razreši** kroz vrata, kola, autobus ili podzemnu; (b) odlasci **samo unutar bloka**; (c) menja se dužina sata igre (danas 60 s). | **moja pretpostavka dok ne kažeš: (a), uz gornju granicu pešačke deonice od 90 m.** Čuva katalog odlazaka i model čini jeftinijim, ne skupljim |
+| **D21** | **Nedelja i naplata (nalaz M8).** Dan naplate se hešuje na **sedam** dana uključujući nedelju, a nedeljom radnje zatvaram — jedan blok od sedam se više nikad ne bi naplatio. | **moja pretpostavka: heš ide na šest radnih dana**, niko ne gubi prihod, radno vreme se ne dira. Alternativa je da blok radi svoju nedelju |
+| **D22** | **Šta novine štampaju o svedoku (nalaz m14).** Puna adresa je igraču mapa do čoveka koga treba ućutkati. | **moja pretpostavka: ulica bez kućnog broja** za očevica; prijavilac je ionako javno na svojoj radnji. Ako hoćeš da likvidacija bude laka, kaži i štampamo broj |
 
 ---
 
@@ -641,3 +646,90 @@ nijedna linija koda. Ako to već izgleda živo, prioriteti epika se menjaju.
 Model drži; tri kritična nalaza pogađala su prvu fazu. Prekrojen je **redosled**, ne model.
 Najjeftiniji test koji obara najrizičniju pretpostavku je popis vrata po izvoru — prva
 stavka faze 0, bez izmene koda.
+
+
+---
+
+## 14. Nezavisni contrarian pregled (2026-09-04, posle otvaranja epika)
+
+Prvi pokušaj nezavisnog pregleda pao je na kvoti, pa je §13 bio **samopregled**. Kad se kvota
+vratila, pregled je ponovljen nezavisno, sa dva zadatka: napasti plan, i **napasti §13**.
+Presuda nad §13: *pravi pregled sa karakterističnom pristrasnošću — nalazi koji se reše
+prekrajanjem redosleda i dodavanjem tiketa, dok je svaka noseća pretpostavka ostala netaknuta.
+Tri najopasnije stvari nisu bile na spisku.*
+
+**Presuda nad planom: treba prerada.** Ne modela — „telo je budžet, čovek je podatak, portal je
+jedini šav" stoji — nego tri mehanizma pisana protiv činjenica koje kod demantuje.
+
+### Kritični
+
+**C1 — šetnja je aritmetički nemoguća na ovom satu.** `PedestrianAgent.Speed = 1.5f` (`:356`) i
+`realSecondsPerGameHour = 60f` (`CoreDemoBuilder.cs:58`) daju **90 m po satu igre** (2.160 m za
+ceo dan). Tabela odlazaka u §4.3 je time nemoguća: ručak na 150 m je **1.7 sati igre**, odlazak
+na posao od 500 m je 5.5 sati, a telo sa ruba iza 330 m stiže posle **3.7 sati** i mora se celo
+to vreme simulirati — što princip 2 (§3) izričito zabranjuje. §13 je uhvatio lestvicu ×16 i
+**promašio da je sat već 60× na ×1**. Ovo nije štelovanje nego noseća jedinica modela.
+Odluka: **D20**. Faza 0 mora objaviti „metara po satu igre" uz popis vrata, a §4.3 se prepisuje
+pre nego što tiket odlazaka počne.
+
+**C2 — rezervacija svedoka nema granicu.** §13 (O4) je tvrdio da je broj otvorenih slučajeva
+plafon. `PrisonPipeline.OpenCases` (`:272-279`) **nema nikakav vremenski filter**, a
+`LapseAbandonedCases` (`:515`) izričito **preskače slučaj bez optuženog**. Svaka prijava nosi
+prijavioca plus do tri očevica. Na oko 60 neodgovorenih prijava rezervacija pojede ceo budžet od
+240 tela i ulica se isprazni — **simptom zbog kog epik postoji, proizveden epikom**, i nevidljiv
+u runu od 300 s. Popravka: pinovati **samo** očevica, samo dok svedoči, i samo unutar prozora
+pamćenja prijave; prijavilac ne traži pinovanje jer već ima adresu (svoju radnju). To je tvrd
+plafon `3 × (slučajevi u prozoru)` i **tvrdi se u kodu kao imenovani nalaz**, ne u dokumentu.
+
+**C3 — imenik je premali, a novine spajaju svedoka po IMENU.** `PedestrianIdentity` nosi 40
+muških imena, 40 ženskih i 48 prezimena, dakle **1.920 kombinacija po polu** za oko 7.000 ljudi
+koje registar traži. `PressDesk` (`:448-449`) spaja ubijenog svedoka sa slučajem preko
+`Witnesses[w].Name == witness.Name`, a `CourtCase.Witness` nosi ime i seed, **bez ikakvog id-a
+osobe**. Duplikati su matematički sigurni, pa novine upisuju smrt u tuđ slučaj. Popravka:
+migracija save formata koju O4 ionako otvara dodaje **stabilan id osobe**, a `PressDesk` spaja
+po njemu.
+
+**C4 — popravka iz K1 je bila prazna, a pravi odgovor stoji u repou nepročitan.** „Jedna vrata
+po zgradi" pretpostavlja zgrade u pečenom bloku; `block-01.prefab` je **171 modul** (krovovi,
+ploče, spratovi), pa bi vrata završila na krovu. Ali `ResidentialHarvest` (`:1053`) prepoznaje
+modul izloga po imenu izvornog prefaba (`SM_Bld_Shop*`, `SM_Bld_Wall_Window*`), i te veze su
+žive i u blokovima centra. Prebrojano: **84 modula izloga i 46 stambenih ulaza** kroz šesnaest
+blokova; **šest blokova (02, 03, 07, 08, 14, 15, 16) nema ništa**, a 03 i 08 nemaju nijedan
+`SM_Bld_*`. Centar dakle nije ni prazan ni ogroman. Uz to §4.2 **precenjuje** šta nasleđuje:
+`CoreOutfitDoors` (`RoadDemoBuilder.CoreFronts.cs:57-77`) uzima samo sajtove sa
+`Role == FrontageRole`, ne svih 3.246.
+
+### Ozbiljni
+
+| # | nalaz | popravka |
+|---|---|---|
+| **M5** | **`Ghost = 0` nije dostižan na 330 m.** `CrowdCullDistance` je cull **renderera**; telo iza njega i dalje postoji i kuca. Repo već ima radnu konvenciju: `StreetTraffic.Thin` teleportuje kola po **frustumu i pojasu**, ne po poluprečniku. | `Ghost` broji **vidljivo** nastajanje i nestajanje: van frustuma **i** preko pojasa. Tek tada je kriterijum i smislen i dostižan |
+| **M6** | **Faza 3 nije nezavisna.** Vozač koji izlazi iz parkiranog kola je portal (faza 4), a D5 seli stajališta u fazi 5 — dok spanovi iz faze 3 isključuju **12 m po stajalištu**. | Faza se deli: **3a** spanovi, slotovi i položena kola (bez vozača, stvarno nezavisna, i to JESTE korisnikov zahtev broj 2), **3b** vozači posle faze 4. Selidba stajališta ide **pre** 3a |
+| **M7** | **Druga sesija je pretekla tiket K2.** Commit `8f6655da2` (posle `aa31246f3`) uveo je `RoadCar.ParkingSpotAvailable/Selected` kao šavove, traženje slobodne rupe 15×3 m u oba smera, i knjigu rezervacija u `PolicePatrolCar`. | Tiket se prepisuje: civili **implementiraju te šavove** uz **zajedničku** knjigu rezervacija; samo „obiđi blok jednom" je zaista novo. `NearestLegalKerbSlot` (neograničen skan cele mreže) dobija granicu pre nego što mu se doda 48 civila |
+| **M8** | **Plima razbija reket.** `DayOf(blockId)` hešuje na **sedam** dana uključujući nedelju (D9 zatvara radnje), pa se **jedan blok od sedam nikad više ne naplaćuje**. `ShouldSend` nema **gornju** granicu sata, pa šalje kolektora u 21:00 pred spuštene roletne. | D21, uz `LatestSendHour` izveden iz tabele zatvaranja |
+| **M9** | **Zvuk zasićuje i plima se ne čuje.** `DemoAudio` meri gomilu do **16** pešaka i saobraćaj do **10** kola, a **parkirano kolo broji kao saobraćaj**. Sa 240 tela i punim ivičnjakom oba merača stoje na jedinici stalno. | Broje se samo kola **u pokretu**, imenioci se skaliraju na novi budžet, a žamor ulice se vodi iz **plime** koju novi sloj ionako računa |
+| **M10** | **Novi sloj pomera deljeni tok slučajnosti.** Gomila vuče iz `UnityEngine.Random`, a harness po sopstvenom pravilu meri **stope nad runovima** baš zato. Prva faza pomera svaki nizvodni izvučeni broj. | `LivingCity.People` dobija **svoj** tok; `UnityEngine.Random` je u njemu zabranjen. **Postojeće stope se ponovo snimaju u fazi 0**, da epik ima „pre" |
+| **M11** | **Harness ne može da testira ×16.** `PlayHarness` pinuje `Time.timeScale = 1f` i fiksni korak, a plima se gleda ubrzano. Uz to `RoadDemoBuilder.cs:767` prosleđuje **jedan neograničen `dt`** svemu. | Ograničenje `dt` je izmena **postojećeg** koda i nosi svoj baseline od 30 runova; harness dobija režim sa velikim korakom pre nego što faza 3 potpiše |
+
+### Sitno, ali važno
+
+* **m12 — protivrečnost 631 / 3.263 je noseća, ne fusnota.** Od nje zavisi najveći broj u epiku
+  (oko 3.200 gazdi). Rešava se u fazi 0 kroz `gangsters_business_audit --seed 1987 --json`, pre
+  nego što se registar dimenzioniše.
+* **m13 — `HomeDoorFor` treba da vrati ADRESU, ne vrata.** `DemoDoor.Building` je živ objekat na
+  bloku koji se strimuje, a u fazi 1 jedini id koji telo ima je runtime broj koji se menja pri
+  recikliranju. Interfejs je `Address HomeOf(PersonId)` (id sajta ili zgrade plus strana), a
+  `DemoDoor` se razrešava pri upotrebi — inače potpis preživi a **pozivi ne**.
+* **m14 — puna adresa u novinama je mapa do svedoka.** Odluka D22.
+* **m15 — svedok se danas ne može ponovo naći.** `WitnessWatch` (`:106`) izbacuje par čim telo
+  nestane, pa „porodica ga nađe kod kuće" traži **ponovno vezivanje** zapisa za novo telo, što
+  dira `WitnessWatch`, `LawWire` i doseg pritiska. Plan mu je dao jedan red.
+* **Predlog reza (obim je korisnikov):** zadržati fazu 0, **3a**, plimu kao čistu gustinu bez
+  adresa po čoveku, i gašenje tableau sloja — to je većina onoga na šta se korisnik žalio.
+  Odložiti u drugi epik registar, gazdu kao telo i prikovanog svedoka.
+
+### Najjeftiniji test
+
+Dva grepa, bez editora: `PedestrianAgent.Speed` i `realSecondsPerGameHour`. **Devedeset metara
+po satu igre** drži se uz §4.3, i odluka D20 se donosi pre nego što NPC-001 počne. Drugi po ceni
+je proba gustine iz O8, koja je već u fazi 0.
