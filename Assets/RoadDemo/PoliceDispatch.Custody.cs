@@ -951,6 +951,11 @@ namespace RoadDemo
                 var load = custody.Cars[i];
                 if (_lights.TryGetValue(load.Ride, out var lights))
                     lights.Set(false, siren: false);
+                // the men are in the back: the car drives to the station kerb, stops
+                // there whether or not a bay is free, and waits to be unloaded. Set
+                // BEFORE the release, which is what reads it to pick the station over
+                // the round.
+                if (load.Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = true;
                 load.Ride.Release();
             }
             custody.Stage = CustodyStage.Riding;
@@ -979,11 +984,6 @@ namespace RoadDemo
         void DepartForNextWave(Custody custody)
         {
             for (var i = 0; i < custody.Cars.Count; i++)
-                // the men are in the back: the car drives to the station kerb, stops
-                // there whether or not a bay is free, and waits to be unloaded. Set
-                // BEFORE the release, which is what reads it to pick the station over
-                // the round.
-                if (load.Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = true;
             {
                 var ride = custody.Cars[i].Ride;
                 if (ride == null) continue;
@@ -1085,6 +1085,7 @@ namespace RoadDemo
             for (var i = 0; i < custody.Cars.Count; i++)
             {
                 var escort = custody.Cars[i].Escort;
+                if (custody.Cars[i].Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = false;
                 if (escort == null || escort.Wiped) continue;
                 _crews.MarchTo(escort, door + Vector3.right * (2f + i * 1.4f));
             }
@@ -1130,7 +1131,6 @@ namespace RoadDemo
                 BeginReturnForNextWave(custody);
             else
                 FinishBookedCustody(custody);
-                if (custody.Cars[i].Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = false;
             return true;
         }
 
@@ -1231,6 +1231,8 @@ namespace RoadDemo
                     _crews.BoardCar(load.Escort, cruiser.Car);
                 else if (load.Escort != null && !load.Escort.Wiped)
                     _crews.RemoveUnit(load.Escort);
+                // whatever ended it, nothing is in the back any more
+                if (load.Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = false;
                 load.Ride?.Release();
             }
             ReleaseHoldingSquad(custody);
@@ -1252,5 +1254,3 @@ namespace RoadDemo
         }
     }
 }
-                // whatever ended it, nothing is in the back any more
-                if (load.Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = false;
