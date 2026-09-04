@@ -484,33 +484,46 @@ plaćaju oko $100 nedeljno, a vojnik košta oko $280 nedeljno — kuća koja pop
 može da ih plati sa zemlje koju drži. **To je EPIC 24 (plate/prihod), ne um**, i zato je
 u kodu A30: rast potpisuje čoveka samo dok nedeljni prihod pokriva platni spisak.
 
-### 8.2 Kadenca (A19), izmereno na trideset seedova × 14 dana × 21 kuća
+### 8.2 Kadenca (A19) i pravilo „jedna ulica po ekipi"
 
-| misao svakih | blokova po kući, dan 14 | vrata po kući | zamrznutih kuća | ms misli ukupno |
+**Korisnikova odluka, 2026-09-04: ostaje jedan sat, i dodaje se pravilo da se ekipa
+fokusira na jednu ulicu.** Oboje je urađeno.
+
+Pravilo: ekipa koju je um poslao na ulicu nije kandidat za otvaranje NOVE zemlje dok ta
+ulica ne postane naša ili dok na njoj ne ostane nijedna vrata koja se mogu pitati. Druga
+slobodna ekipa i dalje sme da ide dalje, pa kuća sa ljudima ne staje. Um to vidi kroz
+novo polje pogleda: gde stoji koja moja ekipa (`CrewBlockLook`) — najobičnija stvar koju
+kuća zna o sebi.
+
+**Merilo je usput moralo da se popravi.** Papirni grad je vodstvo bloka računao SAMO po
+prisustvu (40 = tvoj blok), pa je nagrađivao ekipu koja stoji i ništa ne radi. Sad računa
+pravu formulu kontrole — prisustvo, strah i UDEO VRATA KOJA PLAĆAJU, kroz
+`TerritoryControlReading` — pa su brojevi ispod na pravom merilu i nisu uporedivi sa
+prvom verzijom ove tabele.
+
+30 seedova × 14 dana × 21 kuća, sa pravilom:
+
+| misao svakih | blokova po kući, dan 14 | vrata po kući | zamrznutih kuća | ms misli |
 |---|---|---|---|---|
-| 1 h | **2.93** | 6.02 | 0 | 117 440 |
-| 2 h | **4.15** | 5.38 | 0 | 34 441 |
-| 4 h | **4.15** | 6.74 | 0 | 15 799 |
+| 1 h | 2.42 | 5.97 | 0 | 127 900 |
+| 2 h | 2.82 | 8.46 | 0 | 60 710 |
+| 4 h | 3.06 | 8.33 | 0 | 16 947 |
 
-**Brža misao ne donosi više zemlje — donosi manje.** Trošak nije problem (0.6 ms po
-misli; dvadeset kuća na sat igre je ~12 ms na 60 realnih sekundi). Zemlja jeste.
+**Pravilo je pomoglo, ali razlika nije zatvorena.** Na starom merilu je 1 sat podigao
+zemlju sa 2.93 na 3.14. Na pravom merilu 1 sat i dalje drži manje od 4 sata.
 
-Mehanizam koji se uklapa sa svime što papirni grad ume da pomeri: prisustvo raste 4/sat
-po postavljenoj ekipi, a vođstvo bloka traži 40 — deset sati stajanja. `Expand` nema
-sećanje "ovu ekipu sam već poslao tamo", pa um na svaki sat može da je prepošalje na
-susedni blok koji trenutno bolje kotira, i nijedan blok ne sazri. Na 4 sata prepoštuje
-retko i blokovi sazru.
+**Šta je isključeno merenjem** (da se ne bi pogađalo): ekipa i ljudi su isti na obe
+kadence (1.5 naspram 1.6 ekipa, 7.5 naspram 7.3 aktivnih ljudi 14. dana), faze su iste
+(14 kuća ZEMLJA, 6 LJUDI), nijedna namera se ne odbija (prihvaćeno = predloženo), i na
+sat vremena kuća prihvati ČETIRI PUTA više naredbi nego na četiri sata. Dakle: brža
+kuća radi četiri puta više i postiže manje. Mehanizam nije dokazan.
 
-**Nije menjano ništa u kodu zbog ovoga.** A19 = 1 sat stoji kako je odlučeno; ovo je
-broj za tabelu, a odluka je korisnikova. Ako hoće 2 h ili 4 h, menja se `ThinkEveryHours`
-u `HouseMindConfig` i ništa drugo. Ako hoće 1 h, onda treba pravilo "poslata ekipa se ne
-prepošalje dok ulica ne sazri" — a to je novo pravilo i traži njegovu reč.
+**Probano i odbačeno:** oštrija verzija pravila — ekipa ostaje dok ulica ne postane naša,
+sa danom počeka — je GORA: vrata po kući padnu sa 5.97 na 2.81, jer ekipe sede na
+zemlji koju ne mogu da uzmu. Ostavljena je blaža verzija.
 
-**Ograničenje merača, napisano na njemu:** papirni sat meri KNJIGE, živi harness meri
-ULICU. Tamo nema hapšenja, nema policije, nema hoda koji zapne — pa su hapšenja nula po
-konstrukciji, a razlog zbog koga je 1 h uopšte izabran (kuća koja reaguje na napad,
-obilazak koji se ne ruši) papirni sat ne može da vidi. Živa polovina je
-`gangsters_house_table`.
+**Ostaje otvoreno i ide u follow-up:** zašto brža misao postiže manje kad radi više.
+Ništa se ne tunira dok se ne zna.
 
 ### 8.3 Nalazi dva Codex adversarial pregleda, i šta je popravljeno
 

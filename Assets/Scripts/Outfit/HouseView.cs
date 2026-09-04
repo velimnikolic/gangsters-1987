@@ -294,6 +294,14 @@ namespace LivingCity.Outfit
         /// </summary>
         public System.Func<TerritoryBlockId, double> WalkedLook;
 
+        /// <summary>
+        /// WHICH STREET THIS CREW OF OURS IS STANDING ON, or an invalid block when it
+        /// is nowhere in particular. Our own men, in our own city: the plainest thing a
+        /// house knows about itself, and what keeps it from pulling a crew off a corner
+        /// it has not finished winning (the user's ruling of 2026-09-04).
+        /// </summary>
+        public System.Func<int, TerritoryBlockId> CrewBlockLook;
+
         /// <summary>Men of ours in the cells, with the court's answer on each
         /// (AI-005).</summary>
         public IReadOnlyList<HouseCell> Cells = NoCells;
@@ -360,5 +368,8 @@ namespace LivingCity.Outfit
 
         public double LastWalked(TerritoryBlockId blockId) =>
             WalkedLook != null ? WalkedLook(blockId) : -1.0;
+
+        public TerritoryBlockId CrewBlock(int crewId) =>
+            CrewBlockLook != null ? CrewBlockLook(crewId) : default;
     }
 }

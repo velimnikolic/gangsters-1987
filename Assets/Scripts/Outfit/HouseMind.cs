@@ -294,7 +294,11 @@ namespace LivingCity.Outfit
             if (best.IsValid)
                 note += "neighbour " + best.Value + " worth $" +
                         Score(view, config, best, 1) + "; ";
-            note += CrewOn(view, default) != null ? "a crew is free" : "no crew is free";
+            note += CrewOn(view, default) == null
+                ? "no crew is free"
+                : FreeForNewGround(view, config) != null
+                    ? "a crew is free"
+                    : "every free crew is still working its own street";
             return note;
         }
 
@@ -1200,7 +1204,7 @@ namespace LivingCity.Outfit
             if (!best.IsValid)
                 return false;
 
-            var free = CrewOn(view, default);
+            var free = FreeForNewGround(view, config);
             if (free == null)
                 return false;
 
@@ -1248,6 +1252,53 @@ namespace LivingCity.Outfit
                 }
             }
         }
+
+        /// <summary>
+        /// ONE STREET AT A TIME (the user's ruling of 2026-09-04, on the AI-008 table).
+        ///
+        /// A crew sent onto a street is left there until the family has actually got
+        /// something out of it. The measurement is what asked for this: at a think
+        /// every game hour a house held a THIRD LESS ground by day fourteen than one
+        /// thinking every four, because the mind kept re-posting the same crew to
+        /// whichever neighbour scored best at that moment and no street ever matured -
+        /// a man changing jobs every hour and finishing none of them. The cadence is
+        /// the user's one hour; this is the rule that makes an hour worth having.
+        ///
+        /// A street is DONE WITH when the family leads it, or when there is no door
+        /// left on it worth asking. Until then the crew standing on it is not a
+        /// candidate for opening new ground; another free crew still is, so a house
+        /// with men to spare goes on growing.
+        /// </summary>
+        static Crew FreeForNewGround(HouseView view, HouseMindConfig config)
+        {
+            var crews = view.Roster.Crews;
+            for (var i = 0; i < crews.Count; i++)
+            {
+                var crew = crews[i];
+                if (!Candidate(view, crew))
+                    continue;
+                var standing = view.CrewBlock(crew.Id);
+                if (standing.IsValid && !WorkedOut(view, config, standing))
+                    continue;
+                return crew;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// A STREET A CREW MAY LEAVE: the family leads it, or there is nothing left on
+        /// it to ask.
+        ///
+        /// Both halves were measured. Without the rule at all, a mind at one game hour
+        /// re-posted the same crew to whichever neighbour scored best that moment and
+        /// no street ever matured. Pinning the crew HARDER - until the street is
+        /// actually ours, with a day's grace - is worse again: the men sit on ground
+        /// they cannot take and the family's doors fall by half. Leaving when the
+        /// asking is done is the line that holds.
+        /// </summary>
+        static bool WorkedOut(HouseView view, HouseMindConfig config,
+            TerritoryBlockId blockId) =>
+            view.Leader(blockId) == view.House || !AnyAskable(view, blockId);
 
         /// <summary>The open neighbour with the best score, or invalid when none
         /// clears zero (Z3: if none ever does, the numbers go to the user).</summary>

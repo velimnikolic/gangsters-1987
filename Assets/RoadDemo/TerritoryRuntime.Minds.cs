@@ -557,6 +557,7 @@ namespace RoadDemo
                 DoorLook = blockId => Doors(blockId, mine, gameHour),
                 BackoffLook = key => backoff.Blocked(key, gameHour),
                 RoundLook = crewId => RoundRunning(crewId) || BagRoundPending(crewId),
+                CrewBlockLook = crewId => CrewBlockOf(house, crewId),
                 WalkedLook = blockId => LastWalked(mine, blockId),
                 Cells = cellScratch,
                 HasCounsel = Lawyer.OnBooks(house.Roster) != null,
@@ -746,6 +747,36 @@ namespace RoadDemo
             var ad = HireMarket.CounselFor(
                 house.Roster, house.Runner.Seed, house.Runner.Campaign.Day);
             return ad != null ? ad.Down : 0;
+        }
+
+        /// <summary>
+        /// WHICH STREET ONE OF THIS HOUSE'S CREWS IS STANDING ON. The men themselves
+        /// where the city stood them up, and the posting where it did not - a house on
+        /// the paper clock has no bodies, and OPERATE IN THIS BLOCK is the whole of
+        /// where its crew is. Invalid when the crew is on no block: the road between
+        /// two of them belongs to nobody.
+        /// </summary>
+        TerritoryBlockId CrewBlockOf(House house, int crewId)
+        {
+            if (crews != null)
+                for (var i = 0; i < crews.Units.Count; i++)
+                {
+                    var unit = crews.Units[i];
+                    if (unit == null || unit.Wiped || unit.IsDetachment ||
+                        unit.IsPolice || unit.Faction != house.GangId ||
+                        unit.CrewId != crewId)
+                        continue;
+                    var where = unit.Position;
+                    if (CrewQuarters.Inside(unit) &&
+                        CrewQuarters.TryGetDoorstep(unit, out var doorstep))
+                        where = doorstep;
+                    return TryGetBlockAtWorld(where, out var standing) ? standing : default;
+                }
+
+            return postings.TryGetValue(crewId, out var posted) &&
+                   posted.House.Value == house.GangId
+                ? posted.Block
+                : default;
         }
 
         // ----------------------------------------------------------------- the walks

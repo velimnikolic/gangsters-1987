@@ -438,6 +438,8 @@ namespace LivingCity.Tests
                     RoundLook = crewId => Rounds.RoundRunning(crewId),
                     WalkedLook = blockId =>
                         walked.TryGetValue(blockId, out var at) ? at : -1.0,
+                    CrewBlockLook = crewId =>
+                        posted.TryGetValue(crewId, out var block) ? block : BlockIds[0],
                     GameHour = Hour,
                     Day = Day + 1,
                 };

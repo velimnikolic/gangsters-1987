@@ -63,6 +63,19 @@ namespace LivingCity.Tests
         public double Hour;
         public int LastDay = -1;
 
+        /// <summary>
+        /// THE RACKET THIS CITY'S DOORS ARE ON. Handed over once, because a block is
+        /// not held by men alone: control is presence, fear and COMPLIANCE together
+        /// (TerritoryControlConfig), and a paper city that read leadership off standing
+        /// men only rewarded a crew for loitering. That bias is what made a slower mind
+        /// look better than a faster one on the cadence table, so the yardstick reads
+        /// the real formula now (AI-008).
+        /// </summary>
+        public TerritoryRacketLedger Racket;
+
+        static readonly TerritoryControlConfig Control = TerritoryControlConfig.Default;
+        readonly List<TerritoryControlScore> scoreScratch = new List<TerritoryControlScore>();
+
         public PaperCity(int houses, int seed = 1987)
         {
             Seed = seed;
@@ -186,28 +199,62 @@ namespace LivingCity.Tests
             return led;
         }
 
-        /// <summary>The family with the most standing here, once it is worth calling
-        /// leadership. The control ledger's job in the real city; a bench needs one
-        /// answer and this is it.</summary>
+        /// <summary>
+        /// WHO HOLDS THIS STREET, by the city's own reading: presence, fear and the
+        /// share of its doors that pay, weighed and classified by
+        /// <see cref="TerritoryControlReading"/> - the same arithmetic the real control
+        /// ledger runs. A bench needs one answer and this is it.
+        ///
+        /// NOBODY IS NOT HOUSE ZERO: a default TerritoryGangId reads as gang 0 unless
+        /// it is built invalid, and a street nobody stands on read as the player's for
+        /// a whole sweep once.
+        /// </summary>
         public TerritoryGangId Leader(TerritoryBlockId blockId)
         {
-            // NOBODY IS NOT HOUSE ZERO. A default TerritoryGangId reads as gang 0 unless
-            // it is built invalid, and a street nobody stands on was reading as the
-            // player's for the whole sweep.
-            var best = new TerritoryGangId(-1);
-            var most = 40f;
+            Read(blockId, out var leader, out var state);
+            return state == TerritoryControlState.Controlled ||
+                   state == TerritoryControlState.Dominated ||
+                   state == TerritoryControlState.Contested
+                ? leader
+                : new TerritoryGangId(-1);
+        }
+
+        public TerritoryControlState StateOf(TerritoryBlockId blockId)
+        {
+            Read(blockId, out _, out var state);
+            return state;
+        }
+
+        void Read(TerritoryBlockId blockId, out TerritoryGangId leader,
+            out TerritoryControlState state)
+        {
+            scoreScratch.Clear();
+            var doors = DoorsOn(blockId);
             foreach (var pair in presence)
             {
                 var slash = pair.Key.LastIndexOf('/');
                 if (slash < 0 || pair.Key.Substring(0, slash) != blockId.Value)
                     continue;
-                if (pair.Value < most)
-                    continue;
-                most = pair.Value;
-                best = new TerritoryGangId(
-                    int.Parse(pair.Key.Substring(slash + 1)));
+                var gang = new TerritoryGangId(int.Parse(pair.Key.Substring(slash + 1)));
+
+                // The share of the street's doors that pay this family. Fear and
+                // standing are one thing on paper (men on a corner for a week are
+                // known on it); compliance is the ledger's own.
+                var paying = 0;
+                for (var d = 0; Racket != null && d < doors; d++)
+                    if (Racket.StateOf(Door(blockId, d), gang) ==
+                        TerritoryProtectionState.Compliant)
+                        paying++;
+                var compliance = doors > 0 ? 100f * paying / doors : 0f;
+
+                scoreScratch.Add(Control.Score(new TerritoryControlInputs(
+                    gang, pair.Value, pair.Value, compliance, 1f)));
             }
-            return best;
+
+            state = TerritoryControlReading.Read(
+                scoreScratch, Control, alreadyContested: false, out leader, out _, out _);
+            if (!leader.IsValid || state == TerritoryControlState.Uncontrolled)
+                leader = new TerritoryGangId(-1);
         }
 
         // ---------------------------------------------------------------- the money
@@ -293,10 +340,7 @@ namespace LivingCity.Tests
                 PresenceLook = blockId => Presence(blockId, mine),
                 FearLook = blockId => Presence(blockId, mine),
                 AttentionLook = blockId => 0f,
-                ControlLook = blockId =>
-                    Presence(blockId, mine) >= 40f
-                        ? TerritoryControlState.Controlled
-                        : TerritoryControlState.Uncontrolled,
+                ControlLook = StateOf,
                 LeaderLook = Leader,
                 StanceLook = other =>
                     world.Relations.StanceBetween(house.GangId, other.Value),
@@ -314,6 +358,10 @@ namespace LivingCity.Tests
                 RoundLook = crewId => rounds != null && rounds.RoundRunning(crewId),
                 WalkedLook = blockId =>
                     walked.TryGetValue((house.GangId, blockId), out var at) ? at : -1.0,
+                CrewBlockLook = crewId =>
+                    posted.TryGetValue(crewId, out var post) && post.House == mine
+                        ? post.Block
+                        : HomeBlockOf(house.GangId),
                 GameHour = Hour,
                 Day = Day + 1,
             };

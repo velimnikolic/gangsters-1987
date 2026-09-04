@@ -135,7 +135,7 @@ namespace LivingCity.Tests
             var clock = new TerritoryPaperClock(rounds);
             var scheduler = new TerritoryRoundScheduler();
 
-            var city = new PaperCity(houses, seed);
+            var city = new PaperCity(houses, seed) { Racket = racket };
             var books = new Ledger[houses];
             for (var h = 0; h < houses; h++)
                 books[h] = new Ledger();
