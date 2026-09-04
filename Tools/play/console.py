@@ -24,16 +24,22 @@ Three things this exists to stop, each of which has already cost a session:
     line - `x22` - not twenty-two lines, and counting them by eye across a scroll is
     how the same fact gets fixed twice.
 
-And two the first cut of this file got wrong, which are the same mistake in two places:
-a reader that MOVES THE MARK has one chance at every entry, so anything it does not
-look at is gone for good.
+And the rest of the file is three rounds of adversarial review on one theme, because a
+reader that MOVES THE MARK has one chance at every entry and anything it does not look
+at is gone for good:
 
-  * The mark advances only after a read is proved complete. A `--tail N` that comes back
-    with exactly N rows, or with `dropped`, is a window on the newest entries with the
-    older ones - the ones nearer the mark, which is to say the ones that STARTED the
-    trouble - left outside it. That is reported and exits 2.
   * The verdict counts every entry read, not the forty that get printed. Forty distinct
     logs ahead of an error used to print no error and exit 0, and then eat it.
+  * A `--tail N` that comes back with exactly N rows, or with `dropped`, is a window on
+    the newest entries with the older ones - the ones nearer the mark, which is to say
+    the ones that STARTED the trouble - left outside it. Reported, and exit 2.
+  * That report used to be one-shot: the mark advanced past the hole, so the next run
+    found nothing newer and said clean. The hole is now written down, it outlives the
+    mark, it is honoured in every reading mode, and only `--mark` clears it.
+  * Every piece of state fails closed. Zero is a real cursor and a real gap, not an
+    empty one; unreadable state is a gap, not the absence of one; the gap is on disk
+    before the mark moves, and if it will not go down durably the mark does not move at
+    all. Each of those was a live false-clean before it was a rule.
 """
 
 import json
@@ -102,12 +108,19 @@ def write_mark(cursor):
 
 
 def read_gap():
-    """The seq at which a read was last known to be missing entries, or 0."""
+    """(standing, seq) - and a gap recorded at seq 0 is still a gap.
+
+    Everything here fails CLOSED: a gap file that cannot be read, or holds nonsense, is
+    a gap. The mark makes the opposite trade (an unreadable mark is exit 2 and no read
+    at all), because a mark decides what is new while a gap only ever withholds a pass.
+    """
+    if not os.path.exists(GAP):
+        return False, 0
     try:
         with open(GAP) as handle:
-            return int(handle.read().strip() or 0)
+            return True, int(handle.read().strip())
     except (OSError, ValueError):
-        return 0
+        return True, -1
 
 
 def write_gap(cursor):
@@ -119,13 +132,21 @@ def write_gap(cursor):
     and answers 0 - the incomplete warning would be one-shot, and a burst that lost its
     first error would go green on the retry. So the hole outlives the mark, and only
     `--mark` (a person saying "seen") clears it.
+
+    Returns whether the record is DURABLE, read back from disk - the caller must not
+    advance the mark on a false, or the cursor would move past unread entries with
+    nothing left behind to say so.
     """
     try:
         os.makedirs(os.path.dirname(GAP), exist_ok=True)
         with open(GAP, "w") as handle:
             handle.write(str(int(cursor)))
+            handle.flush()
+            os.fsync(handle.fileno())
     except OSError as problem:
         print("the gap could not be recorded: %s" % problem, file=sys.stderr)
+        return False
+    return read_gap()[0]
 
 
 def clear_gap():
@@ -135,9 +156,9 @@ def clear_gap():
         pass
 
 
-def verdict(loud, whole, gap):
+def verdict(loud, whole, standing):
     """0 read whole and quiet, 1 read whole and loud, 2 not read whole."""
-    if not whole or gap:
+    if not whole or standing:
         return 2
     return 1 if loud else 0
 
@@ -222,10 +243,10 @@ def selftest():
 
     # A gap survives the read that found it: the SECOND run, which sees a whole quiet
     # window, must still refuse to say clean.
-    assert verdict(0, True, 0) == 0
-    assert verdict(1, True, 0) == 1
-    assert verdict(0, False, 0) == 2
-    assert verdict(0, True, 71768) == 2, "an unacknowledged gap went green on the retry"
+    assert verdict(0, True, False) == 0
+    assert verdict(1, True, False) == 1
+    assert verdict(0, False, False) == 2
+    assert verdict(0, True, True) == 2, "an unacknowledged gap went green on the retry"
 
     # A mark of zero is a mark. It used to read as no mark at all, which meant no
     # `--since`, which meant the editor never reported its own overrun.
@@ -241,6 +262,24 @@ def selftest():
         assert read_mark() == ("absent", 0), read_mark()
     finally:
         globals()["MARK"] = keep
+
+    # And a gap at seq 0 is a gap. It was written as `0`, read back as falsy, and the
+    # retry went green - the zero trap again, one file over.
+    keep = globals()["GAP"]
+    try:
+        globals()["GAP"] = os.path.join(ROOT, "Temp", "play", "console.selftest.gap")
+        clear_gap()
+        assert read_gap() == (False, 0), read_gap()
+        assert write_gap(0), "a gap must be durable before the mark is allowed to move"
+        assert read_gap() == (True, 0), read_gap()
+        assert verdict(0, True, read_gap()[0]) == 2, "a gap at seq 0 read as no gap"
+        with open(GAP, "w") as handle:
+            handle.write("scribble")
+        assert read_gap()[0], "unreadable gap state must fail closed"
+        clear_gap()
+        assert read_gap() == (False, 0), read_gap()
+    finally:
+        globals()["GAP"] = keep
     print("selftest ok")
     return 0
 
@@ -275,7 +314,10 @@ def main():
     if not everything:
         call += ["--level", "error"]
     since = 0
-    gap = 0
+    # A standing gap is honoured in EVERY reading mode. `--tail` moves no mark, but it
+    # is still somebody asking "is the console clean", and the answer while entries are
+    # known to be missing is no.
+    standing, gap_at = read_gap()
     if not tail:
         state, since = read_mark()
         if state == "bad":
@@ -284,7 +326,6 @@ def main():
             return 2
         if state == "ok":
             call += ["--since", str(since)]
-        gap = read_gap()
 
     result = ask(call)
     if result is None:
@@ -306,18 +347,24 @@ def main():
         print("INCOMPLETE: the window came back full (%d) or dropped, so entries "
               "between the mark and the oldest line below were never read"
               % len(entries))
-    if gap:
-        print("UNREAD GAP still standing from seq %d: entries were lost there and "
-              "nobody has said they saw it. `--mark` acknowledges and clears it." % gap)
+    if standing:
+        print("UNREAD GAP still standing from seq %s: entries were lost there and "
+              "nobody has said they saw it. `--mark` acknowledges and clears it."
+              % ("(unreadable)" if gap_at < 0 else gap_at))
     show(kinds, traces)
     if not kinds:
         print("nothing new%s" % ("" if everything else " at error level"))
 
     if not tail:
-        write_mark(result.get("cursor") or since)
-        if not whole:
-            write_gap(since)
-    return verdict(loud, whole, gap)
+        # THE GAP GOES DOWN BEFORE THE MARK MOVES. The other order leaves a window in
+        # which the cursor has advanced past entries nobody read and the thing that
+        # would have said so was never written; if it cannot be written durably, the
+        # mark stays where it is and the next read finds the same hole again.
+        if not whole and not write_gap(since):
+            print("the gap could not be recorded, so the mark stays put", file=sys.stderr)
+        else:
+            write_mark(result.get("cursor") or since)
+    return verdict(loud, whole, standing)
 
 
 if __name__ == "__main__":
