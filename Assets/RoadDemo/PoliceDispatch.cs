@@ -706,7 +706,12 @@ namespace RoadDemo
             }
             if (target == null) return false;
             NoteLawWatchedIt(squad);
-            if (squad.Men.TargetUnit != target) _crews.Sic(squad.Men, target);
+            // A squad shot at before it was sent already holds the shooter as a fight
+            // that CAME to it, and a man in one of those waits behind cover for the
+            // range. Dispatch is the order: the same suspect is sicced again so the
+            // fight is an ordered one and the officers close in.
+            if (squad.Men.TargetUnit != target || !squad.Men.OrderedFight)
+                _crews.Sic(squad.Men, target);
             squad.State = SquadState.Engaging;
             squad.Reassess = 0.5f;
             return true;
