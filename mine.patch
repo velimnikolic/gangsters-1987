@@ -1,0 +1,476 @@
+diff --git a/Assets/RoadDemo/PolicePatrolCar.cs b/Assets/RoadDemo/PolicePatrolCar.cs
+index 146f69bbe..58bdc8544 100644
+--- a/Assets/RoadDemo/PolicePatrolCar.cs
++++ b/Assets/RoadDemo/PolicePatrolCar.cs
+@@ -21 +21 @@ namespace RoadDemo
+-        public enum Mode { Resting, Undocking, Patrolling, Returning, Docking, Responding, OnScene }
++        public enum Mode { Resting, Undocking, Patrolling, Returning, Docking, Responding, OnScene, Parking }
+@@ -85,0 +86 @@ namespace RoadDemo
++            if (!Fleet.Contains(this)) Fleet.Add(this);
+@@ -126,0 +128,171 @@ namespace RoadDemo
++        /// <summary>SOMEBODY IS IN THE BACK. Set by custody for the ride to the station:
++        /// the car stops at its kerb whether or not it has a bay and stands there until
++        /// the men have been walked in and the flag comes off. Without it a car that
++        /// reached the kerb with every bay held went back round the city with the
++        /// prisoners still in it, and the booking never came (MiniCoreDemo, 2026-09-04:
++        /// ten cars to six bays).</summary>
++        public bool HoldAtKerb { get; set; }
++
++        /// <summary>At its station's kerb - standing there, queued right behind it,
++        /// swinging in or already in its bay: the place a load of prisoners is walked
++        /// in from. A bay is not the condition; the kerb is.</summary>
++        public bool AtHomeKerb =>
++            State == Mode.Docking || State == Mode.Resting ||
++            (State == Mode.Returning && CurrentEdge == _home &&
++             Progress >= _kerbS - KerbQueueReach);
++
++        /// <summary>Metres short of the kerb a returning car still counts as there: the
++        /// second car of a two-car load stands nose to tail behind the first.</summary>
++        const float KerbQueueReach = 14f;
++
++        /// <summary>Asked its station for a bay on this pass of the home lane already.
++        /// </summary>
++        bool _askedAtHome;
++
++        // ------------------------------------------------------------ the kerb model
++
++        /// <summary>
++        /// THE CAR LIVES ON THE STREET, NOT AT THE STATION (the user's call, 2026-09-04).
++        /// Its round ends at a kerb somewhere in the city - the one farthest from where
++        /// the rest of the fleet is standing, so the cars sit spread over the blocks like
++        /// a real patrol - it rests there, answers calls from there, and goes round
++        /// again from there. The station is where a replacement is spawned, where a
++        /// prisoner is walked in, and where a transfer starts; nothing else.
++        ///
++        /// The earlier spread (SpreadPatrolHomes, before 2026-08-27) stood the resting
++        /// cars ON the running lane and gridlocked a quarter of seeds; this one parks
++        /// them the way a response car parks at a scene - a legal kerb slot clear of
++        /// the junctions, pulled fully out of the lane (CrewCars.KerbSlotNear), which
++        /// did not exist then. False keeps the docking model: bays, the swing, the
++        /// kerb lease.
++        /// </summary>
++        public bool RestsAtKerbs;
++
++        /// <summary>Seconds a car stands at its kerb between rounds in the kerb model.
++        /// Long: the fleet is meant to be SEEN parked over the blocks, and to go round
++        /// now and then for the look of it - not to circulate for ever.</summary>
++        public Vector2 KerbRestSeconds = new Vector2(90f, 240f);
++
++        /// <summary>Where this car rests, or means to - read by the others when they
++        /// choose theirs, so the fleet spreads instead of piling onto one street.</summary>
++        public Vector3 RestSpot { get; private set; }
++        public bool HasRestSpot { get; private set; }
++
++        /// <summary>Every patrol car in the city, for the spread.</summary>
++        static readonly List<PolicePatrolCar> Fleet = new List<PolicePatrolCar>();
++
++        /// <summary>Kerb candidates drawn per choice. Eight uniform draws over the lane
++        /// graph and the farthest of them from the rest of the fleet is a spread that
++        /// covers the blocks without a global search every round.</summary>
++        const int RestDraws = 8;
++
++        /// <summary>Seconds a car will spend looking for its kerb before it gives up and
++        /// goes round again. A street with every kerb taken is not a place to stand.</summary>
++        const float ParkingPatience = 120f;
++
++        float _parkingBy;
++
++        /// <summary>
++        /// A CAR PUT DOWN AT A KERB when the city opens: already parked, resting, spread
++        /// over the map by the builder. Its station is still its home - the kerb a
++        /// prisoner is walked in from, the route there - but it never docks.
++        /// </summary>
++        public void InitAtKerb(Vector3 at, Quaternion facing, RoadEdge home, float kerbS,
++            List<RoadEdge> allEdges, Dictionary<RoadEdge, RoadEdge> routeHome,
++            Vector2 restRange, Vector2Int waypointRange, float firstRest)
++        {
++            _home = home;
++            _kerbS = kerbS;
++            _kerb = home.Start + home.Dir * kerbS;
++            _allEdges = allEdges;
++            _routeHome = routeHome;
++            _restRange = restRange;
++            _waypointRange = new Vector2Int(
++                Mathf.Max(1, waypointRange.x), Mathf.Max(1, waypointRange.y));
++
++            HasBay = false;
++            RestsAtKerbs = true;
++            KerbRestSeconds = restRange;
++            Profile = DriverProfile.Patrol;
++            Tag = "police";
++            Net ??= LaneNet.Active;
++            Tf.SetPositionAndRotation(at, facing);
++            PlaceAt(at, facing * Vector3.forward);
++            RestSpot = at;
++            HasRestSpot = true;
++            State = Mode.Resting;
++            _restTimer = firstRest;
++            if (!Fleet.Contains(this)) Fleet.Add(this);
++        }
++
++        /// <summary>The round is over: find a kerb and stand on it. Entered from the
++        /// corner the last waypoint was reached at; the goal itself is set on the next
++        /// tick, outside the turn choice.</summary>
++        void BeginParking()
++        {
++            State = Mode.Parking;
++            _waypoint = null;
++            _routeToWaypoint = null;
++            _responseRetryAt = 0f;
++            _parkingBy = Time.time + ParkingPatience;
++            HasRestSpot = false;
++        }
++
++        /// <summary>
++        /// WHICH KERB. Draws over the whole lane graph, like the waypoints, and keeps the
++        /// draw farthest from where the rest of the fleet is standing or heading - so a
++        /// fleet of ten ends up one to a block rather than three to the station's street.
++        /// Then the nearest legal kerb slot to that draw, which is what actually gets
++        /// parked on.
++        /// </summary>
++        void SetRestGoal()
++        {
++            _responseRetryAt = Time.time + 1.25f;
++            var net = Net ?? LaneNet.Active;
++            if (net == null || _allEdges == null || _allEdges.Count == 0) return;
++
++            RoadEdge best = null;
++            var bestScore = -1f;
++            for (var draw = 0; draw < RestDraws; draw++)
++            {
++                var edge = _allEdges[Random.Range(0, _allEdges.Count)];
++                if (edge == null || edge == _home || edge.Auxiliary || edge.Length < 30f) continue;
++                var mid = edge.Start + edge.Dir * (edge.Length * 0.5f);
++                var score = SpreadScore(mid);
++                if (score > bestScore) { bestScore = score; best = edge; }
++            }
++            if (best == null) return;
++
++            var near = best.Start + best.Dir * (best.Length * 0.5f);
++            if (!CrewCars.KerbSlotNear(net, near, HalfLen, HalfWide, out var kerb, out _))
++                return;   // no legal kerb on that street: the next tick draws again
++            RestSpot = kerb;
++            HasRestSpot = true;
++            GoTo(kerb, park: true);
++        }
++
++        /// <summary>Metres to the nearest other car's kerb (or the one it is driving
++        /// to). What the choice maximises.</summary>
++        float SpreadScore(Vector3 at)
++        {
++            var nearest = float.MaxValue;
++            for (var i = 0; i < Fleet.Count; i++)
++            {
++                var other = Fleet[i];
++                if (other == null || other == this || other.Wrecked || other.Tf == null ||
++                    !other.HasRestSpot) continue;
++                var d = LivingCity.Police.PoliceProcedure.AirDistanceSquared(
++                    at.x, at.z, other.RestSpot.x, other.RestSpot.z);
++                if (d < nearest) nearest = d;
++            }
++            return nearest;
++        }
++
++        /// <summary>Rested: out of the kerb and round the city again.</summary>
++        void LeaveTheKerb()
++        {
++            HasRestSpot = false;
++            BackOnTheRound();
++            PullOut();
++        }
++
+@@ -144,0 +317,5 @@ namespace RoadDemo
++            // whatever it was driving to is forgotten, and a car stood at a kerb pulls
++            // out: a round that kept a parking goal would have parked at the end of it
++            // and stood there for ever, patrolling in name only
++            if (HasGoal) Stop();
++            if (Parked) PullOut();
+@@ -146 +323,2 @@ namespace RoadDemo
+-            _waypointsLeft = Random.Range(_waypointRange.x, _waypointRange.y + 1);
++            // off the watch, the next corner is the end of the round
++            _waypointsLeft = OffWatch ? 0 : Random.Range(_waypointRange.x, _waypointRange.y + 1);
+@@ -233 +411,3 @@ namespace RoadDemo
+-            if (Officer != null) Officer.Show(State != Mode.Resting && State != Mode.OnScene);
++            if (Officer != null)
++                Officer.Show(State != Mode.OnScene &&
++                             (State != Mode.Resting || (RestsAtKerbs && !_inTheYard)));
+@@ -236,0 +417,8 @@ namespace RoadDemo
++                    if (RestsAtKerbs && !_inTheYard)
++                    {
++                        // at a kerb somewhere in the city; off the watch it stays put
++                        if (OffWatch) break;
++                        _restTimer -= dt;
++                        if (_restTimer <= 0f) LeaveTheKerb();
++                        break;
++                    }
+@@ -270,0 +459,3 @@ namespace RoadDemo
++                        // a replacement in the kerb model leaves the yard for good: the
++                        // bay it was spawned in is the next replacement's
++                        if (RestsAtKerbs) HasBay = false;
+@@ -285,0 +477,23 @@ namespace RoadDemo
++                    if (State != Mode.Returning || CurrentEdge != _home)
++                    {
++                        _askedAtHome = false;
++                        break;
++                    }
++                    // NO BAY, NO STOP. The bay is asked for as the car turns onto the
++                    // home lane, not at the kerb: a car with nothing to swing into used
++                    // to roll to a dead stop in the running lane anyway and only then
++                    // learn it was going round again - and with a fleet bigger than the
++                    // yard, that stop, ten metres off the junction, was a queue back
++                    // into the box (MiniCoreDemo, 2026-09-04). A car with men in the
++                    // back, or one off the watch, still has to stop.
++                    if (!_askedAtHome)
++                    {
++                        _askedAtHome = true;
++                        if (!HoldAtKerb &&
++                            (RestsAtKerbs || (!HasBay && !OffWatch &&
++                                              (AskForABay == null || !AskForABay(this)))))
++                        {
++                            BackOnTheRound();
++                            break;
++                        }
++                    }
+@@ -287,3 +501,3 @@ namespace RoadDemo
+-                    // the car at nought here, so a held lease costs a tick's wait
+-                    if (State == Mode.Returning && CurrentEdge == _home &&
+-                        Progress >= _kerbS - 0.15f && !SwingHeld())
++                    // the car at nought here, so a held lease costs a tick's wait. A
++                    // car held for its load stands until custody lets it go.
++                    if (Progress >= _kerbS - 0.15f && !SwingHeld() && !HoldAtKerb)
+@@ -291 +505,2 @@ namespace RoadDemo
+-                        if (HasBay || (AskForABay != null && AskForABay(this))) BeginDock();
++                        if (RestsAtKerbs) BackOnTheRound();   // unloaded; the street is home
++                        else if (HasBay || (AskForABay != null && AskForABay(this))) BeginDock();
+@@ -310,0 +526,14 @@ namespace RoadDemo
++                case Mode.Parking:
++                    Tick(dt);
++                    if (LivingCity.Police.PoliceProcedure.ResponseCarArrived(
++                            AtGoal, ParkedAtKerb))
++                    {
++                        State = Mode.Resting;
++                        _restTimer = Random.Range(KerbRestSeconds.x, KerbRestSeconds.y);
++                    }
++                    else if (Time.time > _parkingBy)
++                        BackOnTheRound();   // every kerb it tried was taken: round again
++                    else if (!HasGoal && Time.time >= _responseRetryAt)
++                        SetRestGoal();
++                    break;
++
+@@ -323 +552 @@ namespace RoadDemo
+-             State == Mode.Docking);
++             State == Mode.Docking || State == Mode.Parking);
+@@ -337,0 +567,9 @@ namespace RoadDemo
++                    if (RestsAtKerbs && !_inTheYard)
++                    {
++                        // at a kerb, not in a stall: it pulls out on the order itself
++                        HasRestSpot = false;
++                        BeginResponding();
++                        break;
++                    }
++                    _sceneWanted = true; // out of the stall first (Resting starts the undock)
++                    break;
+@@ -344,0 +583 @@ namespace RoadDemo
++                case Mode.Parking:
+@@ -389,0 +629,10 @@ namespace RoadDemo
++            Profile = DriverProfile.Patrol;
++            if (RestsAtKerbs && !HoldAtKerb)
++            {
++                // nothing to take to the station: the round goes on from here, and
++                // ends at whichever kerb the spread gives it
++                HasRestSpot = false;
++                BackOnTheRound();
++                PullOut();
++                return;
++            }
+@@ -393 +641,0 @@ namespace RoadDemo
+-            Profile = DriverProfile.Patrol;
+@@ -421 +669 @@ namespace RoadDemo
+-        static void ResetLeases() => Swinging.Clear();
++        static void ResetLeases() { Swinging.Clear(); Fleet.Clear(); }
+@@ -474 +722,4 @@ namespace RoadDemo
+-                    State = Mode.Returning;
++                {
++                    if (RestsAtKerbs) BeginParking();
++                    else State = Mode.Returning;
++                }
+diff --git a/Assets/RoadDemo/RoadDemoBuilder.cs b/Assets/RoadDemo/RoadDemoBuilder.cs
+index 7287339c6..de4be4595 100644
+--- a/Assets/RoadDemo/RoadDemoBuilder.cs
++++ b/Assets/RoadDemo/RoadDemoBuilder.cs
+@@ -182,0 +183,11 @@ namespace RoadDemo
++
++        [Tooltip("The fleet lives on the street: every car is put down parked at a legal " +
++                 "kerb, spread over the city's blocks, rests there between rounds and " +
++                 "answers calls from there. The station only spawns a replacement, takes " +
++                 "a prisoner in at its door and starts a transfer. Off, the fleet docks in " +
++                 "the station's bays as it used to (the swing, the kerb lease).")]
++        public bool policeRestAtKerbs = true;
++        [Tooltip("Seconds a car stands at its kerb between rounds when the fleet lives on " +
++                 "the street. Long on purpose: the cars are meant to be seen parked over " +
++                 "the blocks and to go round now and then, not to circulate.")]
++        public Vector2 policeKerbRestSeconds = new Vector2(90f, 240f);
+@@ -4260,0 +4272,9 @@ namespace RoadDemo
++            if (policeRestAtKerbs)
++            {
++                // the yard is measured (the kerb, the bays) for the replacement and the
++                // prisoner door, but nobody is put in it: the whole fleet goes to the kerbs
++                for (int i = 0; i < _stations.Count; i++)
++                    if (_stations[i].Forecourt) FindYardKerb(_stations[i], fleet);
++                SpawnKerbPatrolCars(policeRoot, markers, fleet);
++                return;
++            }
+@@ -4270,0 +4291,90 @@ namespace RoadDemo
++        /// <summary>
++        /// THE FLEET ON THE STREET (the user's call, 2026-09-04). Every authorised car is
++        /// put down parked at a legal kerb - clear of the junctions, pulled fully out of
++        /// the lane, the same slot a response car takes at a scene - and the slots are
++        /// dealt farthest-point over the long streets so the cars sit one to a block
++        /// rather than in a row outside the station. Each rests, goes on its round and
++        /// parks again wherever the spread puts it (PolicePatrolCar.SetRestGoal); the
++        /// station is its home only for a prisoner and a replacement.
++        /// </summary>
++        void SpawnKerbPatrolCars(Transform parent, List<IPatrolMarker> markers, int count)
++        {
++            if (count <= 0 || _policeCarPrefabs.Count == 0) return;
++
++            var yards = new List<StationHouse>();
++            for (int i = 0; i < _stations.Count; i++)
++                if (_stations[i].CarHome != null) yards.Add(_stations[i]);
++            if (yards.Count == 0)
++            {
++                Debug.Log("[RoadDemo] no police forecourt in the city; " + count +
++                          " authorised patrol cars stay on the roster");
++                return;
++            }
++            var net = LaneNet.Active;
++            if (net == null) return;
++
++            var streets = new List<RoadEdge>();
++            foreach (var e in _edges)
++                if (!e.Auxiliary && e.Length >= 30f) streets.Add(e);
++            if (streets.Count == 0) return;
++
++            var routeHome = new Dictionary<StationHouse, Dictionary<RoadEdge, RoadEdge>>();
++            var taken = new List<Vector3>();
++            var made = 0;
++            for (int i = 0; i < count; i++)
++            {
++                // the body first: the slot is measured to its own length
++                var probe = streets[(i * 7919 + spacingSeed) % streets.Count];
++                var seat = probe.Start + probe.Dir * (probe.Length * 0.5f);
++                var car = NewPatrolCarBody(parent, _policeCars.Count, seat,
++                    Quaternion.LookRotation(probe.Dir));
++                if (car == null) break;
++
++                // farthest-point over the streets, and the first legal slot down that list
++                streets.Sort((a, b) => Spread(b, taken).CompareTo(Spread(a, taken)));
++                var found = false;
++                Vector3 kerb = seat;
++                Quaternion facing = Quaternion.identity;
++                for (int k = 0; k < streets.Count && !found; k++)
++                {
++                    var mid = streets[k].Start + streets[k].Dir * (streets[k].Length * 0.5f);
++                    found = CrewCars.KerbSlotNear(net, mid, car.HalfLen, car.HalfWide,
++                        out kerb, out facing);
++                }
++                if (!found)
++                {
++                    if (Application.isPlaying) Destroy(car.Tf.gameObject);
++                    else DestroyImmediate(car.Tf.gameObject);
++                    break;
++                }
++                taken.Add(kerb);
++
++                var house = NearestHouse(yards, kerb);
++                if (!routeHome.TryGetValue(house, out var toHome))
++                    routeHome[house] = toHome = PolicePatrolCar.RouteToward(_edges, house.CarHome);
++                car.InitAtKerb(kerb, facing, house.CarHome, house.CarHomeS, _edges, toHome,
++                    policeKerbRestSeconds, policePatrolWaypoints,
++                    Random.Range(policeKerbRestSeconds.x, policeKerbRestSeconds.y));
++                _policeCars.Add(car);
++                house.Cars.Add(car);
++                StreetTraffic.Users.Add(car);
++                markers.Add(car);
++                made++;
++            }
++            Debug.Log($"[RoadDemo] {made} of {count} patrol cars put down at kerbs over the city");
++        }
++
++        /// <summary>Metres from this street's middle to the nearest kerb already dealt;
++        /// a street nobody has yet is as far as the map is wide.</summary>
++        static float Spread(RoadEdge street, List<Vector3> taken)
++        {
++            var mid = street.Start + street.Dir * (street.Length * 0.5f);
++            var nearest = float.MaxValue;
++            for (int i = 0; i < taken.Count; i++)
++            {
++                var d = (taken[i] - mid).sqrMagnitude;
++                if (d < nearest) nearest = d;
++            }
++            return nearest;
++        }
++
+@@ -4392,0 +4503,4 @@ namespace RoadDemo
++                // spawned in the bay, and in the kerb model it leaves it for good on its
++                // first undock (the bay frees itself: FreeStall reads HasBay)
++                car.RestsAtKerbs = policeRestAtKerbs;
++                car.KerbRestSeconds = policeKerbRestSeconds;
+@@ -4503 +4617,2 @@ namespace RoadDemo
+-                if (holder == null || holder.Wrecked) return i;
++                // a replacement that left for the kerbs gave its bay back (HasBay off)
++                if (holder == null || holder.Wrecked || !holder.HasBay) return i;
+@@ -4531,2 +4646,6 @@ namespace RoadDemo
+-        int SpawnPatrolCars(
+-            Transform parent, List<IPatrolMarker> markers, StationHouse station, int wanted)
++        /// <summary>The yard's kerb and its bays, measured once: the nearest lane point to
++        /// the stall row, where the fleet undocks onto the graph and rolls to a stop
++        /// coming home, and where a prisoner is walked in from. Kept past the build - a
++        /// car the department sends to replace a wreck docks exactly here
++        /// (PoliceForce.MakeCar). False for a forecourt with no lane near it.</summary>
++        bool FindYardKerb(StationHouse station, int wanted)
+@@ -4534,4 +4653 @@ namespace RoadDemo
+-            if (_policeCarPrefabs.Count == 0 || wanted <= 0) return 0;
+-
+-            // the kerb: the nearest lane point, where the fleet undocks onto the
+-            // graph and rolls to a stop coming home
++            if (station.CarHome != null) return true;
+@@ -4553 +4669 @@ namespace RoadDemo
+-                return 0;
++                return false;
+@@ -4555,3 +4670,0 @@ namespace RoadDemo
+-
+-            // kept past the build: a car the department sends to replace a wreck docks
+-            // exactly where these did (PoliceForce.MakeCar)
+@@ -4560,0 +4674,10 @@ namespace RoadDemo
++            return true;
++        }
++
++        int SpawnPatrolCars(
++            Transform parent, List<IPatrolMarker> markers, StationHouse station, int wanted)
++        {
++            if (_policeCarPrefabs.Count == 0 || wanted <= 0) return 0;
++            if (!FindYardKerb(station, wanted)) return 0;
++            var home = station.CarHome;
++            var homeS = station.CarHomeS;
+diff --git a/Assets/RoadDemo/PoliceDispatch.Custody.cs b/Assets/RoadDemo/PoliceDispatch.Custody.cs
+index 28ce27188..5bef1f653 100644
+--- a/Assets/RoadDemo/PoliceDispatch.Custody.cs
++++ b/Assets/RoadDemo/PoliceDispatch.Custody.cs
+@@ -953,0 +982,5 @@ namespace RoadDemo
++                // the men are in the back: the car drives to the station kerb, stops
++                // there whether or not a bay is free, and waits to be unloaded. Set
++                // BEFORE the release, which is what reads it to pick the station over
++                // the round.
++                if (load.Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = true;
+@@ -1043,2 +1093,3 @@ namespace RoadDemo
+-                    if (patrol.State != PolicePatrolCar.Mode.Docking &&
+-                        patrol.State != PolicePatrolCar.Mode.Resting) return false;
++                    // the kerb is the threshold, not the bay: a car that found every
++                    // bay held used to go back round the city with its load
++                    if (!patrol.AtHomeKerb) return false;
+@@ -1081,0 +1133 @@ namespace RoadDemo
++                if (custody.Cars[i].Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = false;
+@@ -1226,0 +1279,2 @@ namespace RoadDemo
++                // whatever ended it, nothing is in the back any more
++                if (load.Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = false;
