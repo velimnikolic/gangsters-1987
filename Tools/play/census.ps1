@@ -135,7 +135,8 @@ function Assert-CensusJobIdentity(
         }
     }
 
-    if ($result.seed -isnot [System.Int32] -or $result.seed -ne 1987) {
+    $seedIsInteger = $result.seed -is [System.Int32] -or $result.seed -is [System.Int64]
+    if (-not $seedIsInteger -or [System.Int64]$result.seed -ne 1987L) {
         throw "Census job $ExpectedJobId returned seed '$($result.seed)', not canonical seed 1987."
     }
 }

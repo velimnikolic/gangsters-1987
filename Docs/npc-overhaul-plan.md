@@ -24,8 +24,9 @@ dokument, odnosno samo goli ID uz `-DetachOnly`. `-Resume` pre upisa proverava d
 baš `gangsters_people_census`, a završen rezultat i da je za seed 1987. Ako status već kaže
 `completed`, taj provereni JSON vraća odmah, bez drugog backend poziva i novog race prozora.
 Provera je tipski zatvorena: `success`/`passed` moraju biti Boolean, `seed` mora biti skalarni
-Int32 1987, `failures` niz, a četiri census sekcije JSON objekti; niz ili string ne prolazi kroz
-PowerShell poređenje kao lažni skalar.
+Int32 ili Int64 sa vrednošću 1987 (Windows PowerShell 5.1 i PowerShell 7 dekodiraju JSON broj
+različito), `failures` niz, a četiri census sekcije JSON objekti; niz, string ili decimalni broj
+ne prolazi kroz PowerShell poređenje kao lažni skalar.
 Pipeline čuva poslednjih 100 završenih poslova jedan sat; kompilacija/domain reload prekida red
 i tada stari ID namerno prijavi neuspeh.
 Poslednji puni prolaz je vratio JSON `passed = true`, bez gate grešaka, za **1,65 s** rada
