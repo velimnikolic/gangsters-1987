@@ -1,6 +1,7 @@
 # Plan: grad koji živi — NPC overhaul (ljudi, rutine, parkirana kola)
 
-Stanje na dan 2026-09-04, pre odluka korisnika (§11). Pokriva zašto grad deluje prazno,
+**EPIC 39 — GAN-354** (tiketi NPC-001…020, GAN-356…380).
+Stanje na dan 2026-09-04, posle odluka korisnika (§11) i pregleda (§13). Pokriva zašto grad deluje prazno,
 šta od mašinerije već postoji, model po kom ljudi i kola dobijaju razlog da budu tamo gde
 jesu, katalog ideja, faze, presudu i pitanja. Građa perioda: `Docs/1987-period-reference.md`.
 
@@ -440,19 +441,26 @@ Sat: ostaje `CityClock` bez događaja; `Population` ga anketira jednom u frejmu 
 
 ---
 
-## 7. Faze (svaka ostavlja igru ispravnu; tiketi NPC-0xx posle odobrenja)
+## 7. Faze (prekrojeno posle pregleda §13)
+
+**Šta je pregled promenio:** faza 0 više nije samo merenje nego **kapija** — dok popis vrata
+ne stoji, sledeća faza se ne otvara. Dodela adrese je izvučena ispred odlazaka (nalaz K3), a
+nadmetanje za slot, sat na ×16, migracija save formata i LOD tick dobili su svoje tikete umesto
+da budu pretpostavka (K2, O4, O5, O7).
 
 | faza | šta | izlaz koji se može pogledati |
 |---|---|---|
-| **0. Mera** | izmeriti seed 1987: metri legalnog ivičnjaka, broj slotova pri 60 %, broj vrata koja Core može da objavi (sajtovi + geometrija za block-01…16 + ulazi zgrada), ms po frejmu gomile danas | tabela u ovom dokumentu; ništa u igri |
-| **1. Vrata i cilj** | Core objavljuje vrata; civil dobija odlazak vrata→vrata Dijkstrom; ulazak kroz `DoorBeat`; izlazak iz *istih* vrata; sat gasi/pali odlaske po plimi (kriva ×budžet); deca van gomile | ljudi izlaze iz radnji i ulaze u njih, i grad je u 03:00 prazan a u 12:00 pun |
-| **2. Ivičnjak** | legalni spanovi + slotovi + polaganje parkiranih kola po plimi (statika, strimovana); civilno kolo sa `GoTo(park)`; prelazi u prozoru | ulice pune kola, saobraćaj ih obilazi, 0 gridloka na 30 runova |
-| **3. Ljudi na papiru** | registar gazdi/osoblja/stanara; gazda otvara/zatvara; mušterije po arhetipu; kolo uz kuću; portali (kolo, podzemna, rub); budžet tela + LOD tick | isti gazda svaki dan na istim vratima; reketaš zatiče čoveka |
-| **4. Službena vozila** | ruta + stajanja; ono što D4 izabere (polazno: autobus, smeće, dostava, taksi) | autobus staje, smeće u 05:00 |
-| **5. Grad reaguje** | tišina posle pucnjave, strah × kriva, hitna/vatrogasci, svedoci sa adresom u novinama | posle pucnjave blok utihne, hitna odnese telo |
-| **6. Mesta** | klub red, park ručak/trkači, terasa kao stanice, hangout ćošak, kiosk, govornica, nedelja | po D4/D7/D12 |
+| **0. Popis (kapija)** | popis vrata na seedu 1987 **razdvojen po izvoru** (poslovni sajtovi / blokovi centra / ulazi stambenih zgrada), metri legalnog ivičnjaka i broj slotova pri 60 %, ms po frejmu gomile danas, i **proba gustine** (400 pešaka / 120 kola, samo pogled) | tabela u ovom dokumentu; ništa u igri. **Ako centar da nulu vrata, faza 2 se prekraja pre nego što počne.** |
+| **1. Adrese i vrata** | Core objavljuje vrata u `CityLife`; **`People.HomeDoorFor(id)` / `WorkDoorFor(id)` dobijaju stabilan interfejs** koji u ovoj fazi vraća vrata izvučena hešom iz objavljenog spiska — faza 4 menja SAMO podlogu, ne interfejs; deca van gomile | svaki čovek na ulici ima adresu na koju može da se vrati |
+| **2. Odlasci** | civil dobija odlazak vrata→vrata Dijkstrom; ulazak kroz `DoorBeat`; izlazak iz *istih* vrata; sat gasi i pali odlaske po plimi (kriva × budžet); **svako trajanje u satima igre, ne u sekundama** | ljudi izlaze iz radnji i ulaze u njih; grad je u 03:00 prazan a u 12:00 pun |
+| **3. Ivičnjak** | legalni spanovi + slotovi + polaganje parkiranih kola po plimi; civilno kolo sa `GoTo(park)`; **nadmetanje za slot u `RoadCar` (sledeći slot → obilazak bloka → odustajanje iza ruba) je poseban tiket, ne pretpostavka** | ulice pune kola, saobraćaj ih obilazi, 0 gridloka na 30 runova |
+| **4. Ljudi na papiru** | registar gazdi, osoblja i stanara pod interfejs iz faze 1; gazda otvara i zatvara; mušterije po arhetipu; kolo uz kuću; portali; **budžet tela + LOD tick sa merenim pragom** | isti gazda svaki dan na istim vratima; reketaš zatiče čoveka |
+| **5. Službena vozila** | ruta + stajanja: autobus, smeće, dostava, taksi. **Dupli parking dostave samo na bulevarima dok mera ne kaže drugačije** (nalaz O6) | autobus staje, smeće u 05:00 |
+| **6. Grad reaguje** | tišina posle pucnjave, strah × kriva, hitna i vatrogasci, **prikivanje svedoka + migracija save formata** | posle pucnjave blok utihne, hitna odnese telo, svedok se nađe kod kuće |
+| **7. Mesta** | klub red, park ručak i trkači, terasa kao stanice, hangout ćošak, kiosk, govornica, nedelja | po D4, D7, D12 |
 
-Redosled 1→2 može i 2→1 (nezavisni); 3 traži 1; 4 traži 2; 5 traži 3.
+Zavisnosti: 0 je kapija za sve. 2 traži 1. 3 je nezavisna od 1 i 2 (može paralelno). 4 traži 1
+i 2. 6 traži 4. 7 traži 2.
 
 ---
 
@@ -512,9 +520,14 @@ L1–L8 (`city-performance-plan.md`) — ovde samo budžet tela i tick; rivali i
 
 ---
 
-## 11. Odluke (korisnik)
+## 11. Odluke (korisnik, 2026-09-04)
 
-| # | pitanje | moj predlog (nije pravilo) |
+**Korisnik 2026-09-04: „sve se slažem" — svih 19 odluka po predlogu.** Predlozi u desnoj
+koloni su od tog časa pravila; brojke u njima ostaju polazne vrednosti koje se menjaju po
+slici, ali kroz podatak, ne kroz kod. Redosled koji je tražio: contrarian pregled (§13), pa
+epik u Linear-u, pa faze.
+
+| # | pitanje | odluka (= predlog) |
 |---|---|---|
 | **D1** | **Budžet tela u prozoru kamere**: pešaka, kola u vožnji, parkiranih, službenih? | 240 / 48 / bez gornje granice za statiku u prozoru (meri se u fazi 0) / 6 |
 | **D2** | **Plima dana** — prihvatiti tabelu §4.5 kao polaznu i menjati po slici? | da, polazna; menja se iz podatka, ne iz koda |
@@ -538,7 +551,7 @@ L1–L8 (`city-performance-plan.md`) — ovde samo budžet tela i tick; rivali i
 
 ---
 
-## Rizici koje plan vidi
+## 12. Rizici koje plan vidi
 
 - **Performanse.** 100 → 240 tela i stotine parkiranih kola nad gradom koji već crta 33 M
   temena po frejmu. Zato faza 0 meri, budžet je tvrd, tick se seče po daljini, a statika ide
@@ -554,3 +567,77 @@ L1–L8 (`city-performance-plan.md`) — ovde samo budžet tela i tick; rivali i
 - **Dva sloja vrata** (ambijentalni `VenueDoorSide` i `DemoDoor`) — moraju u jedan pre faze 3.
 - **Ulaz stambene zgrade** deli sudbinu sa EPIC 36 (ResidentialForge §1.1) — jedan od dva
   epica ga uvodi, ne oba.
+
+---
+
+## 13. Pregled pre epika (2026-09-04)
+
+Contrarian subagent je pao na kvoti; pregled je urađen u glavnoj niti na Opusu, uz proveru
+tvrdnji u kodu. To je slabije od nezavisnog pregleda i sme da se ponovi.
+
+**Šta plan drži:** dijagnoza je merena, ne nagađana; presuda u §8 meri ono što broji; odluka
+da je telo budžet a čovek podatak je jedina koja preživljava 33 M temena po frejmu.
+
+### Kritični nalazi
+
+**K1 — vrata za centar ne mogu da se izvedu kako §4.2 tvrdi.** `ShopDoors.Of` prima
+`BusinessMarker` (`ShopDoors.cs:35`) — dakle biznis koji već postoji kao sajt. Blokovi
+`block-01…16` ne objavljuju nijedan sajt, pa nema markera da se pita; `FacadeFinder` nalazi
+koja je strana pročelje **date zgrade**, ne otkriva lokale u pečenoj mreži. Segmentacija
+pečenog bloka na lokale je posao inventara biznisa, ne prolaza za vrata.
+**Popravka:** faza 0 broji vrata **po izvoru**; za centar se meri jeftinija varijanta —
+**jedna ulazna vrata po zgradi** (kancelarijski lobi), koja `FacadeFinder` ume da izvede po
+instanci zgrade. Ako ni to ne da broj, centar u ovom epiku ostaje bez gazdi i to se kaže
+naglas umesto da se otkrije u fazi 2.
+
+**K2 — „sledeci slot pa obiđi blok“ ne postoji.** `RoadCar` ima samo odustajanje posle 25 s
+(`RoadCar.cs:989`) sa rezervom od 22 m (`:999`), a izbor slota odbija cilj dalji od 45 m
+(`RoadCar.Parking.cs:91`). Politika nadmetanja je nasleđena specifikacija iz
+`vehicle-movement-plan.md` koja nikad nije napravljena.
+**Popravka:** svoj tiket u fazi 3, u najosetljivijoj klasi u repou; ne računa se kao gotovo.
+
+**K3 — redosled faza nije držao.** Stara faza 1 tražila je odlazak vrata→vrata i izlazak na
+*ista* vrata, a kućna i radna vrata dodeljuje registar iz stare faze 3.
+**Popravka:** adrese su sada faza 1 sa **stabilnim interfejsom** (`People.HomeDoorFor`), koji
+u fazi 1 vraća vrata po hešu, a u fazi 4 istu funkciju puni registar. Menja se podloga, ne
+interfejs — pa faza 4 ne baca ništa što je faza 2 napravila.
+
+### Ozbiljni nalazi
+
+**O4 — prikovani svedok nema gde da živi u sistemu.** `CityBlockRecycler` ne zna ni za jedno
+telo (nema nijedne reference na civile). Ništa se danas „ne strimuje sa blokom“ osim
+geometrije. Ako svedok mora da bude nađen kod kuće, on je ili izuzet od budžeta tela (curenje
+koje raste sa brojem otvorenih slučajeva) ili obećanje pada. Uz to se svedoci **snimaju u
+save** (`CampaignFile.cs:95 WitnessDto`, `PrisonSnapshot.cs:67-71`), pa dodavanje kućnih
+vrata menja format i traži migraciju.
+**Popravka:** prikivanje je faza 6 sa sopstvenim tiketom za migraciju; pravilo budžeta —
+prikovan svedok ima **rezervisano mesto u budžetu dok mu je slučaj otvoren**, i broj otvorenih
+slučajeva je time gornja granica curenja.
+
+**O5 — lestvica brzine ×16 nije nigde pomenuta.** `CityClock` vuče `Time.timeScale` do 16
+(`CityClock.cs:30, :94`). Na ×16 sat igre traje 3,75 s, ceo dnevni ciklus 90 s; plima, radno
+vreme, dvočasovna tišina, 40 s duplog parkinga i razmak autobusa postaju treptaj, a vožnja
+je podešena na fiksni korak.
+**Popravka:** svako trajanje u novom sloju se meri u **satima igre**, ne u sekundama (faza 2);
+manevri vozila ostaju u sekundama i dobijaju gornju granicu koraka.
+
+**O6 — geometrija gridloka je tesnija nego što plan pretpostavlja.** Obična ulica ima jednu
+traku po smeru (`StreetKit.cs:27, :31` — `RoadHalf = 5`), a `DriverProfile.Traffic` ne koristi
+suprotnu traku i sme 1 m preko krune (`DriverProfile.cs:74-77`). Dupli parking od 40 s uz
+ciklus semafora od 26 s je ozbiljan kandidat za `Gridlock`.
+**Popravka:** dupli parking dostave samo na bulevarima dok 30 runova ne kaže drugačije.
+
+**O7 — sečenje po daljini je imenovano, nije opisano.** Sve se i danas kuca svaki frejm bez
+deljenja (`RoadDemoBuilder.cs:786`), a plan odozgo dodaje Dijkstru po odlasku.
+**Popravka:** LOD tick je svoj tiket u fazi 4, sa pragom iz mere faze 0.
+
+**O8 — dijagnoza možda štedi na pogrešnom mestu.** Plan tvrdi da prazno nije mali broj.
+Moguće je da je delom ipak broj.
+**Popravka:** proba gustine (400 pešaka / 120 kola) je stavka faze 0 — pet minuta u editoru,
+nijedna linija koda. Ako to već izgleda živo, prioriteti epika se menjaju.
+
+### Presuda
+
+Model drži; tri kritična nalaza pogađala su prvu fazu. Prekrojen je **redosled**, ne model.
+Najjeftiniji test koji obara najrizičniju pretpostavku je popis vrata po izvoru — prva
+stavka faze 0, bez izmene koda.
