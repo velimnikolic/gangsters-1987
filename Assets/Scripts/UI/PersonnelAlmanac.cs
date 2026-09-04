@@ -18,15 +18,15 @@ namespace LivingCity.UI
     /// <summary>
     /// The outfit ledger, 1987: a manila file open on the boss's desk, filling the
     /// screen - centred, so an ultrawide monitor puts the desk lamp's light either
-    /// side of it instead of stretching the file into a billboard. Six divider tabs
-    /// - the morning paper, personnel, organization, finances, the armory catalogue,
-    /// and the card index of families - on aged stock, punched down both edges, with a blotter
+    /// side of it instead of stretching the file into a billboard. Divider tabs for
+    /// the morning paper, personnel, chain of command, blocks, finances, the armory
+    /// catalogue, families and the law sit above the working sheet, with a blotter
     /// strip of readouts under the masthead and the night's telex slips clipped in
     /// beneath it. Opened with P.
     ///
-    /// Most pages are bookkeeping. ORGANIZATION is the administrative exception: it
-    /// transfers real Characters and files block responsibility through the shared
-    /// authority. Tactical street orders are still laid against the city on the map.
+    /// Most pages are bookkeeping. CHAIN OF COMMAND is the administrative exception:
+    /// it transfers real Characters through the shared authority. Tactical street
+    /// orders are still laid against the city on the map.
     ///
     /// Built for sixty men even though the game opens with the Boss and six staff: grouping, sorting and
     /// filtering are the screen, not decoration.
@@ -134,7 +134,6 @@ namespace LivingCity.UI
             // measured now, in one pass, so no page can be painted against a stale frame.
             MeasureNewspaperLayout();
             MeasurePersonnelLayout();
-            MeasureOrganizationLayout();
             MeasureBlocksLayout();
             MeasureFinancesLayout();
             MeasureArmoryLayout();
@@ -183,7 +182,6 @@ namespace LivingCity.UI
         {
             Newspaper,
             Personnel,
-            Organization,
             Command,
             Blocks,
             Finances,
@@ -199,18 +197,27 @@ namespace LivingCity.UI
             Blueprint,
         }
 
-        /// <summary>The tabs the folder actually shows, in strip order. ORDERS is the
-        /// last page of the enum and deliberately has no tab: the orders panel is off
-        /// the book. Its page root still builds, so SetPage can reach it in code.</summary>
+        /// <summary>The tabs the folder actually shows, in strip order. ORDERS and
+        /// BLUEPRINT deliberately have no tabs; their roots still build so the relevant
+        /// workflow can reach them in code.</summary>
         static readonly string[] TabNames =
         {
-            "THE PAPER", "PERSONNEL", "ORGANIZATION", "CHAIN OF COMMAND", "BLOCKS",
-            "FINANCES", "ARMORY", "FAMILIES", "THE LAW",
+            "THE PAPER", "PERSONNEL", "CHAIN OF COMMAND", "BLOCKS", "FINANCES",
+            "ARMORY", "FAMILIES", "THE LAW",
+        };
+
+        /// <summary>Tab navigation is explicit because the page enum also contains
+        /// tab-less working pages.</summary>
+        static readonly LedgerPage[] TabPages =
+        {
+            LedgerPage.Newspaper, LedgerPage.Personnel, LedgerPage.Command,
+            LedgerPage.Blocks, LedgerPage.Finances, LedgerPage.Armory,
+            LedgerPage.Diplomacy, LedgerPage.Law,
         };
 
         /// <summary>What a real file's tabs say: the sheet is one leaf of a numbered
         /// file, and the ticker prints which one. Pure furniture, and the design's.</summary>
-        static readonly int[] TabFolios = { 1, 4, 7, 8, 10, 12, 14, 16, 17, 18 };
+        static readonly int[] TabFolios = { 1, 4, 8, 10, 12, 14, 16, 17, 18 };
         const int Folios = 18;
 
         Canvas canvas;
@@ -413,11 +420,13 @@ namespace LivingCity.UI
 
             // [ and ] turn the pages; the tabs are the pointer's way. Both walk the
             // TABS, not the page roots - a page with no tab is not in the book.
+            var tabIndex = System.Array.IndexOf(TabPages, currentPage);
             if (keyboard.leftBracketKey.wasPressedThisFrame)
-                SetPage((LedgerPage)(((int)currentPage + TabNames.Length - 1)
-                    % TabNames.Length));
+                SetPage(TabPages[tabIndex < 0
+                    ? TabPages.Length - 1
+                    : (tabIndex + TabPages.Length - 1) % TabPages.Length]);
             if (keyboard.rightBracketKey.wasPressedThisFrame)
-                SetPage((LedgerPage)(((int)currentPage + 1) % TabNames.Length));
+                SetPage(TabPages[(tabIndex < 0 ? 0 : tabIndex + 1) % TabPages.Length]);
 
             // F2: the sixty-man scale roster - the ledger is specified to stay usable
             // at sixty, and this is how a reviewer sees that without editor wiring.
@@ -432,12 +441,7 @@ namespace LivingCity.UI
             if (keyboard.escapeKey.wasPressedThisFrame)
             {
                 // Innermost state first - each Esc peels one layer, closing last.
-                if (currentPage == LedgerPage.Organization &&
-                    CloseOrganizationTransient())
-                {
-                    // The organization page consumed this Esc.
-                }
-                else if (currentPage == LedgerPage.Blocks && CloseBlocksTransient())
+                if (currentPage == LedgerPage.Blocks && CloseBlocksTransient())
                 {
                     // The blocks page consumed this Esc.
                 }
@@ -553,9 +557,6 @@ namespace LivingCity.UI
                 case LedgerPage.Personnel:
                     RebuildList();
                     RebuildDetail();
-                    break;
-                case LedgerPage.Organization:
-                    RebuildOrganization();
                     break;
                 case LedgerPage.Command:
                     RebuildCommand();
@@ -720,7 +721,7 @@ namespace LivingCity.UI
         public void SetPage(LedgerPage pageKind)
         {
             currentPage = pageKind;
-            if ((int)pageKind < TabNames.Length)
+            if (System.Array.IndexOf(TabPages, pageKind) >= 0)
                 lastTab = pageKind;
             // THE BLUEPRINT IS A POPUP OVER A PAGE, so the page it was opened over stays
             // standing behind its backdrop - the reader has to see the block file they
@@ -747,9 +748,7 @@ namespace LivingCity.UI
                 givePickerItemId = -1;
                 armoryNote = "";
             }
-            // The picked man is shared by the two command sheets - stepping from
-            // one to the other must not drop him.
-            if (pageKind != LedgerPage.Organization && pageKind != LedgerPage.Command)
+            if (pageKind != LedgerPage.Command)
                 DismissOrganizationTransient();
             if (pageKind != LedgerPage.Blocks)
                 DismissBlocksTransient();
@@ -809,10 +808,6 @@ namespace LivingCity.UI
                         viewport = listViewport;
                         content = listContent;
                     }
-                    break;
-                case LedgerPage.Organization:
-                    viewport = organizationViewport;
-                    content = organizationContent;
                     break;
                 case LedgerPage.Command:
                     viewport = commandViewport;
@@ -923,12 +918,6 @@ namespace LivingCity.UI
             {
                 stockScroll = Mathf.Clamp(stockScroll - wheel * WheelStep, 0f, maxScroll);
                 content.anchoredPosition = new Vector2(0f, stockScroll);
-            }
-            else if (viewport == organizationViewport)
-            {
-                organizationScroll = Mathf.Clamp(
-                    organizationScroll - wheel * WheelStep, 0f, maxScroll);
-                content.anchoredPosition = new Vector2(0f, organizationScroll);
             }
             else if (viewport == commandViewport)
             {
@@ -1087,12 +1076,11 @@ namespace LivingCity.UI
             // ---- the pages, in tab order; each is a full-sheet root ----
             BuildNewspaperPage(paper);
             BuildPersonnelPage(paper);
-            BuildOrganizationPage(paper);
+            BuildCommandPage(paper);
             BuildBlocksPage(paper);
             BuildFinancesPage(paper);
             BuildArmoryPage(paper);
             BuildDiplomacyPage(paper);
-            BuildCommandPage(paper);
             BuildLawPage(paper);
             BuildOrdersPage(paper);
             BuildBlueprintPage(paper);
@@ -1191,7 +1179,7 @@ namespace LivingCity.UI
             BuildClose(chromeRoot);
         }
 
-        /// <summary>The six tabs, packed left from the rail's edge. Masked, so a window
+        /// <summary>The tabs, packed left from the rail's edge. Masked, so a window
         /// too narrow for the strip clips the last word instead of running it over the
         /// way out.</summary>
         void BuildTabs(RectTransform chrome)
@@ -1204,7 +1192,7 @@ namespace LivingCity.UI
             var x = 0f;
             for (var i = 0; i < TabNames.Length; i++)
             {
-                var kind = (LedgerPage)i;
+                var kind = TabPages[i];
                 var w = TabWidthFor(TabNames[i]);
                 var rect = NewRect("Tab " + TabNames[i], tabStrip);
                 PlaceTopLeft(rect, x, 0f, w, ChromeH);
@@ -1427,7 +1415,7 @@ namespace LivingCity.UI
                 // reader has not left it.
                 var showing = currentPage == LedgerPage.Blueprint
                     ? blueprintReturn : currentPage;
-                var active = i == (int)showing;
+                var active = TabPages[i] == showing;
                 tabFaces[i].color = active ? LedgerStyle.TabRed : LedgerStyle.Chrome;
                 tabLabels[i].color = active
                     ? LedgerStyle.TabActiveText
@@ -2417,15 +2405,6 @@ namespace LivingCity.UI
                         railHurt > 0 ? TelexVoice.Warn : TelexVoice.Plain));
                     telexMessages.Add((railPosted + " of " + railMen +
                         " men are posted and earning", TelexVoice.Plain));
-                    break;
-
-                case LedgerPage.Organization:
-                    telexMessages.Add(("Each man answers to exactly one man above him",
-                        TelexVoice.Plain));
-                    telexMessages.Add(("A block is answered for by exactly one " +
-                        "lieutenant · the paper is on the BLOCKS sheet", TelexVoice.Plain));
-                    telexMessages.Add(("Nothing on this sheet happens at the click · " +
-                        "the order is FILED and the outfit answers it", TelexVoice.Plain));
                     break;
 
                 case LedgerPage.Command:

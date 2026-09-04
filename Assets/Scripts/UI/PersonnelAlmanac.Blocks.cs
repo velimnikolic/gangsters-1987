@@ -147,8 +147,6 @@ namespace LivingCity.UI
             if (!blocksFixed || !blocksContent)
                 return;
 
-            HideThumbNote();
-
             if (blocksNote == FiledNote && outfit && outfit.Filings.AwaitingCount == 0)
                 blocksNote = "";
 
