@@ -118,6 +118,12 @@ and the script is the number kept on disk. It also folds each stack trace to the
 names a file in this project and collapses a repeated message to `x22`, which is the difference
 between two kilobytes and thirty.
 
+Exit 2 is the one to read carefully: it means the read was refused, unparseable **or
+incomplete** — a marked window that came back full has older entries outside it, and those are
+the ones nearest the mark, which is where the cause of a burst lives. A reader that moves the
+mark gets one chance at every line, so an incomplete read says so and never passes for a clean
+one. `python Tools/play/console.py --selftest` holds both of those down without an editor.
+
 **Every `Tools/…` menu, from the terminal.** The project has ~54 `[MenuItem]`s that until now
 only a mouse could reach:
 

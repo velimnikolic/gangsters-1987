@@ -5,9 +5,11 @@
     python Tools/play/console.py --mark     # move the mark to now, print nothing
     python Tools/play/console.py --tail 50  # the last 50, mark ignored and left alone
     python Tools/play/console.py --trace    # with the stack traces, not just the frame
+    python Tools/play/console.py --selftest # the shaping rules, with no editor needed
 
-Exit 0: the console was read and held no error. Exit 1: it held one. Exit 2: it could
-not be read, which is NOT the same as clean and must never be taken for it.
+Exit 0: the console was read whole and held no error. Exit 1: it held one. Exit 2: the
+read was refused, unparseable or INCOMPLETE, which is not the same as clean and must
+never be taken for it.
 
 Three things this exists to stop, each of which has already cost a session:
 
@@ -21,6 +23,17 @@ Three things this exists to stop, each of which has already cost a session:
   * The same message repeats. Twenty-two identical leak warnings are one fact and one
     line - `x22` - not twenty-two lines, and counting them by eye across a scroll is
     how the same fact gets fixed twice.
+
+And two the first cut of this file got wrong, which are the same mistake in two places:
+a reader that MOVES THE MARK has one chance at every entry, so anything it does not
+look at is gone for good.
+
+  * The mark advances only after a read is proved complete. A `--tail N` that comes back
+    with exactly N rows, or with `dropped`, is a window on the newest entries with the
+    older ones - the ones nearer the mark, which is to say the ones that STARTED the
+    trouble - left outside it. That is reported and exits 2.
+  * The verdict counts every entry read, not the forty that get printed. Forty distinct
+    logs ahead of an error used to print no error and exit 0, and then eat it.
 """
 
 import json
@@ -33,6 +46,7 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 MARK = os.path.join(ROOT, "Temp", "play", "console.mark")
 LOUD = ("error", "exception", "assert")
 LINES = 40
+BUFFER = 2000
 
 
 def ask(args):
@@ -85,8 +99,83 @@ def frame(trace):
     return ""
 
 
+def digest(entries):
+    """The entries as distinct kinds, in order of first sight, each with its tally.
+
+    The same message from the same place is ONE fact. First sight orders them because
+    the first error is usually the one that caused the rest.
+    """
+    seen = {}
+    order = []
+    for entry in entries:
+        level = str(entry.get("level") or "log")
+        message = " ".join(str(entry.get("message") or "").split())[:300]
+        where = frame(entry.get("stackTrace"))
+        key = (level, message, where)
+        if key not in seen:
+            seen[key] = {"count": 0, "trace": entry.get("stackTrace") or ""}
+            order.append(key)
+        seen[key]["count"] += 1
+    return [(k[0], k[1], k[2], seen[k]["count"], seen[k]["trace"]) for k in order]
+
+
+def is_loud(level):
+    return str(level).lower() in LOUD
+
+
+def complete(result, requested):
+    """Did this answer hold everything the window was asked for?
+
+    A response of exactly as many rows as were asked for is a window on the NEWEST
+    entries, and the ones it cut off are the older ones - nearest the mark, which is
+    where the cause of a burst lives. `dropped` says the editor's own ring overran.
+    Neither can be read as "and there was nothing else".
+    """
+    returned = result.get("returned")
+    if returned is None:
+        returned = len(result.get("entries") or [])
+    return not result.get("dropped") and returned < requested
+
+
+def show(kinds, traces):
+    """Print at most LINES kinds, the loud ones first so a cap can never hide one."""
+    ordered = [k for k in kinds if is_loud(k[0])] + [k for k in kinds if not is_loud(k[0])]
+    for level, message, where, count, trace in ordered[:LINES]:
+        tally = "  x%d" % count if count > 1 else ""
+        place = "  @ %s" % where if where else ""
+        print("%-9s %s%s%s" % (level, message, place, tally))
+        if traces and trace:
+            for line in str(trace).splitlines():
+                print("          " + line.strip())
+    if len(ordered) > LINES:
+        print("... and %d more kinds of entry (raise --tail or read the editor)"
+              % (len(ordered) - LINES))
+
+
+def selftest():
+    """The two false negatives that shipped once, held down in code."""
+    quiet = [{"level": "log", "message": "line %d" % i} for i in range(LINES)]
+    kinds = digest(quiet + [{"level": "error", "message": "the one that matters"}])
+    assert len(kinds) == LINES + 1, len(kinds)
+    assert any(is_loud(k[0]) for k in kinds), "an error past the display cap was lost"
+    assert is_loud(([k for k in kinds if is_loud(k[0])] + [k for k in kinds if not is_loud(k[0])])[0][0])
+
+    same = [{"level": "warn", "message": "leak", "stackTrace": "at Assets/A.cs:1"}] * 22
+    folded = digest(same)
+    assert len(folded) == 1 and folded[0][3] == 22, folded
+
+    assert complete({"returned": 399, "dropped": False}, 400)
+    assert not complete({"returned": 400, "dropped": False}, 400), "a full window is not a whole read"
+    assert not complete({"returned": 5, "dropped": True}, 400), "dropped is not a whole read"
+    print("selftest ok")
+    return 0
+
+
 def main():
     args = sys.argv[1:]
+    if "--selftest" in args:
+        return selftest()
+
     everything = "--all" in args
     traces = "--trace" in args
     tail = 0
@@ -104,7 +193,10 @@ def main():
         write_mark(result.get("cursor") or 0)
         return 0
 
-    call = ["--tail", str(tail or 400)]
+    # The whole buffer by default: the cost of a wide window is paid in the editor, not
+    # here, because what comes back is folded to kinds before anything is printed.
+    requested = tail or BUFFER
+    call = ["--tail", str(requested)]
     if not everything:
         call += ["--level", "error"]
     since = 0
@@ -117,43 +209,33 @@ def main():
     if result is None:
         return 2
 
-    entries = [e for e in (result.get("entries") or [])
-               if (e.get("seq") or 0) > since]
-    cursor = result.get("cursor") or since
-    if not tail:
-        write_mark(cursor)
+    entries = [e for e in (result.get("entries") or []) if (e.get("seq") or 0) > since]
+    # An explicit --tail ASKED for a window and moves no mark, so a full one is the
+    # answer to the question rather than a hole in it; only the editor's own overrun
+    # can make that read incomplete. A marked read has no second chance and is held to
+    # the stricter test.
+    whole = complete(result, requested) if not tail else not result.get("dropped")
+    kinds = digest(entries)
 
-    # The same message from the same place is ONE fact. Order of first sight is kept,
-    # because the first error is usually the one that caused the rest.
-    seen = {}
-    order = []
-    for entry in entries:
-        level = str(entry.get("level") or "log")
-        message = " ".join(str(entry.get("message") or "").split())
-        where = frame(entry.get("stackTrace"))
-        key = (level, message[:300], where)
-        if key not in seen:
-            seen[key] = [0, entry.get("stackTrace") or ""]
-            order.append(key)
-        seen[key][0] += 1
+    # THE VERDICT IS TAKEN OVER EVERYTHING READ, before any of it is thrown away for
+    # the sake of a readable page.
+    loud = sum(1 for k in kinds if is_loud(k[0]))
 
-    loud = 0
-    for level, message, where in order[:LINES]:
-        count, trace = seen[(level, message, where)]
-        if level.lower() in LOUD:
-            loud += 1
-        tally = "  x%d" % count if count > 1 else ""
-        place = "  @ %s" % where if where else ""
-        print("%-9s %s%s%s" % (level, message[:300], place, tally))
-        if traces and trace:
-            for line in str(trace).splitlines():
-                print("          " + line.strip())
-
-    if len(order) > LINES:
-        print("... and %d more kinds of entry (raise --tail or read the editor)"
-              % (len(order) - LINES))
-    if not order:
+    if not whole:
+        print("INCOMPLETE: the window came back full (%d) or dropped, so entries "
+              "between the mark and the oldest line below were never read"
+              % len(entries))
+    show(kinds, traces)
+    if not kinds:
         print("nothing new%s" % ("" if everything else " at error level"))
+
+    # An incomplete read still moves the mark, or every later run would re-read the same
+    # overflow and never catch up - but it says so above and answers 2, so nothing can
+    # mistake it for a clean console.
+    if not tail:
+        write_mark(result.get("cursor") or since)
+    if not whole:
+        return 2
     return 1 if loud else 0
 
 
