@@ -99,6 +99,16 @@ def read_mark():
 
 
 def write_mark(cursor):
+    """Move the mark forward. NEVER backward.
+
+    Two sessions share this checkout, so two readers can be in here at once. The one
+    that started earlier finishes with an older cursor in hand, and writing it would
+    hand the other reader's already-read entries back as new - harmless - or, worse,
+    move the mark behind a gap that was just recorded. Forward only costs one read.
+    """
+    state, standing = read_mark()
+    if state == "ok" and standing >= int(cursor):
+        return
     try:
         os.makedirs(os.path.dirname(MARK), exist_ok=True)
         with open(MARK, "w") as handle:
@@ -114,11 +124,14 @@ def read_gap():
     a gap. The mark makes the opposite trade (an unreadable mark is exit 2 and no read
     at all), because a mark decides what is new while a gap only ever withholds a pass.
     """
-    if not os.path.exists(GAP):
-        return False, 0
     try:
         with open(GAP) as handle:
             return True, int(handle.read().strip())
+    except FileNotFoundError:
+        # The ONLY answer that means there is no gap. Not `os.path.exists`, which says
+        # false for a stat that failed, a dangling link, a directory it may not walk -
+        # every one of which is "cannot tell", and cannot tell is a gap.
+        return False, 0
     except (OSError, ValueError):
         return True, -1
 
@@ -260,6 +273,12 @@ def selftest():
         assert read_mark()[0] == "bad", read_mark()
         os.remove(MARK)
         assert read_mark() == ("absent", 0), read_mark()
+        write_mark(500)
+        write_mark(200)
+        assert read_mark() == ("ok", 500), "the mark went backwards"
+        write_mark(900)
+        assert read_mark() == ("ok", 900), read_mark()
+        os.remove(MARK)
     finally:
         globals()["MARK"] = keep
 
@@ -347,6 +366,14 @@ def main():
         print("INCOMPLETE: the window came back full (%d) or dropped, so entries "
               "between the mark and the oldest line below were never read"
               % len(entries))
+    # ASK AGAIN, because `ask()` can block for ninety seconds and the other session in
+    # this checkout may have recorded a gap inside that window. This is not a lock and
+    # does not pretend to be one: two readers can still interleave. It costs one stat to
+    # close the wide window, the mark only ever moves forward, and the gap file itself
+    # outlives any single run - which is the whole reason the state is on disk.
+    if not standing:
+        standing, gap_at = read_gap()
+
     if standing:
         print("UNREAD GAP still standing from seq %s: entries were lost there and "
               "nobody has said they saw it. `--mark` acknowledges and clears it."
