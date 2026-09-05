@@ -2616,6 +2616,7 @@ namespace LivingCity.Tests
         /// and a war already on are never handed to the player as live keys.</summary>
         static void TheSheetGreysWhatCannotBeSaid(List<string> failures)
         {
+            var rules = HouseRelationsConfig.Default;
             string Why(ProposalKind kind, Stance stance, bool asked = false, bool street = true,
                 bool third = true, bool pact = false, int ceiling = 1_000, int owe = 0,
                 int owed = 0, bool grudge = false) =>
@@ -2666,6 +2667,13 @@ namespace LivingCity.Tests
             Expect("joined war with no war", Why(ProposalKind.JoinWar, Stance.Peace, third: false), HouseDiplomacy.ReasonNoWarToJoin);
             Expect("asked already", Why(ProposalKind.OfferTruce, Stance.War, asked: true), HouseDiplomacy.ReasonAlreadyAsked);
             Expect("a ransom from the sheet", Why(ProposalKind.Ransom, Stance.War), HouseDiplomacy.ReasonNothingToSay);
+
+            // ONE KEY FOR THE STREET: the rung picks the word, so the sheet never
+            // shows two keys that do the same thing.
+            if (HouseDiplomacy.WordForStreet(rules.ThreatAt - 1f, rules) != ProposalKind.Warn)
+                failures.Add("DIPL-010: under the threat rung the word is not a warning.");
+            if (HouseDiplomacy.WordForStreet(rules.ThreatAt, rules) != ProposalKind.Threaten)
+                failures.Add("DIPL-010: at the threat rung the word is not a threat.");
 
             // War: on already, or landing at midnight.
             Expect("war at peace", HouseDiplomacy.WhyNotWar(Stance.Peace, false), null);

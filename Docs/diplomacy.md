@@ -136,7 +136,10 @@ books, not on the pavement.
 THE TABLE (`UI/PersonnelAlmanac.Table.cs`) unfolds from the one key on a FAMILIES card as a
 strip under the row the card stands in - the drawer stays, the rows below slide down, FOLD
 puts them back (`PersonnelAlmanac.Diplomacy.cs`; the card's STANDING row reads THEY ASK when
-their proposal waits): what they ask with ACCEPT / REFUSE / AMBUSH, the ten words as keys, the
+their proposal waits): what they ask with ACCEPT / REFUSE / AMBUSH, the words as keys - the
+warning and the threat under ONE key, WARN THEM OFF, because they carry the same demand and
+the same weight; `HouseDiplomacy.WordForStreet` picks the rung, a threat once they have taken
+a threat's worth - the
 terms of the pressed one under it, by telephone or in person with the envoy, and THE RECORD of
 the last words between the two houses. The buttons call `OutfitDirector.Propose / Reply / Ambush /
 SendToSitDown / SetStance`; WAR stays a declaration. The telephone card (EPIC 40's

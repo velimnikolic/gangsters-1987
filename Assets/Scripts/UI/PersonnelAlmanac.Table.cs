@@ -239,9 +239,15 @@ namespace LivingCity.UI
             var warPending = hasPending && pending == Outfit.Stance.War;
             var ourDays = HouseRelations.Endurance(outfit.Accounts.Safe,
                 director != null && director.Roster != null ? Wages.DailyPayroll(director.Roster) : 0);
+            var ourGrudge = relations != null ? relations.Grievance(mine, house.Id) : 0f;
             var grudge = relations != null &&
-                         (relations.Grievance(mine, house.Id) >= rules.ThreatAt ||
+                         (ourGrudge >= rules.ThreatAt ||
                           relations.Grievance(house.Id, mine) >= rules.ThreatAt);
+
+            // ONE KEY FOR THE STREET: the warning and the threat are the same demand
+            // said on two rungs, so the sheet says it once and the ladder picks the
+            // word. Either one open blocks the key.
+            var wordOff = HouseDiplomacy.WordForStreet(ourGrudge, rules);
             var pactStands = book.HasPact(mine, house.Id, day);
             var ours = HouseOps.Look != null && Underworld.Current?.Player != null
                 ? HouseOps.Look(Underworld.Current.Player)
@@ -249,10 +255,20 @@ namespace LivingCity.UI
             var theirDays = ours != null ? ours.TheirEndurance(them) : -1;
             var theirLosses = theirBook != null ? theirBook.Runner.LossesThisWar(mine) : 0;
 
-            string WhyNot(ProposalKind kind) => HouseDiplomacy.WhyNot(kind, current,
-                book.HasOpen(mine, house.Id, kind, day), tableStreets.Count > 0,
-                kind == ProposalKind.JoinWar ? anyWarToJoin : anyThird, pactStands,
-                tableCeiling, weOwe, theyOwe, grudge);
+            ProposalKind Said(ProposalKind kind) =>
+                kind == ProposalKind.Warn ? wordOff : kind;
+
+            string WhyNot(ProposalKind kind)
+            {
+                var said = Said(kind);
+                var asked = said == ProposalKind.Warn || said == ProposalKind.Threaten
+                    ? book.HasOpen(mine, house.Id, ProposalKind.Warn, day) ||
+                      book.HasOpen(mine, house.Id, ProposalKind.Threaten, day)
+                    : book.HasOpen(mine, house.Id, said, day);
+                return HouseDiplomacy.WhyNot(said, current, asked, tableStreets.Count > 0,
+                    said == ProposalKind.JoinWar ? anyWarToJoin : anyThird, pactStands,
+                    tableCeiling, weOwe, theyOwe, grudge);
+            }
 
             var keyW = (w - 5f * 6f) / 6f;
             var keyPitch = TableKeyH + 18f;
@@ -317,7 +333,7 @@ namespace LivingCity.UI
             else if (tableWord != ProposalKind.None)
             {
                 var kind = tableWord;
-                y = TableBand(sheet, y, WordLabel(kind) + " · " + house.Name.ToUpperInvariant());
+                y = TableBand(sheet, y, WordLabel(Said(kind)) + " · " + house.Name.ToUpperInvariant());
                 var reads = theirDays < 0 ? ""
                     : theirDays < rules.MinWarDays ? " · they cannot pay their men " + rules.MinWarDays + " days: beaten"
                     : theirDays > ourDays ? " · they read stronger than us"
@@ -342,20 +358,15 @@ namespace LivingCity.UI
                             "clears what they hold against us · peace when little is left · " +
                             "not for a month after a killing");
                         break;
-                    // The two words carry the SAME demand and the same weight - the
-                    // ladder's first rung and its last before a bill. The hints say
-                    // which rung is being said rather than pretending they differ.
+                    // One key, and the rung it is said on written into the hint.
                     case ProposalKind.Warn:
-                        y = StreetRow(sheet, y, w,
-                            "the first word: keep off that street · " + config.ComplyDays +
-                            " days if they yield · they yield to a house that reads stronger " +
-                            "and is owed nothing" + reads);
-                        break;
                     case ProposalKind.Threaten:
                         y = StreetRow(sheet, y, w,
-                            "the last word before a bill: the same demand, said once more · " +
-                            config.ComplyDays + " days if they yield · either word refused or " +
-                            "left two days is owed for" + reads);
+                            (wordOff == ProposalKind.Threaten
+                                ? "they have taken enough that this is the last word before a bill · "
+                                : "the first word, before anything else · ") +
+                            "keep off that street for " + config.ComplyDays +
+                            " days if they yield · refused or left two days, it is owed for" + reads);
                         break;
                     case ProposalKind.Bill:
                         y = MoneyRow(sheet, y, w, tableCeiling,
@@ -391,7 +402,8 @@ namespace LivingCity.UI
                         break;
                 }
                 y = CarriedRow(sheet, y, w);
-                LedgerV2.Button(sheet, "SEND IT", 0f, y, 140f, TableKeyH, () => Say(house.Id, kind),
+                var word = Said(kind);
+                LedgerV2.Button(sheet, "SEND IT", 0f, y, 140f, TableKeyH, () => Say(house.Id, word),
                     red: false, size: 10f, outline: false);
                 LedgerV2.Button(sheet, "NEVER MIND", 148f, y, 140f, TableKeyH, () =>
                 {
@@ -605,7 +617,7 @@ namespace LivingCity.UI
         static readonly ProposalKind[] TableWords =
         {
             ProposalKind.OfferTruce, ProposalKind.OfferPeace, ProposalKind.Warn,
-            ProposalKind.Threaten, ProposalKind.Bill, ProposalKind.TributeTerms,
+            ProposalKind.Bill, ProposalKind.TributeTerms,
             ProposalKind.Line, ProposalKind.Pact, ProposalKind.JoinWar,
         };
 
@@ -615,8 +627,8 @@ namespace LivingCity.UI
             {
                 case ProposalKind.OfferTruce: return "OFFER TRUCE";
                 case ProposalKind.OfferPeace: return "OFFER PEACE";
-                case ProposalKind.Warn: return "WARNING";
-                case ProposalKind.Threaten: return "THREAT";
+                case ProposalKind.Warn: return "WARN THEM OFF";
+                case ProposalKind.Threaten: return "THE LAST WARNING";
                 case ProposalKind.Bill: return "SEND A BILL";
                 case ProposalKind.TributeTerms: return "TRIBUTE TERMS";
                 case ProposalKind.Line: return "DRAW A LINE";

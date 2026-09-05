@@ -691,6 +691,19 @@ namespace LivingCity.Outfit
             return ReasonNothingToSay;
         }
 
+        /// <summary>
+        /// THE WORD FOR A STREET. A warning and a threat carry the same demand - keep
+        /// off - and the same weight; which one is said is the rung of the ladder we
+        /// stand on, so the sheet offers ONE key and this picks the word: a threat
+        /// once they have taken a threat's worth off us, a warning before that.
+        /// </summary>
+        public static ProposalKind WordForStreet(float grievance,
+            HouseRelationsConfig relations = null)
+        {
+            relations = relations ?? HouseRelationsConfig.Default;
+            return grievance >= relations.ThreatAt ? ProposalKind.Threaten : ProposalKind.Warn;
+        }
+
         /// <summary>Why war cannot be declared on that house now - null when it can:
         /// it is on already, or it lands at midnight.</summary>
         public static string WhyNotWar(Stance stance, bool warPending) =>
