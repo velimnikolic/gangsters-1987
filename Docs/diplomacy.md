@@ -133,11 +133,12 @@ books, not on the pavement.
 
 ## The ledger
 
-THE TABLE (`UI/PersonnelAlmanac.Table.cs`) opens from the one key on a FAMILIES card
-(`PersonnelAlmanac.Diplomacy.cs`; the card's STANDING row reads THEY ASK when their proposal
-waits): what they ask with ACCEPT / REFUSE / AMBUSH, the money, the street, the third house,
-by telephone or in person with the envoy, the ten words, and THE RECORD of the last words
-between the two houses. The buttons call `OutfitDirector.Propose / Reply / Ambush /
+THE TABLE (`UI/PersonnelAlmanac.Table.cs`) unfolds from the one key on a FAMILIES card as a
+strip under the row the card stands in - the drawer stays, the rows below slide down, FOLD
+puts them back (`PersonnelAlmanac.Diplomacy.cs`; the card's STANDING row reads THEY ASK when
+their proposal waits): what they ask with ACCEPT / REFUSE / AMBUSH, the ten words as keys, the
+terms of the pressed one under it, by telephone or in person with the envoy, and THE RECORD of
+the last words between the two houses. The buttons call `OutfitDirector.Propose / Reply / Ambush /
 SendToSitDown / SetStance`; WAR stays a declaration. The telephone card (EPIC 40's
 STREET-002) is not wired to proposals yet; the inbox on the sheet is the surface.
 

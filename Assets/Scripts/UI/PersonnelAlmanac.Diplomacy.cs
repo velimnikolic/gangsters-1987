@@ -148,29 +148,47 @@ namespace LivingCity.UI
 
             BuildOwnLine(gangs);
 
-            // THE TABLE (EPIC 42): one house's sheet takes the drawer's window while
-            // it is open; BACK puts the cards back.
-            if (tableFor >= 0)
-            {
-                BuildTable(gangs);
-                BuildStanceLegend();
-                return;
-            }
-
-            // The rivals, in the window: their y is measured from ITS top edge, not the
-            // page's, so scrolling is one anchoredPosition and never a re-layout.
+            // THE TABLE (EPIC 42): the open house's table unfolds as a strip under the
+            // row its card stands in - the drawer stays, the rows below slide down.
             var slot = 0;
+            var openSlot = -1;
             foreach (var gang in gangs)
             {
                 if (gang.IsPlayer)
                     continue;
-                FamilyCard(gang, slot, mostTurf);
+                if (gang.Id == tableFor)
+                    openSlot = slot;
                 slot++;
             }
+            if (tableFor >= 0 && openSlot < 0)
+                CloseTable();
+            var openRow = openSlot >= 0 ? openSlot / FamilyColumns : -1;
+            if (openRow >= 0 && tableScrollTo)
+            {
+                familiesScroll = openRow * (FamilyCardH + FamilyGap);
+                tableScrollTo = false;
+            }
+
+            // The rivals, in the window: their y is measured from ITS top edge, not the
+            // page's, so scrolling is one anchoredPosition and never a re-layout.
+            slot = 0;
+            var unfolded = 0f;
+            foreach (var gang in gangs)
+            {
+                if (gang.IsPlayer)
+                    continue;
+                var row = slot / FamilyColumns;
+                if (openRow >= 0 && row == openRow + 1 && unfolded == 0f)
+                    unfolded = BuildTableUnder(gangs, openRow);
+                FamilyCard(gang, slot, mostTurf, row > openRow ? unfolded : 0f);
+                slot++;
+            }
+            if (openRow >= 0 && unfolded == 0f)
+                unfolded = BuildTableUnder(gangs, openRow);
 
             var cardRows = (slot + FamilyColumns - 1) / FamilyColumns;
             SizeFamiliesContent(cardRows * FamilyCardH +
-                Mathf.Max(0, cardRows - 1) * FamilyGap);
+                Mathf.Max(0, cardRows - 1) * FamilyGap + unfolded);
 
             // The window has no edge of its own on the paper, so the count says what is
             // in the drawer and the wheel says how to reach it. Printed once, on the
@@ -239,12 +257,12 @@ namespace LivingCity.UI
         }
 
         /// <summary>One house's index card, in the drawer's grid.</summary>
-        void FamilyCard(Gangs.Gang gang, int slot, int mostTurf)
+        void FamilyCard(Gangs.Gang gang, int slot, int mostTurf, float shift)
         {
             var column = slot % FamilyColumns;
             var row = slot / FamilyColumns;
             var x = column * (FamilyCardW + FamilyGap);
-            var y = -row * (FamilyCardH + FamilyGap);
+            var y = -row * (FamilyCardH + FamilyGap) - shift;
 
             // Square on the page: a tilted card turns every hairline on it into a
             // staircase. The Polaroid pinned to it carries the crookedness instead.
@@ -384,11 +402,16 @@ namespace LivingCity.UI
             // declared and truce and peace are offered from the sheet it opens, along
             // with every other word two houses can say to each other.
             var houseId = gang.Id;
-            LedgerV2.Button(card, theyAsk ? "THE TABLE · THEY ASK" : "THE TABLE",
+            var open = tableFor == houseId;
+            LedgerV2.Button(card,
+                open ? "FOLD THE TABLE" : theyAsk ? "THE TABLE · THEY ASK" : "THE TABLE",
                 pad, -278f, inner, 26f, () =>
                 {
-                    OpenTable(houseId);
-                }, red: theyAsk, size: 10f, outline: !theyAsk);
+                    if (open)
+                        CloseTable();
+                    else
+                        OpenTable(houseId);
+                }, red: theyAsk && !open, size: 10f, outline: !theyAsk && !open);
         }
 
         /// <summary>A house's power, 0-100, off the territory runtime's own ledger

@@ -61,6 +61,14 @@ namespace LivingCity.UI
         readonly List<Gangs.Gang> tableThirds = new List<Gangs.Gang>();
         readonly List<Character> tableEnvoys = new List<Character>();
 
+        /// <summary>Set when a table opens: the next build rolls the drawer so the
+        /// card's row stands at the top of the window and the strip under it shows.</summary>
+        bool tableScrollTo;
+
+        /// <summary>The width the strip's rows are drawn to - the drawer less the
+        /// strip's own padding.</summary>
+        float tableW = PageWidth;
+
         void OpenTable(int gangId)
         {
             tableFor = gangId;
@@ -68,7 +76,7 @@ namespace LivingCity.UI
             tableWord = ProposalKind.None;
             tableWar = false;
             tableMoney = 0;
-            familiesScroll = 0f;
+            tableScrollTo = true;
             dirty = true;
         }
 
@@ -78,7 +86,6 @@ namespace LivingCity.UI
             tableNote = "";
             tableWord = ProposalKind.None;
             tableWar = false;
-            familiesScroll = 0f;
             dirty = true;
         }
 
@@ -96,7 +103,18 @@ namespace LivingCity.UI
             return false;
         }
 
-        void BuildTable(IReadOnlyList<Gangs.Gang> gangs)
+        /// <summary>The strip's padding inside its card, and the tag band across its
+        /// head - the family card's own, so the strip reads as the card unfolded.</summary>
+        const float TableStripPad = 14f;
+        const float TableStripHead = 34f;
+
+        /// <summary>
+        /// THE TABLE UNFOLDED under the row its card stands in: a strip the drawer's
+        /// full width, the house's colour across its head, the card's rows that
+        /// matter here, what they ask, our words, and the record. Answers the height
+        /// it took plus the gap, so the rows below slide down by exactly that.
+        /// </summary>
+        float BuildTableUnder(IReadOnlyList<Gangs.Gang> gangs, int openRow)
         {
             Gangs.Gang house = null;
             foreach (var gang in gangs)
@@ -106,23 +124,29 @@ namespace LivingCity.UI
             if (house == null || book == null || !outfit)
             {
                 CloseTable();
-                return;
+                return 0f;
             }
 
             var mine = Gangs.GangCatalog.PlayerGangId;
             var them = new Territory.TerritoryGangId(house.Id);
             var day = outfit.Campaign.Day;
-            var w = PageWidth;
-            var y = 0f;
-            var sheet = familiesContent;
+            var top = -(openRow + 1) * FamilyCardH - openRow * FamilyGap - FamilyGap;
+            var strip = LedgerV2.Card("Table " + house.Name, familiesContent, 0f, top,
+                PageWidth, FamiliesHeight);
+            Block("Colour", strip, 0f, 0f, PageWidth, 4f, GangPalette.Of(house.Id));
+            var band = NewRect("Tag", strip);
+            PlaceTopLeft(band, 0f, -4f, PageWidth, 26f);
+            Fill(band, LedgerV2.PanelDark);
+            Caps(band, TableStripPad, -8f, 400f, "THE TABLE · " + house.Name.ToUpperInvariant(),
+                9.5f, LedgerV2.Red, 3f);
+            LedgerV2.Button(band, "FOLD", PageWidth - TableStripPad - 80f, -3f, 80f, 20f,
+                CloseTable, red: false, size: 9f, outline: true);
 
-            // ---- the head ----
-            LedgerV2.Button(sheet, "< BACK TO THE INDEX", 0f, y, 200f, TableKeyH,
-                CloseTable, red: false, size: 10f, outline: true);
-            var title = Line(sheet, LedgerStyle.Condensed, 22f, LedgerV2.Ink, 216f, y - 2f,
-                w - 216f, LineBox(22f), "THE TABLE · " + house.Name.ToUpperInvariant());
-            title.characterSpacing = 2f;
-            y -= TableKeyH + 10f;
+            var w = PageWidth - TableStripPad * 2f;
+            tableW = w;
+            var sheet = NewRect("Rows", strip);
+            PlaceTopLeft(sheet, TableStripPad, -TableStripHead, w, FamiliesHeight);
+            var y = 0f;
 
             var current = outfit.StanceWith(house.Id);
             var hasPending = outfit.TryGetPendingStance(house.Id, out var pending);
@@ -143,10 +167,6 @@ namespace LivingCity.UI
                 : theyOwe > 0 ? "they kick up " + LedgerText.Cash(theyOwe) + " a cycle"
                 : "nobody is under anybody",
                 weOwe > 0 ? LedgerV2.Red : LedgerV2.Ink);
-            var taken = outfit.Runner.MenLostTo(house.Id);
-            y = TableRow(sheet, y, "TAKEN",
-                taken == 0 ? "nobody of ours" : taken + " of our men",
-                taken > 0 ? LedgerV2.Red : LedgerV2.Muted);
             y = TableRow(sheet, y, "PACT",
                 book.HasPact(mine, house.Id, day) ? "sworn - a war on either is a war on both"
                     : "none", book.HasPact(mine, house.Id, day) ? LedgerV2.Ink : LedgerV2.Muted);
@@ -218,7 +238,10 @@ namespace LivingCity.UI
             tableLevy = weOwe > 0 ? weOwe : theyOwe;
             var warPending = hasPending && pending == Outfit.Stance.War;
             var ourDays = HouseRelations.Endurance(outfit.Accounts.Safe,
-                Wages.DailyPayroll(director.Roster));
+                director != null && director.Roster != null ? Wages.DailyPayroll(director.Roster) : 0);
+            var grudge = relations != null &&
+                         (relations.Grievance(mine, house.Id) >= rules.ThreatAt ||
+                          relations.Grievance(house.Id, mine) >= rules.ThreatAt);
             var pactStands = book.HasPact(mine, house.Id, day);
             var ours = HouseOps.Look != null && Underworld.Current?.Player != null
                 ? HouseOps.Look(Underworld.Current.Player)
@@ -229,7 +252,7 @@ namespace LivingCity.UI
             string WhyNot(ProposalKind kind) => HouseDiplomacy.WhyNot(kind, current,
                 book.HasOpen(mine, house.Id, kind, day), tableStreets.Count > 0,
                 kind == ProposalKind.JoinWar ? anyWarToJoin : anyThird, pactStands,
-                tableCeiling, weOwe, theyOwe, ourDays, rules);
+                tableCeiling, weOwe, theyOwe, grudge);
 
             var keyW = (w - 5f * 6f) / 6f;
             var keyPitch = TableKeyH + 18f;
@@ -304,8 +327,10 @@ namespace LivingCity.UI
                 switch (kind)
                 {
                     case ProposalKind.OfferTruce:
-                        y = MoneyRow(sheet, y, w, safe,
-                            "clears what they hold against us · at most " + cap + " a day counts" +
+                        y = MoneyRow(sheet, y, w, safe, current == Outfit.Stance.Peace
+                            ? "the ladder's first word: a cooling before threats · they take it " +
+                              "while none of their crews work our streets"
+                            : "clears what they hold against us · at most " + cap + " a day counts" +
                             (theirDays >= 0 && theirDays < rules.MinWarDays
                                 ? " · they are beaten: they cannot refuse"
                                 : theirLosses >= rules.LossesToSueForPeace
@@ -409,22 +434,26 @@ namespace LivingCity.UI
                 y -= TableRowH;
             }
 
-            SizeFamiliesContent(-y + 12f);
+            // The strip is as tall as its rows came to; the drawer sizes to it.
+            var height = TableStripHead - y + TableStripPad;
+            strip.sizeDelta = new Vector2(PageWidth, height);
+            sheet.sizeDelta = new Vector2(w, height - TableStripHead);
+            return height + FamilyGap;
         }
 
         float TableRow(Transform sheet, float y, string label, string value, Color ink)
         {
-            CardRow(sheet, 0f, y, PageWidth, label, value, ink);
+            CardRow(sheet, 0f, y, tableW, label, value, ink);
             return y - TableRowH;
         }
 
         float TableBand(Transform sheet, float y, string label)
         {
             y -= 6f;
-            var head = Line(sheet, LedgerStyle.Condensed, 13f, LedgerV2.Ink, 0f, y, PageWidth,
+            var head = Line(sheet, LedgerStyle.Condensed, 13f, LedgerV2.Ink, 0f, y, tableW,
                 LineBox(13f), label);
             head.characterSpacing = 5f;
-            Block("Band rule", sheet, 0f, y - 19f, PageWidth, 1f, LedgerV2.SheetRule);
+            Block("Band rule", sheet, 0f, y - 19f, tableW, 1f, LedgerV2.SheetRule);
             return y - 26f;
         }
 

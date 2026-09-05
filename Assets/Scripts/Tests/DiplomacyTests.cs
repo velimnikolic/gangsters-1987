@@ -2616,12 +2616,11 @@ namespace LivingCity.Tests
         /// and a war already on are never handed to the player as live keys.</summary>
         static void TheSheetGreysWhatCannotBeSaid(List<string> failures)
         {
-            var rules = HouseRelationsConfig.Default;
             string Why(ProposalKind kind, Stance stance, bool asked = false, bool street = true,
                 bool third = true, bool pact = false, int ceiling = 1_000, int owe = 0,
-                int owed = 0, int days = 5) =>
+                int owed = 0, bool grudge = false) =>
                 HouseDiplomacy.WhyNot(kind, stance, asked, street, third, pact, ceiling, owe,
-                    owed, days, rules);
+                    owed, grudge);
 
             void Expect(string what, string got, string want)
             {
@@ -2632,7 +2631,8 @@ namespace LivingCity.Tests
 
             // At peace: truce and peace have nothing to end; a pact and a joined war are
             // the words of peace; the rest speak when their terms are there.
-            Expect("truce at peace", Why(ProposalKind.OfferTruce, Stance.Peace), HouseDiplomacy.ReasonWeAreAtPeace);
+            Expect("truce at peace, nothing held", Why(ProposalKind.OfferTruce, Stance.Peace), HouseDiplomacy.ReasonWeAreAtPeace);
+            Expect("truce at peace, a threat's worth held", Why(ProposalKind.OfferTruce, Stance.Peace, grudge: true), null);
             Expect("peace at peace", Why(ProposalKind.OfferPeace, Stance.Peace), HouseDiplomacy.ReasonWeAreAtPeace);
             Expect("warning at peace", Why(ProposalKind.Warn, Stance.Peace), null);
             Expect("bill at peace, owed", Why(ProposalKind.Bill, Stance.Peace), null);
@@ -2658,8 +2658,9 @@ namespace LivingCity.Tests
             Expect("terms with no levy", Why(ProposalKind.TributeTerms, Stance.Peace), HouseDiplomacy.ReasonNobodyOwesAnybody);
             Expect("terms we are levied", Why(ProposalKind.TributeTerms, Stance.Peace, owe: 1_500), null);
             Expect("terms we levy", Why(ProposalKind.TributeTerms, Stance.Peace, owed: 1_500), null);
-            Expect("line while rich", Why(ProposalKind.Line, Stance.Peace, days: rules.MinWarDays), HouseDiplomacy.ReasonWeCanAffordToArgue);
-            Expect("line while broke", Why(ProposalKind.Line, Stance.Peace, days: rules.MinWarDays - 1), null);
+            // A line is live whatever our wages: the desk weighs them by its own
+            // estimate, and a house at the threshold can still read broke to it.
+            Expect("line with a street", Why(ProposalKind.Line, Stance.Peace), null);
             Expect("pact that stands", Why(ProposalKind.Pact, Stance.Peace, pact: true), HouseDiplomacy.ReasonAPactStands);
             Expect("pact with no third", Why(ProposalKind.Pact, Stance.Peace, third: false), HouseDiplomacy.ReasonNoThirdHouse);
             Expect("joined war with no war", Why(ProposalKind.JoinWar, Stance.Peace, third: false), HouseDiplomacy.ReasonNoWarToJoin);

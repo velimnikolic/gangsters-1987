@@ -643,19 +643,21 @@ namespace LivingCity.Outfit
         /// </summary>
         public static string WhyNot(ProposalKind kind, Stance stance, bool alreadyAsked,
             bool hasStreet, bool hasThird, bool pactStands, int billCeiling,
-            int tributeOwe, int tributeOwed, int ourEndurance,
-            HouseRelationsConfig relations = null)
+            int tributeOwe, int tributeOwed, bool grudge)
         {
-            relations = relations ?? HouseRelationsConfig.Default;
             if (kind == ProposalKind.None || kind == ProposalKind.Ransom)
                 return ReasonNothingToSay;
             if (alreadyAsked)
                 return ReasonAlreadyAsked;
             switch (kind)
             {
+                // A truce at peace is the ladder's first word - said only when one
+                // house holds a threat's worth against the other (Codex: the desk
+                // takes it while no crew of theirs works our streets).
                 case ProposalKind.OfferTruce:
                     return stance == Stance.War ? null
                         : stance == Stance.Truce ? ReasonATruceStands
+                        : grudge ? null
                         : ReasonWeAreAtPeace;
                 case ProposalKind.OfferPeace:
                     return stance == Stance.War ? ReasonAWarEndsInATruce
@@ -672,10 +674,10 @@ namespace LivingCity.Outfit
                     return stance == Stance.War || (tributeOwe <= 0 && tributeOwed <= 0)
                         ? ReasonNobodyOwesAnybody
                         : null;
+                // A line is theirs to weigh: the desk reads our wages by its own
+                // estimate, not the true figure, so the key stays live (Codex).
                 case ProposalKind.Line:
-                    return !hasStreet ? ReasonNoStreetOfOurs
-                        : ourEndurance >= relations.MinWarDays ? ReasonWeCanAffordToArgue
-                        : null;
+                    return hasStreet ? null : ReasonNoStreetOfOurs;
                 case ProposalKind.Pact:
                     return stance != Stance.Peace ? ReasonNotAtPeaceWithThem
                         : pactStands ? ReasonAPactStands
