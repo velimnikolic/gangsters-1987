@@ -61,6 +61,7 @@ namespace AirportDemo
         void BuildWear()
         {
             BuildPours();
+            BuildApronJoints();
             BuildRubberTracks();
             BuildStands();
             BuildPatches();
@@ -114,6 +115,20 @@ namespace AirportDemo
         }
 
         // ------------------------------------------------------------ tyre marks
+
+        // Fine expansion joints establish scale without the high-contrast 30 m
+        // checkerboard of the old pour patches. One mesh for the entire apron.
+        void BuildApronJoints()
+        {
+            var joints = new Painter();
+            float y = AirportSpec.PaveY + 0.006f;
+            const float spacing = 7.5f, halfWidth = 0.022f;
+            for (float x = AirportSpec.ApronX0 + spacing; x < AirportSpec.ApronX1; x += spacing)
+                joints.Rect(x - halfWidth, x + halfWidth, AirportSpec.ApronZ0, AirportSpec.ApronZ1, y);
+            for (float z = AirportSpec.ApronZ0 + spacing; z < AirportSpec.ApronZ1; z += spacing)
+                joints.Rect(AirportSpec.ApronX0, AirportSpec.ApronX1, z - halfWidth, z + halfWidth, y);
+            joints.Emit("Apron expansion joints", _pourDark, _apronRoot);
+        }
 
         /// <summary>The black off the tyres where an aeroplane turns: the runway ends,
         /// where a departure lines up and a landing turns off, and the connectors. Not

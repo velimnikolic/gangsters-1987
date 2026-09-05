@@ -18,7 +18,7 @@ namespace LivingCity.EditorTools
     /// 2.5 m Police Station grid, and the two furnished floors fit inside that shell.
     /// Parking belongs to PolicePrecinctBlock and is surface-only.
     /// </summary>
-    public static class SyntyPolicePrecinctCompactKit
+    public static partial class SyntyPolicePrecinctCompactKit
     {
         public const string CompactPath =
             "Assets/CityKit/PolicePrecinct/building-policestation-compact.prefab";
@@ -117,6 +117,7 @@ namespace LivingCity.EditorTools
                 BuildRoof(roof);
                 BuildLighting(lighting);
                 BuildExteriorDetail(exterior, roof);
+                RepairPropSupport(root);
 
                 var markers = Group(root.transform, "90_FUNCTIONAL PLACES");
                 var entrance = Marker(markers, "PUBLIC ENTRANCE",

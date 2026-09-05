@@ -92,6 +92,15 @@ every signal of the def nearest its threshold with its state, the gate when shut
 words, the broker's door and its watch, whose the line is, and the last three wire lines. The
 probe (`gangsters_connection_probe`) prints the same words.
 
+## The bench lever - F3
+
+The mini core's player is a lone Don, and a house with no lieutenant is told nothing; the
+whole path costs about $86,000 and the street wants a name. **F3 in the ledger** puts the
+house in the state the street wants - a lieutenant (it seeds the sixty if there is none),
+$150,000 in the safe, our name in this morning's paper - and nothing else: the pot fills at
+the next midnight and the man's card comes at the six o'clock cut, so what is watched is the
+ordinary path. F2 alone seeds the men without the money or the name.
+
 ## Adding a def
 
 A funeral, a petition, a rat, a judge — an `EventDef` with `Applies`, `Score`, `Signals`,

@@ -18,7 +18,7 @@ namespace HarborDemo
     // builder.
     public sealed class HarborTruck
     {
-        const float RoadSpeed = 9f, YardSpeed = 4.5f;
+        const float RoadSpeed = 7f, YardSpeed = 3.2f;
         const float Accel = 2.5f, Brake = 3.5f;
         const float TurnRate = 90f;
 
@@ -27,6 +27,8 @@ namespace HarborDemo
         public GameObject Prefab;
         public List<GameObject> Prefabs;
         public Transform Parent;
+        public System.Func<HarborTruck, float> TrafficSpeedLimit;
+        public float HalfLength { get; private set; } = 5f;
         public List<Vector3> Route = new List<Vector3>();
         public int DockNode = -1;            // where it stops and opens up
         public float DockStay = 22f;
@@ -109,6 +111,14 @@ namespace HarborDemo
             float dist = to.magnitude;
             bool stopHere = _node + 1 == DockNode || _node + 1 == Route.Count - 1;
             float cap = _node + 1 >= YardFrom && _node + 1 <= YardTo ? YardSpeed : RoadSpeed;
+            // Brake into corners before steering; a loaded lorry should not whip through a gate.
+            if (_node + 2 < Route.Count)
+            {
+                float turn = Vector3.Angle(to, Route[_node + 2] - target);
+                float cornerCap = Mathf.Lerp(cap, 1.25f, Mathf.InverseLerp(15f, 80f, turn));
+                cap = Mathf.Min(cap, Mathf.Sqrt(cornerCap * cornerCap + 2f * Brake * Mathf.Max(0f, dist - 3f)));
+            }
+            if (TrafficSpeedLimit != null) cap = Mathf.Min(cap, TrafficSpeedLimit(this));
             float want = stopHere ? Mathf.Min(cap, Mathf.Sqrt(2f * Brake * Mathf.Max(0f, dist - 0.4f))) : cap;
             // a waypoint reached - or overshot: a lorry that has swung past one (the
             // point is behind her, and near) takes the next rather than circling back
@@ -139,6 +149,7 @@ namespace HarborDemo
             go.name = "Truck";
             HarborKit.StripBehaviours(go, keepAnimator: false);
             _tf = go.transform;
+            HalfLength = Mathf.Max(2f, HarborKit.PrefabBounds(prefab).size.z * 0.5f);
             _doorL = HarborKit.FindDeep(_tf, "Door_L");
             _doorR = HarborKit.FindDeep(_tf, "Door_R");
             _wheels.Read(_tf);

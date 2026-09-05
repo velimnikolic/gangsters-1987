@@ -152,25 +152,27 @@ namespace HarborDemo.EditorTools
         /// roof - then the wings, the stairs, the boats, the funnel and the mast.</summary>
         static void Deckhouse(Transform t, HarborShipSpec s, Paints p)
         {
-            var wall = P(Wall);
-            var window = P(WallWindow);
-            var door = P(WallDoor);
             float hw = s.HouseWidth * 0.5f;
-            var hcentre = new Vector3(0f, 0f, (s.HouseZ0 + s.HouseZ1) * 0.5f);
-
+            float centreZ = (s.HouseZ0 + s.HouseZ1) * 0.5f;
             for (int storey = 0; storey < s.Storeys; storey++)
             {
                 float y = s.DeckY + storey * HarborShipSpec.Course;
-                var f0 = new Vector3(-hw, y, s.HouseZ1); var f1 = new Vector3(hw, y, s.HouseZ1);
-                var b0 = new Vector3(-hw, y, s.HouseZ0); var b1 = new Vector3(hw, y, s.HouseZ0);
-                bool ground = storey == 0;
-                WallRun(t, window ?? wall, f0, f1, hcentre, p.House,
-                    ground && door != null ? (i => i == 1 ? door : null) : (System.Func<int, GameObject>)null);
-                WallRun(t, window ?? wall, f0, b0, hcentre, p.House, ground ? (i => i == 0 ? wall : null) : (System.Func<int, GameObject>)null);
-                WallRun(t, window ?? wall, f1, b1, hcentre, p.House, ground ? (i => i == 0 ? wall : null) : (System.Func<int, GameObject>)null);
-                WallRun(t, wall, b0, b1, hcentre, p.House,
-                    ground && door != null ? (i => i == 1 ? door : null) : (System.Func<int, GameObject>)null);
-                Quad(t, "housefloor", -hw, hw, s.HouseZ0, s.HouseZ1, y + HarborShipSpec.Course, p.House);
+                bool bridge = storey == s.Storeys - 1;
+                Block(t, new Vector3(0f, y, centreZ), new Vector3(s.HouseWidth, HarborShipSpec.Course - 0.12f, s.HouseLength), p.House);
+                Block(t, new Vector3(0f, y + HarborShipSpec.Course - 0.12f, centreZ), new Vector3(s.HouseWidth + 0.45f, 0.12f, s.HouseLength + 0.45f), p.Trim);
+                // A wheelhouse has a continuous lookout band, accommodation has small windows.
+                int windows = bridge ? 7 : 4;
+                for (int k = 0; k < windows; k++)
+                {
+                    float x = Mathf.Lerp(-hw + 0.9f, hw - 0.9f, (k + 0.5f) / windows);
+                    Mark(t, "Forward bridge glazing", new Vector3(x, y + 1.75f, s.HouseZ1 + 0.015f), Vector3.forward,
+                        bridge ? s.HouseWidth / windows - 0.2f : 0.65f, bridge ? 1.12f : 0.7f, p.Glass);
+                }
+                for (int side = -1; side <= 1; side += 2)
+                    for (int k = 0; k < 4; k++)
+                        Mark(t, "Accommodation glazing", new Vector3(side * (hw + 0.015f), y + 1.75f, s.HouseZ0 + 1.2f + k * (s.HouseLength - 2.4f) / 3f),
+                            Vector3.right * side, bridge ? 1.25f : 0.65f, bridge ? 1.12f : 0.7f, p.Glass);
+                Block(t, new Vector3(0f, y + 2.5f, s.HouseZ1 + 0.35f), new Vector3(s.HouseWidth + 0.5f, 0.12f, 0.7f), p.Trim);
             }
 
             // the monkey island: railed rather than parapeted, so the mast and funnel

@@ -23,7 +23,7 @@ namespace RoadDemo
 
         public static GameObject StandSheet(
             ResidentialFacade.Sheet sheet, Transform parent, int way,
-            Func<GameObject, Transform, GameObject> raise)
+            Func<GameObject, Transform, GameObject> raise, bool dressStorefronts = true)
         {
             if (sheet == null) throw new ArgumentNullException(nameof(sheet));
             if (sheet.Unit == null)
@@ -84,10 +84,10 @@ namespace RoadDemo
 
                 Colourway(building, way);
                 var report = new Stood();
-                foreach (int _ in StorefrontDressingSteps(
+                if (dressStorefronts) foreach (int _ in StorefrontDressingSteps(
                     building, sheet.Unit, "sheet:" + sheet.Unit.Name,
                     sheet.Seed, null, report)) { }
-                int requiredBays = sheet.Unit.ShopBays?.Length ?? 0;
+                int requiredBays = dressStorefronts ? sheet.Unit.ShopBays?.Length ?? 0 : 0;
                 int requiredStorefronts = 0;
                 for (int i = 0; i < requiredBays; i++)
                     if (sheet.Unit.ShopBays[i].Door.Leaves > 0) requiredStorefronts++;
@@ -117,7 +117,7 @@ namespace RoadDemo
                         $"({sheet.Unit.CW * ResidentialFacade.Cell + sheet.Unit.Over[1]}, " +
                         $"{sheet.Unit.MaxH}, " +
                         $"{sheet.Unit.CD * ResidentialFacade.Cell + sheet.Unit.Over[2]}).");
-                ResidentialUnits.RememberGenerated(sheet.Unit);
+                if (dressStorefronts) ResidentialUnits.RememberGenerated(sheet.Unit);
                 return building;
             }
             catch

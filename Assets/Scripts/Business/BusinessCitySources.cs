@@ -164,6 +164,13 @@ namespace LivingCity.Business
             var along = side == 0 || side == 2
                 ? spot.I + (spot.CW - 1) / 2
                 : spot.J + (spot.CD - 1) / 2;
+            if (spot.Unit.Name == "gym")
+            {
+                float cell = ResidentialLot.Cell;
+                var opening = AmenityDoor(new Rect(spot.I * cell, spot.J * cell,
+                    spot.CW * cell, spot.CD * cell), spot, side);
+                along = Mathf.FloorToInt((side == 0 || side == 2 ? opening.x : opening.z) / cell);
+            }
             var i = side switch
             {
                 1 => spot.I + spot.CW,
@@ -196,6 +203,26 @@ namespace LivingCity.Business
             }
 
             return false;
+        }
+
+        /// <summary>The venue's real opening, in the same frame as its footprint.</summary>
+        public static Vector3 AmenityDoor(Rect local, ResidentialLot.Spot spot, int side)
+        {
+            if (spot.Unit.Name != "gym") return EdgeMidpoint(local, side);
+            int sourceSide = (side + spot.Yaw / 90) % 4;
+            if (sourceSide != 0 && sourceSide != 3) return EdgeMidpoint(local, side);
+            float size = ResidentialGym.Cells * ResidentialLot.Cell;
+            var point = sourceSide == 0 ? new Vector3(size * .5f, 0f, 0f)
+                : new Vector3(0f, 0f, ResidentialGym.RampCentreZ);
+            var offset = spot.Yaw switch
+            {
+                90 => new Vector3(0f, 0f, size),
+                180 => new Vector3(size, 0f, size),
+                270 => new Vector3(size, 0f, 0f),
+                _ => Vector3.zero,
+            };
+            return new Vector3(local.xMin, 0f, local.yMin) + offset +
+                Quaternion.Euler(0f, spot.Yaw, 0f) * point;
         }
 
         /// <summary>The middle of one edge of a rectangle: where a gate or a door stands.</summary>

@@ -158,7 +158,7 @@ namespace LivingCity.Business
         /// <summary>The pavement in front of a site's door. Stepped out along the entrance's
         /// own outward normal when the plan gave one; away from the middle of the footprint
         /// when it did not, which is the same direction for any door on a facade.</summary>
-        static Vector3 Doorstep(BusinessSite site, float y)
+        public static Vector3 Doorstep(BusinessSite site, float y = 0f)
         {
             var door = new Vector3(site.Approach.X, y, site.Approach.Z);
             var outward = new Vector3(site.ApproachOutward.X, 0f, site.ApproachOutward.Z);

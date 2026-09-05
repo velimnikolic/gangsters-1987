@@ -25,7 +25,7 @@ namespace RoadDemo
         /// Bump when the meaning of the same ResidentialLot input changes. The plan hash
         /// catches data changes; this catches an optimiser/composer interpretation change.
         /// </summary>
-        public const int GeneratorVersion = 10;
+        public const int GeneratorVersion = 13;
 
         public string Id { get; private set; }
         public string Name { get; private set; }
@@ -137,6 +137,7 @@ namespace RoadDemo
             Mix(ref h, Mathf.RoundToInt(bounds.height * 1000f));
             if (plan == null) return h;
 
+            Mix(ref h, plan.PavementCells);
             Mix(ref h, plan.W); Mix(ref h, plan.D); Mix(ref h, (int)plan.Klass);
             Mix(ref h, plan.YardBlock ? 1 : 0); Mix(ref h, plan.Artery); Mix(ref h, plan.Seed);
             Mix(ref h, plan.Lone ? 1 : 0);

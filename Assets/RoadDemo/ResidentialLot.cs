@@ -118,6 +118,8 @@ namespace RoadDemo
             /// <summary>This plan is one complete gym/car-yard/skatepark lot rather than a
             /// mixed residential block. Those lots keep only the street pavement ring.</summary>
             public bool YardBlock;
+            // A complete venue may use a narrower public ring than a mixed city block.
+            public int PavementCells = Walk;
             public bool[] Street = new bool[4];    // which sides have a road along them
             public EdgeRole[] Role = new EdgeRole[4];
             public int Artery = -1;                // the side the shops look at
@@ -142,8 +144,8 @@ namespace RoadDemo
             public List<string> Refused = new List<string>();
             public Measures M = new Measures();
 
-            public int Inner => W - 2 * Walk;
-            public int InnerD => D - 2 * Walk;
+            public int Inner => W - 2 * PavementCells;
+            public int InnerD => D - 2 * PavementCells;
             public bool Clean => Faults.Count == 0;
         }
 
@@ -482,14 +484,14 @@ namespace RoadDemo
             var plan = new Plan
             {
                 W = w, D = d, Seed = seed, Artery = 0, Klass = Klass.Corner,
-                YardBlock = true,
+                YardBlock = true, PavementCells = YardPavementCells(unitName),
             };
             for (int s = 0; s < 4; s++) plan.Street[s] = streets == null || streets[s];
             Roles(plan);
             plan.Ground = new Use[w, d];
             for (int i = 0; i < w; i++)
                 for (int j = 0; j < d; j++)
-                    if (i < Walk || j < Walk || i >= w - Walk || j >= d - Walk)
+                    if (i < plan.PavementCells || j < plan.PavementCells || i >= w - plan.PavementCells || j >= d - plan.PavementCells)
                         plan.Ground[i, j] = Use.Walkway;
 
             var unit = ResidentialUnits.All.FirstOrDefault(u => u.Name == unitName);
@@ -511,8 +513,8 @@ namespace RoadDemo
                 var turn = Turn.Of(unit, yaw);
                 if (turn.CW + 2 * clear > plan.Inner ||
                     turn.CD + 2 * clear + parking > plan.InnerD) continue;
-                int i = Walk + clear + (plan.Inner - turn.CW - 2 * clear) / 2;
-                int j = Walk + clear + (plan.InnerD - turn.CD - 2 * clear - parking) / 2;
+                int i = plan.PavementCells + clear + (plan.Inner - turn.CW - 2 * clear) / 2;
+                int j = plan.PavementCells + clear + (plan.InnerD - turn.CD - 2 * clear - parking) / 2;
                 var spot = new Spot { Unit = unit, Yaw = yaw, I = i, J = j, CW = turn.CW, CD = turn.CD };
                 if (best == null || rng.Next(2) == 0) best = spot;
             }
@@ -535,8 +537,8 @@ namespace RoadDemo
 
             // everything the lot does not stand on is paving, not yard: this is a public
             // place, and its ground is walked on from every side
-            for (int i = Walk; i < w - Walk; i++)
-                for (int j = Walk; j < d - Walk; j++)
+            for (int i = plan.PavementCells; i < w - plan.PavementCells; i++)
+                for (int j = plan.PavementCells; j < d - plan.PavementCells; j++)
                     if (plan.Ground[i, j] == Use.Empty) plan.Ground[i, j] = Use.Paved;
 
             Measure(plan);
@@ -1202,10 +1204,10 @@ namespace RoadDemo
 
         static (int, int) EdgeCell(Plan plan, int side, int at) => side switch
         {
-            0 => (at, Walk),
-            2 => (at, plan.D - Walk - 1),
-            1 => (plan.W - Walk - 1, at),
-            _ => (Walk, at),
+            0 => (at, plan.PavementCells),
+            2 => (at, plan.D - plan.PavementCells - 1),
+            1 => (plan.W - plan.PavementCells - 1, at),
+            _ => (plan.PavementCells, at),
         };
 
         static (int, int) RingCell(Plan plan, int side, int at) => side switch
@@ -1740,10 +1742,12 @@ namespace RoadDemo
         public static int YardParkingWidth(ResidentialUnit unit) =>
             unit != null && unit.Name == "caryard" ? 6 : 0;
 
+        public static int YardPavementCells(string unitName) => unitName == "gym" ? 1 : Walk;
+
         public static void YardDimensions(ResidentialUnit unit, out int w, out int d)
         {
             if (unit == null) { w = d = 0; return; }
-            int border = 2 * (Walk + YardClearance(unit));
+            int border = 2 * (YardPavementCells(unit.Name) + YardClearance(unit));
             w = Math.Max(unit.CW, YardParkingWidth(unit)) + border;
             d = unit.CD + border + YardParkingDepth(unit);
         }
@@ -1960,7 +1964,7 @@ namespace RoadDemo
             int clear = LotClearance(plan, spot.Unit);
             for (int i = spot.I - clear; i < spot.I + turn.CW + clear; i++)
                 for (int j = spot.J - clear; j < spot.J + turn.CD + clear; j++)
-                    if (i >= Walk && j >= Walk && i < plan.W - Walk && j < plan.D - Walk &&
+                    if (i >= plan.PavementCells && j >= plan.PavementCells && i < plan.W - plan.PavementCells && j < plan.D - plan.PavementCells &&
                         plan.Ground[i, j] == Use.Empty) plan.Ground[i, j] = Use.Paved;
             plan.Spots.Add(spot);
         }
@@ -2128,10 +2132,10 @@ namespace RoadDemo
         /// along it.</summary>
         static (int, int) Into(Plan plan, int side, int at, int k) => side switch
         {
-            0 => (at, Walk + k),
-            2 => (at, plan.D - Walk - 1 - k),
-            1 => (plan.W - Walk - 1 - k, at),
-            _ => (Walk + k, at),
+            0 => (at, plan.PavementCells + k),
+            2 => (at, plan.D - plan.PavementCells - 1 - k),
+            1 => (plan.W - plan.PavementCells - 1 - k, at),
+            _ => (plan.PavementCells + k, at),
         };
 
         // ------------------------------------------------------------------ the inside
@@ -2275,13 +2279,13 @@ namespace RoadDemo
             if (side < 0 || side >= 4 || !plan.Street[side]) return 0;
             int length = side == 0 || side == 2 ? plan.W : plan.D;
             int built = 0;
-            for (int at = Walk; at < length - Walk; at++)
+            for (int at = plan.PavementCells; at < length - plan.PavementCells; at++)
             {
                 var (i, j) = EdgeCell(plan, side, at);
                 var use = plan.Ground[i, j];
                 if (use == Use.Building || use == Use.Forecourt || use == Use.Cafe) built++;
             }
-            return built * 100 / Math.Max(1, length - 2 * Walk);
+            return built * 100 / Math.Max(1, length - 2 * plan.PavementCells);
         }
 
         static void Judge(Plan plan)
@@ -2295,8 +2299,8 @@ namespace RoadDemo
             {
                 var turn = Turn.Of(spot.Unit, spot.Yaw);
 
-                if (spot.I < Walk || spot.J < Walk ||
-                    spot.I + turn.CW > plan.W - Walk || spot.J + turn.CD > plan.D - Walk)
+                if (spot.I < plan.PavementCells || spot.J < plan.PavementCells ||
+                    spot.I + turn.CW > plan.W - plan.PavementCells || spot.J + turn.CD > plan.D - plan.PavementCells)
                     plan.Faults.Add($"OffBlock: {spot} runs off the block");
 
                 for (int u = 0; u < turn.CW; u++)
@@ -2351,7 +2355,7 @@ namespace RoadDemo
                         bool foot = i >= spot.I && i < spot.I + turn.CW &&
                                     j >= spot.J && j < spot.J + turn.CD;
                         if (foot) continue;
-                        if (i < Walk || j < Walk || i >= plan.W - Walk || j >= plan.D - Walk)
+                        if (i < plan.PavementCells || j < plan.PavementCells || i >= plan.W - plan.PavementCells || j >= plan.D - plan.PavementCells)
                         {
                             plan.Faults.Add($"AmenityEdge: {spot.Unit.Name} reaches the pavement at ({i},{j})");
                             continue;
@@ -2390,7 +2394,7 @@ namespace RoadDemo
             if (plan.Artery >= 0)
             {
                 int length = plan.Artery == 0 || plan.Artery == 2 ? plan.W : plan.D;
-                for (int at = Walk; at < length - Walk; at++)
+                for (int at = plan.PavementCells; at < length - plan.PavementCells; at++)
                 {
                     var (i, j) = EdgeCell(plan, plan.Artery, at);
                     if (plan.Ground[i, j] == Use.Parking)
@@ -2421,7 +2425,7 @@ namespace RoadDemo
             // Every corner a block of this class is built on carries a building. A corner
             // block is one building and its garden, a row keeps its open ends: asking all
             // four of those is asking for a fault that is really a misreading of the class.
-            int lo = Walk, hi = plan.W - Walk - 1, bo = Walk, to = plan.D - Walk - 1;
+            int lo = plan.PavementCells, hi = plan.W - plan.PavementCells - 1, bo = plan.PavementCells, to = plan.D - plan.PavementCells - 1;
             int built = 0, offered = 0;
             foreach (var (i, j, a, b) in new[]
                      { (lo, bo, 0, 3), (hi, bo, 0, 1), (hi, to, 2, 1), (lo, to, 2, 3) })

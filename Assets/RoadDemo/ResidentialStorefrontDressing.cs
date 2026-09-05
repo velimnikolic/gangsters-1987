@@ -138,6 +138,7 @@ namespace RoadDemo
             storefrontShellMaterial ??= DemoAssetLoad.Load<Material>(StorefrontShellMaterial);
             rooms.Configure(layout.Openings, storefrontShellMaterial);
             BuildLiveStorefronts(building, unit, layout.Openings, stood);
+            ReserveMeasuredBusinessAccess(building);
 
             stood.Storefronts += layout.Openings.Length;
             yield return 0;

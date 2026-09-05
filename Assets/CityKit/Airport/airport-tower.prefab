@@ -74,11 +74,9 @@ MeshRenderer:
   - {fileID: 2100000, guid: d72985afb4582e54ab1fca2dcf8306ae, type: 2}
   - {fileID: 2100000, guid: d19b08ea456bcea47b18eb357e255f6e, type: 2}
   - {fileID: 2100000, guid: 056e443ee61d0da4f82334b0b2ae7fc3, type: 2}
-  - {fileID: 2100000, guid: 38cfb343e534b644d8b71e075513f4ec, type: 2}
-  - {fileID: 2100000, guid: 80a6e8e32693e944da1cc900a775fdb1, type: 2}
-  - {fileID: 2100000, guid: 740559fe49074f7468c1c9e3402e39b7, type: 2}
-  - {fileID: 2100000, guid: 3e8ef2f4bd3e8ce4bade34a2338b73fa, type: 2}
-  - {fileID: 2100000, guid: c37eaa74936027945bcfbb3858898a8f, type: 2}
+  - {fileID: 2100000, guid: 37556f6d819a24749b88b11a35056ef8, type: 2}
+  - {fileID: 2100000, guid: 2fd7a8f349f3f485691bd2c22f572faf, type: 2}
+  - {fileID: 2100000, guid: 58ef6130b908a8a4c9d0e3d42ad0ad9e, type: 2}
   - {fileID: 2100000, guid: 750faa7f45b734146a65d3123d70ec2c, type: 2}
   - {fileID: 2100000, guid: 1cf72a917d242fa449560e1a76d62a92, type: 2}
   m_StaticBatchInfo:
@@ -123,5 +121,5 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 12.255611, y: 25.46, z: 9.271821}
+  m_Size: {x: 12.255611, y: 25.46, z: 9.5}
   m_Center: {x: 0, y: 12.729999, z: 0}

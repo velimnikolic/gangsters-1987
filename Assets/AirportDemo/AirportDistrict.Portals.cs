@@ -96,6 +96,21 @@ namespace AirportDemo
                         else b.Encapsulate(r.bounds);
                     }
                     if (!started || b.size.y < 1.5f) continue;
+                    var facade = t.Find("Apron facade anchor");
+                    if (facade != null)
+                    {
+                        // The canopy is overhead; blocking its renderer bounds would
+                        // put the boarding destination inside an invisible obstacle.
+                        var centre = facade.localPosition + Vector3.back * (AirportSpec.TerminalDepth * 0.5f);
+                        var footprint = new Bounds(t.TransformPoint(centre), Vector3.zero);
+                        for (int x = -1; x <= 1; x += 2)
+                            for (int z = -1; z <= 1; z += 2)
+                                footprint.Encapsulate(t.TransformPoint(centre + new Vector3(
+                                    x * AirportSpec.TerminalWidth * 0.5f, 0,
+                                    z * AirportSpec.TerminalDepth * 0.5f)));
+                        b = new Bounds(new Vector3(footprint.center.x, b.center.y, footprint.center.z),
+                            new Vector3(footprint.size.x, b.size.y, footprint.size.z));
+                    }
                     host.Blocked(b, t.name);
                     n++;
                 }

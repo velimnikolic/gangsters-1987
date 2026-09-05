@@ -147,7 +147,7 @@ namespace RoadDemo
                     ? "SM_Veh_Pickup_01_Preset_Police - Surface Supervisor"
                     : $"SM_Veh_Sedan_01_Preset_Police - Surface Patrol {i + 1:00}";
                 var at = stalls[i];
-                var go = Composer.Sit(path, fleet, at.x, at.z, ParkingYaw, 0.02f);
+                var go = Composer.Sit(path, fleet, at.x, at.z, ParkingYaw, SurfaceY);
                 if (go == null) continue;
                 go.name = name;
                 SetStatic(go);
@@ -166,7 +166,7 @@ namespace RoadDemo
             for (int i = 0; i < mouths.Count; i++)
             {
                 var at = mouths[i];
-                var gate = Composer.Sit(SurfaceBarrier, gates, at.x, at.z, 90f, 0.02f);
+                var gate = Composer.Sit(SurfaceBarrier, gates, at.x, at.z, 90f, SurfaceY);
                 if (gate == null) continue;
                 gate.name = i == 0
                     ? "SURFACE PARKING ENTRY BARRIER"
@@ -176,7 +176,7 @@ namespace RoadDemo
 
                 foreach (float side in new[] { -1.9f, 1.9f })
                 {
-                    var cone = Composer.Sit(Cone, gates, at.x - 1.1f, at.z + side, 0f, 0.02f);
+                    var cone = Composer.Sit(Cone, gates, at.x - 1.1f, at.z + side, 0f, SurfaceY);
                     if (cone == null) continue;
                     cone.name = "SM_Prop_Cone_01 - surface parking gate safety";
                     SetStatic(cone);

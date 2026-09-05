@@ -40,7 +40,7 @@ namespace HarborDemo
         /// <summary>The boom's sea end - out over a ship lying alongside - and its
         /// back end over the yard.</summary>
         public const float SeaTipZ = -23f, BackTipZ = 31f;
-        public const float BoomY = 26f;
+        public const float BoomY = 31f;
         public const float LegHalfX = 4.5f;
         /// <summary>How far the gantry may travel either side of its berth.</summary>
         public const float TravelHalf = 34f;
@@ -52,7 +52,7 @@ namespace HarborDemo
         /// low enough for it and the spreader to pass over them.</summary>
         const float TrolleyY = BoomY - 1.4f, TieY = BoomY - 3.5f;
         /// <summary>A container's height: the spreader rides the box's top, not its foot.</summary>
-        const float BoxTop = 3.2f;
+        const float BoxTop = HarborShipSpec.BoxHeight + 0.025f;
 
         const float GantryCreep = 7f, TrolleyCreep = 11f, HoistCreep = 7f;
         const float GantryRun = 12f, TrolleyRun = 18f, HoistRun = 12f;
@@ -61,7 +61,6 @@ namespace HarborDemo
 
         Transform _gantry, _trolley, _spreader;
         readonly Transform[] _falls = new Transform[4];
-        float _fallRest = 3f;                 // the rope prefab's own length
         float _groundY;
         float _x, _z, _y;                     // gantry along the quay, trolley across, spreader top
         float _minX, _maxX;
@@ -75,14 +74,15 @@ namespace HarborDemo
         // One locker for the whole port: three cranes in the same livery, and three
         // materials rather than twelve.
 
-        static Material _paint, _steel, _dark, _cab;
+        static Material _paint, _steel, _dark, _cab, _glass;
 
         static void LoadPaint()
         {
             if (_paint != null) return;
-            _paint = HarborKit.Flat("CranePaint", new Color(0.72f, 0.31f, 0.13f), 0.25f);
-            _steel = HarborKit.Flat("CraneSteel", new Color(0.44f, 0.46f, 0.49f), 0.35f);
+            _paint = HarborKit.Flat("CranePaint", new Color(0.56f, 0.38f, 0.17f), 0.25f);
+            _steel = HarborKit.Flat("CraneSteel", new Color(0.27f, 0.30f, 0.31f), 0.35f);
             _dark = HarborKit.Flat("CraneRail", new Color(0.17f, 0.17f, 0.18f), 0.2f);
+            _glass = HarborKit.Flat("Crane glazing", new Color(0.07f, 0.16f, 0.19f), 0.65f);
             _cab = HarborKit.Flat("CraneCab", new Color(0.82f, 0.80f, 0.74f), 0.3f);
         }
 
@@ -114,32 +114,70 @@ namespace HarborDemo
             root.localPosition = new Vector3(berthX, groundY, 0f);
             crane._gantry = root;
 
-            // four legs on the two rails: bogies at their feet, a sill and a tie across
+            // Tapered portal frames leave the transfer lane open under the crane.
             foreach (float lz in new[] { SeaRailZ, LandRailZ })
             {
-                foreach (float lx in new[] { -LegHalfX, LegHalfX })
+                foreach (float side in new[] { -1f, 1f })
                 {
-                    Member(root, pillar, new Vector3(lx, BoomY * 0.5f, lz), new Vector3(1.1f, BoomY, 1.1f), _paint, "Leg");
-                    Member(root, pillar, new Vector3(lx, 0.5f, lz), new Vector3(1.7f, 1f, 2.6f), _steel, "Bogie");
+                    float lx = side * LegHalfX;
+                    Strut(root, pillar, new Vector3(lx, 1.1f, lz), new Vector3(side * 3.2f, BoomY, lz),
+                        1.25f, _paint, "Tapered portal leg");
+                    Member(root, pillar, new Vector3(lx, 0.7f, lz), new Vector3(4.8f, 1.1f, 1.7f), _steel, "Travelling bogie");
+                    for (int wheel = 0; wheel < 4; wheel++)
+                    {
+                        var tyre = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                        Object.Destroy(tyre.GetComponent<Collider>());
+                        tyre.name = "Rail wheel";
+                        tyre.transform.SetParent(root, false);
+                        tyre.transform.localPosition = new Vector3(lx - 1.65f + wheel * 1.1f, 0.42f, lz);
+                        tyre.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                        tyre.transform.localScale = new Vector3(0.8f, 0.25f, 0.8f);
+                        Paint(tyre, _dark);
+                    }
+                    Strut(root, pillar, new Vector3(lx, BoomY - 8f, lz), new Vector3(0f, TieY, lz),
+                        0.55f, _paint, "Portal knee brace");
                 }
-                Member(root, pillar, new Vector3(0f, 2.6f, lz), new Vector3(LegHalfX * 2f, 0.8f, 0.8f), _paint, "Sill");
-                Member(root, pillar, new Vector3(0f, TieY, lz), new Vector3(LegHalfX * 2f + 1.1f, 1.2f, 1.2f), _paint, "PortalTie");
-                Strut(root, pillar, new Vector3(-LegHalfX, 3.4f, lz), new Vector3(LegHalfX, TieY - 2.5f, lz), 0.5f, _steel, "Brace");
+                Member(root, pillar, new Vector3(0f, TieY, lz), new Vector3(8f, 1.5f, 1.5f), _paint, "Portal header");
             }
-            // the boom: two girders with ties between them
+            // Deep Warren trusses: the boom reads as structural steel even at district scale.
             float boomMid = (SeaTipZ + BackTipZ) * 0.5f, boomLen = BackTipZ - SeaTipZ;
-            foreach (float gx in new[] { -LegHalfX, LegHalfX })
-                Member(root, pillar, new Vector3(gx, BoomY, boomMid), new Vector3(1.1f, 1.6f, boomLen), _paint, "Girder");
-            for (float bz = SeaTipZ + 3f; bz < BackTipZ; bz += 6f)
-                Member(root, pillar, new Vector3(0f, BoomY + 0.9f, bz), new Vector3(LegHalfX * 2f, 0.4f, 0.4f), _steel, "BoomTie");
-            // the apex over the landward legs and the stays that carry the boom
-            var apex = new Vector3(0f, BoomY + 10f, LandRailZ);
-            Member(root, pillar, new Vector3(0f, BoomY + 5f, LandRailZ), new Vector3(1f, 10f, 1f), _paint, "Apex");
-            Strut(root, pillar, apex, new Vector3(0f, BoomY + 0.9f, SeaTipZ + 2f), 0.45f, _steel, "ForeStay");
-            Strut(root, pillar, apex, new Vector3(0f, BoomY + 0.9f, BackTipZ - 2f), 0.45f, _steel, "BackStay");
-            // the machinery house, back over the yard between the legs
-            Member(root, pillar, new Vector3(0f, BoomY + 2.6f, (LandRailZ + BackTipZ) * 0.5f),
-                   new Vector3(LegHalfX * 2f, 3.6f, 8f), _cab, "MachineryHouse");
+            foreach (float gx in new[] { -3.2f, 3.2f })
+            {
+                foreach (float gy in new[] { BoomY, BoomY + 3.6f })
+                    Member(root, pillar, new Vector3(gx, gy, boomMid), new Vector3(0.6f, 0.65f, boomLen), _paint, "Truss chord");
+                int panel = 0;
+                for (float z = SeaTipZ; z < BackTipZ - 0.01f; z += 4.5f, panel++)
+                {
+                    float end = Mathf.Min(z + 4.5f, BackTipZ);
+                    Strut(root, pillar, new Vector3(gx, BoomY + (panel % 2 == 0 ? 0f : 3.6f), z),
+                        new Vector3(gx, BoomY + (panel % 2 == 0 ? 3.6f : 0f), end), 0.26f, _paint, "Truss diagonal");
+                }
+                // Maintenance walk and handrails along the outside of the boom.
+                Member(root, pillar, new Vector3(gx * 1.23f, BoomY + 0.5f, boomMid), new Vector3(0.9f, 0.12f, boomLen), _steel, "Catwalk");
+                Member(root, pillar, new Vector3(gx * 1.37f, BoomY + 1.6f, boomMid), new Vector3(0.07f, 0.07f, boomLen), _steel, "Catwalk rail");
+                for (float z = SeaTipZ; z <= BackTipZ; z += 3f)
+                    Member(root, pillar, new Vector3(gx * 1.37f, BoomY + 1.05f, z), new Vector3(0.07f, 1.1f, 0.07f), _steel, "Stanchion");
+            }
+            for (float z = SeaTipZ; z <= BackTipZ; z += 4.5f)
+                Member(root, pillar, new Vector3(0f, BoomY + 3.6f, z), new Vector3(6.4f, 0.3f, 0.3f), _paint, "Boom cross tie");
+            foreach (float x in new[] { -3.2f, 3.2f })
+            {
+                var apex = new Vector3(x, BoomY + 13f, LandRailZ - 2f);
+                Strut(root, pillar, new Vector3(x, BoomY + 3.6f, SeaRailZ), apex, 0.65f, _paint, "A frame sea leg");
+                Strut(root, pillar, new Vector3(x, BoomY + 3.6f, BackTipZ), apex, 0.65f, _paint, "A frame back leg");
+                Strut(root, pillar, apex, new Vector3(x, BoomY + 3.6f, SeaTipZ + 1f), 0.15f, _steel, "Suspension stay");
+            }
+            Member(root, pillar, new Vector3(0f, BoomY + 13f, LandRailZ - 2f), new Vector3(6.8f, 0.6f, 0.6f), _paint, "A frame crown");
+            Member(root, pillar, new Vector3(0f, BoomY + 2.2f, BackTipZ - 4f), new Vector3(5.8f, 3.7f, 7f), _cab, "Machinery house");
+            for (int vent = 0; vent < 8; vent++)
+                Member(root, pillar, new Vector3(-2.92f, BoomY + 1.4f + vent * 0.22f, BackTipZ - 4f),
+                    new Vector3(0.04f, 0.09f, 4f), _dark, "Machinery louvers");
+            // Access ladder on the landward outer face, with intermittent resting platforms.
+            for (float h = 1f; h < BoomY; h += 0.4f)
+                Member(root, pillar, new Vector3(4.7f, h, LandRailZ + 0.85f), new Vector3(0.7f, 0.055f, 0.08f), _steel, "Ladder rung");
+            foreach (float x in new[] { 4.32f, 5.08f })
+                Member(root, pillar, new Vector3(x, BoomY * 0.5f, LandRailZ + 0.85f), new Vector3(0.08f, BoomY, 0.08f), _steel, "Ladder stile");
+            crane.CombineStructure(root);
 
             // the trolley under the girders, with the driver's cab hung off its sea side
             var trolley = new GameObject("Trolley").transform;
@@ -147,8 +185,12 @@ namespace HarborDemo
             trolley.localPosition = new Vector3(0f, TrolleyY, ParkZ);
             crane._trolley = trolley;
             crane._z = ParkZ;
-            Member(trolley, pillar, Vector3.zero, new Vector3(4.2f, 1.2f, 4.6f), _steel, "TrolleyFrame");
+            Member(trolley, pillar, Vector3.zero, new Vector3(6.4f, 1.2f, 2.8f), _steel, "TrolleyFrame");
             Member(trolley, pillar, new Vector3(0f, -1.7f, -2.8f), new Vector3(2f, 2.2f, 2.2f), _cab, "DriverCab");
+
+            Member(trolley, pillar, new Vector3(0f, -1.5f, -3.92f), new Vector3(1.7f, 1.1f, 0.035f), _glass, "Cab windscreen");
+            foreach (float x in new[] { -1.02f, 1.02f })
+                Member(trolley, pillar, new Vector3(x, -1.5f, -2.8f), new Vector3(0.035f, 1.1f, 1.85f), _glass, "Cab side glass");
 
             // the spreader: a container-sized frame that hangs under the trolley
             var spreader = new GameObject("Spreader").transform;
@@ -156,35 +198,15 @@ namespace HarborDemo
             crane._spreader = spreader;
             crane._y = BoomY - ParkClear;
             Member(spreader, pillar, Vector3.zero, new Vector3(6.8f, 0.5f, 0.9f), _paint, "SpreaderBeam");
-            foreach (float sz in new[] { -1.6f, 1.6f })
-                Member(spreader, pillar, new Vector3(0f, -0.2f, sz), new Vector3(6.8f, 0.35f, 0.4f), _steel, "SpreaderRail");
+            foreach (float sz in new[] { -1.12f, 1.12f })
+                Member(spreader, pillar, new Vector3(0f, -0.2f, sz), new Vector3(6.25f, 0.25f, 0.22f), _steel, "SpreaderRail");
             foreach (float sx in new[] { -3.1f, 3.1f })
-                Member(spreader, pillar, new Vector3(sx, 0.7f, 0f), new Vector3(0.5f, 1.4f, 3.4f), _steel, "SpreaderHead");
+                Member(spreader, pillar, new Vector3(sx, 0.7f, 0f), new Vector3(0.3f, 0.7f, 2.5f), _steel, "SpreaderHead");
 
-            // the falls: four ropes turned on their heads so they hang, stretched to
-            // the spreader every frame
-            var rope = HarborKit.TryLoad(HarborKit.Rope1);
+            // Four steel hoist cables, centred between the trolley and spreader heads.
             for (int i = 0; i < 4; i++)
-            {
-                var at = new Vector3(i < 2 ? -1.8f : 1.8f, -0.6f, i % 2 == 0 ? -1.9f : 1.9f);
-                Transform fall;
-                if (rope != null)
-                {
-                    crane._fallRest = Mathf.Max(0.5f, HarborKit.PrefabBounds(rope).size.y);
-                    var go = Object.Instantiate(rope, trolley);
-                    go.name = "Fall";
-                    fall = go.transform;
-                }
-                else
-                {
-                    // no rope in the pack: a hair-thin pillar does the same work
-                    crane._fallRest = HarborKit.PrefabBounds(pillar).size.y;
-                    fall = Member(trolley, pillar, Vector3.zero, new Vector3(0.12f, 1f, 0.12f), _dark, "Fall").transform;
-                }
-                fall.localPosition = at;
-                fall.localRotation = Quaternion.Euler(180f, 0f, 0f);   // +Y down
-                crane._falls[i] = fall;
-            }
+                crane._falls[i] = Member(trolley, pillar, Vector3.zero,
+                    new Vector3(0.055f, 1f, 0.055f), _dark, "Hoist cable").transform;
 
             crane.Apply();
             return crane;
@@ -194,30 +216,56 @@ namespace HarborDemo
         /// centre where asked, painted, hung on the rig.</summary>
         static GameObject Member(Transform parent, GameObject pillar, Vector3 centre, Vector3 size, Material mat, string name)
         {
-            var b = HarborKit.PrefabBounds(pillar);
-            var go = Object.Instantiate(pillar, parent);
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            Object.Destroy(go.GetComponent<Collider>());
             go.name = name;
-            var scale = new Vector3(size.x / Mathf.Max(0.01f, b.size.x),
-                                    size.y / Mathf.Max(0.01f, b.size.y),
-                                    size.z / Mathf.Max(0.01f, b.size.z));
-            go.transform.localScale = scale;
-            go.transform.localRotation = Quaternion.identity;
-            go.transform.localPosition = centre - Vector3.Scale(b.center, scale);
-            Paint(go, mat);
+            go.transform.SetParent(parent, false);
+            go.transform.localScale = size;
+            go.transform.localPosition = centre;
+            go.GetComponent<Renderer>().sharedMaterial = mat;
             return go;
         }
 
-        /// <summary>A diagonal member from A to B - the portal braces and the boom stays.</summary>
         static void Strut(Transform parent, GameObject pillar, Vector3 a, Vector3 b, float thick, Material mat, string name)
         {
             var d = b - a;
-            float len = d.magnitude;
-            if (len < 0.05f) return;
-            var go = Member(parent, pillar, (a + b) * 0.5f, new Vector3(thick, len, thick), mat, name);
-            var rot = Quaternion.FromToRotation(Vector3.up, d / len);
-            var bounds = HarborKit.PrefabBounds(pillar);
-            go.transform.localRotation = rot;
-            go.transform.localPosition = (a + b) * 0.5f - rot * Vector3.Scale(bounds.center, go.transform.localScale);
+            if (d.sqrMagnitude < 0.0025f) return;
+            var go = Member(parent, pillar, (a + b) * 0.5f, new Vector3(thick, d.magnitude, thick), mat, name);
+            go.transform.localRotation = Quaternion.FromToRotation(Vector3.up, d.normalized);
+        }
+
+        readonly System.Collections.Generic.List<Mesh> _meshes = new System.Collections.Generic.List<Mesh>();
+
+        // Only the fixed steelwork is combined. Trolley, spreader and falls remain articulated.
+        void CombineStructure(Transform root)
+        {
+            var groups = new System.Collections.Generic.Dictionary<Material, System.Collections.Generic.List<CombineInstance>>();
+            var filters = root.GetComponentsInChildren<MeshFilter>();
+            foreach (var filter in filters)
+            {
+                var mat = filter.GetComponent<Renderer>().sharedMaterial;
+                if (!groups.TryGetValue(mat, out var group))
+                    groups[mat] = group = new System.Collections.Generic.List<CombineInstance>();
+                group.Add(new CombineInstance { mesh = filter.sharedMesh,
+                    transform = root.worldToLocalMatrix * filter.transform.localToWorldMatrix });
+            }
+            foreach (var group in groups)
+            {
+                var mesh = new Mesh { name = "Crane structure / " + group.Key.name, indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+                mesh.CombineMeshes(group.Value.ToArray());
+                _meshes.Add(mesh);
+                var go = new GameObject(mesh.name);
+                go.transform.SetParent(root, false);
+                go.AddComponent<MeshFilter>().sharedMesh = mesh;
+                go.AddComponent<MeshRenderer>().sharedMaterial = group.Key;
+            }
+            foreach (var filter in filters) Object.Destroy(filter.gameObject);
+        }
+
+        public void Dispose()
+        {
+            foreach (var mesh in _meshes) if (mesh != null) Object.Destroy(mesh);
+            _meshes.Clear();
         }
 
         static void Paint(GameObject piece, Material mat)
@@ -290,13 +338,14 @@ namespace HarborDemo
             if (_spreader != null) _spreader.localPosition = new Vector3(0f, spreaderY, _z);
 
             // the falls run from the trolley's underside down to the spreader's heads
-            float drop = Mathf.Max(0.25f, TrolleyY - 0.6f - spreaderY - 1.4f);
+            float drop = Mathf.Max(0.25f, TrolleyY - 0.6f - spreaderY - 1.05f);
             for (int i = 0; i < _falls.Length; i++)
             {
                 var f = _falls[i];
                 if (f == null) continue;
-                var s = f.localScale;
-                f.localScale = new Vector3(s.x, drop / _fallRest, s.z);
+                f.localPosition = new Vector3(i < 2 ? -2.9f : 2.9f, -0.6f - drop * 0.5f,
+                    i % 2 == 0 ? -1.12f : 1.12f);
+                f.localScale = new Vector3(0.055f, drop, 0.055f);
             }
         }
     }

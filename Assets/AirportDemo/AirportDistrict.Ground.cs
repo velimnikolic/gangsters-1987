@@ -59,8 +59,8 @@ namespace AirportDemo
             // the shoulders are the same tarmac, a shade darker, so the runway edge
             // reads as an edge from the air even before the paint goes on
             _shoulderMat = Surface("airport shoulder", 0.40f, new Color(0.22f, 0.22f, 0.23f));
-            _pourPale = Surface("airport pour pale", 1.30f, new Color(0.69f, 0.69f, 0.67f));
-            _pourDark = Surface("airport pour dark", 1.02f, new Color(0.55f, 0.55f, 0.54f));
+            _pourPale = Surface("airport pour pale", 1.20f, new Color(0.65f, 0.65f, 0.63f));
+            _pourDark = Surface("airport pour dark", 1.11f, new Color(0.59f, 0.59f, 0.57f));
 
             // airfield paint. No pack has a road decal at runway scale - a centreline
             // stripe is 36 m long and 90 cm wide - so the markings are flat colour on

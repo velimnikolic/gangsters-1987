@@ -51,7 +51,7 @@ PrefabInstance:
     - target: {fileID: -7511558181221131132, guid: 2d7263fb7075cbc4897978744eee0b02, type: 3}
       propertyPath: m_Materials.Array.data[0]
       value: 
-      objectReference: {fileID: 2100000, guid: 86aea4dcaf612614380d2c3876bc0bee, type: 2}
+      objectReference: {fileID: 2100000, guid: fc02b97e269d437f9efca4c7894f44da, type: 2}
     - target: {fileID: 919132149155446097, guid: 2d7263fb7075cbc4897978744eee0b02, type: 3}
       propertyPath: m_Name
       value: SM_Prop_Newspaper_Stand_01

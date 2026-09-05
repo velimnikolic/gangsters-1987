@@ -45,7 +45,7 @@ namespace HarborDemo.EditorTools
     /// </summary>
     public static partial class HarborShipKitBash
     {
-        public const int Version = 4;
+        public const int Version = 6;
         const string ShipsDir = "Assets/CityKit/Ships";
         const string MeshDir = ShipsDir + "/Meshes";
         const string MatDir = ShipsDir + "/Materials";
@@ -83,9 +83,9 @@ namespace HarborDemo.EditorTools
 
         static readonly (string name, Color colour)[] BoxColours =
         {
-            ("red", new Color(0.70f, 0.16f, 0.12f)),
-            ("blue", new Color(0.14f, 0.28f, 0.60f)),
-            ("green", new Color(0.16f, 0.42f, 0.22f)),
+            ("red", new Color(0.48f, 0.19f, 0.14f)),
+            ("blue", new Color(0.18f, 0.29f, 0.36f)),
+            ("green", new Color(0.23f, 0.34f, 0.28f)),
             ("rust", new Color(0.55f, 0.32f, 0.16f)),
             ("white", new Color(0.82f, 0.82f, 0.80f)),
         };
@@ -140,7 +140,7 @@ namespace HarborDemo.EditorTools
         /// boat orange and the two nav lights are shared by the whole fleet.</summary>
         sealed class Paints
         {
-            public Material HullUpper, HullLower, Boot, Strake, House, Deck, Funnel, Trim, Mast, Steel, Boat, Rust, NavRed, NavGreen;
+            public Material HullUpper, HullLower, Boot, Strake, House, Deck, Funnel, Trim, Mast, Steel, Boat, Rust, NavRed, NavGreen, Glass;
         }
 
         static Paints PaintsFor(HarborShipSpec s) => new Paints
@@ -157,6 +157,7 @@ namespace HarborDemo.EditorTools
             Steel = Tinted("ship-steel", ConcreteMat, new Color(0.30f, 0.31f, 0.33f), 0.3f),
             Boat = Tinted("ship-boat", PlasterMat, new Color(0.86f, 0.37f, 0.07f), 0.3f),
             Rust = Tinted("ship-rust", PlasterMat, new Color(0.33f, 0.18f, 0.11f), 0.12f),
+            Glass = Tinted("ship-bridge-glass", PlasterMat, new Color(0.055f, 0.13f, 0.17f), 0.65f),
             NavRed = Tinted("ship-nav-red", PlasterMat, new Color(0.62f, 0.09f, 0.08f), 0.45f),
             NavGreen = Tinted("ship-nav-green", PlasterMat, new Color(0.10f, 0.46f, 0.22f), 0.45f),
         };
@@ -278,15 +279,14 @@ namespace HarborDemo.EditorTools
         /// its base - deckhouse blocks, crane bodies, funnel casings, winch drums.</summary>
         static GameObject Block(Transform root, Vector3 at, Vector3 size, Material mat, float yaw = 0f)
         {
-            var prefab = P(Pillar);
-            if (prefab == null) return null;
-            var b = HarborKit.PrefabBounds(prefab);
-            var go = Object.Instantiate(prefab, at, Quaternion.Euler(0f, yaw, 0f), root);
-            go.name = "block";
-            go.transform.localScale = new Vector3(size.x / Mathf.Max(0.05f, b.size.x),
-                                                  size.y / Mathf.Max(0.05f, b.size.y),
-                                                  size.z / Mathf.Max(0.05f, b.size.z));
-            Paint(go, mat);
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            Object.DestroyImmediate(go.GetComponent<Collider>());
+            go.name = "Steel plate";
+            go.transform.SetParent(root, false);
+            go.transform.localPosition = at + Vector3.up * (size.y * 0.5f);
+            go.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            go.transform.localScale = size;
+            go.GetComponent<Renderer>().sharedMaterial = mat;
             return go;
         }
 
@@ -527,51 +527,69 @@ namespace HarborDemo.EditorTools
         /// <summary>A twenty-foot box: two metal wall modules a side, a slide door for
         /// the end, two roof slabs; 6 m along its own +Z, 3 wide, 3 high, pivot at the
         /// footprint's centre on the ground - what the bake makes of it.</summary>
+        // The fabricated box has ordinary UVs, not the old GangWarfare atlas coordinates.
+        // Reset existing materials as well so an upgraded checkout matches a clean bake.
+        static Material ContainerPaint(string name, Color colour, float smoothness)
+        {
+            var clean = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            clean.SetColor("_BaseColor", colour);
+            clean.SetFloat("_Smoothness", smoothness);
+            clean.SetFloat("_Metallic", 0.12f);
+            string path = $"{MatDir}/{name}.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                clean.name = name;
+                AssetDatabase.CreateAsset(clean, path);
+                return clean;
+            }
+            mat.shader = clean.shader;
+            mat.CopyPropertiesFromMaterial(clean);
+            mat.shaderKeywords = clean.shaderKeywords;
+            Object.DestroyImmediate(clean);
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
         static void BuildContainer(string name, Color colour)
         {
-            var wall = P(MetalWall);
-            var doorPiece = P(MetalDoor) ?? wall;
-            var roof = P(MetalRoof);
-            if (wall == null) return;
-            var mat = Tinted(name, GangMat, colour, 0.25f);
-
+            var mat = ContainerPaint(name, colour, 0.18f);
+            var hardware = ContainerPaint("container-hardware", new Color(0.29f, 0.30f, 0.28f), 0.32f);
+            var label = ContainerPaint("container-stencil", new Color(0.72f, 0.71f, 0.63f), 0.1f);
             var root = new GameObject(name);
             var t = root.transform;
             try
             {
-                const float L = 6f, W = 3f, H = 3f;
-                var centre = Vector3.zero;
-                var a = new Vector3(-W * 0.5f, 0f, -L * 0.5f);
-                var b = new Vector3(-W * 0.5f, 0f, L * 0.5f);
-                var c = new Vector3(W * 0.5f, 0f, L * 0.5f);
-                var d = new Vector3(W * 0.5f, 0f, -L * 0.5f);
-                WallRun(t, wall, a, b, centre, mat);
-                WallRun(t, wall, c, d, centre, mat);
-                WallRun(t, wall, b, c, centre, mat);          // the far end, plain
-                WallRun(t, doorPiece, d, a, centre, mat);     // the near end, the doors
-                if (roof != null)
+                const float L = HarborShipSpec.BoxLength, W = HarborShipSpec.BoxWidth, H = HarborShipSpec.BoxHeight;
+                Block(t, Vector3.zero, new Vector3(W - 0.08f, H - 0.06f, L - 0.08f), mat);
+                // Pressed corrugated walls, framed roof and ISO corner castings.
+                for (int side = -1; side <= 1; side += 2)
                 {
-                    // the roof slab covers one quadrant off its pivot: place by bounds
-                    var rb = HarborKit.PrefabBounds(roof);
-                    for (int i = 0; i < 2; i++)
+                    for (float z = -L * 0.5f + 0.3f; z < L * 0.5f - 0.15f; z += 0.28f)
+                        Block(t, new Vector3(side * (W * 0.5f - 0.035f), 0.13f, z), new Vector3(0.07f, H - 0.26f, 0.10f), mat);
+                    foreach (float y in new[] { 0f, H - 0.1f })
+                        Block(t, new Vector3(side * (W * 0.5f - 0.065f), y, 0f), new Vector3(0.13f, 0.10f, L), mat);
+                    foreach (float z in new[] { -L * 0.5f + 0.08f, L * 0.5f - 0.08f })
                     {
-                        var go = Object.Instantiate(roof, t);
-                        go.name = "roof";
-                        var pos = new Vector3(-W * 0.5f - rb.min.x, H - rb.min.y, -L * 0.5f + i * 3f - rb.min.z);
-                        go.transform.position = pos;
-                        go.transform.localScale = new Vector3(W / Mathf.Max(0.1f, rb.size.x), 1f, 3f / Mathf.Max(0.1f, rb.size.z));
-                        Paint(go, mat);
+                        Block(t, new Vector3(side * (W * 0.5f - 0.08f), 0f, z), new Vector3(0.16f, H, 0.16f), mat);
+                        foreach (float y in new[] { 0f, H - 0.14f })
+                            Block(t, new Vector3(side * (W * 0.5f - 0.08f), y, z), new Vector3(0.16f, 0.14f, 0.16f), hardware);
                     }
                 }
-                else Quad(t, "roof", -W * 0.5f, W * 0.5f, -L * 0.5f, L * 0.5f, H, mat);
-                Quad(t, "floor", -W * 0.5f, W * 0.5f, -L * 0.5f, L * 0.5f, 0.02f, mat);
-
+                // Twin doors and locking bars, at the end used by the devanning gang.
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    Block(t, new Vector3(side * W * 0.25f, 0.12f, -L * 0.5f + 0.025f), new Vector3(W * 0.5f - 0.15f, H - 0.24f, 0.05f), mat);
+                    foreach (float x in new[] { side * 0.28f, side * 0.86f })
+                        Block(t, new Vector3(x, 0.16f, -L * 0.5f + 0.015f), new Vector3(0.045f, H - 0.32f, 0.045f), hardware);
+                }
+                for (int line = 0; line < 3; line++)
+                    Block(t, new Vector3(0.73f, H - 0.38f - line * 0.12f, -L * 0.5f - 0.001f), new Vector3(0.42f - line * 0.07f, 0.045f, 0.01f), label);
+                for (float z = -L * 0.5f + 0.3f; z < L * 0.5f - 0.2f; z += 0.28f)
+                    Block(t, new Vector3(0f, H - 0.05f, z), new Vector3(W - 0.26f, 0.035f, 0.10f), mat);
                 SyntyKitExtractor.BakeGroup(root, name, yaw: 0f, outputDir: ShipsDir, meshOutputDir: MeshDir);
             }
-            finally
-            {
-                Object.DestroyImmediate(root);
-            }
+            finally { Object.DestroyImmediate(root); }
         }
     }
 }

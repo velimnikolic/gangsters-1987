@@ -58,8 +58,9 @@ namespace AirportDemo
                 float thr = sign * half;
 
                 // the threshold bar: eight stripes, four either side of the centreline
-                float x0 = thr + sign * AirportSpec.ThresholdOffset;
-                float x1 = x0 + sign * AirportSpec.ThresholdStripeLength;
+                // sign points OUT of the field; all approach markings extend inward.
+                float x0 = thr - sign * AirportSpec.ThresholdOffset;
+                float x1 = x0 - sign * AirportSpec.ThresholdStripeLength;
                 white.Tier = RunwayWear((x0 + x1) * 0.5f);
                 for (int i = 0; i < AirportSpec.ThresholdStripes; i++)
                 {
@@ -74,13 +75,13 @@ namespace AirportDemo
                 // the designator, reading the way the pilot sees it on approach
                 string number = sign < 0f ? "09" : "27";
                 float yaw = sign < 0f ? 90f : 270f;
-                float dx = thr + sign * (AirportSpec.DesignatorOffset + AirportSpec.DesignatorHeight * 0.5f);
+                float dx = thr - sign * (AirportSpec.DesignatorOffset + AirportSpec.DesignatorHeight * 0.5f);
                 white.Tier = RunwayWear(dx);
                 PaintLegend(white, number, new Vector3(dx, 0f, 0f), AirportSpec.DesignatorHeight, yaw, y);
 
                 // the aiming point: a bar either side, 300 m in
-                float ax = thr + sign * AirportSpec.AimingPointFrom;
-                float axEnd = ax + sign * AirportSpec.AimingBarLength;
+                float ax = thr - sign * AirportSpec.AimingPointFrom;
+                float axEnd = ax - sign * AirportSpec.AimingBarLength;
                 white.Tier = RunwayWear(ax);
                 for (int s = -1; s <= 1; s += 2)
                 {
@@ -96,13 +97,17 @@ namespace AirportDemo
                 // makes it read as rubber and not as a stripe of tarmac.
                 for (int i = 0; i < 10; i++)
                 {
-                    float bx = thr + sign * (80f + i * 26f);
+                    float bx = thr - sign * (80f + i * 26f);
                     float heavy = 1f - i / 11f;                 // thickest just past the flare
-                    float inner = 1.6f + i * 0.25f;
-                    float outer = inner + 3.2f + heavy * 3.4f;
                     float len = 7f + heavy * 6f;
                     for (int s = -1; s <= 1; s += 2)
-                        rubber.Rect(bx - len, bx + len, Mathf.Min(s * inner, s * outer), Mathf.Max(s * inner, s * outer), y - 0.004f);
+                        for (int tyre = 0; tyre < 5; tyre++)
+                        {
+                            float z = s * (2.1f + tyre * 0.65f + Mathf.Sin(i * 1.7f + tyre) * 0.16f);
+                            float width = 0.09f + heavy * 0.12f;
+                            float run = len * (0.55f + 0.1f * tyre);
+                            rubber.Rect(bx - run, bx + run, z - width, z + width, y - 0.004f);
+                        }
                 }
             }
 

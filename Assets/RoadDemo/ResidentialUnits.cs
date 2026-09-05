@@ -340,24 +340,7 @@ namespace RoadDemo
                 ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 7.29f, 4.98f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(8.82f, 9.77f, 1.25f, 2, 180.00f)), new ResidentialShopBay(1, 5.29f, 2.41f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.87f, 0.63f, 1.27f, 1, 135.00f)), new ResidentialShopBay(1, 15.00f, 2.74f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(14.30f, 1.07f, 1.27f, 1, 135.00f)), new ResidentialShopBay(2, 2.43f, 10.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(0.69f, 9.82f, 1.30f, 2, 0.00f)), new ResidentialShopBay(2, 12.35f, 10.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(13.93f, 10.25f, 1.30f, 2, 0.00f)) },
                 Over = new[] { 1.65f, 0.57f, 1.81f, 0.81f },
             },
-            new ResidentialUnit
-            {
-                Name = "residential-13", CW = 4, CD = 2,
-                Kind = ResidentialKind.Row,
-                MaxH = 17.1f, Floor = 0.00f, Trees = 0, Pieces = 118, Seats = 0,
-                Plan = new[]
-                {
-                    ".###",
-                    "####",
-                },
-                Face = new[] { false, false, true, false },
-                Doors = new[] { 0, 0, 0, 0 },
-                Shops = new[] { 1, 1, 3, 0 },
-                Stoops = new[] { 0, 0, 0, 0 },
-                ShopCells = new[] { "0dd0", "b0", "0eca", "00" },
-                ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 7.48f, 0.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(10.00f, 0.05f, 1.90f, 2, 180.00f)), new ResidentialShopBay(0, 12.52f, 0.00f, "SM_Bld_Shop_03", new ResidentialStorefrontDoor(12.52f, 0.00f, 0.00f, 0, 180.00f)), new ResidentialShopBay(1, 20.00f, 2.50f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(19.23f, 0.77f, 1.27f, 1, 135.00f)), new ResidentialShopBay(2, 7.50f, 10.00f, "SM_Bld_Shop_06", new ResidentialStorefrontDoor(5.66f, 10.12f, 1.10f, 1, 0.00f)), new ResidentialShopBay(2, 12.50f, 10.00f, "SM_Bld_Shop_02", new ResidentialStorefrontDoor(10.97f, 9.79f, 1.25f, 2, 0.00f)), new ResidentialShopBay(2, 17.50f, 10.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(19.16f, 9.96f, 1.30f, 2, 0.00f)) },
-                Over = new[] { 1.76f, 1.76f, 1.78f, 0.75f },
-            },
+            ResidentialForgeReplacement.Describe(),
             new ResidentialUnit
             {
                 Name = "residential-15", CW = 3, CD = 3,
@@ -532,25 +515,7 @@ namespace RoadDemo
                 ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 9.56f, 7.96f, "SM_Bld_Wall_Window_03_Half_01", new ResidentialStorefrontDoor(9.56f, 7.96f, 0.00f, 0, 180.00f)), new ResidentialShopBay(0, 11.44f, 7.96f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(11.44f, 7.96f, 0.00f, 0, 180.00f)), new ResidentialShopBay(0, 18.94f, 7.96f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(18.94f, 7.96f, 0.00f, 0, 180.00f)), new ResidentialShopBay(0, 20.81f, 7.96f, "SM_Bld_Wall_Window_03_Half_01", new ResidentialStorefrontDoor(20.81f, 7.96f, 0.00f, 0, 180.00f)), new ResidentialShopBay(2, 10.19f, 15.78f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(10.19f, 15.78f, 0.00f, 0, 0.00f)), new ResidentialShopBay(2, 20.19f, 15.78f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(20.19f, 15.78f, 0.00f, 0, 0.00f)), new ResidentialShopBay(3, 8.78f, 9.37f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(8.78f, 9.37f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 8.78f, 11.87f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(8.78f, 11.87f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 8.78f, 14.37f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(8.78f, 14.37f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 21.28f, 9.37f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(21.28f, 9.37f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 21.28f, 11.87f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(21.28f, 11.87f, 0.00f, 0, 270.00f)), new ResidentialShopBay(3, 21.28f, 14.37f, "SM_Bld_Wall_Window_03", new ResidentialStorefrontDoor(21.28f, 14.37f, 0.00f, 0, 270.00f)) },
                 Over = new[] { 0.00f, 0.00f, 0.00f, 0.00f },
             },
-            new ResidentialUnit
-            {
-                Name = "gym", CW = 3, CD = 3,
-                Kind = ResidentialKind.Amenity,
-                MaxH = 6.7f, Floor = 0.00f, Trees = 0, Pieces = 121, Seats = 3,
-                Plan = new[]
-                {
-                    "###",
-                    "###",
-                    "###",
-                },
-                Face = new[] { true, true, false, true },
-                Doors = new[] { 1, 1, 0, 1 },
-                Shops = new[] { 0, 0, 0, 0 },
-                Stoops = new[] { 0, 0, 0, 0 },
-                ShopCells = new[] { "000", "000", "000", "000" },
-                ShopBays = new ResidentialShopBay[] {  },
-                Over = new[] { 0.00f, 0.76f, 0.00f, 0.00f },
-            },
+            ResidentialGym.Describe(),
             new ResidentialUnit
             {
                 Name = "kosarkaskiteren", CW = 7, CD = 4,

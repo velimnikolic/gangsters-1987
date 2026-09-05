@@ -25,6 +25,8 @@
     <Compile Include="..\..\Assets\RoadDemo\ResidentialModules.cs" />
     <Compile Include="..\..\Assets\RoadDemo\ResidentialDecor.cs" />
     <Compile Include="..\..\Assets\RoadDemo\ResidentialFacade.cs" />
+    <Compile Include="..\..\Assets\RoadDemo\ResidentialForgeReplacement.cs" />
+    <Compile Include="..\..\Assets\RoadDemo\ResidentialGym.cs" />
     <Compile Include="..\..\Assets\RoadDemo\ResidentialFacadeTests.cs" />
     <Compile Include="..\..\Assets\RoadDemo\ResidentialLot.cs" />
     <Compile Include="..\..\Assets\RoadDemo\ResidentialSurface.cs" />

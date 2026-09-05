@@ -153,13 +153,16 @@ namespace HarborDemo
 
         // ------------------------------------------------------------ loading bays
 
-        /// <summary>Where the lorries that never move stand: at the kerb in front of the
-        /// odd shed doors, nose along the road. The even ones are the working bays the
-        /// lorries off the approach road pull in at (see FreeBays).</summary>
+        /// <summary>Two parked lorries on the loading court. The remaining spaced
+        /// stands receive the live deliveries (see FreeBays).</summary>
         IEnumerable<Vector3> TruckStands()
         {
-            for (int i = 1; i < _shedDoors.Count; i += 2)
-                yield return new Vector3(_shedDoors[i].x + 3f, TileTop, ShoulderZ);
+            int i = 0;
+            foreach (var bay in FrontBays())
+            {
+                if (i == 1 || i == 3) yield return bay;
+                i++;
+            }
         }
 
         /// <summary>The standing lorries: drawn up at the kerb in front of their
@@ -171,7 +174,6 @@ namespace HarborDemo
             if (truck == null) return;
             var pallet = HarborKit.TryLoad(HarborKit.Pallet);
             var freight = HarborKit.LoadAll(HarborKit.Freight, quiet: true);
-            float forecourt = ShedFrontZ - 1.4f;        // the strip between kerb and doors
 
             int n = 0;
             foreach (var stand in TruckStands())
@@ -183,25 +185,11 @@ namespace HarborDemo
                 // what is still aboard, seen through the open doors
                 HarborTruck.Stow(go.transform, pallet, freight, 2, _rng);
 
-                var tb = HarborKit.BoundsOf(go);
-                float tailX = tb.min.x - 0.9f;
-                if (pallet != null)
-                {
-                    var pb = HarborKit.PrefabBounds(pallet);
-                    for (int k = 0; k < 2; k++)
-                    {
-                        var at = new Vector3(tailX - k * 1.8f, TileTop, stand.z + 0.6f + k * 0.4f);
-                        HarborKit.Sit(pallet, at, HarborKit.Range(_rng, -8f, 8f), _detailRoot, "Pallet");
-                        if (freight.Count > 0)
-                            HarborKit.Sit(HarborKit.Pick(_rng, freight), at + new Vector3(0f, pb.size.y, 0f),
-                                          HarborKit.Range(_rng, 0f, 360f), _detailRoot, "Freight");
-                    }
-                }
-                if (freight.Count > 0)
-                    for (int k = 0; k < 3; k++)
-                        HarborKit.Sit(HarborKit.Pick(_rng, freight),
-                                      new Vector3(stand.x - 2f + k * 1.5f, TileTop, forecourt + HarborKit.Range(_rng, -0.4f, 0.4f)),
-                                      HarborKit.Range(_rng, 0f, 360f), _detailRoot, "Freight");
+                // Cargo stands in the storage strip beside the door corridor. The
+                // measured group includes overhangs; rejected positions stay empty.
+                for (int k = 0; k < 3; k++)
+                    PlaceApronFreight(pallet, freight,
+                        new Vector3(stand.x + 3.5f, TileTop, ShedFrontZ - 5f - k * 3.2f), _detailRoot);
             }
         }
 

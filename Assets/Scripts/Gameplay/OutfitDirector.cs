@@ -888,6 +888,53 @@ namespace LivingCity.Gameplay
         }
 
         /// <summary>
+        /// THE PHONE RINGS TOMORROW (EPIC 40, the F3 lever). Puts the player's house in
+        /// the state the street wants before it talks: a lieutenant on the books (the
+        /// mini core's player is a lone Don, and a house with no lieutenant is told
+        /// nothing), enough in the safe for the whole path - the room, the fit-out,
+        /// the test buy - and our name in this morning's paper. The pot fills at the
+        /// next midnight and the man's card comes at the six o'clock cut. Nothing here
+        /// deals the card itself: what is watched is the ordinary path.
+        /// </summary>
+        public void DebugRingTomorrow(PersonnelDirector personnel)
+        {
+            var underworld = Underworld.Current;
+            var house = House;
+            if (underworld == null || house?.Roster == null)
+                return;
+
+            var lieutenant = false;
+            for (var i = 0; i < house.Roster.Crews.Count && !lieutenant; i++)
+            {
+                var crew = house.Roster.Crews[i];
+                var lt = house.Roster.Find(crew.LieutenantId);
+                lieutenant = lt != null && !lt.Gone && lt.Rank == Rank.Lieutenant &&
+                             crew.LieutenantId != house.Roster.BossId;
+            }
+            if (!lieutenant && personnel != null)
+                personnel.DebugSeedLarge(60);
+
+            const int wholePath = 150_000;
+            if (Accounts.Safe < wholePath)
+                Accounts.Safe = wholePath;
+
+            underworld.Press.Add(new News.PressRecord
+            {
+                Day = Campaign.Day,
+                Hour = News.Edition.PressHour,
+                Kind = News.PressKind.Arrest,
+                Where = "RIVERSIDE",
+                NamedGangId = house.GangId,
+                Factions = new[] { house.GangId },
+                Attribution = News.PressAttribution.Named,
+            });
+            house.Touch();
+            Version++;
+            Debug.Log("[Outfit] F3 - the phone rings tomorrow: a lieutenant on the books, " +
+                      UI.LedgerText.Cash(Accounts.Safe) + " in the safe, our name in the paper.");
+        }
+
+        /// <summary>
         /// The one purchase gate: refuses with the shortfall spelled out, or moves the
         /// money and books it on the open week's Purchases line - so the Armory click
         /// and the Finances row can never disagree.

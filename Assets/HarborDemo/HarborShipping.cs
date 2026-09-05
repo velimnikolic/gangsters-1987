@@ -47,10 +47,10 @@ namespace HarborDemo
 
         public const float WindowMargin = 15f;
         public const float LaneOffset = 24f;
-        public const float LaneStep = 14f;
+        public const float LaneStep = 18f;
         public const float Standoff = 12f;
-        public const float ApproachCap = 3f;
-        public const float CrabCap = 1.2f;
+        public const float ApproachCap = 1.8f;
+        public const float CrabCap = 0.5f;
         public const float PasserGapMin = 25f, PasserGapMax = 70f;
 
         readonly HarborDistrict _b;

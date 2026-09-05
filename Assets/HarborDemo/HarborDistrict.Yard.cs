@@ -28,19 +28,12 @@ namespace HarborDemo
         public const int BlockRows = 5;
         public const float RowPitch = 3.5f;
         public static float BlockZ1 => BlockZ0 + BlockRows * RowPitch;      // 42.5
-        /// <summary>The yard road: a city street's carriageway, two lanes, ten metres - the
-        /// loop's south side - with the sheds hard up against its far kerb.</summary>
-        public const float YardRoadZ0 = 44f, YardRoadZ1 = 54f;
-        /// <summary>The shed line: a forecourt's width off the yard road's kerb, the
-        /// doors opening onto the street. A lorry being worked stands at the kerb
-        /// alongside, the way a delivery stands in a city street, and the goods go
-        /// across the forecourt; the sheds jog off the line by a metre or two, no
-        /// more - a row hard up against a road is a row, a row wandering off it is
-        /// a field with huts in it.</summary>
-        public const float ShedFrontZ = YardRoadZ1 + 3f;
-        /// <summary>The shoulder: where a lorry stands at a door, on the road's north
-        /// lane against the kerb, the traffic passing on the south lane.</summary>
-        public const float ShoulderZ = YardRoadZ1 - 1.8f;
+        /// <summary>Two through lanes, separated from the loading court.</summary>
+        public const float YardRoadZ0 = 54f, YardRoadZ1 = 64f;
+        /// <summary>Twenty metres of working apron between the road and the halls.</summary>
+        public const float ShedFrontZ = YardRoadZ1 + 20f;
+        /// <summary>Parallel truck stands on the loading court, clear of both travel lanes.</summary>
+        public const float ShoulderZ = YardRoadZ1 + 7f;
         public const float BoxPitch = 7f;
         /// <summary>Bays to a standing block before a cross lane is left through it.</summary>
         const int BlockBays = 8;
@@ -68,12 +61,6 @@ namespace HarborDemo
         /// stands open on.</summary>
         const float ShedLift = 0.02f;
 
-        /// <summary>How far behind the shed line a shed may be set. A port is not built
-        /// in one season, and a row of sheds all touching the same line, evenly spaced,
-        /// is the one thing that reads as laid out by a machine rather than by a
-        /// harbour board over forty years.</summary>
-        const float ShedJog = 2.5f;
-
         /// <summary>The gate: the clear width kept through the shed line so the gate
         /// road runs from the street to the yard road with no wall across it, half the
         /// road's own asphalt, and half the opening left in the wire.</summary>
@@ -83,18 +70,8 @@ namespace HarborDemo
         bool InGateLane(float x, float slack = 0f) =>
             Mathf.Abs(x - _gateWestX) < GateLaneHalf + slack || Mathf.Abs(x - _gateEastX) < GateLaneHalf + slack;
 
-        /// <summary>The kit's industrial sheds set along the shed line - the skylit
-        /// warehouses, the depot garage - west to east in blocks of two or three with a
-        /// lot's width between blocks, each set back off the line by its own few metres,
-        /// one now and then turned broadside so its doors open on the alley. Two
-        /// corridors are kept clear for the gate roads, and the little sheds are not in
-        /// the row at all: they go into the back lots as stores and beside the gates as
-        /// gatehouses. Then where the backs end the service road, the fence and the
-        /// street are fixed, and the apron is stretched to reach the fence.
-        ///
-        /// The bake (SyntyWarehouseKit) leaves every one of them fronting +Z with its
-        /// ground at y = 0, so no facade needs measuring here: half a turn faces the
-        /// doors south to the berths, a quarter turn faces them along the line.</summary>
+        /// <summary>The authority headquarters and a small set of distinct transit halls.
+        /// Their measured backs fix the service road and fence; gate corridors stay clear.</summary>
         void BuildWarehouses()
         {
             float half = QuayHalf;
@@ -111,15 +88,9 @@ namespace HarborDemo
                 _gateEastX = half - 20f;
             }
 
-            var big = HarborKit.LoadAll(HarborKit.LineSheds, quiet: true);
             var main = HarborKit.TryLoad(HarborKit.MainShed);
             var loadingDock = HarborKit.TryLoad(HarborKit.LoadingDock);
             float backMax = ShedFrontZ + 18f;
-            if (big.Count == 0 && main == null)
-                Debug.LogWarning("[HarborDemo] no industrial sheds found under Assets/CityKit/Buildings - " +
-                                 "run Tools/City/Catalog/Rebuild Synty Warehouse Kit (Buildings).");
-
-            var bag = new List<GameObject>();
             var taken = new List<Vector2>();        // what stands on the line: sheds and the gate corridors
             taken.Add(new Vector2(_gateWestX - GateLaneHalf, _gateWestX + GateLaneHalf));
             taken.Add(new Vector2(_gateEastX - GateLaneHalf, _gateEastX + GateLaneHalf));
@@ -145,65 +116,21 @@ namespace HarborDemo
                 blocked.Add(span);
             }
 
-            float x = -half + 6f, blockBase = 0f;
-            int inBlock = 0, blockSize = _rng.Next(2, 4), placed = 0, guard = 0;
-
-            while (big.Count > 0 && x < half - 22f && guard++ < 64)
+            // Harbor-owned transit buildings fill the actual free frontage once each.
+            // The industrial estate across the road keeps its own generator and catalogue.
+            blocked.Sort((a, b) => a.x.CompareTo(b.x));
+            float freeFrom = -half + 6f;
+            int design = 0;
+            foreach (var span in blocked)
             {
-                if (bag.Count == 0) { bag.AddRange(big); Shuffle(bag); }
-                var prefab = bag[bag.Count - 1];
-                bag.RemoveAt(bag.Count - 1);
-                var pb = HarborKit.PrefabBounds(prefab);
-                if (pb.size.sqrMagnitude < 1f) continue;
-                // a shed shallow enough to be turned broadside stands so now and then,
-                // its doors on the alley - a transit shed at right angles to the row
-                bool cross = pb.size.z < 20f && pb.size.x < 30f && _rng.NextDouble() < 0.25;
-                float yaw = cross ? (_rng.NextDouble() < 0.5 ? 90f : -90f) : 180f;
-                float width = cross ? pb.size.z : pb.size.x;
-
-                // the gate corridors and the main building are not built in: a shed that
-                // would stand in one waits until the cursor is past it
-                foreach (var span in blocked)
-                    if (x + width > span.x && x < span.y)
-                    {
-                        x = span.y;
-                        inBlock = 0;
-                    }
-                if (x + width > half - 6f) break;
-
-                if (inBlock == 0) blockBase = HarborKit.Range(_rng, 0f, ShedJog);
-                float front = ShedFrontZ + Mathf.Clamp(blockBase + HarborKit.Range(_rng, -2f, 2f), 0f, ShedJog);
-
-                var go = Instantiate(prefab, Vector3.zero, Quaternion.Euler(0f, yaw, 0f), _warehouseRoot);
-                go.name = prefab.name;
-                HarborKit.StripBehaviours(go, keepAnimator: false);
-                var b = HarborKit.BoundsOf(go);
-                if (b.size.sqrMagnitude < 1f) { Destroy(go); continue; }
-                var p = go.transform.position;
-                go.transform.position = new Vector3(p.x + (x - b.min.x), TileTop + ShedLift, p.z + (front - b.min.z));
-                b = HarborKit.BoundsOf(go);
-                backMax = Mathf.Max(backMax, b.max.z);
-                placed++;
-                taken.Add(new Vector2(b.min.x, b.max.x));
-                // only a shed facing the water has a door on the apron; a broadside one
-                // opens on the alley and is left out of the lorries' and forklifts' rounds
-                if (!cross) _shedDoors.Add(new Vector3(b.center.x, TileTop, front - 1.5f));
-                if (!cross && loadingDock != null) BackDocks(loadingDock, b);
-
-                // within a block the sheds stand a lorry's width apart; between blocks
-                // a lot is left - wide enough to park on or store in, not so wide that
-                // the row falls apart into huts on a plain
-                float gap;
-                if (++inBlock >= blockSize) { inBlock = 0; blockSize = _rng.Next(2, 4); gap = HarborKit.Range(_rng, 16f, 24f); }
-                else gap = HarborKit.Range(_rng, 6f, 11f);
-                x = b.max.x + gap;
+                BuildTransitFrontage(freeFrom, Mathf.Min(span.x, half - 6f), ref design, ref backMax, taken, loadingDock);
+                freeFrom = Mathf.Max(freeFrom, span.y);
             }
-            if (placed == 0 && big.Count > 0)
-                Debug.LogWarning("[HarborDemo] the shed line came out empty - the quay may be too short for the stock.");
+            BuildTransitFrontage(freeFrom, half - 6f, ref design, ref backMax, taken, loadingDock);
 
             _shedBackZ = backMax;
-            // the docks stand three metres proud of the backs: the road clears them
-            _serviceRoadZ0 = backMax + 4f;
+            // Rear docks have their own manoeuvring apron before the service road.
+            _serviceRoadZ0 = backMax + 14f;
             _serviceRoadZ1 = _serviceRoadZ0 + 10f;   // a city carriageway too: the loop's north side
             _fenceZ = _serviceRoadZ1 + 3.5f;
             _streetZ = _fenceZ + 20f;   // the wire, a verge, then the road's outer kerb
@@ -225,14 +152,30 @@ namespace HarborDemo
         /// forklift have the door and the forecourt west of her.</summary>
         Vector3 BayAt(Vector3 door) => new Vector3(door.x + 3f, TileTop, ShoulderZ);
 
-        /// <summary>The bays free for a lorry to drive into. The rule the yard is shared
-        /// by: the detail pass parks two lorries that never move on the first two odd
-        /// doors, and everything else - the even doors, and any odd door past those two
-        /// - is a working bay off the approach road.</summary>
+        IEnumerable<Vector3> FrontBays()
+        {
+            float previous = float.NegativeInfinity;
+            var doors = new List<Vector3>(_shedDoors);
+            doors.Sort((a, b) => a.x.CompareTo(b.x));
+            foreach (var door in doors)
+            {
+                var bay = BayAt(door);
+                if (bay.x < _gateWestX + 36f || bay.x > _gateEastX - 36f || bay.x - previous < 32f) continue;
+                previous = bay.x;
+                yield return bay;
+            }
+        }
+
+        /// <summary>The detail pass occupies stand 1 and 3; the other spaced stands
+        /// receive moving traffic. Both passes use the same bay allocation.</summary>
         IEnumerable<Vector3> FreeBays()
         {
-            for (int i = 0; i < _shedDoors.Count; i++)
-                if ((i & 1) == 0 || i >= 5) yield return BayAt(_shedDoors[i]);
+            int i = 0;
+            foreach (var bay in FrontBays())
+            {
+                if ((i & 1) == 0 || i >= 5) yield return bay;
+                i++;
+            }
         }
 
         /// <summary>The loading docks at a shed's back, one or two by its width, their
@@ -424,24 +367,17 @@ namespace HarborDemo
                 }
             }
 
-            BuildGatehouses(small);
+            BuildGatehouses();
         }
 
         /// <summary>The gatehouses: one inside each gate, east of the road with its door
         /// to it - the west side of every gate road belongs to the men's footway.
         /// Turned broadside, just short of the service road, and only built if it fits
         /// the strip between road and corridor.</summary>
-        void BuildGatehouses(List<GameObject> small)
+        void BuildGatehouses()
         {
-            if (small.Count == 0) return;
-            foreach (float gx in new[] { _gateWestX, _gateEastX })
-            {
-                var prefab = HarborKit.Pick(_rng, small);
-                var sb = HarborKit.PrefabBounds(prefab);
-                float room = GateLaneHalf - GateRoadHalf - 1.5f;
-                if (sb.size.z > room) continue;
-                Seat(prefab, gx + GateRoadHalf + 1f, _serviceRoadZ0 - 2f - sb.size.x, -90f);
-            }
+            BuildTerminalGatehouse(_gateWestX, inbound: true);
+            BuildTerminalGatehouse(_gateEastX, inbound: false);
         }
 
         // ------------------------------------------------------------ containers
@@ -521,7 +457,7 @@ namespace HarborDemo
             bool worked = n >= 4 && _rng.NextDouble() < 0.22;            // being run down: half gone
             bool oneShipper = _rng.NextDouble() < 0.35;
             var shipper = HarborKit.Pick(_rng, _boxPrefabs);
-            float skew = HarborKit.Range(_rng, -1.2f, 1.2f);             // the whole block a touch off square
+            float skew = 0f;             // the whole block a touch off square
             int workedFrom = worked ? _rng.Next(1, Mathf.Max(2, n / 2)) : n;
             bool workedEast = _rng.NextDouble() < 0.5;
 
@@ -543,9 +479,9 @@ namespace HarborDemo
                     for (int layer = 0; layer < high; layer++)
                     {
                         var prefab = oneShipper && _rng.NextDouble() < 0.85 ? shipper : HarborKit.Pick(_rng, _boxPrefabs);
-                        var pos = new Vector3(bays[k] + HarborKit.Range(_rng, -0.12f, 0.12f), TileTop + layer * boxH,
-                                              z + HarborKit.Range(_rng, -0.08f, 0.08f));
-                        HarborKit.Prop(prefab, pos, 90f + skew + HarborKit.Range(_rng, -0.8f, 0.8f), _yardRoot, "Container");
+                        var pos = new Vector3(bays[k], TileTop + layer * boxH,
+                                              z);
+                        HarborKit.Prop(prefab, pos, 90f + skew, _yardRoot, "Container");
                     }
                 }
             }
@@ -674,6 +610,9 @@ namespace HarborDemo
                 foreach (float gx in new[] { gW, gE })
                     AsphaltStrip(gx - GateRoadHalf, gx + GateRoadHalf, YardRoadZ0, _streetZ - StreetKit.OuterHalf + 0.5f, _apronRoot);
             }
+            // Unkerbed loading courts connect the stands to the through lanes.
+            AsphaltStrip(gW + 5f, gE - 5f, YardRoadZ1, ShedFrontZ - 2f, _apronRoot);
+            AsphaltStrip(gW + 5f, gE - 5f, _shedBackZ + 3.5f, _serviceRoadZ0, _apronRoot);
             // the yard's own lanes, off the loop
             AsphaltStrip(-half + 1f, gW - 5f, YardRoadZ0, YardRoadZ1, _apronRoot);
             AsphaltStrip(gE + 5f, half - 1f, YardRoadZ0, YardRoadZ1, _apronRoot);
@@ -850,8 +789,11 @@ namespace HarborDemo
                 }
             }
             if (dumpster != null)
-                foreach (var door in _shedDoors)
-                    HarborKit.Prop(dumpster, new Vector3(door.x - 13.5f, y, door.z + 1f), 0f, _yardRoot, "Dumpster");
+                for (int i = 0; i < _shedDoors.Count; i += 4)
+                {
+                    var door = _shedDoors[i];
+                    PlaceApronProp(dumpster, new Vector3(door.x + 6.5f, y, door.z - 2.5f), 0f, _yardRoot, "Dumpster");
+                }
             if (pole != null)
                 for (float x = -QuayHalf + 20f; x < QuayHalf - 10f; x += 40f)
                 {
@@ -868,7 +810,7 @@ namespace HarborDemo
 
         /// <summary>The perimeter: razor coils at the foot of the wire, danger boards
         /// either side of each gate, concrete barriers narrowing the gate approach, and
-        /// a bin at every shed door. Every one of them is seated on its own measured
+        /// occasional bins beside the shed doors. Every one is seated on its measured
         /// underside - the packs pivot their furniture at the middle as readily as at
         /// the feet.</summary>
         void DressPerimeter()
@@ -916,9 +858,12 @@ namespace HarborDemo
             }
 
             if (bin != null)
-                foreach (var door in _shedDoors)
-                    HarborKit.Sit(bin, new Vector3(door.x + 8.5f, y, door.z + 0.1f),
-                                  HarborKit.Range(_rng, -10f, 10f), _yardRoot, "Bin");
+                for (int i = 1; i < _shedDoors.Count; i += 3)
+                {
+                    var door = _shedDoors[i];
+                    PlaceApronProp(bin, new Vector3(door.x - 5f, y, door.z - 2.5f),
+                                   HarborKit.Range(_rng, -10f, 10f), _yardRoot, "Bin");
+                }
         }
     }
 }

@@ -65,6 +65,16 @@ namespace RoadDemo
                 else failures.Add(name + (string.IsNullOrEmpty(detail) ? string.Empty : ": " + detail));
             }
 
+            var replacement = ResidentialForgeReplacement.Roll();
+            var replacementUnit = ResidentialUnits.All.First(u => u.Name == ResidentialForgeReplacement.Name);
+            Contract("replacement full footprint", replacementUnit.CW == 4 && replacementUnit.CD == 2 &&
+                replacementUnit.Plan.Length == 2 && replacementUnit.Plan.All(row => row == "####"));
+            Contract("replacement clean forge", ResidentialFacade.Judge(replacement).Length == 0);
+            Contract("replacement metadata", replacementUnit.Pieces == replacement.Unit.Pieces &&
+                replacementUnit.MaxH == replacement.Unit.MaxH &&
+                replacementUnit.ShopBays.Length == replacement.Unit.ShopBays.Length &&
+                replacementUnit.ShopBays.All(bay => bay.Door.Leaves > 0));
+
             Mutation("Hole", () => Fresh(), sheet =>
                 sheet.Pieces = sheet.Pieces.Skip(1).ToArray(),
                 ResidentialFacade.FaultKind.Hole);

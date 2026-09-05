@@ -34,10 +34,40 @@ namespace LivingCity.Tests
             CompoundsAreOneBusinessWithAGate(failures);
             HarvestedResidentialShopBaysMatchPhysicalFixtures(failures);
             AmenityDoorAvoidsAnotherProgramme(failures);
+            BusinessApproachesStayClear(failures);
             ResidentialPlanDataPublishesStableSites(failures);
             failures.AddRange(BusinessShutdownTests.Run());
 
             return failures;
+        }
+
+        static void BusinessApproachesStayClear(List<string> failures)
+        {
+            // Test real catalogue bays, including inward and chamfered corner doors.
+            var plan = ResidentialLot.Yard(7, 7, 22116, "gym");
+            foreach (int yaw in new[] { 0, 90, 180, 270 })
+            {
+                var spot = plan.Spots[0];
+                spot.Yaw = yaw;
+                var bounds = new Rect(spot.I * 5f, spot.J * 5f, 25f, 25f);
+                int west = (3 - yaw / 90 + 4) % 4;
+                var ramp = BusinessCitySources.AmenityDoor(bounds, spot, west);
+                var middle = BusinessCitySources.EdgeMidpoint(bounds, west);
+                if (Mathf.Abs(Vector3.Distance(ramp, middle) - 5.3f) > .01f)
+                    failures.Add("Gym ramp approach drifted to fence midpoint at yaw " + yaw);
+                var lane = ResidentialBlocks.BusinessAccessLane(ramp, BusinessCitySources.SideDirection(west));
+                var approach = ramp + BusinessCitySources.SideDirection(west) * CityBusinesses.DoorstepClearanceMetres;
+                if (!lane.Contains(new Vector2(approach.x, approach.z)))
+                    failures.Add("Gym doorstep is outside the protected access lane at yaw " + yaw);
+            }
+            // A diagonal entrance needs its complete lane protected, not a cardinal-side guess.
+            var diagonal = new Vector3(1f, 0f, -1f).normalized;
+            var door = new Vector3(20f, 0f, 20f);
+            var clear = ResidentialBlocks.BusinessAccessLane(door, diagonal);
+            var near = door + diagonal * 2.85f;
+            if (!clear.Overlaps(new Rect(near.x - .4f, near.z - .4f, .8f, .8f)) ||
+                clear.Overlaps(new Rect(door.x - 5f, door.z + 5f, 1f, 1f)))
+                failures.Add("Corner-shop access does not protect the doorstep independently of neighbouring frontage.");
         }
 
         // ------------------------------------------------------------------ BIZ-001

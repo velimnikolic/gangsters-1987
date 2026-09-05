@@ -41,6 +41,13 @@ namespace RoadDemo
 
         /// <summary>Ground already spoken for, so nothing is set down twice.</summary>
         internal static readonly List<Rect> Taken = new List<Rect>();
+        internal static readonly List<Rect> Access = new List<Rect>();
+
+        internal static bool AccessRoom(Rect want)
+        {
+            foreach (var clear in Access) if (clear.Overlaps(want)) return false;
+            return true;
+        }
         internal static readonly Dictionary<string, int> Refused = new Dictionary<string, int>();
 
         /// <summary>Opens a composition: takes the raiser and clears the ground.</summary>
@@ -48,6 +55,7 @@ namespace RoadDemo
         {
             _raise = raise;
             Taken.Clear();
+            Access.Clear();
             Refused.Clear();
         }
 
@@ -155,6 +163,8 @@ namespace RoadDemo
         internal static GameObject Sit(string path, Transform parent, float x, float z, float yaw,
                                        float y = 0f)
         {
+            var foot = Foot(path, yaw);
+            if (!AccessRoom(new Rect(x - foot.x * .5f, z - foot.y * .5f, foot.x, foot.y))) return null;
             var go = Raise(path, parent);
             if (go == null) return null;
 
@@ -188,6 +198,7 @@ namespace RoadDemo
 
         internal static bool Room(Rect want)
         {
+            if (!AccessRoom(want)) return false;
             foreach (var taken in Taken) if (taken.Overlaps(want)) return false;
             return true;
         }

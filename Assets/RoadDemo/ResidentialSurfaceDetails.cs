@@ -82,7 +82,7 @@ namespace RoadDemo
 
         static bool Mesh(string path, Transform parent, float x, float z, float yaw, float scale)
         {
-            var go = Sit(path, parent, x, z, yaw, Deck + 0.008f);
+            var go = Sit(path, parent, x, z, yaw, Deck + 0.003f);
             if (go == null) return false;
             go.transform.localScale = Vector3.Scale(go.transform.localScale,
                                                     new Vector3(scale, 1f, scale));
@@ -100,7 +100,7 @@ namespace RoadDemo
                 string path = paths[rng.Next(paths.Length)];
                 float dx = n == 0 ? 0f : Between(rng, -0.55f, 0.55f);
                 float dz = n == 0 ? 0f : Between(rng, -0.55f, 0.55f);
-                var go = Sit(path, parent, x + dx, z + dz, mark.Yaw + rng.Next(4) * 90f, Deck + 0.01f);
+                var go = Sit(path, parent, x + dx, z + dz, mark.Yaw + rng.Next(4) * 90f, Deck + 0.003f);
                 if (go == null) continue;
                 Decorative(go);
                 made = true;

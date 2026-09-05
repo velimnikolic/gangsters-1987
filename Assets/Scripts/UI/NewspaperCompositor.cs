@@ -22,6 +22,12 @@ namespace LivingCity.UI
             public bool HasPrevious;
             public bool HasNext;
             public bool Archive;
+
+            /// <summary>A column of the house's own at the foot of the page (EPIC 40's
+            /// STREET TALK): the caller paints it in the LAST slot, given the slot's
+            /// rect, and the wire's briefs take one column fewer. Null leaves the foot
+            /// as it was - briefs, then the weather.</summary>
+            public System.Action<RectTransform, float, float, float, float> HouseColumn;
         }
 
         public static Headline[] Paint(RectTransform root, float width, float height,
@@ -68,7 +74,8 @@ namespace LivingCity.UI
             Rule(paper, left, leadBottom, contentW, LedgerV2.Ink, 2f);
 
             var columns = Mathf.Max(4, Mathf.FloorToInt((contentW + 18f) / 225f));
-            var shown = Mathf.Min(stories.Length - 1, columns);
+            var house = controls?.HouseColumn != null;
+            var shown = Mathf.Min(stories.Length - 1, house ? columns - 1 : columns);
             var gap = 20f;
             var columnW = (contentW - gap * (columns - 1)) / columns;
             for (var i = 0; i < shown; i++)
@@ -80,9 +87,18 @@ namespace LivingCity.UI
                     seed + date.DayOfYear + i + 1);
             }
 
+            // THE HOUSE'S OWN COLUMN (EPIC 40): the last slot, painted by the caller
+            // inside the same rules and the same rect as the briefs.
+            if (house)
+            {
+                var x = left + (columns - 1) * (columnW + gap);
+                VRule(paper, x - gap * 0.5f, briefTop, briefH, LedgerV2.Rule);
+                controls.HouseColumn(paper, x, briefTop, columnW, briefH);
+            }
+
             // Wide sheets may have a spare column after all six stories. It remains
             // newspaper furniture, not a fabricated city report.
-            if (shown < columns)
+            if (shown < (house ? columns - 1 : columns))
             {
                 var x = left + shown * (columnW + gap);
                 if (shown > 0)

@@ -127,13 +127,7 @@ namespace HarborDemo
         /// L-shaped plan instead of one uniformly narrow strip.</summary>
         void BuildBulkTerminalApron()
         {
-            var r = BulkTerminalApron;
-            if (_paveTile != null &&
-                TileCarpet("Bulk Terminal Apron", r.xMin, r.xMax, r.yMin, r.yMax,
-                           TileTop, _paveTile, _apronRoot) > 0)
-                return;
-            FlatPlane("Bulk Terminal Apron", r.xMin, r.xMax, r.yMin, r.yMax,
-                      TileTop, ConcreteMaterial(), 12.5f, _apronRoot);
+            PourTerminalApron("Bulk apron", BulkTerminalApron);
         }
 
         bool InsideBulkTerminal(float x0, float x1, float z0, float z1)
@@ -223,7 +217,9 @@ namespace HarborDemo
             conveyor.SetParent(WorksRoot, false);
             conveyor.localPosition = root.localPosition;
             float loaderZ = BulkTerminalSouth + 3f - area.center.y;
-            MeshPart(conveyor, "Covered conveyor", ConveyorMesh(loaderZ), BulkSteelMaterial());
+            var conveyorMesh = ConveyorMesh(loaderZ);
+            _terminalMeshes.Add(conveyorMesh);
+            MeshPart(conveyor, "Covered conveyor", conveyorMesh, BulkSteelMaterial());
 
             DressBulkLoadingCourt(area);
         }
@@ -277,7 +273,7 @@ namespace HarborDemo
         {
             if (_bulkShellMaterial == null)
                 _bulkShellMaterial = Keep(HarborKit.Flat(
-                    "Harbor silo concrete", new Color(0.72f, 0.72f, 0.68f), 0.16f));
+                    "Harbor silo concrete", new Color(0.59f, 0.58f, 0.53f), 0.16f));
             return _bulkShellMaterial;
         }
 
@@ -285,7 +281,7 @@ namespace HarborDemo
         {
             if (_bulkSteelMaterial == null)
                 _bulkSteelMaterial = Keep(HarborKit.Flat(
-                    "Harbor silo steel", new Color(0.18f, 0.20f, 0.21f), 0.28f));
+                    "Harbor silo steel", new Color(0.29f, 0.32f, 0.31f), 0.28f));
             return _bulkSteelMaterial;
         }
 
@@ -324,12 +320,31 @@ namespace HarborDemo
             draft.Box(new Vector3(-19f, 73f, 0f), new Vector3(3.6f, 2.2f, 28f));
             draft.Box(new Vector3(-19f, 73f, 0f), new Vector3(10f, 2.2f, 3.6f));
 
+            // Ring beams and roof galleries give the silo group a readable construction scale.
             for (int row = 0; row < 3; row++)
                 for (int column = 0; column < 4; column++)
-                    for (int ring = 0; ring < 3; ring++)
-                        draft.Cylinder((column - 1.5f) * 12.5f,
-                                       (row - 1f) * 12.5f,
-                                       18f + ring * 20f, 0.5f, 5.84f, 20);
+                {
+                    float x = (column - 1.5f) * 12.5f, z = (row - 1f) * 12.5f;
+                    for (int ring = 0; ring < 10; ring++)
+                        draft.Cylinder(x, z, 5f + ring * 6f, 0.13f, 5.74f, 32);
+                    draft.Box(new Vector3(x, 70.6f, z), new Vector3(1.5f, 1.2f, 1.5f));
+                }
+            foreach (float z in new[] { -12.5f, 0f, 12.5f })
+                foreach (float edge in new[] { -1.9f, 1.9f })
+                {
+                    draft.Box(new Vector3(0f, 73.1f, z + edge), new Vector3(43f, 0.10f, 0.10f));
+                    for (float x = -20f; x <= 20f; x += 2.5f)
+                        draft.Box(new Vector3(x, 72.5f, z + edge), new Vector3(0.09f, 1.2f, 0.09f));
+                }
+            for (float y = 4f; y < 84f; y += 6f)
+            {
+                draft.Box(new Vector3(-24f, y, 0f), new Vector3(9.15f, 0.18f, 11.15f));
+                draft.Box(new Vector3(-29.2f, y, 0f), new Vector3(1.4f, 0.2f, 3f));
+            }
+            for (float y = 0.5f; y < 84f; y += 0.45f)
+                draft.Box(new Vector3(-29.4f, y, -1f), new Vector3(0.85f, 0.07f, 0.12f));
+            foreach (float x in new[] { -29.86f, -28.94f })
+                draft.Box(new Vector3(x, 42f, -1f), new Vector3(0.09f, 84f, 0.12f));
 
             _bulkSteelMesh = draft.Bake("Harbor silo steelwork");
             return _bulkSteelMesh;
@@ -342,7 +357,7 @@ namespace HarborDemo
             float startZ = -5f;
             float length = Mathf.Abs(startZ - loaderZ);
             float centre = (startZ + loaderZ) * 0.5f;
-            draft.Box(new Vector3(x, 31f, centre), new Vector3(4.2f, 4.2f, length));
+            draft.Box(new Vector3(x, 31f, centre), new Vector3(3.4f, 2.0f, length));
 
             int supports = Mathf.Max(3, Mathf.FloorToInt(length / 17f));
             for (int k = 1; k < supports; k++)
@@ -350,10 +365,22 @@ namespace HarborDemo
                 float z = Mathf.Lerp(startZ, loaderZ, k / (float)supports);
                 draft.Box(new Vector3(x - 1.4f, 14.5f, z), new Vector3(0.8f, 29f, 0.8f));
                 draft.Box(new Vector3(x + 1.4f, 14.5f, z), new Vector3(0.8f, 29f, 0.8f));
+                for (float y = 2f; y < 28f; y += 6f)
+                    draft.Beam(new Vector3(x - 1.4f, y, z), new Vector3(x + 1.4f, y + 5f, z), 0.22f);
+
             }
 
             // Loader tower on the quay edge and a short boom over the ship's hatch.
-            draft.Box(new Vector3(x, 30f, loaderZ), new Vector3(8f, 60f, 8f));
+            foreach (float dx in new[] { -3f, 3f })
+                foreach (float dz in new[] { -3f, 3f })
+                    draft.Box(new Vector3(x + dx, 29f, loaderZ + dz), new Vector3(0.8f, 58f, 0.8f));
+            for (float y = 6f; y < 58f; y += 8f)
+            {
+                draft.Box(new Vector3(x, y, loaderZ), new Vector3(7f, 0.4f, 7f));
+                foreach (float dz in new[] { -3f, 3f })
+                    draft.Beam(new Vector3(x - 3f, y, loaderZ + dz), new Vector3(x + 3f, y + 7f, loaderZ + dz), 0.3f);
+            }
+            draft.Box(new Vector3(x, 57f, loaderZ), new Vector3(8f, 6f, 8f));
             draft.Box(new Vector3(x, 52f, loaderZ - 10f), new Vector3(4f, 4f, 20f));
             draft.Box(new Vector3(x, 34f, loaderZ - 19f), new Vector3(2f, 36f, 2f));
             return draft.Bake("Harbor bulk conveyor and loader");
@@ -416,7 +443,16 @@ namespace HarborDemo
                 Quad(p000, p100, p101, p001);
             }
 
-            void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
+            public void Beam(Vector3 a, Vector3 b, float width)
+            {
+                int start = _vertices.Count;
+                Box(Vector3.zero, new Vector3(width, Vector3.Distance(a, b), width));
+                var rotation = Quaternion.FromToRotation(Vector3.up, (b - a).normalized);
+                for (int i = start; i < _vertices.Count; i++)
+                    _vertices[i] = (a + b) * 0.5f + rotation * _vertices[i];
+            }
+
+            public void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
             {
                 int first = _vertices.Count;
                 _vertices.Add(a); _vertices.Add(b); _vertices.Add(c); _vertices.Add(d);
@@ -424,7 +460,7 @@ namespace HarborDemo
                 _triangles.Add(first); _triangles.Add(first + 2); _triangles.Add(first + 3);
             }
 
-            void Triangle(Vector3 a, Vector3 b, Vector3 c)
+            public void Triangle(Vector3 a, Vector3 b, Vector3 c)
             {
                 int first = _vertices.Count;
                 _vertices.Add(a); _vertices.Add(b); _vertices.Add(c);
@@ -433,7 +469,7 @@ namespace HarborDemo
 
             public Mesh Bake(string name)
             {
-                var mesh = new Mesh { name = name };
+                var mesh = new Mesh { name = name, indexFormat = _vertices.Count > 65535 ? UnityEngine.Rendering.IndexFormat.UInt32 : UnityEngine.Rendering.IndexFormat.UInt16 };
                 mesh.SetVertices(_vertices);
                 mesh.SetTriangles(_triangles, 0);
                 mesh.RecalculateNormals();

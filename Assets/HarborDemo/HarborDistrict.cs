@@ -28,9 +28,9 @@ namespace HarborDemo
         public float apronDepth = 65f;
         public int seed = 1987;
 
-        public Vector2 stayRange = new Vector2(60f, 120f);
+        public Vector2 stayRange = new Vector2(180f, 300f);
         public Vector2 gapRange = new Vector2(15f, 45f);
-        public float sailSpeed = 8f;
+        public float sailSpeed = 5f;
         [Tooltip("How far along the coast a ship runs before she is out of the world: " +
                  "where she is first seen coming in and where she is let go standing out. " +
                  "In the city this is set to the end of the island either way (the city " +
@@ -138,7 +138,7 @@ namespace HarborDemo
         /// how deep they are. The reservations and the bounds are worked out from this,
         /// so the ground is right whatever the kit turns out to measure; the build warns
         /// if the sheds want more.</summary>
-        const float PlannedStreetZ = 120f;
+        const float PlannedStreetZ = 160f;
 
         /// <summary>The back road's measured centre in district contract coordinates.
         /// Valid after <see cref="Build"/> has measured the warehouse depth.</summary>
@@ -259,6 +259,7 @@ namespace HarborDemo
             BuildWaterline();       // fenders, ladders, life rings, the oil on the concrete
             BuildContraband();      // the watched box, the cut wire, the shed on offer
             BuildDetail();
+            BuildTerminalInfrastructure();
 
             if (_streetZ > PlannedStreetZ + 1f)
                 Debug.LogWarning($"[Harbor] the sheds want the street at z {_streetZ:F0}, further out than the " +
@@ -323,7 +324,15 @@ namespace HarborDemo
             _street?.UnregisterWalkPlan();
             for (int i = 0; i < _workers.Count; i++) _workers[i].Dispose();
             _shipping?.Dispose();
+            foreach (var crane in _cranes) crane.Dispose();
             TestBench.DestroyAll(_mats);
+            foreach (var mesh in _terminalMeshes)
+            {
+                if (mesh == null) continue;
+                if (Application.isPlaying) Object.Destroy(mesh);
+                else Object.DestroyImmediate(mesh);
+            }
+            _terminalMeshes.Clear();
         }
 
         // ------------------------------------------------------------ into place

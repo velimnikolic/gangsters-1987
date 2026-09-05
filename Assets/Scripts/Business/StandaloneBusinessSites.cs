@@ -80,7 +80,7 @@ namespace LivingCity.Business
                         $"lot:{index}:{spot.Unit.Name}",
                         BusinessCitySources.Bounds(core.Frame.ToWorldRect(local)),
                         BusinessCitySources.Point(
-                            core.Frame.ToWorld(BusinessCitySources.EdgeMidpoint(local, side))),
+                            core.Frame.ToWorld(BusinessCitySources.AmenityDoor(local, spot, side))),
                         BusinessCitySources.Point(
                             core.Frame.ToWorldDir(BusinessCitySources.SideDirection(side)).normalized),
                         signage,

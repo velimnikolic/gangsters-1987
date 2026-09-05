@@ -1142,6 +1142,11 @@ namespace RoadDemo
             }
             if (_actLeft > 0f && pose != PoseAct)
             {
+                if (_takeAllowsMovement && IsMotion(pose))
+                {
+                    _actFrom = pose;
+                    return;
+                }
                 // The action IS what he is doing while it lasts - but only over the
                 // poses it was laid on top of: a stand, a ready stand, a word. It is
                 // a gesture, not a state, so it never survives him being told to walk,
@@ -1393,10 +1398,10 @@ namespace RoadDemo
             Mathf.Abs(clip.averageAngularSpeed) * clip.length * Mathf.Rad2Deg >=
                 NearestAuthored(degrees) * 0.4f;
 
-        /// <summary>Is a join holding the body this frame? A derived agent that
+        /// <summary>Is a join holding the body this frame? A caller or derived agent that
         /// steers by hand reads it: while a turn is being taken, the turn owns his
         /// rotation and nothing else may write it.</summary>
-        protected bool Joining => _join != Join.None;
+        public bool Joining => _join != Join.None;
         protected bool TurningOnSpot => _join == Join.Turning;
 
         /// <summary>Are his LEGS in a gait this frame? Not "does he have an order" -
@@ -1539,6 +1544,7 @@ namespace RoadDemo
 
         bool Begin(Join kind, AnimationClip clip, int into, float degrees)
         {
+            if (_takeAllowsMovement && Acting) return false;
             if (clip == null || clip.length < 0.05f) return false;
 
             // THE TURN HAS TO BE IN THE ROOT, NOT THE BODY. This whole layer rests on
@@ -1708,6 +1714,9 @@ namespace RoadDemo
 
         /// <summary>What PlayTake put on him, while it is still showing.</summary>
         AnimationClip _take;
+        bool _takeAllowsMovement;
+        float _takeBlendRate = 4f;
+        float _takeStart, _takeEnd;
 
         /// <summary>Play this take over everything, and HOLD it until somebody takes it
         /// off him (<see cref="EndTake"/>).
@@ -1722,19 +1731,73 @@ namespace RoadDemo
         /// what a gesture wants; a man in the air whose fall clip runs out and hands him
         /// back stands bolt upright in mid-flight. So the slot is held on the clip's last
         /// frame - which is also what makes <see cref="TakeFinished"/> a read rather than
-        /// a thing anyone has to stop.</summary>
-        public bool PlayTake(AnimationClip clip, bool loop, float speed, float at)
+        /// a thing anyone has to stop. allowMovement keeps a crawl or backward pull
+        /// over ordinary locomotion; hits, death and explicit cancellation still win.
+        /// blendSeconds fades from the previous held take when one is visible;
+        /// continuePrevious lets its follow-through play during that fade.</summary>
+        public bool PlayTake(AnimationClip clip, bool loop, float speed, float at,
+            bool allowMovement = false, float blendSeconds = 0f, bool continuePrevious = false)
         {
             if (clip == null) return false;
+            // Explicit presentation transitions can retain the outgoing take in the
+            // shared join port, frozen by default or continuing its follow-through.
+            bool blend = blendSeconds > 0f && Take != null && _weights[PoseAct] > 0.01f;
+            if (blend)
+            {
+                float time = TakeTime;
+                float previousSpeed = continuePrevious && !TakeFinished ? (float)_poses[PoseAct].GetSpeed() : 0f;
+                blend = PutClip(PoseJoin, _take, force: true);
+                if (blend) RestartPose(PoseJoin, time, previousSpeed);
+            }
+            float previousWeight = _weights[PoseAct];
             CancelJoin();                       // clears the act slot with it
             if (!PutClip(PoseAct, clip, force: true)) return false;
+            _takeAllowsMovement = allowMovement;
+            _takeBlendRate = blend ? 1f / Mathf.Max(0.02f, blendSeconds) : 4f;
+            if (blend)
+            {
+                _weights[PoseJoin] = 1f;
+                _weights[PoseAct] = 0f;
+                _mixer.SetInputWeight(PoseJoin, 1f);
+                _mixer.SetInputWeight(PoseAct, 0f);
+            }
+            else
+            {
+                // A forced cut replaces a visible input. Dropping its weight to zero
+                // makes the humanoid sink toward its unweighted pose for a few frames.
+                _weights[PoseAct] = previousWeight;
+                _mixer.SetInputWeight(PoseAct, previousWeight);
+            }
             RestartPose(PoseAct, at, Mathf.Max(0.05f, speed));
             _actLoop = loop;
             _actLeft = float.MaxValue;          // held: nothing hands this one back
             _actFrom = PoseIdle;
             _pose = PoseAct;
             _take = clip;
+            _takeStart = 0f;
+            _takeEnd = clip.length;
             return true;
+        }
+
+        /// <summary>Use a source interval for a guard loop or a partial recovery.
+        /// The shared take still owns blending, movement and interruption.</summary>
+        public bool PlayTakeRange(AnimationClip clip, float start, float end, bool loop,
+            float speed = 1f, float blendSeconds = 0.15f, bool allowMovement = false)
+        {
+            if (clip == null || start < 0f || end <= start || end > clip.length + 0.001f) return false;
+            if (!PlayTake(clip, loop, speed, start, allowMovement, blendSeconds, continuePrevious: true)) return false;
+            _takeStart = start;
+            _takeEnd = Mathf.Min(end, clip.length);
+            return true;
+        }
+
+        /// <summary>Source seconds of the visible take, independent of playback rate.</summary>
+        public float TakeTime => Take == null ? 0f : Mathf.Clamp(PoseTime(PoseAct), _takeStart, _takeEnd);
+
+        /// <summary>Change the pace without restarting or replacing the visible pose.</summary>
+        public void SetTakeSpeed(float speed)
+        {
+            if (Take != null) _poses[PoseAct].SetSpeed(Mathf.Max(0f, speed));
         }
 
         /// <summary>The take on him this instant, or null.</summary>
@@ -1743,7 +1806,7 @@ namespace RoadDemo
         /// <summary>A one-shot take that has reached its last frame.</summary>
         public bool TakeFinished =>
             _take != null && _pose == PoseAct && !_actLoop &&
-            PoseTime(PoseAct) >= PoseLength(PoseAct) - 0.03f;
+            PoseTime(PoseAct) >= _takeEnd - 0.03f;
 
         /// <summary>Give him back to himself - the take off, the slot cleared, whatever
         /// he was doing before it resumed. A held take never ends on its own, so this is
@@ -1758,6 +1821,7 @@ namespace RoadDemo
 
         protected void EndAct()
         {
+            _takeAllowsMovement = false;
             // THE GUARD IS "IS THE SLOT SHOWING", NOT "IS THERE TIME LEFT". Written as
             // `if (_actLeft <= 0f) return;` this method could not do the one job it is
             // called for most: the countdown in TickBlend takes the clock to zero and
@@ -1981,7 +2045,21 @@ namespace RoadDemo
             for (int i = 0; i < PoseCount; i++)
             {
                 if (!_poses[i].IsValid()) continue;
-                if (LoopByHand[i] || (i == PoseAct && _actLoop))
+                if (i == PoseAct && _take != null)
+                {
+                    double at = _poses[i].GetTime();
+                    if (at >= _takeEnd)
+                    {
+                        if (_actLoop && _takeEnd > _takeStart)
+                            _poses[i].SetTime(_takeStart + (at - _takeStart) % (_takeEnd - _takeStart));
+                        else
+                        {
+                            _poses[i].SetTime(_takeEnd);
+                            _poses[i].SetSpeed(0f);
+                        }
+                    }
+                }
+                else if (LoopByHand[i] || (i == PoseAct && _actLoop))
                 {
                     float len = _clipLength[i];
                     if (len > 0.01f)
@@ -1992,7 +2070,8 @@ namespace RoadDemo
                 }
                 float target = i == _pose ? 1f : 0f;
                 if (Mathf.Approximately(_weights[i], target)) continue;
-                _weights[i] = Mathf.MoveTowards(_weights[i], target, 4f * dt);
+                float blendRate = _take != null && (i == PoseAct || i == PoseJoin) ? _takeBlendRate : 4f;
+                _weights[i] = Mathf.MoveTowards(_weights[i], target, blendRate * dt);
                 _mixer.SetInputWeight(i, _weights[i]);
             }
         }

@@ -1114,6 +1114,9 @@ namespace LivingCity.EditorTools
 
         static bool Write(Unit unit)
         {
+            if (unit.Name == "gym") return ResidentialGymBake.Bake();
+            if (unit.Name == RoadDemo.ResidentialForgeReplacement.Name)
+                return ResidentialForgeBake.Bake();
             var pieces = unit.Parts;
             if (pieces == null || pieces.Count == 0) return false;
 
@@ -1155,7 +1158,7 @@ namespace LivingCity.EditorTools
             return true;
         }
 
-        static void PreparePhysics(GameObject root, float width, float depth,
+        internal static void PreparePhysics(GameObject root, float width, float depth,
                                    float floor, float top)
         {
             foreach (var collider in root.GetComponentsInChildren<Collider>(true))
@@ -1312,6 +1315,16 @@ namespace LivingCity.EditorTools
             sb.AppendLine("        {");
             foreach (var unit in units)
             {
+                if (unit.Name == "gym")
+                {
+                    sb.AppendLine("            ResidentialGym.Describe(),");
+                    continue;
+                }
+                if (unit.Name == RoadDemo.ResidentialForgeReplacement.Name)
+                {
+                    sb.AppendLine("            ResidentialForgeReplacement.Describe(),");
+                    continue;
+                }
                 sb.AppendLine("            new ResidentialUnit");
                 sb.AppendLine("            {");
                 sb.AppendLine($"                Name = \"{unit.Name}\", CW = {unit.CW}, CD = {unit.CD},");

@@ -175,7 +175,9 @@ namespace RoadDemo
         };
         /// <summary>The height the pack's own paving stands at, so a prop set on a tile
         /// stands on the tile rather than in it.</summary>
-        const float Deck = 0.054f;
+        // Ground tiles are laid at zero. Their raised kerb/bounds are not the
+        // walking surface: using that height left every freestanding prop in the air.
+        const float Deck = 0f;
 
         /// <summary>Lamps go a cell in from the corner and then every four cells - 20 m -
         /// which is the rhythm measured off the demo (Docs/synty-demo-anatomy.md).</summary>
@@ -383,6 +385,7 @@ namespace RoadDemo
                 var spot = CafeOf(plan, gap, rng, stood);
                 if (spot != null) cafes.Add((gap, spot));
             }
+            ReserveBusinessAccess(plan);
             var ring = Ring(plan, rng);
             var kerbs = new List<CorePavement.Kerbstone>();
             var stalls = new List<Stall>();
@@ -556,6 +559,11 @@ namespace RoadDemo
                     for (int k = -1; k <= 2 && clear; k++)
                         if (!ring.TryGetValue(RingCell(plan, side, at + k), out var t) || t.Tile == KerbCorner)
                             clear = false;
+                    var cellAt = RingCell(plan, side, at);
+                    bool horizontal = side == 0 || side == 2;
+                    if (!AccessRoom(new Rect(cellAt.Item1 * Cell, cellAt.Item2 * Cell,
+                        horizontal ? Cell * 2f : Cell + .1f,
+                        horizontal ? Cell + .1f : Cell * 2f))) clear = false;
                     if (clear) spots.Add(at);
                 }
                 if (spots.Count == 0) continue;
@@ -1979,6 +1987,9 @@ namespace RoadDemo
             const float room = 2f;
             float chair = Box(CafeChair).size.x * 0.5f + Box(CafeTable).size.x * 0.5f + 0.05f;
             float groupYaw = Between(rng, 0f, 360f);
+            float reach = chair + Mathf.Max(Box(CafeChair).size.x, Box(CafeChair).size.z) * .71f;
+            if (shade) reach = Mathf.Max(reach, 2f);
+            if (!AccessRoom(new Rect(x - reach, z - reach, reach * 2f, reach * 2f))) return false;
             var table = Prop(CafeTable, pen, x, z, groupYaw, room, y);
             if (table == null) return false;
             stood.Tables++;
@@ -2413,8 +2424,8 @@ namespace RoadDemo
                     int key = cell.I + cell.J * plan.W;
                     if (used.Contains(key)) continue;
                     int inward = (cell.Side + 2) % 4;
-                    int behindI = cell.I + ResidentialLot.Step[inward, 0] * ResidentialLot.Walk;
-                    int behindJ = cell.J + ResidentialLot.Step[inward, 1] * ResidentialLot.Walk;
+                    int behindI = cell.I + ResidentialLot.Step[inward, 0] * plan.PavementCells;
+                    int behindJ = cell.J + ResidentialLot.Step[inward, 1] * plan.PavementCells;
                     if (behindI < 0 || behindJ < 0 || behindI >= plan.W || behindJ >= plan.D)
                         continue;
                     var behind = plan.Ground[behindI, behindJ];
@@ -2564,8 +2575,8 @@ namespace RoadDemo
             bool leafyYard = plan.YardBlock &&
                              plan.Spots.Any(s => ResidentialLot.OwnBlockUnit(s.Unit));
             stood.Palms = leafyYard
-                ? CorePavement.Plant(kerbs, standing, raise, under, seed, YardPalmEvery)
-                : CorePavement.Plant(kerbs, standing, raise, under, seed);
+                ? CorePavement.Plant(kerbs, standing, raise, under, seed, YardPalmEvery, AccessRoom)
+                : CorePavement.Plant(kerbs, standing, raise, under, seed, accessRoom: AccessRoom);
             stood.Props += stood.Palms;
         }
     }

@@ -237,7 +237,7 @@ namespace RoadDemo
         /// <summary>One pair of authored shop leaves, animated about the same measured
         /// outer hinges used by FuelStation.OpenTheShop. It is held only for the visit,
         /// so a hundred closed shops cost no Update and allocate nothing.</summary>
-        sealed class DoorSwing
+        internal sealed class DoorSwing
         {
             const float MoveSeconds = 0.55f;
             const float OpenDegrees = 78f;

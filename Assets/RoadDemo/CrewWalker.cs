@@ -4429,6 +4429,13 @@ namespace RoadDemo
 
         void TickLoiter(float dt)
         {
+            // A held reaction/fall owns the body. Idle glances and their standing
+            // turn clips must not rotate it or replace the take underneath its caller.
+            if (Take != null)
+            {
+                TickBlend(dt);
+                return;
+            }
             ChatCooldown -= dt;
 
             if (_chatPartner != null)

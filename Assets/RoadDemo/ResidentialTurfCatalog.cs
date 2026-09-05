@@ -45,6 +45,18 @@ namespace RoadDemo
         }
 
 #if UNITY_EDITOR
+        public void ReplaceEntry(string name, ResidentialTurfPrefabMass[] masses)
+        {
+            var entry = _entries.Find(e => e != null && e.Name == name);
+            if (entry == null)
+            {
+                entry = new ResidentialTurfCatalogEntry { Name = name };
+                _entries.Add(entry);
+            }
+            entry.Masses = masses ?? Array.Empty<ResidentialTurfPrefabMass>();
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+
         public void Replace(List<ResidentialTurfCatalogEntry> entries)
         {
             _entries = entries ?? new List<ResidentialTurfCatalogEntry>();

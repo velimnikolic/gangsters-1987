@@ -26,8 +26,15 @@ namespace LivingCity.UI
     /// transcribed rather than approximated: the Boss card is fit-content and measured,
     /// not a share of the page; the connectors are two units DASHED; the filter chips
     /// stand beside their hint on the left and not out at the right margin; a branch
-    /// column is 400 at most with nine units of padding either side; the man rail is
+    /// column is 400 with nine units of padding either side; the man rail is
     /// 30 in with an 18-unit stub; the tail words are bare type, not boxed keys.
+    ///
+    /// A branch NEVER gives that measure back. Twelve branches make a 4800-unit tree
+    /// and the tree is drawn at 4800, inside a window the width of the sheet that pans
+    /// sideways under the wheel. The chain of command is a ROW, and a row squeezed into
+    /// a column of full-width slabs down the page is a different diagram wearing this
+    /// one's name. Only the tree reads across: the reserve, the watch and the order log
+    /// under it are the sheet's, and they stand still while it pans.
     ///
     /// The one thing that is the game's and not the design's is the DATA. No figure on
     /// this page is invented to fill a row the template happens to draw.
@@ -90,10 +97,9 @@ namespace LivingCity.UI
         const float BranchColumn = 400f;
         const float BranchGutter = 9f;
 
-        /// <summary>Under this a card cannot hold a leaf that reads across, so the tree
-        /// stops standing its branches shoulder to shoulder and hangs them off one spine
-        /// down the sheet instead. The tree NEVER scrolls sideways.</summary>
-        const float BranchMin = 300f;
+        /// <summary>The air kept under the tree inside its own window, so the window's
+        /// clip falls past the last card's foot instead of shaving it.</summary>
+        const float TreeFoot = 6f;
 
         /// <summary>The stub between the spine and a branch, and how far the card is
         /// pulled back up into it (the design's margin-top:-28 on a 48-unit stub).
@@ -134,6 +140,30 @@ namespace LivingCity.UI
         internal RectTransform commandViewport;
         internal RectTransform commandContent;
         internal float commandScroll;
+
+        /// <summary>Where the sheet is drawing right now. Everything on this page goes
+        /// on the scrolling sheet EXCEPT the tree, which is drawn into its own window so
+        /// it can read across without dragging the reserve, the watch and the order log
+        /// sideways with it. The leaf renderer serves both - a man on a branch and a man
+        /// in the reserve are the same line - so the surface is a field, not an
+        /// argument threaded through every call.</summary>
+        RectTransform commandDraw;
+
+        /// <summary>The tree's window: the strip cut in the sheet at the sheet's own
+        /// width, and the rail inside it that is as wide as the branches make it.</summary>
+        RectTransform commandTreeWindow;
+        RectTransform commandTree;
+
+        /// <summary>How wide the tree stands. Never under the sheet - a tree narrower
+        /// than the page still centres on the page.</summary>
+        float commandTreeWidth;
+
+        /// <summary>How far the tree is pushed left of its window, and the track that
+        /// says so. The pan survives a repaint: a boss reading the fifth branch does not
+        /// want to be thrown back to the first because a wage was filed.</summary>
+        internal float commandPan;
+        RectTransform commandPanThumb;
+        float commandPanThumbW;
 
         /// <summary>The full personnel dossier opened over this sheet. It has its own
         /// surface and is painted by the one personal-file renderer.</summary>
@@ -257,6 +287,8 @@ namespace LivingCity.UI
             commandContent.pivot = new Vector2(0f, 1f);
             commandContent.anchoredPosition = Vector2.zero;
             commandContent.sizeDelta = new Vector2(0f, CommandHeight);
+            commandDraw = commandContent;
+            commandTreeWidth = PageWidth;
 
             BuildCommandDossierPopup(root);
         }
@@ -273,6 +305,14 @@ namespace LivingCity.UI
                 Destroy(old.gameObject);
             foreach (Transform old in commandContent)
                 Destroy(old.gameObject);
+
+            // The sheet is the surface until the tree claims it, and the tree's window
+            // has just been destroyed with everything else on the page.
+            commandDraw = commandContent;
+            commandTreeWindow = null;
+            commandTree = null;
+            commandPanThumb = null;
+            commandTreeWidth = PageWidth;
 
             var query = director != null ? director.Organization : null;
             var roster = director != null ? director.Roster : null;
@@ -741,26 +781,59 @@ namespace LivingCity.UI
         float BuildCommandTree(
             IOrganizationQuery query, OrganizationPerson boss, float cursor)
         {
-            cursor = BuildCommandBoss(query, boss, cursor);
+            // Every branch keeps its FULL measure, however many of them there are. A
+            // chain of command is a row: the Boss at the head and his branches shoulder
+            // to shoulder under him. When there are more branches than the sheet is
+            // wide the tree does not fold itself into a spine down the page - it reads
+            // ACROSS, inside a window that pans, and the rest of the sheet stands still
+            // while it does.
+            var count = commandBranches.Count;
+            var span = count > 0 ? BranchColumn * count : 0f;
+            commandTreeWidth = Mathf.Max(PageWidth, span);
+
+            var top = cursor;
+            commandTreeWindow = NewRect("Tree window", commandContent);
+            PlaceTopLeft(commandTreeWindow, 0f, -top, PageWidth, 10f);
+            commandTreeWindow.gameObject.AddComponent<RectMask2D>();
+
+            commandTree = NewRect("Tree", commandTreeWindow);
+            PlaceTopLeft(commandTree, 0f, 0f, commandTreeWidth, 10f);
+
+            // The tree draws in the rail's own coordinates, which start at its top - so
+            // the body is built from zero and the whole strip is hung at the cursor.
+            var surface = commandDraw;
+            commandDraw = commandTree;
+            var used = BuildCommandTreeBody(query, boss);
+            commandDraw = surface;
+
+            var height = used + TreeFoot;
+            commandTreeWindow.sizeDelta = new Vector2(PageWidth, height);
+            commandTree.sizeDelta = new Vector2(commandTreeWidth, height);
+
+            cursor = top + height;
+            if (CommandPanReach() > 0f)
+                cursor = BuildCommandPanBar(cursor + 6f);
+            ApplyCommandPan();
+            return cursor;
+        }
+
+        /// <summary>The tree itself, in the rail's coordinates: the Boss, then either
+        /// his branch row or the line that says he has none.</summary>
+        float BuildCommandTreeBody(IOrganizationQuery query, OrganizationPerson boss)
+        {
+            var cursor = BuildCommandBoss(query, boss, 0f);
 
             if (commandBranches.Count == 0)
             {
-                DashDown(commandContent, PageWidth * 0.5f, cursor, 20f);
-                Line(commandContent, LedgerStyle.MonoItalic, 12f, LedgerV2.Red,
-                    0f, -(cursor + 26f), PageWidth, 22f,
+                DashDown(commandDraw, commandTreeWidth * 0.5f, cursor, 20f);
+                Line(commandDraw, LedgerStyle.MonoItalic, 12f, LedgerV2.Red,
+                    0f, -(cursor + 26f), commandTreeWidth, 22f,
                     "No branch hangs off him. Every man answers to the Boss himself.",
                     TextAlignmentOptions.Center);
                 return cursor + 52f;
             }
 
-            // The branch row is at most 400 to a branch and CENTRED under the Boss -
-            // two branches make an 800-unit tree in the middle of the sheet, not two
-            // half-page slabs.
-            var count = commandBranches.Count;
-            var column = Mathf.Min(BranchColumn, PageWidth / count);
-            return column - BranchGutter * 2f >= BranchMin
-                ? BuildCommandRow(cursor, column)
-                : BuildCommandStack(cursor);
+            return BuildCommandRow(cursor, BranchColumn);
         }
 
         /// <summary>The design's tree: a 20-unit drop out of the Boss, the spine struck
@@ -773,16 +846,16 @@ namespace LivingCity.UI
 
             var count = commandBranches.Count;
             var span = column * count;
-            var left = (PageWidth - span) * 0.5f;
+            var left = (commandTreeWidth - span) * 0.5f;
 
-            DashDown(commandContent, PageWidth * 0.5f, cursor, drop);
+            DashDown(commandDraw, commandTreeWidth * 0.5f, cursor, drop);
             cursor += drop;
 
             if (count > 1)
             {
                 var first = left + column * 0.5f;
                 var last = left + span - column * 0.5f;
-                DashAcross(commandContent, first, cursor, last - first);
+                DashAcross(commandDraw, first, cursor, last - first);
             }
 
             var top = cursor + BranchStub - BranchStubBite;
@@ -790,32 +863,56 @@ namespace LivingCity.UI
             for (var i = 0; i < count; i++)
             {
                 var x = left + i * column;
-                DashDown(commandContent, x + column * 0.5f, cursor, BranchStub);
+                DashDown(commandDraw, x + column * 0.5f, cursor, BranchStub);
                 tallest = Mathf.Max(tallest, BuildCommandBranch(commandBranches[i],
                     x + BranchGutter, top, column - BranchGutter * 2f));
             }
             return top + tallest;
         }
 
-        /// <summary>The fallback the design's fifth rule asks for: more branches than
-        /// the measure will hold, so they hang off one spine down the sheet and each
-        /// takes the full width. Nothing scrolls sideways, ever.</summary>
-        float BuildCommandStack(float cursor)
+        /// <summary>How much tree there is past the right edge of its window.</summary>
+        float CommandPanReach() => Mathf.Max(0f, commandTreeWidth - PageWidth);
+
+        /// <summary>Pushes the rail to where the reader left it and moves the thumb with
+        /// it. Called on a repaint and on every wheel notch, so a pan costs no rebuild.
+        /// </summary>
+        internal void ApplyCommandPan()
         {
-            const float gap = 36f;
-            var top = cursor + 4f;
-            cursor += BranchPortraitLift + 6f;
-            var x = 40f;
-            var width = PageWidth - x;
+            var reach = CommandPanReach();
+            commandPan = Mathf.Clamp(commandPan, 0f, reach);
+            if (commandTree)
+                commandTree.anchoredPosition = new Vector2(-commandPan, 0f);
+            if (commandPanThumb)
+                commandPanThumb.anchoredPosition = new Vector2(
+                    reach <= 0f ? 0f
+                        : (PageWidth - commandPanThumbW) * (commandPan / reach),
+                    commandPanThumb.anchoredPosition.y);
+        }
 
-            for (var i = 0; i < commandBranches.Count; i++)
-            {
-                DashAcross(commandContent, 16f, cursor + 26f, x - 16f);
-                cursor += BuildCommandBranch(commandBranches[i], x, cursor, width) + gap;
-            }
+        /// <summary>The one mark that says the tree runs past the sheet: a track with
+        /// the window's own share of the tree filled in, and the words for what the
+        /// wheel does over it. No number on this page stands without its word.</summary>
+        float BuildCommandPanBar(float cursor)
+        {
+            const float trackH = 4f;
 
-            DashDown(commandContent, 16f, top, Mathf.Max(0f, cursor - top - gap));
-            return cursor;
+            Block("Pan track", commandContent, 0f, -cursor, PageWidth, trackH,
+                LedgerV2.SheetRule);
+            commandPanThumbW = Mathf.Max(60f,
+                PageWidth * Mathf.Clamp01(PageWidth / commandTreeWidth));
+            commandPanThumb = Block("Pan thumb", commandContent, 0f, -cursor,
+                commandPanThumbW, trackH, LedgerV2.Red).rectTransform;
+
+            var y = cursor + trackH + 5f;
+            LedgerV2.Mono(commandContent, 0f, -y, PageWidth,
+                    "THE TREE READS ACROSS \u00b7 " + commandBranches.Count +
+                    " BRANCHES, " + Mathf.RoundToInt(commandTreeWidth) +
+                    " WIDE ON A " + Mathf.RoundToInt(PageWidth) +
+                    " SHEET \u00b7 WHEEL OVER THE TREE PANS IT \u00b7 " +
+                    "SHIFT+WHEEL SCROLLS THE SHEET", 10f, LedgerV2.Muted, 2f)
+                .overflowMode = TextOverflowModes.Ellipsis;
+
+            return y + LineBox(10f);
         }
 
         // ------------------------------------------------------------- the Boss node
@@ -855,10 +952,13 @@ namespace LivingCity.UI
             {
                 commandReady = "";
             }
+            // The card is measured against the SHEET - a boss card wider than the page
+            // is unreadable however wide the tree runs - but it is centred over the
+            // TREE, because the head of a row stands over the row.
             var w = Mathf.Min(PageWidth, inner + BossPadSide * 2f);
-            var x = (PageWidth - w) * 0.5f;
+            var x = (commandTreeWidth - w) * 0.5f;
 
-            var card = LedgerV2.Card("Boss", commandContent, x, -top, w, 10f,
+            var card = LedgerV2.Card("Boss", commandDraw, x, -top, w, 10f,
                 LedgerV2.Head);
             Block("Rank", card, 0f, 0f, w, 4f, LedgerV2.Red);
 
@@ -1110,7 +1210,7 @@ namespace LivingCity.UI
         float BuildCommandBranch(CommandBranch branch, float x, float top, float w)
         {
             var roster = director.Roster;
-            var card = LedgerV2.Card("Branch " + branch.Name, commandContent, x, -top, w,
+            var card = LedgerV2.Card("Branch " + branch.Name, commandDraw, x, -top, w,
                 10f, LedgerV2.Panel);
             Block("Rank", card, 0f, 0f, w, 4f, branch.Ink);
 
@@ -1276,9 +1376,9 @@ namespace LivingCity.UI
 
             if (branch.Roster.Count == 0 && !branch.IsBag)
             {
-                DashAcross(commandContent, x + RailX, cursor + 11f, RailStub);
-                DashDown(commandContent, x + RailX, railTop, 11f);
-                Line(commandContent, LedgerStyle.MonoItalic, 10.5f, LedgerV2.Red,
+                DashAcross(commandDraw, x + RailX, cursor + 11f, RailStub);
+                DashDown(commandDraw, x + RailX, railTop, 11f);
+                Line(commandDraw, LedgerStyle.MonoItalic, 10.5f, LedgerV2.Red,
                     leafX + 6f, -cursor, Mathf.Max(40f, leafW - 6f), 22f,
                     options.Availability != AvailabilityFilter.All
                         ? "no man on this branch answers to this filter"
@@ -1294,7 +1394,7 @@ namespace LivingCity.UI
                 {
                     cursor += LeafMargin;
                     lastStub = cursor + LeafRowH() * 0.5f;
-                    DashAcross(commandContent, x + RailX, lastStub, RailStub);
+                    DashAcross(commandDraw, x + RailX, lastStub, RailStub);
                     cursor += BuildCommandLeaf(branch.Roster[i], leafX, cursor, leafW,
                         reserve: false, bagCrewId: branch.IsBag ? branch.CrewId : -1,
                         postBagCrewId: !branch.IsBag && branch.Bag != null &&
@@ -1304,7 +1404,7 @@ namespace LivingCity.UI
                 // The rail is trimmed at the LAST man's stub, the way the design's
                 // little patch of paper trims it: a tail hanging past the last leaf
                 // reads as a branch with a man missing off the end of it.
-                DashDown(commandContent, x + RailX, railTop, lastStub - railTop);
+                DashDown(commandDraw, x + RailX, railTop, lastStub - railTop);
             }
 
             if (branch.IsBag)
@@ -1314,8 +1414,8 @@ namespace LivingCity.UI
                 {
                     cursor += LeafMargin;
                     var stub = cursor + LeafRowH() * 0.5f;
-                    DashAcross(commandContent, x + RailX, stub, RailStub);
-                    var slot = LedgerV2.Card("Escort place", commandContent,
+                    DashAcross(commandDraw, x + RailX, stub, RailStub);
+                    var slot = LedgerV2.Card("Escort place", commandDraw,
                         leafX, -cursor, leafW, LeafRowH(), LedgerV2.Panel);
                     LedgerV2.Mono(slot, LeafPad, -(LeafRowH() - LineBox(10f)) * 0.5f,
                         leafW - LeafPad * 2f, "EMPTY ESCORT PLACE · PLACE", 10f,
@@ -1329,7 +1429,7 @@ namespace LivingCity.UI
                     cursor += LeafRowH() + LeafMargin;
                 }
                 if (branch.Roster.Count + empty > 0)
-                    DashDown(commandContent, x + RailX, railTop,
+                    DashDown(commandDraw, x + RailX, railTop,
                         Mathf.Max(0f, cursor - railTop - LeafMargin - LeafRowH() * 0.5f));
             }
 
@@ -1339,7 +1439,7 @@ namespace LivingCity.UI
             {
                 cursor += 14f;
                 var nestedX = x + RailX;
-                DashAcross(commandContent, x + RailX * 0.45f, cursor + 24f,
+                DashAcross(commandDraw, x + RailX * 0.45f, cursor + 24f,
                     RailX * 0.55f);
                 cursor += BuildCommandBranch(branch.Bag, nestedX, cursor,
                     Mathf.Max(180f, w - RailX));
@@ -1392,7 +1492,7 @@ namespace LivingCity.UI
             var pad = reserve ? 12f : LeafPad;
             var gap = reserve ? 11f : LeafGap;
 
-            var card = LedgerV2.Card("Man " + person.Name, commandContent, x, -top, w,
+            var card = LedgerV2.Card("Man " + person.Name, commandDraw, x, -top, w,
                 rowH, picked ? LedgerV2.Picked : LedgerV2.Panel);
 
             // The LINE is the click surface, not the card: with the file open, a click

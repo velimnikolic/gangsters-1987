@@ -42,6 +42,15 @@ namespace AirportDemo
             // the bake recentred the pivot on the footprint, so the front face is half
             // the depth ahead of it; after the half turn that face looks down -Z
             float centreZ = AirportSpec.BuildingFrontZ + jog + b.size.z * 0.5f;
+            // Roof overhangs and gate hoods must not move the boarding facade away
+            // from the shared door coordinates when the kit is rebaked.
+            var facade = prefab.transform.Find("Apron facade anchor");
+            if (facade != null)
+            {
+                var offset = Quaternion.Euler(0f, 180f + extraTurn, 0f) * facade.localPosition;
+                centreZ = AirportSpec.BuildingFrontZ + jog - offset.z;
+                x -= offset.x;
+            }
             var go = AirportKit.Prop(prefab, new Vector3(x, AirportSpec.PaveY, centreZ), 180f + extraTurn, _buildingRoot, name);
             RememberFootprint(name, go);
             return go;

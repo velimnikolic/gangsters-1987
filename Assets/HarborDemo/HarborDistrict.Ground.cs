@@ -170,6 +170,10 @@ namespace HarborDemo
                 Set("_Enable_Shore_Animation", 0f);
             }
 
+            // Sheltered working water: the pack's beach sand tint overwhelms the basin.
+            if (mat.HasProperty("_Deep_Color")) mat.SetColor("_Deep_Color", new Color(0.055f, 0.15f, 0.18f, 1f));
+            if (mat.HasProperty("_Shallow_Color")) mat.SetColor("_Shallow_Color", new Color(0.17f, 0.29f, 0.28f, 1f));
+
             // the sandy shallows
             float s = Mathf.Clamp01(shallowSand);
             if (mat.HasProperty("_Shallow_Color") && mat.HasProperty("_Deep_Color"))
@@ -483,16 +487,7 @@ namespace HarborDemo
         /// plane stands in when the paving square is not there to be had.</summary>
         void BuildApron()
         {
-            LoadGroundKit();
-            float half = QuayHalf;
-            if (_paveTile == null)
-                Debug.LogWarning($"[Harbor] {HarborKit.PaveTile} is missing; the apron is poured as one plane.");
-            bool tiled = _paveTile != null &&
-                         TileCarpet("Apron", -half, half, 0f, apronDepth,
-                                    TileTop, _paveTile, _apronRoot) > 0;
-            if (!tiled)
-                FlatPlane("Apron", -half, half, 0f, apronDepth,
-                          TileTop, ConcreteMaterial(), 12.5f, _apronRoot);
+            PourTerminalApron("Container apron", Rect.MinMaxRect(-QuayHalf, 0f, QuayHalf, apronDepth));
             BuildBulkTerminalApron();
         }
 
@@ -566,7 +561,7 @@ namespace HarborDemo
             // the channel: tall buoys down the sailing lanes' seaward side, every sixty metres
             if (_buoy != null)
                 for (float x = -half - 60f; x <= BulkTerminalEast + 60f; x += 60f)
-                    HarborKit.Prop(_buoy, new Vector3(x + HarborKit.Range(_rng, -6f, 6f), WaterY - 0.25f, -66f + HarborKit.Range(_rng, -3f, 3f)),
+                    HarborKit.Prop(_buoy, new Vector3(x + HarborKit.Range(_rng, -6f, 6f), WaterY - 0.25f, -(HarborShipping.LaneOffset + (berths - 1) * HarborShipping.LaneStep + 16f) + HarborKit.Range(_rng, -2f, 2f)),
                                    HarborKit.Range(_rng, 0f, 360f), _quayRoot, "Buoy");
         }
     }

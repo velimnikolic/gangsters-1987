@@ -443,6 +443,16 @@ namespace LivingCity.UI
                 dirty = true;
             }
 
+            // F3: THE PHONE RINGS TOMORROW (EPIC 40's bench lever). The conditions the
+            // street wants - a lieutenant to bring the word, money for the whole path,
+            // our name in the paper - so the man's card comes at the next six o'clock
+            // cut and the rest can be walked through by hand.
+            if (keyboard.f3Key.wasPressedThisFrame && outfit != null)
+            {
+                outfit.DebugRingTomorrow(director);
+                dirty = true;
+            }
+
             if (keyboard.escapeKey.wasPressedThisFrame)
             {
                 // Innermost state first - each Esc peels one layer, closing last.
@@ -793,11 +803,26 @@ namespace LivingCity.UI
             if (mouse == null)
                 return;
 
-            var wheel = mouse.scroll.ReadValue().y;
+            var scroll = mouse.scroll.ReadValue();
+            var wheel = scroll.y;
+            var point = mouse.position.ReadValue();
+
+            // A sideways notch - a trackpad's second axis, or a wheel that tilts - means
+            // one thing on this book: pan the chain of command's tree. It is the only
+            // region that reads across.
+            if (scroll.x != 0f && currentPage == LedgerPage.Command &&
+                commandTreeWindow && CommandPanReach() > 0f &&
+                RectTransformUtility.RectangleContainsScreenPoint(
+                    commandTreeWindow, point))
+            {
+                commandPan = Mathf.Clamp(commandPan + scroll.x * WheelStep, 0f,
+                    CommandPanReach());
+                ApplyCommandPan();
+                return;
+            }
+
             if (wheel == 0f)
                 return;
-
-            var point = mouse.position.ReadValue();
 
             // The rail stands on EVERY page, so its wire is asked first: the pointer over
             // the wire is reading the wire, whichever page is open behind it.
@@ -955,9 +980,28 @@ namespace LivingCity.UI
             }
             else if (viewport == commandViewport)
             {
-                commandScroll = Mathf.Clamp(
-                    commandScroll - wheel * WheelStep, 0f, maxScroll);
-                content.anchoredPosition = new Vector2(0f, commandScroll);
+                // The tree is the one thing on this sheet that reads ACROSS, so with the
+                // pointer over it, and more tree than sheet, the wheel pans it. Held with
+                // shift - or anywhere else on the page - the same notch scrolls the
+                // sheet, so nothing under the tree is unreachable.
+                var reach = CommandPanReach();
+                var overTree = reach > 0f && commandTreeWindow &&
+                    RectTransformUtility.RectangleContainsScreenPoint(
+                        commandTreeWindow, point);
+                var keys = Keyboard.current;
+                var shift = keys != null && keys.shiftKey.isPressed;
+                if (overTree && !shift)
+                {
+                    commandPan = Mathf.Clamp(
+                        commandPan - wheel * WheelStep, 0f, reach);
+                    ApplyCommandPan();
+                }
+                else
+                {
+                    commandScroll = Mathf.Clamp(
+                        commandScroll - wheel * WheelStep, 0f, maxScroll);
+                    content.anchoredPosition = new Vector2(0f, commandScroll);
+                }
             }
             else if (viewport == commandDossierViewport)
             {

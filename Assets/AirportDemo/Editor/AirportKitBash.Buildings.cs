@@ -106,6 +106,7 @@ namespace AirportDemo.EditorTools
             Gable(t, "roof", -hx, hx, -hz, hz, h, 2.0f, RoofMetal);
             // the ridge vent every metal shed carries
             Slab(t, "ridge", new Vector3(0f, h + 2.05f, 0f), new Vector3(w * 0.7f, 0.3f, 1.1f), Steel);
+            BuildHangarFinish(t, w, d, h, 2f, "GENERAL AVIATION");
             Bake(root, closed ? "airport-hangar-box" : "airport-hangar-box-open");
         }
 
@@ -151,6 +152,7 @@ namespace AirportDemo.EditorTools
             Slab(t, "ridge lantern", new Vector3(0f, h + 3.1f, 0f), new Vector3(w * 0.55f, 0.9f, 3.2f), RoofMetal);
             for (int s = -1; s <= 1; s += 2)
                 Slab(t, "lantern glazing", new Vector3(0f, h + 3.1f, s * 1.62f), new Vector3(w * 0.5f, 0.55f, 0.06f), Glass);
+            BuildHangarFinish(t, w, d, h, 3f, "AIRCRAFT SERVICE");
             Bake(root, "airport-hangar-maint");
         }
 
@@ -342,7 +344,8 @@ namespace AirportDemo.EditorTools
             Slab(t, "canopy band", new Vector3(0f, BaseStorey - 0.05f, -hz - 6.5f), new Vector3(26f, 0.45f, 0.3f), Blue);
             for (int i = -2; i <= 2; i++)
                 Tube(t, "canopy post", new Vector3(i * 6f, 0f, -hz - 6.2f), 0.12f, BaseStorey - 0.5f, Steel, 8);
-            Bake(root, "airport-terminal");
+            BuildTerminalArchitecture(t, hx, hz, ux, uz);
+            Bake(root, "airport-terminal", hz);
         }
 
         /// <summary>The fixed-base operator: a small block with a lounge looking at the
@@ -374,8 +377,7 @@ namespace AirportDemo.EditorTools
         }
 
         /// <summary>The tower: the manager's office at its foot, a square Base shaft
-        /// rising five storeys out of it, a gallery, and the prison pack's glazed
-        /// watchtower cab on top - the one cab in any pack that reads as a tower cab.
+        /// rising out of it, a gallery, and an octagonal cab with sloped glazing.
         /// The beacon rides the cab roof.</summary>
         static void BuildTower()
         {
@@ -407,13 +409,7 @@ namespace AirportDemo.EditorTools
             Slab(t, "gallery rail E", new Vector3(3.6f, shaftTop + 0.7f, 0f), new Vector3(0.1f, 0.9f, 7.4f), Steel);
             Slab(t, "gallery rail W", new Vector3(-3.6f, shaftTop + 0.7f, 0f), new Vector3(0.1f, 0.9f, 7.4f), Steel);
 
-            var cab = Put(t, AirportKit.TowerCab, new Vector3(0f, shaftTop + 0.24f, 0f));
-            if (cab == null)
-            {
-                // no prison pack: a glazed box of our own rather than a headless tower
-                Slab(t, "cab", new Vector3(0f, shaftTop + 1.9f, 0f), new Vector3(6.2f, 3.2f, 6.2f), Glass);
-                Slab(t, "cab roof", new Vector3(0f, shaftTop + 3.7f, 0f), new Vector3(7f, 0.35f, 7f), Steel);
-            }
+            BuildControlCab(t, shaftTop);
             float cabTop = shaftTop + 4.7f;
             // the beacon: the light that says "airport" from ten miles out
             Tube(t, "beacon post", new Vector3(0f, cabTop, 0f), 0.12f, 1.1f, Steel, 8);

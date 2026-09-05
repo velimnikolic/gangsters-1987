@@ -93,6 +93,7 @@ namespace RoadDemo
                 yield return null;
             }
 
+            ReserveBusinessAccess(plan);
             var ring = Ring(plan, rng);
             var kerbs = new List<CorePavement.Kerbstone>();
             var stalls = new List<Stall>();

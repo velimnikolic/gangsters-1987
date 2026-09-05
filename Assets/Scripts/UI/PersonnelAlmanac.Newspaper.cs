@@ -172,9 +172,8 @@ namespace LivingCity.UI
                         HasNext = newsEditionDay < latest,
                         Previous = PreviousPressEdition,
                         Next = NextPressEdition,
+                        HouseColumn = newsEditionDay == latest ? BuildStreetTalk : null,
                     });
-                if (newsEditionDay == latest)
-                    BuildStreetTalk(newsContent);
                 return;
             }
 
@@ -295,29 +294,26 @@ namespace LivingCity.UI
         /// whose the line is, and the last lines the wire brought. The same words the
         /// probe prints.
         /// </summary>
-        void BuildStreetTalk(RectTransform root)
+        void BuildStreetTalk(RectTransform sheet, float x, float top, float w, float h)
         {
-            var x = NewsLeft + (BriefColumns - 1) * (BriefW + BriefGap);
-            var y = BriefTop;
-            var w = BriefW;
-            var h = BriefH;
+            // A column of the paper like the briefs beside it: the same caps heading,
+            // the same rule, the same serif - not a box laid over the page.
+            var box = NewRect("Street talk", sheet);
+            PlaceTopLeft(box, x, top, w, h);
+            Caps(box, 0f, 0f, w, "STREET TALK", 10.5f, LedgerV2.Muted, 4f);
+            Rule(box, 0f, -20f, w, LedgerV2.Rule);
 
-            var box = NewRect("Street talk", root);
-            PlaceTopLeft(box, x, y, w, h);
-            Fill(box, LedgerV2.PanelDark);
-            Caps(box, 8f, 0f, w - 16f, "STREET TALK", 11f, LedgerV2.Ink, 4f);
-            Rule(box, 8f, -18f, w - 16f, LedgerV2.Ink);
-
-            var line = -24f;
-            void Say(string text, Color ink, float size = 9.5f, int lines = 1)
+            var line = -30f;
+            void Say(string text, Color ink, float size = 12f, int lines = 2)
             {
-                if (string.IsNullOrEmpty(text) || line < -h + 12f)
+                if (string.IsNullOrEmpty(text) || line < -h + 14f)
                     return;
-                var box_ = LineBox(size, lines);
-                if (lines > 1)
-                    Paragraph(box, LedgerStyle.Mono, size, ink, 8f, line, w - 16f, box_, text, 1f);
-                else
-                    LedgerV2.Mono(box, 8f, line, w - 16f, text, size, ink, 0f);
+                // Every line wraps: a signal in words is a sentence, and a sentence cut
+                // at the margin with an ellipsis says nothing (the user's screenshot).
+                var wanted = Mathf.Max(1, Mathf.CeilToInt(text.Length / (w / (size * 0.52f))));
+                var rows = Mathf.Min(lines, wanted);
+                var box_ = LineBox(size, rows);
+                Paragraph(box, LedgerStyle.Serif, size, ink, 0f, line, w, box_, text, 2f);
                 line -= box_ - 2f;
             }
 
@@ -344,19 +340,19 @@ namespace LivingCity.UI
             // The card on the table, and what holds it.
             if (card != null)
             {
-                Say("PENDING · " + card.Title + " · " + card.SpeakerName.ToUpperInvariant(),
-                    LedgerV2.Red, 9.5f);
+                Say("PENDING - " + card.Title + ", " + card.SpeakerName + " on the line.",
+                    LedgerV2.Red, 12f, 2);
                 Say(hold != LedgerOutfit.HoldReason.None
                         ? LedgerOutfit.HoldReasons.Line(hold) + " - " +
-                          LedgerOutfit.HoldReasons.Clears(hold)
+                          LedgerOutfit.HoldReasons.Clears(hold) + "."
                         : "He waits until day " + card.ExpiresDay + ".",
-                    LedgerV2.Body, 9f, 2);
-                LedgerV2.Button(box, "THE PHONE", 8f, line, 96f, 20f, () =>
+                    LedgerV2.Body, 12f, 3);
+                LedgerV2.Button(box, "THE PHONE", 0f, line - 2f, 110f, 22f, () =>
                 {
                     Close();
                     EventCardHud.Instance?.Reopen();
-                }, LedgerV2.Key.Dark, 9f);
-                line -= 26f;
+                }, LedgerV2.Key.Dark, 9.5f);
+                line -= 32f;
             }
 
             // The def nearest its threshold: every signal, the gate, the pot.
@@ -370,18 +366,23 @@ namespace LivingCity.UI
             {
                 var signals = nearest.Signals != null ? nearest.Signals(view, ctx) : null;
                 for (var i = 0; signals != null && i < signals.Count; i++)
-                    Say(signals[i].Name + " - " + signals[i].Line, LedgerV2.Body, 9f);
+                    Say(signals[i].Name + " - " + signals[i].Line + ".", LedgerV2.Ink, 12f, 2);
                 var gate = nearest.Gate(view, ctx);
                 if (gate != LedgerOutfit.HoldReason.None)
-                    Say("SHUT - " + LedgerOutfit.HoldReasons.Line(gate) + " - " +
-                        LedgerOutfit.HoldReasons.Clears(gate), LedgerV2.Amber, 9f, 2);
+                    Say("Shut: " + LedgerOutfit.HoldReasons.Line(gate).ToLowerInvariant() +
+                        " - " + LedgerOutfit.HoldReasons.Clears(gate) + ".",
+                        LedgerV2.Amber, 12f, 3);
                 var pot = book.PotOf(nearest.Id);
                 if (pot >= LedgerOutfit.StreetEvents.Full)
-                    Say("The word is in. " + nearest.PotLine(ctx) + ".", LedgerV2.Green, 9f);
+                    Say("The word is in: " + nearest.PotLine(ctx) + ". The phone rings at six.",
+                        LedgerV2.Green, 12f, 2);
                 else if (pot >= LedgerOutfit.StreetEvents.ShowFrom)
                     Say(char.ToUpperInvariant(nearest.PotLine(ctx)[0]) +
-                        nearest.PotLine(ctx).Substring(1) + " (" + (int)(pot * 100) + "%).",
-                        LedgerV2.Muted, 9f);
+                        nearest.PotLine(ctx).Substring(1) + " - " + (int)(pot * 100) +
+                        " per cent of the way.", LedgerV2.Muted, 12f, 2);
+                else
+                    Say("Nothing on the street yet. Money in the safe and a name in the " +
+                        "paper are what make it talk.", LedgerV2.Muted, 12f, 3);
             }
 
             // The connection's own row.
@@ -392,12 +393,13 @@ namespace LivingCity.UI
                     stage += " - " + System.Math.Max(0, paper.BurnedUntilDay - day) + " DAYS LEFT";
                 else if (paper.Grade != LedgerOutfit.SupplierGrade.None)
                     stage += " - " + LedgerOutfit.Connection.GradeWord(paper.Grade);
-                Say(stage, LedgerV2.Ink, 9.5f);
-                Say(paper.WhoseLine(house.Roster) + " · trust " + paper.Trust +
-                    (paper.Kilos > 0 ? " · " + paper.Kilos + " kilos in the room" : "") +
+                Say(stage, LedgerV2.Ink, 12f, 1);
+                Say(char.ToUpperInvariant(paper.WhoseLine(house.Roster)[0]) +
+                    paper.WhoseLine(house.Roster).Substring(1) + ". Trust " + paper.Trust +
+                    (paper.Kilos > 0 ? ", " + paper.Kilos + " kilos in the room" : "") +
                     (paper.Stage == LedgerOutfit.ConnectionStage.Supplier
-                        ? " · next load day " + paper.NextLoadDay : ""),
-                    LedgerV2.Body, 9f, 2);
+                        ? ", next load day " + paper.NextLoadDay : "") + ".",
+                    LedgerV2.Body, 12f, 3);
                 if (paper.Stage == LedgerOutfit.ConnectionStage.Rumour ||
                     paper.Stage == LedgerOutfit.ConnectionStage.Contact)
                 {
@@ -408,14 +410,14 @@ namespace LivingCity.UI
                             view.PoliceAttention(block), ctx.RaidThreshold, name)[0]) +
                         LedgerOutfit.ConnectionText.Watch(
                             view.PoliceAttention(block), ctx.RaidThreshold, name).Substring(1) + ".",
-                        LedgerV2.Muted, 9f, 2);
+                        LedgerV2.Muted, 12f, 2);
                 }
             }
 
             // The last lines the wire brought.
             var wire = book.Wire;
             for (var i = System.Math.Max(0, wire.Count - 3); i < wire.Count; i++)
-                Say("Day " + wire[i].Day + " · " + wire[i].Text, LedgerV2.Muted, 8.5f, 2);
+                Say("Day " + wire[i].Day + ": " + wire[i].Text, LedgerV2.Muted, 11f, 3);
         }
 
         static int EarliestPressEdition(PressBook press, int currentDay)

@@ -3943,7 +3943,7 @@ MonoBehaviour:
     Masses:
     - _footprint:
         serializedVersion: 2
-        x: 0
+        x: 10
         y: -2
         width: 4
         height: 1
@@ -3951,39 +3951,7 @@ MonoBehaviour:
       _top: 12.959473
     - _footprint:
         serializedVersion: 2
-        x: 4
-        y: -2
-        width: 1
-        height: 1
-      _bottom: 0
-      _top: 6.269721
-    - _footprint:
-        serializedVersion: 2
-        x: 5
-        y: -2
-        width: 4
-        height: 1
-      _bottom: 0
-      _top: 12.959473
-    - _footprint:
-        serializedVersion: 2
-        x: 9
-        y: -2
-        width: 1
-        height: 1
-      _bottom: 0
-      _top: 6.269721
-    - _footprint:
-        serializedVersion: 2
-        x: 15
-        y: -2
-        width: 4
-        height: 1
-      _bottom: 0
-      _top: 9.959473
-    - _footprint:
-        serializedVersion: 2
-        x: 19
+        x: 14
         y: -2
         width: 1
         height: 1
@@ -3994,164 +3962,76 @@ MonoBehaviour:
         x: -1
         y: -1
         width: 17
-        height: 7
+        height: 1
       _bottom: 0
-      _top: 15.4998665
+      _top: 15.74354
     - _footprint:
         serializedVersion: 2
         x: 16
         y: -1
         width: 5
-        height: 4
+        height: 5
       _bottom: 0
-      _top: 12.74354
+      _top: 18.562569
     - _footprint:
         serializedVersion: 2
-        x: 21
+        x: -1
         y: 0
-        width: 1
-        height: 4
+        width: 5
+        height: 11
       _bottom: 0
-      _top: 9.959473
-    - _footprint:
-        serializedVersion: 2
-        x: 16
-        y: 3
-        width: 1
-        height: 2
-      _bottom: 0
-      _top: 13.573437
-    - _footprint:
-        serializedVersion: 2
-        x: 17
-        y: 3
-        width: 4
-        height: 8
-      _bottom: 0
-      _top: 12.74354
-    - _footprint:
-        serializedVersion: 2
-        x: 21
-        y: 4
-        width: 1
-        height: 1
-      _bottom: 0
-      _top: 6.269721
-    - _footprint:
-        serializedVersion: 2
-        x: 16
-        y: 5
-        width: 1
-        height: 2
-      _bottom: 0
-      _top: 13.550419
+      _top: 15.74354
     - _footprint:
         serializedVersion: 2
         x: 4
-        y: 6
-        width: 1
-        height: 5
-      _bottom: 0
-      _top: 12.4998665
-    - _footprint:
-        serializedVersion: 2
-        x: 5
-        y: 6
-        width: 2
-        height: 1
-      _bottom: 0
-      _top: 13.550419
-    - _footprint:
-        serializedVersion: 2
-        x: 7
-        y: 6
-        width: 4
-        height: 2
-      _bottom: 0
-      _top: 15.24361
-    - _footprint:
-        serializedVersion: 2
-        x: 11
-        y: 6
-        width: 3
-        height: 5
-      _bottom: 0
-      _top: 12.743542
-    - _footprint:
-        serializedVersion: 2
-        x: 14
-        y: 6
-        width: 2
-        height: 1
-      _bottom: 0
-      _top: 13.550419
-    - _footprint:
-        serializedVersion: 2
-        x: 5
-        y: 7
-        width: 2
-        height: 4
-      _bottom: 0
-      _top: 12.4998665
-    - _footprint:
-        serializedVersion: 2
-        x: 14
-        y: 7
-        width: 3
-        height: 4
-      _bottom: 0
-      _top: 12.743542
-    - _footprint:
-        serializedVersion: 2
-        x: 7
-        y: 8
-        width: 1
-        height: 1
-      _bottom: 0
-      _top: 13.092119
-    - _footprint:
-        serializedVersion: 2
-        x: 8
-        y: 8
-        width: 1
-        height: 3
-      _bottom: 0
-      _top: 12.4998665
-    - _footprint:
-        serializedVersion: 2
-        x: 9
-        y: 8
+        y: 0
         width: 2
         height: 3
       _bottom: 0
-      _top: 12.743542
-    - _footprint:
-        serializedVersion: 2
-        x: 7
-        y: 9
-        width: 1
-        height: 2
-      _bottom: 0
-      _top: 12.4998665
-    - _footprint:
-        serializedVersion: 2
-        x: 5
-        y: 11
-        width: 1
-        height: 1
-      _bottom: 0
-      _top: 6.269721
+      _top: 16.550419
     - _footprint:
         serializedVersion: 2
         x: 6
-        y: 11
-        width: 5
-        height: 1
+        y: 0
+        width: 10
+        height: 3
       _bottom: 0
-      _top: 9.959473
+      _top: 15.743542
     - _footprint:
         serializedVersion: 2
-        x: 15
+        x: 4
+        y: 3
+        width: 4
+        height: 4
+      _bottom: 0
+      _top: 18.24361
+    - _footprint:
+        serializedVersion: 2
+        x: 8
+        y: 3
+        width: 8
+        height: 8
+      _bottom: 0
+      _top: 15.743542
+    - _footprint:
+        serializedVersion: 2
+        x: 16
+        y: 4
+        width: 5
+        height: 7
+      _bottom: 0
+      _top: 15.74354
+    - _footprint:
+        serializedVersion: 2
+        x: 4
+        y: 7
+        width: 4
+        height: 4
+      _bottom: 0
+      _top: 15.743542
+    - _footprint:
+        serializedVersion: 2
+        x: 10
         y: 11
         width: 1
         height: 1
@@ -4159,12 +4039,12 @@ MonoBehaviour:
       _top: 6.269721
     - _footprint:
         serializedVersion: 2
-        x: 16
+        x: 11
         y: 11
-        width: 5
+        width: 4
         height: 1
       _bottom: 0
-      _top: 9.959473
+      _top: 12.959473
   - Name: residential-15
     Masses:
     - _footprint:
@@ -5451,196 +5331,108 @@ MonoBehaviour:
     Masses:
     - _footprint:
         serializedVersion: 2
-        x: 2
-        y: 1
-        width: 2
+        x: 0
+        y: 0
+        width: 10
         height: 1
       _bottom: 0
-      _top: 2.6724348
-    - _footprint:
-        serializedVersion: 2
-        x: 4
-        y: 1
-        width: 6
-        height: 1
-      _bottom: 0
-      _top: 2.5030546
-    - _footprint:
-        serializedVersion: 2
-        x: 10
-        y: 1
-        width: 1
-        height: 1
-      _bottom: 0
-      _top: 2.6724348
+      _top: 1.7803569
     - _footprint:
         serializedVersion: 2
         x: 15
-        y: 1
-        width: 1
+        y: 0
+        width: 10
         height: 1
       _bottom: 0
-      _top: 2.6724348
-    - _footprint:
-        serializedVersion: 2
-        x: 3
-        y: 2
-        width: 1
-        height: 2
-      _bottom: 0
-      _top: 2.5030546
-    - _footprint:
-        serializedVersion: 2
-        x: 15
-        y: 2
-        width: 1
-        height: 2
-      _bottom: 0
-      _top: 2.5030546
+      _top: 1.7803569
     - _footprint:
         serializedVersion: 2
         x: 0
-        y: 4
+        y: 1
+        width: 1
+        height: 4
+      _bottom: 0
+      _top: 1.7803569
+    - _footprint:
+        serializedVersion: 2
+        x: 24
+        y: 1
+        width: 1
+        height: 24
+      _bottom: 0
+      _top: 1.7803569
+    - _footprint:
+        serializedVersion: 2
+        x: 0
+        y: 9
         width: 2
         height: 2
       _bottom: 0
-      _top: 4.894201
+      _top: 4.0412006
     - _footprint:
         serializedVersion: 2
         x: 2
-        y: 4
+        y: 9
+        width: 1
+        height: 1
+      _bottom: 0
+      _top: 4.0111637
+    - _footprint:
+        serializedVersion: 2
+        x: 3
+        y: 9
         width: 2
         height: 7
       _bottom: 0
-      _top: 6.7053695
-    - _footprint:
-        serializedVersion: 2
-        x: 15
-        y: 4
-        width: 1
-        height: 2
-      _bottom: 0
-      _top: 2.6724348
-    - _footprint:
-        serializedVersion: 2
-        x: 0
-        y: 6
-        width: 1
-        height: 3
-      _bottom: 0
-      _top: 4.864164
-    - _footprint:
-        serializedVersion: 2
-        x: 1
-        y: 6
-        width: 1
-        height: 3
-      _bottom: 0
-      _top: 4.2621374
-    - _footprint:
-        serializedVersion: 2
-        x: 15
-        y: 6
-        width: 1
-        height: 3
-      _bottom: 0
-      _top: 2.5030546
-    - _footprint:
-        serializedVersion: 2
-        x: 4
-        y: 8
-        width: 1
-        height: 1
-      _bottom: 0
-      _top: 3.7196813
-    - _footprint:
-        serializedVersion: 2
-        x: 0
-        y: 9
-        width: 2
-        height: 2
-      _bottom: 0
-      _top: 4.894201
-    - _footprint:
-        serializedVersion: 2
-        x: 15
-        y: 9
-        width: 1
-        height: 2
-      _bottom: 0
-      _top: 2.6724348
-    - _footprint:
-        serializedVersion: 2
-        x: 3
-        y: 11
-        width: 1
-        height: 2
-      _bottom: 0
-      _top: 2.5030546
-    - _footprint:
-        serializedVersion: 2
-        x: 15
-        y: 11
-        width: 1
-        height: 2
-      _bottom: 0
-      _top: 2.5030546
+      _top: 5.8523693
     - _footprint:
         serializedVersion: 2
         x: 2
-        y: 13
+        y: 10
+        width: 1
+        height: 5
+      _bottom: 0
+      _top: 3.4091368
+    - _footprint:
+        serializedVersion: 2
+        x: 0
+        y: 11
         width: 2
-        height: 1
+        height: 3
       _bottom: 0
-      _top: 2.6724348
+      _top: 4.0111637
     - _footprint:
         serializedVersion: 2
-        x: 4
-        y: 13
+        x: 0
+        y: 14
         width: 2
-        height: 1
+        height: 2
       _bottom: 0
-      _top: 2.5030546
+      _top: 4.0412006
     - _footprint:
         serializedVersion: 2
-        x: 6
-        y: 13
+        x: 2
+        y: 15
         width: 1
         height: 1
       _bottom: 0
-      _top: 2.6724348
+      _top: 4.0111637
     - _footprint:
         serializedVersion: 2
-        x: 7
-        y: 13
-        width: 4
-        height: 1
-      _bottom: 0
-      _top: 2.5030546
-    - _footprint:
-        serializedVersion: 2
-        x: 11
-        y: 13
+        x: 0
+        y: 16
         width: 1
-        height: 1
+        height: 9
       _bottom: 0
-      _top: 2.6724348
+      _top: 1.7803569
     - _footprint:
         serializedVersion: 2
-        x: 12
-        y: 13
-        width: 3
+        x: 1
+        y: 24
+        width: 23
         height: 1
       _bottom: 0
-      _top: 2.5030546
-    - _footprint:
-        serializedVersion: 2
-        x: 15
-        y: 13
-        width: 1
-        height: 1
-      _bottom: 0
-      _top: 2.6724348
+      _top: 1.7803569
   - Name: kosarkaskiteren
     Masses:
     - _footprint:

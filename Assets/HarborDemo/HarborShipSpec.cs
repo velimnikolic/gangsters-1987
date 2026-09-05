@@ -53,13 +53,13 @@ namespace HarborDemo
         public Color Boot = new Color(0.07f, 0.07f, 0.08f);
         public Color Strake = new Color(0.28f, 0.29f, 0.31f);
         public Color Trim = new Color(0.88f, 0.88f, 0.84f);
-        public Color Mast = new Color(0.85f, 0.72f, 0.20f);
+        public Color Mast = new Color(0.65f, 0.52f, 0.28f);
         public bool ForeMast = true;
 
         public const float Course = 3.006f;      // the base kit's storey
         public const float HalfCourse = 1.5057f;
-        public const float HatchCoaming = 1.5057f;
-        public const float BoxLength = 6f, BoxWidth = 3f, BoxHeight = 3f;   // the kit-bashed container
+        public const float HatchCoaming = 0.85f;
+        public const float BoxLength = 6.06f, BoxWidth = 2.44f, BoxHeight = 2.59f;   // the kit-bashed container
 
         public float SternZ => -Length * 0.5f;
         public float BowZ => Length * 0.5f;
@@ -145,28 +145,27 @@ namespace HarborDemo
 
         public static readonly HarborShipSpec CargoA = new HarborShipSpec
         {
-            Name = "ship-cargo-A", Length = 72f, Beam = 15f, DeckY = Course + HalfCourse,
-            BowLength = 13f, SternChamfer = 2.5f, HouseLength = 10f, HouseWidth = 10f, Storeys = 3, FunnelHeight = 5f,
+            Name = "ship-cargo-A", Length = 78f, Beam = 14.5f, DeckY = Course + HalfCourse,
+            BowLength = 16f, SternChamfer = 2.5f, HouseLength = 10f, HouseWidth = 10f, Storeys = 3, FunnelHeight = 5f,
             HullUpper = new Color(0.07f, 0.07f, 0.08f), HullLower = new Color(0.52f, 0.14f, 0.10f),
             House = new Color(0.86f, 0.86f, 0.82f), Deck = new Color(0.17f, 0.25f, 0.19f), Funnel = new Color(0.55f, 0.12f, 0.10f),
-            Boot = new Color(0.80f, 0.79f, 0.74f), Strake = new Color(0.19f, 0.19f, 0.21f),
-            Trim = new Color(0.89f, 0.89f, 0.85f), Mast = new Color(0.85f, 0.72f, 0.20f),
+            Boot = new Color(0.10f, 0.11f, 0.11f), Strake = new Color(0.19f, 0.19f, 0.21f),
+            Trim = new Color(0.89f, 0.89f, 0.85f), Mast = new Color(0.65f, 0.52f, 0.28f),
             Hatches = { new Rect(-5.5f, -18f, 11f, 15f), new Rect(-5.5f, 1f, 11f, 15f) },
             Cranes =
             {
-                new DeckCrane { Z = -1f, Reach = 15f, Pedestal = 3.2f, Yaw = 180f },
-                new DeckCrane { Z = 19.5f, Reach = 15f, Pedestal = 3.2f, Yaw = 180f },
+                // Gearless feeder: shore gantries handle her boxes; the other freighter carries derricks.
             },
             ForeMast = false,
         };
 
         public static readonly HarborShipSpec CargoB = new HarborShipSpec
         {
-            Name = "ship-cargo-B", Length = 66f, Beam = 15f, DeckY = Course + HalfCourse,
-            BowLength = 11f, SternChamfer = 2.5f, HouseLength = 10f, HouseWidth = 10f, Storeys = 2, FunnelHeight = 5.5f,
-            HullUpper = new Color(0.09f, 0.17f, 0.40f), HullLower = new Color(0.52f, 0.14f, 0.10f),
+            Name = "ship-cargo-B", Length = 70f, Beam = 13.5f, DeckY = Course + HalfCourse,
+            BowLength = 14f, SternChamfer = 2.5f, HouseLength = 10f, HouseWidth = 10f, Storeys = 2, FunnelHeight = 5.5f,
+            HullUpper = new Color(0.12f, 0.23f, 0.28f), HullLower = new Color(0.52f, 0.14f, 0.10f),
             House = new Color(0.90f, 0.87f, 0.78f), Deck = new Color(0.34f, 0.22f, 0.16f), Funnel = new Color(0.92f, 0.90f, 0.85f),
-            Boot = new Color(0.06f, 0.06f, 0.07f), Strake = new Color(0.14f, 0.24f, 0.50f),
+            Boot = new Color(0.06f, 0.06f, 0.07f), Strake = new Color(0.18f, 0.29f, 0.32f),
             Trim = new Color(0.90f, 0.90f, 0.86f), Mast = new Color(0.88f, 0.86f, 0.78f),
             BridgeWingSpan = 1.6f,
             Hatches = { new Rect(-5.5f, -18f, 11f, 15f), new Rect(-5.5f, 0f, 11f, 15f) },
@@ -176,7 +175,7 @@ namespace HarborDemo
 
         public static readonly HarborShipSpec Coaster = new HarborShipSpec
         {
-            Name = "ship-coaster", Length = 34f, Beam = 10f, DeckY = Course,
+            Name = "ship-coaster", Length = 42f, Beam = 9f, DeckY = Course,
             BowLength = 7f, SternChamfer = 1.5f, HouseLength = 7.5f, HouseWidth = 7.5f, Storeys = 2, FunnelHeight = 3.5f,
             HullUpper = new Color(0.34f, 0.36f, 0.37f), HullLower = new Color(0.52f, 0.14f, 0.10f),
             House = new Color(0.88f, 0.88f, 0.84f), Deck = new Color(0.20f, 0.20f, 0.21f), Funnel = new Color(0.10f, 0.10f, 0.10f),

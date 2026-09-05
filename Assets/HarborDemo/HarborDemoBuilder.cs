@@ -24,11 +24,11 @@ namespace HarborDemo
 
         [Header("Shipping")]
         [Tooltip("Seconds a ship lies alongside being worked.")]
-        public Vector2 stayRange = new Vector2(60f, 120f);
+        public Vector2 stayRange = new Vector2(180f, 300f);
         [Tooltip("Seconds a berth stands empty between one ship's leaving and the next one's showing.")]
         public Vector2 gapRange = new Vector2(15f, 45f);
         [Tooltip("A freighter's cruising speed on the coast run, m/s.")]
-        public float sailSpeed = 8f;
+        public float sailSpeed = 5f;
         [Tooltip("Ships and boats crossing far out that never dock.")]
         public bool passingTraffic = true;
         [Tooltip("A ship-to-shore gantry over every berth, working the boxes on and off.")]
@@ -105,12 +105,10 @@ namespace HarborDemo
             var host = gameObject.AddComponent<StandaloneDistrictHost>();
             if (industrialZone)
             {
-                // Let the shared host centre the union of the port and the works. The
-                // higher view keeps the quay, its road and the whole estate readable as
-                // one district rather than opening on one end of the old quay close-up.
-                host.cameraDistance = 380f;
-                host.cameraYaw = 14f;
-                host.cameraPitch = 48f;
+                // A shore-side overview; the placed quay supplies the pivot after hosting.
+                host.cameraDistance = 440f;
+                host.cameraYaw = -18f;
+                host.cameraPitch = 39f;
                 host.cameraFar = 2500f;
             }
             else
@@ -122,14 +120,19 @@ namespace HarborDemo
                 host.cameraYaw = 0f;
                 host.cameraPitch = 36f;
             }
-            host.skyboxSky = false;                       // the port's plain sky
+            host.skyboxSky = true;
             host.clearColour = new Color(0.55f, 0.66f, 0.78f);
-            host.sunAngles = new Vector3(50f, 20f, 0f);   // over the water
-            host.sunIntensity = 1.25f;
+            host.sunAngles = new Vector3(38f, -35f, 0f);   // over the water
+            host.sunIntensity = 1.1f;
+            host.fogRange = new Vector2(650f, 1800f);
             host.reflectionProbe = false;
             host.hint = "WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom   " +
                         "Space: pause   , . : slower/faster";
             host.HostSeeded(scene, seed);
+            // The standalone host translates the district into positive world coordinates.
+            // Frame the working quay after that placement, using the district's own transform.
+            var camera = Camera.main != null ? Camera.main.GetComponent<DemoCamera>() : null;
+            if (camera != null && industrialZone) camera.pivot = district.W(new Vector3(40f, 6f, 32f));
 #else
             Debug.LogError("[HarborDemo] This demo loads Synty prefabs through the AssetDatabase and only runs in the editor.");
 #endif

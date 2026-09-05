@@ -32,6 +32,8 @@ namespace HarborDemo
         /// <summary>Asked for by the routine every frame: raise it now.</summary>
         public void Ask() => _hold = HoldOpen;
 
+        public bool ClearForTraffic => _angle >= 70f;
+
         public void Tick(float dt)
         {
             if (_hinge == null) return;

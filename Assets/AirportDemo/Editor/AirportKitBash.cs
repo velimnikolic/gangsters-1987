@@ -49,7 +49,8 @@ namespace AirportDemo.EditorTools
         //     pale gravel (RoofDeck) rather than concrete - at a low camera angle a
         //     terminal roof is the biggest face it shows, and in concrete grey it read
         //     as a black slab.
-        public const int Version = 8;
+        // v9: regional terminal sunshades, ribbed hangars and a purpose-built tower cab.
+        public const int Version = 9;
         const string KitDir = "Assets/CityKit/Airport";
         const string MeshDir = KitDir + "/Meshes";
         const string MatDir = KitDir + "/Materials";
@@ -503,9 +504,22 @@ namespace AirportDemo.EditorTools
         // ------------------------------------------------------------ baking
 
         /// <summary>Bakes the assembled group into one prefab and clears the scratch.</summary>
-        static void Bake(GameObject group, string name)
+        static void Bake(GameObject group, string name, float apronFace = float.NaN)
         {
-            SyntyKitExtractor.BakeGroup(group, name, yaw: 0f, KitDir, MeshDir);
+            var pivot = SyntyKitExtractor.BakeGroup(group, name, yaw: 0f, KitDir, MeshDir);
+            if (pivot.HasValue && !float.IsNaN(apronFace))
+            {
+                string path = $"{KitDir}/{name}.prefab";
+                var prefab = PrefabUtility.LoadPrefabContents(path);
+                try
+                {
+                    var anchor = new GameObject("Apron facade anchor").transform;
+                    anchor.SetParent(prefab.transform, false);
+                    anchor.localPosition = new Vector3(0, 0, apronFace) - pivot.Value;
+                    PrefabUtility.SaveAsPrefabAsset(prefab, path);
+                }
+                finally { PrefabUtility.UnloadPrefabContents(prefab); }
+            }
             Object.DestroyImmediate(group);
         }
 

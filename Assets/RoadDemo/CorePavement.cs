@@ -1189,7 +1189,7 @@ namespace RoadDemo
         /// </summary>
         public static int Plant(IReadOnlyList<Kerbstone> kerbs, IReadOnlyList<Vector3> standing,
                                 Func<GameObject, Transform, GameObject> stand, Transform parent,
-                                int seed, int kerbsPerPalm = PalmEvery)
+                                int seed, int kerbsPerPalm = PalmEvery, Func<Rect, bool> accessRoom = null)
         {
             if (kerbs == null || kerbs.Count == 0) return 0;
 
@@ -1207,6 +1207,9 @@ namespace RoadDemo
                 if (planted >= want) break;
                 var stone = kerbs[i];
                 if (Crowded(stone.Middle, standing)) continue;
+                // Include Sapling's +/- 1m along-kerb jitter and the whole grate/cage.
+                if (accessRoom != null && !accessRoom(new Rect(stone.Middle.x - 2.25f,
+                    stone.Middle.z - 2.25f, 4.5f, 4.5f))) continue;
                 if (!Sapling(stone.Middle, stone.Yaw, dice, put)) break;
                 planted++;
             }

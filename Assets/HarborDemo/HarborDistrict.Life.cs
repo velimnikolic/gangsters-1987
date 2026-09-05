@@ -75,7 +75,7 @@ namespace HarborDemo
                     new Vector3(ax, TileTop, DevanZ),
                     new Vector3(ax, TileTop, YardRoadZ0 + 2.5f),
                     new Vector3(NearestDoor(ax).x - 6.5f, TileTop, YardRoadZ0 + 2.5f),
-                    new Vector3(NearestDoor(ax).x - 6.5f, TileTop, NearestDoor(ax).z - 1f),   // the door, west of the shed's own lift and the lorry
+                    new Vector3(NearestDoor(ax).x - 6.5f, TileTop, NearestDoor(ax).z - 6f),   // the door, west of the shed's own lift and the lorry
                 };
                 var go = Instantiate(prefab, route[0], Quaternion.Euler(0f, 90f, 0f), _liveRoot);
                 go.name = "Forklift";
@@ -115,9 +115,13 @@ namespace HarborDemo
                     var pb = HarborKit.PrefabBounds(_palletPrefab);
                     for (int k = 0; k < 4; k++)
                     {
-                        var p = Instantiate(_palletPrefab, new Vector3(route[4].x - 2.4f, TileTop + k * pb.size.y, route[4].z + 1.3f), Quaternion.Euler(0f, k * 5f, 0f), pile);
-                        p.SetActive(false);
+                        var p = HarborKit.Prop(_palletPrefab, Vector3.zero, k * 5f, pile, "Pallet");
+                        CentreOnGround(p, new Vector3(0f, k * pb.size.y, 0f));
                     }
+                    if (ReserveApronProp(pile.gameObject,
+                        new Vector3(NearestDoor(ax).x + 6.5f, TileTop, ShedFrontZ - 8f)))
+                        foreach (Transform p in pile) p.gameObject.SetActive(false);
+                    else pile = null;
                     lift.PileGrows = pile;
                 }
                 lift.Bind(go.transform);
@@ -340,6 +344,7 @@ namespace HarborDemo
             var forklift = HarborKit.TryLoad(HarborKit.Forklift);
             LoadBodies();
             var bays = new List<Vector3>(FreeBays());
+            bays.RemoveAll(bay => bay.x < _gateWestX + 26f || bay.x > _gateEastX - 30f);
             float y = TileTop;
             float laneS = _streetZ - 2.5f, laneN = _streetZ + 2.5f;       // eastbound, westbound
             float inZ = _streetZ - 8f;                                    // on the gate road, just off the square - one point per turn, spaced for the lorry's swing
@@ -352,6 +357,7 @@ namespace HarborDemo
             HarborTruck Lorry(List<Vector3> route, int dockNode, int yardTo, Vector2 stay, Vector2 gap) => new HarborTruck
             {
                 Prefabs = bodies, Parent = _liveRoot, Route = WorldPoints(route),
+                TrafficSpeedLimit = TerminalTrafficSpeed,
                 DockNode = dockNode, YardFrom = 2, YardTo = yardTo,
                 DockStay = HarborKit.Range(_rng, stay.x, stay.y), GapRange = gap,
                 Pallet = pallet, Freight = freight, People = _workerBodies, SitLoop = _clips.SitLoop,
@@ -372,11 +378,11 @@ namespace HarborDemo
                     new Vector3(gW - 2.5f, y, _serviceRoadZ1 + 6f),
                     new Vector3(gW - 2.5f, y, laneE + 6f),            // the corner
                     new Vector3(gW + 6f, y, laneE),                   // left onto the spine
-                    new Vector3(bx - 16f, y, laneE),
-                    new Vector3(bx - 6f, y, bay.z),                   // in to the shoulder
+                    new Vector3(bx - 24f, y, laneE),
+                    new Vector3(bx - 10f, y, bay.z),                   // in to the shoulder
                     new Vector3(bx, y, bay.z),                        // the door: doors open
                     new Vector3(bx + 10f, y, bay.z),
-                    new Vector3(bx + 20f, y, laneE),                  // back out into the lane
+                    new Vector3(bx + 26f, y, laneE),                  // back out into the lane
                     new Vector3(gE - 6f, y, laneE),
                     new Vector3(gE + 2.5f, y, laneE + 7f),            // left, up the gate road's east lane
                     new Vector3(gE + 2.5f, y, _fenceZ - 3f),
@@ -424,6 +430,32 @@ namespace HarborDemo
             }
         }
 
+        // District-owned traffic arbitration uses the same trucks and gate arms that render.
+        float TerminalTrafficSpeed(HarborTruck truck)
+        {
+            if (truck.Tf == null) return 0f;
+            float clear = float.PositiveInfinity;
+            var forward = truck.Tf.forward;
+            foreach (var other in _trucks)
+            {
+                if (other == truck || other.Tf == null) continue;
+                var delta = other.Tf.position - truck.Tf.position;
+                float ahead = Vector3.Dot(delta, forward);
+                float across = Mathf.Abs(Vector3.Dot(delta, truck.Tf.right));
+                if (ahead > 0f && across < 2.8f)
+                    clear = Mathf.Min(clear, ahead - truck.HalfLength - other.HalfLength - 2.5f);
+            }
+            foreach (var boom in _booms)
+            {
+                if (boom.ClearForTraffic) continue;
+                var delta = W(boom.At) - truck.Tf.position;
+                float ahead = Vector3.Dot(delta, forward);
+                if (ahead > 0f && Mathf.Abs(Vector3.Dot(delta, truck.Tf.right)) < 2.8f)
+                    clear = Mathf.Min(clear, ahead - truck.HalfLength - 1.5f);
+            }
+            return Mathf.Sqrt(2f * 3.5f * Mathf.Max(0f, clear));
+        }
+
         /// <summary>The shed's own gang at a working door: a forklift that lives inside
         /// the doorway, comes out to the lorry's tail while she stands and shuttles a
         /// pallet a trip - laden into the shed if she delivers, out to her if she
@@ -436,8 +468,8 @@ namespace HarborDemo
             {
                 var route = new List<Vector3>
                 {
-                    new Vector3(door.x, y, door.z + 4f),                // home: inside the doorway (the door is 1.5 m short of the front)
-                    new Vector3(door.x - 1f, y, door.z - 0.3f),         // the forecourt
+                    new Vector3(door.x, y, door.z - 2f),                // home on the clear apron, outside the closed roller door
+                    new Vector3(door.x - 1f, y, door.z - 5f),           // the forecourt
                     new Vector3(stand.x - 6.5f, y, stand.z),            // the lorry's tail, on the shoulder
                 };
                 var go = Instantiate(forklift, route[0], Quaternion.Euler(0f, 180f, 0f), _liveRoot);
@@ -456,9 +488,9 @@ namespace HarborDemo
             {
                 var pts = new List<Vector3>
                 {
-                    new Vector3(door.x + 1.5f, y, door.z + 3f),         // in the doorway
-                    new Vector3(stand.x + 2f, y, door.z + 0.2f),        // along the lorry's flank, on the forecourt
-                    new Vector3(door.x + 6f, y, door.z + 0.6f),         // the far end of the forecourt
+                    new Vector3(door.x + 1.5f, y, door.z - 1f),         // outside the doorway
+                    new Vector3(stand.x + 2f, y, door.z - 1.2f),        // along the lorry's flank, on the forecourt
+                    new Vector3(door.x + 2f, y, door.z - 3f),         // the far end of the forecourt
                 };
                 Man(HarborKit.Pick(_rng, _workerBodies), _liveRoot, pts[0], HarborKit.Range(_rng, 1.1f, 1.4f), WorldPoints(pts), null);
             }
@@ -474,16 +506,11 @@ namespace HarborDemo
             var pallet = HarborKit.TryLoad(HarborKit.Pallet);
             if (pallet == null) return load;
             var freight = HarborKit.LoadAll(HarborKit.Freight, quiet: true);
-            var pb = HarborKit.PrefabBounds(pallet);
             for (int j = 0; j < 4; j++)
             {
-                var at = new Vector3(bay.x - 2.4f + j * 1.9f, TileTop, bay.z + 3.4f);
-                var group = new GameObject("Goods");
-                group.transform.SetParent(_liveRoot, false);
-                HarborKit.Sit(pallet, at, HarborKit.Range(_rng, -8f, 8f), group.transform, "Pallet");
-                if (freight.Count > 0)
-                    HarborKit.Sit(HarborKit.Pick(_rng, freight), at + new Vector3(0f, pb.size.y, 0f),
-                                  HarborKit.Range(_rng, 0f, 360f), group.transform, "Freight");
+                var at = new Vector3(bay.x + 3.5f, TileTop, ShedFrontZ - 5f - j * 2.8f);
+                var group = PlaceApronFreight(pallet, freight, at, _liveRoot);
+                if (group == null) continue;
                 group.SetActive(false);
                 load.Add(group);
             }

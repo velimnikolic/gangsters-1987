@@ -71,6 +71,17 @@ namespace RoadDemo
             Colour(man);
         }
 
+        /// <summary>Nonfatal presentation: progressive blood on face and clothing,
+        /// independent of the owner's simulation health or business consequences.</summary>
+        public static void BeatingHit(PedestrianAgent man, Vector3 from, float groundY, float severity)
+        {
+            if (man?.Tf == null) return;
+            Hit(man, from, groundY);
+            Stain(man, from, face: true);
+            Stain(man, from, size: 1.6f);
+            Colour(man, Mathf.Clamp01(severity));
+        }
+
         /// <summary>He is down: the pool under him, and his colour gone.</summary>
         public static void Death(PedestrianAgent man, float groundY, bool floor = true)
         {
@@ -162,11 +173,11 @@ namespace RoadDemo
 
         // A stain where the round went in: a small quad glued to the torso, on the
         // side facing the shooter, so the shirt front or the back reads shot.
-        static void Stain(PedestrianAgent man, Vector3 from)
+        static void Stain(PedestrianAgent man, Vector3 from, bool face = false, float size = 1f)
         {
             if (!EnsureSplatMaterial()) return;
             var animator = man.Tf.GetComponentInChildren<Animator>();
-            var chest = animator ? animator.GetBoneTransform(HumanBodyBones.Chest) ??
+            var chest = animator ? animator.GetBoneTransform(face ? HumanBodyBones.Head : HumanBodyBones.Chest) ??
                                    animator.GetBoneTransform(HumanBodyBones.Spine) : null;
             if (chest == null) return;
 
@@ -176,8 +187,9 @@ namespace RoadDemo
             toShooter.Normalize();
             // out from the spine to the skin, on the shooter's side, a hand's width off centre
             var side = Vector3.Cross(Vector3.up, toShooter);
-            var at = chest.position + toShooter * 0.16f + side * Random.Range(-0.1f, 0.1f) +
-                     Vector3.up * Random.Range(-0.12f, 0.12f);
+            var at = chest.position + toShooter * (face ? 0.105f : 0.16f) +
+                     side * Random.Range(face ? -0.035f : -0.1f, face ? 0.035f : 0.1f) +
+                     Vector3.up * Random.Range(face ? 0.02f : -0.12f, face ? 0.06f : 0.12f);
             var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
             go.name = "Stain";
             var col = go.GetComponent<Collider>();
@@ -190,7 +202,7 @@ namespace RoadDemo
             block.SetColor(ColorId, StainOnCloth);
             mr.SetPropertyBlock(block);
             go.transform.SetPositionAndRotation(at, Quaternion.LookRotation(-toShooter, Vector3.up));
-            float s = Random.Range(0.14f, 0.24f);
+            float s = Random.Range(0.14f, face ? 0.18f : 0.24f) * size;
             go.transform.localScale = new Vector3(s, s * Random.Range(0.8f, 1.3f), 1f);
             go.transform.SetParent(chest, true);
             go.layer = man.Tf.gameObject.layer;
@@ -199,7 +211,7 @@ namespace RoadDemo
         // The whole man pulled toward blood-red with the damage: a property block on
         // every renderer he owns, the same trick BuildingCardPicker highlights with,
         // never a material instance.
-        static void Colour(PedestrianAgent man)
+        static void Colour(PedestrianAgent man, float visibleSeverity = -1f)
         {
             float frac = 1f;
             Transform gun = null;
@@ -211,6 +223,7 @@ namespace RoadDemo
             }
             else if (man is CivilianAgent civ)
                 frac = civ.Dead ? 1f : 1f - Mathf.Clamp01(civ.Health / 2f);
+            if (visibleSeverity >= 0f) frac = Mathf.Max(frac, Mathf.Clamp01(visibleSeverity));
             var tint = Color.Lerp(Color.white, Bloodied, frac * 0.75f);
             if (!blocks.TryGetValue(man, out var block))
                 blocks[man] = block = new MaterialPropertyBlock();
