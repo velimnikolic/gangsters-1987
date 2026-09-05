@@ -38,3 +38,8 @@ The actual generated scene ran in Play and synthetic Input System events verifie
 pan, rotation and zoom. A composited Play capture showed the visible control hint.
 Visual inspection covered the first residential block at overview and closer range;
 this is not a historical-accuracy audit or a full gameplay acceptance of every venue.
+
+Visual correction after user review: reduced weather contrast substantially. Broad
+cloudy grime is removed; concrete has rare faint marks, roofs only a trace of wear,
+and walls retain their brick/paint with subtle low damp and narrow runoff. The
+structural audit and camera controls are unaffected by this shader-only revision.
