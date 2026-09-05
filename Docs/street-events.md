@@ -86,7 +86,13 @@ checks before opening over another).
 The card is dealt at midnight and **shown at the six o'clock cut after the paper closes**
 (`EventCardHud`, on `NewspaperHud`'s pattern: it owns the pause, sorting order 129). Keys 1–3
 choose; **Esc holds** — nothing is decided and the card stays PENDING. Every row prints its cost,
-who goes and its risk in words. STREET TALK is the last column of the paper's foot on today's
+who goes and its risk in words. The face is the design system's **Night Rail popup** (the
+user's handoff `Ledger-style popup redesign.zip`, 2026-09-05): a 660-wide card on the rail's
+dark in the HUD's 1280x720 frame (design px copy 1:1, type = px / optical), meta bar (INCOMING ·
+DAY · hour, the caller in gold), condensed title on two hard lines, the lead in serif, every
+further line of the card as a telex slip in typewriter caps, four readings in the trough (THE
+LINE, UP FRONT, RISK and TRUST as six counted pips), one light row per choice — keycap, key,
+consequence, the whole row a button — and the keys in words along the foot. STREET TALK is the last column of the paper's foot on today's
 edition: the PENDING card with its hold and what clears it (and THE PHONE key that reopens it),
 every signal of the def nearest its threshold with its state, the gate when shut, the pot in
 words, the broker's door and its watch, whose the line is, and the last three wire lines. The
