@@ -39,9 +39,10 @@ namespace LivingCity.EditorTools
             asphalt = Mat("Parking asphalt", new Color(.19f,.20f,.21f));
             concrete = Mat("Entrance stone", new Color(.43f,.43f,.42f));
             plum = Mat("Club plum", new Color(.16f,.065f,.13f));
-            var font=AssetDatabase.LoadAssetAtPath<TMPro.TMP_FontAsset>("Assets/Synty/InterfaceModernMenus/Fonts/Bungee/Bungee-Regular SDF.asset");
+            var font=AssetDatabase.LoadAssetAtPath<TMPro.TMP_FontAsset>("Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset");
             lettering=AssetDatabase.LoadAssetAtPath<Material>(Folder+"/Sign lettering.mat");
             if(lettering==null){lettering=new Material(font.material);AssetDatabase.CreateAsset(lettering,Folder+"/Sign lettering.mat");}
+            lettering.shader=font.material.shader; lettering.CopyPropertiesFromMaterial(font.material);
             lettering.SetFloat("_ZTestMode",4); lettering.SetFloat("_CullMode",2); EditorUtility.SetDirty(lettering);
             foreach (string venue in new[] { "police-station-block", "nightclub-block" })
             {
@@ -472,7 +473,7 @@ namespace LivingCity.EditorTools
         {
             var go=new GameObject(value.Replace('\n',' '));go.transform.SetParent(parent,false);go.transform.localPosition=p;go.transform.localRotation=Quaternion.Euler(0,yaw,0);
             var text=go.AddComponent<TMPro.TextMeshPro>();
-            text.font=AssetDatabase.LoadAssetAtPath<TMPro.TMP_FontAsset>("Assets/Synty/InterfaceModernMenus/Fonts/Bungee/Bungee-Regular SDF.asset");
+            text.font=AssetDatabase.LoadAssetAtPath<TMPro.TMP_FontAsset>("Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset");
             text.fontSharedMaterial=lettering;text.text=value;text.fontSize=100;text.color=color;
             text.alignment=TMPro.TextAlignmentOptions.Center;text.textWrappingMode=TMPro.TextWrappingModes.NoWrap;
             text.rectTransform.sizeDelta=new Vector2(200,30);text.ForceMeshUpdate(true,true);

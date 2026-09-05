@@ -1,5 +1,9 @@
 # Gangsters 1987 — Project Architecture Snapshot
 
+Historical snapshot, not the current routing guide. For current system ownership
+and the CoreDemo-only game entry point, read [Docs/runtime-map.md](Docs/runtime-map.md).
+The old strategic/map HUD bootstrap described below was removed during cleanup.
+
 Audit date: 2026-08-30
 
 Unity version: 6000.5.6f1

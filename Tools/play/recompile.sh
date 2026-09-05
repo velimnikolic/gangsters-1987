@@ -21,6 +21,12 @@
 #     the moment of the trigger and shown to hold no `error CS`.
 set -uo pipefail
 
+# This flag records task-specific user permission; agents may not grant it to themselves.
+if [ "${1:-}" != "--allow-unity" ]; then
+    echo "UNVERIFIED: requires explicit user permission for Unity in this task and --allow-unity" >&2
+    exit 2
+fi
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 wait_ready() {
@@ -37,7 +43,7 @@ wait_ready() {
 compile_errors_since() {
     local answer
     answer=$(unity command console --tail 400 --level error --json 2>/dev/null)
-    if ! printf '%s' "$answer" | python "$HERE/consoleread.py" "$1"; then
+    if ! printf '%s' "$answer" | python3 "$HERE/consoleread.py" "$1"; then
         echo "the console could not be read, so no compile could be proved clean"
     fi
 }
@@ -46,7 +52,7 @@ compile_errors_since() {
 # folder and compiles an edit on its own the moment it regains focus, so a mark taken
 # AFTER waiting for ready can sit on the far side of the very errors it is meant to
 # catch - and the compile that failed would be invisible.
-MARK=$(unity command console --tail 1 --json 2>/dev/null | python "$HERE/consoleread.py" --mark)
+MARK=$(unity command console --tail 1 --json 2>/dev/null | python3 "$HERE/consoleread.py" --mark)
 case "$MARK" in ''|*[!0-9]*) MARK=0 ;; esac
 
 wait_ready || { echo "FAILED: the editor never came back to ready"; exit 1; }
@@ -57,12 +63,12 @@ wait_ready || { echo "FAILED: the editor never came back to ready"; exit 1; }
 # editor in Play, three recompiles in a row said COMPILED, and the fix under test was
 # still not in the assemblies (the exception it fixed came back with its OLD line
 # numbers). So Play is stopped first, and if it will not stop this fails.
-PLAY=$(unity command editor_status --json 2>/dev/null | python "$HERE/suiteread.py" --playmode)
+PLAY=$(unity command editor_status --json 2>/dev/null | python3 "$HERE/suiteread.py" --playmode)
 if [ "$PLAY" != "stopped" ]; then
     unity command editor_stop >/dev/null 2>&1
     for _ in $(seq 1 20); do
         sleep 2
-        PLAY=$(unity command editor_status --json 2>/dev/null | python "$HERE/suiteread.py" --playmode)
+        PLAY=$(unity command editor_status --json 2>/dev/null | python3 "$HERE/suiteread.py" --playmode)
         [ "$PLAY" = "stopped" ] && break
     done
 fi
@@ -82,7 +88,7 @@ STEADY=0
 for _ in $(seq 1 90); do
     sleep 4
     wait_ready || continue
-    STATUS=$(unity command recompile_status --json 2>/dev/null | python "$HERE/statusread.py")
+    STATUS=$(unity command recompile_status --json 2>/dev/null | python3 "$HERE/statusread.py")
     case "$STATUS" in
         completed*)
             ERRORS=$(compile_errors_since "$MARK")

@@ -4,27 +4,12 @@ using UnityEngine.UI;
 
 namespace RoadDemo
 {
-    /// <summary>
-    /// The road demo's wardrobe: one place that owns what every screen in this scene
-    /// is made of - the Synty INTERFACE Modern Menus sprites, the book's own condensed
-    /// gothic, and the colour names the demo prints in.
-    ///
-    /// Demo-local ON PURPOSE. RoadDemo does not borrow LivingCity's runtime (it has
-    /// its own clock, sky, lamps and headlights), so it dresses itself from the
-    /// Modern Menus pack folder here. The ledger the demo installs no longer shares
-    /// this scheme - it is a paper book on a desk now (see LedgerStyle) - so the top
-    /// bar and the map read as the demo's instruments, the folder as the boss's.
-    ///
-    /// Editor-only asset loading, the discipline RoadDemoBuilder and BuildingCardPicker
-    /// already keep: this scene is dev tooling that never ships, so AssetDatabase is
-    /// fine and Resources stays clean. Every slot degrades to null and every helper
-    /// falls back to a flat block, so a missing pack costs colour, never a screen.
-    /// </summary>
+    /// <summary>Shared city HUD primitives backed by the game's Ledger and Turf art.</summary>
     public static class DemoUi
     {
         // ------------------------------------------------------------------ colours
         //
-        // The Modern Menus scheme the demo's own instruments print in: a deep navy
+        // The city HUD palette the demo's own instruments print in: a deep navy
         // tube, ice-white data, steel chrome, powder-blue highlights and a gold
         // warning gun. (The ledger used to share it; it wears paper now.)
 
@@ -67,123 +52,31 @@ namespace RoadDemo
         public static readonly Color KeyHover = Color.white;
         public static readonly Color KeyPressed = new Color(0.55f, 0.55f, 0.55f);
 
-        // ------------------------------------------------------------------ the pack
-
-        const string Pack = "Assets/Synty/InterfaceModernMenus/";
-        const string Chrome = Pack + "Sprites/ModernMenus/";
-        const string General = Pack + "Sprites/General/";
-        const string Flat = Pack + "Sprites/Icons_ModernMenus_Flat/";
-        const string Icons = "Assets/Synty/PolygonIcons/Prefabs/";
-
-        /// <summary>A white vertical alpha ramp, clear at the top and solid at the
-        /// bottom, uniform across its width - the glow the top strip lifts toward its
-        /// accent rule. The pack's own Menu_Bar slab is NOT used for that strip: its
-        /// right end is a hard diagonal and its 9-slice keeps 750 of 1024 pixels in
-        /// the right border, so a full-width bar puts a sloping cut exactly where the
-        /// transport keys sit.</summary>
-        public static Sprite Gradient => Slot(ref _gradient,
-            General + "SPR_ModernMenus_Menu_Gradient_Vertical_01.png");
-
-        /// <summary>The flat chip every soft-key and readout in the demo wears - the
-        /// pack's toolbar species, deliberately not its thick action slab.</summary>
-        public static Sprite Chip => Slot(ref _chip, Chrome + "SPR_ModernMenus_Button_08.png");
-
-        /// <summary>The framed box behind a floating popup - the same panel the
-        /// ledger's detail card and sort menu wear.</summary>
-        public static Sprite Box => Slot(ref _box,
-            Chrome + "SPR_ModernMenus_Frame_Box_Medium_01_Background.png");
-
-        /// <summary>Icons: the flat "Clean" cut, authored white so a tint IS the
-        /// colour. There is no pause glyph in the pack - the bar draws its own.</summary>
-        public static Sprite IconTimer => Slot(ref _iconTimer, Flat + "ICON_ModernMenus_Timer_01_Clean.png");
-        public static Sprite IconPlay => Slot(ref _iconPlay, Flat + "ICON_ModernMenus_Play_01_Clean.png");
-        public static Sprite IconFaster => Slot(ref _iconFaster, Flat + "ICON_ModernMenus_FastForward_01_Clean.png");
-
-        /// <summary>The crews' activity glyphs - on the move, in a fight, in a word,
-        /// down - and the recruit slot's plus. Same flat white cut, tinted in place.</summary>
-        public static Sprite IconArrow => Slot(ref _iconArrow, Flat + "ICON_ModernMenus_Arrow_01_Clean.png");
-        public static Sprite IconCombat => Slot(ref _iconCombat, Flat + "ICON_ModernMenus_Combat_01_Clean.png");
-        public static Sprite IconChat => Slot(ref _iconChat, Flat + "ICON_ModernMenus_Chat_01_Clean.png");
-        public static Sprite IconDeath => Slot(ref _iconDeath, Flat + "ICON_ModernMenus_Death_01_Clean.png");
-        public static Sprite IconPlus => Slot(ref _iconPlus, Flat + "ICON_ModernMenus_Plus_01_Clean.png");
-
-        /// <summary>The car hint's glyphs: the back arrow for "get out", the plain one for "get in".</summary>
-        public static Sprite IconBack => Slot(ref _iconBack, Flat + "ICON_ModernMenus_Arrow_Back_01_Clean.png");
-
-        /// <summary>The shop over the outfit's own door - the crew bar's key to the
-        /// front. A storefront and not a house, because that is what a front IS: the
-        /// premises the street sees, with the family behind it.</summary>
-        public static Sprite IconShop => Slot(ref _iconShop, Flat + "ICON_ModernMenus_Shop_01_Clean.png");
-
-        /// <summary>The soft glow dot the world markers ride on.</summary>
-        public static Sprite Dot => Slot(ref _dot, Pack + "Sprites/FX/SPR_ModernMenus_FX_Glow_Dot_01.png");
-
-        /// <summary>The little car the crew bar's key wears. Modern Menus has no
-        /// vehicle glyph, so it comes out of Synty's icon pack - a model, not a
-        /// sprite, printed dead straight on by PortraitStudio like every other object
-        /// the screens show.</summary>
-        public static GameObject CarGlyph => ModelSlot(ref _carGlyph, Icons + "SM_Icon_Car_01.prefab");
-
-        /// <summary>The display face: the clock, a popup's title. The type is the one
-        /// exception to the demo-local rule below, and for two reasons: the pack's faces
-        /// are 2010s screen gothics on a 1987 instrument, and the pack's SDF assets load
-        /// through AssetDatabase, so in a player build the screens would print in TMP's
-        /// default Arial clone. LedgerStyle builds its faces from Resources at runtime,
-        /// which is period-correct and survives a build.</summary>
+        public static Sprite Chip => LivingCity.UI.LedgerStyle.RoundedSmall;
+        public static Sprite Box => LivingCity.UI.LedgerStyle.Rounded;
+        public static Sprite Dot => LivingCity.UI.LedgerStyle.Disc;
+        public static Sprite IconArrow => TurfGlyphs.Arrow;
+        public static Sprite IconBack => TurfGlyphs.Back;
+        public static Sprite IconCombat => TurfGlyphs.Combat;
+        public static Sprite IconChat => TurfGlyphs.Chat;
+        public static Sprite IconDeath => TurfGlyphs.Death;
+        public static Sprite IconPlus => TurfGlyphs.Plus;
+        public static Sprite IconShop => TurfGlyphs.House;
         public static TMP_FontAsset Headline => LivingCity.UI.LedgerStyle.Condensed;
-
-        /// <summary>Everything else the demo prints - the same gothic, reading weight.</summary>
         public static TMP_FontAsset Body => LivingCity.UI.LedgerStyle.CondensedText;
 
-        static Sprite _gradient, _chip, _box, _iconTimer, _iconPlay, _iconFaster, _dot;
-        static Sprite _iconArrow, _iconCombat, _iconChat, _iconDeath, _iconPlus, _iconBack, _iconShop;
         static GameObject _carGlyph;
-        static bool _warned;
-
-        // Static state outlives Play when domain reload is off, and a re-import can
-        // leave a stale reference behind - the same guard LedgerStyle keeps.
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetForPlay()
+        public static GameObject CarGlyph
         {
-            _gradient = _chip = _box = _iconTimer = _iconPlay = _iconFaster = _dot = null;
-            _iconArrow = _iconCombat = _iconChat = _iconDeath = _iconPlus = _iconBack = null;
-            _iconShop = null;
-            _carGlyph = null;
-            _warned = false;
-        }
-
-        static Sprite Slot(ref Sprite cached, string path)
-        {
-            if (cached)
-                return cached;
+            get
+            {
 #if UNITY_EDITOR
-            cached = RoadDemo.DemoAssetLoad.Load<Sprite>(path);
+                if (!_carGlyph)
+                    _carGlyph = DemoAssetLoad.Load<GameObject>(
+                        "Assets/Synty/PolygonIcons/Prefabs/SM_Icon_Car_01.prefab");
 #endif
-            if (!cached)
-                Warn();
-            return cached;
-        }
-
-        static GameObject ModelSlot(ref GameObject cached, string path)
-        {
-            if (cached)
-                return cached;
-#if UNITY_EDITOR
-            cached = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
-#endif
-            if (!cached)
-                Warn();
-            return cached;
-        }
-
-        static void Warn()
-        {
-            if (_warned)
-                return;
-            _warned = true;
-            Debug.LogWarning("[RoadDemo] Interface Modern Menus art is missing - the " +
-                             "demo's screens fall back to flat blocks and the default " +
-                             "TMP face.");
+                return _carGlyph;
+            }
         }
 
         // ------------------------------------------------------------------ elements

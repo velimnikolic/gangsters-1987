@@ -30,17 +30,15 @@ namespace LivingCity.UI
             (which != Paper.Newspaper && NewspaperHud.IsOpen) ||
             (which != Paper.Phone && EventCardHud.IsOpen);
 
-        /// <summary>The paper screens plus the strategic map, which is a different city
-        /// altogether. The street's own furniture stands down under these - and NOT
-        /// under the turf plate, which is a zoom level of the same city.</summary>
-        public static bool ScreenTaken => PaperUp || StrategicMapHud.IsOpen;
+        /// <summary>Paper screens hide the street. The TurfMap remains part of the city.</summary>
+        public static bool ScreenTaken => PaperUp;
 
         /// <summary>Anything at all over the street, the turf plate included.</summary>
         public static bool Any => ScreenTaken || RoadDemo.TurfMapHud.IsOpen;
 
         /// <summary>The arrest clock stops behind these: the player can neither see
         /// the banner nor give the order that would overrule the roll.</summary>
-        public static bool Blocked => PaperUp || StrategicMapHud.InputBlocked;
+        public static bool Blocked => PaperUp;
 
         /// <summary>Esc belongs to one of the paper screens this frame - including the
         /// frame it closed on, because polling input cannot be consumed.</summary>

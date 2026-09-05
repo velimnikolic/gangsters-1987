@@ -2504,14 +2504,7 @@ namespace RoadDemo
             EnsureTransientCaches();
             if (_crews == null) return;
 
-            // The strategic map raises its own top-down camera and drops the iso rig's
-            // Camera.main tag, so a once-cached iso camera would hit-test orders against
-            // a view no longer on the screen. Track the camera the player is actually
-            // looking through: the map's while it is up (so the same right-click gives
-            // the same orders from the zoomed-out map), the iso camera when it is not.
-            var view = LivingCity.UI.StrategicMapHud.IsOpen
-                ? LivingCity.UI.StrategicMapHud.Instance?.MapCamera
-                : Camera.main;
+            var view = Camera.main;
             if (view != null) _cam = view;
             if (_cam == null) return;
 

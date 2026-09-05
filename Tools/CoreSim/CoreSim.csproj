@@ -10,6 +10,7 @@
     <NoWarn>CS0649;CS0169;CS0414;CS8632;CS0108;CS0114;CS0162</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../Assets/Resources/ResidentialDecor.json" LogicalName="ResidentialDecor.json" />
     <Compile Include="Stubs.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="..\..\Assets\RoadDemo\Dice.cs" />

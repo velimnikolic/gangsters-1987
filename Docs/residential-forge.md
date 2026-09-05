@@ -24,7 +24,9 @@ prefaba. Potvrdio je:
 - `Shop_03` kao dve ćelije, a sve ostale neuglaone radnje kao jednu fasadu.
 
 `gangsters_decor_table` čita 14 požnjevenih zgrada i piše
-`Assets/RoadDemo/ResidentialDecor.cs` i `Docs/residential-decor-table.md`. Od 1.272
+`Assets/Resources/ResidentialDecor.json` i `Docs/residential-decor-table.md`.
+`ResidentialDecor.cs` je mali tipski proveren loader, a CoreSim ugrađuje isti JSON.
+Generator po importu invalidira katalog i izvedeni cache fasada. Od 1.272
 direktna source propsa, 1.039 je vezano za potvrđeni host, 45 je imenovano kao
 nevezano, a 188 je eksplicitno van cilja (među njima 60 požarnih stepenica na
 ugaonim kolonama). Dobijena su 731 atomska template-a i 1.034 pravila, bez

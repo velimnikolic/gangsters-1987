@@ -221,8 +221,7 @@ namespace RoadDemo
                 // The maps read the left button themselves (marquee, their own drag)
                 // and say so through PointerGesture.DragTaken.
                 if (PointerGesture.Dragging && !MapOut && !TurfMapHud.IsOpen &&
-                    !PointerGesture.DragTaken &&
-                    !LivingCity.UI.StrategicMapHud.InputBlocked)
+                    !PointerGesture.DragTaken)
                     DragGround(mouse);
             }
 

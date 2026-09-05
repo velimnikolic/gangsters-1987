@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -203,7 +202,20 @@ namespace RoadDemo
             public PlacementAtlas Atlas;
         }
 
-        static readonly DecorData Decor = ReadDecor();
+        static DecorData decor;
+        static int decorRevision = -1;
+        static DecorData Decor
+        {
+            get
+            {
+                if (decor == null || decorRevision != ResidentialDecor.Revision)
+                {
+                    decor = ReadDecor();
+                    decorRevision = ResidentialDecor.Revision;
+                }
+                return decor;
+            }
+        }
         static readonly object VariantLock = new object();
         static readonly Dictionary<string, DecorVariant[]> VariantCache =
             new Dictionary<string, DecorVariant[]>(StringComparer.Ordinal);
@@ -2615,68 +2627,52 @@ namespace RoadDemo
         static DecorData ReadDecor()
         {
             var answer = new DecorData();
-            Type type = typeof(ResidentialFacade).Assembly.GetType("RoadDemo.ResidentialDecor");
-            if (type == null) return answer;
-            answer.StyleWeights = ReadStatic<int[]>(type, "StyleWeights") ?? answer.StyleWeights;
-            answer.FireEscapeShareMin = ReadStatic<float>(type, "FireEscapeShareMin");
-            answer.FireEscapeShareMax = ReadStatic<float>(type, "FireEscapeShareMax");
-            var all = ReadStatic<Array>(type, "All");
+            answer.StyleWeights = ResidentialDecor.StyleWeights ?? answer.StyleWeights;
+            answer.FireEscapeShareMin = ResidentialDecor.FireEscapeShareMin;
+            answer.FireEscapeShareMax = ResidentialDecor.FireEscapeShareMax;
+            var all = ResidentialDecor.All;
             if (all == null) return answer;
             var rows = new List<DecorRow>(all.Length);
-            foreach (object source in all)
+            foreach (var source in all)
             {
                 if (source == null) continue;
-                Type rowType = source.GetType();
                 rows.Add(new DecorRow
                 {
-                    Family = Read<string>(rowType, source, "Family") ?? string.Empty,
-                    Prefab = Read<string>(rowType, source, "Prefab") ?? string.Empty,
-                    Anchor = Convert.ToString(Read<object>(rowType, source, "Anchor")),
-                    Variant = Read<string>(rowType, source, "Variant") ?? string.Empty,
-                    Relation = Convert.ToString(Read<object>(rowType, source, "Relation")),
-                    HostKind = Convert.ToString(Read<object>(rowType, source, "HostKind")),
-                    X = Read<float>(rowType, source, "X"),
-                    Y = Read<float>(rowType, source, "Y"),
-                    Z = Read<float>(rowType, source, "Z"),
-                    Yaw = Read<float>(rowType, source, "Yaw"),
-                    Min = Read<float>(rowType, source, "Min"),
-                    Mean = Read<float>(rowType, source, "Mean"),
-                    Max = Read<float>(rowType, source, "Max"),
-                    FamilyMin = Read<float>(rowType, source, "FamilyMin"),
-                    FamilyMean = Read<float>(rowType, source, "FamilyMean"),
-                    FamilyMax = Read<float>(rowType, source, "FamilyMax"),
-                    Count = Read<int>(rowType, source, "Count"),
-                    Buildings = Read<int>(rowType, source, "Buildings"),
-                    Part = Read<int>(rowType, source, "Part"),
-                    Parts = Read<int>(rowType, source, "Parts"),
-                    Span = Read<int>(rowType, source, "Span"),
-                    ColumnOffset = Read<int>(rowType, source, "ColumnOffset"),
-                    RowOffset = Read<int>(rowType, source, "RowOffset"),
-                    FloorOffset = Read<int>(rowType, source, "FloorOffset"),
-                    VariantWeight = Read<int>(rowType, source, "VariantWeight"),
-                    Role = Read<int>(rowType, source, "Role"),
-                    HostStyle = Read<int>(rowType, source, "HostStyle"),
-                    Repeat = Read<bool>(rowType, source, "Repeat"),
-                    UnboundShare = Read<float>(rowType, source, "UnboundShare"),
-                    Ready = Read<bool>(rowType, source, "Ready"),
+                    Family = source.Family ?? string.Empty,
+                    Prefab = source.Prefab ?? string.Empty,
+                    Anchor = source.Anchor.ToString(),
+                    Variant = source.Variant ?? string.Empty,
+                    Relation = source.Relation.ToString(),
+                    HostKind = source.HostKind.ToString(),
+                    X = source.X,
+                    Y = source.Y,
+                    Z = source.Z,
+                    Yaw = source.Yaw,
+                    Min = source.Min,
+                    Mean = source.Mean,
+                    Max = source.Max,
+                    FamilyMin = source.FamilyMin,
+                    FamilyMean = source.FamilyMean,
+                    FamilyMax = source.FamilyMax,
+                    Count = source.Count,
+                    Buildings = source.Buildings,
+                    Part = source.Part,
+                    Parts = source.Parts,
+                    Span = source.Span,
+                    ColumnOffset = source.ColumnOffset,
+                    RowOffset = source.RowOffset,
+                    FloorOffset = source.FloorOffset,
+                    VariantWeight = source.VariantWeight,
+                    Role = source.Role,
+                    HostStyle = source.HostStyle,
+                    Repeat = source.Repeat,
+                    UnboundShare = source.UnboundShare,
+                    Ready = source.Ready,
                 });
             }
             answer.Rows = rows.ToArray();
             return answer;
         }
 
-        static T ReadStatic<T>(Type type, string field)
-        {
-            object value = type.GetField(field, BindingFlags.Public | BindingFlags.Static)
-                               ?.GetValue(null);
-            return value is T typed ? typed : default;
-        }
-
-        static T Read<T>(Type type, object source, string field)
-        {
-            object value = type.GetField(field, BindingFlags.Public | BindingFlags.Instance)
-                               ?.GetValue(source);
-            return value is T typed ? typed : default;
-        }
     }
 }

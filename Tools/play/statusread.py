@@ -23,7 +23,10 @@ def main():
         print("unknown")
         return
 
-    result = (doc.get("data") or {}).get("result")
+    if not isinstance(doc, dict) or doc.get("success") is not True or not isinstance(doc.get("data"), dict):
+        print("unknown")
+        return
+    result = doc["data"].get("result")
     if isinstance(result, str):
         try:
             result = json.loads(result)

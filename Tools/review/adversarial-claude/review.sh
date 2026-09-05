@@ -8,14 +8,16 @@ MODEL="opus"
 BASE=""
 FOCUS=""
 MAX_BYTES=400000
+INPUT=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --base) BASE="${2:?--base needs a ref}"; shift 2 ;;
     --model) MODEL="${2:?--model needs a name}"; shift 2 ;;
     --max-bytes) MAX_BYTES="${2:?--max-bytes needs a number}"; shift 2 ;;
+    --input) INPUT="${2:?--input needs a frozen review file}"; shift 2 ;;
     -h|--help)
-      echo "usage: review.sh [--base <ref>] [--model <name>] [--max-bytes N] [focus text ...]"
+      echo "usage: review.sh [--base <ref> | --input <frozen file>] [--model <name>] [--max-bytes N] [focus text ...]"
       exit 0 ;;
     *) FOCUS="${FOCUS:+$FOCUS }$1"; shift ;;
   esac
@@ -50,7 +52,11 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 DIFF="$WORK/diff.txt"
 
-if [ -n "$BASE" ]; then
+if [ -n "$INPUT" ]; then
+  [ -z "$BASE" ] || { echo "--input and --base are mutually exclusive" >&2; exit 2; }
+  TARGET="explicit frozen review input: $INPUT (scope declared inside)"
+  cp "$INPUT" "$DIFF"
+elif [ -n "$BASE" ]; then
   TARGET="branch review against $BASE"
   git diff "$BASE...HEAD" > "$DIFF"
 else
@@ -71,9 +77,8 @@ fi
 
 SIZE=$(wc -c < "$DIFF" | tr -d ' ')
 if [ "$SIZE" -gt "$MAX_BYTES" ]; then
-  head -c "$MAX_BYTES" "$DIFF" > "$DIFF.cut"
-  printf '\n\n[TRUNCATED at %s of %s bytes. Read the files directly for the rest.]\n' "$MAX_BYTES" "$SIZE" >> "$DIFF.cut"
-  mv "$DIFF.cut" "$DIFF"
+  echo "Review input exceeds $MAX_BYTES bytes ($SIZE). Split explicit scopes; no truncated clean review." >&2
+  exit 2
 fi
 
 PROMPT="$WORK/prompt.md"
@@ -102,8 +107,8 @@ body = body.replace("{{REVIEW_INPUT}}", pathlib.Path(diff).read_text())
 print(body)
 PY
 
-exec claude -p \
+claude -p \
   --model "$MODEL" \
   --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)" \
   --append-system-prompt "Review only. Never edit a file, never stage or commit, never propose that you are about to change anything." \
-  "$(cat "$PROMPT")"
+  < "$PROMPT"

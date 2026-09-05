@@ -568,10 +568,9 @@ namespace RoadDemo
             }
 
             // The corner card stands down for anything that takes the screen: the full
-            // plate the wheel opens, the book, the strategic map.
+            // plate the wheel opens, the book.
             bool want = !TurfMapHud.IsOpen &&
-                        !LivingCity.UI.PersonnelAlmanac.IsOpen &&
-                        !LivingCity.UI.StrategicMapHud.IsOpen;
+                        !LivingCity.UI.PersonnelAlmanac.IsOpen;
 
             if (_canvas.gameObject.activeSelf != want)
                 _canvas.gameObject.SetActive(want);

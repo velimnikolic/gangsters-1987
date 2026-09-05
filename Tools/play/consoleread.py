@@ -22,13 +22,23 @@ def main():
         doc = json.load(sys.stdin)
     except Exception:
         return 2
-    result = (doc.get("data") or {}).get("result") or {}
+    if not isinstance(doc, dict) or not isinstance(doc.get("data"), dict):
+        return 2
+    result = doc["data"].get("result")
     if not isinstance(result, dict) or not doc.get("success", False):
         return 2
 
     if "--mark" in sys.argv:
-        print(result.get("cursor") or 0)
+        if type(result.get("cursor")) is not int or result["cursor"] < 0:
+            return 2
+        print(result["cursor"])
         return 0
+
+    if not isinstance(result.get("entries"), list) or result.get("dropped"):
+        return 2
+    returned = result.get("returned", len(result["entries"]))
+    if type(returned) is not int or returned < 0 or returned >= 400 or len(result["entries"]) >= 400:
+        return 2
 
     try:
         since = int(sys.argv[1])
@@ -36,6 +46,8 @@ def main():
         since = 0
 
     for entry in result.get("entries") or []:
+        if not isinstance(entry, dict) or type(entry.get("seq")) is not int or not isinstance(entry.get("message"), str):
+            return 2
         if (entry.get("seq") or 0) <= since:
             continue
         message = str(entry.get("message") or "")

@@ -17,7 +17,7 @@ import sys
 from collections import Counter, defaultdict
 
 
-def load(path):
+def load(path, strict=False):
     rows = []
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -25,8 +25,13 @@ def load(path):
             if not line:
                 continue
             try:
-                rows.append(json.loads(line))
+                row = json.loads(line)
+                if strict and (not isinstance(row, dict) or "k" not in row or "t" not in row):
+                    raise ValueError("invalid trace row")
+                rows.append(row)
             except json.JSONDecodeError:
+                if strict:
+                    raise ValueError("truncated or malformed trace")
                 pass  # a run cut off mid-line: the last row is no loss
     return rows
 
@@ -311,16 +316,40 @@ def verdict(dirpath):
     other mobs out, is never stuck with somewhere to be, and parks at the end."""
     import os
 
+    # A trace fragment is not a completed scenario. Keep this check at the public
+    # entry point, so every caller (including old wrappers) fails closed.
+    summary_path = os.path.join(dirpath, "summary.json")
+    try:
+        with open(summary_path, encoding="utf-8") as handle:
+            summary = json.load(handle)
+    except (OSError, ValueError) as error:
+        print(f"NO RUN: unreadable completion summary: {error}")
+        return 3
+    if not isinstance(summary, dict) or summary.get("why") != "done":
+        print("FAILED: scenario did not finish")
+        return 1
+    if any(type(summary.get(key)) is not int or summary[key] != 0 for key in ("errors", "exceptions")):
+        print("FAILED: scenario logged errors or exceptions")
+        return 1
+
     trace = os.path.join(dirpath, "trace.jsonl")
     if not os.path.exists(trace):
         print(f"== {dirpath}")
         print("   NO TRACE - the run never got as far as playing")
         return 3
-    rows = load(trace)
+    try:
+        rows = load(trace, strict=True)
+    except (OSError, ValueError) as error:
+        print(f"NO RUN: {error}")
+        return 3
     if not rows:
         print("no trace")
         return 2
     mission = [r for r in rows if r["k"] == "mission"]
+    active = {"Boarding", "Marching", "Hunting", "Storming", "Reboarding", "Parking", "Passing"}
+    if not any((r.get("state") or r.get("who")) in active for r in mission):
+        print("NO RUN: no active mission evidence; choose the appropriate scenario reader")
+        return 3
     cars = [r for r in rows if r["k"] == "car"]
     crew = [r for r in cars if r.get("tag") == "crew"]
     faults = [r for r in rows if r["k"] == "fault"]
@@ -343,13 +372,7 @@ def verdict(dirpath):
     broke = [f for f in faults
              if f.get("fault") in ("nopark", "carstuck")
              or (f.get("fault") == "mission" and "wiped out" not in str(f.get("what", "")))]
-    summary_path = os.path.join(dirpath, "summary.json")
-    thrown = 0
-    if os.path.exists(summary_path):
-        try:
-            thrown = json.load(open(summary_path, encoding="utf-8")).get("exceptions", 0)
-        except Exception:
-            pass
+    thrown = summary["exceptions"]
     defects = []
     if broke:
         defects.append(f"{len(broke)} mission faults ({', '.join(sorted({f.get('fault') for f in broke}))})")

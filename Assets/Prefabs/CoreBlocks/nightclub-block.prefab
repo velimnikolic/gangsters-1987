@@ -108,7 +108,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: D I S C O   /   D A N C E   /   L A T E
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -289,7 +289,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: SATURDAY
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -470,7 +470,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: AFTER DARK
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -831,7 +831,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: PINK FLAMINGO
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -1012,7 +1012,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: DOORS  21:00
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -1283,7 +1283,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: FLAMINGO
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -1466,7 +1466,7 @@ MonoBehaviour:
 
     RADIO'
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -2330,7 +2330,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: DOORS  21:00
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -2511,7 +2511,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: FRIDAY
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -2694,7 +2694,7 @@ MonoBehaviour:
 
     FEVER'
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -3011,7 +3011,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: CLUB GUESTS
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -3232,7 +3232,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: P
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}

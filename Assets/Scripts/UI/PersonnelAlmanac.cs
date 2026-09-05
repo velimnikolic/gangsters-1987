@@ -2435,15 +2435,9 @@ namespace LivingCity.UI
                 return;
 
             Close();
-            if (StrategicMapHud.IsOpen)
-            {
-                StrategicMapHud.Instance?.FocusOn(world, 34f);
-                return;
-            }
-
-            var rig = FindAnyObjectByType<CameraRig.IsometricCameraController>();
+            var rig = FindAnyObjectByType<RoadDemo.DemoCamera>();
             if (rig)
-                rig.FocusOn(world);
+                rig.Ride(() => world);
         }
 
         void ComposePageTelex()

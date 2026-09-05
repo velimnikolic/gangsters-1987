@@ -108,7 +108,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: PATROL
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -469,7 +469,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: COMMUNITY NOTICES
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -740,7 +740,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: CITY OF PALM
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -921,7 +921,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: PUBLIC ENQUIRIES
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -1102,7 +1102,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: EMERGENCY  911
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -1283,7 +1283,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: PALM CITY  /  PRECINCT 07
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -1464,7 +1464,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: POLICE ONLY
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -1645,7 +1645,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: AIR UNIT 07
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -1826,7 +1826,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: POLICE
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -2007,7 +2007,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: POLICE
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -2188,7 +2188,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: FIRE
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -2448,7 +2448,7 @@ MonoBehaviour:
 
     24 HOURS'
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -2756,7 +2756,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: POLICE
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -2937,7 +2937,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: PATROL DIVISION
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -3208,7 +3208,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: PRECINCT 07
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -3479,7 +3479,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: STAFF ONLY
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -4106,7 +4106,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: POLICE  /  07
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -4287,7 +4287,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: KEEP CLEAR
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -4468,7 +4468,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: REPORTS  /  LOST PROPERTY
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -4649,7 +4649,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: POLICE
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -4830,7 +4830,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: 07
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -5011,7 +5011,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: 07
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -5192,7 +5192,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: POLICE DEPARTMENT
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: ac58e2eeafdb3de45a3a1700bfa0065c, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2100000, guid: a7fc6290111bc45048d1822cd0c8b1d2, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
