@@ -1,29 +1,31 @@
-# Neglected residential set
+# Residential comparison set
 
-Open `Assets/Scenes/NeglectedResidentialDemo.unity` and enter Play. The shared
-`RoadDemo.DemoCamera` supplies WASD/arrows, Q/E, right drag and wheel zoom, with a
-visible command hint.
+Open `Assets/Scenes/ResidentialDemo.unity`. Its 13 normal blocks remain in their
+original positions. Ten matching neglected blocks stand together to the right,
+separated from the normal set by at least 45 metres. Both police blocks and the
+nightclub are omitted only from the neglected set.
 
-Rebuild with `Tools > City > Residential > Build Neglected Set (exclude police and nightclub)`
+Large world-space labels identify **NORMALNI BLOKOVI** and **ZAPUSTENI BLOKOVI** above the two sets.
+
+In Play, **Tab** jumps to the corresponding place in the other set while preserving
+camera angle and zoom. **Home** frames both sets. Movement uses the shared
+`RoadDemo.DemoCamera`: WASD/arrows, Q/E, right drag and wheel zoom. The overlay labels
+the current set and shows the controls. `NeglectedResidentialDemo.unity` is retired.
+
+Refresh the comparison with `Tools > City > Residential > Add or Refresh Neglected Comparison Set`
 or `unity command gangsters_residential_neglected --timeout 60 --json`.
-Close the derived scene and stop Play before rebuilding. The builder copies the
-saved ResidentialDemo hierarchy and dresses that copy; it never regenerates or
-saves the source. Unsaved source edits are not included.
-
-The current source has 13 blocks. Both police blocks and the nightclub are excluded,
-leaving the same 10 remaining blocks at the original positions, including the gym,
-skatepark, car yard, pump and fire station. Original building geometry and business
-components remain in place. This adds a visual set, not district assignment or drug
-trade logic, and does not change the demographic configuration of residents.
+Stop Play first. This copies the current normal block hierarchy, replaces only the
+`RESIDENTIAL NEGLECTED COMPARISON` group, and saves ResidentialDemo. It never rerolls
+or repositions the normal blocks. If the normal bench was regenerated, refresh the
+comparison to obtain matching copies of those new seeds.
 
 `ResidentialNeglect.Apply` owns the opt-in dressing; the editor builder supplies
 persistent material variants and prefab creation. Facades, paving and furniture
-receive weathering in both URP Forward and Deferred. Board placement samples authored
-window triangles/atlas UVs and checks exterior clearance; no boards are placed at
-shop-door height. Litter clusters accompany existing bins. New dressing has no active
-colliders. The dressing pass is a bake-time operation (mesh and texture readback),
-not a pass to run during streaming. Use the resulting assets or bake during content
-production when integrating future district recipes.
+receive subtle weathering in URP Forward and Deferred. Upper-window repairs sample
+authored pane triangles and atlas UVs; litter clusters accompany existing bins.
+The dressing has no active colliders and does not change businesses or demographics.
+The dressing pass uses mesh/texture readback and is intended for content baking,
+not streaming-time composition. District assignment and trade logic are separate.
 
 Saved-scene integrity check:
 
@@ -31,15 +33,10 @@ Saved-scene integrity check:
 unity command run_script --file Tools/ResidentialNeglect/Audit.cs --entry ResidentialNeglectAudit.Main --timeout 60 --json
 ```
 
-Verified 2026-09-05: Unity recompile completed without errors; scene audit passed
-10/10 blocks, source positions and geometry retained, no missing meshes/materials,
-no new active colliders, 48 upper-window repairs, 34 wall tags and 141 litter objects.
-The actual generated scene ran in Play and synthetic Input System events verified
-pan, rotation and zoom. A composited Play capture showed the visible control hint.
-Visual inspection covered the first residential block at overview and closer range;
-this is not a historical-accuracy audit or a full gameplay acceptance of every venue.
+The original standalone set was checked in Play, including camera pan, rotation and
+zoom. After user review, weathering contrast was reduced substantially: no broad
+cloudy grime, rare faint concrete marks, subtle damp and narrow runoff on walls.
+The merged scene is prepared for the user's own Play comparison; its new Tab/Home
+shortcuts have not been manually accepted.
 
-Visual correction after user review: reduced weather contrast substantially. Broad
-cloudy grime is removed; concrete has rare faint marks, roofs only a trace of wear,
-and walls retain their brick/paint with subtle low damp and narrow runoff. The
-structural audit and camera controls are unaffected by this shader-only revision.
+Per user instruction, no further Play tests were run after adding the set labels.
