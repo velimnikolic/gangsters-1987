@@ -73,30 +73,23 @@ namespace RoadDemo
         /// </summary>
         public enum Recipe { Works, Plant, Strip, Yard, Depot, Haulage, Fuel, Waste }
 
-        /// <summary>
-        /// The smallest parcel a recipe can fill, in cells.
-        ///
-        /// Every one of these is the recipe's own frontage plus its setbacks, measured off
-        /// the kit rather than picked: a works is FactoryOld (22.5 m) + the gate + Factory
-        /// (24.4 m) = 55 m of street, and 13.2 m of setback either side, so 70 m across. The
-        /// first table rounded all of them UP for comfort and the quarter came out of
-        /// compounds a hundred metres across with the yard showing through the middle - the
-        /// thing this floor exists to prevent, arrived at from the other direction.
-        /// </summary>
+        /// <summary>Minimum parcels in 5 m cells. Sized for full production floors,
+        /// an eight-metre manoeuvring court and eleven metres of loading approach,
+        /// with administration and service buildings outside those clearances.</summary>
         public static void Smallest(Recipe recipe, out int w, out int d)
         {
             switch (recipe)
             {
-                case Recipe.Works: w = 14; d = 11; break;
-                case Recipe.Plant: w = 14; d = 12; break;
+                case Recipe.Works: w = 16; d = 14; break;
+                case Recipe.Plant: w = 17; d = 16; break;
                 case Recipe.Yard: w = 14; d = 11; break;
-                case Recipe.Depot: w = 12; d = 14; break;
+                case Recipe.Depot: w = 14; d = 15; break;
                 // the haulage yard runs a garage on the frontage, a fuel island and rows
                 // of lorry bays one behind the other, and wants the depth for all three:
                 // asked for less, the yard behind the bays comes out with a negative height
                 // and everything in it quietly does nothing
                 case Recipe.Haulage: w = 12; d = 11; break;
-                case Recipe.Strip: w = 12; d = 10; break;
+                case Recipe.Strip: w = 14; d = 11; break;
                 case Recipe.Fuel: w = 10; d = 9; break;
                 default: w = 9; d = 8; break;       // the empty plot, which wants nothing
             }
@@ -258,24 +251,10 @@ namespace RoadDemo
         /// else in it.</summary>
         const int TiersMin = 2, TiersMax = 3;
 
-        /// <summary>
-        /// A parcel, in cells: 75-105 m across and 55-75 m deep.
-        ///
-        /// The floor is read off <see cref="Smallest"/> and the ceiling is a judgement:
-        /// 60-85 m across, 55-70 m deep, which is the size the bench composes a candidate at
-        /// (Tools/City/Core/Industrial) and the size a works actually is.
-        ///
-        /// It was 75-105 x 60-75 and that was too big - the first drawing came out of
-        /// compounds you could not see the far fence of, with the yard spread so thin that
-        /// no amount of clutter filled it. A recipe furnishes what it is given, so the way to
-        /// a dense yard is a smaller yard, not more barrels.
-        ///
-        /// The floor still has to clear <see cref="Smallest"/> or the deal reverts to a
-        /// monoculture: with the depth floor under 11 cells nothing but the service strip
-        /// fits, and a tier that rolled it came out as a row of strips and nothing else.
-        /// </summary>
-        const int ParcelWMin = 12, ParcelWMax = 17;
-        const int ParcelDMin = 11, ParcelDMax = 14;
+        /// <summary>70-100 m frontage and 70-90 m depth accommodate the shared
+        /// full-size industrial halls. Casting still checks each recipe's minimum.</summary>
+        const int ParcelWMin = 14, ParcelWMax = 20;
+        const int ParcelDMin = 14, ParcelDMax = 18;
 
         /// <summary>How long a tier runs before it stops, in cells: 150-230 m.</summary>
         const int TierMin = 30, TierMax = 46;

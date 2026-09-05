@@ -292,6 +292,7 @@ namespace RoadDemo
         public static IReadOnlyList<string> Missing => Absent;
 
         public static void ForgetMissing() => Absent.Clear();
+        public static void ForgetMeasurements() => Measured.Clear();
 
         /// <summary>
         /// A prefab's own box, measured once and remembered.
@@ -332,7 +333,10 @@ namespace RoadDemo
         public static bool WorldBox(GameObject go, out Bounds box)
         {
             box = default;
-            var renderers = go.GetComponentsInChildren<Renderer>(true);
+            // Particle bounds may still be at the origin before their first simulation.
+            // They describe an effect envelope, never the footprint of its building.
+            var renderers = go.GetComponentsInChildren<Renderer>(true)
+                .Where(r => r is MeshRenderer || r is SkinnedMeshRenderer).ToArray();
             if (renderers.Length == 0) return false;
             box = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++) box.Encapsulate(renderers[i].bounds);
@@ -347,7 +351,9 @@ namespace RoadDemo
         static Vector2 Foot(string path, float yaw)
         {
             var size = Box(path).size;
-            return Turned(yaw) ? new Vector2(size.z, size.x) : new Vector2(size.x, size.z);
+            float radians = yaw * Mathf.Deg2Rad;
+            float c = Mathf.Abs(Mathf.Cos(radians)), s = Mathf.Abs(Mathf.Sin(radians));
+            return new Vector2(size.x * c + size.z * s, size.x * s + size.z * c);
         }
 
         /// <summary>Where a thing standing in the yard has its feet: the top of the paving
@@ -496,6 +502,7 @@ namespace RoadDemo
             // Last, on top of everything, and off the same stream: the ground the block
             // stands on is the last thing decided and the first thing looked at.
             Weather(block, rng);
+            OperationalMarkings(block);
             return block;
         }
 
@@ -519,224 +526,23 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ the recipes
 
-        /// <summary>
-        /// The works: brick fronts filling the street with the gate in the gap between them,
-        /// a shed across the back, a stack over the yard they share.
-        ///
-        /// The street side is BUILT, not walled. A works reads as a works because there is
-        /// no way to see into it and something tall is smoking over the roofline; a yard
-        /// with two sheds in the corner of it reads as a stockyard whatever is in the middle.
-        /// </summary>
+        /// <summary>A brick administration building and a two-bay production floor around a working court.</summary>
         static void Works(Block block, System.Random rng)
         {
-            var older = block.Put(FactoryOld, block.In, block.Near, 180f);
-            float first = older.width > 0f ? older.xMax : block.In;
-            float next = Mathf.Min(first + Between(rng, 8f, 10f),
-                                   block.Out - Foot(Factory, 180f).x);
-            var newer = block.Put(Factory, next, block.Near, 180f);
-            block.Way = newer.width > 0f
-                ? new Vector2(first + 0.6f, newer.xMin - 0.6f)
-                : new Vector2(first + 0.6f, first + 10.6f);
-
-            var shopFoot = Foot(Workshop, 180f);
-            bool shopFronts = newer.width > 0f && block.Out - newer.xMax >= shopFoot.x + 2f;
-            if (shopFronts) block.Put(Workshop, block.Out - shopFoot.x, block.Near, 180f);
-
-            var hallFoot = Foot(FactoryHall, 180f);
-            var hall = block.Put(FactoryHall, block.In + Between(rng, 2f, 5f),
-                                 block.Far - hallFoot.y, 180f);
-            if (!shopFronts)
-                block.Put(Workshop, block.Out - shopFoot.x, block.Far - shopFoot.y, 180f);
-
-            float from = Mathf.Max(Mathf.Max(older.yMax, newer.yMax), block.Near + 2f);
-            float to = hall.height > 0f ? hall.yMin : block.Far;
-
-            // the stack goes against the boiler end of the street building rather than free
-            // in the middle of the yard, which is where works put them and the only place
-            // one does not look planted
-            // against the boiler end of the street building - and if that building never
-            // stood, against the middle of the frontage instead. An unguarded empty Rect put
-            // the stack at (0, 4), inside the kerb ring, where Room refuses it and the works
-            // comes out with no chimney at all: the one thing that says works
-            block.Chimney(older.width > 0f ? older.center.x : (block.In + block.Out) * 0.5f,
-                          older.height > 0f ? older.yMax + 4f : block.Near + 18f,
-                          Between(rng, 22f, 27f));
-            if (hall.height > 0f)
-            {
-                block.Prop(PipeRiserTall, hall.xMin + 4f, hall.yMin - 1.2f, 0f);
-                if (Chance(rng, 0.6)) block.Prop(PipeRiserWide, hall.xMax - 5f, hall.yMin - 2f, 0f);
-                if (hall.width > 8f)
-                    Shuffled(block, LoadingDock, hall.center.x,
-                             hall.yMin - Foot(LoadingDock, 0f).y * 0.5f, 0f,
-                             new Vector2(1f, 0f), 9);
-
-                // two of the three small stories hang off the hall: what was unloaded at
-                // the dock and not cleared, and the plant that feeds the hall
-                Unloaded(block, rng, hall.center.x + 6f, hall.yMin - 3f);
-                ProcessPlant(block, rng, hall.center.x - 4f, hall.yMin - 5.5f, 0f);
-            }
-
-            var store = block.Put(YardShed, block.In, to - Foot(YardShed, 0f).y - 1f, 0f);
-            Ranks(block, BarrelMetal, block.In + 2f, from + 3f, 3, rng.Next(4, 7), 1.15f);
-            Ranks(block, Pallet, block.Out - 8f, from + 3f, 2, rng.Next(3, 5), 1.6f);
-
-            var yard = Rect.MinMaxRect(Mathf.Max(store.xMax + 2f, block.In + 2f), from + 2f,
-                                       block.Out - 2f, to - 2f);
-            block.Prop(WaterTower, block.Out - 4f, to - 5f, 0f);
-            block.Scatter(Pallet, rng.Next(2, 5), yard, 6f);
-            block.Scatter(BarrelPlastic, rng.Next(2, 5), yard, 8f);
-            block.Prop(PipeStack, block.Out - 4f, from + 8f, 90f);
-            if (Chance(rng, 0.5)) block.Prop(Forklift, yard.xMin + 5f, from + 5f, 90f);
-            // the third story, the timber and gas against the far wall, before the yard is
-            // filled by the acre: a story that finds no ground is no story at all
-            HazardStore(block, rng, block.Out - 2f, Mathf.Lerp(from, to, 0.55f), 0f);
-            FillYard(block, yard, rng);
-            if (newer.height > 0f)
-            {
-                block.Prop(Dumpster, newer.center.x, newer.yMax + 1.6f, 0f);
-                BinBags(block, rng, newer.center.x + 2f, newer.yMax + 1.4f, rng.Next(3, 6));
-            }
-            Lamps(block, yard, 2);
-            Gatepost(block, rng);
+            FabricationWorks(block, rng);
         }
 
-        /// <summary>
-        /// The plant: two process sheds across the back with the stack standing in the gap
-        /// they leave for it, a works front on the street, and a brick wall between the two
-        /// of them carrying the gate. The widest of the recipes, because a plant is mostly
-        /// building. What is left over is a working yard, not a car park.
-        /// </summary>
+        /// <summary>An east-side process hall, west-side vessel bank and frontage maintenance shop.</summary>
         static void Plant(Block block, System.Random rng)
         {
-            var works = block.Put(Factory, block.In, block.Near, 180f);
-            var shopFoot = Foot(Workshop, 180f);
-            var shop = block.Put(Workshop, block.Out - shopFoot.x, block.Near, 180f);
-            float mouth = works.width > 0f ? works.xMax + 1f : block.In + 10f;
-            block.Way = Gate(block, mouth, mouth + Between(rng, 9f, 11f));
-
-            var hallFoot = Foot(FactoryHall, 180f);
-            float gap = Between(rng, 6f, 8f);
-            float row = hallFoot.x * 2f + gap;
-            float from = block.In + Mathf.Max(0f, (block.Out - block.In - row) * 0.5f);
-            var west = block.Put(FactoryHall, from, block.Far - hallFoot.y, 180f);
-            var far = block.Put(FactoryHall, from + hallFoot.x + gap, block.Far - hallFoot.y, 180f);
-
-            float yardFrom = Mathf.Max(Mathf.Max(works.yMax, shop.yMax), block.Near + 2f);
-            float yardTo = west.height > 0f ? west.yMin : block.Far;
-
-            // the stack stands in the gap between the sheds, which is what the gap is for
-            if (west.width > 0f)
-                block.Chimney((block.In + west.xMin) * 0.5f, west.yMin + 3f, Between(rng, 26f, 32f));
-            else
-                block.Chimney(block.In + 4f, block.Far - 6f, Between(rng, 26f, 32f));
-            block.Prop(WaterTower, Mathf.Max(block.In + 2f, west.xMin - 3.5f), yardTo - 4f, 0f);
-            // A plant is mostly process, so it gets both tank groups - one at each shed's
-            // gable - and what came off the last lorry left standing between them.
-            if (west.width > 0f)
-            {
-                block.Prop(PipeRiserTall, west.xMin + 4f, west.yMin - 1.2f, 0f);
-                Shuffled(block, LoadingDock, west.center.x,
-                         west.yMin - Foot(LoadingDock, 0f).y * 0.5f, 0f, new Vector2(1f, 0f), 9);
-                ProcessPlant(block, rng, west.xMin + 1.5f, west.yMin - 5f, 0f);
-            }
-            if (far.width > 0f)
-            {
-                block.Prop(PipeRiserWide, far.xMax - 5f, far.yMin - 2f, 0f);
-                Shuffled(block, LoadingDock, far.center.x,
-                         far.yMin - Foot(LoadingDock, 0f).y * 0.5f, 0f, new Vector2(1f, 0f), 9);
-                ProcessPlant(block, rng, far.xMax - 6f, far.yMin - 5f, 0f);
-            }
-            if (west.width > 0f && far.width > 0f)
-                Unloaded(block, rng, (west.xMax + far.xMin) * 0.5f, yardTo - 4f);
-            HazardStore(block, rng, block.In + 2.2f, Mathf.Lerp(yardFrom, yardTo, 0.5f), 0f);
-
-            Ranks(block, BarrelMetal, block.In + 2f, yardFrom + 3f, 3, rng.Next(4, 7), 1.15f);
-            Ranks(block, Pallet, block.Out - 9f, yardFrom + 3f, 2, rng.Next(4, 6), 1.6f);
-
-            var yard = Rect.MinMaxRect(block.In + 8f, yardFrom + 2f, block.Out - 11f, yardTo - 2f);
-            block.Scatter(BarrelMetal, rng.Next(3, 6), yard, 8f);
-            block.Scatter(Pallet, rng.Next(2, 4), yard, 6f);
-            block.Scatter(Crate, rng.Next(2, 4), yard, 10f);
-            block.Scatter(Any(Chemicals, rng), rng.Next(2, 5), yard, 8f);
-            block.Prop(PipeStack, yard.xMin + 3f, yard.center.y, 0f);
-            if (Chance(rng, 0.6)) block.Prop(Forklift, yard.center.x, yardFrom + 4f, 90f);
-            FillYard(block, yard, rng);
-            if (shop.width > 0f)
-            {
-                block.Prop(Dumpster, shop.xMin - 2f, shop.center.y, 90f);
-                BinBags(block, rng, shop.xMin - 2f, shop.center.y + 2f, rng.Next(3, 6));
-            }
-            Lamps(block, yard, 3);
-            Gatepost(block, rng);
+            ProcessingWorks(block, rng);
         }
 
         /// <summary>The depot: one big shed across the back with its doors on the yard, and a
         /// forecourt in front of it wide enough to turn a lorry in.</summary>
         static void Depot(Block block, System.Random rng)
         {
-            block.Wall = Wall.Wire;
-
-            var foot = Foot(ShedLarge, 180f);
-            var shed = block.Put(ShedLarge, Mathf.Round((block.W - foot.x) * 0.5f),
-                                 block.Far - foot.y, 180f);
-            var hut = block.Put(YardShed, block.Out - Foot(YardShed, 180f).x, block.Near, 180f);
-            float middle = shed.width > 0f ? shed.center.x : (block.In + block.Out) * 0.5f;
-            block.Way = Gate(block, middle - 6f, middle + 6f);
-
-            // two docks at the doors, six metres either side of the middle: one lorry each,
-            // and both clear of the door the shed actually works out of
-            if (shed.height > 0f)
-            {
-                float dock = Foot(LoadingDock, 0f).y;
-                block.Prop(LoadingDock, middle - 6f, shed.yMin - dock * 0.5f, 0f);
-                block.Prop(LoadingDock, middle + 6f, shed.yMin - dock * 0.5f, 0f);
-            }
-
-            for (int k = 0; k < 3; k++)
-            {
-                float x = Mathf.Round((block.In + 2f + k * 12f) / Cell) * Cell;
-                if (hut.width > 0f && x + 10f >= hut.xMin) continue;
-                var parked = Chance(rng, 0.55) ? StaffCars[rng.Next(StaffCars.Length)] : null;
-                block.Bay(x, Mathf.Round(block.Near / Cell) * Cell + Cell, 0f, parked);
-            }
-
-            float apronTo = shed.height > 0f ? shed.yMin - 5f : block.Far - 2f;
-            var apron = Rect.MinMaxRect(block.In + 2f, block.Near + 8f, block.Out - 2f, apronTo);
-            if (Chance(rng, 0.8)) block.Prop(BoxLorry, apron.xMin + 6f, apron.center.y, 0f);
-            if (Chance(rng, 0.6)) block.Prop(BoxLorry, apron.xMax - 6f, apron.center.y, 180f);
-            block.Scatter(Pallet, rng.Next(2, 5), apron, 5f);
-            if (shed.height > 0f) Unloaded(block, rng, shed.center.x - 10f, shed.yMin - 4f);
-            FillYard(block, apron, rng, stacked: true);
-            if (hut.width > 0f)
-            {
-                block.Prop(Dumpster, hut.xMin - 2.5f, block.Near + 2f, 90f);
-                BinBags(block, rng, hut.xMin - 2.5f, block.Near + 4f, rng.Next(3, 6));
-            }
-            block.Prop(Forklift, middle, apronTo - 3f, Between(rng, 60f, 120f));
-
-            // the ground down either side of the shed: stock on one, empties and a spare
-            // lorry on the other
-            // both flanks are read off the shed, so both need the same guard: with no shed
-            // standing, an unguarded xMax of 0 turns the east flank into the whole block and
-            // the lorry meant to be down its side ends up in the middle of the yard
-            float shedFrom = shed.height > 0f ? shed.yMin : block.Far - 8f;
-            float shedWest = shed.width > 0f ? shed.xMin : block.In + 6f;
-            float shedEast = shed.width > 0f ? shed.xMax : block.Out - 6f;
-            float hutTop = hut.height > 0f ? hut.yMax : block.Near + 8f;
-            var alongWest = Rect.MinMaxRect(block.In + 1.5f, shedFrom + 2f,
-                                            Mathf.Max(block.In + 3f, shedWest - 1.5f), block.Far - 2f);
-            var alongEast = Rect.MinMaxRect(Mathf.Min(block.Out - 3f, shedEast + 1.5f), hutTop + 3f,
-                                            block.Out - 1.5f, block.Far - 2f);
-            block.Scatter(BarrelMetal, rng.Next(4, 9), alongWest, 8f);
-            block.Scatter(Pallet, rng.Next(3, 6), alongWest, 6f);
-            block.Prop(BoxLorry, alongWest.center.x, alongWest.yMax - 6f, 0f);
-            block.Scatter(Crate, rng.Next(2, 5), alongEast, 10f);
-            block.Scatter(WireSpool, rng.Next(1, 3), alongEast, 0f);
-            block.Prop(Any(Containers, rng), alongEast.center.x, alongEast.yMin + 4f, 0f);
-            block.Prop(StorageRack, alongWest.xMin + 1f, alongWest.center.y, 90f);
-
-            Lamps(block, apron, 3);
-            Gatepost(block, rng);
+            Distribution(block, rng);
         }
 
         /// <summary>The stockyard: a row of sheds with their backs to the far street and
@@ -758,6 +564,8 @@ namespace RoadDemo
 
             float lane = Mathf.Min(west.height > 0f ? west.yMin : block.Far,
                                    far.height > 0f ? far.yMin : block.Far);
+            block.ReserveRoute(new Rect(block.In + 1f, lane - 9f,
+                                       block.Out - block.In - 2f, 8f));
 
             // the containers, stacked on the port's odds: mostly two high, a shipper's whole
             // block in one colour now and then, and a gap where one has been taken away
@@ -776,7 +584,7 @@ namespace RoadDemo
                     float x = block.In + 1f + s * (can.z + 0.4f) + can.z * 0.5f;
                     // the way in is a way in: no rank closes the lane the gate opens onto
                     if (x + can.z * 0.5f > block.Way.x - 1.5f && x - can.z * 0.5f < block.Way.y + 1.5f) continue;
-                    int tall = Chance(rng, 0.2) ? 1 : Chance(rng, 0.75) ? 2 : 3;
+                    int tall = Chance(rng, 0.25) ? 1 : 2;
                     for (int t = 0; t < tall; t++)
                     {
                         string colour = oneShipper ? shipper : Any(Containers, rng);
@@ -812,44 +620,10 @@ namespace RoadDemo
             Gatepost(block, rng);
         }
 
-        /// <summary>The service strip: a workshop and a hall on the street with the way in
-        /// between them, and a yard of standing plant behind.</summary>
+        /// <summary>A row of trade workshops opening onto a shared service court.</summary>
         static void Strip(Block block, System.Random rng)
         {
-            var shop = block.Put(Workshop, block.In, block.Near, 180f);
-            var hallFoot = Foot(FactoryHall, 180f);
-            var hall = block.Put(FactoryHall, block.Out - hallFoot.x, block.Near, 180f);
-
-            float mouth = shop.width > 0f ? shop.xMax + 0.6f : block.In + 8f;
-            float shut = hall.width > 0f ? hall.xMin - 0.6f : block.Out - 8f;
-            if (shut - mouth < 7f) shut = mouth + 7f;
-            block.Way = Gate(block, mouth, shut);
-            float middle = (mouth + shut) * 0.5f;
-
-            float from = Mathf.Max(Mathf.Max(shop.yMax, hall.yMax), block.Near + 2f);
-
-            block.Bay(Mathf.Round(block.In / Cell) * Cell + Cell, block.D - Cell * 2f, 0f,
-                      Chance(rng, 0.7) ? StaffCars[rng.Next(StaffCars.Length)] : null);
-            block.Bay(Mathf.Round(block.In / Cell) * Cell + Cell, block.D - Cell * 3f, 0f,
-                      Chance(rng, 0.5) ? StaffCars[rng.Next(StaffCars.Length)] : null);
-
-            var yard = Rect.MinMaxRect(block.In + 2f, from + 2f, block.Out - 2f, block.Far - 2f);
-            if (hall.width > 0f)
-            {
-                block.Prop(Dumpster, hall.center.x, hall.yMax + 1.6f, 0f);
-                BinBags(block, rng, hall.center.x + 2f, hall.yMax + 1.4f, rng.Next(3, 6));
-                Unloaded(block, rng, hall.center.x, from + 4f);
-            }
-            // A service strip is a trade unit, so what it keeps outside is trade stock rather
-            // than process: the bottles and the timber against the shop's own flank.
-            if (shop.height > 0f) HazardStore(block, rng, block.In + 2.2f, shop.yMax + 4f, 0f);
-            block.Prop(CompanySign, middle, from + 3f, 0f);
-            block.Scatter(BarrelPlastic, rng.Next(2, 5), yard, 8f);
-            block.Scatter(Pallet, rng.Next(2, 4), yard, 6f);
-            if (Chance(rng, 0.5)) block.Prop(Forklift, yard.xMax - 5f, yard.center.y, 270f);
-            FillYard(block, yard, rng);
-            Lamps(block, yard, 2);
-            Gatepost(block, rng);
+            TradeCourt(block, rng);
         }
 
         /// <summary>
@@ -1300,12 +1074,12 @@ namespace RoadDemo
             // The mottle first, at the bottom: patches of a different wear of the same asphalt,
             // at the gang kit's own 3 m rather than stretched onto this block's 5 m grid -
             // stretched, they would only re-draw the grid they are there to break up.
-            lift = Sprinkle(block, rng, WornAsphalt, rng.Next(11, 18), yard, lift);
+            lift = Sprinkle(block, rng, WornAsphalt, rng.Next(2, 5), yard, lift);
             lift = Sprinkle(block, rng, Drains, rng.Next(1, 4), yard, lift);
-            lift = Sprinkle(block, rng, PaintedFloor, rng.Next(1, 3), yard, lift);
+            // Working markings are laid from the circulation plan, never scattered.
 
             // Then standing water over it, which is what says outdoors and unswept.
-            lift = Sprinkle(block, rng, Puddles, rng.Next(7, 12), yard, lift);
+            lift = Sprinkle(block, rng, Puddles, rng.Next(2, 5), yard, lift);
             lift = Sprinkle(block, rng, Litter, rng.Next(1, 4), yard, lift);
 
             // And last the two that carry a height of their own, so nothing they land on can

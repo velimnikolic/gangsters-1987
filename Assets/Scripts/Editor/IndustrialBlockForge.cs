@@ -126,6 +126,10 @@ namespace LivingCity.EditorTools
 
         static object[] GenerateIn(Scene scene, int seed, string which)
         {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                throw new System.InvalidOperationException("Stop Play before rebuilding industrial candidates.");
+            SyntyIndustrialKitBash.BuildIfStale();
+            IndustrialBlocks.ForgetMeasurements();
             Wipe(scene);
             IndustrialBlocks.ForgetMissing();
 
@@ -181,6 +185,7 @@ namespace LivingCity.EditorTools
             }
 
             Undo.RegisterCreatedObjectUndo(root, "Industrial candidates");
+            ConfigureReview(scene, root);
             EditorSceneManager.MarkSceneDirty(scene);
             Selection.activeGameObject = root;
 
@@ -196,6 +201,49 @@ namespace LivingCity.EditorTools
             return told.ToArray();
         }
 
+        static void ConfigureReview(Scene scene, GameObject root)
+        {
+            var camera = scene.GetRootGameObjects().SelectMany(go => go.GetComponentsInChildren<Camera>(true)).FirstOrDefault();
+            if (!camera)
+            {
+                var go = new GameObject("Main Camera");
+                SceneManager.MoveGameObjectToScene(go, scene);
+                camera = go.AddComponent<Camera>();
+                go.tag = "MainCamera";
+            }
+            camera.orthographic = false;
+            camera.fieldOfView = 42f;
+            camera.farClipPlane = 1800f;
+            camera.nearClipPlane = 0.3f;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = new Color(0.23f, 0.26f, 0.28f);
+            var controls = camera.GetComponent<DemoCamera>() ?? camera.gameObject.AddComponent<DemoCamera>();
+            controls.mapTransition = false;
+            controls.mapCeiling = 650f;
+            controls.minDistance = 12f;
+            controls.ConfigurePitch(48f, 24f);
+            controls.yaw = 25f;
+            controls.showHint = true;
+            controls.hintTopPx = 10f;
+            controls.hint = "INDUSTRIAL LAB   1-4: focus block\nWASD: move   Q/E or right-drag: orbit   wheel: zoom";
+            var review = camera.GetComponent<IndustrialLabReview>() ?? camera.gameObject.AddComponent<IndustrialLabReview>();
+            review.candidates = Enumerable.Range(0, root.transform.childCount).Select(i => root.transform.GetChild(i)).ToArray();
+            review.Focus(0);
+            var lights = scene.GetRootGameObjects().SelectMany(go => go.GetComponentsInChildren<Light>()).Where(l => l.type == LightType.Directional).ToArray();
+            if (lights.Length > 0)
+            {
+                lights[0].transform.rotation = Quaternion.Euler(48f, -32f, 0f);
+                lights[0].intensity = 1.6f;
+                lights[0].color = new Color(1f, 0.94f, 0.83f);
+                lights[0].shadows = LightShadows.Soft;
+            }
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.52f, 0.60f, 0.67f);
+            RenderSettings.ambientEquatorColor = new Color(0.38f, 0.40f, 0.42f);
+            RenderSettings.ambientGroundColor = new Color(0.24f, 0.23f, 0.21f);
+            RenderSettings.fog = false;
+        }
+
         static void Caption(Transform candidate, int index, IndustrialLayout.Recipe recipe,
                             IndustrialBlocks.Block block, int seed)
         {
@@ -206,7 +254,7 @@ namespace LivingCity.EditorTools
                                   candidate.position + new Vector3(block.W * 0.5f, 6f, block.D + 4f),
                                   candidate);
             var label = candidate.Find(LabelName);
-            if (label) label.rotation = Quaternion.Euler(35f, 180f, 0f);
+            if (label) label.rotation = Quaternion.Euler(35f, 0f, 0f);
         }
 
         static GameObject Found(Scene scene, string name) =>

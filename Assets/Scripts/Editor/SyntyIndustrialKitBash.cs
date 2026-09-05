@@ -39,12 +39,12 @@ namespace LivingCity.EditorTools
     /// boards. Those are the two bands a city camera actually sees, and a works that has
     /// neither reads as a shed with windows drawn on it however carefully the walls are laid.
     /// </summary>
-    public static class SyntyIndustrialKitBash
+    public static partial class SyntyIndustrialKitBash
     {
         const string Bld = "Assets/Synty/PolygonGangWarfare/Prefabs/Buildings/";
         const string Props = "Assets/Synty/PolygonGangWarfare/Prefabs/Props/";
 
-        public const int Version = 3;
+        public const int Version = 7;
         const string VersionPath = SyntyKitExtractor.BuildingsDir + "/IndustrialKitVersion.txt";
 
         const float M = 3f;      // the gang module: 3.0 wide, 3.0 per storey
@@ -168,18 +168,30 @@ namespace LivingCity.EditorTools
 
         public static void BuildIfStale()
         {
-            var marker = AssetDatabase.LoadAssetAtPath<TextAsset>(VersionPath);
-            if (marker && marker.text.Trim() == Version.ToString())
-                return;
+            if (IsFresh()) return;
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+                throw new System.InvalidOperationException("Stop Play before rebuilding the industrial kit.");
 
             BuildFactory();
             BuildFactoryOld();
             BuildFactoryHall();
             BuildWorkshop();
+            BuildProductionHall("building-production-hall", 12, 6, 2);
+            BuildProductionHall("building-process-hall", 16, 9, 3);
+            BuildProductionHall("building-distribution-hall", 12, 9, 2);
 
             System.IO.File.WriteAllText(VersionPath, Version.ToString());
             AssetDatabase.ImportAsset(VersionPath);
             AssetDatabase.SaveAssets();
+        }
+
+        public static bool IsFresh()
+        {
+            var marker = AssetDatabase.LoadAssetAtPath<TextAsset>(VersionPath);
+            return marker && marker.text.Trim() == Version.ToString() &&
+                new[] { "building-factory", "building-factory-old", "building-factory-hall", "building-workshop",
+                    "building-production-hall", "building-process-hall", "building-distribution-hall" }
+                .All(name => AssetDatabase.LoadAssetAtPath<GameObject>(SyntyKitExtractor.BuildingsDir + "/" + name + ".prefab"));
         }
 
         /// <summary>
@@ -298,13 +310,10 @@ namespace LivingCity.EditorTools
                 WallProp(root, WallVent, w, d, Side.Back, 3f, 2f);
                 WallProp(root, PowerBox, w, d, Side.Right, -4.5f, 1.2f, standoff: 0.05f);
 
-                // The chimney: five blocks from the ground up, snug against the back-left
-                // corner (block half-width 0.6 m outside the wall plane).
-                for (var k = 0; k < 5; k++)
-                    Place(root, ChimneyBlock, -halfW - 0.7f, 0.126f + k * ChimneyCourse,
-                          -halfD + 1.6f, 0f);
+                // The compound supplies its actual boiler stack. Repeating capped domestic
+                // chimney modules here made a second tower of disconnected chimney pots.
 
-                SyntyKitExtractor.BakeGroup(root, root.name, yaw: 0f);
+                BakeWithSigns(root, ("TRADE OFFICE", new Vector3(9f, 4.5f, d * M / 2f + Face + 0.03f), 2.4f));
             }
             finally
             {
@@ -367,7 +376,7 @@ namespace LivingCity.EditorTools
 
                 Gantry(root, w, d, deckY: Course);
 
-                SyntyKitExtractor.BakeGroup(root, root.name, yaw: 0f);
+                BakeWithSigns(root, ("METALWORK", new Vector3(9f, 3.4f, d * M / 2f + Face + 0.03f), 2.4f));
             }
             finally
             {
@@ -407,12 +416,51 @@ namespace LivingCity.EditorTools
                 WallProp(root, Firehose, w, d, Side.Right, -4.5f, 0f);
                 WallProp(root, PowerBox, w, d, Side.Left, -4.5f, 1.2f, standoff: 0.05f);
 
-                SyntyKitExtractor.BakeGroup(root, root.name, yaw: 0f);
+                BakeWithSigns(root, ("SERVICE", new Vector3(-6f, 1.55f, d * M / 2f + Face + 0.03f), 2.4f));
             }
             finally
             {
                 Object.DestroyImmediate(root);
             }
+        }
+
+        // BakeGroup recenters the mesh on all geometry, including projecting fittings.
+        // Carry facade mounts through that same pivot shift, keeping blank wall positions.
+        static void BakeWithSigns(GameObject root, params (string label, Vector3 centre, float width)[] signs)
+        {
+            var pivot = SyntyKitExtractor.BakeGroup(root, root.name, yaw: 0f);
+            if (!pivot.HasValue) return;
+            string path = SyntyKitExtractor.BuildingsDir + "/" + root.name + ".prefab";
+            var output = PrefabUtility.LoadPrefabContents(path);
+            try
+            {
+                var wall = output.AddComponent<MeshCollider>();
+                wall.sharedMesh = output.GetComponent<MeshFilter>().sharedMesh;
+                Physics.SyncTransforms();
+                foreach (var sign in signs)
+                {
+                    var centre = sign.centre - pivot.Value;
+                    float face = float.NegativeInfinity;
+                    // Sample the actual wall ribs. Face also allows for bulky fittings;
+                    // using it unchanged would leave the board several cm off the sheet.
+                    for (float x = -sign.width * 0.5f; x <= sign.width * 0.5f; x += 0.08f)
+                        foreach (float y in new[] { -0.3f, 0f, 0.3f })
+                        {
+                            var ray = new Ray(centre + new Vector3(x, y, 0.5f), Vector3.back);
+                            if (!wall.Raycast(ray, out var hit, 1f))
+                                throw new System.InvalidOperationException(root.name + ": unsupported sign " + sign.label);
+                            face = Mathf.Max(face, hit.point.z);
+                        }
+                    centre.z = face + 0.03f;
+                    var mount = new GameObject("sign mount " + sign.label).transform;
+                    mount.SetParent(output.transform, false);
+                    mount.localPosition = centre;
+                    mount.localScale = new Vector3(sign.width, 0.7f, 1f);
+                }
+                Object.DestroyImmediate(wall);
+                PrefabUtility.SaveAsPrefabAsset(output, path);
+            }
+            finally { PrefabUtility.UnloadPrefabContents(output); }
         }
 
         static (string path, int modules)[] Row(params (string path, int modules)[] row) => row;

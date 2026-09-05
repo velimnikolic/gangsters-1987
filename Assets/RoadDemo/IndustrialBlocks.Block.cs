@@ -31,6 +31,19 @@ namespace RoadDemo
             readonly Surface[] _floor;
             readonly List<Rect> _taken = new List<Rect>();
             readonly List<Rect> _footprints = new List<Rect>();
+            readonly Dictionary<Rect, Transform> _buildings = new Dictionary<Rect, Transform>();
+            readonly List<Rect> _routes = new List<Rect>();
+            public IReadOnlyList<Rect> Routes => _routes;
+
+            public void ReserveRoute(Rect area)
+            {
+                if (!OnYard(area) || _footprints.Any(foot => foot.Overlaps(area))) return;
+                _routes.Add(area);
+                _taken.Add(area);
+            }
+
+            // Reserving working space must not claim its floor tiles as already laid.
+            public void ReserveService(Rect area) { if (OnYard(area)) _taken.Add(area); }
             readonly Dictionary<string, int> _refused = new Dictionary<string, int>();
 
             Vector2 _way;
@@ -367,9 +380,14 @@ namespace RoadDemo
                 var go = IndustrialBlocks.Stand(path, Root, where.center.x, where.center.y, yaw, Deck);
                 if (go == null) return new Rect();
                 _footprints.Add(where);
+                _buildings.Add(where, go.transform);
                 Claim(where);
                 return where;
             }
+
+            internal Transform SignMount(Rect footprint, string label) =>
+                _buildings.TryGetValue(footprint, out var building)
+                    ? building.Find("sign mount " + label) : null;
 
             /// <summary>A prop, if there is room for it. Refused rather than crammed in: a
             /// yard reads as a yard because things are set down where they fit.</summary>
@@ -545,6 +563,8 @@ namespace RoadDemo
                            Mathf.Lerp(Foot, Head, along), paint, "chimney");
                 }
                 Barrel(x, z, Deck + height, 0.9f, Head * 1.25f, paint, "chimney crown");
+                WorkShape(this, "dark chimney mouth", new Vector3(x, Deck + height + 0.905f, z),
+                    new Vector3(Head * 2.05f, 0.015f, Head * 2.05f), Joint, PrimitiveType.Cylinder);
 
                 float mouth = Deck + height + 0.9f;
                 var plume = Raise(Smoke, Root);
@@ -581,29 +601,31 @@ namespace RoadDemo
                 if (collider) UnityEngine.Object.DestroyImmediate(collider);
             }
 
-            /// <summary>
-            /// A storage tank: the pack's own oil drum blown up until it is a tank.
-            ///
-            /// No pack in this project has a tank or a silo, and the harbour settled this
-            /// question first - its tank farm is <c>SM_Prop_Barrel_Metal_01</c> scaled to
-            /// four metres and up (HarborKit.TankBody). A drum is the right shape already:
-            /// a cylinder with two hoop rims, which is what a bunded tank looks like from
-            /// across a fence.
-            /// </summary>
+            /// <summary>A welded storage vessel with footing, seams, roof hatch and
+            /// an access ladder, built at its actual dimensions.</summary>
             public GameObject Tank(float x, float z, float across, float tall)
             {
                 var ground = new Rect(x - across * 0.5f, z - across * 0.5f, across, across);
                 if (!Room(ground)) return null;
-                var go = Sit(BarrelMetal, Root, x, z, 0f, Deck);
-                if (go == null) return null;
-                var own = Box(BarrelMetal).size;
-                if (own.x < 0.01f || own.y < 0.01f) return go;
-                go.transform.localScale = Vector3.Scale(go.transform.localScale,
-                    new Vector3(across / own.x, tall / own.y, across / own.z));
-                if (WorldBox(go, out var box))
-                    go.transform.position += new Vector3(x - box.center.x, Deck - box.min.y, z - box.center.z);
-                go.name = "tank";
-                Claim(ground);
+                var paint = WorkMaterial("Tank", new Color(0.60f, 0.61f, 0.56f));
+                var go = WorkShape(this, "welded storage tank", new Vector3(x, Deck + tall * 0.5f, z),
+                    new Vector3(across, tall * 0.5f, across), paint, PrimitiveType.Cylinder);
+                WorkShape(this, "tank concrete footing", new Vector3(x, Deck + 0.08f, z),
+                    new Vector3(across + 0.6f, 0.08f, across + 0.6f), Concrete, PrimitiveType.Cylinder);
+                for (float h = 2f; h < tall; h += 2f)
+                    WorkShape(this, "tank weld seam", new Vector3(x, Deck + h, z),
+                        new Vector3(across + 0.025f, 0.025f, across + 0.025f), Steel, PrimitiveType.Cylinder);
+                WorkShape(this, "tank roof rim", new Vector3(x, Deck + tall, z),
+                    new Vector3(across + 0.14f, 0.1f, across + 0.14f), Steel, PrimitiveType.Cylinder);
+                WorkShape(this, "tank access hatch", new Vector3(x, Deck + tall + 0.14f, z),
+                    new Vector3(0.8f, 0.12f, 0.8f), Steel, PrimitiveType.Cylinder);
+                for (int side = -1; side <= 1; side += 2)
+                    WorkShape(this, "tank ladder rail", new Vector3(x + side * 0.32f, Deck + tall * 0.5f, z - across * 0.5f - 0.15f),
+                        new Vector3(0.06f, tall, 0.06f), Steel);
+                for (float h = 0.3f; h < tall; h += 0.32f)
+                    WorkShape(this, "tank ladder rung", new Vector3(x, Deck + h, z - across * 0.5f - 0.15f),
+                        new Vector3(0.65f, 0.045f, 0.06f), Steel);
+                _taken.Add(ground);
                 return go;
             }
 
@@ -915,45 +937,9 @@ namespace RoadDemo
                 for (int k = 0; k < _floor.Length; k++)
                     if (!_corridor[k]) _floor[k] = Ground;
 
-                for (int j = 0; j < NZ; j++)
-                    for (int i = 0; i < NX; i++)
-                    {
-                        if (!Held(i, j) || Kerbed(i, j) || _corridor[At(i, j)]) continue;
-
-                        // the walk inside the wall - which, against a shared fence, is the
-                        // boundary cell itself, there being no pavement outside it
-                        bool walk = Kerbed(i - 1, j) || Kerbed(i + 1, j) ||
-                                    Kerbed(i, j - 1) || Kerbed(i, j + 1) || Rim(i, j);
-
-                        // and the skirt a building stands on. A SKIRT, not a five metre
-                        // apron: at a cell to the metre, an apron that wide meets the next
-                        // building's and the walk inside the wall, and the yard comes out as
-                        // islands of asphalt with pavement running between them
-                        if (!walk)
-                        {
-                            var cell = new Rect(i * Cell, j * Cell, Cell, Cell);
-                            foreach (var foot in _footprints)
-                            {
-                                var skirt = new Rect(foot.xMin - 1.2f, foot.yMin - 1.2f,
-                                                     foot.width + 2.4f, foot.height + 2.4f);
-                                if (!skirt.Overlaps(cell)) continue;
-                                walk = true;
-                                break;
-                            }
-                        }
-
-                        if (walk) _floor[At(i, j)] = Surface.Plate;
-                    }
-
-                // and then, over the top of all of it: EVERY cell a building touches is
-                // pavement. The skirt above already reaches them, but saying it outright is
-                // what makes it a rule rather than a consequence - a building stands on one
-                // surface, and it is this one.
-                for (int j = 0; j < NZ; j++)
-                    for (int i = 0; i < NX; i++)
-                        if (Held(i, j) && !Kerbed(i, j) && Apron(i, j))
-                            _floor[At(i, j)] = Surface.Plate;
-
+                // Keep the yard as a continuous working surface. Five-metre pavement
+                // cells around every wall made loading courts into checkerboard islands.
+                // Concrete aprons and pedestrian paths are now measured in metres.
                 Gateway();
             }
 
