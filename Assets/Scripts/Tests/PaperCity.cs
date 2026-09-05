@@ -392,6 +392,8 @@ namespace LivingCity.Tests
                         house.Runner.Campaign.Day),
                 KeepOffLook = blockId => world.Diplomacy.IsKeptOff(
                     house.GangId, blockId, house.Runner.Campaign.Day),
+                LastAskedLook = (other, kind) =>
+                    world.Diplomacy.LastFiled(house.GangId, other.Value, kind),
                 GrievanceLook = other =>
                     world.Relations.Grievance(house.GangId, other.Value),
                 LossesLook = other => house.Runner.LossesThisWar(other.Value),
@@ -654,10 +656,15 @@ namespace LivingCity.Tests
                     if (card == null || eventBook.Pending == null ||
                         eventBook.Pending.Id != card.Id)
                         return "no card on the table";
-                    var inner = StreetEvents.Answer(eventBook, card, intent.CharacterId, ctx);
-                    return inner.Kind == HouseIntentKind.None
-                        ? ""
-                        : Carry(world, racket, dues, rounds, clock, house, inner, book);
+                    var inner = StreetEvents.IntentOf(card, intent.CharacterId);
+                    if (StreetEvents.HasAction(inner))
+                    {
+                        var refusal = Carry(world, racket, dues, rounds, clock, house, inner, book);
+                        if (!string.IsNullOrEmpty(refusal))
+                            return refusal;
+                    }
+                    StreetEvents.Answer(eventBook, card, intent.CharacterId, ctx);
+                    return "";
                 }
 
                 case HouseIntentKind.AcceptTerms:

@@ -38,6 +38,9 @@ namespace LivingCity.Tests
             ("WithACardPendingTheMindAnswersBeforeWalk", WithACardPendingTheMindAnswersBeforeWalk),
             ("WalkAwayIsChosenWhenItsAppealIsHighest", WalkAwayIsChosenWhenItsAppealIsHighest),
             ("TraffickingIsFifteenToThirtyAndBindsAHood", TraffickingIsFifteenToThirtyAndBindsAHood),
+            ("ARefusedActionLeavesTheCardOnTheTable", ARefusedActionLeavesTheCardOnTheTable),
+            ("APendingCardIsTheSameOfferAfterALoad", APendingCardIsTheSameOfferAfterALoad),
+            ("OneThinkNeverSpendsIntoTheWages", OneThinkNeverSpendsIntoTheWages),
         };
 
         public static string[] ContractNames()
@@ -158,22 +161,23 @@ namespace LivingCity.Tests
         static EventDef TheMan => StreetEvents.DefOf(ConnectionEvents.Defs, EventId.TheMan);
         static EventDef Broker => StreetEvents.DefOf(ConnectionEvents.Defs, EventId.BrokerRumour);
 
-        /// <summary>Deal the man's card straight off the def, whatever the pot says.</summary>
-        static EventCard DealTheMan(Rig rig, int g, int seed = 7)
+        /// <summary>Deal the man's card straight off the def, whatever the pot says -
+        /// on the book's own seed for the day, so a re-deal after a load is the same
+        /// stream; a test that wants a different man names its own seed.</summary>
+        static EventCard DealTheMan(Rig rig, int g, int seed = -1)
         {
             var view = rig.Look(g);
             var ctx = rig.Ctx(g);
-            var card = TheMan.Deal(view, ctx, seed);
+            if (seed < 0)
+                seed = StreetEvents.Seed(ctx.CitySeed, ctx.GangId, EventId.TheMan, ctx.Day);
+            var card = TheMan.Deal(view, ctx, seed, null);
             if (card == null)
                 return null;
-            card.DealtDay = rig.Day;
-            card.ExpiresDay = rig.Day + StreetEvents.HoldDays;
+            // The house's own day, the one the seed was struck on.
+            card.DealtDay = ctx.Day;
+            card.ExpiresDay = ctx.Day + StreetEvents.HoldDays;
             var book = rig.House(g).Runner.Events;
-            book.Pending = new PendingCard
-            {
-                Id = card.Id, Def = card.Def, DealtDay = card.DealtDay,
-                ExpiresDay = card.ExpiresDay, Speaker = card.Speaker,
-            };
+            book.Pending = PendingCard.Of(card, HoldReason.None);
             book.Spoken = card;
             book.CardsDealt++;
             return card;
@@ -412,7 +416,7 @@ namespace LivingCity.Tests
             }
             roster.Day = day;
             RosterOps.Jail(roster, hood.Id, day + 2, "held", "Affray", "");
-            var inside = TheMan.Deal(rig.Look(1), rig.Ctx(1), 5);
+            var inside = TheMan.Deal(rig.Look(1), rig.Ctx(1), 5, null);
             if (inside == null || !inside.IsWire)
                 failures.Add("CONN-001: THE CELL produced a man while he was inside.");
             else if (string.IsNullOrEmpty(inside.Lines[0]))
@@ -423,7 +427,7 @@ namespace LivingCity.Tests
                 failures.Add("CONN-001: the cell did not remember his nights (" +
                              hood.NightsInside + ").");
             house.Runner.Campaign.Day = day + 2;
-            var released = TheMan.Deal(rig.Look(1), rig.Ctx(1), 5);
+            var released = TheMan.Deal(rig.Look(1), rig.Ctx(1), 5, null);
             if (released == null || released.IsWire || released.Path != ConnectionPath.Cell ||
                 released.Ad == null)
                 failures.Add("CONN-001: THE CELL did not fire on the day of release.");
@@ -904,6 +908,151 @@ namespace LivingCity.Tests
                     chosen = rig.Intents[i].CharacterId;
             if (chosen != 1)
                 failures.Add("STREET-003: WALK AWAY with the highest appeal was not chosen (" + chosen + ").");
+        }
+
+        /// <summary>The Codex review's finding: the answer was recorded before the
+        /// action ran, so a refused signing ate the card, and a row that is its own
+        /// answer was carried twice and reported failure.</summary>
+        static void ARefusedActionLeavesTheCardOnTheTable(List<string> failures)
+        {
+            var rig = new Rig(60);
+            var house = rig.House(1);
+            var card = DealTheMan(rig, 1);
+            if (card == null || card.IsWire)
+            {
+                failures.Add("STREET-003: no card to refuse.");
+                return;
+            }
+            house.Runner.Accounts.Safe = 0;
+            var book = house.Runner.Events;
+            var refusal = rig.Carry(1, HouseIntent.Choose(card, 0, HouseMind.TierCollect, "sign"));
+            if (string.IsNullOrEmpty(refusal))
+                failures.Add("STREET-003: a signing with an empty safe was not refused.");
+            if (book.Pending == null || book.CardsAnswered != 0)
+                failures.Add("STREET-003: a refused signing consumed the card.");
+            if (house.Runner.Connection.Stage != ConnectionStage.None)
+                failures.Add("STREET-003: a refused signing moved the stage.");
+
+            var walk = ChoiceOf(card, "WALK AWAY");
+            var answer = rig.Carry(1, HouseIntent.Choose(card, walk, HouseMind.TierCollect, "walk"));
+            if (!string.IsNullOrEmpty(answer))
+                failures.Add("STREET-003: WALK AWAY reported a failure: " + answer);
+            if (book.Pending != null || book.CardsAnswered != 1)
+                failures.Add("STREET-003: WALK AWAY did not clear the table once.");
+            if (!book.IsCooling(EventId.TheMan, rig.Day + ConnectionEvents.TheManCooldown - 1))
+                failures.Add("CONN-001: WALK AWAY did not cool the def for thirty days.");
+        }
+
+        /// <summary>The Codex review's finding: a pending card re-dealt from today's
+        /// street could become a different path, or a cold wire, after a load. The
+        /// frozen half of the deal keeps it the same offer.</summary>
+        static void APendingCardIsTheSameOfferAfterALoad(List<string> failures)
+        {
+            var rig = new Rig(61);
+            var house = rig.House(1);
+            house.Runner.Accounts.Safe = 100_000;
+            house.Runner.Connection.Paths = 1 << (int)ConnectionPath.Cell;
+            var roster = house.Roster;
+            var day = rig.Day;
+            Character hood = null;
+            for (var i = 0; i < roster.Members.Count && hood == null; i++)
+                if (roster.Members[i].Rank == Rank.Hood && roster.Members[i].Specialty == Specialty.None)
+                    hood = roster.Members[i];
+            roster.Day = day;
+            RosterOps.Jail(roster, hood.Id, day + 2, "held", "Affray", "");
+            RosterOps.Discharge(roster, day + 2);
+            house.Runner.Campaign.Day = day + 2;
+            var card = DealTheMan(rig, 1);
+            if (card == null || card.IsWire || card.Path != ConnectionPath.Cell || card.Ad == null)
+            {
+                failures.Add("CONN-005: THE CELL did not deal a card to freeze.");
+                return;
+            }
+            if (house.Runner.Events.Pending.CellmateId != hood.Id ||
+                house.Runner.Events.Pending.Path != ConnectionPath.Cell)
+                failures.Add("CONN-005: the pending card did not freeze its path and its cellmate.");
+
+            // A day on, the release is old news; the file goes through JSON; the card
+            // comes back as THE CELL with the same man, the same trade, the same rows.
+            house.Runner.Campaign.Day = day + 3;
+            var json = JsonUtility.ToJson(OutfitSnapshot.Snapshot(rig.World));
+            var read = JsonUtility.FromJson<UnderworldDto>(json);
+            var other = Underworld.Deal(61, 3);
+            OutfitSnapshot.Restore(other, read);
+            var back = other.Of(1);
+            var view = rig.City.Look(other, rig.Racket, rig.Dues, back, rig.Config, rig.Rounds);
+            var ctx = StreetEvents.ContextFor(other, back, rig.Config);
+            var again = StreetEvents.CardOf(back.Runner.Events, view, ctx, ConnectionEvents.Defs);
+            if (again == null || again.IsWire)
+            {
+                failures.Add("CONN-005: the pending card came back as nothing or a wire.");
+                return;
+            }
+            if (again.Path != ConnectionPath.Cell || again.CellmateId != hood.Id ||
+                again.Trade != card.Trade || again.Line != card.Line ||
+                again.Choices.Count != card.Choices.Count || again.CrewId != card.CrewId ||
+                again.Ad == null || again.Ad.Man.FullName != card.Ad.Man.FullName ||
+                again.Choices[0].Cost != card.Choices[0].Cost)
+                failures.Add("CONN-005: the re-dealt card is not the same offer (" + again.Path +
+                             "/" + again.CellmateId + "/" + again.Trade + "/" +
+                             (again.Ad != null ? again.Ad.Man.FullName : "-") + ").");
+            for (var i = 0; i < again.Lines.Count; i++)
+                if (again.Lines[i] != card.Lines[i])
+                    failures.Add("CONN-005: a line of the re-dealt card differs: " + again.Lines[i]);
+        }
+
+        /// <summary>The Codex review's finding: a card answered before the walk and a
+        /// purchase in the walk were both weighed against the same safe. The invariant
+        /// is the mind's own D9 rule over the whole think: everything it proposes to
+        /// spend, added up, leaves a week's wages in the safe.</summary>
+        static void OneThinkNeverSpendsIntoTheWages(List<string> failures)
+        {
+            for (var seed = 70; seed < 76; seed++)
+            {
+                var rig = new Rig(seed);
+                var house = rig.House(1);
+                var reserve = rig.Config.ReserveDays * Wages.DailyPayroll(house.Roster);
+                var row = 50_000;
+                house.Runner.Accounts.Safe = row + reserve + 1_500;
+                house.Runner.Connection.Stage = ConnectionStage.Tested;
+                var card = new EventCard
+                {
+                    Id = CardId.SupplierTerms, Def = EventId.SupplierTerms,
+                    Speaker = house.Roster.BossId, SpeakerName = "TEST", Title = "TEST",
+                    DealtDay = rig.Day, ExpiresDay = rig.Day + 3,
+                };
+                card.Choices.Add(new EventChoice
+                {
+                    Label = "PAY", Cost = row, Appeal = _ => 0.9f,
+                    Intent = HouseIntent.SellKilos(HouseMind.TierCollect, "pay"),
+                });
+                house.Runner.Events.Pending = PendingCard.Of(card, HoldReason.None);
+                house.Runner.Events.Spoken = card;
+                // Three quiet thinks, so the buying tier is awake.
+                house.NoteThink(false); house.NoteThink(false); house.NoteThink(false);
+
+                rig.Think(1);
+                var spent = 0;
+                for (var i = 0; i < rig.Intents.Count; i++)
+                {
+                    var intent = rig.Intents[i];
+                    switch (intent.Kind)
+                    {
+                        case HouseIntentKind.Card: spent += intent.Price; break;
+                        case HouseIntentKind.Buy: spent += intent.Price; break;
+                        case HouseIntentKind.Lease:
+                            spent += EconomyPrices.Apartment + EconomyPrices.StashFitOut; break;
+                        case HouseIntentKind.Job:
+                            if (intent.Job != null && intent.Job.Type == OrderType.Recruit)
+                                spent += EconomyPrices.RecruitSigning;
+                            break;
+                    }
+                }
+                if (spent > house.Runner.Accounts.Safe - reserve)
+                    failures.Add("STREET-003: seed " + seed + " proposed $" + spent +
+                                 " in one think with $" + (house.Runner.Accounts.Safe - reserve) +
+                                 " over the reserve.");
+            }
         }
 
         static void TraffickingIsFifteenToThirtyAndBindsAHood(List<string> failures)

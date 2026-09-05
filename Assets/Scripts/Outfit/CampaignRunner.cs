@@ -1034,10 +1034,16 @@ namespace LivingCity.Outfit
             if (stingChance > 0f && trust.NextDouble() < stingChance)
             {
                 Connection.Bought(ConnectionOutcome.Sting, day);
-                Events.Say(day, "It was a sting. The seller at " + door +
-                                " was a cop, the money is gone and the men who walked are " +
-                                "taken at the door. Thirty days with nobody talking to us.", true);
+                // The street answers whether it took the men; the book only says what
+                // it knows (the Codex review's finding): the seller was a cop, the money
+                // is gone, the precinct is coming. Whether they are taken is the collar's.
                 var taken = StungOnTheStreet != null && StungOnTheStreet(GangId, job);
+                Events.Say(day, "It was a sting. The seller at " + door +
+                                " was a cop and the money is gone. " +
+                                (taken
+                                    ? "The precinct is on its way to the door."
+                                    : "The men who walked are taken at the door.") +
+                                " Thirty days with nobody talking to us.", true);
                 if (!taken)
                 {
                     // No street to take them on: the book does, and with no court in

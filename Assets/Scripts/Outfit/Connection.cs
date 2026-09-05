@@ -1279,7 +1279,8 @@ namespace LivingCity.Outfit
 
         // ---------------------------------------------------------------- the deals
 
-        static EventCard DealTheMan(HouseView view, EventContext ctx, int seed)
+        static EventCard DealTheMan(HouseView view, EventContext ctx, int seed,
+            PendingCard frozen)
         {
             var rng = new System.Random(seed);
             var roster = view.Roster;
@@ -1288,14 +1289,28 @@ namespace LivingCity.Outfit
             // The line, Port 3 : Field 1 - the field is the thinner line.
             var line = rng.Next(4) == 0 ? ConnectionLine.Field : ConnectionLine.Port;
 
-            // The path: the first open one that can produce him today.
+            // The path: the first open one that can produce him today - or, after a
+            // load, the path the deal froze, whatever the street looks like today.
             var paths = PathsFor(ctx);
             Character ourMan = null, cellmate = null;
             HouseDoor bar = default;
             var barBlock = default(TerritoryBlockId);
             var path = ConnectionPath.Column;
             var found = false;
-            for (var p = 0; p < 4 && !found; p++)
+            if (frozen != null)
+            {
+                line = frozen.Line != ConnectionLine.None ? frozen.Line : line;
+                path = frozen.Path;
+                ourMan = frozen.ManId >= 0 ? roster.Find(frozen.ManId) : null;
+                cellmate = frozen.CellmateId >= 0 ? roster.Find(frozen.CellmateId) : null;
+                if (!string.IsNullOrEmpty(frozen.Door))
+                    bar = new HouseDoor(new TerritoryBusinessId(frozen.Door), 1, 0, default,
+                        TerritoryProtectionState.Compliant, 0, false, true, DoorTenure.Ours);
+                found = path == ConnectionPath.Column || path == ConnectionPath.Bar ||
+                        (path == ConnectionPath.OurMan && ourMan != null) ||
+                        (path == ConnectionPath.Cell && cellmate != null);
+            }
+            for (var p = 0; p < 4 && !found && frozen == null; p++)
             {
                 var candidate = (ConnectionPath)p;
                 if ((paths & (1 << p)) == 0)
@@ -1325,9 +1340,14 @@ namespace LivingCity.Outfit
             var direct = ctx.World != null ? ctx.World.DirectManId : -1;
             if (ourMan != null)
                 line = Backgrounds.LineOf(Backgrounds.Of(ctx.RosterSeed, ourMan.Id, direct, connection));
-            var trade = ourMan != null
-                ? Backgrounds.Of(ctx.RosterSeed, ourMan.Id, direct, connection)
-                : Backgrounds.TradeOf(line, rng.Next(3));
+            // The trade roll is ALWAYS taken, so the stream the ad's man is dealt off
+            // is in the same place on a re-deal as on the deal - or his name changes.
+            var rolledTrade = Backgrounds.TradeOf(line, rng.Next(3));
+            var trade = frozen != null && frozen.Trade != Background.None
+                ? frozen.Trade
+                : ourMan != null
+                    ? Backgrounds.Of(ctx.RosterSeed, ourMan.Id, direct, connection)
+                    : rolledTrade;
 
             // Whose word it is.
             int crewId;
@@ -1338,6 +1358,8 @@ namespace LivingCity.Outfit
                     : SpeakerFor(view, ctx, -1, out crewId);
             var lt = roster.Find(speaker);
             var ltName = lt != null ? lt.FirstName : "the desk";
+            if (frozen != null && frozen.CrewId >= 0 && roster.FindCrew(frozen.CrewId) != null)
+                crewId = frozen.CrewId;
             if (crewId < 0)
                 crewId = CrewOf(view)?.Id ?? FirstLedCrew(roster);
 
@@ -1352,6 +1374,8 @@ namespace LivingCity.Outfit
                 Path = path,
                 Trade = trade,
                 CrewId = crewId,
+                CellmateId = cellmate != null ? cellmate.Id : -1,
+                Door = bar.BusinessId.IsValid ? bar.BusinessId.Value : "",
             };
 
             if (!found)
@@ -1467,14 +1491,19 @@ namespace LivingCity.Outfit
             };
         }
 
-        static EventCard DealBroker(HouseView view, EventContext ctx, int seed)
+        static EventCard DealBroker(HouseView view, EventContext ctx, int seed,
+            PendingCard frozen)
         {
             var roster = view.Roster;
             var connection = ctx.Connection;
             var speaker = SpeakerFor(view, ctx, connection.ManId, out var crewId);
             var lt = roster.Find(speaker);
             var man = roster.Find(connection.ManId);
-            var door = BrokerDoor(view, ctx);
+            var door = frozen != null && !string.IsNullOrEmpty(frozen.Door)
+                ? new TerritoryBusinessId(frozen.Door)
+                : BrokerDoor(view, ctx);
+            if (frozen != null && frozen.CrewId >= 0 && roster.FindCrew(frozen.CrewId) != null)
+                crewId = frozen.CrewId;
             var doorWord = DoorWord(door);
             var line = LineOf(ctx);
             var crew = CrewOf(view);
@@ -1493,6 +1522,7 @@ namespace LivingCity.Outfit
                 Line = line,
                 CrewId = crewId,
                 ManId = connection.ManId,
+                Door = door.Value,
             };
             var ltName = lt != null ? lt.FirstName : "the desk";
             var manName = man != null ? man.FirstName : "our man";
@@ -1544,13 +1574,18 @@ namespace LivingCity.Outfit
             return Finished(card);
         }
 
-        static EventCard DealTestBuy(HouseView view, EventContext ctx, int seed)
+        static EventCard DealTestBuy(HouseView view, EventContext ctx, int seed,
+            PendingCard frozen)
         {
             var roster = view.Roster;
             var connection = ctx.Connection;
             var speaker = SpeakerFor(view, ctx, connection.ManId, out var crewId);
             var lt = roster.Find(speaker);
-            var door = BrokerDoor(view, ctx);
+            var door = frozen != null && !string.IsNullOrEmpty(frozen.Door)
+                ? new TerritoryBusinessId(frozen.Door)
+                : BrokerDoor(view, ctx);
+            if (frozen != null && frozen.CrewId >= 0 && roster.FindCrew(frozen.CrewId) != null)
+                crewId = frozen.CrewId;
             var doorWord = DoorWord(door);
             var crew = CrewOf(view);
             if (crewId < 0 && crew != null)
@@ -1569,6 +1604,7 @@ namespace LivingCity.Outfit
                 Line = LineOf(ctx),
                 CrewId = crewId,
                 ManId = connection.ManId,
+                Door = door.Value,
             };
             card.Lines.Add("The Cuban will sell two kilos to see if we're serious. " +
                            UI.LedgerText.Cash(Connection.TestBuyPrice) + " at " + doorWord +
@@ -1619,7 +1655,8 @@ namespace LivingCity.Outfit
             return Finished(card);
         }
 
-        static EventCard DealTerms(HouseView view, EventContext ctx, int seed)
+        static EventCard DealTerms(HouseView view, EventContext ctx, int seed,
+            PendingCard frozen)
         {
             var roster = view.Roster;
             var connection = ctx.Connection;

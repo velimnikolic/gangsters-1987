@@ -315,6 +315,12 @@ namespace LivingCity.Outfit
         /// every think.</summary>
         public System.Func<TerritoryGangId, ProposalKind, bool> OpenProposalLook;
 
+        /// <summary>The day we last asked that house this kind of thing, or -1 (EPIC 42).
+        /// A refusal backs the ask off for hours; this keeps an ACCEPTED word - a
+        /// warning complied with, a truce agreed - from being said again the next
+        /// morning.</summary>
+        public System.Func<TerritoryGangId, ProposalKind, int> LastAskedLook;
+
         /// <summary>Whether we have given our word to keep off this block today - a
         /// complied warning, a line (EPIC 42). The racket's choke points refuse the
         /// order; this is how the mind knows not to file it.</summary>
@@ -346,6 +352,11 @@ namespace LivingCity.Outfit
 
         /// <summary>The house's own connection paper, for the mind's Sell and Lease.</summary>
         public Connection Connection;
+
+        /// <summary>MONEY THIS THINK HAS ALREADY SPOKEN FOR (the Codex review's finding):
+        /// a card answered before the walk and a purchase in the walk were both weighed
+        /// against the same safe. Every reserve check reads Safe less this.</summary>
+        public int Committed;
 
         /// <summary>Whether the house has a lawyer on its books, standing up or not.
         /// </summary>
@@ -415,6 +426,9 @@ namespace LivingCity.Outfit
 
         public bool HasOpenProposal(TerritoryGangId other, ProposalKind kind) =>
             OpenProposalLook != null && OpenProposalLook(other, kind);
+
+        public int LastAsked(TerritoryGangId other, ProposalKind kind) =>
+            LastAskedLook != null ? LastAskedLook(other, kind) : -1;
 
         public bool KeptOff(TerritoryBlockId blockId) =>
             KeepOffLook != null && KeepOffLook(blockId);

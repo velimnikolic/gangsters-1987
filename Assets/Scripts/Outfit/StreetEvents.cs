@@ -199,6 +199,12 @@ namespace LivingCity.Outfit
         /// <summary>A door the scene should mark as learnt when this is dealt.</summary>
         public string DoorToLearn = "";
 
+        /// <summary>The man of ours who did the nights, on THE CELL's card; -1 else.</summary>
+        public int CellmateId = -1;
+
+        /// <summary>The door the card is about - the broker's - as its id, or empty.</summary>
+        public string Door = "";
+
         public bool IsWire => Choices.Count == 0;
 
         public string LabelOf(int choice) =>
@@ -253,9 +259,11 @@ namespace LivingCity.Outfit
         /// before it, a man on the books).</summary>
         public System.Func<HouseView, EventContext, bool> Applies = (_, __) => true;
 
-        /// <summary>The card, spoken. Pure on (view, ctx, seed); a re-deal on the day
-        /// it was dealt is the same card.</summary>
-        public System.Func<HouseView, EventContext, int, EventCard> Deal;
+        /// <summary>The card, spoken. Pure on (view, ctx, seed) the first time; after a
+        /// load it is re-dealt with the FROZEN half of the pending card - the path, the
+        /// line, the man, the crew, the door - so the offer cannot change under the
+        /// house because the street moved on (the Codex review's finding).</summary>
+        public System.Func<HouseView, EventContext, int, PendingCard, EventCard> Deal;
 
         /// <summary>A wire (a card with no rows) does its work here when it fires.</summary>
         public System.Action<HouseView, EventContext, EventCard, EventBook> Fired;
@@ -280,6 +288,34 @@ namespace LivingCity.Outfit
         public int ExpiresDay;
         public int Speaker = -1;
         public HoldReason Hold;
+
+        /// <summary>THE FROZEN HALF: what the deal decided, kept so a re-deal after a
+        /// load is the same offer - the path and the line, the man (ours) or the
+        /// cellmate who brought the name, the crew he lands in, the door.</summary>
+        public ConnectionPath Path;
+        public ConnectionLine Line;
+        public Background Trade;
+        public int ManId = -1;
+        public int CellmateId = -1;
+        public int CrewId = -1;
+        public string Door = "";
+
+        public static PendingCard Of(EventCard card, HoldReason hold) => new PendingCard
+        {
+            Id = card.Id,
+            Def = card.Def,
+            DealtDay = card.DealtDay,
+            ExpiresDay = card.ExpiresDay,
+            Speaker = card.Speaker,
+            Hold = hold,
+            Path = card.Path,
+            Line = card.Line,
+            Trade = card.Trade,
+            ManId = card.ManId,
+            CellmateId = card.CellmateId,
+            CrewId = card.CrewId,
+            Door = card.Door ?? "",
+        };
     }
 
     public sealed class WireLine
@@ -470,7 +506,7 @@ namespace LivingCity.Outfit
             // One card a day, and never over one already on the table.
             if (fullest == null || book.Pending != null || fullest.Deal == null)
                 return;
-            var card = fullest.Deal(view, ctx, Seed(ctx.CitySeed, ctx.GangId, fullest.Id, day));
+            var card = fullest.Deal(view, ctx, Seed(ctx.CitySeed, ctx.GangId, fullest.Id, day), null);
             if (card == null)
                 return;
             if (!card.IsWire && card.Speaker < 0)
@@ -492,15 +528,7 @@ namespace LivingCity.Outfit
                 return;
             }
 
-            book.Pending = new PendingCard
-            {
-                Id = card.Id,
-                Def = card.Def,
-                DealtDay = day,
-                ExpiresDay = card.ExpiresDay,
-                Speaker = card.Speaker,
-                Hold = fullest.Hold(view, ctx),
-            };
+            book.Pending = PendingCard.Of(card, fullest.Hold(view, ctx));
             book.Spoken = card;
             book.CardsDealt++;
             book.Touch();
@@ -521,7 +549,7 @@ namespace LivingCity.Outfit
             if (def?.Deal == null)
                 return null;
             var card = def.Deal(view, ctx,
-                Seed(ctx.CitySeed, ctx.GangId, def.Id, book.Pending.DealtDay));
+                Seed(ctx.CitySeed, ctx.GangId, def.Id, book.Pending.DealtDay), book.Pending);
             if (card == null)
                 return null;
             card.DealtDay = book.Pending.DealtDay;
@@ -549,8 +577,23 @@ namespace LivingCity.Outfit
             return hold;
         }
 
+        /// <summary>The intent a row carries, without touching the book - what a
+        /// carrier EXECUTES before it commits the answer, so a refused action leaves the
+        /// card on the table (the Codex review's finding). A row whose intent is a Card
+        /// choice of its own has no action beyond <see cref="Answer"/>.</summary>
+        public static HouseIntent IntentOf(EventCard card, int choice) =>
+            card == null || choice < 0 || choice >= card.Choices.Count
+                ? default
+                : card.Choices[choice].Intent;
+
+        /// <summary>Whether a row's intent is something to carry, or the row is its
+        /// own answer (WALK AWAY, NOT YET).</summary>
+        public static bool HasAction(HouseIntent intent) =>
+            intent.Kind != HouseIntentKind.None && intent.Kind != HouseIntentKind.Card;
+
         /// <summary>The choice taken. Records it, clears the table, and hands back the
-        /// intent for the carrier. WALK AWAY is a row like any other.</summary>
+        /// intent for the carrier. WALK AWAY is a row like any other. Called AFTER the
+        /// row's action succeeded, never before.</summary>
         public static HouseIntent Answer(EventBook book, EventCard card, int choice,
             EventContext ctx)
         {

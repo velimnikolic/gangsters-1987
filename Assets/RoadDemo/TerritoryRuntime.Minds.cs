@@ -712,6 +712,10 @@ namespace RoadDemo
                 !geography.TryGetDoorstep(door, out var step))
                 return false;
             var name = TryGetBusinessView(door, out var view) ? view.BusinessName : job.TargetLabel;
+            // The complaint is EPIC 34's own: if no unit can come, the call expires and
+            // the men walk - the book's line says the precinct is coming, not that they
+            // were taken (the Codex review's finding). The standing job keeps them at the
+            // table for the officer.
             var hold = new Job
             {
                 Type = OrderType.Guard,
@@ -808,8 +812,17 @@ namespace RoadDemo
                     ConnectionEvents.Defs);
             if (card == null || book.Pending == null || book.Pending.Id != card.Id)
                 return "no card on the table";
-            var inner = StreetEvents.Answer(book, card, intent.CharacterId, ctx);
-            return inner.Kind == HouseIntentKind.None ? "" : Carry(house, inner);
+            // THE ACTION FIRST, THE ANSWER AFTER: a refused signing leaves the card on
+            // the table; a row that is its own answer (WALK AWAY) is committed and done.
+            var inner = StreetEvents.IntentOf(card, intent.CharacterId);
+            if (StreetEvents.HasAction(inner))
+            {
+                var refusal = Carry(house, inner);
+                if (!string.IsNullOrEmpty(refusal))
+                    return refusal;
+            }
+            StreetEvents.Answer(book, card, intent.CharacterId, ctx);
+            return "";
         }
 
         /// <summary>What a house's refusals are holding back right now (P4), for the
@@ -914,6 +927,11 @@ namespace RoadDemo
                     LivingCity.Outfit.Underworld.Current.Diplomacy.HasOpen(
                         house.GangId, other.Value, kind, house.Runner.Campaign.Day),
                 KeepOffLook = blockId => KeptOff(mine, blockId) != null,
+                LastAskedLook = (other, kind) =>
+                    LivingCity.Outfit.Underworld.Current != null
+                        ? LivingCity.Outfit.Underworld.Current.Diplomacy.LastFiled(
+                            house.GangId, other.Value, kind)
+                        : -1,
                 GrievanceLook = other => Relations != null
                     ? Relations.Grievance(house.GangId, other.Value)
                     : 0f,
@@ -1289,6 +1307,10 @@ namespace RoadDemo
         /// the scene edge. Without this, an Assault, Guard or wrecking order marched to
         /// the default point at world origin.
         /// </summary>
+        /// <summary>The ledger's own door to the placing below (EPIC 42): a sit-down
+        /// the player sends is walked to the other house's real doorstep.</summary>
+        public void PlaceJob(Job job) => Place(job);
+
         void Place(Job job)
         {
             if (job == null || geography == null)

@@ -160,6 +160,15 @@ namespace LivingCity.Outfit
         public int expiresDay;
         public int speaker = -1;
         public int hold;
+
+        /// <summary>The frozen half of the deal, so a re-deal is the same offer.</summary>
+        public int path;
+        public int line;
+        public int trade;
+        public int manId = -1;
+        public int cellmateId = -1;
+        public int crewId = -1;
+        public string door = "";
     }
 
     [Serializable]
@@ -470,6 +479,13 @@ namespace LivingCity.Outfit
                     expiresDay = book.Pending.ExpiresDay,
                     speaker = book.Pending.Speaker,
                     hold = (int)book.Pending.Hold,
+                    path = (int)book.Pending.Path,
+                    line = (int)book.Pending.Line,
+                    trade = (int)book.Pending.Trade,
+                    manId = book.Pending.ManId,
+                    cellmateId = book.Pending.CellmateId,
+                    crewId = book.Pending.CrewId,
+                    door = book.Pending.Door ?? "",
                 },
                 pots = new EventPotDto[book.Pots.Count],
                 fired = new EventDayDto[book.Fired.Count],
@@ -514,6 +530,13 @@ namespace LivingCity.Outfit
                     ExpiresDay = dto.pending.expiresDay,
                     Speaker = dto.pending.speaker,
                     Hold = TryEnum(dto.pending.hold, out HoldReason hold) ? hold : HoldReason.None,
+                    Path = TryEnum(dto.pending.path, out ConnectionPath path) ? path : ConnectionPath.Column,
+                    Line = TryEnum(dto.pending.line, out ConnectionLine line) ? line : ConnectionLine.None,
+                    Trade = TryEnum(dto.pending.trade, out Background trade) ? trade : Background.None,
+                    ManId = dto.pending.manId,
+                    CellmateId = dto.pending.cellmateId,
+                    CrewId = dto.pending.crewId,
+                    Door = dto.pending.door ?? "",
                 };
             for (var i = 0; dto.pots != null && i < dto.pots.Length; i++)
                 if (dto.pots[i] != null && TryEnum(dto.pots[i].id, out EventId id))

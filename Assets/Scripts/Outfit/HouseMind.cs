@@ -178,6 +178,7 @@ namespace LivingCity.Outfit
             if (view?.Roster == null || view.Accounts == null)
                 return 0;
             config = config ?? HouseMindConfig.Default;
+            view.Committed = 0;
 
             // A WATCH WHOSE WINDOW HAS PASSED COMES OFF FIRST (S1). Cancelling costs
             // nothing and frees a crew for everything below.
@@ -226,7 +227,7 @@ namespace LivingCity.Outfit
                 if (stance == Stance.War &&
                     (view.Endurance < relations.MinWarDays ||
                      view.Losses(them) >= relations.LossesToSueForPeace) &&
-                    !view.HasOpenProposal(them, ProposalKind.OfferTruce))
+                    MayAsk(view, them, ProposalKind.OfferTruce))
                 {
                     Propose(view, into, HouseIntent.Propose(
                         Ask(them, ProposalKind.OfferTruce), TierDefend,
@@ -242,7 +243,7 @@ namespace LivingCity.Outfit
                     view.Grievance(them) >= relations.BorderPressureCap &&
                     view.Endurance < relations.MinWarDays &&
                     view.TheirEndurance(them) < relations.MinWarDays &&
-                    !view.HasOpenProposal(them, ProposalKind.Line))
+                    MayAsk(view, them, ProposalKind.Line))
                 {
                     var line = Ask(them, ProposalKind.Line);
                     WhereWeTouch(view, them, line.Terms.Blocks);
@@ -257,7 +258,7 @@ namespace LivingCity.Outfit
                 // was not already owed.
                 if (stance == Stance.Peace &&
                     step >= LadderStep.Threat && step < LadderStep.AttackBusiness &&
-                    !view.HasOpenProposal(them, ProposalKind.OfferTruce))
+                    MayAsk(view, them, ProposalKind.OfferTruce))
                 {
                     Propose(view, into, HouseIntent.Propose(
                         Ask(them, ProposalKind.OfferTruce), TierDefend,
@@ -269,7 +270,7 @@ namespace LivingCity.Outfit
                 // automatic rule (D22) gets there on its own in a week; asking is
                 // what happens when somebody talks.
                 if (stance == Stance.Truce && step == LadderStep.Ignore &&
-                    !view.HasOpenProposal(them, ProposalKind.OfferPeace))
+                    MayAsk(view, them, ProposalKind.OfferPeace))
                 {
                     Propose(view, into, HouseIntent.Propose(
                         Ask(them, ProposalKind.OfferPeace), TierDefend,
@@ -289,7 +290,7 @@ namespace LivingCity.Outfit
                         var losing = view.StanceToward(threat) == Stance.War &&
                                      view.Losses(threat) >= 2;
                         var kind = losing ? ProposalKind.JoinWar : ProposalKind.Pact;
-                        if (!view.HasOpenProposal(them, kind))
+                        if (MayAsk(view, them, kind))
                         {
                             var pact = Ask(them, kind);
                             pact.Terms.Third = threat.Value;
@@ -306,7 +307,7 @@ namespace LivingCity.Outfit
                 // and the street's figure stands.
                 var owe = view.TributeOwe(them);
                 if (owe > 0 && view.Endurance < relations.MinWarDays &&
-                    !view.HasOpenProposal(them, ProposalKind.TributeTerms))
+                    MayAsk(view, them, ProposalKind.TributeTerms))
                 {
                     var terms = Ask(them, ProposalKind.TributeTerms);
                     terms.Terms.Money = owe / 2;
@@ -415,6 +416,21 @@ namespace LivingCity.Outfit
                         return blockId;
             }
             return first;
+        }
+
+        /// <summary>
+        /// NOT AGAIN SO SOON. A thing is asked when nothing of the kind is open with that
+        /// house and the last ask of it is at least the table's own days old - a refusal
+        /// backs the intent off for hours, but an ACCEPTED word would otherwise be said
+        /// again every morning: a warning complied with re-warned, a truce agreed
+        /// re-offered.
+        /// </summary>
+        static bool MayAsk(HouseView view, TerritoryGangId them, ProposalKind kind)
+        {
+            if (view.HasOpenProposal(them, kind))
+                return false;
+            var last = view.LastAsked(them, kind);
+            return last < 0 || view.Day - last >= DiplomacyConfig.Default.ProposalDays;
         }
 
         /// <summary>A proposal with nothing on it but the ask.</summary>
@@ -1095,7 +1111,7 @@ namespace LivingCity.Outfit
                     if (man == null || man.Gone || Armed(roster, man.Id))
                         continue;
                     var gun = Cheapest(ArmoryCatalog.Weapons, config.MaxWeaponPrice);
-                    if (gun.Price <= 0 || view.Safe - gun.Price < reserve)
+                    if (gun.Price <= 0 || view.Safe - view.Committed - gun.Price < reserve)
                         return false;
                     if (Propose(view, into, HouseIntent.Buy(
                         gun.Kind, gun.DisplayName, gun.Price, man.Id, crew.Id,
@@ -1110,7 +1126,7 @@ namespace LivingCity.Outfit
                 if (IsDetail(view, crew) || CrewKit.HasVehicle(roster, crew))
                     continue;
                 var car = Cheapest(ArmoryCatalog.Vehicles, config.MaxVehiclePrice);
-                if (car.Price <= 0 || view.Safe - car.Price < reserve)
+                if (car.Price <= 0 || view.Safe - view.Committed - car.Price < reserve)
                     return false;
                 if (Propose(view, into, HouseIntent.Buy(
                     car.Kind, car.DisplayName, car.Price, crew.LieutenantId, crew.Id,
@@ -1263,7 +1279,7 @@ namespace LivingCity.Outfit
         /// <summary>The reserve rule, counting the man we are about to sign.</summary>
         static bool CanSign(HouseView view, HouseMindConfig config)
         {
-            var after = view.Safe - EconomyPrices.RecruitSigning;
+            var after = view.Safe - view.Committed - EconomyPrices.RecruitSigning;
             var payroll = view.DailyPayroll + Outfit.Wages.HoodBase;
             return after >= config.ReserveDays * payroll;
         }
@@ -1927,9 +1943,10 @@ namespace LivingCity.Outfit
                         view.Safe >= EconomyPrices.Apartment + EconomyPrices.StashFitOut + reserve)
                     {
                         var keeper = KeeperFor(view);
-                        Propose(view, into, HouseIntent.Lease(Property.UnitRole.Stash,
-                            keeper != null ? keeper.Id : -1, TierCollect,
-                            "somewhere to keep it: a room for the kilos"));
+                        if (Propose(view, into, HouseIntent.Lease(Property.UnitRole.Stash,
+                                keeper != null ? keeper.Id : -1, TierCollect,
+                                "somewhere to keep it: a room for the kilos")))
+                            view.Committed += EconomyPrices.Apartment + EconomyPrices.StashFitOut;
                     }
                     return;
                 case HoldReason.NoMoney:
@@ -1962,8 +1979,9 @@ namespace LivingCity.Outfit
             }
             if (best < 0)
                 return;
-            Propose(view, into, HouseIntent.Choose(card, best, TierCollect,
-                card.SpeakerName + ": " + card.Choices[best].Label));
+            if (Propose(view, into, HouseIntent.Choose(card, best, TierCollect,
+                    card.SpeakerName + ": " + card.Choices[best].Label)))
+                view.Committed += card.Choices[best].Cost;
         }
 
         /// <summary>The man to keep the room: the most careful hood the books can

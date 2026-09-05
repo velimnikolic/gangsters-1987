@@ -89,7 +89,7 @@ namespace LivingCity.Tests
                 Gate = (v, c) => gate,
                 Hold = (v, c) => hold,
                 PotLine = c => "talking",
-                Deal = (v, c, s) =>
+                Deal = (v, c, s, f) =>
                 {
                     var card = new EventCard
                     {
