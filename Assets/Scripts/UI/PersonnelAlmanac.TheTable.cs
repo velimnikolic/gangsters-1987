@@ -279,16 +279,9 @@ namespace LivingCity.UI
             PlaceTopLeft(tableStage, PageLeft, StageTop, PageWidth, StageH);
             tableStage.gameObject.AddComponent<RectMask2D>();
 
-            // The desk under it: the design's warm fall from the lamp at the top to
-            // near-black at the foot.
-            var desk = NewRect("Desk", tableStage);
-            Stretch(desk);
-            Gradient(desk, LedgerStyle.DeskFall);
-            var lamp = NewRect("Lamp", tableStage);
-            PlaceTopLeft(lamp, PageWidth * 0.06f, 0f, PageWidth * 0.88f, StageH * 0.55f);
-            Fill(lamp, LedgerStyle.Lamp);
-
-            // The table itself takes the press: touching it lays the open card down.
+            // The desk is the PAGE's - BuildFamiliesRoom laid it under the head and the
+            // foot as well, because the design's whole screen is one room. The stage
+            // only masks and takes the press: touching the table lays the open card down.
             var felt = NewRect("Table", tableStage);
             Stretch(felt);
             RowButton(felt, ClickSurface(felt), CloseTheCard);
@@ -399,8 +392,8 @@ namespace LivingCity.UI
         }
 
         /// <summary>Where the chairs stand. Five is the design's own hand-placed table;
-        /// any other number is laid on the ellipse those five sit inside, starting at
-        /// the top-left so nothing ever sits straight above the middle.</summary>
+        /// any other number is laid on the ellipse those five sit inside, stepped half
+        /// a seat off the crown so nothing ever sits straight above the middle.</summary>
         static Vector2[] Seats(int count)
         {
             if (count == FiveSeats.Length)
@@ -410,7 +403,9 @@ namespace LivingCity.UI
             const float ry = 274f;
             for (var i = 0; i < count; i++)
             {
-                var angle = (-144f + 360f * i / count) * Mathf.Deg2Rad;
+                // Half a step off the top, so an even hand straddles the middle's
+                // crown instead of parking a card straight above it.
+                var angle = (-90f + 180f / count + 360f * i / count) * Mathf.Deg2Rad;
                 seats[i] = new Vector2(PlaneCx + rx * Mathf.Cos(angle),
                     PlaneCy + ry * Mathf.Sin(angle));
             }
@@ -452,7 +447,7 @@ namespace LivingCity.UI
             ProjectTable(PlaneCx + (seat.x - PlaneCx) * along,
                 PlaneCy + (seat.y - PlaneCy) * along, 0f, out var mid, out var kMid);
 
-            var word = tie.What.ToUpperInvariant();
+            var word = (tie.Kind == TieKind.Peace ? "peace" : tie.What).ToUpperInvariant();
             var boxW = 16f + MonoWidth(word, 11.4f, 9f);
             var label = NewRect("Standing word", plane);
             label.anchorMin = label.anchorMax = new Vector2(0.5f, 0.5f);
@@ -561,9 +556,13 @@ namespace LivingCity.UI
                 TextAlignmentOptions.MidlineRight);
             stance.characterSpacing = 10f;
 
-            var name = Line(face, LedgerStyle.Condensed, 26.6f, LedgerV2.Ink,
-                col + pad, -8f, Mathf.Max(40f, inner - powerW - stanceW - 14f), 24f,
-                gang.Name.ToUpperInvariant());
+            var nameW = Mathf.Max(40f, inner - powerW - stanceW - 14f);
+            var written = gang.Name.ToUpperInvariant();
+            var nameSize = 26.6f;
+            while (nameSize > 18f && CondensedWidth(written, nameSize) > nameW)
+                nameSize -= 0.5f;
+            var name = Line(face, LedgerStyle.Condensed, nameSize, LedgerV2.Ink,
+                col + pad, -8f, nameW, 24f, written);
             name.characterSpacing = 2f;
             name.overflowMode = TextOverflowModes.Ellipsis;
 

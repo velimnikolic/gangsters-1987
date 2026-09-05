@@ -412,7 +412,13 @@ namespace LivingCity.Outfit
                     : into.TheyAsk ? "asks for an answer"
                     : tie.Kind == TieKind.Pact ? tie.What
                     : into.Power < 0 ? "no eyes inside"
-                    : tie.What;
+                    : tie.Kind != TieKind.Peace ? tie.What
+                    // A quiet house at peace: the standing is already on its line, so
+                    // the card says what the house IS instead of saying peace twice.
+                    : into.Blocks + (into.Blocks == 1 ? " door" : " doors") + " · " +
+                      (into.CaposKnown
+                          ? into.Capos + (into.Capos == 1 ? " capo" : " capos")
+                          : "capos not counted");
 
             // ---- the record ----
             FillRecord(world, gang.Id, mine, day, into);

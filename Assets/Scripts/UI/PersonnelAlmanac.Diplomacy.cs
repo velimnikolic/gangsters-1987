@@ -50,6 +50,9 @@ namespace LivingCity.UI
         /// <summary>The foot: the hint and the last word out of this room.</summary>
         const float FamiliesFootH = 40f;
 
+        /// <summary>The line the sub-head and the legend share.</summary>
+        static float PageTopLegend => PageTop - 33f;
+
         static float StageTop = -80f;
         static float StageH = 700f;
 
@@ -116,6 +119,8 @@ namespace LivingCity.UI
 
             if (rivals == 0)
             {
+                if (OnTheDesk)
+                    BuildFamiliesRoom();
                 BuildFamiliesHead(0);
                 Line(diplomacyContent, LedgerStyle.SerifItalic, 13.3f, LedgerV2.SheetRule,
                     PageLeft, StageTop - 40f, 800f, 26f,
@@ -147,6 +152,8 @@ namespace LivingCity.UI
             if (tableFocus >= 0 && !IsRival(gangs, tableFocus))
                 tableFocus = -1;
 
+            if (OnTheDesk)
+                BuildFamiliesRoom();
             BuildFamiliesHead(rivals);
 
             if (familiesView == FamiliesView.Table)
@@ -170,6 +177,45 @@ namespace LivingCity.UI
             return false;
         }
 
+        /// <summary>
+        /// Whether the sheet is the DESK or the paper. THE TABLE is a room the boss
+        /// stands in; THE WAR ROOM is the design's cream ground with a dark rail down
+        /// one side, and the head and the foot are inked for whichever it is.
+        /// </summary>
+        bool OnTheDesk => familiesView == FamiliesView.Table;
+
+        Color HeadInk => OnTheDesk ? LedgerV2.HeadCream : LedgerV2.Ink;
+        Color HeadFaint => OnTheDesk ? LedgerV2.SheetRule : LedgerV2.Label;
+        Color HeadRule => OnTheDesk ? LedgerStyle.InkMid : LedgerV2.Ink;
+
+        /// <summary>
+        /// THE ROOM. This sheet is not paper: it is the desk the table stands on, and
+        /// the head and the foot are printed on the desk with it. The design's own two
+        /// grounds - a vertical fall from walnut to near-black, and the lamp's pool
+        /// hung off the top edge - laid under everything else on the page.
+        /// </summary>
+        void BuildFamiliesRoom()
+        {
+            var height = PageTop - PageBottom;
+            var room = NewRect("Room", diplomacyContent);
+            PlaceTopLeft(room, PageLeft, PageTop, PageWidth, height);
+            Gradient(room, LedgerStyle.DeskFall);
+            room.gameObject.AddComponent<RectMask2D>();
+
+            // radial-gradient(ellipse 90% 60% at 50% 4%, lamp, transparent 72%): the
+            // pool is wider than the page and hangs off the top, so what the reader
+            // sees is its lower half falling away down the desk.
+            var lamp = NewRect("Lamp", room);
+            lamp.anchorMin = lamp.anchorMax = new Vector2(0.5f, 1f);
+            lamp.pivot = new Vector2(0.5f, 0.5f);
+            lamp.sizeDelta = new Vector2(PageWidth * 1.30f, height * 0.86f);
+            lamp.anchoredPosition = new Vector2(0f, -height * 0.04f);
+            var pool = lamp.gameObject.AddComponent<RawImage>();
+            pool.texture = LedgerStyle.RadialLight;
+            pool.color = LedgerStyle.Lamp;
+            pool.raycastTarget = false;
+        }
+
         // ------------------------------------------------------------------- the head
 
         /// <summary>
@@ -183,52 +229,71 @@ namespace LivingCity.UI
             var middle = FocusedName();
 
             var title = Line(diplomacyContent, LedgerStyle.Condensed, 30.1f,
-                LedgerV2.HeadCream, PageLeft, PageTop, PageWidth - 320f, LineBox(30.1f),
+                HeadInk, PageLeft, PageTop, PageWidth - 320f, LineBox(30.1f),
                 middle == null ? "THE TABLE" : "THE TABLE · " + middle.ToUpperInvariant());
             title.characterSpacing = 4f;
             title.overflowMode = TextOverflowModes.Ellipsis;
 
-            var sub = Caps(diplomacyContent, PageLeft, PageTop - 33f, PageWidth - 460f,
+            var sub = Caps(diplomacyContent, PageLeft, PageTopLegend, PageWidth - 460f,
                 middle == null
                     ? "DAY " + day + " · OUR STANDING WITH " + Spelled(rivals) +
                       " · FOCUS A CARD TO SEE ITS OWN TABLE"
                     : middle + " IN THE MIDDLE · EVERY LINE IS THEIR STANDING WITH THE " +
                       "OTHER HOUSES · DAY " + day,
-                12f, LedgerV2.SheetRule, 8f);
+                12f, HeadFaint, 8f);
             sub.font = LedgerStyle.Mono;
             sub.overflowMode = TextOverflowModes.Ellipsis;
 
-            // The switch, on the title's line, held to the right margin.
-            var labels = new[] { "THE TABLE", "THE WAR ROOM" };
-            const float cellW = 112f;
-            LedgerV2.Segmented(diplomacyContent, PageRight - cellW * labels.Length,
-                PageTop - 2f, 22f, labels, familiesView == FamiliesView.Table ? 0 : 1,
-                index =>
-                {
-                    familiesView = index == 0 ? FamiliesView.Table : FamiliesView.WarRoom;
-                    tableMove = -1;
-                    tableNote = "";
-                    dirty = true;
-                }, cellW, 9.5f);
+            // The switch, on the title's line, held to the right margin. Built as two
+            // keys rather than as the design system's segmented bar: that bar is drawn
+            // for PAPER - dark ink inside a warm-grey hairline - and on this desk its
+            // unchosen half would be black on black.
+            const float cellW = 118f;
+            ViewKey(PageRight - cellW * 2f, "THE TABLE", FamiliesView.Table, cellW);
+            ViewKey(PageRight - cellW, "THE WAR ROOM", FamiliesView.WarRoom, cellW);
 
             // The legend, laid right to left off the margin so the longest word never
             // pushes the first entry off the sheet.
+            var legendY = PageTopLegend;
+            var boxH = LineBox(BookSize(10.8f));
             var x = PageRight;
             for (var i = FamiliesLegend.Length - 1; i >= 0; i--)
             {
                 var entry = FamiliesLegend[i];
-                var labelW = MonoWidth(entry.Word, 10.8f, 10f);
+                var labelW = MonoWidth(entry.Word, 10.8f, 10f) + 4f;
                 x -= labelW;
-                var label = Caps(diplomacyContent, x, PageTop - 32f, labelW + 4f,
-                    entry.Word, 10.8f, LedgerV2.SheetRule, 10f);
-                label.font = LedgerStyle.Mono;
+                Line(diplomacyContent, LedgerStyle.Mono, 10.8f, HeadFaint, x,
+                    legendY, labelW, boxH, entry.Word).characterSpacing = 10f;
                 x -= 7f + 24f;
-                TieRule(diplomacyContent, x, PageTop - 26f, 24f, entry.Kind);
+                TieRule(diplomacyContent, x,
+                    LedgerV2.MarkY(legendY, boxH, TieWeight(entry.Kind)), 24f, entry.Kind);
                 x -= 18f;
             }
 
             Block("Head rule", diplomacyContent, PageLeft, PageTop - FamiliesHeadH + 9f,
-                PageWidth, 2f, LedgerStyle.InkMid);
+                PageWidth, 2f, HeadRule);
+        }
+
+        void ViewKey(float x, string word, FamiliesView view, float w)
+        {
+            var chosen = familiesView == view;
+            var key = LedgerV2.Button(diplomacyContent, word, x, PageTop - 2f, w, 24f,
+                () =>
+                {
+                    if (familiesView == view)
+                        return;
+                    familiesView = view;
+                    tableMove = -1;
+                    tableNote = "";
+                    dirty = true;
+                }, chosen ? LedgerV2.Key.Dark : LedgerV2.Key.Outline, 9.5f);
+            if (chosen)
+                LedgerV2.KeyFrame(key, OnTheDesk ? LedgerStyle.RailGold : LedgerV2.Ink);
+            else if (OnTheDesk)
+            {
+                key.color = LedgerStyle.RailLabel;
+                LedgerV2.KeyFrame(key, LedgerStyle.RailHair);
+            }
         }
 
         static string Spelled(int houses) => houses switch
@@ -337,8 +402,7 @@ namespace LivingCity.UI
         void BuildFamiliesFoot()
         {
             var y = PageBottom + FamiliesFootH - 8f;
-            Block("Foot rule", diplomacyContent, PageLeft, y, PageWidth, 1f,
-                LedgerStyle.InkMid);
+            Block("Foot rule", diplomacyContent, PageLeft, y, PageWidth, 1f, HeadRule);
 
             var hint = Caps(diplomacyContent, PageLeft, y - 10f, PageWidth * 0.55f,
                 familiesView == FamiliesView.WarRoom
@@ -346,12 +410,12 @@ namespace LivingCity.UI
                     : tableFor >= 0
                         ? "TOUCH THE TABLE TO LAY THE CARD BACK DOWN"
                         : "TOUCH A CARD TO STAND IT UP · FOCUS TO PUT A HOUSE IN THE MIDDLE",
-                11.4f, LedgerV2.SheetRule, 8f);
+                11.4f, HeadFaint, 8f);
             hint.font = LedgerStyle.Mono;
             hint.overflowMode = TextOverflowModes.Ellipsis;
 
             var last = Line(diplomacyContent, LedgerStyle.SerifItalic, 12.8f,
-                LedgerV2.SheetRule, PageLeft + PageWidth * 0.45f, y - 10f,
+                HeadFaint, PageLeft + PageWidth * 0.45f, y - 10f,
                 PageWidth * 0.55f, LineBox(12.8f),
                 string.IsNullOrEmpty(tableLastWord)
                     ? "Nothing has left this room today."
