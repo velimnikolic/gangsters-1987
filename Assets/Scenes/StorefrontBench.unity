@@ -52769,11 +52769,11 @@ MonoBehaviour:
   bindingCentreLocal: {x: -2.5, y: 1.5, z: -2.1158888}
   bindingSizeLocal: {x: 5.1059875, y: 3, z: 5.885511}
   openings:
-  - Front: {x: -2.5, y: 0, z: 0.61}
+  - Front: {x: -2.5, y: 1.0099144, z: 0.61}
     Outward: {x: 0, y: 0, z: 1}
     Right: {x: 1, y: 0, z: 0}
     Width: 4.8
-    Height: 2.7
+    Height: 1.5078697
     Group: 0
     Entrance: 0
     Corner: 0
@@ -52783,7 +52783,7 @@ MonoBehaviour:
   - {fileID: 2137330493}
   doorlessWalls:
   - {fileID: 4300000, guid: 2bce0bb1ca7aeef4fb294ea38f091270, type: 2}
-  paneMaterial: {fileID: 2100000, guid: c29d9dff2056b1543bbb70ec32427a62, type: 2}
+  paneMaterial: {fileID: 2100000, guid: 28c262ae5b2c4cf2ac3c66167368505f, type: 2}
   facadeMaterial: {fileID: 2100000, guid: 62e25ef75a2216f418d06453c9ad15cb, type: 2}
   rollerMaterial: {fileID: 2100000, guid: 39acf0a748066964381488478879fc73, type: 2}
   authoringPreview: 1

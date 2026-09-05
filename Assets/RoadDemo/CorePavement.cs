@@ -796,6 +796,7 @@ namespace RoadDemo
             int kerbs = 0, corners = 0, notches = 0, floor = 0, odd = 0, sunken = 0, drive = 0;
             int ramp = 0, park = 0;
             var islands = new List<Laid>();
+            var splitCells = new HashSet<Vector2Int>();
 
             for (int i = 0; i < plan.NX; i++)
                 for (int j = 0; j < plan.NZ; j++)
@@ -856,22 +857,17 @@ namespace RoadDemo
                         continue;
                     }
 
-                    // an ISLAND of pavement - the strip left standing between two driveways
-                    // cut through the band - is open on three sides, and no tile of theirs
-                    // kerbs three. It takes the corner it turns towards the STREET, which is
-                    // the end anybody sees, and is left flush where it meets the block's own
-                    // tarmac (2026-08-26, the user, of the strip in front of the police
-                    // station's car park: "i ovo ostrvce ispred parkinga treba da je
-                    // zaobljeno"). Turned at its ends it reads as an island; squared off it
-                    // reads as paving somebody forgot to take up
-                    if (open == 3 && Island(plan, i, j, north, east, south, west, out int end))
+                    // A narrow strip can expose opposite edges, and an island tip three
+                    // or four edges. No single vendor tile closes those outlines. Split
+                    // only these cells into four half-size tiles, each with at most two
+                    // adjacent exposed edges; keep the original height and cell footprint.
+                    if (open >= 3 || (open == 2 && north == south && east == west))
                     {
-                        bool crossed = ramps && !Cut(plan, i, j);
-                        var turned = new Laid(i, j, crossed ? DippedCorner : PlainCorner,
-                                              crossed ? (end + 90) % 360 : end);
-                        pieces.Add(turned);
-                        islands.Add(turned);
-                        corners++;
+                        var tile = new Laid(i, j, Flat, 0);
+                        pieces.Add(tile);
+                        splitCells.Add(new Vector2Int(i, j));
+                        if (open == 3 && Island(plan, i, j, north, east, south, west, out int end))
+                            islands.Add(new Laid(i, j, PlainCorner, end));
                         continue;
                     }
 
@@ -902,11 +898,26 @@ namespace RoadDemo
 
             int laid = 0;
             var put = Stander(stand, parent, () => laid++);
+            var putQuarter = Stander((prefab, owner) =>
+            {
+                var go = stand(prefab, owner);
+                if (go != null)
+                    go.transform.localScale = Vector3.Scale(
+                        prefab.transform.localScale, new Vector3(0.5f, 1f, 0.5f));
+                return go;
+            }, parent, () => laid++);
 
             foreach (var piece in pieces)
+            {
+                if (splitCells.Contains(new Vector2Int(piece.I, piece.J)))
+                {
+                    LayIslandCell(plan, piece.I, piece.J, y, putQuarter);
+                    continue;
+                }
                 put(piece.Piece, CityEnv,
                       Pivot(plan.X0 + piece.I * Cell, plan.Z0 + piece.J * Cell, y, piece.Yaw),
                       piece.Yaw);
+            }
             int tiles = laid;
 
             string bays = park > 0 ? Bays(plan, y, put) : "";
@@ -921,11 +932,32 @@ namespace RoadDemo
                    (ramp > 0 ? $"; {ramp} cell(s) of it ramping down into the yard" : "") +
                    (bays.Length > 0 ? "; a car park of " + bays : "") +
                    (furniture.Length > 0 ? "; on the pavement " + furniture : "") +
+                   (splitCells.Count > 0 ? $"; {splitCells.Count} fully kerbed narrow pavement cell(s)" : "") +
                    (odd > 0
                        ? $"; {odd} cell(s) carry kerb on more than one side - the block is a tile " +
                          "thick there, which no pavement of theirs is"
                        : "");
             return laid;
+        }
+
+        static void LayIslandCell(Plan plan, int i, int j, float y, Stands put)
+        {
+            float half = Cell * 0.5f;
+            for (int x = 0; x < 2; x++)
+                for (int z = 0; z < 2; z++)
+                {
+                    bool horizontal = !Paved(plan, i + (x == 0 ? -1 : 1), j);
+                    bool vertical = !Paved(plan, i, j + (z == 0 ? -1 : 1));
+                    string piece = horizontal && vertical ? PlainCorner :
+                        horizontal || vertical ? Kerb : Flat;
+                    int yaw = horizontal && vertical ? KerbYaw.Corner(z == 1, x == 1) :
+                        horizontal ? (x == 1 ? 90 : 270) : vertical && z == 0 ? 180 : 0;
+                    var centre = new Vector3(plan.X0 + i * Cell + (x + 0.5f) * half,
+                        y, plan.Z0 + j * Cell + (z + 0.5f) * half);
+                    var pivot = centre + Quaternion.Euler(0f, yaw, 0f) *
+                        new Vector3(half * 0.5f, 0f, half * 0.5f);
+                    put(piece, CityEnv, pivot, yaw);
+                }
         }
 
         /// <summary>

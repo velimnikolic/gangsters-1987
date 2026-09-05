@@ -13,7 +13,7 @@ namespace RoadDemo
         const string StorefrontShellMaterial =
             "Assets/Synty/PolygonCoffeeShop/Materials/Background.mat";
         const string StorefrontGlassMaterial =
-            "Assets/Synty/PolygonCity/Materials/Misc/Glass_01.mat";
+            "Assets/CityKit/Storefront/StorefrontGlass.mat";
         const string StorefrontWallMaterial =
             "Assets/Synty/PolygonCity/Materials/Alts/PolygonCity_01_A.mat";
         const string StorefrontProps = "Assets/Synty/PolygonCity/Prefabs/Props/";
@@ -72,6 +72,7 @@ namespace RoadDemo
         static readonly Dictionary<string, StorefrontLayout> StorefrontLayouts =
             new Dictionary<string, StorefrontLayout>(StringComparer.Ordinal);
         static Material storefrontShellMaterial;
+        static Material storefrontGlassMaterial;
 
         /// <summary>The shallow rooms and display silhouettes behind the glass. The cutaway
         /// treats them as it treats the live facade in front of them (which marks itself
@@ -298,7 +299,8 @@ namespace RoadDemo
 
             var filters = new List<MeshFilter>(64);
             building.GetComponentsInChildren(true, filters);
-            Material fallbackGlass = DemoAssetLoad.Load<Material>(StorefrontGlassMaterial);
+            storefrontGlassMaterial ??= DemoAssetLoad.Load<Material>(StorefrontGlassMaterial);
+            Material fallbackGlass = storefrontGlassMaterial;
             Material fallbackWall = DemoAssetLoad.Load<Material>(StorefrontWallMaterial);
 
             var existing = new List<Storefront>();
@@ -336,7 +338,10 @@ namespace RoadDemo
                             !renderer.name.EndsWith("_Glass", StringComparison.OrdinalIgnoreCase))
                             continue;
                         if (!glasses.Contains(renderer)) glasses.Add(renderer);
-                        if (renderer.sharedMaterial != null) glassMaterial = renderer.sharedMaterial;
+                        // The source renderer is disabled by Storefront.Configure. Use its
+                        // material only if the dedicated live-storefront asset is missing.
+                        if (glassMaterial == null && renderer.sharedMaterial != null)
+                            glassMaterial = renderer.sharedMaterial;
                     }
                 }
 
@@ -721,8 +726,11 @@ namespace RoadDemo
                 float width = along1 - along0;
                 if (width < 0.55f || high - low < 0.45f || high < -0.1f || low > 1.35f)
                     continue;
-                float floor = Mathf.Max(-1.55f, Mathf.Min(0.05f, low));
-                float height = Mathf.Clamp(high - floor, 2.15f, 3.15f);
+                // Preserve the authored vertical glass span. Shop_04 has a solid
+                // parapet below its display window; forcing every measured pane down
+                // to pavement level painted transparent glass over that wall.
+                float floor = low;
+                float height = high - low;
                 Vector3 at = right * ((along0 + along1) * 0.5f) + outward * front +
                              Vector3.up * floor;
                 bool entrance = Mathf.Abs(outward.x) > 0.5f &&
@@ -781,8 +789,10 @@ namespace RoadDemo
             float width = along1 - along0;
             if (width < 0.8f || high < -0.1f || low > 1.35f) return false;
 
-            float floor = Mathf.Max(-1.55f, low);
-            float height = Mathf.Clamp(high - floor, 2.15f, 3.15f);
+            // Bounds-only meshes must obey the same contract as vertex-measured ones:
+            // the source glass bottom and top are authoritative.
+            float floor = low;
+            float height = high - low;
             Vector3 at = right * ((along0 + along1) * 0.5f) + outward * front +
                          Vector3.up * floor;
             opening = new ResidentialStorefrontOpening(

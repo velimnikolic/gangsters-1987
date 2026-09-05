@@ -311,7 +311,7 @@ namespace LivingCity.EditorTools
                     "Lobby plant");
             SitProp(publicRoom, "SM_Prop_Bin_01", new Vector3(5.7f, 0f, 6.6f), 0f,
                     "Lobby bin");
-            WallSign(publicRoom, "SM_Sign_Police_01", new Vector3(3.6f, 2.05f, 9.86f), 0f,
+            WallSign(publicRoom, "SM_Sign_Police_01", new Vector3(3.6f, 2.05f, 9.45f), 0f,
                      "Lobby police crest");
             WallSign(publicRoom, "SM_Sign_Info_01", new Vector3(-5.6f, 1.7f, 9.86f), 0f,
                      "Public information");
@@ -463,12 +463,7 @@ namespace LivingCity.EditorTools
         static void BuildExteriorDetail(Transform exterior, Transform roof)
         {
             var signs = Group(exterior, "POLICE IDENTITY AND EXTERIOR HARDWARE");
-            WallSign(signs, "SM_Sign_Police_Station_01",
-                     new Vector3(-1.25f, 3.65f, MaxZ + 0.2f), 0f,
-                     "SM_Sign_Police_Station_01 - MAIN STREET SIGN");
-            WallSign(signs, "SM_Sign_Badge_01",
-                     new Vector3(4.75f, 3.6f, MaxZ + 0.2f), 0f,
-                     "SM_Sign_Badge_01 - PRECINCT BADGE");
+            BuildPoliceIdentity(signs);
             for (int i = 0; i < 2; i++)
             {
                 SitProp(signs, "SM_Prop_DownPipe_0" + (i + 1),
@@ -490,6 +485,65 @@ namespace LivingCity.EditorTools
 
             SitProp(roof, "SM_Prop_Toolbox_01", new Vector3(1.3f, 6.18f, 3.0f), 17f,
                     "Roof maintenance toolbox", optional: true);
+        }
+
+        static void BuildPoliceIdentity(Transform parent)
+        {
+            var identity = Group(parent, "POLICE ENTRANCE SIGN");
+            // The vendor's station-name asset is a small horizontal plaque. Use a
+            // readable fascia above the canopy, facing the same street as the door.
+            Primitive(identity, "POLICE SIGN BACKBOARD",
+                new Vector3(-1.25f, 3.1f, MaxZ + 1.72f),
+                new Vector3(4.3f, 0.72f, 0.12f), RoofMaterial, collider: false);
+            var crest = WallSign(identity, "SM_Sign_Police_01",
+                new Vector3(-2.92f, 3.1f, MaxZ + 1.93f), 180f,
+                "PRECINCT BADGE");
+            crest.transform.localScale *= 0.34f;
+
+            var label = new GameObject("POLICE LETTERING").AddComponent<TMPro.TextMeshPro>();
+            label.transform.SetParent(identity, false);
+            label.transform.localPosition = new Vector3(-0.8f, 3.1f, MaxZ + 1.79f);
+            label.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            label.font = AssetDatabase.LoadAssetAtPath<TMPro.TMP_FontAsset>(
+                "Assets/TextMesh Pro/Resources/Fonts & Materials/LiberationSans SDF.asset");
+            label.text = "POLICE";
+            label.fontStyle = TMPro.FontStyles.Bold;
+            label.color = new Color(0.96f, 0.96f, 0.9f);
+            label.alignment = TMPro.TextAlignmentOptions.Center;
+            label.enableWordWrapping = false;
+            label.rectTransform.sizeDelta = new Vector2(3.1f, 0.56f);
+            label.enableAutoSizing = true;
+            label.fontSizeMin = 1f;
+            label.fontSizeMax = 10f;
+            label.ForceMeshUpdate();
+        }
+
+        [CliCommand("gangsters_police_precinct_signage",
+            "Refresh only the compact precinct signage, preserving the building and scene layout.",
+            MainThreadRequired = true)]
+        public static object RefreshSignage()
+        {
+            if (EditorApplication.isPlaying)
+                throw new InvalidOperationException("Leave Play Mode before editing precinct signage.");
+            var root = PrefabUtility.LoadPrefabContents(CompactPath);
+            try
+            {
+                var signs = Find(root.transform, "POLICE IDENTITY AND EXTERIOR HARDWARE");
+                foreach (Transform child in signs.Cast<Transform>().ToArray())
+                    if (child.name == "POLICE ENTRANCE SIGN" ||
+                        child.name.Contains("MAIN STREET SIGN") || child.name.Contains("PRECINCT BADGE"))
+                        UnityEngine.Object.DestroyImmediate(child.gameObject);
+                BuildPoliceIdentity(signs);
+                var lobby = Find(root.transform, "SM_Sign_Police_01 - Lobby police crest");
+                // Its relief extends +Z from the pivot. Keep that entire thickness
+                // inside the facade's inner face instead of through the front window.
+                lobby.localPosition = new Vector3(3.6f, 2.05f, 9.45f);
+                SetStatic(signs.gameObject);
+                PrefabUtility.SaveAsPrefabAsset(root, CompactPath);
+            }
+            finally { PrefabUtility.UnloadPrefabContents(root); }
+            AssetDatabase.SaveAssets();
+            return Audit();
         }
 
         static void BuildLighting(Transform parent)
@@ -596,8 +650,10 @@ namespace LivingCity.EditorTools
             if (underground != 0)
                 failures.Add($"{underground} underground/ramp object(s) survived");
             if (lights < 14) failures.Add("interior practical lighting is incomplete");
-            if (Count(prefab.transform, "SM_Sign_Police_Station_") < 1)
+            if (Find(prefab.transform, "POLICE LETTERING")?.GetComponent<TMPro.TextMeshPro>()?.text != "POLICE")
                 failures.Add("the street-facing POLICE STATION sign is missing");
+            if (Count(prefab.transform, "SM_Prop_Flag_") != 0)
+                failures.Add("a vendor national flag remains in the compact precinct");
 
             var visual = prefab.GetComponent<PolicePrecinctVisual>();
             if (visual == null)
@@ -647,6 +703,15 @@ namespace LivingCity.EditorTools
             }
             if (modules != expectedModules)
                 failures.Add($"{side} facade has {modules}/{expectedModules} wall modules");
+            foreach (Transform module in group)
+            {
+                var moduleBounds = BoundsOf(module.gameObject);
+                float floorY = module.position.y;
+                if (Vector3.Dot(module.up, Vector3.up) < 0.999f ||
+                    Mathf.Abs(moduleBounds.min.y - floorY) > 0.15f ||
+                    moduleBounds.max.y < floorY + Storey - 0.1f)
+                    failures.Add($"{module.name} does not enclose its own storey");
+            }
             var bounds = BoundsOf(group.gameObject);
             float span = alongX ? bounds.size.x : bounds.size.z;
             if (span < requiredSpan || bounds.min.y < -0.15f || bounds.min.y > 0.15f ||

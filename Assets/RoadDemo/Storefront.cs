@@ -27,11 +27,15 @@ namespace RoadDemo
     {
         const string AssetRoot = "Assets/CityKit/Storefront/";
         const string GlassMaterialPath =
-            "Assets/Synty/PolygonCity/Materials/Misc/Glass_01.mat";
+            "Assets/CityKit/Storefront/StorefrontGlass.mat";
         const string WallMaterialPath =
             "Assets/Synty/PolygonCity/Materials/Alts/PolygonCity_01_A.mat";
         const float DoorSeconds = 0.55f;
         const float DoorDegrees = 78f;
+
+        static Material storefrontGlassMaterial;
+        static Material PreferredGlassMaterial => storefrontGlassMaterial ??=
+            DemoAssetLoad.Load<Material>(GlassMaterialPath);
 
         [SerializeField] string module = string.Empty;
         [SerializeField] Vector3 doorLocal;
@@ -146,7 +150,10 @@ namespace RoadDemo
             var glass = new List<MeshRenderer>(1);
             var measured = new List<ResidentialStorefrontOpening>(3);
             Material wallMaterial = null;
-            Material glassMaterial = null;
+            // The authored glass is useful for measuring the opening, but it is too opaque
+            // for the shallow room behind it. All live panes use the dedicated storefront
+            // treatment; retain the source material only as a missing-asset fallback.
+            Material glassMaterial = PreferredGlassMaterial;
             Bounds bounds = default;
             bool haveBounds = false;
             for (int i = 0; i < filters.Length; i++)
@@ -161,7 +168,8 @@ namespace RoadDemo
                     if (renderer != null)
                     {
                         glass.Add(renderer);
-                        if (renderer.sharedMaterial != null) glassMaterial = renderer.sharedMaterial;
+                        if (glassMaterial == null && renderer.sharedMaterial != null)
+                            glassMaterial = renderer.sharedMaterial;
                         ResidentialBlocks.MeasureStorefrontOpenings(
                             transform, filter.transform, filter.sharedMesh,
                             glass.Count - 1, measured);
@@ -348,6 +356,11 @@ namespace RoadDemo
         void OnEnable()
         {
             RemoveLegacyShutter();
+            // Saved demo scenes carry the material that existed when their storefronts
+            // were generated. Upgrade those serialized views too; otherwise only freshly
+            // streamed blocks would receive the clearer glass after this asset changed.
+            var preferredGlass = PreferredGlassMaterial;
+            if (preferredGlass != null) paneMaterial = preferredGlass;
             ReapplySourceOverrides();
             bool needsRebuild = panesRoot == null ||
                 panesRoot.GetComponentInChildren<MeshFilter>(true)?.sharedMesh == null;
