@@ -3879,7 +3879,7 @@ namespace RoadDemo
                     healed = true;
                 }
             }
-            // the books still carry him: the next frame's deal gives him a body again
+            // the books still carry the living: the next frame's deal gives each a body
             if (healed)
                 _seenVersion = int.MinValue;
         }
@@ -3890,6 +3890,13 @@ namespace RoadDemo
                              unit.Name + " lost his body while " + man.State +
                              (man.Dead ? ", dead" : "") +
                              " - off the street until the next deal stands him up.");
+            // A DEAD MAN KEEPS HIS TOMBSTONE. His death is reported to the books five
+            // seconds after the fact (ReportDeaths); struck from the lookup before that
+            // he is still Active on the roster, and the next deal would stand a killed
+            // man up at full health (the Codex review). He leaves the line only - the
+            // dead branch of Place will not seat a body that is gone.
+            if (man.Dead)
+                return;
             if (man.CharacterId >= 0 &&
                 _byCharacter.TryGetValue(man.CharacterId, out var registered) &&
                 registered == man)

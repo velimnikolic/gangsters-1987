@@ -334,7 +334,18 @@ namespace LivingCity.Gameplay
 
             // EVERY house works its book for those hours, not only the player's. One
             // sweep, one rule; whose orders they were is the only difference there is.
-            Adopt();
+            // THE WIRE'S BASELINE is taken BEFORE the hours advance, and again whenever
+            // the book under this director changes (a file loaded): what a book already
+            // carries is history and is marked seen, so a loaded job that finishes on
+            // this very step files its result instead of having it swallowed with the
+            // history (the Codex review).
+            if (Runner != wireRunner)
+            {
+                wireRunner = Runner;
+                wireSeen.Clear();
+                wireSwept = false;
+                SweepStreetWire();
+            }
             if (Underworld.Current.AdvanceHours(elapsed))
                 Version++;
             if (SweepStreetWire())
@@ -412,6 +423,7 @@ namespace LivingCity.Gameplay
 
         readonly HashSet<(int day, string text)> wireSeen = new HashSet<(int, string)>();
         bool wireSwept;
+        CampaignRunner wireRunner;
 
         /// <summary>
         /// The flats' half of the night that needs a city. The heat goes onto the block
@@ -919,6 +931,8 @@ namespace LivingCity.Gameplay
             return OpResult.Success;
         }
 
+        const int RingRoster = 20;
+
         /// <summary>
         /// THE PHONE RINGS TOMORROW (EPIC 40, the F3 lever). Puts the player's house in
         /// the state the street wants before it talks: a lieutenant on the books (the
@@ -928,8 +942,6 @@ namespace LivingCity.Gameplay
         /// next midnight and the man's card comes at the six o'clock cut. Nothing here
         /// deals the card itself: what is watched is the ordinary path.
         /// </summary>
-        const int RingRoster = 20;
-
         public void DebugRingTomorrow(PersonnelDirector personnel)
         {
             var underworld = Underworld.Current;
