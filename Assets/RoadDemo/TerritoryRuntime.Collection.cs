@@ -1318,7 +1318,8 @@ namespace RoadDemo
         {
             // Any house's round, arriving at any house's door. The round names its own
             // crew, and crew numbers are unique across all twenty-one books.
-            if (bodies.Count == 0 || actor?.Tf == null || unit.Faction < 0)
+            if (bodies.Count == 0 || actor?.Tf == null || unit.Faction < 0 ||
+                DemoCrews.PoliceStopsWork(unit))
                 return;
 
             for (var i = bodies.Count - 1; i >= 0; i--)
@@ -1360,6 +1361,11 @@ namespace RoadDemo
                     var here = round.Stop;
                     var who = unit;
                     var seen = observation;
+                    if (RacketClosureRefusal(here.BusinessId) != null)
+                    {
+                        NextStop(walking, who);
+                        return;
+                    }
                     DoorBeat.VisitBusiness(
                         actor, here.BusinessId, door,
                         whenInside: () => SettleDoor(
@@ -1553,6 +1559,16 @@ namespace RoadDemo
                    business.Shutdowns.ShouldAccrueRacketAt(businessId, gameHour);
         }
 
+        // Commands and delayed visits read the live closure deadline, not the previous
+        // presence sample's hour: a killing can have happened since that sample.
+        string RacketClosureRefusal(TerritoryBusinessId businessId)
+        {
+            var business = LivingCity.Business.BusinessRuntime.Instance;
+            return business != null && business.TryGetShutdown(businessId, out var closure)
+                ? LivingCity.Business.BusinessShutdownText.Line(closure)
+                : null;
+        }
+
         /// <summary>He is back on the pavement with the bag: on to the next door, or
         /// home. Never while he is switched off inside a shop - a crew marched off
         /// mid-visit leaves its collector standing in somebody's back room.</summary>
@@ -1565,6 +1581,11 @@ namespace RoadDemo
             // Every leg is marched by the men WALKING it (GAN-262) - the bag unit when
             // the crew has one out, the line when it does not.
             unit = body.Walkers ?? unit;
+            if (DemoCrews.PoliceStopsWork(unit))
+            {
+                InterruptErrands(unit);
+                return;
+            }
 
             // A SHAKEDOWN HAS NOTHING TO CARRY HOME. Only a collection walks to the
             // front: the men who have just been down a block asking for money stay on
@@ -1755,6 +1776,32 @@ namespace RoadDemo
                 lastGameHour));
         }
 
+        /// <summary>The police stop the physical men carrying this errand. A detached
+        /// collector's walk ends only when that detachment is the one challenged.</summary>
+        public void InterruptErrands(DemoCrews.Unit unit)
+        {
+            if (unit == null) return;
+            if (!unit.IsDetachment)
+                for (var i = pendingApproaches.Count - 1; i >= 0; i--)
+                    if (pendingApproaches[i].CrewId == unit.CrewId)
+                        pendingApproaches.RemoveAt(i);
+            if (unit.IsDetachment)
+                for (var i = pendingBagRounds.Count - 1; i >= 0; i--)
+                {
+                    var pending = pendingBagRounds[i];
+                    if (pending.Command.GroupId.Value != unit.CrewId) continue;
+                    pendingBagRounds.RemoveAt(i);
+                    FailPendingBagRound(pending, DemoCrews.ArrestChallengeRefusal);
+                }
+            for (var i = bodies.Count - 1; i >= 0; i--)
+            {
+                var body = bodies[i];
+                if (body.Walkers != unit) continue;
+                roundLedger.Abandon(body.Round, lastGameHour);
+                roundScheduler?.Release(body.Round.CrewId, body.Round.BlockId);
+            }
+        }
+
         /// <summary>A crew retasked mid-round walked away from its own route; whatever
         /// it was carrying never reaches the books. An order countermanded is an order
         /// countermanded.
@@ -1787,6 +1834,11 @@ namespace RoadDemo
                 var body = bodies[i];
                 var round = body.Round;
                 var walkers = body.Walkers;
+                if (DemoCrews.PoliceStopsWork(walkers))
+                {
+                    InterruptErrands(walkers);
+                    continue;
+                }
                 var standing = walkers != null && !walkers.Wiped &&
                                crews != null && crews.Units.Contains(walkers);
 

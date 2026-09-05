@@ -123,7 +123,7 @@ after arson. These are owner-only early-reopening costs; waiting for the 3-day /
 shutdown costs no cash, but the skipped protection take is never recovered.
 
 Violence against the proprietor is different damage: a beating closes the counter for
-**one day**, an owner's death for **three days**, and neither carries a repair bill. There is
+**one day**, an owner's death for **ten days**, and neither carries a repair bill. There is
 nothing in the frontage to buy back; the lost trading and protection days are the price.
 
 ## 4. Vehicles (street prices, no paperwork)

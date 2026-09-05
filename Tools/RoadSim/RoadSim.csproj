@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
@@ -17,6 +17,7 @@
     <Compile Include="RecomputedPose.cs" />
     <Compile Include="ArcMotion.cs" />
     <Compile Include="KerbCompletion.cs" />
+    <Compile Include="KerbApproach.cs" />
     <Compile Include="BlockedYield.cs" />
     <Compile Include="Recovery.cs" />
     <Compile Include="RecoveryGoal.cs" />
@@ -30,18 +31,18 @@
     <Compile Include="JunctionReverse.cs" />
     <Compile Include="AdjacentJunction.cs" />
     <Compile Include="ContactSeparation.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadLine.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\Scripts\Gameplay\VehiclePerformance.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\Scripts\Gameplay\VehicleCatalog.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\LaneNet.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadCar.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadCar.Parking.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadCar.Trace.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\DriverProfile.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadDemoNet.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\DriverNerve.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\RoadSpace.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\DemoVehicle.cs" />
-    <Compile Include="C:\Users\N\projects\gangsters-1987\Assets\RoadDemo\DriveTrace.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadLine.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/VehiclePerformance.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/VehicleCatalog.cs" />
+    <Compile Include="../../Assets/RoadDemo/LaneNet.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadCar.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadCar.Parking.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadCar.Trace.cs" />
+    <Compile Include="../../Assets/RoadDemo/DriverProfile.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadDemoNet.cs" />
+    <Compile Include="../../Assets/RoadDemo/DriverNerve.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadSpace.cs" />
+    <Compile Include="../../Assets/RoadDemo/DemoVehicle.cs" />
+    <Compile Include="../../Assets/RoadDemo/DriveTrace.cs" />
   </ItemGroup>
 </Project>

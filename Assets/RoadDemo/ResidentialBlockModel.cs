@@ -25,7 +25,7 @@ namespace RoadDemo
         /// Bump when the meaning of the same ResidentialLot input changes. The plan hash
         /// catches data changes; this catches an optimiser/composer interpretation change.
         /// </summary>
-        public const int GeneratorVersion = 16;
+        public const int GeneratorVersion = 17;
 
         public string Id { get; private set; }
         public string Name { get; private set; }
@@ -37,6 +37,13 @@ namespace RoadDemo
         public int Seed { get; private set; }
         public ResidentialLot.Plan Plan { get; private set; }
         public int Revision { get; private set; }
+        /// <summary>Simulation-owned appearance. Survives view eviction and does not
+        /// invalidate geometry, navigation or the map. Set from district progression.</summary>
+        public float Neglect { get; private set; }
+        public void SetNeglect(float value)
+        {
+            Neglect = float.IsNaN(value) ? 0f : Mathf.Clamp01(value);
+        }
         public ulong PlanHash { get; private set; }
         /// <summary>Conservative height used by the camera-frustum recycler. It is
         /// derived from recipe data, so a tilted camera never needs a live view merely

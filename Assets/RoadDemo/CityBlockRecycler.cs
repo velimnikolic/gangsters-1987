@@ -115,6 +115,7 @@ namespace RoadDemo
             public ulong ContentKey;
             public ResidentialBlocks.IncrementalComposition Compose;
             public IEnumerator Merge;
+            public ResidentialConditionView Condition;
             public bool Active;
             public bool Attached;
             public bool Attaching;
@@ -252,6 +253,7 @@ namespace RoadDemo
         {
             _rig = rig;
             _camera = rig != null ? rig.GetComponent<Camera>() : null;
+            CityConditionHud.Ensure(rig);
         }
 
         void Awake()
@@ -310,6 +312,7 @@ namespace RoadDemo
             // supplies the same time safety net in addition to the configured item cap.
             if (_prefabPool.PendingAssetWarm == 0)
                 PumpAttachments(Stopwatch.StartNew());
+            PumpConditions(clock);
             PumpMerges(clock);
             BeginRuntimePoolWhenReady();
             TrimCache();
@@ -718,6 +721,8 @@ namespace RoadDemo
             // binding wants the shop's own mesh. Binding creates no business and changes
             // no record - see BusinessRuntime.BindBlockView.
             RoadDemoBuilder.BindBusinessViews(recipe.Id, view.Content);
+            if (ConditionEligible(recipe.Name))
+                view.Condition = new ResidentialConditionView(view.Content, recipe.Seed, _prefabPool, false);
 
             if (_config.mergeVisibleBlocks)
             {
@@ -883,6 +888,30 @@ namespace RoadDemo
             view.AttachCursor = 0;
         }
 
+        int _conditionCursor;
+        static bool ConditionEligible(string name) =>
+            name.IndexOf("police", StringComparison.OrdinalIgnoreCase) < 0 &&
+            name.IndexOf("nightclub", StringComparison.OrdinalIgnoreCase) < 0 &&
+            name.IndexOf("discotheque", StringComparison.OrdinalIgnoreCase) < 0;
+
+        void PumpConditions(Stopwatch frame)
+        {
+            if (frame.ElapsedMilliseconds >= _config.BudgetMs) return;
+            _scratchViews.Clear();
+            foreach (var pair in _resident)
+                if (pair.Value.Active && pair.Value.Attached && pair.Value.Condition != null)
+                    _scratchViews.Add(pair.Value);
+            if (_scratchViews.Count == 0) return;
+            int idle = 0, left = 96;
+            while (left-- > 0 && idle < _scratchViews.Count && frame.ElapsedMilliseconds < _config.BudgetMs)
+            {
+                _conditionCursor %= _scratchViews.Count;
+                var view = _scratchViews[_conditionCursor++];
+                if (view.Condition.Step(view.Recipe.Neglect, CityDecorationSettings.Density)) idle = 0;
+                else idle++;
+            }
+        }
+
         void PumpMerges(Stopwatch frame)
         {
             if (_resident.Count == 0 || frame.ElapsedMilliseconds >= _config.BudgetMs) return;
@@ -896,7 +925,7 @@ namespace RoadDemo
             while (frame.ElapsedMilliseconds < _config.BudgetMs && idle < _scratchViews.Count)
             {
                 var view = _scratchViews[_mergeCursor++ % _scratchViews.Count];
-                if (view.Merge == null) { idle++; continue; }
+                if (view.Merge == null || (view.Condition != null && !view.Condition.Prepared)) { idle++; continue; }
                 if (view.Merge.MoveNext()) { idle = 0; continue; }
                 (view.Merge as IDisposable)?.Dispose();
                 view.Merge = null;
@@ -1032,6 +1061,9 @@ namespace RoadDemo
                 _night?.Unregister(view.Content);
                 _lamps?.Unregister(view.Content);
                 _parkedGlow?.Unregister(view.Content);
+                // Restore our material/density changes before any piece is leased to another block.
+                view.Condition?.Dispose();
+                view.Condition = null;
                 _prefabPool?.ReleaseAll(view.Parts);
                 view.Content.gameObject.SetActive(false);
                 view.Content.SetParent(null, false);

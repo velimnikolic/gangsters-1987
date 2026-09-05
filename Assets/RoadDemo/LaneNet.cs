@@ -307,7 +307,8 @@ namespace RoadDemo
         /// <summary>The nearest occupant ahead of s (heading this way) whose claim
         /// overlaps the band [d0, d1], and the metres of road between <paramref
         /// name="noseS"/> and its near end (negative: alongside / overlapping).</summary>
-        public RoadOccupant Ahead(RoadOccupant self, int heading, float noseS, float tailS, float d0, float d1, out float gap)
+        public RoadOccupant Ahead(RoadOccupant self, int heading, float noseS, float tailS,
+            float d0, float d1, out float gap, System.Predicate<RoadOccupant> accepts = null)
         {
             RoadOccupant best = null;
             gap = float.MaxValue;
@@ -315,15 +316,15 @@ namespace RoadDemo
             {
                 var o = Occupants[i];
                 if (ReferenceEquals(o, self) || (self != null && ReferenceEquals(o.Who, self.Who))) continue;
-                if (!o.Overlaps(d0, d1)) continue;
                 // a stopped car is followed up to its body; a moving one up to its claim
                 bool body = !o.Moving;
+                if (body ? !o.BodyOverlaps(d0, d1) : !o.Overlaps(d0, d1)) continue;
                 float near = heading > 0 ? (body ? o.BodyS0 : o.S0) : (body ? o.BodyS1 : o.S1);
                 float far = heading > 0 ? (body ? o.BodyS1 : o.S1) : (body ? o.BodyS0 : o.S0);
                 float g = (near - noseS) * heading;
                 // its far end short of our nose: behind us, or alongside and behind - not ahead
                 if ((far - noseS) * heading < 0.3f) continue;
-                if (g < gap) { gap = g; best = o; }
+                if (g < gap && (accepts == null || accepts(o))) { gap = g; best = o; }
             }
             return best;
         }

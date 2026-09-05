@@ -380,7 +380,13 @@ namespace SuburbDemo
                     TownKit.StripForStatic(go);
                     var bounds = new Bounds(go.transform.position, Vector3.zero);
                     foreach (var r in go.GetComponentsInChildren<Renderer>()) bounds.Encapsulate(r.bounds);
-                    var v = new SuburbVehicle { Tf = go.transform, HalfLen = bounds.extents.z + 0.3f, Long = isLong || bounds.size.z > 6.5f, Avoid = _stubEdges, GroundWorld = relief > 0f ? GroundWorld : null };
+                    CarBody.MeasureTrafficFootprint(go.transform, out float halfLength, out float halfWidth);
+                    var v = new SuburbVehicle
+                    {
+                        Tf = go.transform, HalfLen = halfLength, HalfWide = halfWidth,
+                        Long = isLong || bounds.size.z > 6.5f, Avoid = _stubEdges,
+                        GroundWorld = relief > 0f ? GroundWorld : null,
+                    };
                     v.Spawn(e, sAlong);
                     if (!v.Long) CarOccupant.Crew(go.transform, drivers, sitLoop, passengerChance: 0.3f, layer: ScenePerf.CrowdLayer);
                     _vehicles.Add(v);

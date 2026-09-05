@@ -138,7 +138,8 @@ namespace RoadDemo
 
         /// <summary>Whoever this body would be inside of, stood here turned this way.</summary>
         public static IRoadUser Inside(IRoadUser self, Vector3 at, Vector3 fwd,
-                                       float halfLength, float halfWidth, out Vector3 push)
+                                       float halfLength, float halfWidth, out Vector3 push,
+                                       bool stationaryOnly = false)
         {
             push = Vector3.zero;
             IRoadUser worst = null;
@@ -148,6 +149,7 @@ namespace RoadDemo
             {
                 var u = users[i];
                 if (ReferenceEquals(u, self)) continue;
+                if (stationaryOnly && u is RoadCar car && !car.Parked && !car.Derelict && !car.Wrecked) continue;
                 if (!Overlap(at, fwd, halfLength, halfWidth,
                              u.RoadPosition, u.RoadForward, u.HalfLength, u.HalfWidth, Air, out var p)) continue;
                 float depth = p.magnitude;

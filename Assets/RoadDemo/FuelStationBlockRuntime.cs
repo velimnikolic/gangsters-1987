@@ -286,8 +286,8 @@ namespace RoadDemo
                 {
                     Tf = go.transform,
                     Body = body,
-                    HalfLen = body.HalfLength,
-                    HalfWide = body.HalfWidth,
+                    HalfLen = body.TrafficHalfLength,
+                    HalfWide = body.TrafficHalfWidth,
                     AxleBack = body.AxleBack,
                     RoadY = transform.position.y + FuelStationBlock.RoadY,
                     Net = _net,

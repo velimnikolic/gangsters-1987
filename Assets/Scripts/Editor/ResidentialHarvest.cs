@@ -510,6 +510,16 @@ namespace LivingCity.EditorTools
             bool sunkenAmenity = family == Family.Amenity && name == "skatepark";
             float floor = family != Family.Amenity || sunkenAmenity
                 ? 0f : read.Min(p => p.Box.min.y);
+            if (family == Family.Amenity && name == "dinner")
+            {
+                // The lobster diner's harvest includes non-rendering source objects at
+                // a lower datum. Its terrace tables identify the usable floor; taking
+                // the lowest source bound left the entire restaurant 1.5 m in the air.
+                var tableFeet = read.Where(p => p.Source != null &&
+                    p.Source.StartsWith("SM_Prop_Table_", System.StringComparison.Ordinal) &&
+                    p.Box.size.sqrMagnitude > .01f).Select(p => p.Box.min.y).OrderBy(y => y).ToList();
+                if (tableFeet.Count > 0) floor = tableFeet[tableFeet.Count / 2] - .03f;
+            }
             if (family == Family.Amenity)
             {
                 // A lot's pieces are the pack's own two-metre panels and half-metre trims,

@@ -279,6 +279,7 @@ namespace RoadDemo
                 _collar = Collar.WalkingUp;
                 _collarAt = Time.time;
                 _collarBy = Time.time + CollarPatience;
+                _crews.HaltForArrest(unit);
                 // Salted with the DAY and not with the clock: Time.time is whatever the
                 // frame rate made of it, and a stream seeded off it would answer
                 // differently on two runs of the same seed. A recognition is one thing

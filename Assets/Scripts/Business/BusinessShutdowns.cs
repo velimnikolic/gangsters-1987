@@ -38,7 +38,7 @@ namespace LivingCity.Business
             double bombHours = 7d * 24d,
             int bombRepairPrice = 5_000,
             double beatingHours = 24d,
-            double deathHours = 3d * 24d)
+            double deathHours = 10d * 24d)
         {
             SmashHours = Math.Max(0d, smashHours);
             ArsonHours = Math.Max(0d, arsonHours);

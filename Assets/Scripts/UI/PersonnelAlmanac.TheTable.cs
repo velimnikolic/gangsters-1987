@@ -194,8 +194,7 @@ namespace LivingCity.UI
         /// </summary>
         void TickFamilies()
         {
-            if (currentPage != LedgerPage.Diplomacy ||
-                familiesView != FamiliesView.Table || tableStage == null)
+            if (currentPage != LedgerPage.Diplomacy || tableStage == null)
                 return;
 
             var moved = false;
@@ -276,7 +275,7 @@ namespace LivingCity.UI
         void BuildTheTable(IReadOnlyList<Gangs.Gang> gangs)
         {
             tableStage = NewRect("Stage", diplomacyContent);
-            PlaceTopLeft(tableStage, PageLeft, StageTop, PageWidth, StageH);
+            PlaceTopLeft(tableStage, 0f, StageTop, SheetW, StageH);
             tableStage.gameObject.AddComponent<RectMask2D>();
 
             // The desk is the PAGE's - BuildFamiliesRoom laid it under the head and the
@@ -287,13 +286,13 @@ namespace LivingCity.UI
             RowButton(felt, ClickSurface(felt), CloseTheCard);
 
             tableFit = Mathf.Clamp(
-                Mathf.Min(PageWidth / (PlaneW + 40f), StageH / (PlaneH + 20f)), 0.42f, 1f);
+                Mathf.Min(SheetW / (PlaneW + 40f), StageH / (PlaneH + 20f)), 0.42f, 1f);
 
             var plane = NewRect("Plane", tableStage);
             plane.anchorMin = plane.anchorMax = new Vector2(0.5f, 0.5f);
             plane.pivot = new Vector2(0.5f, 0.5f);
             plane.anchoredPosition = Vector2.zero;
-            plane.sizeDelta = new Vector2(PageWidth, StageH);
+            plane.sizeDelta = new Vector2(SheetW, StageH);
 
             // ---- who sits where ----
             var rivals = new List<Gangs.Gang>();
@@ -494,10 +493,9 @@ namespace LivingCity.UI
             tableRiseFades.Add(new TableFade(card.gameObject.AddComponent<CanvasGroup>(),
                 1f, !anyOpen ? 1f : selected ? 0f : 0.4f));
 
-            var face = NewRect("Face", card);
+            var face = NewRect("Card", card);
             Stretch(face);
-            TableShadow(face, 20f, -10f, 0.5f);
-            Fill(face, LedgerV2.Panel);
+            var paper = Shadowed(face, LedgerV2.Panel);
             Frame(face, 1f, ours ? LedgerStyle.RailGold : LedgerV2.Rule);
 
             Block("Spine", face, 0f, 0f, 5f, HouseCardH, GangPalette.Of(gang.Id));
@@ -575,7 +573,8 @@ namespace LivingCity.UI
             if (!ours)
             {
                 var houseId = gang.Id;
-                RowButton(face, ClickSurface(face), () => OpenTheCard(houseId));
+                paper.raycastTarget = true;
+                RowButton(face, paper, () => OpenTheCard(houseId));
             }
 
             if (inMiddle && ours)
@@ -586,8 +585,8 @@ namespace LivingCity.UI
             var chipW = 18f + MonoWidth(word, 10.8f, 12f);
             var chip = NewRect("Focus", card);
             PlaceTopLeft(chip, HouseCardW - 8f - chipW, -(HouseCardH + 12f), chipW, 24f);
-            TableShadow(chip, 12f, -6f, 0.5f);
-            Fill(chip, LedgerV2.Head);
+            var chipSkin = Shadowed(chip, LedgerV2.Head);
+            chipSkin.raycastTarget = true;
             Frame(chip, 1f, LedgerStyle.RailGold);
             var chipWord = Text("Word", chip, LedgerStyle.MonoBold, 10.8f,
                 LedgerStyle.RailGold, TextAlignmentOptions.Center);
@@ -595,7 +594,7 @@ namespace LivingCity.UI
             chipWord.characterSpacing = 12f;
             chipWord.text = word;
             var target = backToUs ? -1 : gang.Id;
-            RowButton(chip, ClickSurface(chip), () => FocusTheTable(target));
+            RowButton(chip, chipSkin, () => FocusTheTable(target));
         }
 
         // --------------------------------------------------------------- the standees
@@ -635,7 +634,12 @@ namespace LivingCity.UI
 
             var flip = seat.x > PlaneCx;
             var groupAbs = Mathf.Clamp(seat.x - 336f, 40f, PlaneW - 664f);
-            var baseY = Mathf.Clamp(seat.y, 452f, 660f) - 43f;
+
+            // The dossier is the tall one, and it rises from the base: the base is
+            // pushed down far enough that its head clears the top of the plane.
+            var dossierH = DossierHeight();
+            var low = Mathf.Min(660f, Mathf.Max(452f, dossierH + 66f));
+            var baseY = Mathf.Clamp(seat.y, low, 660f) - 43f;
             var dossierAbs = groupAbs + 186f;
             var chipsAbs = flip ? groupAbs + 4f : groupAbs + 478f;
             var shutAbs = flip ? groupAbs + 480f : groupAbs;
@@ -647,8 +651,8 @@ namespace LivingCity.UI
                 gangs);
         }
 
-        /// <summary>The reading and the words, both off <see cref="HouseTable"/> so the
-        /// war room and the table can never disagree about either.</summary>
+        /// <summary>The reading and the words, both off <see cref="HouseTable"/> - the
+        /// card, the dossier and the keys are one reading, taken once.</summary>
         void ReadTheHouse(Gangs.Gang house, Underworld world, int mine, int day,
             IReadOnlyList<Gangs.Gang> gangs)
         {
@@ -717,23 +721,48 @@ namespace LivingCity.UI
         const float DossierMugH = 90f;
         const float LeaderPitch = 28f;
 
+        /// <summary>The width the dossier's full-bleed rows are laid to.</summary>
+        static float DossierInner => DossierW - 20f;
+
+        /// <summary>
+        /// What the dossier will measure before it is built. The group's base is set
+        /// off this, so a tall sheet is never stood up through the top of the table.
+        /// </summary>
+        float DossierHeight()
+        {
+            var head = DossierHeadH + 10f +
+                       Mathf.Max(DossierMugH, LeaderPitch * 5f);
+            var height = head +
+                CopyBlock(tableRead.PowerNote, 12.3f, DossierInner, 1f) + 8f +
+                TraitPitch * 4f + 8f +
+                CopyBlock(tableRead.Personality, 11.8f, DossierInner, 2f);
+            if (tableRead.TheyAsk)
+                height += 10f + 20f +
+                          CopyBlock(tableRead.AskBody, 12.3f, DossierInner, 2f) + 6f;
+            height += 12f + 20f + Mathf.Min(3, Mathf.Max(1, tableRead.Record.Count)) * 22f;
+            return height + 12f;
+        }
+
+        const float TraitPitch = 26f;
+
+        /// <summary>
+        /// THE MAN, THE READING AND THE RECORD on one standing sheet. The whole of what
+        /// the boss needs about a house: the five figures beside his photograph, what
+        /// the strength MEANS in words, the three things about the man himself, the
+        /// door he keeps, what they have asked us, and the last words that passed
+        /// between the two houses.
+        /// </summary>
         void BuildDossier(RectTransform plane, float centreX, float baseY)
         {
             var rowsX = 10f + DossierMugW + 11f;
             var rowsW = DossierW - rowsX - 10f;
             var bodyBottom = DossierHeadH + 10f +
-                             Mathf.Max(DossierMugH, LeaderPitch * 4f);
-            var note = tableRead.Personality + "  Temper: " + tableRead.Temper +
-                       ". Keeps his word: " + tableRead.KeepsHisWord +
-                       ". Found most nights: " + tableRead.FoundAtNight + ".";
-            var noteH = CopyBlock(note, 11.8f, DossierW - 20f, 2f);
-            var height = bodyBottom + 9f + noteH + 10f;
+                             Mathf.Max(DossierMugH, LeaderPitch * 5f);
+            var height = DossierHeight();
 
             var card = Standee(plane, "Dossier", centreX, baseY, DossierW, height,
                 LiftDossier);
-            TableShadow(card, 44f, -26f, 0.6f);
-            Fill(card, LedgerV2.Panel);
-            ClickSurface(card);
+            Shadowed(card, LedgerV2.Panel).raycastTarget = true;
             Frame(card, 1f, LedgerV2.Ink);
 
             var band = NewRect("Head", card);
@@ -761,6 +790,7 @@ namespace LivingCity.UI
                     Gangs.GangCatalog.LieutenantModels[tableRead.GangId]),
                 PortraitStudio.Framing.Bust, raw);
 
+            // ---- the reading, beside his photograph ----
             var ourPower = PowerFigure(Gangs.GangCatalog.PlayerGangId);
             var y = -(DossierHeadH + 10f);
             y = LeaderRow(card, rowsX, y, rowsW, "POWER", tableRead.PowerText,
@@ -768,16 +798,96 @@ namespace LivingCity.UI
                     : ourPower >= 0 && tableRead.Power > ourPower ? LedgerV2.Red
                     : LedgerV2.Ink);
             y = LeaderRow(card, rowsX, y, rowsW, "DOORS",
-                tableRead.Blocks + " of " + Mathf.Max(tableRead.Blocks, tableRead.BlocksTotal),
+                tableRead.BlocksTotal > tableRead.Blocks
+                    ? tableRead.Blocks + " of " + tableRead.BlocksTotal
+                    : tableRead.Blocks.ToString(),
                 LedgerV2.Ink);
+            y = LeaderRow(card, rowsX, y, rowsW, "CAPOS",
+                tableRead.CaposKnown ? tableRead.Capos.ToString() : "not counted",
+                tableRead.CaposKnown ? LedgerV2.Ink : LedgerV2.PaperBlue);
             y = LeaderRow(card, rowsX, y, rowsW, "TAKEN", tableRead.TakenText,
                 tableRead.Taken > 0 ? LedgerV2.Red : LedgerV2.Muted);
             LeaderRow(card, rowsX, y, rowsW, "OWED", tableRead.OwedText,
                 tableRead.TheyOwe > 0 || tableRead.WeOwe > 0 ? LedgerV2.Red : LedgerV2.Muted);
 
-            Rule(card, 10f, -bodyBottom, DossierW - 20f, LedgerV2.Hair);
-            Paragraph(card, LedgerStyle.Serif, 11.8f, LedgerV2.Body, 10f,
-                -(bodyBottom + 9f), DossierW - 20f, noteH, note, lineSpacing: 2f);
+            // ---- what the strength MEANS, which is the thing a figure will not say ----
+            y = -bodyBottom;
+            var noteH = CopyBlock(tableRead.PowerNote, 12.3f, DossierInner, 1f);
+            Paragraph(card, LedgerStyle.SerifItalic, 12.3f,
+                tableRead.Power < 0 ? LedgerV2.PaperBlue : LedgerV2.Muted, 10f, y,
+                DossierInner, noteH, tableRead.PowerNote, lineSpacing: 1f);
+            y -= noteH + 8f;
+
+            // ---- the man himself ----
+            Rule(card, 10f, y + 4f, DossierInner, LedgerV2.Hair);
+            y = TraitRow(card, 10f, y, DossierInner, "TEMPER", tableRead.Temper);
+            y = TraitRow(card, 10f, y, DossierInner, "KEEPS HIS WORD",
+                tableRead.KeepsHisWord);
+            y = TraitRow(card, 10f, y, DossierInner, "FOUND AT NIGHT",
+                tableRead.FoundAtNight);
+            y = TraitRow(card, 10f, y, DossierInner, "THE DOOR", tableRead.Front);
+
+            y -= 8f;
+            var proseH = CopyBlock(tableRead.Personality, 11.8f, DossierInner, 2f);
+            Paragraph(card, LedgerStyle.Serif, 11.8f, LedgerV2.Body, 10f, y,
+                DossierInner, proseH, tableRead.Personality, lineSpacing: 2f);
+            y -= proseH;
+
+            // ---- what they have asked us, in the wire's own words ----
+            if (tableRead.TheyAsk)
+            {
+                y -= 10f;
+                Rule(card, 10f, y + 4f, DossierInner, LedgerV2.Hair);
+                var when = Caps(card, 10f, y, DossierInner,
+                    "THEY ASK · " + tableRead.AskWhen, 10.2f, LedgerV2.Red, 12f);
+                when.font = LedgerStyle.Mono;
+                when.overflowMode = TextOverflowModes.Ellipsis;
+                y -= 20f;
+                var askH = CopyBlock(tableRead.AskBody, 12.3f, DossierInner, 2f);
+                Paragraph(card, LedgerStyle.Serif, 12.3f, LedgerV2.Body, 10f, y,
+                    DossierInner, askH, tableRead.AskBody, lineSpacing: 2f);
+                y -= askH + 6f;
+            }
+
+            // ---- the record: the last words that passed between the two houses ----
+            y -= 12f;
+            Rule(card, 10f, y + 4f, DossierInner, LedgerV2.Hair);
+            var head = Caps(card, 10f, y, DossierInner,
+                tableRead.Record.Count == 0 ? "THE RECORD"
+                    : "THE RECORD · " + tableRead.Record.Count, 10.2f, LedgerV2.Label, 12f);
+            head.font = LedgerStyle.Mono;
+            y -= 20f;
+            if (tableRead.Record.Count == 0)
+            {
+                Line(card, LedgerStyle.SerifItalic, 11.3f, LedgerV2.Muted, 10f, y,
+                    DossierInner, 20f, "nothing has passed between the houses");
+                return;
+            }
+            for (var i = 0; i < tableRead.Record.Count && i < 3; i++)
+            {
+                var entry = tableRead.Record[i];
+                var stamp = LedgerV2.Mono(card, 10f, y, 54f, entry.When, 9.5f,
+                    entry.Fresh ? LedgerV2.Red : LedgerV2.Label, 4f);
+                stamp.overflowMode = TextOverflowModes.Ellipsis;
+                var what = Line(card, LedgerStyle.Type, 11.6f, LedgerV2.Body, 68f, y,
+                    DossierInner - 58f, 18f, entry.What);
+                what.overflowMode = TextOverflowModes.Ellipsis;
+                y -= 22f;
+            }
+        }
+
+        /// <summary>One thing about the man: the word on the left, the answer held to
+        /// the right margin over a dotted leader.</summary>
+        static float TraitRow(Transform card, float x, float y, float w, string label,
+            string figure)
+        {
+            LedgerV2.Mono(card, x, y, w * 0.5f, label, 10.2f, LedgerV2.Label, 8f);
+            var value = Line(card, LedgerStyle.MonoBold, 11.4f,
+                figure == "unknown" ? LedgerV2.PaperBlue : LedgerV2.Ink, x, y, w,
+                LineBox(11.4f), figure, TextAlignmentOptions.MidlineRight);
+            value.overflowMode = TextOverflowModes.Ellipsis;
+            LedgerV2.Leader(card, x, y - 17f, w);
+            return y - TraitPitch;
         }
 
         /// <summary>The design's LeaderRow: the label, the dotted leader between, and
@@ -831,15 +941,15 @@ namespace LivingCity.UI
 
                 var chip = NewRect("Key " + move.Label, column);
                 PlaceTopLeft(chip, 0f, -i * (ChipH + ChipGap), ChipsW, ChipH);
-                TableShadow(chip, on ? 44f : 18f, on ? -26f : -10f, on ? 0.7f : 0.5f);
-                Fill(chip, ChipFace(move.Face));
+                var keySkin = Shadowed(chip, ChipFace(move.Face));
+                keySkin.raycastTarget = true;
                 Frame(chip, 1f, ChipEdge(move.Face));
                 var word = Text("Word", chip, LedgerStyle.MonoBold, 12.6f,
                     ChipInk(move.Face), TextAlignmentOptions.Center);
                 Stretch(word.rectTransform, 2f);
                 word.characterSpacing = 11f;
                 word.text = move.Label.ToUpperInvariant();
-                RowButton(chip, ClickSurface(chip), () => PickTableMove(index));
+                RowButton(chip, keySkin, () => PickTableMove(index));
 
                 tableWordFades.Add(new TableFade(chip.gameObject.AddComponent<CanvasGroup>(),
                     1f, on ? 1f : 0.4f));
@@ -925,6 +1035,21 @@ namespace LivingCity.UI
             {
                 LedgerV2.Mono(panel, rowX, y, labelW, "CARRIED", 10.8f, LedgerV2.Label, 10f);
                 y = CarriedPicker(panel, fieldX, y, fieldW);
+
+                // A man sent into a house we are at war with is a man they can keep,
+                // and the sheet says so BEFORE the key is pressed rather than in the
+                // record afterwards.
+                if (tableInPerson && tableEnvoys.Count > 0 && tableRead.Tie == TieKind.War)
+                {
+                    var envoy = tableEnvoys[Mathf.Clamp(tableEnvoy, 0, tableEnvoys.Count - 1)];
+                    var risk = envoy.FullName + " walks into a house we are at war with. " +
+                               "If they want a second man of ours, we are handing them one.";
+                    LedgerV2.Mono(panel, rowX, y, labelW, "THE RISK", 10.8f, LedgerV2.Red, 12f);
+                    var riskH = CopyBlock(risk, 12.3f, fieldW, 1f);
+                    Paragraph(panel, LedgerStyle.Serif, 12.3f, LedgerV2.Red, fieldX, y,
+                        fieldW, riskH, risk, lineSpacing: 1f);
+                    y -= riskH + 6f;
+                }
             }
 
             if (!string.IsNullOrEmpty(tableNote))
@@ -952,9 +1077,7 @@ namespace LivingCity.UI
             PlaceTopLeft(panel, roomRight ? 0f : -(WordingW - ChipsW),
                 below ? -(ChipH + 6f) : height + 6f, WordingW, height);
             PlaceTopLeft(body, 0f, 0f, WordingW, height);
-            TableShadow(body, 40f, -24f, 0.7f);
-            Fill(body, LedgerV2.Panel);
-            ClickSurface(body);
+            Shadowed(body, LedgerV2.Panel).raycastTarget = true;
             Frame(body, 1f, LedgerV2.Ink);
             Block("Spine", body, 0f, 0f, 4f, height, LedgerV2.Red);
             body.SetAsFirstSibling();
@@ -981,8 +1104,7 @@ namespace LivingCity.UI
             var height = 10f + 22f + 8f + rows + 6f;
 
             var board = Standee(plane, "Shut", centreX, baseY, ShutW, height, LiftShut);
-            Fill(board, LedgerStyle.Rail);
-            ClickSurface(board);
+            ClickSurface(board).color = LedgerStyle.Rail;
             Frame(board, 1f, LedgerV2.At(LedgerStyle.RailGold, 0.26f));
             tableWordFades.Add(new TableFade(board.gameObject.AddComponent<CanvasGroup>(),
                 1f, 0.16f));
@@ -1016,8 +1138,26 @@ namespace LivingCity.UI
 
         // ------------------------------------------------------------------ furniture
 
-        /// <summary>One layer of the design's drop shadow, inside the panel's own rect
-        /// so it hides and dies with it.</summary>
+        /// <summary>
+        /// A panel on the table: the book's own two-layer shadow - a tight contact and
+        /// a wide soft cast, the same pair every card in the ledger stands on - and the
+        /// face over it.
+        ///
+        /// The face is a CHILD, never the rect's own Image. A parent's graphic draws
+        /// BEFORE its children, so a shadow laid inside a rect that carried its own
+        /// fill was painted straight over the panel: every card, dossier and key on
+        /// this sheet came out grey under a square of black. Content added to the rect
+        /// after this call lands over the face, which is where it belongs.
+        /// </summary>
+        static Image Shadowed(RectTransform rect, Color face)
+        {
+            TableShadow(rect, 12f, -4f, 0.26f);
+            TableShadow(rect, 3f, -1f, 0.42f);
+            var skin = NewRect("Face", rect);
+            Stretch(skin);
+            return Fill(skin, face);
+        }
+
         static void TableShadow(RectTransform panel, float spread, float drop,
             float strength)
         {

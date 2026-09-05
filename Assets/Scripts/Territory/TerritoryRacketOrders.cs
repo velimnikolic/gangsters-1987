@@ -272,6 +272,7 @@ namespace LivingCity.Territory
             // Why the whole doorstep chain is closed, when it is. Our own premises are
             // not shaken down, and a crew has to be picked before anybody walks anywhere.
             var shut = !hasCrew ? "nobody is picked to send"
+                : closure.Shut ? closure.Note
                 : tenure == DoorTenure.Ours ? "the place is on our own paper"
                 : null;
             var paying = standing == TerritoryProtectionState.Compliant;

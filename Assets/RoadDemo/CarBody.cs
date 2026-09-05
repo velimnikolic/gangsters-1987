@@ -17,6 +17,11 @@ namespace RoadDemo
         public float HalfLength { get; private set; } = 2.3f;
         public float HalfWidth { get; private set; } = 0.95f;
 
+        /// <summary>The deliberately smaller traffic box. Seats, doors and visible
+        /// bodywork continue to use the full physical measurements above.</summary>
+        public float TrafficHalfLength => HalfLength * RoadCar.TrafficFootprintScale;
+        public float TrafficHalfWidth => HalfWidth * RoadCar.TrafficFootprintScale;
+
         /// <summary>How many men it carries: a van or a limousine six, a truck cab three,
         /// a supercar two, a car four.</summary>
         public int Seats { get; set; } = 4;
@@ -98,14 +103,67 @@ namespace RoadDemo
 
         void Measure()
         {
-            var rs = Tf.GetComponentsInChildren<Renderer>();
-            if (rs.Length == 0) return;
-            var b = rs[0].bounds;
-            foreach (var r in rs) b.Encapsulate(r.bounds);
-            var f = Tf.forward; f.y = 0f; f.Normalize();
-            var r2 = Tf.right; r2.y = 0f; r2.Normalize();
-            HalfLength = Mathf.Max(1.5f, Vector3.Dot(b.extents, new Vector3(Mathf.Abs(f.x), 0f, Mathf.Abs(f.z))));
-            HalfWidth = Mathf.Clamp(Vector3.Dot(b.extents, new Vector3(Mathf.Abs(r2.x), 0f, Mathf.Abs(r2.z))), 0.7f, 1.3f);
+            if (!MeasureFootprint(Tf, out float halfLength, out float halfWidth)) return;
+            HalfLength = halfLength;
+            HalfWidth = halfWidth;
+        }
+
+        /// <summary>The physical meshes in the car's heading frame, in world metres.
+        /// Traffic, prefab slot selection and parked obstacles must measure the same
+        /// body. Projecting Renderer.bounds back onto the car expands an already
+        /// expanded world AABB: at 45 degrees a sedan becomes a square. Transform
+        /// each mesh's own corners directly instead, keeping the actual root scale.
+        /// The road model centres its footprint on the transform, so an offset mesh
+        /// must be enclosed on both sides of that origin.</summary>
+        public static bool MeasureFootprint(Transform car, out float halfLength, out float halfWidth)
+        {
+            halfLength = halfWidth = 0f;
+            if (car == null) return false;
+            var forward = car.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 0.0001f) return false;
+            forward.Normalize();
+            var right = new Vector3(forward.z, 0f, -forward.x);
+            bool any = false;
+            foreach (var renderer in car.GetComponentsInChildren<Renderer>())
+            {
+                if (!renderer.enabled) continue;
+                Bounds local;
+                if (renderer is MeshRenderer)
+                {
+                    var filter = renderer.GetComponent<MeshFilter>();
+                    if (filter == null || filter.sharedMesh == null) continue;
+                    local = filter.sharedMesh.bounds;
+                }
+                else if (renderer is SkinnedMeshRenderer skinned && skinned.sharedMesh != null)
+                    local = skinned.localBounds;
+                else continue; // smoke, tyre trails and other effects are not bodywork
+
+                var extents = local.extents;
+                for (int corner = 0; corner < 8; corner++)
+                {
+                    var point = local.center + new Vector3(
+                        (corner & 1) == 0 ? -extents.x : extents.x,
+                        (corner & 2) == 0 ? -extents.y : extents.y,
+                        (corner & 4) == 0 ? -extents.z : extents.z);
+                    var relative = renderer.transform.TransformPoint(point) - car.position;
+                    halfLength = Mathf.Max(halfLength, Mathf.Abs(Vector3.Dot(relative, forward)));
+                    halfWidth = Mathf.Max(halfWidth, Mathf.Abs(Vector3.Dot(relative, right)));
+                }
+                any = true;
+            }
+            return any && halfLength > 0.001f && halfWidth > 0.001f;
+        }
+
+        /// <summary>The shared road box, scaled once from the physical body. Returns
+        /// false with the ordinary-car fallback when there is no measurable mesh.</summary>
+        public static bool MeasureTrafficFootprint(Transform car, out float halfLength, out float halfWidth)
+        {
+            bool measured = MeasureFootprint(car, out halfLength, out halfWidth);
+            if (!measured) { halfLength = 2.3f; halfWidth = 0.95f; }
+            halfLength *= RoadCar.TrafficFootprintScale;
+            halfWidth *= RoadCar.TrafficFootprintScale;
+            return measured;
         }
 
         // ------------------------------------------------------------------ seats

@@ -12,11 +12,11 @@ namespace LivingCity.UI
     /// streets, a third house, and the man who carries it - and the four doors those
     /// four things go out through.
     ///
-    /// Both directions of the FAMILIES sheet draw their form rows from here and send
-    /// through the same <see cref="HouseOps"/> door a rival's mind does, so a key on the
-    /// map and the same key in the war room cannot behave differently. Nothing here
-    /// decides whether a word MAY be said - <see cref="HouseTable"/> asks the gateway
-    /// that, in the gateway's own words.
+    /// The FAMILIES sheet draws its form rows from here and sends through the same
+    /// <see cref="HouseOps"/> door a rival's mind does, so a key on the table and a
+    /// rival's own intent cannot behave differently. Nothing here decides whether a
+    /// word MAY be said - <see cref="HouseTable"/> asks the gateway that, in the
+    /// gateway's own words.
     /// </summary>
     public sealed partial class PersonnelAlmanac
     {

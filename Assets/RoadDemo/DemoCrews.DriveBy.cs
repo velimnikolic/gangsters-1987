@@ -215,7 +215,7 @@ namespace RoadDemo
                     continue;
                 }
 
-                if (!CrewCars.MeasurePrefab(prefab, out float halfLength, out float halfWidth))
+                if (!CarBody.MeasureFootprint(prefab.transform, out float halfLength, out float halfWidth))
                     halfLength = halfWidth = 0.5f;
                 halfWidth = Mathf.Max(0.42f, halfWidth);
                 if (!CrewCars.KerbSlotNear(Net ?? LaneNet.Active, anchor,

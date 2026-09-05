@@ -47,6 +47,20 @@ namespace RoadDemo
         public IReadOnlyList<ResidentialMapSource> ResidentialMapSources =>
             _residentialMapSources;
 
+        /// <summary>External district progression hook, including blocks without a live view.
+        /// It deliberately emits no geometry invalidation or business-state change.</summary>
+        public bool SetResidentialNeglect(string recipeId, float value)
+        {
+            if (string.IsNullOrEmpty(recipeId)) return false;
+            foreach (var source in _residentialMapSources)
+                if (source.Model.TryGet(recipeId, out var recipe))
+                {
+                    recipe.SetNeglect(value);
+                    return true;
+                }
+            return false;
+        }
+
         /// <summary>Bumped when a future generator replaces a recipe. Both map surfaces
         /// compare this stamp before redrawing their cached geometry.</summary>
         public int ResidentialGeometryVersion { get; private set; }

@@ -254,10 +254,20 @@ shut counter, through `DoorJobs` as well as the visible list.
 
 The two acts do not rewrite the racket. Fear and standing belong to the door, not to the man
 behind it. A dead proprietor is replaced immediately from `(city seed, site, generation)` and,
-after the three-day closure, the wire names the new man with the rule the card already shows:
+after the ten-day closure, the wire names the new man with the rule the card already shows:
 **NEW MAN AT THE COUNTER · the street's memory of us here is his to inherit**.
 
+The counter closes at the killing, before the office records the completed job. DEMAND
+PROTECTION and THREATEN THE OWNER are unavailable throughout the closure. Their commands and
+delayed visits recheck the same live deadline, so an order started before the killing cannot
+ask the successor while the shop is closed.
+
 ## The two block orders
+
+An arrest challenge interrupts every active mission and queued order of the challenged crew,
+including its door visits and block walk. Cancelled visit callbacks cannot settle a counter or
+send the men to another shop. The office refuses new missions while the police hold them;
+the existing flight and fight responses remain available before surrender.
 
 `TerritoryShakedown` (pure) says who a block order reaches:
 

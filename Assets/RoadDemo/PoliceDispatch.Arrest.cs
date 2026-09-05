@@ -307,6 +307,8 @@ namespace RoadDemo
             _collarAt = Time.time;
             _collarBy = Time.time + CollarPatience;
 
+            _crews.HaltForArrest(crew);
+
             // CONF-002: THE ANSWER IS ROLLED HERE, not when the question is finally put.
             // It is a fact about the men - the nerve of whoever is commanding them, the
             // temper of the men behind him - and not about the second the officer
@@ -389,6 +391,7 @@ namespace RoadDemo
             _collarAt = Time.time;
             _collarBy = Time.time + CollarPatience;
 
+            _crews.HaltForArrest(crew);
             RollAnswer(crew, call.Call.Number);
 
             if (foot != null) foot.Challenge(man);
@@ -924,6 +927,8 @@ namespace RoadDemo
 
         void Clear(bool preserveCase = false)
         {
+            if (_arrestCrew != null)
+                _arrestCrew.ArrestChallenged = false;
             // A DOCKET ENTRY NOBODY WAS TAKEN FOR IS NOT A CASE (GAN-245). The file is
             // opened when the officer sets off, because the witnesses have to be
             // snapshotted while the people who saw it are still on the pavement - but

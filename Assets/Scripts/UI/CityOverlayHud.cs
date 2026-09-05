@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.Entities;
 using LivingCity.Gangs;
 using LivingCity.Gameplay;
@@ -285,13 +285,13 @@ namespace LivingCity.UI
                 SetHover(Pick(pointer));
             }
 
-            if (!mouse.leftButton.wasPressedThisFrame)
+            if (!RoadDemo.PointerGesture.Clicked)
                 return;
 
             if (pointerBlocked)
                 return;
 
-            Select(Pick(pointer));
+            Select(Pick(RoadDemo.PointerGesture.ClickAt));
         }
 
         IOverlaySubject Pick(Vector2 screenPosition)

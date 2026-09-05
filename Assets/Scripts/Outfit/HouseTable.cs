@@ -68,7 +68,9 @@ namespace LivingCity.Outfit
         /// </summary>
         public string Terms = "";
 
-        /// <summary>The War Room groups its keys; the Table does not.</summary>
+        /// <summary>Which family of words this is - talk, press, money, the table.
+        /// Kept because a sheet that wants its keys grouped should not have to
+        /// re-derive the grouping from the kind.</summary>
         public string Group = "Talk";
 
         public MoveFace Face = MoveFace.Outline;
@@ -200,9 +202,9 @@ namespace LivingCity.Outfit
 
     /// <summary>
     /// THE TABLE'S OWN BOOK: what the FAMILIES sheet reads, derived from the city's
-    /// books and from nothing else. Both directions of the screen - the relationship
-    /// map and the war room - draw off this one class, so the two can never disagree
-    /// about a standing, a figure or a reason.
+    /// books and from nothing else. The map, the cards and the dossier all draw off
+    /// this one class, so no two of them can disagree about a standing, a figure or a
+    /// reason.
     ///
     /// Nothing here decides anything. Legality is asked of <see cref="HouseDiplomacy"/>
     /// exactly as the gateway asks it, so a key the sheet greys is a key the gateway
@@ -459,7 +461,8 @@ namespace LivingCity.Outfit
                 : "to the letter";
 
             into.FoundAtNight = !hasDoor ? "unknown"
-                : into.Front + (discipline > 60 ? ", never late" : ", when he is not owed money");
+                : ShortDoor(into.Front) +
+                  (discipline > 60 ? ", never late" : ", when he is owed nothing");
 
             // Two sentences: what he is, and what that does to us.
             var what = courage > 60
@@ -478,6 +481,16 @@ namespace LivingCity.Outfit
                     ? " Promises Friday to everybody and means it while he is saying it."
                     : "";
             into.Personality = what + wants + word;
+        }
+
+        /// <summary>The door's own name, without the street it stands on - what a man
+        /// is FOUND at, as opposed to where the postman takes it.</summary>
+        static string ShortDoor(string front)
+        {
+            if (string.IsNullOrEmpty(front))
+                return "unknown";
+            var comma = front.IndexOf(',');
+            return comma > 0 ? front.Substring(0, comma) : front;
         }
 
         /// <summary>Their open word in our inbox: the wire that came in, and what it
@@ -557,10 +570,9 @@ namespace LivingCity.Outfit
                     : entry.Status.ToString().ToLowerInvariant();
                 var answer = string.IsNullOrEmpty(entry.Answer) ? "" : " — " + entry.Answer;
                 into.Record.Add(new TableRecordLine(
-                    "Day " + entry.Day,
-                    (entry.From == mine ? "We said: " : "They said: ") +
-                    HouseDiplomacy.Describe(entry) + ". " +
-                    char.ToUpperInvariant(verdict[0]) + verdict.Substring(1) + answer + ".",
+                    "DAY " + entry.Day,
+                    (entry.From == mine ? "→ " : "← ") +
+                    HouseDiplomacy.Describe(entry) + " · " + verdict + answer,
                     entry.Day == day));
             }
         }

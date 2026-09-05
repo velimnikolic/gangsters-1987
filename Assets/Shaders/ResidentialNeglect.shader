@@ -3,6 +3,8 @@ Shader "LivingCity/Residential Neglect"
 {
     Properties
     {
+        _NeglectAmount("Neglect", Range(0,1)) = 1
+        [HideInInspector] _PavementFinish("Preserve pavement finish", Float) = 0
         // Specular vs Metallic workflow
         _WorkflowMode("WorkflowMode", Float) = 1.0
 
@@ -177,7 +179,7 @@ Shader "LivingCity/Residential Neglect"
             #pragma instancing_options renderinglayer
             #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DOTS.hlsl"
 
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
+            #include "ResidentialLitInput.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/LitForwardPass.hlsl"
 
             // Backs the tint out where the surface faces up. The albedo arrives already
@@ -187,6 +189,7 @@ Shader "LivingCity/Residential Neglect"
             // flat roof (y=1) none, and a 45-degree pitched roof (y=0.707) lands past the top
             // of the ramp, cleanly untinted.
             #include "ResidentialWeather.hlsl"
+            #include "PavementConcrete.hlsl"
 
             half3 UntintRoof(half3 albedo, half3 normalWS)
             {
@@ -228,8 +231,9 @@ Shader "LivingCity/Residential Neglect"
                 InitializeInputData(input, surfaceData.normalTS, inputData);
                 SETUP_DEBUG_TEXTURE_DATA(inputData, UNDO_TRANSFORM_TEX(input.uv, _BaseMap));
 
-                surfaceData.albedo = ResidentialWeather(surfaceData.albedo, inputData.normalWS, inputData.positionWS);
-                surfaceData.smoothness *= 0.25;
+                if (_PavementFinish > 0.5) ApplyPavement(inputData.positionWS, inputData.normalWS, surfaceData);
+                surfaceData.albedo = lerp(surfaceData.albedo, ResidentialWeather(surfaceData.albedo, inputData.normalWS, inputData.positionWS), _NeglectAmount);
+                surfaceData.smoothness *= lerp(1.0, 0.25, _NeglectAmount);
 
             #if defined(_DBUFFER)
                 ApplyDecalToSurfaceData(input.positionCS, surfaceData, inputData);
@@ -292,7 +296,7 @@ Shader "LivingCity/Residential Neglect"
 
             // -------------------------------------
             // Includes
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
+            #include "ResidentialLitInput.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/ShadowCasterPass.hlsl"
             ENDHLSL
         }
@@ -378,13 +382,14 @@ Shader "LivingCity/Residential Neglect"
 
             // -------------------------------------
             // Includes
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
+            #include "ResidentialLitInput.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/LitGBufferPass.hlsl"
             #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/GBufferOutputFormat.hlsl"
 
             // Same mask as the ForwardLit pass - the PC renderer is Deferred, so this pass is
             // the one that actually draws the buildings there.
             #include "ResidentialWeather.hlsl"
+            #include "PavementConcrete.hlsl"
 
             half3 UntintRoof(half3 albedo, half3 normalWS)
             {
@@ -419,8 +424,9 @@ Shader "LivingCity/Residential Neglect"
                 InitializeInputData(input, surfaceData.normalTS, inputData);
                 SETUP_DEBUG_TEXTURE_DATA(inputData, UNDO_TRANSFORM_TEX(input.uv, _BaseMap));
 
-                surfaceData.albedo = ResidentialWeather(surfaceData.albedo, inputData.normalWS, inputData.positionWS);
-                surfaceData.smoothness *= 0.25;
+                if (_PavementFinish > 0.5) ApplyPavement(inputData.positionWS, inputData.normalWS, surfaceData);
+                surfaceData.albedo = lerp(surfaceData.albedo, ResidentialWeather(surfaceData.albedo, inputData.normalWS, inputData.positionWS), _NeglectAmount);
+                surfaceData.smoothness *= lerp(1.0, 0.25, _NeglectAmount);
 
             #if defined(_DBUFFER)
                 ApplyDecalToSurfaceData(input.positionCS, surfaceData, inputData);
@@ -485,7 +491,7 @@ Shader "LivingCity/Residential Neglect"
 
             // -------------------------------------
             // Includes
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
+            #include "ResidentialLitInput.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/DepthOnlyPass.hlsl"
             ENDHLSL
         }
@@ -535,7 +541,7 @@ Shader "LivingCity/Residential Neglect"
 
             // -------------------------------------
             // Includes
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
+            #include "ResidentialLitInput.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/LitDepthNormalsPass.hlsl"
             ENDHLSL
         }
@@ -574,7 +580,7 @@ Shader "LivingCity/Residential Neglect"
 
             // -------------------------------------
             // Includes
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
+            #include "ResidentialLitInput.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/LitMetaPass.hlsl"
 
             ENDHLSL
@@ -611,7 +617,7 @@ Shader "LivingCity/Residential Neglect"
 
             // -------------------------------------
             // Includes
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
+            #include "ResidentialLitInput.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/Shaders/Utils/Universal2D.hlsl"
             ENDHLSL
         }
@@ -627,7 +633,7 @@ Shader "LivingCity/Residential Neglect"
             #pragma multi_compile _ LOD_FADE_CROSSFADE
             #pragma shader_feature_local_vertex _ADD_PRECOMPUTED_VELOCITY
 
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
+            #include "ResidentialLitInput.hlsl"
             #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ObjectMotionVectors.hlsl"
             ENDHLSL
         }
@@ -654,7 +660,7 @@ Shader "LivingCity/Residential Neglect"
             #pragma shader_feature_local_vertex _ADD_PRECOMPUTED_VELOCITY
             #define APPLICATION_SPACE_WARP_MOTION 1
 
-            #include "Packages/com.unity.render-pipelines.universal/Shaders/LitInput.hlsl"
+            #include "ResidentialLitInput.hlsl"
             #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ObjectMotionVectors.hlsl"
             ENDHLSL
         }

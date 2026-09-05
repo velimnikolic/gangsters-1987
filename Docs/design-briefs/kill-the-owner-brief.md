@@ -15,7 +15,7 @@ business id (`TerritoryEconomy.Deal:61`). Fear cannot reach him. There is exactl
 a man who cannot be frightened, and the player does not have it.
 
 Killing him has to cost something the player feels, or it is simply the better move. It costs a
-murder file (EPIC 37 §3.4), a three-day closure, and a stranger behind the counter who owes the
+murder file (EPIC 37 §3.4), a ten-day closure, and a stranger behind the counter who owes the
 family nothing personally.
 
 ## 1. The user's rulings (2026-09-04)
@@ -50,7 +50,7 @@ family nothing personally.
 | The name draw | `Scripts/Business/BusinessOwners.cs:95` `UniqueName(takenNames, …)` — a city-wide uniqueness set, "draw order per owner is FROZEN" | the trap: a successor's name cannot come through this at runtime |
 | The directory | `Scripts/Business/BusinessRegistry.cs:410` `RegisterOwner` (returns the EXISTING record for a reused id AND logs a `problems` row, `:414`), `SetOwner:436` → `OwnerChanged`; `BusinessIdentity:113` is documented as the ONLY minter of business identities | the successor needs a properly minted new id |
 | The file | `Scripts/Save/CampaignFile.cs:150` — `Version` is already **2**; owners are not saved at all, the directory is re-dealt on load | the generation is what the file carries |
-| The shutdown | `Scripts/Business/BusinessShutdowns.cs` — `DurationOf:54`, `RepairPriceOf:60`, `Shut:169` (an unrefused cause OVERWRITES the active entry, `:190`), `DamageRefusal:212`, `BusinessRepair.Try:350`, `Line:386` | a three-day closure with no bill, under EPIC 37's two guards |
+| The shutdown | `Scripts/Business/BusinessShutdowns.cs` — `DurationOf:54`, `RepairPriceOf:60`, `Shut:169` (an unrefused cause OVERWRITES the active entry, `:190`), `DamageRefusal:212`, `BusinessRepair.Try:350`, `Line:386` | a ten-day closure with no bill, under EPIC 37's two guards |
 | The card | `RoadDemo/BusinessMarker.OverlayLine`, the block file's door row, `LawWire` | where ruling 3's sentence is printed |
 
 ## 3. The model
@@ -112,7 +112,7 @@ fix: when the death happens at a business's door, `OnStreetDeath` names the busi
 event. 40 × 1.3 = 52 at the premises plus the block share, comfortably over the beating and over
 `TestifyFearCap`. Scope it to a death AT a door, not to every street death.
 
-`ShutBusiness(businessId, BusinessShutdownCause.Death)` — 72 h, repair price 0, under EPIC 37's
+`BusinessRuntime.RecordOwnerDeath(businessId)` at the physical killing — 240 h, repair price 0, under EPIC 37's
 two guards: a person closure does not displace an active premises closure, and a zero-price
 closure cannot be repaired. `DurationOf`, `RepairPriceOf`, `BusinessShutdownText.Line`,
 `DamageRefusal` and the repair row all gain the case; the copy is fitted to `Line`'s own format
@@ -151,7 +151,7 @@ Four seams, and two invariants without which this ticket silently rewrites every
   killed owner, not a man.
 
 The generation is bumped **at the kill**, not when the shutdown expires: a Repaired-before-Expired
-race would otherwise decide who is behind the counter. The shop stands shut for three days with
+race would otherwise decide who is behind the counter. The shop stands shut for ten days with
 the new man's name already on it, which is what a death in the family looks like.
 
 Nothing else about the business changes (ruling 3): the racket relationship at that door and the
@@ -175,7 +175,7 @@ case with no willing witness is not folded, while an evidenced body remains one 
 held prisoner's empty case is dismissed; unanswered files expire and police crossfire is not
 misattributed.
 `BusinessTests`: invariant 1 (generation 0 is bit-identical to today); the generation deal gives a
-different trait and nerve; the cache is invalidated; the three-day closure carries no bill and
+different trait and nerve; the cache is invalidated; the ten-day closure carries no bill and
 does not displace an active premises closure. `SaveTests`: a killed owner's generation survives a
 file; a version-2 file loads with every generation zero; two generations replayed in either order
 give the same two names. `RackTests`: the row and its two refusals.
@@ -210,7 +210,7 @@ finished.**
 | # | Ticket | Depends on |
 | -- | -- | -- |
 | EMPT-001 | `OrderType.KillOwner`, the row, the two refusals | EPIC 37 CNTR-002 |
-| EMPT-002 | The shot inside, the dead complainant on every case, the un-folded count, the death's fear at the door, the three-day closure | EMPT-001, EPIC 37 CNTR-004 and CNTR-005 |
+| EMPT-002 | The shot inside, the dead complainant on every case, the un-folded count, the death's fear at the door, the ten-day closure | EMPT-001, EPIC 37 CNTR-004 and CNTR-005 |
 | EMPT-003 | The successor: the generation in the deal (invariant 1), the pure name (invariant 2), the cache, the minted id, the file at version 3 | EMPT-002 |
 | EMPT-004 | The door remembers: the card line, the wire, the doc | EMPT-003 |
 | EMPT-005 | Contracts, docs, memory, everything to Done | all |
@@ -224,7 +224,7 @@ finished.**
 
 On MiniCoreDemo, one seed, watched: a `Connected` owner rings the precinct, the crew is told KILL
 THE OWNER, the man goes in, one shot is heard with the men outside standing still, "X WILL NOT BE
-GIVING EVIDENCE" comes up, the shop reads CLOSED for three days, a murder file is on the docket by
+GIVING EVIDENCE" comes up, the shop reads CLOSED for ten days, a murder file is on the docket by
 morning with the pavement on it, the premises is more frightened of us than a beating would have
 left it, and when the shop reopens a different name is on the card with the line that says the
 street's memory came with the building.

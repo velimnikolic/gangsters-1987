@@ -396,9 +396,9 @@ namespace RoadDemo
                     " · cases " + _casesBefore + " -> " + cases + " · wire " +
                     _dispatchesBefore + " -> " + dispatches);
 
-                if (shut.RecoveryAt - shut.StartedAt != 72d)
+                if (shut.RecoveryAt - shut.StartedAt != 240d)
                 {
-                    Give("the death did not close the shop for exactly three days");
+                    Give("the death did not close the shop for exactly ten days");
                     return;
                 }
                 if (shut.RepairPrice != 0 || ShopDamage.IsBusinessDamaged(id))

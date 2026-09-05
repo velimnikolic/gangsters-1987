@@ -71,12 +71,21 @@ namespace LivingCity.Tests
                 !BusinessShutdownText.Line(hurt).Contains("owner is in hospital"))
                 failures.Add("CNTR-003: a beating is not a one-day, no-repair owner closure.");
 
-            Make(out _, out id, out var death);
+            Make(out var deathDirectory, out id, out var death);
             if (!death.Shut(id, BusinessShutdownCause.Death, 10d) ||
                 !death.TryGet(id, 10d, out var dead) ||
-                dead.RecoveryAt != 82d || dead.RepairPrice != 0 ||
+                dead.RecoveryAt != 250d || dead.RemainingDays != 10 || dead.RepairPrice != 0 ||
                 !BusinessShutdownText.Line(dead).Contains("owner is dead"))
-                failures.Add("EMPT-002: an owner's death is not a three-day, no-repair closure.");
+                failures.Add("EMPT-002: an owner's death is not a ten-day, no-repair closure.");
+            if (!death.IsShutAt(id, 10d) || !death.IsShutAt(id, 10.001d) ||
+                !death.IsShutAt(id, 249.999d) || death.IsShutAt(id, 250d) ||
+                !deathDirectory.TryGet(id, out var closedRecord) ||
+                closedRecord.State != BusinessOperationalState.Shut)
+                failures.Add("EMPT-002: the dead owner's shop is not closed immediately until day ten.");
+            death.AdvanceTo(250d);
+            if (!deathDirectory.TryGet(id, out var reopenedRecord) ||
+                reopenedRecord.State != BusinessOperationalState.Trading)
+                failures.Add("EMPT-002: the successor did not reopen at the ten-day boundary.");
 
             Make(out _, out id, out var damaged);
             damaged.Shut(id, BusinessShutdownCause.SmashUp, 10d);
@@ -272,6 +281,20 @@ namespace LivingCity.Tests
             if (AvailableJob(rows, OrderType.SmashUp) ||
                 AvailableJob(rows, OrderType.Torch))
                 failures.Add("WAR-001: a torched shop offered another damage job.");
+
+            closed = new TerritoryDoorClosure(
+                true, "closed - the owner is dead - reopens in 10 days",
+                false, false, 0, BusinessShutdownCause.Death);
+            foreach (var atDoor in new[] { false, true })
+            {
+                TerritoryRacketOrders.For(
+                    TerritoryProtectionState.Unaffiliated, DoorTenure.Open,
+                    true, true, atDoor, 80_000, rows, closure: closed);
+                if (Available(rows, TerritoryDoorRowKind.Racket, TerritoryRacketIntent.Demand) ||
+                    Available(rows, TerritoryDoorRowKind.Racket, TerritoryRacketIntent.Threaten) ||
+                    Available(rows, TerritoryDoorRowKind.Racket, TerritoryRacketIntent.Approach))
+                    failures.Add("EMPT-002: a dead owner's closed shop still offered a doorstep demand.");
+            }
         }
 
         static bool Available(

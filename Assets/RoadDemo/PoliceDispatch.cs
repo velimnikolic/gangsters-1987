@@ -148,6 +148,8 @@ namespace RoadDemo
 
         void OnDestroy()
         {
+            if (_arrestCrew != null)
+                _arrestCrew.ArrestChallenged = false;
             StreetAlarm.OnShot -= OnShot;
             StreetAlarm.OnDeath -= OnDeath;
             StreetAlarm.OnComplaint -= OnComplaint;
@@ -487,6 +489,8 @@ namespace RoadDemo
                 CrewOverlay.Announce("POLICE BACKUP RESPONDING", 4f,
                     new Color(0.55f, 0.78f, 1f));
 
+            foreach (var unit in _units)
+                if (unit is PoliceCruiser cruiser) cruiser.TickParkingRetry();
             for (int i = _squads.Count - 1; i >= 0; i--) TickSquad(_squads[i], dt); // Done() removes
             TickFoot();
             TickPending();
@@ -1312,6 +1316,7 @@ namespace RoadDemo
         readonly DemoCrews _crews;
         Vector3 _target;
         bool _sent;
+        float _parkingRetryAt;
 
         public PoliceCruiser(CrewCar car, DemoCrews.Unit men, Vector3 home, DemoCrews crews)
         {
@@ -1327,9 +1332,17 @@ namespace RoadDemo
         public bool Available => !CustodyReserved && !_sent && Men != null && !Men.Wiped;
         public bool Carries => true;
         public int Precinct { get; set; }
-        public bool OnScene => _sent && !Car.Moving && Flat(Car.Position - _target).sqrMagnitude < 8f * 8f;
+        public bool OnScene => _sent && !Car.ParkingFailed && !Car.Moving && Flat(Car.Position - _target).sqrMagnitude < 8f * 8f;
         public Vector3 Home => _home;
-        public bool AtHome => !_sent && !Car.Moving && Flat(Car.Position - _home).sqrMagnitude < 8f * 8f;
+        public bool AtHome => !_sent && !Car.ParkingFailed && !Car.Moving && Flat(Car.Position - _home).sqrMagnitude < 8f * 8f;
+
+        internal void TickParkingRetry()
+        {
+            if (!Car.ParkingFailed || Car.Wrecked || Car.EngineDead || Car.Tf == null ||
+                Men == null || Men.Wiped || Time.time < _parkingRetryAt) return;
+            _parkingRetryAt = Time.time + 3f;
+            Car.ParkNear(_sent ? _target : _home);
+        }
 
         /// <summary>Short of the scene ALONG THE STREET it is on, on the car's side of
         /// it. Measured along x it stood off into the yards on every north-south street.</summary>
@@ -1345,6 +1358,7 @@ namespace RoadDemo
             float dir = Vector3.Dot(toScene, along) >= 0f ? 1f : -1f;
             _target = scene - along * (dir * standOff);
             _target.y = Car.RoadY;
+            _parkingRetryAt = Time.time + 3f;
             Car.ParkNear(_target);
         }
 
@@ -1354,6 +1368,7 @@ namespace RoadDemo
         {
             _sent = false;
             Car.CivicResponse = false;
+            _parkingRetryAt = Time.time + 3f;
             Car.ParkNear(_home);
         }
     }

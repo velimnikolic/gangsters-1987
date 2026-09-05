@@ -461,7 +461,7 @@ namespace RoadDemo
             {
                 Name = "dinner", CW = 5, CD = 3,
                 Kind = ResidentialKind.Amenity,
-                MaxH = 10.3f, Floor = 0.00f, Trees = 0, Pieces = 203, Seats = 87,
+                MaxH = 8.8f, Floor = 0.00f, Trees = 0, Pieces = 203, Seats = 87,
                 Plan = new[]
                 {
                     "#####",

@@ -18,7 +18,7 @@ namespace RoadDemo
     /// </summary>
     public sealed class CrewCar : RoadCar
     {
-        public enum Mode { Parked, Driving, DriveBy }
+        public enum Mode { Parked, Driving, DriveBy, ParkingBlocked }
 
         static readonly List<CrewCar> ActiveRoadblocks = new List<CrewCar>();
 
@@ -105,8 +105,8 @@ namespace RoadDemo
         {
             Tf = tf;
             Body = new CarBody(tf);
-            HalfLen = Body.HalfLength;
-            HalfWide = Body.HalfWidth;
+            HalfLen = Body.TrafficHalfLength;
+            HalfWide = Body.TrafficHalfWidth;
             AxleBack = Body.AxleBack;
             Net ??= LaneNet.Active;
             PlaceAt(tf.position, tf.forward);
@@ -114,10 +114,11 @@ namespace RoadDemo
 
         public Mode State =>
             DriveByTarget != null ? Mode.DriveBy
+            : ParkingFailed ? Mode.ParkingBlocked
             : HasGoal || FreeGoal.HasValue || Mathf.Abs(Speed) > 0.05f ? Mode.Driving
             : Mode.Parked;
 
-        public bool Moving => State != Mode.Parked || Mathf.Abs(Speed) > 0.05f;
+        public bool Moving => State == Mode.Driving || State == Mode.DriveBy || Mathf.Abs(Speed) > 0.05f;
 
         // ------------------------------------------------------------------ the body, passed through
 
@@ -454,10 +455,18 @@ namespace RoadDemo
             }
         }
 
+        protected override void OnParkingFailed()
+        {
+            // The dispatcher retries a civic errand while its car keeps moving.
+            // A player's failed order stays stopped and visible until another order.
+            if (Civic) base.OnParkingFailed();
+        }
+
         /// <summary>Coast to a stop where it is (the crew is getting out and the car is
         /// already at the kerb, or the player changed his mind).</summary>
         public new void Stop()
         {
+            ClearParkingFailure();
             if (_roadblockOrdered) ClearRoadblockOrder();
             DriveByTarget = null;
             _driveByRoad = null;
@@ -472,6 +481,7 @@ namespace RoadDemo
         public void HardStop()
         {
             if (IsRoadblock) return;
+            ClearParkingFailure();
             if (_roadblockOrdered) ClearRoadblockOrder();
             DriveByTarget = null;
             _driveByRoad = null;

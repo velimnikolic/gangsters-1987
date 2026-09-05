@@ -139,7 +139,11 @@ namespace RoadDemo
         {
             var road = lane?.Road;
             if (road == null) return true;
-            if (!CrewCars.MeasurePrefab(prefab, out float hl, out float hw)) { hl = 1.3f; hw = 0.5f; }
+            if (!CarBody.MeasureFootprint(prefab != null ? prefab.transform : null, out float hl, out float hw))
+            {
+                hl = 1.3f;
+                hw = 0.5f;
+            }
             hw = Mathf.Max(0.42f, hw);
             float s = lane.RoadS(progress);
             float d = lane.Offset;
@@ -165,7 +169,7 @@ namespace RoadDemo
         public static RoadBike Park(LaneNet net, Transform parent, GameObject prefab, Vector3 near, float roadY)
         {
             if (net == null || prefab == null) return null;
-            if (!CrewCars.MeasurePrefab(prefab, out float halfLength, out float halfWidth)) return null;
+            if (!CarBody.MeasureFootprint(prefab.transform, out float halfLength, out float halfWidth)) return null;
             halfWidth = Mathf.Max(0.42f, halfWidth);
             if (!CrewCars.KerbSlotNear(net, near, halfLength, halfWidth, out var pos, out var rot)) return null;
 

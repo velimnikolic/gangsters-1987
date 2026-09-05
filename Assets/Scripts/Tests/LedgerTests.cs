@@ -47,6 +47,9 @@ namespace LivingCity.Tests
             CrewKitReadsVehiclesAndSkill(failures);
             AJobRunsItsCourse(failures);
             PersonViolenceWaitsForTheStreet(failures);
+            ArrestCancelsTheWholeQueue(failures);
+            ReportedActsSurviveArrestOnce(failures);
+            PoliceHoldRefusesOfficeWork(failures);
             AStandingWatchPaysDaily(failures);
             PaydayFallsEveryDay(failures);
             AScriptedMonthIsRepeatable(failures);
@@ -137,6 +140,80 @@ namespace LivingCity.Tests
                 banked += lieutenant.GetPractice(taught[i]);
             if (banked <= 0)
                 failures.Add("AJobRunsItsCourse: nobody learned anything.");
+        }
+
+        static void ArrestCancelsTheWholeQueue(List<string> failures)
+        {
+            var runner = Runner(out var roster);
+            var working = JobFor(roster, OrderType.Guard);
+            var queued = JobFor(roster, OrderType.Donate);
+            var killing = JobFor(roster, OrderType.KillOwner);
+            runner.Issue(roster, working);
+            runner.Issue(roster, queued);
+            runner.Issue(roster, killing);
+            runner.AdvanceHours(roster, 200f);
+            var other = new Job { Id = 10_000, CrewId = 10_000, Type = OrderType.Guard };
+            runner.Book.Jobs.Add(other);
+            var resolved = 0;
+            runner.JobResolved = (_, _) => resolved++;
+            var safe = runner.Accounts.Safe;
+
+            if (runner.InterruptCrew(roster, working.CrewId) != 3 ||
+                working.Live || queued.Live || killing.Live ||
+                runner.Book.CurrentFor(working.CrewId) != null ||
+                runner.Book.CurrentFor(other.CrewId) != other ||
+                runner.Records.Count != 1 ||
+                runner.Records[0].Outcome != OrderOutcome.CalledOff)
+                failures.Add("ARREST: the active mission and its queue were not cancelled in isolation.");
+
+            // A visit may still have held the old job's ID when the officer stopped it.
+            runner.ReportStreetOutcome(killing.Id, OrderOutcome.Completed);
+            runner.AdvanceHours(roster, 200f);
+            if (resolved != 0 || killing.StreetOutcome.HasValue ||
+                runner.Accounts.Safe != safe || runner.Records.Count != 1)
+                failures.Add("ARREST: a late callback completed work after the arrest cancelled it.");
+        }
+
+        static void ReportedActsSurviveArrestOnce(List<string> failures)
+        {
+            var runner = Runner(out var roster);
+            var killing = JobFor(roster, OrderType.KillOwner);
+            var next = JobFor(roster, OrderType.Donate);
+            runner.Issue(roster, killing);
+            runner.Issue(roster, next);
+            runner.AdvanceHours(roster, 200f);
+            runner.ReportStreetOutcome(killing.Id, OrderOutcome.Completed);
+            var resolved = 0;
+            runner.JobResolved = (job, outcome) =>
+            {
+                if (job == killing && outcome == OrderOutcome.Completed) resolved++;
+            };
+
+            runner.InterruptCrew(roster, killing.CrewId);
+            runner.InterruptCrew(roster, killing.CrewId);
+            runner.AdvanceHours(roster, 200f);
+            if (resolved != 1 || killing.Live || next.Live || runner.Book.Jobs.Count != 0 ||
+                runner.Records.Count != 1 || runner.Records[0].Outcome != OrderOutcome.Completed)
+                failures.Add("ARREST: an act already done was erased or applied twice during interruption.");
+        }
+
+        static void PoliceHoldRefusesOfficeWork(List<string> failures)
+        {
+            var runner = Runner(out var roster);
+            var job = JobFor(roster, OrderType.Donate);
+            runner.Issue(roster, job);
+            runner.CrewWorkRefusal = _ => "Under arrest";
+            if (runner.Issue(roster, JobFor(roster, OrderType.KillOwner)).Ok)
+                failures.Add("ARREST: the office accepted a new mission during the challenge.");
+            runner.AdvanceHours(roster, 200f);
+            if (job.Stage != JobStage.Queued || runner.Records.Count != 0)
+                failures.Add("ARREST: the office clock worked a mission while the crew was held.");
+
+            runner.InterruptCrew(roster, job.CrewId);
+            runner.CrewWorkRefusal = null;
+            runner.AdvanceHours(roster, 200f);
+            if (runner.Book.Jobs.Count != 0 || runner.Records.Count != 0)
+                failures.Add("ARREST: lifting the hold resumed a cancelled queue.");
         }
 
         static void PersonViolenceWaitsForTheStreet(List<string> failures)

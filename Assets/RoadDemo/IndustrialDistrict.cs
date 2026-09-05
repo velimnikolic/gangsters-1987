@@ -204,13 +204,12 @@ namespace RoadDemo
                     foreach (var body in go.GetComponentsInChildren<Rigidbody>()) Object.Destroy(body);
                     foreach (var collider in go.GetComponentsInChildren<Collider>()) Object.Destroy(collider);
 
-                    var box = new Bounds(go.transform.position, Vector3.zero);
-                    foreach (var renderer in go.GetComponentsInChildren<Renderer>()) box.Encapsulate(renderer.bounds);
+                    CarBody.MeasureTrafficFootprint(go.transform, out float halfLength, out float halfWidth);
                     var car = new DemoVehicle
                     {
                         Tf = go.transform,
-                        HalfLen = box.extents.z + 0.3f,
-                        HalfWide = Mathf.Clamp(box.extents.x, 0.7f, 1.5f),
+                        HalfLen = halfLength,
+                        HalfWide = halfWidth,
                     };
                     car.Spawn(edge, s);
                     _vehicles.Add(car);

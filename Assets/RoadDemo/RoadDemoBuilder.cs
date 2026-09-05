@@ -3862,15 +3862,13 @@ namespace RoadDemo
                     foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
                     foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
 
-                    var bounds = new Bounds(go.transform.position, Vector3.zero);
-                    foreach (var r in go.GetComponentsInChildren<Renderer>())
-                        bounds.Encapsulate(r.bounds);
+                    CarBody.MeasureTrafficFootprint(go.transform, out float halfLength, out float halfWidth);
 
                     var v = new DemoVehicle
                     {
                         Tf = go.transform,
-                        HalfLen = bounds.extents.z + 0.3f,
-                        HalfWide = Mathf.Clamp(bounds.extents.x, 0.7f, 1.3f),
+                        HalfLen = halfLength,
+                        HalfWide = halfWidth,
                     };
                     v.Spawn(e, s);
                     // somebody at the wheel, now and then somebody beside him - bodies
@@ -4850,17 +4848,14 @@ namespace RoadDemo
             foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
             foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
 
-            // half length measured at identity yaw, before the resting rotation
-            var bounds = new Bounds(go.transform.position, Vector3.zero);
-            foreach (var r in go.GetComponentsInChildren<Renderer>())
-                bounds.Encapsulate(r.bounds);
             go.transform.rotation = rot;
+            CarBody.MeasureTrafficFootprint(go.transform, out float halfLength, out float halfWidth);
 
             var car = new PolicePatrolCar
             {
                 Tf = go.transform,
-                HalfLen = bounds.extents.z + 0.3f,
-                HalfWide = Mathf.Clamp(bounds.extents.x, 0.7f, 1.3f),
+                HalfLen = halfLength,
+                HalfWide = halfWidth,
                 UnitNumber = index + 1,
                 // the body is named for the fleet list and not for the pack, so the
                 // machine is handed over rather than read off the transform

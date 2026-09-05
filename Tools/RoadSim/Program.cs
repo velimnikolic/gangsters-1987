@@ -560,6 +560,7 @@ static class Program
         if (only == "all" || only == "recomputedpose") RecomputedPose.Run();
         if (only == "all" || only == "arcmotion") ArcMotion.Run();
         if (only == "all" || only == "kerbcompletion") KerbCompletion.Run();
+        if (only == "all" || only == "kerbapproach") KerbApproach.Run();
         if (only == "all" || only == "blockedyield") BlockedYield.Run();
         if (only == "all" || only == "recovery") TrafficRecoveryChecks.Run();
         if (only == "all" || only == "recoverygoal") RecoveryGoalChecks.Run();

@@ -191,6 +191,10 @@ namespace RoadDemo
             /// until it is taken in (DemoCrews.TakeIn) or the arrest falls through.</summary>
             public bool Surrendered;
 
+            /// <summary>The law has stopped this crew to ask for its answer. Automatic
+            /// work waits; the player can still order flight or a fight.</summary>
+            public bool ArrestChallenged;
+
             /// <summary>The latest answer this physical crew gave the law, and the
             /// open paper that follows it until station, flight or trial resolves it.</summary>
             public bool HasDoorAnswer;
@@ -537,7 +541,7 @@ namespace RoadDemo
             // nobody was ever going to move. So the same search a man's car gets: out
             // from the point given, nearest first, to the first length of kerb nothing
             // else has claimed (CrewCars.KerbSlotNear reads the lane net's occupancy).
-            if (net != null && CrewCars.MeasurePrefab(prefab, out float hl, out float hw))
+            if (net != null && CarBody.MeasureFootprint(prefab.transform, out float hl, out float hw))
             {
                 hw = Mathf.Max(0.42f, hw);
                 if (CrewCars.KerbSlotNear(net, pos, hl, hw, out var slot, out var facing))
@@ -924,6 +928,8 @@ namespace RoadDemo
         /// organization, but no player command reaches him.</summary>
         public const string InCustodyRefusal = "In police custody - he takes no orders";
 
+        public const string ArrestChallengeRefusal = "Under arrest - answer the officer first";
+
         static bool CustodyRefuses(Unit unit) =>
             unit != null && CustodyPlan.RefusesOrders(unit.InCustody);
 
@@ -932,8 +938,8 @@ namespace RoadDemo
         internal bool AcceptsPlayerOrder(Unit unit)
         {
             OrderRefusal = null;
-            if (!CustodyRefuses(unit)) return true;
-            OrderRefusal = InCustodyRefusal;
+            if (!PoliceStopsWork(unit)) return true;
+            OrderRefusal = unit.ArrestChallenged ? ArrestChallengeRefusal : InCustodyRefusal;
             return false;
         }
 
@@ -1888,6 +1894,11 @@ namespace RoadDemo
                 OrderRefusal = InCustodyRefusal;
                 return false;
             }
+            if (!allowCustody && (unit.ArrestChallenged || unit.Surrendered))
+            {
+                OrderRefusal = unit.Surrendered ? HandsUpRefusal : ArrestChallengeRefusal;
+                return false;
+            }
             // A CREW WHOSE LIEUTENANT IS DOWN IS STILL A CREW. His hoods are on their
             // feet and they can still be sent - somebody at the front picks up the walk.
             // Refusing the order because the man who used to give it is dead left three
@@ -2574,7 +2585,7 @@ namespace RoadDemo
                 // Custody owns each prisoner's route to his escort, seat or cell.
                 // Pulling hoods back to a waiting lieutenant cancels the police walk
                 // every scan and can keep a pickup boarding for days.
-                if (unit.InCustody || unit.Surrendered) continue;
+                if (PoliceStopsWork(unit)) continue;
                 // a man left standing INSIDE something - a car parked onto the spot he
                 // held, a body shoved into a bin - steps calmly out of it (a stride's
                 // order: Steer lets a man inside a thing walk straight out). Everyone,

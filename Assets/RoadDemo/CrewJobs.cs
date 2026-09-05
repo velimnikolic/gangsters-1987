@@ -133,6 +133,32 @@ namespace RoadDemo
             Driving.Remove(crewId);
         }
 
+        public static string PoliceWorkRefusal(int crewId)
+        {
+            var unit = DemoCrews.Active != null ? DemoCrews.Active.UnitOfCrew(crewId) : null;
+            if (!DemoCrews.PoliceStopsWork(unit)) return null;
+            return unit.ArrestChallenged
+                ? DemoCrews.ArrestChallengeRefusal : DemoCrews.InCustodyRefusal;
+        }
+
+        /// <summary>The crew's missions and every one-shot dispatch/watch stamp end
+        /// together. Clearing only its route lets the book send it straight back out.</summary>
+        public static void Interrupt(DemoCrews.Unit unit)
+        {
+            if (unit == null || unit.IsDetachment) return;
+            var house = Underworld.Current?.Of(unit.Faction);
+            if (house != null && house.Runner.InterruptCrew(house.Roster, unit.CrewId) > 0)
+                house.Touch();
+            ForgetDispatch(unit.CrewId);
+            Sicced.Remove(unit.CrewId);
+            Marks.Remove(unit.CrewId);
+            Entered.Remove(unit.CrewId);
+            Swings.Remove(unit.CrewId);
+            Torched.Remove(unit.CrewId);
+            Guarding.Remove(unit.CrewId);
+            GuardSicced.Remove(unit.CrewId);
+        }
+
         /// <summary>The door a crew is standing a watch on, if it is (AI-000).</summary>
         public static bool TryGetWatch(int crewId,
             out LivingCity.Territory.TerritoryBusinessId door)
@@ -153,7 +179,8 @@ namespace RoadDemo
 
             foreach (var unit in crews.Units)
             {
-                if (unit == null || unit.IsPolice || unit.Wiped)
+                if (unit == null || unit.IsPolice || unit.Wiped ||
+                    DemoCrews.PoliceStopsWork(unit) || unit.Fleeing)
                     continue;
 
                 // EVERY house's book is worked, off the crew's own house. The order was
@@ -281,7 +308,7 @@ namespace RoadDemo
                 // DriveTo already chooses the reachable kerb nearest the address. Once
                 // it has stopped, LeaveCar opens the doors and sets everybody down; a
                 // later tick will issue the short foot leg.
-                if (!unit.Leaving && unit.Car != null && !unit.Car.Moving)
+                if (!unit.Leaving && unit.Car != null && !unit.Car.ParkingFailed && !unit.Car.Moving)
                     crews.LeaveCar(unit);
                 return;
             }
@@ -456,14 +483,14 @@ namespace RoadDemo
         /// </summary>
         static void Done(LivingCity.Outfit.House house, Job job)
         {
-            if (house == null || job == null || job.StreetOutcome.HasValue)
+            if (house == null || job == null || !job.Live || job.StreetOutcome.HasValue)
                 return;
             house.Runner.ReportStreetOutcome(job.Id, OrderOutcome.Completed);
         }
 
         static void Failed(LivingCity.Outfit.House house, Job job)
         {
-            if (house == null || job == null || job.StreetOutcome.HasValue)
+            if (house == null || job == null || !job.Live || job.StreetOutcome.HasValue)
                 return;
             house.Runner.ReportStreetOutcome(job.Id, OrderOutcome.Failed);
         }
@@ -493,6 +520,18 @@ namespace RoadDemo
                 lead, businessId, door,
                 whenInside: () =>
                 {
+                    var business = LivingCity.Business.BusinessRuntime.Instance;
+                    var cause = done.Type == OrderType.Beating
+                        ? LivingCity.Business.BusinessShutdownCause.Beating
+                        : LivingCity.Business.BusinessShutdownCause.Death;
+                    if (!done.Live || done.StreetOutcome.HasValue ||
+                        DemoCrews.PoliceStopsWork(unit) || business?.Shutdowns == null ||
+                        business.Shutdowns.DamageRefusal(
+                            businessId, cause, business.CurrentGameHour) != null)
+                    {
+                        Failed(told, done);
+                        return;
+                    }
                     if (done.Type == OrderType.Beating)
                     {
                         crews.StartCoroutine(BeatInside(crews, told, done, door));
@@ -507,6 +546,7 @@ namespace RoadDemo
                         Failed(told, done);
                         return;
                     }
+                    business.RecordOwnerDeath(businessId);
                     StreetAlarm.Death(door, StreetAlarm.DeathOf.Civilian);
                     WitnessWatch.OwnerKilled(done.TargetBusinessId);
                     Done(told, done);
@@ -527,9 +567,11 @@ namespace RoadDemo
             var punches = DemoSounds.Punches;
             for (var i = 0; i < punches.Length; i++)
             {
+                if (!job.Live) yield break;
                 DemoAudio.At(punches[i], door, DemoSounds.PunchVolume, 0.04f);
                 yield return new WaitForSeconds(0.22f);
             }
+            if (!job.Live) yield break;
             DemoAudio.At(DemoSounds.Pick(DemoSounds.Screams), door,
                 DemoSounds.ScreamVolume, 0.035f);
             Done(house, job);
@@ -644,6 +686,7 @@ namespace RoadDemo
             var jobId = job.Id;
             void Lit(Transform _)
             {
+                if (!job.Live) return;
                 Torched[crewId] = (jobId, null, true);
                 // Same rule as the bat: the bottle landed and the front is alight, so
                 // the order was carried out - the book is not left waiting on a fight.

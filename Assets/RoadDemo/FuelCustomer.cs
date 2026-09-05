@@ -123,6 +123,7 @@ namespace RoadDemo
 
                 case Mode.Approaching:
                     Tick(dt);
+                    if (ParkingFailed) { GiveUp("no reachable pump approach"); break; }
                     Watch(dt);
                     // and a bay booked is a bay nobody else can have, so the drive to it
                     // is on a clock of its own: the stuck timer only counts a car that is
@@ -203,7 +204,7 @@ namespace RoadDemo
             // minutes, all of them cars pressing into the back of one customer waiting
             // for the apron.
             if (!GoTo(_station.KerbIn, park: true, standOff: 0f, stopAtGoal: true,
-                      wantHeading: _station.Lane.Heading))
+                      wantHeading: _station.Lane.Heading) || ParkingFailed)
                 GiveUp("no way to the kerb");
         }
 
@@ -680,6 +681,7 @@ namespace RoadDemo
         void GiveUp(string why)
         {
             Debug.LogWarning($"[Fuel] {Plate} gave up: {why}");
+            ClearParkingFailure();
             if (_station != null)
             {
                 _station.Give(_bay);

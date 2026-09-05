@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6cd0a61f60d694bb884caf4498b5662e, type: 3}
+  m_Name: ResidentialConditionCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::RoadDemo.ResidentialConditionCatalog
+  weatherShader: {fileID: 4800000, guid: 64a5f689dc5c6422abb3c0c12f1f50f7, type: 3}
+  litter:
+  - {fileID: 5344977187429829457, guid: 75b5a1ebe90364a41a9ad5e0c880a8f3, type: 3}
+  - {fileID: 3011408524258032283, guid: 00597eeb1ec7f4d75b17734e287c5aed, type: 3}
+  - {fileID: 5387238214875242660, guid: 654a542c3b370400c8486423a3b126c8, type: 3}
+  - {fileID: 1146284592187803640, guid: 26d2dd41ff67046439785a9e5c6aa4e5, type: 3}
+  - {fileID: 5968935585507453909, guid: 9086bc119e74b4c03ab8adf4a3154308, type: 3}
+  shutter: {fileID: 7985365475348968874, guid: 2d070c85853fe40bbbb12c4d2e27caec, type: 3}

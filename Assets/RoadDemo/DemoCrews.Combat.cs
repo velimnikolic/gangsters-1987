@@ -605,7 +605,7 @@ namespace RoadDemo
                 // taken. Skipped whole rather than disarmed man by man, because every
                 // branch below - the retarget, the watch, the shot-back rule - would
                 // otherwise put a gun back in its hands the same frame.
-                if (unit.Surrendered) continue;
+                if (PoliceStopsWork(unit)) continue;
                 if (unit.TargetUnit != null && unit.TargetUnit.Wiped)
                 {
                     // End the dead strategic fight through the same exit that knows

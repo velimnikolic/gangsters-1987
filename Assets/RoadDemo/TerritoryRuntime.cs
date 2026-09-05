@@ -1636,6 +1636,7 @@ namespace RoadDemo
             verdict = TerritoryComplianceVerdict.Refuse;
             terms = default;
             if (racket == null || !IsRacketable(businessId) ||
+                RacketClosureRefusal(businessId) != null ||
                 !TryComplianceInputs(businessId, gangId, out var inputs, out var blockId))
                 return false;
 
@@ -1692,7 +1693,8 @@ namespace RoadDemo
         {
             verdict = TerritoryComplianceVerdict.Refuse;
             terms = default;
-            if (racket == null || !IsRacketable(businessId))
+            if (racket == null || !IsRacketable(businessId) ||
+                RacketClosureRefusal(businessId) != null)
                 return false;
 
             RecordResolvedThreat(
@@ -1972,7 +1974,8 @@ namespace RoadDemo
             DemoCrews.Unit unit, CrewWalker actor,
             TerritoryActorObservation observation, double gameHour)
         {
-            if (racket == null || pendingApproaches.Count == 0 || actor?.Tf == null)
+            if (racket == null || pendingApproaches.Count == 0 || actor?.Tf == null ||
+                DemoCrews.PoliceStopsWork(unit))
                 return;
             // The errand belongs to the crew that was sent on it. Crew numbers are
             // unique across all twenty-one books now, so the number alone is enough -
@@ -1988,6 +1991,8 @@ namespace RoadDemo
                     continue;
 
                 pendingApproaches.RemoveAt(i);
+                if (RacketClosureRefusal(pending.BusinessId) != null)
+                    continue;
                 racketChanges.Clear();
                 // ONE VISIT, ONE SLIP. A bare GO TO THE DOOR is worth a line of its own -
                 // the men standing there IS the news. A walk that carries a demand or a
@@ -2140,6 +2145,13 @@ namespace RoadDemo
                 if (unit == null)
                 {
                     // No crew left to walk it - the men are wiped or gone off the street.
+                    pendingApproaches.RemoveAt(i);
+                    continue;
+                }
+
+                if (DemoCrews.PoliceStopsWork(unit) ||
+                    RacketClosureRefusal(pending.BusinessId) != null)
+                {
                     pendingApproaches.RemoveAt(i);
                     continue;
                 }
@@ -2721,6 +2733,9 @@ namespace RoadDemo
                 return TerritoryCommandExecution.Reject("No such business in this city.");
             if (!IsRacketable(command.BusinessId))
                 return TerritoryCommandExecution.Reject("That place carries no business.");
+            var closureRefusal = RacketClosureRefusal(command.BusinessId);
+            if (closureRefusal != null)
+                return TerritoryCommandExecution.Reject(closureRefusal);
 
             // A STREET UNDER OUR WORD is refused at the door too (EPIC 42).
             if (geography != null &&
@@ -2874,9 +2889,21 @@ namespace RoadDemo
                 return false;
             }
 
+            refusal = RacketClosureRefusal(businessId);
+            if (refusal != null)
+                return false;
+
             if (!TryGetActorGang(actorId, out gangId))
             {
                 refusal = "That man is not on the street.";
+                return false;
+            }
+
+            var unit = crews != null ? crews.UnitOf(FindWalker(actorId)) : null;
+            if (DemoCrews.PoliceStopsWork(unit))
+            {
+                refusal = unit.ArrestChallenged
+                    ? DemoCrews.ArrestChallengeRefusal : DemoCrews.InCustodyRefusal;
                 return false;
             }
 
@@ -2927,9 +2954,14 @@ namespace RoadDemo
                 refusal = "The tactical group has nobody standing.";
                 return null;
             }
-            if (unit.InCustody)
+            if (unit.InCustody || unit.Surrendered)
             {
                 refusal = DemoCrews.InCustodyRefusal;
+                return null;
+            }
+            if (unit.ArrestChallenged)
+            {
+                refusal = DemoCrews.ArrestChallengeRefusal;
                 return null;
             }
             return unit;

@@ -82,20 +82,11 @@ namespace RoadDemo
             return null;
         }
 
-        /// <summary>The body's half length and half width, nose along its own +Z.</summary>
+        /// <summary>The same traffic footprint used after the body is instantiated,
+        /// independent of the prefab's heading.</summary>
         public static bool MeasurePrefab(GameObject prefab, out float halfLength, out float halfWidth)
-        {
-            halfLength = 2.2f;
-            halfWidth = 0.9f;
-            if (prefab == null) return false;
-            var renderers = prefab.GetComponentsInChildren<Renderer>();
-            if (renderers.Length == 0) return false;
-            var b = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
-            halfLength = Mathf.Max(1.4f, b.extents.z);
-            halfWidth = Mathf.Max(0.7f, b.extents.x);
-            return true;
-        }
+            => CarBody.MeasureTrafficFootprint(prefab != null ? prefab.transform : null,
+                out halfLength, out halfWidth);
 
         /// <summary>Metres of kerb searched either way from the man before giving up.</summary>
         const float Reach = 60f;

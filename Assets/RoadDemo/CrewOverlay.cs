@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.CameraRig;
 using LivingCity.UI;
 using TMPro;
@@ -2533,9 +2533,9 @@ namespace RoadDemo
             {
                 // fallback for a scene without the picker, and for the frames it stands
                 // down; a click spent on a screen never reaches a man
-                if (mouse.leftButton.wasPressedThisFrame && !_claimedThisFrame &&
+                if (PointerGesture.Clicked && !_claimedThisFrame &&
                     !BookOpen && !PointerOverUi())
-                    ClaimsClick(mouse.position.ReadValue());
+                    ClaimsClick(PointerGesture.ClickAt);
                 ReadRightClick(mouse);
                 // the pointer swinging under a held right button: the ambush turns
                 TickCoverAim(mouse);

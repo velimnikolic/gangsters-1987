@@ -69,6 +69,8 @@ namespace RoadDemo
         ShopEntrance entrance;
         BuildingDoor buildingDoor;
 
+        internal System.Collections.Generic.IReadOnlyList<ResidentialStorefrontOpening> ConditionOpenings => openings;
+
         public StorefrontState State => damageState != StorefrontState.Intact
             ? damageState
             : doorAmount > 0.001f ? StorefrontState.Open

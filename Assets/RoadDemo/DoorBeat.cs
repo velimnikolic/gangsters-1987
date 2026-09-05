@@ -944,6 +944,30 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>An interrupted visit owes neither an act nor a next stop. Restore
+        /// its walker, release the passage and report failure only to strict callers.</summary>
+        public static void CancelVisit(CrewWalker man)
+        {
+            if (instance == null || man == null) return;
+            for (var i = instance.calls.Count - 1; i >= 0; i--)
+            {
+                var call = instance.calls[i];
+                if (call.Man != man || call.Hold) continue;
+                instance.calls.RemoveAt(i);
+                call.Swing?.SnapClosed();
+                if (man.Tf != null && !man.Dead)
+                {
+                    man.EndDoorway();
+                    if (Indoors(call))
+                        man.Tf.position = call.Through ? call.Outside : call.Home;
+                    if (!man.Tf.gameObject.activeSelf)
+                        man.Tf.gameObject.SetActive(true);
+                }
+                Fail(call);
+                return;
+            }
+        }
+
         /// <summary>Where he stands to knock: a stride off the front, clear of the wall
         /// and off the shopfront itself.</summary>
         const float DoorstepOut = 1.2f;

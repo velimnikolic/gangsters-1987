@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using LivingCity.CameraRig;
 using LivingCity.UI;
 using TMPro;
@@ -297,9 +297,9 @@ namespace RoadDemo
             // and for the frames the picker stands down, which is the whole time the
             // ledger is open. A click spent on a screen never reaches a cop either.
             var mouse = Mouse.current;
-            if (mouse != null && mouse.leftButton.wasPressedThisFrame && !_claimedThisFrame &&
+            if (PointerGesture.Clicked && !_claimedThisFrame &&
                 !BookOpen && !PointerOverUi())
-                Select(PickAt(mouse.position.ReadValue()));
+                Select(PickAt(PointerGesture.ClickAt));
             _claimedThisFrame = false;
 
             var pointerBlocked = mouse == null || BookOpen || PointerOverUi();

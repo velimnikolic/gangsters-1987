@@ -51,7 +51,8 @@ namespace RoadDemo
 
             var car = unit.Car;
             if (car != null)
-                return car.State == CrewCar.Mode.DriveBy ? "DRIVE-BY" : "IN THE CAR";
+                return car.ParkingFailed ? "NO PARKING"
+                    : car.State == CrewCar.Mode.DriveBy ? "DRIVE-BY" : "IN THE CAR";
             if (unit.Boarding != null)
                 return "GETTING IN";
 

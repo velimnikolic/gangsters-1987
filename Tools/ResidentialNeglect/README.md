@@ -1,42 +1,54 @@
-# Residential comparison set
+# Dynamic residential condition
 
-Open `Assets/Scenes/ResidentialDemo.unity`. Its 13 normal blocks remain in their
-original positions. Ten matching neglected blocks stand together to the right,
-separated from the normal set by at least 45 metres. Both police blocks and the
-nightclub are omitted only from the neglected set.
+`Assets/Scenes/ResidentialDemo.unity` has one original set. Both police blocks and
+the nightclub are excluded from the condition preview. In Play, use **ZAPUSTENOST
+BLOKOVA** to move between maintained and neglected appearances. **HOME** frames the
+set. The camera retains WASD, Q/E, right drag and wheel controls.
 
-Large world-space labels identify **NORMALNI BLOKOVI** and **ZAPUSTENI BLOKOVI** above the two sets.
+**Settings > Kolicina propsa** controls small decorative props independently of
+neglect, from 0% to 100%. The setting is shared with Core and saved in PlayerPrefs.
+It changes litter/flowers and added cosmetic props, not buildings, bins, functional
+furniture, entrances, navigation or business operations. A stable seeded subset
+means that dragging back restores the same arrangement.
 
-In Play, **Tab** jumps to the corresponding place in the other set while preserving
-camera angle and zoom. **Home** frames both sets. Movement uses the shared
-`RoadDemo.DemoCamera`: WASD/arrows, Q/E, right drag and wheel zoom. The overlay labels
-the current set and shows the controls. `NeglectedResidentialDemo.unity` is retired.
+Authoring: **Tools > City > Residential > Prepare Dynamic Condition** (outside
+Play), or `gangsters_residential_condition`. This removes the former comparison
+root and labels, retains original block geometry and prepares a collider-free
+Resources catalog. The normal Residential generator also installs these controls.
+The old `gangsters_residential_neglected` command redirects to this preparation.
 
-Refresh the comparison with `Tools > City > Residential > Add or Refresh Neglected Comparison Set`
-or `unity command gangsters_residential_neglected --timeout 60 --json`.
-Stop Play first. This copies the current normal block hierarchy, replaces only the
-`RESIDENTIAL NEGLECTED COMPARISON` group, and saves ResidentialDemo. It never rerolls
-or repositions the normal blocks. If the normal bench was regenerated, refresh the
-comparison to obtain matching copies of those new seeds.
+## Core integration
 
-`ResidentialNeglect.Apply` owns the opt-in dressing; the editor builder supplies
-persistent material variants and prefab creation. Facades, paving and furniture
-receive subtle weathering in URP Forward and Deferred. Upper-window repairs sample
-authored pane triangles and atlas UVs; litter clusters accompany existing bins.
-The dressing has no active colliders and does not change businesses or demographics.
-The dressing pass uses mesh/texture readback and is intended for content baking,
-not streaming-time composition. District assignment and trade logic are separate.
+The same `ResidentialConditionView` is used by the streamed Core recycler.
+Simulation can set `recipe.SetNeglect(value)` (0..1), or call
+`RoadDemoBuilder.SetResidentialNeglect(recipeId, value)`. Model state survives
+view eviction/map handoff. This value is not part of ContentKey/Revision and does
+not fire geometry invalidation, regenerate the block or rebuild navigation.
+New city generation starts at zero; save-game storage of district progression is
+outside this visual adapter. An external simulation/save owner should restore
+its value through the same setter.
 
-Saved-scene integrity check:
+The recycler steps appearance work only for attached visible views, under its
+existing work budget and a 96-step cap per frame. Each view reserves at most 64
+cosmetic slots, instantiated lazily through the existing prefab pool. Hidden slots
+remain leased until view disposal, avoiding repeated allocation while dragging.
+Before returning source parts to the pool, the adapter restores original material
+references and density overrides, returns cosmetic leases, and destroys its own
+material instances. There is no per-slider material construction or texture/mesh
+readback. At zero neglect the exact original material references are restored.
 
-```sh
-unity command run_script --file Tools/ResidentialNeglect/Audit.cs --entry ResidentialNeglectAudit.Main --timeout 60 --json
-```
+Weathering keeps the previously reduced subtle damp/runoff appearance. At 5% neglect, cardboard starts collecting beside bins; glass and bottles follow,
+then groups of bags from 22%, and overflow from 66%. Each cluster includes bags
+instead of relying on a random choice of tiny props. Flat debris is placed above
+the measured pavement surface. Flower colour fades; standalone flower meshes droop without deforming their pots. Measured shop panes can receive corrugated shutters;
+entrance panes remain clear. Residential previews closure with neglect. In Core,
+shutters follow `BusinessOperationalState.Shut`, independently of density; the
+slider never closes a trading business or overrides damage presentation.
 
-The original standalone set was checked in Play, including camera pan, rotation and
-zoom. After user review, weathering contrast was reduced substantially: no broad
-cloudy grime, rare faint concrete marks, subtle damp and narrow runoff on walls.
-The merged scene is prepared for the user's own Play comparison; its new Tab/Home
-shortcuts have not been manually accepted.
+Optional mesh merging preserves condition-driven source renderers, as it already
+preserves moving geometry. Decorative props remain outside merging. The current
+Core config disables merging; enabling it may merge fewer surfaces than before.
 
-Per user instruction, no further Play tests were run after adding the set labels.
+No automated tests or Play sessions were run for this change, per user request.
+Compilation and saved-scene preparation are authoring checks, not visual or
+performance acceptance. The user will inspect the appearance and recycler cost.

@@ -411,7 +411,7 @@ namespace PumpDemo
                 var body = new CarBody(go.transform);
                 var car = new FuelCustomer
                 {
-                    Tf = go.transform, Body = body, HalfLen = body.HalfLength, HalfWide = body.HalfWidth,
+                    Tf = go.transform, Body = body, HalfLen = body.TrafficHalfLength, HalfWide = body.TrafficHalfWidth,
                     AxleBack = body.AxleBack, RoadY = RoadY, Net = _net, Tag = "traffic",
                     Plate = $"customer {i + 1}",
                 };

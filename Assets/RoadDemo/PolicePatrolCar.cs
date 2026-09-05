@@ -224,6 +224,12 @@ namespace RoadDemo
             _hasReservedKerb = false;
         }
 
+        protected override void OnParkingFailed()
+        {
+            GiveUpKerb();
+            base.OnParkingFailed();
+        }
+
         float _responseParkingReachSq = float.PositiveInfinity;
 
         protected override bool ParkingSpotAvailable(Vector3 at)
@@ -391,7 +397,7 @@ namespace RoadDemo
             // whatever it was driving to is forgotten, and a car stood at a kerb pulls
             // out: a round that kept a parking goal would have parked at the end of it
             // and stood there for ever, patrolling in name only
-            if (HasGoal) Stop();
+            if (HasGoal || ParkingFailed) Stop();
             if (Parked) PullOut();
             HasRestSpot = false;
             GiveUpKerb();

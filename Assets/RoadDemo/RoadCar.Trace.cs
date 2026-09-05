@@ -184,7 +184,7 @@ namespace RoadDemo
         }
 
         /// <summary>Read by the traffic's spawner and the overlay: what the driver is doing.</summary>
-        public string DoingLine => _man switch
+        public string DoingLine => ParkingFailed ? "No parking nearby" : _man switch
         {
             Manoeuvre.Pass => "Going round",
             Manoeuvre.Crown => "On the crown",

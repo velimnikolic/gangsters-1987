@@ -11,36 +11,25 @@ namespace LivingCity.UI
     /// FAMILIES - THE TABLE. One screen that answers, in this order: who is against me,
     /// what do they ask, what can I say back.
     ///
-    /// Two directions, both built to the handoff and switched from the header:
+    /// A relationship map on a table tilted away from the reader. Our house sits in the
+    /// middle, the rivals stand round it, and every line IS a standing. Touch a card and
+    /// it stands up off the table into a dossier with its words beside it. FOCUS puts
+    /// any house in the middle to read ITS table with everyone else - the information
+    /// the old card index never showed.
     ///
-    /// A - THE TABLE (default). A relationship map in shallow 3D. Our house sits in the
-    ///     middle, the rivals stand round it, and every line IS a standing. Touch a card
-    ///     and it stands up off the table into a dossier with its words beside it. FOCUS
-    ///     puts any house in the middle to read ITS table with everyone else - the
-    ///     information the old card index never showed.
+    /// The handoff carried a second direction, THE WAR ROOM: a dark rail of houses and a
+    /// paper dossier. It was built and then retired on the user's ruling - everything it
+    /// said is on the table's own dossier, which now carries the reading in words, the
+    /// three things about the man, the door he keeps, what they have asked us and the
+    /// record between the two houses.
     ///
-    /// B - THE WAR ROOM. The same content in a dark rail of houses on the left and a
-    ///     paper dossier on the right: the man, the reading, they ask, our word, the
-    ///     record.
-    ///
-    /// This file owns the chrome both directions share - the head, the line legend, the
-    /// footer's last word - and nothing else. The map is in PersonnelAlmanac.TheTable.cs,
-    /// the rail in PersonnelAlmanac.WarRoom.cs, every figure and every reason in
-    /// <see cref="HouseTable"/>, and every key still goes through the same HouseOps door
-    /// a rival's mind does.
+    /// This file owns the room and the chrome - the desk, the head, the line legend and
+    /// the footer's last word. The map is in PersonnelAlmanac.TheTable.cs, every figure
+    /// and every reason in <see cref="HouseTable"/>, and every key still goes through
+    /// the same HouseOps door a rival's mind does.
     /// </summary>
     public sealed partial class PersonnelAlmanac
     {
-        /// <summary>Which direction the sheet is drawn in. Static so closing the book
-        /// and opening it again returns the boss to the view he was reading.</summary>
-        public enum FamiliesView
-        {
-            Table,
-            WarRoom,
-        }
-
-        static FamiliesView familiesView = FamiliesView.Table;
-
         // ------------------------------------------------------------ the page's frame
 
         /// <summary>The head band: the title's line and the sub-line under it, over the
@@ -61,17 +50,10 @@ namespace LivingCity.UI
         static void MeasureDiplomacyLayout()
         {
             StageTop = PageTop - FamiliesHeadH;
-            StageH = Mathf.Max(240f, StageTop - (PageBottom + FamiliesFootH));
+            StageH = Mathf.Max(240f, StageTop - (PageBottom + FamiliesFootH - 8f));
         }
 
         RectTransform diplomacyContent;
-
-        /// <summary>The window the WAR ROOM's rail scrolls in - the wheel router in
-        /// PersonnelAlmanac.cs still knows it by name. THE TABLE does not scroll: the
-        /// plane fits itself to the stage instead.</summary>
-        RectTransform familiesViewport;
-        RectTransform familiesContent;
-        float familiesScroll;
 
         /// <summary>The gang whose card is standing up, or -1. Keyed off the house's id
         /// and never off a slot: the ring is re-dealt whenever a house is focused.
@@ -90,24 +72,11 @@ namespace LivingCity.UI
             var root = NewPageRoot(sheet, LedgerPage.Diplomacy);
             diplomacyContent = NewRect("Families", root);
             Stretch(diplomacyContent);
-
-            familiesViewport = NewRect("Window", root);
-            PlaceTopLeft(familiesViewport, PageLeft, StageTop, PageWidth, StageH);
-            familiesViewport.gameObject.AddComponent<RectMask2D>();
-
-            familiesContent = NewRect("Rail", familiesViewport);
-            familiesContent.anchorMin = new Vector2(0f, 1f);
-            familiesContent.anchorMax = new Vector2(1f, 1f);
-            familiesContent.pivot = new Vector2(0f, 1f);
-            familiesContent.anchoredPosition = Vector2.zero;
-            familiesContent.sizeDelta = new Vector2(0f, StageH);
         }
 
         void RebuildDiplomacy()
         {
             foreach (Transform old in diplomacyContent)
-                Destroy(old.gameObject);
-            foreach (Transform old in familiesContent)
                 Destroy(old.gameObject);
             ForgetTablePieces();
 
@@ -119,8 +88,7 @@ namespace LivingCity.UI
 
             if (rivals == 0)
             {
-                if (OnTheDesk)
-                    BuildFamiliesRoom();
+                BuildFamiliesRoom();
                 BuildFamiliesHead(0);
                 Line(diplomacyContent, LedgerStyle.SerifItalic, 13.3f, LedgerV2.SheetRule,
                     PageLeft, StageTop - 40f, 800f, 26f,
@@ -137,7 +105,6 @@ namespace LivingCity.UI
                                 1987, underworld.Dealt,
                                 gang => underworld.Of(gang)?.Roster));
                         });
-                SizeFamiliesContent(0f);
                 return;
             }
 
@@ -152,20 +119,9 @@ namespace LivingCity.UI
             if (tableFocus >= 0 && !IsRival(gangs, tableFocus))
                 tableFocus = -1;
 
-            if (OnTheDesk)
-                BuildFamiliesRoom();
+            BuildFamiliesRoom();
             BuildFamiliesHead(rivals);
-
-            if (familiesView == FamiliesView.Table)
-            {
-                familiesContent.sizeDelta = new Vector2(0f, StageH);
-                familiesScroll = 0f;
-                familiesContent.anchoredPosition = Vector2.zero;
-                BuildTheTable(gangs);
-            }
-            else
-                BuildWarRoom(gangs);
-
+            BuildTheTable(gangs);
             BuildFamiliesFoot();
         }
 
@@ -177,16 +133,11 @@ namespace LivingCity.UI
             return false;
         }
 
-        /// <summary>
-        /// Whether the sheet is the DESK or the paper. THE TABLE is a room the boss
-        /// stands in; THE WAR ROOM is the design's cream ground with a dark rail down
-        /// one side, and the head and the foot are inked for whichever it is.
+        /// <summary>The head and the foot are printed on the desk, not on paper.
         /// </summary>
-        bool OnTheDesk => familiesView == FamiliesView.Table;
-
-        Color HeadInk => OnTheDesk ? LedgerV2.HeadCream : LedgerV2.Ink;
-        Color HeadFaint => OnTheDesk ? LedgerV2.SheetRule : LedgerV2.Label;
-        Color HeadRule => OnTheDesk ? LedgerStyle.InkMid : LedgerV2.Ink;
+        static Color HeadInk => LedgerV2.HeadCream;
+        static Color HeadFaint => LedgerV2.SheetRule;
+        static Color HeadRule => LedgerStyle.InkMid;
 
         /// <summary>
         /// THE ROOM. This sheet is not paper: it is the desk the table stands on, and
@@ -196,11 +147,11 @@ namespace LivingCity.UI
         /// </summary>
         void BuildFamiliesRoom()
         {
-            var height = PageTop - PageBottom;
             var room = NewRect("Room", diplomacyContent);
-            PlaceTopLeft(room, PageLeft, PageTop, PageWidth, height);
+            PlaceTopLeft(room, 0f, 0f, SheetW, SheetH);
             Gradient(room, LedgerStyle.DeskFall);
             room.gameObject.AddComponent<RectMask2D>();
+            var height = SheetH;
 
             // radial-gradient(ellipse 90% 60% at 50% 4%, lamp, transparent 72%): the
             // pool is wider than the page and hangs off the top, so what the reader
@@ -208,7 +159,7 @@ namespace LivingCity.UI
             var lamp = NewRect("Lamp", room);
             lamp.anchorMin = lamp.anchorMax = new Vector2(0.5f, 1f);
             lamp.pivot = new Vector2(0.5f, 0.5f);
-            lamp.sizeDelta = new Vector2(PageWidth * 1.30f, height * 0.86f);
+            lamp.sizeDelta = new Vector2(SheetW * 1.30f, height * 0.86f);
             lamp.anchoredPosition = new Vector2(0f, -height * 0.04f);
             var pool = lamp.gameObject.AddComponent<RawImage>();
             pool.texture = LedgerStyle.RadialLight;
@@ -220,8 +171,7 @@ namespace LivingCity.UI
 
         /// <summary>
         /// The head: what this sheet is, what day it is read on, and the five lines a
-        /// standing can be drawn in. The switch between the two directions stands on the
-        /// title's own line, held to the right margin.
+        /// standing can be drawn in.
         /// </summary>
         void BuildFamiliesHead(int rivals)
         {
@@ -229,7 +179,7 @@ namespace LivingCity.UI
             var middle = FocusedName();
 
             var title = Line(diplomacyContent, LedgerStyle.Condensed, 30.1f,
-                HeadInk, PageLeft, PageTop, PageWidth - 320f, LineBox(30.1f),
+                HeadInk, PageLeft, PageTop, PageWidth - 120f, LineBox(30.1f),
                 middle == null ? "THE TABLE" : "THE TABLE · " + middle.ToUpperInvariant());
             title.characterSpacing = 4f;
             title.overflowMode = TextOverflowModes.Ellipsis;
@@ -243,14 +193,6 @@ namespace LivingCity.UI
                 12f, HeadFaint, 8f);
             sub.font = LedgerStyle.Mono;
             sub.overflowMode = TextOverflowModes.Ellipsis;
-
-            // The switch, on the title's line, held to the right margin. Built as two
-            // keys rather than as the design system's segmented bar: that bar is drawn
-            // for PAPER - dark ink inside a warm-grey hairline - and on this desk its
-            // unchosen half would be black on black.
-            const float cellW = 118f;
-            ViewKey(PageRight - cellW * 2f, "THE TABLE", FamiliesView.Table, cellW);
-            ViewKey(PageRight - cellW, "THE WAR ROOM", FamiliesView.WarRoom, cellW);
 
             // The legend, laid right to left off the margin so the longest word never
             // pushes the first entry off the sheet.
@@ -272,28 +214,6 @@ namespace LivingCity.UI
 
             Block("Head rule", diplomacyContent, PageLeft, PageTop - FamiliesHeadH + 9f,
                 PageWidth, 2f, HeadRule);
-        }
-
-        void ViewKey(float x, string word, FamiliesView view, float w)
-        {
-            var chosen = familiesView == view;
-            var key = LedgerV2.Button(diplomacyContent, word, x, PageTop - 2f, w, 24f,
-                () =>
-                {
-                    if (familiesView == view)
-                        return;
-                    familiesView = view;
-                    tableMove = -1;
-                    tableNote = "";
-                    dirty = true;
-                }, chosen ? LedgerV2.Key.Dark : LedgerV2.Key.Outline, 9.5f);
-            if (chosen)
-                LedgerV2.KeyFrame(key, OnTheDesk ? LedgerStyle.RailGold : LedgerV2.Ink);
-            else if (OnTheDesk)
-            {
-                key.color = LedgerStyle.RailLabel;
-                LedgerV2.KeyFrame(key, LedgerStyle.RailHair);
-            }
         }
 
         static string Spelled(int houses) => houses switch
@@ -405,11 +325,9 @@ namespace LivingCity.UI
             Block("Foot rule", diplomacyContent, PageLeft, y, PageWidth, 1f, HeadRule);
 
             var hint = Caps(diplomacyContent, PageLeft, y - 10f, PageWidth * 0.55f,
-                familiesView == FamiliesView.WarRoom
-                    ? "PICK A HOUSE ON THE RAIL · A GREYED KEY SAYS WHY IT CANNOT BE SAID TODAY"
-                    : tableFor >= 0
-                        ? "TOUCH THE TABLE TO LAY THE CARD BACK DOWN"
-                        : "TOUCH A CARD TO STAND IT UP · FOCUS TO PUT A HOUSE IN THE MIDDLE",
+                tableFor >= 0
+                    ? "TOUCH THE TABLE TO LAY THE CARD BACK DOWN"
+                    : "TOUCH A CARD TO STAND IT UP · FOCUS TO PUT A HOUSE IN THE MIDDLE",
                 11.4f, HeadFaint, 8f);
             hint.font = LedgerStyle.Mono;
             hint.overflowMode = TextOverflowModes.Ellipsis;
@@ -422,16 +340,6 @@ namespace LivingCity.UI
                     : tableLastWord,
                 TextAlignmentOptions.MidlineRight);
             last.overflowMode = TextOverflowModes.Ellipsis;
-        }
-
-        /// <summary>Height the rail actually came to, and the scroll held inside it, so
-        /// a repaint never throws the boss back to the top of the drawer.</summary>
-        void SizeFamiliesContent(float height)
-        {
-            familiesContent.sizeDelta = new Vector2(0f, Mathf.Max(StageH, height));
-            var maxScroll = Mathf.Max(0f, familiesContent.sizeDelta.y - StageH);
-            familiesScroll = Mathf.Clamp(familiesScroll, 0f, maxScroll);
-            familiesContent.anchoredPosition = new Vector2(0f, familiesScroll);
         }
 
         /// <summary>A house's power, 0-100, off the territory runtime's own ledger

@@ -17,13 +17,13 @@ half3 ResidentialWeather(half3 albedo, half3 normal, float3 p)
     float streak = smoothstep(0.72, 0.88, WearNoise(float2(along * 3.3, p.y * 0.16)));
     float damp = exp(-max(p.y, 0.0) * 0.9) * (0.3 + patch * 0.4);
     // Most concrete stays clean enough to read. Roofs receive only a trace of wear.
-    float ground = smoothstep(0.64, 0.86, WearNoise(p.xz * 0.38)) * 0.10;
+    float ground = smoothstep(0.64, 0.86, WearNoise(p.xz * 0.38)) * 0.16;
     ground *= lerp(1.0, 0.25, smoothstep(1.0, 3.0, p.y));
-    float grime = lerp(ground, damp * 0.14 + streak * 0.075, wall);
+    float grime = lerp(ground, damp * 0.24 + streak * 0.13, wall);
     float grey = dot(albedo, half3(0.299, 0.587, 0.114));
-    half3 faded = lerp(albedo, grey.xxx * half3(1.03, 1.01, 0.96), 0.08);
+    half3 faded = lerp(albedo, grey.xxx * half3(1.03, 1.01, 0.96), 0.18);
     faded *= 1.0 - grime;
-    float salt = smoothstep(0.76, 0.9, patch) * wall * 0.035;
+    float salt = smoothstep(0.76, 0.9, patch) * wall * 0.055;
     return lerp(faded, half3(0.42, 0.39, 0.32), salt);
 }
 #endif

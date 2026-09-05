@@ -82,8 +82,9 @@ namespace LivingCity.Gameplay
             for (var gangId = 0; gangId < underworld.Count; gangId++)
             {
                 var other = underworld.Of(gangId);
-                if (other != null && other.Runner != null && other.Runner.HoldingsOf == null)
-                    other.Runner.HoldingsOf = CollectHoldings;
+                if (other?.Runner == null) continue;
+                other.Runner.HoldingsOf ??= CollectHoldings;
+                other.Runner.CrewWorkRefusal = RoadDemo.CrewJobs.PoliceWorkRefusal;
             }
 
             runner.DistanceOf = DistanceFromHeadquarters;
@@ -805,12 +806,10 @@ namespace LivingCity.Gameplay
                     break;
                 }
 
-                // The shot and its dead witnesses were already put onto StreetAlarm by
-                // the strict inside callback. This is the persistent aftermath: three
-                // dark days and the next deterministic proprietor behind the same door.
+                // The strict inside callback already closed the shop for ten days and
+                // replaced its proprietor when the shot landed. Do not defer that state
+                // to this office tick or apply a second succession here.
                 case OrderType.KillOwner:
-                    ShutBusiness(businessId, Business.BusinessShutdownCause.Death);
-                    Business.BusinessRuntime.Instance?.AdvanceOwner(businessId);
                     Version++;
                     break;
             }

@@ -285,7 +285,7 @@ namespace RoadDemo
                     var body = new CarBody(go.transform);
                     var car = new Car
                     {
-                        Tf = go.transform, Body = body, HalfLen = body.HalfLength, HalfWide = body.HalfWidth,
+                        Tf = go.transform, Body = body, HalfLen = body.TrafficHalfLength, HalfWide = body.TrafficHalfWidth,
                         AxleBack = body.AxleBack, RoadY = roadY, Net = net, Profile = DriverProfile.Traffic,
                         Tag = "traffic",
                     };

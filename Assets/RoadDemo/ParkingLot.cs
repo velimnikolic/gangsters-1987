@@ -64,20 +64,14 @@ namespace RoadDemo
                 foreach (var body in go.GetComponentsInChildren<Rigidbody>()) Object.Destroy(body);
                 foreach (var collider in go.GetComponentsInChildren<Collider>()) Object.Destroy(collider);
 
-                var bounds = new Bounds(go.transform.position, Vector3.zero);
-                bool measured = false;
-                foreach (var renderer in go.GetComponentsInChildren<Renderer>())
-                {
-                    if (!measured) { bounds = renderer.bounds; measured = true; }
-                    else bounds.Encapsulate(renderer.bounds);
-                }
+                CarBody.MeasureTrafficFootprint(go.transform, out float halfLength, out float halfWidth);
 
                 var car = new ParkingCar
                 {
                     Tf = go.transform,
                     Net = net,
-                    HalfLen = measured ? bounds.extents.z + 0.3f : 2.3f,
-                    HalfWide = measured ? Mathf.Clamp(bounds.extents.x, 0.7f, 1.3f) : 0.95f,
+                    HalfLen = halfLength,
+                    HalfWide = halfWidth,
                 };
                 car.Bind(this, site.Plan.Stalls[stallIndex], i,
                          firstWait: 2f + i * 3.5f,

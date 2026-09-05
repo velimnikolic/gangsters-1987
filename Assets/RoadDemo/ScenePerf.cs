@@ -565,7 +565,7 @@ namespace RoadDemo
         public static bool Animated(Transform t)
         {
             for (var p = t; p != null; p = p.parent)
-                if (p.GetComponent<DemoFerrisWheel>() != null || p.GetComponent<Bascule>() != null) return true;
+                if (ResidentialConditionView.IsDynamic(p) || p.GetComponent<DemoFerrisWheel>() != null || p.GetComponent<Bascule>() != null) return true;
             return false;
         }
 

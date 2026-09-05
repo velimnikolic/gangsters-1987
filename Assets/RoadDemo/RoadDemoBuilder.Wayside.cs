@@ -319,8 +319,8 @@ namespace RoadDemo
                 var body = new CarBody(go.transform);
                 var car = new FuelCustomer
                 {
-                    Tf = go.transform, Body = body, HalfLen = body.HalfLength,
-                    HalfWide = body.HalfWidth, AxleBack = body.AxleBack,
+                    Tf = go.transform, Body = body, HalfLen = body.TrafficHalfLength,
+                    HalfWide = body.TrafficHalfWidth, AxleBack = body.AxleBack,
                     RoadY = station.GroundY, Net = Net, Tag = "traffic",
                     Plate = $"pump {plan.Seed % 1000}-{i + 1}",
                 };

@@ -898,10 +898,6 @@ namespace LivingCity.UI
                     viewport = ordersViewport;
                     content = ordersContent;
                     break;
-                case LedgerPage.Diplomacy:
-                    viewport = familiesViewport;
-                    content = familiesContent;
-                    break;
                 case LedgerPage.Law:
                     // FOUR REGIONS on this sheet, and whichever the pointer sits over
                     // takes the wheel - the PERSONNEL and ARMORY rule.
@@ -964,15 +960,6 @@ namespace LivingCity.UI
                 // the "more above / more below" marks live on the fixed layer and are
                 // drawn by the rebuild, so a roll has to ask for one
                 dirty = true;
-            }
-            else if (viewport == familiesViewport)
-            {
-                // No rebuild on a notch: the dossier's cards carry twenty photographs,
-                // and the window's one hint line is printed fixed for exactly that
-                // reason (RebuildDiplomacy).
-                familiesScroll = Mathf.Clamp(familiesScroll - wheel * WheelStep, 0f,
-                    maxScroll);
-                content.anchoredPosition = new Vector2(0f, familiesScroll);
             }
             else if (viewport == stockViewport)
             {

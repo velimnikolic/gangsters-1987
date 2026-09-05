@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -84,8 +84,10 @@ namespace LivingCity.CameraRig
         {
             var kb = Keyboard.current;
             var mouse = Mouse.current;
-            if (mouse != null && mouse.leftButton.wasPressedThisFrame)
-                Pick(mouse.position.ReadValue());
+            // The click arrives on the RELEASE and only when the pointer never
+            // wandered: a press that travels is the camera's drag, not a card.
+            if (RoadDemo.PointerGesture.Clicked)
+                Pick(RoadDemo.PointerGesture.ClickAt);
             if (kb != null && kb.escapeKey.wasPressedThisFrame)
                 CloseCard();
         }

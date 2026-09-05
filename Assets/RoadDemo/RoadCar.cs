@@ -74,8 +74,11 @@ namespace RoadDemo
         /// <summary>The name shown on an order card. Owned cars replace it from the
         /// ledger; civic cars keep their service name.</summary>
         public string DisplayName = "Car";
-        public float HalfLen = 2.3f;
-        public float HalfWide = 0.95f;
+        /// <summary>Traffic uses a smaller footprint than the visible body. Apply
+        /// once when measuring/spawning, equally for moving and parked vehicles.</summary>
+        public const float TrafficFootprintScale = 0.8f;
+        public float HalfLen = 2.3f * TrafficFootprintScale;
+        public float HalfWide = 0.95f * TrafficFootprintScale;
         /// <summary>Metres from the body's origin back to the rear axle: the point that
         /// follows the line, the front swinging into the bend ahead of it (a car steers
         /// with its front wheels). Unset: read as six tenths of the half length.</summary>
@@ -697,6 +700,11 @@ namespace RoadDemo
         {
             if (Net == null) return false;
             _parkTrying = 0f;
+            ParkingFailed = false;
+            _failedKerbSpots.Clear();
+            _parkPlanReady = false;
+            _parkTrafficCheck = 0f;
+            _parkingRetreat = false;
             _halted = false;
             _freeGoal = null;
             var road = Net.Locate(point, out float s, out float d, within: 12f);
@@ -718,16 +726,20 @@ namespace RoadDemo
             _hasGoal = true;
             _goalRoad = road;
             _goalS = s;
+            _parkRequestedS = s;
             _goalHeading = heading;
             _goalD = park ? kerb : goalLane.Offset;
             _goalPark = park;
             _goalStop = stopAtGoal || park;
             _goalLane = goalLane;
-            _spotFrom = float.NaN;
             _turnBackFor = 0f;
             _goalUTurns = 0;
-            if (park) ChooseKerbSpot();
-            if (Parked) PullOut();
+            if (park && !ChooseKerbSpot()) { FailParking(); return true; }
+            if (Parked)
+            {
+                if (park && _parkEntryLen == 0f && ParkingAligned(_goalD)) Parked = false;
+                else PullOut();
+            }
             Replan();
             return true;
         }
@@ -830,6 +842,7 @@ namespace RoadDemo
         /// traffic does (a patrol car released from a call).</summary>
         public void Stop()
         {
+            ParkingFailed = false;
             _hasGoal = false;
             Route = null;
             _turnFirst = false;
@@ -860,6 +873,7 @@ namespace RoadDemo
                 _freeGoal = null;
                 return;
             }
+
             _haltWhenClear = false;
             _keepGoalWhenHaltClear = false;
             _hasGoal = false;
@@ -874,7 +888,7 @@ namespace RoadDemo
         public bool Halted => _halted;
 
         /// <summary>Is the car where it was sent, stood still?</summary>
-        public bool AtGoal => !_hasGoal && Mathf.Abs(Speed) < 0.05f;
+        public bool AtGoal => !ParkingFailed && !_hasGoal && Mathf.Abs(Speed) < 0.05f;
         public bool HasGoal => _hasGoal;
 
         /// <summary>Actually tucked against a kerb, rather than merely carrying the
@@ -1113,7 +1127,8 @@ namespace RoadDemo
             // in the end stood a foot off the kerb "waiting for a gap" it did not want,
             // with a park order it never finished.
             bool parkingHere = _hasGoal && _goalPark && Road == _goalRoad && Heading == _goalHeading &&
-                               (_goalS - S) * Heading > -6f && (_goalS - S) * Heading < 40f;
+                ((_parkPlanReady && _parkEntryLen == 0f) ||
+                 ((_goalS - S) * Heading > -6f && (_goalS - S) * Heading < 40f));
             if (_man == Manoeuvre.None && !Sliding && !Parked && !_halted && Lane != null &&
                 Mathf.Abs(D - _laneD) > 0.5f && !parkingHere && RoadCarSimulation.Now >= _yieldUntil)
             {
@@ -1136,86 +1151,22 @@ namespace RoadDemo
                 return;
             }
 
-            // LOOKING TOO LONG for somewhere to pull in. Every time the spot is thought
-            // over it can move on a little - somebody took it, somebody else pulled out
-            // - and a car can follow that up the street for ever; worse, a spot on
-            // another street it never manages to reach keeps it driving with its crew
-            // sat waiting to get out (two minutes of it, in the lab, twice). A driver
-            // gives up looking and takes the kerb he is beside. Counted at full rate on
-            // the street the spot is on and at a fifth elsewhere: an ordered leg across
-            // the map must not burn the budget in transit - the car gave up half-way
-            // there and took a kerb the player never asked for - but the car that
-            // circles for ever WITHOUT reaching the goal's street is still caught, a
-            // couple of minutes out.
-            if (_hasGoal && _goalPark && _man == Manoeuvre.None)
+            // A failed exit may have backed into the original slot. Re-enter the
+            // checked pull-out path before approaching the selected lane-to-kerb entry.
+            if (_hasGoal && _goalPark && _parkPlanReady && _parkEntryLen > 0f &&
+                _man == Manoeuvre.None && !Sliding && !_halted &&
+                Road == _goalRoad && Heading == _goalHeading &&
+                (_goalS - S) * Heading > .5f && Mathf.Abs(D - _laneD) > .5f)
+                PullOut();
+
+            // One local parking budget includes every attempted entry, reverse and
+            // pass. Retrying a manoeuvre cannot renew it or move the request elsewhere.
+            // Time spent driving across town is not time spent trying to park.
+            if (_hasGoal && _goalPark && road == _goalRoad &&
+                Mathf.Abs(S - _parkRequestedS) < ParkingSearchReach + 15f)
             {
-                _parkTrying += Road == _goalRoad ? dt : dt * 0.2f;
-                if (_parkTrying > 25f)
-                {
-                    // far enough on to actually PULL IN: a spot three metres ahead
-                    // leaves no room to come off the lane, so the car stops where it
-                    // stands - in the running lane - and everything behind it queues
-                    // (156 seconds of it, in the run that found this).
-                    float room = PullInLength() + 4f;
-                    // and NOT at the mouth of the street: a car left standing where the
-                    // traffic comes out of a junction stops everything crossing it (the
-                    // run that found this queued four cars for nearly three minutes)
-                    const float offJunction = 22f;
-                    float lo = Mathf.Min(offJunction, road.Length * 0.4f);
-                    float hi = Mathf.Max(road.Length - offJunction, road.Length * 0.6f);
-                    float want = S + Heading * room;
-                    // AHEAD, or not at all. Clamping the spot into this street's usable
-                    // stretch can put it BEHIND a car that is already near the end of the
-                    // street - and a spot behind is a lap of the block to reach, at which
-                    // point the driver gives up again, picks another spot behind him, and
-                    // drives the quarter with his crew sat in the back for the rest of the
-                    // run (a crew ordered out on to the pavement rode round for a minute
-                    // and the job timed out with them still in their seats). No room on
-                    // this street: keep going and take the next one, a few seconds on.
-                    if (Heading > 0 ? want > hi : want < lo)
-                    {
-                        _parkTrying = 20f;
-                        if (DriveTrace.On)
-                            DriveTrace.Event("man", "car " + Id, "no kerb ahead on this street - trying the next", ManFields());
-                    }
-                    else
-                    {
-                        float fallbackS = Mathf.Clamp(want, lo, hi);
-                        float fallbackD = road.KerbDOnSide(D, HalfWide);
-                        var fallbackAt = road.Pose(fallbackS, fallbackD);
-                        if (!ParkingSpotAvailable(fallbackAt))
-                        {
-                            // Another ordered car is already making for this empty-looking
-                            // length. Give the order back to its caller for a fresh kerb
-                            // instead of retaining this goal and chasing it round the block.
-                            _parkTrying = 0f;
-                            _hasGoal = false;
-                            Route = null;
-                            _next = null;
-                            _committed = false;
-                            if (DriveTrace.On)
-                                DriveTrace.Event("man", "car " + Id,
-                                    "kerb ahead already claimed - asking for another", ManFields());
-                        }
-                        else
-                        {
-                            if (DriveTrace.On)
-                                DriveTrace.Event("man", "car " + Id, $"gave up looking - taking the kerb at s={fallbackS:F0}", ManFields());
-                            _parkTrying = 0f;   // and if this kerb cannot be had either, try again
-                            _goalUTurns = 0;    // a fresh goal, ahead of the car: fresh turns
-                            _goalRoad = road;
-                            _goalHeading = Heading;
-                            _goalLane = Lane;
-                            _goalS = fallbackS;
-                            _goalD = fallbackD;
-                            _goalStop = true;
-                            Route = null;
-                            _next = null;
-                            _committed = false;
-                            ParkingSpotSelected(fallbackAt);
-                        }
-                    }
-                }
+                _parkTrying += dt;
+                if (_parkTrying > ParkingAttemptLimit) FailParking();
             }
 
             // out of the lane ahead - the junction (or the end of the road)
@@ -1374,10 +1325,24 @@ namespace RoadDemo
             else if (_goalUTurns < MaxGoalUTurns) _turnBackFor = 0f;
 
             // the goal on this road
-            if (_hasGoal && road == _goalRoad && Heading == _goalHeading && _man != Manoeuvre.UTurn)
+            if (_hasGoal && road == _goalRoad && Heading == _goalHeading && _man != Manoeuvre.UTurn &&
+                (!_goalPark || _man == Manoeuvre.PullIn || (_man == Manoeuvre.None && !Sliding)))
             {
+                if (_goalPark && _man == Manoeuvre.None && (_goalS - S) * Heading >= -3f)
+                {
+                    _spotCheck -= dt;
+                    bool missedEntry = _parkPlanReady && _parkEntryLen > 0f &&
+                        ((_parkEntryS - S) * Heading < -.1f || Mathf.Abs(D - _parkEntryD) > .01f);
+                    if (!_parkPlanReady || missedEntry || _spotCheck <= 0f)
+                    {
+                        _spotCheck = .7f;
+                        if (!_parkPlanReady || missedEntry || ParkingDestinationTaken() ||
+                            !ParkingEntryClear(stationaryOnly: true))
+                            if (!ChooseKerbSpot(aheadOnly: true)) FailParking();
+                    }
+                }
                 float toGoal = (_goalS - S) * Heading;
-                if (toGoal < -3f)
+                if (_hasGoal && toGoal < -3f)
                 {
                     // overshot it: round, if the road lets us, else the long way. The
                     // throttle comes down first - a turn is refused above the speed its
@@ -1405,83 +1370,57 @@ namespace RoadDemo
                         }
                     }
                 }
-                else
+                else if (_hasGoal)
                 {
-                    // the spot looked at again on the way in: somebody may have taken it
-                    if (_goalPark && _man == Manoeuvre.None && toGoal < 80f)
-                    {
-                        _spotCheck -= dt;
-                        if (_spotCheck <= 0f) { _spotCheck = 0.7f; ChooseKerbSpot(aheadOnly: true); toGoal = (_goalS - S) * Heading; }
-                    }
                     if (_goalStop) v = Mathf.Min(v, Allowed(0f, toGoal));
-                    // ONE SWING SHORT OF THE SPOT, and not before: the slide is laid from
-                    // where the car IS, so beginning it early puts the car on the kerb
-                    // early - and a car on the kerb before its gap is a car driving into
-                    // whatever is parked in front of the gap. It stopped dead there, half
-                    // in the running lane with its crew aboard, every time the spot had a
-                    // neighbour. The swing is also asked of the road first (the diagonal,
-                    // not the band): fouled, the car keeps its lane and the chooser gets
-                    // another look at the kerb.
-                    if (_goalPark && _man == Manoeuvre.None && toGoal > 0f && Mathf.Abs(_goalD - D) > 0.3f)
+                    // The approach and the swing are one stored plan. Traffic can
+                    // delay its start, but does not move the target every two seconds.
+                    if (_hasGoal && _goalPark && _parkPlanReady && _man == Manoeuvre.None &&
+                        !Sliding && toGoal > 0f && _parkEntryLen > 0f)
                     {
-                        float inLen = PullInSlide();
-                        if (toGoal <= inLen + 0.6f)
+                        float toEntry = (_parkEntryS - S) * Heading;
+                        float entrySpeed = LateralCap(_parkEntryLen, Mathf.Abs(_goalD - _parkEntryD));
+                        v = Mathf.Min(v, Allowed(entrySpeed, Mathf.Max(0f, toEntry)));
+                        float trafficLook = Mathf.Max(8f, Speed * Speed / (2f * Brake) + Mathf.Abs(Speed) * .3f + 2f);
+                        float armReach = Mathf.Max(.6f, Mathf.Abs(Speed) * dt + .2f);
+                        if (toEntry <= trafficLook)
                         {
-                            float lay = Mathf.Max(4f, Mathf.Min(inLen, toGoal));
-                            if (SlidePathClear(_goalD, lay, 0f)) BeginPullIn(lay);
+                            _parkTrafficCheck -= dt;
+                            if (_parkTrafficCheck <= 0f || (toEntry <= armReach && _parkTrafficClear))
+                            {
+                                _parkTrafficCheck = .2f;
+                                _parkTrafficClear = ParkingEntryClear(stationaryOnly: false);
+                            }
+                            if (!_parkTrafficClear)
+                            {
+                                // Brake before the fixed start, not after reaching it.
+                                // A moving car gets time to clear the same planned arc.
+                                v = Mathf.Min(v, Allowed(0f, Mathf.Max(0f, toEntry - .3f)));
+                                MeanToStop(_parkEntryS - Heading * .3f);
+                            }
+                            else if (toEntry <= armReach)
+                            {
+                                BeginPullIn();
+                                v = Mathf.Min(v, entrySpeed);
+                            }
                         }
                     }
-                    // STOPPED AT THE KERB SHORT OF THE SPOT is a PARK, not a failure.
-                    // What stops a car there is the vehicle standing in the spot itself
-                    // (IsOurParkingSpot: we queue behind it rather than go round it,
-                    // which is right - it is where we were going). A driver in that
-                    // position pulls up behind him and switches off. This one instead
-                    // sat in gear a foot off the kerb, neither parked nor driving, and
-                    // whatever asked it to move next found it there: ordered away it
-                    // could not swing out past the same vehicle, ordered back it could
-                    // not finish coming in. Six orders in a row died in that spot.
-                    // Following may stop the last centimetres of a pull-in behind a
-                    // parked bike. Once the body is parallel and within parking reach,
-                    // keep the real resting place instead of restarting that slide.
-                    bool settledPullIn = _man == Manoeuvre.PullIn &&
-                        Vector3.Dot(_fwd, road.DirAt(S) * Heading) > .999f;
-                    if (_goalPark && (_man == Manoeuvre.None || settledPullIn) && Mathf.Abs(Speed) < 0.2f &&
-                        toGoal > 0f && toGoal < 30f && Mathf.Abs(D - _goalD) < KerbParkReach)
-                    {
-                        _kerbHold += dt;
-                        if (_kerbHold > 2.5f)
-                        {
-                            _kerbHold = 0f;
-                            Speed = 0f;
-                            _hasGoal = false;
-                            Route = null;
-                            Parked = true;
-                            _man = Manoeuvre.None;
-                            _sLen = 0f;
-                            ClearClaim();
-                            LeaveBox();
-                            DropNext();
-                            if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "parked short of the spot, behind what took it", ManFields());
-                            OnArrived();
-                            UpdateOccupant();
-                            Place(dt);
-                            return;
-                        }
-                    }
-                    else _kerbHold = 0f;
-                    if (!_goalStop && toGoal <= 0f)
+                    // Parking completes at the driven pose, after the axle has
+                    // straightened. A blocked approach is not an arrival in the lane.
+                    if (_hasGoal && !_goalStop && toGoal <= 0f)
                     {
                         // past the mark on the move: done, and the next order may come at once
                         _hasGoal = false;
                         Route = null;
                         OnArrived();
                     }
-                    else if (toGoal <= 0.25f && Mathf.Abs(Speed) < 0.3f)
+                    else if (_hasGoal && toGoal <= 0.25f && Mathf.Abs(Speed) < 0.3f &&
+                        (!_goalPark || (!Sliding && ParkingAligned(_goalD))))
                     {
                         Speed = 0f;
                         _hasGoal = false;
                         Route = null;
-                        if (_goalPark) { Parked = true; _man = Manoeuvre.None; _sLen = 0f; D = _goalD; ClearClaim(); LeaveBox(); DropNext(); }
+                        if (_goalPark) { Parked = true; _parkPlanReady = false; _man = Manoeuvre.None; _sLen = 0f; ClearClaim(); LeaveBox(); DropNext(); }
                         OnArrived();
                         UpdateOccupant();
                         Place(dt);
@@ -1595,7 +1534,8 @@ namespace RoadDemo
 
             // whoever is ahead in the band we stand in or are moving into
             float d0 = BandLo(), d1 = BandHi();
-            var leader = road.Ahead(_occ, Heading, noseS, tailS, d0, d1, out float gap);
+            var leader = road.Ahead(_occ, Heading, noseS, tailS, d0, d1, out float gap,
+                _man == Manoeuvre.PullIn ? (_parkingLeaderFilter ??= BlocksParkingPath) : null);
             _leadId = leader == null ? -1 : leader.Car != null ? leader.Car.Id : -2;
             _leadGap = leader == null ? -1f : gap;
             float vLead = 0f;
@@ -1689,7 +1629,8 @@ namespace RoadDemo
             {
                 v = 0f;
                 if (_haltHard) hard = true;
-                if (Mathf.Abs(Speed) < 0.05f && Lane != null && Mathf.Abs(Mathf.Abs(D) - Mathf.Abs(Lane.Offset)) > 0.9f) Parked = true;
+                if (!ParkingFailed && Mathf.Abs(Speed) < 0.05f && Lane != null &&
+                    ParkingAligned(Road.KerbDOnSide(D, HalfWide))) Parked = true;
             }
             // stood back from something, waiting for the way round to open
             if (_holdFor > 0f) { _holdFor -= dt; if (_man == Manoeuvre.None) v = 0f; }
@@ -1718,6 +1659,15 @@ namespace RoadDemo
             _want = v; _wantHard = hard;
             Speed = Mathf.MoveTowards(Speed, Mathf.Max(0f, v), rate * dt);
             float step = Speed * dt;
+            if (_hasGoal && _goalPark && _parkPlanReady && !_parkTrafficClear && _parkTrafficCheck > 0f &&
+                _parkEntryLen > 0f && road == _goalRoad && Heading == _goalHeading &&
+                _man == Manoeuvre.None && !Sliding)
+            {
+                // A late-arriving obstruction must not let this frame carry us
+                // beyond the entry and trigger another drive-forward/re-pick loop.
+                float room = Mathf.Max(0f, (_parkEntryS - S) * Heading - .25f);
+                if (step > room) { step = room; Speed = dt > 0f ? step / dt : 0f; }
+            }
             float prevS = S, prevD = D;
             S += Heading * step;
             D = LateralAt(S);
@@ -1931,6 +1881,12 @@ namespace RoadDemo
                     }
                     _tailVia = null;
                 }
+                if (Sliding)
+                {
+                    SlidePose(Road, Heading, _sFrom, _dFrom, _dTo, _sLen,
+                        (S - _sFrom) * Heading, out pos, out fwd);
+                    return;
+                }
                 float da = LateralValue(sa);
                 // the lateral slope is per metre travelled; the heading turns toward the
                 // side the line moves to, whichever way the road's axis runs - and on a
@@ -1998,6 +1954,21 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ lateral
 
+        // A hypothetical slide uses exactly the rear-axle geometry used by Pose.
+        // travel is the centre's road progress since the slide began; its axle
+        // reaches the end Axle metres later. Reading a plan never changes the car.
+        void SlidePose(Carriageway road, int heading, float startS, float fromD,
+            float toD, float len, float travel, out Vector3 position, out Vector3 forward)
+        {
+            float axleTravel = travel - Axle;
+            float axleS = startS + heading * axleTravel;
+            float p = Mathf.Clamp01(axleTravel / Mathf.Max(0.001f, len));
+            float d = Mathf.Lerp(fromD, toD, Mathf.SmoothStep(0f, 1f, p));
+            float slope = (toD - fromD) * 6f * p * (1f - p) / Mathf.Max(0.001f, len);
+            forward = (road.DirAt(axleS) * heading + road.RightAt(axleS) * slope).normalized;
+            position = road.Pose(axleS, d) + forward * Axle;
+        }
+
         void Slide(float toD, float length)
         {
             _dFrom = D;
@@ -2041,8 +2012,6 @@ namespace RoadDemo
             float byCircle = Mathf.Sqrt(6f * 2.2f * dd);
             return Mathf.Clamp(len, Mathf.Max(3f, byCircle), 40f);
         }
-
-        float PullInLength() => Mathf.Clamp(Mathf.Abs(Speed) * 1.6f + 8f, 10f, 26f);
 
         // ------------------------------------------------------------- changing lane
 
@@ -2245,21 +2214,14 @@ namespace RoadDemo
         {
             if (_occ == null || Road == null) return;
             var o = _occ;
-            float slope = Sliding ? LateralSlope(S) : 0f;
-            float ang = Mathf.Atan(Mathf.Abs(slope));
-            float along = Mathf.Cos(ang) * HalfLen + Mathf.Sin(ang) * HalfWide;
-            float across = Mathf.Sin(ang) * HalfLen + Mathf.Cos(ang) * HalfWide;
-            float s = S, d = D;
-            if (_man == Manoeuvre.UTurn)
-            {
-                ArcPose(_arcS0, _arcR, _arcSide, _arcHeading0, _arcAng,
-                    out var arcPosition, out var arcForward);
-                Road.Project(arcPosition, out s, out d);
-                float cosine = Mathf.Abs(Vector3.Dot(arcForward, Road.DirAt(s)));
-                float sine = Mathf.Abs(Vector3.Dot(arcForward, Road.RightAt(s)));
-                along = cosine * HalfLen + sine * HalfWide;
-                across = sine * HalfLen + cosine * HalfWide;
-            }
+            // S/D describe the driving line. The actual centre and heading come
+            // from its rear axle, including the tail still leaving a junction.
+            Pose(out var bodyPosition, out var bodyForward);
+            Road.Project(bodyPosition, out float s, out float d);
+            float cosine = Mathf.Abs(Vector3.Dot(bodyForward, Road.DirAt(s)));
+            float sine = Mathf.Abs(Vector3.Dot(bodyForward, Road.RightAt(s)));
+            float along = cosine * HalfLen + sine * HalfWide;
+            float across = sine * HalfLen + cosine * HalfWide;
             o.BodyS0 = s - along; o.BodyS1 = s + along;
             o.BodyD0 = d - across; o.BodyD1 = d + across;
             o.S0 = o.BodyS0; o.S1 = o.BodyS1; o.D0 = o.BodyD0; o.D1 = o.BodyD1;
@@ -2347,6 +2309,12 @@ namespace RoadDemo
                                _man != Manoeuvre.UTurn && _man != Manoeuvre.Reverse
                 ? _lateralStillFor + dt : 0f;
             if (_lateralStillFor < 6f) return false;
+            if (_man == Manoeuvre.PullIn)
+            {
+                _lateralStillFor = 0f;
+                RetreatFromKerb();
+                return true;
+            }
             // Following can stop a sweep before the collision belt ever refuses a
             // step. Keeping its projected reservation then makes the other driver
             // wait for us too. Withdraw that sweep at the current position; ordinary
@@ -2363,6 +2331,9 @@ namespace RoadDemo
 
         void Decide(float dt, RoadOccupant leader, float gap, float vLead, RoadNode node, float toEnd)
         {
+            // A failed player order remains at its real stopped pose until another
+            // command. Generic jam recovery must not restart or erase that curve.
+            if (ParkingFailed && _halted) return;
             float now = RoadCarSimulation.Now;
             bool stopped = Mathf.Abs(Speed) < 0.4f;
             if (ReleaseStalledLateral(dt)) return;
@@ -2392,11 +2363,15 @@ namespace RoadDemo
                     // clock after that no-op left a patrol in the same blocked swing
                     // forever. End the failed sweep at its current road position and
                     // back up into checked space before planning the kerb again.
-                    _sLen = 0f;
-                    _pullOutWanted = false;
-                    _man = Manoeuvre.None;
-                    ClearClaim();
-                    TryReverse(_blocker);
+                    if (_man == Manoeuvre.PullIn) RetreatFromKerb();
+                    else
+                    {
+                        _sLen = 0f;
+                        _pullOutWanted = false;
+                        _man = Manoeuvre.None;
+                        ClearClaim();
+                        TryReverse(_blocker);
+                    }
                     _yieldUntil = now + 2.5f;
                 }
                 else AbortLateral();
@@ -2479,6 +2454,14 @@ namespace RoadDemo
                     {
                         if (TryUTurn(escape: true)) { _nerve.SlowUntil = 0f; _nerve.BoltUntil = now + 8f; return; }
                     }
+
+                    // Waiting at a planned parking entry is not a traffic jam to
+                    // overtake. Keep emergency yielding above, but do not turn this
+                    // deliberate hold into another pass/return/re-pick cycle.
+                    if (_hasGoal && _goalPark && _parkPlanReady && _parkEntryLen > 0f &&
+                        !_parkTrafficClear && _parkTrafficCheck > 0f && !Sliding &&
+                        Road == _goalRoad && Heading == _goalHeading &&
+                        Mathf.Abs(_parkEntryS - S) < 1f) return;
 
                     // the crown between the lanes, with the guns out: a queue in our lane and
                     // the crown open - drive it for as long as it is open
@@ -2574,12 +2557,7 @@ namespace RoadDemo
                     else if (Mathf.Abs(Speed) < 0.2f && now - _pullInAsked > 5f)
                     {
                         if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "gave up a pull-in that was not moving", ManFields());
-                        _sLen = 0f;
-                        _man = Manoeuvre.None;
-                        ClearClaim();
-                        ChooseKerbSpot(aheadOnly: true);
-                        if (Mathf.Abs(D - _laneD) > 0.3f)
-                            Slide(_laneD, SlideLength(Mathf.Abs(D - _laneD), Mathf.Max(Mathf.Abs(Speed), 3f)));
+                        RetreatFromKerb();
                     }
                     break;
             }
@@ -2617,24 +2595,97 @@ namespace RoadDemo
         /// parked ahead, the flank is past it. This walks that diagonal and asks the road
         /// the honest question at each step of it.</summary>
         bool SlidePathClear(float toD, float len, float run)
+            => SlidePathClear(Road, Heading, S, D, toD, len, run);
+
+        // A broad following band can include a parked shoulder that the existing
+        // slide never touches. Only a fixed body with a clear complete remainder
+        // may be excluded from following; a driver preparing to leave still owns
+        // the normal traffic priority and stopping space.
+        bool RemainingSlideClearOf(RoadOccupant other)
         {
-            if (Road == null) return false;
-            len = Mathf.Max(1f, len);
-            float from = D, dd = toD - D;
-            float total = len + Mathf.Max(0f, run);
-            int steps = Mathf.Clamp(Mathf.CeilToInt(total / 1.2f), 4, 24);
-            for (int i = 1; i <= steps; i++)
+            if (!Sliding || Road == null || other == null || other.Who == null ||
+                ReferenceEquals(other.Who, this) || other.Moving) return false;
+            var car = other.Car;
+            if (car != null && (car.HasGoal || car._pullOutWanted || car._man == Manoeuvre.PullOut ||
+                (!car.Parked && !car.Derelict && !car.Wrecked))) return false;
+            var body = other.Who;
+            if (RoadSpace.Overlap(RoadPosition, RoadForward, HalfLen, HalfWide,
+                body.RoadPosition, body.RoadForward, body.HalfLength, body.HalfWidth,
+                SideAir, out _)) return false;
+            float from = Mathf.Max(0f, (S - _sFrom) * Heading);
+            float remaining = Mathf.Max(0f, _sLen + Axle - from);
+            float dd = Mathf.Abs(_dTo - _dFrom);
+            float step = 0.2f / (1f + 1.5f * dd / _sLen +
+                (Axle + HalfLen + HalfWide) * 6f * dd / (_sLen * _sLen));
+            int steps = Mathf.Max(1, Mathf.CeilToInt(remaining / step));
+            for (int i = 0; i <= steps; i++)
             {
-                float x = total * i / steps;
-                float p = Mathf.Clamp01(x / len);
-                float d = from + dd * Mathf.SmoothStep(0f, 1f, p);
-                // the body where the slide has it, at the angle the slide has it turned
-                float slope = dd * 6f * p * (1f - p) / len;
-                float ang = Mathf.Atan(Mathf.Abs(slope));
-                float along = Mathf.Cos(ang) * HalfLen + Mathf.Sin(ang) * HalfWide;
-                float across = Mathf.Sin(ang) * HalfLen + Mathf.Cos(ang) * HalfWide + SideAir;
-                float s = S + Heading * x;
-                if (Road.Busy(_occ, s - along, s + along, d - across, d + across)) return false;
+                SlidePose(Road, Heading, _sFrom, _dFrom, _dTo, _sLen,
+                    from + remaining * i / steps, out var position, out var forward);
+                Road.Project(position, out float s, out _);
+                position.y = Road.SurfaceOn(s);
+                if (RoadSpace.Overlap(position, forward, HalfLen, HalfWide,
+                    body.RoadPosition, body.RoadForward, body.HalfLength, body.HalfWidth,
+                    SideAir, out _)) return false;
+            }
+            return true;
+        }
+
+        // Planning ahead considers fixed obstacles. Immediately before starting a
+        // manoeuvre the same path is checked with moving traffic and reservations.
+        bool SlidePathClear(Carriageway road, int heading, float startS, float fromD,
+            float toD, float len, float run, bool stationaryOnly = false)
+        {
+            if (road == null || len < SlideLength(Mathf.Abs(toD - fromD), 0f) - 0.01f)
+                return false;
+            float dd = Mathf.Abs(toD - fromD);
+            float total = len + Axle + Mathf.Max(0f, run);
+            // Bound both centre movement and the corner movement caused by yaw.
+            float step = 0.2f / (1f + 1.5f * dd / len +
+                (Axle + HalfLen + HalfWide) * 6f * dd / (len * len));
+            int steps = Mathf.Max(4, Mathf.CeilToInt(total / step));
+            for (int i = 0; i <= steps; i++)
+            {
+                float travel = total * i / steps;
+                SlidePose(road, heading, startS, fromD, toD, len,
+                    travel, out var position, out var forward);
+                road.Project(position, out float s, out float d);
+                float cosine = Mathf.Abs(Vector3.Dot(forward, road.DirAt(s)));
+                float sine = Mathf.Abs(Vector3.Dot(forward, road.RightAt(s)));
+                float along = cosine * HalfLen + sine * HalfWide;
+                float across = sine * HalfLen + cosine * HalfWide;
+                float axleP = Mathf.Clamp01((travel - Axle) / len);
+                float axleD = Mathf.Lerp(fromD, toD, Mathf.SmoothStep(0f, 1f, axleP));
+                // Keep the road's existing kerb support allowance; parked bodies
+                // deliberately overhang the kerb. Obstacle checks below use the
+                // complete angled body, independently of that support policy.
+                if (s - along < 0f || s + along > road.Length || !road.Drivable(axleD, HalfWide))
+                    return false;
+                position.y = road.SurfaceOn(s);
+                for (int j = 0; j < road.Occupants.Count; j++)
+                {
+                    var other = road.Occupants[j];
+                    if (ReferenceEquals(other.Who, this)) continue;
+                    if (stationaryOnly && other.Car != null && !other.Car.Parked &&
+                        !other.Car.Derelict && !other.Car.Wrecked) continue;
+                    bool overlapsBand = other.S0 < s + along + SideAir && other.S1 > s - along - SideAir &&
+                        other.D0 < d + across + SideAir && other.D1 > d - across - SideAir;
+                    if (!overlapsBand) continue;
+                    // A physical body is an oriented box. Its bounding road band is
+                    // only a broad phase; the empty corners do not block a safe swing.
+                    var body = other.Who;
+                    if (body == null || RoadSpace.Overlap(position, forward, HalfLen, HalfWide,
+                        body.RoadPosition, body.RoadForward, body.HalfLength, body.HalfWidth,
+                        SideAir, out _)) return false;
+                    bool hasClaim = other.S0 < other.BodyS0 - 0.01f || other.S1 > other.BodyS1 + 0.01f ||
+                        other.D0 < other.BodyD0 - 0.01f || other.D1 > other.BodyD1 + 0.01f;
+                    if (hasClaim && other.S0 < s + along && other.S1 > s - along &&
+                        other.D0 < d + across && other.D1 > d - across) return false;
+                }
+                // Other roads can cross or run beside this one. The physical index
+                // includes those bodies without inventing a road-band collision.
+                if (RoadSpace.Inside(this, position, forward,
+                    HalfLen, HalfWide, out _, stationaryOnly) != null) return false;
             }
             return true;
         }
@@ -3068,11 +3119,23 @@ namespace RoadDemo
                 step = Mathf.Min(-Speed * dt, Mathf.Min(_backLeft, room - 0.5f));
                 S -= Heading * step;
                 _backLeft -= step;
+                if (_parkingRetreat) D = LateralValue(S);
             }
             else _backLeft = 0f;
             if (_backLeft > 0.01f && step > 0f) return;
             _backLeft = 0f;
             Speed = 0f;
+            if (_parkingRetreat)
+            {
+                _parkingRetreat = false;
+                if ((S - _sFrom) * Heading > .02f) { FailParking(); return; }
+                D = _dFrom;
+                _sLen = 0f;
+                _man = Manoeuvre.None;
+                ClearClaim();
+                _holdFor = 0f;
+                return;
+            }
             _man = Manoeuvre.None;
             ClearClaim();
             _blockedFor = Profile.Patience + 1f;  // and another look from here at once
@@ -3505,13 +3568,27 @@ namespace RoadDemo
             return false;
         }
 
-        // The pace through a turn: the profile's, and no more than the bend's radius
-        // lets at the profile's lateral acceleration.
+        // Junctions allow a brisker pace than the comfort limits used for parking
+        // and lane changes. Approach braking, crossing time and the turn itself all
+        // use this same pace, still bounded by the roads' cruising speeds.
+        const float TurnPaceScale = 1.25f;
+        const float TurnLateralScale = 1.75f;
+
         float TurnSpeed(Connector via)
         {
-            float v = JunctionSpeed;
-            if (via != null && via.MinRadius < 1000f) v = Mathf.Min(v, Mathf.Sqrt(LateralG * via.MinRadius));
-            return Mathf.Max(2.5f, v);
+            float v = JunctionSpeed * TurnPaceScale;
+            if (via != null && via.MinRadius < 1000f)
+                v = Mathf.Min(v, Mathf.Sqrt(LateralG * TurnLateralScale * via.MinRadius));
+            float ceiling = Cruise();
+            var exit = via?.To;
+            if (exit != null)
+            {
+                float exitCruise = exit.Road != null
+                    ? Profile.CruiseOn(exit.Road.Class) * Machine.Top : TopSpeed;
+                if (Profile.ObeysLimit) exitCruise = Mathf.Min(exitCruise, exit.SpeedLimit);
+                ceiling = Mathf.Min(ceiling, exitCruise);
+            }
+            return Mathf.Min(ceiling, Mathf.Max(2.5f, v));
         }
 
         // Following through the box, by where the bodies actually are: anyone in the
@@ -4151,7 +4228,17 @@ namespace RoadDemo
         Vector3? _freeGoal;
 
         /// <summary>Off any road: drive a straight line to this point and stop.</summary>
-        public void GoFree(Vector3 point) { _freeGoal = point; _halted = false; _hasGoal = false; Route = null; _turnFirst = false; }
+        public void GoFree(Vector3 point)
+        {
+            ClearParkingFailure();
+            _parkPlanReady = false;
+            _parkingRetreat = false;
+            _freeGoal = point;
+            _halted = false;
+            _hasGoal = false;
+            Route = null;
+            _turnFirst = false;
+        }
 
         void TickFree(float dt)
         {

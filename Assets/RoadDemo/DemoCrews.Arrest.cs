@@ -27,6 +27,36 @@ namespace RoadDemo
         /// costs the player his week, short enough that it is not a death.</summary>
         public const int HeldDays = 3;
 
+        public static bool PoliceStopsWork(Unit unit) =>
+            unit != null && (unit.ArrestChallenged || unit.Surrendered || unit.InCustody);
+
+        /// <summary>Stop the current errand as soon as the officer begins the challenge.
+        /// Cancelling its visit must not resolve an unfinished act or march to another shop.</summary>
+        public void HaltForArrest(Unit unit)
+        {
+            if (unit == null || unit.Wiped) return;
+            unit.ArrestChallenged = true;
+            TerritoryRuntime.Instance?.InterruptErrands(unit);
+            CrewJobs.Interrupt(unit);
+            CallOffRaids(unit, "an arrest");
+            CrewQuarters.Retasked(unit);
+            Unboard(unit, "an arrest");
+            unit.PendingDrive = null;
+            unit.PendingAttack = null;
+            unit.TargetUnit = null;
+            unit.OrderedFight = false;
+            unit.Searching = false;
+            unit.LookUntil = 0f;
+            foreach (var man in unit.All())
+            {
+                if (man == null || man.Dead || man.Tf == null) continue;
+                DoorBeat.CancelVisit(man);
+                EndChase(man);
+                man.Disengage();
+                man.OrderToPoint(man.Tf.position);
+            }
+        }
+
         /// <summary>HANDS UP. The crew stops, puts its guns away and stands where it
         /// stands. Its guns stay away by themselves after this: the concealment rule
         /// asks the man whether he WANTS the piece out (CrewWalker.WantsGunOut) and a
@@ -36,6 +66,7 @@ namespace RoadDemo
         public bool GiveUp(Unit unit)
         {
             if (unit == null || unit.Wiped || unit.Surrendered) return false;
+            HaltForArrest(unit);
             unit.Surrendered = true;
             unit.TargetUnit = null;
             unit.OrderedFight = false;
@@ -62,6 +93,7 @@ namespace RoadDemo
         public void LetGo(Unit unit)
         {
             if (unit == null || !unit.Surrendered) return;
+            unit.ArrestChallenged = false;
             unit.InCustody = false;
             unit.Surrendered = false;
             foreach (var man in unit.All())

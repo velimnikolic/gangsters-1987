@@ -198,8 +198,8 @@ namespace RoadDemo
                 {
                     Tf = tf,
                     Body = visual,
-                    HalfLen = visual.HalfLength,
-                    HalfWide = visual.HalfWidth,
+                    HalfLen = visual.TrafficHalfLength,
+                    HalfWide = visual.TrafficHalfWidth,
                     AxleBack = visual.AxleBack,
                     RoadY = transform.position.y + RoadY,
                     Net = _net,
@@ -569,6 +569,14 @@ namespace RoadDemo
 
             void TickReturn()
             {
+                if (ParkingFailed)
+                {
+                    // The road driver keeps moving after a failed approach. Retry
+                    // through the duty's existing timer, without claiming arrival.
+                    _timer = 3f;
+                    State = Mode.Responding;
+                    return;
+                }
                 float distance = Vector3.Distance(Tf.position, _station._join);
                 bool atEntrance = distance < HalfLen + 12f ||
                     (Parked && CurrentEdge == _station._home && distance < 30f);

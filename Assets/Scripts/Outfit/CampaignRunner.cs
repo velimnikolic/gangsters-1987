@@ -51,6 +51,10 @@ namespace LivingCity.Outfit
         /// runner only names it. Null on a bench with no city.</summary>
         public Underworld World;
 
+        /// <summary>The physical crew may be held by the police before its roster is
+        /// booked at the station. Both new jobs and the office clock honor that hold.</summary>
+        public System.Func<int, string> CrewWorkRefusal;
+
         public readonly OrderBook Book = new OrderBook();
 
         /// <summary>What the outfit kicks up to the houses above it - re-priced off the
@@ -398,6 +402,8 @@ namespace LivingCity.Outfit
         /// nothing else - the rest of the queue is work it has not got to.</summary>
         bool WorkCrew(Roster roster, Crew crew, float hours)
         {
+            if (CrewWorkRefusal?.Invoke(crew.Id) != null)
+                return false;
             var job = Book.CurrentFor(crew.Id);
             if (job == null)
                 return false;
@@ -1544,6 +1550,9 @@ namespace LivingCity.Outfit
             var crew = roster?.FindCrew(job.CrewId);
             if (crew == null)
                 return OpResult.Fail(UI.LedgerText.ReasonNoSuchCrew);
+            var workRefusal = CrewWorkRefusal?.Invoke(crew.Id);
+            if (workRefusal != null)
+                return OpResult.Fail(workRefusal);
 
             // NOTHING IS SET UP YET. The order charges the fit-out (20,000) and the
             // scene has no case for it, so the money left the safe and no premises ever
@@ -1595,10 +1604,30 @@ namespace LivingCity.Outfit
 
                 if (job.Stage != JobStage.Queued)
                     Record(roster, job, OrderOutcome.CalledOff, 0, 0);
+                job.Stage = JobStage.Finished;
                 Book.Jobs.RemoveAt(i);
                 return OpResult.Success;
             }
             return OpResult.Fail(UI.LedgerText.ReasonNoSuchOrder);
+        }
+
+        /// <summary>An arrest cancels the crew's entire queue. An act already reported
+        /// by the street keeps its consequence; unfinished work cannot resolve later.</summary>
+        public int InterruptCrew(Roster roster, int crewId)
+        {
+            var jobs = Book.Jobs.FindAll(job => job.CrewId == crewId && job.Live);
+            var crew = roster?.FindCrew(crewId);
+            foreach (var job in jobs)
+            {
+                if (job.StreetOutcome.HasValue && crew != null)
+                {
+                    Book.Jobs.Remove(job);
+                    Finish(roster, crew, job, OrderTable.SpecOf(job.Type));
+                }
+                else
+                    Cancel(roster, job.Id);
+            }
+            return jobs.Count;
         }
 
         /// <summary>

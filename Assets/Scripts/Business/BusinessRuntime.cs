@@ -43,6 +43,17 @@ namespace LivingCity.Business
             ownerGenerations.TryGetValue(businessId, out var generation)
                 ? generation : 0;
 
+        /// <summary>The physical killing closes the counter immediately. Bookkeeping
+        /// later records the completed job without replacing the owner a second time.</summary>
+        public bool RecordOwnerDeath(TerritoryBusinessId businessId)
+        {
+            if (shutdowns == null || !shutdowns.Shut(
+                    businessId, BusinessShutdownCause.Death, CurrentGameHour))
+                return false;
+            AdvanceOwner(businessId);
+            return true;
+        }
+
         /// <summary>Replace the dead proprietor immediately. Only the generation is
         /// persistent; the owner record is replayed from seed and site on load.</summary>
         public BusinessOwnerRecord AdvanceOwner(TerritoryBusinessId businessId)

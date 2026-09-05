@@ -128,7 +128,7 @@ namespace RoadDemo
         public string hint =
             "Right-click: send/drive   Shift+right-click: road orders\n" +
             "WASD/arrows: move   Q/E or right-drag: rotate   wheel: zoom\n" +
-            "Click: select/card   O: lot info   H: see through buildings   M: mute";
+            "Click: select/card   Left-drag: move the picture   O: lot info   H: see through buildings   M: mute";
 
         /// <summary>Pixels the hint sits below the top of the screen (the road demo's
         /// top bar is 42 canvas-px on the 1080 reference height).</summary>
@@ -197,7 +197,7 @@ namespace RoadDemo
                 if (kb.eKey.isPressed) yaw += 70f * dt;
             }
 
-            var mouse = BookOpen || SuppressInput ? null : Mouse.current;
+            var mouse = BookOpen || SuppressInput || CityConditionHud.PointerOverControls ? null : Mouse.current;
             if (mouse != null)
             {
                 // While the turf map is visible it owns the wheel: it has to pin the
@@ -213,6 +213,17 @@ namespace RoadDemo
                     if (!PitchLocked)
                         pitch -= d.y * 0.2f;
                 }
+
+                // THE LEFT BUTTON HELD AND MOVED IS THE PLAYER TAKING HOLD OF THE
+                // GROUND. The ground under the pointer stays under the pointer, so the
+                // picture goes exactly as far as the hand does at any zoom or pitch -
+                // no metres-per-pixel constant to be wrong at one boom or the other.
+                // The maps read the left button themselves (marquee, their own drag)
+                // and say so through PointerGesture.DragTaken.
+                if (PointerGesture.Dragging && !MapOut && !TurfMapHud.IsOpen &&
+                    !PointerGesture.DragTaken &&
+                    !LivingCity.UI.StrategicMapHud.InputBlocked)
+                    DragGround(mouse);
             }
 
             // Riding a crew: the pivot goes where he goes, and keeps going, until the
@@ -238,6 +249,40 @@ namespace RoadDemo
             var rot = Quaternion.Euler(pitch, yaw, 0f);
             transform.SetPositionAndRotation(pivot + rot * new Vector3(0f, 0f, -distance), rot);
         }
+
+        /// <summary>Shove the pivot by the ground the pointer travelled over this
+        /// frame: the point of the plane that was under the cursor before the move is
+        /// put back under it. A drag that starts on the sky has nothing to hold, so
+        /// the frame is simply skipped.</summary>
+        void DragGround(Mouse mouse)
+        {
+            Vector2 delta = mouse.delta.ReadValue();
+            if (delta == Vector2.zero) return;
+            if (_lens == null) _lens = GetComponent<Camera>();
+            if (_lens == null) return;
+
+            Vector2 now = mouse.position.ReadValue();
+            var ground = new Plane(Vector3.up, new Vector3(0f, pivot.y, 0f));
+            if (!OnGround(ground, now, out var here) ||
+                !OnGround(ground, now - delta, out var was))
+                return;
+
+            pivot += was - here;
+            _ride = null; // the player moved the camera himself: the ride is over
+        }
+
+        bool OnGround(Plane ground, Vector2 screen, out Vector3 at)
+        {
+            at = Vector3.zero;
+            var ray = _lens.ScreenPointToRay(screen);
+            if (!ground.Raycast(ray, out float t) || t <= 0f || t > 20000f) return false;
+            at = ray.GetPoint(t);
+            return true;
+        }
+
+        /// <summary>The camera this rig steers, for the screen-to-ground arithmetic of
+        /// a drag. Cached: it is the same component every frame.</summary>
+        Camera _lens;
 
         /// <summary>Is the camera riding someone?</summary>
         public bool Riding => _ride != null;

@@ -424,6 +424,24 @@ namespace RoadDemo
         float _repickTimer;
         float _lateral; // the line he is actually holding across the pavement
         float _lane;    // the line he WANTS: his own side of the walk, kept right
+
+        /// <summary>How far off a stretch's centre line a walker may hold on a
+        /// pavement: the free slots run to +-2 m (PedLink.Slots) and his shoulders
+        /// take the rest.</summary>
+        public const float PavementLane = 1.9f;
+
+        /// <summary>The same on a crossing: a zebra keeps him on the paint, so the
+        /// lane he is dealt and the crowd's shove are held to under a metre of
+        /// the line between the two kerbs.</summary>
+        public const float ZebraLane = 0.9f;
+
+        /// <summary>How far off that line the FURNITURE may move him. A crossing's
+        /// two mouths lie on the pavement, over the kerb strip, and a lamp post or
+        /// a meter seated there stands right on the line every walker takes; the
+        /// zebra band is five metres deep, so a man can step nearly two metres off
+        /// its centre and still be on the paint. Held to the lane instead, he could
+        /// not get round the post at all (see GraphLine).</summary>
+        public const float ZebraSlip = 1.9f;
         float _push;    // this frame's shove from whoever is in his way
         float _hold = 1f; // 1 clear road ahead, 0 stopped behind somebody
         float _shuffle;   // how far he has edged sideways waiting at a light
@@ -857,7 +875,18 @@ namespace RoadDemo
 
         const float CrowdCell = 2f;
         const float Notice = 1.25f;   // metres at which another walker registers
-        const float Touch = 0.4f;     // metres at which he has to stop
+        const float Touch = 0.3f;     // metres at which he has to stop
+
+        /// <summary>Half of what a walker takes to be another man's BODY in the crowd
+        /// - the line ahead of him he will not walk into but slow behind. A foot's
+        /// width, not a pair of shoulders: at shoulder width (0.42) two men whose lanes
+        /// differed by less than that held each other and passed only once the eased
+        /// shove had moved one of them aside, and behind a man stopped at a crossing's
+        /// mouth a queue formed across the whole pavement. The user, 2026-09-06: "ljudi
+        /// treba da imaju jako mali boks, sirinu jednog stopala tako da se mimoilaze
+        /// lakse". The shove itself still reads the whole Notice radius, so they lean
+        /// off one another as before; they just do not STOP for a shoulder.</summary>
+        const float Body = 0.15f;
 
         static readonly List<PedestrianAgent> Walking = new List<PedestrianAgent>();
 
@@ -1097,7 +1126,7 @@ namespace RoadDemo
                             : -Mathf.Sign(side);
                         want += steer * weight * (mate ? 0.4f : 0.8f);
 
-                        if (front > 0.05f && Mathf.Abs(side) < 0.42f)
+                        if (front > 0.05f && Mathf.Abs(side) < Body)
                             _hold = Mathf.Min(_hold, Mathf.InverseLerp(Touch, Notice, dist));
                     }
                 }
@@ -2258,6 +2287,34 @@ namespace RoadDemo
         /// walk it.</summary>
         protected virtual float GraphPace(bool gated) => gated ? Speed * CrossHustle : Speed;
 
+        /// <summary>The line a walker holds across his stretch at metre <paramref name="t"/>:
+        /// what he wants (his lane and the crowd's shove), held to the stretch's width,
+        /// then moved to the nearest line the furniture leaves clear over the next
+        /// <paramref name="ahead"/> metres (PedLink.FreeLine). A crossing holds the WANT
+        /// tighter than a pavement - a zebra keeps him on the paint - but lets the
+        /// furniture move him further than that: its mouths are on the pavement, over
+        /// the kerb strip, and until 2026-09-06 a crossing never read the furniture at
+        /// all, so a lamp post or a meter stood at a mouth stopped every walker who met
+        /// it ("npcovi se zakoce na pesackim ako je tipa lampa na pavementu gde krece
+        /// pesacki"). Pure, so the regression is provable without a scene.</summary>
+        public static float GraphLine(PedLink link, float t, float ahead, float wanted)
+        {
+            float lane = link.Gated ? ZebraLane : PavementLane;
+            float slip = link.Gated ? ZebraSlip : PavementLane;
+            float want = Mathf.Clamp(wanted, -lane, lane);
+            return Mathf.Clamp(link.FreeLine(t, ahead, want), -slip, slip);
+        }
+
+        /// <summary>Across the stretch, to his right.</summary>
+        Vector3 LinkRight
+        {
+            get
+            {
+                var d = LinkDirection;
+                return new Vector3(d.z, 0f, -d.x);
+            }
+        }
+
         /// <summary>
         /// Prove the actual step against the live furniture. Streamed blocks may
         /// arrive after the graph's clearance was sampled, for civilians as well as crews.
@@ -2279,8 +2336,13 @@ namespace RoadDemo
             }
             // Get onto the newly sampled clear line before advancing into the prop.
             // If the entire corridor is closed, turn back to the last graph junction.
-            var lateral = Mathf.Clamp(_link.FreeLine(_t, FreeLineAhead, _lane), -1.9f, 1.9f);
-            var right = new Vector3(LinkDirection.z, 0f, -LinkDirection.x);
+            // THE SAME LINE MOVE WILL ASK FOR, or the two fight: this shifted him onto
+            // the clear line and the next step pulled him back toward his lane, every
+            // frame, for ever - a walker met by a lamp post at a crossing's mouth
+            // jittered on the spot until the scene was closed (the blocked clock
+            // restarts on every shift that lands, so he never turned back either).
+            var lateral = GraphLine(_link, _t, FreeLineAhead, _lane + _push * PushGain);
+            var right = LinkRight;
             var shift = Mathf.Clamp(lateral - _lateral,
                 -2.4f * Time.deltaTime, 2.4f * Time.deltaTime);
             var to = Tf.position + right * shift;
@@ -2325,7 +2387,12 @@ namespace RoadDemo
             float nextT = _t + speed * dt;
             if (nextT >= _link.Length)
             {
-                var nodePosition = _link.To.Pos;
+                // the point his feet actually reach: the node, on the line he holds.
+                // Proved against the node's own centre, a bin stood on a corner's
+                // centre point turned back every walker who came to that corner -
+                // each of them a metre to one side of it, on clear pavement - and
+                // nobody ever got past it.
+                var nodePosition = _link.To.Pos + LinkRight * _lateral;
                 // dt=0 is Init's one intentional seating snap onto the graph. It is
                 // placement, not a walked step, and must not hand a half-initialised
                 // derived agent to its runtime reroute hook.
@@ -2358,10 +2425,7 @@ namespace RoadDemo
                 // put on the nearest line that is actually clear of the furniture -
                 // read a stride and a half ahead, so he leans round a palm or a bin
                 // rather than arriving at it. A crossing keeps him on the zebra.
-                float limit = _link.Gated ? 0.9f : 1.9f;
-                float want = Mathf.Clamp(_lane + _push * PushGain, -limit, limit);
-                if (!_link.Gated)
-                    want = Mathf.Clamp(_link.FreeLine(nextT, FreeLineAhead, want), -limit, limit);
+                float want = GraphLine(_link, nextT, FreeLineAhead, _lane + _push * PushGain);
                 float nextLateral = Mathf.MoveTowards(_lateral, want, 2.4f * dt);
 
                 pos += new Vector3(dirN.z, 0f, -dirN.x) * nextLateral;

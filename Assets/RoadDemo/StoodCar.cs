@@ -33,21 +33,26 @@ namespace RoadDemo
 
         public Transform Tf => _tf;
 
-        /// <summary>Stand this body on the road, measured off its own renderers (it is
-        /// laid down nose along the street, so the box its meshes fill is its size), and
-        /// put it among the road's users.</summary>
+        /// <summary>Stand this body on the road with the same traffic footprint as a
+        /// moving car, and put it among the road's users.</summary>
         public static StoodCar Park(GameObject car)
         {
             if (car == null) return null;
-            var renderers = car.GetComponentsInChildren<Renderer>();
-            if (renderers.Length == 0) return null;
-            var b = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++) b.Encapsulate(renderers[i].bounds);
-            // the body as it stands: along its nose, and across it
-            var f = car.transform.forward;
-            float halfLength = Mathf.Abs(f.z) * b.extents.z + Mathf.Abs(f.x) * b.extents.x;
-            float halfWidth = Mathf.Abs(f.z) * b.extents.x + Mathf.Abs(f.x) * b.extents.z;
-            var stood = new StoodCar(car.transform, Mathf.Max(1f, halfLength), Mathf.Max(0.7f, halfWidth));
+            // An owned car becoming a roadblock already has a measured body. Its
+            // passengers, open doors and attached effects must not permanently resize
+            // it just because it switched from driving to standing. These dimensions
+            // already include TrafficFootprintScale; do not scale them a second time.
+            float halfLength = 0f, halfWidth = 0f;
+            foreach (var moving in RoadCar.All)
+                if (moving.Tf == car.transform)
+                {
+                    halfLength = moving.HalfLength;
+                    halfWidth = moving.HalfWidth;
+                    break;
+                }
+            if (halfLength <= 0f && !CarBody.MeasureTrafficFootprint(car.transform, out halfLength, out halfWidth))
+                return null;
+            var stood = new StoodCar(car.transform, halfLength, halfWidth);
             StreetTraffic.Users.Add(stood);
             // and on the road's own books (LaneNet): the lane's traffic plans round it
             stood._occupant = LaneNet.Active?.AddStatic(stood);

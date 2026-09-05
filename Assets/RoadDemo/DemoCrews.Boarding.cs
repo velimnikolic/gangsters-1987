@@ -376,7 +376,7 @@ namespace RoadDemo
             // Otherwise it pulls in at the nearest kerb it can actually reach - the
             // stopping distance from here, no further, no turning round - and lets them
             // down onto the pavement: a car of the outfit's is never left in the road.
-            if (!car.Moving) return;
+            if (!car.Moving && !car.ParkingFailed) return;
             if (car.Hot || car.State == CrewCar.Mode.DriveBy) car.HardStop();
             else car.ParkNear(car.Position);
         }
@@ -495,7 +495,8 @@ namespace RoadDemo
 
                 // the man at the wheel shot: nobody is driving - the car rolls to a stop
                 // where it is and the crew gets out of it (and, out, fights on or runs)
-                if (car.Occupant != null && !car.Occupant.Leaving && car.Moving && DriverDead(car))
+                if (car.Occupant != null && !car.Occupant.Leaving &&
+                    (car.Moving || car.ParkingFailed) && DriverDead(car))
                 {
                     if (DriveTrace.On)
                     {
@@ -638,7 +639,8 @@ namespace RoadDemo
                 }
 
                 // a crew told to get out waits for the kerb, then each man for his door
-                if (car.Occupant != null && car.Occupant.Leaving && !car.Moving)
+                if (car.Occupant != null && car.Occupant.Leaving && !car.Moving &&
+                    (!car.ParkingFailed || car.EngineDead || DriverDead(car)))
                 {
                     var unit = car.Occupant;
                     var outNow = new List<CrewWalker>();

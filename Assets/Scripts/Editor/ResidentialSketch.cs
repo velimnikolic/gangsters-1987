@@ -310,6 +310,7 @@ namespace LivingCity.EditorTools
             // MiniCoreDemo stands (not the compact precinct above) and the nightclub.
             said.AppendLine("core-blocks    " + AddCoreBlocks(scene, seed++));
             index += CoreBlocks.Length;
+            ResidentialConditionSketch.Configure(scene);
 
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, DemoScene);
