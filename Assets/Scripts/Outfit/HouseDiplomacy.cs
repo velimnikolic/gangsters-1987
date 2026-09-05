@@ -286,6 +286,18 @@ namespace LivingCity.Outfit
         public const string ReasonNotOurMan = "he is not ours";
         public const string ReasonTheStreetPricesIt = "the street prices it";
 
+        // WHY A WORD CANNOT BE SAID, in the sheet's own short words (the greyed key's
+        // sub-line). Where the desk's reason already says it, the desk's is reused.
+        public const string ReasonWeAreAtPeace = "we are at peace";
+        public const string ReasonATruceStands = "a truce stands";
+        public const string ReasonNotWithAWarOn = "not with a war on";
+        public const string ReasonNoStreetOfOurs = "no street of ours";
+        public const string ReasonTheyOweUsNothing = "they owe us nothing";
+        public const string ReasonAPactStands = "a pact stands already";
+        public const string ReasonNoThirdHouse = "no third house";
+        public const string ReasonWeAreAtWar = "we are at war";
+        public const string ReasonWarLandsAtMidnight = "war lands at midnight";
+
         readonly List<Proposal> proposals = new List<Proposal>();
         readonly Dictionary<(int house, string block), int> keepOff =
             new Dictionary<(int, string), int>();
@@ -622,6 +634,68 @@ namespace LivingCity.Outfit
         /// <summary>The most a bill from one house to another may ask: what the sender
         /// is owed above the threat rung, at the table's rate - the mind's own price
         /// for its bill, made the ceiling for everybody's.</summary>
+        /// <summary>
+        /// WHY A WORD CANNOT BE SAID TO THAT HOUSE NOW - null when it can. The ledger's
+        /// table greys a key by this and prints the reason under it, so a player is
+        /// never handed a key that only ever answers with a refusal: a peace offered
+        /// at peace, a bill for nothing owed, a line named on no street. Pure over the
+        /// figures the sheet already shows; the desk still answers the word itself.
+        /// </summary>
+        public static string WhyNot(ProposalKind kind, Stance stance, bool alreadyAsked,
+            bool hasStreet, bool hasThird, bool pactStands, int billCeiling,
+            int tributeOwe, int tributeOwed, int ourEndurance,
+            HouseRelationsConfig relations = null)
+        {
+            relations = relations ?? HouseRelationsConfig.Default;
+            if (kind == ProposalKind.None || kind == ProposalKind.Ransom)
+                return ReasonNothingToSay;
+            if (alreadyAsked)
+                return ReasonAlreadyAsked;
+            switch (kind)
+            {
+                case ProposalKind.OfferTruce:
+                    return stance == Stance.War ? null
+                        : stance == Stance.Truce ? ReasonATruceStands
+                        : ReasonWeAreAtPeace;
+                case ProposalKind.OfferPeace:
+                    return stance == Stance.War ? ReasonAWarEndsInATruce
+                        : stance == Stance.Peace ? ReasonWeAreAtPeace
+                        : null;
+                case ProposalKind.Warn:
+                case ProposalKind.Threaten:
+                    return stance == Stance.War ? ReasonNotWithAWarOn
+                        : !hasStreet ? ReasonNoStreetOfOurs
+                        : null;
+                case ProposalKind.Bill:
+                    return billCeiling > 0 ? null : ReasonTheyOweUsNothing;
+                case ProposalKind.TributeTerms:
+                    return stance == Stance.War || (tributeOwe <= 0 && tributeOwed <= 0)
+                        ? ReasonNobodyOwesAnybody
+                        : null;
+                case ProposalKind.Line:
+                    return !hasStreet ? ReasonNoStreetOfOurs
+                        : ourEndurance >= relations.MinWarDays ? ReasonWeCanAffordToArgue
+                        : null;
+                case ProposalKind.Pact:
+                    return stance != Stance.Peace ? ReasonNotAtPeaceWithThem
+                        : pactStands ? ReasonAPactStands
+                        : !hasThird ? ReasonNoThirdHouse
+                        : null;
+                case ProposalKind.JoinWar:
+                    return stance != Stance.Peace ? ReasonNotAtPeaceWithThem
+                        : !hasThird ? ReasonNoWarToJoin
+                        : null;
+            }
+            return ReasonNothingToSay;
+        }
+
+        /// <summary>Why war cannot be declared on that house now - null when it can:
+        /// it is on already, or it lands at midnight.</summary>
+        public static string WhyNotWar(Stance stance, bool warPending) =>
+            stance == Stance.War ? ReasonWeAreAtWar
+            : warPending ? ReasonWarLandsAtMidnight
+            : null;
+
         public static int BillCeiling(HouseRelations relations, int from, int to,
             DiplomacyConfig config, int day)
         {

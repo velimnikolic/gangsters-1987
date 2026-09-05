@@ -141,6 +141,16 @@ between the two houses. The buttons call `OutfitDirector.Propose / Reply / Ambus
 SendToSitDown / SetStance`; WAR stays a declaration. The telephone card (EPIC 40's
 STREET-002) is not wired to proposals yet; the inbox on the sheet is the surface.
 
+The keys are the questions and the panel under the pressed one holds the terms: OFFER TRUCE
+opens money and the carrier; SEND A BILL opens money already set to the most it may ask
+today; WARNING, THREAT and DRAW A LINE open the street; OFFER A PACT and JOIN MY WAR open
+the third house (a war joined lists only the houses we are at war with); DECLARE WAR opens
+its own word and a DECLARE key. A key that can only ever be refused is greyed, with the reason
+printed under it in the sheet's short words - `HouseDiplomacy.WhyNot` and `WhyNotWar`, pure
+over the figures the sheet shows (stance, a word already asked, a street of ours, a third, a
+pact standing, the bill ceiling, the levy either way, our days of wages). The desk still
+answers the word itself.
+
 ## Reading it
 
 * `gangsters_diplomacy_tests` - the contracts, every ticket's.

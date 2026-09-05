@@ -82,6 +82,7 @@ namespace LivingCity.Tests
             AnUnpaidBillLeftToAgeIsStillAWordIgnored(failures);
             AnAgedBillIsRepricedWhenItIsPaid(failures);
             ADeliveredBillIsRepricedBeforeTheDeskAnswers(failures);
+            TheSheetGreysWhatCannotBeSaid(failures);
 
             return failures;
         }
@@ -2607,6 +2608,68 @@ namespace LivingCity.Tests
             if (before - debtor.Runner.Accounts.Safe != today)
                 failures.Add("CODEX: the delivered bill took $" + (before - debtor.Runner.Accounts.Safe) +
                              ", not today's $" + today + ".");
+        }
+
+        /// <summary>THE SHEET'S KEYS (DIPL-010): a word that can only ever be refused
+        /// is greyed with the reason, by the same short table for every state - so a
+        /// peace at peace, a bill for nothing, a line on no street, a pact that stands
+        /// and a war already on are never handed to the player as live keys.</summary>
+        static void TheSheetGreysWhatCannotBeSaid(List<string> failures)
+        {
+            var rules = HouseRelationsConfig.Default;
+            string Why(ProposalKind kind, Stance stance, bool asked = false, bool street = true,
+                bool third = true, bool pact = false, int ceiling = 1_000, int owe = 0,
+                int owed = 0, int days = 5) =>
+                HouseDiplomacy.WhyNot(kind, stance, asked, street, third, pact, ceiling, owe,
+                    owed, days, rules);
+
+            void Expect(string what, string got, string want)
+            {
+                if (got != want)
+                    failures.Add("DIPL-010: " + what + " reads \"" + (got ?? "live") +
+                                 "\", not \"" + (want ?? "live") + "\".");
+            }
+
+            // At peace: truce and peace have nothing to end; a pact and a joined war are
+            // the words of peace; the rest speak when their terms are there.
+            Expect("truce at peace", Why(ProposalKind.OfferTruce, Stance.Peace), HouseDiplomacy.ReasonWeAreAtPeace);
+            Expect("peace at peace", Why(ProposalKind.OfferPeace, Stance.Peace), HouseDiplomacy.ReasonWeAreAtPeace);
+            Expect("warning at peace", Why(ProposalKind.Warn, Stance.Peace), null);
+            Expect("bill at peace, owed", Why(ProposalKind.Bill, Stance.Peace), null);
+            Expect("pact at peace", Why(ProposalKind.Pact, Stance.Peace), null);
+            Expect("joined war at peace with a war on", Why(ProposalKind.JoinWar, Stance.Peace), null);
+
+            // At war: a truce is the word; peace waits for it; nobody warns with a war on.
+            Expect("truce at war", Why(ProposalKind.OfferTruce, Stance.War), null);
+            Expect("peace at war", Why(ProposalKind.OfferPeace, Stance.War), HouseDiplomacy.ReasonAWarEndsInATruce);
+            Expect("warning at war", Why(ProposalKind.Warn, Stance.War), HouseDiplomacy.ReasonNotWithAWarOn);
+            Expect("threat at war", Why(ProposalKind.Threaten, Stance.War), HouseDiplomacy.ReasonNotWithAWarOn);
+            Expect("terms at war", Why(ProposalKind.TributeTerms, Stance.War, owe: 500), HouseDiplomacy.ReasonNobodyOwesAnybody);
+            Expect("pact at war", Why(ProposalKind.Pact, Stance.War), HouseDiplomacy.ReasonNotAtPeaceWithThem);
+
+            // In a truce: peace is the word, a truce stands already.
+            Expect("truce in a truce", Why(ProposalKind.OfferTruce, Stance.Truce), HouseDiplomacy.ReasonATruceStands);
+            Expect("peace in a truce", Why(ProposalKind.OfferPeace, Stance.Truce), null);
+
+            // The terms that are missing.
+            Expect("warning with no street", Why(ProposalKind.Warn, Stance.Peace, street: false), HouseDiplomacy.ReasonNoStreetOfOurs);
+            Expect("line with no street", Why(ProposalKind.Line, Stance.Peace, street: false), HouseDiplomacy.ReasonNoStreetOfOurs);
+            Expect("bill for nothing", Why(ProposalKind.Bill, Stance.Peace, ceiling: 0), HouseDiplomacy.ReasonTheyOweUsNothing);
+            Expect("terms with no levy", Why(ProposalKind.TributeTerms, Stance.Peace), HouseDiplomacy.ReasonNobodyOwesAnybody);
+            Expect("terms we are levied", Why(ProposalKind.TributeTerms, Stance.Peace, owe: 1_500), null);
+            Expect("terms we levy", Why(ProposalKind.TributeTerms, Stance.Peace, owed: 1_500), null);
+            Expect("line while rich", Why(ProposalKind.Line, Stance.Peace, days: rules.MinWarDays), HouseDiplomacy.ReasonWeCanAffordToArgue);
+            Expect("line while broke", Why(ProposalKind.Line, Stance.Peace, days: rules.MinWarDays - 1), null);
+            Expect("pact that stands", Why(ProposalKind.Pact, Stance.Peace, pact: true), HouseDiplomacy.ReasonAPactStands);
+            Expect("pact with no third", Why(ProposalKind.Pact, Stance.Peace, third: false), HouseDiplomacy.ReasonNoThirdHouse);
+            Expect("joined war with no war", Why(ProposalKind.JoinWar, Stance.Peace, third: false), HouseDiplomacy.ReasonNoWarToJoin);
+            Expect("asked already", Why(ProposalKind.OfferTruce, Stance.War, asked: true), HouseDiplomacy.ReasonAlreadyAsked);
+            Expect("a ransom from the sheet", Why(ProposalKind.Ransom, Stance.War), HouseDiplomacy.ReasonNothingToSay);
+
+            // War: on already, or landing at midnight.
+            Expect("war at peace", HouseDiplomacy.WhyNotWar(Stance.Peace, false), null);
+            Expect("war at war", HouseDiplomacy.WhyNotWar(Stance.War, false), HouseDiplomacy.ReasonWeAreAtWar);
+            Expect("war pending", HouseDiplomacy.WhyNotWar(Stance.Peace, true), HouseDiplomacy.ReasonWarLandsAtMidnight);
         }
 
         /// <summary>House 1 bills the player $2,000 at war, then the player buys a
