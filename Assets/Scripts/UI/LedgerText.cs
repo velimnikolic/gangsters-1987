@@ -110,6 +110,7 @@ namespace LivingCity.UI
                 case IncidentKind.FiredOnTheOfficer: return "Fired on law";
                 case IncidentKind.TakenIn: return "Taken in";
                 case IncidentKind.Sprung: return "Sprung";
+                case IncidentKind.StreetTalk: return "Street";
                 case IncidentKind.CaseOpened: return "On the docket";
                 case IncidentKind.WitnessWithdrawn: return "Withdrawn";
                 case IncidentKind.WitnessKilled: return "Silenced";

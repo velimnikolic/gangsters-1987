@@ -149,6 +149,13 @@ namespace LivingCity.Personnel
 
         /// <summary>The escort brought its prisoner across the courthouse threshold.</summary>
         WalkedIn,
+
+        // ------------------------------------------------------------- EPIC 40
+        // Appended: the street's own lines on THE WIRE strip the player reads - a
+        // meeting that went well, a phone that does not ring and why.
+
+        /// <summary>A line off the street event book, in the book's own words.</summary>
+        StreetTalk,
     }
 
     /// <summary>
@@ -168,6 +175,7 @@ namespace LivingCity.Personnel
             switch (kind)
             {
                 case IncidentKind.AWordBetweenHouses:
+                case IncidentKind.StreetTalk:
                     // The whole sentence was written by the house that said it: which
                     // family, and what it said. Nothing here to add to it.
                     return name;

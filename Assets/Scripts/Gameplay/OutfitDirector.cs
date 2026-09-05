@@ -337,6 +337,8 @@ namespace LivingCity.Gameplay
             Adopt();
             if (Underworld.Current.AdvanceHours(elapsed))
                 Version++;
+            if (SweepStreetWire())
+                Version++;
 
             // Clock days are 0-based and the campaign's are 1-based; a while rather
             // than an if so a frame that swallowed several days (a rebuild, a long
@@ -380,6 +382,36 @@ namespace LivingCity.Gameplay
                     Debug.LogWarning("[Outfit] The autosave did not write: " + refusal);
             }
         }
+
+        /// <summary>
+        /// THE STREET ON THE WIRE (EPIC 40). The event book's lines - the meeting that
+        /// went well, the phone that does not ring and why - were printed only in the
+        /// paper's STREET TALK column; the strip the player actually watches is the
+        /// wire. Every new line is filed once as a StreetTalk slip, keyed by day and
+        /// text. The lines a file already carries when the sweep first runs are marked
+        /// seen, not re-filed.
+        /// </summary>
+        bool SweepStreetWire()
+        {
+            var wire = Runner?.Events?.Wire;
+            if (wire == null)
+                return false;
+            var filed = false;
+            for (var i = 0; i < wire.Count; i++)
+            {
+                var line = wire[i];
+                if (!wireSeen.Add((line.Day, line.Text)) || !wireSwept)
+                    continue;
+                Incidents.Add(new Incident(-1, line.Text, IncidentKind.StreetTalk, line.Day,
+                    "", 0, line.Text));
+                filed = true;
+            }
+            wireSwept = true;
+            return filed;
+        }
+
+        readonly HashSet<(int day, string text)> wireSeen = new HashSet<(int, string)>();
+        bool wireSwept;
 
         /// <summary>
         /// The flats' half of the night that needs a city. The heat goes onto the block
@@ -896,6 +928,8 @@ namespace LivingCity.Gameplay
         /// next midnight and the man's card comes at the six o'clock cut. Nothing here
         /// deals the card itself: what is watched is the ordinary path.
         /// </summary>
+        const int RingRoster = 20;
+
         public void DebugRingTomorrow(PersonnelDirector personnel)
         {
             var underworld = Underworld.Current;
@@ -911,8 +945,12 @@ namespace LivingCity.Gameplay
                 lieutenant = lt != null && !lt.Gone && lt.Rank == Rank.Lieutenant &&
                              crew.LieutenantId != house.Roster.BossId;
             }
+            // TWO crews, not six. Sixty men posted on one block bring the precinct
+            // down on it (one test day: 64 statements taken, nine men who ran, an
+            // officer killed) and the WATCHED gate then shuts the very card the key
+            // is meant to ring - the phone needs one lieutenant with a crew.
             if (!lieutenant && personnel != null)
-                personnel.DebugSeedLarge(60);
+                personnel.DebugSeedLarge(RingRoster);
 
             const int wholePath = 150_000;
             if (Accounts.Safe < wholePath)

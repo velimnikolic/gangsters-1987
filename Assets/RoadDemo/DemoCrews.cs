@@ -1179,6 +1179,7 @@ namespace RoadDemo
                     StreetTraffic.Bodies.Add(
                         new StreetTraffic.Body(man.Tf.position, man.Faction));
             TickDeserters(dt);
+            HealOrphans();
             foreach (var unit in Units)
                 foreach (var man in unit.All())
                     man.TickCrew(dt); // riders too: their pose (the seat, the gun out of the window) lives here
@@ -3467,9 +3468,19 @@ namespace RoadDemo
             // stays on the ground and takes no part in the crew's business
             if (!fresh && man.Dead)
             {
+                if (man.Tf == null) return;
                 man.CrowdGroupId = unit.CrowdGroupId;
                 if (boss) unit.Boss = man; else unit.Hoods.Add(man);
                 return;
+            }
+
+            // The roster outlives its street body. A removed hierarchy or an older
+            // retreat cleanup can leave a managed walker whose Transform is gone.
+            // Release its old reservations and let the ordinary spawn path rebuild it.
+            if (!fresh && man.Tf == null)
+            {
+                RemoveMan(id);
+                fresh = true;
             }
 
             // Door holds belong to the old posting. A promoted hood or a newly named
@@ -3826,6 +3837,7 @@ namespace RoadDemo
             if (!_byCharacter.TryGetValue(id, out var man)) return;
             _byCharacter.Remove(id);
             _chasers.Remove(man);
+            DoorBeat.Evict(man);
             // out of whatever car he sat in, or was walking to
             foreach (var car in Cars)
             {
@@ -3834,6 +3846,60 @@ namespace RoadDemo
             }
             man.Dispose();
             if (man.Tf) Destroy(man.Tf.gameObject);
+        }
+
+        /// <summary>
+        /// A MAN WHOSE BODY IS GONE while he still stands in a crew's line. Something
+        /// destroyed his Transform without striking him off the street (the two live
+        /// cases: Place parenting him under his crew, and TickCrew reading his position
+        /// - each a MissingReferenceException, and with the console's Error Pause on,
+        /// each a game that "froze"). He leaves the line and the lookup here, named in
+        /// the log so the destroyer can be found, and the next deal stands him up
+        /// again off the books that still carry him.
+        /// </summary>
+        void HealOrphans()
+        {
+            var healed = false;
+            for (var u = 0; u < Units.Count; u++)
+            {
+                var unit = Units[u];
+                if (unit.Boss != null && unit.Boss.Tf == null)
+                {
+                    Orphaned(unit, unit.Boss);
+                    unit.Boss = null;
+                    healed = true;
+                }
+                for (var h = unit.Hoods.Count - 1; h >= 0; h--)
+                {
+                    var hood = unit.Hoods[h];
+                    if (hood == null || hood.Tf != null)
+                        continue;
+                    Orphaned(unit, hood);
+                    unit.Hoods.RemoveAt(h);
+                    healed = true;
+                }
+            }
+            // the books still carry him: the next frame's deal gives him a body again
+            if (healed)
+                _seenVersion = int.MinValue;
+        }
+
+        void Orphaned(Unit unit, CrewWalker man)
+        {
+            Debug.LogWarning("[Crews] " + man.DisplayName + " (#" + man.CharacterId + ") of " +
+                             unit.Name + " lost his body while " + man.State +
+                             (man.Dead ? ", dead" : "") +
+                             " - off the street until the next deal stands him up.");
+            if (man.CharacterId >= 0 &&
+                _byCharacter.TryGetValue(man.CharacterId, out var registered) &&
+                registered == man)
+            {
+                RemoveMan(man.CharacterId);
+                return;
+            }
+            _chasers.Remove(man);
+            DoorBeat.Evict(man);
+            man.Dispose();
         }
 
         /// <summary>The car this man sits in right now, and his seat; null if none.</summary>

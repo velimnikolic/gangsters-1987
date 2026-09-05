@@ -28,7 +28,7 @@ A reason is a value, never a string, and every value has a `Line` (what is wrong
 
 | class | reasons | what happens |
 |---|---|---|
-| **deal gate** | `BossInCell`, `AtWar`, `NoSpeaker`, `NoMoney` (for the cheapest priced row), `Watched` (the QUIET gate) | the card is not dealt; the pot keeps filling; STREET TALK shows the gate |
+| **deal gate** | `BossInCell`, `AtWar`, `NoSpeaker`, `NoMoney` (for the cheapest priced row), `Watched` (the QUIET gate) | the card is not dealt; the pot keeps filling; STREET TALK shows the gate, and every midnight a full pot stays shut the wire says `<CARD> waits. <gate> - <what clears it>.` |
 | **hold reason** | `NoRoom`, `NoCrew`, and `NoMoney` when the safe drops after the deal | the card is dealt and waits PENDING three days, then expires Unanswered and the def cools |
 
 A house can do something about a hold — rent a room, bring a crew home — which is why it is
@@ -90,13 +90,19 @@ who goes and its risk in words. STREET TALK is the last column of the paper's fo
 edition: the PENDING card with its hold and what clears it (and THE PHONE key that reopens it),
 every signal of the def nearest its threshold with its state, the gate when shut, the pot in
 words, the broker's door and its watch, whose the line is, and the last three wire lines. The
-probe (`gangsters_connection_probe`) prints the same words.
+probe (`gangsters_connection_probe`) prints the same words. The def STREET TALK reads is the
+last one that applies today - the test buy and the terms included, so their gates print too.
+
+**The same lines run on THE WIRE strip of the street HUD.** `OutfitDirector.SweepStreetWire`
+files every new line of the player's event book as an `IncidentKind.StreetTalk` slip (tag
+"Street"), keyed by day and text, so the meeting that went well and the phone that does not
+ring are read where the player actually looks, not only on the paper's foot.
 
 ## The bench lever - F3
 
 The mini core's player is a lone Don, and a house with no lieutenant is told nothing; the
 whole path costs about $86,000 and the street wants a name. **F3 in the ledger** puts the
-house in the state the street wants - a lieutenant (it seeds the sixty if there is none),
+house in the state the street wants - a lieutenant (it seeds two crews, twenty men, if there is none: sixty on one block bring the precinct and the WATCHED gate shuts the test buy),
 $150,000 in the safe, our name in this morning's paper - and nothing else: the pot fills at
 the next midnight and the man's card comes at the six o'clock cut, so what is watched is the
 ordinary path. F2 alone seeds the men without the money or the name.

@@ -494,12 +494,22 @@ namespace LivingCity.Outfit
                 if (pot >= Full)
                     pot = 1f;
                 book.Pots[def.Id] = pot;
-                if (pot >= Full && pot > fullestPot &&
-                    def.Gate(view, ctx) == HoldReason.None)
+                if (pot < Full || pot <= fullestPot)
+                    continue;
+                var shut = def.Gate(view, ctx);
+                if (shut == HoldReason.None)
                 {
                     fullest = def;
                     fullestPot = pot;
                 }
+                else if (book.Pending == null)
+                    // A full pot behind a shut gate is a phone that does not ring. The
+                    // wire says why, every midnight it stays shut, rather than leaving
+                    // the silence to be guessed at (the user's day 4: the test buy sat
+                    // behind WATCHED and nothing anywhere said so).
+                    book.Say(day, (string.IsNullOrEmpty(def.Name) ? def.Id.ToString() : def.Name) +
+                                  " waits. " + HoldReasons.Line(shut) + " - " +
+                                  HoldReasons.Clears(shut) + ".");
             }
             book.Touch();
 

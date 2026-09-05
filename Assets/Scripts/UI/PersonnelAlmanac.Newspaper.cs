@@ -358,9 +358,11 @@ namespace LivingCity.UI
             // The def nearest its threshold: every signal, the gate, the pot.
             LedgerOutfit.EventDef nearest = null;
             var defs = LedgerOutfit.ConnectionEvents.Defs;
+            // EVERY card the street could deal today, not only the first two: the
+            // test buy and the terms have gates of their own, and a gate nobody
+            // prints is a phone that stops ringing for no reason the player can read.
             for (var i = 0; i < defs.Count; i++)
-                if (defs[i].Applies(view, ctx) && (defs[i].Id == LedgerOutfit.EventId.TheMan ||
-                                                   defs[i].Id == LedgerOutfit.EventId.BrokerRumour))
+                if (defs[i].Applies(view, ctx))
                     nearest = defs[i];
             if (nearest != null && card == null)
             {
@@ -369,7 +371,8 @@ namespace LivingCity.UI
                     Say(signals[i].Name + " - " + signals[i].Line + ".", LedgerV2.Ink, 12f, 2);
                 var gate = nearest.Gate(view, ctx);
                 if (gate != LedgerOutfit.HoldReason.None)
-                    Say("Shut: " + LedgerOutfit.HoldReasons.Line(gate).ToLowerInvariant() +
+                    Say(nearest.Name + " is shut: " +
+                        LedgerOutfit.HoldReasons.Line(gate).ToLowerInvariant() +
                         " - " + LedgerOutfit.HoldReasons.Clears(gate) + ".",
                         LedgerV2.Amber, 12f, 3);
                 var pot = book.PotOf(nearest.Id);
