@@ -342,11 +342,20 @@ namespace LivingCity.UI
                             "clears what they hold against us · peace when little is left · " +
                             "not for a month after a killing");
                         break;
+                    // The two words carry the SAME demand and the same weight - the
+                    // ladder's first rung and its last before a bill. The hints say
+                    // which rung is being said rather than pretending they differ.
                     case ProposalKind.Warn:
+                        y = StreetRow(sheet, y, w,
+                            "the first word: keep off that street · " + config.ComplyDays +
+                            " days if they yield · they yield to a house that reads stronger " +
+                            "and is owed nothing" + reads);
+                        break;
                     case ProposalKind.Threaten:
                         y = StreetRow(sheet, y, w,
-                            "keeps them off it for " + config.ComplyDays + " days if they yield · " +
-                            "they yield to a house that reads stronger and is owed nothing" + reads);
+                            "the last word before a bill: the same demand, said once more · " +
+                            config.ComplyDays + " days if they yield · either word refused or " +
+                            "left two days is owed for" + reads);
                         break;
                     case ProposalKind.Bill:
                         y = MoneyRow(sheet, y, w, tableCeiling,
