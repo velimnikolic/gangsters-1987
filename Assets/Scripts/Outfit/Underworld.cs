@@ -66,6 +66,75 @@ namespace LivingCity.Outfit
         /// <summary>The public record shared by every house in the city.</summary>
         public PressBook Press { get; } = new PressBook();
 
+        /// <summary>
+        /// PABLO'S MAN (EPIC 40, ruling 6). Exactly one man in the city carries the
+        /// Direct line. What the deal draws hidden is his TURN - which signing of a
+        /// connection man, city-wide, is him - because ids are allocated when a man is
+        /// made and his cannot exist at Deal. His id is bound at that signing; unsigned
+        /// (his card expired, the house walked away) he moves on to the next signing,
+        /// and not for thirty days.
+        /// </summary>
+        public int DirectTurn { get; set; } = 1;
+
+        public int DirectManId { get; set; } = -1;
+        public int DirectNotBeforeDay { get; set; }
+
+        /// <summary>How many connection men have been signed city-wide.</summary>
+        public int TheManSigned { get; set; }
+
+        /// <summary>Whether the NEXT signing, on this day, is his.</summary>
+        public bool NextSigningIsDirect(int day) =>
+            DirectManId < 0 && TheManSigned + 1 == DirectTurn && day >= DirectNotBeforeDay;
+
+        /// <summary>A connection man signed somewhere. Binds the id when the turn is
+        /// his.</summary>
+        public void ConnectionManSigned(int characterId, int day)
+        {
+            if (NextSigningIsDirect(day))
+                DirectManId = characterId;
+            TheManSigned++;
+        }
+
+        /// <summary>A man's card went unanswered or was walked away from while the
+        /// next signing was Pablo's: he moves on, and not for thirty days.</summary>
+        public void DirectDeclined(int day)
+        {
+            if (DirectManId >= 0 || TheManSigned + 1 != DirectTurn)
+                return;
+            DirectNotBeforeDay = day + Connection.BurnedDays;
+        }
+
+        /// <summary>WHAT EVERY HOUSE HAS ASKED EVERY OTHER (EPIC 42) - one book for the
+        /// city, beside the book of standings, for the same reason.</summary>
+        public HouseDiplomacy Diplomacy { get; } = new HouseDiplomacy();
+
+        /// <summary>
+        /// MONEY BETWEEN TWO HOUSES - the one door it crosses through (EPIC 42). Paid
+        /// out of the payer's safe first, dirty-first like everything, and only then
+        /// received by the payee, dirty: street money arriving is street money. Both
+        /// sheets carry the line. Answers the payer's refusal, or null when it moved.
+        /// </summary>
+        public string Transfer(int from, int to, int amount)
+        {
+            var payer = Of(from);
+            var payee = Of(to);
+            if (payer == null || payee == null || from == to || amount <= 0)
+                return "nothing to move";
+            var refusal = BalanceMath.Pay(payer.Runner.Accounts, amount, out _);
+            if (refusal != null)
+                return refusal;
+            BalanceMath.Receive(payee.Runner.Accounts, amount, MoneyKind.Dirty);
+            var paid = payer.Runner.Accounts.Current;
+            if (paid != null)
+                paid.ToHouses += amount;
+            var got = payee.Runner.Accounts.Current;
+            if (got != null)
+                got.FromHouses += amount;
+            payer.Touch();
+            payee.Touch();
+            return null;
+        }
+
         public int Count => houses.Length;
 
         /// <summary>
@@ -108,6 +177,9 @@ namespace LivingCity.Outfit
                 : houses > GangCatalog.GangCount ? GangCatalog.GangCount
                 : houses;
             var underworld = new Underworld { CitySeed = citySeed, Dealt = dealt };
+            // Which signing carries Pablo's man: drawn hidden, off the city's seed.
+            underworld.DirectTurn = 1 + (int)((uint)Personnel.Potential.Mix(
+                citySeed + 40_003, 7_2_1_9) % (uint)dealt);
             for (var gangId = 0; gangId < dealt; gangId++)
             {
                 var roster = RosterSeeder.Generate(citySeed, gangId);
@@ -127,6 +199,7 @@ namespace LivingCity.Outfit
                     Seed = citySeed,
                     GangId = gangId,
                     Relations = underworld.Relations,
+                    World = underworld,
                 };
                 runner.OpenFirstSheet();
                 underworld.houses[gangId] = new House(gangId, roster, runner);
@@ -323,19 +396,102 @@ namespace LivingCity.Outfit
         /// turn the city ever takes.</summary>
         int thinkCursor;
 
+        /// <summary>THE ENVOY ARRIVED (EPIC 42, DIPL-008): the proposal his job carried
+        /// is delivered to the desk it was carried to.</summary>
+        public void SitDown(Job job, int by, int day)
+        {
+            if (job == null || job.ProposalId <= 0)
+                return;
+            var proposal = Diplomacy.Find(job.ProposalId);
+            if (proposal == null || proposal.From != by)
+                return;
+            HouseOps.Deliver(this, job.ProposalId, HouseOps.Look);
+        }
+
+        /// <summary>
+        /// A MAN IN SOMEBODY'S CELLAR (RIVAL-009 step 6; EPIC 42 DIPL-005 brought it
+        /// into the books from the scene edge). He is off his own family's books for
+        /// KidnapDays, they are owed for it, and the price to have him back at once is
+        /// on the table as a proposal - answered at the desk by his own house's rule,
+        /// or waiting in the player's inbox as long as he is held.
+        /// </summary>
+        public void TakeHim(Job job, int by, int day)
+        {
+            if (job == null || job.TargetCharacterId < 0 || Of(by) == null)
+                return;
+            for (var g = 0; g < houses.Length; g++)
+            {
+                var house = houses[g];
+                var man = house?.Roster?.Find(job.TargetCharacterId);
+                if (man == null || man.Gone || man.Status != CharacterStatus.Active)
+                    continue;
+
+                RosterOps.Taken(house.Roster, man.Id, day + OrderResolution.KidnapDays,
+                    "held by " + GangCatalog.Names[by]);
+                house.Touch();
+                if (house.GangId != by)
+                    Relations.Note(house.GangId, by, GrievanceKind.ManTaken, day);
+
+                var ransom = new Proposal { To = house.GangId, Kind = ProposalKind.Ransom };
+                ransom.Terms.Money = EconomyPrices.KidnapCut;
+                ransom.Terms.CharacterId = man.Id;
+                ransom.Terms.Label = man.FullName;
+                if (house.GangId != by)
+                    HouseOps.Propose(this, Of(by), ransom, HouseOps.Look);
+                return;
+            }
+        }
+
+        readonly System.Collections.Generic.List<AgreementOutcome> outcomes =
+            new System.Collections.Generic.List<AgreementOutcome>();
+
+        readonly System.Collections.Generic.List<int> soured =
+            new System.Collections.Generic.List<int>();
+
+        readonly System.Collections.Generic.List<StanceLanded> landed =
+            new System.Collections.Generic.List<StanceLanded>();
+
+        /// <summary>
+        /// THE ENVELOPES CROSS (EPIC 42, DIPL-004, ruling 2). Every house re-prices
+        /// what it owes the houses above it against this morning's city, in gang-id
+        /// order so two runs of one seed pay in one order, and every envelope that
+        /// falls due goes through Transfer - out of the payer's safe and INTO the
+        /// levying house's, which it never reached before. A house that cannot cover
+        /// its envelope is owed for it by the house it stiffed (D14).
+        /// </summary>
+        void SettleTribute(int day)
+        {
+            for (var g = 0; g < houses.Length; g++)
+            {
+                var house = houses[g];
+                if (house == null || house.Finished)
+                    continue;
+                house.Runner.AssessTribute(day);
+                var payer = house.GangId;
+                house.Runner.Tribute.Settle(
+                    levy => Transfer(payer, levy.GangId, levy.Amount), day, soured);
+                for (var i = 0; i < soured.Count; i++)
+                    Relations.Note(soured[i], payer, GrievanceKind.TributeUnpaid, day);
+                house.Touch();
+            }
+        }
+
         /// <summary>
         /// Midnight for everybody: wages out of each house's own safe, its own men
-        /// aging, learning, souring and walking. Tribute is the player's alone - he is
-        /// the one who pays the houses above him - and that is the whole of the
-        /// difference (D20).
+        /// aging, learning, souring and walking - and, since EPIC 42 (DIPL-004), every
+        /// house's tribute, settled in one pass once the books have turned and
+        /// crossing into the levying house's safe. D20's "the player's alone" is
+        /// retired: a big house grows by what the small ones kick up.
         /// </summary>
         /// <returns>What the PLAYER paid his men, for the line the ledger prints.</returns>
         public int DayTick()
         {
             // MIDNIGHT FOR THE WHOLE CITY. Every pending stance lands at once and every
             // grudge fades by a day, before anybody's books are turned: a war declared
-            // yesterday is a war this morning, for both sides at the same moment.
-            Relations.ApplyPending();
+            // yesterday is a war this morning, for both sides at the same moment. An
+            // agreement made at the table lands over the pending slot, or breaks; the
+            // money it held follows it either way (EPIC 42).
+            Relations.ApplyPending(outcomes, landed);
             Relations.DayTick(Player != null ? Player.Runner.Campaign.Day : 0);
 
             var paidByPlayer = 0;
@@ -347,11 +503,29 @@ namespace LivingCity.Outfit
                 house.Runner.NoticeTheEnd(house.Roster);
                 if (house.Finished)
                     continue;
-                var paid = house.Runner.DayTick(house.Roster, payTribute: house.IsPlayer);
+                // TRIBUTE IS EVERY HOUSE'S NOW (EPIC 42, DIPL-004), settled below in
+                // one pass once every book has turned - never inside one house's tick,
+                // where a levy would be priced against a city half of which had not
+                // yet woken.
+                var paid = house.Runner.DayTick(house.Roster, payTribute: false);
                 house.Touch();
                 if (house.IsPlayer)
                     paidByPlayer = paid;
             }
+            // THE TABLE'S OWN MIDNIGHT, once every book has turned - a runner's tick
+            // clears its desk of the night's incidents, so anything printed before it
+            // would be gone by morning. The escrow follows the agreements that landed
+            // or broke above; the pacts honour against the wars that landed, for the
+            // NEXT midnight (DIPL-007), and never cascade.
+            var morning = Player != null ? Player.Runner.Campaign.Day : 0;
+            Diplomacy.ReleaseEscrows(this, outcomes, morning);
+            Diplomacy.HonourPacts(this, landed, morning, Relations.Config);
+            SettleTribute(morning);
+
+            // THE TABLE'S OWN MIDNIGHT (EPIC 42): a proposal nobody answered lapses on
+            // its day, and a word given to keep off a street lifts on its day. After
+            // the books have turned, so "day" is this morning's.
+            Diplomacy.Expire(morning, Relations);
             return paidByPlayer;
         }
     }

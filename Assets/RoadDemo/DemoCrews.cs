@@ -989,6 +989,9 @@ namespace RoadDemo
             // Every campaign begins with the morning edition and receives one at the
             // 06:00 cut thereafter. It is a modal sheet outside the ledger.
             gameObject.AddComponent<LivingCity.UI.NewspaperHud>();
+            // THE PHONE (EPIC 40): the street's card, dealt at midnight and shown at
+            // the cut once the paper has closed. A modal sheet like the edition.
+            gameObject.AddComponent<LivingCity.UI.EventCardHud>();
             // last onto the click chain, so the front card is asked first and hands the
             // click straight back to the crews if a man was standing in front of the door
             gameObject.AddComponent<FrontOverlay>().Init();

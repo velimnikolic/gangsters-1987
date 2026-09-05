@@ -59,6 +59,16 @@ namespace LivingCity.Tests
             public int BlocksAtFortnight;
             public int DoorsAtFortnight;
             public int HousesAtFortnight;
+
+            /// <summary>EPIC 40: houses that reached Supplier by day 30, and what the
+            /// buyer paid them by the end; cards dealt / answered / expired over all.
+            /// A rival flat raided is counted too (PRE-001's proof).</summary>
+            public int HousesAtSupplierByDay30;
+            public int BuyerMoney;
+            public int CardsDealt;
+            public int CardsAnswered;
+            public int CardsExpired;
+            public int RivalFlatsRaided;
             public string Error = "";
 
             public bool Clean =>
@@ -139,6 +149,10 @@ namespace LivingCity.Tests
             var scheduler = new TerritoryRoundScheduler();
 
             var city = new PaperCity(houses, seed) { Racket = racket };
+            // THE TABLE ANSWERS WITH THE PAPER CITY'S OWN LOOK (EPIC 42): a ransom
+            // filed by a kidnap, a truce a mind offers - the receiver's desk reads its
+            // view through this, the way the runtime's does through TerritoryRuntime.
+            HouseOps.Look = house => city.Look(world, racket, dues, house, config, rounds);
             var books = new Ledger[houses];
             for (var h = 0; h < houses; h++)
                 books[h] = new Ledger();
@@ -151,6 +165,7 @@ namespace LivingCity.Tests
                 var mine = new TerritoryGangId(h);
                 var home = city.HomeBlockOf(h);
                 house.Front = city.Door(home, 0);
+                house.Runner.HoldingsOf = city.CollectHoldings;
                 for (var d = 1; d <= 2 && d < city.DoorsOn(home); d++)
                     racket.Demand(city.Door(home, d), mine, Strong(), 1.0, out _);
                 if (house.Roster.Crews.Count > 0)
@@ -210,6 +225,7 @@ namespace LivingCity.Tests
                 }
 
                 world.AdvanceHours(1f);
+                city.SweepKeepOffs(world);
 
                 world.Think(city.Hour, config.ThinkEveryHours, house =>
                 {
@@ -281,6 +297,16 @@ namespace LivingCity.Tests
             }
 
             report.ThinkMilliseconds = (int)thinkMs;
+            for (var h = 0; h < houses; h++)
+            {
+                var one = world.Of(h);
+                if (one == null)
+                    continue;
+                report.CardsDealt += one.Runner.Events.CardsDealt;
+                report.CardsAnswered += one.Runner.Events.CardsAnswered;
+                report.CardsExpired += one.Runner.Events.CardsExpired;
+                report.BuyerMoney += city.BuyerMoney.TryGetValue(h, out var buyer) ? buyer : 0;
+            }
         }
 
         static readonly List<(string key, double until)> heldScratch =
@@ -319,6 +345,18 @@ namespace LivingCity.Tests
         {
             world.DayTick();
             var day = city.Day;
+
+            // THE STREET'S MIDNIGHT (EPIC 40, PRE-002): the same pass the scene runs,
+            // with this city's own Look. A rival's raided flat is counted off its
+            // runner's report, the way the scene carries it out.
+            for (var h = 0; h < houses; h++)
+            {
+                var one = world.Of(h);
+                if (one == null || one.IsPlayer)
+                    continue;
+                report.RivalFlatsRaided += one.Runner.Flats.Raids.Count;
+            }
+            city.RollTheStreet(world, racket, dues, config, rounds);
 
             for (var h = 0; h < houses; h++)
             {
@@ -506,7 +544,17 @@ namespace LivingCity.Tests
               .Append(" accepted ").Append(book.AcceptedToday)
               .Append('/').Append(book.ProposedToday).Append("prop")
               .Append(" phase ").Append(house.IsPlayer ? "-" : phase.ToString())
-              .Append(" steps ").Append(book.Steps());
+              .Append(" steps ").Append(book.Steps())
+              .Append(" cards ").Append(house.Runner.Events.CardsDealt).Append('/')
+              .Append(house.Runner.Events.CardsAnswered).Append('/')
+              .Append(house.Runner.Events.CardsExpired)
+              .Append(" stage ").Append(house.Runner.Connection.Stage)
+              .Append(" kilos ").Append(house.Runner.Connection.Kilos)
+              .Append(" buyer$ ").Append(
+                  city.BuyerMoney.TryGetValue(h, out var buyer) ? buyer : 0);
+
+            if (day == 30 && house.Runner.Connection.Stage == ConnectionStage.Supplier)
+                report.HousesAtSupplierByDay30++;
             report.Lines.Add(sb.ToString());
         }
 

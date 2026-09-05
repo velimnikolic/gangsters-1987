@@ -24,6 +24,9 @@ namespace LivingCity.Property
         /// <summary>What is stamped on the door: "3C".</summary>
         public string Door => Floor + ApartmentBuildings.DoorLetter(Slot);
 
+        /// <summary>A flat as one string an intent can carry: building|floor|slot.</summary>
+        public string Key => Building.Value + "|" + Floor + "|" + Slot;
+
         public bool Equals(ApartmentUnitId other) =>
             Building.Equals(other.Building) && Floor == other.Floor && Slot == other.Slot;
 
@@ -131,6 +134,20 @@ namespace LivingCity.Property
         public static bool TryGet(ApartmentUnitId unit, out ApartmentRecord record) =>
             book.TryGetValue(unit, out record);
 
+        /// <summary>The <see cref="ApartmentUnitId.Key"/> read back.</summary>
+        public static bool TryParseKey(string key, out ApartmentUnitId unit)
+        {
+            unit = default;
+            if (string.IsNullOrEmpty(key))
+                return false;
+            var parts = key.Split('|');
+            if (parts.Length != 3 || !int.TryParse(parts[1], out var floor) ||
+                !int.TryParse(parts[2], out var slot))
+                return false;
+            unit = new ApartmentUnitId(new ApartmentBuildingId(parts[0]), floor, slot);
+            return unit.IsValid;
+        }
+
         public static bool IsOurs(ApartmentUnitId unit, int gangId) =>
             book.TryGetValue(unit, out var record) && record.GangId == gangId;
 
@@ -173,6 +190,25 @@ namespace LivingCity.Property
             for (var i = 0; i < order.Count; i++)
                 if (order[i].GangId == gangId)
                     into.Add(order[i]);
+        }
+
+        /// <summary>
+        /// EVERY UNIT NOBODY HOLDS in a building (EPIC 40, PRE-001) - what a mind
+        /// leases from, in door order, top floor first like the sheet. The blueprint
+        /// form picks by hand; a mind has to be handed a list.
+        /// </summary>
+        public static void VacantIn(ApartmentBuilding building, List<ApartmentUnitId> into)
+        {
+            into?.Clear();
+            if (into == null || building == null)
+                return;
+            for (var floor = building.Floors; floor >= 1; floor--)
+                for (var slot = 0; slot < building.DoorsPerLanding; slot++)
+                {
+                    var unit = new ApartmentUnitId(building.Id, floor, slot);
+                    if (OwnerOf(unit) < 0)
+                        into.Add(unit);
+                }
         }
 
         /// <summary>The flat a man keeps, or an invalid id. One man, one flat.</summary>

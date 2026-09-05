@@ -153,18 +153,39 @@ Flavour ceiling: Testarossa ~$125,000 — the boss's car, if it ever exists.
 | Tommy gun | **2,000** | transferable full-autos $2,000–4,000 late 80s — a period-true collector piece | 2,000 — **keep** |
 | Grenade | **175** | undocumented; plausible | 175 — **keep** |
 
-## 6. Drugs (reference for the future trade system — no system exists yet)
+## 6. Drugs — the connection (EPIC 40, real since 2026-09-05)
 
-| Item | $ |
-|---|---|
-| Cocaine, kilo wholesale (1987 Miami) | **14,000** (was $55,000 in 1981 — the crash is period colour) |
-| Cocaine, gram street | **100** |
-| Crack vial | **10** |
-| Marijuana, lb commercial / sinsemilla | **500** / **2,000** |
-| Heroin, gram | **2,200** |
+*The system exists now: `Assets/Scripts/Outfit/Connection.cs` and `EconomyPrices.KiloPrice` /
+`BrokerFee` / `BuyerPrice` / `StashFitOut` read this table. What lands in a Stash room is
+sold to the supplier's own buyer at a flat wholesale flip; retail, customs and the port are
+EPIC 41's.*
 
-Margin note: one kilo cut and retailed is ~$70,000–100,000 street — a 5–7× flip, which is
-why it must carry proportional heat/risk when the system lands.
+| Item | $ | In code |
+|---|---|---|
+| Cocaine, kilo wholesale from the Colombian through a broker (1987 Miami) | **14,000** (was $55,000 in 1981 — the crash is period colour) | `EconomyPrices.KiloPrice` |
+| Kilo on the Direct line (Pablo's man) | **11,200** (a fifth off) | `Connection.PriceFor(trust, Direct)` |
+| Trust discount | **Trust/10 per cent** off the kilo (Trust 40 = 4 % off) | `Connection.PriceFor` |
+| The broker's fee, per meeting | **2,000** | `EconomyPrices.BrokerFee` |
+| The test buy (2 kilos, cash at the bar) | **28,000** | `Connection.TestBuyPrice` |
+| The buyer's price per kilo, flat, dirty | **20,000** — a wholesale flip, not the 5–7× street retail | `EconomyPrices.BuyerPrice` |
+| The buyer's capacity | **one load a week** (5 port / 2 field / 10 Direct kilos) | `Connection.BuyerCapacity` |
+| Stash room fit-out (a flat's role) | **3,000** | `EconomyPrices.StashFitOut` |
+| The flat the Stash stands in | **55,000** (§3 `Apartment`) — the real bottleneck of the trade | `EconomyPrices.Apartment` |
+| Minimum load per week | **5 kilos** off the boats, **2** off the county field, **10** Direct | `Connection.MinLoadFor` |
+| Credit for half a load | at **Trust 60** (Broker) / **40** (Direct) | `Connection.CreditAt` |
+| Cocaine, gram street | **100** | not modelled yet (EPIC 41 retail) |
+| Crack vial | **10** | not modelled yet |
+| Marijuana, lb commercial / sinsemilla | **500** / **2,000** | not modelled |
+| Heroin, gram | **2,200** | not modelled |
+
+The arithmetic the design runs on: a good test buy nets **$12,000** after the fee (2 kilos at
+$20,000 less $28,000); a weekly port load of 5 kilos at Trust 40 nets **$32,800** before wages
+and heat. That is real money next to a racket that collects roughly $100 a door a week — which
+is why the introduction is worth having, the room worth raiding, and why a house needs about
+**$86,000** in the safe before the whole path (flat, fit-out, test buy) is open to it.
+
+Trafficking (Fla. Stat. 893.135, 400 g+): **15–30 campaign days**, the minimum binding hoods and
+lawyers alike; bail **$50,000**; the statute's $250,000 fine is not modelled.
 
 ## 7. Crime services, corruption, war costs
 

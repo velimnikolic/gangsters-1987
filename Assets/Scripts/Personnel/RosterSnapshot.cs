@@ -38,6 +38,9 @@ namespace LivingCity.Personnel
         public bool skimming;
         public int wageDemand;
         public int backOnDay;
+        public int jailedOnDay;
+        public int releasedOnDay;
+        public int nightsInside;
         public string conditionNote;
         public int flagsAnnounced;
 
@@ -240,6 +243,9 @@ namespace LivingCity.Personnel
                 skimming = man.Skimming,
                 wageDemand = man.WageDemand,
                 backOnDay = man.BackOnDay,
+                jailedOnDay = man.JailedOnDay,
+                releasedOnDay = man.ReleasedOnDay,
+                nightsInside = man.NightsInside,
                 conditionNote = man.ConditionNote,
                 flagsAnnounced = (int)man.FlagsAnnounced,
                 halfSteps = new int[AttributeScale.Count],
@@ -287,6 +293,9 @@ namespace LivingCity.Personnel
                 Skimming = dto.skimming,
                 WageDemand = dto.wageDemand,
                 BackOnDay = dto.backOnDay,
+                JailedOnDay = dto.jailedOnDay,
+                ReleasedOnDay = dto.releasedOnDay,
+                NightsInside = dto.nightsInside,
                 ConditionNote = dto.conditionNote ?? "",
                 FlagsAnnounced = (ManFlag)dto.flagsAnnounced,
             };

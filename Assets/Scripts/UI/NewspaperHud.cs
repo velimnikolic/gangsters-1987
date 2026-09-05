@@ -88,7 +88,8 @@ namespace LivingCity.UI
                 return;
 
             ObserveCut(underworld.Press, campaign.Day, dayClock.Hour);
-            if (dueDay < 1 || PersonnelAlmanac.IsOpen || OutfitEnd.IsUp || runner.Fallen)
+            if (dueDay < 1 || ModalGate.OtherPaperUp(ModalGate.Paper.Newspaper) ||
+                OutfitEnd.IsUp || runner.Fallen)
                 return;
 
             Open(underworld, dueDay);

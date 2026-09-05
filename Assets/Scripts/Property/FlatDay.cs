@@ -108,7 +108,8 @@ namespace LivingCity.Property
         /// </summary>
         public static void Tick(
             Roster roster, int gangId, int day, int citySeed,
-            Accounts accounts, List<Incident> incidents, FlatDayReport report)
+            Accounts accounts, List<Incident> incidents, FlatDayReport report,
+            int stashKilos = 0)
         {
             report?.Clear();
             if (report == null)
@@ -156,13 +157,16 @@ namespace LivingCity.Property
                     : 0;
                 report.StaffWages += hands * UnitRoles.StaffWage(record.Role);
 
-                if (spec.Heat > 0)
+                // A STASH IS AS HOT AS WHAT IS IN IT (EPIC 40, CONN-003): empty, it
+                // carries the cash stash's heat; every kilo adds a point.
+                var heat = record.Role == UnitRole.Stash ? spec.Heat + stashKilos : spec.Heat;
+                if (heat > 0)
                     report.Heat.Add(new FlatHeatDeposit(
-                        unit.Building, unit, spec.Heat * HeatPerDayScale));
+                        unit.Building, unit, heat * HeatPerDayScale));
 
                 Skim(record, keeper, day, citySeed, incidents, report);
                 Doctor(record, roster, day);
-                Raid(record, keeper, day, citySeed, incidents, report);
+                Raid(record, keeper, day, citySeed, incidents, report, heat);
             }
 
             Settle(accounts, report);
@@ -267,10 +271,12 @@ namespace LivingCity.Property
         /// safehouse with a quiet man in it is not raided at all.
         /// </summary>
         static void Raid(ApartmentRecord record, Character keeper, int day, int citySeed,
-            List<Incident> incidents, FlatDayReport report)
+            List<Incident> incidents, FlatDayReport report, int heat = -1)
         {
             var spec = UnitRoles.Of(record.Role);
-            if (spec.Heat <= 0)
+            if (heat < 0)
+                heat = spec.Heat;
+            if (heat <= 0)
                 return;
 
             var care = keeper != null
@@ -278,7 +284,7 @@ namespace LivingCity.Property
                 : AttributeScale.MinHalfSteps;
             // Tenths of a percent: base, plus the heat the room makes, less what a careful
             // man keeps off the street.
-            var chance = RaidBaseChance + spec.Heat * 6 - care;
+            var chance = RaidBaseChance + heat * 6 - care;
             if (chance <= 0)
                 return;
 

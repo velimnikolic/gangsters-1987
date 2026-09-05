@@ -355,7 +355,8 @@ namespace LivingCity.UI
 
         float ContentsHeight(UnitRole role) =>
             66f + (UnitRoles.StaffCeiling(role) > 0 ? 26f : 0f) +
-            (UnitRoles.Of(role).NeedsBank ? 26f : 0f);
+            (UnitRoles.Of(role).NeedsBank ? 26f : 0f) +
+            (role == UnitRole.Stash ? 26f * 4f : 0f);
 
         void PaintFormRight(RectTransform body, ApartmentUnitId unit,
             ApartmentRecord record, bool ours, float x, float w)
@@ -427,7 +428,65 @@ namespace LivingCity.UI
                     null, () => StakeTheBank(unit, bank));
             }
 
+            // THE STASH (EPIC 40, CONN-003/004): what is in it, how hot that makes it,
+            // whose the line is, and the one thing the room can do - sell.
+            if (role == UnitRole.Stash)
+            {
+                var paper = outfit != null ? outfit.House.Runner.Connection : null;
+                var kilos = paper != null ? paper.Kilos : 0;
+                Line(box, LedgerStyle.Type, 13.5f, LedgerV2.Body, FormPadX, line, w * 0.4f, 20f,
+                    "KILOS IN THE ROOM");
+                Line(box, LedgerStyle.Mono, 13f, LedgerV2.Ink, FormPadX + w * 0.4f, line,
+                    w * 0.6f - FormPadX * 2f, 20f,
+                    kilos + (kilos == 1 ? " kilo" : " kilos") + " · heat " + (spec.Heat + kilos) +
+                    " a day",
+                    TextAlignmentOptions.MidlineRight);
+                line -= 26f;
+                Line(box, LedgerStyle.Type, 13.5f, LedgerV2.Body, FormPadX, line, w * 0.4f, 20f,
+                    "THE LINE");
+                Line(box, LedgerStyle.Mono, 12f, LedgerV2.Ink, FormPadX + w * 0.4f, line,
+                    w * 0.6f - FormPadX * 2f, 20f,
+                    paper == null ? "no connection"
+                        : LivingCity.Outfit.Connection.StageWord(paper.Stage) +
+                          (paper.Grade != LivingCity.Outfit.SupplierGrade.None
+                              ? " · " + LivingCity.Outfit.Connection.GradeWord(paper.Grade) : "") +
+                          " · trust " + paper.Trust +
+                          (paper.Stage == LivingCity.Outfit.ConnectionStage.Supplier
+                              ? " · next load day " + paper.NextLoadDay : ""),
+                    TextAlignmentOptions.MidlineRight);
+                line -= 26f;
+                LedgerV2.Mono(box, FormPadX, line, w - FormPadX * 2f,
+                    "A raid takes the kilos and seals the room. No case." +
+                    (paper != null ? "  " + paper.WhoseLine(director != null ? director.Roster : null) : ""),
+                    10f, LedgerV2.Muted, 0f);
+                line -= 26f;
+                var sell = LedgerV2.Button(box, "SELL TO HIS BUYER", FormPadX, line - 1f, 200f, 22f,
+                    () => SellTheKilos(), LedgerV2.Key.Dark, 11f);
+                LedgerV2.KeyEnabled(sell, kilos > 0 && paper != null &&
+                                          paper.OutletForNextKilo(RosterDay) > 0, LedgerV2.HeadDim);
+                LedgerV2.Mono(box, FormPadX + 212f, line, w - FormPadX * 2f - 212f,
+                    paper == null ? ""
+                        : paper.OutletForNextKilo(RosterDay) > 0
+                            ? Cash(LivingCity.Outfit.Connection.BuyerPrice) + " a kilo, flat, dirty"
+                            : "the buyer has taken all he will this week",
+                    10f, LedgerV2.Muted, 0f);
+            }
+
             return y - h;
+        }
+
+        /// <summary>Every kilo the buyer will take this week, through the same
+        /// HouseOps.Sell a mind's answer goes through.</summary>
+        void SellTheKilos()
+        {
+            if (outfit == null)
+                return;
+            var result = LivingCity.Outfit.HouseOps.Sell(outfit.House, RosterDay,
+                out var money, out var sold);
+            blueprintNote = result.Ok
+                ? sold + (sold == 1 ? " kilo" : " kilos") + " sold to the buyer for " + Cash(money) + "."
+                : result.Reason;
+            dirty = true;
         }
 
         /// <summary>One line of the room's own contents, with the keys that change it.</summary>

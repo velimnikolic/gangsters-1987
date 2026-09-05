@@ -1552,6 +1552,20 @@ namespace LivingCity.Personnel
             return OpResult.Success;
         }
 
+        /// <summary>THE RANSOM IS PAID (EPIC 42, DIPL-005): a man they hold is let go
+        /// on the day named - still to a bed, since Discharge puts a taken man there -
+        /// and nothing else about him moves.</summary>
+        public static OpResult LetGo(Roster roster, int id, int backOnDay)
+        {
+            var member = roster?.Find(id);
+            if (member == null)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            if (member.Status != CharacterStatus.Taken)
+                return OpResult.Fail(LedgerText.ReasonNoSuchMember);
+            member.BackOnDay = backOnDay;
+            return OpResult.Success;
+        }
+
         public static OpResult Hospitalize(Roster roster, int id, int backOnDay,
             string note = "")
         {
@@ -1587,6 +1601,7 @@ namespace LivingCity.Personnel
 
             member.Status = CharacterStatus.Jailed;
             member.BackOnDay = backOnDay;
+            member.JailedOnDay = roster.Day;
             member.ConditionNote = note ?? "";
 
             // Being taken goes on his record - that IS the rap sheet, and a file that
@@ -1631,6 +1646,14 @@ namespace LivingCity.Personnel
                     continue;
                 }
 
+                if (member.Status == CharacterStatus.Jailed)
+                {
+                    // The cell remembers how long he was in it (EPIC 40, THE CELL).
+                    member.ReleasedOnDay = day;
+                    member.NightsInside = member.JailedOnDay > 0
+                        ? day - member.JailedOnDay
+                        : 0;
+                }
                 member.Status = CharacterStatus.Active;
                 member.BackOnDay = 0;
                 // A man on his feet carries no note - leaving the old one would print

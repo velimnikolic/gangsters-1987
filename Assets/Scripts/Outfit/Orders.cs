@@ -59,6 +59,19 @@ namespace LivingCity.Outfit
         // Appended so saved order values keep their meaning.
         Beating,
         KillOwner,
+
+        /// <summary>The broker's table (EPIC 40, CONN-002): a Point job at his door,
+        /// the fee paid on arrival, Contact / Robbed / Cold off the roll.</summary>
+        Meet,
+
+        /// <summary>The test buy (CONN-003): two kilos at the broker's door, the money
+        /// leaving on arrival, Good / Short off the roll and a Sting off the watch.</summary>
+        TestBuy,
+
+        /// <summary>THE SIT-DOWN (EPIC 42, DIPL-008): a lieutenant carries one proposal
+        /// to another house's front in person. Delivered on arrival whatever the roll;
+        /// his Streetwise moves the other desk's tests in his house's favour.</summary>
+        SitDown,
     }
 
     /// <summary>How a job is decided when the crew has done the hours.</summary>
@@ -214,6 +227,17 @@ namespace LivingCity.Outfit
             new OrderSpec(OrderType.Donate, OrderCategory.Influence, TargetMode.Point,
                 4f, JobResolution.Roll, CharacterAttribute.Streetwise, 0,
                 cost: EconomyPrices.Donation),
+
+            // The connection (EPIC 40). Three hours at a bar; the money is the job's
+            // TargetWorth (the fee, or the buy) and is read by CostFor.
+            new OrderSpec(OrderType.Meet, OrderCategory.Business, TargetMode.Point,
+                3f, JobResolution.Roll, CharacterAttribute.Streetwise, 0,
+                cost: EconomyPrices.BrokerFee, heat: 1),
+            new OrderSpec(OrderType.TestBuy, OrderCategory.Business, TargetMode.Point,
+                3f, JobResolution.Roll, CharacterAttribute.Streetwise, 0,
+                cost: EconomyPrices.KiloPrice * 2, heat: 2),
+            new OrderSpec(OrderType.SitDown, OrderCategory.Business, TargetMode.Point,
+                3f, JobResolution.Roll, CharacterAttribute.Streetwise, 0, heat: 1),
         };
 
         public static OrderSpec SpecOf(OrderType type)
@@ -275,6 +299,9 @@ namespace LivingCity.Outfit
                 case OrderType.Bribe:
                 case OrderType.EmployPolice:
                 case OrderType.Donate:
+                case OrderType.Meet:
+                case OrderType.TestBuy:
+                case OrderType.SitDown:
                     return Activity.Negotiation;
 
                 default:
@@ -342,6 +369,10 @@ namespace LivingCity.Outfit
         /// the book strikes him off where he sits.
         /// </summary>
         public int TargetCharacterId = -1;
+
+        /// <summary>The proposal a sit-down carries (EPIC 42, DIPL-008); 0 when the job
+        /// carries none.</summary>
+        public int ProposalId;
 
         /// <summary>Point target: where it is and what to call it.</summary>
         public int TargetBlockId = -1;

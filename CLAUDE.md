@@ -88,6 +88,8 @@ make it call the shared service/model.
 | the residential storefront bay, baked Synty leaf and live states | `Docs/design-briefs/storefront-brief.md` |
 | the residential module forge, measured tables, sheets, faults and showroom | `Docs/residential-forge.md` |
 | the racket: collector duty, the schedule, money on the wire | `Docs/racket-collections.md` |
+| the street event book: pots, gates and holds, THE PHONE, STREET TALK, the one day pass | `Docs/street-events.md` |
+| the connection: the man who knows the Colombian, the broker, the test buy, the terms, the load | `Docs/connection.md` |
 | the closer threat: retargeting, reaction, bullet scatter | `Docs/design-briefs/closer-threat-brief.md` |
 | the law sheet: the docket, the cells, the wanted, the counsel, the verdicts | `Docs/ledger-law-sheet.md` |
 | the city wire: public-record gates, the 06:00 paper and its archive | `Docs/newspaper.md` |

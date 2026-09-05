@@ -1034,6 +1034,8 @@ namespace LivingCity.Tests
                     "Resisting arrest"),
                 [Deed.Battery] = (10, 16, 4_000, Verdict.BatteryBase,
                     "Assault and battery"),
+                [Deed.Trafficking] = (15, 30, 50_000, Verdict.TraffickingBase,
+                    "Trafficking in cocaine, 400 grams or more"),
             };
 
             var values = (Deed[])Enum.GetValues(typeof(Deed));

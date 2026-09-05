@@ -34,6 +34,11 @@ namespace LivingCity.Personnel
 
         /// <summary>Putting a man in hospital without killing him.</summary>
         Battery,
+
+        /// <summary>Four hundred grams of cocaine or more, bought, sold or attempted
+        /// (EPIC 40). Florida 1987: fifteen mandatory, thirty at most, and the minimum
+        /// binds the man who held the door as hard as the man who paid.</summary>
+        Trafficking,
     }
 
     /// <summary>
@@ -118,6 +123,7 @@ namespace LivingCity.Personnel
             Deed.Battery => 10,
             Deed.Affray => 6,
             Deed.Resisting => 2,
+            Deed.Trafficking => 15,
             _ => throw new System.ArgumentOutOfRangeException(nameof(deed), deed,
                 "Every deed needs an explicit low sentence band."),
         };
@@ -133,6 +139,7 @@ namespace LivingCity.Personnel
             Deed.Battery => 16,
             Deed.Affray => 10,
             Deed.Resisting => 4,
+            Deed.Trafficking => 30,
             _ => throw new System.ArgumentOutOfRangeException(nameof(deed), deed,
                 "Every deed needs an explicit high sentence band."),
         };
@@ -201,6 +208,12 @@ namespace LivingCity.Personnel
             else if (rank == Rank.Lieutenant && marked)
                 days = days * MarkedLieutenantPercent / 100;
 
+            // THE MANDATORY MINIMUM BINDS EVERYONE (EPIC 40, "as in real life"). The
+            // 1987 statute did not care that he was only holding the door: no lawyer,
+            // no scale and no rank takes a trafficking count under fifteen.
+            if (deed == Deed.Trafficking && days < low)
+                days = low;
+
             return days;
         }
 
@@ -225,6 +238,7 @@ namespace LivingCity.Personnel
             Deed.WitnessTampering => "Intimidating a witness",
             Deed.Battery => "Assault and battery",
             Deed.Affray => "Affray - discharging firearms in the street",
+            Deed.Trafficking => "Trafficking in cocaine, 400 grams or more",
             _ => throw new System.ArgumentOutOfRangeException(nameof(deed), deed,
                 "Every deed needs explicit charge wording."),
         };
@@ -246,6 +260,7 @@ namespace LivingCity.Personnel
             Deed.WitnessTampering => 2_000,
             Deed.Battery => 4_000,
             Deed.Resisting => 5_000,
+            Deed.Trafficking => 50_000,
             _ => throw new System.ArgumentOutOfRangeException(nameof(deed), deed,
                 "Every deed needs an explicit bail decision."),
         };

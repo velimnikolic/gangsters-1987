@@ -64,6 +64,16 @@ namespace LivingCity.Outfit
                 case OrderType.RunBusiness:
                     return true;
 
+                // The connection (EPIC 40): the meeting moves the stage, the buy puts
+                // kilos in the room or men in a cell.
+                case OrderType.Meet:
+                case OrderType.TestBuy:
+                    return true;
+
+                // The proposal it carries is delivered on arrival (EPIC 42, DIPL-008).
+                case OrderType.SitDown:
+                    return true;
+
                 // ---------------------------------------------------------------- not yet
 
                 // RIVAL-009 step 4: refused outright until the city has vacant premises

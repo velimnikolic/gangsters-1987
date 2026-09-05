@@ -155,8 +155,7 @@ namespace RoadDemo
         /// wheel (the roster scrolls on it) - and the map takes the half of the world
         /// that is still visible. Nothing the player does over either may also steer
         /// the camera underneath.</summary>
-        static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen ||
-                                LivingCity.UI.NewspaperHud.IsOpen;
+        static bool BookOpen => LivingCity.UI.ModalGate.PaperUp;
 
         /// <summary>Something already owns the whole screen: the book, or the plan
         /// the wheel brings up past mapAt. Neither wants the street's furniture

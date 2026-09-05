@@ -967,6 +967,21 @@ namespace LivingCity.UI
         /// when he went down); the campaign supplies the countdown, so a note never
         /// goes stale as the days pass under it.
         /// </summary>
+        /// <summary>What he did before us, and what he is to the connection now.</summary>
+        string TradeLine(Roster roster, Character member)
+        {
+            var paper = outfit != null ? outfit.House.Runner.Connection : null;
+            var direct = Outfit.Underworld.Current != null
+                ? Outfit.Underworld.Current.DirectManId : -1;
+            var trade = Outfit.Backgrounds.Of(roster.Seed, member.Id, direct, paper);
+            if (trade == Outfit.Background.None)
+                return "";
+            var line = Outfit.Backgrounds.Word(trade);
+            if (paper != null && paper.ManId == member.Id)
+                line += " · " + paper.WhoseLine(roster);
+            return line;
+        }
+
         string ConditionNote(Character member, CharacterStatus status)
         {
             if (status == CharacterStatus.Active)
@@ -1004,6 +1019,17 @@ namespace LivingCity.UI
                 LedgerV2.Mono(rect, ColCarrying, -32f, CarryW + ColGap + CondW, note, 9.5f,
                     dead ? LedgerV2.Faint : LedgerV2.Red, 0f,
                     TextAlignmentOptions.MidlineRight);
+            else
+            {
+                // THE MAN'S TRADE (EPIC 40, the UI rule): a man who worked the docks
+                // says so on his row, and the connection's own man says whose line it
+                // is - "Tony's introduction" until Supplier, "our line" after.
+                var trade = TradeLine(roster, member);
+                if (trade.Length > 0)
+                    LedgerV2.Mono(rect, ColCarrying, -32f, CarryW + ColGap + CondW, trade, 9.5f,
+                        dead ? LedgerV2.Faint : LedgerV2.Muted, 0f,
+                        TextAlignmentOptions.MidlineRight);
+            }
 
             var posted = roster.AssignmentOf(member.Id).Kind != AssignmentKind.Pool;
             var standing = member.Wanted ? "WANTED" : dead ? "—" : posted ? "ACTIVE" : "IDLE";

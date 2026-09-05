@@ -148,6 +148,12 @@ namespace LivingCity.Outfit
         public static int PayoutFor(
             in OrderSpec spec, int targetCount, int statHalfSteps, int unitWorth = 0)
         {
+            // The connection's fee and buy carry their PRICE in the worth seat and pay
+            // nothing at the book: what a meeting or a buy brings back is written on the
+            // connection paper, not the record (EPIC 40).
+            if (spec.Type == OrderType.Meet || spec.Type == OrderType.TestBuy)
+                return 0;
+
             // MINDING A SHOP IS NOT OWNING IT. See RunBusinessBonus.
             if (spec.Type == OrderType.RunBusiness)
                 return unitWorth > 0
@@ -178,6 +184,11 @@ namespace LivingCity.Outfit
         {
             // Buying premises reads the asking price of THOSE premises when the caller
             // knows it; everything else is priced by the book.
+            // The connection's fee and buy are the figures on the card, to the dollar:
+            // no discount for a business head (EPIC 40).
+            if ((spec.Type == OrderType.Meet || spec.Type == OrderType.TestBuy) && unitWorth > 0)
+                return unitWorth;
+
             var book = spec.Type == OrderType.BuyPremises && unitWorth > 0
                 ? unitWorth
                 : spec.Cost;

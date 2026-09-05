@@ -44,6 +44,43 @@ namespace LivingCity.Outfit
         /// <summary>Counsel on retainer, off the same market the classified column
         /// deals from and at the same price (AI-005 P1).</summary>
         Retain,
+
+        /// <summary>A proposal to another house, through HouseOps.Propose - the same
+        /// call the ledger's TABLE makes (EPIC 42).</summary>
+        Propose,
+
+        /// <summary>An answer to a proposal in our inbox, through HouseOps.Reply.
+        /// </summary>
+        Reply,
+
+        // Appended for EPIC 40 (The Connection), so a saved intent keeps its number.
+
+        /// <summary>A flat on the house's deed, through the same Apartments.Buy the
+        /// blueprint form calls (PRE-001). The unit is named by the carrier - the
+        /// scene edge picks the first vacant room on a block the house holds - and
+        /// the role and the keeper ride on the intent.</summary>
+        Lease,
+
+        /// <summary>A held flat turned to a use, fit-out paid (PRE-001).</summary>
+        FitOut,
+
+        /// <summary>A man put in a held flat (PRE-001).</summary>
+        SetKeeper,
+
+        /// <summary>A man signed off a card - the connection's man - into a
+        /// lieutenant's crew, the twin of Retain with a crew named (CONN-001).</summary>
+        Sign,
+
+        /// <summary>A choice on a pending card (STREET-003). The carrier records the
+        /// answer on the book and carries the choice's own intent through the same
+        /// switch, so a card can never do what a button cannot.</summary>
+        Card,
+
+        /// <summary>The supplier's terms accepted (CONN-004).</summary>
+        AcceptTerms,
+
+        /// <summary>Every kilo in the room sold to the buyer, flat (CONN-004).</summary>
+        Sell,
     }
 
     /// <summary>
@@ -76,8 +113,15 @@ namespace LivingCity.Outfit
             TerritoryBusinessId businessId, TerritoryRacketIntent followUp, Duty duty,
             CrewPolicy policy, EquipmentKind kit = EquipmentKind.Pistol,
             string listing = "", int price = 0, TerritoryGangId other = default,
-            Stance stance = Stance.Peace)
+            Stance stance = Stance.Peace, Proposal proposal = null, int proposalId = -1,
+            bool accept = false, Property.UnitRole role = Property.UnitRole.Empty,
+            EventCard card = null)
         {
+            Role = role;
+            Card = card;
+            Proposal = proposal;
+            ProposalId = proposalId;
+            Accept = accept;
             Kit = kit;
             Listing = listing ?? "";
             Price = price;
@@ -125,6 +169,37 @@ namespace LivingCity.Outfit
         /// <summary>The other family, for the intents that are about one.</summary>
         public TerritoryGangId Other { get; }
         public Stance Stance { get; }
+
+        /// <summary>What a leased room is turned to (Lease, FitOut). For Lease the
+        /// unit itself is named by the carrier; for FitOut and SetKeeper it rides in
+        /// Listing as the unit's own string.</summary>
+        public Property.UnitRole Role { get; }
+
+        /// <summary>The card a Card intent answers, or the card whose man a Sign
+        /// intent signs. Memory only: a card is re-dealt from its day on a load.</summary>
+        public EventCard Card { get; }
+
+        /// <summary>What is being proposed (Propose), or which proposal is being
+        /// answered and how (Reply). EPIC 42.</summary>
+        public Proposal Proposal { get; }
+        public int ProposalId { get; }
+        public bool Accept { get; }
+
+        /// <summary>A proposal to another house. Its To is the other family.</summary>
+        public static HouseIntent Propose(Proposal proposal, int tier, string reason) =>
+            new HouseIntent(HouseIntentKind.Propose, tier, reason, HouseOrder.None, null,
+                -1, -1, default, default, TerritoryRacketIntent.Approach, Duty.None,
+                CrewPolicy.Normal, EquipmentKind.Pistol, "", 0,
+                new TerritoryGangId(proposal != null ? proposal.To : -1), Stance.Peace,
+                proposal);
+
+        /// <summary>An answer to a proposal in the inbox.</summary>
+        public static HouseIntent Reply(int proposalId, bool accept, int tier,
+            string reason) =>
+            new HouseIntent(HouseIntentKind.Reply, tier, reason, HouseOrder.None, null,
+                -1, -1, default, default, TerritoryRacketIntent.Approach, Duty.None,
+                CrewPolicy.Normal, EquipmentKind.Pistol, "", 0, default, Stance.Peace,
+                null, proposalId, accept);
 
         public static HouseIntent Block(
             HouseOrder order, int crewId, TerritoryBlockId blockId, int tier,
@@ -225,13 +300,77 @@ namespace LivingCity.Outfit
                 -1, -1, default, default, TerritoryRacketIntent.Approach, Duty.None,
                 CrewPolicy.Normal, EquipmentKind.Pistol, "counsel", price);
 
+        /// <summary>A flat rented and fitted out, with its keeper named. The carrier
+        /// picks the room (PRE-001: the first vacant unit in a building on a block the
+        /// house holds, nearest its front); the mind only says what it is for.</summary>
+        public static HouseIntent Lease(Property.UnitRole role, int keeperId, int tier,
+            string reason) =>
+            new HouseIntent(HouseIntentKind.Lease, tier, reason, HouseOrder.None, null,
+                keeperId, -1, default, default, TerritoryRacketIntent.Approach,
+                Duty.None, CrewPolicy.Normal, EquipmentKind.Pistol, "", 0, default,
+                Stance.Peace, null, -1, false, role);
+
+        /// <summary>A held room turned to a use. The unit rides in Listing.</summary>
+        public static HouseIntent FitOut(string unit, Property.UnitRole role, int tier,
+            string reason) =>
+            new HouseIntent(HouseIntentKind.FitOut, tier, reason, HouseOrder.None, null,
+                -1, -1, default, default, TerritoryRacketIntent.Approach, Duty.None,
+                CrewPolicy.Normal, EquipmentKind.Pistol, unit ?? "", 0, default,
+                Stance.Peace, null, -1, false, role);
+
+        /// <summary>A man put in a held room. The unit rides in Listing.</summary>
+        public static HouseIntent Keep(string unit, int keeperId, int tier, string reason) =>
+            new HouseIntent(HouseIntentKind.SetKeeper, tier, reason, HouseOrder.None,
+                null, keeperId, -1, default, default, TerritoryRacketIntent.Approach,
+                Duty.None, CrewPolicy.Normal, EquipmentKind.Pistol, unit ?? "");
+
+        /// <summary>The connection's man signed off his card into a lieutenant's crew
+        /// (CONN-001). The card carries the man; the crew is the speaker's.</summary>
+        public static HouseIntent Sign(EventCard card, int crewId, int price, int tier,
+            string reason) =>
+            new HouseIntent(HouseIntentKind.Sign, tier, reason, HouseOrder.None, null,
+                card != null ? card.ManId : -1, crewId, default, default,
+                TerritoryRacketIntent.Approach, Duty.None, CrewPolicy.Normal,
+                EquipmentKind.Pistol, "the man", price, default, Stance.Peace, null, -1,
+                false, Property.UnitRole.Empty, card);
+
+        /// <summary>A choice on a card (STREET-003). The index rides in CharacterId's
+        /// seat and the label in Listing, so the trace prints "Card:TestBuy/PAY".
+        /// </summary>
+        public static HouseIntent Choose(EventCard card, int choiceIndex, int tier,
+            string reason) =>
+            new HouseIntent(HouseIntentKind.Card, tier, reason, HouseOrder.None, null,
+                choiceIndex, -1, default, default, TerritoryRacketIntent.Approach,
+                Duty.None, CrewPolicy.Normal, EquipmentKind.Pistol,
+                card != null ? card.Id + "/" + card.LabelOf(choiceIndex) : "?",
+                card != null ? card.CostOf(choiceIndex) : 0, default, Stance.Peace,
+                null, -1, false, Property.UnitRole.Empty, card);
+
+        /// <summary>The supplier's terms taken (CONN-004).</summary>
+        public static HouseIntent AcceptTerms(int tier, string reason) =>
+            new HouseIntent(HouseIntentKind.AcceptTerms, tier, reason, HouseOrder.None,
+                null, -1, -1, default, default, TerritoryRacketIntent.Approach,
+                Duty.None, CrewPolicy.Normal, EquipmentKind.Pistol, "terms");
+
+        /// <summary>Every kilo in the room to the buyer (CONN-004).</summary>
+        public static HouseIntent SellKilos(int tier, string reason) =>
+            new HouseIntent(HouseIntentKind.Sell, tier, reason, HouseOrder.None, null,
+                -1, -1, default, default, TerritoryRacketIntent.Approach, Duty.None,
+                CrewPolicy.Normal, EquipmentKind.Pistol, "kilos");
+
         /// <summary>One line for the trace and the family's own book.</summary>
         public override string ToString() =>
             Kind == HouseIntentKind.Command
                 ? Order.ToString()
                 : Kind == HouseIntentKind.Job
                     ? "Job " + (Job != null ? Job.Type.ToString() : "?")
-                    : Kind.ToString();
+                    : Kind == HouseIntentKind.Propose
+                        ? "Propose " + (Proposal != null ? Proposal.Kind.ToString() : "?")
+                        : Kind == HouseIntentKind.Card
+                            ? "Card:" + Listing
+                            : Kind == HouseIntentKind.Lease
+                                ? "Lease:" + Role
+                                : Kind.ToString();
 
         /// <summary>
         /// WHAT THIS INTENT IS, AND WHAT IT IS AIMED AT - the key a refusal is
@@ -268,6 +407,25 @@ namespace LivingCity.Outfit
                         return "bail:" + CharacterId + ":" + Price;
                     case HouseIntentKind.Retain:
                         return "retain";
+                    case HouseIntentKind.Lease:
+                        return "lease:" + Role;
+                    case HouseIntentKind.FitOut:
+                        return "fitout:" + Listing + ":" + Role;
+                    case HouseIntentKind.SetKeeper:
+                        return "keeper:" + Listing + ":" + CharacterId;
+                    case HouseIntentKind.Sign:
+                        return "sign:" + CrewId;
+                    case HouseIntentKind.Card:
+                        return "card:" + Listing;
+                    case HouseIntentKind.AcceptTerms:
+                        return "terms";
+                    case HouseIntentKind.Sell:
+                        return "sell";
+                    case HouseIntentKind.Propose:
+                        return "propose:" + Other.Value + ":" +
+                               (Proposal != null ? Proposal.Kind.ToString() : "?");
+                    case HouseIntentKind.Reply:
+                        return "reply:" + ProposalId + ":" + Accept;
                     default:
                         return Kind + ":" + CharacterId + ":" + CrewId + ":" + Duty +
                                ":" + Policy;

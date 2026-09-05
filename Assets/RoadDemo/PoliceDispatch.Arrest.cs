@@ -98,10 +98,7 @@ namespace RoadDemo
         /// down. The turf map is deliberately NOT on this list any more - orders are
         /// given from it (TurfMapHud), so a player watching an arrest from the map is as
         /// able to intervene as one watching it from the street.</summary>
-        static bool Blocked =>
-            LivingCity.UI.PersonnelAlmanac.IsOpen ||
-            LivingCity.UI.NewspaperHud.IsOpen ||
-            LivingCity.UI.StrategicMapHud.InputBlocked;
+        static bool Blocked => LivingCity.UI.ModalGate.Blocked;
 
         Collar _collar = Collar.None;
         Deed _arrestDeed = Deed.Affray;    // what they are being taken for

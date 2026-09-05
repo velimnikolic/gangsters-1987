@@ -14,6 +14,9 @@ namespace LivingCity.Property
         Garage,
         CardRoom,
         Brothel,
+
+        /// <summary>Holds the kilos (EPIC 40). Its heat is read off what is in it.</summary>
+        Stash,
     }
 
     /// <summary>One role's paper: what fitting it out costs, what it draws in police
@@ -127,6 +130,10 @@ namespace LivingCity.Property
                 BrothelTakePerGirl, false,
                 CharacterAttribute.Persuasion,
                 "girls work the rooms and the house takes its half"),
+            new UnitRoleSpec(UnitRole.Stash, "STASH", "STASH",
+                LivingCity.Outfit.EconomyPrices.StashFitOut, 1, 0, false,
+                CharacterAttribute.Stealth,
+                "holds the kilos; a raid takes them and seals the room, no case"),
         };
 
         public static UnitRoleSpec Of(UnitRole role)

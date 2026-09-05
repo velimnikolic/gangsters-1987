@@ -212,6 +212,21 @@ namespace LivingCity.Outfit
         /// <summary>A raid: the register and what is on the shelves.</summary>
         public const int Raid = 500;
 
+        // ------------------------------------------------------------ the connection
+
+        /// <summary>A kilo, wholesale from the Colombian through a broker
+        /// (Docs/economy-prices.md §6, EPIC 40). Direct is a fifth off.</summary>
+        public const int KiloPrice = 14_000;
+
+        /// <summary>What it costs to sit at the broker's table once.</summary>
+        public const int BrokerFee = 2_000;
+
+        /// <summary>What his buyer pays a kilo, flat - a wholesale flip, not retail.</summary>
+        public const int BuyerPrice = 20_000;
+
+        /// <summary>Fitting a room out to hold the kilos.</summary>
+        public const int StashFitOut = 3_000;
+
         /// <summary>
         /// What it costs to put a man on the books, through every door there is: the
         /// ledger's own HIRE A MAN and the Recruit order both. There used to be two

@@ -109,6 +109,10 @@ namespace LivingCity.News
                 case PressKind.PoliceBlotter:
                     text = "POLICE TAKE STATEMENT IN " + where;
                     break;
+                case PressKind.Seizure:
+                    text = "COCAINE SEIZED IN " + where +
+                           (record.Family >= 0 ? "; " + family + " MEN HELD" : "");
+                    break;
                 default:
                     text = "POLICE BLOTTER: " + where;
                     break;
@@ -202,6 +206,11 @@ namespace LivingCity.News
                                 : "Several men") + " fled an officer in " + where + ".";
                 case PressKind.PoliceBlotter:
                     return "Police took a statement at " + business + " in " + where + ".";
+                case PressKind.Seizure:
+                    return "Narcotics officers seized a quantity of cocaine in " + where +
+                           (record.Family >= 0
+                               ? " and detained men believed tied to the " + family + " family."
+                               : ".");
                 default:
                     return "Police entered the matter in the overnight blotter.";
             }

@@ -136,6 +136,11 @@ namespace LivingCity.Data
             Outfit.OrderType.Donate => "VOX_JOB_DONATE",
             Outfit.OrderType.Beating => OrdWitness,
             Outfit.OrderType.KillOwner => OrdKill,
+            // The connection's two jobs are given off a card, never from the office.
+            Outfit.OrderType.Meet => "VOX_JOB_BRIBE",
+            Outfit.OrderType.TestBuy => "VOX_JOB_BRIBE",
+            // The sit-down is given from THE TABLE, never from the office (EPIC 42).
+            Outfit.OrderType.SitDown => "VOX_JOB_BRIBE",
             _ => throw new System.ArgumentOutOfRangeException(nameof(type), type,
                 "Every order needs an explicit office voice decision."),
         };

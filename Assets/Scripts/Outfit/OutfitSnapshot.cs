@@ -54,6 +54,9 @@ namespace LivingCity.Outfit
 
         /// <summary>-1 for "the street has not answered yet", else the outcome.</summary>
         public int streetOutcome;
+
+        /// <summary>The proposal a sit-down carries (EPIC 42); 0 for none.</summary>
+        public int proposalId;
     }
 
     [Serializable]
@@ -98,6 +101,12 @@ namespace LivingCity.Outfit
     {
         public StanceDto[] stances;
         public GrievanceDto[] grievances;
+
+        /// <summary>EPIC 42: the day's agreements, the killings the floor reads, what
+        /// money cleared today. Appended; a file without them reads as none.</summary>
+        public AgreementDto[] agreements;
+        public KillingDto[] killings;
+        public ClearedDto[] cleared;
     }
 
     [Serializable]
@@ -108,6 +117,85 @@ namespace LivingCity.Outfit
         public double nextThinkHour;
         public RosterDto roster;
         public RunnerDto runner;
+
+        /// <summary>EPIC 40. Both nullable: a file written before the connection
+        /// existed reads as a house with none and an empty book. No version bump.</summary>
+        public ConnectionDto connection;
+        public EventBookDto events;
+    }
+
+    [Serializable]
+    public sealed class ConnectionDto
+    {
+        public int stage;
+        public int line;
+        public int paths;
+        public int manId = -1;
+        public int manTrade;
+        public int supplierGrade;
+        public int trust;
+        public int kilos;
+        public int pricePerKilo;
+        public int minLoad;
+        public int nextLoadDay;
+        public int burnedUntilDay;
+        public int withoutManSinceDay;
+        public int lastLoadDay;
+        public int coolUntilDay;
+        public int lastExploreDay = -1;
+        public int meetAttempts;
+        public int buyAttempts;
+        public int soldThisWeek;
+        public int soldWeek = -1;
+        public int owedTomorrow;
+        public bool loadHeld;
+    }
+
+    [Serializable]
+    public sealed class PendingCardDto
+    {
+        public int id;
+        public int def;
+        public int dealtDay;
+        public int expiresDay;
+        public int speaker = -1;
+        public int hold;
+    }
+
+    [Serializable]
+    public sealed class EventPotDto
+    {
+        public int id;
+        public float pot;
+    }
+
+    [Serializable]
+    public sealed class EventDayDto
+    {
+        public int id;
+        public int day;
+    }
+
+    [Serializable]
+    public sealed class WireDto
+    {
+        public int day;
+        public string text;
+        public bool isPublic;
+    }
+
+    [Serializable]
+    public sealed class EventBookDto
+    {
+        public PendingCardDto pending;
+        public EventPotDto[] pots;
+        public EventDayDto[] fired;
+        public EventDayDto[] cooling;
+        public WireDto[] wire;
+        public int cardsDealt;
+        public int cardsAnswered;
+        public int cardsExpired;
+        public string lastAnswer;
     }
 
     /// <summary>One flat on somebody's deed (EPIC 27). Written at the underworld level
@@ -130,6 +218,19 @@ namespace LivingCity.Outfit
         public int staff;
     }
 
+    /// <summary>The proposal book, flat (EPIC 42): arrays only, appended to the
+    /// underworld like the relations were, so a file without it reads as an empty book
+    /// and needs no version bump.</summary>
+    [Serializable]
+    public sealed class DiplomacyDto
+    {
+        public ProposalDto[] proposals;
+        public KeepOffDto[] keepOffs;
+        public int nextId;
+        public LineDto[] lines;
+        public PactDto[] pacts;
+    }
+
     [Serializable]
     public sealed class UnderworldDto
     {
@@ -137,6 +238,14 @@ namespace LivingCity.Outfit
         public HouseDto[] houses;
         public RelationsDto relations;
         public FlatDto[] flats;
+        public DiplomacyDto diplomacy;
+
+        /// <summary>Pablo's man (EPIC 40): which signing is his, his id once bound,
+        /// the day he will take a call again, and how many have been signed.</summary>
+        public int directTurn = 1;
+        public int directManId = -1;
+        public int directNotBeforeDay;
+        public int theManSigned;
     }
 
     /// <summary>
@@ -160,9 +269,14 @@ namespace LivingCity.Outfit
             var dto = new UnderworldDto
             {
                 citySeed = underworld.CitySeed,
+                directTurn = underworld.DirectTurn,
+                directManId = underworld.DirectManId,
+                directNotBeforeDay = underworld.DirectNotBeforeDay,
+                theManSigned = underworld.TheManSigned,
                 houses = new HouseDto[underworld.Count],
                 relations = Snapshot(underworld.Relations),
                 flats = SnapshotFlats(),
+                diplomacy = Snapshot(underworld.Diplomacy),
             };
             for (var g = 0; g < underworld.Count; g++)
                 dto.houses[g] = Snapshot(underworld.Of(g));
@@ -185,7 +299,12 @@ namespace LivingCity.Outfit
                     Restore(house, dto.houses[i]);
             }
             Restore(underworld.Relations, dto.relations);
+            underworld.DirectTurn = dto.directTurn > 0 ? dto.directTurn : 1;
+            underworld.DirectManId = dto.directManId;
+            underworld.DirectNotBeforeDay = dto.directNotBeforeDay;
+            underworld.TheManSigned = dto.theManSigned;
             RestoreFlats(dto.flats);
+            Restore(underworld.Diplomacy, dto.diplomacy);
         }
 
         // ------------------------------------------------------------------ the flats
@@ -255,7 +374,168 @@ namespace LivingCity.Outfit
                 nextThinkHour = house.NextThinkHour,
                 roster = RosterSnapshot.Snapshot(house.Roster),
                 runner = Snapshot(house.Runner, house.GangId),
+                connection = Snapshot(house.Runner?.Connection),
+                events = Snapshot(house.Runner?.Events),
             };
+        }
+
+        // ------------------------------------------------------------ the connection
+
+        static ConnectionDto Snapshot(Connection c)
+        {
+            if (c == null)
+                return null;
+            return new ConnectionDto
+            {
+                stage = (int)c.Stage,
+                line = (int)c.Line,
+                paths = c.Paths,
+                manId = c.ManId,
+                manTrade = (int)c.ManTrade,
+                supplierGrade = (int)c.Grade,
+                trust = c.Trust,
+                kilos = c.Kilos,
+                pricePerKilo = c.PricePerKilo,
+                minLoad = c.MinLoad,
+                nextLoadDay = c.NextLoadDay,
+                burnedUntilDay = c.BurnedUntilDay,
+                withoutManSinceDay = c.WithoutManSinceDay,
+                lastLoadDay = c.LastLoadDay,
+                coolUntilDay = c.CoolUntilDay,
+                lastExploreDay = c.LastExploreDay,
+                meetAttempts = c.MeetAttempts,
+                buyAttempts = c.BuyAttempts,
+                soldThisWeek = c.SoldThisWeek,
+                soldWeek = c.SoldWeek,
+                owedTomorrow = c.OwedTomorrow,
+                loadHeld = c.LoadHeld,
+            };
+        }
+
+        static void Restore(Connection c, ConnectionDto dto)
+        {
+            if (c == null)
+                return;
+            if (dto == null)
+            {
+                // No block: a house with no connection and nothing on the paper. Said
+                // explicitly so a default-enum read can never mean anything else.
+                c.Stage = ConnectionStage.None;
+                c.Line = ConnectionLine.None;
+                c.Grade = SupplierGrade.None;
+                c.ManId = -1;
+                c.Kilos = 0;
+                c.Touch();
+                return;
+            }
+            c.Stage = TryEnum(dto.stage, out ConnectionStage stage) ? stage : ConnectionStage.None;
+            c.Line = TryEnum(dto.line, out ConnectionLine line) ? line : ConnectionLine.None;
+            c.Paths = dto.paths;
+            c.ManId = dto.manId;
+            c.ManTrade = TryEnum(dto.manTrade, out Background trade) ? trade : Background.None;
+            c.Grade = TryEnum(dto.supplierGrade, out SupplierGrade grade) ? grade : SupplierGrade.None;
+            c.Trust = dto.trust;
+            c.Kilos = dto.kilos;
+            c.PricePerKilo = dto.pricePerKilo;
+            c.MinLoad = dto.minLoad;
+            c.NextLoadDay = dto.nextLoadDay;
+            c.BurnedUntilDay = dto.burnedUntilDay;
+            c.WithoutManSinceDay = dto.withoutManSinceDay;
+            c.LastLoadDay = dto.lastLoadDay;
+            c.CoolUntilDay = dto.coolUntilDay;
+            c.LastExploreDay = dto.lastExploreDay;
+            c.MeetAttempts = dto.meetAttempts;
+            c.BuyAttempts = dto.buyAttempts;
+            c.SoldThisWeek = dto.soldThisWeek;
+            c.SoldWeek = dto.soldWeek;
+            c.OwedTomorrow = dto.owedTomorrow;
+            c.LoadHeld = dto.loadHeld;
+            // An established relationship never restarts an absence timer.
+            if (c.Established)
+                c.WithoutManSinceDay = 0;
+            c.Touch();
+        }
+
+        static EventBookDto Snapshot(EventBook book)
+        {
+            if (book == null)
+                return null;
+            var dto = new EventBookDto
+            {
+                pending = book.Pending == null ? null : new PendingCardDto
+                {
+                    id = (int)book.Pending.Id,
+                    def = (int)book.Pending.Def,
+                    dealtDay = book.Pending.DealtDay,
+                    expiresDay = book.Pending.ExpiresDay,
+                    speaker = book.Pending.Speaker,
+                    hold = (int)book.Pending.Hold,
+                },
+                pots = new EventPotDto[book.Pots.Count],
+                fired = new EventDayDto[book.Fired.Count],
+                cooling = new EventDayDto[book.Cooling.Count],
+                wire = new WireDto[book.Wire.Count],
+                cardsDealt = book.CardsDealt,
+                cardsAnswered = book.CardsAnswered,
+                cardsExpired = book.CardsExpired,
+                lastAnswer = book.LastAnswer,
+            };
+            var i = 0;
+            foreach (var pair in book.Pots)
+                dto.pots[i++] = new EventPotDto { id = (int)pair.Key, pot = pair.Value };
+            i = 0;
+            foreach (var pair in book.Fired)
+                dto.fired[i++] = new EventDayDto { id = (int)pair.Key, day = pair.Value };
+            i = 0;
+            foreach (var pair in book.Cooling)
+                dto.cooling[i++] = new EventDayDto { id = (int)pair.Key, day = pair.Value };
+            for (i = 0; i < book.Wire.Count; i++)
+                dto.wire[i] = new WireDto
+                {
+                    day = book.Wire[i].Day, text = book.Wire[i].Text, isPublic = book.Wire[i].Public,
+                };
+            return dto;
+        }
+
+        static void Restore(EventBook book, EventBookDto dto)
+        {
+            if (book == null)
+                return;
+            book.Clear();
+            if (dto == null)
+                return;
+            if (dto.pending != null && TryEnum(dto.pending.id, out CardId cardId) &&
+                TryEnum(dto.pending.def, out EventId defId))
+                book.Pending = new PendingCard
+                {
+                    Id = cardId,
+                    Def = defId,
+                    DealtDay = dto.pending.dealtDay,
+                    ExpiresDay = dto.pending.expiresDay,
+                    Speaker = dto.pending.speaker,
+                    Hold = TryEnum(dto.pending.hold, out HoldReason hold) ? hold : HoldReason.None,
+                };
+            for (var i = 0; dto.pots != null && i < dto.pots.Length; i++)
+                if (dto.pots[i] != null && TryEnum(dto.pots[i].id, out EventId id))
+                    book.Pots[id] = dto.pots[i].pot;
+            for (var i = 0; dto.fired != null && i < dto.fired.Length; i++)
+                if (dto.fired[i] != null && TryEnum(dto.fired[i].id, out EventId id))
+                    book.Fired[id] = dto.fired[i].day;
+            for (var i = 0; dto.cooling != null && i < dto.cooling.Length; i++)
+                if (dto.cooling[i] != null && TryEnum(dto.cooling[i].id, out EventId id))
+                    book.Cooling[id] = dto.cooling[i].day;
+            for (var i = 0; dto.wire != null && i < dto.wire.Length; i++)
+                if (dto.wire[i] != null)
+                    book.Wire.Add(new WireLine
+                    {
+                        Day = dto.wire[i].day, Text = dto.wire[i].text ?? "",
+                        Public = dto.wire[i].isPublic,
+                    });
+            book.CardsDealt = dto.cardsDealt;
+            book.CardsAnswered = dto.cardsAnswered;
+            book.CardsExpired = dto.cardsExpired;
+            book.LastAnswer = dto.lastAnswer ?? "";
+            book.Touch();
         }
 
         static void Restore(House house, HouseDto dto)
@@ -266,6 +546,8 @@ namespace LivingCity.Outfit
             house.NextThinkHour = dto.nextThinkHour;
             RosterSnapshot.Restore(house.Roster, dto.roster);
             Restore(house.Runner, dto.runner);
+            Restore(house.Runner?.Connection, dto.connection);
+            Restore(house.Runner?.Events, dto.events);
             house.Touch();
         }
 
@@ -403,6 +685,7 @@ namespace LivingCity.Outfit
                 daysStood = job.DaysStood,
                 bookDepth = job.BookDepth,
                 streetOutcome = job.StreetOutcome.HasValue ? (int)job.StreetOutcome.Value : -1,
+                proposalId = job.ProposalId,
             };
             for (var i = 0; i < job.BlockTargets.Count; i++)
                 dto.blockTargets[i] = job.BlockTargets[i];
@@ -444,6 +727,7 @@ namespace LivingCity.Outfit
                 DaysStood = dto.daysStood,
                 BookDepth = dto.bookDepth,
                 StreetOutcome = streetOutcome,
+                ProposalId = dto.proposalId,
             };
             for (var i = 0; dto.blockTargets != null && i < dto.blockTargets.Length; i++)
                 job.BlockTargets.Add(dto.blockTargets[i]);
@@ -475,10 +759,17 @@ namespace LivingCity.Outfit
             var stances = new List<StanceDto>();
             var grievances = new List<GrievanceDto>();
             relations.Collect(stances, grievances);
+            var agreements = new List<AgreementDto>();
+            var killings = new List<KillingDto>();
+            var cleared = new List<ClearedDto>();
+            relations.CollectTable(agreements, killings, cleared);
             return new RelationsDto
             {
                 stances = stances.ToArray(),
                 grievances = grievances.ToArray(),
+                agreements = agreements.ToArray(),
+                killings = killings.ToArray(),
+                cleared = cleared.ToArray(),
             };
         }
 
@@ -487,6 +778,42 @@ namespace LivingCity.Outfit
             if (relations == null || dto == null)
                 return;
             relations.RestoreFrom(dto.stances, dto.grievances);
+            relations.RestoreTable(dto.agreements, dto.killings, dto.cleared);
+        }
+
+        // ------------------------------------------------------------- the table
+
+        public static DiplomacyDto Snapshot(HouseDiplomacy diplomacy)
+        {
+            if (diplomacy == null)
+                return null;
+            var rows = new List<ProposalDto>();
+            var offs = new List<KeepOffDto>();
+            var lines = new List<LineDto>();
+            var pacts = new List<PactDto>();
+            diplomacy.Collect(rows, offs, out var next);
+            diplomacy.CollectLines(lines);
+            diplomacy.CollectPacts(pacts);
+            return new DiplomacyDto
+            {
+                proposals = rows.ToArray(),
+                keepOffs = offs.ToArray(),
+                nextId = next,
+                lines = lines.ToArray(),
+                pacts = pacts.ToArray(),
+            };
+        }
+
+        /// <summary>A file from before the table, or one written with an empty book,
+        /// reads as an empty book: a null block and a {} block both restore to none.
+        /// </summary>
+        public static void Restore(HouseDiplomacy diplomacy, DiplomacyDto dto)
+        {
+            if (diplomacy == null)
+                return;
+            diplomacy.RestoreFrom(dto?.proposals, dto?.keepOffs, dto?.nextId ?? 0);
+            diplomacy.RestoreLines(dto?.lines);
+            diplomacy.RestorePacts(dto?.pacts);
         }
     }
 }

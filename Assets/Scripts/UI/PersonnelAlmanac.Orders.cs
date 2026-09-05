@@ -238,6 +238,9 @@ namespace LivingCity.UI
                 case Outfit.OrderType.Donate:
                 case Outfit.OrderType.Beating:
                 case Outfit.OrderType.KillOwner:
+                case Outfit.OrderType.Meet:
+                case Outfit.OrderType.TestBuy:
+                case Outfit.OrderType.SitDown:
                     return 0;
                 default:
                     throw new System.ArgumentOutOfRangeException(nameof(type), type,

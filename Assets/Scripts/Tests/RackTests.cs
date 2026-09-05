@@ -604,7 +604,7 @@ namespace LivingCity.Tests
                 failures.Add("CNTR-002: the gateway does not reject only person orders at a shut counter.");
 
             var values = (Outfit.OrderType[])Enum.GetValues(typeof(Outfit.OrderType));
-            if (values.Length != 25)
+            if (values.Length != 28)
                 failures.Add("CNTR-001: OrderType changed without updating the exhaustive order contract.");
             for (var i = 0; i < values.Length; i++)
             {

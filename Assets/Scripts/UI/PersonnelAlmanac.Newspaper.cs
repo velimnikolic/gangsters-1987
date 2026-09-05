@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using LivingCity.News;
+using LedgerOutfit = LivingCity.Outfit;
 using static LivingCity.UI.LedgerKit;
 
 namespace LivingCity.UI
@@ -88,6 +89,18 @@ namespace LivingCity.UI
         int newsPaintedLastEdition = -1;
         int newsPaintedPressVersion = -1;
 
+        /// <summary>STREET TALK's own repaint key (EPIC 40): the player's event book
+        /// and connection paper move on their own versions, the press book's aside.</summary>
+        int newsPaintedStreet = -1;
+
+        static int StreetVersion()
+        {
+            var runner = LivingCity.Outfit.Underworld.Current?.Player?.Runner;
+            if (runner == null)
+                return 0;
+            return runner.Events.Version * 7919 + runner.Connection.Version;
+        }
+
         void BuildNewspaperPage(RectTransform sheet)
         {
             var root = NewPageRoot(sheet, LedgerPage.Newspaper);
@@ -132,11 +145,14 @@ namespace LivingCity.UI
                 if (newsEditionDay > latest)
                     newsEditionDay = latest;
                 var version = press != null ? press.Version : 0;
+                var street = StreetVersion();
                 if (currentDay == newsPaintedDay &&
                     newsEditionDay == newsPaintedEdition &&
                     latest == newsPaintedLastEdition &&
-                    version == newsPaintedPressVersion && newsContent.childCount > 0)
+                    version == newsPaintedPressVersion &&
+                    street == newsPaintedStreet && newsContent.childCount > 0)
                     return;
+                newsPaintedStreet = street;
 
                 newsPaintedDay = currentDay;
                 newsPaintedEdition = newsEditionDay;
@@ -157,6 +173,8 @@ namespace LivingCity.UI
                         Previous = PreviousPressEdition,
                         Next = NextPressEdition,
                     });
+                if (newsEditionDay == latest)
+                    BuildStreetTalk(newsContent);
                 return;
             }
 
@@ -267,6 +285,137 @@ namespace LivingCity.UI
                 Paragraph(newsContent, LedgerStyle.Serif, 13f, LedgerV2.Ink, x,
                     BriefTop - 26f, BriefW, BriefH - 30f, WeatherLine(date), lineSpacing: 3f);
             }
+        }
+
+        /// <summary>
+        /// STREET TALK (EPIC 40, STREET-002): the last column of the paper's foot, on
+        /// today's edition only. Every number the street computes for the house, in
+        /// words: the card on the table and what holds it, each signal and its state,
+        /// the gate when shut, how full the pot is, the broker's door and its watch,
+        /// whose the line is, and the last lines the wire brought. The same words the
+        /// probe prints.
+        /// </summary>
+        void BuildStreetTalk(RectTransform root)
+        {
+            var x = NewsLeft + (BriefColumns - 1) * (BriefW + BriefGap);
+            var y = BriefTop;
+            var w = BriefW;
+            var h = BriefH;
+
+            var box = NewRect("Street talk", root);
+            PlaceTopLeft(box, x, y, w, h);
+            Fill(box, LedgerV2.PanelDark);
+            Caps(box, 8f, 0f, w - 16f, "STREET TALK", 11f, LedgerV2.Ink, 4f);
+            Rule(box, 8f, -18f, w - 16f, LedgerV2.Ink);
+
+            var line = -24f;
+            void Say(string text, Color ink, float size = 9.5f, int lines = 1)
+            {
+                if (string.IsNullOrEmpty(text) || line < -h + 12f)
+                    return;
+                var box_ = LineBox(size, lines);
+                if (lines > 1)
+                    Paragraph(box, LedgerStyle.Mono, size, ink, 8f, line, w - 16f, box_, text, 1f);
+                else
+                    LedgerV2.Mono(box, 8f, line, w - 16f, text, size, ink, 0f);
+                line -= box_ - 2f;
+            }
+
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            var house = underworld?.Player;
+            if (house == null || runtime == null)
+            {
+                Say("No street in this scene.", LedgerV2.Muted);
+                return;
+            }
+            var card = runtime.PlayerCard(out var hold);
+            var ctx = runtime.PlayerContext();
+            var view = runtime.Peek(house);
+            var book = house.Runner.Events;
+            var paper = house.Runner.Connection;
+            var day = outfit ? outfit.Campaign.Day : 1;
+            if (view == null || ctx == null)
+            {
+                Say("The street has not been read yet.", LedgerV2.Muted);
+                return;
+            }
+
+            // The card on the table, and what holds it.
+            if (card != null)
+            {
+                Say("PENDING · " + card.Title + " · " + card.SpeakerName.ToUpperInvariant(),
+                    LedgerV2.Red, 9.5f);
+                Say(hold != LedgerOutfit.HoldReason.None
+                        ? LedgerOutfit.HoldReasons.Line(hold) + " - " +
+                          LedgerOutfit.HoldReasons.Clears(hold)
+                        : "He waits until day " + card.ExpiresDay + ".",
+                    LedgerV2.Body, 9f, 2);
+                LedgerV2.Button(box, "THE PHONE", 8f, line, 96f, 20f, () =>
+                {
+                    Close();
+                    EventCardHud.Instance?.Reopen();
+                }, LedgerV2.Key.Dark, 9f);
+                line -= 26f;
+            }
+
+            // The def nearest its threshold: every signal, the gate, the pot.
+            LedgerOutfit.EventDef nearest = null;
+            var defs = LedgerOutfit.ConnectionEvents.Defs;
+            for (var i = 0; i < defs.Count; i++)
+                if (defs[i].Applies(view, ctx) && (defs[i].Id == LedgerOutfit.EventId.TheMan ||
+                                                   defs[i].Id == LedgerOutfit.EventId.BrokerRumour))
+                    nearest = defs[i];
+            if (nearest != null && card == null)
+            {
+                var signals = nearest.Signals != null ? nearest.Signals(view, ctx) : null;
+                for (var i = 0; signals != null && i < signals.Count; i++)
+                    Say(signals[i].Name + " - " + signals[i].Line, LedgerV2.Body, 9f);
+                var gate = nearest.Gate(view, ctx);
+                if (gate != LedgerOutfit.HoldReason.None)
+                    Say("SHUT - " + LedgerOutfit.HoldReasons.Line(gate) + " - " +
+                        LedgerOutfit.HoldReasons.Clears(gate), LedgerV2.Amber, 9f, 2);
+                var pot = book.PotOf(nearest.Id);
+                if (pot >= LedgerOutfit.StreetEvents.Full)
+                    Say("The word is in. " + nearest.PotLine(ctx) + ".", LedgerV2.Green, 9f);
+                else if (pot >= LedgerOutfit.StreetEvents.ShowFrom)
+                    Say(char.ToUpperInvariant(nearest.PotLine(ctx)[0]) +
+                        nearest.PotLine(ctx).Substring(1) + " (" + (int)(pot * 100) + "%).",
+                        LedgerV2.Muted, 9f);
+            }
+
+            // The connection's own row.
+            if (paper.Stage != LedgerOutfit.ConnectionStage.None)
+            {
+                var stage = LedgerOutfit.Connection.StageWord(paper.Stage);
+                if (paper.Stage == LedgerOutfit.ConnectionStage.Burned)
+                    stage += " - " + System.Math.Max(0, paper.BurnedUntilDay - day) + " DAYS LEFT";
+                else if (paper.Grade != LedgerOutfit.SupplierGrade.None)
+                    stage += " - " + LedgerOutfit.Connection.GradeWord(paper.Grade);
+                Say(stage, LedgerV2.Ink, 9.5f);
+                Say(paper.WhoseLine(house.Roster) + " · trust " + paper.Trust +
+                    (paper.Kilos > 0 ? " · " + paper.Kilos + " kilos in the room" : "") +
+                    (paper.Stage == LedgerOutfit.ConnectionStage.Supplier
+                        ? " · next load day " + paper.NextLoadDay : ""),
+                    LedgerV2.Body, 9f, 2);
+                if (paper.Stage == LedgerOutfit.ConnectionStage.Rumour ||
+                    paper.Stage == LedgerOutfit.ConnectionStage.Contact)
+                {
+                    var door = LedgerOutfit.ConnectionEvents.BrokerDoor(view, ctx);
+                    var block = LedgerOutfit.ConnectionEvents.BlockOfDoor(view, door);
+                    var name = LedgerOutfit.ConnectionEvents.DoorWord(door);
+                    Say(char.ToUpperInvariant(LedgerOutfit.ConnectionText.Watch(
+                            view.PoliceAttention(block), ctx.RaidThreshold, name)[0]) +
+                        LedgerOutfit.ConnectionText.Watch(
+                            view.PoliceAttention(block), ctx.RaidThreshold, name).Substring(1) + ".",
+                        LedgerV2.Muted, 9f, 2);
+                }
+            }
+
+            // The last lines the wire brought.
+            var wire = book.Wire;
+            for (var i = System.Math.Max(0, wire.Count - 3); i < wire.Count; i++)
+                Say("Day " + wire[i].Day + " · " + wire[i].Text, LedgerV2.Muted, 8.5f, 2);
         }
 
         static int EarliestPressEdition(PressBook press, int currentDay)

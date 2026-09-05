@@ -45,6 +45,12 @@ namespace LivingCity.Outfit
         public int GangId = Gangs.GangCatalog.PlayerGangId;
 
         public HouseRelations Relations;
+
+        /// <summary>The city this house is one of (EPIC 42). What a finished job does
+        /// to ANOTHER house's books - a man taken - is the underworld's to do; the
+        /// runner only names it. Null on a bench with no city.</summary>
+        public Underworld World;
+
         public readonly OrderBook Book = new OrderBook();
 
         /// <summary>What the outfit kicks up to the houses above it - re-priced off the
@@ -58,6 +64,30 @@ namespace LivingCity.Outfit
         /// has to carry out for them: the heat they put on their blocks and the raids the
         /// precinct made (EPIC 27). Refilled every midnight.</summary>
         public readonly Property.FlatDayReport Flats = new Property.FlatDayReport();
+
+        /// <summary>THE CONNECTION (EPIC 40): this house's paper with the Colombian,
+        /// and the book of what the street brought it. Saved on the house, nullable;
+        /// a file with neither reads as a house with no connection and an empty book.
+        /// </summary>
+        public readonly Connection Connection = new Connection();
+
+        public readonly EventBook Events = new EventBook();
+
+        /// <summary>
+        /// THE WATCH ON A DOOR, for the sting (CONN-003): police attention on the
+        /// block a job is at, 0..100. The street sets it; the book asks it. A bench
+        /// with no city leaves it null and a test buy never stings there - which is
+        /// the paper city's honest answer, since it carries no attention at all.
+        /// </summary>
+        public static System.Func<Job, float> WatchOnTheDoor;
+
+        /// <summary>
+        /// THE COLLAR AT THE DOOR (CONN-003): the scene takes the crew that walked
+        /// into the sting through EPIC 34's arrest code, and answers true when it has.
+        /// Null, or false, and the book puts the men in a cell itself - the paper
+        /// city has no station and no court, so they serve the statute's minimum.
+        /// </summary>
+        public static System.Func<int, Job, bool> StungOnTheStreet;
 
 
         /// <summary>Men who got better overnight - cleared and refilled at each day
@@ -116,6 +146,12 @@ namespace LivingCity.Outfit
         /// would be the page saying an irreversible loss had un-happened.
         /// </summary>
         readonly int[] menLostTo = new int[Gangs.GangCatalog.GangCount];
+
+        /// <summary>What the tally read when the war with each house opened, and
+        /// whether one was open at the last midnight (EPIC 42): losses THIS war are
+        /// the tally over that mark. Memory only, like the tally itself.</summary>
+        readonly int[] lostAtWarStart = new int[Gangs.GangCatalog.GangCount];
+        readonly bool[] atWar = new bool[Gangs.GangCatalog.GangCount];
 
         /// <summary>Rival houses read once when somebody walks, so the door can be
         /// picked off the city as it stands that midnight.</summary>
@@ -541,6 +577,25 @@ namespace LivingCity.Outfit
             if (job.StreetOutcome == null)
                 OrderResolution.AwardPractice(spec, roster, crew, job.Men, lesson);
 
+            // THE CONNECTION'S OWN JOBS (EPIC 40), and the pull an Explore gives it.
+            if (spec.Type == OrderType.Meet || spec.Type == OrderType.TestBuy)
+                ResolveConnection(roster, crew, job, spec, result.Outcome);
+            else if (spec.Type == OrderType.Explore &&
+                     result.Outcome == OrderOutcome.Completed)
+                Connection.Explored(Campaign.Day);
+
+            // THE SIT-DOWN IS DELIVERED ON ARRIVAL, whatever the roll said (EPIC 42,
+            // DIPL-008): the envoy stood at their door and the proposal was heard.
+            if (spec.Type == OrderType.SitDown && job.ProposalId > 0)
+                World?.SitDown(job, GangId, Campaign.Day);
+
+            // THEY HAVE HIM (RIVAL-009 step 6, moved into the books by EPIC 42
+            // DIPL-005 so the paper city sees it too): off their books for three days,
+            // a ransom on the table, and a debt on the ladder.
+            if (spec.Type == OrderType.Kidnap && result.Outcome == OrderOutcome.Completed &&
+                job.TargetCharacterId >= 0)
+                World?.TakeHim(job, GangId, Campaign.Day);
+
             Record(roster, job, result.Outcome, result.Payout - result.Cost, result.Heat);
             job.Stage = JobStage.Finished;
 
@@ -690,6 +745,7 @@ namespace LivingCity.Outfit
                 return 0;
 
             Campaign.Day++;
+            MarkTheWars();
 
             // Whatever the crews did between the two midnights goes onto their files
             // BEFORE the desk is cleared - it is the last chance to see it.
@@ -824,7 +880,12 @@ namespace LivingCity.Outfit
             // What it cannot do itself - putting heat on a block, taking a keeper into a
             // cell - is handed back in the report for the scene edge to carry out.
             Property.FlatDay.Tick(roster, GangId, Campaign.Day, Seed, Accounts,
-                Incidents, Flats);
+                Incidents, Flats, Connection.Kilos);
+
+            // THE CONNECTION'S OWN MIDNIGHT (EPIC 40). A raided Stash lost its kilos;
+            // the introduction cools if the man is gone; the credit half is owed; and
+            // on its day the load lands in the room. Every one of them says so.
+            TickConnection(roster);
 
             // The books close BEFORE the day is read off the men. Being paid - or
             // going home with nothing, and the desertion three of those nights ends in
@@ -881,6 +942,127 @@ namespace LivingCity.Outfit
             if (payTribute)
                 CollectTribute();
             return paid;
+        }
+
+        /// <summary>The connection's midnight (EPIC 40, CONN-003/004).</summary>
+        void TickConnection(Roster roster)
+        {
+            var day = Campaign.Day;
+            for (var i = 0; i < Flats.Raids.Count; i++)
+            {
+                var raid = Flats.Raids[i];
+                if (!Property.Apartments.TryGet(raid.Unit, out var record) ||
+                    record.Role != Property.UnitRole.Stash)
+                    continue;
+                var kilos = Connection.Kilos;
+                Connection.Raided(day);
+                Events.Say(day, "The room at " + raid.Unit.Door + " was raided. " +
+                                (kilos > 0 ? kilos + " kilos gone, " : "Nothing in it, ") +
+                                "the door sealed, no case. Trust down.", true);
+            }
+
+            Say(Connection.DayTick(roster, day));
+            Say(Connection.SettleCredit(Accounts, day));
+            var room = StashRoom.Of(GangId, roster, day);
+            Say(Connection.Load(Accounts, day, room.IsValid));
+        }
+
+        void Say(string line)
+        {
+            if (!string.IsNullOrEmpty(line))
+                Events.Say(Campaign.Day, line);
+        }
+
+        /// <summary>
+        /// The connection's own jobs, decided (CONN-002/003). The meeting and the buy
+        /// roll like any Business job; what the roll MEANS is written here, and the
+        /// sting reads the watch on the door rather than a die.
+        /// </summary>
+        void ResolveConnection(Roster roster, Crew crew, Job job, in OrderSpec spec,
+            OrderOutcome outcome)
+        {
+            var day = Campaign.Day;
+            var completed = outcome == OrderOutcome.Completed;
+            var attempt = spec.Type == OrderType.Meet
+                ? Connection.MeetAttempts
+                : Connection.BuyAttempts;
+            // The trust stream, keyed (day, attempt): a retry is a new roll.
+            var trust = new System.Random(Potential.Mix(Seed + 40_005, day * 31 + attempt));
+            var lieutenant = roster.Find(crew.LieutenantId);
+            var lt = lieutenant != null ? lieutenant.FirstName : "The crew";
+            var door = string.IsNullOrEmpty(job.TargetLabel) ? "the bar" : job.TargetLabel;
+
+            if (spec.Type == OrderType.Meet)
+            {
+                if (completed)
+                {
+                    Connection.Met(ConnectionOutcome.Contact, day);
+                    Events.Say(day, lt + " sat at the Cuban's table at " + door +
+                                    ". The test buy is next: " +
+                                    UI.LedgerText.Cash(Connection.TestBuyPrice) +
+                                    " for two kilos.");
+                }
+                else if (trust.NextDouble() < 0.5)
+                {
+                    Connection.Met(ConnectionOutcome.Robbed, day);
+                    Events.Say(day, "The Cuban's man took the " +
+                                    UI.LedgerText.Cash(Connection.BrokerFee) +
+                                    " at " + door + " and walked. Five days before anyone talks to us again.");
+                }
+                else
+                {
+                    Connection.Met(ConnectionOutcome.Cold, day);
+                    Events.Say(day, "Nobody was at " + door + ". " + lt + " came home. Try again.");
+                }
+                return;
+            }
+
+            if (spec.Type != OrderType.TestBuy)
+                return;
+
+            // THE STING IS THE POLICE, so its odds read the police: zero under the
+            // raid threshold, half at the top of the scale, less what trust buys.
+            var watch = WatchOnTheDoor != null ? WatchOnTheDoor(job) : 0f;
+            var threshold = HouseMindConfig.Default.WalkAttentionCap;
+            var over = (watch - threshold) / (100f - threshold);
+            if (over > 1f) over = 1f;
+            // Under the threshold it is NEVER a sting, whatever the trust; over it,
+            // trust buys some of the risk off and nothing puts it back on.
+            var stingChance = over <= 0f
+                ? 0f
+                : over * 0.5f - (Connection.Trust > 0 ? Connection.Trust : 0) / 200f;
+            if (stingChance > 0f && trust.NextDouble() < stingChance)
+            {
+                Connection.Bought(ConnectionOutcome.Sting, day);
+                Events.Say(day, "It was a sting. The seller at " + door +
+                                " was a cop, the money is gone and the men who walked are " +
+                                "taken at the door. Thirty days with nobody talking to us.", true);
+                var taken = StungOnTheStreet != null && StungOnTheStreet(GangId, job);
+                if (!taken)
+                {
+                    // No street to take them on: the book does, and with no court in
+                    // a paper city they serve the statute's minimum.
+                    CrewKit.MenOnJob(roster, crew, job.Men, scratchMen);
+                    for (var i = 0; i < scratchMen.Count; i++)
+                        RosterOps.Jail(roster, scratchMen[i],
+                            day + Sentencing.DaysToCourt + Sentencing.BandLow(Deed.Trafficking),
+                            "taken at the broker's door",
+                            Sentencing.ChargeFor(Deed.Trafficking),
+                            News.NewsDate.FromClockDay(day - 1).Short());
+                    if (scratchMen.Count > 0)
+                        RosterMoved?.Invoke();
+                }
+                return;
+            }
+
+            var half = job.TargetWorth > 0 && job.TargetWorth < Connection.TestBuyPrice;
+            var good = completed && (!half || trust.NextDouble() < 0.7);
+            Connection.Bought(good ? ConnectionOutcome.Good : ConnectionOutcome.Short, day);
+            Events.Say(day, good
+                ? "Two kilos in the room. The Cuban shook " + lt + "'s hand. Trust " +
+                  Connection.Trust + "."
+                : "The Cuban came up short - one kilo for the money. Trust " +
+                  Connection.Trust + ".");
         }
 
         /// <summary>
@@ -1253,6 +1435,43 @@ namespace LivingCity.Outfit
         public int MenLostTo(int gangId) =>
             gangId >= 0 && gangId < menLostTo.Length ? menLostTo[gangId] : 0;
 
+        /// <summary>A man of ours killed by theirs goes on the same tally a defection
+        /// does (EPIC 42): men that house has cost us.</summary>
+        public void NoteLoss(int gangId, int men = 1)
+        {
+            if (gangId < 0 || gangId >= menLostTo.Length || gangId == GangId || men <= 0)
+                return;
+            menLostTo[gangId] += men;
+        }
+
+        /// <summary>Men that house has cost us since the war with it opened; zero when
+        /// there is no war. What the sue-for-peace rule reads (D15), and what the
+        /// beaten-cannot-refuse rule reads (EPIC 42 ruling 1).</summary>
+        public int LossesThisWar(int gangId)
+        {
+            if (gangId < 0 || gangId >= menLostTo.Length || Relations == null)
+                return 0;
+            if (Relations.StanceBetween(GangId, gangId) != Stance.War)
+                return 0;
+            var mark = atWar[gangId] ? lostAtWarStart[gangId] : menLostTo[gangId];
+            return menLostTo[gangId] - mark;
+        }
+
+        /// <summary>Every midnight, after the stances have landed: a war that opened
+        /// this morning starts its count at the tally as it stands.</summary>
+        void MarkTheWars()
+        {
+            if (Relations == null)
+                return;
+            for (var g = 0; g < atWar.Length; g++)
+            {
+                var war = g != GangId && Relations.StanceBetween(GangId, g) == Stance.War;
+                if (war && !atWar[g])
+                    lostAtWarStart[g] = menLostTo[g];
+                atWar[g] = war;
+            }
+        }
+
         /// <summary>
         /// Re-prices what the houses above the outfit are owed against the city as it
         /// stands this morning, then hands over whatever has fallen due. A house that
@@ -1262,6 +1481,19 @@ namespace LivingCity.Outfit
         /// how a quiet city turns on you.
         /// </summary>
         void CollectTribute()
+        {
+            AssessTribute(Campaign.Day);
+            Tribute.Settle(Accounts, Campaign.Day, scratchSoured);
+            for (var i = 0; i < scratchSoured.Count; i++)
+                Relations?.Note(scratchSoured[i], GangId, GrievanceKind.TributeUnpaid);
+        }
+
+        /// <summary>
+        /// Re-prices what the houses above this one are owed against the city as it
+        /// stands this morning (EPIC 42, DIPL-004: for EVERY house, from the
+        /// underworld's one pass; the envelopes then cross through Transfer).
+        /// </summary>
+        public void AssessTribute(int day)
         {
             scratchHoldings.Clear();
             HoldingsOf?.Invoke(scratchHoldings);
@@ -1273,19 +1505,20 @@ namespace LivingCity.Outfit
             Tribute.Assess(
                 gangId => Relations != null &&
                           Relations.StanceBetween(GangId, gangId) == Stance.War,
-                scratchHoldings, GangId, Campaign.Day);
-            Tribute.Settle(Accounts, Campaign.Day, scratchSoured);
-
-            // A HOUSE THAT IS NOT PAID HOLDS THE GRUDGE (D14). It used to harden the
-            // stance a step at a time on its own; now it is owed - the grudge theirs
-            // and the offence ours, in that order - and the ladder decides whether
-            // being owed that much is a warning, a beating or a war. Nothing is set
-            // pending here any more: the ladder answers in its own time rather than in
-            // the middle of the player's night.
-            for (var i = 0; i < scratchSoured.Count; i++)
-                Relations?.Note(
-                    scratchSoured[i], GangId, GrievanceKind.TributeUnpaid);
+                scratchHoldings, GangId, day);
             scratchHoldings.Clear();
+        }
+
+        /// <summary>What the street would price a levy at today, without any terms -
+        /// the figure the table's "at least half" reads. Zero when nothing is owed.
+        /// </summary>
+        public int DerivedTribute(int levied, int levying)
+        {
+            scratchHoldings.Clear();
+            HoldingsOf?.Invoke(scratchHoldings);
+            var derived = Tribute.Derived(scratchHoldings, levied, levying);
+            scratchHoldings.Clear();
+            return derived;
         }
 
         // ----------------------------------------------------------------- the book

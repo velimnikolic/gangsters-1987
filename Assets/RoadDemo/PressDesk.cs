@@ -460,6 +460,23 @@ namespace RoadDemo
             File(record);
         }
 
+        /// <summary>The police seized something of a family's and said so (EPIC 40).
+        /// The connection's own line names it; the paper prints the fact.</summary>
+        public void Seizure(int gangId, TerritoryBusinessId front, string line)
+        {
+            var where = TerritoryRuntime.Instance != null &&
+                        TerritoryRuntime.Instance.TryGetBusinessView(front, out var view)
+                ? view.BusinessName
+                : "";
+            var record = New(PressKind.Seizure, where);
+            if (record == null) return;
+            record.NamedGangId = gangId;
+            record.Factions = gangId >= 0 ? new[] { gangId } : System.Array.Empty<int>();
+            record.Attribution = PressAttribution.Named;
+            record.Business = line ?? "";
+            File(record);
+        }
+
         public void FlatRaid(LivingCity.Property.FlatRaid raid, Character keeper, int gangId)
         {
             var record = New(PressKind.FlatRaid, raid.Unit.Door);

@@ -27,6 +27,10 @@ namespace LivingCity.News
         PremisesSold,
         PoliceBlotter,
         FledPolice,
+
+        /// <summary>The police seized something and said so (EPIC 40): a sting at a
+        /// bar, a room full of kilos. A rumour is never public; a seizure always is.</summary>
+        Seizure,
     }
 
     /// <summary>How confidently a story may identify the people behind an act.</summary>
@@ -151,6 +155,7 @@ namespace LivingCity.News
             PressKind.PremisesSold => 24,
             PressKind.PoliceBlotter => 18,
             PressKind.FledPolice => 18,
+            PressKind.Seizure => 64,
             _ => 20,
         };
     }

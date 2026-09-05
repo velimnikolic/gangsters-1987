@@ -10,8 +10,10 @@ namespace LivingCity.Outfit
         public HouseDoor(TerritoryBusinessId businessId, int tier, int weeklyRate,
             TerritoryGangId protector, TerritoryProtectionState standing, int owed,
             bool shut, bool trades, DoorTenure tenure, bool late = false,
-            double lastInteraction = -1.0, int demands = 0)
+            double lastInteraction = -1.0, int demands = 0,
+            Business.BusinessArchetypeId trade = (Business.BusinessArchetypeId)(-1))
         {
+            Trade = trade;
             Late = late;
             LastInteraction = lastInteraction;
             Demands = demands;
@@ -28,6 +30,12 @@ namespace LivingCity.Outfit
 
         public TerritoryBusinessId BusinessId { get; }
         public int Tier { get; }
+
+        /// <summary>What trades behind the door - a Pub, a Cafe - so a card can name
+        /// the broker's bar (EPIC 40). -1 (no member) where the scene cannot say.</summary>
+        public Business.BusinessArchetypeId Trade { get; }
+
+        public bool HasTrade => (int)Trade >= 0;
 
         /// <summary>What a week of protection is worth here - the figure the racket
         /// would charge, whoever charged it.</summary>
@@ -302,9 +310,42 @@ namespace LivingCity.Outfit
         /// </summary>
         public System.Func<int, TerritoryBlockId> CrewBlockLook;
 
+        /// <summary>Whether we already have a proposal of this kind open with that
+        /// house (EPIC 42) - the memory that keeps a broke house from offering a truce
+        /// every think.</summary>
+        public System.Func<TerritoryGangId, ProposalKind, bool> OpenProposalLook;
+
+        /// <summary>Whether we have given our word to keep off this block today - a
+        /// complied warning, a line (EPIC 42). The racket's choke points refuse the
+        /// order; this is how the mind knows not to file it.</summary>
+        public System.Func<TerritoryBlockId, bool> KeepOffLook;
+
+        /// <summary>What WE are owed by them, as a number - our own side of the pair,
+        /// which a mind may read (EPIC 42). Never what they are owed.</summary>
+        public System.Func<TerritoryGangId, float> GrievanceLook;
+
+        /// <summary>Men of ours that house has cost us since the war with it opened
+        /// (EPIC 42, wired from the runner's own tally). Zero at peace.</summary>
+        public System.Func<TerritoryGangId, int> LossesLook;
+
+        /// <summary>What we owe that house a cycle in tribute, and what it owes us -
+        /// both derived from turf anybody can count, so both are the street's
+        /// knowledge (EPIC 42, DIPL-004). Zero where nobody levies.</summary>
+        public System.Func<TerritoryGangId, (int owe, int owed)> TributeLook;
+
         /// <summary>Men of ours in the cells, with the court's answer on each
         /// (AI-005).</summary>
         public IReadOnlyList<HouseCell> Cells = NoCells;
+
+        /// <summary>THE STREET'S BOOK (EPIC 40): the card on the table, spoken, and why
+        /// it is waiting if it is. Null with nothing pending. The mind answers it before
+        /// it walks its tiers, like a collection.</summary>
+        public EventCard Card;
+        public HoldReason CardHold;
+        public EventBook Events;
+
+        /// <summary>The house's own connection paper, for the mind's Sell and Lease.</summary>
+        public Connection Connection;
 
         /// <summary>Whether the house has a lawyer on its books, standing up or not.
         /// </summary>
@@ -371,5 +412,23 @@ namespace LivingCity.Outfit
 
         public TerritoryBlockId CrewBlock(int crewId) =>
             CrewBlockLook != null ? CrewBlockLook(crewId) : default;
+
+        public bool HasOpenProposal(TerritoryGangId other, ProposalKind kind) =>
+            OpenProposalLook != null && OpenProposalLook(other, kind);
+
+        public bool KeptOff(TerritoryBlockId blockId) =>
+            KeepOffLook != null && KeepOffLook(blockId);
+
+        public float Grievance(TerritoryGangId other) =>
+            GrievanceLook != null ? GrievanceLook(other) : 0f;
+
+        public int Losses(TerritoryGangId other) =>
+            LossesLook != null ? LossesLook(other) : LossesThisWar;
+
+        public int TributeOwe(TerritoryGangId other) =>
+            TributeLook != null ? TributeLook(other).owe : 0;
+
+        public int TributeOwed(TerritoryGangId other) =>
+            TributeLook != null ? TributeLook(other).owed : 0;
     }
 }

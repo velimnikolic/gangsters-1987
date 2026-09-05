@@ -505,6 +505,72 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_event_tests",
+                    "EPIC 40 STREET-001's contracts for the street event book: the pot " +
+                    "is monotone and deterministic, nothing is dealt against a deal gate, " +
+                    "a card is dealt against a hold reason and waits, a held card expires " +
+                    "on day +3 and cools, one card a day, a card with no speaker is not " +
+                    "dealt, Answer records the choice, Esc leaves Pending unchanged, and " +
+                    "the day pass rolls every house - the player included.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "events", "tests" })]
+        public static object EventTests()
+        {
+            var failures = LivingCity.Tests.StreetEventTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                contracts = LivingCity.Tests.StreetEventTests.ContractNames(),
+                failures = failures.ToArray(),
+            };
+        }
+
+        [CliCommand("gangsters_connection_tests",
+                    "EPIC 40 CONN-001..005's contracts: two paths open per seed, the " +
+                    "trade derived at read, each signal at 0 and 1, the QUIET gate, the " +
+                    "man dealt and signed, one Direct man per city, THE CELL on release, " +
+                    "the broker and the meeting, the test buy held for a room and the " +
+                    "mind leasing one, the sting off the watch, a raid with no case, " +
+                    "dirty capped sales, the terms, the paper load, the introducer's " +
+                    "fortnight before Supplier only, the round trip, the mind answering " +
+                    "before Walk, and Trafficking's mandatory minimum.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "connection", "tests" })]
+        public static object ConnectionTests()
+        {
+            var failures = LivingCity.Tests.ConnectionTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                contracts = LivingCity.Tests.ConnectionTests.ContractNames(),
+                failures = failures.ToArray(),
+            };
+        }
+
+        [CliCommand("gangsters_connection_probe",
+                    "EPIC 40 CONN-005: the paper campaign, one row per house per day - " +
+                    "MONEY and NAME with their lines, the QUIET gate, the pots, the stage, " +
+                    "the man and his trade, the kilos, the trust, the card on the table " +
+                    "with its hold and what clears it, and the last answer. The same words " +
+                    "STREET TALK prints. --gang narrows to one house; -1 is every house.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "connection", "audit" })]
+        public static object ConnectionProbe(
+            int seed = 1987, int days = 30, int houses = 6, int gang = -1)
+        {
+            var lines = LivingCity.Tests.ConnectionProbe.Run(seed, days, houses, gang);
+            var stages = new Dictionary<string, int>();
+            var world = LivingCity.Outfit.Underworld.Deal(seed, houses);
+            return new
+            {
+                seed,
+                days,
+                houses,
+                rows = lines.Count,
+                lines = lines.ToArray(),
+            };
+        }
+
         [CliCommand("gangsters_flat_tests",
                     "Run EPIC 27's contracts for the flats: how a door is named, what a " +
                     "flat reads as with and without a keeper, one man one flat, the card " +
@@ -624,6 +690,24 @@ namespace GangstersTools
                 passed = failures.Count == 0,
                 failures = failures.ToArray(),
                 mvp = LivingCity.Tests.HouseMindTests.Notes.ToArray(),
+            };
+        }
+
+        [CliCommand("gangsters_diplomacy_tests",
+                    "Run EPIC 42's contracts: the proposal book - a house asks another " +
+                    "and is answered at the desk the same on two runs, the player's " +
+                    "inbox lapses on day three, the same thing is not asked twice, " +
+                    "money crosses through one door, a word given keeps a house off a " +
+                    "street, and the book survives the file.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "underworld", "tests" })]
+        public static object DiplomacyTests()
+        {
+            var failures = LivingCity.Tests.DiplomacyTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
             };
         }
 
@@ -798,6 +882,11 @@ namespace GangstersTools
                     frozenHouseDays = one.Frozen,
                     ownershipRefusals = one.OwnershipRefusals,
                     thinkMilliseconds = one.ThinkMilliseconds,
+                    suppliersByDay30 = one.HousesAtSupplierByDay30,
+                    buyerMoney = one.BuyerMoney,
+                    cardsDealtAnsweredExpired = one.CardsDealt + "/" + one.CardsAnswered + "/" +
+                                                one.CardsExpired,
+                    rivalFlatsRaided = one.RivalFlatsRaided,
                     blocksPerHouseAtDay14 = one.HousesAtFortnight > 0
                         ? System.Math.Round(
                             one.BlocksAtFortnight / (double)one.HousesAtFortnight, 2)
@@ -986,11 +1075,30 @@ namespace GangstersTools
                 var phase = "";
                 var neighbours = new List<string>();
                 var cells = new List<string>();
-                if (runtime != null && !one.IsPlayer)
+                var card = "";
+                var connection = "";
+                var blocks = new List<string>();
+                // The player's house is looked at too (EPIC 40, PRE-002): the same
+                // view lines it prints for a rival.
+                if (runtime != null)
                 {
                     var view = runtime.Peek(one);
                     if (view != null)
                     {
+                        for (var i = 0; i < view.Blocks.Count; i++)
+                            blocks.Add(view.Blocks[i].Value + " doors " +
+                                       view.Businesses(view.Blocks[i]).Count + " attention " +
+                                       System.Math.Round(view.PoliceAttention(view.Blocks[i]), 1));
+                        if (view.Card != null)
+                            card = view.Card.Id + " by " + view.Card.SpeakerName +
+                                   (view.CardHold != LivingCity.Outfit.HoldReason.None
+                                       ? " HELD: " + LivingCity.Outfit.HoldReasons.Line(view.CardHold)
+                                       : "");
+                        var paper = view.Connection;
+                        if (paper != null)
+                            connection = paper.Stage + " line " + paper.Line + " grade " +
+                                         paper.Grade + " kilos " + paper.Kilos + " trust " +
+                                         paper.Trust + " man " + paper.ManId;
                         phase = LivingCity.Outfit.HouseMind.PhaseOf(view, config).ToString();
                         LivingCity.Outfit.HouseMind.NeighbourScores(view, config, scores);
                         for (var i = 0; i < scores.Count; i++)
@@ -1035,6 +1143,11 @@ namespace GangstersTools
                     neighbours = neighbours.ToArray(),
                     cells = cells.ToArray(),
                     heldBack = heldBack.ToArray(),
+                    blocks = blocks.ToArray(),
+                    card,
+                    connection,
+                    wire = one.Runner.Events.Wire.Count > 0
+                        ? one.Runner.Events.Wire[one.Runner.Events.Wire.Count - 1].Text : "",
                 });
             }
 

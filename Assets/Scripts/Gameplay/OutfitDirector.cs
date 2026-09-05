@@ -389,36 +389,59 @@ namespace LivingCity.Gameplay
         /// </summary>
         void ApplyFlatNight()
         {
-            var report = Runner.Flats;
-            if (report == null)
-                return;
-
+            // EVERY HOUSE'S FLATS (EPIC 40, PRE-001), the way Underworld.DayTick is a
+            // sweep: a rival's raided room jails its keeper, heats its block and reaches
+            // the paper exactly as ours does. The player's house moves Version; a
+            // rival's moves its own.
+            var underworld = Underworld.Current;
             var runtime = RoadDemo.TerritoryRuntime.Instance;
-            for (var i = 0; i < report.Heat.Count; i++)
+            for (var g = 0; underworld != null && g < underworld.Count; g++)
             {
-                var deposit = report.Heat[i];
-                if (runtime == null ||
-                    !Property.ApartmentBuildings.TryGet(deposit.Building, out var building))
+                var one = underworld.Of(g);
+                if (one == null || one.Finished || one.Runner == null)
                     continue;
-                runtime.AddPoliceAttention(building.CanonicalBlockId, deposit.Heat);
+                var report = one.Runner.Flats;
+                if (report == null)
+                    continue;
+
+                for (var i = 0; i < report.Heat.Count; i++)
+                {
+                    var deposit = report.Heat[i];
+                    if (runtime == null ||
+                        !Property.ApartmentBuildings.TryGet(deposit.Building, out var building))
+                        continue;
+                    runtime.AddPoliceAttention(building.CanonicalBlockId, deposit.Heat);
+                }
+
+                for (var i = 0; i < report.Raids.Count; i++)
+                {
+                    var raid = report.Raids[i];
+                    if (raid.KeeperId < 0)
+                        continue;
+                    // The keeper is taken. The flat is already sealed by the pure
+                    // pass; this is the man, through the same door a street collar uses.
+                    var keeper = one.Roster?.Find(raid.KeeperId);
+                    RoadDemo.PressDesk.Instance?.FlatRaid(raid, keeper, one.GangId);
+                    Personnel.RosterOps.ClearKeeper(one.Roster, raid.KeeperId);
+                    Personnel.RosterOps.Jail(one.Roster, raid.KeeperId,
+                        one.Runner.Campaign.Day + Property.FlatDay.SealedDays);
+                    Property.Apartments.SetKeeper(raid.Unit, -1);
+                    one.Runner.RosterMoved?.Invoke();
+                }
+
+                if (report.Raids.Count > 0 || report.Heat.Count > 0)
+                {
+                    if (one.IsPlayer)
+                        Version++;
+                    else
+                        one.Touch();
+                }
             }
 
-            for (var i = 0; i < report.Raids.Count; i++)
-            {
-                var raid = report.Raids[i];
-                if (raid.KeeperId < 0)
-                    continue;
-                // The keeper is taken. The flat is already sealed by the pure pass; this
-                // is the man, through the same door a street collar uses.
-                var keeper = RosterOrNull()?.Find(raid.KeeperId);
-                RoadDemo.PressDesk.Instance?.FlatRaid(raid, keeper, house.GangId);
-                Personnel.RosterOps.ClearKeeper(RosterOrNull(), raid.KeeperId);
-                Personnel.RosterOps.Jail(RosterOrNull(), raid.KeeperId,
-                    Campaign.Day + Property.FlatDay.SealedDays);
-                Property.Apartments.SetKeeper(raid.Unit, -1);
-            }
-
-            if (report.Raids.Count > 0 || report.Heat.Count > 0)
+            // THE STREET'S MIDNIGHT (EPIC 40, PRE-002): one pass, every house, after
+            // the books and the flats - the card is dealt at midnight and shown at the
+            // six o'clock cut once the paper has closed.
+            if (runtime != null && runtime.RunStreetEvents() > 0)
                 Version++;
         }
 
@@ -462,8 +485,12 @@ namespace LivingCity.Gameplay
 
         // ------------------------------------------------------------------- the rest
 
-        /// <summary>Stores the change as pending - stances turn over at midnight, never
-        /// under a plan the player is still reading.</summary>
+        /// <summary>
+        /// WAR IS DECLARED, TRUCE AND PEACE ARE OFFERED (EPIC 42, DIPL-002). A war goes
+        /// pending for midnight as it always did; a truce or a peace is a proposal to
+        /// the other house through the same door a mind's is, answered at its desk
+        /// at once - a stance the player could impose alone was never diplomacy.
+        /// </summary>
         public OpResult SetStance(int gangId, Stance stance)
         {
             if (gangId == Gangs.GangCatalog.PlayerGangId)
@@ -471,9 +498,25 @@ namespace LivingCity.Gameplay
 
             if (Relations == null)
                 return OpResult.Fail(UI.LedgerText.ReasonFinanceUnavailable);
-            Relations.SetPending(Gangs.GangCatalog.PlayerGangId, gangId, stance);
+            if (stance == Stance.War)
+            {
+                Relations.SetPending(Gangs.GangCatalog.PlayerGangId, gangId, stance);
+                Version++;
+                return OpResult.Success;
+            }
+
+            var world = Underworld.Current;
+            if (world?.Player == null)
+                return OpResult.Fail(UI.LedgerText.ReasonFinanceUnavailable);
+            var filed = HouseOps.Propose(world, world.Player, new Proposal
+            {
+                To = gangId,
+                Kind = stance == Stance.Truce
+                    ? ProposalKind.OfferTruce
+                    : ProposalKind.OfferPeace,
+            }, HouseOps.Look);
             Version++;
-            return OpResult.Success;
+            return filed;
         }
 
         void Start()
@@ -580,11 +623,13 @@ namespace LivingCity.Gameplay
                 return;
             }
 
-            // THEY HAVE HIM (RIVAL-009 step 6). Off their books for three days, a
-            // ransom printed in both books, and a debt on the ladder.
-            if (job.Type == OrderType.Kidnap && job.TargetCharacterId >= 0)
+            // THEY HAVE HIM (RIVAL-009 step 6) is the books' own business since EPIC
+            // 42 DIPL-005: CampaignRunner.Finish hands a completed kidnap to
+            // Underworld.TakeHim, which takes the man, files the grudge and puts the
+            // ransom on the table - so the paper city sees it too.
+            if (job.Type == OrderType.Kidnap)
             {
-                TakeHim(job, whose);
+                Version++;
                 return;
             }
 
@@ -718,48 +763,12 @@ namespace LivingCity.Gameplay
                         whose, new Vector3(job.TargetX, 0f, job.TargetZ));
 
                 if (house.GangId != whose.Value)
+                {
                     underworld.Relations.Note(
-                        house.GangId, whose.Value, GrievanceKind.ManKilled);
-                Version++;
-                return;
-            }
-        }
-
-        /// <summary>
-        /// A MAN IN SOMEBODY'S CELLAR. He is off his own family's books for KidnapDays,
-        /// they are told what it would cost to have him back at once, and they are owed
-        /// for it. Whether anybody PAYS is EPIC 10's; this much is real, and it is real
-        /// for every house.
-        /// </summary>
-        void TakeHim(Job job, Territory.TerritoryGangId whose)
-        {
-            var underworld = Underworld.Current;
-            if (underworld == null)
-                return;
-
-            for (var g = 0; g < underworld.Count; g++)
-            {
-                var house = underworld.Of(g);
-                var man = house?.Roster?.Find(job.TargetCharacterId);
-                if (man == null || man.Gone || man.Status != Personnel.CharacterStatus.Active)
-                    continue;
-
-                Personnel.RosterOps.Taken(
-                    house.Roster, man.Id, Campaign.Day + OrderResolution.KidnapDays,
-                    "held by " + Gangs.GangCatalog.Names[whose.Value]);
-                house.Touch();
-
-                var word = Gangs.GangCatalog.Names[whose.Value] + " has " + man.FullName +
-                           " - $" + EconomyPrices.KidnapCut + " to have him back today";
-                var note = new Personnel.Incident(
-                    man.Id, word, Personnel.IncidentKind.AWordBetweenHouses,
-                    Campaign.Day, "", 0, word);
-                house.Runner.Incidents.Add(note);
-                underworld.Of(whose.Value)?.Runner.Incidents.Add(note);
-
-                if (house.GangId != whose.Value)
-                    underworld.Relations.Note(
-                        house.GangId, whose.Value, GrievanceKind.ManTaken);
+                        house.GangId, whose.Value, GrievanceKind.ManKilled,
+                        house.Runner.Campaign.Day);
+                    house.Runner.NoteLoss(whose.Value);
+                }
                 Version++;
                 return;
             }

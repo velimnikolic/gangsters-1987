@@ -106,6 +106,9 @@ namespace LivingCity.Personnel
         /// walks the rounds now and stands at the front between them.</summary>
         BagHanded,
 
+        /// <summary>Kilos out of the room to the buyer (EPIC 40, CONN-004).</summary>
+        KilosSold,
+
         /// <summary>The precinct came through the door of a flat he was keeping
         /// (EPIC 27).</summary>
         FlatRaided,

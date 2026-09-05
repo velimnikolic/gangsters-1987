@@ -98,9 +98,7 @@ namespace RoadDemo
         static readonly Color PoliceHood = new Color(0.38f, 0.70f, 1f, 0.6f);
         static readonly Color AttackTint = new Color(1f, 0.36f, 0.30f, 0.9f);
 
-        static bool BookOpen => LivingCity.UI.PersonnelAlmanac.IsOpen ||
-                                LivingCity.UI.NewspaperHud.IsOpen ||
-                                TurfMapHud.IsOpen;
+        static bool BookOpen => LivingCity.UI.ModalGate.PaperUp || TurfMapHud.IsOpen;
 
         DemoCrews _crews;
         Canvas _canvas;
@@ -2086,7 +2084,10 @@ namespace RoadDemo
             LivingCity.Outfit.OrderType.Recruit or
             LivingCity.Outfit.OrderType.Bribe or
             LivingCity.Outfit.OrderType.EmployPolice or
-            LivingCity.Outfit.OrderType.Donate => null,
+            LivingCity.Outfit.OrderType.Donate or
+            LivingCity.Outfit.OrderType.Meet or
+            LivingCity.Outfit.OrderType.TestBuy or
+            LivingCity.Outfit.OrderType.SitDown => null,
             _ => throw new System.ArgumentOutOfRangeException(nameof(type), type,
                 "Every order needs an explicit street voice decision."),
         };
@@ -2566,8 +2567,7 @@ namespace RoadDemo
 
             var kb = Keyboard.current;
             if (kb != null && kb.escapeKey.wasPressedThisFrame &&
-                !LivingCity.UI.PersonnelAlmanac.ClaimsEsc &&
-                !LivingCity.UI.NewspaperHud.ClaimsEsc)
+                !LivingCity.UI.ModalGate.ClaimsEsc)
             {
                 if (_aiming) EndCoverAim(order: false);
                 else if (_ordersOpen) CloseOrders();

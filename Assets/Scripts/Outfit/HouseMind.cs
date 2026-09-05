@@ -186,10 +186,240 @@ namespace LivingCity.Outfit
             // TIER 4 NEVER WAITS. A round due today goes out whatever else the family is
             // doing - the money is what everything else is paid from.
             Collect(view, config, into);
+
+            // THE PHONE IS ANSWERED BEFORE THE WALK (EPIC 40, STREET-003). A card on the
+            // table is answered here, beside the collection, or Walk returns at Grow
+            // and no card is ever answered while there is ground to take.
+            AnswerTheCard(view, config, into);
+
+            // THE TABLE NEVER WAITS EITHER (EPIC 42). A proposal costs no crew and no
+            // money until it is accepted, so it is filed beside the collection and
+            // before the tiers - Walk returns at the first tier that proposes, and a
+            // word to another family must not queue behind a shakedown.
+            Diplomacy(view, config, relations, into);
             var tier = Walk(view, config, relations, into);
             DropTheUnbuilt(into);
             return tier;
         }
+
+        /// <summary>
+        /// WHAT THIS HOUSE SAYS TO THE OTHERS (EPIC 42). Runs beside Collect, before
+        /// the tiers. It proposes only; the answers happened at the desk when the
+        /// proposals arrived. Each ticket of the epic adds its kind here, and every one
+        /// asks the view whether the same thing is already open before it files.
+        /// </summary>
+        static void Diplomacy(HouseView view, HouseMindConfig config,
+            HouseRelationsConfig relations, List<HouseIntent> into)
+        {
+            for (var i = 0; i < view.Rivals.Count; i++)
+            {
+                var them = view.Rivals[i];
+                if (them == view.House || !them.IsValid)
+                    continue;
+                var stance = view.StanceToward(them);
+                var step = view.Ladder(them);
+
+                // A FAMILY THAT CANNOT PAY THROUGH THE WAR IT IS IN, OR HAS LOST TOO
+                // MANY, OFFERS A TRUCE WHATEVER IT IS OWED (D15) - offers, since
+                // DIPL-002, and does not impose. The other side may be beaten too and
+                // then cannot refuse; otherwise the desk reads the tables.
+                if (stance == Stance.War &&
+                    (view.Endurance < relations.MinWarDays ||
+                     view.Losses(them) >= relations.LossesToSueForPeace) &&
+                    !view.HasOpenProposal(them, ProposalKind.OfferTruce))
+                {
+                    Propose(view, into, HouseIntent.Propose(
+                        Ask(them, ProposalKind.OfferTruce), TierDefend,
+                        "we cannot pay the men through this"));
+                    continue;
+                }
+
+                // THE LINE (DIPL-006), before the truce a squeezed house would ask for:
+                // pressed against a neighbour up to the border's own cap, and neither
+                // house able to pay for the war the ladder is walking toward, a line
+                // across the streets where the two touch is the narrower word.
+                if (stance != Stance.War &&
+                    view.Grievance(them) >= relations.BorderPressureCap &&
+                    view.Endurance < relations.MinWarDays &&
+                    view.TheirEndurance(them) < relations.MinWarDays &&
+                    !view.HasOpenProposal(them, ProposalKind.Line))
+                {
+                    var line = Ask(them, ProposalKind.Line);
+                    WhereWeTouch(view, them, line.Terms.Blocks);
+                    if (line.Terms.Blocks.Count > 0 &&
+                        Propose(view, into, HouseIntent.Propose(line, TierDefend,
+                            "a line, before a war neither of us can pay for")))
+                        continue;
+                }
+
+                // AT PEACE AND OWED A THREAT'S WORTH: they keep off our streets from
+                // now on - a truce asked for, which costs the other side nothing it
+                // was not already owed.
+                if (stance == Stance.Peace &&
+                    step >= LadderStep.Threat && step < LadderStep.AttackBusiness &&
+                    !view.HasOpenProposal(them, ProposalKind.OfferTruce))
+                {
+                    Propose(view, into, HouseIntent.Propose(
+                        Ask(them, ProposalKind.OfferTruce), TierDefend,
+                        "they keep off our streets from now on"));
+                    continue;
+                }
+
+                // IN A TRUCE AND OWED NOTHING: peace, if they will have it. The
+                // automatic rule (D22) gets there on its own in a week; asking is
+                // what happens when somebody talks.
+                if (stance == Stance.Truce && step == LadderStep.Ignore &&
+                    !view.HasOpenProposal(them, ProposalKind.OfferPeace))
+                {
+                    Propose(view, into, HouseIntent.Propose(
+                        Ask(them, ProposalKind.OfferPeace), TierDefend,
+                        "there is nothing between us now"));
+                    continue;
+                }
+
+                // A PACT (DIPL-007), with a house at peace with us, when a third house
+                // is at war with us or owes us shops' worth: we can pay for the war,
+                // and the partner is asked to stand in it. JOIN MY WAR when the war is
+                // on and going badly.
+                if (stance == Stance.Peace && view.Endurance >= relations.MinWarDays)
+                {
+                    var threat = WhoThreatens(view, them);
+                    if (threat.IsValid)
+                    {
+                        var losing = view.StanceToward(threat) == Stance.War &&
+                                     view.Losses(threat) >= 2;
+                        var kind = losing ? ProposalKind.JoinWar : ProposalKind.Pact;
+                        if (!view.HasOpenProposal(them, kind))
+                        {
+                            var pact = Ask(them, kind);
+                            pact.Terms.Third = threat.Value;
+                            if (Propose(view, into, HouseIntent.Propose(pact, TierDefend,
+                                    losing ? "we are losing men to them"
+                                           : "they will come for us both")))
+                                continue;
+                        }
+                    }
+                }
+
+                // LEVIED AND BROKE: half the envelope, on the table (DIPL-004). The
+                // levying house takes half from a house that cannot pay, or refuses
+                // and the street's figure stands.
+                var owe = view.TributeOwe(them);
+                if (owe > 0 && view.Endurance < relations.MinWarDays &&
+                    !view.HasOpenProposal(them, ProposalKind.TributeTerms))
+                {
+                    var terms = Ask(them, ProposalKind.TributeTerms);
+                    terms.Terms.Money = owe / 2;
+                    if (terms.Terms.Money > 0)
+                        Propose(view, into, HouseIntent.Propose(terms, TierWages,
+                            "the envelope is more than the street pays us"));
+                }
+
+                // THE FIRST THREE RUNGS ARE WORDS, AND WORDS HAVE ANSWERS NOW
+                // (DIPL-003). A warning, a threat, then a bill priced from the grudge
+                // so that paying it lands exactly on the threat rung - the ladder's
+                // own steps, filed as proposals the other desk answers.
+                switch (step)
+                {
+                    case LadderStep.DiplomaticWarning:
+                    case LadderStep.Threat:
+                        var kind = step == LadderStep.DiplomaticWarning
+                            ? ProposalKind.Warn
+                            : ProposalKind.Threaten;
+                        if (view.HasOpenProposal(them, kind))
+                            continue;
+                        var street = TheirDoorOnOurGround(view, them);
+                        if (!street.IsValid)
+                            continue;
+                        var word = Ask(them, kind);
+                        word.Terms.Blocks.Add(street.Value);
+                        Propose(view, into, HouseIntent.Propose(word, TierDefend,
+                            step == LadderStep.DiplomaticWarning
+                                ? "a word, before anything else"
+                                : "the second word is the last one"));
+                        continue;
+
+                    case LadderStep.DemandCompensation:
+                        if (view.HasOpenProposal(them, ProposalKind.Bill))
+                            continue;
+                        var bill = Ask(them, ProposalKind.Bill);
+                        bill.Terms.Money = (int)(
+                            (view.Grievance(them) - relations.ThreatAt) *
+                            DiplomacyConfig.Default.CompensationPerPoint);
+                        if (bill.Terms.Money <= 0)
+                            continue;
+                        Propose(view, into, HouseIntent.Propose(bill, TierDefend,
+                            "they can pay for what they took"));
+                        continue;
+                }
+            }
+        }
+
+        /// <summary>The house we would want a partner against: one we are at war
+        /// with, else one that owes us shops' worth - and never the partner itself.
+        /// </summary>
+        static TerritoryGangId WhoThreatens(HouseView view, TerritoryGangId partner)
+        {
+            var worst = default(TerritoryGangId);
+            for (var i = 0; i < view.Rivals.Count; i++)
+            {
+                var other = view.Rivals[i];
+                if (other == partner || other == view.House || !other.IsValid)
+                    continue;
+                if (view.StanceToward(other) == Stance.War)
+                    return other;
+                if (view.Ladder(other) >= LadderStep.RetakeBusiness && !worst.IsValid)
+                    worst = other;
+            }
+            return worst;
+        }
+
+        /// <summary>The streets where the two houses touch: every block we lead that
+        /// borders one they lead, and those blocks of theirs - the line's streets.
+        /// </summary>
+        static void WhereWeTouch(HouseView view, TerritoryGangId them, List<string> into)
+        {
+            for (var b = 0; b < view.Blocks.Count; b++)
+            {
+                var blockId = view.Blocks[b];
+                if (view.Leader(blockId) != view.House)
+                    continue;
+                var neighbours = view.Neighbours(blockId);
+                for (var n = 0; n < neighbours.Count; n++)
+                {
+                    if (view.Leader(neighbours[n]) != them)
+                        continue;
+                    if (!into.Contains(blockId.Value))
+                        into.Add(blockId.Value);
+                    if (!into.Contains(neighbours[n].Value))
+                        into.Add(neighbours[n].Value);
+                }
+            }
+        }
+
+        /// <summary>The street a word names: a block we lead on which they hold a
+        /// door, else the first block we lead, else nothing to warn them off.</summary>
+        static TerritoryBlockId TheirDoorOnOurGround(HouseView view, TerritoryGangId them)
+        {
+            var first = default(TerritoryBlockId);
+            for (var b = 0; b < view.Blocks.Count; b++)
+            {
+                var blockId = view.Blocks[b];
+                if (view.Leader(blockId) != view.House)
+                    continue;
+                if (!first.IsValid)
+                    first = blockId;
+                var doors = view.Businesses(blockId);
+                for (var i = 0; i < doors.Count; i++)
+                    if (doors[i].Protector == them)
+                        return blockId;
+            }
+            return first;
+        }
+
+        /// <summary>A proposal with nothing on it but the ask.</summary>
+        static Proposal Ask(TerritoryGangId them, ProposalKind kind) =>
+            new Proposal { To = them.Value, Kind = kind };
 
         /// <summary>The tiers themselves, in order. Split out so nothing may be emitted
         /// without passing the built-orders gate above.</summary>
@@ -553,7 +783,7 @@ namespace LivingCity.Outfit
             for (var b = 0; b < view.Blocks.Count; b++)
             {
                 var blockId = view.Blocks[b];
-                if (view.Leader(blockId) != view.House)
+                if (view.Leader(blockId) != view.House || view.KeptOff(blockId))
                     continue;
 
                 var contested = view.ControlState(blockId) == TerritoryControlState.Contested;
@@ -620,27 +850,16 @@ namespace LivingCity.Outfit
                 var stance = view.StanceToward(them);
                 var step = view.Ladder(them);
 
-                // WAR AND PEACE FIRST. A family with a month's wages behind it and a
-                // grudge worth shops declares; one that cannot pay through the month it
-                // is already in offers a truce, whatever it is owed.
-                if (stance == Stance.War &&
-                    (view.Endurance < relations.MinWarDays ||
-                     view.LossesThisWar >= relations.LossesToSueForPeace) &&
-                    Propose(view, into, HouseIntent.Stand(them, Stance.Truce, TierDefend,
-                        "we cannot pay the men through this")))
-                    return true;
-
+                // WAR IS DECLARED, NEVER PROPOSED. A family with a month's wages
+                // behind it and a grudge worth shops declares. The truce it offers
+                // when it cannot pay, and the truce it asks of a neighbour it is owed
+                // a threat's worth by, are proposals now (EPIC 42, DIPL-002) and are
+                // filed from Diplomacy, before the tiers.
                 if (stance != Stance.War && step >= LadderStep.AttackBusiness && ready &&
                     view.Endurance >= relations.MinWarDays &&
                     view.Endurance >= view.TheirEndurance(them) &&
                     Propose(view, into, HouseIntent.Stand(them, Stance.War, TierDefend,
                         "they have taken too much")))
-                    return true;
-
-                if (stance == Stance.Peace &&
-                    step >= LadderStep.Threat && step < LadderStep.AttackBusiness &&
-                    Propose(view, into, HouseIntent.Stand(them, Stance.Truce, TierDefend,
-                        "they keep off our streets from now on")))
                     return true;
 
                 // THEN THE STEP ITSELF.
@@ -649,26 +868,11 @@ namespace LivingCity.Outfit
                     case LadderStep.Ignore:
                         continue;
 
+                    // The three words are proposals now, filed from Diplomacy before
+                    // the tiers (DIPL-003); the ladder here starts at the door.
                     case LadderStep.DiplomaticWarning:
-                        if (Propose(view, into, HouseIntent.Word(them,
-                            "warns them off our streets", 0, TierDefend,
-                            "a word, before anything else")))
-                            return true;
-                        continue;
-
                     case LadderStep.Threat:
-                        if (Propose(view, into, HouseIntent.Word(
-                            them, "will not warn them again", 0, TierDefend,
-                            "the second word is the last one")))
-                            return true;
-                        continue;
-
                     case LadderStep.DemandCompensation:
-                        if (Propose(view, into, HouseIntent.Word(
-                            them, "sends a bill for what they took",
-                            EconomyPrices.Shakedown * Theirs(view, them), TierDefend,
-                            "they can pay for what they took")))
-                            return true;
                         continue;
 
                     case LadderStep.RetakeBusiness:
@@ -708,20 +912,6 @@ namespace LivingCity.Outfit
                     return false;
             }
             return true;
-        }
-
-        /// <summary>How many doors on ground we can see are theirs.</summary>
-        static int Theirs(HouseView view, TerritoryGangId them)
-        {
-            var count = 0;
-            for (var b = 0; b < view.Blocks.Count; b++)
-            {
-                var doors = view.Businesses(view.Blocks[b]);
-                for (var i = 0; i < doors.Count; i++)
-                    if (doors[i].Protector == them)
-                        count++;
-            }
-            return count > 0 ? count : 1;
         }
 
         /// <summary>
@@ -1193,6 +1383,8 @@ namespace LivingCity.Outfit
             for (var b = 0; b < view.Blocks.Count; b++)
             {
                 var blockId = view.Blocks[b];
+                if (view.KeptOff(blockId))
+                    continue;
                 if (view.OurPresence(blockId) < config.DemandPresence)
                     continue;
                 if (!AnyAskable(view, blockId))
@@ -1327,7 +1519,7 @@ namespace LivingCity.Outfit
                 for (var n = 0; n < neighbours.Count; n++)
                 {
                     var blockId = neighbours[n];
-                    if (!Open(view, blockId))
+                    if (!Open(view, blockId) || view.KeptOff(blockId))
                         continue;
                     if (view.OurPresence(blockId) >= config.DemandPresence)
                         continue;
@@ -1696,6 +1888,107 @@ namespace LivingCity.Outfit
                     return crew;
             }
             return first;
+        }
+
+        /// <summary>A crew that could be sent anywhere at all - the connection's cards
+        /// ask it (EPIC 40). The mind's own rule, made readable.</summary>
+        public static Crew AnyFreeCrew(HouseView view) =>
+            view?.Roster == null ? null : CrewOn(view, default);
+
+        // ------------------------------------------------------------------ EPIC 40
+
+        /// <summary>
+        /// THE CARD ON THE TABLE, ANSWERED (STREET-003). A pending card whose hold is
+        /// clear is answered with the highest-appeal row the safe covers; WALK AWAY is
+        /// a row with an appeal of its own, never the absence of one. A held card is
+        /// resolved by its reason: NoRoom leases a Stash room this think, NoMoney and
+        /// NoCrew wait inside the card's three days. And kilos in the room are sold.
+        /// </summary>
+        static void AnswerTheCard(HouseView view, HouseMindConfig config,
+            List<HouseIntent> into)
+        {
+            // Kilos are money: sold the think after they land (CONN-004).
+            if (view.Connection != null && view.Connection.Kilos > 0 &&
+                view.Connection.OutletForNextKilo(view.Day) > 0)
+                Propose(view, into, HouseIntent.SellKilos(TierCollect,
+                    view.Connection.Kilos + " kilos to the buyer"));
+
+            var card = view.Card;
+            if (card == null || card.Choices.Count == 0)
+                return;
+
+            var reserve = config.ReserveDays * view.DailyPayroll;
+            switch (view.CardHold)
+            {
+                case HoldReason.NoRoom:
+                    // The one hold a house can fix by itself: rent the room, keep it -
+                    // with a week's wages still in the safe afterwards (D9).
+                    if (!StashRoom.Held(view.House.Value) &&
+                        view.Safe >= EconomyPrices.Apartment + EconomyPrices.StashFitOut + reserve)
+                    {
+                        var keeper = KeeperFor(view);
+                        Propose(view, into, HouseIntent.Lease(Property.UnitRole.Stash,
+                            keeper != null ? keeper.Id : -1, TierCollect,
+                            "somewhere to keep it: a room for the kilos"));
+                    }
+                    return;
+                case HoldReason.NoMoney:
+                case HoldReason.NoCrew:
+                    return;
+                case HoldReason.None:
+                    break;
+                default:
+                    return;
+            }
+
+            var best = -1;
+            var bestAppeal = -1f;
+            for (var i = 0; i < card.Choices.Count; i++)
+            {
+                var row = card.Choices[i];
+                // A week's wages still in the safe after the row - the man's own
+                // wage included, or the signing is what puts the safe under it.
+                if (row.Cost > 0 &&
+                    row.Cost + reserve + row.Upkeep * config.ReserveDays > view.Safe)
+                    continue;
+                if (row.NeedsCrew && AnyFreeCrew(view) == null)
+                    continue;
+                var appeal = row.Appeal != null ? row.Appeal(view) : 0f;
+                if (appeal > bestAppeal)
+                {
+                    bestAppeal = appeal;
+                    best = i;
+                }
+            }
+            if (best < 0)
+                return;
+            Propose(view, into, HouseIntent.Choose(card, best, TierCollect,
+                card.SpeakerName + ": " + card.Choices[best].Label));
+        }
+
+        /// <summary>The man to keep the room: the most careful hood the books can
+        /// spare - RosterOps.CanKeep's rule, read here so the intent is not refused.
+        /// </summary>
+        static Character KeeperFor(HouseView view)
+        {
+            var roster = view.Roster;
+            Character best = null;
+            var bestCare = -1;
+            for (var i = 0; i < roster.Members.Count; i++)
+            {
+                var man = roster.Members[i];
+                if (!RosterOps.CanKeep(roster, man.Id, out _))
+                    continue;
+                // A man with no duty first; the bag man only when nobody else can.
+                var care = man.GetHalfSteps(CharacterAttribute.Stealth) * 2 +
+                           (man.Duty == Duty.None ? 100 : 0);
+                if (care > bestCare)
+                {
+                    bestCare = care;
+                    best = man;
+                }
+            }
+            return best;
         }
 
         /// <summary>

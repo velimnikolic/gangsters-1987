@@ -410,6 +410,9 @@ namespace LivingCity.UI
             Outfit.OrderType.Donate => "Donate",
             Outfit.OrderType.Beating => "Beat the Owner",
             Outfit.OrderType.KillOwner => "Kill the Owner",
+            Outfit.OrderType.Meet => "Meet the Man",
+            Outfit.OrderType.TestBuy => "Test Buy",
+            Outfit.OrderType.SitDown => "Sit-Down",
             _ => throw new System.ArgumentOutOfRangeException(nameof(type), type,
                 "Every order needs an explicit ledger label."),
         };

@@ -272,6 +272,13 @@ namespace LivingCity.Personnel
         /// with however many ticks happened to run.</summary>
         public int BackOnDay;
 
+        /// <summary>The day he was last put in a cell, and the day he last came out of
+        /// one, with the nights between them - so a card can say "released today
+        /// after two nights inside" without a second clock (EPIC 40, THE CELL).</summary>
+        public int JailedOnDay;
+        public int ReleasedOnDay;
+        public int NightsInside;
+
         /// <summary>
         /// What is actually wrong with him, in the clerk's own words - "two ribs and a
         /// wrist", "held at Rikers". Free text on purpose: the roster's CONDITION column

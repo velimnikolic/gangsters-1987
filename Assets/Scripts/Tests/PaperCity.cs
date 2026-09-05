@@ -127,8 +127,20 @@ namespace LivingCity.Tests
         public int RateOf(TerritoryBusinessId businessId) =>
             EconomyPrices.ProtectionPerWeek(TradeOf(businessId));
 
+        /// <summary>The second door of every block is a bar (EPIC 40): a broker has to
+        /// have a table somewhere, and a paper city dealt from shopfronts alone would
+        /// never name one. Priced as a Pub, like the real one.</summary>
+        public static bool IsTheBar(TerritoryBusinessId businessId)
+        {
+            var value = businessId.Value;
+            var colon = value != null ? value.LastIndexOf(':') : -1;
+            return colon >= 0 && value.Substring(colon + 1) == "1";
+        }
+
         BusinessArchetypeId TradeOf(TerritoryBusinessId businessId)
         {
+            if (IsTheBar(businessId))
+                return BusinessArchetypeId.Pub;
             var mix = Potential.Mix(Seed, businessId.Value.GetHashCode());
             return Trades[(int)((uint)mix % (uint)Trades.Length)];
         }
@@ -339,7 +351,7 @@ namespace LivingCity.Tests
                 if (g != house.GangId && world.Of(g) != null && !world.Of(g).Extinct)
                     rivals.Add(new TerritoryGangId(g));
 
-            return new HouseView
+            var view = new HouseView
             {
                 House = mine,
                 Roster = house.Roster,
@@ -375,9 +387,97 @@ namespace LivingCity.Tests
                     posted.TryGetValue(crewId, out var post) && post.House == mine
                         ? post.Block
                         : HomeBlockOf(house.GangId),
+                OpenProposalLook = (other, kind) =>
+                    world.Diplomacy.HasOpen(house.GangId, other.Value, kind,
+                        house.Runner.Campaign.Day),
+                KeepOffLook = blockId => world.Diplomacy.IsKeptOff(
+                    house.GangId, blockId, house.Runner.Campaign.Day),
+                GrievanceLook = other =>
+                    world.Relations.Grievance(house.GangId, other.Value),
+                LossesLook = other => house.Runner.LossesThisWar(other.Value),
+                TributeLook = other => (house.Runner.Tribute.OwedTo(other.Value),
+                    world.Of(other.Value) != null
+                        ? world.Of(other.Value).Runner.Tribute.OwedTo(house.GangId)
+                        : 0),
+                LossesThisWar = WorstLosses(world, house),
                 GameHour = Hour,
                 Day = Day + 1,
             };
+
+            // The street's book (EPIC 40), read the way the runtime reads it.
+            view.Events = house.Runner.Events;
+            view.Connection = house.Runner.Connection;
+            var ctx = StreetEvents.ContextFor(world, house, config);
+            if (ctx != null)
+            {
+                view.Card = StreetEvents.CardOf(house.Runner.Events, view, ctx,
+                    ConnectionEvents.Defs);
+                view.CardHold = StreetEvents.HoldOf(house.Runner.Events, view, ctx,
+                    ConnectionEvents.Defs);
+            }
+            return view;
+        }
+
+        /// <summary>The midnight pass, with this city's own Look (PRE-002's second
+        /// caller). Answers how many houses were rolled.</summary>
+        public int RollTheStreet(Underworld world, TerritoryRacketLedger racket,
+            TerritoryDuesLedger dues, HouseMindConfig config, TerritoryRoundLedger rounds,
+            List<EventFiring> firings = null) =>
+            StreetEvents.DayPass(world,
+                h => Look(world, racket, dues, h, config, rounds),
+                h => StreetEvents.ContextFor(world, h, config),
+                ConnectionEvents.Defs, firings);
+
+        /// <summary>How many paper rooms each house has taken, so a second lease is a
+        /// second door.</summary>
+        readonly Dictionary<int, int> paperRooms = new Dictionary<int, int>();
+
+        /// <summary>Money the buyer paid each house, for the yardstick's row.</summary>
+        public readonly Dictionary<int, int> BuyerMoney = new Dictionary<int, int>();
+
+        readonly List<int> keepOffCrews = new List<int>();
+
+        /// <summary>The city's holdings as the tribute book reads them: every block
+        /// with a leader, under that leader's name (EPIC 42, DIPL-004). The runner's
+        /// HoldingsOf on paper.</summary>
+        public void CollectHoldings(List<Turf.Holding> into)
+        {
+            into.Clear();
+            for (var b = 0; b < blocks.Length; b++)
+            {
+                var leader = Leader(blocks[b]);
+                if (leader.IsValid)
+                    into.Add(new Turf.Holding(leader.Value, b));
+            }
+        }
+
+        /// <summary>The word is kept on paper as on the pavement (EPIC 42): a crew
+        /// posted on a block its house has given its word to keep off goes home - the
+        /// posting is forgotten, and the crew reads as standing at the front.</summary>
+        public void SweepKeepOffs(Underworld world)
+        {
+            keepOffCrews.Clear();
+            foreach (var pair in posted)
+            {
+                var house = world.Of(pair.Value.House.Value);
+                if (house != null && world.Diplomacy.IsKeptOff(
+                        house.GangId, pair.Value.Block, house.Runner.Campaign.Day))
+                    keepOffCrews.Add(pair.Key);
+            }
+            for (var i = 0; i < keepOffCrews.Count; i++)
+                posted.Remove(keepOffCrews[i]);
+        }
+
+        static int WorstLosses(Underworld world, House house)
+        {
+            var worst = 0;
+            for (var g = 0; g < world.Count; g++)
+            {
+                var lost = house.Runner.LossesThisWar(g);
+                if (lost > worst)
+                    worst = lost;
+            }
+            return worst;
         }
 
         IReadOnlyList<HouseDoor> Doors(TerritoryRacketLedger racket,
@@ -411,7 +511,7 @@ namespace LivingCity.Tests
                             : protector.IsValid
                                 ? DoorTenure.Rival
                                 : DoorTenure.Open,
-                    late, lastInteraction, demands));
+                    late, lastInteraction, demands, TradeOf(businessId)));
             }
             return doorScratch;
         }
@@ -483,7 +583,18 @@ namespace LivingCity.Tests
                     return "";
 
                 case HouseIntentKind.Warn:
-                    return "";
+                    return "a word is a proposal now";
+
+                // THE TABLE (EPIC 42): the same two calls the runtime carries, with
+                // the paper city's own Look handed over for the desk's answer.
+                case HouseIntentKind.Propose:
+                    return HouseOps.Propose(world, house, intent.Proposal,
+                        other => Look(world, racket, dues, other, HouseMindConfig.Default,
+                            rounds)).Reason;
+
+                case HouseIntentKind.Reply:
+                    return HouseOps.Reply(
+                        world, house, intent.ProposalId, intent.Accept).Reason;
 
                 case HouseIntentKind.Cancel:
                     return house.Runner.Cancel(house.Roster, intent.CharacterId).Reason;
@@ -493,6 +604,75 @@ namespace LivingCity.Tests
 
                 case HouseIntentKind.Retain:
                     return "there is no courthouse in a paper city";
+
+                // EPIC 40. A paper flat is a paper flat: a building the city never
+                // dealt, on the house's own street, through the same HouseOps door.
+                case HouseIntentKind.Lease:
+                {
+                    paperRooms.TryGetValue(house.GangId, out var rooms);
+                    var unit = new Property.ApartmentUnitId(
+                        new Property.ApartmentBuildingId("paper:" + house.GangId), 1, rooms);
+                    var bought = HouseOps.BuyFlat(house, unit, Day + 1);
+                    if (!bought.Ok)
+                        return bought.Reason;
+                    paperRooms[house.GangId] = rooms + 1;
+                    if (intent.Role != Property.UnitRole.Empty)
+                    {
+                        var fit = HouseOps.FitOut(house, unit, intent.Role);
+                        if (!fit.Ok)
+                            return fit.Reason;
+                    }
+                    if (intent.CharacterId >= 0)
+                    {
+                        var kept = HouseOps.SetKeeper(house, unit, intent.CharacterId);
+                        if (!kept.Ok)
+                            return kept.Reason;
+                    }
+                    return "";
+                }
+
+                case HouseIntentKind.FitOut:
+                    return Property.Apartments.TryParseKey(intent.Listing, out var fitUnit)
+                        ? HouseOps.FitOut(house, fitUnit, intent.Role).Reason
+                        : "no such room";
+
+                case HouseIntentKind.SetKeeper:
+                    return Property.Apartments.TryParseKey(intent.Listing, out var keptUnit)
+                        ? HouseOps.SetKeeper(house, keptUnit, intent.CharacterId).Reason
+                        : "no such room";
+
+                case HouseIntentKind.Sign:
+                    return HouseOps.Sign(house, world, intent.Card, intent.CrewId, Day + 1).Reason;
+
+                case HouseIntentKind.Card:
+                {
+                    var ctx = StreetEvents.ContextFor(world, house);
+                    var eventBook = house.Runner.Events;
+                    var card = intent.Card ?? StreetEvents.CardOf(eventBook,
+                        Look(world, racket, dues, house, HouseMindConfig.Default, rounds),
+                        ctx, ConnectionEvents.Defs);
+                    if (card == null || eventBook.Pending == null ||
+                        eventBook.Pending.Id != card.Id)
+                        return "no card on the table";
+                    var inner = StreetEvents.Answer(eventBook, card, intent.CharacterId, ctx);
+                    return inner.Kind == HouseIntentKind.None
+                        ? ""
+                        : Carry(world, racket, dues, rounds, clock, house, inner, book);
+                }
+
+                case HouseIntentKind.AcceptTerms:
+                    return HouseOps.AcceptTerms(house, world, Day + 1).Reason;
+
+                case HouseIntentKind.Sell:
+                {
+                    var sold = HouseOps.Sell(house, Day + 1, out var money, out _);
+                    if (sold.Ok)
+                    {
+                        BuyerMoney.TryGetValue(house.GangId, out var had);
+                        BuyerMoney[house.GangId] = had + money;
+                    }
+                    return sold.Reason;
+                }
             }
             return "nothing to do";
         }
@@ -502,6 +682,14 @@ namespace LivingCity.Tests
             TerritoryPaperClock clock, House house, TerritoryGangId mine,
             HouseIntent intent, UnderworldSim.Ledger book)
         {
+            // A STREET UNDER OUR WORD (EPIC 42): the paper city's one choke point.
+            var street = intent.Order == HouseOrder.ApproachBusiness
+                ? BlockOf(intent.BusinessId)
+                : intent.BlockId;
+            if (street.IsValid && world.Diplomacy.IsKeptOff(
+                    house.GangId, street, house.Runner.Campaign.Day))
+                return HouseDiplomacy.ReasonUnderOurWord;
+
             switch (intent.Order)
             {
                 case HouseOrder.OperateInBlock:

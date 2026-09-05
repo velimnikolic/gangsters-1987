@@ -267,8 +267,7 @@ namespace RoadDemo
         /// file is the plate's own file - it went up with the wheel before this class
         /// existed and it still does. The almanac suspends every canvas on its own.
         /// </summary>
-        static bool ModalUp => PersonnelAlmanac.IsOpen || NewspaperHud.IsOpen ||
-                               StrategicMapHud.IsOpen;
+        static bool ModalUp => LivingCity.UI.ModalGate.ScreenTaken;
 
         void Update()
         {
@@ -278,7 +277,7 @@ namespace RoadDemo
             // These two pieces belong to the street, not to the open book. Hide them
             // explicitly as well as suspending the HUD canvas, so they cannot remain
             // over the ledger for a frame if canvas update order changes.
-            SetLedgerFurnitureVisible(!PersonnelAlmanac.IsOpen && !NewspaperHud.IsOpen);
+            SetLedgerFurnitureVisible(!LivingCity.UI.ModalGate.PaperUp);
 
             var want = !ModalUp;
             if (_canvas.enabled != want)

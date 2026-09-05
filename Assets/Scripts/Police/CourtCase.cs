@@ -384,6 +384,10 @@ namespace LivingCity.Police
         public const float ResistingBase = 0.45f;
         public const float BatteryBase = 0.30f;
 
+        /// <summary>A sting: the seller was the police and the money changed hands in
+        /// front of him. A hard case to beat (EPIC 40).</summary>
+        public const float TraffickingBase = 0.55f;
+
         /// <summary>What each eyewitness is worth, and how many of them the court
         /// bothers to count. A third man who saw the same thing is not a third case.</summary>
         public const float PerEyewitness = 0.20f;
@@ -425,6 +429,7 @@ namespace LivingCity.Police
             Deed.Affray => AffrayBase,
             Deed.Extortion => ExtortionBase,
             Deed.WitnessTampering => ExtortionBase,
+            Deed.Trafficking => TraffickingBase,
             _ => throw new System.ArgumentOutOfRangeException(nameof(deed), deed,
                 "Every deed needs an explicit verdict base."),
         };
