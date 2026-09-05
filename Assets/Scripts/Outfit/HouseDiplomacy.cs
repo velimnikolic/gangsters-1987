@@ -716,20 +716,19 @@ namespace LivingCity.Outfit
             if (world == null || proposal == null || !proposal.Open)
                 return false;
 
+            // A BILL THAT LAPSED is not a bill answered: the debt it named was cleared
+            // by other money while it lay open, so whatever the answer, nothing moves
+            // and no grudge is taken for it (Codex) - read before the answer is.
+            if (BillLapsed(world.Relations, proposal, day))
+            {
+                Lapse(world, proposal, day);
+                return false;
+            }
+
             var note = accepted ? reason ?? "" : "";
             if (accepted)
             {
                 var refusal = Apply(world, proposal, day);
-                // A BILL THAT LAPSED is not a bill refused: the debt it named was
-                // cleared by other money while it lay open, so nothing moves and no
-                // grudge is taken for it (Codex).
-                if (refusal == ReasonNoSuchDebt && proposal.Kind == ProposalKind.Bill)
-                {
-                    proposal.Status = ProposalStatus.Expired;
-                    proposal.Answer = refusal;
-                    Print(world, proposal, Describe(proposal) + " · LAPSED - " + refusal, day);
-                    return false;
-                }
                 if (refusal != null)
                 {
                     accepted = false;
@@ -796,14 +795,9 @@ namespace LivingCity.Outfit
                     return null;
 
                 // PAID: the receiver's money to the sender, and the sender's grudge
-                // cleared by it within the day's cap. The ceiling is read again HERE,
-                // not only at filing: a bill lies open while other money - a truce
-                // bought, a bill paid - clears the same grudge, and the day's cap it
-                // was priced against may be spent by the time it is answered (Codex).
+                // cleared by it within the day's cap (a stale bill never reaches here:
+                // Settle lapses it first).
                 case ProposalKind.Bill:
-                    if (proposal.Terms.Money > BillCeiling(world.Relations, proposal.From,
-                            proposal.To, Config, day))
-                        return ReasonNoSuchDebt;
                     var moved = world.Transfer(proposal.To, proposal.From, proposal.Terms.Money);
                     if (moved != null)
                         return ReasonCouldNotPutTheMoneyUp;
@@ -1006,11 +1000,29 @@ namespace LivingCity.Outfit
                 if (!p.Open || day < p.ExpiresDay)
                     continue;
                 p.Status = ProposalStatus.Expired;
-                if (IsWord(p.Kind))
+                // A bill left unanswered is a word ignored - unless the debt it named
+                // was cleared meanwhile: then it merely lapses (Codex).
+                if (BillLapsed(relations, p, day))
+                    p.Answer = ReasonNoSuchDebt;
+                else if (IsWord(p.Kind))
                     relations?.Note(p.From, p.To, GrievanceKind.WarningIgnored, day);
                 expired?.Add(p);
             }
             SweepKeepOffs(day);
+        }
+
+        /// <summary>A bill lying open while other money - a truce bought, another bill
+        /// paid - cleared the grudge it was priced from: the ceiling is read again on
+        /// the day it is answered or left, not only at filing (Codex).</summary>
+        public bool BillLapsed(HouseRelations relations, Proposal proposal, int day) =>
+            proposal != null && proposal.Kind == ProposalKind.Bill && relations != null &&
+            proposal.Terms.Money > BillCeiling(relations, proposal.From, proposal.To, Config, day);
+
+        void Lapse(Underworld world, Proposal proposal, int day)
+        {
+            proposal.Status = ProposalStatus.Expired;
+            proposal.Answer = ReasonNoSuchDebt;
+            Print(world, proposal, Describe(proposal) + " · LAPSED - " + ReasonNoSuchDebt, day);
         }
 
         // ---------------------------------------------------------------- keep-off

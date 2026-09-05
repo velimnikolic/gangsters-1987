@@ -2384,40 +2384,18 @@ namespace LivingCity.Tests
                              (filed != null ? filed.Status + " " + filed.Answer : "") + ").");
         }
 
-        /// <summary>A bill lying in the player's inbox is priced again when it is paid:
-        /// a truce bought meanwhile spent the day's cap on the same grudge, so the
-        /// bill lapses - no money moves, no grudge is taken for a refusal.</summary>
+        /// <summary>A bill lying in the player's inbox is priced again when it is
+        /// answered - or left: a truce bought meanwhile spent the day's cap on the same
+        /// grudge, so the bill lapses whatever the player does. Accepted: no money
+        /// moves. Refused: no grudge for a word ignored. Left to expire: the same.
+        /// </summary>
         static void AnOpenBillLapsesWhenOtherMoneyClearsTheDebt(List<string> failures)
         {
-            var table = new Table(116);
-            War(table, 1, 0);
-            var creditor = table.World.Of(1);
+            // ACCEPTED.
+            if (!StaleBill(116, failures, out var table, out var filed))
+                return;
             var player = table.World.Of(0);
-            if (!player.IsPlayer)
-            {
-                failures.Add("CODEX: the fixture's house 0 is not the player.");
-                return;
-            }
-            creditor.Runner.Accounts.Safe = 1_000_000;
-            player.Runner.Accounts.Safe = 1_000_000;
-            for (var i = 0; i < 2; i++)
-                table.World.Relations.Note(1, 0, GrievanceKind.DoorAttacked);
-            var owed = table.World.Relations.Grievance(1, 0);
-            var bill = table.Propose(1, 0, ProposalKind.Bill, 2_000);
-            var filed = Last(table);
-            if (!bill.Ok || filed == null || !filed.Open)
-            {
-                failures.Add("CODEX: the fixture's bill did not reach the player's inbox (" +
-                             bill.Reason + ").");
-                return;
-            }
-            var truce = table.Propose(0, 1, ProposalKind.OfferTruce, 4_000);
-            var bought = Last(table);
-            if (!truce.Ok || bought == null || bought.Status != ProposalStatus.Accepted)
-            {
-                failures.Add("CODEX: the fixture's truce was not bought (" + truce.Reason + ").");
-                return;
-            }
+            var creditor = table.World.Of(1);
             var before = player.Runner.Accounts.Safe;
             var creditorBefore = creditor.Runner.Accounts.Safe;
             var grudge = table.World.Relations.Grievance(1, 0);
@@ -2429,9 +2407,84 @@ namespace LivingCity.Tests
                 creditor.Runner.Accounts.Safe != creditorBefore)
                 failures.Add("CODEX: money moved on a bill the cap no longer covers.");
             if (table.World.Relations.Grievance(1, 0) != grudge)
-                failures.Add("CODEX: a lapsed bill was taken as a refusal.");
-            if (owed <= grudge)
+                failures.Add("CODEX: a lapsed bill accepted was taken as a refusal.");
+
+            // REFUSED.
+            if (!StaleBill(117, failures, out table, out filed))
+                return;
+            grudge = table.World.Relations.Grievance(1, 0);
+            HouseOps.Reply(table.World, table.World.Of(0), filed.Id, false, table.Look);
+            if (filed.Status != ProposalStatus.Expired)
+                failures.Add("CODEX: a stale bill refused reads " + filed.Status + ".");
+            if (table.World.Relations.Grievance(1, 0) != grudge)
+                failures.Add("CODEX: a lapsed bill refused was taken as a word ignored.");
+
+            // LEFT TO EXPIRE - against a twin that never had the bill, day for day.
+            if (!StaleBill(118, failures, out table, out filed))
+                return;
+            var twin = new Table(118);
+            War(twin, 1, 0);
+            twin.World.Of(1).Runner.Accounts.Safe = 1_000_000;
+            twin.World.Of(0).Runner.Accounts.Safe = 1_000_000;
+            for (var i = 0; i < 2; i++)
+                twin.World.Relations.Note(1, 0, GrievanceKind.DoorAttacked);
+            twin.Propose(0, 1, ProposalKind.OfferTruce, 4_000);
+            var days = filed.ExpiresDay - table.World.Of(0).Runner.Campaign.Day + 1;
+            for (var i = 0; i < days; i++)
+            {
+                table.World.DayTick();
+                twin.World.DayTick();
+            }
+            if (filed.Status != ProposalStatus.Expired || filed.Answer != HouseDiplomacy.ReasonNoSuchDebt)
+                failures.Add("CODEX: a stale bill left did not lapse (" + filed.Status + " " +
+                             filed.Answer + ").");
+            if (table.World.Relations.Grievance(1, 0) != twin.World.Relations.Grievance(1, 0))
+                failures.Add("CODEX: a stale bill left to expire was taken as a word ignored (" +
+                             table.World.Relations.Grievance(1, 0) + " vs " +
+                             twin.World.Relations.Grievance(1, 0) + ").");
+        }
+
+        /// <summary>House 1 bills the player $2,000 at war, then the player buys a
+        /// truce for $4,000 - the day's cap spent on the very grudge the bill was
+        /// priced from. Answers false when the fixture could not be stood up.</summary>
+        static bool StaleBill(int seed, List<string> failures, out Table table, out Proposal filed)
+        {
+            table = new Table(seed);
+            filed = null;
+            War(table, 1, 0);
+            var creditor = table.World.Of(1);
+            var player = table.World.Of(0);
+            if (!player.IsPlayer)
+            {
+                failures.Add("CODEX: the fixture's house 0 is not the player.");
+                return false;
+            }
+            creditor.Runner.Accounts.Safe = 1_000_000;
+            player.Runner.Accounts.Safe = 1_000_000;
+            for (var i = 0; i < 2; i++)
+                table.World.Relations.Note(1, 0, GrievanceKind.DoorAttacked);
+            var owed = table.World.Relations.Grievance(1, 0);
+            var bill = table.Propose(1, 0, ProposalKind.Bill, 2_000);
+            filed = Last(table);
+            if (!bill.Ok || filed == null || !filed.Open)
+            {
+                failures.Add("CODEX: the fixture's bill did not reach the player's inbox (" +
+                             bill.Reason + ").");
+                return false;
+            }
+            var truce = table.Propose(0, 1, ProposalKind.OfferTruce, 4_000);
+            var bought = Last(table);
+            if (!truce.Ok || bought == null || bought.Status != ProposalStatus.Accepted)
+            {
+                failures.Add("CODEX: the fixture's truce was not bought (" + truce.Reason + ").");
+                return false;
+            }
+            if (owed <= table.World.Relations.Grievance(1, 0))
+            {
                 failures.Add("CODEX: the fixture's truce cleared nothing.");
+                return false;
+            }
+            return true;
         }
 
         /// <summary>The tribute book with its pinned terms, and the lines between the

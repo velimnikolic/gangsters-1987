@@ -73,8 +73,9 @@ honour it. A bill's ceiling (`HouseDiplomacy.BillCeiling`) is that clearable fig
 past `ThreatAt`, at the rate; after the day's cap a second bill asks for nothing, and the
 mind prices its own bill by the same figure. The ceiling is read again when a bill is PAID: a
 bill lying in an inbox while other money clears the same grudge lapses (`Expired`, "they owe
-us no such thing") - nothing moves and no refusal grudge is taken, and `HouseOps.Reply`
-answers with the record's words rather than a success. Tribute
+us no such thing") whatever the answer - accepted, refused or left past its day - nothing
+moves and no `WarningIgnored` is taken for it (`HouseDiplomacy.BillLapsed`, read by `Settle`
+and `Expire`), and `HouseOps.Reply` answers with the record's words rather than a success. Tribute
 terms are priced against the street's figure (`CampaignRunner.DerivedTribute`), never against
 a discount already pinned, so half of half is refused. The record keeps a proposal holding
 escrow through pruning, and the levies with their pinned terms and the sheets' `FromHouses` /
