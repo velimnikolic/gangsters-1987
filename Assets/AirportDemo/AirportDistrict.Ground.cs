@@ -344,25 +344,32 @@ namespace AirportDemo
             FlatPlane("Ramp", AirportSpec.ApronX0, AirportSpec.ApronX1, AirportSpec.ApronZ0, AirportSpec.ApronZ1,
                       AirportSpec.PaveY, _concreteMat, 15f, _apronRoot);
             float sr = AirportSpec.ServiceRoadWidth * 0.5f;
-            FlatPlane("Service road", AirportSpec.ApronX0 - 30f, AirportSpec.ApronX1 + 30f,
+            GateCutPlane("Service road", AirportSpec.ApronX0 - 30f, AirportSpec.ApronX1 + 30f,
                       AirportSpec.ServiceRoadZ - sr, AirportSpec.ServiceRoadZ + sr,
-                      AirportSpec.PaveY + 0.005f, _asphaltMat, 15f, _apronRoot);
+                      AirportSpec.PaveY, _asphaltMat);
             // the apron in front of each building, up to its wall, so no building
             // stands on grass with a metre of nothing between it and the concrete
-            FlatPlane("Building apron", AirportSpec.ApronX0 - 30f, AirportSpec.ApronX1 + 30f,
-                      AirportSpec.ApronZ1, AirportSpec.BuildingFrontZ + 0.5f,
-                      AirportSpec.PaveY, _concreteMat, 15f, _apronRoot);
+            GateCutPlane("Building apron", AirportSpec.ApronX0 - 30f, AirportSpec.ApronX1 + 30f,
+                      AirportSpec.ApronZ1, AirportSpec.ServiceRoadZ - sr, AirportSpec.PaveY, _concreteMat);
+            GateCutPlane("Building apron", AirportSpec.ApronX0 - 30f, AirportSpec.ApronX1 + 30f,
+                      AirportSpec.ServiceRoadZ + sr, AirportSpec.BuildingFrontZ + 0.5f, AirportSpec.PaveY, _concreteMat);
             // and the yard road behind them, inside the wire: what the freight lorries
             // back onto the shed's dock from, and how anything reaches the back of a
             // hangar without crossing the ramp. It stops either side of the terminal,
             // whose own back wall stands on the boundary and leaves no room for it.
             float termHalf = AirportSpec.TerminalWidth * 0.5f + 6f;
-            FlatPlane("Rear yard road", AirportSpec.FenceX0 + 10f, AirportSpec.TerminalX - termHalf,
+            GateCutPlane("Rear yard road", AirportSpec.FenceX0 + 10f, AirportSpec.TerminalX - termHalf,
                       AirportSpec.FenceZ - 7f, AirportSpec.FenceZ - 1f,
-                      AirportSpec.PaveY, _asphaltMat, 15f, _apronRoot);
-            FlatPlane("Rear yard road", AirportSpec.TerminalX + termHalf, AirportSpec.FenceX1 - 10f,
+                      AirportSpec.PaveY, _asphaltMat);
+            GateCutPlane("Rear yard road", AirportSpec.TerminalX + termHalf, AirportSpec.FenceX1 - 10f,
                       AirportSpec.FenceZ - 7f, AirportSpec.FenceZ - 1f,
-                      AirportSpec.PaveY, _asphaltMat, 15f, _apronRoot);
+                      AirportSpec.PaveY, _asphaltMat);
+        }
+
+        void GateCutPlane(string name, float x0, float x1, float z0, float z1, float y, Material material)
+        {
+            foreach (var r in AirportLandsidePlan.Subtract(Rect.MinMaxRect(x0, z0, x1, z1), AirportLandsidePlan.GateRoads()))
+                FlatPlane(name, r.xMin, r.xMax, r.yMin, r.yMax, y, material, 15f, _apronRoot);
         }
 
         // ------------------------------------------------------------ paint

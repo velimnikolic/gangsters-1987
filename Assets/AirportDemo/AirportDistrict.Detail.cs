@@ -28,23 +28,15 @@ namespace AirportDemo
             BuildBirds();
         }
 
-        /// <summary>The avgas island: two pumps under a small canopy on a raised kerb,
-        /// with the bollards that stop somebody driving into them.</summary>
+        /// <summary>The aviation hose point; the fuel farm and bowser supply aircraft.
+        /// Roadside gas pumps and their canopy belong to the public filling station.</summary>
         void BuildFuelIsland()
         {
-            var pump = AirportKit.TryLoad(AirportKit.GasPump);
-            var pumpBase = AirportKit.TryLoad(AirportKit.GasPumpBase);
             var bollard = AirportKit.TryLoad(AirportKit.Bollard);
             var hose = AirportKit.TryLoad(AirportKit.HoseReel);
             float x = AirportSpec.FuelIslandX, z = AirportSpec.FuelIslandZ;
 
             FlatPlane("Fuel island", x - 7f, x + 7f, z - 2.5f, z + 2.5f, AirportSpec.PaveY + 0.14f, _concreteMat, 7f, _detailRoot);
-            if (pumpBase != null) AirportKit.Sit(pumpBase, new Vector3(x, AirportSpec.PaveY + 0.14f, z), 180f, _detailRoot, "Pump base");
-            if (pump != null)
-            {
-                AirportKit.Sit(pump, new Vector3(x - 2.6f, AirportSpec.PaveY + 0.14f, z), 180f, _detailRoot, "Avgas pump");
-                AirportKit.Sit(pump, new Vector3(x + 2.6f, AirportSpec.PaveY + 0.14f, z), 0f, _detailRoot, "Jet A pump");
-            }
             if (hose != null) AirportKit.Sit(hose, new Vector3(x + 5.5f, AirportSpec.PaveY + 0.14f, z - 1.2f), 180f, _detailRoot, "Hose reel");
             if (bollard != null)
                 for (int i = -1; i <= 1; i += 2)

@@ -9,9 +9,8 @@ namespace AirportDemo
     // road out of the map, and the furniture that says 1987 - a rank of cabs, a bus
     // stop, a pair of pay phones, a news stand and a board with an aeroplane on it.
     //
-    // The road is laid with the road demo's own StreetKit (5 m tiles, 10 m of
-    // carriageway between kerbs) for the approach, and as plain asphalt planes with
-    // painted lines for the loop, which is a kerbside road and not a street.
+    // The approach uses CoreRoads' two-way profile and CorePavement at its edges.
+    // The terminal's one-way loop retains its own swept asphalt turns.
     public partial class AirportDistrict
     {
         /// <summary>The one-way loop, anticlockwise with the kerb on the driver's
@@ -24,7 +23,6 @@ namespace AirportDemo
         readonly List<(Vector3 pos, float yaw)> _parkBays = new List<(Vector3, float)>();
         /// <summary>The rank the cabs wait on, front of the rank first.</summary>
         readonly List<Vector3> _cabRank = new List<Vector3>();
-        StreetKit _street;
 
         void BuildLandside()
         {
@@ -46,7 +44,7 @@ namespace AirportDemo
         float LoopTurnR => (AirportSpec.LoopBackZ - AirportSpec.LoopRoadZ) * 0.5f;
         /// <summary>Where the two pedestrian routes cross the loop, out of the terminal
         /// spur's way. Everything landside walks over one of these.</summary>
-        static readonly float[] CrossX = { -30f, 30f };
+        static readonly float[] CrossX = AirportLandsidePlan.Crossings;
 
         void BuildLoopRoad()
         {
@@ -143,15 +141,12 @@ namespace AirportDemo
                 Zebra(white, cx, back - rh, back + rh, y);
             }
 
-            // the hatched nose where the spur meets the return leg: what a driver coming
-            // off it has to give way at, and what keeps him out of the westbound lane
-            for (int i = 0; i < 7; i++)
-            {
-                float t = i / 6f;
-                float w = Mathf.Lerp(0.4f, 5.2f, t);
-                white.Turned(new Vector3(0f, 0f, back + rh + 2.5f + i * 1.9f), 35f, 0.28f, w, y);
-                white.Turned(new Vector3(0f, 0f, back + rh + 2.5f + i * 1.9f), -35f, 0.28f, w, y);
-            }
+            // The spur ends at the loop edge. Southbound arrivals yield and turn
+            // right onto its westbound return lane; the island stays unbroken.
+            white.Rect(AirportSpec.ApproachX - 4.6f, AirportSpec.ApproachX - 0.3f,
+                AirportLandsidePlan.LoopEdge + 1.5f, AirportLandsidePlan.LoopEdge + 1.8f, y);
+            Arrow(white, new Vector3(AirportSpec.ApproachX - 2.5f, 0, back + rh + 8f), 180f, y);
+            Arrow(white, new Vector3(AirportSpec.ApproachX + 2.5f, 0, back + rh + 8f), 0f, y);
 
             white.Emit("Loop markings", _whitePaint, _markingRoot);
         }
@@ -263,119 +258,78 @@ namespace AirportDemo
 
         // ------------------------------------------------------------ the car park
 
-        /// <summary>How wide a strip either side of the terminal spur belongs to the
-        /// road rather than to the lot. The spur runs up the MIDDLE of the car park to
-        /// the street (BuildApproachRoad), which the old lot ignored: it laid bays and
-        /// paint straight across the carriageway. Two blocks either side of it is both
-        /// the fix and the right layout - that spur is how a car gets in.</summary>
-        const float SpurVerge = 15f;
+        const float SpurVerge = AirportLandsidePlan.SpurVerge;
+        readonly AirportLandsidePlan.Lot[] _parkingLots = AirportLandsidePlan.Lots();
 
         void BuildCarPark()
         {
-            float z0 = AirportSpec.ParkZ0, z1 = AirportSpec.ParkZ1;
-            // west block and east block, with the terminal spur running up between them
-            ParkBlock("West lot", AirportSpec.ParkX0, AirportSpec.ApproachX - SpurVerge, z0, z1, entryEast: true);
-            ParkBlock("East lot", AirportSpec.ApproachX + SpurVerge, AirportSpec.ParkX1, z0, z1, entryEast: false);
+            foreach (var lot in _parkingLots) ParkBlock(lot);
             BuildParkEntry();
             BuildParkPlanting();
         }
 
-        /// <summary>One block of the lot: a drive lane along the side the spur is on,
-        /// then double rows of bays back to back with their aisles, and an end island
-        /// so a row does not run out into the lane. The bays nearest the terminal are
-        /// the short stay, which is why they are marked and the far ones are not
-        /// (nothing enforces it - it is what the paint SAYS that matters).</summary>
-        void ParkBlock(string name, float x0, float x1, float z0, float z1, bool entryEast)
+        // The shared parking plan owns stalls, open mouths and aisles. The airport
+        // supplies materials and maps the same stall positions to its parked cars.
+        void ParkBlock(AirportLandsidePlan.Lot lot)
         {
-            if (x1 - x0 < 20f) return;
-            FlatPlane(name, x0, x1, z0, z1, AirportSpec.PaveY, _asphaltMat, 12f, _landsideRoot);
-
-            var white = new Painter();
-            var yellow = new Painter();
-            float y = AirportSpec.MarkY;
-            float bay = AirportSpec.BayDepth, aisle = AirportSpec.ParkAisle, wide = AirportSpec.BayWidth;
-
-            // the drive lane down the spur side, and the island that ends every row
-            const float Lane = 7f, Island = 3.2f;
-            float laneX0 = entryEast ? x1 - Lane : x0;
-            float laneX1 = entryEast ? x1 : x0 + Lane;
-            float bayX0 = entryEast ? x0 + Island : laneX1 + Island;
-            float bayX1 = entryEast ? laneX0 - Island : x1 - Island;
-            // the island is grass, not paint: a painted island is a place a car parks on
-            FlatPlane("Lot island", entryEast ? bayX1 : laneX1, entryEast ? laneX0 : bayX0, z0 + 1f, z1 - 1f,
-                      AirportSpec.PaveY + 0.12f, _grassMat, 8f, _landsideRoot);
-            FlatPlane("Lot island", entryEast ? x0 : bayX1, entryEast ? bayX0 : x1, z0 + 1f, z1 - 1f,
-                      AirportSpec.PaveY + 0.12f, _grassMat, 8f, _landsideRoot);
-            // the lane's own edge line and the arrow that says which way round it goes
-            white.Rect(laneX0 + 0.2f, laneX0 + 0.32f, z0 + 1f, z1 - 1f, y);
-            white.Rect(laneX1 - 0.32f, laneX1 - 0.2f, z0 + 1f, z1 - 1f, y);
-            Arrow(white, new Vector3((laneX0 + laneX1) * 0.5f, 0f, z0 + 9f), 0f, y);
-            Arrow(white, new Vector3((laneX0 + laneX1) * 0.5f, 0f, z1 - 9f), 0f, y);
-
-            int row = 0;
-            float z = z0 + 2f;
-            while (z + bay * 2f + aisle < z1)
-            {
-                for (int side = 0; side < 2; side++)
-                {
-                    float rz0 = z + side * bay, rz1 = rz0 + bay;
-                    int n = 0;
-                    for (float x = bayX0; x + wide <= bayX1; x += wide, n++)
-                    {
-                        // the two bays by the walk are the wide ones, in yellow
-                        bool wideBay = row == 0 && n < 2;
-                        var p = wideBay ? yellow : white;
-                        p.Rect(x, x + 0.12f, rz0, rz1, y);
-                        _parkBays.Add((new Vector3(x + wide * 0.5f, AirportSpec.PaveY, (rz0 + rz1) * 0.5f), side == 0 ? 180f : 0f));
-                    }
-                    white.Rect(bayX0, bayX1, side == 0 ? rz0 : rz1 - 0.12f, side == 0 ? rz0 + 0.12f : rz1, y);
-                }
-                z += bay * 2f + aisle;
-                row++;
-            }
-            white.Emit(name + " markings", _whitePaint, _markingRoot);
-            yellow.Emit(name + " markings wide", _yellowPaint, _markingRoot);
+            var box = lot.Bounds;
+            FlatPlane(lot.Name, box.xMin, box.xMax, box.yMin, box.yMax,
+                AirportSpec.PaveY, _asphaltMat, 12f, _landsideRoot);
+            var paint = new Painter();
+            foreach (var stripe in lot.Parking.Markings)
+                paint.Dashes(new Vector3(box.xMin + stripe.A.x, 0, box.yMin + stripe.A.y),
+                    new Vector3(box.xMin + stripe.B.x, 0, box.yMin + stripe.B.y), 0.1f, 1000f, 0f, AirportSpec.MarkY);
+            foreach (var stall in lot.Parking.Stalls)
+                _parkBays.Add((new Vector3(box.xMin + stall.Stand.x, AirportSpec.PaveY,
+                    box.yMin + stall.Stand.z), Mathf.Atan2(stall.Forward.x, stall.Forward.z) * Mathf.Rad2Deg));
+            Arrow(paint, new Vector3(lot.GateX + 1.7f, 0, box.yMin + 4f), 0, AirportSpec.MarkY);
+            Arrow(paint, new Vector3(lot.GateX - 1.7f, 0, box.yMin + 4f), 180, AirportSpec.MarkY);
+            paint.Emit(lot.Name + " markings", _whitePaint, _markingRoot);
         }
 
-        /// <summary>How a car actually gets in: the two mouths off the terminal spur,
-        /// the ticket machine at each and the board over it. Without them the lot was a
-        /// rectangle of paint a car had no way into and no reason to be in.</summary>
         void BuildParkEntry()
         {
-            float z0 = AirportSpec.ParkZ0, z1 = AirportSpec.ParkZ1;
-            float mouthZ = (z0 + z1) * 0.5f;
             var booth = AirportKit.TryLoad(AirportKit.GuardBooth);
-            var boom = AirportKit.TryLoad(AirportKit.BoomGate);
             var sign = AirportKit.TryLoad(AirportKit.SignParking);
-            var cone = AirportKit.TryLoad(AirportKit.Cone);
-
-            for (int s = -1; s <= 1; s += 2)
+            var paint = new Painter();
+            foreach (var lot in _parkingLots)
             {
-                float x = AirportSpec.ApproachX + s * SpurVerge;
-                // the throat off the spur into the block
-                FlatPlane("Lot mouth", Mathf.Min(x, AirportSpec.ApproachX + s * StreetKit.RoadHalf),
-                          Mathf.Max(x, AirportSpec.ApproachX + s * StreetKit.RoadHalf),
-                          mouthZ - 5f, mouthZ + 5f, AirportSpec.PaveY, _asphaltMat, 8f, _landsideRoot);
-                if (boom != null)
-                    AirportKit.Sit(boom, new Vector3(x, AirportSpec.PaveY, mouthZ + 5f), s > 0 ? 90f : 270f, _landsideRoot, "Lot boom");
+                var drive = lot.Driveway;
+                FlatPlane(lot.Name + " access", drive.xMin, drive.xMax, drive.yMin, drive.yMax,
+                    AirportSpec.PaveY, _asphaltMat, 8f, _landsideRoot);
+                float z = drive.yMin + 6f;
+                // The attendant stands beside the throat, outside both lanes and
+                // the footpath. No closed prop barrier across an unmodelled gate.
                 if (booth != null)
-                    AirportKit.Prop(booth, new Vector3(x + s * 2.5f, AirportSpec.PaveY, mouthZ + 9f), s > 0 ? 270f : 90f, _landsideRoot, "Ticket booth");
+                {
+                    var at = new Vector3(drive.xMax + 2.5f, AirportSpec.PaveY, z);
+                    AirportKit.Prop(booth, at, 270, _landsideRoot, "Parking attendant");
+                    BlockLocal(at.x - 2f, at.x + 2f, at.z - 2f, at.z + 2f);
+                }
                 if (sign != null)
-                    AirportKit.Sit(sign, new Vector3(x + s * 2f, AirportSpec.PaveY, mouthZ - 8f), s > 0 ? 270f : 90f, _landsideRoot, "Parking sign");
-                if (cone != null)
-                    for (int i = 0; i < 3; i++)
-                        AirportKit.Sit(cone, new Vector3(x + s * 1.2f, AirportSpec.PaveY, mouthZ - 6f + i * 2.2f), 0f, _landsideRoot, "Cone");
-            }
+                    AirportKit.Sit(sign, new Vector3(drive.xMax + 1.5f, AirportSpec.PaveY, drive.yMin + 1.5f),
+                        180, _landsideRoot, "Parking entrance sign");
+                Arrow(paint, new Vector3(lot.GateX + 1.7f, 0, z), 0, AirportSpec.MarkY);
+                Arrow(paint, new Vector3(lot.GateX - 1.7f, 0, z), 180, AirportSpec.MarkY);
+                paint.Rect(drive.xMin + 0.3f, lot.GateX - 0.3f, drive.yMin + 1.2f,
+                    drive.yMin + 1.5f, AirportSpec.MarkY);
 
-            // the walk from the lot down to the loop's crossings, so somebody off a bay
-            // has a way to the terminal that is not the carriageway
-            foreach (float cx in CrossX)
-            {
-                FlatPlane("Lot walk", cx - 2.5f, cx + 2.5f, AirportSpec.LoopBackZ + AirportSpec.LoopRoadHalf, z0,
-                          AirportSpec.PaveY + 0.12f, _concreteMat, 8f, _landsideRoot);
-                FlatPlane("Lot walk", cx - 2.5f, cx + 2.5f, z0, z1,
-                          AirportSpec.PaveY + 0.12f, _concreteMat, 8f, _landsideRoot);
+                // The front walk is cut at the driveway; a painted crossing spans
+                // its asphalt. There is no raised slab across the vehicle entrance.
+                float walkZ = lot.Bounds.yMin - AirportLandsidePlan.WalkWidth;
+                foreach (var r in AirportLandsidePlan.Subtract(
+                    Rect.MinMaxRect(lot.Bounds.xMin, walkZ, lot.Bounds.xMax, lot.Bounds.yMin), new[] { drive }))
+                    FlatPlane("Parking front walk", r.xMin, r.xMax, r.yMin, r.yMax,
+                        AirportSpec.PaveY + 0.12f, _concreteMat, 8f, _landsideRoot);
+                for (float x = drive.xMin + 0.4f; x < drive.xMax - 0.3f; x += 1.1f)
+                    paint.Rect(x, Mathf.Min(x + 0.6f, drive.xMax), walkZ + 0.3f,
+                        lot.Bounds.yMin - 0.3f, AirportSpec.MarkY);
             }
+            foreach (float cx in CrossX)
+                FlatPlane("Lot walk", cx - 2.5f, cx + 2.5f, AirportLandsidePlan.LoopEdge,
+                    AirportSpec.ParkZ0 - AirportLandsidePlan.WalkWidth,
+                    AirportSpec.PaveY + 0.12f, _concreteMat, 8f, _landsideRoot);
+            paint.Emit("Parking access markings", _whitePaint, _markingRoot);
         }
 
         /// <summary>The lamps and the planting. A lot the size of this one with nothing
@@ -391,83 +345,88 @@ namespace AirportDemo
             if (lamp != null)
                 for (float x = x0 + 14f; x < x1; x += 28f)
                 {
-                    if (Mathf.Abs(x - AirportSpec.ApproachX) < SpurVerge) continue;
-                    AirportKit.Sit(lamp, new Vector3(x, AirportSpec.PaveY, z0 - 1.5f), 0f, _landsideRoot, "Park lamp");
+                    if (!ParkVergeClear(x)) continue;
+                    AirportKit.Sit(lamp, new Vector3(x, AirportSpec.PaveY, z0 - 4.5f), 0f, _landsideRoot, "Park lamp");
                     AirportKit.Sit(lamp, new Vector3(x, AirportSpec.PaveY, z1 + 1.5f), 180f, _landsideRoot, "Park lamp");
                 }
             if (trees.Count > 0)
                 for (float x = x0 + 8f; x < x1; x += 22f)
                 {
-                    if (Mathf.Abs(x - AirportSpec.ApproachX) < SpurVerge - 3f) continue;
-                    AirportKit.Sit(Pick(trees), new Vector3(x + Rnd(-3f, 3f), AirportSpec.LandY, z1 + 6f), Rnd(0f, 360f), _floraRoot, "Tree");
+                    if (!ParkVergeClear(x)) continue;
+                    AirportKit.Sit(Pick(trees), new Vector3(x, AirportSpec.LandY, z1 + 2f), Rnd(0f, 360f), _floraRoot, "Tree");
                     if (Chance(0.6f))
-                        AirportKit.Sit(Pick(trees), new Vector3(x + Rnd(-3f, 3f), AirportSpec.LandY, z0 - 6f), Rnd(0f, 360f), _floraRoot, "Tree");
+                        AirportKit.Sit(Pick(trees), new Vector3(x, AirportSpec.LandY, z0 - 8f), Rnd(0f, 360f), _floraRoot, "Tree");
                 }
-            // and the end islands, which are grass and want something growing on them
-            if (bushes.Count > 0)
-                for (int s = -1; s <= 1; s += 2)
-                {
-                    float ix = s < 0 ? x0 + 1.6f : x1 - 1.6f;
-                    for (float z = z0 + 5f; z < z1 - 4f; z += 7f)
-                        AirportKit.Sit(Pick(bushes), new Vector3(ix, AirportSpec.PaveY + 0.12f, z), Rnd(0f, 360f), _floraRoot, "Bush");
-                }
+        }
+
+        bool ParkVergeClear(float x)
+        {
+            if (Mathf.Abs(x - AirportSpec.ApproachX) < SpurVerge + 3f) return false;
+            foreach (var lot in _parkingLots) if (Mathf.Abs(x - lot.GateX) < 11f) return false;
+            foreach (var crossing in CrossX) if (Mathf.Abs(x - crossing) < 6f) return false;
+            return true;
         }
 
         // ------------------------------------------------------------ the approach
 
-        /// <summary>The road in: the road demo's own street, laid out of the map at
-        /// both ends, with a junction where the terminal spur leaves it and one at
-        /// each of the two service gates - and the three roads that run south from
-        /// them, to the loop and through the wire onto the ramp.</summary>
+        // CoreDemo's ten-metre two-way road, with its pavement directly at
+        // the asphalt edge. Each junction and each fuel parcel owns its surface.
         void BuildApproachRoad()
         {
-            // the kit's road top is at its own y (the city drives its cars at the tile
-            // height), so the road is laid at the field's paving level, a step up off
-            // the grass like every other surface here
-            _street = new StreetKit(_landsideRoot, AirportSpec.PaveY,
-                registerWalkPlan: false) { Palms = false };
-            if (!_street.Load()) return;
-            float z = AirportSpec.StreetZ;
-
-            // the three arms that leave the street, west to east
+            float half = AirportLandsidePlan.RoadHalf;
             var arms = new List<float> { AirportSpec.GaGateX, AirportSpec.ApproachX, AirportSpec.CargoGateX };
             arms.Sort();
-
-            // the street in segments between them, so a junction square is never laid
-            // on top of a carriageway tile. In the city the approach junction is where
-            // the city's own street arrives (the portal, Portals.cs): its north side is
-            // left open for it instead of capped with pavement.
             float cursor = AirportSpec.StreetX0;
-            foreach (float ax in arms)
+            foreach (float x in arms)
             {
-                bool approach = Mathf.Approximately(ax, AirportSpec.ApproachX);
-                _street.LayAlongX(z, cursor, ax - 10f, southWalk: true, northWalk: true, dress: true);
-                _street.LayJunction(ax, z, capNorth: !(approach && _links != null), splaySouth: 1);
-                cursor = ax + 10f;
+                LayFrontageSpan(cursor, x - half);
+                CoreRoads.LayAsphalt(Rect.MinMaxRect(x - half, AirportSpec.StreetZ - half,
+                    x + half, AirportSpec.StreetZ + half), RaiseRoad, _landsideRoot, AirportSpec.PaveY);
+                if (_links == null || !Mathf.Approximately(x, AirportSpec.ApproachX))
+                    CorePavement.LayFootway(AirportSpec.StreetZ + half, x - half, x + half,
+                        180, RaiseRoad, _landsideRoot, AirportSpec.PaveY);
+                cursor = x + half;
             }
-            _street.LayAlongX(z, cursor, AirportSpec.StreetX1, southWalk: true, northWalk: true, dress: true);
+            LayFrontageSpan(cursor, AirportSpec.StreetX1);
+            BuildAccessRoad(AirportSpec.ApproachX, AirportLandsidePlan.LoopEdge,
+                AirportLandsidePlan.LoopEdge);
+            foreach (float x in new[] { AirportSpec.GaGateX, AirportSpec.CargoGateX })
+                BuildAccessRoad(x, AirportSpec.ServiceRoadZ - AirportSpec.ServiceRoadWidth * 0.5f,
+                    AirportSpec.FenceZ + 5f);
+        }
 
-            // the terminal spur, and the two gate roads that run down to the ramp
-            _street.LayRoadAlongZ(AirportSpec.ApproachX, AirportSpec.LoopBackZ + 4f, z - 5f);
-            _street.LayRoadAlongZ(AirportSpec.GaGateX, AirportSpec.ServiceRoadZ, z - 5f);
-            _street.LayRoadAlongZ(AirportSpec.CargoGateX, AirportSpec.ServiceRoadZ, z - 5f);
+        static GameObject RaiseRoad(GameObject prefab, Transform parent)
+            => Object.Instantiate(prefab, parent);
 
-            // they are one lane each way, so they get a centre line rather than kerbs
-            var white = new Painter();
-            white.Dashes(new Vector3(AirportSpec.ApproachX, 0f, AirportSpec.LoopBackZ + 6f),
-                         new Vector3(AirportSpec.ApproachX, 0f, z - 6f), 0.14f, 3f, 4f, AirportSpec.MarkY);
-            foreach (float ax in new[] { AirportSpec.GaGateX, AirportSpec.CargoGateX })
-                white.Dashes(new Vector3(ax, 0f, AirportSpec.ServiceRoadZ + 4f),
-                             new Vector3(ax, 0f, z - 6f), 0.14f, 3f, 4f, AirportSpec.MarkY);
-            white.Emit("Spur markings", _whitePaint, _markingRoot);
+        void BuildAccessRoad(float x, float fromZ, float walkFrom)
+        {
+            float edge = AirportLandsidePlan.StreetEdge;
+            float half = AirportLandsidePlan.RoadHalf;
+            CoreRoads.LayTwoWay(x, fromZ, edge, true, RaiseRoad, _landsideRoot, AirportSpec.PaveY);
+            // Stop at the frontage footway, so its corner square is laid once.
+            float walkTo = edge - CorePavement.Cell;
+            CorePavement.LayFootway(x - half, walkFrom, walkTo, 90,
+                RaiseRoad, _landsideRoot, AirportSpec.PaveY);
+            CorePavement.LayFootway(x + half, walkFrom, walkTo, 270,
+                RaiseRoad, _landsideRoot, AirportSpec.PaveY);
+        }
 
-            var trees = AirportKit.LoadAll(AirportKit.Trees, quiet: true);
-            if (trees.Count > 0)
-                for (float x = AirportSpec.StreetX0 + 20f; x < AirportSpec.StreetX1 - 20f; x += 30f)
-                {
-                    if (Mathf.Abs(x - AirportSpec.ApproachX) < 24f) continue;
-                    AirportKit.Sit(Pick(trees), new Vector3(x, AirportSpec.LandY, z + 16f), Rnd(0f, 360f), _floraRoot, "Tree");
-                }
+        void LayFrontageSpan(float from, float to)
+        {
+            if (to - from < 0.01f) return;
+            float half = AirportLandsidePlan.RoadHalf;
+            CoreRoads.LayTwoWay(AirportSpec.StreetZ, from, to, false,
+                RaiseRoad, _landsideRoot, AirportSpec.PaveY);
+            CorePavement.LayFootway(AirportSpec.StreetZ + half, from, to, 180,
+                RaiseRoad, _landsideRoot, AirportSpec.PaveY);
+            // The complete PumpDemo parcel already contains its front pavement
+            // and both vehicle crossovers. Do not lay another footway over them.
+            float fuelLeft = GasX - FuelStationBlock.BlockFrontage * 0.5f;
+            float fuelRight = GasX + FuelStationBlock.BlockFrontage * 0.5f;
+            CorePavement.LayFootway(AirportSpec.StreetZ - half, from, Mathf.Min(to, fuelLeft), 0,
+                RaiseRoad, _landsideRoot, AirportSpec.PaveY);
+            CorePavement.LayFootway(AirportSpec.StreetZ - half, Mathf.Max(from, fuelRight), to, 0,
+                RaiseRoad, _landsideRoot, AirportSpec.PaveY);
         }
 
         // ------------------------------------------------------------ the kerb

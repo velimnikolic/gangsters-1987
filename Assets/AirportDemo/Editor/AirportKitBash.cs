@@ -50,7 +50,8 @@ namespace AirportDemo.EditorTools
         //     terminal roof is the biggest face it shows, and in concrete grey it read
         //     as a black slab.
         // v9: regional terminal sunshades, ribbed hangars and a purpose-built tower cab.
-        public const int Version = 9;
+        // v10: hangar hardware, rooflights, service entrances and workshop fittings.
+        public const int Version = 10;
         const string KitDir = "Assets/CityKit/Airport";
         const string MeshDir = KitDir + "/Meshes";
         const string MatDir = KitDir + "/Materials";

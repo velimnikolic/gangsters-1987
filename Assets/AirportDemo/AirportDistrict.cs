@@ -135,7 +135,7 @@ namespace AirportDemo
         /// <summary>Where the district ends toward the city, in the field's own z: the
         /// far side of the approach junction's box - the portal stands on it, and the
         /// city's street arrives there.</summary>
-        public const float BoundaryZ = AirportSpec.StreetZ + StreetKit.StreetHalf;
+        public const float BoundaryZ = AirportSpec.StreetZ + AirportLandsidePlan.RoadHalf;
 
         public string Name => "Airport";
 
@@ -251,7 +251,6 @@ namespace AirportDemo
             // flies, drives or walks after this works in the Live root's own coordinates,
             // which moved with it.
             MoveIntoPlace();
-            _street?.RegisterWalkPlan(_inner.origin, _inner.yaw);
             BuildPortals();
             BlockTheField(host);
             float walkY = _inner.origin.y + AirportSpec.LandY;
@@ -292,7 +291,6 @@ namespace AirportDemo
 
         public void Dispose()
         {
-            _street?.UnregisterWalkPlan();
             _people?.Dispose();
             _boarding?.Dispose();
             _ground?.Dispose();

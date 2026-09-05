@@ -278,7 +278,7 @@ namespace AirportDemo
 
         public const float ParkX0 = -140f;
         public const float ParkX1 = 120f;
-        public const float ParkZ0 = 363f;
+        public const float ParkZ0 = 369f;
         public const float ParkZ1 = 401f;
         /// <summary>A car park bay, 9 x 18 ft.</summary>
         public const float BayWidth = 2.7f;

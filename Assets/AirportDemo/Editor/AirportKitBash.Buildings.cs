@@ -107,7 +107,8 @@ namespace AirportDemo.EditorTools
             // the ridge vent every metal shed carries
             Slab(t, "ridge", new Vector3(0f, h + 2.05f, 0f), new Vector3(w * 0.7f, 0.3f, 1.1f), Steel);
             BuildHangarFinish(t, w, d, h, 2f, "GENERAL AVIATION");
-            Bake(root, closed ? "airport-hangar-box" : "airport-hangar-box-open");
+            BuildHangarEquipment(t, w, d, h, 2f, door, open: !closed, workshop: false);
+            Bake(root, closed ? "airport-hangar-box" : "airport-hangar-box-open", apronFace: hz);
         }
 
         /// <summary>The maintenance shop: half as wide again, nine metres to the eaves,
@@ -153,7 +154,8 @@ namespace AirportDemo.EditorTools
             for (int s = -1; s <= 1; s += 2)
                 Slab(t, "lantern glazing", new Vector3(0f, h + 3.1f, s * 1.62f), new Vector3(w * 0.5f, 0.55f, 0.06f), Glass);
             BuildHangarFinish(t, w, d, h, 3f, "AIRCRAFT SERVICE");
-            Bake(root, "airport-hangar-maint");
+            BuildHangarEquipment(t, w, d, h, 3f, door, open: false, workshop: true);
+            Bake(root, "airport-hangar-maint", apronFace: hz);
         }
 
         /// <summary>The fire station: two bays, doors on the ramp, the hose tower and

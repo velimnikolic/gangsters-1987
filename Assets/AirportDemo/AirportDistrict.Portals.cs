@@ -21,7 +21,7 @@ namespace AirportDemo
             if (_links == null) return;   // its own scene: nowhere to go
 
             float cz = AirportSpec.StreetZ;
-            float half = StreetKit.StreetHalf;            // the street kit's own half width
+            float half = AirportLandsidePlan.RoadHalf;
             float x0 = AirportSpec.StreetX0 + half, x1 = AirportSpec.StreetX1 - half;
             var stops = new List<float> { x0, AirportSpec.GaGateX, AirportSpec.ApproachX, AirportSpec.CargoGateX, x1 };
             stops.Sort();

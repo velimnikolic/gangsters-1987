@@ -107,7 +107,14 @@ namespace AirportDemo
             {
                 if (!Chance(0.45f)) continue;
                 float x1 = Mathf.Min(AirportSpec.ApronX1 + 30f, x + Bay);
-                pale.Rect(x + 0.1f, x1 - 0.1f, AirportSpec.ApronZ1 + 0.1f, AirportSpec.BuildingFrontZ, y);
+                var roads = new System.Collections.Generic.List<Rect>(AirportLandsidePlan.GateRoads())
+                {
+                    Rect.MinMaxRect(AirportSpec.ApronX0 - 30f, AirportSpec.ServiceRoadZ - AirportSpec.ServiceRoadWidth * 0.5f,
+                        AirportSpec.ApronX1 + 30f, AirportSpec.ServiceRoadZ + AirportSpec.ServiceRoadWidth * 0.5f),
+                };
+                foreach (var r in AirportLandsidePlan.Subtract(Rect.MinMaxRect(x + 0.1f,
+                    AirportSpec.ApronZ1 + 0.1f, x1 - 0.1f, AirportSpec.BuildingFrontZ), roads))
+                    pale.Rect(r.xMin, r.xMax, r.yMin, r.yMax, y);
             }
 
             pale.Emit("Ramp pours pale", _pourPale, _apronRoot);

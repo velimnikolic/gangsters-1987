@@ -3,92 +3,37 @@ using UnityEngine;
 
 namespace AirportDemo
 {
-    // The drive in. An airport does not begin at its kerb: it begins a mile out, at
-    // the filling station that sells the last tank before the long-term car park, the
-    // roadhouse that feeds the men off the freight shift, the board that tells you how
-    // far it still is, and the hire desk in the corner of the lot.
-    //
-    // Without any of that the approach road arrived out of nothing and stopped at a
-    // terminal, which is the single loudest thing that said "this is a model of an
-    // airport" rather than "this is a place". None of it is new art: the filling
-    // station and the store are the Town pack's own dressed clusters, the same ones
-    // the city stands beside every district road (RoadDemoBuilder.Wayside), so the
-    // strip outside the wire reads as the same country the city is built out of.
-    //
-    // All of it stands on the ground the field ALREADY holds - the strip of grass
-    // between the car park and the two ends of the approach road - so the context
-    // costs the map nothing. That is deliberate: the whole point of the field's new
-    // size is that it stops eating a shore, and buying atmosphere back with more
-    // ground would have undone it.
+    // Shared fuel parcel, approach signs and the car-hire desk.
     public partial class AirportDistrict
     {
         /// <summary>Where the roadside places stand, in the field's own frame: south of
         /// the approach road, west and east of the car park, clear of the two gate
         /// roads and of the terminal spur.</summary>
-        const float StripZ0 = 364f, StripZ1 = 404f;
-        const float GasX = -235f, DinerX = 300f;
+        const float StripZ1 = 404f;
+        const float GasX = -235f;
+        static float GasAnchorZ => AirportSpec.StreetZ - AirportLandsidePlan.RoadHalf - FuelStationBlock.KerbZ;
 
         void BuildApproachStrip()
         {
-            BuildRoadsideForecourts();
-            StandCluster(SuburbDemo.TownClusters.GasStation, new Vector3(GasX, AirportSpec.PaveY, 388f), "Filling station");
-            StandCluster(SuburbDemo.TownClusters.Shop, new Vector3(DinerX, AirportSpec.PaveY, 382f), "Roadhouse");
+            BuildPublicFuelStation();
             BuildRoadsideSigns();
             BuildHireDesk();
         }
 
-        /// <summary>The asphalt each roadside place stands on, run up to the approach
-        /// road's own kerb strip so a forecourt meets the road rather than floating on
-        /// the grass beside it.</summary>
-        void BuildRoadsideForecourts()
+        void BuildPublicFuelStation()
         {
-            float kerb = AirportSpec.StreetZ - StreetKit.OuterHalf;
-            FlatPlane("Filling station forecourt", GasX - 46f, GasX + 42f, StripZ0, kerb, AirportSpec.PaveY, _asphaltMat, 12f, _landsideRoot);
-            FlatPlane("Roadhouse forecourt", DinerX - 40f, DinerX + 40f, StripZ0 + 4f, kerb, AirportSpec.PaveY, _asphaltMat, 12f, _landsideRoot);
-        }
-
-        /// <summary>One of the Town pack's dressed clusters, stood with its front to the
-        /// approach road. The anchor goes down first - the piece every offset in the
-        /// cluster is measured from - and the rest follow in its frame.
-        ///
-        /// The y is pinned at the field's own paving level rather than left to
-        /// <see cref="SuburbDemo.TownKit.GroundAt"/>: that hook belongs to whichever
-        /// district set it last, and a suburb's heightfield still hanging off it would
-        /// lift this forecourt onto a hillside that is nowhere near here.</summary>
-        void StandCluster(SuburbDemo.TownClusters.Cluster cluster, Vector3 anchor, string name)
-        {
-            if (cluster == null) return;
-            var rot = Quaternion.Euler(0f, SuburbDemo.TownKit.YawToFace(cluster.Front, Vector3.forward), 0f);
-            int stood = 0;
-
-            var anchorPrefab = SuburbDemo.TownKit.LoadByName(cluster.Anchor);
-            if (anchorPrefab != null)
-            {
-                SuburbDemo.TownKit.Prop(anchorPrefab, anchor, rot, _landsideRoot, name, groundY: 0f);
-                stood++;
-            }
-            foreach (var p in cluster.Pieces)
-            {
-                var prefab = SuburbDemo.TownKit.LoadByName(p.Name);
-                if (prefab == null) continue;
-                var go = SuburbDemo.TownKit.Prop(prefab, anchor + rot * new Vector3(p.X, p.Y, p.Z),
-                                                 rot * p.Rot, _landsideRoot, name + " piece", groundY: 0f);
-                // the same touch the suburb and the wayside give it: the pole sign is
-                // stretched tall so it is read from the road and not from the forecourt
-                if (p.Name == "SM_Prop_StreetSign_Pole_01")
-                    go.transform.localScale = new Vector3(1.3f, 1.95f, 1.3f);
-                if (p.Name.StartsWith("SM_Veh")) SuburbDemo.TownKit.StripForStatic(go);
-                stood++;
-            }
-            if (stood == 0)
-            {
-                Debug.LogWarning("[Airport] the Town pack's " + cluster.Label + " is not where TownKit looks - the approach road stands bare.");
-                return;
-            }
-
-            // a walker crossing the strip goes round the building and the forecourt kit
-            BlockLocal(anchor.x - 12f, anchor.x + 12f, anchor.z - 20f, anchor.z + 4f);
-            Debug.Log($"[Airport] {name} on the approach road, {stood} pieces");
+            var root = new GameObject("Public fuel station (PumpDemo)").transform;
+            root.gameObject.SetActive(false);
+            // Compose the complete shared parcel at the origin, as CoreDemo does.
+            // The airport's roadside station is scenery; it must not create the
+            // residential preview's invisible traffic circuit in this district.
+            FuelStationBlock.Compose(root, seed, createRuntime: false);
+            root.SetParent(_landsideRoot, false);
+            root.SetLocalPositionAndRotation(new Vector3(GasX,
+                AirportSpec.PaveY - FuelStationBlock.RoadY, GasAnchorZ), Quaternion.Euler(0, 180, 0));
+            root.gameObject.SetActive(true);
+            BlockLocal(GasX - 8f, GasX + 8f, GasAnchorZ - 23f, GasAnchorZ - 5f);
+            BlockLocal(GasX - 1.5f, GasX + 1.5f, GasAnchorZ - 4f, GasAnchorZ + 4f);
         }
 
         /// <summary>The boards on the drive in: the airport's own, and the two the

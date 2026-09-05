@@ -74,6 +74,128 @@ namespace AirportDemo.EditorTools
             Legend(t, label, new Vector3(0, eave + 0.5f, hz + 0.33f), 0.62f, White);
         }
 
+        // Door hardware stays on the facade; service equipment stays against the
+        // side walls so neither the aircraft opening nor the apron is cluttered.
+        static void BuildHangarEquipment(Transform t, float w, float d, float eave,
+            float rise, float doorWidth, bool open, bool workshop)
+        {
+            float hx = w * 0.5f, hz = d * 0.5f, head = 6f;
+            Slab(t, "door track hood", new Vector3(0, head + 0.12f, hz + 0.45f),
+                new Vector3(w, 0.22f, 0.7f), Steel);
+            for (float x = -hx + 0.5f; x < hx; x += 3f)
+                Slab(t, "track wall bracket", new Vector3(x, head + 0.3f, hz + 0.25f),
+                    new Vector3(0.12f, 0.55f, 0.5f), Black);
+            if (!open)
+                for (float x = -doorWidth * 0.5f + 3f; x < doorWidth * 0.5f; x += 6f)
+                {
+                    Slab(t, "door leaf reinforcing rail", new Vector3(x, 2.7f, hz + 0.3f),
+                        new Vector3(5.7f, 0.12f, 0.12f), Steel);
+                    Slab(t, "door pull handle", new Vector3(x + 2.35f, 1.15f, hz + 0.45f),
+                        new Vector3(0.08f, 0.55f, 0.14f), Black);
+                }
+            for (int side = -1; side <= 1; side += 2)
+            {
+                float x = side * (hx - 0.6f);
+                Slab(t, "jamb safety strip", new Vector3(x, 1.1f, hz + 0.4f),
+                    new Vector3(0.24f, 2.2f, 0.12f), Yellow);
+                for (int band = 0; band < 4; band++)
+                    Slab(t, "jamb black band", new Vector3(x, 0.3f + band * 0.5f, hz + 0.47f),
+                        new Vector3(0.26f, 0.2f, 0.04f), Black);
+                Beam(t, "floodlight arm", new Vector3(x, head - 0.4f, hz),
+                    new Vector3(x, head - 0.25f, hz + 0.95f), 0.09f, Steel);
+                var lamp = Slab(t, "apron floodlight housing", new Vector3(x, head - 0.35f, hz + 0.95f),
+                    new Vector3(0.65f, 0.32f, 0.4f), Black);
+                lamp.transform.localRotation = Quaternion.Euler(25f, 0, 0);
+                Slab(t, "apron floodlight lens", new Vector3(x, head - 0.43f, hz + 1.15f),
+                    new Vector3(0.54f, 0.2f, 0.04f), White).transform.localRotation = lamp.transform.localRotation;
+
+                // Vertical facade ribs and a louvred vent on each gable wall.
+                for (float z = -hz + 1f; z < hz; z += 3f)
+                    Slab(t, "side wall stiffener", new Vector3(side * (hx + 0.12f), eave * 0.5f, z),
+                        new Vector3(0.18f, eave, 0.12f), Steel);
+                Slab(t, "vent recess", new Vector3(side * (hx + 0.24f), eave - 1f, 0),
+                    new Vector3(0.12f, 1.2f, 2f), Black);
+                for (int blade = 0; blade < 6; blade++)
+                    Slab(t, "vent louvre", new Vector3(side * (hx + 0.34f), eave - 1.5f + blade * 0.2f, 0),
+                        new Vector3(0.25f, 0.07f, 1.9f), Steel);
+
+                // Raised rooflight cassettes follow the actual slope, including overhang.
+                float roofZ = side * hz * 0.5f;
+                float roofY = eave + rise * (1f - Mathf.Abs(roofZ) / (hz + 0.4f));
+                var tilt = Quaternion.Euler(side * Mathf.Atan(rise / (hz + 0.4f)) * Mathf.Rad2Deg, 0, 0);
+                for (int bay = -1; bay <= 1; bay++)
+                {
+                    var centre = new Vector3(bay * w * 0.25f, roofY + 0.16f, roofZ);
+                    Slab(t, "rooflight frame", centre, new Vector3(2.1f, 0.22f, 3.4f), Steel)
+                        .transform.localRotation = tilt;
+                    Slab(t, "rooflight panel", centre + tilt * new Vector3(0, 0.14f, 0),
+                        new Vector3(1.85f, 0.06f, 3.1f), Glass).transform.localRotation = tilt;
+                    Slab(t, "rooflight crossbar", centre + tilt * new Vector3(0, 0.2f, 0),
+                        new Vector3(2f, 0.06f, 0.08f), Steel).transform.localRotation = tilt;
+                }
+            }
+
+            // Personnel entrance on the west side, clear of the maintenance office.
+            float serviceZ = -hz + 4f;
+            Slab(t, "personnel door frame", new Vector3(-hx - 0.18f, 1.2f, serviceZ),
+                new Vector3(0.2f, 2.4f, 1.3f), Steel);
+            Slab(t, "personnel door", new Vector3(-hx - 0.3f, 1.14f, serviceZ),
+                new Vector3(0.06f, 2.22f, 1.1f), Blue);
+            Slab(t, "personnel door handle", new Vector3(-hx - 0.38f, 1.05f, serviceZ + 0.37f),
+                new Vector3(0.1f, 0.08f, 0.22f), Steel);
+            Slab(t, "personnel rain hood", new Vector3(-hx - 0.55f, 2.65f, serviceZ),
+                new Vector3(1.15f, 0.12f, 1.7f), Steel);
+            Slab(t, "electrical cabinet", new Vector3(-hx - 0.35f, 1.3f, serviceZ + 2f),
+                new Vector3(0.45f, 1.2f, 0.65f), Steel);
+            Tube(t, "electrical conduit", new Vector3(-hx - 0.2f, 1.9f, serviceZ + 2f),
+                0.035f, eave - 2f, Black, 6);
+            Legend(t, "STAFF", new Vector3(-hx - 0.35f, 2.15f, serviceZ), 0.22f, White, yaw: 270f);
+
+            if (open) BuildHangarWorkshop(t, hx, hz, eave);
+            if (workshop)
+            {
+                // The lean-to office has its own recognisable window rhythm.
+                foreach (float windowZ in new[] { -5f, 4.5f })
+                {
+                    Slab(t, "office window frame", new Vector3(hx + 5.05f, 1.9f, windowZ),
+                        new Vector3(0.16f, 1.2f, 2.3f), Steel);
+                    Slab(t, "office glazing", new Vector3(hx + 5.15f, 1.9f, windowZ),
+                        new Vector3(0.05f, 1f, 2.1f), Glass);
+                    Slab(t, "office mullion", new Vector3(hx + 5.2f, 1.9f, windowZ),
+                        new Vector3(0.06f, 1.1f, 0.06f), Steel);
+                }
+            }
+        }
+
+        static void BuildHangarWorkshop(Transform t, float hx, float hz, float eave)
+        {
+            for (float z = -hz + 3f; z < hz; z += 6f)
+            {
+                Beam(t, "interior roof tie", new Vector3(-hx + 0.25f, eave - 0.35f, z),
+                    new Vector3(hx - 0.25f, eave - 0.35f, z), 0.18f, Steel);
+                Slab(t, "workshop strip lamp", new Vector3(0, eave - 0.5f, z),
+                    new Vector3(2.4f, 0.1f, 0.22f), White);
+            }
+            float x = hx - 1.1f;
+            Slab(t, "workbench", new Vector3(x, 0.95f, -hz + 4f),
+                new Vector3(1.4f, 0.15f, 4f), Steel);
+            for (int end = -1; end <= 1; end += 2)
+                Slab(t, "workbench legs", new Vector3(x, 0.45f, -hz + 4f + end * 1.7f),
+                    new Vector3(1.2f, 0.9f, 0.1f), Black);
+            Slab(t, "tool cabinet", new Vector3(x, 0.6f, -hz + 7f),
+                new Vector3(1.2f, 1.2f, 0.75f), Red);
+            for (int drawer = 0; drawer < 4; drawer++)
+                Slab(t, "tool drawer pull", new Vector3(x - 0.63f, 0.25f + drawer * 0.25f, -hz + 7f),
+                    new Vector3(0.06f, 0.04f, 0.5f), Steel);
+            for (int shelf = 0; shelf < 3; shelf++)
+                Slab(t, "stores shelf", new Vector3(-hx + 0.9f, 0.3f + shelf * 0.9f, -hz + 2.5f),
+                    new Vector3(1.2f, 0.1f, 3.5f), Steel);
+            for (int end = -1; end <= 1; end += 2)
+                for (int face = -1; face <= 1; face += 2)
+                    Slab(t, "stores rack upright", new Vector3(-hx + 0.9f + face * 0.55f, 1.2f, -hz + 2.5f + end * 1.65f),
+                        new Vector3(0.08f, 2.4f, 0.08f), Steel);
+        }
+
         static void Beam(Transform t, string name, Vector3 a, Vector3 b, float width, Material mat)
         {
             var go = Slab(t, name, (a + b) * 0.5f, new Vector3(width, width, (b - a).magnitude), mat);
