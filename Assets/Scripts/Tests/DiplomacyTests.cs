@@ -81,6 +81,7 @@ namespace LivingCity.Tests
             AnOpenBillLapsesWhenOtherMoneyClearsTheDebt(failures);
             AnUnpaidBillLeftToAgeIsStillAWordIgnored(failures);
             AnAgedBillIsRepricedWhenItIsPaid(failures);
+            ADeliveredBillIsRepricedBeforeTheDeskAnswers(failures);
 
             return failures;
         }
@@ -2545,6 +2546,67 @@ namespace LivingCity.Tests
             if (table.World.Relations.Grievance(1, 0) < HouseRelationsConfig.Default.ThreatAt)
                 failures.Add("CODEX: an aged bill cleared the grudge under the threat rung (" +
                              table.World.Relations.Grievance(1, 0) + ").");
+        }
+
+        /// <summary>A bill carried by an envoy ages a night on the road. The desk it
+        /// reaches can cover today's figure over its reserve but not the one filed:
+        /// it pays today's, because the bill was repriced before the desk read it
+        /// (Codex over 0d745f380). The inbox reads today's figure after midnight too.
+        /// </summary>
+        static void ADeliveredBillIsRepricedBeforeTheDeskAnswers(List<string> failures)
+        {
+            var table = new Table(121);
+            War(table, 1, 2);
+            var creditor = table.World.Of(1);
+            var debtor = table.World.Of(2);
+            creditor.Runner.Accounts.Safe = 1_000_000;
+            debtor.Runner.Accounts.Safe = 1_000_000;
+            for (var i = 0; i < 2; i++)
+                table.World.Relations.Note(1, 2, GrievanceKind.DoorAttacked);
+            var day = creditor.Runner.Campaign.Day;
+            var atFiling = HouseDiplomacy.BillCeiling(table.World.Relations, 1, 2,
+                DiplomacyConfig.Default, day);
+            var carried = new Proposal
+            {
+                To = 2,
+                Kind = ProposalKind.Bill,
+                Terms = new ProposalTerms { Money = atFiling },
+                InTransit = true,
+            };
+            var sent = HouseOps.Propose(table.World, creditor, carried, table.Look);
+            var filed = Last(table);
+            if (!sent.Ok || filed == null || !filed.Open || !filed.InTransit)
+            {
+                failures.Add("CODEX: the fixture's envoy did not leave with the bill (" +
+                             sent.Reason + ").");
+                return;
+            }
+            table.World.DayTick();
+            var today = HouseDiplomacy.BillCeiling(table.World.Relations, 1, 2,
+                DiplomacyConfig.Default, creditor.Runner.Campaign.Day);
+            if (!filed.Open || today >= atFiling || today <= 0)
+            {
+                failures.Add("CODEX: the fixture's night did not lower the ceiling ($" + today +
+                             " vs $" + atFiling + "), so it proves nothing.");
+                return;
+            }
+            if (filed.Terms.Money != today)
+                failures.Add("CODEX: the inbox still reads the filed figure after midnight ($" +
+                             filed.Terms.Money + ", not $" + today + ").");
+            // The desk can pay today's figure over its reserve, and not a dollar more.
+            var reserve = DiplomacyConfig.Default.BillReserveDays * table.Look(debtor).DailyPayroll;
+            debtor.Runner.Accounts.Safe = reserve + today;
+            var before = debtor.Runner.Accounts.Safe;
+            var delivered = HouseOps.Deliver(table.World, filed.Id, table.Look);
+            if (!delivered.Ok || filed.Status != ProposalStatus.Accepted)
+            {
+                failures.Add("CODEX: the desk refused an aged bill it could pay today (" +
+                             filed.Status + " " + filed.Answer + ").");
+                return;
+            }
+            if (before - debtor.Runner.Accounts.Safe != today)
+                failures.Add("CODEX: the delivered bill took $" + (before - debtor.Runner.Accounts.Safe) +
+                             ", not today's $" + today + ".");
         }
 
         /// <summary>House 1 bills the player $2,000 at war, then the player buys a

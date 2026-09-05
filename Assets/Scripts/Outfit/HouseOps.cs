@@ -388,6 +388,7 @@ namespace LivingCity.Outfit
             if (to == null)
                 return OpResult.Fail(HouseDiplomacy.ReasonNobodyToAskWord);
             var day = to.Runner.Campaign.Day;
+            world.Diplomacy.Reprice(world.Relations, proposal, day);
             if (look == null)
                 return OpResult.Success;
             var view = look(to);
@@ -468,6 +469,7 @@ namespace LivingCity.Outfit
             if (proposal.InTransit)
                 return OpResult.Fail(HouseDiplomacy.ReasonStillOnTheRoad);
             var note = "";
+            world.Diplomacy.Reprice(world.Relations, proposal, to.Runner.Campaign.Day);
             if (!accept && look != null &&
                 HouseDiplomacy.MustAccept(look(to), proposal, world.Relations.Config))
             {

@@ -1017,8 +1017,15 @@ namespace LivingCity.Outfit
             for (var i = 0; i < proposals.Count; i++)
             {
                 var p = proposals[i];
-                if (!p.Open || day < p.ExpiresDay)
+                if (!p.Open)
                     continue;
+                if (day < p.ExpiresDay)
+                {
+                    // An open bill ages with the grudge: the figure in the inbox is
+                    // today's, so what the ledger shows is what a yes would move.
+                    Reprice(relations, p, day);
+                    continue;
+                }
                 p.Status = ProposalStatus.Expired;
                 // A bill left unanswered is a word ignored - unless the debt it named
                 // was cleared meanwhile: then it merely lapses (Codex).
@@ -1045,6 +1052,21 @@ namespace LivingCity.Outfit
             var (clearedDay, points) = relations.ClearedOn(proposal.From, proposal.To);
             return clearedDay > proposal.Day ||
                    (clearedDay == proposal.Day && points > proposal.ClearedAtFiling);
+        }
+
+        /// <summary>An aged bill reads today's ceiling, not the figure filed: the
+        /// grudge decayed on its own while it lay open. Read before any desk answers
+        /// it - at delivery, at the player's reply, at midnight - and again in Apply,
+        /// so the desk's reserve test and the payment price the same figure (Codex).
+        /// A bill other money made stale is left alone: Settle lapses it.</summary>
+        public void Reprice(HouseRelations relations, Proposal proposal, int day)
+        {
+            if (proposal == null || relations == null || !proposal.Open ||
+                proposal.Kind != ProposalKind.Bill || BillLapsed(relations, proposal, day))
+                return;
+            var ceiling = BillCeiling(relations, proposal.From, proposal.To, Config, day);
+            if (proposal.Terms.Money > ceiling)
+                proposal.Terms.Money = ceiling;
         }
 
         void Lapse(Underworld world, Proposal proposal, int day)

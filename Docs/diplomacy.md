@@ -79,9 +79,11 @@ and `Expire`), and `HouseOps.Reply` answers with the record's words rather than 
 Only MONEY lapses a bill: the grudge's own daily decay lowers the ceiling too, so the book
 compares what money cleared off the pair since the filing (`HouseRelations.ClearedOn` against
 `Proposal.ClearedAtFiling`) - a bill that merely aged unanswered is still a word ignored. A
-bill that aged and is then PAID is repriced to today's ceiling first (the record reads the
-figure paid), so no payment clears the grudge under the threat rung; aged to nothing owed, it
-lapses. Tribute
+bill that aged is repriced to today's ceiling (`HouseDiplomacy.Reprice`) before any desk reads
+it - at midnight for every open bill, so the inbox shows today's figure; at an envoy's
+delivery; at the player's reply; and again in `Apply` - so the desk's reserve test and the
+payment price the same figure, and no payment clears the grudge under the threat rung; aged
+to nothing owed, it lapses. Tribute
 terms are priced against the street's figure (`CampaignRunner.DerivedTribute`), never against
 a discount already pinned, so half of half is refused. The record keeps a proposal holding
 escrow through pruning, and the levies with their pinned terms and the sheets' `FromHouses` /
