@@ -502,6 +502,7 @@ namespace LivingCity.UI
             }
 
             UpdateScroll();
+            TickFamilies();
             RefreshClock();
             RefreshTimeControls();
             RunTelex();
