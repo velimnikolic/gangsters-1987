@@ -321,10 +321,16 @@ namespace LivingCity.Outfit
                 stances[entry.Key] = entry.Value;
                 if (landed == null)
                     continue;
+                // WHAT ACTUALLY LANDS on the pair is the agreement, when one stands
+                // unbroken over the slot (below): a war written pending after a truce
+                // was agreed never lands, and must not wake a pact as if it had.
+                var stance = entry.Value;
+                if (agreed.TryGetValue(entry.Key, out var over) && !over.Broken)
+                    stance = over.Stance;
                 var a = (int)(entry.Key >> 32);
                 var b = (int)(entry.Key & 0xFFFFFFFF);
                 var by = pendingBy.TryGetValue(entry.Key, out var writer) ? writer : a;
-                landed.Add(new StanceLanded(by, by == a ? b : a, entry.Value,
+                landed.Add(new StanceLanded(by, by == a ? b : a, stance,
                     pendingByPact.Contains(entry.Key)));
             }
             pending.Clear();
@@ -556,6 +562,8 @@ namespace LivingCity.Outfit
                         b = (int)(entry.Key & 0xFFFFFFFF),
                         stance = (int)entry.Value,
                         pending = true,
+                        by = pendingBy.TryGetValue(entry.Key, out var writer) ? writer : -1,
+                        byPact = pendingByPact.Contains(entry.Key),
                     });
             }
 
@@ -659,10 +667,11 @@ namespace LivingCity.Outfit
                 if (rows[i].pending)
                 {
                     pending[key] = (Stance)rows[i].stance;
-                    // The row's first house is the writer: Collect writes the pair's
-                    // packed order, so a pending stance restored from a file reads
-                    // the lower id as the declarer - the one loss a save takes.
-                    pendingBy[key] = rows[i].a;
+                    // The writer rides on the row since EPIC 42; a file from before it
+                    // names none, and the lower id serves - the one loss such a save takes.
+                    pendingBy[key] = rows[i].by >= 0 ? rows[i].by : rows[i].a;
+                    if (rows[i].byPact)
+                        pendingByPact.Add(key);
                 }
                 else
                     stances[key] = (Stance)rows[i].stance;

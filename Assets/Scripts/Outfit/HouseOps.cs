@@ -256,6 +256,13 @@ namespace LivingCity.Outfit
                  proposal.Kind == ProposalKind.Line) &&
                 (proposal.Terms == null || proposal.Terms.Blocks.Count == 0))
                 return OpResult.Fail(HouseDiplomacy.ReasonNoStreetNamed);
+            // A BILL IS FOR WHAT THEY OWE US, and no more (Codex, EPIC 42): the sender's
+            // own grudge prices it - for the player exactly as for a mind - so a weaker
+            // house cannot be billed for nothing every morning.
+            if (proposal.Kind == ProposalKind.Bill &&
+                (money <= 0 || money > HouseDiplomacy.BillCeiling(world.Relations,
+                    from.GangId, to.GangId, world.Diplomacy.Config)))
+                return OpResult.Fail(HouseDiplomacy.ReasonNoSuchDebt);
 
             var day = from.Runner.Campaign.Day;
             var filed = world.Diplomacy.File(

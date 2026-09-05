@@ -265,6 +265,7 @@ namespace LivingCity.Outfit
         public const string ReasonWeKeepOurStreets = "we keep our streets";
         public const string ReasonWhistleForIt = "they can whistle for it";
         public const string ReasonNoStreetNamed = "no street named";
+        public const string ReasonNoSuchDebt = "they owe us no such thing";
         public const string ReasonNobodyOwesAnybody = "nobody owes anybody here";
         public const string ReasonHeCanWait = "he can wait";
         public const string ReasonWeCanAffordToArgue = "we can afford to argue";
@@ -602,6 +603,19 @@ namespace LivingCity.Outfit
                         : DeskAnswer.No(ReasonHeCanWait);
             }
             return DeskAnswer.No(ReasonNothingToSay);
+        }
+
+        /// <summary>The most a bill from one house to another may ask: what the sender
+        /// is owed above the threat rung, at the table's rate - the mind's own price
+        /// for its bill, made the ceiling for everybody's.</summary>
+        public static int BillCeiling(HouseRelations relations, int from, int to,
+            DiplomacyConfig config)
+        {
+            if (relations == null)
+                return 0;
+            config = config ?? DiplomacyConfig.Default;
+            var above = relations.Grievance(from, to) - relations.Config.ThreatAt;
+            return above > 0f ? (int)(above * config.CompensationPerPoint) : 0;
         }
 
         /// <summary>The house that sent the word reads as the stronger, and we are

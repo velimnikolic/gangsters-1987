@@ -86,6 +86,12 @@ namespace LivingCity.Outfit
         public int b;
         public int stance;
         public bool pending;
+
+        /// <summary>EPIC 42: who wrote a pending stance (-1 in a file from before), and
+        /// whether a pact wrote it. A pact honours against the declarer, and a war a
+        /// pact declared wakes no other pact - neither may be lost at a save.</summary>
+        public int by = -1;
+        public bool byPact;
     }
 
     [Serializable]

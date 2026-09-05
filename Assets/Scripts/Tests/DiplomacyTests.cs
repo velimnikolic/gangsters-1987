@@ -67,6 +67,11 @@ namespace LivingCity.Tests
             TheSitDownIsDeliveredOnArrival(failures);
             AnAmbushKillsTheEnvoyAtTheDoor(failures);
 
+            // The Codex pass over e09003833.
+            AWarTheTruceOverrodeWakesNoPact(failures);
+            TheDeclarerSurvivesTheFile(failures);
+            ABillAsksNoMoreThanIsOwed(failures);
+
             return failures;
         }
 
@@ -2084,6 +2089,122 @@ namespace LivingCity.Tests
                 failures.Add("DIPL-008: the ambush was not printed in every book.");
             if (HouseOps.Ambush(table.World, player, filed.Id).Ok)
                 failures.Add("DIPL-008: a closed proposal was ambushed twice.");
+        }
+
+        // ------------------------------------------------------------- Codex pass
+
+        /// <summary>A war written pending after a truce was agreed never lands, and a
+        /// partner's pact must not honour it as if it had.</summary>
+        static void AWarTheTruceOverrodeWakesNoPact(List<string> failures)
+        {
+            var table = new Table(101);
+            var declarer = table.World.Of(1);
+            var victim = table.World.Of(2);
+            var partner = table.World.Of(0);
+            declarer.Runner.Accounts.Safe = 0;
+            victim.Runner.Accounts.Safe = 1_000_000;
+            partner.Runner.Accounts.Safe = 1_000_000;
+
+            // The victim and the player swear a pact against the declarer.
+            HouseOps.Propose(table.World, victim, PactAgainst(0, 1), table.Look);
+            var pact = Last(table);
+            if (pact == null || !pact.Open)
+            {
+                failures.Add("CODEX: the fixture's pact did not reach the player's inbox.");
+                return;
+            }
+            HouseOps.Reply(table.World, partner, pact.Id, true, table.Look);
+
+            // At war, the declarer (beaten) offers a truce and the victim takes it;
+            // then, the same evening, the declarer writes War pending again.
+            War(table, 1, 2);
+            table.Propose(1, 2, ProposalKind.OfferTruce);
+            var truce = Last(table);
+            if (truce == null || truce.Status != ProposalStatus.Accepted)
+            {
+                failures.Add("CODEX: the fixture's truce was not accepted (" +
+                             (truce != null ? truce.Answer : "") + ").");
+                return;
+            }
+            table.World.Relations.SetPending(1, 2, Stance.War);
+            table.World.DayTick();
+            if (table.World.Relations.StanceBetween(1, 2) != Stance.Truce)
+                failures.Add("CODEX: the agreed truce did not land over the re-declaration.");
+            if (table.World.Relations.TryGetPending(0, 1, out var woke) && woke == Stance.War)
+                failures.Add("CODEX: a war the truce overrode woke the pact.");
+        }
+
+        /// <summary>The declarer of a pending war, and whether a pact wrote it, survive
+        /// the file - a pact honours against the right house after a load and a pact's
+        /// own war still wakes no other pact.</summary>
+        static void TheDeclarerSurvivesTheFile(List<string> failures)
+        {
+            var table = new Table(102);
+            table.World.Relations.SetPending(2, 1, Stance.War);
+            table.World.Relations.SetPending(0, 2, Stance.War, byPact: true);
+
+            var json = JsonUtility.ToJson(OutfitSnapshot.Snapshot(table.World));
+            var dto = JsonUtility.FromJson<UnderworldDto>(json);
+            var fresh = Underworld.Deal(102, 3);
+            OutfitSnapshot.Restore(fresh, dto);
+
+            var landed = new List<StanceLanded>();
+            fresh.Relations.ApplyPending(null, landed);
+            var declared = false;
+            var byPact = false;
+            for (var i = 0; i < landed.Count; i++)
+            {
+                if (landed[i].By == 2 && landed[i].Against == 1 && landed[i].Stance == Stance.War &&
+                    !landed[i].ByPact)
+                    declared = true;
+                if (landed[i].By == 0 && landed[i].Against == 2 && landed[i].ByPact)
+                    byPact = true;
+            }
+            if (!declared)
+                failures.Add("CODEX: the declarer of a pending war did not survive the file.");
+            if (!byPact)
+                failures.Add("CODEX: a pact's own war lost its flag in the file.");
+
+            // A file from before the table names no writer: the lower id serves.
+            var legacy = JsonUtility.FromJson<UnderworldDto>(
+                "{\"citySeed\":102,\"houses\":[],\"relations\":{\"stances\":[{\"a\":1,\"b\":2,\"stance\":2,\"pending\":true}],\"grievances\":[]}}");
+            var old = Underworld.Deal(102, 3);
+            OutfitSnapshot.Restore(old.Relations, legacy.relations);
+            old.Relations.ApplyPending(null, landed);
+            if (landed.Count != 1 || landed[0].By != 1 || landed[0].ByPact)
+                failures.Add("CODEX: a file from before the table did not read the lower id as the declarer.");
+        }
+
+        /// <summary>A bill asks no more than the sender is owed above the threat rung,
+        /// at the table's rate - the player's bill as the mind's - and nothing at all
+        /// when nothing is owed.</summary>
+        static void ABillAsksNoMoreThanIsOwed(List<string> failures)
+        {
+            var config = HouseRelationsConfig.Default;
+            var rate = DiplomacyConfig.Default.CompensationPerPoint;
+            var table = new Table(103);
+            var creditor = table.World.Of(1);
+            var debtor = table.World.Of(2);
+            creditor.Runner.Accounts.Safe = 1_000_000;
+            debtor.Runner.Accounts.Safe = 1_000_000;
+
+            var nothing = table.Propose(1, 2, ProposalKind.Bill, 1_000);
+            if (nothing.Ok || nothing.Reason != HouseDiplomacy.ReasonNoSuchDebt)
+                failures.Add("CODEX: a bill for nothing was filed (" + nothing.Reason + ").");
+
+            for (var i = 0; i < 3; i++)
+                table.World.Relations.Note(1, 2, GrievanceKind.DoorSwitched);
+            var ceiling = HouseDiplomacy.BillCeiling(table.World.Relations, 1, 2, DiplomacyConfig.Default);
+            if (ceiling != (int)((30f - config.ThreatAt) * rate))
+                failures.Add("CODEX: the bill's ceiling reads $" + ceiling + ".");
+            var over = table.Propose(1, 2, ProposalKind.Bill, ceiling + 1);
+            if (over.Ok || over.Reason != HouseDiplomacy.ReasonNoSuchDebt)
+                failures.Add("CODEX: a bill above what is owed was filed.");
+            debtor.Runner.Accounts.Safe = 0;
+            var fair = table.Propose(1, 2, ProposalKind.Bill, ceiling);
+            var filed = Last(table);
+            if (filed == null || filed.Kind != ProposalKind.Bill || filed.Terms.Money != ceiling)
+                failures.Add("CODEX: a bill for exactly what is owed was not filed (" + fair.Reason + ").");
         }
     }
 }
