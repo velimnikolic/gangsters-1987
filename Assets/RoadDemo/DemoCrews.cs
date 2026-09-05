@@ -703,8 +703,9 @@ namespace RoadDemo
                     if (man.Tf.gameObject.activeSelf && !IsAboard(man) && !man.Riding)
                         CrewGore.Chalk(man, GroundY);
                     man.Tf.gameObject.SetActive(false);
-                    foreach (var car in Cars) { car.Aboard.Remove(man); car.SeatOf.Remove(man); }
                 }
+                // the seat goes back whether or not the body is still there to leave it
+                foreach (var car in Cars) { car.Aboard.Remove(man); car.SeatOf.Remove(man); }
                 // Every house's book is told, not only ours. A rival shot dead is a
                 // man struck off HIS family's roster - his gun back in their safe, his
                 // crew passed to whoever was most loyal - and the FAMILIES page reads
@@ -3894,9 +3895,17 @@ namespace RoadDemo
             // seconds after the fact (ReportDeaths); struck from the lookup before that
             // he is still Active on the roster, and the next deal would stand a killed
             // man up at full health (the Codex review). He leaves the line only - the
-            // dead branch of Place will not seat a body that is gone.
+            // dead branch of Place will not seat a body that is gone - and gives his
+            // seat back, or a car keeps a place for a passenger who is not there.
             if (man.Dead)
+            {
+                foreach (var car in Cars)
+                {
+                    car.Aboard.Remove(man);
+                    car.SeatOf.Remove(man);
+                }
                 return;
+            }
             if (man.CharacterId >= 0 &&
                 _byCharacter.TryGetValue(man.CharacterId, out var registered) &&
                 registered == man)

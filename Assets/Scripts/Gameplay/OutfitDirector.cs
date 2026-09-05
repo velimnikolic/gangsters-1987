@@ -334,18 +334,6 @@ namespace LivingCity.Gameplay
 
             // EVERY house works its book for those hours, not only the player's. One
             // sweep, one rule; whose orders they were is the only difference there is.
-            // THE WIRE'S BASELINE is taken BEFORE the hours advance, and again whenever
-            // the book under this director changes (a file loaded): what a book already
-            // carries is history and is marked seen, so a loaded job that finishes on
-            // this very step files its result instead of having it swallowed with the
-            // history (the Codex review).
-            if (Runner != wireRunner)
-            {
-                wireRunner = Runner;
-                wireSeen.Clear();
-                wireSwept = false;
-                SweepStreetWire();
-            }
             if (Underworld.Current.AdvanceHours(elapsed))
                 Version++;
             if (SweepStreetWire())
@@ -398,31 +386,46 @@ namespace LivingCity.Gameplay
         /// THE STREET ON THE WIRE (EPIC 40). The event book's lines - the meeting that
         /// went well, the phone that does not ring and why - were printed only in the
         /// paper's STREET TALK column; the strip the player actually watches is the
-        /// wire. Every new line is filed once as a StreetTalk slip, keyed by day and
-        /// text. The lines a file already carries when the sweep first runs are marked
-        /// seen, not re-filed.
+        /// wire. Every line is filed once as a StreetTalk slip. THE INCIDENTS BOOK IS
+        /// THE RECORD OF WHAT WAS FILED - a line goes in unless a slip with its day and
+        /// its text is already there. Both books are saved together and restored IN
+        /// PLACE (the runner keeps its identity through OutfitSnapshot.Restore, the
+        /// Codex review's finding), so a load neither re-files what was filed before
+        /// the save nor swallows what the restored jobs say after it; a file older
+        /// than this slip files its street's history once, dated.
         /// </summary>
         bool SweepStreetWire()
         {
-            var wire = Runner?.Events?.Wire;
-            if (wire == null)
+            var book = Runner?.Events;
+            if (book == null || (book.Version == wireVersion && Runner == wireRunner))
                 return false;
+            wireVersion = book.Version;
+            wireRunner = Runner;
+            var wire = book.Wire;
             var filed = false;
             for (var i = 0; i < wire.Count; i++)
             {
                 var line = wire[i];
-                if (!wireSeen.Add((line.Day, line.Text)) || !wireSwept)
+                if (FiledOnTheWire(line.Day, line.Text))
                     continue;
                 Incidents.Add(new Incident(-1, line.Text, IncidentKind.StreetTalk, line.Day,
                     "", 0, line.Text));
                 filed = true;
             }
-            wireSwept = true;
             return filed;
         }
 
-        readonly HashSet<(int day, string text)> wireSeen = new HashSet<(int, string)>();
-        bool wireSwept;
+        bool FiledOnTheWire(int day, string text)
+        {
+            var slips = Incidents;
+            for (var i = slips.Count - 1; i >= 0; i--)
+                if (slips[i].Kind == IncidentKind.StreetTalk && slips[i].Day == day &&
+                    slips[i].Line == text)
+                    return true;
+            return false;
+        }
+
+        int wireVersion = -1;
         CampaignRunner wireRunner;
 
         /// <summary>
