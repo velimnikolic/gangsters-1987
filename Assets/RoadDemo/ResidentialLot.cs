@@ -510,6 +510,8 @@ namespace RoadDemo
             int parking = YardParkingDepth(unit);
             for (int yaw = 0; yaw < 360; yaw += 90)
             {
+                // The sales gate faces south; the separate attended lot faces north.
+                if (unitName == "caryard" && yaw != 0) continue;
                 var turn = Turn.Of(unit, yaw);
                 if (turn.CW + 2 * clear > plan.Inner ||
                     turn.CD + 2 * clear + parking > plan.InnerD) continue;
@@ -552,10 +554,10 @@ namespace RoadDemo
         static void CaryardParking(Plan plan, Spot spot)
         {
             int firstJ = spot.J + spot.CD;
-            int first = Walk;
+            int first = plan.PavementCells;
             int run = plan.Inner;
             int depth = YardParkingDepth(spot.Unit);
-            if (run < 2 || depth < 1 || firstJ < Walk || firstJ + depth > plan.D - Walk)
+            if (run < 2 || depth < 1 || firstJ < plan.PavementCells || firstJ + depth > plan.D - plan.PavementCells)
             {
                 plan.Faults.Add("CaryardParking: no room for the ParkingDemo attended lot");
                 return;
@@ -589,8 +591,8 @@ namespace RoadDemo
         static void CaryardVenueEntry(Plan plan, Spot spot)
         {
             if (spot?.Unit == null || spot.Unit.Name != "caryard") return;
-            int first = Math.Max(Walk, Math.Min(spot.I + spot.CW / 2 - 1,
-                                                plan.W - Walk - 2));
+            int first = Math.Max(plan.PavementCells, Math.Min(spot.I + spot.CW / 2 - 1,
+                                                plan.W - plan.PavementCells - 2));
             if (!Mouth(plan, 0, first, "caryard venue"))
                 plan.Faults.Add("CaryardEntry: the venue gate has no south street mouth");
             if (!CutPavement(plan, 0, first + 1))
@@ -1742,7 +1744,7 @@ namespace RoadDemo
         public static int YardParkingWidth(ResidentialUnit unit) =>
             unit != null && unit.Name == "caryard" ? 6 : 0;
 
-        public static int YardPavementCells(string unitName) => unitName == "gym" ? 1 : Walk;
+        public static int YardPavementCells(string unitName) => unitName == "gym" || unitName == "caryard" ? 1 : Walk;
 
         public static void YardDimensions(ResidentialUnit unit, out int w, out int d)
         {
@@ -1759,8 +1761,8 @@ namespace RoadDemo
             if (plan == null || !plan.YardBlock) return false;
             var spot = plan.Spots.FirstOrDefault(s => s.Unit != null && s.Unit.Name == "caryard");
             if (spot == null) return false;
-            return i >= Walk && i < plan.W - Walk &&
-                   j >= spot.J + spot.CD && j < plan.D - Walk;
+            return i >= plan.PavementCells && i < plan.W - plan.PavementCells &&
+                   j >= spot.J + spot.CD && j < plan.D - plan.PavementCells;
         }
 
         static int LotClearance(Plan plan, ResidentialUnit unit) =>
@@ -2091,7 +2093,7 @@ namespace RoadDemo
         static bool CutPavement(Plan plan, int side, int at)
         {
             var (i, j) = EdgeCell(plan, side, at);
-            for (int step = 1; step <= Walk; step++)
+            for (int step = 1; step <= plan.PavementCells; step++)
             {
                 int x = i + Step[side, 0] * step;
                 int y = j + Step[side, 1] * step;
@@ -2099,7 +2101,7 @@ namespace RoadDemo
                 var use = plan.Ground[x, y];
                 if (use != Use.Walkway && use != Use.Drive) return false;
             }
-            for (int step = 1; step <= Walk; step++)
+            for (int step = 1; step <= plan.PavementCells; step++)
                 plan.Ground[i + Step[side, 0] * step,
                             j + Step[side, 1] * step] = Use.Drive;
             return true;

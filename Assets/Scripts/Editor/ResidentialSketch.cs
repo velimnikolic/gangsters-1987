@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Unity.Pipeline.Commands;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -23,6 +24,19 @@ namespace LivingCity.EditorTools
         const string Root = "RESIDENTIAL";
         const string FuelRoot = Root + " pumpdemo full functional";
         const string FireRoot = Root + " firestation full functional";
+
+        /// <summary>The bench's prefix for a BAKED core block - a building big enough to be
+        /// a block on its own, with its pavement already grown round it by
+        /// <c>CoreBuildingBlocks</c>. These are dealt as-is by the city and by MiniCoreDemo;
+        /// nothing is composed here, the prefab is stood and measured.</summary>
+        const string CoreRoot = Root + " core ";
+
+        const string CoreBlockDir = "Assets/Prefabs/CoreBlocks/";
+
+        /// <summary>The two the user asked this bench for (2026-09-05): the police station
+        /// MiniCoreDemo stands - which is NOT the compact precinct already in this scene -
+        /// and the nightclub.</summary>
+        static readonly string[] CoreBlocks = { "police-station-block", "nightclub-block" };
 
         /// <summary>The blocks the demo scene stands. The large Court recipe is intentionally
         /// absent here: at its minimum 80 x 80 m it needs a dedicated courtyard programme,
@@ -137,6 +151,48 @@ namespace LivingCity.EditorTools
             EditorUtility.DisplayDialog("Residential demo", said, "OK");
         }
 
+        [MenuItem("Tools/City/Residential/Add Baked Core Blocks (police station, nightclub)",
+                  priority = 48)]
+        public static void AddCoreBlocksMenu()
+        {
+            var scene = SceneManager.GetActiveScene();
+            if (scene.path != DemoScene)
+            {
+                EditorUtility.DisplayDialog("Residential demo",
+                    "Open ResidentialDemo before adding its baked core blocks.", "OK");
+                return;
+            }
+            string said = AddCoreBlocks(scene, FreshSeed());
+            Debug.Log("[Demo] " + said);
+            EditorUtility.DisplayDialog("Residential demo", said, "OK");
+        }
+
+        [CliCommand("gangsters_residential_core_blocks",
+                    "Stand the baked core blocks - the MiniCoreDemo police station and the " +
+                    "nightclub - in ResidentialDemo without rebuilding a residential recipe.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "residential", "block" })]
+        public static object CoreBlocksFromCli()
+        {
+            if (EditorApplication.isPlaying)
+                return new { passed = false, reason = "Leave Play Mode before editing ResidentialDemo." };
+
+            var active = SceneManager.GetActiveScene();
+            if (active.IsValid() && active.isDirty && active.path != DemoScene)
+                return new
+                {
+                    passed = false,
+                    reason = $"The active scene {active.path} has unsaved changes; it was left untouched.",
+                };
+
+            var scene = active.path == DemoScene
+                ? active
+                : EditorSceneManager.OpenScene(DemoScene, OpenSceneMode.Single);
+            string said = AddCoreBlocks(scene, FreshSeed());
+            bool saved = EditorSceneManager.SaveScene(scene, DemoScene);
+            return new { passed = saved, saved, scene = DemoScene, report = said };
+        }
+
         /// <summary>One block into a scene that is already open, beside whatever is in it.</summary>
         public static string Sketch(Scene scene, int seed, string klass, int w, int d)
         {
@@ -244,6 +300,17 @@ namespace LivingCity.EditorTools
             said.AppendLine($"police-precinct {precinct.report}");
             if (precinct.passed) index++;
 
+            // The fire station is a shared civic composer too, and it belongs in the
+            // generated scene rather than only in the hand-added rows: a re-deal used to
+            // drop it on the floor and the block had to be added back by hand every time.
+            said.AppendLine("firestation    " + AddFireStationBlock(scene, seed++));
+            index++;
+
+            // And the two baked core blocks the city itself deals: the police station
+            // MiniCoreDemo stands (not the compact precinct above) and the nightclub.
+            said.AppendLine("core-blocks    " + AddCoreBlocks(scene, seed++));
+            index += CoreBlocks.Length;
+
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene, DemoScene);
 
@@ -291,7 +358,9 @@ namespace LivingCity.EditorTools
         }
 
         /// <summary>
-        /// Append the complete Synty fire station to a separate review row. This is the
+        /// Append the complete Synty fire station to a separate review row, wrapped as an
+        /// ordinary city block: the shared CorePavement ring is generated round its parcel
+        /// and one crossover is cut through the frontage for the appliances. This is the
         /// same non-destructive contract as <see cref="AddFuelBlock"/>: no residential
         /// recipe is re-dealt and a repeated call changes nothing. Its two authored fire
         /// engines are wired to the shared RoadCar/PatrolDocking runtime in Play.
@@ -306,7 +375,7 @@ namespace LivingCity.EditorTools
             float gap = Street * ResidentialLot.Cell;
             float nextMinZ = NextReviewRow(scene, gap);
             var station = ComposeFireStation(scene, seed);
-            var bounds = FireStationBlock.PreviewBounds;
+            var bounds = FireStationBlock.BlockBounds;
             station.root.transform.position = new Vector3(
                 gap - bounds.xMin, 0f, nextMinZ - bounds.yMin);
             EditorSceneManager.MarkSceneDirty(scene);
@@ -348,6 +417,71 @@ namespace LivingCity.EditorTools
                    "untouched; " + station.stood + ", two working fire-engine routes";
         }
 
+        /// <summary>
+        /// Stand the baked core blocks on one review row of their own. Same non-destructive
+        /// contract as <see cref="AddFuelBlock"/>: no residential recipe is re-dealt, no
+        /// other root moves, and a block already in the scene is left exactly as it is.
+        ///
+        /// They arrive as blocks - <c>CoreBuildingBlocks</c> grew the ten-metre pavement
+        /// round each one when it baked them - so there is nothing to wrap here. Their
+        /// footprint is read from <see cref="CoreBlockCatalog"/>, the same baked table the
+        /// city lays them out with, rather than off their renderers: furniture hangs over a
+        /// kerb and the block's own ground is what the street gap is measured against.
+        /// </summary>
+        public static string AddCoreBlocks(Scene scene, int seed)
+        {
+            if (!scene.IsValid() || !scene.isLoaded) return "ResidentialDemo is not loaded.";
+
+            var wanted = new List<string>();
+            foreach (string name in CoreBlocks)
+                if (RootNamed(scene, CoreRoot + name) == null) wanted.Add(name);
+            if (wanted.Count == 0)
+                return "the baked core blocks are already present; nothing was changed.";
+
+            var boxes = CoreBlockCatalog.CreateBlocks();
+            float gap = Street * ResidentialLot.Cell;
+            float rowZ = NextReviewRow(scene, gap);
+            float atX = gap;
+            var said = new StringBuilder();
+
+            foreach (string name in wanted)
+            {
+                var asset = AssetDatabase.LoadAssetAtPath<GameObject>(
+                    CoreBlockDir + name + ".prefab");
+                if (asset == null)
+                {
+                    said.Append(name + " is missing from " + CoreBlockDir + "; ");
+                    continue;
+                }
+                var block = boxes.FirstOrDefault(b => b.Name == name);
+                if (block == null)
+                {
+                    said.Append(name + " is not in the baked block table; ");
+                    continue;
+                }
+
+                var ground = new Rect(block.Ground.min.x, block.Ground.min.z,
+                                      block.CW * CoreBlockMetrics.Cell,
+                                      block.CD * CoreBlockMetrics.Cell);
+                var go = (GameObject)PrefabUtility.InstantiatePrefab(asset);
+                SceneManager.MoveGameObjectToScene(go, scene);
+                go.name = CoreRoot + name;
+                go.transform.position = new Vector3(
+                    atX - ground.xMin, 0f, rowZ - ground.yMin);
+                atX += ground.width + gap;
+
+                said.Append($"{name} {ground.width:F0} x {ground.height:F0} m at " +
+                            $"({go.transform.position.x:F0}, {go.transform.position.z:F0}); ");
+            }
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            return said.ToString();
+        }
+
+        static GameObject RootNamed(Scene scene, string prefix) =>
+            scene.GetRootGameObjects().FirstOrDefault(
+                root => root.name.StartsWith(prefix, System.StringComparison.Ordinal));
+
         static float NextReviewRow(Scene scene, float gap)
         {
             bool found = false;
@@ -385,7 +519,7 @@ namespace LivingCity.EditorTools
             SceneManager.MoveGameObjectToScene(root, scene);
             // Shared composers measure while they stand their children, so this block is
             // also composed at the origin and translated only once it is complete.
-            var stood = FireStationBlock.Compose(root.transform, Raise);
+            var stood = FireStationBlock.ComposeBlock(root.transform, seed, Raise);
             var live = root.AddComponent<FireStationBlockRuntime>();
             live.Configure(seed, stood.Vehicles, stood.FireEngines, stood.BayDoors);
             return (root, stood);

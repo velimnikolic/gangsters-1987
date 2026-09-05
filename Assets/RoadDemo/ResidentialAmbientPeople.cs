@@ -330,10 +330,10 @@ namespace RoadDemo
                     break;
 
                 case "caryard":
-                    Pose(new Vector3(14.70f, 1.00f, 7.37f), 90f, clips.Inspect, "Inspecting car bodywork");
-                    Pose(new Vector3(2.33f, 1.00f, 5.05f), 180f, clips.Inspect, "Looking at car interior");
-                    Pose(new Vector3(8.33f, 1.00f, 9.75f), 0f, clips.Inspect, "Comparing cars");
-                    Pose(new Vector3(11.30f, 1.00f, 4.25f), 65f, new ClipPair(clips.Talk), "Talking to car salesman");
+                    Pose(new Vector3(13.7f, ResidentialCaryard.Deck, 5f), 270f, clips.Inspect, "Inspecting car bodywork");
+                    Pose(new Vector3(6.1f, ResidentialCaryard.Deck, 5.2f), 90f, clips.Inspect, "Looking at car interior");
+                    Pose(new Vector3(12f, ResidentialCaryard.Deck, 16.2f), 0f, clips.Inspect, "Comparing cars");
+                    Pose(new Vector3(32f, ResidentialCaryard.Deck + .02f, 15.8f), 65f, new ClipPair(clips.Talk), "Talking to car salesman");
                     break;
 
                 case "kosarkaskiteren":
@@ -344,11 +344,11 @@ namespace RoadDemo
                     break;
 
                 case "skatepark":
-                    Shuttle(new Vector3(8.00f, 2.00f, 17.00f), new Vector3(16.00f, 2.00f, 18.00f),
+                    Shuttle(new Vector3(8.00f, 0.00f, 17.00f), new Vector3(16.00f, 0.00f, 18.00f),
                             82f, 262f, new ClipPair(clips.Idle), "Moving between skate ramps");
-                    Shuttle(new Vector3(25.00f, 2.00f, 10.00f), new Vector3(31.00f, 2.00f, 14.00f),
+                    Shuttle(new Vector3(25.00f, 0.00f, 10.00f), new Vector3(31.00f, 0.00f, 14.00f),
                             56f, 236f, new ClipPair(clips.Idle), "Walking through skatepark");
-                    Pose(new Vector3(17.00f, 2.00f, 6.00f), 180f, clips.Inspect, "Watching a skate line");
+                    Pose(new Vector3(17.00f, 0.00f, 6.00f), 180f, clips.Inspect, "Watching a skate line");
                     break;
             }
         }
@@ -686,11 +686,11 @@ namespace RoadDemo
         static float VenueFloor(string name) => name switch
         {
             "gym" => 1.26f,
-            "caryard" => 1.00f,
+            "caryard" => ResidentialCaryard.Deck,
             "dinner" => 1.53f,
             "dinner2" => 0.07f,
             "kosarkaskiteren" => 0.64f,
-            "skatepark" => 2.00f,
+            "skatepark" => 0.00f,
             _ => Deck,
         };
 

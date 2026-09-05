@@ -504,7 +504,12 @@ namespace LivingCity.EditorTools
             // (the LOWEST of everything it brought: the pack uses the same floor slab for a
             // shop's floor and for the roof over it, so the ground tiles alone are not the
             // ground - one shop read its roof as its floor and came out 0.9 m tall)
-            float floor = family != Family.Amenity ? 0f : read.Min(p => p.Box.min.y);
+            // The skatepark is an excavated bowl: its authored zero is street grade.
+            // Its lowest rail extends almost two metres below that grade and must not
+            // lift the ramps, benches and lamps when the terrain is stripped away.
+            bool sunkenAmenity = family == Family.Amenity && name == "skatepark";
+            float floor = family != Family.Amenity || sunkenAmenity
+                ? 0f : read.Min(p => p.Box.min.y);
             if (family == Family.Amenity)
             {
                 // A lot's pieces are the pack's own two-metre panels and half-metre trims,
@@ -711,7 +716,7 @@ namespace LivingCity.EditorTools
             if (family == Family.Amenity)
             {
                 unit.MaxH -= floor;
-                unit.Floor = 0f;
+                unit.Floor = sunkenAmenity ? unit.Floor - floor : 0f;
             }
 
             unit.Pivot = new Vector3(origin.x, family == Family.Amenity ? floor : 0f, origin.y);
@@ -1115,6 +1120,7 @@ namespace LivingCity.EditorTools
         static bool Write(Unit unit)
         {
             if (unit.Name == "gym") return ResidentialGymBake.Bake();
+            if (unit.Name == "caryard") return ResidentialCaryardBake.Bake();
             if (unit.Name == RoadDemo.ResidentialForgeReplacement.Name)
                 return ResidentialForgeBake.Bake();
             var pieces = unit.Parts;
@@ -1136,6 +1142,9 @@ namespace LivingCity.EditorTools
                 if (IsSquare(t.eulerAngles.y))
                     copy.transform.rotation = Quaternion.Euler(0f, Snap(t.eulerAngles.y), 0f);
             }
+
+            if (unit.Name == "skatepark")
+                ResidentialSkateGround.BakeInto(go, unit.CW * Cell, unit.CD * Cell);
 
             var tag = go.AddComponent<LivingCity.Generation.BlockLotTag>();
             tag.lotWidth = unit.CW * Cell;
@@ -1315,6 +1324,11 @@ namespace LivingCity.EditorTools
             sb.AppendLine("        {");
             foreach (var unit in units)
             {
+                if (unit.Name == "caryard")
+                {
+                    sb.AppendLine("            ResidentialCaryard.Describe(),");
+                    continue;
+                }
                 if (unit.Name == "gym")
                 {
                     sb.AppendLine("            ResidentialGym.Describe(),");

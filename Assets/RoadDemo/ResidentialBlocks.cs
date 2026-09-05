@@ -333,6 +333,8 @@ namespace RoadDemo
             Schedule(SubwayPath, 1);
             Schedule(PlazaDivider, sparseTarget);
             Schedule(PlazaHedge, Mathf.Max(6, window * 2));
+            foreach (string bed in ResidentialLandscaping.Prefabs)
+                Schedule(ResidentialLandscaping.Folder + bed + ".prefab", Mathf.Max(4, window * 3));
             // Street pavements can now carry up to ten seats on the largest blocks.
             // Reserve roughly a viewport's real mix across all three variants so the
             // denser frontage does not fall back to a first-use Instantiate burst.
@@ -433,6 +435,7 @@ namespace RoadDemo
             PavementEssentials(plan, root, standing, stood);
             if (Dressed) Street(plan, root, rng, standing, stood);
             Palms(plan, kerbs, standing, root, raise, rng.Next(), stood);
+            foreach (int n in ResidentialLandscaping.Compose(plan, root, raise)) stood.Props += n;
             SurfaceDetails(plan, root, stood);
             AmbientPeople(plan, root, stood);
 
@@ -446,16 +449,16 @@ namespace RoadDemo
         /// Outdoor amenities were harvested from Palm City's terrain. Their ramps, fences,
         /// machines and tables came across, but the terrain did not, so holes showed through
         /// below the gym, car yard, basketball court and both diners. A quiet concrete backing
-        /// is laid one tile per cell under the complete amenity rectangle, just below zero:
+        /// is laid one tile per cell under the complete amenity rectangle, below its floor:
         /// its own court/tarmac stays visible and every gap still has a floor.
         /// </summary>
         static void AmenityFloors(ResidentialLot.Plan plan, Transform root, Stood stood)
         {
-            const float below = -0.06f;
             float cell = ResidentialLot.Cell;
             foreach (var spot in plan.Spots)
             {
                 if (spot.Unit.Kind != ResidentialKind.Amenity) continue;
+                float below = AmenityBackingHeight(spot.Unit);
                 var turn = ResidentialLot.Turn.Of(spot.Unit, spot.Yaw);
                 for (int u = 0; u < turn.CW; u++)
                     for (int v = 0; v < turn.CD; v++)
@@ -463,6 +466,8 @@ namespace RoadDemo
                                 cell, cell, 0f, below) != null) stood.Tiles++;
             }
         }
+
+        static float AmenityBackingHeight(ResidentialUnit unit) => Mathf.Min(0f, unit.Floor) - 0.06f;
 
         // ------------------------------------------------------------------ the ring
 
@@ -779,7 +784,7 @@ namespace RoadDemo
 
             float cell = ResidentialLot.Cell;
             var box = new Rect(
-                ResidentialLot.Walk * cell,
+                plan.PavementCells * cell,
                 (spot.J + spot.CD) * cell,
                 plan.Inner * cell,
                 ResidentialLot.YardParkingDepth(spot.Unit) * cell);

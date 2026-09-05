@@ -101,11 +101,11 @@ namespace RoadDemo
             yield return null;
 
             // Amenity backing, one tile per step.
-            const float below = -0.06f;
             float cell = ResidentialLot.Cell;
             foreach (var amenity in plan.Spots)
             {
                 if (amenity.Unit.Kind != ResidentialKind.Amenity) continue;
+                float below = AmenityBackingHeight(amenity.Unit);
                 var turn = ResidentialLot.Turn.Of(amenity.Unit, amenity.Yaw);
                 for (int u = 0; u < turn.CW; u++)
                     for (int v = 0; v < turn.CD; v++)
@@ -242,6 +242,9 @@ namespace RoadDemo
             }
             Palms(plan, kerbs, standing, root, raise, rng.Next(), stood);
             yield return null;
+
+            foreach (int n in ResidentialLandscaping.Compose(plan, root, raise))
+            { stood.Props += n; yield return null; }
 
             var details = ResidentialSurface.Lay(plan);
             stood.SurfaceProfile = details.Wear.ToString();

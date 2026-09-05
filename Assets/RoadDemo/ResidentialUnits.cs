@@ -456,25 +456,7 @@ namespace RoadDemo
                 ShopBays = new ResidentialShopBay[] { new ResidentialShopBay(0, 2.50f, 0.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(0.84f, 0.04f, 1.30f, 2, 180.00f)), new ResidentialShopBay(0, 7.45f, 0.00f, "SM_Bld_Shop_Corner_01", new ResidentialStorefrontDoor(9.11f, 0.04f, 1.30f, 2, 180.00f)), new ResidentialShopBay(2, 2.36f, 10.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(0.63f, 9.25f, 1.27f, 1, 45.00f)), new ResidentialShopBay(2, 7.37f, 10.00f, "SM_Bld_Shop_Corner_02", new ResidentialStorefrontDoor(9.10f, 9.25f, 1.27f, 1, 45.00f)) },
                 Over = new[] { 0.46f, 0.85f, 0.75f, 0.88f },
             },
-            new ResidentialUnit
-            {
-                Name = "caryard", CW = 4, CD = 3,
-                Kind = ResidentialKind.Amenity,
-                MaxH = 9.1f, Floor = 0.00f, Trees = 0, Pieces = 208, Seats = 0,
-                Plan = new[]
-                {
-                    "####",
-                    "####",
-                    "####",
-                },
-                Face = new[] { false, false, false, false },
-                Doors = new[] { 0, 0, 0, 0 },
-                Shops = new[] { 0, 0, 0, 0 },
-                Stoops = new[] { 0, 0, 0, 0 },
-                ShopCells = new[] { "0000", "000", "0000", "000" },
-                ShopBays = new ResidentialShopBay[] {  },
-                Over = new[] { 0.00f, 0.16f, 0.51f, 0.00f },
-            },
+            ResidentialCaryard.Describe(),
             new ResidentialUnit
             {
                 Name = "dinner", CW = 5, CD = 3,
@@ -594,7 +576,7 @@ namespace RoadDemo
             {
                 Name = "skatepark", CW = 8, CD = 7,
                 Kind = ResidentialKind.Amenity,
-                MaxH = 7.3f, Floor = 0.00f, Trees = 0, Pieces = 269, Seats = 3,
+                MaxH = 5.3f, Floor = -2.00f, Trees = 0, Pieces = 269, Seats = 3,
                 Plan = new[]
                 {
                     ".####...",
