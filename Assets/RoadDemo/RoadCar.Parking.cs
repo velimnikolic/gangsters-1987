@@ -139,7 +139,7 @@ namespace RoadDemo
         void BeginPullIn(float len)
         {
             _man = Manoeuvre.PullIn;
-            _pullInAsked = Time.time;
+            _pullInAsked = RoadCarSimulation.Now;
             Slide(_goalD, len);
             float w = HalfWide + 0.2f;
             Claim(S - Heading * HalfLen, _goalS + Heading * HalfLen, Mathf.Min(_goalD - w, _laneD - HalfWide), Mathf.Max(_goalD + w, _laneD + HalfWide));
@@ -158,7 +158,7 @@ namespace RoadDemo
             if (Mathf.Abs(D - _laneD) < 0.3f) return;
             _man = Manoeuvre.PullOut;
             _pullOutWanted = true;
-            _pullOutAsked = Time.time;
+            _pullOutAsked = RoadCarSimulation.Now;
         }
 
         /// <summary>Seconds a car holds at the line after backing out of a junction it
@@ -195,7 +195,7 @@ namespace RoadDemo
             // first few seconds it waits for a proper gap, as it should - and after that
             // the parked stop counting. Rolling, a parked car ahead is a thing to go
             // round, which the tactics already do (Decide's behindParked).
-            bool ignoreParked = Time.time - _pullOutAsked > PullOutPatience;
+            bool ignoreParked = RoadCarSimulation.Now - _pullOutAsked > PullOutPatience;
 
             // AND IF EVEN THAT DOES NOT COME, he takes the lane. There is a second way
             // to wait for ever: parked on the far kerb of a wide street, the lane for
@@ -207,7 +207,7 @@ namespace RoadDemo
             // dropped, which also lets him past the junction line again (CanEnter), and
             // the ordinary lane-keeping takes him the rest of the way over.
             if (!BandFree(lo, hi, 8f, 2f, out _, ignoreParked) &&
-                Time.time - _pullOutAsked > PullOutGiveUp)
+                RoadCarSimulation.Now - _pullOutAsked > PullOutGiveUp)
             {
                 if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "took the lane after waiting", ManFields());
                 _pullOutWanted = false;
@@ -231,7 +231,25 @@ namespace RoadDemo
                 if (!SlidePathClear(_laneD, len, 4f))
                 {
                     len = SlideLength(dd, 0f);
-                    if (!SlidePathClear(_laneD, len, 4f)) { AskRoomToPullOut(); return; }
+                    if (!SlidePathClear(_laneD, len, 4f))
+                    {
+                        AskRoomToPullOut();
+                        // The swing can clip a parked shoulder even though the band
+                        // we already occupy is clear. Waiting for that parked body
+                        // never creates a gap. Ease forward under normal following
+                        // and collision checks, then ask for the merge again.
+                        if (_pullOutWanted && RoadCarSimulation.Now - _pullOutAsked > PullOutGiveUp &&
+                            Road.Drivable(D, HalfWide) &&
+                            BandFree(D - HalfWide - 0.3f, D + HalfWide + 0.3f,
+                                8f, 2f, out _))
+                        {
+                            _pullOutWanted = false;
+                            _man = Manoeuvre.None;
+                            ClearClaim();
+                            _yieldUntil = RoadCarSimulation.Now + PullOutPatience;
+                        }
+                        return;
+                    }
                 }
                 _pullOutWanted = false;
                 _man = Manoeuvre.PullOut;

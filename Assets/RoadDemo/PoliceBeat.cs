@@ -210,7 +210,7 @@ namespace RoadDemo
                     else
                     {
                         StalledOnTheWay = stalled;
-                        if (!AnyoneMoving() && Time.time >= _routeRetryAt) TryResponseRoute();
+                        if (!stalled && !AnyoneMoving() && Time.time >= _routeRetryAt) TryResponseRoute();
                     }
                     break;
                 }
@@ -296,10 +296,40 @@ namespace RoadDemo
                          side * (index == 0 ? 0f : 1.4f);
                 at.y = man.Tf.position.y;
                 man.Disengage();
-                man.OrderToPoint(at, index * 0.15f);
+                // A stance beside a station door can land inside its street furniture.
+                // Keep the approach near enough to question the suspect after walking it.
+                OrderChallengeApproach(man, collar.Tf.position, at, back, index);
                 man.HoldAtGunpoint(collar);
                 index++;
             }
+        }
+
+        static bool OrderChallengeApproach(CrewWalker man, Vector3 suspect,
+            Vector3 preferred, Vector3 back, int index)
+        {
+            bool TryOrder(Vector3 wanted, float reach)
+            {
+                if (!WalkObstacles.TryClearStandingSpot(wanted, WalkRoute.ClearanceRadius,
+                        man.Tf.position, out var approach, reach)) return false;
+                if (index == 0 && Flat(approach - suspect).sqrMagnitude > 4.4f * 4.4f)
+                    return false;
+                if (!man.CanOrderAcrossVia(approach, null)) return false;
+                return man.OrderAcross(approach, index * 0.15f);
+            }
+
+            if (TryOrder(preferred, 1f)) return true;
+            // A broad prop can cover the entire local adjustment around the nominal
+            // stance. Try other sides of the suspect, all within questioning range,
+            // and prove the walking route before committing the approach.
+            for (int heading = 1; heading <= 12; heading++)
+            {
+                float angle = ((heading + 1) / 2) * 30f * (heading % 2 == 1 ? 1f : -1f);
+                var toward = Quaternion.Euler(0f, angle, 0f) * back;
+                var wanted = suspect + toward * 3.2f;
+                wanted.y = man.Tf.position.y;
+                if (TryOrder(wanted, .5f)) return true;
+            }
+            return false;
         }
 
         /// <summary>Custody refreshes this while the prisoner waits and while he is led

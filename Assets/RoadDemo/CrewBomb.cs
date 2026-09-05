@@ -14,6 +14,7 @@ namespace RoadDemo
     public sealed class BombProjectile : MonoBehaviour
     {
         DemoCrews _crews;
+        CrewWalker _attacker;
         int _faction;
         float _groundY;
         Vector3 _vel;
@@ -25,7 +26,8 @@ namespace RoadDemo
         /// <summary>Throw it from <paramref name="from"/> to <paramref name="to"/>, over a
         /// flight time set by the distance. <paramref name="crews"/> is handed on to the
         /// blast for the gangsters it catches.</summary>
-        public static void Throw(Vector3 from, Vector3 to, DemoCrews crews, int faction, float groundY)
+        public static void Throw(Vector3 from, Vector3 to, DemoCrews crews, int faction, float groundY,
+            CrewWalker attacker = null)
         {
             // WHOEVER IS STANDING WHERE IT IS GOING TO LAND SEES IT COMING. One shout for
             // the whole throw, from the nearest man who is not of the family that threw it -
@@ -43,12 +45,13 @@ namespace RoadDemo
             mr.sharedMaterial = BombKit.CasingMaterial();
 
             var b = go.AddComponent<BombProjectile>();
-            b.Begin(from, to, crews, faction, groundY);
+            b.Begin(from, to, crews, faction, groundY, attacker);
         }
 
-        void Begin(Vector3 from, Vector3 to, DemoCrews crews, int faction, float groundY)
+        void Begin(Vector3 from, Vector3 to, DemoCrews crews, int faction, float groundY, CrewWalker attacker)
         {
             _crews = crews;
+            _attacker = attacker;
             _faction = faction;
             _groundY = groundY;
             _target = to;
@@ -71,7 +74,7 @@ namespace RoadDemo
             transform.Rotate(37f, 51f, 0f, Space.Self);
             if (_age >= _flight)
             {
-                Explosion.Blow(_target, _crews, null, _faction, _groundY);
+                Explosion.Blow(_target, _crews, null, _faction, _groundY, _attacker);
                 Destroy(gameObject);
             }
         }
@@ -312,6 +315,7 @@ namespace RoadDemo
     public sealed class PlantedBomb : MonoBehaviour
     {
         DemoCrews _crews;
+        CrewWalker _attacker;
         RoadCar _car;
         int _faction;
         float _groundY;
@@ -320,7 +324,8 @@ namespace RoadDemo
         /// charge to read as "being driven off" and spring.</summary>
         const float TriggerSpeed = 1.2f;
 
-        public static PlantedBomb Lay(Vector3 at, RoadCar car, DemoCrews crews, int faction, float groundY)
+        public static PlantedBomb Lay(Vector3 at, RoadCar car, DemoCrews crews, int faction, float groundY,
+            CrewWalker attacker = null)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
             go.name = "Planted Bomb";
@@ -334,6 +339,7 @@ namespace RoadDemo
 
             var b = go.AddComponent<PlantedBomb>();
             b._crews = crews;
+            b._attacker = attacker;
             b._car = car;
             b._faction = faction;
             b._groundY = groundY;
@@ -348,7 +354,7 @@ namespace RoadDemo
 
             if (_car.RoadSpeed >= TriggerSpeed)
             {
-                Explosion.Blow(transform.position, _crews, _car, _faction, _groundY);
+                Explosion.Blow(transform.position, _crews, _car, _faction, _groundY, _attacker);
                 Destroy(gameObject);
             }
         }

@@ -376,8 +376,9 @@ namespace RoadDemo
                 {
                     Speed = 1.2f + (float)rng.NextDouble() * 0.6f,
                 };
-                agent.Init(go.transform, CrewKit.ForCrowd(clips, rng), link,
-                    (float)rng.NextDouble() * link.Length * 0.9f);
+                if (!agent.Init(go.transform, CrewKit.ForCrowd(clips, rng), link,
+                    (float)rng.NextDouble() * link.Length * 0.9f))
+                { Destroy(go); continue; }
                 agent.Setup(_life);
                 _walkers.Add(agent);
             }

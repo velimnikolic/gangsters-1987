@@ -415,7 +415,8 @@ namespace SuburbDemo
                 PrepareBody(go);
                 TownKit.SetLayerDeep(go, ScenePerf.CrowdLayer);
                 var agent = new CivilianAgent { Speed = Rnd(1.2f, 1.8f) };
-                agent.Init(go.transform, CrewKit.ForCrowd(clips, variety), link, Rnd() * link.Length * 0.9f);
+                if (!agent.Init(go.transform, CrewKit.ForCrowd(clips, variety), link, Rnd() * link.Length * 0.9f))
+                { Object.Destroy(go); continue; }
                 agent.Setup(_life);
                 if (k < fromDoors) agent.SpawnInside(Rnd(2f, 60f));
                 _civilians.Add(agent);

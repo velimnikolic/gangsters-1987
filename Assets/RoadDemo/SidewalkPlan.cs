@@ -24,7 +24,8 @@ namespace RoadDemo
             public bool Tall;             // measured as a trunk/post, not as a whole shape
         }
 
-        static readonly Dictionary<GameObject, Foot> Cache = new Dictionary<GameObject, Foot>();
+        static readonly Dictionary<GameObject, (Vector3 Scale, Foot Foot)> Cache =
+            new Dictionary<GameObject, (Vector3, Foot)>();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void Forget() => Cache.Clear();
@@ -32,13 +33,17 @@ namespace RoadDemo
         public static Foot Of(GameObject prefab)
         {
             if (prefab == null) return default;
-            if (Cache.TryGetValue(prefab, out var foot)) return foot;
-            foot = Measure(prefab);
-            Cache[prefab] = foot;
+            // Recycled storefront furniture is fitted to each new opening. Its
+            // identity survives, but its physical scale need not; reusing the first
+            // cached fit made navigation depend on which block borrowed it first.
+            var scale = prefab.transform.lossyScale;
+            if (Cache.TryGetValue(prefab, out var entry) && entry.Scale == scale) return entry.Foot;
+            var foot = Measure(prefab, scale);
+            Cache[prefab] = (scale, foot);
             return foot;
         }
 
-        static Foot Measure(GameObject prefab)
+        static Foot Measure(GameObject prefab, Vector3 scale)
         {
             var toRoot = prefab.transform.worldToLocalMatrix;
             var min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
@@ -48,10 +53,10 @@ namespace RoadDemo
 
             var meshes = new List<(Mesh mesh, Matrix4x4 m)>();
             foreach (var mf in prefab.GetComponentsInChildren<MeshFilter>(true))
-                if (mf.sharedMesh != null)
+                if (mf.sharedMesh != null && !MarkerMesh(mf.transform, prefab.transform))
                     meshes.Add((mf.sharedMesh, toRoot * mf.transform.localToWorldMatrix));
             foreach (var sk in prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-                if (sk.sharedMesh != null)
+                if (sk.sharedMesh != null && !MarkerMesh(sk.transform, prefab.transform))
                     meshes.Add((sk.sharedMesh, toRoot * sk.transform.localToWorldMatrix));
 
             foreach (var (mesh, m) in meshes)
@@ -71,7 +76,6 @@ namespace RoadDemo
             }
             if (!any) return default;
 
-            var scale = prefab.transform.localScale;
             float sx = Mathf.Abs(scale.x), sz = Mathf.Abs(scale.z);
             var lo = new Vector2(min.x, min.z);
             var hi = new Vector2(max.x, max.z);
@@ -111,6 +115,15 @@ namespace RoadDemo
         /// The XZ span of whatever sits between ankle and shoulder height. False
         /// when no mesh will hand over its vertices (Read/Write off) or nothing of
         /// the prop is in that band at all.
+        static bool MarkerMesh(Transform mesh, Transform root)
+        {
+            // Emissive accents can protrude beyond a parked vehicle. Switching
+            // them on, or recycling them, never changes the physical body.
+            for (var at = mesh; at != null && at != root; at = at.parent)
+                if (at.name == DemoParkedCarGlow.MarkerRootName) return true;
+            return false;
+        }
+
         static bool Slice(List<(Mesh mesh, Matrix4x4 m)> meshes, out Vector2 lo, out Vector2 hi)
         {
             lo = new Vector2(float.MaxValue, float.MaxValue);

@@ -282,7 +282,9 @@ namespace RoadDemo
             // charged for the carriageway (WalkRoute): pavement all the way, across at
             // the end. Close in it is still a straight leg - the door itself IS in the
             // road, and there is no walking round to a handle.
-            if (gap.sqrMagnitude > DoorRouteFrom * DoorRouteFrom) { man.OrderAcross(door, delay); return; }
+            if (gap.sqrMagnitude > DoorRouteFrom * DoorRouteFrom ||
+                WalkObstacles.BlocksStanding(man.Tf.position, door, WalkRoute.ClearanceRadius))
+            { man.OrderAcross(door, delay); return; }
             man.OrderToPoint(door, delay);
         }
 
@@ -795,10 +797,11 @@ namespace RoadDemo
                 if (!canSee) { _windowTimers[man] = 0f; continue; }
 
                 _windowTimers.TryGetValue(man, out float timer);
-                timer -= dt;
-                if (timer > 0f) { _windowTimers[man] = timer; continue; }
-                _windowTimers[man] = man.Ballistics.Interval;
-                Resolve(man, mark, man.MuzzlePosition, car.Position, CrewArms.MuzzleOf(man.Weapon) ?? car.Tf);
+                var due = GunCadence.Advance(ref timer, dt, man.Ballistics.Interval);
+                _windowTimers[man] = timer;
+                for (int i = 0; i < due.Count; i++)
+                    QueueRound(man, mark, man.MuzzlePosition, car.Position,
+                        CrewArms.MuzzleOf(man.Weapon) ?? car.Tf, due.At(i));
             }
         }
 

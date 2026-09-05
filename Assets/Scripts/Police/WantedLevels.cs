@@ -9,11 +9,12 @@ namespace LivingCity.Police
     /// for, and the looking is per MAN and never per outfit: there is no wanted level
     /// on a family, because a family cannot be recognised walking down a street.
     ///
-    /// Three grades and one cure. He ran from an arrest (1); he came out of the back of
+    /// While he remains at large, hidden time is the cure. He ran from an arrest (1); he came out of the back of
     /// a wrecked transfer (2); he killed a policeman (3). The cure is hidden time -
     /// three clear days for the first, a week for the second, and NOTHING for the
     /// third. No disguises, no bribe that buys it off, no lawyer: a cop-killer in this
-    /// city dies, does his life, or lives in a room for the rest of the campaign.
+    /// city dies, faces the court, or lives in a room for the rest of the campaign.
+    /// Being taken ends the pursuit; it never closes the charges against him.
     ///
     /// Every day is an absolute campaign day (Character.HidingSince), never a counter,
     /// so a long soak and a save cannot drift it.
@@ -76,6 +77,23 @@ namespace LivingCity.Police
             // reason every other call here takes one - so a caller cannot mark a man
             // without knowing what day it is.)
             _ = today;
+            man.HidingSince = 0;
+        }
+
+        /// <summary>The deed behind a recognition when no earlier docket survives.</summary>
+        public static Deed Charge(int level) => level switch
+        {
+            CopKiller => Deed.CopKilling,
+            ShotAtOfficer => Deed.AssaultOnOfficer,
+            _ => Deed.Resisting,
+        };
+
+        /// <summary>The pursuit ends in custody. Charges and escape history remain
+        /// on the pipeline; bail or a court release must not revive this old chase.</summary>
+        public static void TakenIn(Character man)
+        {
+            if (man == null) return;
+            man.WantedLevel = 0;
             man.HidingSince = 0;
         }
 

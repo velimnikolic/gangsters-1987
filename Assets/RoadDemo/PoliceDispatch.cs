@@ -363,7 +363,9 @@ namespace RoadDemo
             // and the radio call that is not an escalation but a different kind of day
             // (GAN-220): every car in the city, and a hunt that outlives the shooting
             if (!StreetAlarm.LastOfficerDeathWasDefensiveReturn)
-                RaiseSwarm(where, SwarmGrade.OfficerDown);
+                RaiseSwarm(where, SwarmGrade.OfficerDown,
+                    StreetAlarm.LastDeathAttacker != null && _crews != null
+                        ? _crews.UnitOf(StreetAlarm.LastDeathAttacker) : null);
             // and the precinct is a man short until the department fills the hole
             // (GAN-226). Through here rather than through a second listener: StreetAlarm
             // is the one channel for a death, and this is already listening to it.
@@ -773,6 +775,7 @@ namespace RoadDemo
             public float RouteRetryAt;
             public int Incident;
             public bool PlayerNews;
+            public bool SwarmResponse;
         }
 
         bool IsPlayerNews(Squad squad) => squad != null &&
@@ -784,6 +787,15 @@ namespace RoadDemo
             switch (squad.State)
             {
                 case SquadState.Sent:
+                    // TickFoot leaves owned responses to this state machine. A pair
+                    // that cannot reach the scene must therefore be released here;
+                    // waiting only on OnScene otherwise owns it forever.
+                    if (ride is PoliceBeat stalled && stalled.StalledOnTheWay &&
+                        !FootHeldByLawWork(ride))
+                    {
+                        Done(squad);
+                        return;
+                    }
                     if (!ride.OnScene) return;
                     squad.ArrivedAt = Time.time;
                     if (_lights.TryGetValue(ride, out var lights)) lights.Set(true, siren: false);
@@ -1057,6 +1069,7 @@ namespace RoadDemo
                 }
             }
             if (target == null) return false;
+            if (bestHunted) squad.SwarmResponse = true;
             NoteLawWatchedIt(squad);
             // A squad shot at before it was sent already holds the shooter as a fight
             // that CAME to it, and a man in one of those waits behind cover for the
@@ -1310,7 +1323,8 @@ namespace RoadDemo
 
         public Transform Tf => Car.Tf;
         public Vector3 Position => Car.Position;
-        public bool Available => !_sent && Men != null && !Men.Wiped;
+        internal bool CustodyReserved { get; set; }
+        public bool Available => !CustodyReserved && !_sent && Men != null && !Men.Wiped;
         public bool Carries => true;
         public int Precinct { get; set; }
         public bool OnScene => _sent && !Car.Moving && Flat(Car.Position - _target).sqrMagnitude < 8f * 8f;

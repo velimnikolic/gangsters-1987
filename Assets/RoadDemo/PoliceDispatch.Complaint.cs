@@ -601,6 +601,12 @@ namespace RoadDemo
         /// </summary>
         void AtTheDoor(CallOut call)
         {
+            // Another officer's question must not turn this officer's reachable
+            // suspect into an empty doorstep. Retry once the shared collar is free;
+            // the active collar has its own timeout and the suspect may walk away.
+            if (_collar != Collar.None && call.AtTheDoorstep &&
+                AccusedNear(call.Call.Pos, call.Call.Faction) != null)
+                return;
             if (TryComplaintCollar(call))
             {
                 // The EPIC 17 window has the CREW from here; the call keeps the UNIT,

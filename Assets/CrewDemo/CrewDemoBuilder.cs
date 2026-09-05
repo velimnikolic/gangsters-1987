@@ -989,7 +989,8 @@ namespace CrewDemo
                 foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
                 foreach (var animator in go.GetComponentsInChildren<Animator>()) animator.runtimeAnimatorController = null;
                 var agent = new CivilianAgent { Speed = Random.Range(1.25f, 1.85f) };
-                agent.Init(go.transform, CrewKit.ForCrowd(crowd, variety), link, Random.value * link.Length * 0.9f);
+                if (!agent.Init(go.transform, CrewKit.ForCrowd(crowd, variety), link, Random.value * link.Length * 0.9f))
+                { Destroy(go); continue; }
                 agent.Setup(null); // no doors, no benches on this street: they walk, chat, and run
                 _walkers.Add(agent);
             }

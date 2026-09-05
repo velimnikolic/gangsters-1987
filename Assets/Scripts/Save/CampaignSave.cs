@@ -110,7 +110,7 @@ namespace LivingCity.Save
         /// LOAD. The city is generated from a seed, so the honest way to put a saved one
         /// back is to build it again from that seed and restore the books over it - the
         /// same restart the user does by hand. The file waits in Pending while the scene
-        /// comes up; the territory runtime applies it on its first business tick, by
+        /// comes up; the territory runtime applies it before its first update, by
         /// which time the businesses are populated and the racket is running.
         ///
         /// Answers the refusal, or empty.

@@ -1,0 +1,20 @@
+var clock = UnityEngine.Object.FindAnyObjectByType<LivingCity.Ambient.CityClock>();
+var crews = UnityEngine.Object.FindAnyObjectByType<RoadDemo.DemoCrews>();
+var runtime = RoadDemo.TerritoryRuntime.Instance;
+if (clock == null || crews == null || runtime == null) return false;
+// The default starting pause lets the renderer finish before this player run
+// starts. The game clock stays at its starting time while the bindings load.
+clock.Paused = true;
+UnityEditor.EditorApplication.QueuePlayerLoopUpdate();
+var boss = crews.Units.FirstOrDefault(u => u.Faction == 0 && u.All().Any(m => m.CharacterId == 0));
+if (boss == null) return false;
+var targets = LivingCity.Business.CityBusinesses.All.Where(b => runtime.IsRacketable(b.Id) &&
+    LivingCity.Gameplay.DoorHolder.Read(b.Id) != LivingCity.Outfit.DoorTenure.Ours)
+    .OrderBy(b => runtime.TryGetBusinessApproach(b.Id, out var at) ? (at-boss.Position).sqrMagnitude : float.MaxValue)
+    .Take(3).ToArray();
+if (targets.Length < 3) return false;
+runtime.TryGetBusinessApproach(targets[0].Id, out var target);
+var rig = UnityEngine.Object.FindAnyObjectByType<RoadDemo.DemoCamera>();
+rig.PanBy(new UnityEngine.Vector2(target.x-rig.pivot.x,target.z-rig.pivot.z));
+return targets.All(b => LivingCity.Business.BusinessViewBindings.TryGet(b.Id,out var marker) &&
+    marker != null && marker.gameObject.activeInHierarchy && marker.GetComponentsInChildren<UnityEngine.Renderer>(true).Length > 0);

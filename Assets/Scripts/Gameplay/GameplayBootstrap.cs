@@ -1,6 +1,7 @@
 using UnityEngine;
 using LivingCity.Entities;
 using LivingCity.Generation;
+using UnityEngine.SceneManagement;
 
 namespace LivingCity.Gameplay
 {
@@ -19,6 +20,17 @@ namespace LivingCity.Gameplay
     /// </summary>
     public static class GameplayBootstrap
     {
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void Install()
+        {
+            // Runtime initialization runs once per Play, not after a save reloads
+            // the scene. Reinstall the scene-owned directors on every scene load.
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            SceneManager.sceneLoaded += OnSceneLoaded;
+        }
+
+        static void OnSceneLoaded(Scene scene, LoadSceneMode mode) => EnsureGameplay();
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureGameplay()
         {

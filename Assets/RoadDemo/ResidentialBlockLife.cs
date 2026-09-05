@@ -87,6 +87,12 @@ namespace RoadDemo
         // scene data, not transient runtime caches: without serialization the figures
         // survive but every route disappears on the next domain reload.
         [SerializeField] List<Actor> _actors = new List<Actor>(12);
+
+        internal void AppendActorRoots(HashSet<Transform> roots)
+        {
+            foreach (var actor in _actors)
+                if (actor.Root != null) roots.Add(actor.Root.transform);
+        }
         [SerializeField] Shelter[] _shelters = Array.Empty<Shelter>();
         [SerializeField] AnimationClip _idle;
         [SerializeField] AnimationClip _walk;

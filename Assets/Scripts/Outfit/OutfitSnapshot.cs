@@ -316,7 +316,7 @@ namespace LivingCity.Outfit
                 flats = SnapshotFlats(),
                 diplomacy = Snapshot(underworld.Diplomacy),
             };
-            for (var g = 0; g < underworld.Count; g++)
+            for (var g = 0; g < underworld.Dealt; g++)
                 dto.houses[g] = Snapshot(underworld.Of(g));
             return dto;
         }
@@ -326,11 +326,14 @@ namespace LivingCity.Outfit
             if (underworld == null || dto?.houses == null)
                 return;
 
+            var restored = new System.Collections.Generic.HashSet<int>();
             for (var i = 0; i < dto.houses.Length; i++)
             {
-                // A city that holds fewer families than the catalogue names writes an
-                // empty slot for every house it never dealt.
-                if (dto.houses[i] == null)
+                // Older small-city files wrote null entries for undealt houses.
+                // JsonUtility expands those to empty objects with gangId = 0.
+                // Keep the first record for each house so those placeholders cannot
+                // erase the player's actual roster and safe later in the array.
+                if (dto.houses[i] == null || !restored.Add(dto.houses[i].gangId))
                     continue;
                 var house = underworld.Of(dto.houses[i].gangId);
                 if (house != null)

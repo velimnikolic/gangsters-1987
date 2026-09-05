@@ -1639,9 +1639,9 @@ namespace LivingCity.UI
             y += Head(card, x, y, width,
                 "WHO STANDS HERE · " + blockCardHands.Count +
                 (blockCardHands.Count == 1 ? " MAN · " : " MEN · ") +
-                (carrying == 0 ? "NO COLLECTOR"
-                    : carrying == 1 ? "1 COLLECTOR"
-                    : carrying + " COLLECTORS"));
+                (carrying == 0 ? "NO COLLECTOR ON SITE"
+                    : carrying == 1 ? "1 COLLECTOR ON SITE"
+                    : carrying + " COLLECTORS ON SITE"));
 
             if (blockCardHands.Count == 0)
             {

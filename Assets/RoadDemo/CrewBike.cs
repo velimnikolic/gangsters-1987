@@ -945,12 +945,14 @@ namespace RoadDemo
 
         void Shoot(CrewWalker man, CrewWalker mark, ref float timer, float dt)
         {
-            timer -= dt;
-            if (timer > 0f) return;
-            timer = man.Ballistics.Interval * PillionRate;
-            ShotsFired++;
-            if (Arena != null) Arena.FireFrom(man, mark);
-            else StreetAlarm.Report(Position, null, 0, man.Ballistics.Loudness);
+            var due = GunCadence.Advance(ref timer, dt, man.Ballistics.Interval * PillionRate);
+            for (int i = 0; i < due.Count; i++)
+            {
+                if (man.Dead || man.Surrendered || man.Panicked || mark == null || mark.Dead) break;
+                ShotsFired++;
+                if (Arena != null) Arena.FireFrom(man, mark, at: due.At(i));
+                else StreetAlarm.Report(Position, null, 0, man.Ballistics.Loudness);
+            }
         }
 
         public string StatusLine => Down

@@ -349,8 +349,9 @@ namespace LivingCity.Police
             policeFiredAtCrew && crewWasFightingNonPolice;
 
         public static bool CrewMayAnswerAttacker(
-            bool attackerIsPolice, bool policeOpenedFireThisIncident) =>
-            !attackerIsPolice || policeOpenedFireThisIncident;
+            bool attackerIsPolice, bool policeOpenedFireThisIncident,
+            bool crewFoughtPoliceThisIncident = false) =>
+            !attackerIsPolice || policeOpenedFireThisIncident || crewFoughtPoliceThisIncident;
 
         public static bool ShotAtPoliceStartsSwarm(
             bool targetIsPolice, bool defensiveReturn) =>

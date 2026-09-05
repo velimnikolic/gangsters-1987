@@ -91,6 +91,7 @@ namespace RoadDemo
             /// so a drive that started at the car rather than at the prisoner would have
             /// teleported him out of the cells (GAN-237).</summary>
             public Vector3 Pickup;
+            public Vector3? OriginDoor;
 
             /// <summary>He is actually in the back. Until then the escort can be killed
             /// but nobody walks out of it - he was never in the car.</summary>
@@ -115,6 +116,8 @@ namespace RoadDemo
 
             public readonly List<Prisoner> Riders = new List<Prisoner>();
             public float By;          // the backstop: a drive that never arrives
+            public Vector3 DrivingAnchor;
+            public float DrivingHardBy;
             public float HardBy;      // absolute ceiling: retries never extend this state
             public string WasCalled;  // the car's own name, put back when it docks
         }
@@ -279,6 +282,9 @@ namespace RoadDemo
             // from the paper stage would let Sync delete him halfway through that exit.
             return _custodyKeepAlive.Contains(characterId);
         }
+
+        internal bool KeepsUnbookedBody(int characterId) =>
+            _dispatch != null && _dispatch.KeepsUnbookedBody(characterId);
 
         public bool TryCustodyPosition(int characterId, out Vector3 at)
         {
@@ -672,7 +678,7 @@ namespace RoadDemo
                     continue;
                 }
 
-                var convoy = Riding(precinct, car, prisoner.Leg);
+                var convoy = Riding(precinct, car, prisoner);
                 convoy.Riders.Add(prisoner);
                 prisoner.Carriage = CarriageStage.Calling;
                 PinCustody(prisoner.CharacterId,
@@ -718,7 +724,10 @@ namespace RoadDemo
                 if (!CustodyPlan.TracksStage(prisoner.Stage)) continue;
                 KeepCustodyAlive(prisoner.CharacterId);
 
-                var body = crews?.BodyOf(prisoner.CharacterId);
+                var source = prisoner.Stage == PrisonStage.Sentenced && HasCourthouse
+                    ? CourthouseDoor
+                    : Station != null ? Station.Door : Vector3.zero;
+                var body = crews?.RestoreCustodyBody(prisoner.GangId, prisoner.CharacterId, source);
                 if (body == null || body.Tf == null) continue;
                 var unit = crews.UnitOf(body);
                 if (unit != null)
@@ -729,15 +738,13 @@ namespace RoadDemo
                 }
                 body.Disarm();
                 body.Surrendered = true;
-                var source = prisoner.Stage == PrisonStage.Sentenced && HasCourthouse
-                    ? CourthouseDoor
-                    : Station != null ? Station.Door : body.Tf.position;
                 DoorBeat.RestoreInside(body, source);
             }
         }
 
-        Convoy Riding(Precinct precinct, PolicePatrolCar car, PrisonLeg leg)
+        Convoy Riding(Precinct precinct, PolicePatrolCar car, Prisoner prisoner)
         {
+            var leg = prisoner.Leg;
             for (var i = 0; i < _convoys.Count; i++)
                 if (_convoys[i].Car == car && _convoys[i].Leg == leg && !_convoys[i].Loaded)
                     return _convoys[i];
@@ -757,6 +764,15 @@ namespace RoadDemo
             var pickup = leg == PrisonLeg.Prison && HasCourthouse
                 ? CourthouseKerb
                 : precinct.Door;
+            var source = leg == PrisonLeg.Prison && HasCourthouse
+                ? CourthouseDoor : precinct.Door;
+            var body = DemoCrews.Active?.BodyOf(prisoner.CharacterId);
+            if (body?.Tf != null)
+            {
+                source = PrisonerDoor(body, source);
+                pickup = HasCourthouse && FlatDistance(source, CourthouseDoor) < 2f
+                    ? CourthouseKerb : source;
+            }
 
             var convoy = new Convoy
             {
@@ -765,6 +781,7 @@ namespace RoadDemo
                 Leg = leg,
                 To = to,
                 Pickup = pickup,
+                OriginDoor = source,
                 By = Time.time + TransferPatience,
                 WasCalled = car.Tf != null ? car.Tf.name : "",
             };
@@ -809,9 +826,7 @@ namespace RoadDemo
             }
             convoy.Carriage = new PrisonerCarriage(rider.CharacterId, body, escort,
                 convoy.Car, crews, _dispatch?.CarriageSitLoop);
-            var sourceDoor = convoy.Leg == PrisonLeg.Prison && HasCourthouse
-                ? CourthouseDoor : convoy.From.Door;
-            convoy.Carriage.BeginWalkingOut(sourceDoor);
+            convoy.Carriage.BeginWalkingOut(SourceDoor(convoy));
             rider.Carriage = CarriageStage.WalkingOut;
             convoy.By = Time.time + TransferPatience;
             CrewOverlay.Announce("THE PRISONER IS WALKING TO THE CAR", 5f,
@@ -841,7 +856,7 @@ namespace RoadDemo
         {
             MarkPrisonerSeated(convoy);
             SetCarriageStage(convoy, CarriageStage.Riding);
-            convoy.By = Time.time + TransferPatience;
+            BeginDrivingDeadline(convoy, Time.time);
             convoy.Car.RouteTo(convoy.To, 0f);
             // Prime the sampled map route on the RouteTo edge. If gunfire halts the car
             // before the player next opens TurfMap, RoadCar can still retain this last
@@ -861,12 +876,34 @@ namespace RoadDemo
                 5f, new Color(0.55f, 0.78f, 1f));
         }
 
-        /// <summary>Seconds a routine collection/drive is given before it is put back
-        /// on tomorrow's list. A deliberate roadblock or a short escorted walk owns an
-        /// explicit state and never falls through this backstop.</summary>
+        /// <summary>Allowance for pickup/boarding, or for a drive without net progress,
+        /// before retrying tomorrow. Deliberate roadblocks and escorted walks own
+        /// explicit states and never fall through this routine backstop.</summary>
         const float TransferPatience = 300f;
+        const float TransferDriveCeiling = 1800f;
         const float RoadblockReadAhead = 65f;
         const float EscortQuiet = 20f;
+
+        static void BeginDrivingDeadline(Convoy convoy, float now)
+        {
+            convoy.DrivingAnchor = convoy.Car.Position;
+            convoy.By = now + TransferPatience;
+            convoy.DrivingHardBy = now + TransferDriveCeiling;
+        }
+
+        static bool DrivingWithinDeadline(Convoy convoy, float now)
+        {
+            if (now > convoy.By || now > convoy.DrivingHardBy) return false;
+            // A moving carrier must not return its seated prisoner to the cells just
+            // because traffic made the trip longer than five minutes. Require net
+            // movement, and retain an absolute ceiling for a route that never ends.
+            if ((convoy.Car.Position - convoy.DrivingAnchor).sqrMagnitude >= 4f)
+            {
+                convoy.DrivingAnchor = convoy.Car.Position;
+                convoy.By = now + TransferPatience;
+            }
+            return true;
+        }
 
         void TickConvoys()
         {
@@ -993,7 +1030,7 @@ namespace RoadDemo
                             }
                             break;
                         }
-                        if (Time.time <= convoy.By) break;
+                        if (DrivingWithinDeadline(convoy, Time.time)) break;
                         ReturnToSource(convoy);
                         CleanupConvoy(convoy, releaseCar: true);
                         _convoys.RemoveAt(i);
@@ -1055,7 +1092,7 @@ namespace RoadDemo
             }
 
             convoy.Blocked = false;
-            convoy.By = Time.time + TransferPatience;
+            BeginDrivingDeadline(convoy, Time.time);
             convoy.Blockade = null;
             convoy.BlockedRoad = null;
             convoy.BlockedHeading = 0;
@@ -1114,7 +1151,7 @@ namespace RoadDemo
                                 if (man != null && man.CarMark == car)
                                     man.Disengage();
 
-                LawWire.TransferHalted(Roster()?.Find(
+                LawWire.TransferHalted(RosterOf(FirstRider(active))?.Find(
                     FirstRider(active)?.CharacterId ?? -1));
                 CrewOverlay.Announce("THE TRANSFER IS UNDER FIRE", 6f,
                     new Color(1f, 0.55f, 0.45f));
@@ -1356,8 +1393,8 @@ namespace RoadDemo
 
         bool CompleteCountyCourt(Convoy convoy)
         {
-            var roster = Roster();
             var rider = FirstRider(convoy);
+            var roster = RosterOf(rider);
             if (roster == null || rider == null || convoy.Carriage == null) return false;
             convoy.Carriage.DeliverOffMap(convoy.To);
             var file = rider.CaseId >= 0 ? Pipeline.FindCase(rider.CaseId) : null;
@@ -1381,8 +1418,8 @@ namespace RoadDemo
 
         bool CompleteCourtThreshold(Convoy convoy)
         {
-            var roster = Roster();
             var rider = FirstRider(convoy);
+            var roster = RosterOf(rider);
             if (roster == null || rider == null || convoy.Carriage == null) return false;
             var man = roster.Find(rider.CharacterId);
             var file = rider.CaseId >= 0 ? Pipeline.FindCase(rider.CaseId) : null;
@@ -1493,7 +1530,7 @@ namespace RoadDemo
                 ? convoy.Carriage.Prisoner.Tf.position
                 : convoy.Car != null ? convoy.Car.Position : convoy.Pickup;
             convoy.Carriage?.Restore(at);
-            if (Pipeline.Freed(Roster(), rider, Today()) == null) return false;
+            if (Pipeline.Freed(RosterOf(rider), rider, Today()) == null) return false;
             ReleaseCustodyTracking(rider.CharacterId, at, relocate: false);
             rider.Carriage = null;
             TouchPersonnel();
@@ -1514,7 +1551,7 @@ namespace RoadDemo
                 ? body.Tf.position
                 : convoy.Car != null ? convoy.Car.Position : convoy.Pickup;
             convoy.Carriage?.Restore(at);
-            if (!Pipeline.Sprung(Roster(), rider.CharacterId, Today())) return false;
+            if (!Pipeline.Sprung(RosterOf(rider), rider.CharacterId, Today())) return false;
             ReleaseCustodyTracking(rider.CharacterId, at, relocate: false);
             rider.Carriage = null;
             convoy.Carriage?.MarkDelivered();
@@ -1552,13 +1589,13 @@ namespace RoadDemo
                     crews.Sic(convoy.Attacker, convoy.Carriage?.Escort);
                 }
             }
-            var killed = Pipeline.Killed(Roster(), rider.CharacterId, Today());
+            var killed = Pipeline.Killed(RosterOf(rider), rider.CharacterId, Today());
             ReleaseCustodyTracking(rider.CharacterId, at, relocate: false);
             rider.Carriage = CarriageStage.Delivered;
             convoy.Carriage?.MarkDelivered();
             if (killed != null)
             {
-                LawWire.Killed(Roster()?.Find(rider.CharacterId));
+                LawWire.Killed(RosterOf(rider)?.Find(rider.CharacterId));
                 TouchPersonnel();
                 CrewOverlay.Announce("THE PRISONER IS DEAD IN THE CAR", 6f,
                     new Color(1f, 0.45f, 0.4f));
@@ -1600,8 +1637,14 @@ namespace RoadDemo
         }
 
         Vector3 SourceDoor(Convoy convoy) =>
-            convoy.Leg == PrisonLeg.Prison && HasCourthouse
-                ? CourthouseDoor : convoy.From.Door;
+            convoy.OriginDoor ?? (convoy.Leg == PrisonLeg.Prison && HasCourthouse
+                ? CourthouseDoor : convoy.From.Door);
+
+        static Vector3 PrisonerDoor(CrewWalker body, Vector3 fallback)
+        {
+            if (body?.Tf == null) return fallback;
+            return DoorBeat.TryGetOutside(body, out var outside) ? outside : body.Tf.position;
+        }
 
         static Prisoner FirstRider(Convoy convoy) =>
             convoy != null && convoy.Riders.Count > 0 ? convoy.Riders[0] : null;
@@ -1795,6 +1838,22 @@ namespace RoadDemo
             CaseStatus status, bool banner = true)
         {
             if (prisoner == null) return;
+            if (prisoner.Stage == PrisonStage.Sentenced)
+            {
+                // Bail released the original custody pin. A conviction at the
+                // daily hearing must reclaim the same body before roster Sync
+                // removes inactive men, or tomorrow's van has nobody to collect.
+                KeepCustodyAlive(prisoner.CharacterId);
+                var body = DemoCrews.Active?.BodyOf(prisoner.CharacterId);
+                if (body != null && !body.Dead)
+                {
+                    body.Disengage();
+                    body.Disarm();
+                    body.Surrendered = true;
+                    if (!DoorBeat.Active(body) && !body.Riding && body.Tf != null)
+                        body.OrderAcross(body.Tf.position);
+                }
+            }
             var man = roster != null ? roster.Find(prisoner.CharacterId) : null;
             var file = prisoner.CaseId >= 0 ? Pipeline.FindCase(prisoner.CaseId) : null;
             LawWire.Verdict(man, prisoner.Stage, status, prisoner, file);

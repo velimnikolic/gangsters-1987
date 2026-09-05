@@ -25,6 +25,9 @@ namespace RoadDemo
     /// </summary>
     public static class WalkRoute
     {
+        static readonly Unity.Profiling.ProfilerMarker planMarker = new Unity.Profiling.ProfilerMarker("WalkRoute.Plan");
+        static readonly HashSet<(Vector3 from, Vector3 to, bool keepOffRoad)> failedPlans = new();
+        static int failedPlansVersion = -1;
         /// <summary>The free-ground footprint shared by route construction and the
         /// crew feet that traverse it. Ordinary pavement walkers retain their wider
         /// shoulder berth in <see cref="WalkObstacles.Radius"/>.</summary>
@@ -95,6 +98,8 @@ namespace RoadDemo
             _closedAt = _goalAt = null; _goalExit = null;
             _w = _h = 0; _builtAt = -1; _cacheAt = 0; _visit = 0;
             _open.Clear();
+            failedPlans.Clear();
+            failedPlansVersion = -1;
         }
 
         /// <summary>Squares the lattice holds, once it is built - for the lab.</summary>
@@ -356,10 +361,32 @@ namespace RoadDemo
 
         /// <summary>The corners of a way from here to there, into
         /// <paramref name="into"/> (cleared first), ending at
-        /// <paramref name="to"/>. False when there is no way at all - then the caller
-        /// walks straight at it and lets the steering do what it can.</summary>
+        /// <paramref name="to"/>. False when no proved route is available.</summary>
         public static bool Plan(Vector3 from, Vector3 to, List<Vector3> into,
             bool keepOffRoad = false)
+        {
+            using var profile = planMarker.Auto();
+            if (failedPlansVersion != WalkObstacles.Version)
+            {
+                failedPlans.Clear();
+                failedPlansVersion = WalkObstacles.Version;
+            }
+            var key = (from, to, keepOffRoad);
+            if (failedPlans.Contains(key)) { into.Clear(); return false; }
+            bool found = PlanUncached(from, to, into, keepOffRoad);
+            // Cohesion can request the same unreachable formation slot every scan.
+            // Only fixed geometry participates in this search, so the answer stays
+            // valid until that geometry changes or either exact endpoint moves.
+            if (!found)
+            {
+                if (failedPlans.Count >= 128) failedPlans.Clear();
+                failedPlans.Add(key);
+            }
+            return found;
+        }
+
+        static bool PlanUncached(Vector3 from, Vector3 to, List<Vector3> into,
+            bool keepOffRoad)
         {
             into.Clear();
             // Clear ground is by far the common order and needs no city-sized address
@@ -383,6 +410,7 @@ namespace RoadDemo
             if (Walkable(from, to) && (!keepOffRoad || AlongRun(from, to) <= AlongLimit))
             { into.Add(to); return true; }
 
+            if (!CouldConnect(_startAnchors, _goalAnchors)) return false;
             if (!Search(_startAnchors, _goalAnchors, to, keepOffRoad,
                         out int a, out int b)) return false;
 
@@ -409,6 +437,44 @@ namespace RoadDemo
         }
 
         static readonly List<Vector3> _crumbs = new List<Vector3>();
+
+        static readonly HashSet<int> _connectionStarts = new HashSet<int>();
+        static readonly HashSet<int> _connectionSeen = new HashSet<int>();
+        static readonly Queue<int> _connectionOpen = new Queue<int>();
+
+        static bool CouldConnect(List<EndpointAnchor> starts, List<EndpointAnchor> goals)
+        {
+            // A* from the open city toward a sealed courtyard searches the whole
+            // city. First inspect a bounded region from the destination: exhausting
+            // that component proves failure even when the exact endpoints drift.
+            // Reaching the bound is inconclusive and leaves ordinary A* unchanged.
+            _connectionStarts.Clear();
+            _connectionSeen.Clear();
+            _connectionOpen.Clear();
+            foreach (var anchor in starts) _connectionStarts.Add(anchor.Square);
+            foreach (var anchor in goals)
+                if (_connectionSeen.Add(anchor.Square)) _connectionOpen.Enqueue(anchor.Square);
+            int explored = 0;
+            while (_connectionOpen.Count != 0)
+            {
+                int cur = _connectionOpen.Dequeue();
+                if (_connectionStarts.Contains(cur) || ++explored > 256) return true;
+                int cx = cur % _w, cz = cur / _w;
+                for (int d = 0; d < 8; d++)
+                {
+                    int x = cx + _dx[d], z = cz + _dz[d];
+                    if (x < 0 || z < 0 || x >= _w || z >= _h) continue;
+                    int next = z * _w + x;
+                    if (_connectionSeen.Contains(next) || !Free(next)) continue;
+                    bool pass = d < 4 ? Passable(cx, cz, _dx[d], _dz[d])
+                        : Walkable(Middle(cur), Middle(next));
+                    if (!pass) continue;
+                    _connectionSeen.Add(next);
+                    _connectionOpen.Enqueue(next);
+                }
+            }
+            return false;
+        }
 
         /// <summary>Is there a way from this square one step that way? The passage is
         /// kept on the western/southern square of each pair, so a step the other way

@@ -1,0 +1,1588 @@
+// Evaluated by player_trials.py inside the open editor. All actions use production
+// player command seams; reflection only observes police state or dismisses the paper.
+var kind = __KIND__;
+var attempt = __ATTEMPT__;
+var folder = __FOLDER__;
+System.IO.Directory.CreateDirectory(folder);
+var continueAfterTrafficFailure = System.IO.File.Exists(folder + "/continue-traffic.flag");
+var trafficFailures = new System.Collections.Generic.HashSet<int>();
+var p = LivingCity.Gameplay.PersonnelDirector.Instance;
+var crews = UnityEngine.Object.FindAnyObjectByType<RoadDemo.DemoCrews>();
+var rt = RoadDemo.TerritoryRuntime.Instance;
+var dispatch = UnityEngine.Object.FindAnyObjectByType<RoadDemo.PoliceDispatch>();
+var clock = UnityEngine.Object.FindAnyObjectByType<LivingCity.Ambient.CityClock>();
+var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+var legal = kind == "court" || kind == "bail" || kind == "bail_skip" || kind == "bail_refusal";
+var policeScenario = legal || kind == "arrest" || kind == "flee" || kind == "fight" || kind == "fight_win";
+var collecting = kind == "collection" || kind == "collection_auto";
+var heldCollection = kind == "collection_held" || kind == "collection_held_auto" || kind == "collection_held_backup";
+if (p == null || crews == null || rt == null || clock == null || dispatch == null)
+    throw new System.Exception("The scene is not ready for a player trial.");
+void Log(string text) => System.IO.File.AppendAllText(folder + "/actions.txt", $"{UnityEngine.Time.time:F2} {text}\n");
+object Read(string field) => dispatch.GetType().GetField(field, flags).GetValue(dispatch);
+var resuming = System.IO.File.Exists(folder + "/resume.flag");
+if (!resuming) for (int i = 0; i < 5; i++)
+{
+    var hired = p.RecruitHood(out var id);
+    Log($"recruit {id}: {hired.Ok} {hired.Reason}");
+    if (!hired.Ok) throw new System.Exception("Recruitment refused: " + hired.Reason);
+}
+var leader = kind == "fight" || kind == "fight_win" ? 1 : 4;
+if (!resuming && (legal || kind == "arrest" || kind == "flee")) leader = new[] { 4, 3, 1 }[(attempt - 1) % 3];
+// Revisit the lieutenant from the observed bail failure first, then vary the crew.
+if (!resuming && (kind == "bail" || kind == "bail_skip")) leader = new[] { 3, 1, 4 }[(attempt - 1) % 3];
+var resumeConfig = System.IO.File.Exists(folder + "/resume-config.json")
+    ? Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(folder + "/resume-config.json")) : null;
+if (resuming && resumeConfig != null) leader = (int)resumeConfig["leader"];
+Log("recruited traits " + string.Join("; ", p.Roster.Members.Where(m => m.Id > 0)
+    .Select(m => $"{m.Id}: courage {m.Courage}, temper {m.Temper}, discipline {m.Discipline}, loyalty {m.Loyalty}")));
+var crewId = resuming ? p.Roster.CrewOf(leader)?.Id ?? 1 : -1;
+if (resuming && p.Roster.Find(leader) == null)
+    throw new System.Exception("Loaded campaign is missing the trial lieutenant.");
+if (resumeConfig != null && !heldCollection && kind != "court" && (p.Roster.Find(leader).Status != LivingCity.Personnel.CharacterStatus.Active ||
+    RoadDemo.LawDesk.Held(leader) != null))
+    throw new System.Exception("Loaded bail repetitions require an active lieutenant before his new arrest.");
+if (heldCollection && (!resuming ||
+    p.Roster.Find(leader)?.Status != LivingCity.Personnel.CharacterStatus.Jailed || RoadDemo.LawDesk.Held(leader) == null))
+    throw new System.Exception("Collector with held leader requires a real saved booking.");
+if (kind == "court" && resumeConfig != null &&
+    (p.Roster.Find(leader)?.Status != LivingCity.Personnel.CharacterStatus.Jailed ||
+     RoadDemo.LawDesk.Held(leader)?.Stage != LivingCity.Police.PrisonStage.Held))
+    throw new System.Exception("Loaded court repetitions require a real booking before either physical transfer.");
+var promotion = resuming ? LivingCity.Personnel.OpResult.Success : p.Promote(leader, out crewId);
+if (!promotion.Ok) throw new System.Exception("Promotion refused: " + promotion.Reason);
+Log(resuming ? $"resume lieutenant {leader}, crew {crewId}" : $"promote {leader}, crew {crewId}");
+if (!resuming) foreach (var id in new[] { 2, leader == 3 ? 4 : 3, 5 })
+{
+    var assigned = p.AssignToCrew(id, crewId);
+    if (!assigned.Ok) throw new System.Exception("Assignment refused: " + assigned.Reason);
+}
+var named = resuming ? LivingCity.Personnel.OpResult.Success : p.NameCollector(crewId, 5);
+var posted = resuming ? LivingCity.Personnel.OpResult.Success : p.PostEscort(crewId, 2);
+if (!resuming) Log($"collector 5 {named.Ok}; escort 2 {posted.Ok}");
+var pendingEquipment = new System.Collections.Generic.List<int>();
+if (kind == "fight_win")
+{
+    p.PullEscort(2); p.TakeOffTheBag(5); p.AssignToCrew(4, crewId);
+    var weapon = LivingCity.Outfit.ArmoryCatalog.Weapons.First(w => w.Kind == LivingCity.Personnel.EquipmentKind.TommyGun);
+    for (int i = 0; i < 5; i++)
+    {
+        var bought = LivingCity.Gameplay.OutfitDirector.Instance.Purchase(weapon.Price, weapon.DisplayName);
+        if (!bought.Ok) throw new System.Exception("Weapon purchase refused: " + bought.Reason);
+        var item = p.AddEquipment(weapon.Kind, weapon.DisplayName, weapon.Price);
+        pendingEquipment.Add(item.Id);
+        Log("bought " + weapon.DisplayName + "; awaiting physical crew before assignment");
+    }
+}
+if (kind == "car")
+{
+    var vehicle = LivingCity.Outfit.ArmoryCatalog.Vehicles.First(w => w.DisplayName == "Sedan");
+    var bought = LivingCity.Gameplay.OutfitDirector.Instance.Purchase(vehicle.Price, vehicle.DisplayName);
+    if (!bought.Ok) throw new System.Exception("Car purchase refused: " + bought.Reason);
+    var item = p.AddEquipment(vehicle.Kind, vehicle.DisplayName, vehicle.Price);
+    pendingEquipment.Add(item.Id);
+    Log("bought sedan; awaiting physical crew before assignment");
+}
+if (kind == "grenade")
+{
+    var charge = LivingCity.Outfit.ArmoryCatalog.Explosives.First(w => w.Kind == LivingCity.Personnel.EquipmentKind.Grenade);
+    var bought = LivingCity.Gameplay.OutfitDirector.Instance.Purchase(charge.Price, charge.DisplayName);
+    if (!bought.Ok) throw new System.Exception("Grenade purchase refused: " + bought.Reason);
+    var item = p.AddEquipment(charge.Kind, charge.DisplayName, charge.Price);
+    pendingEquipment.Add(item.Id);
+    Log("bought one grenade; awaiting assignment to physical lieutenant");
+}
+var started = UnityEngine.Time.time;
+var deadline = started + (collecting ? 14000f : 1800f);
+if (legal) deadline = started + 40000f;
+if (heldCollection) deadline = started + 40000f;
+if (kind == "collection_auto") deadline = started + 40000f;
+if (kind == "streaming") deadline = started + 14000f;
+if (kind == "block_round_view") deadline = started + 14000f;
+var blockViewHomeSent = false;
+LivingCity.Police.Prisoner held = null;
+LivingCity.Police.CourtCase docket = null;
+var legalStep = 0;
+var bailPrepared = false;
+var preparingBail = false;
+var legalState = "";
+var releaseBecameActiveAt = -1f;
+var sawCourtRide = false;
+var sawPrisonRide = false;
+var courtPaperPending = false;
+var prisonPaperPending = false;
+if (resuming && System.IO.File.Exists(folder + "/previous-observations.json"))
+{
+    var observed = Newtonsoft.Json.Linq.JObject.Parse(System.IO.File.ReadAllText(folder + "/previous-observations.json"));
+    if ((int?)observed["characterId"] == leader)
+        sawPrisonRide = (bool?)observed["prisonRide"] == true;
+}
+var policeObserved = "";
+var aiHours = new System.Collections.Generic.Dictionary<int, double>();
+var parkingModes = new System.Collections.Generic.Dictionary<RoadDemo.ParkingCar, RoadDemo.ParkingCar.Mode>();
+var parkingCycles = new System.Collections.Generic.Dictionary<RoadDemo.ParkingCar, int>();
+var parkingMoved = new System.Collections.Generic.Dictionary<RoadDemo.ParkingCar, (UnityEngine.Vector3 position, float time)>();
+var next = started;
+if (!resuming && policeScenario) next += ((attempt - 1) % 5) * 12f;
+var pendingAt = 0f;
+var lastSample = -10f;
+var pending = default(LivingCity.Territory.TerritoryBusinessId);
+var beforeDemands = 0;
+var attempts = 0;
+var answered = 0;
+var waiting = false;
+var calledAt = -10000f;
+var challengeAt = -1f;
+var escapeAt = -1f;
+var escapeFrom = UnityEngine.Vector3.zero;
+var banked = 0;
+var safeBefore = 0;
+var collectionSent = false;
+var retryCollectionDay = -1;
+// After observing missed payments immediately after this saved arrest, vary the
+// player's first visit across later trading days, without predicting payment rolls.
+var heldFirstVisitDay = (int)(rt.GameHour / 24d) + 2 + (attempt - 1) % 2;
+var blockAssigned = false;
+var collectionBlocks = new System.Collections.Generic.HashSet<string>();
+var collectionAccounts = LivingCity.Gameplay.OutfitDirector.Instance.Accounts;
+int LedgerCash() => collectionAccounts.Sheets.Sum(s => s.LegalIncome + s.IllegalIncome + s.JobIncome +
+    s.SalesIncome - s.Bribes - s.Purchases - s.OtherCosts - s.WagesPaid - s.TaxPaid);
+var initialCash = collectionAccounts.Safe;
+var initialLedgerCash = LedgerCash();
+var initialIllegal = collectionAccounts.Sheets.Sum(s => s.IllegalIncome);
+var requestedCollectionBanked = false;
+var backupLeader = -1;
+var backupCrew = -1;
+var backupDemandDay = -1;
+var backupAnswered = 0;
+var backupRestoredBusiness = default(LivingCity.Territory.TerritoryBusinessId);
+var attributionFailure = "";
+var deedsBeforeShot = new System.Collections.Generic.Dictionary<RoadDemo.DemoCrews.Unit, LivingCity.Personnel.Deed>();
+var grenadeThrownAt = -1f;
+var grenadeExplodedAt = -1f;
+var grenadeTarget = UnityEngine.Vector3.zero;
+RoadDemo.BombProjectile thrownGrenade = null;
+var physicallyPaid = false;
+var done = false;
+var bossSheltered = false;
+var lastPolice = "";
+var blockedSince = new System.Collections.Generic.Dictionary<int, float>();
+var missingCustodySince = new System.Collections.Generic.Dictionary<int, float>();
+var trafficProgress = new System.Collections.Generic.Dictionary<RoadDemo.RoadCar, (UnityEngine.Vector3 position, float time)>();
+var roleStep = 0;
+var promotedCrew = -1;
+var newRecruit = -1;
+var recruitedBodySeen = false;
+var streamIndex = 0;
+var streamAt = -1f;
+var renderedTargets = new System.Collections.Generic.List<LivingCity.Territory.TerritoryBusinessId>();
+var renderedReady = false;
+var streamVisited = new System.Collections.Generic.HashSet<string>();
+var moveDestination = UnityEngine.Vector3.zero;
+var moveSent = false;
+RoadDemo.DemoCrews.Unit challengedBy = null;
+var defeatAt = -1f;
+var victoryAt = -1f;
+var hidAfterFight = false;
+var answeredFightAt = -1f;
+var escapedDistance = false;
+var everSwarmed = false;
+var bankedAtHeadquarters = true;
+RoadDemo.CrewCar playerCar = null;
+var carStart = UnityEngine.Vector3.zero;
+var visited = new System.Collections.Generic.HashSet<string>();
+RoadDemo.RacketProbe probe = null;
+RoadDemo.DemoCrews.Unit unit = null;
+UnityEditor.EditorApplication.CallbackFunction tick = null;
+UnityEngine.Application.LogCallback runtimeLog = (message, stack, type) =>
+{
+    if (type == UnityEngine.LogType.Error || type == UnityEngine.LogType.Exception || type == UnityEngine.LogType.Assert)
+        System.IO.File.AppendAllText(folder + "/runtime-errors.jsonl", Newtonsoft.Json.JsonConvert.SerializeObject(
+            new { t = UnityEngine.Time.time, segment = resuming ? 1 : 0, type = type.ToString(), message, stack }) + "\n");
+};
+System.Action<RoadDemo.StreetAlarm.Complaint> complaint = c =>
+{
+    if (c.Faction != 0) return;
+    calledAt = UnityEngine.Time.time;
+    Log($"complaint {c.Number} {c.Where} {c.Charge}");
+};
+System.Action<RoadDemo.StreetAlarm.Shot> shotObserved = shot =>
+{
+    deedsBeforeShot.Clear();
+    foreach (var hunted in ((System.Collections.IEnumerable)Read("_hunted")).Cast<RoadDemo.DemoCrews.Unit>())
+        if (hunted != null) deedsBeforeShot[hunted] = hunted.ArrestDeed;
+    if (kind == "grenade" && grenadeThrownAt >= 0 && shot.Faction == 0 && shot.Loudness >= 130f &&
+        UnityEngine.Vector3.Distance(shot.Pos, grenadeTarget) < 2f)
+    { grenadeExplodedAt = UnityEngine.Time.time; Log("thrown grenade exploded at its ordered point"); }
+    var shooter = shot.Shooter;
+    if (shooter == null) return;
+    System.IO.File.AppendAllText(folder + "/shots.jsonl", Newtonsoft.Json.JsonConvert.SerializeObject(new {
+        t = shot.Time, frame = UnityEngine.Time.frameCount, dt = UnityEngine.Time.deltaTime,
+        shot.Faction, shooter.CharacterId, weapon = shooter.WeaponKind.ToString(), shooter.Ballistics.Interval,
+        target = shooter.Target?.CharacterId, health = shooter.Target?.Health
+    }) + "\n");
+};
+System.Action<UnityEngine.Vector3, RoadDemo.StreetAlarm.DeathOf, int> deathObserved = (at, deathKind, victimFaction) =>
+{
+    var attacker = RoadDemo.StreetAlarm.LastDeathAttacker;
+    var responsible = attacker != null ? crews.UnitOf(attacker) : null;
+    var hunted = ((System.Collections.IEnumerable)Read("_hunted")).Cast<RoadDemo.DemoCrews.Unit>().ToArray();
+    if (deathKind == RoadDemo.StreetAlarm.DeathOf.Officer && responsible != null && !responsible.IsPolice &&
+        !responsible.Wiped && !RoadDemo.StreetAlarm.LastOfficerDeathWasDefensiveReturn)
+    {
+        if (!hunted.Contains(responsible) || responsible.ArrestDeed != LivingCity.Personnel.Deed.CopKilling)
+            attributionFailure = "A known officer killer was omitted from the hunt or its own charge.";
+        foreach (var other in hunted)
+            if (other != responsible && deedsBeforeShot.TryGetValue(other, out var previous) &&
+                previous != LivingCity.Personnel.Deed.CopKilling && other.ArrestDeed == LivingCity.Personnel.Deed.CopKilling)
+                attributionFailure = "Officer death was copied onto unrelated crew " + other.CrewId;
+    }
+    System.IO.File.AppendAllText(folder + "/deaths.jsonl", Newtonsoft.Json.JsonConvert.SerializeObject(new {
+        t = UnityEngine.Time.time, kind = deathKind.ToString(), victimFaction, at = at.ToString(),
+        attacker = attacker?.CharacterId, responsible = responsible?.CrewId,
+        defensive = RoadDemo.StreetAlarm.LastOfficerDeathWasDefensiveReturn,
+        suspects = hunted.Select(u => new {u.Faction, u.CrewId, u.IsDetachment, deed = u.ArrestDeed.ToString(),
+            before = deedsBeforeShot.TryGetValue(u, out var old) ? old.ToString() : null,
+            caseId = u.ArrestCase?.CaseId, caseDeed = u.ArrestCase?.Deed.ToString()}).ToArray(),
+        attributionFailure
+    }) + "\n");
+};
+System.Action<LivingCity.Territory.TerritoryRound> ended = r =>
+{
+    if (r.House.Value != 0)
+        System.IO.File.AppendAllText(folder + "/ai-rounds.jsonl", Newtonsoft.Json.JsonConvert.SerializeObject(new {
+            t = UnityEngine.Time.time, hour = rt.GameHour, house = r.House.Value, r.CrewId,
+            block = r.BlockId.Value, kind = r.Kind.ToString(), stage = r.Stage.ToString(),
+            origin = r.Origin.ToString(), r.Carried, r.Missed, r.StopIndex
+        }) + "\n");
+    if (r.House.Value != 0 || r.CrewId != crewId) return;
+    Log($"round ended {r.Stage}, origin {r.Origin}, carried {r.Carried}, missed {r.Missed}");
+    if (r.Stage == LivingCity.Territory.TerritoryRoundStage.Banked)
+    {
+        banked += r.Carried;
+        if (r.Carried > 0)
+        {
+            var carrier = crews.BagUnitOf(crewId)?.All().FirstOrDefault(m => m.CharacterId == r.CollectorId);
+            var home = RoadDemo.DemoCrews.FrontOf(0);
+            var distance = carrier?.Tf != null && home != null
+                ? UnityEngine.Vector3.Distance(carrier.Tf.position, home.Outside) : float.PositiveInfinity;
+            bankedAtHeadquarters &= distance <= 3f;
+            Log("banked with carrier " + distance + " metres from headquarters approach");
+        }
+        if (r.Carried > 0 && r.Origin == (kind == "collection_auto" || kind == "collection_held_auto"
+                ? LivingCity.Territory.TerritoryRoundOrigin.Schedule : LivingCity.Territory.TerritoryRoundOrigin.Player))
+            requestedCollectionBanked = true;
+    }
+    if (r.Carried == 0)
+    {
+        collectionSent = false;
+        retryCollectionDay = (int)(rt.GameHour / 24d) + 1;
+        next = UnityEngine.Time.time + 10f;
+        Log("empty collection; retry after a new trading day rather than repeat the same owner's answer");
+    }
+};
+System.Action<LivingCity.Territory.TerritoryRound, LivingCity.Territory.TerritoryRoundStop,
+    LivingCity.Territory.TerritoryStopSettlement> settled = (r, stop, payment) =>
+{
+    if (r.House.Value != 0)
+        System.IO.File.AppendAllText(folder + "/ai-payments.jsonl", Newtonsoft.Json.JsonConvert.SerializeObject(new {
+            t = UnityEngine.Time.time, hour = rt.GameHour, house = r.House.Value, r.CrewId,
+            block = r.BlockId.Value, business = stop.BusinessId.Value,
+            payment.Paid, payment.Owed, outcome = payment.Outcome.ToString(),
+            excuse = payment.Excuse.ToString(), payment.Lapsed
+        }) + "\n");
+    if (r.House.Value == 0 && r.CrewId == crewId)
+    {
+        Log($"counter {stop.BusinessId}: paid {payment.Paid}/{payment.Owed}, {payment.Outcome}, excuse {payment.Excuse}, lapsed {payment.Lapsed}");
+        var carrier = crews.BagUnitOf(crewId)?.All().FirstOrDefault(m => m.CharacterId == r.CollectorId);
+        if (payment.Paid > 0 && carrier?.Tf != null && RoadDemo.DoorBeat.PhaseOf(carrier) == RoadDemo.DoorBeat.VisitPhase.Inside) physicallyPaid = true;
+    }
+};
+var walkPrevious = new System.Collections.Generic.Dictionary<RoadDemo.PedestrianAgent, UnityEngine.Vector3>();
+var walkFlagged = new System.Collections.Generic.HashSet<RoadDemo.PedestrianAgent>();
+var lastWalkTime = -1f;
+var lastWalkVersion = RoadDemo.WalkObstacles.Version;
+var junctionPrevious = new System.Collections.Generic.Dictionary<RoadDemo.RoadCar, string>();
+var junctionOverline = new System.Collections.Generic.HashSet<RoadDemo.RoadCar>();
+var committedField = typeof(RoadDemo.RoadCar).GetField("_committed", flags);
+UnityEngine.LowLevel.PlayerLoopSystem.UpdateFunction walkLoop = null;
+void RemoveWalkLoop()
+{
+    var loop = UnityEngine.LowLevel.PlayerLoop.GetCurrentPlayerLoop();
+    loop.subSystemList = loop.subSystemList.Where(system => system.updateDelegate != walkLoop).ToArray();
+    UnityEngine.LowLevel.PlayerLoop.SetPlayerLoop(loop);
+}
+var walkSamples = 0;
+var checkedWalkSegments = 0;
+var walkWrites = new System.Collections.Generic.Dictionary<RoadDemo.PedestrianAgent,
+    System.Collections.Generic.List<(int frame, int geometry, UnityEngine.Vector3 from, UnityEngine.Vector3 to, string source)>>();
+var walkWriteFlagged = new System.Collections.Generic.HashSet<RoadDemo.PedestrianAgent>();
+var embeddedFlagged = new System.Collections.Generic.HashSet<RoadDemo.PedestrianAgent>();
+var hiddenCommandSince = new System.Collections.Generic.Dictionary<RoadDemo.CrewWalker, float>();
+var bodyPrevious = new System.Collections.Generic.Dictionary<RoadDemo.PedestrianAgent,
+    (UnityEngine.Vector3 position, bool visible, string door, int geometry)>();
+System.Action<RoadDemo.PedestrianAgent, UnityEngine.Vector3, UnityEngine.Vector3, string> observeWrite = null;
+observeWrite = (walker, from, to, source) =>
+{
+    try
+    {
+        if (done || walker.Tf == null || !walker.Tf.gameObject.activeInHierarchy) return;
+        var frame = UnityEngine.Time.frameCount;
+        if (!walkWrites.TryGetValue(walker, out var writes))
+            walkWrites[walker] = writes = new System.Collections.Generic.List<(int, int, UnityEngine.Vector3, UnityEngine.Vector3, string)>();
+        if (writes.Count > 0 && writes[0].frame != frame) writes.Clear();
+        if (writes.Count < 12) writes.Add((frame, RoadDemo.WalkObstacles.Version, from, to, source));
+        // InitAt calls Move(0) to place a fresh body; this is not a travelled segment.
+        if (!walkPrevious.ContainsKey(walker) || source == "InitAt" ||
+            walkWriteFlagged.Contains(walker) || (to - from).sqrMagnitude <= .01f) return;
+        var man = walker as RoadDemo.CrewWalker;
+        if (man != null && (man.Dead || man.Riding ||
+            (bool)typeof(RoadDemo.CrewWalker).GetProperty("Crossing", flags).GetValue(man))) return;
+        if (walker is RoadDemo.CivilianAgent civilian && (civilian.Dead || civilian.State != RoadDemo.CivilianAgent.Mode.Walking)) return;
+        var radius = RoadDemo.WalkRoute.ClearanceRadius;
+        if (RoadDemo.WalkObstacles.Standing(from, radius) ||
+            (!RoadDemo.WalkObstacles.Standing(to, radius) && !RoadDemo.WalkObstacles.BlocksStanding(from, to, radius))) return;
+        walkWriteFlagged.Add(walker);
+        System.IO.File.AppendAllText(folder + "/walker-write-crossings.jsonl", Newtonsoft.Json.JsonConvert.SerializeObject(new {
+            t = UnityEngine.Time.time, frame, source, geometry = RoadDemo.WalkObstacles.Version,
+            kind = walker.GetType().Name, id = man?.CharacterId ?? 0, from = from.ToString(), to = to.ToString(),
+            state = man?.State.ToString(), door = man == null ? null : RoadDemo.DoorBeat.PhaseOf(man).ToString()
+        }) + "\n");
+    }
+    catch (System.Exception error) { Finish("FAIL", "Individual walk-write observer failed: " + error); }
+};
+RoadDemo.PedestrianAgent.WalkStepObserved += observeWrite;
+void ObserveWalks(float now)
+{
+    if (now == lastWalkTime) return;
+    lastWalkTime = now;
+    walkSamples++;
+    var walkers = crews.Units.SelectMany(u => u.All()).Cast<RoadDemo.PedestrianAgent>()
+        .Concat(RoadDemo.CivilianAgent.All).Distinct();
+    foreach (var walker in walkers)
+    {
+        bool visible = walker.Tf != null && walker.Tf.gameObject.activeInHierarchy;
+        bool walking = walker is RoadDemo.CrewWalker crewWalker
+            ? !crewWalker.Dead && !crewWalker.Riding && !RoadDemo.DoorBeat.Active(crewWalker)
+            : walker is RoadDemo.CivilianAgent civilian && !civilian.Dead && civilian.State == RoadDemo.CivilianAgent.Mode.Walking;
+        if (walker.Tf != null)
+        {
+            var at = walker.Tf.position;
+            var man = walker as RoadDemo.CrewWalker;
+            var door = man == null ? null : RoadDemo.DoorBeat.PhaseOf(man).ToString();
+            bool hadPrevious = bodyPrevious.TryGetValue(walker, out var previous);
+            if (visible && walking && RoadDemo.WalkObstacles.Standing(at, .1f) && embeddedFlagged.Add(walker))
+                System.IO.File.AppendAllText(folder + "/embedded-walkers.jsonl", Newtonsoft.Json.JsonConvert.SerializeObject(new {
+                    t = now, frame = UnityEngine.Time.frameCount, id = man?.CharacterId ?? 0,
+                    kind = walker.GetType().Name, at = at.ToString(), door, geometry = RoadDemo.WalkObstacles.Version,
+                    hadPrevious, previous = new { at = previous.position.ToString(), previous.visible, previous.door, previous.geometry },
+                    writes = walkWrites.TryGetValue(walker, out var journal) ? journal.Select(w => new {
+                        w.frame, w.geometry, w.source, from = w.from.ToString(), to = w.to.ToString() }).ToArray() : null
+                }) + "\n");
+            bodyPrevious[walker] = (at, visible, door, RoadDemo.WalkObstacles.Version);
+        }
+        if (!visible || !walking) { walkPrevious.Remove(walker); continue; }
+        var position = walker.Tf.position;
+        if (walkPrevious.TryGetValue(walker, out var from) && (position - from).sqrMagnitude > 0.01f &&
+            !RoadDemo.WalkObstacles.Standing(from, RoadDemo.WalkRoute.ClearanceRadius) &&
+            !RoadDemo.WalkObstacles.Standing(position, RoadDemo.WalkRoute.ClearanceRadius))
+        {
+            checkedWalkSegments++;
+            if (!walkFlagged.Contains(walker) && RoadDemo.WalkObstacles.BlocksStanding(from, position, RoadDemo.WalkRoute.ClearanceRadius))
+            {
+                walkFlagged.Add(walker);
+                var nearby = new System.Collections.Generic.List<RoadDemo.SidewalkPlan.Box>();
+                RoadDemo.WalkObstacles.PropsNear((from + position) * .5f, (position - from).magnitude + 1f, nearby);
+                var touched = nearby.Where(box => {
+                    var shape = new RoadDemo.SidewalkPlan(); shape.Take(box);
+                    return shape.Obstructs(new UnityEngine.Vector2(from.x, from.z), new UnityEngine.Vector2(position.x, position.z), RoadDemo.WalkRoute.ClearanceRadius);
+                }).Select(box => new { box.SourceName, centre = box.C.ToString(), half = box.H.ToString(), ax = box.Ax.ToString(), az = box.Az.ToString() }).ToArray();
+                var crewMan = walker as RoadDemo.CrewWalker;
+                System.IO.File.AppendAllText(folder + "/walker-crossings.jsonl", Newtonsoft.Json.JsonConvert.SerializeObject(new {
+                    t = now, kind = walker.GetType().Name, id = walker is RoadDemo.CrewWalker man ? man.CharacterId : 0,
+                    from = from.ToString(), to = position.ToString(), distance = (position - from).magnitude,
+                    frame = UnityEngine.Time.frameCount, dt = UnityEngine.Time.deltaTime, touched,
+                    geometryVersion = RoadDemo.WalkObstacles.Version, previousGeometryVersion = lastWalkVersion,
+                    writes = walkWrites.TryGetValue(walker, out var recent) ? recent.Select(w => new {
+                        w.frame, w.geometry, w.source, from = w.from.ToString(), to = w.to.ToString() }).ToArray() : null,
+                    state = crewMan?.State.ToString(), crossing = crewMan != null && (bool)typeof(RoadDemo.CrewWalker).GetProperty("Crossing", flags).GetValue(crewMan),
+                    goal = crewMan?.OrderDestination.ToString(),
+                    legs = crewMan == null ? null : ((System.Collections.Generic.List<UnityEngine.Vector3>)typeof(RoadDemo.CrewWalker).GetField("_legs", flags).GetValue(crewMan)).Select(at => at.ToString()).ToArray()
+                }) + "\n");
+            }
+        }
+        walkPrevious[walker] = position;
+    }
+    lastWalkVersion = RoadDemo.WalkObstacles.Version;
+}
+void Finish(string status, string reason)
+{
+    if (done) return;
+    done = true;
+    if (status == "PASS" && trafficFailures.Count > 0) status = "FLOW_PASS_TRAFFIC_FAIL";
+    Log(status + ": " + reason);
+    clock.Paused = true;
+    RemoveWalkLoop();
+    RoadDemo.PedestrianAgent.WalkStepObserved -= observeWrite;
+    UnityEditor.EditorApplication.update -= tick;
+    UnityEngine.Application.logMessageReceived -= runtimeLog;
+    RoadDemo.StreetAlarm.OnComplaint -= complaint;
+    RoadDemo.StreetAlarm.OnShot -= shotObserved;
+    RoadDemo.StreetAlarm.OnDeath -= deathObserved;
+    rt.Rounds.Ended -= ended;
+    rt.Rounds.Settled -= settled;
+    if (probe != null) probe.enabled = false;
+    System.IO.File.WriteAllText(folder + "/result.json", Newtonsoft.Json.JsonConvert.SerializeObject(
+        new { kind, attempt, status, reason, resuming, trafficFailures = trafficFailures.ToArray(), seconds = UnityEngine.Time.time - started, answered, banked, walkSamples, checkedWalkSegments, obstacleCrossingsForReview = walkFlagged.Count, actualWriteCrossingsForReview = walkWriteFlagged.Count }));
+}
+RoadDemo.StreetAlarm.OnComplaint += complaint;
+RoadDemo.StreetAlarm.OnShot += shotObserved;
+RoadDemo.StreetAlarm.OnDeath += deathObserved;
+UnityEngine.Application.logMessageReceived += runtimeLog;
+rt.Rounds.Ended += ended;
+rt.Rounds.Settled += settled;
+tick = () =>
+{
+    if (!UnityEditor.EditorApplication.isPlaying) { RemoveWalkLoop(); UnityEditor.EditorApplication.update -= tick; return; }
+    UnityEditor.EditorApplication.QueuePlayerLoopUpdate();
+    try
+    {
+        var now = UnityEngine.Time.time;
+        if (!bossSheltered)
+        {
+            var bossUnit = crews.Units.FirstOrDefault(u => u.Faction == 0 && u.All().Any(m => m.CharacterId == 0));
+            var home = LivingCity.Business.CityBusinesses.All.First(b => LivingCity.Gameplay.DoorHolder.Read(b.Id) == LivingCity.Outfit.DoorTenure.Ours);
+            if (bossUnit != null) bossSheltered = RoadDemo.CrewQuarters.Station(crews, bossUnit, home.Id);
+        }
+        var observed = Read("_arrestCrew") as RoadDemo.DemoCrews.Unit;
+        var observedKey = Read("_collar") + " " + Read("_answer") + " " +
+            (observed == null ? "none" : $"faction {observed.Faction} crew {observed.CrewId} detachment {observed.IsDetachment} boss {observed.Boss?.CharacterId}");
+        if (policeObserved != observedKey) { Log("police " + observedKey); policeObserved = observedKey; }
+        everSwarmed |= dispatch.Swarming;
+        if (LivingCity.UI.NewspaperHud.IsOpen)
+        {
+            var paper = UnityEngine.Object.FindAnyObjectByType<LivingCity.UI.NewspaperHud>();
+            paper.GetType().GetMethod("Close", flags).Invoke(paper, null);
+            clock.Paused = false;
+        }
+        if (clock.Paused && !LivingCity.UI.PersonnelAlmanac.IsOpen &&
+            !LivingCity.Gameplay.OutfitDirector.Instance.Runner.Fallen)
+            clock.Paused = false;
+        unit = crews.Units.FirstOrDefault(u => u.Faction == 0 && u.CrewId == crewId && !u.IsDetachment) ?? unit;
+        if (!string.IsNullOrEmpty(attributionFailure)) { Finish("FAIL", attributionFailure); return; }
+        if (now > deadline)
+        {
+            Finish(kind == "block_round_view" ? "NOT_EXERCISED" : "FAIL",
+                kind == "block_round_view" ? "No paid physical rival round appeared within the observation window." : "The live flow exceeded its deadline.");
+            return;
+        }
+        if (pendingEquipment.Count > 0)
+        {
+            if (unit == null || !p.EquipmentAccessFor(leader).Located)
+            {
+                if (now - started > 30f) Finish("FAIL", "New crew did not become locatable for armory assignment.");
+                return;
+            }
+            foreach (int equipment in pendingEquipment)
+            {
+                var given = p.GiveEquipment(equipment, leader);
+                if (!given.Ok) { Finish("FAIL", "Armory assignment refused: " + given.Reason); return; }
+                Log("assigned equipment " + equipment + " to physical crew " + crewId);
+            }
+            pendingEquipment.Clear();
+            return;
+        }
+        if (now - lastSample >= 2f)
+        {
+            lastSample = now;
+            foreach (var car in RoadDemo.RoadCar.All)
+            {
+                var previousJunctionState = junctionPrevious.TryGetValue(car, out var oldJunction) ? oldJunction : null;
+                junctionPrevious[car] = car.Describe();
+                var road = car.Road;
+                var node = road?.NodeAhead(car.Heading);
+                if (node != null && car.Via == null && !car.Parked && !car.Halted &&
+                    !car.Wrecked && !car.Derelict && !((bool)committedField.GetValue(car)))
+                {
+                    var noseDistance = (road.EndS(car.Heading) - car.S) * car.Heading - car.HalfLen;
+                    if (noseDistance < node.StopSetback - .5f && System.Math.Abs(car.Speed) < .5f && junctionOverline.Add(car))
+                        System.IO.File.AppendAllText(folder + "/junction-overline.jsonl", Newtonsoft.Json.JsonConvert.SerializeObject(new {
+                            t = now, car.Id, previous = previousJunctionState, state = car.Describe(), noseDistance, node.StopSetback,
+                            node.X, node.Z, node.XMin, node.XMax, node.ZMin, node.ZMax,
+                            cars = RoadDemo.RoadCar.All.Where(other => (other.Position - car.Position).sqrMagnitude < 30f * 30f)
+                                .Select(other => new { other.Id, type = other.GetType().Name, pos = other.Position.ToString(),
+                                    forward = other.RoadForward.ToString(), other.Speed, other.HalfLen, other.HalfWide,
+                                    other.Parked, other.Halted, other.HasGoal, state = other.Describe() })
+                        }) + "\n");
+                }
+                if (!car.OnRoad || car.Parked || car.Halted || car.Wrecked || car.Derelict || car is RoadDemo.PolicePatrolCar)
+                { trafficProgress.Remove(car); continue; }
+                if (!trafficProgress.TryGetValue(car, out var oldProgress) ||
+                    (car.Position - oldProgress.position).sqrMagnitude > 1f)
+                    trafficProgress[car] = (car.Position, now);
+                else if (now - oldProgress.time > 600f && trafficFailures.Add(car.Id))
+                {
+                    var trafficReason = "Ordinary traffic made no net progress for 600 simulated seconds: car " + car.Id + " " + car.Describe();
+                    Log("TRAFFIC FAIL: " + trafficReason);
+                    System.IO.File.WriteAllText(folder + "/traffic-stall-" + car.Id + ".json", Newtonsoft.Json.JsonConvert.SerializeObject(
+                        RoadDemo.RoadCar.All.Where(other => (other.Position - car.Position).sqrMagnitude < 100f * 100f)
+                            .Select(other => new { other.Id, type = other.GetType().Name, pos = other.Position.ToString(),
+                                other.Speed, other.Parked, other.Halted, other.Wrecked, other.HasGoal, state = other.Describe() })));
+                    if (!continueAfterTrafficFailure) { Finish("FAIL", trafficReason); return; }
+                }
+            }
+            var parking = RoadDemo.StreetTraffic.Users.OfType<RoadDemo.ParkingCar>().Select(car => {
+                if (parkingModes.TryGetValue(car, out var old) && old != car.State && car.State == RoadDemo.ParkingCar.Mode.Parked)
+                    parkingCycles[car] = parkingCycles.GetValueOrDefault(car) + 1;
+                parkingModes[car] = car.State;
+                if (!parkingMoved.TryGetValue(car, out var moved) || (car.Position - moved.position).sqrMagnitude > 1f)
+                    parkingMoved[car] = (car.Position, now);
+                return new { car.Id, state = car.State.ToString(), pos = car.Position.ToString(), car.Speed,
+                    car.HasGoal, car.Halted, car.Derelict, still = now - parkingMoved[car].time,
+                    cycles = parkingCycles.GetValueOrDefault(car) };
+            }).ToArray();
+            var footApproach = Read("_arrestOfficer") as RoadDemo.PoliceBeat;
+            var sample = new { t = now, hour = rt.GameHour, segment = resuming ? 1 : 0, collar = Read("_collar").ToString(),
+                arrestApproach = footApproach == null ? null : new {
+                    deadline = Read("_collarBy"), footApproach.StoodOver,
+                    members = footApproach.Unit?.All().Select(m => new {
+                        m.CharacterId, m.Dead, m.HasOrder, m.RoutedLegStalled, m.Riding,
+                        pos = m.Tf?.position.ToString(), goal = m.OrderDestination.ToString(),
+                        phase = RoadDemo.DoorBeat.PhaseOf(m).ToString()
+                    }).ToArray()
+                },
+                parking,
+                suspect = observed == null ? null : new { observed.CrewId, observed.Faction, observed.IsDetachment,
+                    observed.OrderedAt, pos = observed.Position.ToString() },
+                suspectCharacter = (Read("_arrestCollar") as RoadDemo.CrewWalker)?.CharacterId,
+                legal = RoadDemo.LawDesk.Pipeline.Inside.Select(x => {
+                    var body = crews.BodyOf(x.CharacterId);
+                    return new { x.CharacterId, x.GangId, stage = x.Stage.ToString(), leg = x.Leg.ToString(),
+                        x.CourtDay, x.PrisonDay, x.CaseId, x.BailPaid, x.SentenceDays, x.OutOnDay, x.TransferFails,
+                        tracked = RoadDemo.PoliceForce.Instance.KeepsCustodyAlive(x.CharacterId),
+                        bodyExists = body?.Tf != null, bodyDead = body?.Dead,
+                        bodyActive = body?.Tf != null && body.Tf.gameObject.activeInHierarchy,
+                        bodyPos = body?.Tf != null ? body.Tf.position.ToString() : null,
+                        bodyPhase = body != null ? RoadDemo.DoorBeat.PhaseOf(body).ToString() : null };
+                }).ToArray(),
+                verdicts = RoadDemo.LawDesk.Pipeline.Cases.SelectMany(c => c.Verdicts.Select(v => new {c.CaseId, c.GangId, v.CharacterId, outcome = v.Outcome.ToString(), v.Days, v.OutOnDay, v.Day})).ToArray(),
+                convoys = ((System.Collections.IEnumerable)typeof(RoadDemo.PoliceForce).GetField("_convoys", flags).GetValue(RoadDemo.PoliceForce.Instance)).Cast<object>().Select(c => {
+                    var type = c.GetType();
+                    var car = (RoadDemo.PolicePatrolCar)type.GetField("Car").GetValue(c);
+                    var carriage = (RoadDemo.PrisonerCarriage)type.GetField("Carriage").GetValue(c);
+                    var boarding = carriage == null ? null : typeof(RoadDemo.PrisonerCarriage).GetField("_prisonerBoarding", flags).GetValue(carriage) as RoadDemo.PrisonerCarriage.BoardingMan;
+                    object Walker(RoadDemo.CrewWalker man) => man?.Tf == null ? null : new {
+                        man.CharacterId, man.HasOrder, man.RoutedLegStalled, man.Surrendered, man.Dead, man.Riding,
+                        active = man.Tf.gameObject.activeInHierarchy,
+                        pos = man.Tf.position.ToString(), goal = man.OrderDestination.ToString(),
+                        phase = RoadDemo.DoorBeat.PhaseOf(man).ToString() };
+                    return new {
+                        riders = ((System.Collections.IEnumerable)type.GetField("Riders").GetValue(c)).Cast<LivingCity.Police.Prisoner>().Select(rider => rider.CharacterId).ToArray(),
+                        leg = type.GetField("Leg").GetValue(c).ToString(),
+                        loaded = (bool)type.GetField("Loaded").GetValue(c),
+                        deadline = type.GetField("By").GetValue(c),
+                        drivingCeiling = type.GetField("DrivingHardBy")?.GetValue(c),
+                        drivingAnchor = type.GetField("DrivingAnchor")?.GetValue(c)?.ToString(),
+                        stage = carriage?.Stage.ToString(), car = car?.Id,
+                        carGoal = car == null ? null : new {
+                            state = car.State.ToString(), pos = car.Position.ToString(), car.Speed,
+                            car.HasGoal, car.Parked, car.Halted,
+                            roadStart = car.Road?.A.ToString(), roadEnd = car.Road?.B.ToString(),
+                            goalRoadStart = (typeof(RoadDemo.RoadCar).GetField("_goalRoad", flags)?.GetValue(car) as RoadDemo.Carriageway)?.A.ToString(),
+                            goalRoadEnd = (typeof(RoadDemo.RoadCar).GetField("_goalRoad", flags)?.GetValue(car) as RoadDemo.Carriageway)?.B.ToString(),
+                            goalStation = typeof(RoadDemo.RoadCar).GetField("_goalS", flags)?.GetValue(car),
+                            goalHeading = typeof(RoadDemo.RoadCar).GetField("_goalHeading", flags)?.GetValue(car),
+                            parkingSeconds = typeof(RoadDemo.RoadCar).GetField("_parkTrying", flags)?.GetValue(car),
+                            responseTarget = typeof(RoadDemo.PolicePatrolCar).GetField("_scenePos", flags)?.GetValue(car)?.ToString(),
+                            claimedKerb = typeof(RoadDemo.PolicePatrolCar).GetField("_reservedKerb", flags)?.GetValue(car)?.ToString(),
+                            hasKerbClaim = typeof(RoadDemo.PolicePatrolCar).GetField("_hasReservedKerb", flags)?.GetValue(car)
+                        },
+                        pickup = type.GetField("Pickup").GetValue(c)?.ToString(),
+                        originDoor = type.GetField("OriginDoor").GetValue(c)?.ToString(),
+                        officerBoarding = carriage == null ? null :
+                            ((System.Collections.IEnumerable)typeof(RoadDemo.PrisonerCarriage).GetField("_officerBoarding", flags).GetValue(carriage))
+                            .Cast<RoadDemo.PrisonerCarriage.BoardingMan>().Select(b => new {
+                                b.Started, b.StartedAt, b.Seated, b.RetryAt, door = b.Door.ToString(),
+                                man = Walker(b.Man) }).ToArray(),
+                        boarding = boarding == null ? null : new { boarding.Started, boarding.Seated,
+                            door = boarding.Door.ToString(), escortPost = boarding.EscortPost.ToString(), boarding.RetryAt,
+                            man = Walker(boarding.Man), escort = Walker(boarding.Escort) },
+                        prisoner = carriage?.Prisoner?.Tf != null ? carriage.Prisoner.Tf.position.ToString() : null,
+                        escorts = carriage?.Escort?.All().Select(m => new {m.CharacterId,m.Dead,m.HasOrder,pos=m.Tf != null ? m.Tf.position.ToString() : null}).ToArray()
+                    };
+                }).ToArray(),
+                answer = Read("_answer").ToString(), swarm = dispatch.Swarming,
+                traffic = RoadDemo.RoadCar.All.Where(c => c.OnRoad).Select(c => new { c.Id,
+                    pos = c.Position.ToString(), c.Speed, c.Parked, c.Halted, c.Wrecked, c.Derelict,
+                    c.HasGoal, c.TrafficRecoveries, c.LastTrafficRecoveryDistance, c.LastTrafficRecoveryHidden, state = c.Describe() }).ToArray(),
+                custodies = ((System.Collections.IEnumerable)Read("_custodies")).Cast<object>().Select(x => {
+                    var type = x.GetType(); var crew = (RoadDemo.DemoCrews.Unit)type.GetField("Crew").GetValue(x);
+                    return new { crew.Faction, crew.CrewId, stage = type.GetField("Stage").GetValue(x).ToString(),
+                        prisoners = ((System.Collections.IEnumerable)type.GetField("Prisoners").GetValue(x)).Cast<object>().Select(p => {
+                            var pt = p.GetType(); var man = (RoadDemo.CrewWalker)pt.GetField("Man").GetValue(p);
+                            return new { id = pt.GetField("CharacterId").GetValue(p), booked = pt.GetField("Booked").GetValue(p),
+                                inWave = pt.GetField("InWave").GetValue(p), bodyExists = man?.Tf != null,
+                                pos = man?.Tf != null ? man.Tf.position.ToString() : null };
+                        }).ToArray(),
+                        cars = ((System.Collections.IEnumerable)type.GetField("Cars").GetValue(x)).Cast<object>()
+                            .Select(l => l.GetType().GetField("Ride").GetValue(l)).OfType<RoadDemo.RoadCar>()
+                            .Select(car => new { car.Id, pos = car.Position.ToString(), car.Speed, state = car.Describe() }).ToArray() }; }).ToArray(),
+                calls = ((System.Collections.IEnumerable)Read("_calls")).Cast<object>().Select(x => {
+                    var type = x.GetType(); var call = (RoadDemo.StreetAlarm.Complaint)type.GetField("Call").GetValue(x);
+                    var accused = type.GetField("Accused").GetValue(x) as RoadDemo.DemoCrews.Unit;
+                    return new { call.Number, call.Faction, call.Where, stage = type.GetField("Stage").GetValue(x).ToString(),
+                        accused = accused == null ? null : new { accused.CrewId, accused.IsDetachment, boss = accused.Boss?.CharacterId } }; }).ToArray(),
+                ours = crews.Units.Where(u => u.Faction == 0).Select(u => new { u.CrewId, u.IsDetachment,
+                    u.Surrendered, u.InCustody, u.Wiped, u.Fleeing, u.FledAt, u.SeenByLawAt,
+                    targetUnit = u.TargetUnit?.Boss?.CharacterId, u.PoliceFightIncident, u.PoliceAttackedIncident,
+                    incident = RoadDemo.StreetAlarm.IncidentNumber,
+                    billeted = RoadDemo.CrewQuarters.Billeted(u), inside = RoadDemo.CrewQuarters.Inside(u), pos = u.Position.ToString(),
+                    men = u.All().Select(m => new { m.CharacterId, m.Dead, m.Health, m.HasOrder, state = m.State.ToString(),
+                        m.Carrying, m.Armed, weapon = m.WeaponKind.ToString(), m.InCover, m.Panicked, m.Riding,
+                        target = m.Target?.CharacterId, attacker = m.LastAttacker?.CharacterId,
+                        active = m.Tf && m.Tf.gameObject.activeInHierarchy, held = RoadDemo.DoorBeat.Held(m),
+                        doorPhase = RoadDemo.DoorBeat.PhaseOf(m).ToString(),
+                        goal = m.OrderDestination.ToString(),
+                        pos = m.Tf ? m.Tf.position.ToString() : null }).ToArray() }).ToArray(),
+                roster = p.Roster.Members.Select(m => new { m.Id, status = m.Status.ToString(), m.WantedLevel }).ToArray(),
+                cityRoster = Enumerable.Range(0, LivingCity.Outfit.Underworld.Current.Dealt)
+                    .SelectMany(gang => LivingCity.Outfit.Underworld.Current.Of(gang).Roster.Members
+                        .Select(m => new { gang, m.Id, status = m.Status.ToString(), m.WantedLevel,
+                            m.HidingSince, m.BailedUntil })).ToArray(),
+                safe = LivingCity.Gameplay.OutfitDirector.Instance.Accounts.Safe,
+                rounds = rt.Rounds.Rounds.Where(r => r.House.Value == 0).Select(r => new { r.CrewId, r.CollectorId,
+                    stage = r.Stage.ToString(), r.Carried, r.StopIndex, r.InTheDoor }).ToArray() };
+            System.IO.File.AppendAllText(folder + "/memory.jsonl", Newtonsoft.Json.JsonConvert.SerializeObject(sample) + "\n");
+            foreach (var gang in Enumerable.Range(1, System.Math.Max(0, LivingCity.Outfit.Underworld.Current.Dealt - 1)))
+            {
+                var history = rt.ThinkHistory(gang);
+                if (history == null) continue;
+                var after = aiHours.TryGetValue(gang, out var hour) ? hour : -1;
+                foreach (var record in history.Where(r => r.Hour > after))
+                    System.IO.File.AppendAllText(folder + "/ai.jsonl", Newtonsoft.Json.JsonConvert.SerializeObject(new { t = now, gang, record }) + "\n");
+                if (history.Count > 0) aiHours[gang] = history[history.Count - 1].Hour;
+            }
+            var duplicated = sample.custodies.SelectMany(x => x.cars).GroupBy(x => x.Id).FirstOrDefault(g => g.Count() > 1);
+            if (duplicated != null) { Finish("FAIL", "Police car assigned to multiple custodies: " + duplicated.Key); return; }
+            foreach (var prisoner in sample.legal)
+            {
+                if (prisoner.CaseId < 0 || RoadDemo.LawDesk.Pipeline.FindCase(prisoner.CaseId) == null)
+                { Finish("FAIL", "City prisoner has no court case: " + prisoner.CharacterId); return; }
+                if (!prisoner.tracked || prisoner.bodyExists) missingCustodySince.Remove(prisoner.CharacterId);
+                else if (!missingCustodySince.ContainsKey(prisoner.CharacterId)) missingCustodySince[prisoner.CharacterId] = now;
+                else if (now - missingCustodySince[prisoner.CharacterId] > 5f)
+                { Finish("FAIL", "Tracked prisoner has no physical body: " + prisoner.CharacterId +
+                    " gang " + prisoner.GangId + " stage " + prisoner.stage); return; }
+                var body = crews.BodyOf(prisoner.CharacterId);
+                if (prisoner.tracked && body?.Tf != null && !body.Dead && !body.Riding &&
+                    !body.Tf.gameObject.activeInHierarchy && RoadDemo.DoorBeat.Held(body) &&
+                    RoadDemo.DoorBeat.TryGetOutside(body, out var heldDoor) &&
+                    (body.Tf.position - heldDoor).sqrMagnitude > 64f)
+                { Finish("FAIL", "Hidden prisoner drifted away from its held doorway: " + prisoner.CharacterId +
+                    " body " + body.Tf.position + " door " + heldDoor); return; }
+            }
+            foreach (var own in crews.Units.Where(u => !u.InCustody))
+                foreach (var man in own.All().Where(m => !m.Dead))
+                {
+                    if (man.Tf == null) { Finish("FAIL", "Living roster member has no body: " + man.CharacterId); return; }
+                    bool hiddenCommand = !man.Tf.gameObject.activeInHierarchy && man.HasOrder &&
+                        !man.Riding && !RoadDemo.DoorBeat.Active(man);
+                    if (!hiddenCommand) hiddenCommandSince.Remove(man);
+                    else if (!hiddenCommandSince.ContainsKey(man)) hiddenCommandSince[man] = now;
+                    else if (now - hiddenCommandSince[man] > 5f)
+                    { Finish("FAIL", "Hidden living body retained a street movement order: " + man.CharacterId); return; }
+                    bool stuck = man.Tf.gameObject.activeInHierarchy && !RoadDemo.DoorBeat.Active(man) &&
+                        !man.Riding && RoadDemo.WalkObstacles.Standing(man.Tf.position, RoadDemo.WalkRoute.ClearanceRadius);
+                    if (!stuck) blockedSince.Remove(man.CharacterId);
+                    else if (!blockedSince.ContainsKey(man.CharacterId)) blockedSince[man.CharacterId] = now;
+                    else if (now - blockedSince[man.CharacterId] > 15f)
+                    { Finish("FAIL", "Living man stuck in fixed geometry: " + man.CharacterId + " " + man.Tf.position); return; }
+                }
+        }
+        if (kind == "block_round_view")
+        {
+            if (unit == null) return;
+            if (!blockViewHomeSent)
+            {
+                var blockViewHome = LivingCity.Business.CityBusinesses.All.First(b =>
+                    LivingCity.Gameplay.DoorHolder.Read(b.Id) == LivingCity.Outfit.DoorTenure.Ours);
+                if (!RoadDemo.CrewQuarters.Station(crews, unit, blockViewHome.Id))
+                { Finish("FAIL", "Observer crew could not take up quarters at its own front."); return; }
+                blockViewHomeSent = true;
+                Log("crew goes home; observing real AI collection and the block data provider");
+                return;
+            }
+            if (!RoadDemo.CrewQuarters.Inside(unit)) return;
+            var roundBodies = ((System.Collections.IEnumerable)typeof(RoadDemo.TerritoryRuntime)
+                .GetField("bodies", flags).GetValue(rt)).Cast<object>().ToArray();
+            LivingCity.Territory.TerritoryRound BodyRound(object body) =>
+                (LivingCity.Territory.TerritoryRound)body.GetType().GetField("Round").GetValue(body);
+            foreach (var roundBody in roundBodies)
+            {
+                var rivalRound = BodyRound(roundBody);
+                if (rivalRound.Kind != LivingCity.Territory.TerritoryRoundKind.Collect ||
+                    rivalRound.House == LivingCity.Gameplay.PlayerCommands.House || rivalRound.Carried <= 0) continue;
+                var rivalCollector = roundBody.GetType().GetField("Collector").GetValue(roundBody) as RoadDemo.CrewWalker;
+                if (rivalCollector?.Tf == null || rivalCollector.Dead) continue;
+                if (roundBodies.Any(b => BodyRound(b).Kind == LivingCity.Territory.TerritoryRoundKind.Collect &&
+                    BodyRound(b).House == LivingCity.Gameplay.PlayerCommands.House && BodyRound(b).BlockId == rivalRound.BlockId)) continue;
+                if (!LivingCity.UI.BlockRacketSeam.SourceOrStub.TryGetBlock(rivalRound.BlockId, out var observedBlock))
+                { Finish("FAIL", "A real rival collection block has no block-view data."); return; }
+                bool ownFigures = !observedBlock.RoundOut && observedBlock.RoundCarried == 0 &&
+                    observedBlock.InTheBag == 0 && observedBlock.RoundCollectorName == "";
+                System.IO.File.WriteAllText(folder + "/foreign-round-view.json", Newtonsoft.Json.JsonConvert.SerializeObject(new {
+                    t = now, house = rivalRound.House.Value, rivalRound.CrewId, rivalRound.Carried,
+                    block = rivalRound.BlockId.Value, collector = rivalCollector.CharacterId,
+                    body = rivalCollector.Tf.position.ToString(), observedBlock.RoundOut,
+                    observedBlock.RoundCarried, observedBlock.InTheBag, observedBlock.RoundCollectorName,
+                    observedBlock.CollectorId, observedBlock.ResponsibleCrewId
+                }));
+                Finish(ownFigures ? "PASS" : "FAIL", "Physical rival collector carries " + rivalRound.Carried +
+                    "; player block figures exclude that rival round: " + ownFigures);
+                return;
+            }
+            return;
+        }
+        if (kind == "grenade")
+        {
+            if (unit == null || unit.Wiped) { Finish("FAIL", "Grenade crew disappeared before completing its order."); return; }
+            if (grenadeThrownAt >= 0)
+            {
+                if (grenadeExplodedAt >= 0 && now - grenadeExplodedAt > 5f)
+                {
+                    bool reconciled = thrownGrenade == null &&
+                        LivingCity.Personnel.RosterOps.GrenadesOwnedBy(p.Roster, leader) == 0 && unit.Bombs == 0;
+                    Finish(reconciled ? "PASS" : "FAIL", "Purchased grenade flew, exploded and retired; inventory spent exactly once: " + reconciled);
+                }
+                else if (now - grenadeThrownAt > 30f) Finish("FAIL", "Thrown grenade never exploded or retired at its ordered point.");
+                return;
+            }
+            if (unit.Bombs <= 0) return;
+            crews.Select(unit);
+            int charges = LivingCity.Personnel.RosterOps.GrenadesOwnedBy(p.Roster, leader);
+            if (charges != 1) { Finish("FAIL", "Purchased grenade was not assigned exactly once."); return; }
+            if (crews.OrderBombThrowAt(unit.Position) ||
+                crews.OrderBombThrowAt(unit.Position + UnityEngine.Vector3.right * (crews.BombThrowRange + 100f)) ||
+                LivingCity.Personnel.RosterOps.GrenadesOwnedBy(p.Roster, leader) != charges)
+            { Finish("FAIL", "Rejected close/range grenade orders consumed ammunition or launched a bomb."); return; }
+            bool foundTarget = false;
+            for (int direction = 0; direction < 16; direction++)
+            {
+                var candidate = unit.Position + UnityEngine.Quaternion.Euler(0, direction * 22.5f, 0) * UnityEngine.Vector3.forward * 20f;
+                if (!RoadDemo.WalkObstacles.InCity(candidate) || RoadDemo.WalkObstacles.WallAt(candidate, RoadDemo.Explosion.Radius)) continue;
+                if (crews.Units.SelectMany(u => u.All()).Any(m => m != null && !m.Dead && m.Tf != null &&
+                    UnityEngine.Vector3.Distance(m.Tf.position, candidate) < RoadDemo.Explosion.Radius + 3f)) continue;
+                if (!crews.CanBombThrow(unit, candidate)) continue;
+                grenadeTarget = candidate; foundTarget = true; break;
+            }
+            if (!foundTarget) { Finish("NOT_EXERCISED", "No unoccupied test target within the live crew's grenade range."); return; }
+            grenadeThrownAt = now;
+            if (!crews.OrderBombThrowAt(grenadeTarget)) { Finish("FAIL", "Valid grenade throw was refused: " + crews.BombRefusal); return; }
+            thrownGrenade = UnityEngine.Object.FindAnyObjectByType<RoadDemo.BombProjectile>();
+            if (thrownGrenade == null || LivingCity.Personnel.RosterOps.GrenadesOwnedBy(p.Roster, leader) != 0 || unit.Bombs != 0)
+            { Finish("FAIL", "Grenade command did not create a physical projectile and spend its inventory."); return; }
+            if (crews.OrderBombThrowAt(grenadeTarget)) { Finish("FAIL", "Lieutenant threw the same grenade twice."); return; }
+            var detail = crews.BagUnitOf(crewId);
+            crews.Select(detail);
+            if (crews.OrderBombThrowAt(grenadeTarget))
+            { Finish("FAIL", "Selecting the collector allowed a spent grenade to be launched again."); return; }
+            crews.Select(unit);
+            Log("one grenade launched; duplicate throw and collector selection did not launch another");
+            return;
+        }
+        if (heldCollection)
+        {
+            if (p.Roster.Find(leader)?.Status != LivingCity.Personnel.CharacterStatus.Jailed)
+            { Finish("NOT_EXERCISED", "Lieutenant was released before collection finished."); return; }
+            if (banked > 0 && requestedCollectionBanked)
+            {
+                var money = LivingCity.Gameplay.OutfitDirector.Instance.Accounts;
+                bool reconciled = physicallyPaid && bankedAtHeadquarters &&
+                    money.Sheets.Sum(s => s.IllegalIncome) - initialIllegal == banked &&
+                    money.Safe - initialCash == LedgerCash() - initialLedgerCash;
+                Finish(reconciled ? "PASS" : "FAIL", "Collector with jailed lieutenant banked " + banked +
+                    "; physical counter, headquarters and transaction reconciliation: " + reconciled);
+                return;
+            }
+            if (kind == "collection_held_backup")
+            {
+                var responsibilities = new System.Collections.Generic.List<LivingCity.Personnel.OrganizationBlockResponsibility>();
+                p.Organization.CollectBlockResponsibilities(leader, responsibilities);
+                var assigned = responsibilities.FirstOrDefault();
+                if (!assigned.BlockId.IsValid) { Finish("FAIL", "Jailed lieutenant lost his assigned block."); return; }
+                if (backupLeader < 0)
+                {
+                    // This real saved arrest also contains hood 3. Wait for the court's
+                    // acquittal before promoting the freed man through the player ledger.
+                    var freed = p.Roster.Find(3);
+                    if (freed?.Status != LivingCity.Personnel.CharacterStatus.Active) return;
+                    var promoted = p.Promote(freed.Id, out backupCrew);
+                    if (!promoted.Ok) { Finish("FAIL", "Freed hood promotion refused: " + promoted.Reason); return; }
+                    backupLeader = freed.Id;
+                    var policy = p.SetCrewPolicy(crewId, LivingCity.Personnel.CrewPolicy.Strict);
+                    if (!policy.Ok) { Finish("FAIL", "Changing the jailed leader's collector policy was refused: " + policy.Reason); return; }
+                    Log("original collector policy set to Strict while lieutenant remains jailed");
+                    var support = p.AssignToCrew(1, backupCrew);
+                    if (!support.Ok) { Finish("FAIL", "Backup lieutenant support assignment refused: " + support.Reason); return; }
+                    Log("promoted acquitted hood " + backupLeader + " to backup crew " + backupCrew + "; original collector and block remain with jailed lieutenant");
+                    return;
+                }
+                var backup = crews.Units.FirstOrDefault(u => u.Faction == 0 && !u.IsDetachment && u.CrewId == backupCrew);
+                var challenged = Read("_arrestCrew") as RoadDemo.DemoCrews.Unit;
+                if (challenged != null && challenged.Faction == 0 && challenged.CrewId == backupCrew) return;
+                if (waiting)
+                {
+                    var count = rt.Racket.TryGetRelationship(pending, LivingCity.Gameplay.PlayerCommands.House, out var answer) ? answer.Demands + answer.Threats : 0;
+                    if (count > beforeDemands)
+                    {
+                        waiting = false; backupAnswered++;
+                        if (answer.IsProtected) backupRestoredBusiness = pending;
+                        Log("backup lieutenant obtained owner answer " + answer.State);
+                    }
+                    else if (now - pendingAt > 180f) Finish("FAIL", "Backup lieutenant's accepted demand never reached an owner answer.");
+                    return;
+                }
+                if (rt.Rounds.RoundRunning(crewId) || collectionSent) return;
+                int today = (int)(rt.GameHour / 24d);
+                if (rt.GameHour % 24 < 9 || rt.GameHour % 24 > 17 || now < next) return;
+                var doors = LivingCity.Business.CityBusinesses.All.Where(b => b.CanonicalBlockId.Equals(assigned.BlockId)).ToArray();
+                var owing = doors.Any(b => rt.Racket.TryGetRelationship(b.Id, LivingCity.Gameplay.PlayerCommands.House, out var rel) &&
+                    rel.IsProtected && rt.Dues.OwedOf(b.Id, LivingCity.Gameplay.PlayerCommands.House) > 0);
+                if (backupAnswered > 0 && owing && today >= retryCollectionDay)
+                {
+                    var collect = rt.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(new LivingCity.Territory.CollectDuesCommand(
+                        LivingCity.Territory.TerritoryCommandNodeId.Crew(crewId), assigned.BlockId)));
+                    Log("original jailed leader's collector sent after backup enforcement " + collect.Status + " " + collect.Reason);
+                    if (!collect.WasAccepted) { Finish("FAIL", "Existing collector refused the restored block: " + collect.Reason); return; }
+                    collectionSent = true; return;
+                }
+                if (p.Roster.Find(backupLeader)?.Status != LivingCity.Personnel.CharacterStatus.Active || backup == null || backup.Wiped)
+                { Finish("NOT_EXERCISED", "The replacement enforcer became unavailable before a paid round."); return; }
+                // Once a new agreement is in place, let a trading day accrue dues.
+                // The bag continues independently; there is no need to spam other doors.
+                if (backupRestoredBusiness.IsValid && rt.Racket.TryGetRelationship(backupRestoredBusiness,
+                    LivingCity.Gameplay.PlayerCommands.House, out var restored) && restored.IsProtected) return;
+                if (backup.All().Any(m => m != null &&
+                    RoadDemo.DoorBeat.PhaseOf(m) == RoadDemo.DoorBeat.VisitPhase.Exiting)) return;
+                if (backupDemandDay != today) { visited.Clear(); backupDemandDay = today; }
+                var door = doors.Where(b => rt.IsRacketable(b.Id) && !visited.Contains(b.Id.Value) &&
+                    rt.Racket.StateOf(b.Id, LivingCity.Gameplay.PlayerCommands.House) != LivingCity.Territory.TerritoryProtectionState.Compliant &&
+                    !RoadDemo.ShopDamage.IsBusinessDamaged(b.Id)).OrderBy(b => b.Name == "Grimaldi Grocery" ? -10000f :
+                        rt.TryGetBusinessApproach(b.Id, out var at) ? UnityEngine.Vector3.Distance(at, backup.Position) : float.MaxValue).FirstOrDefault();
+                if (!door.Id.IsValid) { next = now + 10f; return; }
+                pending = door.Id; visited.Add(pending.Value);
+                beforeDemands = rt.Racket.TryGetRelationship(pending, LivingCity.Gameplay.PlayerCommands.House, out var oldRelation) ? oldRelation.Demands + oldRelation.Threats : 0;
+                var backupDemandReceipt = rt.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(new LivingCity.Territory.ApproachBusinessCommand(
+                    LivingCity.Territory.TerritoryCommandNodeId.Crew(backupCrew), pending, LivingCity.Territory.TerritoryRacketIntent.Threaten)));
+                Log("backup lieutenant threatens " + door.Name + " " + backupDemandReceipt.Status + " " + backupDemandReceipt.Reason);
+                if (!backupDemandReceipt.WasAccepted) { Finish("FAIL", "Backup lieutenant's demand refused: " + backupDemandReceipt.Reason); return; }
+                waiting = true; pendingAt = now; return;
+            }
+            if (kind == "collection_held_auto") return;
+            // A scheduled round may already be walking at opening time. A player
+            // waits for that real detail instead of treating its busy refusal as a bug.
+            if (rt.Rounds.RoundRunning(crewId)) return;
+            if (collectionSent || now < next || rt.GameHour % 24 < 9 || rt.GameHour % 24 > 17 ||
+                (int)(rt.GameHour / 24d) < System.Math.Max(retryCollectionDay, heldFirstVisitDay)) return;
+            var assignedBlocks = new System.Collections.Generic.List<LivingCity.Personnel.OrganizationBlockResponsibility>();
+            p.Organization.CollectBlockResponsibilities(leader, assignedBlocks);
+            var block = assignedBlocks.FirstOrDefault();
+            if (!block.BlockId.IsValid) { Finish("FAIL", "Saved collector crew lost its assigned block."); return; }
+            var heldProtectedDoors = LivingCity.Business.CityBusinesses.All.Where(b => b.CanonicalBlockId.Equals(block.BlockId) &&
+                rt.Racket.TryGetRelationship(b.Id, LivingCity.Gameplay.PlayerCommands.House, out var rel) &&
+                rel.IsProtected).ToArray();
+            if (heldProtectedDoors.Length == 0)
+            { Finish("NOT_EXERCISED", "The saved protection agreements lapsed before a paid round; free collector remained available."); return; }
+            var row = heldProtectedDoors.FirstOrDefault(b => rt.Dues.OwedOf(b.Id, LivingCity.Gameplay.PlayerCommands.House) > 0);
+            if (!row.Id.IsValid) { next = now + 10f; return; }
+            var sent = rt.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(new LivingCity.Territory.CollectDuesCommand(
+                LivingCity.Territory.TerritoryCommandNodeId.Crew(crewId), block.BlockId)));
+            Log("collection while lieutenant jailed " + sent.Status + " " + sent.Reason);
+            if (!sent.WasAccepted) { Finish("FAIL", "Active bag detail with jailed lieutenant cannot collect: " + sent.Reason); return; }
+            collectionSent = true;
+            return;
+        }
+        if (legal && (held != null || p.Roster.Find(leader)?.Status == LivingCity.Personnel.CharacterStatus.Jailed))
+        {
+            held ??= RoadDemo.LawDesk.Held(leader);
+            docket ??= RoadDemo.LawDesk.CaseOf(leader);
+            if (held == null || docket == null) { Finish("FAIL", "Booked lieutenant has no prisoner/case."); return; }
+            var member = p.Roster.Find(leader);
+            if (kind == "bail_refusal")
+            {
+                if (LivingCity.Personnel.Lawyer.Counsel(p.Roster) != null)
+                { Finish("NOT_EXERCISED", "Counsel already present at booking."); return; }
+                if (RoadDemo.LawDesk.BailPrice(leader) <= 0)
+                { Finish("NOT_EXERCISED", "The recorded charge does not allow bail even with counsel."); return; }
+                var money = LivingCity.Gameplay.OutfitDirector.Instance.Accounts;
+                var cash = money.Safe; var stage = held.Stage; var caseId = held.CaseId;
+                var refused = RoadDemo.LawDesk.PostBail(leader);
+                bool intact = !refused.Ok && refused.Reason == LivingCity.UI.LedgerText.ReasonNoCounsel && money.Safe == cash && held.Stage == stage && held.CaseId == caseId &&
+                    member.Status == LivingCity.Personnel.CharacterStatus.Jailed;
+                Finish(intact ? "PASS" : "FAIL", "Bail without counsel: " + refused.Reason +
+                    "; safe, custody and docket unchanged: " + intact);
+                return;
+            }
+            var verdict = docket.VerdictFor(leader);
+            if (held.TransferFails >= LivingCity.Police.PrisonPipeline.TransferFailsBeforePaper)
+            {
+                if (verdict == null) courtPaperPending = true;
+                else prisonPaperPending = true;
+            }
+            sawCourtRide |= held.Stage == LivingCity.Police.PrisonStage.InTransit && held.Leg == LivingCity.Police.PrisonLeg.Court;
+            sawPrisonRide |= held.Stage == LivingCity.Police.PrisonStage.InTransit && held.Leg == LivingCity.Police.PrisonLeg.Prison;
+            if (held.Stage == LivingCity.Police.PrisonStage.Serving && (!sawPrisonRide || prisonPaperPending))
+            { Finish("FAIL", "Prison leg used the paper fallback without a physical transport."); return; }
+            if (kind == "court" && (!resuming || resumeConfig != null) && verdict != null && (!sawCourtRide || courtPaperPending))
+            { Finish("FAIL", "Court was resolved without the requested physical court transfer."); return; }
+            var state = $"{held.Stage}/{held.Leg} roster {member.Status} verdict {verdict?.Outcome} court day {held.CourtDay}";
+            if (state != legalState) { legalState = state; Log("legal " + state); }
+            if (kind != "court" && legalStep == 0)
+            {
+                var before = LivingCity.Gameplay.OutfitDirector.Instance.Accounts.Safe;
+                var refused = RoadDemo.LawDesk.PostBail(leader);
+                if (refused.Ok || LivingCity.Gameplay.OutfitDirector.Instance.Accounts.Safe != before)
+                { Finish("FAIL", "Bail without counsel succeeded or charged money."); return; }
+                Log("bail without counsel refused " + refused.Reason);
+                var counsel = p.ColumnToday().Ads.FirstOrDefault(a => a.Specialty == LivingCity.Personnel.Specialty.Lawyer);
+                if (counsel == null) { Log("waiting for counsel advertisement"); legalStep = 1; return; }
+                var hired = p.HireFromAd(counsel, out var counselId);
+                Log("hire counsel " + hired.Ok + " " + hired.Reason);
+                if (!hired.Ok) { Finish("FAIL", "Counsel hire refused."); return; }
+                legalStep = 2;
+            }
+            if (legalStep == 1)
+            {
+                var counsel = p.ColumnToday().Ads.FirstOrDefault(a => a.Specialty == LivingCity.Personnel.Specialty.Lawyer);
+                if (counsel == null) return;
+                var hired = p.HireFromAd(counsel, out _);
+                if (!hired.Ok) { Finish("FAIL", "Counsel hire refused: " + hired.Reason); return; }
+                legalStep = 2;
+            }
+            if (legalStep == 2)
+            {
+                var before = LivingCity.Gameplay.OutfitDirector.Instance.Accounts.Safe;
+                var price = RoadDemo.LawDesk.BailPrice(leader);
+                var bailed = RoadDemo.LawDesk.PostBail(leader);
+                Log($"post bail {bailed.Ok} {bailed.Reason}, price {price}");
+                if (!bailed.Ok || before - LivingCity.Gameplay.OutfitDirector.Instance.Accounts.Safe != price ||
+                    member.Status != LivingCity.Personnel.CharacterStatus.Active || held.Stage != LivingCity.Police.PrisonStage.Bailed)
+                { Finish("FAIL", "Bail failed its money/roster/pipeline reconciliation."); return; }
+                var repeat = RoadDemo.LawDesk.PostBail(leader);
+                if (repeat.Ok || before - LivingCity.Gameplay.OutfitDirector.Instance.Accounts.Safe != price)
+                { Finish("FAIL", "Repeated bail charged twice."); return; }
+                legalStep = 3; next = now + 5f;
+            }
+            if (legalStep == 3 && now > next)
+            {
+                var released = crews.Units.FirstOrDefault(u => u.Faction == 0 && u.All().Any(m => m.CharacterId == leader && !m.Dead));
+                if (released == null) return;
+                if (!crews.OrderUnit(released, released.Position + UnityEngine.Vector3.right * 10f, out moveDestination))
+                { Finish("FAIL", "Bailed man cannot receive a move order: " + crews.OrderRefusal); return; }
+                unit = released; legalStep = 4;
+            }
+            if (legalStep == 4 && (unit.Position - moveDestination).sqrMagnitude < 4f)
+            {
+                var man = unit.All().FirstOrDefault(m => m.CharacterId == leader);
+                if (man?.Tf == null || !man.Tf.gameObject.activeInHierarchy)
+                { Finish("FAIL", "Bailed man moved as an invisible indicator."); return; }
+                Log("bailed man walked physically");
+                if (kind == "bail_skip")
+                {
+                    var skipped = RoadDemo.LawDesk.SkipBail(leader);
+                    if (!skipped.Ok) { Finish("FAIL", "Skip bail refused."); return; }
+                }
+                var home = LivingCity.Business.CityBusinesses.All.First(b => LivingCity.Gameplay.DoorHolder.Read(b.Id) == LivingCity.Outfit.DoorTenure.Ours);
+                Log("bailed crew goes home " + RoadDemo.CrewQuarters.Station(crews, unit, home.Id));
+                legalStep = 5;
+            }
+            if (verdict != null)
+            {
+                if (kind == "bail_skip")
+                    Finish(verdict.Outcome == LivingCity.Police.CaseOutcome.BailForfeit && member.WantedLevel > 0 && member.BailedUntil == 0 ? "PASS" : "FAIL", "Court day after ordered bail skip: " + verdict.Outcome);
+                else
+                {
+                    if (legalStep < 10 && (held.Stage == LivingCity.Police.PrisonStage.Cleared || held.Stage == LivingCity.Police.PrisonStage.Serving))
+                    {
+                        legalStep = 10;
+                        var daysRemaining = verdict.OutOnDay - LivingCity.Gameplay.OutfitDirector.Instance.Campaign.Day;
+                        if (daysRemaining > 0 && !LivingCity.Personnel.Sentencing.IsLife(daysRemaining))
+                            deadline = UnityEngine.Mathf.Max(deadline, now + (daysRemaining + 2) * 24f * clock.SecondsPerHour);
+                        Log("court outcome " + verdict.Outcome + "; waiting for release on day " + verdict.OutOnDay);
+                    }
+                    if (legalStep == 10 && member.Status == LivingCity.Personnel.CharacterStatus.Active)
+                    {
+                        if (releaseBecameActiveAt < 0f) { releaseBecameActiveAt = now; Log("sentence ended; waiting for custody projection"); }
+                        var released = crews.Units.FirstOrDefault(u => u.Faction == 0 && u.All().Any(m => m.CharacterId == leader && !m.Dead));
+                        if (released == null || released.InCustody || released.CustodyTracked || released.Surrendered ||
+                            RoadDemo.PoliceForce.Instance.KeepsCustodyAlive(leader))
+                        {
+                            if (now - releaseBecameActiveAt > 30f)
+                                Finish("FAIL", "Completed sentence left its body or police custody tracking unresolved.");
+                            return;
+                        }
+                        if (!crews.OrderUnit(released, released.Position + UnityEngine.Vector3.right * 10f, out moveDestination))
+                        { Finish("FAIL", "Released defendant cannot receive a move order: " + crews.OrderRefusal); return; }
+                        unit = released; legalStep = 11;
+                    }
+                    if (legalStep == 11 && (unit.Position - moveDestination).sqrMagnitude < 4f)
+                    {
+                        var man = unit.All().FirstOrDefault(m => m.CharacterId == leader);
+                        var returnedBodies = new[] { leader, 2, 3, 5 }.Distinct().All(id =>
+                            p.Roster.Find(id)?.Status != LivingCity.Personnel.CharacterStatus.Active ||
+                            crews.BodyOf(id)?.Tf != null);
+                        Finish(man?.Tf != null && man.Tf.gameObject.activeInHierarchy && returnedBodies ? "PASS" : "FAIL",
+                            "Booking, court outcome " + verdict.Outcome + ", release and physical movement; active crew and bag bodies present: " + returnedBodies);
+                    }
+                }
+            }
+            return;
+        }
+        if (p.Roster.Find(leader)?.Status == LivingCity.Personnel.CharacterStatus.Jailed)
+        {
+            Finish(kind == "arrest" ? "PASS" : "FAIL", "Lieutenant physically booked into custody."); return;
+        }
+        if (unit == null) return;
+        if (challengeAt < 0 && answered > 0 && (kind == "fight" || kind == "fight_win") && !unit.Fleeing)
+        {
+            foreach (var call in ((System.Collections.IEnumerable)Read("_calls")).Cast<object>())
+            {
+                var type = call.GetType();
+                var complaintRow = (RoadDemo.StreetAlarm.Complaint)type.GetField("Call").GetValue(call);
+                var stage = type.GetField("Stage").GetValue(call).ToString();
+                if (complaintRow.Faction != 0 || (stage != "Walking" && stage != "Closing" && stage != "AtTheDoor")) continue;
+                var response = type.GetField("Unit").GetValue(call) as RoadDemo.PoliceBeat;
+                var law = type.GetField("Men").GetValue(call) as RoadDemo.DemoCrews.Unit ?? response?.Unit;
+                if (law == null || law.Wiped || (law.Position - unit.Position).sqrMagnitude > 15f * 15f ||
+                    !law.All().Any(m => !m.Dead && m.Tf != null && m.Tf.gameObject.activeInHierarchy)) continue;
+                crews.Select(unit);
+                if (!crews.OrderAttack(law)) { Finish("FAIL", "Attack on approaching response officers was refused."); return; }
+                challengeAt = now;
+                challengedBy = law;
+                Log("attack officers approaching our complaint " + complaintRow.Number +
+                    "; distance " + UnityEngine.Vector3.Distance(unit.Position, law.Position));
+                break;
+            }
+        }
+        if (kind == "flee" && challengeAt < 0 && unit.Fleeing && unit.HasDoorAnswer &&
+            unit.LastDoorAnswer == LivingCity.Police.DoorAnswer.Run)
+        {
+            // At 16x the lieutenant may react before the next player input frame.
+            // Continue playing that situation: explicitly direct the escape, then
+            // require the same wanted, distance, physical shelter and pursuit checks.
+            var pursuer = crews.Units.Where(u => u.IsPolice && !u.Wiped &&
+                u.All().Any(m => !m.Dead && m.Tf != null && m.Tf.gameObject.activeInHierarchy))
+                .OrderBy(u => (u.Position - unit.Position).sqrMagnitude).FirstOrDefault();
+            escapeFrom = unit.Position;
+            var accepted = crews.OrderFlee(unit, pursuer != null ? pursuer.Position : unit.FlightFrom);
+            Log("player redirects flight after the lieutenant's natural Run: " + accepted);
+            if (!accepted) { Finish("FAIL", "Player could not direct an already fleeing crew: " + crews.OrderRefusal); return; }
+            challengeAt = escapeAt = now;
+            challengedBy = pursuer;
+        }
+        if (challengeAt < 0 && (legal || kind == "arrest" || kind == "flee" || kind == "fight" || kind == "fight_win") &&
+            unit.HasDoorAnswer && unit.LastDoorAnswer != LivingCity.Police.DoorAnswer.Quiet)
+        {
+            Finish("NOT_EXERCISED", "The lieutenant naturally chose " + unit.LastDoorAnswer +
+                " before the player-command observation window.");
+            return;
+        }
+        if ((kind == "bail" || kind == "bail_skip") && !bailPrepared)
+        {
+            if (!preparingBail)
+            {
+                var home = LivingCity.Business.CityBusinesses.All.First(b => LivingCity.Gameplay.DoorHolder.Read(b.Id) == LivingCity.Outfit.DoorTenure.Ours);
+                preparingBail = RoadDemo.CrewQuarters.Station(crews, unit, home.Id);
+                Log("crew waits safely for the weekly counsel advertisement " + preparingBail);
+            }
+            // Counsel advertises every seventh campaign day. Do not manufacture an
+            // ad or skip calendar time to make the bail flow available on day one.
+            var counselAd = p.ColumnToday().Ads.FirstOrDefault(a => a.Specialty == LivingCity.Personnel.Specialty.Lawyer);
+            var retainedCounsel = resuming ? LivingCity.Personnel.Lawyer.Counsel(p.Roster) : null;
+            if (counselAd == null && retainedCounsel == null) return;
+            // Hire while the advert is available. The racket and arrest can take
+            // several campaign days; waiting to hire until booking misses the ad
+            // and can let the trial finish before the next weekly newspaper.
+            var counselHire = retainedCounsel != null ? LivingCity.Personnel.OpResult.Success : p.HireFromAd(counselAd, out _);
+            Log("retained counsel before racket " + counselHire.Ok + " " + counselHire.Reason);
+            if (!counselHire.Ok) { Finish("FAIL", "Counsel hire before racket refused: " + counselHire.Reason); return; }
+            legalStep = 2;
+            if (!crews.OrderUnit(unit, unit.Position + UnityEngine.Vector3.right * 12f, out _))
+            { Finish("FAIL", "Crew could not leave headquarters for the bail scenario: " + crews.OrderRefusal); return; }
+            bailPrepared = true;
+            Log("counsel advertised; crew ordered outside to begin the bail scenario");
+        }
+        if (kind == "car")
+        {
+            playerCar ??= RoadDemo.RoadCar.All.OfType<RoadDemo.CrewCar>().FirstOrDefault(c => c.Owner == unit);
+            if (playerCar == null) return;
+            if (roleStep == 0)
+            {
+                crews.Select(unit); carStart = playerCar.Position;
+                var accepted = crews.OrderCar(playerCar); Log("board sedan " + accepted);
+                if (!accepted) { Finish("FAIL", "Owned sedan refused boarding: " + crews.CarRefusal); return; }
+                roleStep = 1;
+            }
+            else if (roleStep == 1 && unit.Car == playerCar && playerCar.Aboard.Count >= unit.Standing())
+            {
+                var preferred = carStart + (attempt % 2 == 0 ? UnityEngine.Vector3.forward : UnityEngine.Vector3.right) * 80f;
+                var destination = playerCar.Net.Edges.Where(edge => edge.Road != null && edge.Length > 40f)
+                    .Select(edge => edge.Start + edge.Dir * (edge.Length * 0.5f))
+                    .Where(at => UnityEngine.Vector3.Distance(at, carStart) > 70f)
+                    .OrderBy(at => UnityEngine.Vector3.Distance(at, preferred)).First();
+                var accepted = crews.OrderUnit(unit, destination, out moveDestination);
+                Log("drive sedan " + accepted + " " + moveDestination);
+                if (!accepted) { Finish("FAIL", "Occupied sedan refused driving."); return; }
+                roleStep = 2;
+            }
+            else if (roleStep == 2 && !playerCar.HasGoal && !playerCar.FreeGoal.HasValue && playerCar.Parked && (playerCar.Position - carStart).sqrMagnitude > 400f)
+            {
+                crews.Select(unit); var accepted = crews.OrderOut(); Log("exit sedan " + accepted);
+                if (!accepted) { Finish("FAIL", "Parked sedan refused disembarkation."); return; }
+                roleStep = 3;
+            }
+            else if (roleStep == 3 && unit.Car == null && unit.Boarding == null && playerCar.Aboard.Count == 0 &&
+                     unit.All().All(m => m.Tf != null && m.Tf.gameObject.activeInHierarchy))
+            {
+                var accepted = crews.OrderUnit(unit, unit.Position + UnityEngine.Vector3.forward * 10f, out moveDestination);
+                Log("walk after sedan " + accepted + " " + moveDestination);
+                if (!accepted) { Finish("FAIL", "Disembarked crew refused walking."); return; }
+                roleStep = 4;
+            }
+            else if (roleStep == 4 && (unit.Position - moveDestination).sqrMagnitude < 4f)
+                Finish("PASS", "Purchased and assigned sedan, boarded, drove, parked, disembarked and walked onward.");
+            return;
+        }
+        if (kind == "recruit_inside")
+        {
+            if (roleStep == 0)
+            {
+                var home = LivingCity.Business.CityBusinesses.All.First(b => LivingCity.Gameplay.DoorHolder.Read(b.Id) == LivingCity.Outfit.DoorTenure.Ours);
+                if (!RoadDemo.CrewQuarters.Station(crews, unit, home.Id))
+                { Finish("FAIL", "Could not station crew before recruiting."); return; }
+                roleStep = 1; Log("crew goes indoors before recruiting a new hood");
+            }
+            else if (roleStep == 1 && RoadDemo.CrewQuarters.Inside(unit))
+            {
+                var hired = p.RecruitHood(out newRecruit);
+                if (!hired.Ok) { Finish("FAIL", "Indoor recruit refused: " + hired.Reason); return; }
+                var assigned = p.AssignToCrew(newRecruit, crewId);
+                if (!assigned.Ok) { Finish("FAIL", "New recruit assignment refused: " + assigned.Reason); return; }
+                roleStep = 2; Log("recruited and assigned " + newRecruit + " while the lieutenant is inside");
+            }
+            else if (roleStep == 2)
+            {
+                var man = unit.All().FirstOrDefault(m => m.CharacterId == newRecruit);
+                if (man?.Tf == null) return;
+                if (!recruitedBodySeen)
+                {
+                    recruitedBodySeen = true;
+                    Log("new recruit body " + man.Tf.position + " door " + RoadDemo.DoorBeat.PhaseOf(man));
+                    if (!RoadDemo.DoorBeat.Active(man) && RoadDemo.WalkObstacles.Standing(man.Tf.position, .225f))
+                    { Finish("FAIL", "New recruit appeared inside a blocked structure."); return; }
+                }
+                if (!RoadDemo.CrewQuarters.Inside(unit) || RoadDemo.DoorBeat.PhaseOf(man) != RoadDemo.DoorBeat.VisitPhase.Inside) return;
+                if (!crews.OrderUnit(unit, unit.Position + UnityEngine.Vector3.right * 18f, out moveDestination))
+                { Finish("FAIL", "Newly enlarged indoor crew could not move outside."); return; }
+                roleStep = 3;
+            }
+            else if (roleStep == 3 && (unit.Position - moveDestination).sqrMagnitude < 4f &&
+                unit.All().All(m => m.Tf != null && m.Tf.gameObject.activeInHierarchy && !RoadDemo.DoorBeat.Active(m)))
+            {
+                var faults = new System.Collections.Generic.List<string>(); p.ValidateOrganization(faults);
+                Finish(faults.Count == 0 ? "PASS" : "FAIL", faults.Count == 0
+                    ? "Recruited beside an indoor lieutenant, entered with the crew, then all bodies walked outside."
+                    : string.Join("; ", faults));
+            }
+            return;
+        }
+        if (kind == "streaming")
+        {
+            if (roleStep == 0)
+            {
+                var home = LivingCity.Business.CityBusinesses.All.First(b => LivingCity.Gameplay.DoorHolder.Read(b.Id) == LivingCity.Outfit.DoorTenure.Ours);
+                if (!RoadDemo.CrewQuarters.Station(crews, unit, home.Id))
+                { Finish("FAIL", "Could not station crew before inspecting the city's streamed blocks."); return; }
+                roleStep = 1;
+            }
+            var recycler = UnityEngine.Object.FindAnyObjectByType<RoadDemo.CityBlockRecycler>();
+            var model = (RoadDemo.ResidentialBlockModel)recycler.GetType().GetField("_model", flags).GetValue(recycler);
+            if (recycler.NavigationBlocks != model.Count)
+            { Finish("FAIL", "Walkers started before every block had navigation geometry."); return; }
+            if (streamIndex >= model.Count)
+            {
+                Log("navigation bake " + recycler.NavigationBakeMs + "ms; rendered visits " + streamVisited.Count + "; evictions " + recycler.EvictedViews);
+                Finish(recycler.EvictedViews > 0 ? "PASS" : "NOT_EXERCISED",
+                    "Visited every residential block; rendered collision matched the persistent plan through visual evictions.");
+                return;
+            }
+            var recipe = model.Blocks[(streamIndex * (model.Count - 1)) % model.Count];
+            if (streamAt < 0)
+            {
+                var rig = UnityEngine.Object.FindAnyObjectByType<RoadDemo.DemoCamera>();
+                var target = recycler.transform.TransformPoint(new UnityEngine.Vector3(recipe.LocalBounds.center.x, 0, recipe.LocalBounds.center.y));
+                rig.PanBy(new UnityEngine.Vector2(target.x - rig.pivot.x, target.z - rig.pivot.z));
+                streamAt = now; Log("pan to " + recipe.Id);
+            }
+            var resident = (System.Collections.IDictionary)recycler.GetType().GetField("_resident", flags).GetValue(recycler);
+            if (resident.Contains(recipe.Id))
+            {
+                var view = resident[recipe.Id];
+                var content = (UnityEngine.Transform)view.GetType().GetField("Content").GetValue(view);
+                var uncovered = RoadDemo.WalkObstacles.ComposedPropPlan(content, recycler.transform.position.y);
+                if (uncovered.Count > 0)
+                {
+                    System.IO.File.WriteAllText(folder + "/unplanned-props.json", Newtonsoft.Json.JsonConvert.SerializeObject(
+                        uncovered.Boxes.Select(b => new { b.SourceName, centre = b.C.ToString(), half = b.H.ToString() })));
+                    Finish("FAIL", "The streamed block introduced geometry absent from the startup plan: " + recipe.Id); return;
+                }
+                streamVisited.Add(recipe.Id); streamIndex++; streamAt = -1f;
+            }
+            else if (now - streamAt > 600f)
+            { Finish("FAIL", "Camera reached a block whose visual payload never completed: " + recipe.Id); }
+            return;
+        }
+        if (kind == "roles")
+        {
+            var bag = crews.Units.FirstOrDefault(u => u.Faction == 0 && u.CrewId == crewId && u.IsDetachment);
+            if (roleStep == 0 && bag != null && RoadDemo.CrewQuarters.Inside(bag))
+            {
+                var pulled = p.PullEscort(2); var swap = p.NameCollector(crewId, 2); var escort = p.PostEscort(crewId, 5);
+                Log($"swap indoor bag: pull {pulled.Ok}; collector {swap.Ok}; escort {escort.Ok}");
+                if (!pulled.Ok || !swap.Ok || !escort.Ok) { Finish("FAIL", "Indoor duty change refused."); return; }
+                roleStep = 1; next = now + 8f;
+            }
+            else if (roleStep == 1 && now > next && bag != null && RoadDemo.CrewQuarters.Inside(bag))
+            {
+                var promoted = p.Promote(5, out promotedCrew);
+                Log("promote indoor escort " + promoted.Ok + " " + promoted.Reason);
+                if (!promoted.Ok) { Finish("FAIL", "Indoor escort promotion refused: " + promoted.Reason); return; }
+                roleStep = 2; next = now + 2f;
+            }
+            else if (roleStep == 2 && now > next)
+            {
+                var promoted = crews.Units.FirstOrDefault(u => u.Faction == 0 && u.CrewId == promotedCrew && !u.IsDetachment);
+                if (promoted == null) return;
+                var moved = crews.OrderUnit(promoted, promoted.Position + UnityEngine.Vector3.left * 12f, out moveDestination);
+                Log("move promoted escort " + moved);
+                if (!moved) { Finish("FAIL", "Promoted escort refused movement."); return; }
+                roleStep = 3;
+            }
+            else if (roleStep == 3)
+            {
+                var promoted = crews.Units.FirstOrDefault(u => u.Faction == 0 && u.CrewId == promotedCrew && !u.IsDetachment);
+                if (promoted?.Boss?.Tf != null && promoted.Boss.Tf.gameObject.activeInHierarchy &&
+                    !RoadDemo.DoorBeat.Held(promoted.Boss) && (promoted.Position - moveDestination).sqrMagnitude < 4f)
+                {
+                    var faults = new System.Collections.Generic.List<string>(); p.ValidateOrganization(faults);
+                    Finish(faults.Count == 0 ? "PASS" : "FAIL", faults.Count == 0
+                        ? "Indoor collector/escort swap and escort promotion preserved a visible, movable body and valid organization."
+                        : string.Join("; ", faults));
+                }
+            }
+            return;
+        }
+        if (unit.Wiped)
+        {
+            if (kind == "fight" && challengeAt >= 0)
+            {
+                if (defeatAt < 0) { defeatAt = now; Log("crew defeated; watching corpse cleanup"); }
+                if (crews.OrderUnit(unit, unit.Position + UnityEngine.Vector3.right * 10f, out _))
+                { Finish("FAIL", "A wiped crew still accepted movement."); return; }
+                if (now - defeatAt > 120f && !dispatch.Swarming)
+                    Finish(everSwarmed ? "PASS" : "NOT_EXERCISED", everSwarmed
+                        ? "Defeated crew rejects orders after corpse cleanup and swarm has cleared."
+                        : "Crew was defeated but this run never exercised a swarm.");
+            }
+            else Finish("FAIL", "The trial crew was wiped out before the requested outcome.");
+            return;
+        }
+        var suspect = Read("_arrestCrew") as RoadDemo.DemoCrews.Unit;
+        // A collection player waits for the encounter already taking place. Sending
+        // the lieutenant indoors during the question is itself an ordered escape.
+        if (collecting && suspect != null && suspect.Faction == 0 && suspect.CrewId == crewId)
+            return;
+        if ((legal || kind == "arrest" || kind == "flee" || kind == "fight" || kind == "fight_win") &&
+            suspect != null && suspect.Faction == 0 && suspect.CrewId == crewId)
+        {
+            var phase = Read("_collar").ToString();
+            var state = phase + " " + Read("_answer");
+            if (lastPolice != state) { Log("arrest " + state); lastPolice = state; }
+            if ((kind == "fight" || kind == "fight_win") && answeredFightAt != (float)Read("_collarAt"))
+            {
+                if (kind == "fight_win" && victoryAt >= 0)
+                {
+                    var home = LivingCity.Business.CityBusinesses.All.Where(b => LivingCity.Gameplay.DoorHolder.Read(b.Id) == LivingCity.Outfit.DoorTenure.Ours)
+                        .OrderBy(b => rt.TryGetBusinessApproach(b.Id, out var at) ? (at - unit.Position).sqrMagnitude : float.MaxValue).First();
+                    if (!RoadDemo.CrewQuarters.Station(crews, unit, home.Id)) { Finish("FAIL", "Could not reaffirm shelter during a new police challenge."); return; }
+                    answeredFightAt = (float)Read("_collarAt");
+                    Log("player kept the shelter order during the new police challenge");
+                    return;
+                }
+                var officer = Read("_arrestOfficer") as RoadDemo.PoliceBeat;
+                var lawNow = Read("_arrestSquad") as RoadDemo.DemoCrews.Unit ?? officer?.Unit;
+                crews.Select(unit);
+                if (lawNow == null || !(escapeAt >= 0 && kind == "fight_win"
+                    ? crews.OrderFlee(unit, lawNow.Position) : crews.OrderAttack(lawNow)))
+                { Finish("FAIL", "Attack during the police challenge was refused."); return; }
+                answeredFightAt = (float)Read("_collarAt");
+                challengeAt = challengeAt < 0 ? now : challengeAt;
+                challengedBy = lawNow;
+                Log(escapeAt >= 0 && kind == "fight_win" ? "withdrawal reaffirmed during the police challenge" : "attack reaffirmed during the police challenge");
+            }
+            if (challengeAt < 0)
+            {
+                challengeAt = now;
+                if ((legal || kind == "arrest") && Read("_answer").ToString() != "Quiet")
+                { Finish("NOT_EXERCISED", "The lieutenant naturally chose " + Read("_answer")); return; }
+                var beat = Read("_arrestOfficer") as RoadDemo.PoliceBeat;
+                var law = Read("_arrestSquad") as RoadDemo.DemoCrews.Unit ?? beat?.Unit;
+                challengedBy = law;
+                Log("challenge positions: crew " + unit.Position + "; police " + (law != null ? law.Position.ToString() : "missing") +
+                    "; distance " + (law != null ? UnityEngine.Vector3.Distance(unit.Position, law.Position) : -1f));
+                if (kind == "flee")
+                {
+                    escapeFrom = unit.Position;
+                    var awayFrom = law != null ? law.Position : unit.Position + UnityEngine.Vector3.right;
+                    var accepted = crews.OrderFlee(unit, awayFrom);
+                    Log("flee order " + accepted);
+                    if (!accepted) { Finish("FAIL", "Flee order was refused during the challenge."); return; }
+                    escapeAt = now;
+                }
+                if (kind == "fight" || kind == "fight_win")
+                {
+                    crews.Select(unit);
+                    if (law == null || !crews.OrderAttack(law))
+                    { Finish("FAIL", "Attack on arresting police was refused."); return; }
+                    Log("attack arresting police");
+                }
+            }
+            return;
+        }
+        if (challengeAt >= 0)
+        {
+            if ((kind == "fight" || kind == "fight_win") && victoryAt < 0 && escapeAt < 0 &&
+                unit.Fleeing && challengedBy != null && !challengedBy.Wiped)
+            {
+                crews.Select(unit);
+                if (!crews.OrderAttack(challengedBy)) { Finish("FAIL", "Could not countermand automatic flight with an attack."); return; }
+                Log("player countermanded automatic flight and resumed the attack");
+            }
+            if (kind == "flee" && (unit.Position - escapeFrom).sqrMagnitude > 20f * 20f)
+                escapedDistance = true;
+            if (kind == "flee" && escapeAt >= 0 && now - escapeAt > 20f &&
+                escapedDistance && p.Roster.Find(leader).WantedLevel > 0)
+            {
+                if (!hidAfterFight && RoadDemo.CrewQuarters.Billeted(unit))
+                {
+                    hidAfterFight = true;
+                    Log("fugitives broke sight and are following the normal shelter decision");
+                }
+                if (hidAfterFight && RoadDemo.CrewQuarters.Inside(unit) && !dispatch.Swarming &&
+                    unit.All().Where(m => !m.Dead).All(m => m.Tf != null &&
+                        !m.Tf.gameObject.activeInHierarchy && RoadDemo.DoorBeat.PhaseOf(m) == RoadDemo.DoorBeat.VisitPhase.Inside))
+                { Finish("PASS", "Crew fled, became wanted, physically reached shelter and cleared pursuit."); return; }
+            }
+            if (kind == "fight_win" && (victoryAt >= 0 || challengedBy != null && challengedBy.Wiped))
+            {
+                if (victoryAt < 0) { victoryAt = now; Log("arresting police killed"); }
+                if (!hidAfterFight)
+                {
+                    var home = LivingCity.Business.CityBusinesses.All.Where(b => LivingCity.Gameplay.DoorHolder.Read(b.Id) == LivingCity.Outfit.DoorTenure.Ours)
+                        .OrderBy(b => rt.TryGetBusinessApproach(b.Id, out var at) ? (at - unit.Position).sqrMagnitude : float.MaxValue).First();
+                    hidAfterFight = RoadDemo.CrewQuarters.Station(crews, unit, home.Id);
+                    if (!hidAfterFight) { Finish("FAIL", "Survivors could not return home after defeating the patrol."); return; }
+                    Log("survivors ordered into the nearest owned building immediately after defeating the patrol");
+                }
+                hidAfterFight |= RoadDemo.CrewQuarters.Billeted(unit);
+                if (hidAfterFight && everSwarmed && !dispatch.Swarming && RoadDemo.CrewQuarters.Inside(unit) &&
+                    unit.All().Where(m => !m.Dead).All(m => m.Tf != null &&
+                        !m.Tf.gameObject.activeInHierarchy && RoadDemo.DoorBeat.PhaseOf(m) == RoadDemo.DoorBeat.VisitPhase.Inside))
+                { Finish("PASS", "Arresting police killed; surviving crew reached shelter and the triggered swarm cleared."); return; }
+            }
+            if (now - challengeAt > 900f) Finish("FAIL", "Arrest/flight/combat did not complete after the challenge.");
+            return;
+        }
+        if (kind == "racket_rendered" || kind == "racket_overlap" || kind == "arson")
+        {
+            if (!renderedReady)
+            {
+                if (renderedTargets.Count == 0)
+                {
+                    renderedTargets.AddRange(LivingCity.Business.CityBusinesses.All.Where(b => rt.IsRacketable(b.Id) &&
+                        LivingCity.Gameplay.DoorHolder.Read(b.Id) != LivingCity.Outfit.DoorTenure.Ours &&
+                        !RoadDemo.ShopDamage.IsBusinessDamaged(b.Id))
+                        .OrderBy(b => rt.TryGetBusinessApproach(b.Id, out var at) ? (at - unit.Position).sqrMagnitude : float.MaxValue)
+                        .Take(kind == "arson" ? 1 : 3).Select(b => b.Id));
+                    if (renderedTargets.Count == 0) { Finish("FAIL", "No business for the rendered doorway scenario."); return; }
+                    rt.TryGetBusinessApproach(renderedTargets[0], out var atDoor);
+                    var rig = UnityEngine.Object.FindAnyObjectByType<RoadDemo.DemoCamera>();
+                    rig.PanBy(new UnityEngine.Vector2(atDoor.x - rig.pivot.x, atDoor.z - rig.pivot.z));
+                    Log("camera moved to the target block; waiting for physical business objects");
+                }
+                foreach (var id in renderedTargets)
+                    if (!LivingCity.Business.BusinessViewBindings.TryGet(id, out var marker) || marker == null ||
+                        !marker.gameObject.activeInHierarchy || marker.GetComponentsInChildren<UnityEngine.Renderer>(true).Length == 0)
+                        return;
+                foreach (var id in renderedTargets)
+                {
+                    LivingCity.Business.BusinessViewBindings.TryGet(id, out var marker);
+                    var front = marker.GetComponent<RoadDemo.Storefront>() ?? marker.GetComponentInParent<RoadDemo.Storefront>();
+                    Log("physical doorway ready " + id + "; storefront leaves " + (front != null ? front.LeafCount : -1));
+                }
+                renderedReady = true;
+            }
+            if (kind == "arson")
+            {
+                var targetDoor = renderedTargets[0];
+                if (roleStep == 0)
+                {
+                    if (!LivingCity.Gameplay.DoorJobs.TryBuild(targetDoor, LivingCity.Outfit.OrderType.Torch,
+                            crewId, UnityEngine.Mathf.Max(1, unit.Standing()), out var job, out var refusal))
+                    { Finish("FAIL", "Torch refused: " + refusal); return; }
+                    var issued = LivingCity.Gameplay.OutfitDirector.Instance.IssueOrder(job);
+                    Log("torch order " + issued.Ok + " " + issued.Reason);
+                    if (!issued.Ok) { Finish("FAIL", "Torch job was refused: " + issued.Reason); return; }
+                    roleStep = 1; next = now + 180f;
+                }
+                else if (LivingCity.Business.BusinessRuntime.Instance.TryGetShutdown(targetDoor, out var closure) &&
+                    closure.Cause == LivingCity.Business.BusinessShutdownCause.Arson &&
+                    LivingCity.Gameplay.OutfitDirector.Instance.Book.Jobs.Count == 0)
+                    Finish(RoadDemo.ShopDamage.IsBusinessDamaged(targetDoor) ? "PASS" : "FAIL",
+                        "Player torch job completed and the loaded business is closed by arson with damage recorded.");
+                else if (now > next) Finish("FAIL", "Filed torch did not close the loaded business.");
+                return;
+            }
+        }
+        if (kind == "beating" || kind == "killing" || kind == "racket" || kind == "racket_rendered" || kind == "racket_overlap")
+        {
+            if (probe == null)
+            {
+                probe = dispatch.gameObject.AddComponent<RoadDemo.RacketProbe>();
+                probe.patience = 150f; probe.startAfter = 0f;
+                probe.beating = kind == "beating"; probe.killing = kind == "killing";
+                probe.overlap = kind == "racket_overlap";
+                typeof(RoadDemo.RacketProbe).GetField("_ours", flags).SetValue(probe, unit);
+                Log("started production doorstep probe for crew " + crewId);
+            }
+            if (probe.Finished)
+            {
+                if (!probe.Verdict.StartsWith("no fault")) { Finish("FAIL", probe.Verdict); return; }
+                if (RoadDemo.DoorBeat.Active(unit.Boss)) return;
+                if (!moveSent)
+                {
+                    moveSent = crews.OrderUnit(unit, unit.Position + UnityEngine.Vector3.right * 10f, out moveDestination);
+                    Log("walk after completed proprietor action " + moveSent + " destination " + moveDestination);
+                    if (!moveSent) Finish("FAIL", "The proprietor action completed but its crew could not walk away: " + crews.OrderRefusal);
+                }
+                else if ((unit.Position - moveDestination).sqrMagnitude < 4f &&
+                    unit.All().Where(m => !m.Dead).All(m => m.Tf != null && m.Tf.gameObject.activeInHierarchy))
+                    Finish("PASS", probe.Verdict + "\nPhysical doorway exit and subsequent player movement completed.");
+            }
+            return;
+        }
+        if (collecting && banked > 0 && requestedCollectionBanked)
+        {
+            var money = LivingCity.Gameplay.OutfitDirector.Instance.Accounts;
+            if (!physicallyPaid || !bankedAtHeadquarters || money.Sheets.Sum(s => s.IllegalIncome) - initialIllegal != banked ||
+                money.Safe - initialCash != LedgerCash() - initialLedgerCash)
+                Finish("FAIL", $"Banking {banked} failed physical collection or transaction reconciliation.");
+            else Finish("PASS", $"Collector returned {banked} after physical door visits; receipts and safe reconcile including daily expenses.");
+            return;
+        }
+        if (kind == "doorstep" && answered >= 3)
+        {
+            if (RoadDemo.DoorBeat.Active(unit.Boss)) return;
+            if (!moveSent)
+            {
+                moveSent = crews.OrderUnit(unit, unit.Position + UnityEngine.Vector3.right * 10f, out moveDestination);
+                Log("move after third doorway " + moveSent);
+                if (!moveSent) Finish("FAIL", "Crew could not move after exiting third shop.");
+            }
+            else if ((unit.Position - moveDestination).sqrMagnitude < 4f && unit.All().All(m => m.Tf != null && m.Tf.gameObject.activeInHierarchy))
+                Finish("PASS", "Three owner answers, physical exits, and a subsequent move completed.");
+            return;
+        }
+        if (now < next || collectionSent) return;
+        if (waiting)
+        {
+            var count = rt.Racket.TryGetRelationship(pending, LivingCity.Gameplay.PlayerCommands.House, out var rel)
+                ? rel.Demands : 0;
+            if (count > beforeDemands) { answered++; waiting = false; Log("door answered " + rel.State); next = now + 4f; }
+            else if (now - pendingAt > 120f) { Finish("FAIL", "Accepted demand never reached an owner answer: " + pending); }
+            return;
+        }
+        var protectedDoors = collecting ? LivingCity.Business.CityBusinesses.All.Where(b =>
+            visited.Contains(b.Id.Value) && rt.Racket.TryGetRelationship(b.Id, LivingCity.Gameplay.PlayerCommands.House, out var relation) &&
+            relation.IsProtected).OrderByDescending(b => rt.Dues.OwedOf(b.Id, LivingCity.Gameplay.PlayerCommands.House)).ToArray() : null;
+        if (collecting && answered >= 1 && protectedDoors.Length > 0)
+        {
+            var row = protectedDoors[0];
+            pending = row.Id;
+            if (collectionBlocks.Add(row.CanonicalBlockId.Value))
+            {
+                var assignment = p.AssignBlockResponsibility(row.CanonicalBlockId, leader);
+                Log("block assignment " + assignment.Ok + " " + assignment.Reason);
+                if (!assignment.Ok) { Finish("FAIL", "Block responsibility refused: " + assignment.Reason); return; }
+                var blockSource = LivingCity.UI.BlockRacketSeam.Source;
+                if (blockSource == null || !blockSource.TryGetBlock(row.CanonicalBlockId, out var blockView) ||
+                    !blockView.HasResponsible || blockView.ResponsibleCrewId != crewId ||
+                    blockView.CollectorId != 5 || blockView.Collectors != 1 ||
+                    !blockSource.IsCollector(5) || blockSource.IsCollector(2))
+                { Finish("FAIL", "Block details disagree with the assigned collector or label his escort as a second collector."); return; }
+                Log("block details: collector " + blockView.CollectorId + " " + blockView.CollectorName +
+                    "; count " + blockView.Collectors + "; schedule " + blockView.CollectsWord);
+                blockAssigned = true;
+                var home = LivingCity.Business.CityBusinesses.All.First(b => LivingCity.Gameplay.DoorHolder.Read(b.Id) == LivingCity.Outfit.DoorTenure.Ours);
+                Log("line returns indoors " + RoadDemo.CrewQuarters.Station(crews, unit, home.Id));
+            }
+            if (!RoadDemo.CrewQuarters.Billeted(unit) && !RoadDemo.DoorBeat.Active(unit.Boss))
+            {
+                var home = LivingCity.Business.CityBusinesses.All.First(b => LivingCity.Gameplay.DoorHolder.Read(b.Id) == LivingCity.Outfit.DoorTenure.Ours);
+                Log("line returns indoors between collections " + RoadDemo.CrewQuarters.Station(crews, unit, home.Id));
+            }
+            if (!rt.Dues.TryGet(pending, out var due) || due.Owed <= 0 || rt.GameHour % 24 < 9 || rt.GameHour % 24 > 17)
+            { clock.SetSpeed(4); next = now + 10f; return; }
+            if (kind == "collection_auto") { next = now + 10f; return; }
+            if ((int)(rt.GameHour / 24d) < retryCollectionDay) { next = now + 10f; return; }
+            clock.SetSpeed(4);
+            safeBefore = LivingCity.Gameplay.OutfitDirector.Instance.Accounts.Safe;
+            var sent = rt.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(new LivingCity.Territory.CollectDuesCommand(
+                LivingCity.Territory.TerritoryCommandNodeId.Crew(crewId), row.CanonicalBlockId)));
+            Log("collection " + sent.Status + " " + sent.Reason);
+            if (!sent.WasAccepted) { Finish("FAIL", "Dues exist but collection refused: " + sent.Reason); return; }
+            collectionSent = true;
+            return;
+        }
+        if (!collecting && kind != "doorstep" && now - calledAt < 600f) return;
+        if (RoadDemo.DoorBeat.Active(unit.Boss) && !RoadDemo.CrewQuarters.Inside(unit)) return;
+        if (++attempts > 20) { Finish("FAIL", "Twenty demands did not produce the requested police scenario."); return; }
+        var candidates = LivingCity.Business.CityBusinesses.All.Where(b => rt.IsRacketable(b.Id) && !visited.Contains(b.Id.Value) &&
+            LivingCity.Gameplay.DoorHolder.Read(b.Id) != LivingCity.Outfit.DoorTenure.Ours &&
+            !RoadDemo.ShopDamage.IsBusinessDamaged(b.Id)).OrderBy(b =>
+                collecting && b.Name == "Grimaldi Grocery" ? -10000f : rt.TryGetBusinessApproach(b.Id, out var at) ?
+                    (at - unit.Position).magnitude + (100f - rt.OwnerProfileOf(b.Id).Connections) * (collecting ? 0f : 0.5f)
+                    : float.MaxValue).ToArray();
+        if (candidates.Length == 0) { Finish("FAIL", "No accessible target businesses remain."); return; }
+        var targetChoice = candidates[policeScenario && attempts == 1
+            ? (attempt - 1) % System.Math.Min(3, candidates.Length) : 0];
+        pending = targetChoice.Id; visited.Add(pending.Value);
+        beforeDemands = rt.Racket.TryGetRelationship(pending, LivingCity.Gameplay.PlayerCommands.House, out var previous) ? previous.Demands : 0;
+        var demand = rt.Commands.Submit(LivingCity.Gameplay.PlayerCommands.Stamp(new LivingCity.Territory.ApproachBusinessCommand(
+            LivingCity.Territory.TerritoryCommandNodeId.Crew(crewId), pending, LivingCity.Territory.TerritoryRacketIntent.Demand)));
+        Log("demand " + targetChoice.Name + " " + demand.Status + " " + demand.Reason);
+        if (!demand.WasAccepted) { Finish("FAIL", "Demand order rejected: " + targetChoice.Name + " " + demand.Reason); return; }
+        waiting = demand.WasAccepted; pendingAt = now; next = now + 2f;
+    }
+    catch (System.Exception ex) { Finish("FAIL", ex.ToString()); }
+};
+// Sample after every runtime frame; editor callbacks may skip multiple frames at 16x.
+walkLoop = () => { try { if (!done && UnityEditor.EditorApplication.isPlaying) { ObserveWalks(UnityEngine.Time.time); tick(); } } catch (System.Exception error) { Finish("FAIL", "Runtime player driver failed: " + error); } };
+var observedLoop = UnityEngine.LowLevel.PlayerLoop.GetCurrentPlayerLoop();
+observedLoop.subSystemList = observedLoop.subSystemList.Concat(new[] {
+    new UnityEngine.LowLevel.PlayerLoopSystem { type = typeof(RoadDemo.DriveTrace), updateDelegate = walkLoop }
+}).ToArray();
+UnityEngine.LowLevel.PlayerLoop.SetPlayerLoop(observedLoop);
+clock.SetSpeed(4);
+clock.Paused = false;
+return new { kind, attempt, crewId, leader, folder };

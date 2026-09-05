@@ -14,6 +14,41 @@ namespace RoadDemo
         /// length, near enough: he leans off it early and passes it in one curve.</summary>
         const float Lookahead = 3f;
 
+        readonly List<Vector3> _parkedWalk = new List<Vector3>();
+        Vector3 _parkedWalkGoal;
+        int _parkedWalkAt;
+        float _parkedWalkRetryAt;
+
+        void FollowParkedCarDetour(ref Vector3 to, ref float stopWithin, ref bool terminal)
+        {
+            if ((to - _parkedWalkGoal).sqrMagnitude > 0.01f)
+            {
+                _parkedWalk.Clear();
+                _parkedWalkGoal = to;
+                _parkedWalkRetryAt = 0f;
+            }
+            while (_parkedWalkAt < _parkedWalk.Count &&
+                   (Tf.position - _parkedWalk[_parkedWalkAt]).sqrMagnitude < 0.01f)
+            {
+                _parkedWalkAt++;
+                _wander = _stall = 0f;
+                _steerSide = 0;
+                _strideDir = Vector3.zero;
+            }
+            if (_parkedWalkAt >= _parkedWalk.Count && Time.time >= _parkedWalkRetryAt)
+            {
+                _parkedWalkRetryAt = Time.time + 1f;
+                _parkedWalkAt = 0;
+                var delta = to - Tf.position;
+                var localEnd = Tf.position + Vector3.ClampMagnitude(delta, 16f);
+                ParkedCarWalkRoute.TryPlan(Tf.position, localEnd, _parkedWalk);
+            }
+            if (_parkedWalkAt >= _parkedWalk.Count) return;
+            to = _parkedWalk[_parkedWalkAt];
+            stopWithin = 0.05f;
+            terminal = false;
+        }
+
         int _steerSide;      // which way round the last thing in his way he went (WalkObstacles)
         int _preferredSteerSide; // a shared crew route's stable first choice, even between obstacles
         Vector3 _strideDir;  // the line he stepped along last frame; zero at the start of a leg
@@ -152,7 +187,7 @@ namespace RoadDemo
                 return true;
             }
             free.y = from.y;
-            Tf.position = free;
+            SetWalkPosition(free);
             ClearCombatWay();
             if (DriveTrace.On)
                 DriveTrace.Event("walk", DisplayName,
@@ -172,7 +207,7 @@ namespace RoadDemo
                     toward, out var free, 2.5f,
                     candidate => WalkRoute.CanAnchor(candidate))) return false;
             free.y = from.y;
-            Tf.position = free;
+            SetWalkPosition(free);
             if (DriveTrace.On)
                 DriveTrace.Event("walk", DisplayName,
                     $"recovered route start {Vector3.Distance(from, free):F2} m ({context})");
@@ -500,6 +535,7 @@ namespace RoadDemo
         void TickStride(float dt, Vector3 to, float stopWithin, bool hurry = false, bool run = false,
             bool keepOffRoad = false, bool terminal = true, bool routed = false)
         {
+            if (routed && !Crossing) FollowParkedCarDetour(ref to, ref stopWithin, ref terminal);
             var delta = to - Tf.position;
             delta.y = 0f;
             float dist = delta.magnitude;
@@ -609,7 +645,8 @@ namespace RoadDemo
                 // WalkObstacles clears its committed side whenever the line is open.
                 // A crew preference is passed as an equal-angle tie-break only; it is
                 // never installed as an already-committed obstacle side.
-                float probe = Mathf.Min(jog ? Lookahead * 2f : Lookahead, dist);
+                float probe = Mathf.Min(Mathf.Max(jog ? Lookahead * 2f : Lookahead,
+                    Mathf.Min(pace * GaitGain * dt, FrameStepLimit)), dist);
                 // A route corner is authoritative. The route has already solved the
                 // fixed furniture; letting the crowd rewrite its desired line before
                 // obstacle steering made that solver pick a second, contradictory way
@@ -645,7 +682,7 @@ namespace RoadDemo
             // clip, and one pulling up eases off over the stop clip. Applied HERE and
             // not to `pace` above, so the gait's own thresholds (is he running, at what
             // clip rate) are judged on the pace he is actually settling to.
-            float step = Mathf.Min(Mathf.Min(pace * GaitGain * dt, MaxStepPerFrame),
+            float step = Mathf.Min(Mathf.Min(pace * GaitGain * dt, FrameStepLimit),
                 Mathf.Min(dist, clear));
 
             // THE FLOOR IS THE WORLD. A stride, wherever it was ordered from - a walk,
@@ -683,13 +720,13 @@ namespace RoadDemo
             // blocked side forever. This is still an ordinary speed-limited step: it is
             // exact only when the whole remaining distance survived the final proof.
             bool completesRoutedCorner = routed && !terminal && step > 0f &&
-                                         step >= dist;
+                                         step >= dist && (dir - want).sqrMagnitude < 1e-8f;
             if (step > 1e-4f || completesRoutedCorner)
             {
                 if (completesRoutedCorner)
-                    Tf.position = new Vector3(to.x, Tf.position.y, to.z);
+                    SetWalkPosition(new Vector3(to.x, Tf.position.y, to.z));
                 else
-                    Tf.position += dir * step;
+                    SetWalkPosition(Tf.position + dir * step);
                 _strideDir = dir;
                 _strideMoveFrame = Time.frameCount;
                 _blockedFor = 0f;
@@ -816,6 +853,16 @@ namespace RoadDemo
             if (CurrentPose != PoseSprint) ScatterPhase(PoseSprint);
         }
 
+        /// <summary>Use the existing escape gait while retaining the crew's shared
+        /// route. A flight order is more urgent than an ordinary double-click jog.</summary>
+        internal void SetFlightPace(bool fleeing)
+        {
+            if (!fleeing) { _sprinting = false; return; }
+            Urgent = true;
+            SetPace(1f);
+            if (!_sprinting) BreakIntoSprint();
+        }
+
         // ------------------------------------------------------------------ the leg
 
         // Has this leg come to its end short of the spot? A leg ends at the spot, or
@@ -833,6 +880,9 @@ namespace RoadDemo
 
         void BeginLeg()
         {
+            _parkedWalk.Clear();
+            _parkedWalkAt = 0;
+            _parkedWalkRetryAt = 0f;
             _bestLegDist = float.MaxValue;
             _stall = 0f;
             _wander = 0f;

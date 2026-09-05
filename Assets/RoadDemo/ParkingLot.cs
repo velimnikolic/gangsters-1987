@@ -15,7 +15,9 @@ namespace RoadDemo
         readonly float _joinProgress;
         readonly Vector3 _join;
         readonly List<ParkingCar> _cars = new List<ParkingCar>();
+        readonly List<ParkingCar> _requests = new List<ParkingCar>();
         ParkingCar _moving;
+        static readonly Dictionary<GameObject, bool> FitsStall = new Dictionary<GameObject, bool>();
 
         public int CarCount => _cars.Count;
         public RoadEdge HomeLane => _home;
@@ -53,7 +55,7 @@ namespace RoadDemo
             {
                 int stallIndex = Mathf.Min(site.Plan.Stalls.Count - 1,
                                            Mathf.FloorToInt((i + 0.5f) * stride));
-                var prefab = CoreRoads.PickCar(dice);
+                var prefab = CoreRoads.PickCar(dice, FitsParkingStall);
                 if (prefab == null) break;
 
                 var go = Object.Instantiate(prefab, liveRoot);
@@ -94,12 +96,39 @@ namespace RoadDemo
         internal float JoinProgress => _joinProgress;
         internal RoadEdge Home => _home;
 
+        internal ParkingManeuver Plan(ParkingCar car, Vector3 from, Vector3 forward,
+            Vector3 goal, Vector3 goalForward) =>
+            new ParkingManeuver(_site, _cars, car, from, forward, goal, goalForward);
+
+        static bool FitsParkingStall(GameObject prefab)
+        {
+            if (FitsStall.TryGetValue(prefab, out bool fits)) return fits;
+            var bounds = new Bounds();
+            bool measured = false;
+            foreach (var renderer in prefab.GetComponentsInChildren<Renderer>())
+            {
+                if (!measured) { bounds = renderer.bounds; measured = true; }
+                else bounds.Encapsulate(renderer.bounds);
+            }
+            // The traffic catalogue includes seven-metre pickups. Those belong in
+            // larger bays; placing them in this plan fills its manoeuvring aisle.
+            fits = measured && bounds.size.z <= ParkingBlockPlan.StallDepth &&
+                bounds.size.x + 2f * RoadSpace.Air <= ParkingBlockPlan.StallWidth;
+            FitsStall[prefab] = fits;
+            return fits;
+        }
+
         internal bool TryUseDrive(ParkingCar car)
         {
-            if (_moving != null && !ReferenceEquals(_moving, car)) return false;
+            if (ReferenceEquals(_moving, car)) return true;
+            if (!_requests.Contains(car)) _requests.Add(car);
+            if (_moving != null || !ReferenceEquals(_requests[0], car)) return false;
+            _requests.RemoveAt(0);
             _moving = car;
             return true;
         }
+
+        internal bool RequestReturn(ParkingCar car) => TryUseDrive(car);
 
         internal void ReleaseDrive(ParkingCar car)
         {
@@ -154,6 +183,8 @@ namespace RoadDemo
 
         public void Tick(float dt)
         {
+            if (_moving != null && !_moving.CanCommute) _moving = null;
+            _requests.RemoveAll(car => !car.CanCommute);
             for (int i = 0; i < _cars.Count; i++) _cars[i].TickParking(dt);
 
             // Each lot boom is real scene state, not a permanently lowered prop. It opens
@@ -181,6 +212,7 @@ namespace RoadDemo
                 if (car.Tf != null) Object.Destroy(car.Tf.gameObject);
             }
             _cars.Clear();
+            _requests.Clear();
             _moving = null;
         }
     }
@@ -215,8 +247,12 @@ namespace RoadDemo
         int _motion;
         int _laneMotion = -1;   // the exit motion that first puts the body on the road
         Quaternion _motionStart;
+        ParkingManeuver _query;
+        bool _planningExit;
+        readonly List<ParkingManeuver.Pose> _entryPath = new List<ParkingManeuver.Pose>();
 
         public Mode State { get; private set; }
+        internal bool CanCommute => Tf != null && !Gone && !Wrecked && !EngineDead;
 
         internal void Bind(
             ParkingLot lot, ParkingBlockPlan.Stall stall, int index, float firstWait,
@@ -243,12 +279,20 @@ namespace RoadDemo
 
         public void TickParking(float dt)
         {
-            if (Tf == null || Gone || dt <= 0f) return;
+            if (dt <= 0f) return;
+            if (!CanCommute) { _query = null; Speed = 0f; return; }
+            AdvancePlan();
+            Tick(dt);
+        }
+
+        internal override void TickStep(float dt)
+        {
+            if (!CanCommute || dt <= 0f) return;
             switch (State)
             {
                 case Mode.Parked:
                     _timer -= dt;
-                    if (_timer <= 0f && _lot.RejoinClear(this) && _lot.TryUseDrive(this))
+                    if (_timer <= 0f && _lot.TryUseDrive(this))
                         BeginExit();
                     break;
 
@@ -258,13 +302,13 @@ namespace RoadDemo
                     break;
 
                 case Mode.Driving:
-                    Tick(dt);
+                    base.TickStep(dt);
                     _timer -= dt;
                     if (_timer <= 0f) BeginReturn();
                     break;
 
                 case Mode.Returning:
-                    Tick(dt);
+                    base.TickStep(dt);
                     TickReturn();
                     break;
             }
@@ -274,20 +318,18 @@ namespace RoadDemo
         {
             State = Mode.Exiting;
             EngineOff = false;
-            _motions.Clear();
+            _planningExit = true;
+            _query = _lot.Plan(this, Tf.position, Tf.forward,
+                _lot.GateInside, _lot.Direction(Vector3.back));
+        }
 
-            var stand = _lot.World(_stall.Stand);
-            var forward = _lot.Direction(_stall.Forward);
-            var mouth = _lot.World(_stall.Mouth);
-            var junction = _lot.World(_stall.Junction);
+        void BuildExit(IReadOnlyList<ParkingManeuver.Pose> path)
+        {
+            _motions.Clear();
             var gateInside = _lot.GateInside;
             var gateOutside = _lot.GateOutside;
-            var aisle = Flat(junction - mouth).normalized;
             var outward = _lot.Direction(Vector3.back);
-
-            Add(PatrolDocking.Undock(stand, forward, mouth, aisle), true, Quaternion.identity);
-            AddSweep(mouth, aisle, junction, outward);
-            AddSweep(junction, outward, gateInside, outward);
+            AddPath(path);
             // the motion that takes the body out of the gate: held at ITS start, inside
             // the lot, until the road is clear (TickMotion). If the gate has no depth
             // the index falls on the sweep to the join, which starts at the gate anyway
@@ -303,9 +345,40 @@ namespace RoadDemo
 
         void BeginReturn()
         {
-            if (!GoTo(_lot.Join, park: true, standOff: 0f, stopAtGoal: true,
+            if (_query != null) return;
+            // Reserve the driveway before approaching it. Otherwise returners park
+            // across an exiting car's path while waiting for the drive it owns.
+            // Departures and returns share a FIFO so early cars cannot monopolise
+            // the lot while later bays never get their first departure.
+            if (!_lot.RequestReturn(this)) { _timer = 2f; return; }
+            _planningExit = false;
+            _entryPath.Clear();
+            _query = _lot.Plan(this, _lot.GateInside, _lot.Direction(Vector3.forward),
+                _lot.World(_stall.Stand), _lot.Direction(_stall.Forward));
+        }
+
+        void AdvancePlan()
+        {
+            if (_query == null) return;
+            // Work once per rendered frame, independently of the number of 16x
+            // driving substeps. A difficult three-point turn must not stall the city.
+            _query.Step(256);
+            if (!_query.Finished) return;
+            var query = _query;
+            _query = null;
+            if (!query.Found)
+            {
+                _lot.ReleaseDrive(this);
+                _timer = 10f;
+                if (_planningExit) { State = Mode.Parked; EngineOff = true; }
+                return;
+            }
+            if (_planningExit) { BuildExit(query.Path); return; }
+            _entryPath.AddRange(query.Path);
+            if (!GoTo(_lot.Join, park: false, standOff: 0f, stopAtGoal: true,
                       wantHeading: _lot.Home.Heading))
             {
+                _lot.ReleaseDrive(this);
                 _timer = 2f;
                 return;
             }
@@ -315,21 +388,26 @@ namespace RoadDemo
         void TickReturn()
         {
             float distance = Vector3.Distance(Tf.position, _lot.Join);
-            bool atEntrance = distance < HalfLen + 12f
-                           || (Parked && CurrentEdge == _lot.Home && distance < 30f);
+            // Road goals can finish up to three metres beyond the mark. The entry
+            // sweep starts at the physical pose and still checks every movement.
+            bool atEntrance = CurrentEdge == _lot.Home && distance <= 3f;
             if (atEntrance && Mathf.Abs(Speed) < 1.2f)
             {
-                // the way in is hand-driven from here to the gate: nobody may be
-                // standing on it, and the drive is asked for only once it is clear,
-                // so a car held at the mouth does not hold the drive against an exit
-                if (!_lot.EntryClear(this) || !_lot.TryUseDrive(this)) { Halt(false); return; }
+                if (!_lot.EntryClear(this)) return;
                 BeginEnter();
                 return;
             }
 
-            if (!HasGoal && !Halted)
-                GoTo(_lot.Join, park: true, standOff: 0f, stopAtGoal: true,
+            if (!HasGoal)
+                GoTo(_lot.Join, park: false, standOff: 0f, stopAtGoal: true,
                      wantHeading: _lot.Home.Heading);
+        }
+
+        protected override void OnArrived()
+        {
+            // Hold at the actual entrance while its turning sweep clears, never
+            // abandon a parking search somewhere along the public running lane.
+            if (State == Mode.Returning) Halt(false);
         }
 
         void BeginEnter()
@@ -348,19 +426,24 @@ namespace RoadDemo
 
             var gateOutside = _lot.GateOutside;
             var gateInside = _lot.GateInside;
-            var junction = _lot.World(_stall.Junction);
-            var mouth = _lot.World(_stall.Mouth);
-            var stand = _lot.World(_stall.Stand);
             var inward = _lot.Direction(Vector3.forward);
-            var aisle = Flat(mouth - junction).normalized;
-            var forward = _lot.Direction(_stall.Forward);
 
             AddSweep(Tf.position, Tf.forward, gateOutside, inward);
             AddSweep(gateOutside, inward, gateInside, inward);
-            AddSweep(gateInside, inward, junction, aisle);
-            AddSweep(junction, aisle, mouth, aisle);
-            Add(PatrolDocking.Dock(mouth, stand, forward), false, Quaternion.LookRotation(forward));
+            AddPath(_entryPath);
             StartMotions();
+        }
+
+        void AddPath(IReadOnlyList<ParkingManeuver.Pose> path)
+        {
+            for (int i = 1; i < path.Count; i++)
+            {
+                var from = path[i - 1].Position;
+                var to = path[i].Position;
+                Add(new PatrolDocking.Curve { A = from, B = to,
+                    ControlA = Vector3.Lerp(from, to, 1f / 3f),
+                    ControlB = Vector3.Lerp(from, to, 2f / 3f) }, false, path[i].Rotation);
+            }
         }
 
         void AddSweep(Vector3 from, Vector3 fromWay, Vector3 to, Vector3 toWay)
@@ -382,6 +465,7 @@ namespace RoadDemo
 
         void TickMotion(float dt)
         {
+            if (_query != null) return;
             if (_motion >= _motions.Count) { FinishMotion(); return; }
             // HELD INSIDE THE GATE, where no part of the body is in the lane yet. The
             // hold used to be at the start of the last sweep, at the kerb line, with the
@@ -397,20 +481,38 @@ namespace RoadDemo
 
             var motion = _motions[_motion];
             Speed = PatrolDocking.Speed;
-            _t = PatrolDocking.Advance(motion.Curve, _t, PatrolDocking.Speed * dt);
-            var position = PatrolDocking.Point(motion.Curve, _t);
+            float next = PatrolDocking.Advance(motion.Curve, _t, PatrolDocking.Speed * dt);
+            var position = PatrolDocking.Point(motion.Curve, next);
             var rotation = motion.FollowTangent
-                ? PatrolDocking.Heading(motion.Curve, _t, _motionStart)
-                : Quaternion.Slerp(_motionStart, motion.EndRotation,
-                                   Mathf.SmoothStep(0f, 1f, _t));
+                ? PatrolDocking.Heading(motion.Curve, next, _motionStart)
+                : Quaternion.Slerp(_motionStart, motion.EndRotation, next);
+            if (!MotionClear(position, rotation)) { Speed = 0f; return; }
+            _t = next;
             Tf.SetPositionAndRotation(position, rotation);
-            Slid(position);
+            Slid(position, Tf.forward);
             if (_t < 1f) return;
 
             _motion++;
             _t = 0f;
             _motionStart = Tf.rotation;
             if (_motion >= _motions.Count) FinishMotion();
+        }
+
+        bool MotionClear(Vector3 position, Quaternion rotation)
+        {
+            // Translation and yaw happen together. Testing the new yaw at the old
+            // position can falsely trap a tail that clears its neighbour as it moves.
+            float travel = Vector3.Distance(Tf.position, position) +
+                Quaternion.Angle(Tf.rotation, rotation) * Mathf.Deg2Rad * (HalfLen + HalfWide);
+            int samples = Mathf.Max(1, Mathf.CeilToInt(travel / 0.1f));
+            for (int i = 0; i <= samples; i++)
+            {
+                float fraction = i / (float)samples;
+                var at = Vector3.Lerp(Tf.position, position, fraction);
+                var forward = Quaternion.Slerp(Tf.rotation, rotation, fraction) * Vector3.forward;
+                if (RoadSpace.Inside(this, at, forward, HalfLen, HalfWide, out _) != null) return false;
+            }
+            return true;
         }
 
         void FinishMotion()
@@ -428,7 +530,7 @@ namespace RoadDemo
             var position = _lot.World(_stall.Stand);
             var forward = _lot.Direction(_stall.Forward);
             Tf.SetPositionAndRotation(position, Quaternion.LookRotation(forward));
-            Slid(position);
+            Slid(position, forward);
             State = Mode.Parked;
             EngineOff = true;
             _timer = Range(_parkedSeconds);

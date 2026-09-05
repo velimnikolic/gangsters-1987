@@ -288,6 +288,36 @@ namespace RoadDemo
 
     public class PedestrianAgent
     {
+#if UNITY_EDITOR
+        /// <summary>Optional live diagnostics for individual transform writes. A
+        /// frame endpoint chord can cross a prop even when its two actual steps
+        /// went safely around the corner.</summary>
+        public static event System.Action<PedestrianAgent, Vector3, Vector3, string> WalkStepObserved;
+#endif
+
+        protected void SetWalkPosition(Vector3 position,
+            [System.Runtime.CompilerServices.CallerMemberName] string source = null)
+        {
+#if UNITY_EDITOR
+            var from = Tf.position;
+#endif
+            Tf.position = position;
+#if UNITY_EDITOR
+            WalkStepObserved?.Invoke(this, from, position, source);
+#endif
+        }
+
+        protected void SetWalkPositionAndRotation(Vector3 position, Quaternion rotation,
+            [System.Runtime.CompilerServices.CallerMemberName] string source = null)
+        {
+#if UNITY_EDITOR
+            var from = Tf.position;
+#endif
+            Tf.SetPositionAndRotation(position, rotation);
+#if UNITY_EDITOR
+            WalkStepObserved?.Invoke(this, from, position, source);
+#endif
+        }
         const float CrossHustle = 1.35f;
 
         // Mixer input per pose; a pose whose clip was not provided stays invalid
@@ -409,16 +439,79 @@ namespace RoadDemo
         readonly float[] _clipPace = new float[PoseCount];
         int _pose = PoseWalk;
 
-        public void Init(Transform tf, AnimationClip walk, AnimationClip idle, PedLink start, float t)
+        public bool Init(Transform tf, AnimationClip walk, AnimationClip idle, PedLink start, float t)
             => Init(tf, new PedClips { Walk = walk, Idle = idle }, start, t);
 
-        public void Init(Transform tf, PedClips clips, PedLink start, float t)
+        public bool Init(Transform tf, PedClips clips, PedLink start, float t)
         {
             Setup(tf, clips);
-            _link = start;
-            _cameFrom = start.From;
-            _t = t;
+            if (!TryInitialSeat(start, t, _lateral, out _link, out _t, out _lateral))
+            {
+                Dispose();
+                return false;
+            }
+            _cameFrom = _link.From;
             Move(0f);
+            return true;
+        }
+
+        /// <summary>A graph edge is a suggested spawn, not proof that the selected
+        /// metre is outside the finished buildings. Keep a clear seat unchanged;
+        /// otherwise search along that edge, then its connected neighbours.</summary>
+        internal static bool TryInitialSeat(PedLink start, float wantedT, float wantedLine,
+            out PedLink seated, out float seatedT, out float seatedLine)
+        {
+            seated = null;
+            seatedT = seatedLine = 0f;
+            if (start == null) return false;
+            bool TryEdge(PedLink edge, float preferred, out float metre, out float lateral)
+            {
+                metre = lateral = 0f;
+                if (edge == null || edge.Length < .01f) return false;
+                var forward = edge.To.Pos - edge.From.Pos;
+                forward.y = 0f;
+                if (forward.sqrMagnitude < .01f) return false;
+                forward.Normalize();
+                var right = new Vector3(forward.z, 0f, -forward.x);
+                float margin = Mathf.Min(.3f, edge.Length * .25f);
+                preferred = Mathf.Clamp(preferred, margin, edge.Length - margin);
+                for (float offset = 0f; offset <= edge.Length; offset += .5f)
+                    for (int side = 0; side < (offset == 0f ? 1 : 2); side++)
+                    {
+                        float at = preferred + (side == 0 ? offset : -offset);
+                        if (at < margin || at > edge.Length - margin) continue;
+                        for (int line = 0; line < 17; line++)
+                        {
+                            float across = line == 0 ? wantedLine : line == 1 ? 0f :
+                                (line % 2 == 0 ? 1f : -1f) * (line / 2) * .25f;
+                            if (Mathf.Abs(across) > (edge.Gated ? .9f : 1.9f)) continue;
+                            var point = Vector3.Lerp(edge.From.Pos, edge.To.Pos, at / edge.Length) + right * across;
+                            if (!WalkObstacles.InCity(point) || WalkObstacles.Standing(point, WalkObstacles.Radius)) continue;
+                            metre = at;
+                            lateral = across;
+                            return true;
+                        }
+                    }
+                return false;
+            }
+            if (TryEdge(start, wantedT, out seatedT, out seatedLine))
+            { seated = start; return true; }
+            var pending = new Queue<PedLink>();
+            var seen = new HashSet<PedLink> { start };
+            pending.Enqueue(start);
+            while (pending.Count > 0 && seen.Count <= 64)
+            {
+                var edge = pending.Dequeue();
+                foreach (var node in new[] { edge.From, edge.To })
+                    foreach (var next in node.Links)
+                    {
+                        if (next == null || !seen.Add(next)) continue;
+                        if (TryEdge(next, .3f, out seatedT, out seatedLine))
+                        { seated = next; return true; }
+                        pending.Enqueue(next);
+                    }
+            }
+            return false;
         }
 
         /// <summary>A walker off the graph entirely: stood at a point, no link under
@@ -430,7 +523,7 @@ namespace RoadDemo
             _link = null;
             _cameFrom = null;
             _t = 0f;
-            Tf.SetPositionAndRotation(position, rotation);
+            SetWalkPositionAndRotation(position, rotation);
         }
 
         void Setup(Transform tf, PedClips clips)
@@ -842,6 +935,9 @@ namespace RoadDemo
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ForgetCrowd()
         {
+#if UNITY_EDITOR
+            WalkStepObserved = null;
+#endif
             Crossings.Clear();
             Walking.Clear();
             Cells.Clear();
@@ -1064,7 +1160,7 @@ namespace RoadDemo
                 var to = Tf.position + right * (moved - _shuffle);
                 if (GraphStepClear(Tf.position, to))
                 {
-                    Tf.position = to;
+                    SetWalkPosition(to);
                     _shuffle = moved;
                 }
             }
@@ -1647,9 +1743,10 @@ namespace RoadDemo
                 if (_stepAsked < Time.frameCount - 1) { EndJoin(); return; }
                 if (Tf != null && _stepPace > 0.01f)
                 {
-                    var to = Tf.position + _stepDir * (_stepPace * dt);
-                    if (!WalkObstacles.Occupied(to, WalkObstacles.Radius) && WalkObstacles.InCity(to))
-                        Tf.position = to;
+                    var to = Tf.position + _stepDir * Mathf.Min(_stepPace * dt, FrameStepLimit);
+                    if (!WalkObstacles.Occupied(to, WalkObstacles.Radius) && WalkObstacles.InCity(to) &&
+                        !WalkObstacles.BlocksStanding(Tf.position, to, WalkObstacles.Radius))
+                        SetWalkPosition(to);
                 }
             }
             if (_join != Join.Stopping && _join != Join.Stepping && Tf != null && _joinLen > 0.01f)
@@ -2189,7 +2286,7 @@ namespace RoadDemo
             var to = Tf.position + right * shift;
             if (Mathf.Abs(shift) > 0.001f && GraphStepClear(Tf.position, to))
             {
-                Tf.position = to;
+                SetWalkPosition(to);
                 _lateral += shift;
                 _graphBlockedAt = -1f;
                 return;
@@ -2281,12 +2378,12 @@ namespace RoadDemo
                 _lateral = nextLateral;
                 // a join owns his heading while it runs (SpendJoin); the rest of the
                 // time he eases onto the line of the stretch as he always has
-                if (Joining) Tf.position = step;
+                if (Joining) SetWalkPosition(step);
                 else
                 {
                     var rot = Quaternion.Slerp(
                         Tf.rotation, Quaternion.LookRotation(dirN), dt <= 0f ? 1f : 8f * dt);
-                    Tf.SetPositionAndRotation(step, rot);
+                    SetWalkPositionAndRotation(step, rot);
                 }
                 return;
             }
@@ -2299,7 +2396,7 @@ namespace RoadDemo
                 return;
             }
             _t = heldT;
-            Tf.position = held;
+            SetWalkPosition(held);
         }
 
         /// <summary>A hard ceiling on how far any one frame may move a person, whatever
@@ -2311,6 +2408,12 @@ namespace RoadDemo
         /// across the street. Set above any true per-frame stride so normal play never
         /// meets it.</summary>
         public const float MaxStepPerFrame = 0.75f;
+
+        // The hitch ceiling is measured in real frames. At accelerated game speed
+        // the same frame represents more walking time as well as more combat time.
+        // Keeping the unscaled ceiling made a 16x fugitive walk at about 0.3 m/s
+        // while police shots and the rest of the simulation kept advancing.
+        public static float FrameStepLimit => MaxStepPerFrame * Mathf.Max(1f, Time.timeScale);
 
         /// <summary>THE GRAPH NEVER TELEPORTS A MAN. His position is rebuilt from
         /// metre-plus-lateral every frame, and whenever his true feet do not fit
@@ -2328,7 +2431,7 @@ namespace RoadDemo
             if (dt <= 0f) return want;
             var to = want - Tf.position;
             to.y = 0f;
-            float cap = Mathf.Min((speed + 2f) * dt, MaxStepPerFrame);
+            float cap = Mathf.Min((speed + 2f) * dt, FrameStepLimit);
             float off = to.magnitude;
             if (off <= cap) return want;
             var held = Tf.position + to * (cap / off);

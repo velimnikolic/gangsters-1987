@@ -49,7 +49,6 @@ namespace RoadDemo
         const float EscortJoinReach = 3.2f;
         const float EscortControlReach = 6f;
         const float EscortSeatReach = 5.5f;
-        const float DoorRouteFrom = 20f;
         const float DoorDestinationReach = 0.8f;
         const float RetryEvery = 1.25f;
 
@@ -411,6 +410,9 @@ namespace RoadDemo
                 return false;
             boarding.Activated = true;
             boarding.Man.Disengage();
+            // A new pickup supersedes any earlier transfer or foot-march order.
+            // Wait at the physical position while the covering officer joins.
+            boarding.Man.OrderToPoint(boarding.Man.Tf.position);
             OrderEscortToPrisoner(boarding, crews);
             return true;
         }
@@ -474,6 +476,16 @@ namespace RoadDemo
             var atDoor = AtBoardingDoor(man, door);
             var escortBeside = Flat(escort.Tf.position - man.Tf.position)
                                .sqrMagnitude <= EscortSeatReach * EscortSeatReach;
+            // The accepted door radius and the covering post can leave two idle
+            // bodies just beyond seating reach. Close that gap instead of treating
+            // both independent destinations as a completed boarding approach.
+            if (atDoor && !escortBeside)
+            {
+                if (CustodyPlan.ShouldRetryBoarding(escort.HasOrder, false,
+                        Time.time >= boarding.RetryAt, escort.RoutedLegStalled))
+                    OrderEscortToPrisoner(boarding, crews);
+                return false;
+            }
             if (CustodyPlan.CanSeatPrisoner(atDoor, escortBeside))
             {
                 DisarmPrisoner(prisonerCrew, man);
@@ -648,17 +660,22 @@ namespace RoadDemo
             Vector3 door, bool run)
         {
             if (man == null || man.Dead || man.Tf == null) return;
-            crews?.SendToVehicleDoor(man, door);
+            // The approach must clear the car as well as nearby props. Otherwise
+            // an adjustment toward the boarder can land inside the far flank, where
+            // the parked-car detour cannot reach it. The real door still gates seating.
+            if (!WalkObstacles.TryClearSpot(door, WalkObstacles.Radius, out var approach,
+                    PoliceProcedure.CustodyStoppedDoorReach - DoorDestinationReach)) return;
+            crews?.SendToVehicleDoor(man, approach);
             man.Urgent = run;
         }
 
         static bool OrderCustodyLeg(CrewWalker man, Vector3 target, bool run)
         {
             if (man == null || man.Dead || man.Tf == null) return false;
-            var gap = Flat(target - man.Tf.position);
-            var accepted = gap.sqrMagnitude > DoorRouteFrom * DoorRouteFrom
-                ? man.OrderAcross(target)
-                : man.OrderToPoint(target);
+            // A short station-yard leg can still cross parked props. Local steering
+            // cannot solve the row of pickups beside the cells; use the same proved
+            // route as a longer walk. Open ground takes the planner's direct shortcut.
+            var accepted = man.OrderAcross(target);
             if (accepted) man.Urgent = run;
             return accepted;
         }

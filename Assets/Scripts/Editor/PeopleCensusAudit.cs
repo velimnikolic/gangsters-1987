@@ -1086,8 +1086,9 @@ namespace GangstersTools
                 // Own it before any setup call which could throw, so the caller's finally
                 // sweep can remove a half-wired agent from the global crowd as well.
                 agents.Add(agent);
-                agent.Init(go.transform, CrewKit.ForCrowd(clips, variety), link,
-                           UnityEngine.Random.value * link.Length * 0.9f);
+                if (!agent.Init(go.transform, CrewKit.ForCrowd(clips, variety), link,
+                           UnityEngine.Random.value * link.Length * 0.9f))
+                    throw new System.InvalidOperationException("Census could not seat a pedestrian on clear connected ground.");
                 agent.Setup(life);
             }
         }

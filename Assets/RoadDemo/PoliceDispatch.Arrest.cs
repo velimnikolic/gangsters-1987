@@ -290,12 +290,11 @@ namespace RoadDemo
             var crew = GuiltyNear(from);
             if (crew == null || crew.InCustody || crew.Surrendered) return;
 
-            var man = crew.Boss != null && !crew.Boss.Dead
-                ? crew.Boss : DemoCrews.NearestOf(crew, from);
+            var man = StreetCollar(crew, from);
             if (man == null || man.Tf == null) return;
 
             _askedIncident = StreetAlarm.IncidentNumber;
-            _arrestDeed = TheDeed();
+            _arrestDeed = TheDeed(crew);
             _arrestCase = OpenShootingCase(crew);
             if (_arrestCase != null) _arrestDeed = _arrestCase.Deed;
             _arrestCaseIsOurs = true;
@@ -362,8 +361,7 @@ namespace RoadDemo
             if (crew == null || crew.InCustody || crew.Surrendered) return false;
             call.Accused = crew;
 
-            var man = crew.Boss != null && !crew.Boss.Dead
-                ? crew.Boss : DemoCrews.NearestOf(crew, from);
+            var man = StreetCollar(crew, from);
             if (man == null || man.Tf == null) return false;
 
             // AND HIS MAN HAS TO BE A WALK AWAY. The crew is found within the whole
@@ -414,12 +412,41 @@ namespace RoadDemo
                     unit.InCustody || unit.Surrendered) continue;
                 if (unit.Faction != faction) continue;
                 if (unit.Retreated || unit.Car != null) continue;   // gone, or driving off
-                float d = (unit.Position - door).sqrMagnitude;
+                var exposed = StreetCollar(unit, door);
+                if (exposed == null) continue;
+                float d = (exposed.Tf.position - door).sqrMagnitude;
                 if (d > bestD) continue;
                 bestD = d;
                 best = unit;
             }
             return best;
+        }
+
+        static bool ExposedForArrest(CrewWalker man) =>
+            man != null && !man.Dead && man.Tf != null &&
+            man.Tf.gameObject.activeInHierarchy && !DoorBeat.Held(man) && !man.Riding;
+
+        /// <summary>A unit's marker can remain at its hidden lieutenant while another
+        /// member finishes entering. Arrest the person actually visible to the officer.</summary>
+        static CrewWalker StreetCollar(DemoCrews.Unit unit, Vector3 from,
+            bool requireSight = true, LivingCity.Personnel.Roster wantedRoster = null)
+        {
+            if (unit == null) return null;
+            bool Eligible(CrewWalker man) => ExposedForArrest(man) &&
+                (!requireSight || WalkObstacles.Sees(from, man.Tf.position)) &&
+                (wantedRoster == null || wantedRoster.Find(man.CharacterId)?.WantedLevel > 0);
+            if (Eligible(unit.Boss)) return unit.Boss;
+            CrewWalker nearest = null;
+            float distance = float.MaxValue;
+            foreach (var man in unit.All())
+            {
+                if (!Eligible(man)) continue;
+                float gap = (man.Tf.position - from).sqrMagnitude;
+                if (gap >= distance) continue;
+                nearest = man;
+                distance = gap;
+            }
+            return nearest;
         }
 
         /// <summary>
@@ -673,12 +700,12 @@ namespace RoadDemo
             float bestScore = float.MaxValue;
             foreach (var man in _shotBy)
             {
-                if (man == null || man.Dead || man.Tf == null) continue;
+                if (!ExposedForArrest(man) || !WalkObstacles.Sees(from, man.Tf.position)) continue;
                 var unit = _crews.UnitOf(man);
                 if (unit == null || unit.IsPolice || unit.Wiped ||
                     unit.InCustody || unit.Surrendered) continue;
                 if (unit.Retreated || unit.Car != null) continue;   // gone, or driving off
-                float d = Vector3.Distance(unit.Position, from);
+                float d = Vector3.Distance(man.Tf.position, from);
                 if (d > ArrestReach) continue;
                 if (d < bestScore) { bestScore = d; best = unit; }
             }
@@ -689,9 +716,11 @@ namespace RoadDemo
         /// decoration: the deed decides the charge on the rap sheet AND how long they
         /// get (Sentencing) - guns in the street and a dead policeman used to cost the
         /// outfit exactly the same three days.</summary>
-        static Deed TheDeed()
+        Deed TheDeed(DemoCrews.Unit crew)
         {
-            if (StreetAlarm.OfficerDeaths > 0) return Deed.CopKilling;
+            if (crew != null &&
+                (_hunted.Contains(crew) || crew.ArrestCase?.Status == CaseStatus.Open))
+                return crew.ArrestDeed;
             var since = Mathf.Max(0.1f, Time.time - StreetAlarm.IncidentStart + 0.1f);
             var lawFired = StreetAlarm.FactionFiredSince(StreetAlarm.PoliceFaction, since);
             if (StreetAlarm.CivilianDeaths > 0 ||
@@ -709,6 +738,8 @@ namespace RoadDemo
                 ? _arrestOfficer.Tf == null
                 : _arrestLawman == null || _arrestLawman.Dead || _arrestLawman.Tf == null;
             if (noLaw || _arrestCrew == null || _arrestCrew.Wiped) { Drop(); return true; }
+            if ((_collar == Collar.WalkingUp || _collar == Collar.Asking) &&
+                !ExposedForArrest(_arrestCollar)) { Drop(); return true; }
 
             if (_collar == Collar.WalkingUp && Time.time > _collarBy) { Drop(); return true; }
 
@@ -740,8 +771,7 @@ namespace RoadDemo
                     : "THE LIEUTENANT CHOOSES TO FIGHT",
                 4.5f, new Color(1f, 0.55f, 0.45f));
             var original = _arrestDeed;
-            var fresh = StreetAlarm.OfficerDeaths > 0
-                ? Deed.CopKilling : Deed.AssaultOnOfficer;
+            var fresh = Deed.AssaultOnOfficer;
             _arrestDeed = Sentencing.PrimaryCharge(original, fresh);
             if (_arrestCase != null)
             {

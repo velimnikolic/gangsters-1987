@@ -2735,7 +2735,10 @@ namespace RoadDemo
                     : CrewQuarters.Inside(unit) ? "IN THE HOUSE"
                     : unit.TargetUnit != null ? "DEFENDING"
                     : "OUTSIDE";
-                return "THE BAG · " + Surname(unit.Parent?.Name ?? unit.Name) +
+                var roster = LivingCity.Outfit.Underworld.Current?.Of(unit.Faction)?.Roster;
+                var role = roster?.Find(man.CharacterId)?.Duty == LivingCity.Personnel.Duty.Collector
+                    ? "COLLECTOR" : "BAG ESCORT";
+                return role + " · " + Surname(man.DisplayName) +
                        " · " + state;
             }
             while (_menTag.Count <= i) _menTag.Add(default);

@@ -14,6 +14,10 @@ namespace UnityEngine
         public static Vector3 right => new Vector3(1, 0, 0);
         public static Vector3 back => new Vector3(0, 0, -1);
         public static Vector3 left => new Vector3(-1, 0, 0);
+        public static bool operator ==(Vector3 a, Vector3 b) => (a - b).sqrMagnitude < 1e-10f;
+        public static bool operator !=(Vector3 a, Vector3 b) => !(a == b);
+        public override bool Equals(object other) => other is Vector3 v && x == v.x && y == v.y && z == v.z;
+        public override int GetHashCode() => HashCode.Combine(x, y, z);
         public static Vector3 operator +(Vector3 a, Vector3 b) => new Vector3(a.x + b.x, a.y + b.y, a.z + b.z);
         public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(a.x - b.x, a.y - b.y, a.z - b.z);
         public static Vector3 operator -(Vector3 a) => new Vector3(-a.x, -a.y, -a.z);
@@ -88,7 +92,14 @@ namespace UnityEngine
         public static Quaternion LookRotation(Vector3 f) => new Quaternion { fwd = f.normalized };
         public static Quaternion LookRotation(Vector3 f, Vector3 up) => new Quaternion { fwd = f.normalized };
         public static Quaternion Euler(float x, float y, float z) => new Quaternion { fwd = new Vector3(MathF.Sin(y * Mathf.Deg2Rad), 0, MathF.Cos(y * Mathf.Deg2Rad)) };
-        public static Vector3 operator *(Quaternion q, Vector3 v) => v;
+        public static Vector3 operator *(Quaternion q, Vector3 v)
+        {
+            // The road model uses yaw-only rotations; preserve the requested planar
+            // heading so rotated geometry fixtures do not silently repeat angle zero.
+            var forward = new Vector3(q.fwd.x, 0f, q.fwd.z).normalized;
+            var right = new Vector3(forward.z, 0f, -forward.x);
+            return right * v.x + Vector3.up * v.y + forward * v.z;
+        }
     }
 
     public static class Mathf
@@ -148,6 +159,11 @@ namespace UnityEngine
         public string name;
         public GameObject gameObject = new GameObject();
         public void SetPositionAndRotation(Vector3 p, Quaternion q) { position = p; rotation = q; }
+        public Vector3 InverseTransformPoint(Vector3 p)
+        {
+            var offset = p - position;
+            return new Vector3(Vector3.Dot(offset, right), offset.y, Vector3.Dot(offset, forward));
+        }
     }
 
     public class GameObject
@@ -210,6 +226,11 @@ namespace RoadDemo
     }
 
     public class CrewWalker { }
+    public static class CarSmoke { public static void Bonnet(RoadCar car) { } }
+    public static class CrewGore
+    {
+        public static void Hole(UnityEngine.Transform body, UnityEngine.Vector3 at, UnityEngine.Vector3 normal) { }
+    }
 
     // The toll plaza is scene furniture (TollPlaza is a MonoBehaviour that stands the
     // booths up); the sim only ever asks the gate one question, so the stub answers it.
@@ -236,10 +257,11 @@ namespace RoadDemo
         public TrafficSignal(float offset) { _offset = offset; }
         float AxisTime(bool ns)
         {
-            float t = (UnityEngine.Time.time + _offset) % Cycle;
+            float t = (RoadCarSimulation.Now + _offset) % Cycle;
             return ns ? t : (t + HalfCycle) % Cycle;
         }
         public bool GreenFor(bool ns) => AxisTime(ns) < Green;
+        public float ClearanceRemaining(bool ns) => UnityEngine.Mathf.Max(0f, HalfCycle - AxisTime(ns));
         public bool YellowFor(bool ns) { float t = AxisTime(ns); return t >= Green && t < Green + Yellow; }
     }
 }

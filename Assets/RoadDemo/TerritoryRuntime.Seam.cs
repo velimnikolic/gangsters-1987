@@ -219,7 +219,7 @@ namespace RoadDemo
                 var weekday = walked ? TerritoryCollectionSchedule.DayOf(blockId) : -1;
                 var word = walked ? TerritoryCollectionSchedule.WordOf(blockId) : "";
 
-                // The round, if one of this crew's is out on THIS block.
+                // Only our house's round belongs on the player's block card.
                 var roundOut = false;
                 var cursor = 0;
                 var stops = 0;
@@ -229,6 +229,7 @@ namespace RoadDemo
                 {
                     var round = runtime.bodies[i].Round;
                     if (round.Kind != TerritoryRoundKind.Collect ||
+                        round.House != LivingCity.Gameplay.PlayerCommands.House ||
                         round.BlockId != blockId)
                         continue;
                     roundOut = true;
@@ -478,6 +479,8 @@ namespace RoadDemo
                         return LeanRefusal;
 
                     case "round":
+                        if (runtime.FindCollectionUnit(gang, TerritoryCommandNodeId.Crew(crewId), out var unavailable) == null)
+                            return unavailable;
                         if (runtime.RoundRunning(crewId))
                             return "a round is already out";
                         return runtime.TryGetCollectibleDues(blockId, out var owed) &&

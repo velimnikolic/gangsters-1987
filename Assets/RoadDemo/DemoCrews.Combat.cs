@@ -16,10 +16,10 @@ namespace RoadDemo
         /// body falls now, the house's roster is struck after the visible death beat,
         /// and StreetAlarm hears exactly one death immediately.
         /// </summary>
-        public void KilledByBlast(CrewWalker man)
+        public void KilledByBlast(CrewWalker man, CrewWalker attacker = null)
         {
             if (man == null || man.Dead || man.Tf == null) return;
-            KillThroughStreet(man, blast: true);
+            KillThroughStreet(man, blast: true, attacker);
         }
 
         /// <summary>A capped carriage-jeopardy roll found the prisoner.</summary>
@@ -29,10 +29,10 @@ namespace RoadDemo
             var from = attacker != null && attacker.Tf != null
                 ? attacker.Tf.position : man.Tf.position - man.Tf.forward * 4f;
             CrewGore.Hit(man, from, GroundY, floor: false);
-            KillThroughStreet(man, blast: false);
+            KillThroughStreet(man, blast: false, attacker);
         }
 
-        void KillThroughStreet(CrewWalker man, bool blast)
+        void KillThroughStreet(CrewWalker man, bool blast, CrewWalker attacker)
         {
             man.Kill();
             // A rider's pool and chalk belong beside the car after the carriage restores
@@ -43,7 +43,7 @@ namespace RoadDemo
                 man.Faction == StreetAlarm.PoliceFaction
                     ? StreetAlarm.DeathOf.Officer
                     : StreetAlarm.DeathOf.Gangster,
-                man.Faction);
+                man.Faction, attacker: attacker);
             if (DriveTrace.On)
                 DriveTrace.Event(blast ? "blastdeath" : "transferdeath",
                     man.DisplayName, "death entered through the shared roster channel");
@@ -528,6 +528,19 @@ namespace RoadDemo
         internal static bool AnswerCrossUnitAttackerModel(bool hasCurrentEnemyUnit,
             bool sameEnemyUnit, bool attackerVisible, bool canEngage) =>
             hasCurrentEnemyUnit && !sameEnemyUnit && attackerVisible && canEngage;
+
+        internal static bool MayAnswerShot(Unit victim, Unit shooter, bool aboard)
+        {
+            if (victim == null || shooter == null || victim.Surrendered || victim.Fleeing)
+                return false;
+            var incident = StreetAlarm.IncidentNumber;
+            return LivingCity.Police.PoliceProcedure.CrewMayAnswerAttacker(
+                shooter.IsPolice,
+                LivingCity.Police.PoliceProcedure.IsDefensivePoliceReturn(
+                    victim.PoliceAttackedIncident, incident),
+                incident > 0 && victim.PoliceFightIncident == incident) &&
+                (aboard || Time.time - victim.OrderedAt > HoldFireAfterOrder);
+        }
 
         internal static bool OrderedAddressAppliesModel(bool unitOrderedFight,
             bool personalTargetBelongsToStrategicUnit) =>
@@ -1213,7 +1226,7 @@ namespace RoadDemo
                 if (other.IsPolice || other.TargetUnit != unit || !other.OrderedFight) continue;
                 foreach (var a in unit.All())
                 {
-                    if (a.Dead) continue;
+                    if (a.Dead || a.Tf == null || !a.Tf.gameObject.activeInHierarchy) continue;
                     foreach (var b in other.All())
                         // on his feet and in the fight: not a rider, not a passenger,
                         // not a man off on a raid, not one with his hands up or running
@@ -1238,13 +1251,13 @@ namespace RoadDemo
                 if (!MayEngage(unit, other, provoked)) continue;
                 foreach (var a in unit.All())
                 {
-                    if (a.Dead) continue;
+                    if (a.Dead || a.Tf == null || !a.Tf.gameObject.activeInHierarchy) continue;
                     // a man in a car is just a car going by until somebody shoots
                     foreach (var b in other.All())
                         // close enough AND in view: a crew on the far side of a block of
                         // flats has not "seen the outfit walk up", whatever the tape says -
                         // and a man LYING IN WAIT is not walking up at all (COVER-004)
-                        if (!b.Dead && !IsAboard(b) &&
+                        if (!b.Dead && b.Tf != null && b.Tf.gameObject.activeInHierarchy && !IsAboard(b) &&
                             (a.Tf.position - b.Tf.position).sqrMagnitude < r2 &&
                             !Concealed(b, a.Tf.position) &&
                             InSight(a.Tf.position, b.Tf.position))
@@ -1284,11 +1297,8 @@ namespace RoadDemo
         /// crew answers if it has nobody else on its hands.</summary>
         void OnFired(CrewWalker shooter)
         {
-            if (DriveTrace.On) CrewAudit.ShotFired(shooter);
-            // the round is what springs an ambush, not the order that gave him the mark
-            SpringAmbush(shooter);
-            Resolve(shooter, shooter.Target, shooter.MuzzlePosition, shooter.Tf.position,
-                CrewArms.MuzzleOf(shooter.Weapon) ?? shooter.Tf);
+            QueueRound(shooter, shooter.Target, shooter.MuzzlePosition, shooter.Tf.position,
+                CrewArms.MuzzleOf(shooter.Weapon) ?? shooter.Tf, shooter.ShotTimeInFrame, foot: true);
         }
 
         /// <summary>One shot, from a shooter the arena is not itself driving: the same
@@ -1296,7 +1306,8 @@ namespace RoadDemo
         /// is for is the pillion of a motorcycle (CrewBike) - a drive-by whose muzzle is
         /// nowhere near a car window, and which would otherwise have had to grow a
         /// second copy of the ballistics to fire a round.</summary>
-        public void FireFrom(CrewWalker shooter, CrewWalker mark, Transform follow = null)
+        public void FireFrom(CrewWalker shooter, CrewWalker mark, Transform follow = null,
+            float at = 0f)
         {
             if (shooter == null || shooter.Dead || shooter.Tf == null) return;
 
@@ -1304,11 +1315,8 @@ namespace RoadDemo
             // seconds and forty of them are firing at once; one shot in six, and never
             // twice from the same mouth inside eight seconds, is the difference between a
             // street fight and a football crowd.
-            if (Random.value < 0.16f)
-                CrewSpeech.Cry(shooter, LivingCity.Data.VoiceLines.FightCurse, cooldown: 8f);
-
-            Resolve(shooter, mark, shooter.MuzzlePosition, shooter.Tf.position,
-                follow != null ? follow : (CrewArms.MuzzleOf(shooter.Weapon) ?? shooter.Tf));
+            QueueRound(shooter, mark, shooter.MuzzlePosition, shooter.Tf.position,
+                follow != null ? follow : (CrewArms.MuzzleOf(shooter.Weapon) ?? shooter.Tf), at, voice: true);
         }
 
         /// <summary>The nearest man of this crew still on his feet - who a drive-by
@@ -1518,6 +1526,8 @@ namespace RoadDemo
             // wherever the car is going: the order stands, the guns come out anyway
             var victimUnit = UnitOf(target);
             var shooterUnit = UnitOf(shooter);
+            if (shooterUnit != null && !shooterUnit.IsPolice && victimUnit != null && victimUnit.IsPolice)
+                shooterUnit.PoliceFightIncident = StreetAlarm.IncidentNumber;
             // Rounds are coming at this crew, hit or miss: it has a fight now whether it
             // went looking for one or not. Police used to be excluded here, so a crew
             // already fighting a gang simply absorbed police fire without answering.
@@ -1537,13 +1547,7 @@ namespace RoadDemo
             HeatFight(shooterUnit);
             HeatFight(victimUnit);
 
-            var policeOpenedFireOnVictim = victimUnit != null &&
-                LivingCity.Police.PoliceProcedure.IsDefensivePoliceReturn(
-                    victimUnit.PoliceAttackedIncident, StreetAlarm.IncidentNumber);
-            bool mayAnswer = victimUnit != null && shooterUnit != null &&
-                LivingCity.Police.PoliceProcedure.CrewMayAnswerAttacker(
-                    shooterUnit.IsPolice, policeOpenedFireOnVictim) &&
-                (IsAboard(target) || Time.time - victimUnit.OrderedAt > HoldFireAfterOrder);
+            bool mayAnswer = MayAnswerShot(victimUnit, shooterUnit, IsAboard(target));
             bool shooterSpotted = mayAnswer && Spotted(victimUnit, shooter);
             // AND THE FIGHT ITSELF IS ONLY EVER PICKED UP OFF SOMEBODY IN SIGHT. Being
             // shot at is provocation (above) and provocation is answered by looking
@@ -1688,7 +1692,7 @@ namespace RoadDemo
                         StreetAlarm.IncidentNumber);
                 StreetAlarm.Death(target.Tf.position,
                     officer ? StreetAlarm.DeathOf.Officer : StreetAlarm.DeathOf.Gangster,
-                    target.Faction, defensivePoliceReturn);
+                    target.Faction, defensivePoliceReturn, shooter);
                 // a friend going down beside a man may break him: he runs, and comes
                 // back when his nerve does (the law does not run)
                 if (victimUnit != null && !victimUnit.IsPolice && !IsAboard(target))

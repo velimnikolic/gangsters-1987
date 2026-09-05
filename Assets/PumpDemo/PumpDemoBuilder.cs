@@ -696,8 +696,9 @@ namespace PumpDemo
                 foreach (var animator in go.GetComponentsInChildren<Animator>())
                     animator.runtimeAnimatorController = null;
                 var agent = new CivilianAgent { Speed = Random.Range(1.2f, 1.8f) };
-                agent.Init(go.transform, CrewKit.ForCrowd(clips, variety), link,
-                           Random.value * link.Length * 0.9f);
+                if (!agent.Init(go.transform, CrewKit.ForCrowd(clips, variety), link,
+                           Random.value * link.Length * 0.9f))
+                { Destroy(go); continue; }
                 agent.Setup(_life);
                 _walkers.Add(agent);
             }

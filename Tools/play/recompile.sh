@@ -71,7 +71,7 @@ if [ "$PLAY" != "stopped" ]; then
     exit 1
 fi
 
-TRIGGER=$(unity command recompile --json 2>&1)
+TRIGGER=$(unity command recompile --focus "${RECOMPILE_FOCUS:-false}" --json 2>&1)
 if ! printf '%s' "$TRIGGER" | grep -q '"success": true'; then
     echo "FAILED: the editor would not take a recompile"
     printf '%s\n' "$TRIGGER" | tail -5

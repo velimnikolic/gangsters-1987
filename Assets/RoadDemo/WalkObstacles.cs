@@ -305,10 +305,19 @@ namespace RoadDemo
         {
             int taken = 0;
             var all = root.GetComponentsInChildren<Transform>(true);
+            var actors = new HashSet<Transform>();
+            foreach (var life in root.GetComponentsInChildren<ResidentialBlockLife>(true))
+                life.AppendActorRoots(actors);
             for (int i = 0; i < all.Length; i++)
             {
                 var t = all[i];
                 if (t == null) continue;
+                // A resident's carried bag moves with him. It must not leave an
+                // immovable obstacle behind at the position where his rig was baked.
+                bool carried = false;
+                for (var parent = t; parent != null && parent != root; parent = parent.parent)
+                    if (actors.Contains(parent)) { carried = true; break; }
+                if (carried) continue;
                 float groundY = groundAt(t.position);
                 // Harvested residential roots already carry a compact, baked outline of
                 // their STRUCTURE. Their root BoxCollider is deliberately the complete
@@ -941,6 +950,11 @@ namespace RoadDemo
             if (!RouteStartNeedsRecoveryModel(clearanceBlocked, centreOverlapping,
                     accepts != null, validatorAccepts)) return false;
 
+            // A centre which already has its travel clearance must keep that whole
+            // footprint during recovery, not merely avoid the core of a pole.
+            float chordRadius = Mathf.Min(radius, CrewTravelRadius);
+            if (Standing(wanted, chordRadius)) chordRadius = OverlapProbeRadius;
+
             var forward = toward - wanted;
             forward.y = 0f;
             if (forward.sqrMagnitude < 1e-5f) forward = Vector3.forward;
@@ -962,7 +976,7 @@ namespace RoadDemo
                     var candidate = wanted + dir * ring;
                     candidate.y = wanted.y;
                     if (!InCity(candidate) || Standing(candidate, radius) ||
-                        BlocksStanding(wanted, candidate, OverlapProbeRadius) ||
+                        BlocksStanding(wanted, candidate, chordRadius) ||
                         (accepts != null && !accepts(candidate))) continue;
 
                     var chord = candidate - wanted;

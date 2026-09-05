@@ -2040,7 +2040,7 @@ namespace LivingCity.Outfit
         }
 
         static bool Candidate(HouseView view, Crew crew) =>
-            !IsDetail(view, crew) && Free(view, crew) &&
+            !IsDetail(view, crew) && Led(view.Roster, crew) && Free(view, crew) &&
             Active(view.Roster, crew) >= 2 && !Wanted(view.Roster, crew);
 
         /// <summary>No job on the book AND no round on the street (S7). A crew out on

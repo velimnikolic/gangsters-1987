@@ -111,6 +111,10 @@ namespace LivingCity.Tests
             ("WordAgainstWordMostlyWalks", WordAgainstWordMostlyWalks),
             ("TwoEyewitnessesConvict", TwoEyewitnessesConvict),
             ("NoWitnessesIsADismissal", NoWitnessesIsADismissal),
+            ("RecognitionRecoversTheOpenCase", RecognitionRecoversTheOpenCase),
+            ("RecognitionAfterForfeitGetsANewHearing", RecognitionAfterForfeitGetsANewHearing),
+            ("BookingEndsThePursuitButKeepsTheCase", BookingEndsThePursuitButKeepsTheCase),
+            ("LegacyCourtOutcomesEndThePursuit", LegacyCourtOutcomesEndThePursuit),
             ("ThePoliceWhoSawItAreNotSilenced", ThePoliceWhoSawItAreNotSilenced),
             ("AWithdrawnWitnessIsOffTheCase", AWithdrawnWitnessIsOffTheCase),
             ("AnOpenComplaintIsAnExtraCount", AnOpenComplaintIsAnExtraCount),
@@ -2622,6 +2626,142 @@ namespace LivingCity.Tests
                            Sentencing.DismissedOutcome,
                 "TRIAL: the dismissal is written on his sheet.");
             Want(failures, pipe.Find(man.Id) == null, "TRIAL: and he leaves the pipe.");
+        }
+
+        static void RecognitionRecoversTheOpenCase(List<string> failures)
+        {
+            for (var repetition = 0; repetition < 5; repetition++)
+            {
+                var roster = BookedRoster(out var man, out var pipe);
+                var original = WordAgainstWord(pipe, 10 + repetition);
+                original.GangId = roster.GangId;
+                original.Defendants.Add(man.Id);
+                var closed = pipe.OpenCase(Deed.Battery, roster.GangId, 1, 2);
+                closed.Status = CaseStatus.Tried;
+                var recovered = pipe.CaseForArrest(man.Id, roster.GangId, Deed.Resisting,
+                    12 + repetition, closed, out var opened);
+                Want(failures, recovered == original && !opened && original.AnyEvidence(),
+                    "RECOGNITION: a rebuilt crew must recover the man's open docket.");
+                original.Status = CaseStatus.Tried;
+                var fresh = pipe.CaseForArrest(man.Id, roster.GangId, Deed.CopKilling,
+                    12 + repetition, closed, out opened);
+                Want(failures, opened && fresh != original && fresh != closed &&
+                    fresh.Status == CaseStatus.Open && fresh.Deed == Deed.CopKilling &&
+                    fresh.CourtDay == 13 + repetition,
+                    "RECOGNITION: a closed file must not replace a new recognition charge.");
+                Want(failures, pipe.CaseForArrest(man.Id, roster.GangId, Deed.Resisting,
+                    12 + repetition, fresh, out opened) == fresh && !opened,
+                    "RECOGNITION: an open remembered file must not be duplicated.");
+                var foreign = pipe.OpenCase(Deed.Extortion, roster.GangId + 1, 10, 11);
+                var own = pipe.CaseForArrest(man.Id + 1, roster.GangId,
+                    WantedLevels.Charge(WantedLevels.ShotAtOfficer), 12, foreign, out opened);
+                Want(failures, opened && own.GangId == roster.GangId &&
+                    own.Deed == Deed.AssaultOnOfficer && foreign.Defendants.Count == 0,
+                    "RECOGNITION: another family's file cannot become this man's charge.");
+            }
+        }
+
+        static void RecognitionAfterForfeitGetsANewHearing(List<string> failures)
+        {
+            for (var repetition = 0; repetition < 5; repetition++)
+            {
+                var roster = BookedRoster(out var man, out var pipe);
+                var old = WordAgainstWord(pipe, 10);
+                old.GangId = roster.GangId;
+                var prisoner = pipe.Book(roster, man.Id, old.Deed, 10, old);
+                pipe.PostBail(roster, prisoner, PrisonPipeline.BailPrice(prisoner), 10);
+                pipe.SkipBail(prisoner);
+                pipe.TryOnPaper(roster, prisoner.CourtDay);
+                var recognised = pipe.CaseForArrest(man.Id, roster.GangId, Deed.Resisting,
+                    13, old, out var opened);
+                Want(failures, opened && recognised != old && old.HasDefendant(man.Id),
+                    "RECOGNITION: spotting a bail skipper must not erase his old charge.");
+                var otherDefendant = man.Id + 100;
+                old.Defendants.Add(otherDefendant);
+                var recaptured = pipe.Book(roster, man.Id, recognised.Deed, 13, recognised);
+                Want(failures, recaptured.CourtDay == 14 && recognised.Counts.Contains(old.CaseId) &&
+                    !old.HasDefendant(man.Id) && old.HasDefendant(otherDefendant) &&
+                    old.Status == CaseStatus.Open && man.WantedLevel == 0,
+                    "RECOGNITION: recapture carries the old count to a new date without losing other defendants.");
+                recognised.Witnesses.Add(new Witness { Kind = WitnessKind.PoliceFoundThem });
+                pipe.Away(recaptured);
+                pipe.Tried(roster, recaptured, 14);
+                Want(failures, old.VerdictFor(man.Id).Outcome == CaseOutcome.BailForfeit &&
+                    recognised.VerdictFor(man.Id) != null &&
+                    recognised.VerdictFor(man.Id).Outcome != CaseOutcome.BailForfeit,
+                    "RECOGNITION: the forfeit and the later trial must both remain readable.");
+                var third = pipe.CaseForArrest(man.Id, roster.GangId, Deed.Resisting,
+                    15, recognised, out opened);
+                Want(failures, opened && third != recognised,
+                    "RECOGNITION: an already judged man cannot reuse that verdict's case.");
+            }
+        }
+
+        static void BookingEndsThePursuitButKeepsTheCase(List<string> failures)
+        {
+            for (var repetition = 0; repetition < 5; repetition++)
+            {
+                foreach (var level in new[] { WantedLevels.Fled, WantedLevels.FreedFromTransfer,
+                    WantedLevels.ShotAtOfficer, WantedLevels.CopKiller })
+                {
+                    var roster = BookedRoster(out var man, out var pipe);
+                    WantedLevels.Mark(man, level, 8);
+                    WantedLevels.WentToGround(man, 9);
+                    var file = pipe.CaseForArrest(man.Id, roster.GangId,
+                        WantedLevels.Charge(level), 10, null, out _);
+                    file.Witnesses.Add(new Witness { Kind = WitnessKind.PoliceFoundThem });
+                    var prisoner = pipe.Book(roster, man.Id, file.Deed, 10, file);
+                    Want(failures, prisoner != null && man.WantedLevel == 0 && man.HidingSince == 0 &&
+                        file.Status == CaseStatus.Open && file.HasDefendant(man.Id) &&
+                        prisoner.Deed == WantedLevels.Charge(level),
+                        "CUSTODY: capture ends the pursuit while retaining its actual charge.");
+                    WantedLevels.Mark(man, level, 11);
+                    Want(failures, pipe.Book(roster, man.Id, file.Deed, 11, file) == null &&
+                        man.WantedLevel == level,
+                        "CUSTODY: a refused duplicate booking must not clear a fresh mark.");
+                }
+                var bailedRoster = BookedRoster(out var bailedMan, out var bailedPipe);
+                WantedLevels.Mark(bailedMan, WantedLevels.Fled, 9);
+                var bailFile = WordAgainstWord(bailedPipe, 10);
+                var bailed = bailedPipe.Book(bailedRoster, bailedMan.Id, bailFile.Deed, 10, bailFile);
+                bailedPipe.PostBail(bailedRoster, bailed, PrisonPipeline.BailPrice(bailed), 10);
+                bailedPipe.TryOnPaper(bailedRoster, bailed.CourtDay);
+                Want(failures, bailed.Stage != PrisonStage.Skipped && bailedMan.WantedLevel == 0,
+                    "BAIL: yesterday's captured flight cannot forfeit today's attended hearing.");
+            }
+        }
+
+        static void LegacyCourtOutcomesEndThePursuit(List<string> failures)
+        {
+            for (var repetition = 0; repetition < 5; repetition++)
+            {
+                foreach (var level in new[] { WantedLevels.Fled, WantedLevels.FreedFromTransfer,
+                    WantedLevels.ShotAtOfficer, WantedLevels.CopKiller })
+                {
+                    var roster = BookedRoster(out var man, out var pipe);
+                    var file = pipe.OpenCase(WantedLevels.Charge(level), roster.GangId, 10, 11);
+                    var prisoner = pipe.Book(roster, man.Id, file.Deed, 10, file);
+                    // A legacy held save retained the pursuit from before booking.
+                    WantedLevels.Mark(man, level, 9);
+                    pipe.Away(prisoner);
+                    pipe.Tried(roster, prisoner, 11);
+                    Want(failures, man.WantedLevel == 0 &&
+                        (prisoner.Stage == PrisonStage.Sentenced ||
+                         man.Status == CharacterStatus.Active && pipe.Find(man.Id) == null) &&
+                        file.VerdictFor(man.Id) != null,
+                        "TRIAL: an adjudicated legacy prisoner must not retain his old pursuit.");
+                    if (!file.BodyEvidence)
+                        Want(failures, file.Status == CaseStatus.Dismissed,
+                            "TRIAL: a case with no remaining evidence must be dismissed.");
+                }
+                var convictedRoster = BookedRoster(out var convicted, out var convictedPipe);
+                var serving = convictedPipe.Book(convictedRoster, convicted.Id, Deed.Affray, 10);
+                WantedLevels.Mark(convicted, WantedLevels.Fled, 9);
+                convictedPipe.Away(serving);
+                convictedPipe.Tried(convictedRoster, serving, 11);
+                Want(failures, serving.Stage == PrisonStage.Sentenced && convicted.WantedLevel == 0,
+                    "TRIAL: a convicted man serves his charge without a second pursuit for it.");
+            }
         }
 
         static void ThePoliceWhoSawItAreNotSilenced(List<string> failures)

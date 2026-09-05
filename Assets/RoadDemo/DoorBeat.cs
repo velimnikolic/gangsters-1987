@@ -253,6 +253,7 @@ namespace RoadDemo
 
             readonly List<Leaf> leaves = new List<Leaf>(2);
             readonly Storefront storefront;
+            readonly Transform source;
             float amount;
             float target;
 
@@ -263,6 +264,7 @@ namespace RoadDemo
 
                 storefront = doorway.GetComponent<Storefront>() ??
                              doorway.GetComponentInParent<Storefront>();
+                source = storefront != null ? storefront.transform : doorway;
                 if (storefront != null)
                     return;
 
@@ -304,6 +306,13 @@ namespace RoadDemo
                 : leaves.Count == 0 || amount >= 0.999f;
             public bool IsClosed => storefront != null ? storefront.IsClosed
                 : leaves.Count == 0 || amount <= 0.001f;
+
+            public bool Matches(Transform doorway)
+            {
+                if (doorway == null || source == null) return false;
+                var front = doorway.GetComponent<Storefront>() ?? doorway.GetComponentInParent<Storefront>();
+                return source == (front != null ? front.transform : doorway);
+            }
 
             public void Open()
             {
@@ -358,6 +367,36 @@ namespace RoadDemo
 
         static DoorBeat instance;
         readonly List<Call> calls = new List<Call>();
+        readonly Dictionary<DoorSwing, bool> passageDoors = new Dictionary<DoorSwing, bool>();
+
+        DoorSwing SwingFor(Transform doorway)
+        {
+            foreach (var call in calls)
+                if (call.Swing != null && call.Swing.Matches(doorway)) return call.Swing;
+            return new DoorSwing(doorway);
+        }
+
+        void RefreshPassages(float dt)
+        {
+            // Every visitor owns a passage, but they share the physical leaves.
+            // The first man going inside must not close them on the next man who
+            // is waiting for them to open. Tick each door only once per frame.
+            passageDoors.Clear();
+            foreach (var call in calls)
+            {
+                if (call.Swing == null) continue;
+                bool passing = call.Phase == VisitPhase.OpeningEntry || call.Phase == VisitPhase.Entering ||
+                    call.Phase == VisitPhase.OpeningExit || call.Phase == VisitPhase.Exiting;
+                passageDoors.TryGetValue(call.Swing, out bool alreadyPassing);
+                passageDoors[call.Swing] = passing || alreadyPassing;
+            }
+            foreach (var door in passageDoors)
+            {
+                if (door.Value) door.Key.Open();
+                else door.Key.Close();
+                door.Key.Tick(dt);
+            }
+        }
 
         static bool UnderFire(Transform body) =>
             body != null &&
@@ -578,7 +617,7 @@ namespace RoadDemo
 
             for (var i = 0; i < instance.calls.Count; i++)
                 if ((man != null && instance.calls[i].Man == man) ||
-                    (doorway != null && instance.calls[i].Swing != null &&
+                    (strictArrival && doorway != null && instance.calls[i].Swing != null &&
                      instance.calls[i].Door == threshold))
                 {
                     // A police statement may only be carried by THIS officer through
@@ -601,7 +640,7 @@ namespace RoadDemo
             // crew MOVING IN needs no guard on the door it is going through.
             if (!hold && man != null)
                 Escort(man, outside, outside - threshold);
-            var swing = new DoorSwing(doorway);
+            var swing = instance.SwingFor(doorway);
             // The passage starts AT the doorstep. Ordering a man at the inside point
             // from across the street walks him in a straight line through the shopfront,
             // which is what a player reads as a man entering a door from thirty metres.
@@ -823,7 +862,7 @@ namespace RoadDemo
             {
                 var call = instance.calls[i];
                 if (call.Man == man)
-                    return call.Hold && Indoors(call);
+                    return call.Hold && call.Phase == VisitPhase.Inside;
             }
             return false;
         }
@@ -990,8 +1029,24 @@ namespace RoadDemo
             return Vector3.zero;
         }
 
+        /// <summary>The street end of this visit, for a newcomer joining a man
+        /// whose body is currently beyond the threshold.</summary>
+        public static bool TryGetOutside(CrewWalker man, out Vector3 outside)
+        {
+            outside = default;
+            if (instance == null || man == null) return false;
+            foreach (var call in instance.calls)
+            {
+                if (call.Man != man) continue;
+                outside = call.Through ? call.Outside : call.Home;
+                return true;
+            }
+            return false;
+        }
+
         void Update()
         {
+            RefreshPassages(Time.deltaTime);
             for (var i = calls.Count - 1; i >= 0; i--)
             {
                 var call = calls[i];
@@ -1096,6 +1151,7 @@ namespace RoadDemo
                 StepOut(call);
                 Left(call);
             }
+            RefreshPassages(0f);
         }
 
         /// <summary>The clock for one step of the beat: sim time, or the wall clock when
@@ -1200,7 +1256,6 @@ namespace RoadDemo
 
         void TickThrough(int index, Call call)
         {
-            call.Swing?.Tick(Time.deltaTime);
             var visitor = call.Visitor;
             if (visitor == null || visitor.Gone)
             {

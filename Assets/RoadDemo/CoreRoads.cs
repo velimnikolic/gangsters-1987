@@ -1821,12 +1821,23 @@ namespace RoadDemo
                 Ensure();
                 return _pool.Count == 0 ? null : _pool[dice.Next(_pool.Count)];
             }
+
+            public static GameObject Pick(System.Random dice, System.Predicate<GameObject> accepts)
+            {
+                Ensure();
+                var eligible = _pool.FindAll(accepts);
+                return eligible.Count == 0 ? null : eligible[dice.Next(eligible.Count)];
+            }
         }
 
         /// <summary>A car for the quarter's traffic, out of the same pool the car parks
         /// draw on - the catalogue's road cars, the wrong decade and the marked liveries
         /// left out, weighted as the city weights its own pool.</summary>
         public static GameObject PickCar(System.Random dice) => Cars.Pick(dice);
+
+        /// <summary>Keep catalogue weights while restricting cars to a site's usable space.</summary>
+        public static GameObject PickCar(System.Random dice, System.Predicate<GameObject> accepts) =>
+            Cars.Pick(dice, accepts);
 
         /// <summary>Distinct members of the same filtered car pool, for the residential
         /// recycler's background prewarm. Keeping this catalogue here prevents its visual

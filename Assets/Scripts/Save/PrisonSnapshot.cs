@@ -209,10 +209,10 @@ namespace LivingCity.Save
                     GangId = row.gangId,
                     BusinessId = row.businessId ?? "",
                     Where = row.where ?? "",
-                    // The bool was appended without bumping version 3. Infer it for
-                    // version-3 murder rows written by the first implementation.
-                    BodyEvidence = row.bodyEvidence || deed == Deed.Murder ||
-                                   deed == Deed.CopKilling,
+                    // A charge is not evidence. Preserve an explicit false (and the
+                    // documented false default of older files) instead of creating
+                    // prosecution evidence merely because the charge names a death.
+                    BodyEvidence = row.bodyEvidence,
                     OpenedDay = row.openedDay,
                     CourtDay = row.courtDay,
                     LawyerId = row.lawyerId,

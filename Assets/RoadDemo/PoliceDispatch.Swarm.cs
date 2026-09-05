@@ -67,7 +67,6 @@ namespace RoadDemo
         bool _playerSwarm;
 
         readonly List<DemoCrews.Unit> _hunted = new List<DemoCrews.Unit>();
-        static readonly List<CrewWalker> _swarmShooters = new List<CrewWalker>();
 
         /// <summary>Whether the whole force is out. Read by the overlay and the map.</summary>
         public bool Swarming => _swarm;
@@ -82,39 +81,36 @@ namespace RoadDemo
             if (!_swarm || grade == SwarmGrade.OfficerDown)
                 _swarmGrade = grade;
 
-            // whoever has been shooting at this incident is who the city is looking for
-            _swarmShooters.Clear();
-            StreetAlarm.ShootersSince(30f, _swarmShooters);
-            foreach (var man in _swarmShooters)
+            // The radio names the crew whose shot or death event raised this hunt.
+            // Recent gunfire elsewhere in the city is not evidence against that crew.
+            if (culprit != null && !culprit.IsPolice && !culprit.Wiped)
             {
-                if (man == null || man.Faction == StreetAlarm.PoliceFaction) continue;
-                var unit = _crews != null ? _crews.UnitOf(man) : null;
-                if (unit == null || unit.IsPolice || unit.Wiped) continue;
-                if (!_hunted.Contains(unit)) _hunted.Add(unit);
+                var alreadyHunted = _hunted.Contains(culprit);
+                var hasOpenCase = culprit.ArrestCase?.Status == CaseStatus.Open;
+                var fresh = grade == SwarmGrade.OfficerDown ? Deed.CopKilling : Deed.AssaultOnOfficer;
+                var former = alreadyHunted || hasOpenCase ? culprit.ArrestDeed : Deed.Affray;
+                culprit.ArrestDeed = Sentencing.PrimaryCharge(former, fresh);
+                if (hasOpenCase)
+                {
+                    var original = culprit.ArrestCase.Deed;
+                    var primary = Sentencing.PrimaryCharge(original, culprit.ArrestDeed);
+                    if (original != Deed.Affray && original != primary)
+                        PrisonPipeline.AttachCharge(culprit.ArrestCase, original);
+                    if (fresh != primary) PrisonPipeline.AttachCharge(culprit.ArrestCase, fresh);
+                    culprit.ArrestCase.Deed = primary;
+                    culprit.ArrestDeed = primary;
+                }
+                if (!alreadyHunted) _hunted.Add(culprit);
             }
-            if (culprit != null && !culprit.IsPolice && !culprit.Wiped &&
-                !_hunted.Contains(culprit))
-                _hunted.Add(culprit);
 
             // The hunt is citywide simulation, but the banner is the player's news.
             // Remember his involvement even if his crew is taken before stand-down.
             if (PlayerHunted())
                 _playerSwarm = true;
 
-            if (grade == SwarmGrade.OfficerDown)
-                for (var i = 0; i < _hunted.Count; i++)
-                {
-                    var hunted = _hunted[i];
-                    hunted.ArrestDeed = Deed.CopKilling;
-                    if (hunted.ArrestCase != null &&
-                        hunted.ArrestCase.Status == CaseStatus.Open)
-                    {
-                        var former = hunted.ArrestCase.Deed;
-                        if (former != Deed.Affray && former != Deed.CopKilling)
-                            PrisonPipeline.AttachCharge(hunted.ArrestCase, former);
-                        hunted.ArrestCase.Deed = Deed.CopKilling;
-                    }
-                }
+            foreach (var squad in _squads)
+                if (squad.Men != null && _hunted.Contains(squad.Men.TargetUnit))
+                    squad.SwarmResponse = true;
 
             if (_swarm)
             {
@@ -159,6 +155,7 @@ namespace RoadDemo
                     State = SquadState.Sent,
                     Incident = _incident,
                     PlayerNews = _playerSwarm,
+                    SwarmResponse = true,
                 });
                 if (_lights.TryGetValue(car, out var lights)) lights.Set(true, siren: true);
                 _carsSent++;
@@ -203,8 +200,8 @@ namespace RoadDemo
             if (Time.time - _swarmSeenAt > SwarmQuiet) StandDown();
         }
 
-        /// <summary>Has any unit of the law laid eyes on anybody it is hunting? A
-        /// proximity test, which is what a sighting is; the CHASE itself never reads a
+        /// <summary>Has any active unit of the law laid eyes on an exposed hunted
+        /// man, within range and with a clear sight line? The CHASE itself never reads a
         /// live transform (that rule has four known traps behind it).</summary>
         bool AnyHuntedSeen()
         {
@@ -248,6 +245,25 @@ namespace RoadDemo
         void StandDown()
         {
             _swarm = false;
+            // End the response itself as well as its banner. A squad still approaching
+            // an unreachable post otherwise never reaches the securing/return states.
+            foreach (var squad in _squads)
+            {
+                var target = squad.Men?.TargetUnit;
+                if (!squad.SwarmResponse && (target == null || !_hunted.Contains(target)))
+                    continue;
+                if (target != null && !target.Wiped && !target.Surrendered &&
+                    !_hunted.Contains(target)) continue; // another incident still needs it
+                if (squad.State == SquadState.Leaving || squad.State == SquadState.Done)
+                    continue;
+                if (squad.Men != null)
+                {
+                    squad.Men.TargetUnit = null;
+                    foreach (var man in squad.Men.All())
+                        if (man != null && !man.Dead) man.Disengage();
+                }
+                BeginLeaving(squad);
+            }
             var outfit = LivingCity.Gameplay.OutfitDirector.Instance;
             int today = outfit != null && outfit.Campaign != null ? outfit.Campaign.Day : 0;
             var underworld = LivingCity.Outfit.Underworld.Current;
@@ -269,7 +285,7 @@ namespace RoadDemo
                     var member = roster.Find(man.CharacterId);
                     if (member == null) continue;
                     WantedLevels.Mark(member,
-                        WantedLevels.ShotOutcome(_swarmGrade == SwarmGrade.OfficerDown),
+                        WantedLevels.ShotOutcome(unit.ArrestDeed == Deed.CopKilling),
                         today);
                 }
             }

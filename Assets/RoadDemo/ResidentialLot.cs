@@ -345,7 +345,11 @@ namespace RoadDemo
             // block and calls it done, which is the paving-with-a-shed-on-it the user threw
             // out (2026-08-28). Deterministic retries also give a weak principal frontage
             // another deal; after that it stands as it is and the verdict says so.
-            for (int again = 1; again <= 12; again++)
+            // Narrow rows have fewer combinations that preserve both neighbour
+            // gaps and occupied ground. Keep the variety, but allow enough draws
+            // to find them (17x7 seeds 1988/1992/223715228 need draws 13/38/69).
+            int maxRetries = plan.Klass == Klass.Row ? 128 : 12;
+            for (int again = 1; again <= maxRetries; again++)
             {
                 bool empty = plan.Lone && !Standing(plan);
                 bool bare = BuiltCoverage(plan) < RequiredBuiltCoverage(plan);
@@ -378,7 +382,8 @@ namespace RoadDemo
             Edges(plan, rng);
             RearParking(plan, rng);
             Cafe(plan, rng);
-            Subway(plan, rng);
+            // Subway entrances do not belong in residential blocks: they seal shop approaches.
+            // Keep the gap as ordinary paving (player direction, 2026-09-04).
             Parks(plan, rng);
             Inside(plan, rng);
         }

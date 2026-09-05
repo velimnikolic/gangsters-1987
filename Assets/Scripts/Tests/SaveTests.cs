@@ -28,6 +28,7 @@ namespace LivingCity.Tests
             var failures = new List<string>();
 
             ACampaignComesBackTheSameCampaign(failures);
+            SmallCityFilesDoNotOverwriteThePlayer(failures);
             TheCityComesBackTheSameCity(failures);
             ALoadedCampaignPlaysOnTheSameWay(failures);
             AnActiveShutdownComesBackThroughCampaignApply(failures);
@@ -47,6 +48,31 @@ namespace LivingCity.Tests
         }
 
         // ------------------------------------------------------------------ RIVAL-010
+
+        static void SmallCityFilesDoNotOverwriteThePlayer(List<string> failures)
+        {
+            foreach (var count in new[] { 1, 2, 7, 10, 21 })
+            {
+                var world = Underworld.Deal(Seed, count);
+                var before = Dump(world);
+                var snapshot = OutfitSnapshot.Snapshot(world);
+                if (snapshot.houses.Length != count)
+                    failures.Add("SAVE-SMALL: snapshot includes undealt houses for " + count);
+                foreach (var legacy in new[] { false, true })
+                {
+                    var file = OutfitSnapshot.Snapshot(world);
+                    if (legacy)
+                        System.Array.Resize(ref file.houses, world.Count);
+                    // Exercise Unity's actual null-to-empty-object JSON behavior.
+                    var read = JsonUtility.FromJson<UnderworldDto>(JsonUtility.ToJson(file));
+                    var loaded = Underworld.Deal(Seed, count);
+                    OutfitSnapshot.Restore(loaded, read);
+                    if (Dump(loaded) != before)
+                        failures.Add("SAVE-SMALL: " + count + " houses, legacy=" + legacy +
+                                     " lost campaign state at the file boundary.");
+                }
+            }
+        }
 
         /// <summary>
         /// (a) The books: money, days, orders in flight, a man in a bed, a man struck
@@ -585,6 +611,21 @@ namespace LivingCity.Tests
 
             if (restored == null || !restored.BodyEvidence || !restored.AnyEvidence())
                 failures.Add("CNTR-AUDIT: a murder body disappeared across a version-3 save.");
+
+            foreach (var charge in new[] { Deed.Murder, Deed.CopKilling })
+                foreach (var present in new[] { false, true })
+                {
+                    var source = new CampaignFile
+                    {
+                        cases = new[] { new CourtCaseDto
+                        { caseId = 1, deed = (int)charge, gangId = 0, bodyEvidence = present } },
+                    };
+                    var loaded = JsonUtility.FromJson<CampaignFile>(JsonUtility.ToJson(source));
+                    var target = new Police.PrisonPipeline();
+                    Save.PrisonSnapshot.Restore(target, loaded);
+                    if (target.FindCase(1)?.BodyEvidence != present)
+                        failures.Add("SAVE-EVIDENCE: load changed the evidence for " + charge);
+                }
         }
 
         static void BadEnumIntegersStopAtTheLoadBoundary(List<string> failures)

@@ -104,7 +104,7 @@ namespace RoadDemo
     /// enters the camera's ground footprint. Recently left holders form a small LRU cache,
     /// while entering the existing 2D map evicts every 3D payload immediately.
     /// </summary>
-    public sealed class CityBlockRecycler : MonoBehaviour
+    public sealed partial class CityBlockRecycler : MonoBehaviour
     {
         sealed class View
         {
@@ -115,7 +115,6 @@ namespace RoadDemo
             public ulong ContentKey;
             public ResidentialBlocks.IncrementalComposition Compose;
             public IEnumerator Merge;
-            public StreamedWalkObstaclePlan WalkProps;
             public bool Active;
             public bool Attached;
             public bool Attaching;
@@ -239,6 +238,7 @@ namespace RoadDemo
                          bool mapHandoff = true, ResidentialFallbackLayer fallbacks = null)
         {
             if (_model != null) _model.Changed -= OnModelChanged;
+            ClearNavigation();
             _model = model ?? throw new ArgumentNullException(nameof(model));
             _frame = frame;
             _config = CityViewConfig.Resolve(config);
@@ -262,6 +262,7 @@ namespace RoadDemo
 
         void Start()
         {
+            PrepareNavigation();
             ResolveSceneServices();
             if (_model == null || _rig == null || (_mapHandoff && _rig.MapOut)) return;
             RefreshDesired();
@@ -669,13 +670,9 @@ namespace RoadDemo
             holder.localPosition = new Vector3(recipe.LocalBounds.xMin, 0f, recipe.LocalBounds.yMin);
             holder.localRotation = Quaternion.identity;
             holder.localScale = Vector3.one;
-            // Residential cafe tables, chairs, bins and parked props are born inside this
-            // recyclable payload, after Core's permanent obstacle pass has finished. Keep
-            // their measured footprints with the resident holder. Camera visibility may
-            // disable its renderers, but the logical venue remains in the city until the
-            // payload is actually evicted or rebound.
-            view.WalkProps = view.Content.gameObject.AddComponent<StreamedWalkObstaclePlan>();
-            view.WalkProps.Bind(transform.position.y);
+            // The complete collision catalogue predates population and survives
+            // visual eviction. Binding renderers never changes walkable ground.
+            EnsureNavigation(recipe);
             // Begin attaching just outside the picture. At the configured fast-WASD
             // speed this lead covers the lower renderer budget before the kerb reaches
             // screen, so spreading graphics registration does not become visual pop-in.
@@ -780,7 +777,6 @@ namespace RoadDemo
             view.LastUsed = Time.frameCount;
             if (view.Active) return;
             view.Active = true;
-            RegisterWalkProps(view);
             Streamed();
             BeginAttachment(view);
             _lamps?.Register(view.Content);
@@ -950,12 +946,18 @@ namespace RoadDemo
         {
             if (recipe == null)
             {
+                ClearNavigation();
                 CancelBinding();
                 _scratchViews.Clear();
                 foreach (var pair in _resident) _scratchViews.Add(pair.Value);
                 for (int i = 0; i < _scratchViews.Count; i++) Evict(_scratchViews[i]);
                 return;
             }
+            // A navigation bake uses the same deterministic composer as a visual
+            // bind, so retire an in-flight composition before opening another one.
+            CancelBinding();
+            if ((change & ResidentialBlockChange.Removed) != 0) RemoveNavigation(recipe.Id);
+            else EnsureNavigation(recipe);
             _invalid.Add(recipe);
         }
 
@@ -1010,7 +1012,6 @@ namespace RoadDemo
         void DestroyPayload(View view, bool countEviction)
         {
             if (view?.Recipe != null) _fallbacks?.ShowFallback(view.Recipe.Id);
-            UnregisterWalkProps(view);
             CancelAttachment(view);
             // Disable one common ancestor before returning hundreds of nested prefab
             // roots. This turns renderer detachment into one hierarchy transition and
@@ -1052,7 +1053,6 @@ namespace RoadDemo
             if (countEviction) _evicted++;
             view.Content = null;
             view.Merged = null;
-            view.WalkProps = null;
             view.Recipe = null;
             view.ContentKey = 0UL;
             view.Objects = 0;
@@ -1061,16 +1061,6 @@ namespace RoadDemo
             view.Attached = false;
             view.AttachRenderers.Clear();
             view.Parts.Clear();
-        }
-
-        static void RegisterWalkProps(View view)
-        {
-            view?.WalkProps?.Register();
-        }
-
-        static void UnregisterWalkProps(View view)
-        {
-            view?.WalkProps?.Unregister();
         }
 
         void ReturnHolder(View view)
@@ -1105,6 +1095,7 @@ namespace RoadDemo
         void OnDestroy()
         {
             _teardown = true;
+            ClearNavigation();
             Instances.Remove(this);
             if (_model != null) _model.Changed -= OnModelChanged;
             CancelBinding();

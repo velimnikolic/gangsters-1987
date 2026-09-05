@@ -209,6 +209,26 @@ namespace LivingCity.Police
             return null;
         }
 
+        /// <summary>Recognition must recover the man's docket even after his street
+        /// crew was rebuilt or loaded. A closed or foreign remembered file cannot
+        /// stand in for an open charge against him.</summary>
+        public CourtCase CaseForArrest(int characterId, int gangId, Deed deed, int today,
+            CourtCase remembered, out bool opened)
+        {
+            opened = false;
+            var file = CaseOf(characterId);
+            if (file != null && file.Status == CaseStatus.Open && file.GangId == gangId &&
+                file.VerdictFor(characterId) == null)
+                return file;
+            if (remembered != null && remembered.Status == CaseStatus.Open &&
+                remembered.GangId == gangId && remembered.VerdictFor(characterId) == null &&
+                FindCase(remembered.CaseId) == remembered)
+                return remembered;
+            opened = true;
+            return OpenCase(deed, gangId, today,
+                today > 0 ? today + Sentencing.DaysToCourt : 0);
+        }
+
         /// <summary>Has this man been out of custody before? The surcharge reads it, and
         /// so does the next judge.</summary>
         public bool EverEscaped(int characterId) => _everEscaped.Contains(characterId);
@@ -419,13 +439,14 @@ namespace LivingCity.Police
                 return null;   // already inside; one arrest per man
             }
 
+            var outstanding = CaseOf(characterId);
             var result = RosterOps.Jail(roster, characterId, 0,
                 "Held at the station", Sentencing.ChargeFor(deed), Stamp(today));
             if (!result.Ok)
                 return null;
 
             var courtDay = today > 0 ? today + Sentencing.DaysToCourt : 0;
-            if (file != null && file.CourtDay > 0)
+            if (file != null && file.CourtDay > courtDay)
                 courtDay = file.CourtDay;
 
             var prisoner = new Prisoner
@@ -441,12 +462,23 @@ namespace LivingCity.Police
                 CaseId = file != null ? file.CaseId : -1,
             };
             _inside.Add(prisoner);
+            WantedLevels.TakenIn(roster.Find(characterId));
 
             if (file != null)
             {
                 if (file.CourtDay <= 0) file.CourtDay = courtDay;
                 if (!file.Defendants.Contains(characterId))
                     file.Defendants.Add(characterId);
+                // A forfeited hearing already has a verdict line. Its charge follows
+                // him onto the new case, where the next judge can write a new verdict.
+                // Other defendants keep their own unresolved place on the old file.
+                if (outstanding != null && outstanding != file &&
+                    outstanding.Status == CaseStatus.Open && outstanding.GangId == roster.GangId)
+                {
+                    if (!file.Counts.Contains(outstanding.CaseId))
+                        file.Counts.Add(outstanding.CaseId);
+                    DropDefendant(outstanding, characterId);
+                }
             }
             return prisoner;
         }
@@ -474,6 +506,7 @@ namespace LivingCity.Police
             if (!result.Ok)
                 return null;
 
+            WantedLevels.TakenIn(member);
             var old = prisoner.CaseId >= 0 ? FindCase(prisoner.CaseId) : null;
 
             prisoner.Deed = worse;
@@ -827,6 +860,10 @@ namespace LivingCity.Police
             if (file != null && counsel != null)
                 file.LawyerId = counsel.Id;
 
+            // Older saves can retain the pursuit that already ended at booking.
+            // A man standing before the judge is in custody, not still on the run.
+            WantedLevels.TakenIn(member);
+
             // The shopkeeper's nerve is asked ONCE, on the morning of the trial: he has
             // had the night, with the family standing in his doorway, to think it over.
             if (file != null && ComplainantStillTalks != null && !ComplainantStillTalks(file))
@@ -1133,6 +1170,9 @@ namespace LivingCity.Police
                     continue;
                 if (member.Status != CharacterStatus.Jailed)
                 {
+                    // Legacy serving records may predate pursuit closure at booking.
+                    if (_inside[i].Stage == PrisonStage.Serving)
+                        WantedLevels.TakenIn(member);
                     released?.Add(_inside[i].CharacterId);
                     _inside.RemoveAt(i);
                     count++;

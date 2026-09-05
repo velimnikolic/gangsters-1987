@@ -147,7 +147,7 @@ namespace RoadDemo
             SpendBomb(unit, man);
             var from = man.ChestPosition + Vector3.up * 0.15f;
             Face(man, targetPos);
-            BombProjectile.Throw(from, targetPos + Vector3.up * 0.2f, this, unit.Faction, GroundY);
+            BombProjectile.Throw(from, targetPos + Vector3.up * 0.2f, this, unit.Faction, GroundY, man);
 
             if (DriveTrace.On)
             {
@@ -183,7 +183,7 @@ namespace RoadDemo
             var at = car.Position + (car.Tf != null ? car.Tf.forward : Vector3.forward) * (car.HalfLength + 0.2f);
             at.y = GroundY;
             Face(man, at);
-            PlantedBomb.Lay(at, car, this, Selected.Faction, GroundY);
+            PlantedBomb.Lay(at, car, this, Selected.Faction, GroundY, man);
 
             if (DriveTrace.On)
             {

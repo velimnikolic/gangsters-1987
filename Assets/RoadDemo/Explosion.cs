@@ -29,15 +29,19 @@ namespace RoadDemo
         /// for the gangsters to catch in the blast (null skips them); <paramref name="car"/>
         /// is the one to tear apart, if any; <paramref name="faction"/> is who is answerable
         /// for the bang, for the alarm.</summary>
-        public static void Blow(Vector3 at, DemoCrews crews, RoadCar car, int faction, float groundY)
+        public static void Blow(Vector3 at, DemoCrews crews, RoadCar car, int faction, float groundY,
+            CrewWalker attacker = null)
         {
+            // Open the incident before its casualties are reported. Reporting the
+            // blast afterwards reset their tally after a quiet street.
+            StreetAlarm.Report(at, attacker, faction, 130f);
             var force = PoliceForce.Instance;
             force?.BeginExplosion(car, at);
             try
             {
                 Flash(at);
                 KillCivilians(at, groundY);
-                KillCrews(at, crews, groundY);
+                KillCrews(at, crews, groundY, attacker);
             }
             finally
             {
@@ -55,13 +59,6 @@ namespace RoadDemo
             TerritoryRuntime.ReportViolenceAt(
                 at, faction, LivingCity.Territory.TerritoryEscalationKind.PropertyDamage,
                 ShopDamage.ScorchRange);
-
-            // the loudest thing on the street by far: heard three streets over, so the
-            // whole quarter reacts and the police are called to it. The deaths are not
-            // reported here: each man killed reports his own (CivilianAgent.Kill), and
-            // a blanket report on top of that was a death the heat counted twice - or
-            // once for a blast that hit nobody.
-            StreetAlarm.Report(at, null, faction, 130f);
 
             if (DriveTrace.On)
                 DriveTrace.Event("bomb", "blast",
@@ -82,7 +79,7 @@ namespace RoadDemo
             }
         }
 
-        static void KillCrews(Vector3 at, DemoCrews crews, float groundY)
+        static void KillCrews(Vector3 at, DemoCrews crews, float groundY, CrewWalker attacker)
         {
             if (crews == null) return;
             float r2 = Radius * Radius;
@@ -93,7 +90,7 @@ namespace RoadDemo
                 {
                     if (man == null || man.Dead || man.Tf == null) continue;
                     if ((man.Tf.position - at).sqrMagnitude > r2) continue;
-                    crews.KilledByBlast(man);
+                    crews.KilledByBlast(man, attacker);
                 }
             }
         }

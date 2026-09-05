@@ -61,6 +61,7 @@ namespace RoadDemo
             public double DeadlineHour;
             public double ReassertAtHour;
             public int ScheduledDay = -1;
+            public TerritoryRoundOrigin Origin;
 
             /// <summary>
             /// EVERY HISTORY ROW WAITING ON THIS ONE ROUND. The gateway hands each
@@ -160,7 +161,9 @@ namespace RoadDemo
                 pendingBagRounds.RemoveAt(i);
                 TerritoryCommandExecution result;
                 var previousScheduledDay = scheduledSubmitDay;
+                var previousOrigin = submittingOrigin;
                 scheduledSubmitDay = pending.ScheduledDay;
+                submittingOrigin = pending.Origin;
                 try
                 {
                     result = Execute(command);
@@ -168,6 +171,7 @@ namespace RoadDemo
                 finally
                 {
                     scheduledSubmitDay = previousScheduledDay;
+                    submittingOrigin = previousOrigin;
                 }
 
                 if (RoundRunning(command.GroupId.Value))
@@ -766,6 +770,21 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ rounds
 
+        DemoCrews.Unit FindCollectionUnit(TerritoryGangId house,
+            TerritoryCommandNodeId groupId, out string refusal)
+        {
+            refusal = "Unknown tactical group.";
+            if (crews == null || groupId.Kind != TerritoryCommandNodeKind.Crew)
+                return null;
+            var detail = crews.BagUnitOf(groupId.Value);
+            if (detail == null)
+            {
+                refusal = "The crew has no bag detail on the street.";
+                return null;
+            }
+            return CommandableUnit(detail, house, out refusal);
+        }
+
         public TerritoryCommandExecution Execute(CollectDuesCommand command)
         {
             if (!command.BlockId.IsValid)
@@ -778,7 +797,7 @@ namespace RoadDemo
             if (word != null)
                 return TerritoryCommandExecution.Reject(word);
 
-            var unit = FindUnit(command.House, command.GroupId, out var refusal);
+            var unit = FindCollectionUnit(command.House, command.GroupId, out var refusal);
             if (unit == null)
                 return TerritoryCommandExecution.Reject(refusal);
             // One round to a crew. The bag man's round outlives an order to the line
@@ -849,8 +868,8 @@ namespace RoadDemo
             var ordered = new List<RoundStop>();
             OrderStops(candidates, UnitAnchor(walkers), ordered);
 
-            // One errand at a time: the old doorstep order and any old round go.
-            DropPendingApproaches(unit.CrewId);
+            // This detail owns collection; a simultaneous doorstep order belongs
+            // to the lieutenant's line and must keep its pending arrival.
 
             // The detail comes through the door on its feet. The filed round begins
             // only once the doorway beat has put every survivor back on the pavement.
@@ -863,6 +882,7 @@ namespace RoadDemo
                     DeadlineHour = lastGameHour + PendingBagRoundTimeoutHours,
                     ReassertAtHour = lastGameHour + PendingBagRoundReassertHours,
                     ScheduledDay = scheduledSubmitDay,
+                    Origin = submittingOrigin,
                 };
                 if (command.CommandId > 0) queued.Receipts.Add(command.CommandId);
                 pendingBagRounds.Add(queued);
@@ -1358,13 +1378,18 @@ namespace RoadDemo
             }
         }
 
-        const float HomeRadius = 18f;
+        const float HomeRadius = 2.5f;
 
         /// <summary>Where a house's round walks the bag to: that family's own door.
         /// The player's is his headquarters, which the outfit director already
         /// answers; everybody else's is the front the city seated them.</summary>
         Vector3 HomeDoor(TerritoryGangId house)
         {
+            // Collections return to the same pavement approach as their bag unit.
+            // A facade marker can be inside the building; a broad radius around it
+            // used to bank the take while the collector was still at a nearby shop.
+            var front = house.IsValid ? DemoCrews.FrontOf(house.Value) : null;
+            if (front != null) return front.Outside;
             if (house == LivingCity.Gameplay.PlayerCommands.House)
             {
                 var director = LivingCity.Gameplay.OutfitDirector.Instance;
@@ -1372,8 +1397,7 @@ namespace RoadDemo
                     return hq;
             }
 
-            var front = house.IsValid ? DemoCrews.FrontOf(house.Value) : null;
-            return front != null ? front.Outside : Vector3.zero;
+            return Vector3.zero;
         }
 
         bool HasHome(TerritoryGangId house) =>

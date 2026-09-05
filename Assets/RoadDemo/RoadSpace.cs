@@ -95,6 +95,8 @@ namespace RoadDemo
         static int _builtFrame = -1;
         static int _builtCount = -1;
 
+        internal static void Invalidate() => _builtFrame = -1;
+
         static long Key(int cx, int cz) => ((long)cx << 32) ^ (uint)cz;
 
         static void Build()
@@ -157,6 +159,29 @@ namespace RoadDemo
             return worst;
         }
 
+        // A short step out of existing contact must improve separation from every
+        // touching body and leave all previously clear bodies untouched.
+        static bool SeparatingStep(IRoadUser self, Vector3 from, Vector3 to,
+            Vector3 fwd, float halfLength, float halfWidth)
+        {
+            var delta = to - from; delta.y = 0f;
+            if (delta.sqrMagnitude < 1e-8f || delta.sqrMagnitude > Probe * Probe) return false;
+            bool improves = false;
+            var nearby = Near(from);
+            for (int i = 0; i < nearby.Count; i++)
+            {
+                var other = nearby[i];
+                if (ReferenceEquals(other, self)) continue;
+                bool before = Overlap(from, self.RoadForward, halfLength, halfWidth,
+                    other.RoadPosition, other.RoadForward, other.HalfLength, other.HalfWidth, Air, out var oldPush);
+                bool after = Overlap(to, fwd, halfLength, halfWidth,
+                    other.RoadPosition, other.RoadForward, other.HalfLength, other.HalfWidth, Air, out var newPush);
+                if (after && (!before || newPush.sqrMagnitude > oldPush.sqrMagnitude + 1e-8f)) return false;
+                if (before && (!after || newPush.sqrMagnitude < oldPush.sqrMagnitude - 1e-8f)) improves = true;
+            }
+            return improves;
+        }
+
         /// <summary>The point a car may actually move to this frame: its own step, cut
         /// short at the last place its body is still clear of everybody else's. A car
         /// that is already inside one is eased out instead, a few centimetres a frame.
@@ -167,9 +192,14 @@ namespace RoadDemo
         {
             // inside somebody already - a car turned into us, one spawned on us, the
             // last frame's arithmetic: out of him first, and no step at all this frame
-            hit = Inside(self, from, fwd, halfLength, halfWidth, out var push);
+            // Test the current pose before sweeping toward the next one. Applying
+            // the future heading here can invent a collision at the old position.
+            var fromForward = self.RoadForward;
+            hit = Inside(self, from, fromForward, halfLength, halfWidth, out var push);
             if (hit != null)
             {
+                if (SeparatingStep(self, from, to, fwd, halfLength, halfWidth))
+                { hit = null; return to; }
                 float d = push.magnitude;
                 var eased = from + (d > UnwedgeStep ? push * (UnwedgeStep / d) : push);
                 eased.y = to.y;
@@ -179,14 +209,17 @@ namespace RoadDemo
             var step = to - from;
             step.y = 0f;
             float len = step.magnitude;
-            if (len < 1e-5f) return to;
+            float rotationDistance = Vector3.Angle(fromForward, fwd) * Mathf.Deg2Rad *
+                Mathf.Sqrt(halfLength * halfLength + halfWidth * halfWidth);
+            if (len < 1e-5f && rotationDistance < 1e-5f) return to;
 
-            int n = Mathf.Clamp(Mathf.CeilToInt(len / Probe), 1, 16);
+            int n = Mathf.Clamp(Mathf.CeilToInt((len + rotationDistance) / Probe), 1, 16);
             var free = from;
             for (int i = 1; i <= n; i++)
             {
                 var at = from + step * (i / (float)n);
-                var blocker = Inside(self, at, fwd, halfLength, halfWidth, out _);
+                var facing = Vector3.Slerp(fromForward, fwd, i / (float)n);
+                var blocker = Inside(self, at, facing, halfLength, halfWidth, out _);
                 if (blocker != null)
                 {
                     hit = blocker;

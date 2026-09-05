@@ -22,11 +22,16 @@ namespace RoadDemo
 
         float AxisTime(bool northSouth)
         {
-            float t = (Time.time + _offset) % Cycle;
+            float t = (RoadCarSimulation.Now + _offset) % Cycle;
             return northSouth ? t : (t + HalfCycle) % Cycle;
         }
 
         public bool GreenFor(bool northSouth) => AxisTime(northSouth) < Green;
+
+        /// <summary>Time until the opposing axis receives green, including the
+        /// yellow and clearance interval at the end of this axis's turn.</summary>
+        public float ClearanceRemaining(bool northSouth) =>
+            Mathf.Max(0f, HalfCycle - AxisTime(northSouth));
 
         public bool YellowFor(bool northSouth)
         {

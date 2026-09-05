@@ -6,7 +6,9 @@ using RoadDemo;
 
 static class Program
 {
-    const float Dt = 1f / 30f;
+    internal static readonly float Dt = float.TryParse(Environment.GetEnvironmentVariable("ROAD_SIM_DT"),
+        System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var requestedDt)
+        && requestedDt > 0f ? requestedDt : 1f / 30f;
 
     // ------------------------------------------------------------ builders
 
@@ -84,6 +86,7 @@ static class Program
         public int Overlaps, Stalls, BeltHits, Frames;
         public float SpeedSum; public int SpeedN;
         public Dictionary<RoadCar, float> StillFor = new Dictionary<RoadCar, float>();
+        public Dictionary<RoadCar, Vector3> LastPositions = new Dictionary<RoadCar, Vector3>();
         public HashSet<RoadCar> Stalled = new HashSet<RoadCar>();
         public List<string> Notes = new List<string>();
         public float MaxDepth;
@@ -113,7 +116,10 @@ static class Program
             if (c.Parked) continue;
             st.SpeedSum += Math.Abs(c.Speed); st.SpeedN++;
             st.StillFor.TryGetValue(c, out float sf);
-            sf = Math.Abs(c.Speed) < 0.1f ? sf + dt : 0f;
+            bool unmoved = st.LastPositions.TryGetValue(c, out var previousPosition) &&
+                (c.Position - previousPosition).sqrMagnitude < 0.01f;
+            sf = Math.Abs(c.Speed) < 0.1f && unmoved ? sf + dt : 0f;
+            st.LastPositions[c] = c.Position;
             st.StillFor[c] = sf;
             if (!st.Hist.TryGetValue(c, out var h)) st.Hist[c] = h = new List<string>();
             h.Add($"{now:F1}: v={c.Speed:F1} s={c.S:F1} d={c.D:F1} {c.DoingLine} {c.Why} | pass: {c.PassWhy} {ViaInfo(c)}");
@@ -130,8 +136,9 @@ static class Program
 
     static string ViaInfo(RoadCar c)
     {
-        if (c.Via == null) return "";
-        var v = c.Via;
+        var v = c.Via ?? (Connector)typeof(RoadCar).GetField("_via",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(c);
+        if (v == null) return "";
         var inside = v.Node.Inside;
         var mine = inside.FirstOrDefault(o => o.Car == c);
         string others = string.Join(",", inside.Where(o => o.Car != c).Select(o => $"car{o.Car.Id}@{o.Via.From.Road.Index}/{o.Via.From.Heading}->{o.Via.To.Road.Index}/{o.Via.To.Heading}:conf={v.Conflicts[o.Via.Index]}"));
@@ -147,21 +154,28 @@ static class Program
         int frames = (int)(seconds / Dt);
         Time.deltaTime = Dt;
         RoadCar.BeltHits = 0;
+        DriveTrace.On = Environment.GetEnvironmentVariable("TRACE") == "1";
+        var traceFile = Environment.GetEnvironmentVariable("TRACE_FILE");
+        bool recordTrace = traceFile != null && title.StartsWith(Environment.GetEnvironmentVariable("TRACE_SCENARIO") ?? "crew ring");
+        if (recordTrace) DriveTrace.Open(traceFile);
         var sw = System.Diagnostics.Stopwatch.StartNew();
         double tickMs = 0;
         for (int f = 0; f < frames; f++)
         {
             Time.time = f * Dt;
             Time.frameCount = f;
+            DriveTrace.Now = Time.time;
             each?.Invoke(Time.time);
             int bh = RoadCar.BeltHits;
             var t0 = sw.Elapsed.TotalMilliseconds;
-            foreach (var c in cars) c.Tick(Dt);
+            RoadCarSimulation.Simulate(cars, Dt);
             tickMs += sw.Elapsed.TotalMilliseconds - t0;
-            if (RoadCar.BeltHits > bh && st.Notes.Count < 40 && beltNoted < 6) { beltNoted++; st.Notes.Add($"t={Time.time:F1} BELT " + RoadCar.LastBeltHit); }
-            if (f % 6 == 0) Measure(cars, st, Dt * 6, Time.time);
-            if (f == frames - 30 * 60) { lateSpeed = 0f; lateN = 0; }
-            if (f >= frames - 30 * 60) foreach (var c in cars) if (!c.Parked) { lateSpeed += Math.Abs(c.Speed); lateN++; }
+            if (RoadCar.BeltHits > bh && beltNoted < 6) { beltNoted++; st.Notes.Add($"t={Time.time:F1} BELT " + RoadCar.LastBeltHit); }
+            int sampleEvery = Math.Max(1, (int)Math.Ceiling(0.2f / Dt));
+            if (f % sampleEvery == 0) Measure(cars, st, Dt * sampleEvery, Time.time);
+            int lastMinuteFrames = (int)Math.Ceiling(60f / Dt);
+            if (f == frames - lastMinuteFrames) { lateSpeed = 0f; lateN = 0; }
+            if (f >= frames - lastMinuteFrames) foreach (var c in cars) if (!c.Parked) { lateSpeed += Math.Abs(c.Speed); lateN++; }
         }
         int frozen = 0; foreach (var kv in st.StillFor) if (kv.Value > 60f) frozen++;
         float maxStill = 0f; foreach (var kv in st.StillFor) maxStill = Math.Max(maxStill, kv.Value);
@@ -169,7 +183,27 @@ static class Program
         if (frozen > 0) foreach (var kv in st.StillFor) if (kv.Value > 60f && st.Notes.Count < 60) st.Notes.Add("   FROZEN car " + kv.Key.Id + " " + kv.Key.Profile.Name + " " + kv.Key.Describe() + " pass: " + kv.Key.PassWhy);
         st.BeltHits = RoadCar.BeltHits;
         Console.WriteLine($"== {title}: {cars.Count} cars, {seconds}s: overlaps={st.Overlaps} (max depth {st.MaxDepth:F2}) stalls={st.Stalls} beltHits={st.BeltHits} avgSpeed={(st.SpeedN > 0 ? st.SpeedSum / st.SpeedN : 0):F1} lastMinuteAvg={(lateN > 0 ? lateSpeed / lateN : 0):F1} frozen>60s={frozen} tick={tickMs / frames:F2}ms/frame");
+        if (st.Overlaps > 0 || frozen > 0 || st.BeltHits > 0)
+            Environment.ExitCode = 1;
         foreach (var n in st.Notes) Console.WriteLine("   " + n);
+        if (Environment.GetEnvironmentVariable("TRACE") == "1")
+        {
+            var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+            foreach (var kv in st.StillFor.Where(kv => kv.Value > 60f))
+            {
+                var car = kv.Key;
+                Console.WriteLine($"      frozen details {car.Id}: held={typeof(RoadCar).GetField("_heldAtLine", flags).GetValue(car)}, lane={car.Lane?.Offset}, end={car.Lane?.Length}, progress={car.Progress}");
+                foreach (var name in new[] { "_jammed", "_blockedFor", "_stuckFor", "_giveUntil", "_yieldUntil", "_holdFor", "_man", "_blocker" })
+                    Console.WriteLine($"         {name}={typeof(RoadCar).GetField(name, flags)?.GetValue(car)}");
+            }
+            foreach (var node in net.Nodes)
+                foreach (var occupant in node.Inside)
+                {
+                    var car = occupant.Car;
+                    var own = typeof(RoadCar).GetField("_inNode", flags).GetValue(car);
+                    Console.WriteLine($"      claim car {car.Id} node ({node.X},{node.Z}) at {car.Position} owned={ReferenceEquals(own, occupant)} {car.Describe()}");
+                }
+        }
         if (Environment.GetEnvironmentVariable("TRACE") == "1")
             foreach (var kv in st.Hist)
                 if (kv.Key.Id.ToString() == (Environment.GetEnvironmentVariable("TRACEID") ?? "1") || cars.Count <= 2)
@@ -181,6 +215,7 @@ static class Program
             shown++;
             Console.WriteLine($"   END stuck in box: car {c.Id} viaS={c.ViaS:F1}/{c.Via.Length:F1} why: {c.Why} {ViaInfo(c)}");
         }
+        if (recordTrace) DriveTrace.Close();
     }
 
     static RoadCar Spawn(LaneNet net, RoadEdge e, float s, DriverProfile p = null, float hl = 2.3f, float hw = 0.95f)
@@ -518,6 +553,20 @@ static class Program
     static void Main(string[] args)
     {
         string only = args.Length > 0 ? args[0] : "all";
+        if (only == "all" || only == "emergencyqueue") EmergencyQueue.Run();
+        if (only == "all" || only == "reverserollback") ReverseRollback.Run();
+        if (only == "all" || only == "rotatingclearance") RotatingClearance.Run();
+        if (only == "all" || only == "straightexit") StraightExitClearance.Run();
+        if (only == "all" || only == "recomputedpose") RecomputedPose.Run();
+        if (only == "all" || only == "arcmotion") ArcMotion.Run();
+        if (only == "all" || only == "kerbcompletion") KerbCompletion.Run();
+        if (only == "all" || only == "blockedyield") BlockedYield.Run();
+        if (only == "all" || only == "recovery") TrafficRecoveryChecks.Run();
+        if (only == "all" || only == "recoverygoal") RecoveryGoalChecks.Run();
+        if (only == "all" || only == "separation") ContactSeparation.Run();
+        if (only == "all" || only == "adjacent") AdjacentJunction.Run();
+        if (only == "all" || only == "junctionreverse") JunctionReverse.Run();
+        if (only == "all" || only == "junctionyield") JunctionYield.Run();
         if (only == "small") GridTraffic(12, true, 200f);
         if (only == "perf") GridTraffic(200, true, 120f);
         if (only == "all" || only == "grid") { GridTraffic(100, true, 600f); GridTraffic(60, false, 300f); GridTraffic(120, true, 300f, blvd: true); }

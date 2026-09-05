@@ -812,6 +812,10 @@ namespace RoadDemo
 
         void OnDestroy()
         {
+            // Unloading the scene destroys the views, but these drivers are plain
+            // objects. Release their road claims before the next city is built.
+            foreach (var car in _vehicles) { car.Despawn(); StreetTraffic.Users.Remove(car); }
+            foreach (var car in _policeCars) { car.Despawn(); StreetTraffic.Users.Remove(car); }
             WalkObstacles.UnregisterPlan(_plan);
             _connectorKit?.UnregisterWalkPlan();
             for (int i = 0; i < _pedestrians.Count; i++) _pedestrians[i].Dispose();
@@ -3433,7 +3437,8 @@ namespace RoadDemo
                 SetLayerDeep(go, CrowdLayer); // drawn only within CrowdCullDistance
 
                 var agent = new CivilianAgent { Speed = Random.Range(1.25f, 1.85f) };
-                agent.Init(go.transform, CrewKit.ForCrowd(clips, variety), link, Random.value * link.Length * 0.9f);
+                if (!agent.Init(go.transform, CrewKit.ForCrowd(clips, variety), link, Random.value * link.Length * 0.9f))
+                { Destroy(go); continue; }
                 agent.Setup(_life);
                 if (k < fromDoors)
                     agent.SpawnInside(Random.Range(2f, 60f));

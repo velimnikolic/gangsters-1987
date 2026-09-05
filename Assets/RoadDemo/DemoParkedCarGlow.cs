@@ -13,6 +13,8 @@ namespace RoadDemo
     {
         public LivingCity.Ambient.CityClock clock;
 
+        internal const string MarkerRootName = "parked-marker-glow";
+
         const int Groups = 4;
         const float LitShare = 0.16f;
         const float VigilShare = 0.05f;
@@ -96,15 +98,45 @@ namespace RoadDemo
         public void Unregister(Transform root)
         {
             if (!root) return;
+            // The unlit majority is in _seen too. A pooled vehicle must get a
+            // fresh position-based decision when another block borrows it.
+            _seen.RemoveWhere(car => !car || car == root || car.IsChildOf(root));
             for (int i = _rigs.Count - 1; i >= 0; i--)
             {
                 var car = _rigs[i].Car;
                 if (!car || car == root || car.IsChildOf(root))
                 {
-                    if (car) _seen.Remove(car);
+                    ReleaseMarkers(_rigs[i]);
                     _rigs.RemoveAt(i);
                 }
             }
+        }
+
+        static void ReleaseMarkers(Rig rig)
+        {
+            if (!rig.Markers) return;
+            rig.Markers.SetActive(false);
+            // Destroy is deferred in Play. Detach now, before the same pooled
+            // body can be measured or registered again during this frame.
+            rig.Markers.transform.SetParent(null, false);
+            Retire(rig.Markers);
+            rig.Markers = null;
+        }
+
+        static void Retire(Object value)
+        {
+            if (!value) return;
+            if (Application.isPlaying) Destroy(value);
+            else DestroyImmediate(value);
+        }
+
+        void OnDestroy()
+        {
+            foreach (var rig in _rigs) ReleaseMarkers(rig);
+            foreach (var material in _glass.Values) Retire(material);
+            foreach (var material in _markers) Retire(material);
+            _rigs.Clear();
+            _seen.Clear();
         }
 
         void RegisterCar(Transform car, DemoVehicle vehicle)
@@ -170,7 +202,7 @@ namespace RoadDemo
 
         GameObject MakeMarkers(Transform car, Bounds bounds, int group)
         {
-            var root = new GameObject("parked-marker-glow");
+            var root = new GameObject(MarkerRootName);
             root.transform.SetParent(car, false);
             float x = Mathf.Max(0.36f, bounds.extents.x * 0.58f);
             float y = bounds.min.y + Mathf.Clamp(bounds.size.y * 0.40f, 0.38f, 0.72f);
@@ -188,7 +220,7 @@ namespace RoadDemo
             marker.transform.localPosition = at;
             marker.transform.localScale = new Vector3(0.15f, 0.10f, 0.07f);
             var collider = marker.GetComponent<Collider>();
-            if (collider) Destroy(collider);
+            Retire(collider);
             if (_markers[group] == null) _markers[group] = MarkerMaterial(group);
             marker.GetComponent<MeshRenderer>().sharedMaterial = _markers[group];
         }

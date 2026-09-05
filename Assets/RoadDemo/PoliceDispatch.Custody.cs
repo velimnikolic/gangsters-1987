@@ -57,6 +57,7 @@ namespace RoadDemo
             public int CharacterId;
             public bool InWave;
             public bool Booked;
+            public float StationRetryAt;
         }
 
         sealed class CustodyCar
@@ -68,6 +69,19 @@ namespace RoadDemo
         readonly List<Custody> _custodies = new List<Custody>();
         readonly List<PolicePatrolCar> _custodyCars = new List<PolicePatrolCar>();
         readonly List<CrewWalker> _custodyMen = new List<CrewWalker>();
+
+        internal bool KeepsUnbookedBody(int characterId)
+        {
+            foreach (var custody in _custodies)
+            {
+                if (custody.Finished) continue;
+                foreach (var prisoner in custody.Prisoners)
+                    if (prisoner.CharacterId == characterId && !prisoner.Booked &&
+                        prisoner.Man != null && !prisoner.Man.Dead)
+                        return true;
+            }
+            return false;
+        }
 
         /// <summary>Custody itself is deliberately not serialized. Preserve the honest
         /// fallback in the snapshot instead: any unbooked man whose physical transfer
@@ -208,12 +222,18 @@ namespace RoadDemo
             return null;
         }
 
-        static void AddCustodyCar(Custody custody, IPoliceUnit ride,
+        void AddCustodyCar(Custody custody, IPoliceUnit ride,
             DemoCrews.Unit escort)
         {
             if (custody == null || ride == null || ride.Tf == null) return;
             for (var i = 0; i < custody.Cars.Count; i++)
                 if (custody.Cars[i].Ride == ride) return;
+            foreach (var other in _custodies)
+                if (!other.Finished)
+                    foreach (var load in other.Cars)
+                        if (load.Ride == ride) return;
+            if (ride is PolicePatrolCar patrol) patrol.CustodyReserved = true;
+            if (ride is PoliceCruiser cruiser) cruiser.CustodyReserved = true;
             custody.Cars.Add(new CustodyCar { Ride = ride, Escort = escort });
         }
 
@@ -417,17 +437,34 @@ namespace RoadDemo
         /// <summary>Custody is authoritative for every frame of the transfer. No input
         /// path or stray choreography may quietly clear these gates and hand a prisoner
         /// back to the player before the station threshold.</summary>
-        static void ReassertCustody(Custody custody)
+        void ReassertCustody(Custody custody)
         {
             if (custody?.Crew == null) return;
-            custody.Crew.InCustody = true;
-            custody.Crew.Surrendered = true;
+            // The station can still be receiving a hood after the lieutenant has
+            // posted bail. The pending transfer owns that hood, not the free leader.
+            bool hasCommander = custody.Crew.Boss != null && !custody.Crew.Boss.Dead;
+            bool held = hasCommander && CustodyHolds(custody, custody.Crew.Boss);
+            if (!hasCommander)
+                foreach (var man in custody.Crew.All())
+                    held |= CustodyHolds(custody, man);
+            custody.Crew.InCustody = held;
+            custody.Crew.Surrendered = held;
+            if (!held) custody.Crew.CustodyTracked = false;
             for (var i = 0; i < custody.Prisoners.Count; i++)
             {
                 var prisoner = custody.Prisoners[i];
                 if (!prisoner.Booked && prisoner.Man != null && !prisoner.Man.Dead)
                     prisoner.Man.Surrendered = true;
             }
+        }
+
+        bool CustodyHolds(Custody custody, CrewWalker man)
+        {
+            if (man == null || man.Dead) return false;
+            if (Force != null && Force.KeepsCustodyAlive(man.CharacterId)) return true;
+            foreach (var prisoner in custody.Prisoners)
+                if (prisoner.Man == man && !prisoner.Booked) return true;
+            return false;
         }
 
         /// <summary>Every visible unbooked prisoner has a visible gun trained on him.
@@ -778,8 +815,7 @@ namespace RoadDemo
                 : custody.Crew.Position;
             RestoreBodies(custody, door);
             custody.Boarding.Clear();
-            custody.Crew.InCustody = true;
-            custody.Crew.Surrendered = true;
+            ReassertCustody(custody);
             // Only this car's load walks through the station door.  Men held at the
             // original doorstep are not marched across the map by a whole-crew order;
             // they wait visibly for these cars to return.
@@ -790,6 +826,7 @@ namespace RoadDemo
                 if (!prisoner.InWave || prisoner.Booked || man == null || man.Dead ||
                     man.Tf == null) continue;
                 PrisonerCarriage.WalkIntoStation(man, door);
+                prisoner.StationRetryAt = Time.time + 5f;
             }
             for (var i = 0; i < custody.Cars.Count; i++)
             {
@@ -819,7 +856,18 @@ namespace RoadDemo
                     prisoner.InWave = false;
                     continue;
                 }
-                if (!CustodyPlan.CanBook(DoorBeat.Held(man))) continue;
+                if (!CustodyPlan.CanBook(DoorBeat.Held(man)))
+                {
+                    // Door approaches may be interrupted by nearby gunfire or a
+                    // stalled route. Custody still owns the destination after that
+                    // visit ends; extending its clock alone never restarted the walk.
+                    if (!DoorBeat.Active(man) && Time.time >= prisoner.StationRetryAt && custody.Precinct != null)
+                    {
+                        prisoner.StationRetryAt = Time.time + 5f;
+                        PrisonerCarriage.WalkIntoStation(man, custody.Precinct.Door);
+                    }
+                    continue;
+                }
                 if (!_crews.TakeInOne(custody.Crew, man, custody.Deed,
                         Force != null ? Force.Pipeline : null, custody.File,
                         custody.Answer, sprung: custody.Crew.CustodySprung))
@@ -850,9 +898,13 @@ namespace RoadDemo
             // Booking advances the court pipeline, but it does not retire the HUD
             // identity. Keep it command-locked while the pipeline physically holds
             // him; the release transitions clear this latch and its position pin.
-            custody.Crew.InCustody = true;
-            custody.Crew.Surrendered = true;
-            custody.Crew.CustodyTracked = true;
+            // The leader may already have posted bail while the last hood crossed
+            // the threshold. Finishing that hood's booking cannot take him back in.
+            bool bossHeld = custody.Crew.Boss != null && Force != null &&
+                Force.KeepsCustodyAlive(custody.Crew.Boss.CharacterId);
+            custody.Crew.InCustody = bossHeld;
+            custody.Crew.Surrendered = bossHeld;
+            custody.Crew.CustodyTracked = bossHeld;
             custody.Crew.CustodySprung = false;
             LawWire.TakenIn(custody.Call?.Call, custody.Crew);
             FinishCustody(custody);
@@ -924,7 +976,13 @@ namespace RoadDemo
                 else if (load.Escort != null && !load.Escort.Wiped)
                     _crews.RemoveUnit(load.Escort);
                 // whatever ended it, nothing is in the back any more
-                if (load.Ride is PolicePatrolCar patrol) patrol.HoldAtKerb = false;
+                if (load.Ride is PolicePatrolCar patrol)
+                {
+                    patrol.HoldAtKerb = false;
+                    patrol.CustodyReserved = false;
+                }
+                if (load.Ride is PoliceCruiser reservedCruiser)
+                    reservedCruiser.CustodyReserved = false;
                 load.Ride?.Release();
             }
             ReleaseHoldingSquad(custody);

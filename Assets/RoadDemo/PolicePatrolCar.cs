@@ -136,6 +136,10 @@ namespace RoadDemo
         /// ten cars to six bays).</summary>
         public bool HoldAtKerb { get; set; }
 
+        // Custody owns the car through unloading and any return for another wave,
+        // including the intervals when it is empty and HoldAtKerb is false.
+        internal bool CustodyReserved { get; set; }
+
         /// <summary>At its station's kerb - standing there, queued right behind it,
         /// swinging in or already in its bay: the place a load of prisoners is walked
         /// in from. A bay is not the condition; the kerb is.</summary>
@@ -220,7 +224,16 @@ namespace RoadDemo
             _hasReservedKerb = false;
         }
 
-        protected override bool ParkingSpotAvailable(Vector3 at) => KerbUnclaimed(at);
+        float _responseParkingReachSq = float.PositiveInfinity;
+
+        protected override bool ParkingSpotAvailable(Vector3 at)
+        {
+            if (!KerbUnclaimed(at)) return false;
+            if (State != Mode.Responding) return true;
+            var offset = at - _scenePos;
+            offset.y = 0f;
+            return offset.sqrMagnitude <= _responseParkingReachSq;
+        }
 
         protected override void ParkingSpotSelected(Vector3 at)
         {
@@ -642,7 +655,7 @@ namespace RoadDemo
             LivingCity.Police.PoliceFleet.CountsAsBody(
                 Wrecked, EngineDead, _retiredFromFleet);
 
-        public bool Available => !_sceneWanted && !OffWatch && Fleetworthy && !Derelict &&
+        public bool Available => !CustodyReserved && !HoldAtKerb && !_sceneWanted && !OffWatch && Fleetworthy && !Derelict &&
             (State == Mode.Resting || State == Mode.Undocking ||
              State == Mode.Patrolling || State == Mode.Returning ||
              State == Mode.Docking || State == Mode.Parking);
@@ -725,6 +738,14 @@ namespace RoadDemo
             // retained only as a defensive fallback for a network with no legal kerb.
             if (hasKerb)
             {
+                // RoadCar may try another kerb after a long drive. Keep that
+                // recovery near the response's chosen destination: parking across
+                // town must not count as arriving for a prisoner pickup. The reach
+                // comes from the closest legal slot, including unusually wide roads.
+                var offset = kerb - _scenePos;
+                offset.y = 0f;
+                var reach = offset.magnitude + 10f;
+                _responseParkingReachSq = reach * reach;
                 ReserveKerb(kerb);
                 if (!GoTo(kerb, park: true)) GiveUpKerb();
             }

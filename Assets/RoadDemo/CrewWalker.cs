@@ -26,6 +26,23 @@ namespace RoadDemo
 
         public CrewWalker() { Tag = "crew"; }
 
+        /// <summary>Validate a newly constructed body before it joins a unit. A
+        /// sidewalk link can cut across a blocked lot; its centre is not proof of
+        /// a standable spawn. This is placement only, never movement recovery.</summary>
+        internal bool TryClearSpawn()
+        {
+            if (Tf == null) return false;
+            if (WalkObstacles.InCity(Tf.position) &&
+                !WalkObstacles.Standing(Tf.position, WalkRoute.ClearanceRadius)) return true;
+            var wanted = WalkObstacles.ClampToCity(Tf.position);
+            if (!WalkObstacles.TryClearStandingSpot(wanted, WalkObstacles.Radius,
+                    out var at, 20f)) return false;
+            LeaveGraphOrder();
+            SetWalkPosition(at);
+            State = Mode.Standing;
+            return true;
+        }
+
         /// <summary>The roster id of the man this figure stands for (rivals carry
         /// their own negative ids - they are on nobody's books).</summary>
         public int CharacterId;
@@ -151,6 +168,7 @@ namespace RoadDemo
         public System.Action<CrewWalker> Fired;
 
         float _fireTimer;
+        internal float ShotTimeInFrame { get; private set; }
         float _shootHold;
         int _firePose = PoseShoot;
         float _flinch;
@@ -211,6 +229,7 @@ namespace RoadDemo
         /// instead of the slide.</summary>
         public void EaseAside(Vector3 worldDir, float metres)
         {
+            if (Tf == null || !Tf.gameObject.activeInHierarchy || Riding) return;
             // A MAN WHOSE LEGS ARE ALREADY GOING IS NEVER HANDED A SHUFFLE. The
             // shuffle clips are authored from a standstill - both feet planted, the
             // weight shifting off one of them - so laid over a stride they read as a
@@ -226,9 +245,10 @@ namespace RoadDemo
 
         void Nudge(Vector3 worldDir, float metres)
         {
-            var to = Tf.position + worldDir * metres;
-            if (!WalkObstacles.Occupied(to, WalkObstacles.Radius) && WalkObstacles.InCity(to))
-                Tf.position = to;
+            var to = Tf.position + worldDir * Mathf.Min(metres, FrameStepLimit);
+            if (!WalkObstacles.Occupied(to, WalkObstacles.Radius) && WalkObstacles.InCity(to) &&
+                !WalkObstacles.BlocksStanding(Tf.position, to, WalkObstacles.Radius))
+                SetWalkPosition(to);
         }
 
         /// <summary>Deal this man his own line across the pavement. Every walker keeps
@@ -412,17 +432,6 @@ namespace RoadDemo
         protected override float FreeLineAhead => _runningLeg ? 4f : base.FreeLineAhead;
         protected override float PushGain => _runningLeg ? 0.5f : base.PushGain;
 
-        /// <summary>
-        /// PedLink.Free was sampled before residential views stream in. Prove the
-        /// outfit's actual graph step against the live ledger; civilians retain the
-        /// cheap sampled path, while an ordered crew member may never spend a stale
-        /// link line through a newly arrived cafe or its furniture.
-        /// </summary>
-        protected override bool GraphStepClear(Vector3 from, Vector3 to)
-        {
-            return base.GraphStepClear(from, to);
-        }
-
         /// <summary>A stale graph link is abandoned before any movement is committed.
         /// Continue to the same order destination through the live A* ground map; if
         /// no safe route exists, BeginAcross refuses it and leaves the man standing.</summary>
@@ -462,14 +471,19 @@ namespace RoadDemo
             {
                 const float MaxRecoveryStep = 2.5f;
                 var from = Tf.position;
-                if (!WalkObstacles.TryClearStandingSpot(from, WalkObstacles.Radius,
-                        _graphCorridor[0], out var free, MaxRecoveryStep))
+                Vector3 free;
+                bool recovered = WalkObstacles.Standing(from, WalkObstacles.OverlapProbeRadius)
+                    ? WalkObstacles.TryClearStandingSpot(from, WalkObstacles.Radius,
+                        _graphCorridor[0], out free, MaxRecoveryStep)
+                    : WalkObstacles.TryClearRouteStart(from, WalkObstacles.Radius,
+                        _graphCorridor[0], out free, MaxRecoveryStep);
+                if (!recovered)
                 {
                     RefuseUnsafeAcross();
                     return;
                 }
                 free.y = from.y;
-                Tf.position = free;
+                SetWalkPosition(free);
                 relocated = true;
             }
             bool accepted = BeginAcross(
@@ -1179,7 +1193,11 @@ namespace RoadDemo
         /// (DemoCrews.Unwedge). Stamped so the snap rule can tell a body being placed
         /// from a body taking a step; it is the same excuse a man set down out of a car
         /// seat already has.</summary>
-        internal void NoteRelocated() => RelocatedAt = Time.frameCount;
+        internal void NoteRelocated(Vector3 position)
+        {
+            SetWalkPosition(position);
+            RelocatedAt = Time.frameCount;
+        }
 
         bool RecoverFixedOverlap()
         {
@@ -1199,7 +1217,7 @@ namespace RoadDemo
                 return true;
             }
             free.y = from.y;
-            Tf.position = free;
+            SetWalkPosition(free);
             RelocatedAt = Time.frameCount;
             _replans = 0;
             if (!BuildRemainingWay(free) || _legs.Count == 0)
@@ -2290,6 +2308,9 @@ namespace RoadDemo
 
         public void TickCrew(float dt)
         {
+            // Roster/custody changes can retire a view before the next roster sync.
+            // One stale walker must not abort every other crew's update that frame.
+            if (Tf == null || !Tf.gameObject.activeInHierarchy) return;
             if (DriveTrace.On) TracePed(dt);
             TickHeldCover();
             TickArms(dt);
@@ -3635,6 +3656,21 @@ namespace RoadDemo
         /// walk away, so there is no cover to look for, no flank to re-check and no
         /// chase. He walks into his own range, squares up, and fires until it is a
         /// wreck or the order is taken off him.</summary>
+        void TickTrigger(float dt, float interval, bool ready)
+        {
+            var due = GunCadence.Advance(ref _fireTimer, dt, interval, ready);
+            for (int i = 0; i < due.Count; i++)
+            {
+                if (Dead || Surrendered || Panicked || !Carrying) break;
+                if (Target != null && (Target.Dead || Target.Tf == null)) break;
+                if (CarMark != null && (CarMark.Wrecked || CarMark.Tf == null)) break;
+                ShotTimeInFrame = due.At(i);
+                _firedThisFight = true;
+                StartFirePose();
+                Fired?.Invoke(this);
+            }
+        }
+
         void TickShootUp(float dt)
         {
             var car = CarMark;
@@ -3680,7 +3716,6 @@ namespace RoadDemo
                 return;
             }
 
-            _fireTimer -= dt;
             if (_shootHold > 0f)
             {
                 _shootHold -= dt;
@@ -3693,14 +3728,8 @@ namespace RoadDemo
             // squared up, and the arm actually up: the same two gates a man gets, for
             // the same reason - a round let off while the gun is still coming up goes
             // into the pavement
-            if (_fireTimer <= 0f && dist <= range && CombatAimError(to) < 25f &&
-                StrideAllowsAim(to) && _aimBlend >= 0.5f && BarrelOn(CarAim(car)))
-            {
-                _fireTimer = Ballistics.Interval;
-                _firedThisFight = true;
-                StartFirePose();
-                Fired?.Invoke(this);
-            }
+            TickTrigger(dt, Ballistics.Interval, dist <= range && CombatAimError(to) < 25f &&
+                StrideAllowsAim(to) && _aimBlend >= 0.5f && BarrelOn(CarAim(car)));
         }
 
         void TickEngage(float dt)
@@ -4019,7 +4048,6 @@ namespace RoadDemo
                 // but the alternative is what the lab watched three times over: a crew
                 // marching up to a mob that was already shooting, taking the whole
                 // exchange without answering a round of it, and going down to the last man.
-                _fireTimer -= dt;
                 // and only once the arm has actually come up (AimGun's blend): a round
                 // that leaves the barrel while the gun still hangs at the hip is the
                 // shot into the pavement the player kept seeing - and a flinch mid-walk
@@ -4038,16 +4066,9 @@ namespace RoadDemo
                 TickCombatStride(dt, Target.Tf.position, range * RangeFactor, hurry: true,
                     run: RunWhile(dist > range * (_runningLeg ? RunOffFight : RunToFight)),
                     attackEnvelope: true);
-                if (dist <= range && !_runningLeg && _fireTimer <= 0f && _flinch <= 0f &&
-                    _aimBlend >= 0.5f &&
-                    CombatAimError(toTarget) < 40f &&
-                    StrideAllowsAim(toTarget) && BarrelOn(Target))
-                {
-                    _fireTimer = Ballistics.Interval * OnTheMove;
-                    _firedThisFight = true;
-                    StartFirePose();
-                    Fired?.Invoke(this);
-                }
+                TickTrigger(dt, Ballistics.Interval * OnTheMove,
+                    dist <= range && !_runningLeg && _flinch <= 0f && _aimBlend >= 0.5f &&
+                    CombatAimError(toTarget) < 40f && StrideAllowsAim(toTarget) && BarrelOn(Target));
                 // WELL out of his reach he runs it in; inside a stride or two of it he
                 // walks the rest, because a man who sprints to the line and stops dead
                 // reads as a puppet being placed. The two figures are apart on purpose,
@@ -4066,7 +4087,6 @@ namespace RoadDemo
                 return;
             }
 
-            _fireTimer -= dt;
             if (_shootHold > 0f)
             {
                 _shootHold -= dt;
@@ -4081,14 +4101,8 @@ namespace RoadDemo
             // duck, or fresh out of a flinch, the barrel spends a beat coming up, and a
             // round let off during it goes into the ground the clip was authored at
             float off = CombatAimError(toTarget);
-            if (_fireTimer <= 0f && dist <= range && off < 25f && StrideAllowsAim(toTarget) &&
-                _aimBlend >= 0.5f && BarrelOn(Target))
-            {
-                _fireTimer = Ballistics.Interval;
-                _firedThisFight = true;
-                StartFirePose();
-                Fired?.Invoke(this);
-            }
+            TickTrigger(dt, Ballistics.Interval, dist <= range && off < 25f &&
+                StrideAllowsAim(toTarget) && _aimBlend >= 0.5f && BarrelOn(Target));
         }
 
         /// <summary>Choose the take that belongs to this long gun. This table is only

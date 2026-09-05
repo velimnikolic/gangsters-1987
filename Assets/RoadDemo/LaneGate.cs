@@ -38,6 +38,14 @@ namespace RoadDemo
             {
                 var car = cars[i];
                 if (ReferenceEquals(car, self)) continue;
+                if (Stationary(car))
+                {
+                    // A kerbside patrol remains a member of this lane. It cannot
+                    // arrive at the join while parked, but its real body can still
+                    // obstruct the car being admitted there.
+                    if (BlocksJoin(car, lane, at, self)) return false;
+                    continue;
+                }
                 float ahead = at - car.Progress;          // metres before it reaches the point
                 if (ahead < -aheadMax) continue;           // past it already
                 if (ahead < Mathf.Max(behindMin, Reach(car, lane, seconds))) return false;
@@ -81,8 +89,21 @@ namespace RoadDemo
         /// 431 refusals). What it is doing now is a floor, never a ceiling.</summary>
         static float Reach(RoadCar car, RoadEdge road, float seconds)
         {
+            if (Stationary(car)) return car.HalfLen + Stopping;
             float v = Mathf.Max(car.Speed, road != null ? road.SpeedLimit : 0f);
             return v * seconds + Stopping;
+        }
+
+        static bool Stationary(RoadCar car) => car.Parked || car.Wrecked || car.Derelict;
+
+        static bool BlocksJoin(RoadCar car, RoadEdge lane, float at, RoadCar self)
+        {
+            float s = lane.RoadS(at);
+            var position = lane.Road != null ? lane.Road.Pose(s, lane.Offset) : lane.Start + lane.Dir * at;
+            var forward = lane.Road != null ? lane.Road.DirAt(s) * lane.Heading : lane.Dir;
+            return RoadSpace.Overlap(position, forward, self != null ? self.HalfLen : 2.3f,
+                self != null ? self.HalfWide : 1f, car.Position, car.Forward,
+                car.HalfLen, car.HalfWide, RoadSpace.Air, out _);
         }
 
         /// <summary>May a hand-driven body cross this junction's box for the next

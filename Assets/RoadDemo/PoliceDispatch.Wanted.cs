@@ -122,7 +122,8 @@ namespace RoadDemo
                     continue;
                 }
 
-                var seenBy = LawWithin(unit.Position, LawEyes);
+                var exposed = StreetCollar(unit, unit.Position, requireSight: false);
+                var seenBy = exposed != null ? LawWithin(exposed.Tf.position, LawEyes) : null;
                 bool seen = seenBy != null;
                 if (seen)
                 {
@@ -140,7 +141,7 @@ namespace RoadDemo
                     StreetAlarm.QuietFor > QuietBefore)
                     ChaseOnSight(unit, seenBy, today);
 
-                if (unit.Fleeing) TickFlight(unit, roster, today, seen);
+                if (unit.Fleeing) TickFlight(unit, roster, today, seenBy);
                 else
                 {
                     _flightResponders.Remove(unit);
@@ -203,7 +204,7 @@ namespace RoadDemo
                      DoorBeat.Active(foot.Lead))) continue;
                 if (u is PolicePatrolCar car && car.State == PolicePatrolCar.Mode.Resting) continue;
                 float d = (u.Position - at).sqrMagnitude;
-                if (d < bestD) { bestD = d; best = u; }
+                if (d < bestD && WalkObstacles.Sees(at, u.Position)) { bestD = d; best = u; }
             }
             return best;
         }
@@ -213,7 +214,7 @@ namespace RoadDemo
             if (roster == null) return;
             foreach (var man in unit.All())
             {
-                if (man == null || man.Dead || man.CharacterId < 0) continue;
+                if (!ExposedForArrest(man) || man.CharacterId < 0) continue;
                 var member = roster.Find(man.CharacterId);
                 if (member != null && member.WantedLevel > 0) WantedLevels.Seen(member);
             }
@@ -223,7 +224,7 @@ namespace RoadDemo
         {
             foreach (var man in unit.All())
             {
-                if (man == null || man.Dead || man.CharacterId < 0) continue;
+                if (!ExposedForArrest(man) || man.CharacterId < 0) continue;
                 var member = roster.Find(man.CharacterId);
                 if (member != null && member.WantedLevel > 0) return true;
             }
@@ -240,16 +241,16 @@ namespace RoadDemo
         {
             if (unit == null || unit.InCustody || unit.Surrendered ||
                 law == null || law.Tf == null) return;
-            var man = unit.Boss != null && !unit.Boss.Dead
-                ? unit.Boss : DemoCrews.NearestOf(unit, law.Tf.position);
+            var man = StreetCollar(unit, law.Tf.position, wantedRoster:
+                LivingCity.Outfit.Underworld.Current?.Of(unit.Faction)?.Roster);
             if (man == null || man.Tf == null) return;
 
             // A busy seer still radios it in: the nearest AVAILABLE unit is routed to
             // the sighting, while the seer also goes when it is free.
-            var responder = NearestAvailable(unit.Position);
+            var responder = NearestAvailable(man.Tf.position);
             var seerCanGo = law.Available;
-            if (seerCanGo) law.RouteTo(unit.Position, 4f);
-            if (responder != null && responder != law) responder.RouteTo(unit.Position, 4f);
+            if (seerCanGo) law.RouteTo(man.Tf.position, 4f);
+            if (responder != null && responder != law) responder.RouteTo(man.Tf.position, 4f);
             _chaseAgainAt = Time.time + ChaseAgain;
 
             var beat = law as PoliceBeat;
@@ -265,9 +266,16 @@ namespace RoadDemo
                 _arrestSquad = null;
                 _arrestCrew = unit;
                 _arrestCollar = man;
-                _arrestDeed = unit.HasDoorAnswer ? unit.ArrestDeed : Deed.Resisting;
-                _arrestCase = unit.ArrestCase;
+                var member = LivingCity.Outfit.Underworld.Current?.Of(unit.Faction)?
+                    .Roster.Find(man.CharacterId);
+                var deed = WantedLevels.Charge(member != null ? member.WantedLevel : 0);
                 _arrestCaseIsOurs = false;
+                _arrestCase = Force != null && Force.Pipeline != null
+                    ? Force.Pipeline.CaseForArrest(man.CharacterId, unit.Faction,
+                        deed, today, unit.ArrestCase, out _arrestCaseIsOurs)
+                    : null;
+                _arrestDeed = _arrestCase != null ? _arrestCase.Deed : deed;
+                if (_arrestCaseIsOurs) LawWire.CaseOpened(_arrestCase);
                 _collar = Collar.WalkingUp;
                 _collarAt = Time.time;
                 _collarBy = Time.time + CollarPatience;
@@ -301,13 +309,16 @@ namespace RoadDemo
         /// FLEE-002. The run, and its one ending that is not being caught: nobody of the
         /// law has seen them for long enough, and they go through one of our own doors.
         /// </summary>
-        void TickFlight(DemoCrews.Unit unit, Roster roster, int today, bool seen)
+        void TickFlight(DemoCrews.Unit unit, Roster roster, int today, IPoliceUnit seenBy)
         {
             // already walking to a door of ours: let them get there. (Being actually
             // INSIDE is handled a step earlier, where the hidden days begin.)
             if (CrewQuarters.Billeted(unit)) return;
-            if (seen) return;
-            if (Time.time - unit.SeenByLawAt < PursuitBroken) return;
+            if (seenBy != null || Time.time - unit.SeenByLawAt < PursuitBroken)
+            {
+                _crews.ContinueFlight(unit, seenBy != null ? seenBy.Position : unit.FlightFrom);
+                return;
+            }
 
             if (unit.Faction != LivingCity.Gameplay.PlayerCommands.House.Value)
             {

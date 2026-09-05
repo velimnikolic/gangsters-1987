@@ -28,7 +28,7 @@ using RoadDemo;
 /// </summary>
 static class TurnRound
 {
-    const float Dt = 1f / 30f;
+    static float Dt => Program.Dt;
 
     // ------------------------------------------------------------ one plain street
 
@@ -71,7 +71,7 @@ static class TurnRound
         for (int f = 0; f < (int)(120f / Dt); f++)
         {
             Time.time = f * Dt; Time.frameCount = f;
-            foreach (var c in cars) c.Tick(Dt);
+            RoadCarSimulation.Simulate(cars, Dt);
             driven += Vector3.Distance(g.Position, was); was = g.Position;
             topSpeed = Math.Max(topSpeed, Math.Abs(g.Speed));
             if (turnedAt < 0f && g.Heading != h0) turnedAt = Time.time;
@@ -125,10 +125,11 @@ static class TurnRound
 
         float driven = 0f, arrivedAt = -1f, east = bike.Position.x;
         var was = bike.Position;
+        var moving = new[] { bike };
         for (int f = 0; f < (int)(240f / Dt); f++)
         {
             Time.time = f * Dt; Time.frameCount = f;
-            bike.Tick(Dt);
+            RoadCarSimulation.Simulate(moving, Dt);
             driven += Vector3.Distance(bike.Position, was); was = bike.Position;
             east = Math.Max(east, bike.Position.x);
             if (arrivedAt < 0f && bike.Parked) { arrivedAt = Time.time; break; }

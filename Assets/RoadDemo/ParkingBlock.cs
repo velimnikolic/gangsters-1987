@@ -16,9 +16,10 @@ namespace RoadDemo
         // sparse 3.2 m grid the first review scene used.
         public const float StallWidth = 2.7f;
         public const float StallDepth = 5.6f;
-        public const float AisleWidth = 6f;
+        public const float AisleWidth = 8f;
         public const float GateWidth = 7f;
         public const float EdgeMargin = 2.5f;
+        const float RearMargin = 1f;
 
         public readonly struct Stall
         {
@@ -81,14 +82,16 @@ namespace RoadDemo
 
             float start = EdgeMargin + (run - across * StallWidth) * 0.5f;
             float cursor = 0f;
-            while (cursor + AisleWidth + StallDepth <= plan.Depth - EdgeMargin)
+            // Keep a manoeuvring aisle wide enough for the admitted long sedans,
+            // including their traffic clearance, even between two occupied bays.
+            while (cursor + AisleWidth + StallDepth <= plan.Depth - RearMargin)
             {
                 float nearAisle = cursor + AisleWidth * 0.5f;
                 float nearRow = cursor + AisleWidth + StallDepth * 0.5f;
                 EmitRow(plan, start, across, nearRow, Vector3.back, nearAisle);
 
                 float farAisle = cursor + AisleWidth + 2f * StallDepth + AisleWidth * 0.5f;
-                if (farAisle + AisleWidth * 0.5f > plan.Depth - EdgeMargin)
+                if (farAisle + AisleWidth * 0.5f > plan.Depth - RearMargin)
                     break;
 
                 float farRow = cursor + AisleWidth + StallDepth * 1.5f;

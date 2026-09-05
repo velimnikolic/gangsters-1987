@@ -22,7 +22,7 @@ using RoadDemo;
 /// </summary>
 static class RedLight
 {
-    const float Dt = 1f / 30f;
+    static float Dt => Program.Dt;
 
     // a 4x4 of signalled crossroads: any run across it meets several lights
     static LaneNet Quarter()
@@ -69,6 +69,7 @@ static class RedLight
 
     public static void Run()
     {
+        DriveTrace.On = Environment.GetEnvironmentVariable("TRACE") == "1";
         Sweep("empty quarter", 0);
         Sweep("busy quarter ", 60);
         Control(60, 400f);
@@ -110,12 +111,18 @@ static class RedLight
 
         float arrivedAt = -1f, atRed = 0f, thisRed = 0f, ran = 0f;
         bool sent = false;
+        bool reportedBelt = false;
         for (int f = 0; f < (int)(400f / Dt); f++)
         {
             Time.time = f * Dt; Time.frameCount = f;
             // the signals run on before he sets off, so the eight trips meet different phases
             if (!sent && Time.time >= depart) { sent = true; bike.GoTo(goal, park: true); }
-            foreach (var c in cars) c.Tick(Dt);
+            RoadCarSimulation.Simulate(cars, Dt);
+            if (!reportedBelt && RoadCar.BeltHits > 0 && Environment.GetEnvironmentVariable("TRACE") == "1")
+            {
+                Console.WriteLine($"   red-light departure {depart:F1}, t={Time.time:F1}: {RoadCar.LastBeltHit}");
+                reportedBelt = true;
+            }
             ran = Time.time;
             if (!sent) continue;
             // HELD BY A LIGHT, as against held by a car. Why is the driver's own word for
@@ -130,6 +137,7 @@ static class RedLight
         redSum += atRed;
         beltSum += RoadCar.BeltHits;
         secs += ran;
+        if (arrivedAt < 0f || RoadCar.BeltHits > 0) Environment.ExitCode = 1;
     }
 
     // The same quarter for the same time with NO machine in it: how many of those belt
@@ -143,9 +151,10 @@ static class RedLight
         for (int f = 0; f < (int)(seconds / Dt); f++)
         {
             Time.time = f * Dt; Time.frameCount = f;
-            foreach (var c in cars) c.Tick(Dt);
+            RoadCarSimulation.Simulate(cars, Dt);
         }
         Console.WriteLine($"== red-light CONTROL: {traffic} cars, NO machine, {seconds:F0}s: " +
                           $"belt {RoadCar.BeltHits} = {RoadCar.BeltHits / seconds:F1}/s (the traffic's own)");
+        if (RoadCar.BeltHits > 0) Environment.ExitCode = 1;
     }
 }

@@ -446,6 +446,22 @@ namespace RoadDemo
 
         void Update()
         {
+            // Restore before advancing any territory channel. Waiting for the first
+            // four-hour business tick left a loaded city running its fresh campaign
+            // for minutes, and a paused city never loaded at all.
+            if (LivingCity.Save.CampaignSave.Pending != null)
+            {
+                if (scheduler == null || PersonnelDirector.Instance?.Roster == null)
+                    return;
+                var file = LivingCity.Save.CampaignSave.Pending;
+                LivingCity.Save.CampaignSave.Pending = null;
+                LivingCity.Save.CampaignSave.Apply(file);
+                var restoredClock = DayClock.Current;
+                lastGameHour = restoredClock.Day * 24.0 + restoredClock.Hour + debugTimeOffset;
+                scheduler.ResetTo(lastGameHour);
+                Debug.Log("[Save] Day " + file.day + " restored from the file.");
+                return;
+            }
             RegisterOrganizationBlocks();
             TendPendingBagRounds();
             if (Time.time >= nextBagDefenceAt)
@@ -1887,17 +1903,7 @@ namespace RoadDemo
         /// </summary>
         void SettleBusinesses(double gameHour)
         {
-            // A SAVE WAITING FOR ITS CITY. The scene has been rebuilt from the file's own
-            // seed by now, the businesses are populated and the racket is up, so this is
-            // the first moment the books can be put back over it (RIVAL-010).
-            if (LivingCity.Save.CampaignSave.Pending != null)
-            {
-                var file = LivingCity.Save.CampaignSave.Pending;
-                LivingCity.Save.CampaignSave.Pending = null;
-                LivingCity.Save.CampaignSave.Apply(file);
-                Debug.Log("[Save] Day " + file.day + " restored from the file.");
-            }
-
+            SweepWarnings(gameHour);
             SweepDefiance(gameHour);
             SweepProtectionSwitches();
             AccrueDues(gameHour);
@@ -2903,7 +2909,13 @@ namespace RoadDemo
             if (crews == null || groupId.Kind != TerritoryCommandNodeKind.Crew)
                 return null;
 
-            var unit = FindUnit(groupId);
+            return CommandableUnit(FindUnit(groupId), house, out refusal);
+        }
+
+        static DemoCrews.Unit CommandableUnit(DemoCrews.Unit unit,
+            TerritoryGangId house, out string refusal)
+        {
+            refusal = "Unknown tactical group.";
             if (unit == null)
                 return null;
             if (!house.IsValid || unit.Faction != house.Value)

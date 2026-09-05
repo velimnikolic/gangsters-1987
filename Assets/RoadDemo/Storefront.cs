@@ -247,7 +247,9 @@ namespace RoadDemo
 
         public void Open()
         {
-            if (damageState == StorefrontState.Intact)
+            // Broken panes close the business's trade, not the door's hinges.
+            // Racket follow-ups still reach the owner through this entrance.
+            if (damageState == StorefrontState.Intact || damageState == StorefrontState.Smashed)
                 doorTarget = 1f;
         }
 

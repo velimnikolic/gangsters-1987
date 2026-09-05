@@ -730,6 +730,7 @@ namespace RoadDemo
             // Finalize after every building solid is known, so interior/child meshes
             // are not entered again as street furniture.
             WalkObstacles.BlockComposedProps(quarter, Frame.origin.y);
+            _recycler?.PrepareNavigation();
 
             Debug.Log($"[Core] {_plan.Name}: {_blocks.Count} blocks, {_raster.Junctions.Count} junctions, " +
                       $"{_raster.Stretches.Count} stretches of road, {_edges.Count} lanes, " +
