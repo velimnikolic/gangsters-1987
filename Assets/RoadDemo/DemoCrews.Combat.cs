@@ -1126,8 +1126,18 @@ namespace RoadDemo
                 if (man.Tf) man.Tf.gameObject.SetActive(false);
                 if (unit.Boss == man) unit.Boss = null;
                 unit.Hoods.Remove(man);
-                man.Dispose();
-                if (man.Tf) Destroy(man.Tf.gameObject);
+                // Roster-backed walkers must leave the lookup and car reservations
+                // with their body, or the next deal reuses a destroyed Transform.
+                if (_byCharacter.TryGetValue(man.CharacterId, out var registered) &&
+                    registered == man)
+                    RemoveMan(man.CharacterId);
+                else
+                {
+                    _chasers.Remove(man);
+                    DoorBeat.Evict(man);
+                    man.Dispose();
+                    if (man.Tf) Destroy(man.Tf.gameObject);
+                }
             }
         }
 

@@ -20,10 +20,13 @@ namespace LivingCity.Personnel
         Motorcycle,
 
         /// <summary>A grenade - a crew's throwing charge (DemoCrews.Bomb). Neither a
-        /// gun nor a wheel (RosterOps.IsGrenade), so the quartermaster deals it into no
-        /// man's hand: it is a COUNTABLE stock the lieutenant's crew carries, spent one
-        /// at a time when thrown or laid. Owned by the lieutenant like any gear (the
-        /// via-lieutenant rule), counted by DemoCrews.BindBombs.</summary>
+        /// gun nor a wheel (RosterOps.IsGrenade), so no deal ever ranks it by a stat:
+        /// one charge is the same as the next. It is a COUNTABLE stock, spent one at a
+        /// time when thrown or laid, and it is carried in one of two ways - as the
+        /// crew's LOOSE stock on its lieutenant's deed, which any man of the crew may
+        /// take one from, or SIGNED OUT BY NAME to a hood or a lieutenant exactly as a
+        /// rifle is (PinnedTo), in which case that man is the one who throws it
+        /// (DemoCrews.BombHands). Counted by DemoCrews.BindBombs.</summary>
         Grenade,
     }
 

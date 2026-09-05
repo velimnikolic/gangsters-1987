@@ -894,12 +894,17 @@ namespace LivingCity.Personnel
             kind != EquipmentKind.Vehicle && kind != EquipmentKind.Motorcycle &&
             kind != EquipmentKind.Grenade;
 
-        /// <summary>A grenade: gear a crew owns but the quartermaster deals into no
-        /// man's hand - a COUNTABLE stock (DemoCrews.BindBombs), spent when thrown. It
-        /// is neither a gun (a hand slot) nor a wheel, so it stays out of both decks.</summary>
+        /// <summary>A grenade: gear a crew owns and no deal ever ranks - a COUNTABLE
+        /// stock (DemoCrews.BindBombs), spent when thrown. It is neither a gun (a hand
+        /// slot dealt by Combat) nor a wheel (dealt by Driving), so it stays out of both
+        /// decks - but the BOSS may still put charges in one named man's hand exactly as
+        /// he puts a rifle there (<see cref="GiveEquipment"/> with a pin), and then that
+        /// man is the one who carries them (<see cref="GrenadesHeldBy"/>).</summary>
         public static bool IsGrenade(EquipmentKind kind) => kind == EquipmentKind.Grenade;
 
-        /// <summary>How many grenades the given owner (a lieutenant, or the front) holds.</summary>
+        /// <summary>How many grenades the given owner (a lieutenant, or the front) holds -
+        /// the whole branch's charges, the ones in a named man's coat included, because
+        /// the deed of everything a crew carries is its lieutenant's.</summary>
         public static int GrenadesOwnedBy(Roster roster, int ownerId)
         {
             var n = 0;
@@ -909,10 +914,57 @@ namespace LivingCity.Personnel
             return n;
         }
 
+        /// <summary>Of those, the ones the boss has put in NO named hand - the crew's
+        /// loose stock, which any man of it may take one from. Zero here with charges
+        /// still on the books means every charge belongs to somebody by name.</summary>
+        public static int LooseGrenadesOwnedBy(Roster roster, int ownerId)
+        {
+            var n = 0;
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var item = roster.Equipment[i];
+                if (item.Kind == EquipmentKind.Grenade && item.OwnerId == ownerId &&
+                    item.PinnedTo == RosterEquipment.Unheld) n++;
+            }
+            return n;
+        }
+
+        /// <summary>How many charges are in ONE man's hands right now - what the boss
+        /// pinned on him, or the loose stock warehoused on a lieutenant. This is the
+        /// number his file prints and the street asks before it lets him throw.</summary>
+        public static int GrenadesHeldBy(Roster roster, int memberId)
+        {
+            if (roster == null) return 0;
+            var n = 0;
+            for (var i = 0; i < roster.Equipment.Count; i++)
+                if (roster.Equipment[i].Kind == EquipmentKind.Grenade &&
+                    roster.Equipment[i].HolderId == memberId) n++;
+            return n;
+        }
+
         /// <summary>Spend one of the owner's grenades - struck off the books the moment
         /// it is thrown. True if there was one to spend.</summary>
-        public static bool SpendGrenade(Roster roster, int ownerId)
+        public static bool SpendGrenade(Roster roster, int ownerId) =>
+            SpendGrenade(roster, ownerId, RosterEquipment.Unheld);
+
+        /// <summary>The same, spending the charge THE MAN WHO THREW IT was carrying
+        /// first. It matters because the charges are not interchangeable any more: one
+        /// pinned to a hood is his, and taking a different man's off the books would
+        /// leave the thrower still holding one he has already used.</summary>
+        public static bool SpendGrenade(Roster roster, int ownerId, int holderId)
         {
+            if (roster == null) return false;
+            if (holderId != RosterEquipment.Unheld)
+                for (var i = roster.Equipment.Count - 1; i >= 0; i--)
+                {
+                    var item = roster.Equipment[i];
+                    if (item.Kind == EquipmentKind.Grenade && item.OwnerId == ownerId &&
+                        item.HolderId == holderId)
+                    {
+                        roster.Equipment.RemoveAt(i);
+                        return true;
+                    }
+                }
             for (var i = roster.Equipment.Count - 1; i >= 0; i--)
                 if (roster.Equipment[i].Kind == EquipmentKind.Grenade &&
                     roster.Equipment[i].OwnerId == ownerId)
@@ -1000,12 +1052,13 @@ namespace LivingCity.Personnel
                 return OpResult.Fail(GoneReason(member));
 
             // A GUN goes into whatever hand the boss names - his own lieutenant's, or
-            // a corner hood's over that lieutenant's head. WHEELS and grenades still go
-            // through the man who runs the branch: a car belongs to a crew and to
-            // whoever drives it that day, and a grenade is a countable stock the
-            // quartermaster deals into no man's hand at all.
+            // a corner hood's over that lieutenant's head - and SO DOES A CHARGE: the
+            // boss picks the man who carries the grenades exactly as he picks the man
+            // who carries the rifle, and unpinned charges stay the crew's loose stock.
+            // WHEELS still go through the man who runs the branch: a car belongs to a
+            // crew and to whoever drives it that day.
             var runsIt = CanBeIssuedGear(roster, id);
-            if (!IsWeapon(item.Kind) && !runsIt)
+            if (!IsWeapon(item.Kind) && !IsGrenade(item.Kind) && !runsIt)
                 return OpResult.Fail(LedgerText.ReasonGearViaLieutenant);
 
             if (item.OwnerId == id)
@@ -1225,10 +1278,33 @@ namespace LivingCity.Personnel
                     item.PinnedTo = RosterEquipment.Unheld;
             }
 
+            DealGrenades(roster);
+
             for (var i = 0; i < roster.Crews.Count; i++)
                 DealCrewArms(roster, roster.Crews[i]);
 
             DealFrontArms(roster);
+        }
+
+        /// <summary>Whose coat the charges are in. Grenades are in no deck - nothing
+        /// ranks them by a stat, because one charge is the same as the next - so the
+        /// only question is whether the boss named a man for them: a pinned charge is
+        /// carried by that man while he is on his feet, and everything else sits with
+        /// the branch that owns it as loose stock. A man off his feet gives his charges
+        /// back to the stock and takes them up again when he is back (his pin keeps -
+        /// the pin loop above is the one that ends it).</summary>
+        static void DealGrenades(Roster roster)
+        {
+            for (var i = 0; i < roster.Equipment.Count; i++)
+            {
+                var item = roster.Equipment[i];
+                if (!IsGrenade(item.Kind) || item.OwnerId == RosterEquipment.Unheld)
+                    continue;
+                var man = item.PinnedTo != RosterEquipment.Unheld
+                    ? roster.Find(item.PinnedTo) : null;
+                item.HolderId = man != null && man.Status == CharacterStatus.Active
+                    ? item.PinnedTo : item.OwnerId;
+            }
         }
 
         /// <summary>The men who guard headquarters: the front manager and every pooled

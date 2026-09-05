@@ -152,13 +152,15 @@ namespace LivingCity.Outfit
         };
 
         /// <summary>
-        /// The counter's back shelf: what a crew throws. A grenade is not dealt into a
-        /// man's hand the way a gun is (RosterOps.IsGrenade) - it is a countable charge
-        /// the crew carries and spends one at a time, thrown at a rival or a shopfront or
-        /// laid under a car (DemoCrews.Bomb). Bought and given to a lieutenant one at a
-        /// time exactly as a gun is (each BUY one charge on the books, each GIVE hands the
-        /// crew one more to carry), and struck off the moment it is thrown - so a crew's
-        /// grenade count is just how many the lieutenant has been given and not yet spent.
+        /// The counter's back shelf: what a crew throws. A grenade is not RANKED into a
+        /// man's hand the way a gun is (RosterOps.IsGrenade - no stat sorts charges,
+        /// one is the same as the next) - it is a countable charge, thrown at a rival or
+        /// a shopfront or laid under a car (DemoCrews.Bomb). Bought one at a time exactly
+        /// as a gun is (each BUY one charge on the books), and given either to a
+        /// LIEUTENANT as his crew's loose stock, from this page, or straight into a named
+        /// man's hand - a corner hood's included - from the grenade drawer on his own
+        /// file, which is where the boss says WHO carries the bomb. Struck off the moment
+        /// it is thrown, so a crew's count is what it has been given and not yet spent.
         /// Priced so a handful is a real call against a better gun.
         /// </summary>
         public static readonly ArmoryItem[] Explosives =

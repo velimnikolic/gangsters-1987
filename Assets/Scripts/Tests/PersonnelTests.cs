@@ -44,6 +44,7 @@ namespace LivingCity.Tests
             KeysMoveBetweenLieutenants(failures);
             LieutenantDealsArmsByOrganization(failures);
             MotorcycleIsWheelsAndNotAGun(failures);
+            ChargesGoIntoANamedHand(failures);
             FrontArmsTheGuards(failures);
             DeadReceiveNothing(failures);
             ViewGroupsInLedgerOrder(failures);
@@ -1016,6 +1017,78 @@ namespace LivingCity.Tests
         /// the guns. The whole split is one predicate (RosterOps.IsWeapon) and it used
         /// to read "anything that is not a Vehicle", so the day the kind was added the
         /// quartermaster would have handed the outfit's best shot a moped to fire.</summary>
+        /// <summary>A CHARGE is signed out the way a rifle is: into whatever hand the
+        /// boss names, a corner hood's included. What is pinned stays on that man
+        /// through every deal, what is not stays the crew's loose stock on its
+        /// lieutenant, and both count on the crew's own deed.</summary>
+        static void ChargesGoIntoANamedHand(List<string> failures)
+        {
+            var roster = new Roster();
+            var lieutenant = Make(roster, "Sal", "Moretti", Rank.Lieutenant);
+            var hood = Make(roster, "Corner", "Hood");
+            var other = Make(roster, "Second", "Hood");
+            MakeCrew(roster, lieutenant, hood, other);
+
+            var his = MakeItem(roster, EquipmentKind.Grenade);
+            var stock = MakeItem(roster, EquipmentKind.Grenade);
+
+            if (!RosterOps.GiveEquipment(roster, his.Id, hood.Id, pin: true).Ok)
+                failures.Add("ChargesGoIntoANamedHand: the boss could not put a charge " +
+                             "in a hood's hand.");
+            if (!RosterOps.GiveEquipment(roster, stock.Id, lieutenant.Id).Ok)
+                failures.Add("ChargesGoIntoANamedHand: the crew's loose stock was " +
+                             "refused.");
+
+            RosterOps.NormalizeArms(roster);
+
+            if (his.OwnerId != lieutenant.Id || his.HolderId != hood.Id ||
+                his.PinnedTo != hood.Id)
+                failures.Add("ChargesGoIntoANamedHand: the hood's charge is not on his " +
+                             "lieutenant's deed and in his own hand.");
+            if (stock.HolderId != lieutenant.Id)
+                failures.Add("ChargesGoIntoANamedHand: loose stock left its branch.");
+            if (RosterOps.GrenadesOwnedBy(roster, lieutenant.Id) != 2)
+                failures.Add("ChargesGoIntoANamedHand: the crew's count is not both " +
+                             "charges.");
+            if (RosterOps.LooseGrenadesOwnedBy(roster, lieutenant.Id) != 1)
+                failures.Add("ChargesGoIntoANamedHand: the pinned charge counted as " +
+                             "loose stock.");
+            if (RosterOps.GrenadesHeldBy(roster, hood.Id) != 1 ||
+                RosterOps.GrenadesHeldBy(roster, other.Id) != 0)
+                failures.Add("ChargesGoIntoANamedHand: the charge is not in the hand " +
+                             "the boss named.");
+
+            // The thrower spends HIS charge, not the next man's.
+            if (!RosterOps.SpendGrenade(roster, lieutenant.Id, hood.Id))
+                failures.Add("ChargesGoIntoANamedHand: the hood could not spend his own.");
+            if (RosterOps.GrenadesHeldBy(roster, hood.Id) != 0 ||
+                RosterOps.GrenadesOwnedBy(roster, lieutenant.Id) != 1)
+                failures.Add("ChargesGoIntoANamedHand: the wrong charge came off the " +
+                             "books.");
+
+            // A man off his feet hands his charges back to the stock and takes them up
+            // again when he is back - the pin itself keeps.
+            var second = MakeItem(roster, EquipmentKind.Grenade);
+            RosterOps.GiveEquipment(roster, second.Id, hood.Id, pin: true);
+            hood.Status = CharacterStatus.Hospitalized;
+            RosterOps.NormalizeArms(roster);
+            if (second.PinnedTo != hood.Id || second.HolderId != lieutenant.Id)
+                failures.Add("ChargesGoIntoANamedHand: a hurt man's charge did not go " +
+                             "back to the crew's stock with his pin kept.");
+            hood.Status = CharacterStatus.Active;
+            RosterOps.NormalizeArms(roster);
+            if (second.HolderId != hood.Id)
+                failures.Add("ChargesGoIntoANamedHand: his charge did not come back " +
+                             "with him.");
+
+            // And a wheel is still a wheel: the hood may hold a charge and never keys.
+            var car = MakeItem(roster, EquipmentKind.Vehicle);
+            var refused = RosterOps.GiveEquipment(roster, car.Id, hood.Id);
+            if (refused.Ok || refused.Reason != LedgerText.ReasonGearViaLieutenant)
+                failures.Add("ChargesGoIntoANamedHand: the charge rule let a car " +
+                             "through to a hood.");
+        }
+
         static void MotorcycleIsWheelsAndNotAGun(List<string> failures)
         {
             if (RosterOps.IsWeapon(EquipmentKind.Motorcycle))

@@ -165,6 +165,11 @@ namespace LivingCity.UI
         RectTransform commandPanThumb;
         float commandPanThumbW;
 
+        /// <summary>The reach the pan was last set against. A tree that CHANGES width -
+        /// a lieutenant made, a crew broken up - opens on its middle again, where the
+        /// Boss stands; one that merely repaints keeps the reader where he was.</summary>
+        float commandPanReachSeen = -1f;
+
         /// <summary>The full personnel dossier opened over this sheet. It has its own
         /// surface and is painted by the one personal-file renderer.</summary>
         int commandDossierId = -1;
@@ -194,6 +199,11 @@ namespace LivingCity.UI
         /// than to the hood the quartermaster puts at the bars, so this drawer exists
         /// only on the Boss and lieutenant files.</summary>
         int commandMotorcyclesOpenId = -1;
+
+        /// <summary>Whose grenade drawer is open. Charges are signed out to a named man
+        /// exactly as a gun is, so this drawer stands on EVERY file - a corner hood's
+        /// as much as his lieutenant's.</summary>
+        int commandBombsOpenId = -1;
 
         bool commandBossOpen;
 
@@ -810,8 +820,18 @@ namespace LivingCity.UI
             commandTreeWindow.sizeDelta = new Vector2(PageWidth, height);
             commandTree.sizeDelta = new Vector2(commandTreeWidth, height);
 
+            // The Boss stands over the middle of his row, so a tree wider than the sheet
+            // opens on its middle and not on its left edge - the first thing the sheet
+            // shows is the head of the family, with a branch either side of him.
+            var reach = CommandPanReach();
+            if (!Mathf.Approximately(reach, commandPanReachSeen))
+            {
+                commandPan = reach * 0.5f;
+                commandPanReachSeen = reach;
+            }
+
             cursor = top + height;
-            if (CommandPanReach() > 0f)
+            if (reach > 0f)
                 cursor = BuildCommandPanBar(cursor + 6f);
             ApplyCommandPan();
             return cursor;
@@ -1044,6 +1064,13 @@ namespace LivingCity.UI
                 carried == "nothing" ? LedgerV2.Boss : LedgerV2.HeadCream));
             var carryIndex = facts.Count - 1;
 
+            var grenades = member != null ? GrenadeLine(member.Id) : "--";
+            var bombsOpen = member != null && commandBombsOpenId == member.Id;
+            facts.Add(("GRENADES",
+                member != null ? grenades + (bombsOpen ? "  ▴" : "  ▾") : grenades,
+                grenades == "none" ? LedgerV2.HeadDim : LedgerV2.HeadCream));
+            var bombIndex = facts.Count - 1;
+
             var cars = member != null ? WheelsLine(member.Id,
                 EquipmentKind.Vehicle, "Car", "cars") : "--";
             var carsOpen = member != null && commandCarsOpenId == member.Id;
@@ -1083,15 +1110,17 @@ namespace LivingCity.UI
                 label.overflowMode = TextOverflowModes.Ellipsis;
                 LedgerV2.Figure(card, cx + cell - figureW, -cy, figureW,
                     facts[i].Value, 11.5f, facts[i].Ink);
-                if ((i == carryIndex || i == carIndex || i == motorcycleIndex) &&
-                    member != null)
+                if ((i == carryIndex || i == carIndex || i == motorcycleIndex ||
+                     i == bombIndex) && member != null)
                 {
                     var bossId = member.Id;
                     UnityAction open = i == carryIndex
                         ? () => ToggleCommandArms(bossId)
-                        : i == carIndex
-                            ? () => ToggleCommandCars(bossId)
-                            : () => ToggleCommandMotorcycles(bossId);
+                        : i == bombIndex
+                            ? () => ToggleCommandBombs(bossId)
+                            : i == carIndex
+                                ? () => ToggleCommandCars(bossId)
+                                : () => ToggleCommandMotorcycles(bossId);
                     NameKey(card, cx, -cy, cell, 22f, open);
                 }
             }
@@ -1115,6 +1144,8 @@ namespace LivingCity.UI
             // is open at once, so a gun list and a motorcycle list never stack.
             if (member != null && commandArmsOpenId == member.Id)
                 y = FileArmsMenu(card, member, BossPadSide, y, inner) + 11f;
+            else if (member != null && commandBombsOpenId == member.Id)
+                y = FileBombMenu(card, member, BossPadSide, y, inner) + 11f;
             else if (member != null && commandCarsOpenId == member.Id)
                 y = FileCarMenu(card, member, BossPadSide, y, inner) + 11f;
             else if (member != null && commandMotorcyclesOpenId == member.Id)
@@ -1659,6 +1690,8 @@ namespace LivingCity.UI
             // also has the motorcycle stock that belongs to his whole branch.
             if (commandArmsOpenId == member.Id)
                 y = FileArmsMenu(host, member, pad, y + 4f, inner);
+            else if (commandBombsOpenId == member.Id)
+                y = FileBombMenu(host, member, pad, y + 4f, inner);
             else if (isLieutenant && commandCarsOpenId == member.Id)
                 y = FileCarMenu(host, member, pad, y + 4f, inner);
             else if (isLieutenant && commandMotorcyclesOpenId == member.Id)
@@ -1688,11 +1721,13 @@ namespace LivingCity.UI
             bool isLieutenant, float x, float y, float w)
         {
             var carried = CarriedGun(member);
+            var grenades = GrenadeLine(member.Id);
             var idle = !isLieutenant && !HasPost(person);
             var memberId = member.Id;
             var armsOpen = commandArmsOpenId == memberId;
             var carsOpen = commandCarsOpenId == memberId;
             var motorcyclesOpen = commandMotorcyclesOpenId == memberId;
+            var bombsOpen = commandBombsOpenId == memberId;
 
             // CARRIES is the one fact on the file that is also a DRAWER: what he holds
             // is the question the answer to which is bought, so the line that states it
@@ -1706,6 +1741,11 @@ namespace LivingCity.UI
                 ("CARRIES", carried + (armsOpen ? "  ▴" : "  ▾"),
                     carried == "nothing" ? LedgerV2.Red : LedgerV2.Ink,
                     (UnityAction)(() => ToggleCommandArms(memberId))),
+                // A charge is signed out by name like the gun above it, so the line
+                // that states it opens its own counter on every man's file.
+                ("GRENADES", grenades + (bombsOpen ? "  ▴" : "  ▾"),
+                    grenades == "none" ? LedgerV2.Muted : LedgerV2.Ink,
+                    (UnityAction)(() => ToggleCommandBombs(memberId))),
                 ("WAGE", LedgerText.Cash(Outfit.Wages.WageFor(member, RosterDay)) +
                     " / day" + (member.UnpaidSince > 0
                         ? "  ·  UNPAID SINCE DAY " + member.UnpaidSince : ""),
@@ -1727,14 +1767,16 @@ namespace LivingCity.UI
             // hood whose name the quartermaster writes in HolderId.
             if (isLieutenant)
             {
+                // After CARRIES and GRENADES: the file reads down what he has on him
+                // first, then what his branch keeps.
                 var motorcycles = MotorcycleLine(memberId);
-                facts.Insert(3, ("MOTORCYCLE",
+                facts.Insert(4, ("MOTORCYCLE",
                     motorcycles + (motorcyclesOpen ? "  ▴" : "  ▾"),
                     motorcycles == "none" ? LedgerV2.Red : LedgerV2.Ink,
                     (UnityAction)(() => ToggleCommandMotorcycles(memberId))));
 
                 var cars = WheelsLine(memberId, EquipmentKind.Vehicle, "Car", "cars");
-                facts.Insert(3, ("CAR", cars + (carsOpen ? "  ▴" : "  ▾"),
+                facts.Insert(4, ("CAR", cars + (carsOpen ? "  ▴" : "  ▾"),
                     cars == "none" ? LedgerV2.Red : LedgerV2.Ink,
                     (UnityAction)(() => ToggleCommandCars(memberId))));
             }
@@ -2070,6 +2112,115 @@ namespace LivingCity.UI
             }
 
             return DrawCommandEquipmentMenu(host, x, y, w, "Gun drawer", "Gun ");
+        }
+
+        /// <summary>
+        /// THE GRENADE DRAWER, pulled out from under his GRENADES line. It is the gun
+        /// drawer's twin and deliberately so - the user's rule is that a charge is
+        /// issued the way a rifle is - with the one difference a grenade forces: charges
+        /// are COUNTED, not held one to a hand, so every row here is one more charge and
+        /// the line above says how many he is carrying.
+        ///
+        /// What is signed out here is PINNED to the man (RosterEquipment.PinnedTo), so
+        /// the deal never moves it to somebody else and, on the street, he is the man
+        /// who throws it (DemoCrews.BombHands). A lieutenant given charges without a
+        /// name on them still keeps loose crew stock - that is what the ARMORY page
+        /// does and this page does not undo it: TAKE ONE BACK returns his topmost
+        /// charge to the safe either way.
+        /// </summary>
+        float FileBombMenu(Transform host, Character member, float x, float y, float w)
+        {
+            var roster = director != null ? director.Roster : null;
+            if (roster == null || member == null)
+                return y;
+
+            var memberId = member.Id;
+            var memberName = member.FullName;
+            commandArms.Clear();
+
+            // Every charge in his own hands - what he was pinned, and (for a lieutenant)
+            // the loose stock warehoused on him. One row per charge, so a man with three
+            // can hand back exactly one.
+            var carried = 0;
+            for (var i = 0; i < roster.Equipment.Count && carried < 6; i++)
+            {
+                var held = roster.Equipment[i];
+                if (!RosterOps.IsGrenade(held.Kind) || held.HolderId != memberId)
+                    continue;
+                carried++;
+                var heldId = held.Id;
+                var heldName = string.IsNullOrEmpty(held.DisplayName)
+                    ? "Grenade" : held.DisplayName;
+                commandArms.Add((heldName, "TAKE ONE BACK", LedgerV2.Muted,
+                    LedgerV2.Ink, true, (UnityAction)(() =>
+                    {
+                        var result = director.ReturnEquipment(heldId);
+                        commandNote = result.Ok
+                            ? heldName + " taken back off " + memberName
+                            : result.Reason;
+                        CloseCommandEquipmentDrawers();
+                        dirty = true;
+                    })));
+            }
+
+            // What is already in the safe and unheld - it costs nothing to sign out.
+            var shelved = 0;
+            for (var i = 0; i < roster.Equipment.Count && shelved < 6; i++)
+            {
+                var item = roster.Equipment[i];
+                if (!RosterOps.IsGrenade(item.Kind) ||
+                    item.OwnerId != RosterEquipment.Unheld)
+                    continue;
+                shelved++;
+                var itemId = item.Id;
+                var itemName = string.IsNullOrEmpty(item.DisplayName)
+                    ? "Grenade" : item.DisplayName;
+                commandArms.Add((itemName, "OFF THE SHELF", LedgerV2.Green,
+                    LedgerV2.Green, true, (UnityAction)(() =>
+                    {
+                        var result = director.GiveEquipment(itemId, memberId, pin: true);
+                        commandNote = result.Ok
+                            ? itemName + " signed out to " + memberName
+                            : result.Reason;
+                        CloseCommandEquipmentDrawers();
+                        dirty = true;
+                    })));
+            }
+
+            // And what the counter sells, at the armory's own price - bought and put in
+            // his hand in the one click, exactly as a gun is.
+            var safe = outfit ? outfit.Accounts.Safe : 0;
+            for (var i = 0; i < Outfit.ArmoryCatalog.Explosives.Length; i++)
+            {
+                var listing = Outfit.ArmoryCatalog.Explosives[i];
+                commandArms.Add((listing.DisplayName, LedgerText.Cash(listing.Price),
+                    LedgerV2.Red, LedgerV2.Dotted, outfit && safe >= listing.Price,
+                    (UnityAction)(() =>
+                    {
+                        var bought = outfit
+                            ? outfit.Purchase(listing.Price, listing.DisplayName)
+                            : OpResult.Fail(LedgerText.ReasonNoSuchItem);
+                        if (!bought.Ok)
+                        {
+                            commandNote = bought.Reason;
+                            dirty = true;
+                            return;
+                        }
+                        var stock = director.AddEquipment(listing.Kind,
+                            listing.DisplayName, listing.Price);
+                        var given = stock != null
+                            ? director.GiveEquipment(stock.Id, memberId, pin: true)
+                            : OpResult.Fail(LedgerText.ReasonNoSuchItem);
+                        commandNote = given.Ok
+                            ? listing.DisplayName + " bought and signed out to " +
+                              memberName
+                            : listing.DisplayName + " bought · " + given.Reason;
+                        CloseCommandEquipmentDrawers();
+                        dirty = true;
+                    })));
+            }
+
+            return DrawCommandEquipmentMenu(host, x, y, w, "Grenade drawer", "Grenade ");
         }
 
         float FileCarMenu(Transform host, Character member, float x, float y, float w) =>
@@ -2815,6 +2966,8 @@ namespace LivingCity.UI
                 commandCarsOpenId = -1;
             else if (commandMotorcyclesOpenId == id)
                 commandMotorcyclesOpenId = -1;
+            else if (commandBombsOpenId == id)
+                commandBombsOpenId = -1;
             commandNote = "";
             dirty = true;
         }
@@ -2852,11 +3005,24 @@ namespace LivingCity.UI
             dirty = true;
         }
 
+        /// <summary>The grenade drawer under one man's GRENADES line - on a hood's file
+        /// as much as a lieutenant's, because a charge goes into a named hand.</summary>
+        void ToggleCommandBombs(int id)
+        {
+            var opening = commandBombsOpenId != id;
+            CloseCommandEquipmentDrawers();
+            if (opening)
+                commandBombsOpenId = id;
+            commandNote = "";
+            dirty = true;
+        }
+
         void CloseCommandEquipmentDrawers()
         {
             commandArmsOpenId = -1;
             commandCarsOpenId = -1;
             commandMotorcyclesOpenId = -1;
+            commandBombsOpenId = -1;
         }
 
         /// <summary>Raising a man to lieutenant is filed like every other order: the
@@ -2896,7 +3062,7 @@ namespace LivingCity.UI
                 return true;
             }
             if (commandArmsOpenId >= 0 || commandCarsOpenId >= 0 ||
-                commandMotorcyclesOpenId >= 0)
+                commandMotorcyclesOpenId >= 0 || commandBombsOpenId >= 0)
             {
                 CloseCommandEquipmentDrawers();
                 dirty = true;
@@ -3084,6 +3250,20 @@ namespace LivingCity.UI
         /// fact the Boss/lieutenant panel is displaying and changing.</summary>
         string MotorcycleLine(int leaderId) => WheelsLine(leaderId,
             EquipmentKind.Motorcycle, "Motorcycle", "motorcycles");
+
+        /// <summary>The charges in ONE man's hands, in the file's words. Not the
+        /// branch's count: a grenade signed out to a hood is his, and the file that says
+        /// otherwise would be the file the boss reads before he sends the wrong man.</summary>
+        string GrenadeLine(int memberId)
+        {
+            var roster = director != null ? director.Roster : null;
+            if (roster == null)
+                return "--";
+            var count = RosterOps.GrenadesHeldBy(roster, memberId);
+            return count == 0 ? "none"
+                 : count == 1 ? "one charge"
+                 : count + " charges";
+        }
 
         string WheelsLine(int leaderId, EquipmentKind kind, string singular,
             string plural)

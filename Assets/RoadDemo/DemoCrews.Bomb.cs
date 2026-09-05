@@ -52,8 +52,13 @@ namespace RoadDemo
         /// <summary>Spend one of the crew's grenades: struck off the ledger the moment it
         /// leaves a man's hand (so BindBombs re-derives the lower count and never puts it
         /// back), and dropped from the unit's own tally at once for the order that just
-        /// threw it. In a scene with no roster the tally is all there is.</summary>
-        void SpendBomb(Unit unit)
+        /// threw it. In a scene with no roster the tally is all there is.
+        ///
+        /// It is the THROWER'S charge that is struck off where he was carrying one of
+        /// his own (the boss pinned it on him): charges stopped being interchangeable
+        /// the day they could be signed out to a named man, and taking another man's
+        /// off the books would leave this one holding a grenade he has just thrown.</summary>
+        void SpendBomb(Unit unit, CrewWalker man = null)
         {
             if (unit == null) return;
             if (unit.Bombs > 0) unit.Bombs--;
@@ -62,7 +67,9 @@ namespace RoadDemo
             var roster = director != null ? director.Roster : null;
             if (roster == null) return;
             var crew = roster.FindCrew(unit.CrewId);
-            if (crew != null) RosterOps.SpendGrenade(roster, crew.LieutenantId);
+            if (crew != null)
+                RosterOps.SpendGrenade(roster, crew.LieutenantId,
+                    man != null ? man.CharacterId : RosterEquipment.Unheld);
         }
 
         /// <summary>How far a man will lob a grenade, in metres. Past this the throw is
@@ -137,7 +144,7 @@ namespace RoadDemo
             var man = Thrower(unit, targetPos, out var why);
             if (man == null) { BombRefusal = why; return false; }
 
-            SpendBomb(unit);
+            SpendBomb(unit, man);
             var from = man.ChestPosition + Vector3.up * 0.15f;
             Face(man, targetPos);
             BombProjectile.Throw(from, targetPos + Vector3.up * 0.2f, this, unit.Faction, GroundY);
@@ -171,7 +178,7 @@ namespace RoadDemo
             var man = Planter(Selected, car.Position, out var why);
             if (man == null) { BombRefusal = why; return false; }
 
-            SpendBomb(Selected);
+            SpendBomb(Selected, man);
             // under the nose of the car, where a car pulling out rolls straight over it
             var at = car.Position + (car.Tf != null ? car.Tf.forward : Vector3.forward) * (car.HalfLength + 0.2f);
             at.y = GroundY;
@@ -200,8 +207,8 @@ namespace RoadDemo
         {
             if (!HasGrenade(unit, out why)) return null;
 
-            var best = NearestUp(unit, targetPos, out float range);
-            if (best == null) { why = "Nobody up to throw it"; return null; }
+            var best = NearestUp(unit, targetPos, BombHands(unit), out float range);
+            if (best == null) { why = NobodyUp(unit, "throw"); return null; }
             if (range > BombThrowRange) { why = "Too far - move the crew closer"; return null; }
             // a grenade does not pick sides: a mark inside the blast of the man throwing
             // it takes him with it, so a throw that would land on the crew's own feet is
@@ -224,8 +231,8 @@ namespace RoadDemo
         {
             if (!HasGrenade(unit, out why)) return null;
 
-            var best = NearestUp(unit, at, out float range);
-            if (best == null) { why = "Nobody up to lay it"; return null; }
+            var best = NearestUp(unit, at, BombHands(unit), out float range);
+            if (best == null) { why = NobodyUp(unit, "lay"); return null; }
             if (range > BombPlantRange) { why = "Get the crew to the car first"; return null; }
             return best;
         }
@@ -241,9 +248,12 @@ namespace RoadDemo
         }
 
         /// <summary>The crew's nearest man to a point who could handle a grenade - alive,
-        /// on his own two feet, not riding and not running away - with the metres to it
-        /// on <paramref name="range"/>. Null when there is nobody up.</summary>
-        static CrewWalker NearestUp(Unit unit, Vector3 pos, out float range)
+        /// on his own two feet, not riding and not running away, and holding a charge
+        /// where the charges are held by name (<paramref name="hands"/>, null for any
+        /// man) - with the metres to it on <paramref name="range"/>. Null when there is
+        /// nobody up.</summary>
+        static CrewWalker NearestUp(Unit unit, Vector3 pos,
+            System.Func<CrewWalker, bool> hands, out float range)
         {
             CrewWalker best = null;
             float bestD = float.MaxValue;
@@ -251,12 +261,45 @@ namespace RoadDemo
             {
                 if (man == null || man.Dead || man.Tf == null) continue;
                 if (man.Riding || man.Retreating) continue;
+                if (hands != null && !hands(man)) continue;
                 float d = (man.Tf.position - pos).sqrMagnitude;
                 if (d < bestD) { bestD = d; best = man; }
             }
             range = best != null ? Mathf.Sqrt(bestD) : float.MaxValue;
             return best;
         }
+
+        /// <summary>
+        /// WHOSE HAND THE CHARGE IS IN. A crew's grenades used to be one number and any
+        /// man of it could throw one; they can now be signed out to a named man the way
+        /// a rifle is (RosterOps.GiveEquipment with a pin), and a charge in one hood's
+        /// coat is not in the next man's.
+        ///
+        /// So: while the crew still has LOOSE stock - charges the boss put in nobody's
+        /// name - anyone up may take one, and this is null (no filter, the old rule).
+        /// The moment every charge on the books belongs to somebody, only the men
+        /// carrying one may throw or lay it. Null too where there is no ledger at all
+        /// (a bare demo, a rival crew), whose tally is the whole truth.
+        /// </summary>
+        static System.Func<CrewWalker, bool> BombHands(Unit unit)
+        {
+            if (unit == null || unit.Faction != 0) return null;
+            var director = PersonnelDirector.Instance;
+            var roster = director != null ? director.Roster : null;
+            if (roster == null) return null;
+            var crew = roster.FindCrew(unit.CrewId);
+            if (crew == null) return null;
+            if (RosterOps.LooseGrenadesOwnedBy(roster, crew.LieutenantId) > 0) return null;
+            return man => man != null && man.CharacterId >= 0 &&
+                          RosterOps.GrenadesHeldBy(roster, man.CharacterId) > 0;
+        }
+
+        /// <summary>Why nobody can do it - and the two reasons are different orders to
+        /// the player: get a man on his feet, or bring the man WHO HAS THE CHARGE up.</summary>
+        static string NobodyUp(Unit unit, string verb) =>
+            BombHands(unit) != null
+                ? "Only the man carrying it can " + verb + " it - bring him up"
+                : "Nobody up to " + verb + " it";
 
         /// <summary>Turn a man to face where he is throwing - just his heading, no step;
         /// the walker owns his feet.</summary>
