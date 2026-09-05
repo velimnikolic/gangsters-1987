@@ -431,6 +431,12 @@ namespace LivingCity.Outfit
             return room < (int)above ? room : (int)above;
         }
 
+        /// <summary>The last day money cleared points off this pair, and how many that
+        /// day - (-1, 0) when it never did. A bill reads it to tell compensation since
+        /// its filing from the ordinary decay of the grudge (Codex).</summary>
+        public (int day, int points) ClearedOn(int aggrieved, int offender) =>
+            cleared.TryGetValue(Owed(aggrieved, offender), out var row) ? row : (-1, 0);
+
         /// <summary>The last day one house had a man killed by another, or -1.</summary>
         public int LastKilling(int aggrieved, int offender) =>
             killings.TryGetValue(Owed(aggrieved, offender), out var day) ? day : -1;

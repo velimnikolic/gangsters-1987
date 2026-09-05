@@ -114,6 +114,11 @@ namespace LivingCity.Outfit
         public int Escrow;
         public int EscrowDirty;
 
+        /// <summary>For a bill: the points money had cleared off the pair on the day it
+        /// was filed, as they stood at filing - so the book can tell compensation that
+        /// came AFTER (the bill lapses) from the grudge's own decay (it does not).</summary>
+        public int ClearedAtFiling;
+
         /// <summary>The lieutenant who carried it in person, or -1 by telephone
         /// (DIPL-008), his Streetwise in half-steps as it was read when he left, and
         /// whether he is still on the road - a proposal in transit is not answered
@@ -1013,10 +1018,19 @@ namespace LivingCity.Outfit
 
         /// <summary>A bill lying open while other money - a truce bought, another bill
         /// paid - cleared the grudge it was priced from: the ceiling is read again on
-        /// the day it is answered or left, not only at filing (Codex).</summary>
-        public bool BillLapsed(HouseRelations relations, Proposal proposal, int day) =>
-            proposal != null && proposal.Kind == ProposalKind.Bill && relations != null &&
-            proposal.Terms.Money > BillCeiling(relations, proposal.From, proposal.To, Config, day);
+        /// the day it is answered or left, not only at filing (Codex). Only money
+        /// counts: the grudge's own daily decay lowers the ceiling too, and a bill
+        /// that merely aged is still a bill ignored.</summary>
+        public bool BillLapsed(HouseRelations relations, Proposal proposal, int day)
+        {
+            if (proposal == null || proposal.Kind != ProposalKind.Bill || relations == null)
+                return false;
+            if (proposal.Terms.Money <= BillCeiling(relations, proposal.From, proposal.To, Config, day))
+                return false;
+            var (clearedDay, points) = relations.ClearedOn(proposal.From, proposal.To);
+            return clearedDay > proposal.Day ||
+                   (clearedDay == proposal.Day && points > proposal.ClearedAtFiling);
+        }
 
         void Lapse(Underworld world, Proposal proposal, int day)
         {
@@ -1256,6 +1270,7 @@ namespace LivingCity.Outfit
                         answer = p.Answer,
                         escrow = p.Escrow,
                         escrowDirty = p.EscrowDirty,
+                        clearedAtFiling = p.ClearedAtFiling,
                         envoy = p.Envoy,
                         envoyHalfSteps = p.EnvoyHalfSteps,
                         inTransit = p.InTransit,
@@ -1315,6 +1330,7 @@ namespace LivingCity.Outfit
                     Answer = row.answer ?? "",
                     Escrow = row.escrow,
                     EscrowDirty = row.escrowDirty,
+                    ClearedAtFiling = row.clearedAtFiling,
                     Envoy = row.envoy,
                     EnvoyHalfSteps = row.envoyHalfSteps,
                     InTransit = row.inTransit,
@@ -1353,6 +1369,7 @@ namespace LivingCity.Outfit
         public string answer;
         public int escrow;
         public int escrowDirty;
+        public int clearedAtFiling;
         public int envoy;
         public int envoyHalfSteps;
         public bool inTransit;

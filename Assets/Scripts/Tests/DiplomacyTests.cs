@@ -79,6 +79,7 @@ namespace LivingCity.Tests
             TheDeskReadsTheFloorBeforeItSaysYes(failures);
             TheLeviesAndTheHouseLinesSurviveTheFile(failures);
             AnOpenBillLapsesWhenOtherMoneyClearsTheDebt(failures);
+            AnUnpaidBillLeftToAgeIsStillAWordIgnored(failures);
 
             return failures;
         }
@@ -2442,6 +2443,53 @@ namespace LivingCity.Tests
                 failures.Add("CODEX: a stale bill left to expire was taken as a word ignored (" +
                              table.World.Relations.Grievance(1, 0) + " vs " +
                              twin.World.Relations.Grievance(1, 0) + ").");
+        }
+
+        /// <summary>A bill priced at the ceiling and simply ignored: the grudge's own
+        /// decay lowers the ceiling under the figure by the day it expires, but no
+        /// money cleared anything, so it is a word ignored - the grudge rises over a
+        /// twin that never had the bill (Codex over 4fc754574).</summary>
+        static void AnUnpaidBillLeftToAgeIsStillAWordIgnored(List<string> failures)
+        {
+            var table = new Table(119);
+            var twin = new Table(119);
+            foreach (var t in new[] { table, twin })
+            {
+                War(t, 1, 0);
+                t.World.Of(1).Runner.Accounts.Safe = 1_000_000;
+                t.World.Of(0).Runner.Accounts.Safe = 1_000_000;
+                for (var i = 0; i < 2; i++)
+                    t.World.Relations.Note(1, 0, GrievanceKind.DoorAttacked);
+            }
+            var day = table.World.Of(0).Runner.Campaign.Day;
+            var ceiling = HouseDiplomacy.BillCeiling(table.World.Relations, 1, 0,
+                DiplomacyConfig.Default, day);
+            var bill = table.Propose(1, 0, ProposalKind.Bill, ceiling);
+            var filed = Last(table);
+            if (!bill.Ok || filed == null || !filed.Open)
+            {
+                failures.Add("CODEX: the fixture's bill did not reach the player's inbox (" +
+                             bill.Reason + ").");
+                return;
+            }
+            var days = filed.ExpiresDay - day + 1;
+            for (var i = 0; i < days; i++)
+            {
+                table.World.DayTick();
+                twin.World.DayTick();
+            }
+            if (filed.Status != ProposalStatus.Expired || filed.Answer == HouseDiplomacy.ReasonNoSuchDebt)
+                failures.Add("CODEX: an unpaid bill left to age lapsed as if paid (" +
+                             filed.Status + " " + filed.Answer + ").");
+            if (table.World.Relations.Grievance(1, 0) <= twin.World.Relations.Grievance(1, 0))
+                failures.Add("CODEX: an unpaid bill ignored cost no grudge (" +
+                             table.World.Relations.Grievance(1, 0) + " vs " +
+                             twin.World.Relations.Grievance(1, 0) + ").");
+            var later = HouseDiplomacy.BillCeiling(twin.World.Relations, 1, 0,
+                DiplomacyConfig.Default, twin.World.Of(0).Runner.Campaign.Day);
+            if (later >= ceiling)
+                failures.Add("CODEX: the fixture's decay did not lower the ceiling ($" +
+                             later + " vs $" + ceiling + "), so it proves nothing.");
         }
 
         /// <summary>House 1 bills the player $2,000 at war, then the player buys a

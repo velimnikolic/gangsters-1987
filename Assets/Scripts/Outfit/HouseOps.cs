@@ -274,6 +274,12 @@ namespace LivingCity.Outfit
             filed.Envoy = proposal.Envoy;
             filed.EnvoyHalfSteps = proposal.EnvoyHalfSteps;
             filed.InTransit = proposal.InTransit;
+            if (proposal.Kind == ProposalKind.Bill)
+            {
+                var (clearedDay, points) = world.Relations.ClearedOn(from.GangId, to.GangId);
+                filed.ClearedAtFiling = clearedDay == day ? points : 0;
+                proposal.ClearedAtFiling = filed.ClearedAtFiling;
+            }
             HouseDiplomacy.Print(world, filed, HouseDiplomacy.Describe(filed), day);
             from.Touch();
 
