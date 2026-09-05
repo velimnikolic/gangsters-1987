@@ -377,6 +377,14 @@ namespace RoadDemo
             go.transform.localRotation = Quaternion.Euler(0f, yawA, 0f);
             var animator = PrepareFigure(go);
 
+            // Derive appearance without consuming another draw from the placement RNG.
+            int skinSeed = unchecked(stood.People * 486187739 ^
+                Mathf.RoundToInt(parent.position.x * 100f) * 397 ^
+                Mathf.RoundToInt(parent.position.z * 100f));
+            var appearance = LivingCity.Entities.PedestrianAnthropometry.Sample(skinSeed,
+                female, LivingCity.Entities.PedestrianAgeCohort.Adult);
+            LivingCity.Entities.PersonSkinTint.Apply(go, skinSeed, appearance.PopulationGroup);
+
             GameObject carry = null;
             if (carryTrash)
             {

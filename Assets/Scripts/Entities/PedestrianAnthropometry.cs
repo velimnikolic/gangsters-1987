@@ -304,6 +304,7 @@ namespace LivingCity.Entities
                 stamp = person.AddComponent<PedestrianAnthropometryStamp>();
 
             stamp.Configure(seed, sample, scale);
+            PersonSkinTint.Apply(person, seed, sample.PopulationGroup);
             return stamp;
         }
 
