@@ -943,9 +943,15 @@ namespace RoadDemo
             // lost him holds the grudge, and it holds it against the house whose men
             // were shooting - never against a name nobody could put to the shot.
             if (victimFaction >= 0 && shooter.IsValid && shooter.Value != victimFaction)
-                LivingCity.Outfit.Underworld.Current?.Relations.Note(
+            {
+                var underworld = LivingCity.Outfit.Underworld.Current;
+                var bereaved = underworld?.Of(victimFaction);
+                underworld?.Relations.Note(
                     victimFaction, shooter.Value,
-                    LivingCity.Outfit.GrievanceKind.ManKilled);
+                    LivingCity.Outfit.GrievanceKind.ManKilled,
+                    bereaved != null ? bereaved.Runner.Campaign.Day : -1);
+                bereaved?.Runner.NoteLoss(shooter.Value);
+            }
             var businessId = default(TerritoryBusinessId);
             TryGetBusinessNear(position, 4f, out businessId);
             RecordFear(new TerritoryFearEvent(
@@ -1717,9 +1723,12 @@ namespace RoadDemo
             // an arrangement and the family that was paid for it is still the family
             // that was wronged.
             if (racket.TryGetProtector(businessId, out var wronged) && wronged != gangId)
+            {
                 LivingCity.Outfit.Underworld.Current?.Relations.Note(
                     wronged.Value, gangId.Value,
                     LivingCity.Outfit.GrievanceKind.DoorAttacked);
+                NoteLineCrossed(wronged, gangId, blockId);
+            }
 
             racket.Escalate(
                 businessId, gangId, kind, lastGameHour, racketChanges, news);
@@ -1889,11 +1898,11 @@ namespace RoadDemo
                 Debug.Log("[Save] Day " + file.day + " restored from the file.");
             }
 
-            SweepWarnings(gameHour);
             SweepDefiance(gameHour);
             SweepProtectionSwitches();
             AccrueDues(gameHour);
             PressBorders(gameHour);
+            SweepKeepOffs(gameHour);
             TendScheduledRounds(gameHour);
             TickPaperRounds(gameHour);
         }
@@ -1948,6 +1957,7 @@ namespace RoadDemo
                     LivingCity.Outfit.Underworld.Current?.Relations.Note(
                         protector.Value, challenger.Value,
                         LivingCity.Outfit.GrievanceKind.DoorSwitched);
+                    NoteLineCrossed(protector, challenger, blockId);
                 }
             }
         }
@@ -2672,6 +2682,10 @@ namespace RoadDemo
                 !state.TryGetDefinition(command.BlockId, out var block))
                 return TerritoryCommandExecution.Reject("Unknown territory block.");
 
+            var word = KeptOff(command.House, command.BlockId);
+            if (word != null)
+                return TerritoryCommandExecution.Reject(word);
+
             var unit = FindUnit(command.House, command.GroupId, out var refusal);
             if (unit == null)
                 return TerritoryCommandExecution.Reject(refusal);
@@ -2702,6 +2716,15 @@ namespace RoadDemo
                 return TerritoryCommandExecution.Reject("No such business in this city.");
             if (!IsRacketable(command.BusinessId))
                 return TerritoryCommandExecution.Reject("That place carries no business.");
+
+            // A STREET UNDER OUR WORD is refused at the door too (EPIC 42).
+            if (geography != null &&
+                geography.TryGetBusinessBlock(command.BusinessId, out var doorBlock))
+            {
+                var word = KeptOff(command.House, doorBlock);
+                if (word != null)
+                    return TerritoryCommandExecution.Reject(word);
+            }
 
             if (!crews.MarchTo(unit, door))
                 return TerritoryCommandExecution.Reject("The physical crew refused the order.");

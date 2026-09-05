@@ -148,6 +148,15 @@ namespace LivingCity.UI
 
             BuildOwnLine(gangs);
 
+            // THE TABLE (EPIC 42): one house's sheet takes the drawer's window while
+            // it is open; BACK puts the cards back.
+            if (tableFor >= 0)
+            {
+                BuildTable(gangs);
+                BuildStanceLegend();
+                return;
+            }
+
             // The rivals, in the window: their y is measured from ITS top edge, not the
             // page's, so scrolling is one anchoredPosition and never a re-layout.
             var slot = 0;
@@ -297,10 +306,14 @@ namespace LivingCity.UI
             var pending = Outfit.Stance.Peace;
             var hasPending = outfit && outfit.TryGetPendingStance(gang.Id, out pending);
 
+            // THEY ASK (EPIC 42): an open proposal of theirs in our inbox rides on the
+            // standing row, so the card says there is something on the table.
+            var theyAsk = TheyAsk(gang.Id);
             CardRow(card, pad, -98f, inner, "STANDING",
                 LedgerText.StanceLabel(current) + (hasPending
-                    ? " → " + LedgerText.StanceLabel(pending) : ""),
-                hasPending ? LedgerV2.Red : LedgerV2.Ink);
+                    ? " → " + LedgerText.StanceLabel(pending) : "") +
+                (theyAsk ? " · THEY ASK" : ""),
+                hasPending || theyAsk ? LedgerV2.Red : LedgerV2.Ink);
 
             // The meter is CENTRED on its label's line, not hung off the top of it -
             // hung off the top it climbed into the standing row above.
@@ -367,22 +380,15 @@ namespace LivingCity.UI
                 lineSpacing: 1f);
             note.overflowMode = TextOverflowModes.Ellipsis;
 
-            // ---- the three stances, the standing one ringed ----
-            var effective = hasPending ? pending : current;
-            var buttonW = (inner - 8f) / 3f;
-            for (var s = 0; s < 3; s++)
-            {
-                var choice = (Outfit.Stance)s;
-                var gangId = gang.Id;
-                var button = LedgerV2.Button(card, LedgerText.StanceLabel(choice),
-                    pad + s * (buttonW + 4f), -278f, buttonW, 26f, () =>
-                    {
-                        if (outfit)
-                            outfit.SetStance(gangId, choice);
-                        dirty = true;
-                    }, red: choice == Outfit.Stance.War, size: 10f,
-                    outline: choice != effective);
-            }
+            // ---- THE TABLE (EPIC 42): the three stance keys became one door. War is
+            // declared and truce and peace are offered from the sheet it opens, along
+            // with every other word two houses can say to each other.
+            var houseId = gang.Id;
+            LedgerV2.Button(card, theyAsk ? "THE TABLE · THEY ASK" : "THE TABLE",
+                pad, -278f, inner, 26f, () =>
+                {
+                    OpenTable(houseId);
+                }, red: theyAsk, size: 10f, outline: !theyAsk);
         }
 
         /// <summary>A house's power, 0-100, off the territory runtime's own ledger

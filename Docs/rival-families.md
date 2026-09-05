@@ -312,8 +312,8 @@ What puts a grudge on the books (D14):
 | a door switched from us to them | 10 | `SweepProtectionSwitches` |
 | a round of ours was lost on their street | 20 | the round ledger's `Ended` |
 | a man of ours killed by theirs | 35 | `OnStreetDeath`, and a paper `Kill` |
-| a warning of ours ignored for 48 h | 10 | `SweepWarnings` |
-| tribute unpaid | 25 | `CampaignRunner.CollectTribute` |
+| a word of ours refused, or unanswered for two days | 10 | `HouseDiplomacy.Settle` / `Expire` (EPIC 42, DIPL-003) |
+| tribute unpaid | 25 | `Underworld.SettleTribute` — every house's envelope, in one pass after the books turn, crossing through `Underworld.Transfer` into the levying house's safe (EPIC 42, DIPL-004; it was the player's alone and reached nobody) |
 
 The ladder (design §26) is derived from the grievance by the D13 thresholds — Ignore 0,
 DiplomaticWarning 10, Threat 20, DemandCompensation 30, RetakeBusiness 40, BeatCollector

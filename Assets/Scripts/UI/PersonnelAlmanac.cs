@@ -2502,8 +2502,8 @@ namespace LivingCity.UI
                           " at war with you — their men engage yours on sight"
                         : "Nobody in this city is at war with you",
                         railAtWar > 0 ? TelexVoice.Urgent : TelexVoice.Plain));
-                    telexMessages.Add(("Stance changes take effect when the week is " +
-                        "committed, never mid-plan", TelexVoice.Plain));
+                    telexMessages.Add(("War is declared; a truce or a peace is offered " +
+                        "at the table and lands at midnight", TelexVoice.Plain));
                     break;
 
                 case LedgerPage.Orders:

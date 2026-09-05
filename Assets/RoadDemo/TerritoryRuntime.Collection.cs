@@ -774,6 +774,10 @@ namespace RoadDemo
                 return TerritoryCommandExecution.Reject(
                     "The racket is not running in this scene.");
 
+            var word = KeptOff(command.House, command.BlockId);
+            if (word != null)
+                return TerritoryCommandExecution.Reject(word);
+
             var unit = FindUnit(command.House, command.GroupId, out var refusal);
             if (unit == null)
                 return TerritoryCommandExecution.Reject(refusal);

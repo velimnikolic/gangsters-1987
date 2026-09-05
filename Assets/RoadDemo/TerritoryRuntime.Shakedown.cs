@@ -42,6 +42,10 @@ namespace RoadDemo
             TerritoryCommandNodeId groupId, TerritoryBlockId blockId,
             TerritoryRoundKind kind)
         {
+            var word = KeptOff(gang, blockId);
+            if (word != null)
+                return TerritoryCommandExecution.Reject(word);
+
             if (!blockId.IsValid)
                 return TerritoryCommandExecution.Reject("Unknown territory block.");
             if (racket == null || geography == null)

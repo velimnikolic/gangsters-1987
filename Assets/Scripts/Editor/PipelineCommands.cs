@@ -711,6 +711,114 @@ namespace GangstersTools
             };
         }
 
+        [CliCommand("gangsters_diplomacy_probe",
+                    "EPIC 42: the table as it stands - per house, what it has asked and " +
+                    "been asked and how each was answered, what it keeps off, the " +
+                    "lines and pacts it is party to, and the tribute both ways. Reads, " +
+                    "never repairs.",
+                    MainThreadRequired = true,
+                    Tags = new[] { "gangsters", "underworld", "audit" })]
+        public static object DiplomacyProbe(
+            [CliArg("house", "One gang id to narrow to; -1 for every house.")] int house = -1,
+            [CliArg("record", "How many of the last words to print per house.")] int record = 10)
+        {
+            var underworld = LivingCity.Outfit.Underworld.Current;
+            if (underworld == null)
+                return new { ok = false, reason = "No underworld is dealt; is a scene playing?" };
+            var book = underworld.Diplomacy;
+            var houses = new List<object>();
+            var offs = new List<(int house, LivingCity.Territory.TerritoryBlockId block, int untilDay)>();
+            book.CollectKeepOffs(offs);
+            for (var g = 0; g < underworld.Count; g++)
+            {
+                var one = underworld.Of(g);
+                if (one == null || (house >= 0 && g != house))
+                    continue;
+                var day = one.Runner.Campaign.Day;
+
+                var words = new List<object>();
+                var count = 0;
+                for (var i = book.All.Count - 1; i >= 0 && count < record; i--)
+                {
+                    var p = book.All[i];
+                    if (p.From != g && p.To != g)
+                        continue;
+                    count++;
+                    words.Add(new
+                    {
+                        id = p.Id,
+                        day = p.Day,
+                        from = p.From,
+                        to = p.To,
+                        kind = p.Kind.ToString(),
+                        money = p.Terms.Money,
+                        blocks = p.Terms.Blocks.ToArray(),
+                        third = p.Terms.Third,
+                        status = p.Status.ToString(),
+                        answer = p.Answer,
+                        envoy = p.Envoy,
+                        inTransit = p.InTransit,
+                        escrow = p.Escrow,
+                    });
+                }
+
+                var keptOff = new List<object>();
+                for (var i = 0; i < offs.Count; i++)
+                    if (offs[i].house == g && book.IsKeptOff(g, offs[i].block, day))
+                        keptOff.Add(new { block = offs[i].block.Value, untilDay = offs[i].untilDay });
+
+                var lines = new List<object>();
+                for (var i = 0; i < book.Lines.Count; i++)
+                    if (book.Lines[i].Names(g))
+                        lines.Add(new
+                        {
+                            with = book.Lines[i].A == g ? book.Lines[i].B : book.Lines[i].A,
+                            block = book.Lines[i].Block,
+                            untilDay = book.Lines[i].UntilDay,
+                        });
+
+                var pacts = new List<object>();
+                for (var i = 0; i < book.Pacts.Count; i++)
+                    if (book.Pacts[i].Names(g))
+                        pacts.Add(new
+                        {
+                            with = book.Pacts[i].PartnerOf(g),
+                            untilDay = book.Pacts[i].UntilDay,
+                        });
+
+                var tribute = new List<object>();
+                for (var i = 0; i < one.Runner.Tribute.Levies.Count; i++)
+                {
+                    var levy = one.Runner.Tribute.Levies[i];
+                    tribute.Add(new
+                    {
+                        to = levy.GangId,
+                        amount = levy.Amount,
+                        dueDay = levy.DueDay,
+                        overdue = levy.Overdue,
+                        pinned = levy.Pinned(day),
+                    });
+                }
+
+                houses.Add(new
+                {
+                    house = g,
+                    name = LivingCity.Gangs.GangCatalog.Names[g],
+                    day,
+                    safe = one.Runner.Accounts.Safe,
+                    endurance = LivingCity.Outfit.HouseRelations.Endurance(
+                        one.Runner.Accounts.Safe,
+                        LivingCity.Outfit.Wages.DailyPayroll(one.Roster)),
+                    words = words.ToArray(),
+                    keptOff = keptOff.ToArray(),
+                    lines = lines.ToArray(),
+                    pacts = pacts.ToArray(),
+                    tribute = tribute.ToArray(),
+                });
+            }
+            return new { ok = true, proposals = book.All.Count, houses = houses.ToArray() };
+        }
+
         [CliCommand("gangsters_relations_tests",
                     "Run RIVAL-007's contracts: where twenty-one families stand with " +
                     "one another, what each is owed by each, and the one rule the " +
@@ -884,6 +992,17 @@ namespace GangstersTools
                     thinkMilliseconds = one.ThinkMilliseconds,
                     suppliersByDay30 = one.HousesAtSupplierByDay30,
                     buyerMoney = one.BuyerMoney,
+                    table = new
+                    {
+                        proposals = one.ProposalsMade,
+                        accepted = one.ProposalsAccepted,
+                        refused = one.ProposalsRefused,
+                        moneyBetweenHouses = one.MoneyBetweenHouses,
+                        lines = one.LinesStanding,
+                        pacts = one.PactsStanding,
+                        kidnaps = one.Kidnaps,
+                        ransomsPaid = one.RansomsPaid,
+                    },
                     cardsDealtAnsweredExpired = one.CardsDealt + "/" + one.CardsAnswered + "/" +
                                                 one.CardsExpired,
                     rivalFlatsRaided = one.RivalFlatsRaided,

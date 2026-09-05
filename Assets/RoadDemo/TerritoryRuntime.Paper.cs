@@ -56,6 +56,17 @@ namespace RoadDemo
         /// </summary>
         string PaperOrder(House house, TerritoryGangId mine, HouseIntent intent)
         {
+            // A STREET UNDER OUR WORD is refused on paper as on the pavement (EPIC 42).
+            var street = intent.Order == HouseOrder.ApproachBusiness
+                ? geography != null &&
+                  geography.TryGetBusinessBlock(intent.BusinessId, out var doorBlock)
+                    ? doorBlock
+                    : default
+                : intent.BlockId;
+            var word = KeptOff(mine, street);
+            if (word != null)
+                return word;
+
             switch (intent.Order)
             {
                 case HouseOrder.OperateInBlock:

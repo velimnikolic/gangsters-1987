@@ -468,8 +468,19 @@ namespace LivingCity.Outfit
                     continue;
                 house.Runner.AssessTribute(day);
                 var payer = house.GangId;
+                // A MIND KICKS UP ONLY WHAT IT CAN SPARE (D9's reserve, applied to the
+                // envelope): a family that would go under a week's wages to pay goes
+                // overdue instead, and is owed for it - the pressure the mechanic is
+                // for. The player's house pays whatever its safe covers, as it always
+                // did; what he cannot spare is his to notice.
+                var reserve = house.IsPlayer
+                    ? 0
+                    : Diplomacy.Config.TributeReserveDays * Wages.DailyPayroll(house.Roster);
                 house.Runner.Tribute.Settle(
-                    levy => Transfer(payer, levy.GangId, levy.Amount), day, soured);
+                    levy => house.Runner.Accounts.Safe - levy.Amount < reserve
+                        ? "the safe cannot cover it and the men"
+                        : Transfer(payer, levy.GangId, levy.Amount),
+                    day, soured);
                 for (var i = 0; i < soured.Count; i++)
                     Relations.Note(soured[i], payer, GrievanceKind.TributeUnpaid, day);
                 house.Touch();

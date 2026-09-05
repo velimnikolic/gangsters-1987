@@ -186,9 +186,24 @@ namespace LivingCity.Tests
             view.Accounts.Safe = view.DailyPayroll * (config.MinWarDays - 1);
             view.StanceLook = other => Stance.War;
             HouseMind.Think(view, HouseMindConfig.Default, config, intents);
-            if (!Declared(intents, them, Stance.Truce))
+            // Since EPIC 42 (DIPL-002) the truce is OFFERED, not imposed: the intent
+            // is a proposal to them, and their desk answers it.
+            if (!Proposed(intents, them, ProposalKind.OfferTruce))
                 failures.Add("RELATIONS-004: a family that cannot pay through its own " +
                              "war did not sue for peace.");
+            if (Declared(intents, them, Stance.Truce))
+                failures.Add("RELATIONS-004: a truce was imposed rather than offered.");
+        }
+
+        static bool Proposed(List<HouseIntent> intents, TerritoryGangId them,
+            ProposalKind kind)
+        {
+            for (var i = 0; i < intents.Count; i++)
+                if (intents[i].Kind == HouseIntentKind.Propose &&
+                    intents[i].Proposal != null && intents[i].Proposal.Kind == kind &&
+                    intents[i].Other == them)
+                    return true;
+            return false;
         }
 
         static int Endurance(int days) => HouseRelations.Endurance(days * 100, 100);

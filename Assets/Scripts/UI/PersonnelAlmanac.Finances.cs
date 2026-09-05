@@ -222,7 +222,7 @@ namespace LivingCity.UI
                     }
                 }
 
-            var inH = FinBandH + FinRowH * 4f + FinTotalH + FinProfitH + FinTaxH * 3f;
+            var inH = FinBandH + FinRowH * 5f + FinTotalH + FinProfitH + FinTaxH * 3f;
             // WHAT THE ROWS MAY SAY DEPENDS ON WHETHER THE NIGHT IS OVER.
             //
             // An OPEN sheet is a forecast: the live roster IS the obligation, so the
@@ -234,8 +234,8 @@ namespace LivingCity.UI
             // would rewrite last night's page. It gets ONE line, what was actually
             // paid, which is the figure TOTAL OUT is made of.
             var wageRows = report.Closed ? 1f : 2f + (specialists > 0 ? 1f : 0f);
-            // Bribes, purchases, other costs.
-            var outRows = wageRows + 3f;
+            // Bribes, purchases, other costs, and the houses (EPIC 42).
+            var outRows = wageRows + 4f;
             // And what the safe could not cover, which is NOT an outgoing - that money
             // never left. It stands under the total as the debt it is.
             var shortRows = report.WagesShort > 0 ? 1f : 0f;
@@ -253,6 +253,7 @@ namespace LivingCity.UI
             y = FinanceRow(moneyIn, y, "Jobs", report.JobIncome, 1);
             y = FinanceRow(moneyIn, y, "Sales", report.SalesIncome, 2);
             y = FinanceRow(moneyIn, y, "Legitimate", report.LegalIncome, 3);
+            y = FinanceRow(moneyIn, y, "Between the houses", report.FromHouses, 4);
             y = FinanceTotal(moneyIn, y, "TOTAL IN", report.TotalIncome);
 
             var loss = report.TotalProfit < 0;
@@ -296,7 +297,8 @@ namespace LivingCity.UI
             }
             oy = FinanceRow(moneyOut, oy, "Bribes", report.Bribes, row++);
             oy = FinanceRow(moneyOut, oy, "Purchases", report.Purchases, row++);
-            oy = FinanceRow(moneyOut, oy, "Other costs", report.OtherCosts, row);
+            oy = FinanceRow(moneyOut, oy, "Other costs", report.OtherCosts, row++);
+            oy = FinanceRow(moneyOut, oy, "Between the houses", report.ToHouses, row);
             oy = FinanceTotal(moneyOut, oy, "TOTAL OUT", report.TotalOutgoings);
 
             // WAGE-003. What the safe could not cover, said in red on the sheet that

@@ -276,8 +276,16 @@ namespace LivingCity.Outfit
                 {
                     var answer = HouseDiplomacy.Answer(view, filed, world.Diplomacy.Config,
                         world.Relations.Config);
-                    world.Diplomacy.Settle(world, filed, answer.Accepted, answer.Reason, day);
+                    var taken = world.Diplomacy.Settle(world, filed, answer.Accepted,
+                        answer.Reason, day);
                     to.Touch();
+                    // A NO AT THE DESK IS A REFUSAL OF THE ASK: the intent that carried it
+                    // backs off like any refused intent (P4), so a mind does not ask the
+                    // same thing every think until the answer changes, and the trace
+                    // prints the desk's own words. The proposal is on the record either
+                    // way.
+                    if (!taken)
+                        return OpResult.Fail(filed.Answer);
                 }
                 else if (HouseDiplomacy.MustAccept(view, filed, world.Relations.Config))
                 {
@@ -298,7 +306,7 @@ namespace LivingCity.Outfit
         /// his Streetwise moving their desk's tests. The Don never goes.
         /// </summary>
         public static OpResult SendToSitDown(Underworld world, House from, Proposal proposal,
-            int envoyId)
+            int envoyId, System.Action<Job> place = null)
         {
             if (world?.Diplomacy == null || from?.Runner == null || proposal == null)
                 return OpResult.Fail(HouseDiplomacy.ReasonNothingToSay);
@@ -338,6 +346,9 @@ namespace LivingCity.Outfit
                 TargetLabel = "sit-down with " + Gangs.GangCatalog.Names[to.GangId],
                 ProposalId = proposal.Id,
             };
+            // The scene edge resolves their door into a place to walk to; a bench
+            // with no city hands nothing and the job resolves on paper.
+            place?.Invoke(job);
             var issued = world.Issue(job);
             if (!issued.Ok && carried != null)
             {

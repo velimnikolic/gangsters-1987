@@ -761,7 +761,7 @@ namespace RoadDemo
         /// <summary>A house's own door, to walk a finished crew back to: the player's
         /// headquarters as his director answers it, and every other family's own
         /// front.</summary>
-        static bool Home(LivingCity.Outfit.House house, out Vector3 door)
+        public static bool Home(LivingCity.Outfit.House house, out Vector3 door)
         {
             door = Vector3.zero;
             if (house == null)

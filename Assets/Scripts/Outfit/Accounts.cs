@@ -20,7 +20,13 @@ namespace LivingCity.Outfit
         public int SalesIncome;
 
         /// <summary>Protection rounds plus jobs: every dirty dollar booked today.</summary>
-        public int DirtyIncome => IllegalIncome + JobIncome;
+        /// <summary>Money that crossed between houses today (EPIC 42): what other
+        /// families paid us, and what we paid them. A truce's compensation, a bill, a
+        /// ransom, a tribute envelope once DIPL-004 lands.</summary>
+        public int FromHouses;
+        public int ToHouses;
+
+        public int DirtyIncome => IllegalIncome + JobIncome + FromHouses;
 
         public int Bribes;
         public int Purchases;
@@ -125,10 +131,11 @@ namespace LivingCity.Outfit
 
         public static int TotalIncome(DaySheet sheet) =>
             sheet == null ? 0 : sheet.LegalIncome + sheet.IllegalIncome +
-                sheet.JobIncome + sheet.SalesIncome;
+                sheet.JobIncome + sheet.SalesIncome + sheet.FromHouses;
 
         public static int TotalOutgoings(DaySheet sheet, int wages) =>
-            wages + (sheet == null ? 0 : sheet.Bribes + sheet.Purchases + sheet.OtherCosts);
+            wages + (sheet == null ? 0 : sheet.Bribes + sheet.Purchases + sheet.OtherCosts +
+                                         sheet.ToHouses);
 
         public static int Profit(DaySheet sheet, int wages) =>
             TotalIncome(sheet) - TotalOutgoings(sheet, wages);
@@ -272,6 +279,11 @@ namespace LivingCity.Outfit
         public readonly int Bribes;
         public readonly int Purchases;
         public readonly int OtherCosts;
+
+        /// <summary>BETWEEN THE HOUSES (EPIC 42): what other families paid us today,
+        /// and what we paid them.</summary>
+        public readonly int FromHouses;
+        public readonly int ToHouses;
         public readonly int TotalIncome;
         public readonly int TotalOutgoings;
         public readonly int Profit;
@@ -305,6 +317,8 @@ namespace LivingCity.Outfit
             Bribes = sheet?.Bribes ?? 0;
             Purchases = sheet?.Purchases ?? 0;
             OtherCosts = sheet?.OtherCosts ?? 0;
+            FromHouses = sheet?.FromHouses ?? 0;
+            ToHouses = sheet?.ToHouses ?? 0;
             TotalIncome = BalanceMath.TotalIncome(sheet);
             TotalOutgoings = BalanceMath.TotalOutgoings(sheet, wages);
             Profit = TotalIncome - TotalOutgoings;

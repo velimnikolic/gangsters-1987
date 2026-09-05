@@ -22,6 +22,21 @@ namespace LivingCity.Outfit
         /// <summary>The safe could not cover it on the day. It stays due, and the house
         /// remembers - Tribute.Settle sours the stance the first time it happens.</summary>
         public bool Overdue;
+
+        /// <summary>TERMS AGREED AT THE TABLE (EPIC 42, DIPL-004): a fixed envelope in
+        /// place of the derived one, until this day. Zero when the street prices it.
+        /// </summary>
+        public int PinnedAmount;
+        public int PinnedUntilDay;
+
+        public bool Pinned(int day) => PinnedUntilDay > day && PinnedAmount > 0;
+
+        public void Pin(int amount, int untilDay)
+        {
+            PinnedAmount = amount;
+            PinnedUntilDay = untilDay;
+            Amount = amount;
+        }
     }
 
     /// <summary>
@@ -135,9 +150,64 @@ namespace LivingCity.Outfit
                     continue;
                 }
 
+                if (levy.Pinned(day))
+                {
+                    levy.Amount = levy.PinnedAmount;
+                    continue;
+                }
+                levy.PinnedAmount = 0;
+                levy.PinnedUntilDay = 0;
                 var asked = ahead * PerBlockAhead;
                 levy.Amount = asked < Floor ? Floor : asked;
             }
+        }
+
+        /// <summary>The derived figure a levy would read without its terms - what the
+        /// table's "at least half" is half of.</summary>
+        public static int Derived(IReadOnlyList<Turf.Holding> holdings, int levied,
+            int levying)
+        {
+            var ahead = Turf.CountOf(holdings, levying) - Turf.CountOf(holdings, levied);
+            if (ahead <= 0)
+                return 0;
+            var asked = ahead * PerBlockAhead;
+            return asked < Floor ? Floor : asked;
+        }
+
+        /// <summary>
+        /// THE ENVELOPE CROSSES (EPIC 42, DIPL-004). The same settlement as below, with
+        /// the payment handed to the caller - Underworld.Transfer, so the levying house
+        /// is credited - which answers null when it moved and the refusal when it did
+        /// not.
+        /// </summary>
+        public int Settle(System.Func<Levy, string> pay, int day, List<int> soured)
+        {
+            soured?.Clear();
+            if (pay == null)
+                return 0;
+
+            var handed = 0;
+            for (var i = 0; i < Levies.Count; i++)
+            {
+                var levy = Levies[i];
+                if (levy.Amount <= 0 || levy.DueDay > day)
+                    continue;
+
+                if (pay(levy) == null)
+                {
+                    handed += levy.Amount;
+                    levy.Overdue = false;
+                    levy.DueDay = day + CycleDays;
+                    continue;
+                }
+
+                if (!levy.Overdue)
+                {
+                    levy.Overdue = true;
+                    soured?.Add(levy.GangId);
+                }
+            }
+            return handed;
         }
 
         /// <summary>

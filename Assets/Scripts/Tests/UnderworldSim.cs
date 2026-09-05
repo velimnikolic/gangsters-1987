@@ -69,6 +69,19 @@ namespace LivingCity.Tests
             public int CardsAnswered;
             public int CardsExpired;
             public int RivalFlatsRaided;
+
+            /// <summary>EPIC 42: what passed between the houses over the run - the
+            /// proposals made and how they were answered, the dollars that crossed,
+            /// the lines and pacts standing at the end, the kidnaps and the ransoms
+            /// paid. The rows the table's numbers are ruled from.</summary>
+            public int ProposalsMade;
+            public int ProposalsAccepted;
+            public int ProposalsRefused;
+            public int MoneyBetweenHouses;
+            public int LinesStanding;
+            public int PactsStanding;
+            public int Kidnaps;
+            public int RansomsPaid;
             public string Error = "";
 
             public bool Clean =>
@@ -297,6 +310,7 @@ namespace LivingCity.Tests
             }
 
             report.ThinkMilliseconds = (int)thinkMs;
+            ReadTheTable(world, houses, report);
             for (var h = 0; h < houses; h++)
             {
                 var one = world.Of(h);
@@ -307,6 +321,45 @@ namespace LivingCity.Tests
                 report.CardsExpired += one.Runner.Events.CardsExpired;
                 report.BuyerMoney += city.BuyerMoney.TryGetValue(h, out var buyer) ? buyer : 0;
             }
+        }
+
+        /// <summary>The table's yardstick rows (EPIC 42), read off the book and the
+        /// sheets at the end of the run.</summary>
+        static void ReadTheTable(Underworld world, int houses, Report report)
+        {
+            var book = world.Diplomacy;
+            for (var i = 0; i < book.All.Count; i++)
+            {
+                var p = book.All[i];
+                report.ProposalsMade++;
+                if (p.Status == ProposalStatus.Accepted)
+                    report.ProposalsAccepted++;
+                else if (p.Status == ProposalStatus.Refused)
+                    report.ProposalsRefused++;
+                if (p.Kind == ProposalKind.Ransom)
+                {
+                    report.Kidnaps++;
+                    if (p.Status == ProposalStatus.Accepted)
+                        report.RansomsPaid++;
+                }
+            }
+            report.LinesStanding = book.Lines.Count;
+            report.PactsStanding = book.Pacts.Count;
+            for (var h = 0; h < houses; h++)
+            {
+                var house = world.Of(h);
+                if (house == null)
+                    continue;
+                var sheets = house.Runner.Accounts.Sheets;
+                for (var s = 0; s < sheets.Count; s++)
+                    report.MoneyBetweenHouses += sheets[s].FromHouses;
+            }
+            report.Lines.Add("table: " + report.ProposalsMade + " proposals, " +
+                             report.ProposalsAccepted + " accepted, " + report.ProposalsRefused +
+                             " refused; $" + report.MoneyBetweenHouses + " crossed; " +
+                             report.LinesStanding + " lines and " + report.PactsStanding +
+                             " pacts standing; " + report.Kidnaps + " kidnaps, " +
+                             report.RansomsPaid + " ransoms paid");
         }
 
         static readonly List<(string key, double until)> heldScratch =

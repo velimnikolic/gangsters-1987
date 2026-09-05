@@ -485,6 +485,52 @@ namespace LivingCity.Gameplay
 
         // ------------------------------------------------------------------- the rest
 
+        /// <summary>THE TABLE (EPIC 42): the city's one proposal book, for the pages.
+        /// </summary>
+        public HouseDiplomacy Diplomacy => Underworld.Current?.Diplomacy;
+
+        /// <summary>A proposal from the player's house, through the same door a mind's
+        /// goes; the other desk answers at once. Null To or Kind None is refused in
+        /// the table's words.</summary>
+        public OpResult Propose(Proposal proposal)
+        {
+            var world = Underworld.Current;
+            if (world?.Player == null)
+                return OpResult.Fail(UI.LedgerText.ReasonFinanceUnavailable);
+            return Commit(HouseOps.Propose(world, world.Player, proposal, HouseOps.Look));
+        }
+
+        /// <summary>The player's answer from his inbox.</summary>
+        public OpResult Reply(int proposalId, bool accept)
+        {
+            var world = Underworld.Current;
+            if (world?.Player == null)
+                return OpResult.Fail(UI.LedgerText.ReasonFinanceUnavailable);
+            return Commit(HouseOps.Reply(world, world.Player, proposalId, accept, HouseOps.Look));
+        }
+
+        /// <summary>The host's ambush of an envoy at his own door (DIPL-008).</summary>
+        public OpResult Ambush(int proposalId)
+        {
+            var world = Underworld.Current;
+            if (world?.Player == null)
+                return OpResult.Fail(UI.LedgerText.ReasonFinanceUnavailable);
+            return Commit(HouseOps.Ambush(world, world.Player, proposalId));
+        }
+
+        /// <summary>The proposal carried in person by one of the player's lieutenants
+        /// (DIPL-008); the runtime places their door for the walk.</summary>
+        public OpResult SendToSitDown(Proposal proposal, int envoyId)
+        {
+            var world = Underworld.Current;
+            if (world?.Player == null)
+                return OpResult.Fail(UI.LedgerText.ReasonFinanceUnavailable);
+            Adopt();
+            var runtime = RoadDemo.TerritoryRuntime.Instance;
+            return Commit(HouseOps.SendToSitDown(world, world.Player, proposal, envoyId,
+                runtime != null ? runtime.PlaceJob : (System.Action<Job>)null));
+        }
+
         /// <summary>
         /// WAR IS DECLARED, TRUCE AND PEACE ARE OFFERED (EPIC 42, DIPL-002). A war goes
         /// pending for midnight as it always did; a truce or a peace is a proposal to
