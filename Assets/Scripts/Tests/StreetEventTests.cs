@@ -205,7 +205,7 @@ namespace LivingCity.Tests
                 failures.Add("STREET-001: the held card did not expire on day +3.");
             if (book.CardsExpired != 1)
                 failures.Add("STREET-001: the expiry was not counted.");
-            if (!book.Cooling_(EventId.TestBuy, 5) || book.Cooling_(EventId.TestBuy, 9))
+            if (!book.IsCooling(EventId.TestBuy, 5) || book.IsCooling(EventId.TestBuy, 9))
                 failures.Add("STREET-001: the def did not cool for its five days.");
             if (book.Wire.Count == 0 || !book.Wire[0].Text.Contains("unanswered"))
                 failures.Add("STREET-001: the expiry left no line on the wire.");

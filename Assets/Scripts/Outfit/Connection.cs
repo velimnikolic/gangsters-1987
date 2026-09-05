@@ -1036,7 +1036,7 @@ namespace LivingCity.Outfit
             if (ctx?.Connection == null || view?.Roster == null)
                 return HoldReason.NoSpeaker;
             if (ctx.Connection.IsBurned(ctx.Day))
-                return HoldReason.Watched;
+                return HoldReason.Burned;
             if (BossInside(view))
                 return HoldReason.BossInCell;
             if (AtWar(view))

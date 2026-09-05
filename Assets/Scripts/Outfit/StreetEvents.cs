@@ -44,6 +44,10 @@ namespace LivingCity.Outfit
 
         /// <summary>The QUIET gate: the law is watching our ground (CONN-001).</summary>
         Watched,
+
+        /// <summary>Burned: a sting, or trust under nought - thirty days with nobody
+        /// talking to the house (CONN-003). Appended so a saved hold keeps its number.</summary>
+        Burned,
     }
 
     public static class HoldReasons
@@ -57,6 +61,7 @@ namespace LivingCity.Outfit
             HoldReason.AtWar => true,
             HoldReason.NoSpeaker => true,
             HoldReason.Watched => true,
+            HoldReason.Burned => true,
             _ => false,
         };
 
@@ -69,6 +74,7 @@ namespace LivingCity.Outfit
             HoldReason.AtWar => "There is a war on",
             HoldReason.NoSpeaker => "Nobody to bring the word",
             HoldReason.Watched => "The law is watching our streets",
+            HoldReason.Burned => "Nobody is talking to us",
             _ => "",
         };
 
@@ -81,6 +87,7 @@ namespace LivingCity.Outfit
             HoldReason.AtWar => "make peace and the street will talk again",
             HoldReason.NoSpeaker => "a lieutenant on the books is a man who hears things",
             HoldReason.Watched => "let the attention cool and the docks will talk",
+            HoldReason.Burned => "thirty days from the sting and the street forgets",
             _ => "",
         };
     }
@@ -316,7 +323,7 @@ namespace LivingCity.Outfit
 
         public float PotOf(EventId id) => Pots.TryGetValue(id, out var pot) ? pot : 0f;
 
-        public bool Cooling_(EventId id, int day) =>
+        public bool IsCooling(EventId id, int day) =>
             Cooling.TryGetValue(id, out var until) && day < until;
 
         public bool FiredOnce(EventId id) => Fired.ContainsKey(id);
@@ -444,7 +451,7 @@ namespace LivingCity.Outfit
                     continue;
                 if (!def.Applies(view, ctx))
                     continue;
-                if (book.Cooling_(def.Id, day))
+                if (book.IsCooling(def.Id, day))
                     continue;
 
                 var pot = book.PotOf(def.Id) + PotStep(def.Score(view, ctx), def.Threshold);
