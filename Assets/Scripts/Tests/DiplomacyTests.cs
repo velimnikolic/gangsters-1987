@@ -2000,6 +2000,9 @@ namespace LivingCity.Tests
             }
             if (HouseOps.Ambush(table.World, receiver, filed.Id).Ok)
                 failures.Add("DIPL-008: a proposal still on the road was ambushed.");
+            var early = HouseOps.Reply(table.World, receiver, filed.Id, true, table.Look);
+            if (early.Ok || early.Reason != HouseDiplomacy.ReasonStillOnTheRoad)
+                failures.Add("DIPL-008: a proposal still on the road was answered (" + early.Reason + ").");
 
             var hours = 0;
             while (filed.InTransit && hours < 24 * 3)
@@ -2079,6 +2082,8 @@ namespace LivingCity.Tests
                 failures.Add("DIPL-008: the ambushed proposal does not read so.");
             if (!Heard(table.World.Of(2), "at their own door"))
                 failures.Add("DIPL-008: the ambush was not printed in every book.");
+            if (HouseOps.Ambush(table.World, player, filed.Id).Ok)
+                failures.Add("DIPL-008: a closed proposal was ambushed twice.");
         }
     }
 }

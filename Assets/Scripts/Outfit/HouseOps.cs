@@ -411,6 +411,9 @@ namespace LivingCity.Outfit
             var sender = world.Of(proposal.From);
             if (sender == null)
                 return OpResult.Fail(HouseDiplomacy.ReasonNobodyToAskWord);
+            var envoy = sender.Roster?.Find(proposal.Envoy);
+            if (envoy == null || envoy.Gone)
+                return OpResult.Fail(HouseDiplomacy.ReasonNoEnvoy);
 
             var day = host.Runner.Campaign.Day;
             Kill(sender, proposal.Envoy);
@@ -446,6 +449,10 @@ namespace LivingCity.Outfit
             var proposal = world.Diplomacy.Find(proposalId);
             if (proposal == null || !proposal.Open || proposal.To != to.GangId)
                 return OpResult.Fail(HouseDiplomacy.ReasonNoSuchProposal);
+            // A proposal carried in person is not answered before the envoy stands at
+            // the door - the inbox shows it on the road and offers no key for it.
+            if (proposal.InTransit)
+                return OpResult.Fail(HouseDiplomacy.ReasonStillOnTheRoad);
             var note = "";
             if (!accept && look != null &&
                 HouseDiplomacy.MustAccept(look(to), proposal, world.Relations.Config))
