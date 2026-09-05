@@ -80,6 +80,7 @@ namespace LivingCity.Tests
             TheLeviesAndTheHouseLinesSurviveTheFile(failures);
             AnOpenBillLapsesWhenOtherMoneyClearsTheDebt(failures);
             AnUnpaidBillLeftToAgeIsStillAWordIgnored(failures);
+            AnAgedBillIsRepricedWhenItIsPaid(failures);
 
             return failures;
         }
@@ -2490,6 +2491,60 @@ namespace LivingCity.Tests
             if (later >= ceiling)
                 failures.Add("CODEX: the fixture's decay did not lower the ceiling ($" +
                              later + " vs $" + ceiling + "), so it proves nothing.");
+        }
+
+        /// <summary>A bill priced at the ceiling and paid a day later, after the grudge
+        /// decayed on its own: what moves is today's ceiling, not the figure filed, so
+        /// the grudge never clears under the threat rung; the record reads the figure
+        /// paid (Codex over 93709eb98).</summary>
+        static void AnAgedBillIsRepricedWhenItIsPaid(List<string> failures)
+        {
+            var table = new Table(120);
+            War(table, 1, 0);
+            var creditor = table.World.Of(1);
+            var player = table.World.Of(0);
+            creditor.Runner.Accounts.Safe = 1_000_000;
+            player.Runner.Accounts.Safe = 1_000_000;
+            for (var i = 0; i < 2; i++)
+                table.World.Relations.Note(1, 0, GrievanceKind.DoorAttacked);
+            var day = player.Runner.Campaign.Day;
+            var atFiling = HouseDiplomacy.BillCeiling(table.World.Relations, 1, 0,
+                DiplomacyConfig.Default, day);
+            var bill = table.Propose(1, 0, ProposalKind.Bill, atFiling);
+            var filed = Last(table);
+            if (!bill.Ok || filed == null || !filed.Open)
+            {
+                failures.Add("CODEX: the fixture's bill did not reach the player's inbox (" +
+                             bill.Reason + ").");
+                return;
+            }
+            table.World.DayTick();
+            if (!filed.Open)
+            {
+                failures.Add("CODEX: the fixture's bill did not survive one midnight.");
+                return;
+            }
+            var today = HouseDiplomacy.BillCeiling(table.World.Relations, 1, 0,
+                DiplomacyConfig.Default, player.Runner.Campaign.Day);
+            if (today >= atFiling || today <= 0)
+            {
+                failures.Add("CODEX: the fixture's decay did not lower the ceiling ($" + today +
+                             " vs $" + atFiling + "), so it proves nothing.");
+                return;
+            }
+            var before = player.Runner.Accounts.Safe;
+            var replied = HouseOps.Reply(table.World, player, filed.Id, true, table.Look);
+            if (!replied.Ok || filed.Status != ProposalStatus.Accepted)
+                failures.Add("CODEX: an aged bill could not be paid (" + filed.Status + " " +
+                             replied.Reason + ").");
+            if (before - player.Runner.Accounts.Safe != today)
+                failures.Add("CODEX: an aged bill took $" + (before - player.Runner.Accounts.Safe) +
+                             ", not today's ceiling $" + today + ".");
+            if (filed.Terms.Money != today)
+                failures.Add("CODEX: the record does not read the figure paid.");
+            if (table.World.Relations.Grievance(1, 0) < HouseRelationsConfig.Default.ThreatAt)
+                failures.Add("CODEX: an aged bill cleared the grudge under the threat rung (" +
+                             table.World.Relations.Grievance(1, 0) + ").");
         }
 
         /// <summary>House 1 bills the player $2,000 at war, then the player buys a

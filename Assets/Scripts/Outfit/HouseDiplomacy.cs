@@ -734,6 +734,13 @@ namespace LivingCity.Outfit
             if (accepted)
             {
                 var refusal = Apply(world, proposal, day);
+                // A bill accepted after the grudge decayed to nothing owed is not a
+                // bill refused either: it lapses, and nothing is taken for it.
+                if (refusal == ReasonNoSuchDebt && proposal.Kind == ProposalKind.Bill)
+                {
+                    Lapse(world, proposal, day);
+                    return false;
+                }
                 if (refusal != null)
                 {
                     accepted = false;
@@ -800,14 +807,22 @@ namespace LivingCity.Outfit
                     return null;
 
                 // PAID: the receiver's money to the sender, and the sender's grudge
-                // cleared by it within the day's cap (a stale bill never reaches here:
-                // Settle lapses it first).
+                // cleared by it within the day's cap. A bill that AGED is repriced to
+                // today's ceiling before it is paid - the grudge decayed on its own
+                // while it lay open, and what is owed is what is owed today, never a
+                // figure that would clear under the threat rung (Codex). A bill other
+                // money made stale never reaches here: Settle lapses it first.
                 case ProposalKind.Bill:
-                    var moved = world.Transfer(proposal.To, proposal.From, proposal.Terms.Money);
+                    var ceiling = BillCeiling(world.Relations, proposal.From, proposal.To,
+                        Config, day);
+                    var due = proposal.Terms.Money < ceiling ? proposal.Terms.Money : ceiling;
+                    if (due <= 0)
+                        return ReasonNoSuchDebt;
+                    var moved = world.Transfer(proposal.To, proposal.From, due);
                     if (moved != null)
                         return ReasonCouldNotPutTheMoneyUp;
-                    Compensate(world.Relations, proposal.From, proposal.To,
-                        proposal.Terms.Money, day);
+                    proposal.Terms.Money = due;
+                    Compensate(world.Relations, proposal.From, proposal.To, due, day);
                     return null;
 
                 // TERMS: the levy between the two is pinned at the figure for the
