@@ -502,13 +502,12 @@ namespace RoadDemo
         }
 
         /// <summary>What this house owes that one a cycle, and what that one owes it
-        /// - the two levies, both derived from the turf (EPIC 42, DIPL-004).</summary>
-        static (int owe, int owed) TributeBetween(House house, TerritoryGangId other)
-        {
-            var theirs = LivingCity.Outfit.Underworld.Current?.Of(other.Value);
-            return (house.Runner.Tribute.OwedTo(other.Value),
-                theirs != null ? theirs.Runner.Tribute.OwedTo(house.GangId) : 0);
-        }
+        /// - both as the STREET prices them off the holdings, never the pinned figure
+        /// (EPIC 42, DIPL-004; Codex: a discount must not halve again off itself).
+        /// </summary>
+        static (int owe, int owed) TributeBetween(House house, TerritoryGangId other) =>
+            (house.Runner.DerivedTribute(house.GangId, other.Value),
+                house.Runner.DerivedTribute(other.Value, house.GangId));
 
         /// <summary>The most men any one war has cost this house - the one figure the
         /// view's plain LossesThisWar seat carries; the per-house look is the real
@@ -937,6 +936,13 @@ namespace RoadDemo
                     : 0f,
                 LossesLook = other => house.Runner.LossesThisWar(other.Value),
                 TributeLook = other => TributeBetween(house, other),
+                ClearableLook = other => Relations != null
+                    ? Relations.Clearable(house.GangId, other.Value,
+                        house.Runner.Campaign.Day,
+                        LivingCity.Outfit.Underworld.Current.Diplomacy.Config.CompensationCapPerDay,
+                        Relations.Config.ThreatAt,
+                        LivingCity.Outfit.Underworld.Current.Diplomacy.Config.KillingFloorDays)
+                    : 0,
                 WalkedLook = blockId => LastWalked(mine, blockId),
                 Cells = cellScratch,
                 HasCounsel = Lawyer.OnBooks(house.Roster) != null,

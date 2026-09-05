@@ -72,6 +72,13 @@ namespace LivingCity.Tests
             TheDeclarerSurvivesTheFile(failures);
             ABillAsksNoMoreThanIsOwed(failures);
 
+            // The Codex report over 5455456a7..3a4185132.
+            RepeatedBillsStopAtTheDaysCap(failures);
+            PruningKeepsTheEscrow(failures);
+            ADiscountDoesNotHalveOffItself(failures);
+            TheDeskReadsTheFloorBeforeItSaysYes(failures);
+            TheLeviesAndTheHouseLinesSurviveTheFile(failures);
+
             return failures;
         }
 
@@ -2194,7 +2201,8 @@ namespace LivingCity.Tests
 
             for (var i = 0; i < 3; i++)
                 table.World.Relations.Note(1, 2, GrievanceKind.DoorSwitched);
-            var ceiling = HouseDiplomacy.BillCeiling(table.World.Relations, 1, 2, DiplomacyConfig.Default);
+            var ceiling = HouseDiplomacy.BillCeiling(table.World.Relations, 1, 2, DiplomacyConfig.Default,
+                creditor.Runner.Campaign.Day);
             if (ceiling != (int)((30f - config.ThreatAt) * rate))
                 failures.Add("CODEX: the bill's ceiling reads $" + ceiling + ".");
             var over = table.Propose(1, 2, ProposalKind.Bill, ceiling + 1);
@@ -2205,6 +2213,183 @@ namespace LivingCity.Tests
             var filed = Last(table);
             if (filed == null || filed.Kind != ProposalKind.Bill || filed.Terms.Money != ceiling)
                 failures.Add("CODEX: a bill for exactly what is owed was not filed (" + fair.Reason + ").");
+        }
+
+        // ------------------------------------------------------------- Codex report
+
+        /// <summary>A second bill the same day asks for nothing: what money can still
+        /// clear is the ceiling, and the day's cap is spent by the first.</summary>
+        static void RepeatedBillsStopAtTheDaysCap(List<string> failures)
+        {
+            var config = HouseRelationsConfig.Default;
+            var table = new Table(111);
+            var rate = DiplomacyConfig.Default.CompensationPerPoint;
+            var creditor = table.World.Of(1);
+            var debtor = table.World.Of(2);
+            creditor.Runner.Accounts.Safe = 1_000_000;
+            debtor.Runner.Accounts.Safe = 1_000_000;
+            for (var i = 0; i < 4; i++)
+                table.World.Relations.Note(1, 2, GrievanceKind.DoorAttacked);
+            var day = creditor.Runner.Campaign.Day;
+
+            var ceiling = HouseDiplomacy.BillCeiling(table.World.Relations, 1, 2,
+                DiplomacyConfig.Default, day);
+            if (ceiling != DiplomacyConfig.Default.CompensationCapPerDay * rate)
+                failures.Add("CODEX: the first bill's ceiling is not the day's cap ($" + ceiling + ").");
+            debtor.Runner.Accounts.Safe = 0;
+            var first = table.Propose(1, 2, ProposalKind.Bill, ceiling);
+            var filed = Last(table);
+            if (filed == null || filed.Status != ProposalStatus.Refused)
+                failures.Add("CODEX: the fixture's bill was not refused by a broke debtor.");
+            debtor.Runner.Accounts.Safe = 1_000_000;
+            table.World.DayTick();
+            day = creditor.Runner.Campaign.Day;
+            ceiling = HouseDiplomacy.BillCeiling(table.World.Relations, 1, 2,
+                DiplomacyConfig.Default, day);
+            var paid = table.Propose(1, 2, ProposalKind.Bill, ceiling);
+            filed = Last(table);
+            if (!paid.Ok || filed == null || filed.Status != ProposalStatus.Accepted)
+            {
+                failures.Add("CODEX: the fixture's bill was not paid (" + paid.Reason + ").");
+                return;
+            }
+            var again = table.Propose(1, 2, ProposalKind.Bill, 1_000);
+            if (again.Ok || again.Reason != HouseDiplomacy.ReasonNoSuchDebt)
+                failures.Add("CODEX: a second bill the same day was filed (" + again.Reason + ").");
+            if (HouseDiplomacy.BillCeiling(table.World.Relations, 1, 2, DiplomacyConfig.Default, day) != 0)
+                failures.Add("CODEX: the ceiling did not fall to nothing after the cap.");
+            table.World.DayTick();
+            if (HouseDiplomacy.BillCeiling(table.World.Relations, 1, 2, DiplomacyConfig.Default,
+                    creditor.Runner.Campaign.Day) <= 0)
+                failures.Add("CODEX: the next day's ceiling did not open.");
+        }
+
+        /// <summary>The record's pruning never removes a proposal still holding money in
+        /// escrow, however many refused ones follow it before midnight.</summary>
+        static void PruningKeepsTheEscrow(List<string> failures)
+        {
+            var table = new Table(112);
+            War(table, 1, 2);
+            var payer = table.World.Of(1);
+            var payee = table.World.Of(2);
+            payee.Runner.Accounts.Safe = 0;
+            payer.Runner.Accounts.Safe = 1_000_000;
+            table.Propose(1, 2, ProposalKind.OfferTruce, 4_000);
+            var truce = Last(table);
+            if (truce == null || truce.Status != ProposalStatus.Accepted || truce.Escrow != 4_000)
+            {
+                failures.Add("CODEX: the fixture's paid truce was not accepted into escrow.");
+                return;
+            }
+            // Peace at war is always refused: a pile of closed proposals past the record's depth.
+            for (var i = 0; i < table.World.Diplomacy.Config.HistoryPerPair + 5; i++)
+                table.Propose(1, 2, ProposalKind.OfferPeace);
+            if (table.World.Diplomacy.Find(truce.Id) == null)
+                failures.Add("CODEX: pruning removed a proposal holding escrow.");
+            var before = payee.Runner.Accounts.Safe;
+            table.World.DayTick();
+            if (payee.Runner.Accounts.Safe - before != 4_000 - Wages.DailyPayroll(payee.Roster) &&
+                payee.Runner.Accounts.RiskyMoney < 4_000)
+                failures.Add("CODEX: the escrow did not reach the receiver after pruning.");
+        }
+
+        /// <summary>Terms are taken against what the street prices the envelope at,
+        /// never against a discount already pinned - half of half is refused.</summary>
+        static void ADiscountDoesNotHalveOffItself(List<string> failures)
+        {
+            var table = new Table(113);
+            Levy(table, leader: 1, blocks: 4, other: 2, otherBlocks: 1);
+            var payer = table.World.Of(2);
+            var payee = table.World.Of(1);
+            payer.Runner.Accounts.Safe = 100_000;
+            payee.Runner.Accounts.Safe = 100_000;
+            table.World.DayTick();
+            var derived = (4 - 1) * Tribute.PerBlockAhead;
+            table.Propose(2, 1, ProposalKind.TributeTerms, derived / 2);
+            var half = Last(table);
+            if (half == null || half.Status != ProposalStatus.Accepted)
+            {
+                failures.Add("CODEX: the fixture's half was refused.");
+                return;
+            }
+            table.World.DayTick();
+            table.World.DayTick();
+            table.World.DayTick();
+            var quarter = table.Propose(2, 1, ProposalKind.TributeTerms, derived / 4);
+            var filed = Last(table);
+            if (quarter.Ok || filed == null || filed.Status != ProposalStatus.Refused)
+                failures.Add("CODEX: a quarter was taken off a pinned half.");
+            if (table.Look(payee).TributeOwed(new TerritoryGangId(2)) != derived)
+                failures.Add("CODEX: the view reads the pinned figure, not the street's.");
+        }
+
+        /// <summary>The desk reckons an offer's money by what it can still clear today
+        /// - the floor after a killing, the cap already spent - not by the rate alone.
+        /// </summary>
+        static void TheDeskReadsTheFloorBeforeItSaysYes(List<string> failures)
+        {
+            var config = HouseRelationsConfig.Default;
+            var table = DiplomacyConfig.Default;
+            var view = Desk(2, Stance.Truce, 35f, config.MinWarDays * 3, 1);
+            view.ClearableLook = other => (int)(35f - config.ThreatAt);
+            var peace = HouseDiplomacy.Answer(view, Offer(1, 2, ProposalKind.OfferPeace, 4_000), table, config);
+            if (peace.Accepted)
+                failures.Add("CODEX: peace was made on money the killing floor will not let clear.");
+            view.ClearableLook = other => 0;
+            var truce = Desk(2, Stance.War, 50f, config.MinWarDays * 3, 1);
+            truce.ClearableLook = other => 0;
+            if (HouseDiplomacy.Answer(truce, Offer(1, 2, ProposalKind.OfferTruce, 4_000), table, config).Accepted)
+                failures.Add("CODEX: a truce was bought after the day's cap was spent.");
+
+            // Through the table: in a truce after a killing, the peace the rate alone
+            // would have bought is refused, because the floor will not let the money
+            // clear that far.
+            var city = new Table(114);
+            city.World.Relations.SetPending(1, 2, Stance.Truce);
+            city.World.DayTick();
+            city.World.Of(2).Runner.Accounts.Safe = 1_000_000;
+            city.World.Of(1).Runner.Accounts.Safe = 1_000_000;
+            city.World.Relations.Note(2, 1, GrievanceKind.ManKilled, city.World.Of(2).Runner.Campaign.Day);
+            city.Propose(1, 2, ProposalKind.OfferPeace, 4_000);
+            var filed = Last(city);
+            if (filed == null || filed.Status != ProposalStatus.Refused ||
+                filed.Answer != HouseDiplomacy.ReasonNotYet)
+                failures.Add("CODEX: peace was bought under the killing floor (" +
+                             (filed != null ? filed.Status + " " + filed.Answer : "") + ").");
+        }
+
+        /// <summary>The tribute book with its pinned terms, and the lines between the
+        /// houses on the sheets, survive the file.</summary>
+        static void TheLeviesAndTheHouseLinesSurviveTheFile(List<string> failures)
+        {
+            var table = new Table(115);
+            Levy(table, leader: 1, blocks: 4, other: 2, otherBlocks: 1);
+            table.World.Of(2).Runner.Accounts.Safe = 100_000;
+            table.World.Of(1).Runner.Accounts.Safe = 100_000;
+            table.World.DayTick();
+            var derived = (4 - 1) * Tribute.PerBlockAhead;
+            table.Propose(2, 1, ProposalKind.TributeTerms, derived / 2);
+            table.World.Transfer(1, 2, 700);
+            var levy = table.World.Of(2).Runner.Tribute.For(1);
+            if (levy == null || !levy.Pinned(table.World.Of(2).Runner.Campaign.Day))
+            {
+                failures.Add("CODEX: the fixture pinned no levy.");
+                return;
+            }
+
+            var json = JsonUtility.ToJson(OutfitSnapshot.Snapshot(table.World));
+            var dto = JsonUtility.FromJson<UnderworldDto>(json);
+            var fresh = Underworld.Deal(115, 3);
+            OutfitSnapshot.Restore(fresh, dto);
+            var back = fresh.Of(2).Runner.Tribute.For(1);
+            if (back == null || back.Amount != levy.Amount || back.PinnedAmount != levy.PinnedAmount ||
+                back.PinnedUntilDay != levy.PinnedUntilDay || back.DueDay != levy.DueDay)
+                failures.Add("CODEX: the levy's terms did not survive the file.");
+            var sheet = fresh.Of(2).Runner.Accounts.Current;
+            if (sheet == null || sheet.FromHouses != 700 ||
+                fresh.Of(1).Runner.Accounts.Current == null ||
+                fresh.Of(1).Runner.Accounts.Current.ToHouses != 700)
+                failures.Add("CODEX: the lines between the houses did not survive the file.");
         }
     }
 }

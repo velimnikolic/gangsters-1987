@@ -19,6 +19,24 @@ namespace LivingCity.Outfit
         public int wagesPaid;
         public int taxPaid;
         public bool closed;
+
+        /// <summary>BETWEEN THE HOUSES (EPIC 42). Appended; a file from before reads 0.</summary>
+        public int fromHouses;
+        public int toHouses;
+    }
+
+    /// <summary>One tribute claim on a house's book (EPIC 42): the envelope, its day,
+    /// whether it is overdue, and the terms pinned on it. The book was never in the
+    /// file before; a load re-assessed every levy from the turf and lost the terms.</summary>
+    [Serializable]
+    public sealed class LevyDto
+    {
+        public int gangId;
+        public int amount;
+        public int dueDay;
+        public bool overdue;
+        public int pinnedAmount;
+        public int pinnedUntilDay;
     }
 
     [Serializable]
@@ -77,6 +95,10 @@ namespace LivingCity.Outfit
         public int fallenOnDay;
         public int ending;
         public int brokeNights;
+
+        /// <summary>The tribute book (EPIC 42). Null in a file from before: the next
+        /// midnight re-assesses it from the turf, as it always did.</summary>
+        public LevyDto[] levies;
     }
 
     [Serializable]
@@ -600,9 +622,23 @@ namespace LivingCity.Outfit
                 fallenOnDay = runner.FallenOnDay,
                 ending = (int)runner.Ending,
                 brokeNights = runner.BrokeNights,
+                levies = new LevyDto[runner.Tribute.Levies.Count],
             };
             for (var i = 0; i < runner.Book.Jobs.Count; i++)
                 dto.jobs[i] = Snapshot(runner.Book.Jobs[i]);
+            for (var i = 0; i < runner.Tribute.Levies.Count; i++)
+            {
+                var levy = runner.Tribute.Levies[i];
+                dto.levies[i] = new LevyDto
+                {
+                    gangId = levy.GangId,
+                    amount = levy.Amount,
+                    dueDay = levy.DueDay,
+                    overdue = levy.Overdue,
+                    pinnedAmount = levy.PinnedAmount,
+                    pinnedUntilDay = levy.PinnedUntilDay,
+                };
+            }
             return dto;
         }
 
@@ -626,6 +662,26 @@ namespace LivingCity.Outfit
             runner.Book.RestoreNextJobId(dto.nextJobId);
             runner.RestoreEnding(dto.fallen, dto.fallenOnDay,
                 (OutfitEnding)dto.ending, dto.brokeNights);
+
+            if (dto.levies != null)
+            {
+                runner.Tribute.Levies.Clear();
+                for (var i = 0; i < dto.levies.Length; i++)
+                {
+                    var row = dto.levies[i];
+                    if (row == null)
+                        continue;
+                    runner.Tribute.Levies.Add(new Levy
+                    {
+                        GangId = row.gangId,
+                        Amount = row.amount,
+                        DueDay = row.dueDay,
+                        Overdue = row.overdue,
+                        PinnedAmount = row.pinnedAmount,
+                        PinnedUntilDay = row.pinnedUntilDay,
+                    });
+                }
+            }
         }
 
         // -------------------------------------------------------------- the accounts
@@ -654,6 +710,8 @@ namespace LivingCity.Outfit
                     wagesPaid = sheet.WagesPaid,
                     taxPaid = sheet.TaxPaid,
                     closed = sheet.Closed,
+                    fromHouses = sheet.FromHouses,
+                    toHouses = sheet.ToHouses,
                 };
             }
             return dto;
@@ -684,6 +742,8 @@ namespace LivingCity.Outfit
                     WagesPaid = sheet.wagesPaid,
                     TaxPaid = sheet.taxPaid,
                     Closed = sheet.closed,
+                    FromHouses = sheet.fromHouses,
+                    ToHouses = sheet.toHouses,
                 });
             }
         }

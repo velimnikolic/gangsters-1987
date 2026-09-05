@@ -401,6 +401,36 @@ namespace LivingCity.Outfit
                 agreement.Broken = true;
         }
 
+        /// <summary>
+        /// WHAT MONEY COULD STILL CLEAR TODAY off one pair, without clearing it: the
+        /// day's cap less what was cleared already, and never under the floor inside
+        /// the killing window. The desk decides by this and the bill is priced by it
+        /// (Codex, EPIC 42), so a yes never promises more than Clear will do.
+        /// </summary>
+        public int Clearable(int aggrieved, int offender, int day, int capPerDay,
+            int floorAt, int floorDays)
+        {
+            if (aggrieved == offender || aggrieved < 0 || offender < 0)
+                return 0;
+            var key = Owed(aggrieved, offender);
+            grievances.TryGetValue(key, out var value);
+            if (value <= 0f)
+                return 0;
+            var todayCleared = cleared.TryGetValue(key, out var row) && row.day == day
+                ? row.points
+                : 0;
+            var room = capPerDay - todayCleared;
+            if (room <= 0)
+                return 0;
+            var floor = 0f;
+            if (killings.TryGetValue(key, out var killed) && day - killed < floorDays)
+                floor = floorAt;
+            var above = value - floor;
+            if (above <= 0f)
+                return 0;
+            return room < (int)above ? room : (int)above;
+        }
+
         /// <summary>The last day one house had a man killed by another, or -1.</summary>
         public int LastKilling(int aggrieved, int offender) =>
             killings.TryGetValue(Owed(aggrieved, offender), out var day) ? day : -1;
@@ -415,31 +445,16 @@ namespace LivingCity.Outfit
         public int Clear(int aggrieved, int offender, int points, int day, int capPerDay,
             int floorAt, int floorDays)
         {
-            if (aggrieved == offender || aggrieved < 0 || offender < 0 || points <= 0)
+            var take = Clearable(aggrieved, offender, day, capPerDay, floorAt, floorDays);
+            if (take > points)
+                take = points;
+            if (take <= 0)
                 return 0;
             var key = Owed(aggrieved, offender);
             grievances.TryGetValue(key, out var value);
-            if (value <= 0f)
-                return 0;
-
             var todayCleared = cleared.TryGetValue(key, out var row) && row.day == day
                 ? row.points
                 : 0;
-            var room = capPerDay - todayCleared;
-            if (room <= 0)
-                return 0;
-            var take = points < room ? points : room;
-
-            var floor = 0f;
-            if (killings.TryGetValue(key, out var killed) && day - killed < floorDays)
-                floor = floorAt;
-            var above = value - floor;
-            if (above <= 0f)
-                return 0;
-            if (take > above)
-                take = (int)above;
-            if (take <= 0)
-                return 0;
 
             var left = value - take;
             if (left <= 0f)

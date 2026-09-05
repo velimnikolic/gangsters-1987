@@ -261,7 +261,8 @@ namespace LivingCity.Outfit
             // house cannot be billed for nothing every morning.
             if (proposal.Kind == ProposalKind.Bill &&
                 (money <= 0 || money > HouseDiplomacy.BillCeiling(world.Relations,
-                    from.GangId, to.GangId, world.Diplomacy.Config)))
+                    from.GangId, to.GangId, world.Diplomacy.Config,
+                    from.Runner.Campaign.Day)))
                 return OpResult.Fail(HouseDiplomacy.ReasonNoSuchDebt);
 
             var day = from.Runner.Campaign.Day;

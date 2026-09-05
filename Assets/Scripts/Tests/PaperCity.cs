@@ -397,10 +397,11 @@ namespace LivingCity.Tests
                 GrievanceLook = other =>
                     world.Relations.Grievance(house.GangId, other.Value),
                 LossesLook = other => house.Runner.LossesThisWar(other.Value),
-                TributeLook = other => (house.Runner.Tribute.OwedTo(other.Value),
-                    world.Of(other.Value) != null
-                        ? world.Of(other.Value).Runner.Tribute.OwedTo(house.GangId)
-                        : 0),
+                TributeLook = other => (house.Runner.DerivedTribute(house.GangId, other.Value),
+                    house.Runner.DerivedTribute(other.Value, house.GangId)),
+                ClearableLook = other => world.Relations.Clearable(house.GangId, other.Value,
+                    house.Runner.Campaign.Day, world.Diplomacy.Config.CompensationCapPerDay,
+                    world.Relations.Config.ThreatAt, world.Diplomacy.Config.KillingFloorDays),
                 LossesThisWar = WorstLosses(world, house),
                 GameHour = Hour,
                 Day = Day + 1,

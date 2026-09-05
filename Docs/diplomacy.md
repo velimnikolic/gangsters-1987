@@ -66,6 +66,16 @@ Every dollar that clears a grudge goes through `HouseDiplomacy.Compensate` →
 (20) off one pair in one day, and for `KillingFloorDays` (30) after a `ManKilled` never under
 `ThreatAt`. Time still clears the rest. GIFT is not built (ruling 3).
 
+The desk reads the same arithmetic before it says yes: `HouseView.Clearable` (the
+`ClearableLook`) is what the money could still clear today - the cap already spent, the floor
+after a killing - so an offer priced by the rate alone is refused when the book would not
+honour it. A bill's ceiling (`HouseDiplomacy.BillCeiling`) is that clearable figure, never
+past `ThreatAt`, at the rate; after the day's cap a second bill asks for nothing. Tribute
+terms are priced against the street's figure (`CampaignRunner.DerivedTribute`), never against
+a discount already pinned, so half of half is refused. The record keeps a proposal holding
+escrow through pruning, and the levies with their pinned terms and the sheets' `FromHouses` /
+`ToHouses` survive the file.
+
 ## Tribute, for every house
 
 `Underworld.SettleTribute` assesses every house against this morning's holdings in gang-id

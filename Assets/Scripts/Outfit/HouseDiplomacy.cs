@@ -439,20 +439,24 @@ namespace LivingCity.Outfit
         }
 
         /// <summary>The record keeps HistoryPerPair closed proposals a pair; the oldest
-        /// closed one goes when a new one is filed.</summary>
+        /// closed one goes when a new one is filed - never one still holding money in
+        /// escrow: that record is the only place the deducted cash lives until
+        /// midnight (Codex).</summary>
         void Prune(int a, int b)
         {
             var closed = 0;
             for (var i = 0; i < proposals.Count; i++)
             {
                 var p = proposals[i];
-                if (!p.Open && ((p.From == a && p.To == b) || (p.From == b && p.To == a)))
+                if (!p.Open && p.Escrow <= 0 &&
+                    ((p.From == a && p.To == b) || (p.From == b && p.To == a)))
                     closed++;
             }
             for (var i = 0; i < proposals.Count && closed > Config.HistoryPerPair; i++)
             {
                 var p = proposals[i];
-                if (p.Open || !((p.From == a && p.To == b) || (p.From == b && p.To == a)))
+                if (p.Open || p.Escrow > 0 ||
+                    !((p.From == a && p.To == b) || (p.From == b && p.To == a)))
                     continue;
                 proposals.RemoveAt(i);
                 i--;
@@ -543,6 +547,11 @@ namespace LivingCity.Outfit
                 // the envelope at. From the house we pay: taken only when it reads
                 // stronger and the safe covers the new figure over the reserve.
                 case ProposalKind.TributeTerms:
+                    if (stance == Stance.War)
+                        return DeskAnswer.No(ReasonNobodyOwesAnybody);
+                    // Both figures are the STREET's own - what the holdings price the
+                    // envelope at, never the pinned one - so a discount agreed cannot be
+                    // halved again off itself (Codex).
                     var theyOwe = view.TributeOwed(from);
                     var weOwe = view.TributeOwe(from);
                     if (theyOwe > 0)
@@ -609,13 +618,21 @@ namespace LivingCity.Outfit
         /// is owed above the threat rung, at the table's rate - the mind's own price
         /// for its bill, made the ceiling for everybody's.</summary>
         public static int BillCeiling(HouseRelations relations, int from, int to,
-            DiplomacyConfig config)
+            DiplomacyConfig config, int day)
         {
             if (relations == null)
                 return 0;
             config = config ?? DiplomacyConfig.Default;
-            var above = relations.Grievance(from, to) - relations.Config.ThreatAt;
-            return above > 0f ? (int)(above * config.CompensationPerPoint) : 0;
+            // What a bill can still clear TODAY - a second bill after the day's cap is
+            // spent asks for nothing, so a debtor is not billed until it is dry (Codex)
+            // - and never past the threat rung: a bill is the ladder's third step, and
+            // paying it in full lands exactly on the second.
+            var clearable = relations.Clearable(from, to, day, config.CompensationCapPerDay,
+                relations.Config.ThreatAt, config.KillingFloorDays);
+            var aboveThreat = (int)(relations.Grievance(from, to) - relations.Config.ThreatAt);
+            if (clearable > aboveThreat)
+                clearable = aboveThreat;
+            return clearable > 0 ? clearable * config.CompensationPerPoint : 0;
         }
 
         /// <summary>The house that sent the word reads as the stronger, and we are
@@ -664,8 +681,12 @@ namespace LivingCity.Outfit
             var points = money / (config.CompensationPerPoint > 0
                 ? config.CompensationPerPoint
                 : 1);
-            if (points > config.CompensationCapPerDay)
-                points = config.CompensationCapPerDay;
+            // What the money can actually clear today: the cap less what was cleared
+            // already, over the killing floor - the same reckoning Clear will make,
+            // so the desk never says yes to a figure that then does nothing (Codex).
+            var clearable = view.Clearable(from, config.CompensationCapPerDay);
+            if (points > clearable)
+                points = clearable;
             var after = view.Grievance(from) - points;
             return after < 0f ? 0f : after;
         }

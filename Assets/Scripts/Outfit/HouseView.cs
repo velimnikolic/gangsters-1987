@@ -334,6 +334,11 @@ namespace LivingCity.Outfit
         /// (EPIC 42, wired from the runner's own tally). Zero at peace.</summary>
         public System.Func<TerritoryGangId, int> LossesLook;
 
+        /// <summary>How many points money could still clear off our grudge against that
+        /// house today - the day's cap less what was cleared, over the killing floor
+        /// (EPIC 42). The desk's reckoning of an offer's money.</summary>
+        public System.Func<TerritoryGangId, int> ClearableLook;
+
         /// <summary>What we owe that house a cycle in tribute, and what it owes us -
         /// both derived from turf anybody can count, so both are the street's
         /// knowledge (EPIC 42, DIPL-004). Zero where nobody levies.</summary>
@@ -438,6 +443,9 @@ namespace LivingCity.Outfit
 
         public int Losses(TerritoryGangId other) =>
             LossesLook != null ? LossesLook(other) : LossesThisWar;
+
+        public int Clearable(TerritoryGangId other, int fallback) =>
+            ClearableLook != null ? ClearableLook(other) : fallback;
 
         public int TributeOwe(TerritoryGangId other) =>
             TributeLook != null ? TributeLook(other).owe : 0;
