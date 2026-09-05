@@ -219,6 +219,7 @@ namespace LivingCity.Outfit
         public int day;
         public string text;
         public bool isPublic;
+        public bool filed;
     }
 
     [Serializable]
@@ -537,6 +538,7 @@ namespace LivingCity.Outfit
                 dto.wire[i] = new WireDto
                 {
                     day = book.Wire[i].Day, text = book.Wire[i].Text, isPublic = book.Wire[i].Public,
+                    filed = book.Wire[i].Filed,
                 };
             return dto;
         }
@@ -580,7 +582,7 @@ namespace LivingCity.Outfit
                     book.Wire.Add(new WireLine
                     {
                         Day = dto.wire[i].day, Text = dto.wire[i].text ?? "",
-                        Public = dto.wire[i].isPublic,
+                        Public = dto.wire[i].isPublic, Filed = dto.wire[i].filed,
                     });
             book.CardsDealt = dto.cardsDealt;
             book.CardsAnswered = dto.cardsAnswered;

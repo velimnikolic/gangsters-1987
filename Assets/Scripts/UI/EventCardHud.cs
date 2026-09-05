@@ -223,11 +223,15 @@ namespace LivingCity.UI
                 : note;
             var holdH = string.IsNullOrEmpty(holdLine) ? 0f : 36f;
             var rows = Mathf.Min(3, card.Choices.Count);
+            var rowHeights = new float[rows];
+            var rowsH = 0f;
+            for (var i = 0; i < rows; i++)
+                rowsH += rowHeights[i] = RowHeightOf(card.Choices[i]);
 
             var bodyH = BodyTop + titleLines.Length * TitleLine + Gap + leadH +
                         (telexH > 0f ? Gap + telexH : 0f) + Gap + StatsH +
                         (holdH > 0f ? 12f + holdH : 0f) + BodyBottom;
-            var cardH = MetaH + bodyH + rows * RowH + FootH;
+            var cardH = MetaH + bodyH + rowsH + FootH;
 
             // ------------------------------------------------------------------ card
             var sheet = NewRect("Card", screen.transform);
@@ -289,8 +293,10 @@ namespace LivingCity.UI
 
             // 3. THE ROWS: one hit target each - the number, the key and the copy.
             for (var i = 0; i < rows; i++)
-                ChoiceRow(sheet, y - i * RowH, i);
-            y -= rows * RowH;
+            {
+                ChoiceRow(sheet, y, i, rowHeights[i]);
+                y -= rowHeights[i];
+            }
 
             // 4. THE FOOT: the keys, in words.
             var foot = NewRect("Foot", sheet);
@@ -315,7 +321,10 @@ namespace LivingCity.UI
         const float BodyTop = 22f;
         const float BodyBottom = 20f;
         const float StatsH = 66f;
-        const float RowH = 70f;
+        const float RowH = 70f;         // one line of consequence; a longer one grows the row
+        const float RowPad = 14f;
+        const float CopyLine = 19f;     // 13px mono, 2 of leading
+        const float MonoChar = 8f;      // IBM Plex Mono at 13px, measured on the capture
         const float FootH = 37f;
         const float LeadWidth = 470f;   // 56ch of 15px serif
         const float LeadLine = 24f;     // 15px x 1.6
@@ -450,14 +459,37 @@ namespace LivingCity.UI
             return x + w + 26f;
         }
 
+        /// <summary>The consequence a row prints: its note, and the risk in words when
+        /// there is one - every computed thing readable on the card (the UI rule).</summary>
+        static string WhyOf(EventChoice choice)
+        {
+            var why = choice.Note ?? "";
+            if (!string.IsNullOrEmpty(choice.Risk))
+                why += (why.Length > 0 ? " " : "") + choice.Risk;
+            return why;
+        }
+
+        /// <summary>A row is as tall as its copy needs: the design's 70 for one line, and
+        /// a line more for every wrap. A fixed row truncated the test buy's watch
+        /// warning while the key stayed live (the Codex review).</summary>
+        static float RowHeightOf(EventChoice choice)
+        {
+            var copyW = CardWidth - CopyX - Pad;
+            var perLine = Mathf.Max(1, Mathf.FloorToInt(copyW / MonoChar));
+            var lines = Mathf.Max(1, Mathf.CeilToInt(WhyOf(choice).Length / (float)perLine));
+            return Mathf.Max(RowH, RowPad * 2f + lines * CopyLine);
+        }
+
+        const float CopyX = Pad + 30f + Gap + 150f + Gap;
+
         /// <summary>One choice: the keycap with its number, the key with its verb, the
-        /// consequence in one mono line - and the whole row is the button.</summary>
-        void ChoiceRow(Transform parent, float y, int index)
+        /// consequence in mono - and the whole row is the button.</summary>
+        void ChoiceRow(Transform parent, float y, int index, float h)
         {
             var choice = card.Choices[index];
             var commits = index == 0;
             var row = NewRect("Row " + (index + 1), parent);
-            PlaceTopLeft(row, 0f, y, CardWidth, RowH);
+            PlaceTopLeft(row, 0f, y, CardWidth, h);
             var face = Fill(row, LedgerV2.Panel);
             Rule(row, 0f, 0f, CardWidth, LedgerV2.Hair);
             var open = hold == HoldReason.None;
@@ -469,10 +501,10 @@ namespace LivingCity.UI
 
             // the keycap: the committing verb's sits proud on a hard shadow
             var cap = NewRect("Keycap", row);
-            PlaceTopLeft(cap, Pad, -(RowH - 30f) * 0.5f, 30f, 30f);
+            PlaceTopLeft(cap, Pad, -(h - 30f) * 0.5f, 30f, 30f);
             if (commits)
             {
-                Block("Cap shadow", row, Pad + 2f, -(RowH - 30f) * 0.5f - 2f, 30f, 30f,
+                Block("Cap shadow", row, Pad + 2f, -(h - 30f) * 0.5f - 2f, 30f, 30f,
                     LedgerV2.Rule);
                 cap.SetAsLastSibling();
                 Fill(cap, LedgerV2.Head);
@@ -484,18 +516,16 @@ namespace LivingCity.UI
                 (index + 1).ToString(), TextAlignmentOptions.Center);
             digit.raycastTarget = false;
 
-            var key = LedgerV2.Button(row, choice.Label, Pad + 30f + Gap, -(RowH - 42f) * 0.5f,
+            var key = LedgerV2.Button(row, choice.Label, Pad + 30f + Gap, -(h - 42f) * 0.5f,
                 150f, 42f, () => Choose(index), commits ? LedgerV2.Key.Dark : LedgerV2.Key.Outline,
                 11f);
             LedgerV2.KeyEnabled(key, open, LedgerV2.HeadDim);
 
-            var copyX = Pad + 30f + Gap + 150f + Gap;
-            var why = choice.Note ?? "";
-            if (!string.IsNullOrEmpty(choice.Risk))
-                why += (why.Length > 0 ? " " : "") + choice.Risk;
+            var copyH = h - RowPad * 2f;
             var copy = Paragraph(row, LedgerStyle.Mono, MonoSize,
-                commits ? LedgerV2.Body : LedgerV2.Muted, copyX, -(RowH - 48f) * 0.5f,
-                CardWidth - copyX - Pad, 48f, why, 2f);
+                commits ? LedgerV2.Body : LedgerV2.Muted, CopyX,
+                -(h - copyH) * 0.5f + (copyH <= CopyLine + 4f ? -3f : 0f),
+                CardWidth - CopyX - Pad, copyH + 6f, WhyOf(choice), 2f);
             copy.raycastTarget = false;
         }
 

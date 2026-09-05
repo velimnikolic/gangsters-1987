@@ -326,6 +326,12 @@ namespace LivingCity.Outfit
         /// <summary>Whether the police made a record of it - what the paper may print.
         /// A rumour never is.</summary>
         public bool Public;
+
+        /// <summary>Whether the street HUD's wire strip has carried it. The scene's
+        /// mark, kept ON the line and saved with it: the incidents book it is filed
+        /// into is cleared every midnight and not saved at all, so a mark kept there
+        /// replayed the whole wire the next day (the Codex review).</summary>
+        public bool Filed;
     }
 
     /// <summary>

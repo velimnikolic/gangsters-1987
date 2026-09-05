@@ -386,13 +386,11 @@ namespace LivingCity.Gameplay
         /// THE STREET ON THE WIRE (EPIC 40). The event book's lines - the meeting that
         /// went well, the phone that does not ring and why - were printed only in the
         /// paper's STREET TALK column; the strip the player actually watches is the
-        /// wire. Every line is filed once as a StreetTalk slip. THE INCIDENTS BOOK IS
-        /// THE RECORD OF WHAT WAS FILED - a line goes in unless a slip with its day and
-        /// its text is already there. Both books are saved together and restored IN
-        /// PLACE (the runner keeps its identity through OutfitSnapshot.Restore, the
-        /// Codex review's finding), so a load neither re-files what was filed before
-        /// the save nor swallows what the restored jobs say after it; a file older
-        /// than this slip files its street's history once, dated.
+        /// wire. Every line is filed once as a StreetTalk slip and MARKED ON THE LINE
+        /// (WireLine.Filed), which is saved with it: the incidents book is cleared every
+        /// midnight and not saved, so a record kept there replayed the wire each new
+        /// day and after every load (the Codex review, twice). A file from before the
+        /// mark files its street's history once, dated.
         /// </summary>
         bool SweepStreetWire()
         {
@@ -406,23 +404,14 @@ namespace LivingCity.Gameplay
             for (var i = 0; i < wire.Count; i++)
             {
                 var line = wire[i];
-                if (FiledOnTheWire(line.Day, line.Text))
+                if (line.Filed)
                     continue;
+                line.Filed = true;
                 Incidents.Add(new Incident(-1, line.Text, IncidentKind.StreetTalk, line.Day,
                     "", 0, line.Text));
                 filed = true;
             }
             return filed;
-        }
-
-        bool FiledOnTheWire(int day, string text)
-        {
-            var slips = Incidents;
-            for (var i = slips.Count - 1; i >= 0; i--)
-                if (slips[i].Kind == IncidentKind.StreetTalk && slips[i].Day == day &&
-                    slips[i].Line == text)
-                    return true;
-            return false;
         }
 
         int wireVersion = -1;
