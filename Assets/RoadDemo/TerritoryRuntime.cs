@@ -1903,7 +1903,6 @@ namespace RoadDemo
         /// </summary>
         void SettleBusinesses(double gameHour)
         {
-            SweepWarnings(gameHour);
             SweepDefiance(gameHour);
             SweepProtectionSwitches();
             AccrueDues(gameHour);
