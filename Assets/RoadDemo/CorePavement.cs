@@ -768,6 +768,31 @@ namespace RoadDemo
             }
         }
 
+        /// <summary>A single row of the core's kerb tiles along a road edge. Uses
+        /// the same outward facing convention and five-metre width as block pavement.</summary>
+        public static void LayFootway(float edge, float from, float to, int outwardYaw,
+            Func<GameObject, Transform, GameObject> stand, Transform parent, float y = 0f)
+        {
+            var prefab = DemoAssetLoad.Load<GameObject>(CityEnv + Kerb + ".prefab");
+            if (prefab == null) return;
+            bool vertical = outwardYaw == 90 || outwardYaw == 270;
+            for (float at = from; at < to - 0.001f; at += Cell)
+            {
+                float length = Mathf.Min(Cell, to - at);
+                float x = vertical ? (outwardYaw == 90 ? edge - Cell : edge) : at;
+                float z = vertical ? at : (outwardYaw == 0 ? edge - Cell : edge);
+                float sx = vertical ? Cell : length, sz = vertical ? length : Cell;
+                var centre = new Vector3(x + sx * 0.5f, y, z + sz * 0.5f);
+                var rotation = Quaternion.Euler(0f, outwardYaw, 0f);
+                var go = stand(prefab, parent);
+                if (go == null) continue;
+                go.transform.SetPositionAndRotation(centre + rotation *
+                    new Vector3(length * 0.5f, 0f, Cell * 0.5f), rotation);
+                go.transform.localScale = Vector3.Scale(prefab.transform.localScale,
+                    new Vector3(length / Cell, 1f, 1f));
+            }
+        }
+
         /// <summary>
         /// Stands the tiles: the kerb round the outside turned to face out, a corner tile
         /// on every corner of the run, the plain square everywhere inside.

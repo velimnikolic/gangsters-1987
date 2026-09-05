@@ -19,6 +19,44 @@ namespace RoadDemo
             -BlockFrontage * 0.5f, -BlockDepth * 0.5f,
              BlockFrontage * 0.5f,  BlockDepth * 0.5f);
 
+        /// <summary>
+        /// The half depth the BLOCK is squared up to. Everything here is composed around
+        /// the block's own centre, so it is the half measurement that has to land on the
+        /// city's five-metre raster, and 17.5 m does not: a parcel whose edge falls at a
+        /// cell midpoint cannot be kerbed by CorePavement without leaving a 2.5 m strip
+        /// of bare ground inside its own kerb. Half the frontage (25 m) already lands.
+        /// <see cref="ComposeBlock"/> pays for the difference with a shallow apron skirt;
+        /// the city's own parcel reservation still uses the authored
+        /// <see cref="BlockDepth"/>.
+        /// </summary>
+        public const float ParcelHalfDepth = 20f;
+
+        /// <summary>Deliberately the central generator's pavement width, so this block's
+        /// kerb line matches the fuel-station block standing beside it.</summary>
+        public const float PavementWidth = CoreBlockMetrics.PavementWidth;
+
+        /// <summary>The station's own ground, squared to the raster.</summary>
+        public static readonly Rect ParcelBounds = Rect.MinMaxRect(
+            -BlockFrontage * 0.5f, -ParcelHalfDepth,
+             BlockFrontage * 0.5f,  ParcelHalfDepth);
+
+        /// <summary>The kerb the appliances cross on their way out, and what the street
+        /// beyond the block is measured from.</summary>
+        public const float KerbZ = ParcelHalfDepth + PavementWidth;
+
+        /// <summary>The whole block: the parcel and its generated pavement ring.</summary>
+        public static readonly Rect BlockBounds = Rect.MinMaxRect(
+            ParcelBounds.xMin - PavementWidth, ParcelBounds.yMin - PavementWidth,
+            ParcelBounds.xMax + PavementWidth, ParcelBounds.yMax + PavementWidth);
+
+        /// <summary>How much of the frontage the crossover opens, each side of centre.
+        /// Both outer corner cells stay kerbed pavement so the block still reads as a
+        /// block; everything between them is the working apron that the three engine
+        /// runs and the staff bays back out over. A fire station's front IS a crossing.</summary>
+        const float ApronMouthHalfX = 20f;
+
+        const float ApronY = -0.025f;
+
         public const string ShellPath =
             "Assets/CityKit/Buildings/building-firestation.prefab";
 
@@ -113,10 +151,19 @@ namespace RoadDemo
             public int DetailProps { get; internal set; }
             public int HangarDoors => _bayDoors.Count;
 
+            /// <summary>Nought unless the station was stood by <see cref="ComposeBlock"/>.</summary>
+            public int PavementTiles { get; internal set; }
+            public int DriveCells { get; internal set; }
+            public string PavementReport { get; internal set; }
+
             public override string ToString() =>
                 $"three-bay engine hall, firefighters' quarters, {FireEngines} fire " +
                 $"engine(s), {StaffCars} staff car(s), {HangarDoors} working hangar doors, " +
-                $"{DetailProps} operational props, marked front apron";
+                $"{DetailProps} operational props, marked front apron" +
+                (PavementTiles > 0
+                    ? $", {PavementTiles} generated pavement tile(s) and a " +
+                      $"{DriveCells}-cell apron crossover"
+                    : "");
         }
 
         /// <summary>Stand the block with the caller's chosen prefab instantiator.</summary>
@@ -138,7 +185,7 @@ namespace RoadDemo
                         RoadTile, surface,
                         PreviewBounds.xMin + i * Composer.Cell,
                         PreviewBounds.yMin + j * Composer.Cell,
-                        Composer.Cell, Composer.Cell, 0f, y: -0.025f);
+                        Composer.Cell, Composer.Cell, 0f, y: ApronY);
                     SetStatic(tile);
                 }
 
@@ -185,6 +232,136 @@ namespace RoadDemo
 
         public static Stood Compose(Transform root) =>
             Compose(root, (prefab, parent) => UnityEngine.Object.Instantiate(prefab, parent));
+
+        /// <summary>
+        /// The station as an ordinary city block: the parcel <see cref="Compose"/> stands,
+        /// squared to the five-metre raster and wrapped in the same generated CorePavement
+        /// ring the rest of the city is kerbed with, with one declared crossover across its
+        /// frontage so the appliances are not walled in by their own pavement (the lesson
+        /// the police station already taught: "nema ukljucenje jer si je okruzio trotoarom").
+        ///
+        /// Compose at the origin and translate the finished root: the shared Synty helpers
+        /// measure in world space while they stand their children, and CorePavement lays
+        /// its raster from the world origin.
+        /// </summary>
+        public static Stood ComposeBlock(
+            Transform root, int seed, Func<GameObject, Transform, GameObject> stand)
+        {
+            var stood = Compose(root, stand);
+            if (root == null || stand == null) return stood;
+
+            Composer.Begin(stand);
+            SquareTheApron(root);
+
+            var pavement = new GameObject("Generated City Pavement").transform;
+            pavement.SetParent(root, false);
+            var plan = PavementPlan(stood);
+            stood.PavementTiles = CorePavement.Lay(
+                plan, stand, pavement, out string report,
+                y: ApronY, seed: seed * 809 + 137,
+                ramps: true, under: false, props: true);
+            stood.PavementTiles -= ClearTheMouth(pavement);
+            stood.PavementReport = report;
+            stood.DriveCells = plan.DriveCells;
+            return stood;
+        }
+
+        public static Stood ComposeBlock(Transform root, int seed) =>
+            ComposeBlock(root, seed, (prefab, parent) =>
+                UnityEngine.Object.Instantiate(prefab, parent));
+
+        /// <summary>The 2.5 m of apron at the front and the back that carries the authored
+        /// 35 m parcel out to <see cref="ParcelBounds"/>. Without it the pavement ring
+        /// would be laid against a cell midpoint and the block would show bare ground
+        /// inside its own kerb.</summary>
+        static void SquareTheApron(Transform root)
+        {
+            float skirt = ParcelHalfDepth - BlockDepth * 0.5f;
+            if (skirt <= 0.001f) return;
+
+            var surface = new GameObject("Fire Station Apron - Block Skirt").transform;
+            surface.SetParent(root, false);
+            foreach (float minZ in new[] { -ParcelHalfDepth, PreviewBounds.yMax })
+                for (int i = 0; i < 10; i++)
+                {
+                    var tile = Composer.Lay(
+                        RoadTile, surface,
+                        PreviewBounds.xMin + i * Composer.Cell, minZ,
+                        Composer.Cell, skirt, 0f, y: ApronY);
+                    SetStatic(tile);
+                }
+        }
+
+        /// <summary>Anything shorter than this on a pavement is its surface; anything
+        /// taller is furniture standing on it.</summary>
+        const float TileProud = 0.5f;
+
+        /// <summary>The ground the appliances cross, which nothing may stand on: the
+        /// crossover itself, from the apron's edge out to the kerb.</summary>
+        static readonly Rect MouthBounds = Rect.MinMaxRect(
+            -ApronMouthHalfX, ParcelBounds.yMax,
+             ApronMouthHalfX, BlockBounds.yMax);
+
+        /// <summary>
+        /// Two things the generator gets right for an ordinary block and wrong for this one.
+        ///
+        /// It kerbs the inner end of every driveway, because a generic drive runs between two
+        /// pavements; this one joins the station's own apron, so that row would stand as a
+        /// kerb across all three engine runs. And it furnishes every kerb it lays, so the
+        /// lamp on that row ends up planted in the middle of the appliance exit.
+        ///
+        /// So: the parcel carries its authored asphalt and takes no tile of any kind, and
+        /// the crossover carries nothing that stands proud of the ground. A fire station's
+        /// way out is kept clear (the user, 2026-09-05: "ulaz na parking se preplice s
+        /// trotoarom i ne sme da ima props na ulazu").
+        /// </summary>
+        static int ClearTheMouth(Transform pavement)
+        {
+            var remove = new List<GameObject>();
+            foreach (Transform child in pavement)
+            {
+                var renderer = child.GetComponentInChildren<Renderer>();
+                if (renderer == null) continue;
+                var box = renderer.bounds;
+                var footprint = new Rect(box.min.x, box.min.z, box.size.x, box.size.z);
+
+                // By its CENTRE, not its footprint: a band tile laid hard against the
+                // parcel touches it on the seam, and a rounding error there would strip
+                // the block's own pavement.
+                bool onTheApron = ParcelBounds.Contains(
+                    new Vector2(box.center.x, box.center.z));
+                bool blocksTheMouth = box.size.y > TileProud && MouthBounds.Overlaps(footprint);
+                if (onTheApron || blocksTheMouth) remove.Add(child.gameObject);
+            }
+
+            for (int i = 0; i < remove.Count; i++)
+            {
+                if (Application.isPlaying) UnityEngine.Object.Destroy(remove[i]);
+                else UnityEngine.Object.DestroyImmediate(remove[i]);
+            }
+            return remove.Count;
+        }
+
+        static CorePavement.Plan PavementPlan(Stood stood)
+        {
+            // Measured, never typed: the hall and the crew wing are the one thing no
+            // driveway may be routed through, and only the raised shell knows where
+            // they actually stand.
+            var roofs = new List<Bounds>();
+            if (stood.Shell != null) roofs.Add(BoundsOf(stood.Shell));
+
+            var gate = new Bounds(
+                new Vector3(0f, 0f, ParcelBounds.yMax - CorePavement.Cell * 0.5f),
+                new Vector3(ApronMouthHalfX * 2f, 1f, CorePavement.Cell));
+
+            return CorePavement.Around(
+                new[] { Box(ParcelBounds) }, band: CoreBlockMetrics.PavementTiles,
+                roofs: roofs, gates: new[] { gate });
+        }
+
+        static Bounds Box(Rect rect) =>
+            new Bounds(new Vector3(rect.center.x, 0f, rect.center.y),
+                       new Vector3(rect.width, 1f, rect.height));
 
         static void Park(Stood stood, string path, Transform parent, string name,
                          float x, float z, float yaw, bool engine = false)

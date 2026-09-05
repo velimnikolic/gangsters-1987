@@ -1299,6 +1299,42 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ the tiles
 
+        /// <summary>The same two-lane profile used by NarrowEW/NarrowNS, for a
+        /// district frontage whose ends need not fall on the core's raster.</summary>
+        public static void LayTwoWay(float crown, float from, float to, bool vertical,
+            Func<GameObject, Transform, GameObject> stand, Transform parent, float y = 0f)
+        {
+            var kit = new Kit(stand, parent);
+            for (float at = from; at < to - 0.001f; at += Cell)
+                TwoWay(kit, vertical ? crown - Cell : at, vertical ? at : crown - Cell,
+                    vertical, Mathf.Min(Cell, to - at), y);
+        }
+
+        static void TwoWay(Kit kit, float x, float z, bool vertical, float length, float y = 0f)
+        {
+            if (vertical)
+            {
+                kit.Tile(RoadHalfTile, x, z, 0, Cell, length, y);
+                kit.Tile(RoadHalfTile, x + Cell, z, 180, Cell, length, y);
+            }
+            else
+            {
+                kit.Tile(RoadHalfTile, x, z, 270, length, Cell, y);
+                kit.Tile(RoadHalfTile, x, z + Cell, 90, length, Cell, y);
+            }
+        }
+
+        /// <summary>Unmarked junction/driveway surface from the core road kit.</summary>
+        public static void LayAsphalt(Rect area, Func<GameObject, Transform, GameObject> stand,
+            Transform parent, float y = 0f)
+        {
+            var kit = new Kit(stand, parent);
+            for (float x = area.xMin; x < area.xMax - 0.001f; x += Cell)
+                for (float z = area.yMin; z < area.yMax - 0.001f; z += Cell)
+                    kit.Tile(Bare, x, z, 0, Mathf.Min(Cell, area.xMax - x),
+                        Mathf.Min(Cell, area.yMax - z), y);
+        }
+
         /// <summary>
         /// Lays the tiles. A road is laid a 5 m length at a time across its whole width -
         /// the builder's own profiles: a street is parking strip, the two facing halves
@@ -1389,15 +1425,13 @@ namespace RoadDemo
                         case Kind.NarrowEW:
                             if (r.Across[i, j] != 0) break;                   // laid from its south cell
                             if (!Same(i, j, 0, 1, 2)) { Spread(i, j, 0, 1, 2); break; }
-                            kit.Tile(RoadHalfTile, mx, mz, 270, Cell, Cell);
-                            kit.Tile(RoadHalfTile, mx, mz + Cell, 90, Cell, Cell);
+                            TwoWay(kit, mx, mz, false, Cell);
                             break;
 
                         case Kind.NarrowNS:
                             if (r.Across[i, j] != 0) break;                   // laid from its west cell
                             if (!Same(i, j, 1, 0, 2)) { Spread(i, j, 1, 0, 2); break; }
-                            kit.Tile(RoadHalfTile, mx, mz, 0, Cell, Cell);
-                            kit.Tile(RoadHalfTile, mx + Cell, mz, 180, Cell, Cell);
+                            TwoWay(kit, mx, mz, true, Cell);
                             break;
 
                         case Kind.StreetEW:

@@ -79,7 +79,10 @@ namespace RoadDemo
                 "entry and exit open to the city road";
         }
 
-        public static Stood Compose(Transform root, int seed)
+        public static Stood Compose(Transform root, int seed) => Compose(root, seed, true);
+
+        /// <summary>Composes the complete parcel; scenery callers can omit the traffic adapter.</summary>
+        public static Stood Compose(Transform root, int seed, bool createRuntime)
         {
             var stood = new Stood();
             if (root == null) return stood;
@@ -135,9 +138,12 @@ namespace RoadDemo
             stood.Exit = Marker(connectors, "EXIT -> city road", stood.Station,
                 FuelStation.MouthX);
 
-            var live = root.GetComponent<FuelStationBlockRuntime>();
-            if (live == null) live = root.gameObject.AddComponent<FuelStationBlockRuntime>();
-            live.nameSeed = seed;
+            if (createRuntime)
+            {
+                var live = root.GetComponent<FuelStationBlockRuntime>();
+                if (live == null) live = root.gameObject.AddComponent<FuelStationBlockRuntime>();
+                live.nameSeed = seed;
+            }
 #else
             Debug.LogError("[FuelBlock] The visual block loads Synty prefabs in the editor.");
 #endif

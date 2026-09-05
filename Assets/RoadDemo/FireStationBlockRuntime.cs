@@ -13,12 +13,15 @@ namespace RoadDemo
     public sealed class FireStationBlockRuntime : MonoBehaviour
     {
         const float RoadY = 0f;
-        const float CityRoadZ = FireStationBlock.BlockDepth * 0.5f + StreetKit.StreetHalf;
+        // Measured off the WRAPPED block, not the bare parcel: this component is only
+        // ever added by FireStationBlock.ComposeBlock, so the street it joins lies
+        // outside the generated pavement ring rather than against the apron's edge.
+        const float CityRoadZ = FireStationBlock.KerbZ + StreetKit.StreetHalf;
         const float HarnessHalfRun = 55f;
         const float HarnessBackRoadZ = CityRoadZ + 60f;
         const float GateX = -10.5f;
         const float GateInsideZ = 16.1f;
-        const float GateOutsideZ = 18.6f;
+        const float GateOutsideZ = FireStationBlock.KerbZ + 1.1f;
         const float BayMouthZ = 5.2f;
         const float DoorTravelSeconds = 1.35f;
         const float DoorOpenScale = 0.035f;
