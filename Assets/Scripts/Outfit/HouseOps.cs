@@ -468,11 +468,14 @@ namespace LivingCity.Outfit
                 accept = true;
                 note = HouseDiplomacy.ReasonWeCouldNotRefuse;
             }
-            world.Diplomacy.Settle(world, proposal, accept, note,
+            var carried = world.Diplomacy.Settle(world, proposal, accept, note,
                 to.Runner.Campaign.Day);
             to.Touch();
             world.Of(proposal.From)?.Touch();
-            return OpResult.Success;
+            // A yes the book could not carry - the money not there, a bill lapsed -
+            // answers with the record's own words, so the caller is not told a deal
+            // was made when the file says otherwise.
+            return accept && !carried ? OpResult.Fail(proposal.Answer) : OpResult.Success;
         }
 
         // ------------------------------------------------------------------- EPIC 40

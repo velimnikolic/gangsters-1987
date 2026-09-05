@@ -343,10 +343,17 @@ namespace LivingCity.Outfit
                     case LadderStep.DemandCompensation:
                         if (view.HasOpenProposal(them, ProposalKind.Bill))
                             continue;
+                        // Priced from the grudge above the threat rung, and never
+                        // past what the book can still clear today: a bill over the
+                        // ceiling is refused at the gateway as no such debt, and a
+                        // house owed sixty would otherwise never collect a dollar.
                         var bill = Ask(them, ProposalKind.Bill);
-                        bill.Terms.Money = (int)(
-                            (view.Grievance(them) - relations.ThreatAt) *
-                            DiplomacyConfig.Default.CompensationPerPoint);
+                        var points = (int)(view.Grievance(them) - relations.ThreatAt);
+                        var clearable = view.Clearable(them,
+                            DiplomacyConfig.Default.CompensationCapPerDay);
+                        if (points > clearable)
+                            points = clearable;
+                        bill.Terms.Money = points * DiplomacyConfig.Default.CompensationPerPoint;
                         if (bill.Terms.Money <= 0)
                             continue;
                         Propose(view, into, HouseIntent.Propose(bill, TierDefend,

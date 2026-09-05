@@ -720,6 +720,16 @@ namespace LivingCity.Outfit
             if (accepted)
             {
                 var refusal = Apply(world, proposal, day);
+                // A BILL THAT LAPSED is not a bill refused: the debt it named was
+                // cleared by other money while it lay open, so nothing moves and no
+                // grudge is taken for it (Codex).
+                if (refusal == ReasonNoSuchDebt && proposal.Kind == ProposalKind.Bill)
+                {
+                    proposal.Status = ProposalStatus.Expired;
+                    proposal.Answer = refusal;
+                    Print(world, proposal, Describe(proposal) + " · LAPSED - " + refusal, day);
+                    return false;
+                }
                 if (refusal != null)
                 {
                     accepted = false;
@@ -786,8 +796,14 @@ namespace LivingCity.Outfit
                     return null;
 
                 // PAID: the receiver's money to the sender, and the sender's grudge
-                // cleared by it within the day's cap.
+                // cleared by it within the day's cap. The ceiling is read again HERE,
+                // not only at filing: a bill lies open while other money - a truce
+                // bought, a bill paid - clears the same grudge, and the day's cap it
+                // was priced against may be spent by the time it is answered (Codex).
                 case ProposalKind.Bill:
+                    if (proposal.Terms.Money > BillCeiling(world.Relations, proposal.From,
+                            proposal.To, Config, day))
+                        return ReasonNoSuchDebt;
                     var moved = world.Transfer(proposal.To, proposal.From, proposal.Terms.Money);
                     if (moved != null)
                         return ReasonCouldNotPutTheMoneyUp;

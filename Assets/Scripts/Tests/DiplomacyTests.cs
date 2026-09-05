@@ -78,6 +78,7 @@ namespace LivingCity.Tests
             ADiscountDoesNotHalveOffItself(failures);
             TheDeskReadsTheFloorBeforeItSaysYes(failures);
             TheLeviesAndTheHouseLinesSurviveTheFile(failures);
+            AnOpenBillLapsesWhenOtherMoneyClearsTheDebt(failures);
 
             return failures;
         }
@@ -1057,6 +1058,31 @@ namespace LivingCity.Tests
             else if (bill.Terms.Money != (int)((30f - config.ThreatAt) * rate))
                 failures.Add("DIPL-003: the bill reads $" + bill.Terms.Money + ", not $" +
                              (int)((30f - config.ThreatAt) * rate) + ".");
+
+            // Owed sixty, the bill stops at the day's cap - and at what the book says
+            // can still clear: a house that cleared most of the cap already bills the
+            // rest, one that cleared it all sends no bill (Codex fix, 69fa3fe3a).
+            var cap = DiplomacyConfig.Default.CompensationCapPerDay;
+            view = Desk(1, Stance.Truce, 60f, config.MinWarDays * 3, 1);
+            view.Rivals = new[] { them };
+            view.LadderLook = other => LadderStep.DemandCompensation;
+            intents.Clear();
+            HouseMind.Think(view, HouseMindConfig.Default, config, intents);
+            bill = FindProposal(intents, ProposalKind.Bill);
+            if (bill == null || bill.Terms.Money != cap * rate)
+                failures.Add("DIPL-003: owed sixty, the bill does not stop at the cap ($" +
+                             (bill != null ? bill.Terms.Money : 0) + ").");
+            view.ClearableLook = other => 5;
+            intents.Clear();
+            HouseMind.Think(view, HouseMindConfig.Default, config, intents);
+            bill = FindProposal(intents, ProposalKind.Bill);
+            if (bill == null || bill.Terms.Money != 5 * rate)
+                failures.Add("DIPL-003: the bill does not read what the book can still clear.");
+            view.ClearableLook = other => 0;
+            intents.Clear();
+            HouseMind.Think(view, HouseMindConfig.Default, config, intents);
+            if (FindProposal(intents, ProposalKind.Bill) != null)
+                failures.Add("DIPL-003: a bill was sent after the day's cap was spent.");
 
             // Owed twenty-five, a threat; owed fifteen, a word; owed nothing, nothing.
             view = Desk(1, Stance.Truce, 25f, config.MinWarDays * 3, 1);
@@ -2356,6 +2382,56 @@ namespace LivingCity.Tests
                 filed.Answer != HouseDiplomacy.ReasonNotYet)
                 failures.Add("CODEX: peace was bought under the killing floor (" +
                              (filed != null ? filed.Status + " " + filed.Answer : "") + ").");
+        }
+
+        /// <summary>A bill lying in the player's inbox is priced again when it is paid:
+        /// a truce bought meanwhile spent the day's cap on the same grudge, so the
+        /// bill lapses - no money moves, no grudge is taken for a refusal.</summary>
+        static void AnOpenBillLapsesWhenOtherMoneyClearsTheDebt(List<string> failures)
+        {
+            var table = new Table(116);
+            War(table, 1, 0);
+            var creditor = table.World.Of(1);
+            var player = table.World.Of(0);
+            if (!player.IsPlayer)
+            {
+                failures.Add("CODEX: the fixture's house 0 is not the player.");
+                return;
+            }
+            creditor.Runner.Accounts.Safe = 1_000_000;
+            player.Runner.Accounts.Safe = 1_000_000;
+            for (var i = 0; i < 2; i++)
+                table.World.Relations.Note(1, 0, GrievanceKind.DoorAttacked);
+            var owed = table.World.Relations.Grievance(1, 0);
+            var bill = table.Propose(1, 0, ProposalKind.Bill, 2_000);
+            var filed = Last(table);
+            if (!bill.Ok || filed == null || !filed.Open)
+            {
+                failures.Add("CODEX: the fixture's bill did not reach the player's inbox (" +
+                             bill.Reason + ").");
+                return;
+            }
+            var truce = table.Propose(0, 1, ProposalKind.OfferTruce, 4_000);
+            var bought = Last(table);
+            if (!truce.Ok || bought == null || bought.Status != ProposalStatus.Accepted)
+            {
+                failures.Add("CODEX: the fixture's truce was not bought (" + truce.Reason + ").");
+                return;
+            }
+            var before = player.Runner.Accounts.Safe;
+            var creditorBefore = creditor.Runner.Accounts.Safe;
+            var grudge = table.World.Relations.Grievance(1, 0);
+            var replied = HouseOps.Reply(table.World, player, filed.Id, true, table.Look);
+            if (replied.Ok || filed.Status != ProposalStatus.Expired)
+                failures.Add("CODEX: the stale bill did not lapse (" + filed.Status + " " +
+                             replied.Reason + ").");
+            if (player.Runner.Accounts.Safe != before ||
+                creditor.Runner.Accounts.Safe != creditorBefore)
+                failures.Add("CODEX: money moved on a bill the cap no longer covers.");
+            if (table.World.Relations.Grievance(1, 0) != grudge)
+                failures.Add("CODEX: a lapsed bill was taken as a refusal.");
+            if (owed <= grudge)
+                failures.Add("CODEX: the fixture's truce cleared nothing.");
         }
 
         /// <summary>The tribute book with its pinned terms, and the lines between the
