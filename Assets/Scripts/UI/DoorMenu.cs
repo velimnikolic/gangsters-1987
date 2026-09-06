@@ -42,7 +42,7 @@ namespace LivingCity.UI
     /// from Outfit.EconomyPrices, the deed from Gameplay.DoorHolder, the demand's terms
     /// from the racket itself. This class draws them and files what the reader presses.
     /// </summary>
-    public static class DoorMenu
+    public static partial class DoorMenu
     {
         // ------------------------------------------------------------------ the door
 
@@ -72,8 +72,28 @@ namespace LivingCity.UI
             public TerritoryProtectionState Standing;
             public bool InGoodStanding;
             public int TakePerDay;
+
+            /// <summary>What this door is worth to us in a WEEK - the figure the card
+            /// prints on its readings. Ours is what owning it nets, a paying door is
+            /// what it pays, and an open or a rival's door is what it WOULD pay, which
+            /// is why <see cref="PaysUs"/> travels with it: the same figure means two
+            /// different things and the label has to say which.</summary>
+            public int TakePerWeek;
+
+            /// <summary>Whether that weekly figure is money already coming in.</summary>
+            public bool PaysUs;
+
             public int BuyPrice;
             public TerritoryDoorClosure Closure;
+
+            /// <summary>How much fear it takes to move the man behind the counter, on
+            /// the economy's own 0-1 (ECON-002). The card prints it as pips.</summary>
+            public float Nerve;
+
+            /// <summary>Police eyes on the ground this door stands on, as a share of the
+            /// cap the fear ledger keeps them against. Not the door's - the BLOCK's.
+            /// </summary>
+            public float Heat;
 
             // ------------------------------------------------------------ the gazda
 
@@ -194,8 +214,20 @@ namespace LivingCity.UI
             // (TerritoryOwnerProfile), read rather than chosen.
             if (runtime != null)
             {
-                door.Trait = runtime.OwnerProfileOf(id).Trait;
+                var profile = runtime.OwnerProfileOf(id);
+                door.Trait = profile.Trait;
+                door.Nerve = profile.Nerve;
                 door.InGoodStanding = runtime.DoorInGoodStanding(id, us);
+
+                // THE HEAT IS THE BLOCK'S, not the shop's. The fear ledger keeps police
+                // attention per block against a cap of its own, and the card prints the
+                // share rather than the raw figure - a number nobody can act on is not
+                // a readout (the block file reads the same pair).
+                var fear = runtime.Fear;
+                var cap = fear?.Config != null ? fear.Config.PoliceAttentionCap : 0f;
+                if (fear != null && cap > 0f && block.IsValid)
+                    door.Heat = Mathf.Clamp01(
+                        fear.PoliceAttention(block, runtime.GameHour) / cap);
             }
 
             // The DEED first - the deed book is the record and the marker only a view of
@@ -234,6 +266,15 @@ namespace LivingCity.UI
                         Outfit.EconomyPrices.ProtectionPerWeek(archetype) / 7,
                     _ => 0,
                 };
+
+                // The week, for the card's own reading. A door that pays us nothing
+                // still has a figure worth printing - what it WOULD pay - and it is the
+                // same table's, so the two can never quote different money.
+                door.PaysUs = door.Tenure == DoorTenure.Ours ||
+                              (door.Tenure == DoorTenure.Paying && !door.Closure.Shut);
+                door.TakePerWeek = door.Tenure == DoorTenure.Ours
+                    ? Outfit.EconomyPrices.NetPerDay(archetype) * 7
+                    : Outfit.EconomyPrices.ProtectionPerWeek(archetype);
             }
 
             return door;
@@ -391,6 +432,8 @@ namespace LivingCity.UI
         {
             SelectedCrewId = SelectedPersonId = -1;
             Note = "";
+            OpenSection = SectionDoor;
+            Armed = null;
             Version++;
         }
 
@@ -430,84 +473,6 @@ namespace LivingCity.UI
         {
             var director = Gameplay.PersonnelDirector.Instance;
             return director != null ? director.Roster : null;
-        }
-
-        // ----------------------------------------------------------------- the paper
-
-        /// <summary>The menu never opens wider than this, so a wide sheet does not hand
-        /// the reader a panel the width of a page for eight short keys.</summary>
-        public const float MaxWidth = 380f;
-
-        /// <summary>A key never stretches past this.</summary>
-        const float KeyMax = 300f;
-
-        /// <summary>
-        /// Paints the whole menu as a card under <paramref name="parent"/> and answers it,
-        /// sized. The caller places it: the ledger level with its row, the map beside the
-        /// shop that was clicked. <paramref name="changed"/> is called when the menu's own
-        /// state moves and the surface must repaint; <paramref name="close"/> is the X in
-        /// its corner, and no X is drawn when there is nothing to close.
-        /// </summary>
-        public static RectTransform Open(Transform parent, Door door, float width,
-            Action changed, Action close,
-            DoorDispatch dispatch = DoorDispatch.PickedOrStreet,
-            bool showCommands = true)
-        {
-            var infoOnly = !showCommands;
-
-            var panel = LedgerV2.Card("Door menu", parent, 0f, 0f, width, 1f, LedgerV2.Head);
-            // It is laid OVER whatever it opened on, so it must also stop the clicks the
-            // rows beneath it would otherwise answer.
-            ClickSurface(panel);
-
-            var y = 10f;
-            const float closeW = 24f;
-            var headW = width - 24f - (close != null ? closeW + 6f : 0f);
-            var name = LedgerV2.Name(panel, 12f, -y, headW, door.Name, 15f,
-                LedgerV2.HeadCream);
-            name.overflowMode = TextOverflowModes.Ellipsis;
-            if (close != null)
-            {
-                var shut = LedgerV2.Button(panel, "X", width - 12f - closeW, -(y - 2f),
-                    closeW, closeW, () => close(), LedgerV2.Key.Outline, 11f);
-                shut.color = LedgerV2.HeadCream;
-                LedgerV2.KeyFrame(shut, LedgerV2.HeadDim);
-            }
-            y += 20f;
-
-            Caps(panel, 12f, -y, headW,
-                (string.IsNullOrEmpty(door.Role) ? "" : door.Role + " · ") +
-                door.Trade + " · " + TenureWord(door.Tenure),
-                infoOnly ? 11f : 9f, LedgerV2.HeadDim, 6f)
-                .font = LedgerStyle.Mono;
-            y += infoOnly ? 25f : 22f;
-
-            y += Gazda(panel, 12f, y, width - 24f, door, infoOnly);
-
-            // The door's own sentence WRAPS. It carries the demand's terms - what we are
-            // worth to this man against what he wants - and a line cut off at the panel's
-            // edge is exactly the half the reader needs.
-            var noteMax = infoOnly ? 72f : 48f;
-            var note = Paragraph(panel, LedgerStyle.Mono, infoOnly ? 12f : 10f,
-                LedgerV2.HeadDim, 12f, -y, width - 24f, noteMax, Sentence(door), 2f);
-            y += Mathf.Clamp(note.preferredHeight, infoOnly ? 18f : 14f, noteMax) + 6f;
-
-            if (showCommands)
-            {
-                y += Hands(panel, 12f, y, width - 24f, door, changed, dispatch);
-                y += Keys(panel, 12f, y, width - 24f, door, changed, dispatch);
-            }
-
-            if (showCommands && !string.IsNullOrEmpty(Note))
-            {
-                var ruling = Paragraph(panel, LedgerStyle.MonoItalic, 10f,
-                    LedgerV2.HeadCream, 12f, -y, width - 24f, 42f, Note, 2f);
-                y += Mathf.Clamp(ruling.preferredHeight, 14f, 42f) + 4f;
-            }
-
-            y += 12f;
-            PlaceTopLeft(panel, 0f, 0f, width, y);
-            return panel;
         }
 
         // ------------------------------------------------------------ floating over
@@ -684,116 +649,6 @@ namespace LivingCity.UI
             }
         }
 
-        // ------------------------------------------------------------------ the gazda
-
-        /// <summary>
-        /// THE MAN BEHIND THE COUNTER: his face, his name, what the deed makes him, and
-        /// what kind of man he is. Every one of the four is the city's own - the deed
-        /// (BusinessOwners) names him and carries the seed his face is dealt from, the
-        /// economy (TerritoryOwnerProfile) says what he is like - and the menu only
-        /// prints them. Nothing is spawned for him: a deed is a name, not an actor.
-        ///
-        /// A firm and City Hall get no photograph, because neither is a man; their plate
-        /// keeps its initials. Answers the height the block took.
-        /// </summary>
-        static float Gazda(RectTransform panel, float x, float top, float width, Door door,
-            bool largeCopy = false)
-        {
-            if (string.IsNullOrEmpty(door.OwnerName))
-                return 0f;
-
-            const float plateW = 44f;
-            const float plateH = 52f;
-            var textX = x + plateW + 10f;
-            var textW = width - plateW - 10f;
-
-            var house = door.RoleGang >= 0;
-            var plate = LedgerV2.PortraitPlate(panel, x, -top, plateW, plateH,
-                Initials(door.OwnerName), LedgerV2.DarkPlate, LedgerV2.HeadDim);
-            if (!string.IsNullOrEmpty(door.OwnerFace))
-                PortraitStudio.Request(PortraitStudio.FindPeoplePrefab(door.OwnerFace),
-                    PortraitStudio.Framing.Bust, plate);
-            else if (door.OwnerKind == BusinessOwnerKind.Individual)
-                PortraitStudio.Request(
-                    PortraitStudio.CivilianPrefab(door.PortraitSeed, FemaleDeed(door.OwnerName)),
-                    PortraitStudio.Framing.Bust, plate);
-
-            var name = LedgerV2.Name(panel, textX, -(top + 4f), textW, door.OwnerName,
-                largeCopy ? 15.5f : 13.5f, LedgerV2.HeadCream);
-            name.overflowMode = TextOverflowModes.Ellipsis;
-
-            // A house's man is read by his house, not by how easily he folds: nobody
-            // leans on a family's own front, so the shopkeeper's trait says nothing here.
-            Caps(panel, textX, -(top + 22f), textW,
-                house
-                    ? "BOSS · " + GangName(door.RoleGang)
-                    : KindWord(door.OwnerKind) + " · " + TraitWord(door.Trait),
-                largeCopy ? 10.5f : 9f, LedgerV2.HeadDim, 6f).font = LedgerStyle.Mono;
-
-            LedgerV2.Mono(panel, textX, -(top + (largeCopy ? 37f : 36f)), textW,
-                house ? "the house's own premises" : TraitLine(door.Trait),
-                largeCopy ? 11f : 9f,
-                LedgerV2.HeadDim, 0.5f);
-
-            if (!house && door.OwnerGeneration > 0)
-                LedgerV2.Mono(panel, x, -(top + plateH + 4f), width,
-                    BusinessSuccession.MemoryLine,
-                    largeCopy ? 10.5f : 9f, LedgerStyle.RedPen, 0.5f);
-
-            return plateH + (largeCopy ? 13f : 10f) +
-                   (!house && door.OwnerGeneration > 0 ? 24f : 0f);
-        }
-
-        /// <summary>What the deed makes him.</summary>
-        static string KindWord(BusinessOwnerKind kind) => kind switch
-        {
-            BusinessOwnerKind.Company => "COMPANY",
-            BusinessOwnerKind.Civic => "CITY HALL",
-            _ => "PROPRIETOR",
-        };
-
-        /// <summary>His trait, in the economy's own word.</summary>
-        static string TraitWord(TerritoryOwnerTrait trait) =>
-            trait.ToString().ToUpperInvariant();
-
-        /// <summary>What that trait MEANS at his door, in the terms the racket weighs him
-        /// in (TerritoryOwnerProfile) - never a figure invented for the page.</summary>
-        static string TraitLine(TerritoryOwnerTrait trait) => trait switch
-        {
-            TerritoryOwnerTrait.Cowardly => "folds a step early · little fear moves him",
-            TerritoryOwnerTrait.Proud => "costs an extra lean · he does not like asking",
-            TerritoryOwnerTrait.Greedy => "parting with the cut hurts him",
-            TerritoryOwnerTrait.Connected => "leaning on him draws the precinct",
-            TerritoryOwnerTrait.Stubborn => "takes a war · he will not be talked round",
-            _ => "no reading either way",
-        };
-
-        static string Initials(string name)
-        {
-            var parts = (name ?? "").Split(' ');
-            var head = parts.Length > 0 && parts[0].Length > 0 ? parts[0][0].ToString() : "";
-            var tail = parts.Length > 1 && parts[parts.Length - 1].Length > 0
-                ? parts[parts.Length - 1][0].ToString()
-                : "";
-            return head + tail;
-        }
-
-        /// <summary>Whether the deed names a woman, asked of the SAME table the deed was
-        /// drawn from (PedestrianIdentity). Nothing new is stored on the owner for this:
-        /// his given name already carries the answer.</summary>
-        static bool FemaleDeed(string ownerName)
-        {
-            if (string.IsNullOrEmpty(ownerName))
-                return false;
-            var space = ownerName.IndexOf(' ');
-            var first = space > 0 ? ownerName.Substring(0, space) : ownerName;
-            var names = Entities.PedestrianIdentity.AllFemaleNames;
-            for (var i = 0; i < names.Count; i++)
-                if (string.Equals(names[i], first, StringComparison.Ordinal))
-                    return true;
-            return false;
-        }
-
         // ------------------------------------------------------------- what it reads
 
         public static string Sentence(Door door)
@@ -898,107 +753,10 @@ namespace LivingCity.UI
                    " a day accrues to the dues ledger.";
         }
 
-        // ---------------------------------------------------------------- who goes
+        // ------------------------------------------------------- what a row does
 
         static readonly List<TerritoryActorObservation> actors =
             new List<TerritoryActorObservation>();
-
-        static float Hands(RectTransform panel, float x, float top, float width,
-            Door door, Action changed, DoorDispatch dispatch)
-        {
-            var roster = Book();
-            var restricted = dispatch == DoorDispatch.BlockResponsibility;
-            if (restricted) ConstrainToBlock(roster, door.Block, CrewMissionPicker.Physical());
-            var going = CrewToSend(door.Block, dispatch, out _, out _, out _);
-            return CrewMissionPicker.Draw(panel, x, top, width, roster, door.Block,
-                restricted, SelectedCrewId, SelectedPersonId, going?.Id ?? -1,
-                crewId => { ToggleCrew(crewId); changed?.Invoke(); },
-                manId => { TogglePerson(manId); changed?.Invoke(); }, dark: true);
-        }
-
-        static string ShortName(string first, string surname)
-        {
-            var initial = string.IsNullOrEmpty(surname) ? "" : " " + surname[0] + ".";
-            return (string.IsNullOrEmpty(first) ? surname : first) + initial;
-        }
-
-        // -------------------------------------------------------- what may be done
-
-        static readonly List<TerritoryRacketOrder> orders = new List<TerritoryRacketOrder>();
-
-        /// <summary>
-        /// What can actually be done to THIS door, and only that - every row of it out of
-        /// the one shared list, so the ledger, the street card and the paper map offer the
-        /// SAME menu against the same shop. Red for the doorstep chain (the men walk there
-        /// and the demand or the threat happens when they arrive), outline for the work
-        /// filed with the outfit's book. A row that cannot be given stands, greyed, rather
-        /// than vanishing.
-        /// </summary>
-        static float Keys(RectTransform panel, float x, float top, float width,
-            Door door, Action changed, DoorDispatch dispatch)
-        {
-            var y = top;
-            var keyW = Mathf.Min(KeyMax, (width - 12f) / 3f);
-            var cursorX = x;
-
-            // WHO WOULD GO, asked before a single key is drawn. A key that files an
-            // order no crew can carry is refused by the office a second and a half
-            // later, on a line nothing on this panel ever showed - so the row stands
-            // faded instead, which is what the shared table's hasCrew is for.
-            var going = CrewToSend(door.Block, dispatch, out _, out _, out _);
-            var solo = SelectedPersonId >= 0;
-            var soloReason = solo ? SoloRefusal(door, dispatch) : null;
-            var hasCrew = going != null || (solo && soloReason == null);
-
-            TerritoryRacketOrders.For(
-                door.Standing, door.Tenure, racketable: true, hasCrew,
-                MenAtDoor(door.Id), door.BuyPrice, orders,
-                closure: door.Closure,
-                quarters: RoadDemo.CrewQuarters.State(StreetUnit(going), door.Id),
-                isHideout: door.IsHideout,
-                inGoodStanding: door.InGoodStanding);
-
-            for (var i = 0; i < orders.Count; i++)
-            {
-                var row = orders[i];
-                var red = row.Kind == TerritoryDoorRowKind.Racket;
-                // The money the row commits belongs on the key, and it is the SHARED row's
-                // figure - the street card prints the same word beside the same sum.
-                var word = row.Cash > 0
-                    ? row.Label + " · " + LedgerText.Cash(row.Cash)
-                    : row.Label;
-                var keyWidth = row.Cash > 0 ? Mathf.Min(KeyMax, width) : keyW;
-
-                if (cursorX > x && cursorX + keyWidth > x + width)
-                {
-                    cursorX = x;
-                    y += 32f;
-                }
-
-                var press = Press(door, row, changed, dispatch);
-                var label = LedgerV2.Button(panel, word, cursorX, -y, keyWidth, 26f,
-                    () => press(), red ? LedgerV2.Key.Red : LedgerV2.Key.Outline, 9f);
-                // THE OUTLINE KEY RESTATED IN THE DARK PALETTE. It is drawn for paper -
-                // dark ink inside a warm grey box on a cream sheet - and this panel is
-                // the near-black head fill, where the box vanishes and the word is left
-                // floating. Both halves move: a cream word inside a box in the panel's
-                // own dim grey, which is what makes it read as a key at all.
-                if (!red)
-                {
-                    label.color = LedgerV2.HeadCream;
-                    LedgerV2.KeyFrame(label, LedgerV2.HeadDim);
-                }
-                // And the dead key goes dim rather than into the paper greys, which are
-                // bright over black - that is what made every key on the panel read alike.
-                var soloOrder = row.Kind == TerritoryDoorRowKind.Racket &&
-                    (row.Intent == TerritoryRacketIntent.Demand || row.Intent == TerritoryRacketIntent.Threaten);
-                LedgerV2.KeyEnabled(label, row.Available && (!solo || (soloOrder && soloReason == null)),
-                    LedgerV2.HeadDim, LedgerV2.DarkPlate);
-                cursorX += keyWidth + 6f;
-            }
-
-            return y + 32f - top;
-        }
 
         /// <summary>Where a shared row goes when it is pressed: the doorstep chain through
         /// the territory gateway, the rest into the outfit's order book.</summary>

@@ -16,16 +16,18 @@ namespace LivingCity.UI
     ///
     /// It was a section of ORGANIZATION until 2026-09-02, squeezed into the right half
     /// of a page that is really about men. The block is the unit the whole game is
-    /// played in, so it has its own leaf now: the ledger of the blocks around us down
-    /// the left with the city under it and the wire under that, and the BLOCK FILE -
-    /// the filmed block, its arrangement, its doors and its men - standing on the right
-    /// where it does not push the ledger off the page.
+    /// played in, so it has its own leaf.
+    ///
+    /// TWO REGIONS, and only the left one scrolls (the design, 2026-09-06): the ledger
+    /// of the blocks around us, the city under it, the wire and our flats under that,
+    /// all down one column - and beside it the DRAWER, a fixed shell that holds the open
+    /// block and never moves with the page under a reader's wheel
+    /// (<see cref="BuildBlockDrawer"/>).
     ///
     /// Nothing about a block is composed here. The paper is the organization's
     /// (<see cref="ReadOrganizationRoll"/>), the street's reading is the territory
     /// layer's, and every verb is FILED with the outfit exactly as it was - this sheet
-    /// only asks. The file itself is <see cref="BuildBlockFile"/>, unchanged and moved
-    /// whole, film and all.
+    /// only asks.
     /// </summary>
     public sealed partial class PersonnelAlmanac
     {
@@ -66,20 +68,36 @@ namespace LivingCity.UI
         static float BlocksTop;
         static float BlocksHeight;
 
+        /// <summary>The detail DRAWER down the right of the sheet, and the ledger column
+        /// left of it. The drawer is a fixed shell - it never scrolls with the page - so
+        /// the block a reader is working stays on screen while he reads the city under
+        /// the ledger beside it (the design, 2026-09-06).</summary>
+        static float BlocksDrawerW;
+        static float BlocksLedgerW;
+
+        /// <summary>The design's clamp on the drawer: never narrower than its three role
+        /// cells need, never wider than 660, and 46% of the sheet between the two.
+        /// </summary>
+        const float BlocksDrawerMin = 420f;
+        const float BlocksDrawerMax = 660f;
+        const float BlocksDrawerShare = 0.46f;
+
+        /// <summary>The hairline that closes the ledger column against the drawer.</summary>
+        const float BlocksDrawerRule = 1f;
+
+        /// <summary>Air between the last word of the ledger column and that hairline -
+        /// the design's own 18 of right padding.</summary>
+        const float BlocksLedgerPad = 18f;
+
         static void MeasureBlocksLayout()
         {
             BlocksTop = PageTop - 76f;
             BlocksHeight = -(PageBottom - BlocksTop);
+            BlocksDrawerW = Mathf.Clamp(PageWidth * BlocksDrawerShare,
+                BlocksDrawerMin, BlocksDrawerMax);
+            BlocksLedgerW = Mathf.Max(320f,
+                PageWidth - BlocksDrawerW - BlocksDrawerRule);
         }
-
-        /// <summary>Under this the sheet runs one column: the ledger, then the file
-        /// under it. Above it the ledger goes down the left and the open block's file
-        /// stands beside it, which is the design's own arrangement.</summary>
-        const float BlocksTwoColumn = 1180f;
-
-        /// <summary>The design's own two columns: equal measures with 28 units of air
-        /// between them (minmax(460px, 1fr) twice).</summary>
-        const float BlocksGutter = 28f;
 
         /// <summary>Air above the first section, and between one section and the next -
         /// the design's 20 and 26.</summary>
@@ -131,7 +149,7 @@ namespace LivingCity.UI
             Stretch(blocksFixed);
 
             blocksViewport = NewRect("Blocks Window", root);
-            PlaceTopLeft(blocksViewport, PageLeft, BlocksTop, PageWidth, BlocksHeight);
+            PlaceTopLeft(blocksViewport, PageLeft, BlocksTop, BlocksLedgerW, BlocksHeight);
             blocksViewport.gameObject.AddComponent<RectMask2D>();
 
             blocksContent = NewRect("Blocks File", blocksViewport);
@@ -177,36 +195,19 @@ namespace LivingCity.UI
                 StopBlockFilm();
             }
 
-            var cursor = 0f;
-            if (PageWidth >= BlocksTwoColumn)
-            {
-                var span = PageWidth - BlocksGutter;
-                var half = span * 0.5f;
-
-                InBlocksColumn(0f, half);
-                var ledger = BuildBlockLedger(BlocksSectionTop);
-                ledger = BuildCityBlocks(ledger + BlocksSectionGap);
-                ledger = BuildBlockWire(ledger + BlocksSectionGap);
-                ledger = BuildOurFlats(ledger + BlocksSectionGap);
-                ledger = BuildStreetJobs(ledger + BlocksSectionGap);
-
-                InBlocksColumn(half + BlocksGutter, span - half);
-                var file = BuildBlockDetails(BlocksSectionTop);
-
-                cursor = Mathf.Max(ledger, file);
-            }
-            else
-            {
-                InBlocksColumn(0f, PageWidth);
-                cursor = BuildBlockLedger(BlocksSectionTop);
-                cursor = BuildBlockDetails(cursor + BlocksSectionGap);
-                cursor = BuildCityBlocks(cursor + BlocksSectionGap);
-                cursor = BuildBlockWire(cursor + BlocksSectionGap);
-                cursor = BuildOurFlats(cursor + BlocksSectionGap);
-                cursor = BuildStreetJobs(cursor + BlocksSectionGap);
-            }
-
+            // ONE column down the left and the drawer beside it, always. The column is
+            // the only thing on this sheet that scrolls; the drawer is a shell with its
+            // own scroll region inside it, which is what makes the block's file fit
+            // without pushing the city off the page.
+            InBlocksColumn(0f, BlocksLedgerW - BlocksLedgerPad);
+            var cursor = BuildBlockLedger(BlocksSectionTop);
+            cursor = BuildCityBlocks(cursor + BlocksSectionGap);
+            cursor = BuildBlockWire(cursor + BlocksSectionGap);
+            cursor = BuildOurFlats(cursor + BlocksSectionGap);
+            cursor = BuildStreetJobs(cursor + BlocksSectionGap);
             CloseBlocks(cursor);
+
+            BuildBlockDrawer(blocksFixed);
             FinishBlockModelRebuild();
         }
 
@@ -233,30 +234,6 @@ namespace LivingCity.UI
         {
             var y = LedgerV2.Section(blocksColumn, 0f, -cursor, blocksW, title, aside);
             return -y;
-        }
-
-        // ------------------------------------------------------------ the block details
-
-        /// <summary>The right-hand column: the open block's whole file, or the plate
-        /// that says a block has to be picked before there is one.</summary>
-        float BuildBlockDetails(float cursor)
-        {
-            cursor = BlocksSection(cursor, "BLOCK DETAILS",
-                blockCardId.IsValid
-                    ? "DRAG THE BLOCK TO TURN IT · CLICK A DOOR"
-                    : "ONE BLOCK AT A TIME");
-
-            if (blockCardId.IsValid)
-                return BuildBlockFile(cursor);
-
-            var empty = NewRect("No block", blocksColumn);
-            PlaceTopLeft(empty, 0f, -cursor, blocksW, 74f);
-            Fill(empty, LedgerV2.Panel);
-            Frame(empty, 1f, LedgerV2.Rule);
-            Caps(empty, 14f, -30f, blocksW - 28f,
-                "— PICK A BLOCK FROM THE LEDGER —", 11f, LedgerV2.Muted, 8f,
-                TextAlignmentOptions.Midline);
-            return cursor + 86f;
         }
 
         // --------------------------------------------------------- all blocks in the city
@@ -697,6 +674,18 @@ namespace LivingCity.UI
             return cursor + 16f;
         }
 
+        /// <summary>What a ledger row is printed on: the money band while its menu is
+        /// down, carbon where paper and street disagree, plain panel otherwise - and the
+        /// design's Highlight wash over any of the three when the drawer beside it is
+        /// showing that block.</summary>
+        static Color RowGround(bool menuOpen, bool wrong, bool open)
+        {
+            var ground = menuOpen ? LedgerV2.Money
+                : wrong ? LedgerV2.Carbon
+                : LedgerV2.Panel;
+            return open ? Color.Lerp(ground, LedgerV2.Red, 0.09f) : ground;
+        }
+
         float BuildBlockRow(
             TerritoryBlockId blockId, float[] columns, float top, float offset)
         {
@@ -715,9 +704,11 @@ namespace LivingCity.UI
 
             var row = NewRect("Block " + blockId.Value, blocksColumn);
             PlaceTopLeft(row, 0f, -(top + offset), blocksW, rowH);
-            Fill(row, menuOpen
-                ? LedgerV2.Money
-                : mismatch || orphan ? LedgerV2.Carbon : LedgerV2.Panel);
+            // The block whose drawer stands open is washed with the design's own
+            // Highlight - nine per cent of the red the sheet marks anything of ours in,
+            // never a second fill colour - and keeps the mark down its left edge, which
+            // is what says WHICH of a dozen rows the drawer beside them is showing.
+            Fill(row, RowGround(menuOpen, mismatch || orphan, open));
             // The row itself opens the block's file. The key at the right end still only
             // changes the paper, so a reader after one thing never gets the other.
             RowButton(row, ClickSurface(row), () => OpenBlockCard(blockId));
@@ -807,9 +798,7 @@ namespace LivingCity.UI
 
             var row = NewRect("Block " + blockId.Value, blocksColumn);
             PlaceTopLeft(row, 0f, -(top + offset), blocksW, rowH);
-            Fill(row, menuOpen
-                ? LedgerV2.Money
-                : mismatch || orphan ? LedgerV2.Carbon : LedgerV2.Panel);
+            Fill(row, RowGround(menuOpen, mismatch || orphan, open));
             // The card itself opens the block's file. The key still only changes the
             // paper, so a reader after one thing never gets the other.
             RowButton(row, ClickSurface(row), () => OpenBlockCard(blockId));

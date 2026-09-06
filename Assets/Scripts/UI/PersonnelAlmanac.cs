@@ -907,8 +907,25 @@ namespace LivingCity.UI
                     }
                     break;
                 case LedgerPage.Blocks:
-                    viewport = blocksViewport;
-                    content = blocksContent;
+                    // THREE regions on this sheet - the ledger column, the drawer's tab
+                    // body, and whatever list a picker has open over it - and whichever
+                    // the pointer sits over takes the wheel. The picker is asked first:
+                    // it is laid over the tab body and the tab body is still under it.
+                    if (blockSheetViewport && Over(blockSheetViewport, point))
+                    {
+                        viewport = blockSheetViewport;
+                        content = blockSheetContent;
+                    }
+                    else if (blockTabViewport && Over(blockTabViewport, point))
+                    {
+                        viewport = blockTabViewport;
+                        content = blockTabContent;
+                    }
+                    else
+                    {
+                        viewport = blocksViewport;
+                        content = blocksContent;
+                    }
                     break;
                 case LedgerPage.Blueprint:
                     viewport = blueprintViewport;
@@ -1021,6 +1038,18 @@ namespace LivingCity.UI
                 blocksScroll = Mathf.Clamp(
                     blocksScroll - wheel * WheelStep, 0f, maxScroll);
                 content.anchoredPosition = new Vector2(0f, blocksScroll);
+            }
+            else if (viewport == blockTabViewport)
+            {
+                blockTabScroll = Mathf.Clamp(
+                    blockTabScroll - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, blockTabScroll);
+            }
+            else if (viewport == blockSheetViewport)
+            {
+                blockSheetScroll = Mathf.Clamp(
+                    blockSheetScroll - wheel * WheelStep, 0f, maxScroll);
+                content.anchoredPosition = new Vector2(0f, blockSheetScroll);
             }
             else if (viewport == blueprintViewport)
             {

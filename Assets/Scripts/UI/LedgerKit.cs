@@ -1113,6 +1113,43 @@ namespace LivingCity.UI
         }
 
         /// <summary>
+        /// A DISCLOSURE CARET, drawn rather than typed: right while a section is shut,
+        /// down while it is open.
+        ///
+        /// It is geometry for the same reason <see cref="StepBar"/> is - the design's
+        /// U+25B6 / U+25BC are Geometric Shapes and NOT ONE face in
+        /// Assets/Fonts/Ledger1987 cuts them, so a section head that printed the glyph
+        /// printed tofu. A staircase of hairlines draws the same triangle out of
+        /// letters the game owns nothing of.
+        /// </summary>
+        public static void Caret(Transform parent, float x, float centreY, float size,
+            bool open, Color colour)
+        {
+            var steps = Mathf.Max(3, Mathf.RoundToInt(size * 0.6f));
+            var step = size / steps;
+            for (var i = 0; i < steps; i++)
+            {
+                // How far the triangle has closed by the middle of this step.
+                var half = size * 0.5f * (1f - (i + 0.5f) / steps);
+                var rect = NewRect("Caret", parent);
+                rect.anchorMin = rect.anchorMax = new Vector2(0f, 1f);
+                rect.pivot = new Vector2(0f, 0.5f);
+                if (open)
+                {
+                    rect.anchoredPosition = new Vector2(
+                        x + size * 0.5f - half, centreY + size * 0.5f - (i + 0.5f) * step);
+                    rect.sizeDelta = new Vector2(Mathf.Max(1f, half * 2f), step);
+                }
+                else
+                {
+                    rect.anchoredPosition = new Vector2(x + i * step, centreY);
+                    rect.sizeDelta = new Vector2(step, Mathf.Max(1f, half * 2f));
+                }
+                Fill(rect, colour);
+            }
+        }
+
+        /// <summary>
         /// The design's meter: a run of typed blocks, so many struck and the rest
         /// hollow. It is a COUNT, never a percentage - six of ten reads as six marks
         /// and not as a bar that happens to stop somewhere.

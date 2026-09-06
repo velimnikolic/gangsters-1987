@@ -167,17 +167,29 @@ namespace LivingCity.UI
     }
 
     /// <summary>One hood of a crew, as the bag menu lists him: who he is, how good a
-    /// bag man he would make, and where he stands today.</summary>
+    /// bag man he would make, what he costs, and where he stands today.
+    ///
+    /// The readings past <see cref="Carries"/> are what the candidate list prints beside
+    /// his name (FRONT/BLOCK page, 2026-09-06). They are defaulted so every existing
+    /// construction of this view keeps compiling and simply reads blank - a caller that
+    /// lists candidates for the bag fills them, one that only needs a name does not.
+    /// </summary>
     public readonly struct CrewHandView
     {
         public CrewHandView(int id, string name, int fitnessHalfSteps, bool walksTheStreet,
-            bool carries)
+            bool carries, string rank = "", int wageADay = 0, int nerve = -1,
+            int loyal = -1, string busyReason = "")
         {
             Id = id;
             Name = name ?? "";
             FitnessHalfSteps = fitnessHalfSteps;
             WalksTheStreet = walksTheStreet;
             Carries = carries;
+            Rank = rank ?? "";
+            WageADay = wageADay;
+            Nerve = nerve;
+            Loyal = loyal;
+            BusyReason = busyReason ?? "";
         }
 
         public int Id { get; }
@@ -191,6 +203,27 @@ namespace LivingCity.UI
 
         /// <summary>He has the bag now.</summary>
         public bool Carries { get; }
+
+        /// <summary>His rank in one word, for the line beside his name.</summary>
+        public string Rank { get; }
+
+        /// <summary>What the house pays him a day (Wages.HouseRate).</summary>
+        public int WageADay { get; }
+
+        /// <summary>What he does when it turns dangerous - Character.Courage, 0-100.
+        /// -1 where the source cannot say.</summary>
+        public int Nerve { get; }
+
+        /// <summary>Character.Loyalty, 0-100. -1 where the source cannot say.</summary>
+        public int Loyal { get; }
+
+        /// <summary>Why he cannot take the bag today, in the words of whatever holds
+        /// him; empty when he can. A busy man is listed and dimmed with his reason
+        /// beside him rather than dropped off the list.</summary>
+        public string BusyReason { get; }
+
+        /// <summary>He may be given the bag.</summary>
+        public bool Selectable => BusyReason.Length == 0;
     }
 
     public interface IBlockRacketSource
@@ -374,6 +407,15 @@ namespace LivingCity.UI
 
         static readonly int[] StubFitness = { 24, 18, 27, 12 };
 
+        // Invented, deterministic and clearly the stub's, exactly like the money above:
+        // enough for the candidate list to show every state it can print.
+        static readonly string[] StubRanks =
+            { "Soldier", "Soldier", "Soldier", "Associate" };
+
+        static readonly int[] StubWages = { 14, 18, 15, 8 };
+        static readonly int[] StubNerve = { 72, 91, 78, 34 };
+        static readonly int[] StubLoyal = { 88, 52, 70, 55 };
+
         readonly HashSet<int> namedByBoss = new HashSet<int>();
 
         static string NameOf(int hoodId) =>
@@ -395,8 +437,16 @@ namespace LivingCity.UI
             for (var h = 1; h <= StubHoods.Length; h++)
             {
                 var id = crewId * 10 + h;
+                // The last stub hood is always OUT on something, so the bench scene
+                // shows the dimmed candidate row with its stated reason without a
+                // simulation behind the page.
                 into.Add(new CrewHandView(id, StubHoods[h - 1], StubFitness[h - 1],
-                    walksTheStreet: !IsCollector(id), carries: IsCollector(id)));
+                    walksTheStreet: !IsCollector(id), carries: IsCollector(id),
+                    rank: StubRanks[h - 1], wageADay: StubWages[h - 1],
+                    nerve: StubNerve[h - 1], loyal: StubLoyal[h - 1],
+                    busyReason: h == StubHoods.Length && !IsCollector(id)
+                        ? "out on a job until Thursday"
+                        : ""));
             }
         }
 

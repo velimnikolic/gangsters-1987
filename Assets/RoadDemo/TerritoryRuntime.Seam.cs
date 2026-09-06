@@ -304,8 +304,7 @@ namespace RoadDemo
                         if (walks)
                             dealt++;
                     }
-                    into.Add(new CrewHandView(man.Id, man.FullName,
-                        CollectorChoice.Fitness(man), walks, carries));
+                    into.Add(Hand(roster, man, walks, carries));
                 }
                 AddNodeHand(roster, crew.BagId, true, into);
                 for (var i = 0; i < crew.EscortIds.Count; i++)
@@ -318,8 +317,48 @@ namespace RoadDemo
                 var man = roster.Find(id);
                 if (man == null || man.Gone)
                     return;
-                into.Add(new CrewHandView(man.Id, man.FullName,
-                    CollectorChoice.Fitness(man), false, carries));
+                // An escort belongs to the collector's node, not to the crew's four
+                // tactical places, and the books will not hand him the bag. He is listed
+                // and dimmed with that reason rather than dropped: a man standing beside
+                // the bag man is exactly who a reader looks for first.
+                into.Add(carries
+                    ? Hand(roster, man, false, true)
+                    : new CrewHandView(man.Id, man.FullName,
+                        CollectorChoice.Fitness(man), false, false,
+                        man.Rank.ToString(),
+                        LivingCity.Outfit.Wages.HouseRate(man, Today()),
+                        man.Courage, man.Loyalty,
+                        "posted as the bag man's escort"));
+            }
+
+            /// <summary>One man as the candidate list reads him: what he would make of
+            /// the bag, what he costs, the two personal readings the list prints, and
+            /// why he cannot take it today where something holds him.</summary>
+            static CrewHandView Hand(Roster roster, Character man, bool walks, bool carries) =>
+                new CrewHandView(man.Id, man.FullName, CollectorChoice.Fitness(man),
+                    walks, carries, man.Rank.ToString(),
+                    LivingCity.Outfit.Wages.HouseRate(man, Today()),
+                    man.Courage, man.Loyalty, BusyOn(roster, man, carries));
+
+            /// <summary>Why the bag cannot go to him today, in one line, or empty. Only
+            /// what holds the MAN - what the block itself refuses is the block's own
+            /// answer (BlockMissionChoice.BagRefusal) and is given when the bag is
+            /// actually handed over.</summary>
+            static string BusyOn(Roster roster, Character man, bool carries)
+            {
+                if (carries)
+                    return "";
+                switch (man.Status)
+                {
+                    case CharacterStatus.Jailed: return "in a cell";
+                    case CharacterStatus.Hospitalized: return "in a bed";
+                    case CharacterStatus.Taken: return "another house has him";
+                }
+                if (man.Rank != Rank.Hood)
+                    return "only a hood of the crew carries its bag";
+                return roster != null && roster.DoorOrders.Find(man.Id) != null
+                    ? "already on a doorstep errand"
+                    : "";
             }
 
             public void EscortsOf(int crewId, List<CrewHandView> into)
