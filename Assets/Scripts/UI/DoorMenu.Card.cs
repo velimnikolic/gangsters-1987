@@ -128,6 +128,14 @@ namespace LivingCity.UI
             Say("Called off. Nothing sent.");
         }
 
+        /// <summary>A crew picked: the dropdown shuts on the answer, which the head now
+        /// carries, and the foot says who is going.</summary>
+        static void Pick(string line)
+        {
+            OpenSection = null;
+            Say(line);
+        }
+
         // ------------------------------------------------------------------- the card
 
         /// <summary>
@@ -712,11 +720,18 @@ namespace LivingCity.UI
                 var crew = crews[i];
                 var why = BlockMissionChoice.Refusal(roster, door.Block, crew.Id, restricted);
                 var men = Outfit.CrewKit.MenOf(roster, crew);
-                CrewRow(panel, x, ry, w, rowH,
-                    BlockMissionChoice.Label(roster, crew),
+                var word = BlockMissionChoice.Label(roster, crew);
+                CrewRow(panel, x, ry, w, rowH, word,
                     why ?? men + (men == 1 ? " MAN" : " MEN"),
                     why == null, crew.Id == SelectedCrewId,
-                    () => { ToggleCrew(crew.Id); ShowSection(SectionCrew); changed?.Invoke(); });
+                    () =>
+                    {
+                        ToggleCrew(crew.Id);
+                        Pick(SelectedCrewId == crew.Id
+                            ? word + " brings " + men + (men == 1 ? " man." : " men.")
+                            : "Nobody picked.");
+                        changed?.Invoke();
+                    });
                 ry += rowH;
             }
 
@@ -727,7 +742,14 @@ namespace LivingCity.UI
                 CrewRow(panel, x, ry, w, rowH, man.FullName,
                     busy ? "already on a doorstep errand" : "ONE MAN · NO WITNESSES",
                     !busy, man.Id == SelectedPersonId,
-                    () => { TogglePerson(man.Id); ShowSection(SectionCrew); changed?.Invoke(); });
+                    () =>
+                    {
+                        TogglePerson(man.Id);
+                        Pick(SelectedPersonId == man.Id
+                            ? man.FullName + " goes alone."
+                            : "Nobody picked.");
+                        changed?.Invoke();
+                    });
                 ry += rowH;
             }
 
@@ -877,8 +899,20 @@ namespace LivingCity.UI
         {
             var keyW = KeyWidth(row.Label);
             var noteW = Wide(row.Note, MonoPx(9.8f), 4.5f);
-            return noteW <= w - keyW - Px(24f) ? rowH : rowH + Px(13f);
+            return noteW <= w - keyW - Px(24f)
+                ? rowH
+                : rowH + NoteBox(NoteLines(row.Note, w));
         }
+
+        /// <summary>How many lines a dropped note runs to. Two is the ceiling: a row
+        /// three lines deep is a paragraph with a key stuck on it.</summary>
+        static int NoteLines(string note, float w) => Mathf.Clamp(
+            Mathf.CeilToInt(Wide(note, MonoPx(9.8f), 4.5f) / Mathf.Max(1f, w)), 1, 2);
+
+        /// <summary>The room those lines need. Struck off the size that PRINTS at a real
+        /// line pitch, not off the point size - a box cut to the point size loses the
+        /// second line whole.</summary>
+        static float NoteBox(int lines) => Print(MonoPx(9.8f)) * 1.3f * lines + 4f;
 
         static float KeyWidth(string label) =>
             Px(15f) * 2f + Wide(label, MonoPx(8.7f), 7f);
@@ -940,9 +974,9 @@ namespace LivingCity.UI
             if (h > rowH)
             {
                 // The note dropped under the key: it is a sentence now, so it is set
-                // against the key's own left edge and reads left to right like one.
-                LedgerV2.Cell(band, 0f, -rowH, w, Px(13f), note, MonoPx(9.8f), noteInk,
-                    4.5f);
+                // against the key's own left edge, wraps, and reads left to right.
+                Paragraph(band, LedgerStyle.Mono, MonoPx(9.8f), noteInk, 0f, -rowH, w,
+                    h - rowH, note, 2f);
                 return;
             }
 

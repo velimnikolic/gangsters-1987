@@ -29,6 +29,7 @@ another session's Play or replace its scene.
 | the canonical blocks, neighborhoods and the block graph | `Docs/territory-geography.md` |
 | every source of a business, and which provider owns it | `Docs/business-inventory.md` |
 | the residential storefront bay, baked Synty leaf and live states | `Docs/design-briefs/storefront-brief.md` |
+| the premises popup: the card that opens on a shop, its dropdowns and the two-step confirm | `Docs/design-briefs/premises-popup-brief.md` |
 | the residential module forge, measured tables, sheets, faults and showroom | `Docs/residential-forge.md` |
 | the racket: collector duty, the schedule, money on the wire | `Docs/racket-collections.md` |
 | the street event book: pots, gates and holds, THE PHONE, STREET TALK, the one day pass | `Docs/street-events.md` |
