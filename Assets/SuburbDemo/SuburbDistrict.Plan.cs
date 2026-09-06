@@ -170,7 +170,8 @@ namespace SuburbDemo
                 spac.AddRange(SplitGap(FlankOf(rest)));
             }
             _pinColumns = pins.ToArray();
-            var deep = SplitGap(Mathf.Max(1, rows) * 70);
+            float margin = 2f * (Walk + StreetHalf);
+            var deep = SplitGap((Mathf.Max(1, rows) * 70 + margin) * areaScale - margin);
 
             _nx = spac.Count;
             _nz = deep.Length;

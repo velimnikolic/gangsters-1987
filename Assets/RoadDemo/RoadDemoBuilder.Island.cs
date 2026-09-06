@@ -203,6 +203,8 @@ namespace RoadDemo
         /// metres of dry land left between the point and the water.</summary>
         float OutsideGrid(float x, float z, out float toSea)
         {
+            if (_regionalIsland != null)
+            { toSea = _regionalIsland.Coast(x, z); return _regionalIsland.DevelopedDistance(x, z); }
             // The waterline is a width of shore measured from the TOWN, and from nothing
             // else. It used to be measured from whatever ground was nearest - the grid or
             // a quarter - which meant a port pushed out to the end of the island took the
@@ -277,6 +279,7 @@ namespace RoadDemo
         /// basins a district asked for cut down into it over a beach.</summary>
         float IslandHeight(float x, float z)
         {
+            if (_regionalIsland != null) return _regionalIsland.Height(x, z);
             // a district's basin is water wherever it says so, whatever the coast does:
             // a ship has to be able to sail in to the quay
             _reservations.WaterAt(x, z, ShoreBlend, out float basin);
@@ -383,6 +386,12 @@ namespace RoadDemo
             _coastSeed = spacingSeed * 37 % 1000;
             LoadSeamKit();
             LoadWildKit();
+            if (_regionalIsland != null)
+            {
+                _islandArea = _regionalIsland.Bounds;
+                RegionalIslandView.Build(_regionalIsland, _reservations, IslandRoot);
+                return;
+            }
             OpenBasinsToSea();
 
             // The ground mesh reaches the same distance on a peninsula as on an island,

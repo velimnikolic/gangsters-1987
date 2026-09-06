@@ -56,6 +56,9 @@
     <Compile Include="../../Assets/RoadDemo/RoadDemoNet.cs" />
     <Compile Include="../../Assets/RoadDemo/DriverNerve.cs" />
     <Compile Include="../../Assets/RoadDemo/RoadSpace.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadBody.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadProgress.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadReachability.cs" />
     <Compile Include="../../Assets/RoadDemo/DemoVehicle.cs" />
     <Compile Include="../../Assets/RoadDemo/DriveTrace.cs" />
   </ItemGroup>

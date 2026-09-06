@@ -41,6 +41,7 @@ namespace SuburbDemo
         /// the width is the city's) and deep (~70 m each; the city says how deep).</summary>
         public int columns = 9;
         public int rows = 9;
+        public float areaScale = 1f;
         /// <summary>How far the suburb's outline wobbles in from its ellipse (0 = the plain
         /// ellipse, 0.3 = a proper potato).</summary>
         public float outlineWobble = 0.3f;
@@ -118,9 +119,9 @@ namespace SuburbDemo
         /// is - a quarter pinned to one street is still a quarter, and what the pins
         /// do not cover is carried by the flanks either side (PlanLines). The city
         /// rolls the width from what the shore will take.</summary>
-        public static SuburbDistrict ForCity(DistrictSlot slot)
+        public static SuburbDistrict ForCity(DistrictSlot slot, float areaScale = 1f)
         {
-            var d = new SuburbDistrict { seed = slot.seed };
+            var d = new SuburbDistrict { seed = slot.seed, areaScale = Mathf.Max(1f, areaScale) };
             if (slot.sizeAcross > 0) d.columns = Mathf.Clamp(slot.sizeAcross, 1, 12);
             if (slot.sizeDeep > 0) d.rows = Mathf.Clamp(slot.sizeDeep, 1, 8);
             d.extraBlocks = Mathf.Clamp(slot.sizeDeep, 1, 4) * 2;
@@ -128,7 +129,7 @@ namespace SuburbDemo
             // the demo scene's nine by nine quarter; a city ringed with a dozen villages
             // that each spawned twenty-eight cars and a hundred and ten residents would
             // put fifteen hundred agents on the island before downtown had woken up.
-            float share = Mathf.Clamp01(d.columns * d.rows / 81f);
+            float share = Mathf.Clamp01(d.columns * d.rows * d.areaScale / 81f);
             d.carCount = Mathf.Max(3, Mathf.RoundToInt(d.carCount * share));
             d.pedestrianCount = Mathf.Max(8, Mathf.RoundToInt(d.pedestrianCount * share));
             d.yardIdlers = Mathf.Max(2, Mathf.RoundToInt(d.yardIdlers * share));

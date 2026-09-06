@@ -12,6 +12,9 @@ namespace RoadDemo
         IDistrict _primaryStructure;
         int _primaryStructureSeed;
         Rect _primaryWorld;
+        CoreRegion _coreRegion;
+        IslandLandform _regionalIsland;
+        public CoreRegion Region => _coreRegion;
 
         /// <summary>True when this builder is hosting an alternative city structure.</summary>
         public bool HasPrimaryStructure => _primaryStructure != null;
@@ -83,6 +86,8 @@ namespace RoadDemo
                 Net = core.Net;
                 LaneNet.Active = Net;
             }
+
+            if (PrimaryCore != null && PrimaryCore.regionalRoads) BuildCoreRegion();
 
             if (Net == null)
                 Debug.LogError($"[RoadDemo] {_primaryStructure.Name} supplied no LaneNet; " +

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
@@ -315,17 +315,13 @@ namespace RoadDemo
             // scene build nobody is looking at is free.
             DrawNow(_survey.CityView);
 
-            // How far back the wheel may go: the TOWN in the frame with a hand's width
-            // of country round it, not the whole island. The screen shows
-            // distance * BoomToMetres metres down its height, and the survey's own
-            // city view is already the grid with a margin, fitted to the plate's
-            // aspect - so the ceiling is the boom at which that view fills the height.
+            // Fit the regional paper map on any window aspect. The 3D camera is
+            // blanked by Show/Blank as soon as MapOut becomes true; this paper-only
+            // ceiling does not extend the 3D transition or its clipping distance.
             if (_rig != null)
             {
                 var city = _survey.CityView;
-                float wants = Mathf.Max(city.height, city.width / TurfPlate.AW * TurfPlate.AH);
-                _rig.mapCeiling = Mathf.Clamp(
-                    wants * CityFrame / DemoCamera.BoomToMetres, 260f, 440f);
+                _rig.mapCeiling = TurfRelief.Ceiling(city, Screen.width, Screen.height, CityFrame);
             }
 
             // And the same plate in the corner, for the player down in the street. It
@@ -1026,7 +1022,8 @@ namespace RoadDemo
         /// current height. The chips over the blocks stand down when the ground they
         /// name gets smaller than the words.</summary>
         float _pixelsPerMetre = 1f;
-        float _indicatorScale = 1f;
+        // Crew glyphs keep their authored pickable size at every zoom.
+        const float IndicatorScale = 1f;
         Vector2 _sheetAt;
 
         float Heading => _rig != null ? _rig.yaw : 0f;
@@ -1224,6 +1221,7 @@ namespace RoadDemo
         /// </summary>
         void FitSheet()
         {
+            if (_rig != null) _rig.mapCeiling = TurfRelief.Ceiling(_survey.CityView, Screen.width, Screen.height, CityFrame);
             var drawn = _survey.DrawnView;
             if (drawn.height <= 0f || _sheet == null)
                 return;
@@ -1246,10 +1244,8 @@ namespace RoadDemo
             // size while the city becomes smaller underneath it.
             if (_lettering != null && _rig != null)
             {
-                float zoomOut = Mathf.InverseLerp(_rig.mapAt, _rig.mapCeiling,
-                    _rig.distance);
+                float zoomOut = TurfRelief.DetailRecession(_rig.distance, _rig.mapAt, _rig.mapCeiling);
                 _lettering.SetZoomOut(zoomOut);
-                _indicatorScale = Mathf.Lerp(1f, 0.18f, zoomOut);
             }
 
             // SCALED, not resized: the sheet keeps its 960 x 600 so everything hung on
@@ -2935,7 +2931,7 @@ namespace RoadDemo
 
         void DrawMovementRoute(List<Vector3> worldPath, Color32 colour)
         {
-            int weight = Mathf.Max(1, Mathf.RoundToInt(2f * _indicatorScale));
+            int weight = Mathf.Max(1, Mathf.RoundToInt(2f * IndicatorScale));
             Vector2 previous = RoutePixel(worldPath[0]);
             for (int i = 1; i < worldPath.Count; i++)
             {
@@ -2948,7 +2944,7 @@ namespace RoadDemo
             // it in the 3D formation view.
             int cx = Mathf.RoundToInt(previous.x);
             int cy = Mathf.RoundToInt(previous.y);
-            int reach = Mathf.Max(2, Mathf.RoundToInt(4f * _indicatorScale));
+            int reach = Mathf.Max(2, Mathf.RoundToInt(4f * IndicatorScale));
             _live.Px(cx - reach, cy - reach, reach * 2 + 1, weight, colour);
             _live.Px(cx - reach, cy + reach, reach * 2 + 1, weight, colour);
             _live.Px(cx - reach, cy - reach, weight, reach * 2 + 1, colour);
@@ -3118,7 +3114,7 @@ namespace RoadDemo
         void DrawCrews()
         {
             BankGlow();
-            int glowRadius = Mathf.Max(1, Mathf.RoundToInt(GlowRadius * _indicatorScale));
+            int glowRadius = Mathf.Max(1, Mathf.RoundToInt(GlowRadius * IndicatorScale));
             int span = GlowRadius * 2 + 1;
 
             foreach (var crew in _units)
@@ -3136,9 +3132,9 @@ namespace RoadDemo
                 for (int dy = -glowRadius; dy <= glowRadius; dy++)
                     for (int dx = -glowRadius; dx <= glowRadius; dx++)
                     {
-                        int sourceX = Mathf.Clamp(Mathf.RoundToInt(dx / _indicatorScale),
+                        int sourceX = Mathf.Clamp(Mathf.RoundToInt(dx / IndicatorScale),
                             -GlowRadius, GlowRadius);
-                        int sourceY = Mathf.Clamp(Mathf.RoundToInt(dy / _indicatorScale),
+                        int sourceY = Mathf.Clamp(Mathf.RoundToInt(dy / IndicatorScale),
                             -GlowRadius, GlowRadius);
                         int at = (sourceY + GlowRadius) * span + (sourceX + GlowRadius);
                         byte alpha = _glowAlpha[at];
@@ -3150,18 +3146,18 @@ namespace RoadDemo
                         _live.OverDot(cx + dx, cy + dy, tint);
                     }
 
-                Disc(cx, cy, CoreUnits * TurfPlate.S * _indicatorScale, house.Ink);
-                Disc(cx, cy, PipUnits * TurfPlate.S * _indicatorScale, house.Pencil);
+                Disc(cx, cy, CoreUnits * TurfPlate.S * IndicatorScale, house.Ink);
+                Disc(cx, cy, PipUnits * TurfPlate.S * IndicatorScale, house.Pencil);
 
                 if (_selected.Contains(crew.Id) && crew.Mine)
-                    Brackets(cx, cy, _indicatorScale);
+                    Brackets(cx, cy, IndicatorScale);
 
                 if (InspectedCrew == crew)
                 {
                     // the small cap above a crew whose file is open
-                    int cap = Mathf.RoundToInt(BracketUnits * TurfPlate.S * _indicatorScale) + 2;
-                    int capWidth = Mathf.Max(1, Mathf.RoundToInt(5f * _indicatorScale));
-                    int capHeight = Mathf.Max(1, Mathf.RoundToInt(2f * _indicatorScale));
+                    int cap = Mathf.RoundToInt(BracketUnits * TurfPlate.S * IndicatorScale) + 2;
+                    int capWidth = Mathf.Max(1, Mathf.RoundToInt(5f * IndicatorScale));
+                    int capHeight = Mathf.Max(1, Mathf.RoundToInt(2f * IndicatorScale));
                     _live.Px(cx - capWidth / 2, cy + cap, capWidth, capHeight, TurfInk.Red);
                 }
             }
@@ -3182,7 +3178,7 @@ namespace RoadDemo
                 var plan = _survey.Plan.ToPlan(world);
                 var cx = Mathf.RoundToInt(plan.x * TurfPlate.S);
                 var cy = Mathf.RoundToInt(plan.y * TurfPlate.S);
-                var reach = Mathf.Max(2, Mathf.RoundToInt(3f * _indicatorScale));
+                var reach = Mathf.Max(2, Mathf.RoundToInt(3f * IndicatorScale));
                 for (var y = -reach; y <= reach; y++)
                 {
                     var half = reach - Mathf.Abs(y);
@@ -3229,7 +3225,7 @@ namespace RoadDemo
                     if (cx < -8 || cy < -8 || cx > TurfPlate.RW + 8 || cy > TurfPlate.RH + 8)
                         continue;
 
-                    int arm = Mathf.Max(2, Mathf.RoundToInt(3f * _indicatorScale));
+                    int arm = Mathf.Max(2, Mathf.RoundToInt(3f * IndicatorScale));
                     for (int k = -arm; k <= arm; k++)
                     {
                         _live.OverDot(cx + k, cy + k, TurfInk.Red);

@@ -220,20 +220,8 @@ namespace RoadDemo
         /// crossed line's own coordinate, bank to bank. A road running north-south is cut
         /// by the east-west rivers and by nothing else: a river running the same way as
         /// the road never meets it. Sorted, lowest first.</summary>
-        internal List<(float lo, float hi)> RiverCrossings(bool alongZ)
-        {
-            var cuts = new List<(float lo, float hi)>();
-            if (seams == null) return cuts;
-            foreach (var s in seams)
-            {
-                if (s == null || s.kind != SeamKind.River) continue;
-                if (s.vertical == alongZ) continue;      // parallel: never crossed
-                var span = SeamSpan(s);
-                cuts.Add((span.lo - RiverBank, span.hi + RiverBank));
-            }
-            cuts.Sort((a, b) => a.lo.CompareTo(b.lo));
-            return cuts;
-        }
+        internal List<(float lo, float hi)> RiverCrossings(bool alongZ) =>
+            RiverCorridors.Crossings(PrimaryCore, seams, alongZ, SeamSpan, RiverBank);
 
         /// <summary>The rivers that leave the grid across ONE named shore, as spans of
         /// that shore's own axis (X for the south and north shores, Z for west and

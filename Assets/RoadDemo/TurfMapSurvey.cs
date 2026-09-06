@@ -87,11 +87,6 @@ namespace RoadDemo
         /// once.</summary>
         const float NameRepeat = 150f;
 
-        /// <summary>Metres between samples of the island's height. Finer than the
-        /// shoreline is ever drawn at the wide zooms, and close enough at the tight
-        /// ones that the waterline never steps.</summary>
-        const float HeightStep = 3f;
-
         /// <summary>The paper's own seed. The city changes with its seed; the PAPER
         /// does not.</summary>
         const int PaperSeed = 1987;
@@ -237,9 +232,7 @@ namespace RoadDemo
         /// waterline at every zoom is bilinear off this: the live query is Perlin noise
         /// plus a basin test per district, and half a million of those per redraw would
         /// make the wheel unusable.</summary>
-        float[] _height;
-        int _heightW, _heightH;
-        Rect _heightArea;
+        TurfHeightField _height;
 
         RoadDemoBuilder _builder;
         Transform _blockRoot;
@@ -303,7 +296,8 @@ namespace RoadDemo
             if (_builder == null)
                 return;
 
-            var grid = TownWorld();
+            var grid = _builder.Region != null && _builder.IslandArea.width > 0f
+                ? _builder.IslandArea : _builder.Region?.WorldBounds ?? TownWorld();
             CityView = FitToPlate(new Rect(
                 grid.xMin - GridMargin, grid.yMin - GridMargin,
                 grid.width + GridMargin * 2f, grid.height + GridMargin * 2f));
@@ -318,9 +312,6 @@ namespace RoadDemo
             if (shareHeight != null && shareHeight._height != null)
             {
                 _height = shareHeight._height;
-                _heightArea = shareHeight._heightArea;
-                _heightW = shareHeight._heightW;
-                _heightH = shareHeight._heightH;
 
                 // And the lettering widths with it. Only one of these surveys owns a
                 // face to measure with, and both draw the same city: without this the
@@ -338,6 +329,7 @@ namespace RoadDemo
             CollectBuildings(blockRoot);
             _residentialGeometryVersion = _builder.ResidentialGeometryVersion;
             CollectDistricts();
+            CoreRegionMap.AddDistricts(_builder.Region, Districts);
             CollectCoreRiver();
 
             // Every family's ink mixed here, on the main thread, so no drawing pass has
@@ -490,36 +482,14 @@ namespace RoadDemo
 
         void CacheHeight()
         {
-            // A third again round the widest view, so panning at the map line never
-            // walks off the edge of the cached coast.
-            _heightArea = new Rect(
-                CityView.center - CityView.size * 0.65f, CityView.size * 1.3f);
-
-            _heightW = Mathf.CeilToInt(_heightArea.width / HeightStep) + 1;
-            _heightH = Mathf.CeilToInt(_heightArea.height / HeightStep) + 1;
-            _height = new float[_heightW * _heightH];
-
-            for (int j = 0; j < _heightH; j++)
-            {
-                float wz = _heightArea.yMin + j * HeightStep;
-                for (int i = 0; i < _heightW; i++)
-                    _height[j * _heightW + i] =
-                        _builder.LandHeight(_heightArea.xMin + i * HeightStep, wz);
-            }
+            _height = new TurfHeightField(CityView, _builder.LandHeight,
+                _builder.Region != null ? TurfHeightField.RegionalSampleBudget : int.MaxValue);
+            if (_builder.Region != null)
+                Debug.Log($"[CoreDemo] regional map {CityView.width:F0} x {CityView.height:F0} m, " +
+                    $"overview {CityView.width / TurfPlate.RW:F2} m/px; {_height.SampleCount} height samples at {_height.Step:F2} m.");
         }
 
-        float LandAt(float wx, float wz)
-        {
-            float u = (wx - _heightArea.xMin) / HeightStep;
-            float v = (wz - _heightArea.yMin) / HeightStep;
-            int x0 = Mathf.Clamp((int)u, 0, _heightW - 2);
-            int y0 = Mathf.Clamp((int)v, 0, _heightH - 2);
-            float fx = Mathf.Clamp01(u - x0), fy = Mathf.Clamp01(v - y0);
-
-            float h00 = _height[y0 * _heightW + x0], h10 = _height[y0 * _heightW + x0 + 1];
-            float h01 = _height[(y0 + 1) * _heightW + x0], h11 = _height[(y0 + 1) * _heightW + x0 + 1];
-            return Mathf.Lerp(Mathf.Lerp(h00, h10, fx), Mathf.Lerp(h01, h11, fx), fy);
-        }
+        float LandAt(float wx, float wz) => _height.At(wx, wz);
 
         // ------------------------------------------------------------------- draw
 
@@ -688,6 +658,7 @@ namespace RoadDemo
         /// stock-still under a pan reads as a fault and not as a wood.</summary>
         void DrawGround()
         {
+            float metres = _plan.MetresPerUnit / TurfPlate.S;
             for (int ry = 0; ry < TurfPlate.RH; ry++)
                 for (int rx = 0; rx < TurfPlate.RW; rx++)
                 {
@@ -704,9 +675,11 @@ namespace RoadDemo
                         continue;
                     }
 
-                    Ground.Dot(rx, ry, (fleck & 0xFF) < 12
+                    var paper = (fleck & 0xFF) < 12
                         ? ((fleck & 0x100) != 0 ? TurfInk.Land2 : TurfInk.Stipple)
-                        : TurfInk.Land);
+                        : TurfInk.Land;
+                    Ground.Dot(rx, ry, TurfRelief.At(_height, _plan.Origin.x + (rx + 0.5f) * metres,
+                        _plan.Origin.y + (ry + 0.5f) * metres, metres, paper));
                 }
 
             // the shoreline: the last dry pixel before the water, inked all the way
@@ -915,9 +888,11 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ roads
 
+        readonly TurfRoadGeometry _sweptRoads = new TurfRoadGeometry();
         void CollectStreets()
         {
             Streets.Clear();
+            _sweptRoads.Collect(_builder.Net);
             if (!_builder.HasPrimaryStructure)
             {
                 var vx = _builder.verticalRoadX;
@@ -949,9 +924,7 @@ namespace RoadDemo
                 }
             }
 
-            // They are the entire road plan in CoreDemo. The ordinary game's grid map
-            // stays on its existing path; only a primary structure substitutes these
-            // registered roads for that grid.
+            // Primary structures publish the full registered road plan, including the region.
             if (_builder.HasPrimaryStructure)
                 CollectPrimaryStreets();
         }
@@ -1108,6 +1081,8 @@ namespace RoadDemo
                 Erase(_plan.ToPlan(yard));
             foreach (var lot in _builder.LotPlans)
                 Erase(_plan.ToPlan(lot.Slab));
+
+            _sweptRoads.Ink(_plan, _roadMask, _roadCount, _roadMajor);
 
             for (int ry = 0; ry < TurfPlate.RH; ry++)
                 for (int rx = 0; rx < TurfPlate.RW; rx++)

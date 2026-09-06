@@ -66,6 +66,10 @@ namespace RoadDemo
                  "patrol and the premises, not for what a prefab measures.")]
         public bool buildingCards;
 
+        [Header("The region")]
+        public bool regionalDistricts = true;
+        [Range(0, 4)] public int suburbanDistricts = 2;
+
         [Header("Round the core")]
         [Min(20f)] public float greenBelt = 140f;
 
@@ -228,6 +232,7 @@ namespace RoadDemo
                 streetSpeed = streetSpeed,
                 boulevardSpeed = boulevardSpeed,
                 alleySpeed = alleySpeed,
+                regionalRoads = regionalDistricts && quarterBudget == 0,
                 parkingLotCount = Mathf.Max(0, parkingLots),
                 parkingCarsPerLot = Mathf.Max(0, parkingCarsPerLot),
                 fuelStationCount = Mathf.Max(0, fuelStations),
@@ -241,6 +246,11 @@ namespace RoadDemo
             var runtime = runtimeObject.AddComponent<RoadDemoBuilder>();
             runtime.ConfigurePrimaryStructure(district, seed);
 
+            runtime.beltFreeway = false;
+            runtime.expressway = new ExpresswayRoute { on = regionalDistricts && quarterBudget == 0,
+                lamps = true, guideSigns = false, billboards = false, underDeck = false, tollRoad = false, vagrants = 0 };
+            runtime.suburbsMin = runtime.suburbsMax = suburbanDistricts;
+            runtime.seams = new Seam[0];
             runtime.citySeed = seed;
             runtime.spacingSeed = seed;
             runtime.cityLayoutSeed = seed;
@@ -275,6 +285,7 @@ namespace RoadDemo
             runtime.islandSouth = belt;
             runtime.coastWander = belt * 0.3f;
             runtime.treesPerHectare = 14f;
+            if (regionalDistricts && quarterBudget == 0) runtime.linearHaze = new Vector2(900f, 5200f);
 
             runtimeObject.SetActive(true);
             var parkingFrontage = new CoreParkingFrontage(district.Raster);

@@ -282,7 +282,7 @@ namespace RoadDemo
 
         /// <summary>The seed deals a quarter; the drawing judges it. Same seed, same
         /// quarter, every time.</summary>
-        public static Plan Roll(int seed)
+        public static Plan Roll(int seed, bool compact = false, bool pocket = false)
         {
             var dice = new System.Random(seed);
             var plan = new Plan { Seed = seed, Name = $"seed {seed}" };
@@ -291,8 +291,8 @@ namespace RoadDemo
             plan.Roads.MainRoad = new Vector2(0f, arteryTo);
             plan.Roads.Bands.Add(Rect.MinMaxRect(-Any, 0f, Any, arteryTo));
 
-            int tiersNorth = dice.Next(TiersMin, TiersMax + 1);
-            int tiersSouth = dice.Next(TiersMin, TiersMax + 1);
+            int tiersNorth = compact ? 1 : dice.Next(TiersMin, TiersMax + 1);
+            int tiersSouth = pocket ? 0 : compact ? 1 : dice.Next(TiersMin, TiersMax + 1);
 
             int northNext = ArteryGap;          // the first tier north starts past the artery
             int southNext = 0;                  // and the first south ends at its south kerb
@@ -314,7 +314,7 @@ namespace RoadDemo
                 int rank = north ? ++northTier : ++southTier;
 
                 int front = dice.Next(ParcelDMin, ParcelDMax + 1);
-                bool doubled = dice.NextDouble() < DoubleOdds;
+                bool doubled = !compact && dice.NextDouble() < DoubleOdds;
                 int back = doubled ? dice.Next(ParcelDMin, ParcelDMax + 1) : 0;
                 int depth = front + back;
 
@@ -323,7 +323,7 @@ namespace RoadDemo
                 int length = 0, want = dice.Next(TierMin, TierMax + 1);
                 while (length < want)
                 {
-                    int parcels = dice.NextDouble() < ShareOdds ? 2 : 1;
+                    int parcels = !pocket && dice.NextDouble() < ShareOdds ? 2 : 1;
                     int wide = 0;
                     for (int p = 0; p < parcels; p++) wide += dice.Next(ParcelWMin, ParcelWMax + 1);
                     widths.Add(wide);
@@ -638,13 +638,13 @@ namespace RoadDemo
         /// the same quarter; if none of them is clean the cleanest is kept and its report
         /// says what is wrong with it.
         /// </summary>
-        public static Plan Arrange(int seed, out CoreRoads.Raster raster)
+        public static Plan Arrange(int seed, out CoreRoads.Raster raster, bool compact = false, bool pocket = false)
         {
             Plan best = null;
             CoreRoads.Raster bestRaster = null;
             for (int attempt = 0; attempt < Deals; attempt++)
             {
-                var plan = Roll(unchecked(seed * 1000003 + attempt * 7919));
+                var plan = Roll(unchecked(seed * 1000003 + attempt * 7919), compact, pocket);
                 plan.Seed = seed;
                 plan.Attempt = attempt;
                 plan.Name = $"seed {seed}" + (attempt > 0 ? $" (deal {attempt + 1})" : "");

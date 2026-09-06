@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace RoadDemo
@@ -78,10 +78,8 @@ namespace RoadDemo
         public float minDistance = 18f;
 
         /// <summary>How far back the wheel may go once the map is up. Set by
-        /// <see cref="TurfMapHud"/> from the CITY's own size and a margin of country,
-        /// so the last click of the wheel is the town filling the frame - the way the
-        /// original's plan opens - and not the whole island with the streets a smudge
-        /// in the middle of it.</summary>
+        /// <see cref="TurfMapHud"/> from the regional paper map and window aspect.
+        /// The world camera is blanked above mapAt while that paper is visible.</summary>
         public float mapCeiling = 900f;
 
         /// <summary>Whether the map should be up: the boom is past the threshold.</summary>

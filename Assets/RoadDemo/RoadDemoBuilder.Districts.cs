@@ -307,63 +307,12 @@ namespace RoadDemo
 
         // ----------------------------------------------------------- the frame
 
-        /// <summary>Where the district stands and where its streets must meet the city.
-        /// A district is laid out with the city at its local +Z and its own body at
-        /// local z below zero; the links are the local X the connecting streets land on,
-        /// the first of them at zero.</summary>
+        /// <summary>Apply shared district placement to the inspector grid.</summary>
         bool FrameFor(DistrictSlot slot, out DistrictFrame frame, out float[] links)
         {
-            frame = DistrictFrame.Identity;
-            links = null;
-            if (slot.pinLines == null || slot.pinLines.Length == 0) return false;
-
-            bool vertical = slot.edge == CityEdge.South || slot.edge == CityEdge.North;
-            var axis = vertical ? verticalRoadX : horizontalRoadZ;
-            foreach (int line in slot.pinLines)
-                if (line < 0 || line >= axis.Length) return false;
-
-            float gx0 = verticalRoadX[0] - VHalf(0) - Sidewalk;
-            float gx1 = verticalRoadX[verticalRoadX.Length - 1] + VHalf(verticalRoadX.Length - 1) + Sidewalk;
-            float gz0 = horizontalRoadZ[0] - HHalf(0) - Sidewalk;
-            float gz1 = horizontalRoadZ[horizontalRoadZ.Length - 1] + HHalf(horizontalRoadZ.Length - 1) + Sidewalk;
-
-            int yaw;
-            var pins = new Vector3[slot.pinLines.Length];
-            switch (slot.edge)
-            {
-                case CityEdge.South:
-                    yaw = 0;
-                    for (int k = 0; k < pins.Length; k++) pins[k] = new Vector3(axis[slot.pinLines[k]], 0f, gz0 - slot.strip);
-                    break;
-                case CityEdge.North:
-                    yaw = 180;
-                    for (int k = 0; k < pins.Length; k++) pins[k] = new Vector3(axis[slot.pinLines[k]], 0f, gz1 + slot.strip);
-                    break;
-                case CityEdge.West:
-                    yaw = 90;
-                    for (int k = 0; k < pins.Length; k++) pins[k] = new Vector3(gx0 - slot.strip, 0f, axis[slot.pinLines[k]]);
-                    break;
-                default:
-                    yaw = 270;
-                    for (int k = 0; k < pins.Length; k++) pins[k] = new Vector3(gx1 + slot.strip, 0f, axis[slot.pinLines[k]]);
-                    break;
-            }
-
-            // the district's origin is the westmost (in its own frame) of its pins, so
-            // its links run from zero upward whichever shore it is on
-            var probe = new DistrictFrame { origin = pins[0], yaw = yaw };
-            float min = float.MaxValue;
-            var local = new float[pins.Length];
-            for (int k = 0; k < pins.Length; k++)
-            {
-                local[k] = probe.ToLocal(pins[k]).x;
-                min = Mathf.Min(min, local[k]);
-            }
-            frame = new DistrictFrame { origin = probe.ToWorld(new Vector3(min, 0f, 0f)), yaw = yaw };
-            links = new float[pins.Length];
-            for (int k = 0; k < pins.Length; k++) links[k] = local[k] - min;
-            System.Array.Sort(links);
-            return true;
+            var x = GridExtent(true); var z = GridExtent(false);
+            return DistrictPlacement.Frame(slot, verticalRoadX, horizontalRoadZ,
+                Rect.MinMaxRect(x.lo, z.lo, x.hi, z.hi), out frame, out links);
         }
 
         void OpenArm(CityEdge edge, int line)
@@ -691,7 +640,7 @@ namespace RoadDemo
 
         // the island's own green, handed to the quarters so a suburb's lawns and the
         // wild around it are one field of grass and not a Synty rectangle laid on it
-        Material IDistrictHost.GroundMaterial => GrassMaterial();
+        Material IDistrictHost.GroundMaterial => _coreRegion != null ? RegionalMeadow.For(DistrictRoot) : GrassMaterial();
 
         PedClips _hostClips;
         bool _hostClipsMade;
@@ -749,6 +698,7 @@ namespace RoadDemo
                 if (road != null)
                 {
                     if (!_quarterRoadSeen.Add(road)) continue;
+                    if (TurfRoadGeometry.Swept(road)) continue;
                     // Carriageway.A/B stop at the EDGE of each junction box because
                     // connectors own the asphalt inside it. A survey has no connector
                     // meshes to photograph: its road strips must meet at the junction

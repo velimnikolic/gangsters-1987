@@ -436,15 +436,6 @@ namespace HarborDemo
             if (truck.Tf == null) return 0f;
             float clear = float.PositiveInfinity;
             var forward = truck.Tf.forward;
-            foreach (var other in _trucks)
-            {
-                if (other == truck || other.Tf == null) continue;
-                var delta = other.Tf.position - truck.Tf.position;
-                float ahead = Vector3.Dot(delta, forward);
-                float across = Mathf.Abs(Vector3.Dot(delta, truck.Tf.right));
-                if (ahead > 0f && across < 2.8f)
-                    clear = Mathf.Min(clear, ahead - truck.HalfLength - other.HalfLength - 2.5f);
-            }
             foreach (var boom in _booms)
             {
                 if (boom.ClearForTraffic) continue;

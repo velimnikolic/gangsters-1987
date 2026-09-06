@@ -89,6 +89,7 @@ namespace RoadDemo
         static readonly List<List<IRoadUser>> _pool = new List<List<IRoadUser>>();
         static int _builtFrame = -1;
         static int _builtCount = -1;
+        static float _bodyReach;
 
         internal static void Invalidate() => _builtFrame = -1;
 
@@ -100,11 +101,13 @@ namespace RoadDemo
             if (_builtFrame == Time.frameCount && _builtCount == users.Count) return;
             _builtFrame = Time.frameCount;
             _builtCount = users.Count;
+            _bodyReach = 0f;
             foreach (var kv in _bins) { kv.Value.Clear(); _pool.Add(kv.Value); }
             _bins.Clear();
             for (int i = 0; i < users.Count; i++)
             {
                 var u = users[i];
+                _bodyReach = Mathf.Max(_bodyReach, u.HalfLength + u.HalfWidth);
                 var p = u.RoadPosition;
                 int cx = Mathf.FloorToInt(p.x / Cell), cz = Mathf.FloorToInt(p.z / Cell);
                 long k = Key(cx, cz);
@@ -118,16 +121,18 @@ namespace RoadDemo
             }
         }
 
-        /// <summary>The bodies near this point: its bin and the eight round it.</summary>
+        /// <summary>Shared scratch list: bodies whose extent can reach this query. Do not retain it.</summary>
         static readonly List<IRoadUser> _near = new List<IRoadUser>(32);
-        static List<IRoadUser> Near(Vector3 at)
+        internal static List<IRoadUser> Nearby(Vector3 at, float reach)
         {
             Build();
             _near.Clear();
-            int cx = Mathf.FloorToInt(at.x / Cell), cz = Mathf.FloorToInt(at.z / Cell);
-            for (int dx = -1; dx <= 1; dx++)
-                for (int dz = -1; dz <= 1; dz++)
-                    if (_bins.TryGetValue(Key(cx + dx, cz + dz), out var list)) _near.AddRange(list);
+            float radius = reach + _bodyReach;
+            int x0 = Mathf.FloorToInt((at.x - radius) / Cell), x1 = Mathf.FloorToInt((at.x + radius) / Cell);
+            int z0 = Mathf.FloorToInt((at.z - radius) / Cell), z1 = Mathf.FloorToInt((at.z + radius) / Cell);
+            for (int x = x0; x <= x1; x++)
+                for (int z = z0; z <= z1; z++)
+                    if (_bins.TryGetValue(Key(x, z), out var list)) _near.AddRange(list);
             return _near;
         }
 
@@ -139,7 +144,7 @@ namespace RoadDemo
             push = Vector3.zero;
             IRoadUser worst = null;
             float deepest = 0f;
-            var users = Near(at);
+            var users = Nearby(at, halfLength + halfWidth + Air);
             for (int i = 0; i < users.Count; i++)
             {
                 var u = users[i];
@@ -165,7 +170,7 @@ namespace RoadDemo
             var delta = to - from; delta.y = 0f;
             if (delta.sqrMagnitude < 1e-8f || delta.sqrMagnitude > Probe * Probe) return false;
             bool improves = false;
-            var nearby = Near(from);
+            var nearby = Nearby(from, halfLength + halfWidth + Air + Probe);
             for (int i = 0; i < nearby.Count; i++)
             {
                 var other = nearby[i];

@@ -144,13 +144,13 @@ namespace RoadDemo
         {
             _beltU.Clear();
             if (!beltFreeway) return;
-            if (verticalRoadX == null || horizontalRoadZ == null || verticalRoadX.Length < 2 || horizontalRoadZ.Length < 2) return;
-            var ex = GridExtent(true);
-            var ez = GridExtent(false);
-            _beltU[CityEdge.South] = ez.lo - BeltOut;
-            _beltU[CityEdge.North] = ez.hi + BeltOut;
-            _beltU[CityEdge.West] = ex.lo - BeltOut;
-            _beltU[CityEdge.East] = ex.hi + BeltOut;
+            if (_coreRegion == null && (verticalRoadX == null || horizontalRoadZ == null || verticalRoadX.Length < 2 || horizontalRoadZ.Length < 2)) return;
+            var ex = _coreRegion != null ? (_coreRegion.BeltBounds.xMin, _coreRegion.BeltBounds.xMax) : GridExtent(true);
+            var ez = _coreRegion != null ? (_coreRegion.BeltBounds.yMin, _coreRegion.BeltBounds.yMax) : GridExtent(false);
+            _beltU[CityEdge.South] = ez.Item1 - BeltOut;
+            _beltU[CityEdge.North] = ez.Item2 + BeltOut;
+            _beltU[CityEdge.West] = ex.Item1 - BeltOut;
+            _beltU[CityEdge.East] = ex.Item2 + BeltOut;
         }
 
         // ----------------------------------------------------------------- build
@@ -165,25 +165,7 @@ namespace RoadDemo
             if (!BeltOn || Net == null) return;
             LoadSeamKit();
 
-            // the crossings planned: one per pin line of every district that made it
-            // onto the island - the connector is laid down that line's axis
-            var crossings = new Dictionary<CityEdge, List<(float v, float strip)>>();
-            foreach (CityEdge e in System.Enum.GetValues(typeof(CityEdge)))
-                crossings[e] = new List<(float, float)>();
-            for (int k = 0; k < _builtSlots.Count; k++)
-            {
-                var slot = _builtSlots[k];
-                bool vertical = slot.edge == CityEdge.South || slot.edge == CityEdge.North;
-                var axis = vertical ? verticalRoadX : horizontalRoadZ;
-                foreach (int line in slot.pinLines)
-                {
-                    if (line < 0 || line >= axis.Length) continue;
-                    float v = axis[line];
-                    bool dup = false;
-                    foreach (var o in crossings[slot.edge]) if (Mathf.Abs(o.v - v) < 0.5f) dup = true;
-                    if (!dup) crossings[slot.edge].Add((v, slot.strip));
-                }
-            }
+            var crossings = BeltConnections.Collect(_builtSlots, verticalRoadX, horizontalRoadZ, _coreRegion);
 
             float xW = _beltU[CityEdge.West], xE = _beltU[CityEdge.East];
             float zS = _beltU[CityEdge.South], zN = _beltU[CityEdge.North];
@@ -291,7 +273,7 @@ namespace RoadDemo
             for (int i = 0; i < stops.Count; i++)
             {
                 var cross = BeltCrossFor(edge, stops[i].v);
-                if (cross == null) continue;
+                if (cross == null || (_coreRegion != null && cross.Strip == 0f)) continue;
                 float roomLo = i > 0 ? stops[i].v - stops[i - 1].v - stops[i - 1].padHalf : float.MaxValue;
                 float roomHi = i + 1 < stops.Count ? stops[i + 1].v - stops[i].v - stops[i + 1].padHalf : float.MaxValue;
                 if (roomLo < SlipRoom || roomHi < SlipRoom)

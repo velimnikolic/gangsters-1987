@@ -86,14 +86,14 @@ namespace RoadDemo
 
         /// <summary>Stands the river and dresses the bridges, under the root, in the core's
         /// coordinates.</summary>
-        public static void Dress(CoreLayout.Plan plan, Transform root, Func<GameObject, Transform, GameObject> raise)
+        public static void Dress(CoreLayout.Plan plan, Transform root, Func<GameObject, Transform, GameObject> raise, bool layWater = true)
         {
             if (plan.Quays.Count == 0) return;
             Begin(raise);
             var line = plan.River;
 
             // the water: one plane, measured and scaled to the rectangle, placed by its centre
-            var plane = Raise(Water, root);
+            var plane = layWater ? Raise(Water, root) : null;
             if (plane != null)
             {
                 plane.name = "Water";

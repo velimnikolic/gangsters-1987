@@ -23,6 +23,9 @@ namespace RoadDemo
 
         public static readonly Color32 Land = Hex("ddd0a6");
         public static readonly Color32 Land2 = Hex("d2c398");
+        public static readonly Color32 Hill = Hex("bcc396");
+        public static readonly Color32 Highland = Hex("ac977b");
+        public static readonly Color32 Contour = Hex("786d52");
         public static readonly Color32 Grass = Hex("c3cb9a");
         public static readonly Color32 Grass2 = Hex("b2bb87");
         public static readonly Color32 Tree = Hex("87954f");

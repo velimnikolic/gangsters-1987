@@ -69,6 +69,8 @@ namespace RoadDemo
         /// <summary>Whether the kerbs get their palms. Off for a road where nobody
         /// planted any - a port's approach, an industrial street.</summary>
         public bool Palms = true;
+        /// <summary>Country roads carry lighting, without urban pavement furniture.</summary>
+        public bool LampsOnly;
         readonly List<GameObject> _grates = new List<GameObject>();
         readonly List<GameObject> _lamps = new List<GameObject>();
         readonly List<GameObject> _bins = new List<GameObject>();      // public litter bins, at the kerb
@@ -386,6 +388,16 @@ namespace RoadDemo
         /// of the pavement either side of the square on that flank - the splayed kerb
         /// a lorry's turn needs; the street is laid without its pavement there
         /// (LayAlongX's southWalk/northWalk).</summary>
+        public void LayJunctionCorners(float cx, float cz)
+        {
+            if (!_loaded && !Load()) return;
+            float outer = OuterHalf;
+            PlaceTile(_swCorner, cx - outer, cz + StreetHalf, 90, SidewalkWidth, SidewalkWidth);
+            PlaceTile(_swCorner, cx + StreetHalf, cz + StreetHalf, 180, SidewalkWidth, SidewalkWidth);
+            PlaceTile(_swCorner, cx + StreetHalf, cz - outer, 270, SidewalkWidth, SidewalkWidth);
+            PlaceTile(_swCorner, cx - outer, cz - outer, 0, SidewalkWidth, SidewalkWidth);
+        }
+
         public bool LayJunction(float cx, float cz, bool capNorth = false, bool capSouth = false, bool capEast = false, bool capWest = false,
                                 int splaySouth = 0, int splayNorth = 0, float half = StreetHalf)
         {
@@ -521,6 +533,7 @@ namespace RoadDemo
                     BikeStand = _bikeStand, Hydrant = _hydrant,
                     Meter = _meter, PayPhone = _payPhone, MenuStand = _menuStand,
                 };
+                if (LampsOnly) _props = new StreetProps { Lamps = _lamps };
                 _dressing = new SidewalkDressing
                 {
                     Plan = _plan,
@@ -536,7 +549,7 @@ namespace RoadDemo
         // RoadDemoBuilder.ManholePass, for one plain street: one or two covers.
         void Manholes(Vector3 start, Vector3 dir, float len)
         {
-            if (_manhole == null) return;
+            if (LampsOnly || _manhole == null) return;
             int count = Random.Range(1, 3);
             var side = new Vector3(dir.z, 0f, -dir.x);
             for (int k = 0; k < count; k++)

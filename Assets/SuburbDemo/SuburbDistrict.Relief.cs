@@ -81,7 +81,8 @@ namespace SuburbDemo
         /// gutters, the hills of the map and the flat skirt far beyond it.</summary>
         void BuildGroundMesh(Transform parent)
         {
-            const float step = 10f, skirt = 600f;
+            const float step = 10f;
+            float skirt = _host.ProvidesGround ? 0f : 600f;
             float x0 = -skirt, z0 = -skirt, x1 = MapWidth + skirt, z1 = MapHeight + skirt;
             int nx = Mathf.CeilToInt((x1 - x0) / step), nz = Mathf.CeilToInt((z1 - z0) / step);
             var verts = new Vector3[(nx + 1) * (nz + 1)];
@@ -112,7 +113,8 @@ namespace SuburbDemo
             go.transform.SetParent(parent, false);
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>();
-            mr.sharedMaterial = TownKit.Flat("Suburb Ground", new Color(0.33f, 0.47f, 0.2f));
+            mr.sharedMaterial = _lawnMat ?? TownKit.Flat("Suburb Ground", new Color(0.33f, 0.47f, 0.2f));
+            go.AddComponent<RoadDemo.LandscapeResources>().Mesh(go);
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         }
     }

@@ -89,7 +89,7 @@ namespace RoadDemo
             stood.SurfaceDriveCells = stood.SurfacePlan.DriveCells;
             stood.ParkingPavementOverlapCells = SurfaceConflicts(stood.SurfacePlan);
 
-            DressSurfaceFleet(stood, root, stood.SurfacePlan.Stalls);
+            DressSurfaceFleet(stood, building, stood.SurfacePlan.Stalls);
             BuildSurfaceParkingGates(stood, root, stood.SurfacePlan);
             WireStationMarker(stood, root, stood.SurfacePlan.Stalls);
 

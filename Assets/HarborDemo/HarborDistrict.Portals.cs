@@ -29,26 +29,9 @@ namespace HarborDemo
             stops.AddRange(gates);
             stops.Add(x1);
 
-            var nodes = new RoadNode[stops.Count];
-            for (int i = 0; i < stops.Count; i++)
-            {
-                var c = W(new Vector3(stops[i], 0f, cz));
-                var n = new RoadNode { I = -2, J = -i - 1, X = c.x, Z = c.z };
-                var box = _inner.ToWorldDir(new Vector3(half, 0f, half));
-                n.XMin = n.X - Mathf.Abs(box.x); n.XMax = n.X + Mathf.Abs(box.x);
-                n.ZMin = n.Z - Mathf.Abs(box.z); n.ZMax = n.Z + Mathf.Abs(box.z);
-                nodes[i] = n;
-            }
-
-            // two lanes the length of the street, keeping right: eastbound south of the
-            // centre line, westbound north of it
-            for (int i = 0; i + 1 < stops.Count; i++)
-            {
-                float a = stops[i] + half, b = stops[i + 1] - half;
-                if (b - a < 5f) continue;
-                AddRoad(nodes[i], nodes[i + 1], new Vector3(a, 0f, cz - 2.5f), new Vector3(b, 0f, cz - 2.5f));
-                AddRoad(nodes[i + 1], nodes[i], new Vector3(b, 0f, cz + 2.5f), new Vector3(a, 0f, cz + 2.5f));
-            }
+            var net = HarborStreet.Build(_inner, stops, cz);
+            var nodes = net.Nodes;
+            _roads.AddRange(net.Edges);
 
             // the gates: where the city's streets come down to the quay
             for (int k = 0; k < gates.Count && k < _links.Length; k++)
@@ -64,23 +47,6 @@ namespace HarborDemo
                 });
             }
             Debug.Log($"[Harbor] {_portals.Count} gates to the city, {_roads.Count} lanes along the back street");
-        }
-
-        void AddRoad(RoadNode from, RoadNode to, Vector3 startOwn, Vector3 endOwn)
-        {
-            var start = W(startOwn);
-            var end = W(endOwn);
-            var dir = end - start;
-            float len = dir.magnitude;
-            if (len < 0.01f) return;
-            var e = new RoadEdge
-            {
-                From = from, To = to, Start = start, End = end, Dir = dir / len,
-                Length = len, NorthSouth = Mathf.Abs(dir.z) > Mathf.Abs(dir.x), SpeedLimit = 11f,
-            };
-            from.Outgoing.Add(e);
-            to.Incoming.Add(e);
-            _roads.Add(e);
         }
 
         /// <summary>The sheds, the stacks and the fence as ground a walker off the graph

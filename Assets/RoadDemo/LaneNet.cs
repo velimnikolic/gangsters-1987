@@ -54,7 +54,7 @@ namespace RoadDemo
     public sealed class RoadOccupant
     {
         public IRoadUser Who;
-        public RoadCar Car;            // null for something that never moves (a parked prop)
+        public RoadCar Car;            // null for an external driver or a parked prop
         public Carriageway Road;
         public float S0, S1;           // the claim, along the road (S0 < S1)
         public float D0, D1;           // the claim, across it (D0 < D1)
@@ -1203,6 +1203,8 @@ namespace RoadDemo
 
         public Dictionary<RoadEdge, RoadEdge> RouteToward(RoadEdge target) => RouteToward(Edges, target);
 
+        public HashSet<RoadEdge> ReachableFrom(RoadEdge source) => RoadReachability.From(source);
+
         public Dictionary<RoadEdge, RoadEdge> RouteToward(RoadEdge target, out Dictionary<RoadEdge, float> dist) =>
             RouteToward(Edges, target, out dist, null);
 
@@ -1221,18 +1223,7 @@ namespace RoadDemo
             var road = Locate(who.RoadPosition, out float s, out float d, within: 2f);
             if (road == null) return null;
             var o = new RoadOccupant { Who = who, Road = road, Priority = 0, Heading = 0, Parked = true };
-            var f = who.RoadForward;
-            float along = Mathf.Abs(Vector3.Dot(f, road.Axis)) * who.HalfLength + Mathf.Abs(Vector3.Dot(f, road.Right)) * who.HalfWidth;
-            float across = Mathf.Abs(Vector3.Dot(f, road.Right)) * who.HalfLength + Mathf.Abs(Vector3.Dot(f, road.Axis)) * who.HalfWidth;
-            o.BodyS0 = o.S0 = s - along;
-            o.BodyS1 = o.S1 = s + along;
-            o.BodyD0 = o.D0 = d - across;
-            o.BodyD1 = o.D1 = d + across;
-            o.Heading = Vector3.Dot(f, road.Axis) >= 0f ? 1 : -1;
-            // at the kerb, out of every lane's band: passed, not queued for; in a lane: a wreck
-            o.Parked = true;
-            foreach (var l in road.Lanes)
-                if (o.BodyD0 < l.Offset + 1.25f && o.BodyD1 > l.Offset - 1.25f) { o.Parked = false; break; }
+            RoadBody.Project(o);
             road.Occupants.Add(o);
             return o;
         }

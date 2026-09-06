@@ -320,6 +320,8 @@ namespace HarborDemo
 
         public void Dispose()
         {
+            foreach (var truck in _trucks) truck.Dispose();
+            _trucks.Clear();
             _yardStreet?.UnregisterWalkPlan();
             _street?.UnregisterWalkPlan();
             for (int i = 0; i < _workers.Count; i++) _workers[i].Dispose();

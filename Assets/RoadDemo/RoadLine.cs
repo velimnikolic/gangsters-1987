@@ -100,6 +100,25 @@ namespace RoadDemo
             return new RoadLine(pts.ToArray(), startDir, endDir);
         }
 
+        /// <summary>Shared cubic used by expressway ramps; endpoint headings stay tangent.</summary>
+        public static RoadLine Bezier(Vector3 p0, Vector3 d0, Vector3 p3, Vector3 d3, float k0, float k1)
+        {
+            p0.y = p3.y = 0f;
+            d0.y = d3.y = 0f;
+            d0.Normalize(); d3.Normalize();
+            float span = Vector3.Distance(p0, p3);
+            var c0 = p0 + d0 * (span * k0);
+            var c1 = p3 - d3 * (span * k1);
+            int n = Mathf.Clamp(Mathf.CeilToInt(span / 4f), 8, 200);
+            var pts = new List<Vector3>(n + 1);
+            for (int i = 0; i <= n; i++)
+            {
+                float t = i / (float)n, u = 1f - t;
+                pts.Add(u * u * u * p0 + 3f * u * u * t * c0 + 3f * u * t * t * c1 + t * t * t * p3);
+            }
+            return RoadLine.Through(pts);
+        }
+
         public static RoadLine Straight(Vector3 a, Vector3 b) => Through(new[] { a, b });
 
         /// <summary>The stretch between two stations, ends included.</summary>

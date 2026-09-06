@@ -62,6 +62,9 @@ namespace RoadDemo
         /// <summary>Use only the landward half of the estate and join the road already
         /// supplied by the host, rather than standing IndustrialDemo's boulevard.</summary>
         public bool externalArtery;
+        /// <summary>A few port-side blocks around the same shared industrial artery.</summary>
+        public bool compact;
+        public bool pocket;
 
         public string Name => "Industry";
         public DistrictFrame Frame { get; set; } = DistrictFrame.Identity;
@@ -78,6 +81,8 @@ namespace RoadDemo
             : _bounds;
 
         readonly List<DemoVehicle> _vehicles = new List<DemoVehicle>();
+        readonly List<DemoVehicle> _lorries = new List<DemoVehicle>();
+        readonly List<IndustrialFreight> _freight = new List<IndustrialFreight>();
         readonly List<RoadEdge> _edges = new List<RoadEdge>();
         readonly List<DistrictPortal> _portals = new List<DistrictPortal>();
         readonly List<float> _externalJunctionXs = new List<float>();
@@ -101,7 +106,7 @@ namespace RoadDemo
             _seed = seed;
             _plan = externalArtery
                 ? IndustrialLayout.ArrangeRoadside(seed, out _raster)
-                : IndustrialLayout.Arrange(seed, out _raster);
+                : IndustrialLayout.Arrange(seed, out _raster, compact, pocket);
             _bounds = IndustrialLayout.Bounds(_raster);
             _externalJunctionXs.Clear();
             if (_plan.ExternalArtery)
@@ -197,7 +202,8 @@ namespace RoadDemo
                     if (s > edge.Length - 16f) continue;
                     any = true;
 
-                    var prefab = dice.NextDouble() < lorryShare ? Lorry(dice) : CoreRoads.PickCar(dice);
+                    bool lorry = placed < 2 || dice.NextDouble() < lorryShare;
+                    var prefab = lorry ? Lorry(dice) : CoreRoads.PickCar(dice);
                     if (prefab == null) return;
                     var go = Object.Instantiate(prefab, Vector3.zero, Quaternion.identity, parent);
                     LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
@@ -213,6 +219,7 @@ namespace RoadDemo
                     };
                     car.Spawn(edge, s);
                     _vehicles.Add(car);
+                    if (lorry) _lorries.Add(car);
                     StreetTraffic.Users.Add(car);
                     placed++;
                 }
@@ -273,13 +280,28 @@ namespace RoadDemo
             }
         }
 
-        public void Tick(float dt) { }
+        public void ConnectFreight(LaneNet net, Rect harbor, ref int next, HashSet<Vector3> portClaims)
+        {
+            foreach (var job in _freight) job.Dispose();
+            _freight.Clear();
+            for (int i = 0; i < Mathf.Min(2, _lorries.Count); i++)
+            {
+                var job = IndustrialFreight.TryCreate(_lorries[i], net, Frame.ToWorldRect(_bounds), harbor, next++, portClaims);
+                if (job != null) _freight.Add(job);
+            }
+            string report = $"[Industry] {_plan.Name}: {_freight.Count} lorries assigned round trips to the port.";
+            if (_freight.Count == 0) Debug.LogWarning(report); else Debug.Log(report);
+        }
+
+        public void Tick(float dt) { foreach (var job in _freight) job.Tick(dt); }
 
         public void Dispose()
         {
             // the cars went on the street's list so the men on foot and the outfit's
             // drivers could see them; off it again, or the next quarter dodges ghosts
-            foreach (var car in _vehicles) StreetTraffic.Users.Remove(car);
+            foreach (var job in _freight) job.Dispose();
+            _freight.Clear(); _lorries.Clear();
+            foreach (var car in _vehicles) { car.Despawn(); StreetTraffic.Users.Remove(car); }
             _vehicles.Clear();
             if (_yard != null && _yard.parent == null) Object.Destroy(_yard.gameObject);
         }
