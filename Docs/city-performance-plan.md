@@ -210,3 +210,49 @@ stanice goriva/vatrogasci 0,7. Pod editorskog frejma bez ijedne skripte je ~12 m
   hvata ~20 recepata. Smanjenje tog vođenja je pitanje pop-in-a, ne koda.
 - **Frejm sada** (pokrenut grad, editor, početni kadar): ~22–24 ms; od toga EditorLoop 4,4,
   render + job-ovi ~4,5, animatori 2,6, skripte ~9. Pauziran grad ~16 ms. Na mapi ~14 ms.
+
+### 5.3 Četvrti prolaz (uveče 2026-09-06): render, spajanje i ritam
+
+Metod: seed 1987 fiksiran (`newSeedEveryPlay` isključen samo za merenje), vsync isključen samo
+u sesiji, isti početni kadar, dva pojasa sata: špic 7,6–8,7 i mirno 10,5–11,1.
+
+- **Draw call-ovi**: 21.500 po frejmu, od toga 10.700 shadow caster-a — skoro sve iz strimovanih
+  stambenih blokova (svaki ~1.000 renderera, 18–20 aktivnih). Spajanje (`mergeVisibleBlocks`)
+  je bilo mrtvo slovo jer je `ResidentialConditionView` svaku fasadu obeležavao kao „dinamičnu"
+  (menja joj materijal habanja), pa je `ScenePerf.Animated` sve preskakao. Sada: samo
+  „dressing" koren je dinamičan; habanje ide kroz deljene materijale (`_NeglectAmount`), a
+  promena praga habanja ili gustine dekoracija izbacuje spojeni pogled da se sagradi iznova.
+  Grupe se seku na ≤ 60 k temena (korak spajanja 196 → ≤ 60 ms), skriveni (forceRenderingOff)
+  se ne spajaju. Rezultat: **draw 21,5 k → 2,7–4,3 k, shadow 10,7 k → 1,5–2,5 k**, render petlja
+  2,9 → 1,3 ms, čekanje render job-ova 2,3 → 0,7 ms.
+- **Kamera**: `IslandLandform.Height` (~50 µs) zvan 15× po frejmu = 0,85 ms; visine temena
+  mreže se keširaju po landform-u → ~0.
+- **Građani u magli** tiču se svaki drugi frejm sa dugovanim vremenom (`CivilianCadence`);
+  isto šetači pumpi. Aerodromski šetači probaju prepreke svaki drugi frejm.
+- **Recycler**: prefetch blok se ne gradi kad je keš pun (klackanje 26 gradnji / 4 min).
+- **Nije poluga**: animatori u magli (već culled — gašenje 512 animatora nije pomerilo
+  Director vreme), GPU Resident Drawer uključen uživo (bez promene; traži novi pipeline, nije
+  testiran iz asset fajla), spajanje pre popravke „dinamičnih" površina.
+- **Rezultat** (editor, pokrenut grad, seed 1987, fiksna kamera): težak kadar sa 17 aktivnih
+  blokova p50 ~19–20 ms; lakši kadar (5–8 blokova) p50 ~15–18; mapa ~13 ms. Igra sama vozi
+  kameru na mapu oko 8:00 i vraća je oko 10:50 — ne mešati te prozore sa uličnim.
+- **Šta je ostalo u frejmu** (~19 ms, teški kadar): EditorLoop 4,0; render 1,9 + čekanje render
+  job-ova 1,3; čekanje job-ova (6 niti) 1,5; skripte ~7 (građani 0,5–0,8, patrole 0,35, DemoCrews
+  0,9 + nišan 0,65, auti 1,0–2,7 po saobraćaju, TurfMarks 0,25, stanice 0,2); GC 0,7 (policija
+  alocira ~15 KB/frejm u 4 alokacije — uzrok nije nađen); fizika 0,6 (0 rigidbody-ja, ali
+  stakla/bombe/rasipanje prave Rigidbody kad zatreba, pa Script mod nije bezbedan);
+  UpdateAllRenderers 0,5. Trzaji: gradnja + spajanje bloka pri pomeranju kamere, korak do
+  ~80 ms (bilo 196).
+- **Za 60 fps u editoru nedostaje ~3 ms** i to su: build (bez EditorLoop-a — odmah ispod
+  16 ms), manji Game view (3007×1774), jedna kaskada senke umesto dve (vizuelno), ili
+  Windows koji vidi svih 12 jezgara (job-ovi čekaju 1,5 ms po frejmu na 6 niti).
+
+### 5.4 Noć 2026-09-07: dekor stoji u magli, pool i pojas strimovanja
+
+Korisnikove odluke: `prefetchMetres` 25 → 45 i `cachedViews` 4 → 8 (blok se gradi pre nego što
+uđe u kadar; povratak nazad ne gradi ponovo); `prewarmPartLimit` 5.600 → 12.000 (delovi se
+zadržavaju u poolu umesto Instantiate na svaki nov blok); **dekor stoji dok ga niko ne vidi**
+(`DecorFog`): luka (kranovi, brodovi, viljuškari, radnici) i aerodrom (letovi, rotori, apron,
+ukrcavanje, ljudi) ne tiču dok je cela njihova zemlja u magli (9 tačaka, presuda na pola
+sekunde); kamioni, kerb saobraćaj i parking kola ostaju na putevima; ekipe, policija, radnje i
+događaji se ne pitaju. Harness (DriveTrace) i grad bez fog izvora vide sve da se kreće.

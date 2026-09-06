@@ -1242,7 +1242,10 @@ namespace RoadDemo
         // The arena's eyes come and go with the component (VisionActive), and the
         // registry's epoch does not see that: every cached fog answer is re-judged
         // on the first frame back.
-        void OnEnable() => _mapVisionVersion++;
+        void OnEnable() { _mapVisionVersion++; Current = this; }
+        void OnDisable() { if (Current == this) Current = null; }
+        /// <summary>The arena on the street, for whoever ticks bodies the fog may hide.</summary>
+        public static DemoCrews Current { get; private set; }
 
         void OnDestroy()
         {
@@ -1369,6 +1372,10 @@ namespace RoadDemo
         }
 
         void ClearWorldFog() => _worldFog.Clear();
+
+        /// <summary>A body the fog is hiding: drawn by nobody, so its owner may tick it
+        /// at half the frame rate (CivilianCadence).</summary>
+        public bool FoggedOut(Transform root) => _worldFog.Hidden(root);
 
         bool IMapVisionAreaSource.VisionActive => isActiveAndEnabled;
 

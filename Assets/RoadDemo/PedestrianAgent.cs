@@ -233,6 +233,9 @@ namespace RoadDemo
         }
 
         public Transform Tf;
+        /// <summary>Frame time a fog-hidden walker was not ticked for; paid on his next
+        /// tick (CivilianCadence).</summary>
+        public float OwedSeconds;
         /// <summary>The stock civilian pace. Named so game-time audits do not have to
         /// duplicate the literal which drives the actual walker.</summary>
         public const float DefaultSpeedMetresPerSecond = 1.5f;

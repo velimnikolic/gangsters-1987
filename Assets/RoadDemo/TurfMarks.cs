@@ -221,7 +221,10 @@ namespace RoadDemo
 
                     _businessSeen.Add(business.Id);
                     var step = door + Vector3.up * Lift;
-                    var tint = DoorMenu.TenureColour(DoorMenu.Read(business).Tenure);
+                    // the tenure alone: the full door card (owner, trade, prices) was read
+                    // for every shop four times a second, ~3,000 allocations a sweep
+                    var tint = DoorMenu.TenureColour(
+                        LivingCity.Gameplay.DoorHolder.Read(business.Id, business.Marker, out _));
 
                     if (!_businessMarks.TryGetValue(business.Id, out var mark) ||
                         mark.Business != business.Marker || mark.Paint == null)

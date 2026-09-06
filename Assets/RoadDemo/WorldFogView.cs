@@ -185,6 +185,10 @@ namespace RoadDemo
             group.Hidden = hidden;
         }
 
+        /// <summary>Hidden by the fog at its last judgement - nobody is drawing him.</summary>
+        public bool Hidden(Transform root) =>
+            root != null && _groups.TryGetValue(root, out var group) && group.Hidden;
+
         public void Clear()
         {
             foreach (var group in _groups.Values)

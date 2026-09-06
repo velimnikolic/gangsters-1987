@@ -24,7 +24,7 @@ MonoBehaviour:
   cutawayCrewSamples: 6
   cutawayKeepShadows: 1
   minimapViewHeight: 720
-  prefetchMetres: 25
+  prefetchMetres: 45
   recycleHysteresisMetres: 45
   renderHysteresisMetres: 15
   warmupViews: 3
@@ -32,12 +32,12 @@ MonoBehaviour:
   compositionStepsPerFrame: 12
   rendererAttachBudget: 64
   workBudgetMs: 6
-  cachedViews: 4
+  cachedViews: 8
   prewarmViewCapacity: 0
   heavyUnitPieceThreshold: 0
-  prewarmPartLimit: 5600
+  prewarmPartLimit: 12000
   prewarmVariantReserve: 0
   prewarmPartsPerFrame: 2
   groundRayBooms: 2.35
-  mergeVisibleBlocks: 0
+  mergeVisibleBlocks: 1
   profileStreaming: 1

@@ -27,6 +27,16 @@ namespace RoadDemo
         static readonly long[,] FrameTicks = new long[2, Slots];
         static readonly int[] FrameIds = { -1, -1 };
         static int _frameSlot;
+        // the same sections as profiler markers, so the Profiler window and the raw
+        // frame data name them ("city/cars") instead of one BehaviourUpdate lump
+        static readonly Unity.Profiling.ProfilerMarker[] Markers =
+        {
+            new Unity.Profiling.ProfilerMarker("city/signals"), new Unity.Profiling.ProfilerMarker("city/cars"),
+            new Unity.Profiling.ProfilerMarker("city/patrol cars"), new Unity.Profiling.ProfilerMarker("city/civilians"),
+            new Unity.Profiling.ProfilerMarker("city/crowd"), new Unity.Profiling.ProfilerMarker("city/officers"),
+            new Unity.Profiling.ProfilerMarker("city/districts"), new Unity.Profiling.ProfilerMarker("city/chats"),
+        };
+        static int _openMarker = -1;
 
         /// <summary>Clear the accumulated section sample. The people census uses this
         /// before and after its preview-scene curve so its figures are the same sections
@@ -35,6 +45,8 @@ namespace RoadDemo
         {
             ClearTotals();
             FrameIds[0] = FrameIds[1] = -1;
+            if (_openMarker >= 0) Markers[_openMarker].End();
+            _openMarker = -1;
         }
 
         static void ClearTotals()
@@ -72,6 +84,9 @@ namespace RoadDemo
             // section makes, which is what the collector will later have to walk.
             _byteMark = UnityEngine.Profiling.Profiler.GetMonoUsedSizeLong();
             _frames++;
+            if (_openMarker >= 0) Markers[_openMarker].End();
+            _openMarker = 0;
+            Markers[0].Begin();
         }
 
         /// <summary>The section that ended here took everything since the last mark.</summary>
@@ -87,6 +102,9 @@ namespace RoadDemo
             if (grew > 0) Bytes[slot] += grew;   // a fall is a collection, not this section's work
             _byteMark = nowB;
             Names[slot] = name;
+            if (_openMarker >= 0) Markers[_openMarker].End();
+            _openMarker = slot + 1 < Slots ? slot + 1 : -1;
+            if (_openMarker >= 0) Markers[_openMarker].Begin();
         }
 
         /// <summary>Only an exact frame match can explain a recorded hitch.</summary>

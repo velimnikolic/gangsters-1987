@@ -2198,6 +2198,9 @@ namespace RoadDemo
             }
             _longGunGripBlend = Mathf.MoveTowards(_longGunGripBlend,
                 1f, Mathf.Max(0f, dt) * 10f);
+            // the fore-end hand is a picture and nothing else - the weapon hangs off
+            // the right fist - so a man nobody is drawing keeps his blend and skips the solve
+            if (DemoCrews.Current != null && DemoCrews.Current.FoggedOut(Tf) && !DriveTrace.On) return;
             if (_longGunGripBlend <= 0.001f || _supportArm == null ||
                 _supportForearm == null || _supportHand == null) return;
 

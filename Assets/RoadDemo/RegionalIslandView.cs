@@ -14,6 +14,23 @@ namespace RoadDemo
         /// Paved cells retain the landform's level here; their rendered basement bed
         /// is deliberately below the streets the camera must clear. The continuous
         /// landform can lie below the mesh on sharp road shoulders.</summary>
+        // THE MESH'S OWN VERTICES, REMEMBERED. Height() is the whole landform - noise,
+        // reservations, roads, quays - at ~50 us a call, and the camera asks this three
+        // times per sample several times a frame (0.85 ms of every frame, 2026-09-06).
+        // The surface is the triangulated Step grid, so its vertex heights are a finite
+        // set: each is computed once per landform and read back after.
+        static IslandLandform _heightsFor;
+        static readonly Dictionary<long, float> _vertexHeights = new Dictionary<long, float>();
+
+        static float VertexHeight(IslandLandform land, float x, float z)
+        {
+            if (!ReferenceEquals(_heightsFor, land)) { _vertexHeights.Clear(); _heightsFor = land; }
+            long key = ((long)Mathf.RoundToInt(x * 4f) << 32) ^ (uint)Mathf.RoundToInt(z * 4f);
+            if (!_vertexHeights.TryGetValue(key, out float h))
+                _vertexHeights[key] = h = land.Height(x, z);
+            return h;
+        }
+
         public static float SurfaceHeight(IslandLandform land, float x, float z)
         {
             var area = land.Bounds;
@@ -26,10 +43,10 @@ namespace RoadDemo
             float x1 = Mathf.Min(x0 + Step, area.xMax);
             float z1 = Mathf.Min(z0 + Step, area.yMax);
             float u = (x - x0) / (x1 - x0), v = (z - z0) / (z1 - z0);
-            float b = land.Height(x1, z0), c = land.Height(x0, z1);
+            float b = VertexHeight(land, x1, z0), c = VertexHeight(land, x0, z1);
             return u + v <= 1f
-                ? land.Height(x0, z0) * (1f - u - v) + b * u + c * v
-                : b * (1f - v) + c * (1f - u) + land.Height(x1, z1) * (u + v - 1f);
+                ? VertexHeight(land, x0, z0) * (1f - u - v) + b * u + c * v
+                : b * (1f - v) + c * (1f - u) + VertexHeight(land, x1, z1) * (u + v - 1f);
         }
 
         public static void Build(IslandLandform land, DistrictReservations reservations, Transform parent)

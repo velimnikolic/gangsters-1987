@@ -116,6 +116,9 @@ namespace RoadDemo
             public ResidentialBlocks.IncrementalComposition Compose;
             public IEnumerator Merge;
             public ResidentialConditionView Condition;
+            // the wear threshold and decoration density the merge was folded at
+            public bool MergedWorn, MergeStarted, MergeStale;
+            public float MergedDensity = -1f;
             public bool Active;
             public bool Attached;
             public bool Attaching;
@@ -397,6 +400,7 @@ namespace RoadDemo
                 {
                     if (resident.ContentKey != recipe.ContentKey)
                     {
+                        _evictedKey++;
                         Evict(resident);
                         AddCandidate(recipe);
                     }
@@ -409,6 +413,11 @@ namespace RoadDemo
                     continue;
                 }
                 if (_retryAt.TryGetValue(recipe.Id, out float retry) && Time.unscaledTime < retry) continue;
+                // a block in the prefetch band only (not yet on screen) is built into the
+                // cache, and only while the cache has room: with the cache full it would be
+                // built, put away, trimmed and built again, one a second, for as long as
+                // the camera stood still (26 rebuilds in four minutes, 2026-09-06)
+                if (CachedViews >= _config.CachedViews && !Visible(recipe, _config.RenderHysteresis)) continue;
                 AddCandidate(recipe);
             }
             _candidates.Sort((a, b) => a.Priority.CompareTo(b.Priority));
@@ -739,6 +748,8 @@ namespace RoadDemo
                 view.Merge = ScenePerf.MergeSteps(
                     new[] { ScenePerf.MergeRoot.Of(view.Content) }, view.Merged,
                     "BlockRecycler", releaseSourceCpu: false, log: false);
+                view.MergeStarted = false;
+                view.MergeStale = false;
             }
 
             view.Active = false;
@@ -786,6 +797,7 @@ namespace RoadDemo
         {
             view.LastUsed = Time.frameCount;
             if (view.Active) return;
+            if (view.MergeStale && view.Recipe != null) _invalid.Add(view.Recipe);
             view.Active = true;
             Streamed();
             BeginAttachment(view);
@@ -796,6 +808,16 @@ namespace RoadDemo
         void Deactivate(View view)
         {
             if (!view.Active) return;
+            // a fold in flight is not carried into the cache: only active views are
+            // pumped, so it would hold ScenePerf.Merging up for as long as it sat there
+            // and keep the cutaway from ever cutting. It is cancelled here, and the
+            // half-folded block is stood again from its pieces when it comes back.
+            if (view.Merge != null)
+            {
+                (view.Merge as IDisposable)?.Dispose();
+                view.Merge = null;
+                view.MergeStale = true;
+            }
             view.Active = false;
             Streamed();
             view.LastUsed = Time.frameCount;
@@ -912,6 +934,11 @@ namespace RoadDemo
                 var view = _scratchViews[_conditionCursor++];
                 if (view.Condition.Step(view.Recipe.Neglect, CityDecorationSettings.Density)) idle = 0;
                 else idle++;
+                // a folded block whose wear threshold or density has moved is stood again
+                // from its pieces: the merge is a picture of one condition
+                if (view.Merged != null && view.Merge == null && view.Condition.Settled &&
+                    (view.Condition.Worn != view.MergedWorn || view.Condition.Density != view.MergedDensity))
+                    _invalid.Add(view.Recipe);
             }
         }
 
@@ -928,7 +955,14 @@ namespace RoadDemo
             while (frame.ElapsedMilliseconds < _config.BudgetMs && idle < _scratchViews.Count)
             {
                 var view = _scratchViews[_mergeCursor++ % _scratchViews.Count];
-                if (view.Merge == null || (view.Condition != null && !view.Condition.Prepared)) { idle++; continue; }
+                if (view.Merge == null || (view.Condition != null && !view.Condition.Settled)) { idle++; continue; }
+                // the condition the fold reads is the one at its first step: a change
+                // during the yielded steps is caught after, against this record
+                if (!view.MergeStarted)
+                {
+                    view.MergeStarted = true;
+                    if (view.Condition != null) { view.MergedWorn = view.Condition.Worn; view.MergedDensity = view.Condition.Density; }
+                }
                 if (view.Merge.MoveNext()) { idle = 0; continue; }
                 (view.Merge as IDisposable)?.Dispose();
                 view.Merge = null;
@@ -953,7 +987,7 @@ namespace RoadDemo
                     if (view.Active || oldest != null && view.LastUsed >= oldest.LastUsed) continue;
                     oldest = view;
                 }
-                if (oldest != null) Evict(oldest);
+                if (oldest != null) { _evictedTrim++; Evict(oldest); }
             }
         }
 
@@ -971,7 +1005,7 @@ namespace RoadDemo
                 if (view.Active || oldest != null && view.LastUsed >= oldest.LastUsed) continue;
                 oldest = view;
             }
-            if (oldest != null) Evict(oldest);
+            if (oldest != null) { _evictedRoom++; Evict(oldest); }
         }
 
         void OnModelChanged(ResidentialBlockRecipe recipe, ResidentialBlockChange change)
@@ -999,7 +1033,7 @@ namespace RoadDemo
             foreach (var recipe in _invalid)
             {
                 if (recipe != null && _binding?.Recipe?.Id == recipe.Id) CancelBinding();
-                if (recipe != null && _resident.TryGetValue(recipe.Id, out var view)) Evict(view);
+                if (recipe != null && _resident.TryGetValue(recipe.Id, out var view)) { _evictedInvalid++; Evict(view); }
             }
             _invalid.Clear();
         }
@@ -1030,6 +1064,9 @@ namespace RoadDemo
                 if (_scratchViews[i].Active) Deactivate(_scratchViews[i]);
             _candidates.Clear();
         }
+
+        // why views leave, for the stats line: trim, room, invalidation, key, other
+        int _evictedTrim, _evictedRoom, _evictedInvalid, _evictedKey;
 
         void Evict(View view)
         {
@@ -1093,6 +1130,9 @@ namespace RoadDemo
             view.ContentKey = 0UL;
             view.Objects = 0;
             view.Renderers = 0;
+            view.MergeStale = false;
+            view.MergeStarted = false;
+            view.MergedDensity = -1f;
             view.Active = false;
             view.Attached = false;
             view.AttachRenderers.Clear();
@@ -1150,6 +1190,7 @@ namespace RoadDemo
         {
             int recipes = 0, active = 0, cached = 0, pooled = 0, pending = 0, composing = 0;
             int objects = 0, renderers = 0, built = 0, evicted = 0, merged = 0;
+            int trim = 0, room = 0, invalid = 0, key = 0;
             int fallbacks = 0, visibleFallbacks = 0;
             int partCapacity = 0, partReady = 0, partQueued = 0, partRetiring = 0;
             int partReused = 0, partMisses = 0;
@@ -1165,6 +1206,7 @@ namespace RoadDemo
                 objects += one.SourceObjects; renderers += one.SourceRenderers;
                 fallbacks += one.FallbackBlocks; visibleFallbacks += one.VisibleFallbackBlocks;
                 built += one._built; evicted += one._evicted; merged += one._merged;
+                trim += one._evictedTrim; room += one._evictedRoom; invalid += one._evictedInvalid; key += one._evictedKey;
                 partCapacity += one.PrefabPoolCapacity; partReady += one.AvailablePrefabParts;
                 partQueued += one.PendingPrewarmParts;
                 partRetiring += one.PendingPoolRetirements;
@@ -1178,7 +1220,7 @@ namespace RoadDemo
                             $"pending {pending} composing {composing}  source objects {objects} renderers {renderers}  " +
                             $"fallbacks {visibleFallbacks}/{fallbacks} visible/total  " +
                             $"parts capacity/ready/queued/retiring/reused/missed {partCapacity}/{partReady}/{partQueued}/{partRetiring}/{partReused}/{partMisses}  " +
-                            $"built/merged/evicted {built}/{merged}/{evicted}  " +
+                            $"built/merged/evicted {built}/{merged}/{evicted} (trim/room/invalid/key {trim}/{room}/{invalid}/{key})  " +
                             $"build ms total {last}/{worst} step {lastStep}/{worstStep}");
         }
     }

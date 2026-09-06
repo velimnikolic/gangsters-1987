@@ -782,7 +782,7 @@ namespace RoadDemo
             // curves across the forecourt, and the man who gets out
             for (int i = 0; i < _fuelCustomers.Count; i++) _fuelCustomers[i].TickErrand(dt);
             TickTimer.Mark(2, "patrol cars");
-            for (int i = 0; i < _pedestrians.Count; i++) _pedestrians[i].TickCivilian(dt);
+            CivilianCadence.Tick(_pedestrians, _crews, dt);
             TickTimer.Mark(3, "civilians");
             CivilianAgent.TickCrowd(dt); // who is in the road, who drifts over to stare
             TickTimer.Mark(4, "crowd");

@@ -174,10 +174,15 @@ namespace RoadDemo
             public Material Material;
             public int Layer;
             public ShadowCastingMode Shadows;
-            public bool Equals(MergeKey o) => Chunk == o.Chunk && Material == o.Material && Layer == o.Layer && Shadows == o.Shadows;
+            // a group is cut into parts of at most MaxGroupVerts, so one CombineMeshes
+            // step never holds the frame (a 900-piece facade group took 196 ms, 2026-09-06)
+            public int Part;
+            public bool Equals(MergeKey o) => Chunk == o.Chunk && Material == o.Material && Layer == o.Layer && Shadows == o.Shadows && Part == o.Part;
             public override bool Equals(object o) => o is MergeKey k && Equals(k);
-            public override int GetHashCode() => (Chunk * 397) ^ (Material ? Material.GetHashCode() : 0) ^ (Layer << 8) ^ ((int)Shadows << 12);
+            public override int GetHashCode() => (Chunk * 397) ^ (Material ? Material.GetHashCode() : 0) ^ (Layer << 8) ^ ((int)Shadows << 12) ^ (Part << 16);
         }
+
+        const int MaxGroupVerts = 60000;
 
         /// <summary>Fold the still geometry under these roots into merged meshes, one per
         /// (chunk, material, layer, shadow mode), and switch the originals' renderers off.
@@ -252,9 +257,12 @@ namespace RoadDemo
                 return found;
             }
             var unreadable = new HashSet<string>();
+            // the open part of each (chunk, material, layer, shadows) and its vertex count
+            var partOf = new Dictionary<MergeKey, int>();
+            var partVerts = new Dictionary<MergeKey, int>();
             int nextChunk = 1;
             int walked = 0;
-            const int GatherYieldEvery = 2500;
+            const int GatherYieldEvery = 120;
             int pieces = 0;
             // long, not int: the city's merge is already a hundred and eighty million
             // vertices and an int runs out at two billion
@@ -274,6 +282,11 @@ namespace RoadDemo
                 foreach (var mr in root.GetComponentsInChildren<MeshRenderer>())
                 {
                     if (!mr.enabled) continue;
+                    // switched off by its owner (a decoration over the density, a fogged
+                    // prop): not drawn, so not folded - it stays its own to switch back on
+                    if (mr.forceRenderingOff) continue;
+                    // a car standing in the block is the fog's to show and hide, not a wall
+                    if (UnderVehicle(mr.transform, root)) continue;
                     if (mr.GetComponent<StorefrontLive>() != null) continue;
                     var mf = mr.GetComponent<MeshFilter>();
                     var mesh = mf ? mf.sharedMesh : null;
@@ -320,6 +333,15 @@ namespace RoadDemo
                     {
                         if (mats[i] == null) continue;
                         var key = new MergeKey { Chunk = chunk, Material = mats[i], Layer = mr.gameObject.layer, Shadows = mr.shadowCastingMode };
+                        partOf.TryGetValue(key, out int part);
+                        partVerts.TryGetValue(key, out int partSize);
+                        if (partSize > 0 && partSize + mesh.vertexCount > MaxGroupVerts)
+                        {
+                            partOf[key] = ++part;
+                            partSize = 0;
+                        }
+                        partVerts[key] = partSize + mesh.vertexCount;
+                        key.Part = part;
                         if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<CombineInstance>();
                         list.Add(new CombineInstance { mesh = mesh, subMeshIndex = i, transform = matrix });
                         mrKeys.Add(key);
@@ -560,12 +582,21 @@ namespace RoadDemo
 
         static bool IsWater(string name) => name == "Water" || name == "Sea";
 
+        /// <summary>Under a pack vehicle root (SM_Veh_*, the name DemoParkedCarGlow and
+        /// the fog go by): drawn or hidden as one car, never folded into a wall.</summary>
+        static bool UnderVehicle(Transform t, Transform root)
+        {
+            for (var p = t; p != null && p != root; p = p.parent)
+                if (p.name.StartsWith("SM_Veh_", System.StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
         /// <summary>Under something that turns or is otherwise driven at runtime -
         /// the fairground wheel, the bridge that opens; a merged piece cannot move.</summary>
         public static bool Animated(Transform t)
         {
             for (var p = t; p != null; p = p.parent)
-                if (ResidentialConditionView.IsDynamic(p) || p.GetComponent<DemoFerrisWheel>() != null || p.GetComponent<Bascule>() != null) return true;
+                if (ResidentialConditionView.IsDressing(p) || p.GetComponent<DemoFerrisWheel>() != null || p.GetComponent<Bascule>() != null) return true;
             return false;
         }
 

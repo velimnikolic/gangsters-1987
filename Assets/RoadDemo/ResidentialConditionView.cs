@@ -13,8 +13,16 @@ namespace RoadDemo
         const int MaxProps = 64;
         static readonly HashSet<Transform> dynamicParts = new HashSet<Transform>();
         public static bool IsDynamic(Transform part) => dynamicParts.Contains(part);
+        // The dressing roots alone: pooled litter and props the view stands and takes
+        // back. A building's own surfaces used to count as dynamic too, which kept every
+        // wall out of the block merge (4,562 of 5,900 renderers in twelve blocks,
+        // 2026-09-06); their wear rides on shared materials, and the recycler rebuilds a
+        // block whose wear threshold or decoration density moves (the user's rule:
+        // blocks are not dynamic, and what repeats is merged).
+        static readonly HashSet<Transform> dressingRoots = new HashSet<Transform>();
+        public static bool IsDressing(Transform part) => dressingRoots.Contains(part);
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void Reset() => dynamicParts.Clear();
+        static void Reset() { dynamicParts.Clear(); dressingRoots.Clear(); }
 
         sealed class Surface
         {
@@ -62,6 +70,15 @@ namespace RoadDemo
         bool disposed;
         int shutters;
         public bool Prepared => scan.Count == 0;
+        /// <summary>Scanned, and the wear and decoration pass applied: what the merge may
+        /// fold now is what the block will look like until its condition moves.</summary>
+        public bool Settled => scan.Count == 0 && cursor < 0 && judged;
+        // the first Step after the scan has either applied a pass or found nothing to
+        // apply: before that the applied values are the defaults, not the block's
+        bool judged;
+        /// <summary>Worn materials are on (neglect above nought).</summary>
+        public bool Worn => appliedNeglect > 0;
+        public float Density => appliedDensity;
 
         public ResidentialConditionView(Transform root, int seed, ResidentialPrefabPool pool, bool preview)
         {
@@ -72,6 +89,7 @@ namespace RoadDemo
             dressing.SetParent(root, false);
             // The dynamic props live outside the merge and never enter navigation discovery.
             dynamicParts.Add(dressing);
+            dressingRoots.Add(dressing);
             if (catalog) scan.Push(root);
         }
 
@@ -91,7 +109,7 @@ namespace RoadDemo
             if (cursor < 0)
             {
                 if (neglect == appliedNeglect && density == appliedDensity &&
-                    (preview || Time.unscaledTime < nextShopRefresh)) return false;
+                    (preview || Time.unscaledTime < nextShopRefresh)) { judged = true; return false; }
                 passNeglect = neglect; passDensity = density; cursor = 0;
                 materialWork = neglect != appliedNeglect ? materials.Count : 0;
                 flowerWork = neglect != appliedNeglect ? flowers.Count : 0;
@@ -145,7 +163,7 @@ namespace RoadDemo
                 cursor += end - n - 1;
                 return true;
             }
-            appliedNeglect = passNeglect; appliedDensity = passDensity; cursor = -1;
+            appliedNeglect = passNeglect; appliedDensity = passDensity; cursor = -1; judged = true;
             return true;
         }
 
@@ -363,6 +381,7 @@ namespace RoadDemo
             foreach (var material in materials) if (material) Object.Destroy(material);
             pool.ReleaseAll(leases);
             dynamicParts.Remove(dressing);
+            dressingRoots.Remove(dressing);
             if (dressing) { dressing.gameObject.SetActive(false); Object.Destroy(dressing.gameObject); }
         }
     }

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace RoadDemo
@@ -761,10 +761,21 @@ namespace RoadDemo
 
         readonly List<PedestrianAgent> _districtWalkers = new List<PedestrianAgent>();
 
+        // one profiler marker per district, so the profiler says which one is ticking
+        readonly List<Unity.Profiling.ProfilerMarker> _districtMarkers = new List<Unity.Profiling.ProfilerMarker>();
+
         void TickDistricts(float dt)
         {
-            for (int i = 0; i < _built.Count; i++) _built[i].Tick(dt);
-            for (int i = 0; i < _districtWalkers.Count; i++) _districtWalkers[i].Tick(dt);
+            while (_districtMarkers.Count < _built.Count)
+                _districtMarkers.Add(new Unity.Profiling.ProfilerMarker("district/" + _built[_districtMarkers.Count].GetType().Name));
+            for (int i = 0; i < _built.Count; i++)
+            {
+                using (_districtMarkers[i].Auto()) _built[i].Tick(dt);
+            }
+            // a district hand in the fog stands where he is (DecorFog)
+            for (int i = 0; i < _districtWalkers.Count; i++)
+                if (_districtWalkers[i].Tf == null || !DecorFog.Hidden(_districtWalkers[i].Tf.position))
+                    _districtWalkers[i].Tick(dt);
         }
 
         void DisposeDistricts()

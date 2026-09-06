@@ -283,12 +283,16 @@ namespace AirportDemo
         public void Tick(float dt)
         {
             if (dt <= 0f) return;
-            _flights?.Tick(dt);
-            for (int i = 0; i < _rotors.Count; i++) _rotors[i].Tick(dt);
-            _ground?.Tick(dt);
-            _boarding?.Tick(dt);
+            // the kerb traffic and the freight are on the city's roads, and an
+            // aeroplane is drawn from anywhere in the sky: always
             _traffic?.Tick(dt);
             _freight?.Tick(dt);
+            _flights?.Tick(dt);
+            for (int i = 0; i < _rotors.Count; i++) _rotors[i].Tick(dt);
+            // the ground decor stands still while nobody sees the field (DecorFog)
+            if (RoadDemo.DecorFog.Hidden(this)) return;
+            _ground?.Tick(dt);
+            _boarding?.Tick(dt);
             _people?.Tick(dt);
         }
 

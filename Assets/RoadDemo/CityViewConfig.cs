@@ -69,7 +69,7 @@ namespace RoadDemo
         [Tooltip("Legacy content threshold retained for existing config compatibility. Asset dependencies are now warmed from actual incremental binds.")]
         [Range(0, 400)] public int heavyUnitPieceThreshold = 0;
         [Tooltip("Maximum retained prefab roots. Leased roots may temporarily exceed it; surplus roots are retired incrementally after a holder is recycled.")]
-        [Range(500, 10000)] public int prewarmPartLimit = 5600;
+        [Range(500, 20000)] public int prewarmPartLimit = 5600;
         [Tooltip("Legacy speculative-variant reserve retained for existing config compatibility. No invisible variant roots are cloned at startup.")]
         [Range(0, 1000)] public int prewarmVariantReserve = 0;
         [Tooltip("Texture dependencies warmed or surplus pooled roots retired per frame.")]

@@ -308,17 +308,29 @@ namespace HarborDemo
             return t;
         }
 
+        static readonly System.Action<HarborWorker, float> TickWorker = (w, d) => w.Tick(d);
+
         public void Tick(float dt)
         {
+            // the gates first and always: a lorry brakes against a closed boom, and a
+            // boom that never opened while the port was in the fog would suspend its
+            // route for good. The trucks are on the city's roads and drive whatever
+            // the fog says.
+            TickGates(dt);
+            for (int i = 0; i < _trucks.Count; i++) _trucks[i].Tick(dt);
+            // the port's own decor stands still while nobody sees it (DecorFog)
+            if (RoadDemo.DecorFog.Hidden(this)) return;
             // the cranes open the frame, the cargo handlers drive them through the
             // shipping's tick, and whichever was not asked for parks its gear again
             for (int i = 0; i < _cranes.Count; i++) _cranes[i].BeginFrame(dt);
             _shipping?.Tick(dt);
             for (int i = 0; i < _cranes.Count; i++) _cranes[i].EndFrame();
             for (int i = 0; i < _forklifts.Count; i++) _forklifts[i].Tick(dt);
-            for (int i = 0; i < _trucks.Count; i++) _trucks[i].Tick(dt);
-            TickRoutine(dt);
-            for (int i = 0; i < _workers.Count; i++) _workers[i].Tick(dt);
+            TickBreaks(dt);
+            TickBerthWorks();
+            TickWelder(dt);
+            TickLights();
+            RoadDemo.CivilianCadence.Tick(_workers, RoadDemo.DemoCrews.Current, dt, TickWorker);
             if ((Time.frameCount & 63) == 0) PruneWorkers();
         }
 

@@ -205,7 +205,7 @@ namespace RoadDemo
         public static void TickPavementLife(List<CivilianAgent> walkers, List<PoliceBeat> beat,
                                             float dt, ref float chatScan)
         {
-            for (int i = 0; i < walkers.Count; i++) walkers[i].TickCivilian(dt);
+            CivilianCadence.Tick(walkers, DemoCrews.Current, dt);
             CivilianAgent.TickCrowd(dt);
             if (beat != null)
                 for (int i = 0; i < beat.Count; i++) beat[i].TickPatrol(dt);
