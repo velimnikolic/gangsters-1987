@@ -40,6 +40,19 @@ namespace LivingCity.Gameplay
         static bool collected;
         static ITerritoryGeography canonical;
 
+        // A uniform grid over the city, so At() reads a handful of candidate blocks
+        // instead of walking all of them. The fog of war asks At() for close to three
+        // thousand actors a frame in the full city; against 193 blocks that walk was
+        // 4.5 ms of every frame (measured 2026-09-06). Cells hold, in Known order, every
+        // block whose union rect overlaps them, so the first match in a cell is the
+        // first match the walk would have found.
+        const float CellSize = 48f;
+        const int MaxCells = 1 << 16;
+        static List<BlockInfo>[] cells = System.Array.Empty<List<BlockInfo>>();
+        static float cellSize = CellSize;
+        static float gridMinX, gridMinY;
+        static int gridCols, gridRows;
+
         public static IReadOnlyList<BlockInfo> Blocks
         {
             get
@@ -79,8 +92,18 @@ namespace LivingCity.Gameplay
         public static BlockInfo At(Vector2 worldXZ)
         {
             EnsureCollected();
-            foreach (var block in Known)
+            if (gridCols == 0)
+                return null;
+            int cx = (int)((worldXZ.x - gridMinX) / cellSize);
+            int cy = (int)((worldXZ.y - gridMinY) / cellSize);
+            if (cx < 0 || cy < 0 || cx >= gridCols || cy >= gridRows)
+                return null;
+            var candidates = cells[cy * gridCols + cx];
+            if (candidates == null)
+                return null;
+            for (var i = 0; i < candidates.Count; i++)
             {
+                var block = candidates[i];
                 if (!block.Union.Contains(worldXZ))
                     continue;
                 foreach (var slab in block.Slabs)
@@ -88,6 +111,53 @@ namespace LivingCity.Gameplay
                         return block;
             }
             return null;
+        }
+
+        static void BuildGrid()
+        {
+            gridCols = gridRows = 0;
+            cells = System.Array.Empty<List<BlockInfo>>();
+            if (Known.Count == 0)
+                return;
+
+            float minX = float.MaxValue, minY = float.MaxValue;
+            float maxX = float.MinValue, maxY = float.MinValue;
+            foreach (var block in Known)
+            {
+                var r = block.Union;
+                if (r.xMin < minX) minX = r.xMin;
+                if (r.yMin < minY) minY = r.yMin;
+                if (r.xMax > maxX) maxX = r.xMax;
+                if (r.yMax > maxY) maxY = r.yMax;
+            }
+            if (!(maxX > minX) || !(maxY > minY))
+                return;
+
+            // a city too wide for the default cell simply gets a coarser one
+            cellSize = CellSize;
+            while ((long)(Mathf.CeilToInt((maxX - minX) / cellSize) + 1) *
+                   (Mathf.CeilToInt((maxY - minY) / cellSize) + 1) > MaxCells)
+                cellSize *= 2f;
+
+            gridMinX = minX;
+            gridMinY = minY;
+            gridCols = Mathf.CeilToInt((maxX - minX) / cellSize) + 1;
+            gridRows = Mathf.CeilToInt((maxY - minY) / cellSize) + 1;
+            cells = new List<BlockInfo>[gridCols * gridRows];
+            foreach (var block in Known)
+            {
+                var r = block.Union;
+                int x0 = Mathf.Clamp((int)((r.xMin - minX) / cellSize), 0, gridCols - 1);
+                int x1 = Mathf.Clamp((int)((r.xMax - minX) / cellSize), 0, gridCols - 1);
+                int y0 = Mathf.Clamp((int)((r.yMin - minY) / cellSize), 0, gridRows - 1);
+                int y1 = Mathf.Clamp((int)((r.yMax - minY) / cellSize), 0, gridRows - 1);
+                for (int y = y0; y <= y1; y++)
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        int k = y * gridCols + x;
+                        (cells[k] ??= new List<BlockInfo>(4)).Add(block);
+                    }
+            }
         }
 
         static void EnsureCollected()
@@ -103,6 +173,12 @@ namespace LivingCity.Gameplay
             collected = true;
             canonical = geography;
 
+            Collect(geography);
+            BuildGrid();
+        }
+
+        static void Collect(ITerritoryGeography geography)
+        {
             if (CollectCanonical(geography))
                 return;
 
@@ -209,6 +285,8 @@ namespace LivingCity.Gameplay
             ById.Clear();
             collected = false;
             canonical = null;
+            gridCols = gridRows = 0;
+            cells = System.Array.Empty<List<BlockInfo>>();
         }
     }
 }

@@ -719,6 +719,25 @@ namespace RoadDemo
         bool TouchesGrid(int x0, int z0, int x1, int z1) => _boxes.Count != 0 &&
             x1 >= _minCellX && x0 <= _maxCellX && z1 >= _minCellZ && z0 <= _maxCellZ;
 
+        /// <summary>The metres this plan's boxes span - the same cells TouchesGrid
+        /// answers by - for whoever keeps many plans and wants to ask only the ones
+        /// near a point (WalkObstacles). False while the plan holds nothing.</summary>
+        public bool TryGetExtent(out Vector2 min, out Vector2 max)
+        {
+            if (_boxes.Count == 0)
+            {
+                min = max = default;
+                return false;
+            }
+            min = new Vector2(_minCellX * Cell, _minCellZ * Cell);
+            max = new Vector2((_maxCellX + 1) * Cell, (_maxCellZ + 1) * Cell);
+            return true;
+        }
+
+        /// <summary>Scratch for the plan index: the query that last listed this plan,
+        /// so a plan spanning several index cells is listed once.</summary>
+        internal int VisitStamp;
+
         void Bounds(in Box b, out int x0, out int z0, out int x1, out int z1)
         {
             float hx = Mathf.Abs(b.Ax.x) * b.H.x + Mathf.Abs(b.Az.x) * b.H.y;

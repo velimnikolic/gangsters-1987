@@ -48,31 +48,48 @@ namespace LivingCity.Gameplay
         /// </summary>
         public static bool FogOfWarEnabled { get; private set; } = true;
 
-        public static void SetFogOfWarEnabled(bool enabled) =>
+        /// <summary>Counts every change that can alter the answer for everybody at
+        /// once: the switch, a source registered or struck off. A consumer that caches
+        /// answers per actor (the street's WorldFogView) re-judges them all when this
+        /// moves, so a toggle still restores the real picture immediately.</summary>
+        public static int Epoch { get; private set; }
+
+        public static void SetFogOfWarEnabled(bool enabled)
+        {
+            if (FogOfWarEnabled == enabled)
+                return;
             FogOfWarEnabled = enabled;
+            Epoch++;
+        }
 
         public static IReadOnlyList<IMapVisionSource> Sources => Registered;
 
         public static void Register(IMapVisionSource source)
         {
-            if (source != null && !Registered.Contains(source))
-                Registered.Add(source);
+            if (source == null || Registered.Contains(source))
+                return;
+            Registered.Add(source);
+            Epoch++;
         }
 
         public static void Unregister(IMapVisionSource source)
         {
-            Registered.Remove(source);
+            if (Registered.Remove(source))
+                Epoch++;
         }
 
         public static void RegisterArea(IMapVisionAreaSource source)
         {
-            if (source != null && !RegisteredAreas.Contains(source))
-                RegisteredAreas.Add(source);
+            if (source == null || RegisteredAreas.Contains(source))
+                return;
+            RegisteredAreas.Add(source);
+            Epoch++;
         }
 
         public static void UnregisterArea(IMapVisionAreaSource source)
         {
-            RegisteredAreas.Remove(source);
+            if (RegisteredAreas.Remove(source))
+                Epoch++;
         }
 
         /// <summary>
@@ -139,6 +156,7 @@ namespace LivingCity.Gameplay
             Registered.Clear();
             RegisteredAreas.Clear();
             FogOfWarEnabled = true;
+            Epoch = 0;
         }
     }
 

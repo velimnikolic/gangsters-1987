@@ -160,6 +160,11 @@ namespace RoadDemo
             return true;
         }
 
+        // the registered plans near a square or a point - the one or two that can
+        // matter, not all 216 (WalkPlanIndex)
+        static List<SidewalkPlan> PlansNear(Vector2 lo, Vector2 hi) => WalkPlanIndex.Near(_props, Version, lo, hi);
+        static List<SidewalkPlan> PlansNear(Vector2 at, float reach) => WalkPlanIndex.Near(_props, Version, at, reach);
+
         static void PlanChanged(SidewalkPlan plan, SidewalkPlan.Box box, SidewalkPlan.Change change)
         {
             if (change == SidewalkPlan.Change.Added) Include(box);
@@ -201,6 +206,7 @@ namespace RoadDemo
             for (int i = 0; i < _props.Count; i++)
                 if (_props[i] != null) _props[i].Changed -= PlanChanged;
             _props.Clear();
+            WalkPlanIndex.Forget();
             _solids = new SidewalkPlan();
             _composedProps = new SidewalkPlan();
             Near.Clear();
@@ -548,8 +554,8 @@ namespace RoadDemo
             if (destination != null && destination.Occupied(point, seam)) return true;
             if (_solids.Occupied(point, seam) || _composedProps.Occupied(point, seam))
                 return true;
-            for (int i = 0; i < _props.Count; i++)
-                if (_props[i].Occupied(point, seam)) return true;
+            foreach (var plan in PlansNear(point, seam))
+                if (plan.Occupied(point, seam)) return true;
             return false;
         }
 
@@ -590,7 +596,7 @@ namespace RoadDemo
             RecoveryBoxes.Clear();
             _solids.SolidNear(a, reach, RecoveryBoxes);
             _composedProps.SolidNear(a, reach, RecoveryBoxes);
-            foreach (var plan in _props) plan.SolidNear(a, reach, RecoveryBoxes);
+            foreach (var plan in PlansNear(a, reach)) plan.SolidNear(a, reach, RecoveryBoxes);
             bool overlap = false;
             foreach (var box in RecoveryBoxes)
             {
@@ -667,8 +673,8 @@ namespace RoadDemo
         {
             if (_solids.Occupied(q, radius, tallBerth)) return true;
             if (_composedProps.Occupied(q, radius, tallBerth)) return true;
-            for (int i = 0; i < _props.Count; i++)
-                if (_props[i].Occupied(q, radius, tallBerth)) return true;
+            foreach (var plan in PlansNear(q, Mathf.Max(0f, radius) + Mathf.Max(0f, tallBerth)))
+                if (plan.Occupied(q, radius, tallBerth)) return true;
             return false;
         }
 
@@ -1146,7 +1152,7 @@ namespace RoadDemo
             into.Clear();
             var q = new Vector2(p.x, p.z);
             _composedProps.SolidNear(q, reach, into);
-            for (int i = 0; i < _props.Count; i++) _props[i].SolidNear(q, reach, into);
+            foreach (var plan in PlansNear(q, reach)) plan.SolidNear(q, reach, into);
         }
 
         /// <summary>Fixed geometry clearance for route planning. Passing traffic is
@@ -1170,8 +1176,8 @@ namespace RoadDemo
             var b = new Vector2(to.x, to.z);
             if (_solids.Obstructs(a, b, radius) || _composedProps.Obstructs(a, b, radius))
                 return true;
-            for (int i = 0; i < _props.Count; i++)
-                if (_props[i].Obstructs(a, b, radius)) return true;
+            foreach (var plan in PlansNear(Vector2.Min(a, b) - Vector2.one * radius, Vector2.Max(a, b) + Vector2.one * radius))
+                if (plan.Obstructs(a, b, radius)) return true;
             return false;
         }
 

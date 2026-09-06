@@ -834,28 +834,17 @@ namespace RoadDemo
         const float FreeRoamVisionRadius = 60f;
         readonly List<CityBlocks.BlockInfo> _mapVisionBlocks =
             new List<CityBlocks.BlockInfo>();
+        readonly List<CityBlocks.BlockInfo> _mapVisionBlocksBefore =
+            new List<CityBlocks.BlockInfo>();
         readonly HashSet<int> _mapVisionBlockIds = new HashSet<int>();
         int _mapVisionFrame = -1;
 
-        sealed class FogRenderGroup
-        {
-            public readonly Renderer[] Renderers;
-            public readonly bool[] ForcedBeforeFog;
-            public bool Hidden;
-            public int SeenFrame;
-
-            public FogRenderGroup(Transform root)
-            {
-                Renderers = root.GetComponentsInChildren<Renderer>(true);
-                ForcedBeforeFog = new bool[Renderers.Length];
-            }
-        }
-
-        readonly Dictionary<Transform, FogRenderGroup> _worldFog =
-            new Dictionary<Transform, FogRenderGroup>();
-        readonly List<Transform> _worldFogPrune = new List<Transform>();
-        int _worldFogPruneAt;
-        DemoParkedCarGlow _worldFogParkedCars;
+        // The fog on the 3D street itself: which bodies are drawn (WorldFogView).
+        readonly WorldFogView _worldFog = new WorldFogView();
+        // Bumped whenever the set of revealed blocks changes, so every actor is re-judged
+        // that frame rather than on its next turn.
+        int _mapVisionVersion;
+        int _fogEpochSeen = -1;
         Vector3 _outfitAnchor, _outfitFacing = Vector3.forward;
         float _outfitSpread = 9f;
         /// <summary>
@@ -1253,6 +1242,11 @@ namespace RoadDemo
             return false;
         }
 
+        // The arena's eyes come and go with the component (VisionActive), and the
+        // registry's epoch does not see that: every cached fog answer is re-judged
+        // on the first frame back.
+        void OnEnable() => _mapVisionVersion++;
+
         void OnDestroy()
         {
             foreach (var car in Cars) { car.Despawn(); StreetTraffic.Users.Remove(car); }
@@ -1361,123 +1355,23 @@ namespace RoadDemo
         // ---------------------------------------------------------- map visibility
 
         /// <summary>
-        /// The same intelligence rule used by both paper maps, applied to 3D actors.
-        /// forceRenderingOff hides meshes and shadows without touching activity, physics,
-        /// animation time, traffic occupancy or streamed-holder lifetime.
+        /// The same intelligence rule used by both paper maps, applied to 3D actors
+        /// (WorldFogView). The revealed blocks are refreshed first, so a change in them
+        /// is known before the first actor is judged against them.
         /// </summary>
         void ApplyWorldFog()
         {
-            var walkers = PedestrianAgent.Everyone;
-            for (var i = 0; i < walkers.Count; i++)
-                TouchWorldFog(walkers[i]?.Tf);
-
-            var cars = RoadCar.All;
-            for (var i = 0; i < cars.Count; i++)
-                TouchWorldFog(cars[i]?.Tf);
-
-            var stoodCars = StoodCar.All;
-            for (var i = 0; i < stoodCars.Count; i++)
-                TouchWorldFog(stoodCars[i]?.Tf);
-
-            if (_worldFogParkedCars == null && Time.frameCount >= _worldFogPruneAt)
-                _worldFogParkedCars = FindFirstObjectByType<DemoParkedCarGlow>();
-            if (_worldFogParkedCars != null)
-                foreach (var car in _worldFogParkedCars.VisualCars)
-                    TouchWorldFog(car);
-
-            var cityWalkers = LivingCity.Entities.PedestrianAgent.Agents;
-            for (var i = 0; i < cityWalkers.Count; i++)
-                if (cityWalkers[i] != null)
-                    TouchWorldFog(cityWalkers[i].transform);
-
-            // The generated-city specialists (officers, gang members, school children,
-            // visitors and buses) deliberately stay outside both pedestrian lists but
-            // share the moving-subject overlay registry. Squares are places/buildings
-            // and remain visible; diamonds are people or vehicles.
-            var subjects = LivingCity.UI.OverlayRegistry.Subjects;
-            for (var i = 0; i < subjects.Count; i++)
+            if (MapVisionRegistry.FogOfWarEnabled) RefreshMapVisionBlocks();
+            // the switch thrown, a source registered or struck off: everybody again
+            if (_fogEpochSeen != MapVisionRegistry.Epoch)
             {
-                var subject = subjects[i];
-                if (subject == null ||
-                    subject.MarkerShape != LivingCity.UI.OverlayShape.Diamond)
-                    continue;
-                TouchWorldFog(subject.OverlayAnchor);
+                _fogEpochSeen = MapVisionRegistry.Epoch;
+                _mapVisionVersion++;
             }
-
-            var ambient = ResidentialBlockLife.ActivePopulations;
-            for (var i = 0; i < ambient.Count; i++)
-            {
-                var life = ambient[i];
-                if (life == null)
-                    continue;
-                for (var actor = 0; actor < life.VisionActorCount; actor++)
-                    TouchWorldFog(life.VisionActorAt(actor));
-            }
-
-            if (Time.frameCount < _worldFogPruneAt)
-                return;
-            _worldFogPruneAt = Time.frameCount + 60;
-            RoadCar.PruneRegistered();
-            _worldFogPrune.Clear();
-            foreach (var pair in _worldFog)
-                if (pair.Key == null || pair.Value.SeenFrame != Time.frameCount)
-                    _worldFogPrune.Add(pair.Key);
-            for (var i = 0; i < _worldFogPrune.Count; i++)
-            {
-                var root = _worldFogPrune[i];
-                if (_worldFog.TryGetValue(root, out var group))
-                    SetWorldFog(group, false);
-                _worldFog.Remove(root);
-            }
+            _worldFog.Apply(_mapVisionVersion);
         }
 
-        void TouchWorldFog(Transform root)
-        {
-            if (root == null || !root.gameObject.activeInHierarchy)
-                return;
-
-            if (!_worldFog.TryGetValue(root, out var group))
-            {
-                group = new FogRenderGroup(root);
-                _worldFog.Add(root, group);
-            }
-            group.SeenFrame = Time.frameCount;
-            SetWorldFog(group, !MapVisionRegistry.IsVisible(root.position));
-        }
-
-        static void SetWorldFog(FogRenderGroup group, bool hidden)
-        {
-            if (group == null)
-                return;
-
-            if (group.Hidden == hidden)
-            {
-                if (hidden)
-                    for (var i = 0; i < group.Renderers.Length; i++)
-                        if (group.Renderers[i] != null)
-                            group.Renderers[i].forceRenderingOff = true;
-                return;
-            }
-
-            for (var i = 0; i < group.Renderers.Length; i++)
-            {
-                var renderer = group.Renderers[i];
-                if (renderer == null)
-                    continue;
-                if (hidden)
-                    group.ForcedBeforeFog[i] = renderer.forceRenderingOff;
-                renderer.forceRenderingOff = hidden || group.ForcedBeforeFog[i];
-            }
-            group.Hidden = hidden;
-        }
-
-        void ClearWorldFog()
-        {
-            foreach (var group in _worldFog.Values)
-                SetWorldFog(group, false);
-            _worldFog.Clear();
-            _worldFogPrune.Clear();
-        }
+        void ClearWorldFog() => _worldFog.Clear();
 
         bool IMapVisionAreaSource.VisionActive => isActiveAndEnabled;
 
@@ -1509,13 +1403,32 @@ namespace RoadDemo
                 return;
 
             _mapVisionFrame = Time.frameCount;
+            _mapVisionBlocksBefore.Clear();
+            _mapVisionBlocksBefore.AddRange(_mapVisionBlocks);
             _mapVisionBlocks.Clear();
             _mapVisionBlockIds.Clear();
 
             var blocks = CityBlocks.Blocks;
-            if (blocks.Count == 0)
-                return;
+            if (blocks.Count > 0)
+                CollectMapVisionBlocks(blocks);
+            if (!SameMapVisionBlocks())
+                _mapVisionVersion++;
+        }
 
+        /// <summary>The same revealed set as last frame - the common case, in which
+        /// nobody's fog answer has changed.</summary>
+        bool SameMapVisionBlocks()
+        {
+            if (_mapVisionBlocksBefore.Count != _mapVisionBlocks.Count)
+                return false;
+            for (var i = 0; i < _mapVisionBlocks.Count; i++)
+                if (!ReferenceEquals(_mapVisionBlocksBefore[i], _mapVisionBlocks[i]))
+                    return false;
+            return true;
+        }
+
+        void CollectMapVisionBlocks(IReadOnlyList<CityBlocks.BlockInfo> blocks)
+        {
             foreach (var unit in Units)
             {
                 if (unit == null || unit.Faction != 0)

@@ -115,3 +115,78 @@ time u `summary.json`, pa svaka poluga ima presudu u brojkama, a ne u priči.
 3. **Koji je cilj?** Koliko fps na tvojoj mašini, na kojoj rezoluciji — to je prag za sve gore.
 4. **Da li da se pobere još 4–6 kuća?** Sada dve zgrade nose ~88 % grada; više kuća je i lepše i
    daje prostor da se jeftinije kuće stave tamo gde ih niko ne gleda izbliza.
+
+---
+
+## 5. Izmereno 2026-09-06: frejm je CPU, ne GPU
+
+Živi Play (korisnikova sesija, 3D pogled, Game view ~3000×1770, RTX 5080), Unity Profiler
+očitan kroz `eval` bez diranja Play-a, prosek 150 frejmova:
+
+| gde | ms/frejm |
+|---|---:|
+| **glavna nit ukupno** | **~20** (23 sa uključenim profilerom) |
+| PlayerLoop | 16 |
+| ├ BehaviourUpdate | 4,5 — `DemoCrews.Update` 2,9 (od toga `Crews.Combat` 2,3), `RoadDemoBuilder.Update` 1,1 |
+| ├ LateBehaviourUpdate | 7,3 — **`DemoCrews.LateUpdate` 6,4**, od toga `ApplyWorldFog` **5,5** |
+| ├ render loop (URP, glavna nit) | 1,7 |
+| ├ WaitForRenderJobs + UpdateAllRenderers | 1,2 |
+| EditorLoop (Game view blit itd.) | 3,6 — nema ga u buildu |
+| render nit | 5,3 (čeka glavnu nit 17 ms) |
+
+GPU nije usko grlo: render nit i GPU čekaju glavnu nit. Scena: 159 k renderera, 1.740
+svetala, 542 animatora, 449 pešaka, 162 auta, 58 jedinica / 120 ljudi, 35–55 M trouglova.
+GC alokacije skripti ~2 KB/frejm. Sekcije `districts` i `civilians` iz `TickTimer`-a su skupe
+samo u prvim minutima (dizanje okruga), ne u stabilnom stanju.
+
+**Fog of war (5,5 ms).** 2.825 aktera (svaki građanin, svako auto na putu i uz ivičnjak) sa
+23.910 renderera; svakom skrivenom se `forceRenderingOff = true` upisivao SVAKI frejm, a
+`CityBlocks.At` je za svakog prolazio kroz sva 193 bloka (4,5 ms samo to). Urađeno:
+`CityBlocks.At` dobio mrežni indeks (48 m ćelije, isti redosled kandidata); akter se sudi
+jedan u četiri frejma, a odmah čim se promeni skup otkrivenih blokova; skriveni renderer se
+ponovo upisuje jednom u 64 frejma, ravnomerno.
+
+**Sken neprijatelja (2,3 ms).** `EnemyWithin`/`EnemyComing` su za svaku ekipu bez mete
+prolazile sve ljude svih drugih ekipa (~14 k parova) uz native pozive po paru
+(`activeInHierarchy`, liste auta) i pogled na teritoriju (`MayEngage`) pre daljine. Urađeno:
+snimak ulice jednom po frejmu (pozicija, prisutan, u autu) + krug oko ekipe koji preskače
+parove ekipa predaleko da bi ijedan par ljudi bio u dometu; `MayEngage` tek posle daljine.
+Isti odgovor kao ranije (prva ekipa po redu koja zadovolji sve uslove).
+
+**Očekivano posle ovoga:** ~8 ms manje po frejmu → u editoru ~11–12 ms (85–90 fps), u
+buildu ~8 ms (~120 fps). **120 fps u samom editoru nije dostižno** dok EditorLoop nosi 3,6 ms
+i ne-skriptni PlayerLoop ~4,3 ms. Napomene za mašinu: Windows prijavljuje 6 logičkih jezgara
+na 9900X3D (BIOS/SMT?), a monitor je 60 Hz uz `vSyncCount: 1` u PC kvalitetu — u buildu sa
+vsync-om nikad preko 60.
+
+### 5.1 Drugi prolaz istog dana: pokrenut grad, ne pauziran
+
+Prvo merenje je bilo nad PAUZIRANIM gradom (korisnikov popup u 06:00 drži `timeScale 0`; skripte
+i dalje rade, ali niko se ne kreće). Pokrenut grad (sat 7, 166 pešaka, 168 vozila) je skuplji;
+mereno mojim Play-om, vsync isključen za merenje, isti 3D pogled sa ~58 M trouglova:
+
+| šta | pre | posle |
+|---|---:|---:|
+| `RoadDemoBuilder.Update` | 9,7 ms | 4,2 ms |
+| └ `districts` (aerodrom: 40 šetača × `WalkObstacles.Steer`) | 7,4 ms | 2,1 ms |
+| └ `civilians` | 4,2 ms | 1,4 ms |
+| `Crews.Walkers` (TickCrew ×120) | 3,1 ms | 0,6 ms |
+| `DemoCrews.LateUpdate` (fog + nišan) | 6,4 ms | 0,8 ms |
+| `Crews.Combat` | 2,3 ms | < 0,1 ms |
+| `CityBlockRecycler.Update` (mirna kamera) | 1,4 ms + zastoji | 0,25 ms |
+| **frejm, pokrenut grad, editor** | **33–36 ms** | **~24–26 ms** |
+| frejm, pauziran grad, editor | ~20 ms | ~16 ms |
+
+Tri uzroka iza prvog: (1) `WalkObstacles.OnGround` je za svaku probu pitao SVIH 216 planova
+trotoara (5,5 od 6,8 µs po probi; `Run` 68 µs) — sada grubi indeks planova po 32 m ćeliji
+(`WalkPlanIndex`), `Run` 7 µs; (2) brojač aktivnih pogleda u recycler-u je odlutao na 0 dok je
+15 pogleda bilo aktivno, pa je svaki tek sagrađen prefetch blok odmah izbačen i ponovo građen
+(194 sagrađena / 193 izbačena za tri minuta mirne kamere) — sada se broji iz samih pogleda; uz to
+aktivan pogled pri izbacivanju prvo prolazi kroz Deactivate, pa `DemoStreetLamps` više ne dobija
+uništeno svetlo; (3) fog i sken neprijatelja iz §5.
+
+Šta ostaje u pokrenutom gradu (~22 ms pravog frejma u editoru): EditorLoop 4,4; render loop 2,9 +
+čekanje render job-ova 2,3; animatori/Director 2,6 (čekanje job-ova na 6 jezgara); auti
+`RoadCarSimulation` 2,3 (4–9 kad frejm pređe 33 ms i uđe drugi podkorak); okruzi 2,1; civili 1,4;
+DemoCrews 1,0 + 0,8; `TurfMarks.Update` 0,5 (210 alokacija po frejmu, `GetComponent` na null);
+stanice goriva/vatrogasci 0,7. Pod editorskog frejma bez ijedne skripte je ~12 ms.

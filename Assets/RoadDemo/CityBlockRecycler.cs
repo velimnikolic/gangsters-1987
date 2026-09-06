@@ -171,7 +171,6 @@ namespace RoadDemo
         View _binding;
         long _bindingCpuMs;
         long _bindingWorstStepMs;
-        int _active;
         int _mergeCursor;
         int _sourceObjects;
         int _sourceRenderers;
@@ -184,8 +183,12 @@ namespace RoadDemo
         long _worstBuildStepMs;
 
         public int RecipeCount => _model?.Count ?? 0;
-        public int ActiveViews => _active;
-        public int CachedViews => Mathf.Max(0, _resident.Count - _active);
+        // counted off the views: a tracked tally drifted and evicted fresh blocks (2026-09-06)
+        public int ActiveViews
+        {
+            get { int n = 0; foreach (var pair in _resident) if (pair.Value.Active) n++; return n; }
+        }
+        public int CachedViews => _resident.Count - ActiveViews;
         public int PooledHolders => _pool.Count;
         public int PendingViews => _candidates.Count + (_binding != null ? 1 : 0);
         public int ComposingViews => _binding != null ? 1 : 0;
@@ -788,7 +791,6 @@ namespace RoadDemo
             BeginAttachment(view);
             _lamps?.Register(view.Content);
             _parkedGlow?.Register(view.Content);
-            _active++;
         }
 
         void Deactivate(View view)
@@ -801,7 +803,6 @@ namespace RoadDemo
             CancelAttachment(view);
             _lamps?.Unregister(view.Content);
             view.Holder.SetActive(false);
-            _active = Mathf.Max(0, _active - 1);
         }
 
         /// <summary>
@@ -1033,9 +1034,10 @@ namespace RoadDemo
         void Evict(View view)
         {
             if (view == null) return;
+            // through Deactivate first: its lamps leave the lighting ledger before they are destroyed
+            if (view.Active) Deactivate(view);
             Streamed();
             if (view.Recipe != null) _resident.Remove(view.Recipe.Id);
-            if (view.Active) _active = Mathf.Max(0, _active - 1);
             DestroyPayload(view, countEviction: true);
             ReturnHolder(view);
         }

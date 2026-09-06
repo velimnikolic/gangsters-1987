@@ -598,6 +598,16 @@ namespace RoadDemo
         // that sees the outfit walk up opens fire on its own.
         void TickCombat()
         {
+            // one picture of the street for the whole tick (SnapshotStreet); a scan
+            // asked outside the tick takes its own
+            _picture.Take(Units);
+            _snapLive = true;
+            TickCombatUnits();
+            _snapLive = false;
+        }
+
+        void TickCombatUnits()
+        {
             foreach (var unit in Units)
             {
                 // A CREW WITH ITS HANDS UP IS NOT IN THE FIGHT. Not its own, not the
@@ -1213,59 +1223,6 @@ namespace RoadDemo
         }
 
         // ------------------------------------------------------------------ the round
-
-        /// <summary>A crew with an ORDER on this one, one of whose men is on foot with
-        /// his gun out, in sight of one of these men inside SightRange. Never the
-        /// law, never a car going by, never a man lying in wait.</summary>
-        Unit EnemyComing(Unit unit)
-        {
-            float r2 = SightRange * SightRange;
-            foreach (var other in Units)
-            {
-                if (other == unit || other.Faction == unit.Faction || other.Wiped) continue;
-                if (other.IsPolice || other.TargetUnit != unit || !other.OrderedFight) continue;
-                foreach (var a in unit.All())
-                {
-                    if (a.Dead || a.Tf == null || !a.Tf.gameObject.activeInHierarchy) continue;
-                    foreach (var b in other.All())
-                        // on his feet and in the fight: not a rider, not a passenger,
-                        // not a man off on a raid, not one with his hands up or running
-                        if (CanEngageOnFoot(b) && b.Armed && !b.Surrendered &&
-                            !b.Retreating &&
-                            (a.Tf.position - b.Tf.position).sqrMagnitude < r2 &&
-                            !Concealed(b, a.Tf.position) &&
-                            InSight(a.Tf.position, b.Tf.position))
-                            return other;
-                }
-            }
-            return null;
-        }
-
-        Unit EnemyWithin(Unit unit, float range, bool provoked, bool noPolice = false)
-        {
-            float r2 = range * range;
-            foreach (var other in Units)
-            {
-                if (other == unit || other.Faction == unit.Faction || other.Wiped) continue;
-                if (noPolice && other.IsPolice) continue;
-                if (!MayEngage(unit, other, provoked)) continue;
-                foreach (var a in unit.All())
-                {
-                    if (a.Dead || a.Tf == null || !a.Tf.gameObject.activeInHierarchy) continue;
-                    // a man in a car is just a car going by until somebody shoots
-                    foreach (var b in other.All())
-                        // close enough AND in view: a crew on the far side of a block of
-                        // flats has not "seen the outfit walk up", whatever the tape says -
-                        // and a man LYING IN WAIT is not walking up at all (COVER-004)
-                        if (!b.Dead && b.Tf != null && b.Tf.gameObject.activeInHierarchy && !IsAboard(b) &&
-                            (a.Tf.position - b.Tf.position).sqrMagnitude < r2 &&
-                            !Concealed(b, a.Tf.position) &&
-                            InSight(a.Tf.position, b.Tf.position))
-                            return other;
-                }
-            }
-            return null;
-        }
 
         /// <summary>
         /// MAY THESE MEN START SOMETHING? The pair's stance decides it, read from the
