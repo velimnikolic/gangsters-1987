@@ -40,6 +40,16 @@ namespace LivingCity.UI
             penFace.Clear();
             penBox.Clear();
 
+            // THE PAPER THIS PAGE IS PRINTED ON. The book's own sheet is the warmer
+            // Ground; the design gives this tab the lighter Panel, and every fill on it
+            // is read AGAINST that - the banded line is a shade darker than the paper,
+            // the severe line darker again, the picked line warmer. Left on the book's
+            // ground the whole ladder inverts: the banded line comes out LIGHTER than
+            // the sheet under it and the severe line disappears into it.
+            var ground = NewRect("Sheet", root);
+            Stretch(ground);
+            Fill(ground, LedgerV2.Panel);
+
             LedgerV2.PageHead(root, Pad, -TopPad, width, "THE WIRE",
                 "THE OUTFIT'S DISPATCHES · NEWEST FIRST · CLICK A LINE TO DRAW ITS " +
                 "SLIP · ↑ ↓ WALKS THE REGISTER");
@@ -103,7 +113,11 @@ namespace LivingCity.UI
 
             x += Divider(x, y) + 16f;
             x += Label(x, y, "FIND") + 10f;
-            find = Field(root, x, y - 4f, 220f, 24f, "", Find, null, MonoPt(11.5f), 24);
+            find = Field(root, x, y - 4f, 220f, 24f, "", Find, Caret, MonoPt(11.5f), 24);
+            // Escape lets the caret go; it does NOT take the reader's word back. TMP
+            // would otherwise restore the text the field was activated with and the
+            // register would jump to a scope nobody asked for.
+            find.restoreOriginalTextOnEscape = false;
             var rule = find.transform.Find("Rule");
             if (rule)
                 rule.GetComponent<Image>().color = LedgerV2.SheetRule;
@@ -221,7 +235,7 @@ namespace LivingCity.UI
         {
             if (!footWord)
                 return;
-            var reading = register.DayAt(scroll);
+            var reading = ReadingDay;
             var oldest = register.Days.Count > 0
                 ? register.Days[register.Days.Count - 1].Day : 0;
             var newestDay = register.Days.Count > 0 ? register.Days[0].Day : 0;

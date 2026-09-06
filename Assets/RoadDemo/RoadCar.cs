@@ -757,7 +757,7 @@ namespace RoadDemo
                 if (park && _parkEntryLen == 0f && ParkingAligned(_goalD)) Parked = false;
                 else PullOut();
             }
-            Replan();
+            Replan(newOrder: true);
             return true;
         }
 
@@ -941,19 +941,8 @@ namespace RoadDemo
         int _goalUTurns;
         const int MaxGoalUTurns = 2;
 
-        /// <summary>Seconds a driver crawls looking for the turn-round before he gives
-        /// it up and takes the long way instead.
-        ///
-        /// It was twelve, and twelve was free: the throttle and the turn's own gate
-        /// disagreed (see UTurnApproachSpeed), so the turn was never granted at all and
-        /// the twelve seconds were only ever spent driving on at very nearly full pace
-        /// toward the junction, where the other half of the rule ended the wait. Now
-        /// that the turn IS granted, the wait is real - the driver holds the street up
-        /// at walking pace for the whole of it - and twelve seconds of that on a busy
-        /// road cost more than the detour it was saving (a crew car took 63s to a kerb
-        /// it had reached in 27s before). Five is long enough for one gap in oncoming
-        /// traffic to come along and short enough that failing costs less than the trip
-        /// round the block.</summary>
+        /// <summary>Seconds waiting for a safe U-turn gap before taking the fallback
+        /// route. Parking and pull-out manoeuvres do not spend this patience.</summary>
         public static float TurnBackPatience = 5f;
 
         /// <summary>The driver means to turn round HERE before he goes anywhere - the
@@ -961,44 +950,41 @@ namespace RoadDemo
         /// the turning (the same block that turns a car round on its goal's own road);
         /// this only says that it should.</summary>
         bool _turnFirst;
+        bool _replanOnExit;
 
-        /// <summary>What turning round in the road is reckoned to cost, in metres of
-        /// driving - the slowing, the wait for a gap, the arc itself.
-        ///
-        /// It is also the hysteresis: the way behind has to be this much shorter before
-        /// the driver would rather turn than carry on. Without it a car half a metre
-        /// past the balance point would swing round for nothing, and one whose goal is
-        /// almost exactly abeam would dither about which way to go every time the table
-        /// was drawn again.</summary>
+        /// <summary>U-turn cost and hysteresis, in the route table's street-distance
+        /// units. Turning back must be materially cheaper than continuing.</summary>
         public static float UTurnCost = 25f;
 
-        void Replan()
+        void Replan(bool newOrder = false)
         {
             if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "replan", ManFields());
             Route = null;
+            RouteShift?.Clear();
             _turnFirst = false;
+            bool refresh = newOrder || _replanOnExit;
+            if (refresh) _previewBuilt = false;
+            // Preserve the committed crossing, but show the new order immediately.
+            _replanOnExit = _hasGoal && (Via != null || _committed);
+            if (_replanOnExit)
+            {
+                RouteShift ??= new Dictionary<RoadEdge, RoadEdge>();
+                Route = LaneNet.RouteToward(Net.Edges, _goalLane, out _, RouteShift);
+                return;
+            }
+            // Retrying the same local turn keeps its fallback connector and preview.
+            if (!refresh && PlansTurnRoundToGoal()) return;
+            _next = null;
+            _via = null;
+            DropNext();
             if (!_hasGoal || Road == null) return;
             if (Road == _goalRoad && Heading == _goalHeading && (_goalS - S) * Heading > -3f) return; // straight down this road
-            // on the right road the wrong way round, or past the spot: the turn in the
-            // road is the way back when the driver may make one - the route round the
-            // block is only for failing that (TickRoad gives up on the turn near the junction)
-            if (!NoTurnBack && Road == _goalRoad && Road.TwoWay &&
-                Profile.UTurnsInRoad && Road.MedianHalf <= 0f &&
-                (_turnBackFor < TurnBackPatience || RequiredTurnHere())) return;
+            if (PlansTurnRoundToGoal()) return;
             RouteShift ??= new Dictionary<RoadEdge, RoadEdge>();
             Route = LaneNet.RouteToward(Net.Edges, _goalLane, out var dist, RouteShift);
 
-            // THE MARK BEHIND HIM ON A STREET HE IS NOT GOING TO END ON. The table is a
-            // graph of one-way lanes and knows no turn in the middle of a street, so the
-            // only route it can draw from the lane he is in goes FORWARD - down to the
-            // end and round the block, or worse. That is what the player watched: an
-            // order given to a machine standing thirty metres past its mark sent it the
-            // whole way round the quarter to come back at it.
-            //
-            // The search has just measured every lane's distance to the goal, the one
-            // facing the other way included, so the question costs nothing to ask: is
-            // the way behind me shorter than the way in front, by more than a turn is
-            // worth? Then turn, and let TickRoad find the gap for it.
+            // The lane graph has no mid-street U-turn edge. Compare both directions
+            // from the car's current station and let TickRoad find a safe gap.
             if (dist != null && !NoTurnBack && Road.TwoWay && Profile.UTurnsInRoad && Road.MedianHalf <= 0f &&
                 _turnBackFor < TurnBackPatience && _man != Manoeuvre.UTurn)
             {
@@ -1008,30 +994,15 @@ namespace RoadDemo
                 var opp = Road.LaneFor(-Heading, -D);
                 if (cur != null && opp != null && cur != opp)
                 {
-                    // measured from where he actually IS, not from the lane's start:
-                    // the table's metres are from the start of each lane, and he is
-                    // part way down one of them. Turning round leaves him at the same
-                    // road-s in the other, facing back the way he came.
+                    // Subtract progress already travelled in each direction.
                     bool ahead = dist.TryGetValue(cur, out float dAhead);
                     bool back = dist.TryGetValue(opp, out float dBack);
                     if (ahead) dAhead -= cur.Progress(S);
                     if (back) dBack -= opp.Progress(S);
                     if (back && (!ahead || dBack + UTurnCost < dAhead))
                     {
-                        // A DRIVER WAITING TO TURN IS STILL DRIVING SOMEWHERE. The route
-                        // is KEPT. It was dropped here at first, on the reasoning that a
-                        // man about to turn round is not going that way - and a car with
-                        // no route wanders (PlanNext picks its turns at random), so a
-                        // machine that wanted a turn the street would not give it spent
-                        // the whole wait taking junctions at random instead of driving
-                        // to the mark. In a signalled quarter with sixty cars in it that
-                        // cost four times the belt refusals of the same trip without any
-                        // of this (24.1 a second against 6.2), a trip half again as long,
-                        // and one crossing in eight that never arrived at all.
-                        //
-                        // With the route kept, failing to turn costs nothing: he is
-                        // simply driving the long way, which is what he would have done
-                        // anyway, and the turn is taken the moment the road offers it.
+                        // Keep the fallback table: a refused turn must not make the
+                        // driver wander randomly while still carrying a live goal.
                         _turnFirst = true;
                         if (DriveTrace.On)
                         {
@@ -1129,6 +1100,8 @@ namespace RoadDemo
 
         void TickRoad(float dt)
         {
+            // Every cancelled admission returns here, not just a clean box exit.
+            if (_replanOnExit && !_committed) Replan();
             var road = Road;
             _stopAt = float.NaN;
             UpdateOccupant();
@@ -1236,28 +1209,14 @@ namespace RoadDemo
             bool returningToParking = ReturnToParkingEntry();
             if (returningToParking) v = 0f;
 
-            // the wrong way round for where he is going: turn HERE as soon as the sweep
-            // is clear (slowed right down for it); only near the junction, or after long
-            // enough, is the long way round taken instead.
-            //
-            // Two cases, one piece of driving. The goal on THIS road behind him is the
-            // old one. The other is a goal on another street altogether that the table
-            // says is nearer the way he came (_turnFirst, set in Replan): a machine sent
-            // at a mark thirty metres behind it used to ride the whole way round the
-            // quarter, because the lane graph has no U-turn in it to route through and
-            // the only road it could draw went forward.
+            // Shared U-turn intent: a local opposite kerb, or a cheaper route back
+            // toward another road. Failure near the junction selects the fallback.
             if (_hasGoal && !returningToParking && _man != Manoeuvre.UTurn && !NoTurnBack &&
                 (_goalUTurns < MaxGoalUTurns || requiredTurn) &&
                 (_turnFirst || (road == _goalRoad && Heading != _goalHeading && Route == null)) &&
                 road.TwoWay && Profile.UTurnsInRoad && road.MedianHalf <= 0f)
             {
-                // THE PATIENCE IS FOR WAITING FOR A GAP, and for nothing else. It used
-                // to run from the moment the driver wanted to turn - through the pull-out
-                // he was still in the middle of, through the reverse he needed to get out
-                // of the slot - so a car ordered to a mark behind it spent its whole five
-                // seconds at the kerb without once being in a position to ask for the
-                // turn, gave up before it had moved, and drove round the block. Five
-                // seconds of ASKING is what was meant.
+                // A stationary queue after a corner must not freeze the fallback clock.
                 if (_man == Manoeuvre.None && !Parked) _turnBackFor += dt;
                 // THE THROTTLE COMES DOWN FOR A TURN THE ROAD HAS ROOM FOR, and stays
                 // down for as long as the driver is still asking (his patience, five
@@ -1299,18 +1258,8 @@ namespace RoadDemo
                     else
                     {
                         if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "no turn: " + UTurnWhy, ManFields());
-                        // OUT OF ROAD IS A FACT THE ARC ITSELF KNOWS. It needs a radius, a
-                        // length and a metre before the junction line (SweepClear measures
-                        // exactly that); "twenty-two metres" was a guess standing in for it,
-                        // and on a short street the guess is true the moment the car turns
-                        // into the street - so a driver with his mark thirty metres behind
-                        // him gave the turn up before he had begun to slow for it and drove
-                        // the whole block instead. On an EMPTY street. Which is what the
-                        // player watched, twice.
-                        //
-                        // Out of PATIENCE is a real thing and stays: a driver who has held
-                        // the street up for five seconds waiting for a gap takes the long
-                        // way instead.
+                        // Match SweepClear's actual arc footprint, not a guessed fixed
+                        // distance. Otherwise an empty short road gives up immediately.
                         float arcRoom = UTurnRadius() + HalfLen + 2f;
                         var turnNode = road.NodeAhead(Heading);
                         bool noRoom = (road.EndS(Heading) - (S + Heading * arcRoom)) * Heading <
@@ -3156,7 +3105,7 @@ namespace RoadDemo
             // Build that missing route on the next approach as well as repairing
             // an existing table, or the car wanders forever with a live goal.
             if (_hasGoal && _goalLane != null && Net != null &&
-                (Route == null || !Route.ContainsKey(lane)))
+                !PlansTurnRoundToGoal() && (Route == null || !Route.ContainsKey(lane)))
             {
                 RouteShift ??= new Dictionary<RoadEdge, RoadEdge>();
                 Route = LaneNet.RouteToward(Net.Edges, _goalLane, out _, RouteShift);
@@ -3948,6 +3897,7 @@ namespace RoadDemo
                 _via = null;
                 _committed = false;
                 _viaD0 = 0f;
+                if (_replanOnExit) Replan();
                 return;
             }
         }
@@ -4162,9 +4112,7 @@ namespace RoadDemo
                     _previewCursor = 0;
                     _previewValid = false;
                 }
-                // A transfer halted by gunfire has deliberately dropped its RoadCar
-                // goal, but the announced route is still the route the escort intends
-                // to recover. Its caller opts into retaining the last valid sample.
+                // Transfers may retain the announced route while halted by gunfire.
                 RememberPreview(spacing);
             }
             if (!_previewValid || _plannedRoutePreview.Count < 2) return false;
@@ -4173,6 +4121,8 @@ namespace RoadDemo
             PreviewAdd(into, PreviewCurrent());
             for (var i = _previewCursor; i < _plannedRoutePreview.Count; i++)
                 PreviewAdd(into, _plannedRoutePreview[i]);
+            // Keep the destination ring when the final centimetres collapse to one point.
+            if (into.Count == 1) into.Add(_plannedRoutePreview[_plannedRoutePreview.Count - 1]);
             return into.Count > 1;
         }
 
@@ -4191,10 +4141,12 @@ namespace RoadDemo
 
             RoadEdge edge;
             float startS, startD;
-            if (Via != null)
+            var crossing = Via ?? (_committed ? _via : null);
+            if (crossing != null)
             {
-                PreviewConnector(into, Via, ViaS, Via.Length, spacing);
-                edge = Via.To;
+                float progress = Via != null ? ViaS : (S - Road.EndS(Heading)) * Heading;
+                PreviewConnector(into, crossing, progress, crossing.Length, spacing);
+                edge = crossing.To;
                 startS = edge != null ? edge.S0 : 0f;
                 startD = edge != null ? edge.Offset : 0f;
             }
@@ -4229,15 +4181,15 @@ namespace RoadDemo
                 }
             }
 
-            // A route search is acyclic (each edge gets closer to the goal), but keep a
-            // hard guard because this is diagnostic code and must never hang a frame if
-            // a malformed hand-built bench supplies a cyclic table.
-            for (int leg = 0; leg < 128 && edge != null && edge.Road != null; leg++)
+            if (!RoutePreviewBudget.Fit(edge, startS, _goalRoad, _goalHeading, _goalS,
+                Route, RouteShift, into.Count, ref spacing)) { into.Clear(); return false; }
+            for (int leg = 0; leg < RoutePreviewBudget.MaxLegs && edge != null && edge.Road != null; leg++)
             {
                 var road = edge.Road;
                 if (road == _goalRoad && (edge.Heading == _goalHeading || Route == null))
                 {
                     PreviewGoal(into, road, edge, startS, startD, spacing);
+                    if (into.Count == 1) into.Add(PreviewRoadPoint(road, _goalS, _goalD));
                     return into.Count > 1;
                 }
 
@@ -4276,7 +4228,7 @@ namespace RoadDemo
             _previewRoute != Route ||
             _previewRoad != Road ||
             _previewLane != Lane ||
-            _previewVia != Via ||
+            _previewVia != (Via ?? (_committed ? _via : null)) ||
             _previewGoalRoad != _goalRoad ||
             _previewGoalLane != _goalLane ||
             _previewHasGoal != _hasGoal ||
@@ -4294,7 +4246,7 @@ namespace RoadDemo
             _previewRoute = Route;
             _previewRoad = Road;
             _previewLane = Lane;
-            _previewVia = Via;
+            _previewVia = Via ?? (_committed ? _via : null);
             _previewGoalRoad = _goalRoad;
             _previewGoalLane = _goalLane;
             _previewHasGoal = _hasGoal;
@@ -4309,26 +4261,22 @@ namespace RoadDemo
         void AdvancePreviewCursor(float spacing)
         {
             if (_previewCursor >= _plannedRoutePreview.Count) return;
-            // Road/S is the strongest available identity for the current sample and its
-            // surface height distinguishes an overpass from the road beneath it.
+            // Road height distinguishes an overpass from the street beneath it.
             var here = Road != null ? PreviewRoadPoint(Road, S, D) : PreviewCurrent();
             var last = Mathf.Min(_plannedRoutePreview.Count - 1, _previewCursor + 8);
             var nearest = _previewCursor;
             var nearestSqr = float.MaxValue;
             for (var i = _previewCursor; i <= last; i++)
             {
-                var point = _plannedRoutePreview[i];
-                var sqr = (point - here).sqrMagnitude;
+                var sqr = PreviewDistance(i, here, out int cursor);
                 if (sqr >= nearestSqr) continue;
                 nearestSqr = sqr;
-                nearest = i;
+                nearest = cursor;
             }
             var catchup = Mathf.Max(8f, spacing * 2.5f);
 
-            // Normally eight samples are enough and keep this redraw constant-time. If
-            // the map was closed while the car travelled farther, find the FIRST nearby
-            // cluster in the remaining route and catch up in one call. Stopping at that
-            // cluster avoids a later return leg or crossing stealing the monotonic cursor.
+            // After a hidden-map gap, catch up to the FIRST nearby cluster; a later
+            // crossing or return leg must not steal the monotonic cursor.
             var catchupSqr = catchup * catchup;
             if (last < _plannedRoutePreview.Count - 1 &&
                 (nearest == last || nearestSqr > catchupSqr))
@@ -4338,7 +4286,7 @@ namespace RoadDemo
                 var rising = 0;
                 for (var i = last + 1; i < _plannedRoutePreview.Count; i++)
                 {
-                    var sqr = (_plannedRoutePreview[i] - here).sqrMagnitude;
+                    var sqr = PreviewDistance(i, here, out int cursor);
                     if (sqr > catchupSqr)
                     {
                         if (caught >= 0) break;
@@ -4346,7 +4294,7 @@ namespace RoadDemo
                     }
                     if (sqr < caughtSqr)
                     {
-                        caught = i;
+                        caught = cursor;
                         caughtSqr = sqr;
                         rising = 0;
                     }
@@ -4360,7 +4308,17 @@ namespace RoadDemo
                 }
             }
             if (nearestSqr <= catchupSqr)
-                _previewCursor = nearest;
+                _previewCursor = Mathf.Max(_previewCursor, nearest);
+        }
+
+        float PreviewDistance(int end, Vector3 here, out int cursor)
+        {
+            var a = _plannedRoutePreview[Mathf.Max(0, end - 1)];
+            var delta = _plannedRoutePreview[end] - a;
+            float t = delta.sqrMagnitude > .0001f
+                ? Mathf.Clamp01(Vector3.Dot(here - a, delta) / delta.sqrMagnitude) : 0f;
+            cursor = t > 0f ? end : Mathf.Max(0, end - 1);
+            return (a + delta * t - here).sqrMagnitude;
         }
 
         const float PreviewLift = 0.14f;
@@ -4383,7 +4341,10 @@ namespace RoadDemo
             bool requiredTurn = RequiredTurnHere();
             if (!_hasGoal || Road == null || Road != _goalRoad || NoTurnBack ||
                 !Road.TwoWay || !Profile.UTurnsInRoad || Road.MedianHalf > 0f ||
-                (!requiredTurn && _turnBackFor >= TurnBackPatience)) return false;
+                (!requiredTurn && (_turnBackFor >= TurnBackPatience || _goalUTurns >= MaxGoalUTurns))) return false;
+            var node = Road.NodeAhead(Heading);
+            if (!requiredTurn && (Road.EndS(Heading) - S) * Heading <
+                UTurnRadius() + HalfLen + 2f + (node != null ? node.StopSetback : 0f)) return false;
             return Heading != _goalHeading || (_goalS - S) * Heading < -3f;
         }
 

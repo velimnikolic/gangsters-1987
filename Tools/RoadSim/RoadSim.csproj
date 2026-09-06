@@ -22,6 +22,12 @@
     <Compile Include="JunctionPace.cs" />
     <Compile Include="TrafficAdmission.cs" />
     <Compile Include="TrafficFlow.cs" />
+    <Compile Include="TurnRouting.cs" />
+    <Compile Include="TrafficPerformance.cs" />
+    <Compile Include="IntentOverlayStubs.cs" />
+    <Compile Include="IntentOverlayChecks.cs" />
+    <Compile Include="../../Assets/RoadDemo/CombatIntentOverlay.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoutePreviewBudget.cs" />
     <Compile Include="TrafficEscape.cs" />
     <Compile Include="BlockedYield.cs" />
     <Compile Include="Recovery.cs" />

@@ -31,6 +31,8 @@ namespace RoadDemo
 
         Transform _root;
         readonly List<LineRenderer> _lines = new List<LineRenderer>();
+        readonly List<Vector3[]> _pathPoints = new List<Vector3[]>();
+        readonly List<int> _pathCounts = new List<int>();
         readonly Dictionary<Color, Material> _inks = new Dictionary<Color, Material>();
         int _used;
 
@@ -216,11 +218,7 @@ namespace RoadDemo
 
             CopyPathSegment(_walkPath, mergeAt, splitAt, _trunkPath);
             if (_trunkPath.Count > 1)
-            {
-                var route = Take(ink, _trunkPath.Count);
-                for (int i = 0; i < _trunkPath.Count; i++)
-                    route.SetPosition(i, Lift(_trunkPath[i], 0.12f));
-            }
+                Path(ink, _trunkPath, 0.12f);
 
             foreach (var man in _movingMen)
             {
@@ -299,9 +297,7 @@ namespace RoadDemo
                     car.Occupant.Faction != 0) continue;
                 if (!car.CopyPlannedRoute(_carPath) || _carPath.Count < 2) continue;
 
-                var route = Take(Driving, _carPath.Count);
-                for (int i = 0; i < _carPath.Count; i++)
-                    route.SetPosition(i, _carPath[i]);
+                Path(Driving, _carPath);
 
                 var goal = _carPath[_carPath.Count - 1];
                 Ring(Driving,
@@ -310,6 +306,26 @@ namespace RoadDemo
                     goal + new Vector3(-0.45f, 0f, -0.45f),
                     goal + new Vector3(-0.45f, 0f, 0.45f));
             }
+        }
+
+        void Path(Color ink, List<Vector3> points, float lift = 0f)
+        {
+            int slot = _used;
+            var line = Take(ink, points.Count, path: true);
+            var vertices = _pathPoints[slot];
+            bool changed = _pathCounts[slot] != points.Count;
+            if (vertices.Length < points.Count)
+                _pathPoints[slot] = vertices = new Vector3[Mathf.Max(points.Count, vertices.Length * 2)];
+            for (int i = 0; i < points.Count; i++)
+            {
+                var point = Lift(points[i], lift);
+                changed |= !vertices[i].Equals(point);
+                vertices[i] = point;
+            }
+            // Unity ignores capacity beyond positionCount. Keep unchanged native
+            // geometry intact, including when I hides and then restores the same line.
+            if (changed) line.SetPositions(vertices);
+            _pathCounts[slot] = points.Count;
         }
 
         void Ring(Color ink, Vector3 a, Vector3 b, Vector3 c, Vector3 d)
@@ -329,7 +345,7 @@ namespace RoadDemo
             line.SetPosition(1, b);
         }
 
-        LineRenderer Take(Color ink, int points)
+        LineRenderer Take(Color ink, int points, bool path = false)
         {
             LineRenderer line;
             if (_used < _lines.Count) line = _lines[_used];
@@ -344,11 +360,15 @@ namespace RoadDemo
                 line.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 line.receiveShadows = false;
                 _lines.Add(line);
+                _pathPoints.Add(System.Array.Empty<Vector3>());
+                _pathCounts.Add(0);
             }
 
+            // A pooled renderer reused for a ring/branch no longer contains its path.
+            if (!path) _pathCounts[_used] = 0;
             _used++;
             line.enabled = true;
-            line.positionCount = points;
+            if (line.positionCount != points) line.positionCount = points;
             line.sharedMaterial = Ink(ink);
             return line;
         }

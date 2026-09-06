@@ -88,15 +88,16 @@ namespace LivingCity.UI
         int drawnIndex = -1;
         string drawnTrouble = "";
 
-        int hovered = -1, hoveredDay = -1;
+        int hovered = -1, hoveredDay = -1, reading = -1, leftTyping = -1;
         int heldNew;
+        bool booksMoved;
 
         /// <summary>Where the reader was standing when the books changed under him, so
         /// entries landing above it can be held without moving the page - and where that
-        /// line stood in the WHOLE archive, which is how many arrived above it.</summary>
+        /// line stood IN SCOPE, which is how many arrived above it that he can see.</summary>
         WireLine? anchor;
         float anchorOffset;
-        int anchorFiled;
+        int anchorPlace = -1;
 
         public void Build(RectTransform parent, float pageWidth, float pageHeight,
             Action<WireLine> onOpen, Func<WireLine, string> targetTrouble = null)
@@ -130,8 +131,25 @@ namespace LivingCity.UI
             }
         }
 
-        /// <summary>The caret is in the FIND field, so the keys belong to it.</summary>
-        public bool Typing => find != null && find.isFocused;
+        /// <summary>
+        /// The caret is in the FIND field, so the keys belong to it - and it stays true
+        /// for the frame the field LET GO in.
+        ///
+        /// The event system runs before the book and TMP deactivates the field on Escape
+        /// itself, so a guard that only asked isFocused would see a field that had just
+        /// released the caret and hand that same Escape to the key which closes the
+        /// ledger.
+        /// </summary>
+        public bool Typing =>
+            find != null && (find.isFocused || leftTyping == Time.frameCount);
+
+        /// <summary>The field taking and giving back the caret. The frame it gave it
+        /// back in still belongs to the field.</summary>
+        void Caret(bool held)
+        {
+            if (!held)
+                leftTyping = Time.frameCount;
+        }
 
         /// <summary>Give the keys back to the book - P closes it, and a reader typing a
         /// man's name into FIND must not lose the book at the first letter.</summary>
@@ -163,6 +181,9 @@ namespace LivingCity.UI
             {
                 narrowDirty = false;
                 register.Build(narrow);
+                if (booksMoved)
+                    HoldArrivals();
+                booksMoved = false;
                 drawnIndex = drawn.HasValue ? register.IndexOf(drawn.Value) : -1;
                 RestoreAnchor();
                 PaintStrip();
@@ -184,7 +205,7 @@ namespace LivingCity.UI
         void Collect()
         {
             anchor = null;
-            anchorFiled = -1;
+            anchorPlace = -1;
             if (scroll > 0f)
             {
                 var items = register.Items;
@@ -195,24 +216,33 @@ namespace LivingCity.UI
                         continue;
                     anchor = register.Kept[item.Index];
                     anchorOffset = item.Y - scroll;
-                    anchorFiled = WireRegister.FiledAt(lines, anchor.Value);
+                    anchorPlace = item.Index;
                     break;
                 }
             }
 
             WireBook.Collect(outfit, lines);
-
-            // How many arrived ABOVE the line the reader is on - which is what its place
-            // in the whole archive moved by. Counting the run in front of the old head
-            // instead would miss a door slip filed under a day an incident already
-            // leads: the books tie on the day, and the incident keeps the tie.
-            if (anchor.HasValue && anchorFiled >= 0)
-            {
-                var moved = WireRegister.FiledAt(lines, anchor.Value);
-                if (moved > anchorFiled)
-                    heldNew += moved - anchorFiled;
-            }
             register.Take(lines);
+            booksMoved = true;
+        }
+
+        /// <summary>
+        /// How many slips arrived above the line the reader is on, counted in the run he
+        /// is actually reading - which is what its place in that run moved by.
+        ///
+        /// Counted in the whole archive instead, a door slip landing while the register
+        /// is narrowed to OUR MEN would offer him an entry his own scope will not print.
+        /// Counted off the head of the archive, a door slip filed under a day an incident
+        /// already leads would not be counted at all: the books tie on the day, and the
+        /// incident keeps the tie.
+        /// </summary>
+        void HoldArrivals()
+        {
+            if (!anchor.HasValue || anchorPlace < 0)
+                return;
+            var moved = register.IndexOf(anchor.Value);
+            if (moved > anchorPlace)
+                heldNew += moved - anchorPlace;
         }
 
         /// <summary>Put the reader back on the line he was reading after a rebuild, and
@@ -260,6 +290,8 @@ namespace LivingCity.UI
         void ScrollTo(float y)
         {
             var was = scroll;
+            // The wheel is the reader saying where he stands; a jump says it again after.
+            reading = -1;
             scroll = y;
             ClampScroll();
             if (Mathf.Approximately(was, scroll))
@@ -388,8 +420,10 @@ namespace LivingCity.UI
             narrowDirty = true;
             // The pointer's line is an index into the RUN, and the run is about to be a
             // different one. A hover left standing would tint whichever slip happens to
-            // land in that place.
+            // land in that place; and the held notice counts arrivals in the run being
+            // read, so a different run is a different count, none of it unseen news.
             hovered = -1;
+            heldNew = 0;
             if (toTop)
                 scroll = 0f;
             Refresh(outfit);
@@ -423,18 +457,31 @@ namespace LivingCity.UI
             PaintFooter();
         }
 
-        /// <summary>Jump the scroll to a day's band. The rail's single click, and both
-        /// day keys in the footer.</summary>
+        /// <summary>
+        /// Jump the scroll to a day's band, and REMEMBER that day as the one being read.
+        ///
+        /// The last days of the archive can never stand at the top of the viewport - the
+        /// scroll stops where the run ends - so a reading day taken off the scroll alone
+        /// sticks a few days short of the oldest, and OLDER DAY goes on offering a step
+        /// it can no longer take.
+        /// </summary>
         void JumpToDay(int day)
         {
             var top = register.TopOf(day);
-            if (top >= 0f)
-                ScrollTo(top);
+            if (top < 0f)
+                return;
+            ScrollTo(top);
+            reading = day;
+            PaintFooter();
         }
+
+        /// <summary>The day the reader stands in: the one he jumped to, or the last band
+        /// above the scroll when he came here by the wheel.</summary>
+        int ReadingDay => reading >= 0 ? reading : register.DayAt(scroll);
 
         void StepDay(int direction)
         {
-            var current = register.DayAt(scroll);
+            var current = ReadingDay;
             if (current < 0)
                 return;
             JumpToDay(register.Step(current, direction));

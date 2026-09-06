@@ -511,6 +511,9 @@ namespace LivingCity.UI
                 RebuildForFrame();
                 return;
             }
+            // The frame is the book's own; the canvas it stands on can still be smaller
+            // than it, so the fit is read every turn rather than only at build.
+            FitPage();
 
             UpdateScroll();
             TickFamilies();
@@ -1093,6 +1096,34 @@ namespace LivingCity.UI
         /// resolution, which is also the floor Expand mode guarantees.</summary>
         Vector2 lastGoodFrame = new Vector2(1920f, 1080f);
 
+        /// <summary>
+        /// Stand the book on whatever canvas it was given.
+        ///
+        /// Every page is drawn against a frame of at least 1920x1080 - the design's
+        /// sheet, and the floor <see cref="ReferenceFrame"/> clamps to - but the canvas
+        /// rect can come back SMALLER than that: an editor game view scaled up, a window
+        /// narrower than the reference, a display that reports its size in points. The
+        /// book then hangs over the edges, and it is the widest page that pays: the
+        /// wire's register loses its last column off the right and its footer off the
+        /// foot, with nothing on screen to say so.
+        ///
+        /// So the whole book is scaled about the canvas centre to fit. Nothing is
+        /// re-laid and no page measures anything different; the sheet simply prints
+        /// smaller, at the proportions it was drawn in.
+        /// </summary>
+        void FitPage()
+        {
+            if (!page || !canvas)
+                return;
+            var rect = ((RectTransform)canvas.transform).rect;
+            if (rect.width < 1f || rect.height < 1f)
+                return;
+            var fit = Mathf.Min(1f, Mathf.Min(rect.width / FrameW, rect.height / FrameH));
+            var scale = page.transform.localScale;
+            if (Mathf.Abs(scale.x - fit) > 0.0005f)
+                page.transform.localScale = new Vector3(fit, fit, 1f);
+        }
+
         void BuildBook()
         {
             MeasureFrame();
@@ -1151,6 +1182,7 @@ namespace LivingCity.UI
             BuildBlueprintPage(paper);
 
             SetPage(currentPage);
+            FitPage();
 
             // Built active for TMP's sake (a TextMeshProUGUI only loads its font in
             // OnEnable, which never runs under an inactive parent), hidden until P.

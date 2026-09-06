@@ -26,6 +26,7 @@ namespace LivingCity.Tests
             TheRailKeepsQuietDays(failures);
             WalkingTheDaysStops(failures);
             ArrivalsAboveTheReaderAreCounted(failures);
+            ArrivalsOutOfScopeAreNotHeld(failures);
 
             return failures;
         }
@@ -252,6 +253,41 @@ namespace LivingCity.Tests
             if (WireRegister.FiledAt(after, Men(9, "Street", "Never filed.",
                     LedgerStyle.TelexPlain)) >= 0)
                 failures.Add("WIRE: a slip that is not in the run was found in it.");
+        }
+
+        /// <summary>The held notice counts what arrived in the run the reader is
+        /// READING. A door slip landing while the register is narrowed to OUR MEN moves
+        /// nothing he can see, and a notice offering it would point at a line his own
+        /// scope will not print.</summary>
+        static void ArrivalsOutOfScopeAreNotHeld(List<string> failures)
+        {
+            var ours = Men(2, "Watch him", "He drinks with men who are not ours.",
+                LedgerStyle.Ballpoint);
+            var older = Men(1, "Street", "Talk on the beach.", LedgerStyle.TelexPlain);
+            var narrow = WireNarrow.Open;
+            narrow.Book = WireScope.OurMen;
+
+            var register = new WireRegister();
+            register.Take(new List<WireLine> { ours, older });
+            register.Build(narrow);
+            var before = register.IndexOf(older);
+
+            register.Take(new List<WireLine>
+            {
+                ours,
+                Door(2, "17:40", "He pays", "The envelope was waiting.",
+                    LedgerStyle.GreenOk, 450, true),
+                older,
+            });
+            register.Build(narrow);
+            if (register.IndexOf(older) != before)
+                failures.Add("WIRE: a slip the scope does not print moved the reader's " +
+                    "line, so the held notice would offer him an invisible entry.");
+
+            register.Build(WireNarrow.Open);
+            if (register.IndexOf(older) != before + 1)
+                failures.Add("WIRE: the same slip is not counted when the scope does " +
+                    "print it.");
         }
 
         static void WalkingTheDaysStops(List<string> failures)

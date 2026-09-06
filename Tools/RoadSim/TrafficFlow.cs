@@ -19,8 +19,15 @@ static class TrafficFlow
         foreach (int heading in new[] { 1, -1 })
             foreach (float width in new[] { 5f, 7.5f })
                 foreach (float halfLength in new[] { 2.3f, 3.8f }) ParkingTurn(heading, width, halfLength);
-        BoundaryFlow();
-        TerminalFlow();
+        foreach (bool mixed in new[] { false, true }) { BoundaryFlow(mixed); TerminalFlow(mixed); }
+    }
+
+    internal static void Body(RoadCar car, int index)
+    {
+        // Measured large-body envelope already used by the kerb regressions;
+        // explicit axle ratios straddle the default sedan's steering threshold.
+        if (index % 3 != 0) { car.HalfLen = 3.72353f; car.HalfWide = 1.28412f; }
+        car.AxleBack = car.HalfLen * (index % 2 == 0 ? .7f : .6f);
     }
 
     static void Distribution()
@@ -111,7 +118,7 @@ static class TrafficFlow
             "placement preserves population by using terminal capacity after through lanes fill");
     }
 
-    static void BoundaryFlow()
+    static void BoundaryFlow(bool mixed)
     {
         foreach (int seed in new[] { 7, 37 })
         {
@@ -126,6 +133,7 @@ static class TrafficFlow
             foreach (var slot in TrafficDistribution.Place(edges, 32, seed))
             {
                 var car = new RoadCar { Net = net, Profile = DriverProfile.Traffic };
+                if (mixed) Body(car, cars.Count);
                 car.Spawn(slot.Lane, slot.Progress);
                 cars.Add(car); StreetTraffic.Users.Add(car);
             }
@@ -146,25 +154,29 @@ static class TrafficFlow
             }
             float share = interior / (float)samples;
             TrafficAdmission.Check(cars.Count == 32 && share > .4f && overlaps == 0 && cars.All(car => car.TrafficRecoveries == 0 && !car.Gone),
-                $"boundary traffic seed={seed}: mean interior={share:P1} (initial 0%) overlaps={overlaps} recoveries={cars.Sum(car => car.TrafficRecoveries)}");
+                $"boundary traffic mixed={mixed} seed={seed}: mean interior={share:P1} (initial 0%) overlaps={overlaps} recoveries={cars.Sum(car => car.TrafficRecoveries)}");
         }
     }
 
-    static void TerminalFlow()
+    static void TerminalFlow(bool mixed)
     {
         TrafficAdmission.Reset();
+        var trace = Environment.GetEnvironmentVariable("TRAFFIC_FLOW_TRACE");
+        if (trace != null) DriveTrace.Open(trace);
         UnityEngine.Random.R = new System.Random(17);
         var net = Program.CrewRing(reach: 60f);
         var cars = new List<RoadCar>();
         foreach (var slot in TrafficDistribution.Place(net.Edges, 24, 91))
         {
             var car = new RoadCar { Net = net, Profile = DriverProfile.Traffic };
+            if (mixed) Body(car, cars.Count);
             car.Spawn(slot.Lane, slot.Progress);
             cars.Add(car); StreetTraffic.Users.Add(car);
         }
         int terminal = 0, samples = 0, overlaps = 0;
         for (int frame = 0; frame < 7200; frame++)
         {
+            DriveTrace.Now = frame / 30f;
             TrafficAdmission.Tick(cars, 1f / 30f);
             if (frame >= 3600 && frame % 30 == 0)
                 foreach (var car in cars)
@@ -183,9 +195,10 @@ static class TrafficFlow
                 }
         }
         float share = terminal / (float)samples;
+        if (trace != null) DriveTrace.Close();
         TrafficAdmission.Check(share > .1f && share < .55f && overlaps == 0 &&
             cars.All(car => car.TrafficRecoveries == 0 && !car.Gone),
-            $"terminal-spur flow: mean terminal={share:P1} overlaps={overlaps} recoveries={cars.Sum(car => car.TrafficRecoveries)}");
+            $"terminal-spur flow mixed={mixed}: mean terminal={share:P1} overlaps={overlaps} recoveries={cars.Sum(car => car.TrafficRecoveries)}");
     }
 
     static void Corners(float halfZ)

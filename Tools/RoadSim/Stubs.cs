@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 namespace UnityEngine
 {
-    public struct Vector3
+    public struct Vector3 : IEquatable<Vector3>
     {
         public float x, y, z;
         public Vector3(float x, float y, float z) { this.x = x; this.y = y; this.z = z; }
@@ -17,7 +17,8 @@ namespace UnityEngine
         public static Vector3 left => new Vector3(-1, 0, 0);
         public static bool operator ==(Vector3 a, Vector3 b) => (a - b).sqrMagnitude < 1e-10f;
         public static bool operator !=(Vector3 a, Vector3 b) => !(a == b);
-        public override bool Equals(object other) => other is Vector3 v && x == v.x && y == v.y && z == v.z;
+        public bool Equals(Vector3 v) => x == v.x && y == v.y && z == v.z;
+        public override bool Equals(object other) => other is Vector3 v && Equals(v);
         public override int GetHashCode() => HashCode.Combine(x, y, z);
         public static Vector3 operator +(Vector3 a, Vector3 b) => new Vector3(a.x + b.x, a.y + b.y, a.z + b.z);
         public static Vector3 operator -(Vector3 a, Vector3 b) => new Vector3(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -185,7 +186,7 @@ namespace UnityEngine
         public static Action<object> Destroying;
         public static void Destroy(object o) => Destroying?.Invoke(o);
     }
-    public class Component : Object { }
+    public class Component : Object { public Transform transform = new Transform(); }
     public class Behaviour : Component { }
     public class MonoBehaviour : Behaviour { }
     public class MeshRenderer : Component { }

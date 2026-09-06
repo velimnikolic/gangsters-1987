@@ -79,8 +79,8 @@ and the reader's own line is put back under his eye (`Collect` takes an anchor, 
   flat item list with a y on every band, divider and line, per-day counts, the scope
   tally, and where a day stands in the scroll.
 - `Assets/Scripts/UI/WireSheet*.cs` — the page. `WireSheet.cs` is state and input,
-  `.Chrome.cs` the head, strip and footer, `.Register.cs` the ruled register and the rail,
-  `.Slip.cs` the foot of the page.
+  `.Chrome.cs` the head, strip and footer, `.Register.cs` the ruled register and the rail.
+- `Assets/Scripts/UI/WireSlip.cs` — the foot of the page, its own object.
 - `Assets/Scripts/UI/WireHit.cs` — the pointer's half of a pooled view.
 - `Assets/Scripts/Tests/WireRegisterTests.cs` — the bench (`gangsters_wire_tests`).
 
@@ -101,6 +101,47 @@ and the reader's own line is put back under his eye (`Collect` takes an anchor, 
   applies on top, as on every other sheet.
 - **`AddComponent<Image>` on a rect that already has one returns null.** Every click
   surface goes through `LedgerKit.ClickSurface`.
+
+## What the adversarial review caught (2026-09-06)
+
+Four findings, three fixed:
+
+- **Escape went past the typing guard.** The event system runs before the book, and TMP
+  deactivates FIND on Escape itself - so a guard asking only `isFocused` saw a field that
+  had just let go and passed the same Escape to the key that closes the ledger.
+  `WireSheet.Typing` now stays true for the frame the field let go in, and
+  `restoreOriginalTextOnEscape` is off so Escape releases the caret without taking the
+  reader's word back.
+- **The day keys stalled short of the oldest day.** The last bands can never stand at the
+  top of the viewport, so a reading day taken off the scroll stuck a few days short while
+  OLDER DAY stayed lit. A jump is now REMEMBERED (`reading`), the wheel clears it, and the
+  footer, the rail's current tick and both keys all read `ReadingDay`.
+- **The held notice counted arrivals the scope does not print.** It counted the reader's
+  place in the WHOLE archive, so a door slip landing under OUR MEN offered him an entry
+  his own register would not show. `HoldArrivals` now counts his place in the narrowed
+  run, and a scope change retires the notice.
+
+Not changed, and why: the review also read the scope tally's pen rows (BLOOD AND LOSS,
+HANDS LAID ON, ...) as claims about event categories, since the ballpoint also carries a
+man gone over and the amber a complaint rung. Those five phrases are the handoff's own
+words for the five PENS, taken from `WireBook.InkOf`'s own description of what each pen
+is for, and each row prints its swatch beside it. The rail's red share is red AND blue by
+the design's own rule. Renaming them is a wording decision for the design, not a defect to
+fix in the page.
+
+## Two things the first Play capture measured (2026-09-06)
+
+- **The page paints its own paper.** The book's sheet is `LedgerStyle.Ground` `#ebe3da`;
+  the design gives this tab `#f4efe9`, and every fill on the register is read against it -
+  banded line a shade darker, severe darker again, picked warmer. Left on the book's own
+  ground the ladder INVERTS (the banded line comes out lighter than the sheet under it and
+  the severe line vanishes into it). Measured off the capture: the register's ground came
+  back `(235,227,218)` where the design says `(244,239,233)`.
+- **The book now fits the canvas it is given.** The capture's canvas rect was 1484.8 x
+  927.9 units against the book's 1920 x 1080 frame, so the whole book was cropped: the
+  FILE column off the right, the footer off the foot, the chrome off the top.
+  `PersonnelAlmanac.FitPage` scales the page about the canvas centre to fit (never up),
+  read at build and every turn. Nothing is re-laid; the sheet prints smaller.
 
 ## Deliberate divergences from the handoff
 

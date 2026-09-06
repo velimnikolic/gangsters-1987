@@ -569,6 +569,10 @@ static class Program
         if (only == "all" || only == "junctionpace") JunctionPace.Run();
         if (only == "all" || only == "trafficadmission") TrafficAdmission.Run();
         if (only == "all" || only == "trafficflow") TrafficFlow.Run();
+        if (only == "all" || only == "turnrouting") TurnRouting.Run();
+        if (only == "trafficperf") TrafficPerformance.Run();
+        if (only == "routing") TurnRouting.Routes();
+        if (only == "all" || only == "intentoverlay") IntentOverlayChecks.Run();
         if (only == "all" || only == "trafficescape") TrafficEscape.Run();
         if (only == "all" || only == "blockedyield") BlockedYield.Run();
         if (only == "all" || only == "recovery") TrafficRecoveryChecks.Run();

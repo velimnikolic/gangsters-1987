@@ -460,7 +460,7 @@ namespace LivingCity.UI
             var tickH = days.Count > 0
                 ? Mathf.Min(22f, runH / days.Count) : 22f;
             var busiest = Mathf.Max(1, register.Busiest);
-            var current = register.DayAt(scroll);
+            var current = ReadingDay;
 
             var used = 0;
             for (var i = 0; i < days.Count; i++)
