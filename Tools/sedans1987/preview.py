@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import yaml
 from artwork import font_path
-from showroom import CAMERA, SCENE
+from showroom import CAMERA, SCENE, REFERENCE
 import unity_assets as ua
 
 
@@ -35,6 +35,7 @@ class Assets:
     def __init__(self):
         paths = [p for p in (ua.ROOT/ua.ASSET).rglob('*') if p.is_file() and p.suffix != '.meta']
         self.paths = {ua.guid(p.relative_to(ua.ROOT)): p for p in paths}
+        self.paths[ua.guid(REFERENCE)]=ua.ROOT/REFERENCE
         self.meshes, self.textures = {}, {}
 
     def mesh(self, guid):
@@ -57,6 +58,10 @@ class Assets:
 
     def objects(self, path, outer=None):
         outer = np.eye(4) if outer is None else outer
+        if Path(path)==ua.ROOT/REFERENCE:
+            from reference_preview import reference_objects
+            return [(p@outer[:3,:3].T+outer[:3,3],n@np.linalg.inv(outer[:3,:3]),uv,i,t,u)
+                    for p,n,uv,i,t,u in reference_objects()]
         docs = documents(path)
         transforms = {k: d['Transform'] for k, (t, d) in docs.items() if t == 4 and 'm_GameObject' in d['Transform']}
         by_go = {t['m_GameObject']['fileID']: key for key, t in transforms.items()}
@@ -157,7 +162,18 @@ def main(output):
             sheet.paste(view, (column*800, i*380))
         draw.text((24, i*380+343), f'{i+1:02d} / {car["name"]}', font=font, fill='#eadfc7')
     sheet.save(output/'cars.png')
+    pair=Image.new('RGB',(1600,800),'#233e43')
+    draw=ImageDraw.Draw(pair)
+    for column,(path,label) in enumerate(((f'{ua.ASSET}/Prefabs/Vahren_Drei.prefab','VAHREN DREI'),
+                                         (REFERENCE,'SYNTY / ORIGINAL PALM CITY'))):
+        objects=assets.objects(ua.ROOT/path)
+        for row,yaw in enumerate((145,-35)):
+            view=render(objects,dict(pivot=(0,.7,0),distance=9.5,pitch=22,yaw=yaw),(800,350))
+            pair.paste(view,(column*800,row*400))
+            draw.text((column*800+20,row*400+355),label,font=font,fill='#eadfc7')
+    pair.save(output/'synty-comparison.png')
     print('Offline serialized-mesh previews: '+str(output))
+    print('Synty reference: source FBX normals/albedo, opaque glass approximation; no URP or Unity import verdict.')
 
 
 if __name__ == '__main__':

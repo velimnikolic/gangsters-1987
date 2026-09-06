@@ -17,7 +17,7 @@ namespace RoadDemo
         Vector3 _overviewPivot;
         float _overviewDistance, _overviewYaw, _overviewPitch;
         int _focused = -1;
-        const string Controls = "1-8: inspect car   0: full lineup   L: day/night lights\n" +
+        const string Controls = "1-8: cars   9: Synty   C: compare   0: lineup   L: day/night\n" +
             "WASD/arrows: pan   Q/E or right-drag: orbit   wheel: zoom";
 
         void Awake()
@@ -47,7 +47,7 @@ namespace RoadDemo
         {
             string label = _focused >= 0 && cars != null && _focused < cars.Length && cars[_focused]
                 ? (labels != null && _focused < labels.Length ? labels[_focused] : cars[_focused].name)
-                : "MIAMI 1987 / luxury to everyday";
+                : (_focused == -2 ? "VAHREN DREI / SYNTY SEDAN" : "MIAMI 1987 / luxury to everyday");
             _camera.hint = label + (clock && clock.Hour > 20f ? " / NIGHT" : " / DAY") + "\n" + Controls;
         }
 
@@ -74,6 +74,18 @@ namespace RoadDemo
             RefreshHint();
         }
 
+        void Compare()
+        {
+            if (cars == null || cars.Length < 9 || !cars[3] || !cars[8]) return;
+            _camera.Drop();
+            _camera.pivot = (cars[3].position + cars[8].position) * 0.5f + Vector3.up * 0.7f;
+            _camera.distance = 14f;
+            _camera.yaw = 160f;
+            _camera.pitch = 24f;
+            _focused = -2;
+            RefreshHint();
+        }
+
         void Update()
         {
             var keys = Keyboard.current;
@@ -92,6 +104,8 @@ namespace RoadDemo
             if (keys.digit6Key.wasPressedThisFrame) Focus(5);
             if (keys.digit7Key.wasPressedThisFrame) Focus(6);
             if (keys.digit8Key.wasPressedThisFrame) Focus(7);
+            if (keys.digit9Key.wasPressedThisFrame) Focus(8);
+            if (keys.cKey.wasPressedThisFrame) Compare();
         }
     }
 }

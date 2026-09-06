@@ -229,7 +229,7 @@ def material(name,texture,unlit=False,emission=None,surface=None):
     - _ZWrite: 1
     m_Colors:
     - _BaseColor: {{r: 1, g: 1, b: 1, a: 1}}
-    - _EmissionColor: {{r: 0, g: 0, b: 0, a: 0}}
+    - _EmissionColor: {{r: {0.0001 if emission else 0}, g: {0.0001 if emission else 0}, b: {0.0001 if emission else 0}, a: {1 if emission else 0}}}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
 --- !u!114 &{version_id}
@@ -319,14 +319,14 @@ class Hierarchy:
         return self.component(n,114,'MonoBehaviour',f'  m_Enabled: {int(enabled)}\n  m_EditorHideFlags: 0\n'+
                 f'  m_Script: {ref(path,11500000,3)}\n  m_Name: \n  m_EditorClassIdentifier: \n'+body)
 
-    def prefab_instance(self,path,position,yaw):
+    def prefab_instance(self,path,position,yaw,root_file_id=1002):
         cid,tid=self.alloc(),self.alloc()
         q=quat(yaw=yaw)
         props={'m_LocalPosition.'+axis:value for axis,value in zip('xyz',position)}
         props.update({'m_LocalRotation.'+axis:float(value) for axis,value in re.findall(r'(\w): ([-.\d]+)',q)})
         mods=''
         for key,value in props.items():
-            mods+=f'    - target: {ref(path,1002,3)}\n      propertyPath: {key}\n      value: {value}\n      objectReference: {{fileID: 0}}\n'
+            mods+=f'    - target: {ref(path,root_file_id,3)}\n      propertyPath: {key}\n      value: {value}\n      objectReference: {{fileID: 0}}\n'
         self.instances.append((tid,f'''--- !u!1001 &{cid}
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -342,7 +342,7 @@ PrefabInstance:
   m_SourcePrefab: {ref(path,100100000,3)}
 --- !u!4 &{tid} stripped
 Transform:
-  m_CorrespondingSourceObject: {ref(path,1002,3)}
+  m_CorrespondingSourceObject: {ref(path,root_file_id,3)}
   m_PrefabInstance: {{fileID: {cid}}}
   m_PrefabAsset: {{fileID: 0}}
 '''))

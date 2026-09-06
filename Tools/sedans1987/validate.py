@@ -7,7 +7,7 @@ import subprocess
 import numpy as np
 from build import check
 from preview import Assets, documents
-from showroom import SCENE
+from showroom import SCENE, REFERENCE, REFERENCE_ROOT
 from check_wheels import closed_tire,sidewall_coverage
 from palette import COLORS
 from bodywork import Coachwork
@@ -139,15 +139,20 @@ def validate():
         assert points[:, 2].max()-points[:, 2].min() < car['length']+.35, path
     scene = documents(ua.ROOT/SCENE)
     instances = [d['PrefabInstance'] for t, d in scene.values() if t == 1001]
-    assert len(instances) == len(lineup)
-    assert len({p['m_SourcePrefab']['guid'] for p in instances}) == len(lineup)
+    assert len(instances) == len(lineup)+1
+    assert len({p['m_SourcePrefab']['guid'] for p in instances}) == len(lineup)+1
+    reference_guid=ua.guid(REFERENCE)
+    reference=next(p for p in instances if p['m_SourcePrefab']['guid']==reference_guid)
+    targets=reference['m_Modification']['m_Modifications']
+    assert targets and all(t['target']['fileID']==REFERENCE_ROOT for t in targets)
     monos = [d['MonoBehaviour'] for t, d in scene.values() if t == 114]
     camera = next(m for m in monos if m['m_Script']['guid'] == ua.guid('Assets/RoadDemo/DemoCamera.cs'))
     assert camera['mapTransition'] == 0 and camera['showHint'] == 1
     review = next(m for m in monos if m['m_Script']['guid'] == ua.guid('Assets/RoadDemo/SedanShowroom.cs'))
-    assert len(review['cars']) == len(review['labels']) == len(lineup)
+    assert len(review['cars']) == len(review['labels']) == len(lineup)+1
     # Exercise the complete serialized hierarchy resolver used by the offline preview.
-    assert len(assets.objects(ua.ROOT/SCENE)) == 7*len(lineup)+2
+    reference_objects=len(assets.objects(ua.ROOT/REFERENCE))
+    assert len(assets.objects(ua.ROOT/SCENE)) == 7*len(lineup)+3+reference_objects
     clock=next(m for m in monos if m['m_Script']['guid']==ua.guid('Assets/Scripts/Ambient/CityClock.cs'))
     assert clock['m_Enabled']==0 and clock['running']==0, 'Review clock must not handle number keys'
     assert scene[review['clock']['fileID']][1]['MonoBehaviour']==clock

@@ -7,7 +7,11 @@ from artwork import sign
 import unity_assets as ua
 
 SCENE = 'Assets/Scenes/Sedan1987Showroom.unity'
-CAMERA = dict(pivot=(0, .7, -.3), distance=38, pitch=34, yaw=180, fov=42)
+CAMERA = dict(pivot=(0, .7, -.3), distance=43, pitch=34, yaw=180, fov=42)
+REFERENCE = 'Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Sedan_01.prefab'
+# Existing PalmCityDemo/Overview instances serialize this variant's root Transform.
+REFERENCE_ROOT = 6977666779751257434
+REFERENCE_BAY = 4
 
 
 def placement(index,count=8):
@@ -79,9 +83,12 @@ def sign_plane(name, width, height):
 def build(cars, prefabs, material):
     scene = ua.Hierarchy()
     court = scene.node('Miami 1987 - dealership forecourt')
-    ua_mesh = ua.mesh_asset(forecourt(len(cars)), list(COLORS))
+    count=len(cars)+1
+    bay=lambda i:i if i<REFERENCE_BAY else i+1
+    ua_mesh = ua.mesh_asset(forecourt(count), list(COLORS))
     scene.renderer(court, ua_mesh, material)
-    car_ids = [scene.prefab_instance(path, *placement(i,len(cars))) for i, path in enumerate(prefabs)]
+    car_ids = [scene.prefab_instance(path, *placement(bay(i),count)) for i, path in enumerate(prefabs)]
+    reference=scene.prefab_instance(REFERENCE,*placement(REFERENCE_BAY,count),root_file_id=REFERENCE_ROOT)
     placard = sign_plane('CarPlacard', 3.65, .9125)
     for i, car in enumerate(cars):
         texture = sign(car['id']+'_Sign', [
@@ -91,13 +98,21 @@ def build(cars, prefabs, material):
             (f'1987 price class: ${car["price"]:,}', 32, '#d3b879'),
         ])
         mat = ua.material(car['id']+'_Sign', texture, unlit=True)
-        x = placement(i,len(cars))[0][0]
+        x = placement(bay(i),count)[0][0]
         label = scene.node(car['name']+' - display card', position=(x, .5, 4.5), pitch=-64)
         scene.renderer(label, placard, mat)
+    reference_tex=sign('SyntyReference', [
+        ('09 / COMPARISON', 23, '#d3b879'),
+        ('SYNTY SEDAN', 49, '#f3eddc'),
+        ('Original Palm City prefab', 28, '#b9ccca'),
+        ('C: compare with Vahren Drei', 32, '#d3b879'),
+    ])
+    label=scene.node('Synty reference - display card',position=(placement(REFERENCE_BAY,count)[0][0],.5,4.5),pitch=-64)
+    scene.renderer(label,placard,ua.material('SyntyReference',reference_tex,unlit=True))
     title_tex = sign('MiamiTitle', [
         ('BISCAYNE MOTOR CLUB', 68, '#d3b879'),
         ('MIAMI / 1987', 139, '#f3eddc'),
-        ('EIGHT SEDANS   /   LUXURY TO EVERYDAY', 50, '#b9ccca'),
+        ('EIGHT SEDANS   /   SYNTY COMPARISON', 50, '#b9ccca'),
     ], title=True)
     title = scene.node('Biscayne Motor Club sign', position=(0, 3.6, -6.83))
     scene.renderer(title, sign_plane('ShowroomTitle', 10.5, 2.625),
@@ -113,7 +128,7 @@ def build(cars, prefabs, material):
                             f'  clock: {{fileID: {clock_id}}}\n')
     scene.mono(lighting,'Assets/RoadDemo/DemoSky.cs',
                f'  clock: {{fileID: {clock_id}}}\n  sun: {{fileID: {sun_id}}}\n')
-    camera = add_camera(scene, car_ids, cars,clock_id,headlights_id,fill_id)
+    camera = add_camera(scene, car_ids+[reference], cars,clock_id,headlights_id,fill_id)
     settings = (ua.ROOT/'Tools/sedans1987/scene_settings.txt').read_text()
     settings = settings.replace('m_Sun: {fileID: 0}', f'm_Sun: {{fileID: {sun_id}}}')
     ua.write(SCENE, settings+scene.text(scene=True))
@@ -171,7 +186,7 @@ def add_camera(scene, cars, lineup,clock_id,headlights_id,fill_id):
   mapTransition: 0
   minDistance: 4.5
   mapCeiling: 65
-  hint: "1-8: inspect car / 0: lineup / L: day-night lights / WASD: pan / Q E: orbit / wheel: zoom"
+  hint: "1-8: cars / 9: Synty / C: compare / 0: lineup / L: day-night / WASD: pan / Q E: orbit / wheel: zoom"
   hintTopPx: 12
   showHint: 1
   showZoom: 0
@@ -179,6 +194,7 @@ def add_camera(scene, cars, lineup,clock_id,headlights_id,fill_id):
     body = '  cars:\n'+''.join(f'  - {{fileID: {car}}}\n' for car in cars)
     body += '  labels:\n'+''.join('  - '+json.dumps(f'{i+1:02d} / {car["name"]} / {car["role"]}')+'\n'
                                   for i, car in enumerate(lineup))
+    body += '  - "09 / SYNTY SEDAN / Original Palm City prefab"\n'
     body += f'''  clock: {{fileID: {clock_id}}}
   headlights: {{fileID: {headlights_id}}}
   editorFill: {{fileID: {fill_id}}}
