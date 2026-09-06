@@ -5,13 +5,15 @@ from cabins import build_cabin
 from fascias import build_fascias
 from wheels import build_wheels
 from lenses import separate_lamps
+from interiors import build_interior
 
 
 def build_car(car):
     body=Mesh(car['id']+'_Body')
     form=Coachwork(car)
     form.shell(body)
-    build_cabin(body,form)
+    glazing=build_cabin(body,form)
+    build_interior(body,form)
     anchors=build_fascias(body,form)
     trim='rubber' if car['style']=='hikari' else 'chrome'
     form.belt_trim(body,.17,.022 if trim=='rubber' else .012,trim)
@@ -26,4 +28,4 @@ def build_car(car):
     body.box((x,y-.17,z),(.009,.12,.16),'seam')
     body.box((x+.006,y-.17,z),(.009,.106,.146),car['paint'])
     body.box((-.46,.29,-form.end+.055),(.074,.055,.19),'rubber')
-    return body,build_wheels(form),separate_lamps(body),anchors
+    return body,build_wheels(form),separate_lamps(body),anchors,glazing

@@ -105,7 +105,7 @@ def build(cars, prefabs, material):
         ('09 / COMPARISON', 23, '#d3b879'),
         ('SYNTY SEDAN', 49, '#f3eddc'),
         ('Original Palm City prefab', 28, '#b9ccca'),
-        ('C: compare with Vahren Drei', 32, '#d3b879'),
+        ('Select 1-8, then C to compare', 32, '#d3b879'),
     ])
     label=scene.node('Synty reference - display card',position=(placement(REFERENCE_BAY,count)[0][0],.5,4.5),pitch=-64)
     scene.renderer(label,placard,ua.material('SyntyReference',reference_tex,unlit=True))

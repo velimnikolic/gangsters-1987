@@ -8,6 +8,7 @@ from artwork import make_palette, make_surface, font_path
 from palette import COLORS
 from sedans import build_car
 import showroom
+import synty_lamps
 import unity_assets as ua
 
 HERE = Path(__file__).resolve().parent
@@ -18,7 +19,9 @@ def fingerprint():
     inputs = [HERE/name for name in ('artwork.py', 'build.py', 'geometry.py', 'palette.py',
               'sedans.py', 'bodywork.py', 'cabins.py', 'fascias.py', 'wheels.py', 'lenses.py',
               'showroom.py', 'unity_assets.py', 'lineup.json', 'scene_settings.txt',
-              'requirements.txt')]
+              'requirements.txt','interiors.py','synty_lamps.py')]
+    inputs += [ua.ROOT/(showroom.REFERENCE+suffix) for suffix in ('','.meta')]
+    inputs += [ua.ROOT/(path+suffix) for path in (synty_lamps.MATERIAL,synty_lamps.ALBEDO,synty_lamps.EMISSION,synty_lamps.SHADER) for suffix in ('','.meta')]
     return {str(p.relative_to(ua.ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(inputs)}
 
@@ -40,13 +43,14 @@ def check():
 
 
 def generate():
+    assert (ua.ROOT/showroom.REFERENCE).is_file() and (ua.ROOT/(showroom.REFERENCE+'.meta')).is_file(), 'Missing original Synty reference prefab'
     cars = json.loads((HERE/'lineup.json').read_text())
     assert len(cars) == 8 and len({c['id'] for c in cars}) == 8
     assert all(a['price'] > b['price'] for a, b in zip(cars, cars[1:]))
     authored=[build_car(car) for car in cars]
-    for car,(body,wheels,lamps,_) in zip(cars,authored):
-        count=sum(len(list(m.triangles())) for m in [body,lamps]+[w for w,_ in wheels])
-        assert count<=6000, (car['id'],'Exceeded the 6000-triangle authoring budget',count)
+    for car,(body,wheels,lamps,_,glazing) in zip(cars,authored):
+        count=sum(len(list(m.triangles())) for m in [body,lamps,glazing]+[w for w,_ in wheels])
+        assert count<=6500, (car['id'],'Exceeded the 6500-triangle authoring budget including interior',count)
     for script in ('SedanShowroom','VehicleLampRig'):
         ua.meta(f'Assets/RoadDemo/{script}.cs', 'MonoImporter', '''  serializedVersion: 2
   defaultReferences: []
@@ -54,10 +58,10 @@ def generate():
   icon: {instanceID: 0}
 ''')
     material = ua.material('SedanPalette', make_palette(),surface=make_surface())
-    lamp_material = ua.material('SedanLamps', f'{ua.ASSET}/Textures/SedanPalette.png',
-                                emission=make_palette(emission=True))
+    lamp_material = synty_lamps.MATERIAL
+    glass_material=ua.material('SedanGlass',f'{ua.ASSET}/Textures/SedanPalette.png',transparent=True)
     prefabs, stats = [], []
-    for car,(body,wheels,lamps,anchors) in zip(cars,authored):
+    for car,(body,wheels,lamps,anchors,glazing) in zip(cars,authored):
         prefab = ua.Hierarchy()
         root = prefab.node(car['name'])
         hull = prefab.node('Body', parent=root['tf'])
@@ -72,12 +76,14 @@ def generate():
   rightHeadlight: {ua.v3(anchors[1])}
   lenses: {{fileID: {lamp_renderer}}}
 ''')
+        node=prefab.node('Transparent windows',parent=root['tf'])
+        prefab.renderer(node,ua.mesh_asset(glazing,list(COLORS)),glass_material,shadows=False)
         path = f'{ua.ASSET}/Prefabs/{car["id"]}.prefab'
         ua.write(path, ua.HEADER+prefab.text())
         ua.meta(path, 'PrefabImporter', '')
         prefabs.append(path)
-        triangles = sum(len(list(mesh.triangles())) for mesh in [body,lamps]+[w for w, _ in wheels])
-        stats.append(dict(id=car['id'], triangles=triangles, renderers=6, wheelbase=car['wheelbase']))
+        triangles = sum(len(list(mesh.triangles())) for mesh in [body,lamps,glazing]+[w for w, _ in wheels])
+        stats.append(dict(id=car['id'], triangles=triangles, renderers=7, materials=3,wheelbase=car['wheelbase']))
     showroom.build(cars, prefabs, material)
     manifest = dict(inputs=fingerprint(), outputs=dict(sorted(ua.WRITTEN.items())), cars=stats,
                     font_sha256=hashlib.sha256(font_path().read_bytes()).hexdigest())

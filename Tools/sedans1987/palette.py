@@ -14,6 +14,8 @@ COLORS = {
     'tile': '#dfd2b9', 'coral': '#bf8278', 'teal': '#407a78',
     'wall': '#ded5b9', 'soil': '#584d3d', 'trunk': '#8b7755',
     'leaf': '#4e7250', 'leaflight': '#6d8959', 'line': '#e1cf9a',
+    'window_glass': '#b6cbd0', 'interior_trim': '#34373a',
+    'upholstery': '#948775', 'seat_panel': '#b4a591', 'dashboard': '#464849',
 }
 
 # Surface identity and glass reflections stay in the shared atlas.
@@ -24,4 +26,4 @@ for paint in PAINTS:
 
 
 def glass_uv(height):
-    return ((list(COLORS).index('glass')+.5)/len(COLORS),.06+.88*height)
+    return ((list(COLORS).index('window_glass')+.5)/len(COLORS),.5)

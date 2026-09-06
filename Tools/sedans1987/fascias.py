@@ -11,7 +11,8 @@ def patch(mesh,form,end,x,y,width,height,color,depth=.04,radius=.025):
         corner=max(0,abs(dx)-(width/2-radius))
         half=height/2-radius+math.sqrt(max(0,radius*radius-corner*corner))
         px=x+dx
-        return (px,y+lerp(-half,half,t),form.end_z(px,end)+end*depth)
+        py=y+lerp(-half,half,t)
+        return (px,py,form.end_z(px,end,py)+end*depth)
     # Include the tangent points: three samples made small grilles look pointed.
     count=10 if width>.8 else 6 if width>.3 else 2
     across=sorted(set(samples(-1,1,count)+[-1+radius/width,-1+2*radius/width,

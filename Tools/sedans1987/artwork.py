@@ -52,7 +52,7 @@ def make_surface():
     image=Image.new('RGBA',(len(COLORS)*8,128));draw=ImageDraw.Draw(image)
     for i,key in enumerate(COLORS):
         metal,smooth=(25,153)
-        if key in ('rubber','tireface','seam') or key.endswith('_gap'):metal,smooth=0,35
+        if key in ('rubber','tireface','seam','interior_trim','upholstery','seat_panel','dashboard') or key.endswith('_gap'):metal,smooth=0,35
         elif key in ('chrome','wheelshade','gold'):metal,smooth=205,220
         elif key in ('glass','glasslight','glasssky'):metal,smooth=30,245
         elif key in ('cream','maroon','cladding'):metal,smooth=0,90

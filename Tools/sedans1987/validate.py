@@ -7,11 +7,12 @@ import subprocess
 import numpy as np
 from build import check
 from preview import Assets, documents
-from showroom import SCENE, REFERENCE, REFERENCE_ROOT
+from showroom import SCENE, REFERENCE, REFERENCE_ROOT, REFERENCE_BAY, placement
 from check_wheels import closed_tire,sidewall_coverage
 from palette import COLORS
 from bodywork import Coachwork
 import unity_assets as ua
+import synty_lamps
 
 
 def validate():
@@ -94,13 +95,13 @@ def validate():
             sidewall_coverage(vertices,indices,car['radius'])
         path = ua.ROOT/f'{ua.ASSET}/Prefabs/{car["id"]}.prefab'
         docs = documents(path)
-        assert sum(t == 23 for t, _ in docs.values()) == 6, path
+        assert sum(t == 23 for t, _ in docs.values()) == 7, path
         fitting=next(d['MonoBehaviour'] for t,d in docs.values() if t==114)
         assert fitting['m_Script']['guid']==ua.guid('Assets/RoadDemo/VehicleLampRig.cs')
         assert docs[fitting['lenses']['fileID']][0]==23
         glass,glass_indices=assets.mesh(ua.guid(f'{ua.ASSET}/Meshes/{car["id"]}_Lamps.asset'))
-        swatches=np.floor(glass[:,10]*len(COLORS)).astype(int)
-        front=glass[swatches==list(COLORS).index('lamp_front'),:3]
+        swatches=np.all(np.isclose(glass[:,10:12],synty_lamps.LAMP_UV['lamp_front'],atol=1e-7),axis=1)
+        front=glass[swatches,:3]
         assert len(front)>0
         form=Coachwork(car)
         assert front[:,1].max()<form.top(0,form.end)[1]+.012, ('Lamp above hood',car['id'])
@@ -110,7 +111,7 @@ def validate():
             assert side*anchor[0]>0
             assert lens[:,0].min()<=anchor[0]<=lens[:,0].max()
             assert lens[:,1].min()<=anchor[1]<=lens[:,1].max()
-            faces=glass[glass_indices[swatches[glass_indices[:,0]]==list(COLORS).index('lamp_front')],:3]
+            faces=glass[glass_indices[swatches[glass_indices[:,0]]],:3]
             a,b,c=faces[:,0],faces[:,1],faces[:,2]
             det=(b[:,1]-c[:,1])*(a[:,0]-c[:,0])+(c[:,0]-b[:,0])*(a[:,1]-c[:,1])
             valid=np.abs(det)>1e-9
@@ -130,9 +131,10 @@ def validate():
         z = sorted({t['m_LocalPosition']['z'] for t in wheels})
         assert abs(z[1]-z[0]-car['wheelbase']) < 1e-5, path
         objects = assets.objects(path)
-        assert sum(len(o[1]) for o in objects)<=6000, ('Triangle budget',car['id'])
+        assert sum(len(o[3]) for o in objects)<=6500, ('Triangle budget with interior',car['id'])
         mats={d['MeshRenderer']['m_Materials'][0]['guid'] for t,d in docs.values() if t==23}
-        assert len(mats)==2, ('Material budget',car['id'])
+        assert len(mats)==3, ('Material budget',car['id'])
+        assert docs[fitting['lenses']['fileID']][1]['MeshRenderer']['m_Materials'][0]['guid']==ua.guid(synty_lamps.MATERIAL)
         points = np.concatenate([o[0] for o in objects])
         assert abs(points[:, 1].min()) < 1e-5, path
         assert points[:, 1].max() < car['height']+.2, path
@@ -144,24 +146,44 @@ def validate():
     reference_guid=ua.guid(REFERENCE)
     reference=next(p for p in instances if p['m_SourcePrefab']['guid']==reference_guid)
     targets=reference['m_Modification']['m_Modifications']
-    assert targets and all(t['target']['fileID']==REFERENCE_ROOT for t in targets)
+    assert len(targets)==7 and all(t['target']['fileID']==REFERENCE_ROOT for t in targets)
+    assert all(t['propertyPath'].startswith(('m_LocalPosition.','m_LocalRotation.')) for t in targets), 'Reference must retain original scale/materials'
+    props={t['propertyPath']:float(t['value']) for t in targets}
+    assert np.allclose([props['m_LocalPosition.'+a] for a in 'xyz'],placement(REFERENCE_BAY,9)[0])
     monos = [d['MonoBehaviour'] for t, d in scene.values() if t == 114]
     camera = next(m for m in monos if m['m_Script']['guid'] == ua.guid('Assets/RoadDemo/DemoCamera.cs'))
     assert camera['mapTransition'] == 0 and camera['showHint'] == 1
     review = next(m for m in monos if m['m_Script']['guid'] == ua.guid('Assets/RoadDemo/SedanShowroom.cs'))
     assert len(review['cars']) == len(review['labels']) == len(lineup)+1
+    for car,focus in zip(lineup,review['cars']):
+        assert scene[focus['fileID']][1]['Transform']['m_CorrespondingSourceObject']['guid']==ua.guid(f'{ua.ASSET}/Prefabs/{car["id"]}.prefab')
+    ref_transform=scene[review['cars'][8]['fileID']][1]['Transform']['m_CorrespondingSourceObject']
+    assert ref_transform==dict(fileID=REFERENCE_ROOT,guid=ua.guid(REFERENCE),type=3)
     # Exercise the complete serialized hierarchy resolver used by the offline preview.
     reference_objects=len(assets.objects(ua.ROOT/REFERENCE))
-    assert len(assets.objects(ua.ROOT/SCENE)) == 7*len(lineup)+3+reference_objects
+    assert reference_objects==16
+    assert len(assets.objects(ua.ROOT/SCENE)) == 8*len(lineup)+3+reference_objects
     clock=next(m for m in monos if m['m_Script']['guid']==ua.guid('Assets/Scripts/Ambient/CityClock.cs'))
     assert clock['m_Enabled']==0 and clock['running']==0, 'Review clock must not handle number keys'
     assert scene[review['clock']['fileID']][1]['MonoBehaviour']==clock
     head=scene[review['headlights']['fileID']][1]['MonoBehaviour']
     assert head['m_Script']['guid']==ua.guid('Assets/RoadDemo/DemoHeadlights.cs')
     assert head['clock']==review['clock']
-    lamp_mat=next(iter(documents(ua.ROOT/f'{ua.ASSET}/Materials/SedanLamps.mat').values()))[1]['Material']
-    assert '_EMISSION' in lamp_mat['m_ValidKeywords']
-    assert any('_EmissionMap' in t for t in lamp_mat['m_SavedProperties']['m_TexEnvs'])
+    lamp_mat=documents(ua.ROOT/synty_lamps.MATERIAL)[2100000][1]['Material']
+    assert lamp_mat['m_Shader']['guid']==ua.guid(synty_lamps.SHADER)
+    assert next(t['_Emission_Map']['m_Texture']['guid'] for t in lamp_mat['m_SavedProperties']['m_TexEnvs'] if '_Emission_Map' in t)==ua.guid(synty_lamps.EMISSION)
+    from PIL import Image
+    emit=np.asarray(Image.open(ua.ROOT/synty_lamps.EMISSION).convert('RGB'))
+    for key,expected in [('lamp_front',(255,255,255)),('lamp_tail',(255,0,0)),('lamp_marker',(255,189,0))]:
+        u,v=synty_lamps.LAMP_UV[key];x,y=int(u*emit.shape[1]),int((1-v)*emit.shape[0])
+        assert np.all(emit[y-2:y+3,x-2:x+3]==expected), ('Synty emission swatch changed',key)
+    window_mat=documents(ua.ROOT/f'{ua.ASSET}/Materials/SedanGlass.mat')[2100000][1]['Material']
+    floats={k:v for d in window_mat['m_SavedProperties']['m_Floats'] for k,v in d.items()}
+    assert window_mat['m_CustomRenderQueue']==3000 and '_SURFACE_TYPE_TRANSPARENT' in window_mat['m_ValidKeywords']
+    assert (floats['_Surface'],floats['_ZWrite'],floats['_SrcBlend'],floats['_DstBlend'])==(1,0,5,10)
+    assert 'ShadowCaster' in window_mat['disabledShaderPasses']
+    tint=next(c['_BaseColor'] for c in window_mat['m_SavedProperties']['m_Colors'] if '_BaseColor' in c)
+    assert .1<=tint['a']<=.3
     body_mat=next(iter(documents(ua.ROOT/f'{ua.ASSET}/Materials/SedanPalette.mat').values()))[1]['Material']
     assert '_METALLICSPECGLOSSMAP' in body_mat['m_ValidKeywords']
     surface=next(t['_MetallicGlossMap']['m_Texture']['guid'] for t in body_mat['m_SavedProperties']['m_TexEnvs'] if '_MetallicGlossMap' in t)
@@ -178,7 +200,8 @@ def validate():
     print(f'PASS: 24 retained GUIDs resolve uniquely to their recorded destination assets; {retained} unstaged moves accounted for.')
     print(f'PASS: closed outward tire shells; {4*len(lineup)} serialized wheels opaque from both sides (6144 sample rays).')
     print('PASS: fitted headlamp anchors, separate emissive lenses and shared clock/headlight wiring; low compact bonnet lip.')
-    print('PASS: each car within 6000 triangles / 6 renderers / 2 materials; compact linear surface atlas.')
+    print('PASS: each car with interior within 6500 triangles / 7 renderers / 3 shared materials; transparent glass and original Synty lamp material/UVs.')
+    print('PASS: original Synty prefab in adjacent bay; variant root and nine focus targets; no scale/material overrides.')
     print('Not verified: Unity asset import, materials/lighting in URP, Play controls or manual visual acceptance.')
 
 

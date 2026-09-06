@@ -177,7 +177,7 @@ def texture_meta(path,srgb=True):
 ''')
 
 
-def material(name,texture,unlit=False,emission=None,surface=None):
+def material(name,texture,unlit=False,emission=None,surface=None,transparent=False):
     path=f'{ASSET}/Materials/{name}.mat'
     # URP Lit and Unlit package assets; no custom shader or runtime Shader.Find.
     shader='650dd9526735d5b46b79224bc6e94025' if unlit else '933532a4fcc9baf4fa0491de14d08ed7'
@@ -191,15 +191,15 @@ def material(name,texture,unlit=False,emission=None,surface=None):
   m_Shader: {{fileID: 4800000, guid: {shader}, type: 3}}
   m_Parent: {{fileID: 0}}
   m_ModifiedSerializedProperties: 0
-  m_ValidKeywords: [{', '.join(k for k,enabled in [('_EMISSION',emission),('_METALLICSPECGLOSSMAP',surface)] if enabled)}]
+  m_ValidKeywords: [{', '.join(k for k,enabled in [('_EMISSION',emission),('_METALLICSPECGLOSSMAP',surface),('_SURFACE_TYPE_TRANSPARENT',transparent)] if enabled)}]
   m_InvalidKeywords: []
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 1
   m_DoubleSidedGI: 0
-  m_CustomRenderQueue: -1
+  m_CustomRenderQueue: {3000 if transparent else -1}
   stringTagMap:
-    RenderType: Opaque
-  disabledShaderPasses: []
+    RenderType: {'Transparent' if transparent else 'Opaque'}
+  disabledShaderPasses: {'[ShadowCaster, DepthOnly]' if transparent else '[]'}
   m_LockedProperties: {''}
   m_SavedProperties:
     serializedVersion: 3
@@ -211,24 +211,28 @@ def material(name,texture,unlit=False,emission=None,surface=None):
     m_Ints: []
     m_Floats:
     - _AlphaClip: 0
+    - _AlphaToMask: 0
     - _Blend: 0
+    - _BlendModePreserveSpecular: 0
     - _BumpScale: 1
     - _Cull: 2
     - _Cutoff: 0.5
-    - _DstBlend: 0
+    - _DstBlend: {10 if transparent else 0}
+    - _DstBlendAlpha: {10 if transparent else 0}
     - _EnvironmentReflections: 1
     - _Metallic: 0.08
     - _OcclusionStrength: 1
     - _ReceiveShadows: 1
-    - _Smoothness: {0.85 if surface else 0.65 if emission else 0.26}
+    - _Smoothness: {0.75 if transparent else 0.85 if surface else 0.65 if emission else 0.26}
     - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
-    - _SrcBlend: 1
-    - _Surface: 0
+    - _SrcBlend: {5 if transparent else 1}
+    - _SrcBlendAlpha: 1
+    - _Surface: {1 if transparent else 0}
     - _WorkflowMode: 1
-    - _ZWrite: 1
+    - _ZWrite: {0 if transparent else 1}
     m_Colors:
-    - _BaseColor: {{r: 1, g: 1, b: 1, a: 1}}
+    - _BaseColor: {{r: 1, g: 1, b: 1, a: {0.20 if transparent else 1}}}
     - _EmissionColor: {{r: {0.0001 if emission else 0}, g: {0.0001 if emission else 0}, b: {0.0001 if emission else 0}, a: {1 if emission else 0}}}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
@@ -288,10 +292,10 @@ class Hierarchy:
         self.extra.append(f'--- !u!{kind} &{cid}\n{name}:\n'+COMMON+f'  m_GameObject: {{fileID: {n["go"]}}}\n'+body)
         return cid
 
-    def renderer(self,n,mesh,mat):
+    def renderer(self,n,mesh,mat,shadows=True):
         self.component(n,33,'MeshFilter',f'  m_Mesh: {ref(mesh,4300000)}\n')
         return self.component(n,23,'MeshRenderer',f'''  m_Enabled: 1
-  m_CastShadows: 1
+  m_CastShadows: {1 if shadows else 0}
   m_ReceiveShadows: 1
   m_DynamicOccludee: 1
   m_MotionVectors: 1

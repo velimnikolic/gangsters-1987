@@ -11,6 +11,7 @@ import yaml
 from artwork import font_path
 from showroom import CAMERA, SCENE, REFERENCE
 import unity_assets as ua
+import synty_lamps
 
 
 def documents(path):
@@ -36,6 +37,8 @@ class Assets:
         paths = [p for p in (ua.ROOT/ua.ASSET).rglob('*') if p.is_file() and p.suffix != '.meta']
         self.paths = {ua.guid(p.relative_to(ua.ROOT)): p for p in paths}
         self.paths[ua.guid(REFERENCE)]=ua.ROOT/REFERENCE
+        for p in (synty_lamps.MATERIAL,synty_lamps.ALBEDO,synty_lamps.EMISSION):
+            self.paths[ua.guid(p)]=ua.ROOT/p
         self.meshes, self.textures = {}, {}
 
     def mesh(self, guid):
@@ -50,8 +53,16 @@ class Assets:
     def material(self, guid):
         if guid not in self.textures:
             mat = next(iter(documents(self.paths[guid]).values()))[1]['Material']
-            tex = mat['m_SavedProperties']['m_TexEnvs'][0]['_BaseMap']['m_Texture']['guid']
+            props=mat['m_SavedProperties']
+            tex=next(t[k]['m_Texture']['guid'] for t in props['m_TexEnvs'] for k in ('_BaseMap','_Albedo_Map')
+                     if k in t and t[k]['m_Texture'].get('guid'))
             image = np.asarray(Image.open(self.paths[tex]).convert('RGB'))
+            floats={k:v for d in props['m_Floats'] for k,v in d.items()}
+            if floats.get('_Surface')==1:
+                tint=next(c['_BaseColor'] for c in props['m_Colors'] if '_BaseColor' in c)
+                rgba=np.empty((*image.shape[:2],4),dtype=np.uint8)
+                rgba[:,:,:3]=np.clip(image*np.array([tint[k] for k in 'rgb']),0,255)
+                rgba[:,:,3]=round(tint['a']*255);image=rgba
             unlit = mat['m_Shader']['guid'] == '650dd9526735d5b46b79224bc6e94025'
             self.textures[guid] = image, unlit
         return self.textures[guid]
@@ -108,8 +119,12 @@ def render(objects, config, size=(1600, 900)):
     canvas[:] = (165, 190, 188)
     depth = np.full((height, width), np.inf)
     light = np.array([-.38, .80, .46])
-    for points, normals, uv, indices, texture, unlit in objects:
+    # Opaque depth first; glass alpha-blends back-to-front without depth writes.
+    ordered=sorted(objects,key=lambda o:(o[4].shape[2]==4,-np.mean((o[0]-eye)@forward)))
+    for points, normals, uv, indices, texture, unlit in ordered:
         camera = (points-eye) @ basis
+        transparent=texture.shape[2]==4
+        if transparent:indices=indices[np.argsort(-camera[indices,2].mean(axis=1))]
         screen = np.stack((width/2+camera[:, 0]*focal/camera[:, 2],
                            height/2-camera[:, 1]*focal/camera[:, 2], camera[:, 2]), axis=1)
         for tri in indices:
@@ -141,8 +156,14 @@ def render(objects, config, size=(1600, 900)):
                 ns=(a[mask,None]*normals[tri[0]]/p[0,2]+b[mask,None]*normals[tri[1]]/p[1,2]+c[mask,None]*normals[tri[2]]/p[2,2])*z[mask,None]
                 ns/=np.maximum(np.linalg.norm(ns,axis=1,keepdims=True),1e-9)
                 shade=(.57+.43*np.maximum(0,ns@light))[:,None]
-            canvas[y0:y1+1, x0:x1+1][mask] = np.clip(texture[ty, tx]*shade, 0, 255)
-            local[mask] = z[mask]
+            rgb=np.clip(texture[ty,tx,:3]*shade,0,255)
+            pixels=canvas[y0:y1+1,x0:x1+1]
+            if transparent:
+                alpha=texture[ty,tx,3:4]/255
+                pixels[mask]=rgb*alpha+pixels[mask]*(1-alpha)
+            else:
+                pixels[mask]=rgb
+                local[mask] = z[mask]
     return Image.fromarray(canvas)
 
 

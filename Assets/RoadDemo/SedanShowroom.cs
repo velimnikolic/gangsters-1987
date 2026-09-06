@@ -17,6 +17,7 @@ namespace RoadDemo
         Vector3 _overviewPivot;
         float _overviewDistance, _overviewYaw, _overviewPitch;
         int _focused = -1;
+        int _comparison = 3;
         const string Controls = "1-8: cars   9: Synty   C: compare   0: lineup   L: day/night\n" +
             "WASD/arrows: pan   Q/E or right-drag: orbit   wheel: zoom";
 
@@ -39,7 +40,7 @@ namespace RoadDemo
             if (editorFill) editorFill.enabled = false; // DemoSky supplies the Play moon/fill.
             if (headlights && cars != null)
                 foreach (var car in cars)
-                    if (car) headlights.Register(car, 2.3f);
+                    if (car && car.TryGetComponent<VehicleLampRig>(out _)) headlights.Register(car, 2.3f);
             RefreshHint();
         }
 
@@ -47,7 +48,7 @@ namespace RoadDemo
         {
             string label = _focused >= 0 && cars != null && _focused < cars.Length && cars[_focused]
                 ? (labels != null && _focused < labels.Length ? labels[_focused] : cars[_focused].name)
-                : (_focused == -2 ? "VAHREN DREI / SYNTY SEDAN" : "MIAMI 1987 / luxury to everyday");
+                : (_focused == -2 ? cars[_comparison].name + " / SYNTY SEDAN" : "MIAMI 1987 / luxury to everyday");
             _camera.hint = label + (clock && clock.Hour > 20f ? " / NIGHT" : " / DAY") + "\n" + Controls;
         }
 
@@ -71,15 +72,16 @@ namespace RoadDemo
             _camera.yaw = cars[index].eulerAngles.y + 145f;
             _camera.pitch = 26f;
             _focused = index;
+            if (index < 8) _comparison = index;
             RefreshHint();
         }
 
         void Compare()
         {
-            if (cars == null || cars.Length < 9 || !cars[3] || !cars[8]) return;
+            if (cars == null || cars.Length < 9 || !cars[_comparison] || !cars[8]) return;
             _camera.Drop();
-            _camera.pivot = (cars[3].position + cars[8].position) * 0.5f + Vector3.up * 0.7f;
-            _camera.distance = 14f;
+            _camera.pivot = (cars[_comparison].position + cars[8].position) * 0.5f + Vector3.up * 0.7f;
+            _camera.distance = Mathf.Max(14f, Vector3.Distance(cars[_comparison].position, cars[8].position) * 1.25f + 7f);
             _camera.yaw = 160f;
             _camera.pitch = 24f;
             _focused = -2;

@@ -10,7 +10,9 @@ namespace RoadDemo
         public Renderer lenses;
 
         static readonly int Emission = Shader.PropertyToID("_EmissionColor");
+        static readonly int SyntyEmission = Shader.PropertyToID("_Emission_Color");
         MaterialPropertyBlock _properties;
+        int _emissionProperty;
         float _level = -1f;
 
         public void SetRunningLights(float level)
@@ -18,12 +20,18 @@ namespace RoadDemo
             level = isActiveAndEnabled ? Mathf.Clamp01(level) : 0f;
             if (!lenses || Mathf.Approximately(level, _level)) return;
             _level = level;
-            if (_properties == null) _properties = new MaterialPropertyBlock();
+            if (_properties == null)
+            {
+                _properties = new MaterialPropertyBlock();
+                var material = lenses.sharedMaterial;
+                _emissionProperty = material && material.HasProperty(SyntyEmission) ? SyntyEmission : Emission;
+            }
             lenses.GetPropertyBlock(_properties);
-            _properties.SetColor(Emission, Color.white * (level * 2.5f));
+            _properties.SetColor(_emissionProperty, Color.white * (level * (_emissionProperty == SyntyEmission ? 1f : 2.5f)));
             lenses.SetPropertyBlock(_properties);
         }
 
+        void OnEnable() => SetRunningLights(0f);
         void OnDisable() => SetRunningLights(0f);
     }
 }
