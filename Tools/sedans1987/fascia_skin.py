@@ -3,13 +3,13 @@ from bodywork import samples
 from geometry import Mesh, cross, sub
 
 
-def fitted_face(mesh,form,points,color,end=1):
+def fitted_face(mesh,form,points,color,end=1,conform=False):
     """Clip edge fittings to the real cap silhouette, including its shoulder."""
-    if all(form.cap_z(p[0],end,p[1]) is not None for p in points):
+    if not conform and all(form.cap_z(p[0],end,p[1]) is not None for p in points):
         mesh.face(points,color,(0,0,end))
         return
-    # Interior fittings retain their small mesh; only parts crossing the body
-    # boundary are intersected with its existing triangles.
+    # Conforming inserts share the cap triangles, including their interior
+    # creases. Merely projecting a large quad at its corners cuts through them.
     lo_x,hi_x=min(p[0] for p in points),max(p[0] for p in points)
     lo_y,hi_y=min(p[1] for p in points),max(p[1] for p in points)
     for a,b,c,box in form.cap_faces[end]:
@@ -56,3 +56,9 @@ def surround(mesh,form,x,y,width,height,color='chrome',rim=.024):
             # recessed black insert. No full chrome plate behind the insert.
             fitted_face(mesh,form,[p(*a,rim,.001),p(*b,rim,.001),p(*b,rim*.70,.014),p(*a,rim*.70,.014)],color)
             fitted_face(mesh,form,[p(*a,rim*.70,.014),p(*b,rim*.70,.014),p(*b,0,.021),p(*a,0,.021)],color)
+
+
+def insert(mesh,form,outline,color,depth,end=1):
+    """A constant-depth insert on the exact triangulated sheet-metal surface."""
+    points=[(x,y,form.skin_z(x,end,y)+end*depth) for x,y in outline]
+    fitted_face(mesh,form,points,color,end,conform=True)

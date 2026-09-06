@@ -2,7 +2,7 @@
 import math
 from bodywork import samples,lerp
 from lenses import round_lamp
-from fascia_skin import surround,surface
+from fascia_skin import surround,surface,insert
 
 
 def patch(mesh,form,end,x,y,width,height,color,depth=.04,radius=.025):
@@ -14,11 +14,15 @@ def patch(mesh,form,end,x,y,width,height,color,depth=.04,radius=.025):
         px=x+dx
         py=y+lerp(-half,half,t)
         return (px,py,form.skin_z(px,end,py)+end*depth)
-    # Include the tangent points: three samples made small grilles look pointed.
-    count=10 if width>.8 else 6 if width>.3 else 2
-    across=sorted(set(samples(-1,1,count)+[-1+radius/width,-1+2*radius/width,
-                                         1-2*radius/width,1-radius/width]))
-    surface(mesh,form,panel,across,[0,1],color,end)
+    # Clip a single convex outline into the actual cap facets. A second,
+    # unrelated quad grid would bridge creases and expose painted triangles.
+    outline=[]
+    for sx,sy,angle in [(1,1,0),(-1,1,90),(-1,-1,180),(1,-1,270)]:
+        for i in range(3):
+            a=math.radians(angle+i*45)
+            outline.append((x+sx*(width/2-radius)+radius*math.cos(a),
+                            y+sy*(height/2-radius)+radius*math.sin(a)))
+    insert(mesh,form,outline,color,depth,end)
 
 
 def grille(mesh,form,width,height,y,vertical=False):
@@ -40,7 +44,7 @@ def front(mesh,form):
     if style=='vahren':
         level=form.deck(form.end)-.093
         # Slim bonnet lip, full-width recessed mask, shallow four-lamp face.
-        patch(mesh,form,1,0,level-.022,1.43,.226,'rubber',.012,radius=.012)
+        patch(mesh,form,1,0,level-.022,1.43,.226,'rubber',.003,radius=.012)
         for side in (-1,1):
             surround(mesh,form,side*.081,level-.024,.112,.144,rim=.012)
             patch(mesh,form,1,side*.081,level-.024,.112,.144,'rubber',.014,radius=.004)
@@ -52,7 +56,7 @@ def front(mesh,form):
         patch(mesh,form,1,0,.31,.81,.074,'rubber',.02,radius=.007)
         for side in (-1,1):
             patch(mesh,form,1,side*.56,.315,.18,.068,'rubber',.027,radius=.009)
-        return [(-.595,level,form.skin_z(-.595,1,level)+.046),(.595,level,form.skin_z(.595,1,level)+.046)]
+        return [(-.595,level,form.skin_z(-.595,1,level)+.037),(.595,level,form.skin_z(.595,1,level)+.037)]
     layouts={
         'regent':(.59,.40),'kronen':(.67,.255),'albion':(.69,.14),
         'calder':(.56,.405),'monarch':(1.05,.23),'bayside':(.94,.16),'hikari':(.67,.105),
@@ -65,7 +69,7 @@ def front(mesh,form):
         if style=='albion':
             for x,r in ((.66,.090),(.44,.077)):
                 round_lamp(mesh,form,side*x,level+.012,r)
-            anchors.append((side*.66,level+.012,form.skin_z(side*.66,1,level+.012)+.047))
+            anchors.append((side*.66,level+.012,form.skin_z(side*.66,1,level+.012)+.038))
             patch(mesh,form,1,side*.64,.405,.32,.055,'lamp_marker',.10)
         elif style=='calder':
             # Stacked sealed-beam lamps and tall outboard corner lenses.

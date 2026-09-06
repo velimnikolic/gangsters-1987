@@ -95,10 +95,36 @@ namespace RoadDemo
             }
         }
 
-        static bool Fits(Recipe recipe, int w, int d)
+        /// <summary>
+        /// The floor on the port zone's small parcels: the least ground each recipe still
+        /// composes coherently on, used only where the deal asks for it
+        /// (<see cref="Shape.Least"/>) so an estate's cast is what it always was.
+        ///
+        /// The floor is set by the halls, which are never scaled: the production hall is
+        /// 37 m wide, the process hall 49 m, the distribution hall 37 x 29 m, and each wants
+        /// its loading court in front. On a parcel this small the recipe keeps the hall,
+        /// the court, the gate and the office and drops what will not fit - the fitter's
+        /// shop, the process train, the second shed - because every piece is placed with
+        /// <c>Block.Put</c>, which refuses rather than overlaps.
+        /// </summary>
+        public static void Least(Recipe recipe, out int w, out int d)
         {
-            Smallest(recipe, out int mw, out int md);
-            return w >= mw && d >= md;
+            switch (recipe)
+            {
+                case Recipe.Works: w = 13; d = 12; break;
+                case Recipe.Plant: w = 14; d = 13; break;
+                case Recipe.Yard: w = 12; d = 11; break;
+                case Recipe.Depot: w = 13; d = 13; break;
+                case Recipe.Strip: w = 12; d = 10; break;
+                default: Smallest(recipe, out w, out d); break;
+            }
+        }
+
+        static bool Fits(Recipe recipe, int w, int d, bool least)
+        {
+            int lw, ld;
+            if (least) Least(recipe, out lw, out ld); else Smallest(recipe, out lw, out ld);
+            return w >= lw && d >= ld;
         }
 
         /// <summary>What a recipe is called on a card, in words rather than in the enum's
@@ -242,6 +268,10 @@ namespace RoadDemo
             /// street behind every tier, declared the whole way across.</summary>
             public readonly CoreLayout.Plan Roads = new CoreLayout.Plan();
             public readonly List<string> Rows = new List<string>();
+            /// <summary>Where a fixed-count deal ends seaward, in the quarter's metres:
+            /// the drawing stops there and another district's street is the frontage.
+            /// Infinity where the deal has no such cut.</summary>
+            public float SeawardCut = float.PositiveInfinity;
         }
 
         // ---------------------------------------------------------------------- dealing
@@ -258,6 +288,55 @@ namespace RoadDemo
 
         /// <summary>How long a tier runs before it stops, in cells: 150-230 m.</summary>
         const int TierMin = 30, TierMax = 46;
+
+        /// <summary>
+        /// The shape of a deal: how many tiers, how big a parcel, whether neighbours may
+        /// share a fence or stand back to back. The full estate is the default; the
+        /// others are the same deal with fewer dice, so a seed dealt as an estate before
+        /// this existed is dealt the same estate now.
+        /// </summary>
+        public sealed class Shape
+        {
+            /// <summary>Tiers north/south of the artery, or -1 to roll two or three.</summary>
+            public int TiersNorth = -1, TiersSouth = -1;
+            public bool Doubled = true;
+            public bool Shared = true;
+            public int ParcelWMin = IndustrialLayout.ParcelWMin, ParcelWMax = IndustrialLayout.ParcelWMax;
+            public int ParcelDMin = IndustrialLayout.ParcelDMin, ParcelDMax = IndustrialLayout.ParcelDMax;
+            /// <summary>Islands in every tier, or 0 to roll a tier length instead.</summary>
+            public int IslandsPerTier;
+            /// <summary>Cast recipes by their small-parcel floors (<see cref="IndustrialLayout.Least"/>).</summary>
+            public bool Least;
+            /// <summary>The artery's width in cells: the estate's 35 m divided road, or the
+            /// city's 15 m street where the artery is a street the quarter joins.</summary>
+            public int ArteryCells = ArteryGap;
+
+            public static Shape Estate => new Shape();
+            /// <summary>One tier a side, nothing doubled.</summary>
+            public static Shape Compact => new Shape { TiersNorth = 1, TiersSouth = 1, Doubled = false };
+            /// <summary>One tier, one side, every island a single parcel.</summary>
+            public static Shape Pocket => new Shape { TiersNorth = 1, TiersSouth = 0, Doubled = false, Shared = false };
+            /// <summary>
+            /// The works behind the port: the artery is the port's own gate road - a 15 m
+            /// street, no wider than the road it joins - and the parcels hang off it two
+            /// tiers deep either side, five to a tier, each island one parcel, so the
+            /// zone is twenty small blocks along one road rather than a handful of large
+            /// compounds each with a road of its own. Every tier shares one set of column
+            /// widths and ends flush at the seaward cut, where the port's back street is
+            /// the frontage: no edge street of the zone's own runs beside it. Parcels are
+            /// 65-70 x 60-65 m - about half the estate's - and the floor is the halls'
+            /// (<see cref="Least"/>).
+            /// </summary>
+            public static Shape PortZone => new Shape
+            {
+                TiersNorth = 2, TiersSouth = 2, Doubled = false, Shared = false,
+                ParcelWMin = 13, ParcelWMax = 14, ParcelDMin = 12, ParcelDMax = 13, IslandsPerTier = 5,
+                Least = true, ArteryCells = StreetGap,
+            };
+
+            public static Shape For(bool compact, bool pocket, bool portZone = false) =>
+                portZone ? PortZone : pocket ? Pocket : compact ? Compact : Estate;
+        }
 
         /// <summary>
         /// How often a tier is two rows deep, back fence to back fence.
@@ -282,19 +361,22 @@ namespace RoadDemo
 
         /// <summary>The seed deals a quarter; the drawing judges it. Same seed, same
         /// quarter, every time.</summary>
-        public static Plan Roll(int seed, bool compact = false, bool pocket = false)
+        public static Plan Roll(int seed, bool compact = false, bool pocket = false) =>
+            Roll(seed, Shape.For(compact, pocket));
+
+        public static Plan Roll(int seed, Shape shape)
         {
             var dice = new System.Random(seed);
             var plan = new Plan { Seed = seed, Name = $"seed {seed}" };
 
-            float arteryTo = ArteryGap * Cell;
+            float arteryTo = shape.ArteryCells * Cell;
             plan.Roads.MainRoad = new Vector2(0f, arteryTo);
             plan.Roads.Bands.Add(Rect.MinMaxRect(-Any, 0f, Any, arteryTo));
 
-            int tiersNorth = compact ? 1 : dice.Next(TiersMin, TiersMax + 1);
-            int tiersSouth = pocket ? 0 : compact ? 1 : dice.Next(TiersMin, TiersMax + 1);
+            int tiersNorth = shape.TiersNorth >= 0 ? shape.TiersNorth : dice.Next(TiersMin, TiersMax + 1);
+            int tiersSouth = shape.TiersSouth >= 0 ? shape.TiersSouth : dice.Next(TiersMin, TiersMax + 1);
 
-            int northNext = ArteryGap;          // the first tier north starts past the artery
+            int northNext = shape.ArteryCells;  // the first tier north starts past the artery
             int southNext = 0;                  // and the first south ends at its south kerb
             var northStreets = new List<int>();
             var southStreets = new List<int>();
@@ -302,6 +384,11 @@ namespace RoadDemo
             int tiers = tiersNorth + tiersSouth;
             int northTier = 0, southTier = 0;
             bool north = dice.Next(2) == 0;
+            // a fixed-count deal deals its columns ONCE: every tier takes the same widths
+            // and starts at the same place, so its cross streets meet the artery in line
+            // and all four tiers end flush at the seaward cut
+            List<int> columns = null;
+            int columnsLength = 0;
             for (int t = 0, laid = 0; laid < tiers && t < tiers * 2; t++)
             {
                 if (north && tiersNorth <= 0) north = false;
@@ -313,23 +400,27 @@ namespace RoadDemo
                 // whether the parcels on it are built in brick or fenced in wire
                 int rank = north ? ++northTier : ++southTier;
 
-                int front = dice.Next(ParcelDMin, ParcelDMax + 1);
-                bool doubled = !compact && dice.NextDouble() < DoubleOdds;
-                int back = doubled ? dice.Next(ParcelDMin, ParcelDMax + 1) : 0;
+                int front = dice.Next(shape.ParcelDMin, shape.ParcelDMax + 1);
+                bool doubled = shape.Doubled && dice.NextDouble() < DoubleOdds;
+                int back = doubled ? dice.Next(shape.ParcelDMin, shape.ParcelDMax + 1) : 0;
                 int depth = front + back;
 
-                // where the tier's islands fall along x, and how wide each one is
+                // where the tier's islands fall along x, and how wide each one is: a
+                // tier runs to a rolled length, or holds a fixed count of islands
                 var widths = new List<int>();
-                int length = 0, want = dice.Next(TierMin, TierMax + 1);
-                while (length < want)
+                int length = 0, want = shape.IslandsPerTier > 0 ? 0 : dice.Next(TierMin, TierMax + 1);
+                bool More() => shape.IslandsPerTier > 0 ? widths.Count < shape.IslandsPerTier : length < want;
+                if (columns != null) { widths.AddRange(columns); length = columnsLength; }
+                else while (More())
                 {
-                    int parcels = !pocket && dice.NextDouble() < ShareOdds ? 2 : 1;
+                    int parcels = shape.Shared && dice.NextDouble() < ShareOdds ? 2 : 1;
                     int wide = 0;
-                    for (int p = 0; p < parcels; p++) wide += dice.Next(ParcelWMin, ParcelWMax + 1);
+                    for (int p = 0; p < parcels; p++) wide += dice.Next(shape.ParcelWMin, shape.ParcelWMax + 1);
                     widths.Add(wide);
                     length += wide;
-                    if (length < want) length += StreetGap;
+                    if (More()) length += StreetGap;
                 }
+                if (shape.IslandsPerTier > 0 && columns == null) { columns = widths; columnsLength = length; }
 
                 // the tier stands roughly centred, at whichever offset puts its cross
                 // streets either exactly in line with the neighbouring tier's or well
@@ -339,7 +430,8 @@ namespace RoadDemo
                                    : (southStreets.Count > 0 ? southStreets : northStreets);
                 int centre = -length / 2;
                 int at = centre, worst = int.MaxValue;
-                foreach (int jitter in Jitters(dice))
+                if (columns != null) at = 0;    // shared columns: in line by construction
+                else foreach (int jitter in Jitters(dice))
                 {
                     int clash = Clashes(Streets(widths, centre + jitter), facing);
                     if (clash >= worst) continue;
@@ -374,13 +466,13 @@ namespace RoadDemo
                     // island's southern half, south of it the northern
                     if (north)
                     {
-                        Row(plan, island, dice, i, j0, wide, front, 0, false, rank);
-                        if (doubled) Row(plan, island, dice, i, j0 + front, wide, back, 180, true, rank);
+                        Row(plan, island, dice, shape, i, j0, wide, front, 0, false, rank);
+                        if (doubled) Row(plan, island, dice, shape, i, j0 + front, wide, back, 180, true, rank);
                     }
                     else
                     {
-                        if (doubled) Row(plan, island, dice, i, j0, wide, back, 0, true, rank);
-                        Row(plan, island, dice, i, j0 + back, wide, front, 180, false, rank);
+                        if (doubled) Row(plan, island, dice, shape, i, j0, wide, back, 0, true, rank);
+                        Row(plan, island, dice, shape, i, j0 + back, wide, front, 180, false, rank);
                     }
                     plan.Islands.Add(island);
                     line.Append(' ').Append(island.W * 5).Append('x').Append(island.D * 5)
@@ -399,18 +491,27 @@ namespace RoadDemo
                 north = !north;
             }
 
-            Cast(plan, dice);
+            // the seaward cut: the ring of street the blocks would grow past their last
+            // column, and the tier streets' reach beyond it, are taken back so the last
+            // islands front whatever road stands there - the port's own back street
+            if (columns != null)
+            {
+                plan.SeawardCut = columnsLength * Cell;
+                plan.Roads.Outside.Add(Rect.MinMaxRect(plan.SeawardCut, -Any, Any, Any));
+            }
+
+            Cast(plan, dice, shape.Least);
             return plan;
         }
 
         /// <summary>One row of an island cut into parcels, each at least a recipe wide,
         /// with a shared fence between every two of them.</summary>
-        static void Row(Plan plan, Island island, System.Random dice, int i0, int j0, int wide,
+        static void Row(Plan plan, Island island, System.Random dice, Shape shape, int i0, int j0, int wide,
                         int deep, int yaw, bool back, int tier)
         {
-            int most = Mathf.Max(1, wide / ParcelWMin);
+            int most = Mathf.Max(1, wide / shape.ParcelWMin);
             int parts = Mathf.Clamp(dice.NextDouble() < ShareOdds ? 2 : 1, 1, most);
-            var cuts = Split(wide, parts, ParcelWMin, dice);
+            var cuts = Split(wide, parts, shape.ParcelWMin, shape.ParcelWMax, dice);
 
             int i = i0;
             for (int p = 0; p < cuts.Count; p++)
@@ -440,14 +541,14 @@ namespace RoadDemo
 
         /// <summary>Cuts a run of cells into parts, none shorter than <paramref name="min"/>.
         /// The remainder is dealt a cell at a time so no part is left a sliver.</summary>
-        static List<int> Split(int total, int parts, int min, System.Random dice)
+        static List<int> Split(int total, int parts, int min, int max, System.Random dice)
         {
             // no part wider than a parcel may be, however the dice fell. The island's width
             // and the row's division are rolled SEPARATELY - the width is a sum of parcel
             // draws, the division a fresh coin - so a run of two draws could be handed back
             // as one parcel of a hundred and forty metres, which is twice what any recipe
             // was measured for. The floor is the roll's; the ceiling is not negotiable.
-            int least = Mathf.CeilToInt(total / (float)ParcelWMax);
+            int least = Mathf.CeilToInt(total / (float)max);
             parts = Mathf.Max(least, parts);
             parts = Mathf.Max(1, Mathf.Min(parts, total / Mathf.Max(1, min)));
             var cuts = new List<int>();
@@ -519,7 +620,7 @@ namespace RoadDemo
         ///     a retail park;
         ///   - and never the same recipe twice running in a row.
         /// </summary>
-        static void Cast(Plan plan, System.Random dice)
+        static void Cast(Plan plan, System.Random dice, bool least)
         {
             foreach (var parcel in plan.Parcels)
             {
@@ -527,18 +628,18 @@ namespace RoadDemo
                 var wants = artery
                     ? new[] { Recipe.Works, Recipe.Plant, Recipe.Works, Recipe.Strip }
                     : new[] { Recipe.Yard, Recipe.Depot, Recipe.Yard, Recipe.Works };
-                parcel.Recipe = Choose(wants, parcel, plan, dice);
+                parcel.Recipe = Choose(wants, parcel, plan, dice, least);
             }
 
             // the one-offs, each on the best parcel for it rather than wherever it lands
-            var corner = Best(plan, p => Artery(p) && Corner(p) && Fits(Recipe.Haulage, p.W, p.D));
+            var corner = Best(plan, p => Artery(p) && Corner(p) && Fits(Recipe.Haulage, p.W, p.D, least));
             if (corner != null) corner.Recipe = Recipe.Haulage;
 
-            var tank = Best(plan, p => !Artery(p) && p.Recipe != Recipe.Haulage && Fits(Recipe.Fuel, p.W, p.D));
+            var tank = Best(plan, p => !Artery(p) && p.Recipe != Recipe.Haulage && Fits(Recipe.Fuel, p.W, p.D, least));
             if (tank != null) tank.Recipe = Recipe.Fuel;
 
             var spare = Best(plan, p => !Artery(p) && p.Recipe != Recipe.Haulage && p.Recipe != Recipe.Fuel &&
-                                        Fits(Recipe.Waste, p.W, p.D));
+                                        Fits(Recipe.Waste, p.W, p.D, least));
             if (spare != null) spare.Recipe = Recipe.Waste;
 
             // and a chimney, if the deal has left the quarter without one
@@ -547,7 +648,7 @@ namespace RoadDemo
                 if (parcel.Recipe == Recipe.Works || parcel.Recipe == Recipe.Plant) { smoke = true; break; }
             if (smoke) return;
             var stack = Best(plan, p => p.Recipe != Recipe.Haulage && p.Recipe != Recipe.Fuel &&
-                                        Fits(Recipe.Works, p.W, p.D));
+                                        Fits(Recipe.Works, p.W, p.D, least));
             if (stack != null) stack.Recipe = Recipe.Works;
         }
 
@@ -557,21 +658,21 @@ namespace RoadDemo
 
         /// <summary>The first recipe on the list that fits the parcel and is not what the
         /// parcel to the west is, falling back to the smallest thing that fits.</summary>
-        static Recipe Choose(Recipe[] wants, Parcel parcel, Plan plan, System.Random dice)
+        static Recipe Choose(Recipe[] wants, Parcel parcel, Plan plan, System.Random dice, bool least)
         {
             var west = West(plan, parcel);
             int from = dice.Next(wants.Length);
             for (int k = 0; k < wants.Length; k++)
             {
                 var want = wants[(from + k) % wants.Length];
-                if (!Fits(want, parcel.W, parcel.D)) continue;
+                if (!Fits(want, parcel.W, parcel.D, least)) continue;
                 if (west != null && west.Recipe == want) continue;
                 return want;
             }
             for (int k = 0; k < wants.Length; k++)
             {
                 var want = wants[(from + k) % wants.Length];
-                if (Fits(want, parcel.W, parcel.D)) return want;
+                if (Fits(want, parcel.W, parcel.D, least)) return want;
             }
             // nothing the tier wanted fits: the biggest recipe that does, rather than the
             // smallest. A parcel too shallow for a works is a service strip, but a WIDE one
@@ -581,8 +682,9 @@ namespace RoadDemo
             foreach (Recipe recipe in System.Enum.GetValues(typeof(Recipe)))
             {
                 if (recipe == Recipe.Haulage || recipe == Recipe.Fuel || recipe == Recipe.Waste) continue;
-                if (!Fits(recipe, parcel.W, parcel.D)) continue;
-                Smallest(recipe, out int mw, out int md);
+                if (!Fits(recipe, parcel.W, parcel.D, least)) continue;
+                int mw, md;
+                if (least) Least(recipe, out mw, out md); else Smallest(recipe, out mw, out md);
                 if (mw * md <= room) continue;
                 room = mw * md;
                 most = recipe;
@@ -638,13 +740,16 @@ namespace RoadDemo
         /// the same quarter; if none of them is clean the cleanest is kept and its report
         /// says what is wrong with it.
         /// </summary>
-        public static Plan Arrange(int seed, out CoreRoads.Raster raster, bool compact = false, bool pocket = false)
+        public static Plan Arrange(int seed, out CoreRoads.Raster raster, bool compact = false, bool pocket = false) =>
+            Arrange(seed, out raster, Shape.For(compact, pocket));
+
+        public static Plan Arrange(int seed, out CoreRoads.Raster raster, Shape shape)
         {
             Plan best = null;
             CoreRoads.Raster bestRaster = null;
             for (int attempt = 0; attempt < Deals; attempt++)
             {
-                var plan = Roll(unchecked(seed * 1000003 + attempt * 7919), compact, pocket);
+                var plan = Roll(unchecked(seed * 1000003 + attempt * 7919), shape);
                 plan.Seed = seed;
                 plan.Attempt = attempt;
                 plan.Name = $"seed {seed}" + (attempt > 0 ? $" (deal {attempt + 1})" : "");
@@ -677,7 +782,7 @@ namespace RoadDemo
                 int rolled = unchecked(seed * 1000003 + attempt * 7919);
                 var plan = Roll(rolled);
                 KeepRoadsideHalf(plan);
-                Cast(plan, new System.Random(unchecked(rolled ^ 0x51f15e)));
+                Cast(plan, new System.Random(unchecked(rolled ^ 0x51f15e)), false);
                 plan.Seed = seed;
                 plan.Attempt = attempt;
                 plan.Name = $"roadside seed {seed}" + (attempt > 0 ? $" (deal {attempt + 1})" : "");

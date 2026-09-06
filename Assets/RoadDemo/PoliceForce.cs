@@ -383,6 +383,12 @@ namespace RoadDemo
 
         public IReadOnlyList<Precinct> Precincts => _precincts;
 
+        /// <summary>Which watch is on, for whoever is reporting the force rather than
+        /// running it. False until the city's clock has been found (the force is founded
+        /// a pass before the day/night stack), which is worth telling apart from "day".</summary>
+        public PoliceWatch Watch => _watch;
+        public bool WatchKnown => _watchKnown;
+
         /// <summary>The city's one force. The ledger's own pages need to reach the
         /// docket - a man's file has to be able to say what he is charged with and what
         /// bail would cost - and everything else in this scene that owns city-wide

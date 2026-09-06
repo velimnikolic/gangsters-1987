@@ -17,7 +17,7 @@ namespace RoadDemo
             if (prefab == null) return null;
             var go = Instantiate(prefab, new Vector3(position.x, roadY, position.z), rotation);
             go.name = "Outfit Car";
-            foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
+            foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) if (!CarBody.IsVisualRig(mb)) Destroy(mb);
             foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
             foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
             // the roads it drives: the scene's network (or the one the builder set as
@@ -27,7 +27,7 @@ namespace RoadDemo
             // its body (RoadCar.Machine), but this one has just been renamed for the
             // hierarchy's sake and the prefab is still in hand, so hand it over
             car.Machine = LivingCity.Gameplay.VehiclePerformance.For(prefab.name);
-            car.Attach(go.transform); // reads the body: seats, doors, wheels, size; onto the road under it
+            car.Attach(go.transform, prefab.name); // keep model identity after the hierarchy rename
             StreetTraffic.Users.Add(car);
             Cars.Add(car);
             return car;
@@ -702,7 +702,7 @@ namespace RoadDemo
                         to.y = 0f;
                         if (to.sqrMagnitude > 1e-3f) rot = Quaternion.LookRotation(to.normalized, Vector3.up);
                     }
-                    man.Tf.SetPositionAndRotation(car.Seat(seat), rot);
+                    man.PlaceInCar(car.Body, seat, rot);
                 }
 
                 // the guns out of the windows: on a drive-by, at the crew being driven
@@ -760,7 +760,7 @@ namespace RoadDemo
             foreach (var man in car.Aboard)
             {
                 car.SeatOf.TryGetValue(man, out int seat);
-                if (man.Dead || !man.Carrying) { man.RidingAim = false; car.SetWindow(seat, false); continue; }
+                if (man.Dead || !man.Carrying || !car.CanFireFromSeat(seat)) { man.RidingAim = false; car.SetWindow(seat, false); continue; }
                 // guns out for the whole run-in, not at the instant a window comes down:
                 // the car has a crew to shoot at, and men who draw as the glass drops
                 // read as men conjuring pieces out of the air. It also keeps their own

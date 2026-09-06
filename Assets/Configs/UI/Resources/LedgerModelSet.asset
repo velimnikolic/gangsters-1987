@@ -62,6 +62,8 @@ MonoBehaviour:
   - {fileID: 1001, guid: 12763056cfe352439a72b83d215adaf1, type: 3}
   - {fileID: 1001, guid: 93d0fe0526a05df99e82a5daacc716c3, type: 3}
   - {fileID: 1001, guid: 8f825fc85c3c50d3a01a12db7ebfca27, type: 3}
+  - {fileID: 1001, guid: 05db33484f5959e28f1619c113a05904, type: 3}
+  - {fileID: 1001, guid: 11207624c82a5146abd352dbfcaa882f, type: 3}
   people:
   - {fileID: 17189799186563761, guid: bc9b3a9556793d34e917f082a7745fff, type: 3}
   - {fileID: 4681667460326336885, guid: d94b2a42b709b0148b2ade390a5c50df, type: 3}

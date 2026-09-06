@@ -2662,6 +2662,23 @@ namespace RoadDemo
         // every pass. A body it cannot pose is asked once and never again.
         SeatPose _seated;
         bool _seatless;
+        VehicleSeatBinding _vehicleSeat;
+        Animator _ridingAnimator;
+
+        public void PlaceInCar(CarBody body, int seat, Quaternion facing)
+        {
+            if (Tf == null || body == null) return;
+            if (body.Seating && _ridingAnimator)
+            {
+                if (_vehicleSeat == null) _vehicleSeat = new VehicleSeatBinding();
+                _vehicleSeat.Place(Tf, _ridingAnimator, body.Seating, body.SeatLocalPoint(seat), facing);
+            }
+            else
+            {
+                _vehicleSeat?.Release();
+                Tf.SetPositionAndRotation(body.Seat(seat), facing);
+            }
+        }
 
         void Seated(Vector3? aim)
         {
@@ -2744,6 +2761,7 @@ namespace RoadDemo
         /// and folding them would leave a man riding side-saddle on his own stumps.</summary>
         public void SetRiding(bool on, bool astride)
         {
+            if (!on || astride) { _vehicleSeat?.Release(); _ridingAnimator = null; }
             ClearFallingIn();
             Astride = on && astride;
             // the legs go with the seat either way - a dead man is lifted out whole
@@ -2762,6 +2780,7 @@ namespace RoadDemo
                 Target = null;
                 EndChat();
                 State = Mode.Riding;
+                if (!astride) _ridingAnimator = SnapPose(PoseSit);
             }
             else if (State == Mode.Riding)
             {
@@ -4343,6 +4362,7 @@ namespace RoadDemo
         /// before the body does.</summary>
         public override void Dispose()
         {
+            _vehicleSeat?.Release();
             var partner = _chatPartner;
             _chatPartner = null;
             if (partner != null && partner._chatPartner == this) partner.EndChat();

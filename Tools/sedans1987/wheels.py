@@ -22,7 +22,9 @@ def build_wheels(form):
                 annulus(mesh,side,.114,radius*.76,radius*.81,'cream')
             # A dished face stays inside the rubber shoulder; the rim is a thin
             # bright outline and dark spoke wells give the wheel depth at game scale.
-            mesh.cylinder((side*.106,0,0),radius*.64,.008,'wheelshade',sides=SEGMENTS)
+            # The rubber shell closes the back; this visible dish needs one face.
+            mesh.face([(side*.110,radius*.64*math.cos(i*math.tau/SEGMENTS),
+                        radius*.64*math.sin(i*math.tau/SEGMENTS)) for i in range(SEGMENTS)],'wheelshade',(side,0,0))
             annulus(mesh,side,.113,radius*.59,radius*.66,'chrome')
             if style=='regent':
                 mesh.cylinder((side*.115,0,0),radius*.54,.008,'chrome',sides=SEGMENTS)

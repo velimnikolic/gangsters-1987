@@ -54,9 +54,21 @@ static class Program
             Require(signature==Signature(new CoreRegion(core,world,seed,2)),"seed replay changed region");
             layouts.Add(signature);
             var industries=region.Quarters.Where(q=>q.District is IndustrialDistrict).ToArray();
-            Require(industries.Length>=3,"industry was not split into smaller estates");
-            Require(industries.Sum(q=>q.World.width*q.World.height)>=region.IndustryAreaTarget,"industry area did not double");
-            Require(industries.All(q=>q.World.width*q.World.height<region.IndustryAreaTarget*.5f),"individual estate is not smaller");
+            Require(industries.Length==1,"industry is not one zone behind the port");
+            var zone=(IndustrialDistrict)industries[0].District;
+            Require(zone.Layout.Islands.Count==20,$"port zone has {zone.Layout.Islands.Count} islands, not 20");
+            Require(zone.Layout.Parcels.Count==20,$"port zone has {zone.Layout.Parcels.Count} parcels, not 20");
+            foreach(var parcel in zone.Layout.Parcels)
+            {
+                Require(parcel.W>=13&&parcel.W<=14&&parcel.D>=12&&parcel.D<=13,$"port zone parcel {parcel.Name} is {parcel.W}x{parcel.D} cells");
+                IndustrialLayout.Least(parcel.Recipe,out int mw,out int md);
+                Require(parcel.W>=mw&&parcel.D>=md,$"port zone parcel {parcel.Name} is too small for its {parcel.Recipe}");
+            }
+            Require(zone.Layout.Parcels.Count(p=>p.Recipe==IndustrialLayout.Recipe.Works||p.Recipe==IndustrialLayout.Recipe.Plant)>=4,"port zone has no works");
+            Require(zone.Layout.Parcels.Count(p=>p.Recipe==IndustrialLayout.Recipe.Haulage)==1,"port zone has no haulage yard");
+            Require(zone.Raster.Faults==0,$"port zone drawing has {zone.Raster.Faults} raster faults");
+            Console.WriteLine($"seed {seed} port zone: {zone.Layout.Name}, {zone.LocalBounds.width:0}x{zone.LocalBounds.height:0} m, "+
+                string.Join(" ",zone.Layout.Parcels.GroupBy(p=>p.Recipe).OrderBy(g=>g.Key).Select(g=>$"{g.Key}x{g.Count()}")));
             Require(region.Quarters.Count==industries.Length+4,"missing district");
             Require(region.Quarters.Select(q=>q.Slot.name).Distinct().Count()==region.Quarters.Count,"duplicate district names");
             foreach(var q in expanded.Quarters)
@@ -194,7 +206,7 @@ static class Program
         foreach(var c in region.Connections)
         {
             if(c.CityNode!=null) access.Add(new {edge=(int)c.Edge,outlying=false,point=new[]{c.CityFace.x,c.CityFace.z}});
-            if(c.Quarter!=null && region.TryPortal(c,out var p))
+            if(c.Quarter!=null && c.Via==null && region.TryPortal(c,out var p))
             {var at=c.Quarter.District.Frame.ToWorld(p.Local);access.Add(new {edge=(int)c.Edge,outlying=true,point=new[]{at.x,at.z}});}
         }
         return new {seed,city=Box(core.Frame.ToWorldRect(core.LocalBounds)),ring=Box(region.BeltBounds),region=Box(region.WorldBounds),
@@ -208,11 +220,18 @@ static class Program
         foreach(var c in region.Connections)
         {
             foreach(var other in region.Connections)
-                if(other!=c && other.Edge==c.Edge) Require(Math.Abs(other.Across-c.Across)>=30f,"overlapping belt junctions");
+                if(other!=c && other.Edge==c.Edge && other.Via!=c.Quarter && c.Via!=other.Quarter) Require(Math.Abs(other.Across-c.Across)>=30f,"overlapping belt junctions");
             if(c.Quarter==null) continue;
             var edge=c.Edge;
             var belt=region.BeltBounds;
             var q=c.Quarter.World;
+            if(c.Via!=null)
+            {
+                // the gate is reached along the works' artery: the line must run through the works
+                var works=c.Via.World;
+                Require(CoreRegion.Vertical(edge)?c.Across>works.xMin&&c.Across<works.xMax:c.Across>works.yMin&&c.Across<works.yMax,"port gate line misses the works it is reached through");
+                continue;
+            }
             float from=edge==CityEdge.South?belt.yMin-166:edge==CityEdge.North?belt.yMax+166:edge==CityEdge.West?belt.xMin-166:belt.xMax+166;
             float to=edge==CityEdge.South?q.yMax:edge==CityEdge.North?q.yMin:edge==CityEdge.West?q.xMax:q.xMin;
             var corridor=CoreRegion.Vertical(edge)?Rect.MinMaxRect(c.Across-12.5f,Math.Min(from,to),c.Across+12.5f,Math.Max(from,to))
@@ -257,7 +276,7 @@ static class Program
             var box=q.World;
             var a=port.District.Frame.ToLocal(new Vector3(box.xMin,0,box.yMin));
             var b=port.District.Frame.ToLocal(new Vector3(box.xMax,0,box.yMax));
-            Require(Math.Abs(Math.Min(a.z,b.z)-30f)<.01f,"estate is not beside the port's landward edge");
+            Require(Math.Abs(Math.Min(a.z,b.z)-PortIndustryLayout.Frontage)<.01f,"works do not front the port's back street pavement");
             var ground=region.IndustryGroundBounds;
             Require(ground.xMin<=box.xMin && ground.xMax>=box.xMax && ground.yMin<=box.yMin && ground.yMax>=box.yMax,
                 "shared industrial ground misses an estate");
@@ -269,6 +288,31 @@ static class Program
             Require(Vector3.Dot(facing,RasterGateways.Outward(connection.Edge))<-.99f,"estate gateway faces away from the city");
             var face=q.District.Frame.ToWorld(portal.Local);
             Require(Math.Abs(CoreRegion.Across(connection.Edge,face)-connection.Across)<.01f,"estate approach misses its rotated gateway");
+
+            // the artery is a port gate road: the gate lays no approach of its own, the
+            // artery's seaward mouth lines up with the gate, and the zone stays inside the
+            // port frontage and clear of the other gate road
+            var via=region.Connections.Single(c=>c.Via==q);
+            Require(via.Quarter==port&&Math.Abs(via.Across-connection.Across)<.01f,"port gate is not on the works' artery line");
+            var zone=(IndustrialDistrict)q.District;
+            var mouths=IndustrialDistrict.SeawardStreets(zone.Raster,zone.SeawardCut);
+            Require(mouths.Count==5,$"port zone has {mouths.Count} streets running out onto the port road, not 5");
+            Require(zone.Layout.Roads.MainRoad.y-zone.Layout.Roads.MainRoad.x==15f,"port zone artery is not a 15 m street");
+            Require(mouths.Exists(z=>Math.Abs(z-7.5f)<.01f),"port zone artery does not run out onto the port road");
+            Require(Math.Abs(q.District.LocalBounds.xMax-zone.SeawardCut)<.01f,"port zone bounds keep the ring past the seaward cut");
+            foreach(float crown in mouths)
+            {
+                var arrival=port.District.Frame.ToLocal(q.District.Frame.ToWorld(new Vector3(zone.SeawardCut,0,crown)));
+                Require(arrival.x>port.District.LocalBounds.xMin+20f&&arrival.x<port.District.LocalBounds.xMax-20f,"a works street arrives beyond the port road");
+                Require(Math.Abs(arrival.z-PortIndustryLayout.Frontage)<.01f,"a works street does not end at the port pavement");
+            }
+            Require(Math.Min(a.x,b.x)>=port.District.LocalBounds.xMin-.01f&&Math.Max(a.x,b.x)<=port.District.LocalBounds.xMax+.01f,"works overhang the port frontage");
+            foreach(var other in region.Connections)
+            {
+                if(other==via||other.Edge!=via.Edge||other.Quarter==null||other.Quarter==q) continue;
+                float lo=CoreRegion.Vertical(via.Edge)?box.xMin:box.yMin, hi=CoreRegion.Vertical(via.Edge)?box.xMax:box.yMax;
+                Require(other.Across<lo-20f||other.Across>hi+20f,$"{other.Quarter.District.Name} gate road runs into the works");
+            }
         }
     }
     static float Gap(Rect a,Rect b)

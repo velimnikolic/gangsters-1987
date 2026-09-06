@@ -22,12 +22,15 @@ namespace RoadDemo
         public float TrafficHalfLength => HalfLength * RoadCar.TrafficFootprintScale;
         public float TrafficHalfWidth => HalfWidth * RoadCar.TrafficFootprintScale;
 
+        public const int DefaultSeats = 5;
+
         /// <summary>How many men it carries: a van or a limousine six, a truck cab three,
-        /// a supercar two, a car four.</summary>
-        public int Seats { get; set; } = 4;
+        /// a roadster or supercar two, an ordinary car five including its driver.</summary>
+        public int Seats { get; set; } = DefaultSeats;
 
         // Seats, left-hand drive: 0 is the driver's (front left), 1 the front
-        // passenger's, 2 and 3 the back seat, 4 and 5 a van's third row. In the car's
+        // passenger's, 2 and 3 the back seat. Seat 4 is an ordinary car's rear centre;
+        // a van instead keeps 4 and 5 in its third row. In the car's
         // own frame; y is where a seated man's ROOT goes (the sit clip carries his
         // pelvis 0.43 above it), which puts him on the cushion. The fallback for a
         // body with no steering wheel to measure from - see MeasureSeats.
@@ -48,14 +51,21 @@ namespace RoadDemo
         public static float WheelHeightOfCar = 0.95f;
 
         readonly Vector3[] _seats;
+        public readonly VehicleSeatRig Seating;
 
-        public CarBody(Transform tf)
+        public CarBody(Transform tf, string modelName = null)
         {
             Tf = tf;
             Measure();
-            string n = tf.name.ToLowerInvariant();
-            Seats = n.Contains("van") || n.Contains("limo") ? 6 : n.Contains("truck") ? 3 : n.Contains("supercar") ? 2 : 4;
+            Seats = CapacityFor(modelName ?? tf.name);
+            tf.TryGetComponent(out Seating);
+            int additional = Seating ? Seating.additionalSeats?.Length ?? 0 : 0;
+            // Four authored cushion positions do not remove the middle passenger.
+            // Explicit extra rows can expand a normal car; a roadster stays a two-seater.
+            if (Seating && Seats >= DefaultSeats) Seats = Mathf.Max(Seats, 4 + additional);
             _seats = MeasureSeats(tf);
+            if (Seats == DefaultSeats && additional == 0)
+                _seats[4] = (_seats[2] + _seats[3]) * 0.5f;
             FindDoors();
             FindWheels();
         }
@@ -65,20 +75,32 @@ namespace RoadDemo
 
         static readonly HashSet<string> SeatsLogged = new HashSet<string>();
 
+        internal static int CapacityFor(string name)
+        {
+            string n = (name ?? string.Empty).ToLowerInvariant();
+            return n.Contains("van") || n.Contains("limo") ? 6 : n.Contains("truck") ? 3
+                : n.Contains("supercar") || n.Contains("roadster") ? 2 : DefaultSeats;
+        }
+
         /// <summary>Where the seats of this body are, in its own frame: the table above,
         /// moved to sit behind the body's own steering wheel - its part named
         /// "...Steering..." (SM_Veh_Car_Sedan_SteeringW, SM_Veh_Steering_Wheel_08) -
         /// so the driver is back off the wheel in every pack car alike, the front pair
         /// on the wheel's line across, the rows a RowPitch apart behind it, and a tall
         /// cab's men lifted with its wheel. A body without the part keeps the table.</summary>
+        // Custody also uses these rows, including the cargo-row anchor at index 4.
+        // Only a five-seat CarBody instance replaces that anchor with its rear centre.
         public static Vector3[] MeasureSeats(Transform car)
         {
             var seats = (Vector3[])SeatLocal.Clone();
             if (car == null) return seats;
             if (car.TryGetComponent<VehicleSeatRig>(out var authored))
             {
+                int additional = authored.additionalSeats?.Length ?? 0;
+                if (4 + additional > seats.Length) System.Array.Resize(ref seats, 4 + additional);
                 seats[0] = authored.frontLeft; seats[1] = authored.frontRight;
                 seats[2] = authored.rearLeft; seats[3] = authored.rearRight;
+                if (additional > 0) System.Array.Copy(authored.additionalSeats, 0, seats, 4, additional);
                 return seats;
             }
             Renderer wheel = null;
@@ -188,15 +210,22 @@ namespace RoadDemo
         /// <summary>Which flank a seat is on: +1 right, -1 left.</summary>
         public static float SeatSide(int index) => index % 2 == 0 ? -1f : 1f;
 
+        internal bool IsRearCentreSeat(int seat) => Seats == DefaultSeats && seat == 4;
+
+        // The middle passenger shares the rear-left exit, never a fifth door or boot.
+        int DoorSeat(int seat) => IsRearCentreSeat(seat) ? 2 : seat;
+
         /// <summary>Where the man for this seat stands to get in or out: outside his
         /// own door a stride off the flank; behind the back door of a van.</summary>
         public Vector3 DoorPoint(int seat)
         {
+            float exitOffset = IsRearCentreSeat(seat) ? -0.7f : 0f;
+            seat = DoorSeat(seat);
             var d = DoorFor(seat);
             if (d != null && d.Seat == -1)
                 return Tf.position - Tf.forward * (HalfLength + 1.2f) + Tf.right * (seat % 2 == 0 ? -0.5f : 0.5f);
             var s = _seats[Mathf.Clamp(seat, 0, _seats.Length - 1)];
-            return Tf.position + Tf.right * Mathf.Sign(s.x) * (HalfWidth + 0.9f) + Tf.forward * s.z;
+            return Tf.position + Tf.right * Mathf.Sign(s.x) * (HalfWidth + 0.9f) + Tf.forward * (s.z + exitOffset);
         }
 
         /// <summary>A window on the flank facing the target, at head height, staggered
@@ -239,6 +268,7 @@ namespace RoadDemo
         /// that nothing (a body without door parts). Never the boot.</summary>
         Door DoorFor(int seat)
         {
+            seat = DoorSeat(seat);
             foreach (var d in _doors) if (d.Seat == seat) return d;
             foreach (var d in _doors) if (d.Seat == -1) return d;
             return null;
@@ -377,6 +407,7 @@ namespace RoadDemo
         /// his gun out of it) or back up. A body without the glass part does nothing.</summary>
         public void SetWindow(int seat, bool down)
         {
+            if (IsRearCentreSeat(seat)) return; // the middle rider has no window of his own
             var d = DoorFor(seat);
             if (d == null || d.Seat == -1) return; // a van's back doors: no window to wind
             d.WantDown = down;

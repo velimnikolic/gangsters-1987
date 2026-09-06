@@ -451,8 +451,7 @@ namespace RoadDemo
         Vector3 _paveSize, _paveOffset;
         float _paveTop;
         /// <summary>The marked cruisers the patrol fleet draws from - the approved
-        /// pickup (VehicleCatalog.PoliceCars), used in every stall so all marked police
-        /// vehicles in the city have the requested body.</summary>
+        /// pickup and authored custody van (VehicleCatalog.PoliceCars).</summary>
         readonly List<GameObject> _policeCarPrefabs = new List<GameObject>();
         readonly List<GameObject> _officerPrefabs = new List<GameObject>();
         /// <summary>
@@ -958,6 +957,7 @@ namespace RoadDemo
             // Patrol admission remains separate from the ambient fleet.
             string[] vehicleFolders =
             {
+                "Assets/Sedan1987/Prefabs",
                 "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles",
                 "Assets/Synty/PolygonCity/Prefabs/Vehicles",
                 "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles",

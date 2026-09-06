@@ -1153,6 +1153,25 @@ namespace RoadDemo
             _pose = pose;
         }
 
+        /// <summary>Resolve a physical pose change before measuring its bones.
+        /// Boarding cannot carry a standing-to-sitting crossfade through a roof.</summary>
+        protected Animator SnapPose(int pose)
+        {
+            if (!_graph.IsValid() || !HasPose(pose) || !_animator) return null;
+            SetPose(pose);
+            for (int i = 0; i < PoseCount; i++)
+            {
+                _weights[i] = i == pose ? 1f : 0f;
+                _mixer.SetInputWeight(i, _weights[i]);
+            }
+            if (_layers.IsValid()) { _longGunRunWeight = 0f; _layers.SetInputWeight(1, 0f); }
+            var culling = _animator.cullingMode;
+            _animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+            _graph.Evaluate(0f);
+            _animator.cullingMode = culling;
+            return _animator;
+        }
+
         /// <summary>Rewind a one-shot (sit down, stand up) before blending it in.</summary>
         protected void RestartPose(int pose, float atTime = 0f, float speed = 1f)
         {

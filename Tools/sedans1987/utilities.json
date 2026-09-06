@@ -15,7 +15,7 @@
     "cabin": [
       -1.79,
       -1.62,
-      0.43,
+      0.52,
       0.88
     ],
     "posts": [
@@ -58,7 +58,7 @@
     "cabin": [
       -2.3,
       -2.14,
-      0.35,
+      0.47,
       0.97
     ],
     "posts": [
@@ -101,7 +101,7 @@
     "cabin": [
       -2.14,
       -1.86,
-      0.39,
+      0.53,
       1.05
     ],
     "posts": [
@@ -145,7 +145,7 @@
     "cabin": [
       -2.51,
       -2.42,
-      1.68,
+      1.7699999999999998,
       2.09
     ],
     "posts": [
@@ -177,24 +177,23 @@
     "id": "12_Monarch_Bastion",
     "name": "MONARCH BASTION",
     "style": "bastion",
-    "role": "ARMOURED CREW SUV",
+    "role": "ARMOURED CREW TRUCK",
     "paint": "navy",
     "roof": "navy",
     "length": 5.04,
-    "width": 1.96,
+    "width": 2.02,
     "height": 1.82,
     "wheelbase": 3.0,
-    "radius": 0.395,
+    "radius": 0.435,
     "belt": 1.13,
     "cabin": [
-      -2.4,
-      -2.19,
-      0.49,
-      1.17
+      -1.25,
+      -1.06,
+      0.82,
+      1.2
     ],
     "posts": [
-      -1.01,
-      0.25
+      -0.12
     ],
     "shape": {
       "nose_taper": 0.045,
@@ -204,18 +203,19 @@
       "tail_drop": 0.015,
       "crown": 0.032,
       "corner": 0.18,
-      "roof_rear_inset": 0.19,
-      "roof_front_inset": 0.24,
+      "roof_rear_inset": 0.15,
+      "roof_front_inset": 0.19,
       "roof_crown": 0.035,
       "roof_end_drop": 0.02,
-      "pillar": 0.25,
+      "pillar": -0.12,
       "rear_pillar": 0.11,
       "axle_offset": 0.04
     },
     "detail": "Black armour / deep window frames / protected grille",
     "era": "Black armour / deep window frames / protected grille",
     "price": 30000,
-    "utility": true
+    "utility": true,
+    "pickup": true
   },
   {
     "id": "13_Calder_Voyager",
@@ -233,7 +233,7 @@
     "cabin": [
       -2.39,
       -2.28,
-      1.59,
+      1.67,
       2.0
     ],
     "posts": [

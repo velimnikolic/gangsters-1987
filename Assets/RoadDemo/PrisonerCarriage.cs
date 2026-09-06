@@ -744,6 +744,7 @@ namespace RoadDemo
             var seats = CarBody.MeasureSeats(car);
             if (seats == null || seats.Length == 0) return null;
             var seat = seats[Mathf.Clamp(index, 0, seats.Length - 1)];
+            float yaw = car.TryGetComponent<VehicleSeatRig>(out var seating) ? seating.YawAt(index) : 0f;
             var body = new SeatedBody
             {
                 Man = man,
@@ -760,10 +761,10 @@ namespace RoadDemo
             man.SetRiding(true);
             man.Tf.SetParent(car, false);
             man.Tf.localPosition = seat;
-            man.Tf.localRotation = Quaternion.identity;
+            man.Tf.localRotation = Quaternion.Euler(0f, yaw, 0f);
             man.Tf.localScale = body.LocalScale;
             body.Visual = CarOccupant.Seat(car, man.SourcePrefab, sitLoop, seat,
-                man.Tf.gameObject.layer);
+                man.Tf.gameObject.layer, yaw);
             for (var i = 0; i < body.Renderers.Length; i++)
                 if (body.Renderers[i] != null) body.Renderers[i].enabled = false;
             return body;

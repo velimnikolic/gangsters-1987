@@ -803,9 +803,10 @@ namespace LivingCity.Tests
         {
             const string fleet = Gameplay.VehicleCatalog.PoliceFleetFolder;
             const string policePickup = "SM_Veh_Pickup_01_Preset_Police";
-            if (Gameplay.VehicleCatalog.PoliceCars.Length != 1 ||
-                Gameplay.VehicleCatalog.PoliceCars[0] != policePickup)
-                failures.Add("Fleet: live police cars must use only the marked pickup.");
+            if (Gameplay.VehicleCatalog.PoliceCars.Length != 2 ||
+                Gameplay.VehicleCatalog.PoliceCars[0] != policePickup ||
+                Gameplay.VehicleCatalog.PoliceCars[1] != Gameplay.VehicleCatalog.PoliceTransportModel)
+                failures.Add("Fleet: live police cars must retain the marked pickup and include Warden transport.");
             if (RoadDemo.DriverProfile.Police.Cruise < 24f ||
                 RoadDemo.DriverProfile.Police.Cruise <= RoadDemo.DriverProfile.Hot.Cruise)
                 failures.Add("Fleet: police answering with roof lights must be faster " +

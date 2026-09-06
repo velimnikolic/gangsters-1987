@@ -16,11 +16,12 @@ namespace RoadDemo
         DemoCamera _camera;
         Vector3 _overviewPivot;
         float _overviewDistance, _overviewYaw, _overviewPitch;
+        bool _brakePreview;
         int _focused = -1;
         int _comparison = 3;
         const int FirstUtility = 9;
-        const string Controls = "F1-F6: new vehicles   U: new row   1-8: sedans   9: Synty\n" +
-            "C: compare   0: all vehicles   L: day/night\n" +
+        const string Controls = "F1-F7: new vehicles   U: new row   1-8: sedans   9: Synty\n" +
+            "C: compare   0: all vehicles   L: day/night   B: brake lights\n" +
             "WASD/arrows: pan   Q/E or right-drag: orbit   wheel: zoom";
 
         void Awake()
@@ -51,7 +52,7 @@ namespace RoadDemo
             string label = _focused >= 0 && cars != null && _focused < cars.Length && cars[_focused]
                 ? (labels != null && _focused < labels.Length ? labels[_focused] : cars[_focused].name)
                 : (_focused == -2 ? cars[_comparison].name + " / SYNTY SEDAN"
-                    : _focused == -3 ? "NEW UTILITY VEHICLES / awaiting approval" : "MIAMI 1987 / complete collection");
+                    : _focused == -3 ? "UTILITY VEHICLES / COMPACT HATCHBACK" : "MIAMI 1987 / complete collection");
             _camera.hint = label + (clock && clock.Hour > 20f ? " / NIGHT" : " / DAY") + "\n" + Controls;
         }
 
@@ -117,6 +118,12 @@ namespace RoadDemo
                 clock.SetHour(clock.Hour > 20f ? 14f : 23f);
                 RefreshHint();
             }
+            if (keys.bKey.wasPressedThisFrame && cars != null)
+            {
+                _brakePreview = !_brakePreview;
+                foreach (var car in cars)
+                    if (car && car.TryGetComponent<VehicleLampRig>(out var rig)) rig.SetBrakeLights(_brakePreview);
+            }
             if (keys.digit0Key.wasPressedThisFrame) Overview();
             if (keys.digit1Key.wasPressedThisFrame) Focus(0);
             if (keys.digit2Key.wasPressedThisFrame) Focus(1);
@@ -135,6 +142,7 @@ namespace RoadDemo
             if (keys.f4Key.wasPressedThisFrame) Focus(FirstUtility + 3);
             if (keys.f5Key.wasPressedThisFrame) Focus(FirstUtility + 4);
             if (keys.f6Key.wasPressedThisFrame) Focus(FirstUtility + 5);
+            if (keys.f7Key.wasPressedThisFrame) Focus(FirstUtility + 6);
         }
     }
 }

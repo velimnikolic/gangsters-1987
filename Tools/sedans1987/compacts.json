@@ -1,0 +1,42 @@
+[
+  {
+    "id": "14_Borough_Mica",
+    "name": "SRBO",
+    "style": "mica",
+    "hatchback": true,
+    "role": "THREE-DOOR COMPACT",
+    "paint": "red",
+    "roof": "red",
+    "length": 3.45,
+    "width": 1.54,
+    "height": 1.39,
+    "wheelbase": 2.16,
+    "radius": 0.263,
+    "belt": 0.87,
+    "cabin": [
+      -1.67,
+      -1.13,
+      0.36,
+      0.98
+    ],
+    "shape": {
+      "nose_taper": 0.055,
+      "tail_taper": 0.035,
+      "waist": 0.99,
+      "hood_drop": 0.15,
+      "tail_drop": 0.015,
+      "crown": 0.026,
+      "corner": 0.12,
+      "roof_rear_inset": 0.11,
+      "roof_front_inset": 0.15,
+      "roof_crown": 0.02,
+      "roof_end_drop": 0.018,
+      "pillar": -0.34,
+      "rear_pillar": 0.12,
+      "axle_offset": 0.035
+    },
+    "price": 3990,
+    "detail": "Red three-door hatchback / short bonnet / small steel wheels",
+    "era": "Small European economy hatchback"
+  }
+]

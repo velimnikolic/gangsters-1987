@@ -65,6 +65,10 @@ namespace RoadDemo
         /// <summary>A few port-side blocks around the same shared industrial artery.</summary>
         public bool compact;
         public bool pocket;
+        /// <summary>The works behind the port: twenty small parcels two tiers deep either
+        /// side of an artery that is the port's own approach road
+        /// (<see cref="IndustrialLayout.Shape.PortZone"/>).</summary>
+        public bool portZone;
 
         public string Name => "Industry";
         public DistrictFrame Frame { get; set; } = DistrictFrame.Identity;
@@ -79,6 +83,49 @@ namespace RoadDemo
         public Rect LocalSurfaceBounds => _plan != null && _plan.ExternalArtery
             ? Rect.MinMaxRect(_bounds.xMin, _plan.ExternalRoad.y, _bounds.xMax, _bounds.yMax)
             : _bounds;
+        /// <summary>Where the port zone's drawing stops seaward, in local metres
+        /// (<see cref="IndustrialLayout.Plan.SeawardCut"/>); infinity for an estate.</summary>
+        public float SeawardCut => _plan?.SeawardCut ?? float.PositiveInfinity;
+        /// <summary>The dead ends of the streets that run to the seaward cut, once the
+        /// graph is built: the node each ends in and the point on its crown at the cut.
+        /// The host joins each to the road that stands beyond the cut.</summary>
+        public IReadOnlyList<(RoadNode Node, Vector3 World)> SeawardMouths => _mouths;
+        readonly List<(RoadNode Node, Vector3 World)> _mouths = new List<(RoadNode, Vector3)>();
+
+        /// <summary>The crowns (local z) of the streets that end at the seaward cut.</summary>
+        public static List<float> SeawardStreets(CoreRoads.Raster raster, float cut)
+        {
+            var crowns = new List<float>();
+            if (raster == null || float.IsPositiveInfinity(cut)) return crowns;
+            foreach (var reach in raster.Stretches)
+                if (!reach.Vertical && reach.NodeB < 0 && Mathf.Abs(reach.To - cut) < CoreRoads.Cell * 0.51f)
+                    crowns.Add(reach.Crown);
+            crowns.Sort();
+            return crowns;
+        }
+
+        /// <summary>The graph's dead-end nodes at the seaward cut, by street crown.
+        /// RasterGraph stands a small node half a metre short of every dead end.</summary>
+        public static List<(RoadNode Node, Vector3 World)> FindSeawardMouths(CoreRoads.Raster raster, float cut,
+                                                                              LaneNet net, DistrictFrame frame)
+        {
+            var mouths = new List<(RoadNode, Vector3)>();
+            if (net == null) return mouths;
+            foreach (float crown in SeawardStreets(raster, cut))
+            {
+                var end = frame.ToWorld(new Vector3(cut, 0f, crown));
+                var expect = frame.ToWorld(new Vector3(cut - 0.5f, 0f, crown));
+                RoadNode best = null;
+                float nearest = 1.5f;
+                foreach (var node in net.Nodes)
+                {
+                    float d = Mathf.Abs(node.X - expect.x) + Mathf.Abs(node.Z - expect.z);
+                    if (d < nearest) { nearest = d; best = node; }
+                }
+                if (best != null) mouths.Add((best, end));
+            }
+            return mouths;
+        }
 
         readonly List<DemoVehicle> _vehicles = new List<DemoVehicle>();
         readonly List<DemoVehicle> _lorries = new List<DemoVehicle>();
@@ -106,8 +153,12 @@ namespace RoadDemo
             _seed = seed;
             _plan = externalArtery
                 ? IndustrialLayout.ArrangeRoadside(seed, out _raster)
-                : IndustrialLayout.Arrange(seed, out _raster, compact, pocket);
+                : IndustrialLayout.Arrange(seed, out _raster, IndustrialLayout.Shape.For(compact, pocket, portZone));
             _bounds = IndustrialLayout.Bounds(_raster);
+            // the port zone's drawing ends at its seaward cut: the ring of street the
+            // raster keeps beyond it is another district's ground
+            if (!float.IsPositiveInfinity(_plan.SeawardCut))
+                _bounds = Rect.MinMaxRect(_bounds.xMin, _bounds.yMin, Mathf.Min(_bounds.xMax, _plan.SeawardCut), _bounds.yMax);
             _externalJunctionXs.Clear();
             if (_plan.ExternalArtery)
             {
@@ -156,6 +207,8 @@ namespace RoadDemo
             quarter.SetPositionAndRotation(Frame.origin, Frame.Rotation);
 
             Net = RasterGraph.Build(_raster, Frame, streetSpeed, arterySpeed, streetSpeed * 0.6f);
+            _mouths.Clear();
+            _mouths.AddRange(FindSeawardMouths(_raster, SeawardCut, Net, Frame));
             _edges.Clear();
             _edges.AddRange(Net.Edges);
             SpawnLorries(host.LiveRoot("Industry Traffic"));
@@ -284,7 +337,10 @@ namespace RoadDemo
         {
             foreach (var job in _freight) job.Dispose();
             _freight.Clear();
-            for (int i = 0; i < Mathf.Min(2, _lorries.Count); i++)
+            // two lorries called a small estate's; the zone behind the port is several
+            // estates' worth of parcels on one road and sends one lorry per three
+            int calls = Mathf.Min(_lorries.Count, Mathf.Max(2, (_plan?.Parcels.Count ?? 0) / 3));
+            for (int i = 0; i < calls; i++)
             {
                 var job = IndustrialFreight.TryCreate(_lorries[i], net, Frame.ToWorldRect(_bounds), harbor, next++, portClaims);
                 if (job != null) _freight.Add(job);

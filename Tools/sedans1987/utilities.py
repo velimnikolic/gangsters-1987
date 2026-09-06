@@ -6,6 +6,7 @@ from wheels import build_wheels
 from lenses import separate_lamps
 from utility_cabin import build_cabin
 from utility_details import fascia,interior,trim,seat_layout
+from armour import fit_armour,armoured_wheels,truck_bed,lightbar
 
 
 def build_car(car):
@@ -17,9 +18,12 @@ def build_car(car):
     wheel_car=copy.deepcopy(car)
     wheel_car['style']={'trail':'hikari','ranger':'bayside','highland':'kronen',
                         'warden':'hikari','bastion':'bayside','voyager':'hikari'}[car['style']]
-    wheels=build_wheels(Coachwork(wheel_car))
+    wheels=armoured_wheels(form) if car['style']=='bastion' else build_wheels(Coachwork(wheel_car))
     trim(body,form,wheels)
     if car['style']=='bastion':
+        fit_armour(body,form)
+        if car.get('pickup'):truck_bed(body,form)
+        anchors += lightbar(body,form)
         body.faces=[(points,'rubber' if color=='navy' else 'seam' if color=='navy_gap' else color)
                     for points,color in body.faces]
     lift=.11 if car['style'] not in ('warden','voyager') else .055

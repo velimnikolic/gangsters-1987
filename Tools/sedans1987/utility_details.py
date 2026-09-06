@@ -5,7 +5,8 @@ from geometry import Mesh
 from bodywork import samples,lerp
 from interiors import cushion,steering
 from lenses import round_lamp
-from fascia_skin import surround,surface
+from fascia_skin import surround,surface,insert
+from seating import seat_roots as seat_layout
 
 
 def bevel_box(mesh,center,size,color,bevel=.04):
@@ -22,38 +23,35 @@ def bevel_box(mesh,center,size,color,bevel=.04):
 
 def fascia(mesh,form):
     car=form.car;style=car['style'];van=style in ('warden','voyager')
-    lamp_y=car['belt']-form.shape['hood_drop']-(.09 if van else .12)
-    lamp_x=form.w*.70
+    lamp_y=car['belt']-form.shape['hood_drop']-(.09 if van else .14 if style=='bastion' else .12)
+    lamp_x=form.w*(.64 if style=='highland' else .68)
     # Recesses follow the planform sweep. Lamps are thin inserts, below the hood.
-    def plate(x,y,w,h,color,end=1,depth=.025):
-        def pt(u,t):
-            px=x+u*w/2;py=y+t*h/2
-            return px,py,form.skin_z(px,end,py)+end*depth
-        surface(mesh,form,pt,samples(-1,1,8 if w>.6 else 4),[-1,1],color,end)
+    def plate(x,y,w,h,color,end=1,depth=.004):
+        insert(mesh,form,[(x+u*w/2,y+t*h/2) for u,t in [(-1,-1),(1,-1),(1,1),(-1,1)]],color,depth,end)
     for side in (-1,1):
         x=side*lamp_x
         width=.34 if style in ('trail','ranger') else .40 if style=='highland' else .29 if van else .35
         height=.28 if style in ('trail','ranger') else .25 if style=='highland' else .15
         plate(x,lamp_y,width+.045,height+.046,'rubber')
-        if style in ('trail','highland'):
-            if style=='trail':round_lamp(mesh,form,x,lamp_y,.126)
+        if style in ('trail','highland','bastion'):
+            if style in ('trail','bastion'):round_lamp(mesh,form,x,lamp_y,.126)
             else:
                 for dx in (-.104,.104):round_lamp(mesh,form,x+dx,lamp_y,.091)
         else:
-            plate(x,lamp_y,width+.016,height+.017,'chrome',depth=.031)
-            plate(x,lamp_y,width,height,'lamp_front',depth=.035)
+            plate(x,lamp_y,width+.016,height+.017,'chrome',depth=.009)
+            plate(x,lamp_y,width,height,'lamp_front',depth=.013)
         if van:
-            plate(x,lamp_y-.215,width+.035,.183,'chrome',depth=.031)
-            plate(x,lamp_y-.215,width,.145,'lamp_front',depth=.035)
-            plate(side*(form.w*.88),lamp_y-.11,.062,.39,'lamp_marker',depth=.034)
+            plate(x,lamp_y-.215,width+.035,.183,'chrome',depth=.009)
+            plate(x,lamp_y-.215,width,.145,'lamp_front',depth=.013)
+            plate(side*(form.w*.88),lamp_y-.11,.062,.39,'lamp_marker',depth=.012)
         elif style=='ranger':
-            plate(side*(form.w*.91),lamp_y,.056,.27,'lamp_marker',depth=.034)
-        else:plate(x,lamp_y-height/2-.072,width*.82,.055,'lamp_marker',depth=.034)
+            plate(side*(form.w*.91),lamp_y,.056,.27,'lamp_marker',depth=.012)
+        else:plate(x,lamp_y-height/2-.072,width*.82,.055,'lamp_marker',depth=.012)
         # Tall tail lights remain clear of a hatch-mounted spare.
         rear_x=side*form.w*.80
         plate(rear_x,.88 if van else .89,.14,.29,'rubber',-1)
-        plate(rear_x,.92,.113,.18,'lamp_tail',-1,.033)
-        plate(rear_x,.80,.113,.055,'lamp_marker',-1,.034)
+        plate(rear_x,.92,.113,.18,'lamp_tail',-1,.010)
+        plate(rear_x,.80,.113,.055,'lamp_marker',-1,.012)
     grille_width=form.w*.97
     gy=lamp_y-.10 if van else lamp_y
     gh=.38 if van else .31
@@ -68,33 +66,26 @@ def fascia(mesh,form):
         form.bumper(mesh,end,'chrome' if style=='highland' else 'wheelshade')
         plate(0,.43,.37,.10,'plate',end,.106)
         plate(0,.43,.29,.026,'wheelshade',end,.108)
-    if style in ('trail','bastion'):
+    if style=='trail':
         bevel_box(mesh,(0,.69,form.end+.13),(1.13,.075,.075),'rubber',.014)
         for side in (-1,1):
             mesh.beam((side*.48,.42,form.end+.14),(side*.48,.91,form.end+.14),.064,'rubber')
             mesh.beam((side*.36,.30,form.end+.08),(side*.36,.45,form.end+.15),.07,'wheelshade')
     beam_x=lamp_x+(.104 if style=='highland' else 0)
-    return [(-beam_x,lamp_y,form.skin_z(-beam_x,1,lamp_y)+.055),
-            (beam_x,lamp_y,form.skin_z(beam_x,1,lamp_y)+.055)]
-
-
-def seat_layout(form):
-    car=form.car;van=car['style'] in ('warden','voyager')
-    top=.755 if van else .735
-    z=car['posts'][-1]+.30
-    width=car['width']*.40
-    return [(side*width/2,top-.43,row) for row in (z,z-1.03) for side in (-1,1)]
+    return [(-beam_x,lamp_y,form.skin_z(-beam_x,1,lamp_y)+.032),
+            (beam_x,lamp_y,form.skin_z(beam_x,1,lamp_y)+.032)]
 
 
 def interior(mesh,form):
     car=form.car;style=car['style'];bb,bt,ft,fb=car['cabin'];van=style in ('warden','voyager')
     width=car['width']*.80;floor=.39 if van else .33
     mesh.box((0,floor,(bb+fb)/2),(width,.07,fb-bb),'interior_trim')
-    top=.755 if van else .735;seat_y=top-.08
-    front_z=car['posts'][-1]+.30
+    seats=seat_layout(form)
+    top=seats[0][1]+.43;seat_y=top-.08
+    front_z=seats[0][2]
     back_top=min(car['height']-.40,1.55)
     fabric='dashboard' if style in ('trail','warden','bastion') else 'upholstery'
-    for x in (-car['width']*.20,car['width']*.20):
+    for x in (seats[0][0],seats[1][0]):
         cushion(mesh,(x,seat_y,front_z),(width*.43,.16,.54),fabric)
         cushion(mesh,(x,(top+back_top)/2,front_z-.29),(width*.42,back_top-top,.14),fabric,lean=.07)
         mesh.box((x,back_top+.07,front_z-.32),(width*.24,.12,.12),fabric)
@@ -107,8 +98,7 @@ def interior(mesh,form):
             cushion(mesh,(side*width*.34,.73,-1.02),(width*.27,.13,1.80),'dashboard')
             mesh.box((side*width*.46,1.02,-1.02),(.08,.51,1.8),'dashboard')
     else:
-        rows=[front_z-1.03]
-        if style=='voyager':rows.append(front_z-2.00)
+        rows=[p[2] for p in seats[2::2]]
         for z in rows:
             cushion(mesh,(0,seat_y,z),(width*.92,.16,.52),fabric)
             cushion(mesh,(0,(top+back_top)/2,z-.29),(width*.92,back_top-top,.14),fabric,lean=.07)
@@ -176,17 +166,7 @@ def trim(mesh,form,wheels):
             def band(z,t):
                 y=lerp(low,high,t);return side*(form.side_x(y,z)+.012),y,z
             mesh.surface(band,zs,[0,1],color,(side,0,0),smooth=False)
-        if style=='bastion':
-            # Ballistic door overlays have a visible edge rather than rivet clutter.
-            for a,b in [(-.89,.18),(.34,fb-.15)]:
-                def plate(u,t):
-                    z=lerp(a,b,u);y=lerp(.63,car['belt']-.07,t)
-                    return side*(form.side_x(y,z)+.028),y,z
-                mesh.surface(plate,[0,1],[0,1],'interior_trim',(side,0,0),smooth=False)
-                for u in (.08,.92):
-                    for t in (.10,.90):
-                        x,y,z=plate(u,t);mesh.cylinder((x+side*.004,y,z),.013,.006,'wheelshade',sides=6)
-    if style in ('ranger','highland','bastion'):
+    if style in ('ranger','highland'):
         for side in (-1,1):
             x=side*(form.w-.19)
             for z in (bt+.30,ft-.17):mesh.beam((x,car['height']-.055,z),(x,car['height']+.075,z),.037,'rubber')
@@ -201,5 +181,5 @@ def trim(mesh,form,wheels):
         bevel_box(mesh,(0,car['height']+.07,.74),(1.33,.075,.24),'wheelshade',.025)
         for side,color in [(-1,'red'),(1,'blue')]:
             mesh.cylinder((side*.43,car['height']+.17,.74),.135,.17,color,axis=1,sides=12)
-            mesh.cylinder((side*.43,car['height']+.27,.74),.11,.028,color,axis=1,sides=12)
+            mesh.cylinder((side*.43,car['height']+.27,.74),.11,.028,color,axis=1,sides=10)
         mesh.beam((form.w*.72,car['height']-.03,-1.30),(form.w*.72,car['height']+.50,-1.30),.010,'rubber')

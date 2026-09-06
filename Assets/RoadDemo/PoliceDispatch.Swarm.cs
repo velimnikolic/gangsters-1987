@@ -71,6 +71,35 @@ namespace RoadDemo
         /// <summary>Whether the whole force is out. Read by the overlay and the map.</summary>
         public bool Swarming => _swarm;
 
+        /// <summary>The most cars the radio puts on one scene, for a report that wants to
+        /// say what the ceiling was as well as what came.</summary>
+        public static int SwarmCarCap => SwarmCars;
+
+        /// <summary>
+        /// THE CARS ANSWERING THE RADIO, and whose they are. Returns how many cars are on
+        /// the current hunt and fills <paramref name="precincts"/> with the distinct
+        /// station ids that sent them - which is the whole evidence for "a dead officer
+        /// pulls cars off every roster there is" (GAN-236). Read-only; it decides nothing.
+        /// </summary>
+        public int SwarmAnswer(List<int> precincts)
+        {
+            precincts?.Clear();
+            var cars = 0;
+            for (var i = 0; i < _squads.Count; i++)
+            {
+                var squad = _squads[i];
+                if (squad == null || !squad.SwarmResponse) continue;
+                var car = squad.Ride as PolicePatrolCar;
+                if (car == null) continue;
+                cars++;
+                if (precincts != null && !precincts.Contains(car.Precinct))
+                    precincts.Add(car.Precinct);
+            }
+
+            precincts?.Sort();
+            return cars;
+        }
+
         /// <summary>
         /// SWARM-001: an officer is down. Everything the city has, now.
         /// </summary>

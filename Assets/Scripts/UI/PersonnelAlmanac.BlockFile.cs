@@ -198,14 +198,22 @@ namespace LivingCity.UI
             dirty = true;
         }
 
-        /// <summary>Opens the menu beside a premise, or shuts the one that is open. A
-        /// different door is a different job, so the men picked at the last one do not
-        /// follow the pointer down the column - the same rule the map keeps.</summary>
+        /// <summary>Open a premises popup, retaining this block's chosen men while
+        /// clearing any pending confirmation from the previous premises.</summary>
         void PickTrade(TerritoryBusinessId businessId)
         {
-            blockCardPick = blockCardPick == businessId ? default : businessId;
-            DoorMenu.Say("");
+            if (blockCardPick == businessId)
+            {
+                CloseTradePopup();
+                return;
+            }
+            if (!DoorMenu.TryRead(businessId, out _))
+                return;
+            blockCardPick = businessId;
+            tradePopupScroll = 0f;
+            DoorMenu.ResetCard();
             dirty = true;
+            RebuildTradePopup();
         }
 
         // ------------------------------------------------------------- what is true
@@ -1313,11 +1321,15 @@ namespace LivingCity.UI
             _ => "nobody leans on it",
         };
 
-        /// <summary>Close the door while retaining this block's chosen crew.</summary>
+        /// <summary>Dismiss only the premises popup and its pending selection.</summary>
         void CloseTradePopup()
         {
+            ClearTradePopupView();
+            if (!blockCardPick.IsValid)
+                return;
             blockCardPick = default;
-            DoorMenu.Say("");
+            tradePopupScroll = 0f;
+            DoorMenu.ResetCard();
             dirty = true;
         }
 

@@ -136,7 +136,8 @@ class Coachwork:
                     previous=(here,inner)
         across=[-1,-.84,-.72,-.52,0,.52,.72,.84,1]
         for za,zb in [(-self.end,bb),(fb,self.end)]:
-            mesh.surface(self.top,across,samples(za,zb,5),car['paint'],(0,1,0),smooth=False)
+            spans=[[-1,-.84],[.84,1]] if car.get('pickup') and za<0 else [across]
+            for span in spans:mesh.surface(self.top,span,samples(za,zb,5),car['paint'],(0,1,0),smooth=False)
         # A stamped bonnet panel between the fenders, with a millimetre-scale
         # shut line. The hood should read as sheet metal rather than a solid block.
         def seam_point(u,z):
@@ -154,7 +155,7 @@ class Coachwork:
                 x=u*self.side_x(min(y,self.deck(z)),z)
                 return (x,y,self.end_z(x,end,y))
             start=len(mesh.faces)
-            mesh.surface(cap,sorted(set(across+samples(-1,1,10))),[0,.16,.30,.42,.72,.86,1],
+            mesh.surface(cap,sorted(set(across+[-.95,-.30,.30,.95])),[0,.16,.30,.42,.72,.86,1],
                          car['paint'],(0,0,end),smooth=False)
             self.cap_faces[end]=[]
             for points,_ in mesh.faces[start:]:

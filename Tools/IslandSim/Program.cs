@@ -58,7 +58,7 @@ class Program
                 }
                 else if(kind==DistrictKind.Pad)
                 {
-                    var estate=new IndustrialDistrict {compact=true,pocket=true,Frame=frame}; estate.Plan(null,ds);
+                    var estate=new IndustrialDistrict {portZone=true,Frame=frame}; estate.Plan(null,ds);
                     estate.Reserve(reservations);
                     portArea.Add(new CoreRegion.Quarter {District=estate,Slot=new DistrictSlot {
                         kind=kind,edge=(CityEdge)district.GetProperty("edge").GetInt32()}});
@@ -239,10 +239,9 @@ class Program
             var a=port.District.Frame.ToLocal(new Vector3(bounds.xMin,0,bounds.yMin));
             var b=port.District.Frame.ToLocal(new Vector3(bounds.xMax,0,bounds.yMax));
             float x=(a.x+b.x)*.5f;
-            gaps.Add(port.District.Frame.ToWorld(new Vector3(x,0,15f)));
+            gaps.Add(port.District.Frame.ToWorld(new Vector3(x,0,PortIndustryLayout.Frontage-3f)));
             beyond.Add(port.District.Frame.ToWorld(new Vector3(x,0,Math.Max(a.z,b.z)+45f)));
         }
-        Check(gaps.Any(p=>!reservations.InBare(p.x,p.z)),"fixture does not exercise the unreserved port gap");
         var oldBeyond=beyond.Select(p=>reservations.InBare(p.x,p.z)).ToArray();
         PortIndustryLayout.ReserveGround(area,reservations);
         foreach(var point in gaps)

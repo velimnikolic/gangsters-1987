@@ -63,12 +63,10 @@ namespace RoadDemo
         const float RedrawZoomShare = 1.08f;
         const float RedrawAfterStillSeconds = 0.14f;
         const float MovingRedrawInterval = 0.9f;
-        // The card is only 290 x 189 canvas pixels. A 480 x 300 upload was almost
-        // four source texels for every displayed pixel and could make Texture2D.Apply
-        // the one periodic hitch while the 3D camera was moving. The shared survey is
-        // still drawn at full resolution on its worker; only the corner-card handoff is
-        // reduced to 240 x 150 and bilinear filtering restores the final card size.
-        const int UploadDownsample = 4;
+        // Keep the survey's detail through rotation, overscan and canvas scaling.
+        // A 240 x 150 handoff discarded road markings before enlarging them on the
+        // card. Uploads remain paced by camera travel and the worker, never per frame.
+        const int UploadDownsample = 1;
 
         /// <summary>How much bigger a crew's dot is drawn here than the plate's own
         /// scale would make it. The design's own MinimapScaleBoost: a marker that is
@@ -83,6 +81,7 @@ namespace RoadDemo
         RoadDemoBuilder _builder;
         TurfMapHud _owner;
         TurfMapBuildingLayer _buildingLayer;
+        TurfMinimapNavigation _navigation;
         float _viewHeight = CityViewConfig.DefaultMinimapViewHeight;
 
         readonly TurfMapSurvey _survey = new TurfMapSurvey();
@@ -251,6 +250,11 @@ namespace RoadDemo
             // The band eats the top of the card; the plate keeps the rest.
             _view.offsetMax = new Vector2(_view.offsetMax.x, -(Border + BandTall));
             _view.gameObject.AddComponent<RectMask2D>();
+            var mapHit = _view.gameObject.AddComponent<Image>();
+            mapHit.color = Color.clear;
+            mapHit.raycastTarget = true;
+            _navigation = _view.gameObject.AddComponent<TurfMinimapNavigation>();
+            _navigation.Init(this, _rig);
 
             // The one rule the design keeps: down the edge that faces the city, so the
             // corner reads as a card laid on the street and not a hole cut in it.
@@ -267,10 +271,8 @@ namespace RoadDemo
                 wrapMode = TextureWrapMode.Clamp,
                 hideFlags = HideFlags.DontSave,
             };
-            // Held at a fifth of its drawn size, so a point filter would drop four
-            // pixels in five and shatter every kerb hairline on the sheet. This is the
-            // one place on the map where the paper is read smaller than it was printed.
-            _paper.filterMode = FilterMode.Bilinear;
+            // Filter the original survey once at display size, preserving thin roads
+            // without the earlier box reduction followed by a blurry enlargement.
 
             _sheetPose = DemoUi.NewRect("Sheet Pose", _view);
             _sheetPose.anchorMin = _sheetPose.anchorMax = new Vector2(0.5f, 0.5f);
@@ -649,9 +651,14 @@ namespace RoadDemo
             }
         }
 
-        float Heading => _rig != null ? _rig.yaw : 0f;
-        float Pitch => _rig != null ? _rig.pitch : 90f;
+        float Heading => _navigation != null && _navigation.Held
+            ? _navigation.Heading : _rig != null ? _rig.yaw : 0f;
+        float Pitch => _navigation != null && _navigation.Held
+            ? _navigation.Pitch : _rig != null ? _rig.pitch : 90f;
         float Tilt => TurfMapHud.PitchTilt(Pitch);
+        Vector2 ViewCentre => _navigation != null && _navigation.Held
+            ? _navigation.Centre : _rig != null
+                ? new Vector2(_rig.pivot.x, _rig.pivot.z) : _survey.DrawnView.center;
 
         Vector2 ViewSize()
         {
@@ -661,7 +668,7 @@ namespace RoadDemo
                 size.y > 1f ? size.y : CardTall);
         }
 
-        float CanvasPerMetre => ViewSize().y / Mathf.Max(120f, _viewHeight);
+        internal float CanvasPerMetre => ViewSize().y / Mathf.Max(120f, _viewHeight);
 
         /// <summary>The worker draws beyond the card edges. That spare paper lets the
         /// published texture slide every frame while the next survey is in flight,
@@ -678,7 +685,7 @@ namespace RoadDemo
                 Mathf.Max(1f, card.y);
             var span = new Vector2(TurfPlate.RW * metresPerPixel,
                 TurfPlate.RH * metresPerPixel);
-            var centre = new Vector2(_rig.pivot.x, _rig.pivot.z);
+            var centre = ViewCentre;
             return new Rect(centre - span * 0.5f, span);
         }
 
@@ -698,9 +705,7 @@ namespace RoadDemo
             _sheetRect.localRotation = Quaternion.Euler(0f, 0f, Heading);
             _sheetPose.localScale = new Vector3(1f, Tilt, 1f);
 
-            var pivot = _rig != null
-                ? new Vector2(_rig.pivot.x, _rig.pivot.z)
-                : drawn.center;
+            var pivot = ViewCentre;
             _sheetRect.anchoredPosition = TurfMapHud.RotateForHeading(
                 drawn.center - pivot, Heading) * canvasPerMetre;
 
@@ -768,9 +773,7 @@ namespace RoadDemo
         bool OnCard(Vector2 worldXZ, out Vector2 at)
         {
             var size = ViewSize();
-            var pivot = _rig != null
-                ? new Vector2(_rig.pivot.x, _rig.pivot.z)
-                : _survey.DrawnView.center;
+            var pivot = ViewCentre;
             var local = TurfMapHud.ApplyTilt(
                 TurfMapHud.RotateForHeading(worldXZ - pivot, Heading), Tilt) *
                 CanvasPerMetre;

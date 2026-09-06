@@ -19,7 +19,7 @@ COLORS = {
 }
 
 # Surface identity and glass reflections stay in the shared atlas.
-PAINTS=('ivory','navy','green','champagne','wine','blue','sand','silver')
+PAINTS=('ivory','navy','green','champagne','wine','blue','sand','silver','red')
 for paint in PAINTS:
     rgb=[int(COLORS[paint][i:i+2],16) for i in (1,3,5)]
     COLORS[paint+'_gap']='#'+''.join(f'{round(c*.60):02x}' for c in rgb)

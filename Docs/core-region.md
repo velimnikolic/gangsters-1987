@@ -1,16 +1,29 @@
 # CoreDemo region
 
 CoreDemoBuilder enables `regionalDistricts` for the full city (`quarterBudget == 0`).
-The default region contains one cargo harbour, several small industrial estates near
-its approaches, one airport, and two suburban districts. `suburbanDistricts` accepts 0–4.
+The default region contains one cargo harbour, one works zone behind it, one airport,
+and two suburban districts. `suburbanDistricts` accepts 0–4.
 MiniCore keeps its compact extent. All placement and district sub-seeds derive from
 the displayed Core city seed; turning off `newSeedEveryPlay` replays the region too.
 
 The port chooses the east or west shore, away from Core's north/south river mouths.
 The airport takes the opposite shore. Suburbs take the other edges and avoid the
-river. Industrial roads and buildings use IndustrialDistrict's compact/pocket options;
-the standalone estate keeps its existing size. Districts reserve their own ground
-and water before the shared island is built.
+river. The works zone (`IndustrialLayout.Shape.PortZone`) is one IndustrialDistrict
+whose artery is one of the port's gate roads, a 15 m street no wider than the road it
+joins: twenty parcels of 65–70 × 60–65 m, one per island, two tiers deep either side,
+five columns of one shared width so every cross street meets the artery in line. All
+tiers end flush at the plan's seaward cut (`CoreLayout.Plan.Outside` takes back the
+raster's ring there), so the seaward islands front the port's back street across its
+pavement (`PortIndustryLayout.Frontage`) with no edge street or gap of the zone's own.
+The artery's landward mouth takes the expressway approach; the five streets that
+dead-end at the cut (artery and four tier streets) run into junctions the port lays
+under them (`SetStandaloneBackStreetNorthLinks`, `TryLandwardJunction`) via short
+link roads, and the gate lays no approach of its own (`Connection.Via`). The zone
+takes the gate line that keeps it inside the port frontage and 20 m clear of the
+other gate road. Recipe floors on the small parcels are `IndustrialLayout.Least`
+(the estate keeps `Smallest`), set by the halls, which are never scaled: a recipe
+keeps its hall, court and gate and drops what will not fit. Districts reserve their
+own ground and water before the shared island is built.
 
 CoreRegion connects actual exposed raster junctions and district portals through
 RegionalExpresswayPlan. It uses ExpresswayDemo's shared RoadLine curves, DeckMesh
@@ -53,8 +66,8 @@ airport's existing final approach without changing flight behavior.
 Outside built-up districts, access-road StreetKits use LampsOnly: no bins, benches,
 parking meters or other urban furniture. Existing wayside fuel blocks remain.
 
-IndustrialFreight assigns two existing estate lorries to recurring loading calls on
-the port's public back street and at estate kerbs. RoadCar retains route admission,
+IndustrialFreight assigns existing estate lorries (one per three parcels, at least
+two) to recurring loading calls on the port's public back street and at estate kerbs. RoadCar retains route admission,
 traffic, parking and completion; the district ticks the call schedule and clears it
 on disposal. These ambient trips carry no business inventory or campaign truth and
 are recreated with the district, like its other civilian traffic. HarborStreet owns
@@ -92,6 +105,59 @@ dry road centres/edges, loop/ramp continuity, pier clearance, bridge/mast cleara
 grades, both airport approaches, shipping depth and terrain bounds.
 `Tools/IslandSim/plot.py <island.csv>` optionally plots exported heights/roads using
 Pillow; this is a model plot, not a Unity render.
+
+## Validation record - 2026-09-07, one works zone on the port road
+
+Revision 2 (after Play review: artery 15 m, blocks flush on the port pavement):
+compile PASS, snapshot `cae3943b204b330b7239a5122e645501d60ad44712a0ed85521e44eceedb3959`;
+RegionSim PASS, snapshot `8a2f176996023752de5a6c626a995f953c2ee1c7c51ec3f274b20b10cecbd24f`
+(per seed: one 15 m artery, 20 islands/parcels, zero faults, five streets ending at
+the port pavement, zone 400–420 m inland × 315–330 m along the shore); IslandSim PASS
+on 30 fixtures with the five links into HarborStreet junctions, assembly
+`6818a021c12d9c8c97a5410e3ff75bceda9b91b233647ec4074f50800a9a6082`; estate deals
+still byte-identical to HEAD. Codex review of this revision found two faults, both
+repaired: the links were laid with pavements into the port's cleared turning corners
+(now bare carriageway via `LayRoadAlongZ/X`), and the zone was placed against the
+port's PLANNED street while the sheds put the measured street ~2 m nearer (the works'
+Frame now slides by `BackStreetContractZ` after the port builds, before the works
+reserve and build). IslandSim models the harbour street at contract z = −7.5 and the
+link ends at z = 0; that is a graph model, not the measured geometry. The junction
+tiles, pavement gaps and the few metres of link carriageway are unverified visually.
+
+Revision 1:
+- Runtime/editor offline compile: PASS (909/137 sources), source snapshot
+  `7e8c2c2b675386907194ff772cefb22cedbc803bc8c740bac8dbfe14989591e8` (the region
+  and island runs below were made on `b93263ee…`, which differs only in
+  IndustrialBlocks.Operations.cs, a file neither harness exercises).
+- Adversarial review (Codex) found two composer faults, both repaired: the loading
+  apron guard read the gate's drive reservation as an obstruction (now only building
+  footprints count), and the small plant/depot lost their court to the frontage
+  buildings (the court is now booked before them; full-size parcels compose as before
+  because nothing overlapped there).
+- Region model (`Tools/RegionSim`): PASS on the same ten seeds; snapshot
+  `1fca4ddde33852fbf9569be9d3c021b2ba35abaefcbd6462edc1793d0359cbeb`. Per seed: one
+  zone of 20 islands / 20 parcels, 450–465 × 340–355 m, zero raster faults, every
+  parcel above its `Least` floor, 4–7 works and 0–4 plants, one haulage yard, one tank
+  farm, one empty plot; zone inside the port frontage (−178..178 of −225..320), 30 m
+  link to gate 0, gate 1 road 62 m clear; port gate connection marked `Via`.
+- Island/expressway harness (`Tools/IslandSim`): PASS on 30 fixtures with the port
+  link laid as a ground road; assembly SHA256
+  `3f421721c5a8d9a120a727e9a74195d923e90d3cf55aeee3fe01b40029fcd336`. Freight round
+  trips estate↔port route both ways.
+- Deal determinism: estate/compact/pocket deals for 13 seeds dumped from HEAD and from
+  this tree are byte-identical (tiers, islands, parcels and recipe cast), because the
+  small-parcel floors live in `IndustrialLayout.Least` and bind only under
+  `Shape.Least`.
+- The re-rolled region dice exposed a latent airport placement inside the
+  river-widened outer collector (seed 2, no suburbs); `RegionalRing.ClearOf` now
+  keeps airport and suburbs beyond it.
+- Both harnesses target net10.0; Unity's bundled SDK is 8.0, so they were run through
+  a shim that rewrites the target framework. Asset audit: PASS.
+
+Unverified: how the recipes actually compose on 60–70 m parcels (the halls stand, the
+fitter's shop / process train / second shed are refused where they do not fit), the
+35 m artery meeting the 15 m link and approach roads, lorry traffic through the port
+gate, terrain under the link, and every visual. No Editor/Play run was authorized.
 
 ## Validation record - 2026-09-06, curved expressway and island revision
 

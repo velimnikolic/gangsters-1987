@@ -926,13 +926,13 @@ namespace LivingCity.Tests
             }
         }
 
-        /// <summary>The authored sedan/SUV shelf must resolve every exact model and
-        /// exclude the old merchandise, passenger van and police transport.</summary>
+        /// <summary>The authored civilian/armoured shelf resolves every exact model
+        /// and keeps police transport off the counter.</summary>
         static void CarsAreOnTheCounter(List<string> failures)
         {
             var seen = new List<string>();
-            if (ArmoryCatalog.Vehicles.Length != 12)
-                failures.Add("CarsAreOnTheCounter: expected eight sedans and four SUVs.");
+            if (ArmoryCatalog.Vehicles.Length != 14)
+                failures.Add("CarsAreOnTheCounter: expected all fourteen authored civilian/crew vehicles.");
 
             foreach (var car in ArmoryCatalog.Vehicles)
             {
@@ -955,7 +955,7 @@ namespace LivingCity.Tests
                     failures.Add($"CarsAreOnTheCounter: {car.DisplayName} drives the " +
                                  $"law's own {body}.");
 
-                if (body == "11_Borough_Warden" || body == "13_Calder_Voyager")
+                if (body == "11_Borough_Warden")
                     failures.Add($"CarsAreOnTheCounter: excluded van {body} is for sale.");
             }
         }

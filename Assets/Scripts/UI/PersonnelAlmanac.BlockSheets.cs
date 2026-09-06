@@ -499,35 +499,81 @@ namespace LivingCity.UI
 
         // -------------------------------------------------------------- one door
 
-        /// <summary>
-        /// The picked door's own menu, over the drawer. The panel itself is not this
-        /// sheet's - it is <see cref="DoorMenu"/>, the same menu the turf map opens over
-        /// a shop, so the two can never offer different rows or send different men. The
-        /// drawer only says where it stands, and carries the name and the way out in its
-        /// own head band so the menu does not print a second one.
-        /// </summary>
-        void BuildDoorSheet(RectTransform host, float inner)
+        RectTransform tradePopupRoot;
+        RectTransform tradePopupViewport;
+        RectTransform tradePopupContent;
+        float tradePopupScroll;
+        TMP_Text tradePopupAbove, tradePopupBelow;
+
+        /// <summary>The shared premises card floats over whichever page opened it.</summary>
+        void RebuildTradePopup()
         {
-            var index = PickedTrade();
-            if (index < 0)
+            ClearTradePopupView();
+            if (!blockCardPick.IsValid || !page)
+                return;
+            if (!DoorMenu.TryRead(blockCardPick, out var door))
             {
-                blockCardPick = default;
+                CloseTradePopup();
                 return;
             }
 
-            var trade = blockCardTrades[index];
-            // The drawer's own band no longer repeats the premises: the menu opens with
-            // a file band of its own that names the shop, the file and the day, so the
-            // shell keeps only the way out and says which drawer this is.
-            var list = BlockSheetShell(host, inner, "THE PREMISES",
-                "ONE DOOR ON THIS BLOCK", 0f, out var listH);
+            tradePopupRoot = NewRect("Premises popup", page.transform);
+            Stretch(tradePopupRoot);
+            var shade = Fill(tradePopupRoot, new Color(0f, 0f, 0f, 0.7f));
+            shade.raycastTarget = true;
+            RowButton(tradePopupRoot, shade, CloseTradePopup);
 
-            var width = Mathf.Min(blockCardW - BlockPad * 2f, DoorMenu.MaxWidth);
-            var panel = DoorMenu.Open(list, trade.Menu, width,
-                () => dirty = true, null, DoorDispatch.BlockResponsibility);
-            var height = panel.sizeDelta.y;
-            PlaceTopLeft(panel, (blockCardW - width) * 0.5f, -BlockPad, width, height);
-            SizeBlockSheet(height + BlockPad * 2f, listH);
+            // Give the card its own reading width instead of squeezing it into the drawer.
+            var width = Mathf.Min(760f, FrameW - 64f);
+            tradePopupViewport = NewRect("Premises window", tradePopupRoot);
+            tradePopupViewport.anchorMin = tradePopupViewport.anchorMax =
+                new Vector2(0.5f, 0.5f);
+            tradePopupViewport.pivot = new Vector2(0.5f, 0.5f);
+            tradePopupViewport.gameObject.AddComponent<RectMask2D>();
+            // Consume presses inside the window, including its empty margins.
+            RowButton(tradePopupViewport, ClickSurface(tradePopupViewport), () => { });
+
+            tradePopupContent = DoorMenu.Open(tradePopupViewport, door, width,
+                () => { dirty = true; RebuildTradePopup(); }, CloseTradePopup,
+                DoorDispatch.BlockResponsibility);
+            var height = Mathf.Min(tradePopupContent.sizeDelta.y, FrameH - 64f);
+            tradePopupViewport.sizeDelta = new Vector2(width, height);
+            tradePopupAbove = Line(tradePopupViewport, LedgerStyle.MonoItalic,
+                11f, LedgerV2.Muted, 8f, -4f, width - 16f, 14f,
+                "↑ more above", TextAlignmentOptions.MidlineRight);
+            tradePopupBelow = Line(tradePopupViewport, LedgerStyle.MonoItalic,
+                11f, LedgerV2.Muted, 8f, -(height - 18f), width - 16f, 14f,
+                "↓ more below · roll the wheel", TextAlignmentOptions.MidlineRight);
+            ApplyTradePopupScroll();
+        }
+
+        void ApplyTradePopupScroll()
+        {
+            if (!tradePopupContent || !tradePopupViewport)
+                return;
+            var reach = Mathf.Max(0f,
+                tradePopupContent.sizeDelta.y - tradePopupViewport.sizeDelta.y);
+            tradePopupScroll = Mathf.Clamp(tradePopupScroll, 0f, reach);
+            tradePopupContent.anchoredPosition = new Vector2(0f, tradePopupScroll);
+            ShowScrollMarks(tradePopupAbove, tradePopupBelow, tradePopupScroll, reach);
+        }
+
+        void ScrollTradePopup(float wheel, Vector2 point)
+        {
+            if (wheel == 0f || !Over(tradePopupViewport, point))
+                return;
+            tradePopupScroll -= wheel * WheelStep;
+            ApplyTradePopupScroll();
+        }
+
+        void ClearTradePopupView()
+        {
+            if (tradePopupRoot)
+            {
+                tradePopupRoot.gameObject.SetActive(false);
+                Destroy(tradePopupRoot.gameObject);
+            }
+            tradePopupRoot = tradePopupViewport = tradePopupContent = null;
         }
     }
 }

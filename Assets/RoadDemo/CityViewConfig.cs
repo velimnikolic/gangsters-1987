@@ -11,7 +11,7 @@ namespace RoadDemo
     public sealed class CityViewConfig : ScriptableObject
     {
         public const float DefaultMax3DDistance = 180f;
-        public const float DefaultMinimapViewHeight = 360f;
+        public const float DefaultMinimapViewHeight = 720f;
         public const float DefaultStreetPitch = 55f;
         public const float MinimumStreetPitch = 22f;
         public const float MaximumStreetPitch = 82f;

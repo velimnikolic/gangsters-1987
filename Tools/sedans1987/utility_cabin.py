@@ -5,7 +5,9 @@ from bodywork import lerp, samples, profile
 from cabins import mirror
 from window_frames import aperture
 from roof_skin import RoofSkin
+from screen_skin import sampled,cowl
 from palette import COLORS
+from armour import window_guard
 
 
 def van_style(style):return style in ('warden','voyager')
@@ -31,7 +33,8 @@ def build_cabin(mesh, form):
     mesh.surface(roof,skin.us,skin.zs,roof_color,(0,1,0),smooth=False)
     mesh.face([(x,y-.032,z) for x,y,z in [roof(-1,bt),roof(1,bt),roof(1,ft),roof(-1,ft)]],'upholstery',(0,-1,0))
     def side_point(side,z,t,offset=0):
-        return side*(lerp(form.width(z)*.90,rw(z),t)+offset),lerp(form.deck(z),rh(1,z),t),z
+        x=lerp(form.width(z)*.90,rw(z),t)
+        return side*(x+offset),lerp(form.deck(z),rh(1,z),t),lerp(form.position_z(x,z),z,t)
     def metal(point,us,vs,color,out):
         start=len(mesh.faces)
         mesh.surface(point,us,vs,color,out,smooth=False)
@@ -42,15 +45,15 @@ def build_cabin(mesh, form):
     for side in (-1,1):
         out=(side,.15,0)
         def edge(u,t):return side_point(side,lerp(lerp(bb,bt,t),lerp(fb,ft,t),u),t)
-        for lo,hi in [(0,lower),(upper,1)]:
-            metal(edge,samples(0,1,6),[lo,hi],roof_color,out)
+        rail_stations={lower:set(samples(0,1,6)),upper:set(samples(0,1,6))}
         bounds=[None]+car['posts']+[None]
         for k in range(len(bounds)-1):
             first=k==0;last=k==len(bounds)-2
-            def window(u,t):
+            def window_z(u,t):
                 a=lerp(bb,bt,t)+shape['rear_pillar'] if first else bounds[k]+post
                 b=lerp(fb,ft,t)-(.15 if armoured else .11) if last else bounds[k+1]-post
-                return side_point(side,lerp(a,b,u),t,.012)
+                return lerp(a,b,u)
+            def window(u,t):return side_point(side,window_z(u,t),t)
             # Police custody windows are small inset apertures in full metal panels.
             lo,hi=(.43,.71) if police and not last else (lower,upper)
             left,right=(.18,.82) if police and not last else (0,1)
@@ -59,14 +62,23 @@ def build_cabin(mesh, form):
                 metal(window,[0,1],[hi,upper],roof_color,out)
                 metal(window,[0,left],[lo,hi],roof_color,out)
                 metal(window,[right,1],[lo,hi],roof_color,out)
-            aperture(mesh,glass,window,(left,right,lo,hi),.032 if armoured else .021,out,roof_color,tex,
-                     corner=(.055,.010,.010,.020) if last else (.012,.045,.035,.012))
+            outline=aperture(mesh,glass,window,(left,right,lo,hi),.046 if armoured else .035,out,roof_color,tex,
+                     corner=(.055,.010,.010,.020) if last else (.012,.045,.035,.012),
+                     glass_color='glass' if armoured else 'window_glass')
+            for u,t in outline:
+                for rail in rail_stations:
+                    if abs(t-rail)<1e-8:
+                        a,b=lerp(bb,bt,t),lerp(fb,ft,t)
+                        rail_stations[rail].add((window_z(u,t)-a)/(b-a))
+            if armoured:window_guard(mesh,window,lo,hi,side)
             if police and not last:
                 for u in samples(left+.07,right-.07,4):
                     a=window(u,lo);b=window(u,hi)
                     mesh.beam((a[0]+side*.014,a[1],a[2]),(b[0]+side*.014,b[1],b[2]),.019,'wheelshade')
             if style=='highland':
                 mesh.ribbon([window(u,lo) for u in samples(0,1,4)],.018,'chrome',out)
+        for rail,outer in [(lower,0),(upper,1)]:
+            metal(edge,sorted(rail_stations[rail]),sorted([rail,outer]),roof_color,out)
         # A/B/C/D pillars have visible reverse faces and continuous painted rails.
         for k in range(len(bounds)):
             def pillar(u,t):
@@ -78,7 +90,8 @@ def build_cabin(mesh, form):
         # Passenger doors: handles sit just ahead of each trailing edge (+Z nose).
         rear=car['posts'][-2] if len(car['posts'])>1 else car['posts'][0]
         cuts=[car['posts'][-1],fb-.12]
-        if len(car['posts'])>1:cuts.insert(0,rear)
+        if car.get('pickup'):cuts.insert(0,bb+.09)
+        elif len(car['posts'])>1:cuts.insert(0,rear)
         for z in cuts:
             low=max(.28,form.arch_y(z)+.026);high=form.deck(z)-.025
             if low>=high:continue
@@ -96,23 +109,27 @@ def build_cabin(mesh, form):
                          for z in samples(bb+.22,car['posts'][-1]-.10,5)],.015,'wheelshade',out)
     # Windshield, plus a large rear hatch or two glazed rear van doors.
     for base,top,end in [(fb,ft,1),(bb,bt,-1)]:
-        def screen(u,t):
-            x=lerp(form.width(base)*.90,rw(top),t)*u
-            y=lerp(form.top(u,base)[1],rh(u,top),t)
-            z=lerp(base,top,t)+end*.015*(1-u*u)*math.sin(math.pi*t)
-            return x,y,z
+        side_ts=[0,lower,upper,1]
+        def boundary(t):
+            return sampled(lambda v,_:side_point(1,lerp(base,top,v),v),side_ts,t,0)
+        def raw_screen(u,t):
+            x,edge_y,edge_z=boundary(t)
+            crown=lerp(form.top(u,base)[1]-form.top(1,base)[1],rh(u,top)-rh(1,top),t)
+            return x*u,edge_y+crown,edge_z+end*.015*(1-u*u)*math.sin(math.pi*t)
+        screen=lambda u,t:sampled(raw_screen,skin.us,u,t)
         lo,hi=(.21,.90) if armoured else (.12,.955)
         if police and end<0:lo,hi=.42,.76
         edge=.88 if armoured else .91
         out=(0,.2,end)
-        for low,high in [(0,lo),(hi,1)]:metal(screen,skin.us,[low,high],roof_color,out)
+        cowl(metal,form,screen,base,lo,skin.us,roof_color,out)
+        metal(screen,skin.us,[hi,1],roof_color,out)
         for left,right in [(-1,-edge),(edge,1)]:metal(screen,[left,right],[lo,hi],roof_color,out)
-        split=end<0 and style in ('warden','voyager')
+        split=(end<0 and style in ('warden','voyager')) or (armoured and end>0)
         panes=[(-edge,-.045),(.045,edge)] if split else [(-edge,edge)]
         if split:metal(screen,[-.045,.045],[lo,hi],roof_color,out)
         for left,right in panes:
-            pane=lambda u,t:tuple(v+d for v,d in zip(screen(u,t),(0,0,end*.012)))
-            aperture(mesh,glass,pane,(left,right,lo,hi),.024 if armoured else .020,out,roof_color,tex,corner=.095,across=skin.us)
+            pane=screen
+            aperture(mesh,glass,pane,(left,right,lo,hi),.046 if armoured else .035,out,roof_color,tex,corner=.050,across=skin.us)
             if police and end<0:
                 for u in samples(left+.08,right-.08,3):mesh.beam(pane(u,lo),pane(u,hi),.018,'wheelshade')
         if end>0:

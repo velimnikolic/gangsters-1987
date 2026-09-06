@@ -3,7 +3,7 @@ import math
 from geometry import unit,sub,cross
 
 
-def aperture(body,glass,point,limits,width,outward,paint,uv,corner=.065,across=()):
+def aperture(body,glass,point,limits,width,outward,paint,uv,corner=.065,across=(),along=(),glass_color='window_glass'):
     left,right,bottom,top=limits;cu=(left+right)/2;ct=(bottom+top)/2
     distance=lambda a,b:math.sqrt(sum((x-y)**2 for x,y in zip(a,b)))
     cross_stations=across
@@ -27,13 +27,16 @@ def aperture(body,glass,point,limits,width,outward,paint,uv,corner=.065,across=(
         if abs(a[1]-b[1])<1e-8 and abs(a[0]-b[0])>.01:
             stations=sorted((u for u in cross_stations if min(a[0],b[0])+1e-8<u<max(a[0],b[0])-1e-8),reverse=a[0]>b[0])
             sampled.extend((u,a[1]) for u in stations)
+        if abs(a[0]-b[0])<1e-8 and abs(a[1]-b[1])>.01:
+            stations=sorted((t for t in along if min(a[1],b[1])+1e-8<t<max(a[1],b[1])-1e-8),reverse=a[1]>b[1])
+            sampled.extend((a[0],t) for t in stations)
     outline=sampled
     normal=unit(outward)
-    def place(coord,expand=0,depth=0):
+    def inset(coord,amount):
         u,t=coord
-        u=cu+(u-cu)*(1+2*expand/max(.01,across))
-        t=ct+(t-ct)*(1+2*expand/max(.01,rise))
-        return tuple(x+depth*n for x,n in zip(point(u,t),normal))
+        return cu+(u-cu)*(1-2*amount/max(.01,across)),ct+(t-ct)*(1-2*amount/max(.01,rise))
+    def place(coord,amount=0,depth=0):
+        return tuple(x+depth*n for x,n in zip(point(*inset(coord,amount)),normal))
     center=point(cu,ct)
     def pane_normal(u,t):
         # Side panes are flat glass. Windscreens share a smoothly varying normal
@@ -42,29 +45,47 @@ def aperture(body,glass,point,limits,width,outward,paint,uv,corner=.065,across=(
         e=.045
         n=unit(cross(sub(point(u+e,t),point(u-e,t)),sub(point(u,t+e),point(u,t-e))))
         return tuple(-v for v in n) if sum(v*w for v,w in zip(n,outward))<0 else n
-    # Alternate ears of the convex opening into a strip. There is no central
-    # vertex or four-way diagonal convergence in the visible glass.
-    indices=list(range(len(outline)));alternate=False
+    # Triangulate in aperture coordinates, where the opening is convex. A 3D
+    # area check admits folded slivers made from three points on one curved edge.
+    # Keep every boundary station, but only clip ears with a real 2D area.
+    indices=list(range(len(outline)))
     while len(indices)>2:
-        tri=[indices[0],indices[1],indices[-1]] if not alternate else [indices[0],indices[-2],indices[-1]]
-        coords=[outline[i] for i in tri]
+        def area(k):
+            a,b,c=[outline[indices[j%len(indices)]] for j in (k-1,k,k+1)]
+            return abs((b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]))
+        ear=max(range(len(indices)),key=area)
+        if area(ear)<1e-12:break
+        tri=[indices[j%len(indices)] for j in (ear-1,ear,ear+1)]
+        coords=[inset(outline[i],width) for i in tri]
         pts=[point(*p) for p in coords]
-        if sum(v*v for v in cross(sub(pts[1],pts[0]),sub(pts[2],pts[0])))>1e-16:
-            glass.face(pts,'window_glass',outward,normals=[pane_normal(*p) for p in coords],uvs=[uv(p[1]) for p in coords])
-        del indices[0 if not alternate else -1]
-        alternate=not alternate
+        glass.face(pts,glass_color,outward,normals=[pane_normal(*p) for p in coords],uvs=[uv(p[1]) for p in coords])
+        del indices[ear]
     for i,a in enumerate(outline):
         b=outline[(i+1)%len(outline)]
-        # Small slope changes catch light at the edge of the stamped window frame.
-        body.face([place(a,width,.002),place(b,width,.002),
-                   place(b,width*.60,.006),place(a,width*.60,.006)],paint,outward)
-        body.face([place(a,width*.60,.006),place(b,width*.60,.006),
-                   place(b,0,.002),place(a,0,.002)],'rubber',outward)
-        body.face([place(a),place(b),place(b,0,-.034),place(a,0,-.034)],
+        # Keep the metal lip at six millimetres. Only the black seal grows,
+        # inward into the opening, never across the roof or neighbouring paint.
+        body.face([place(a,0,0),place(b,0,0),
+                   place(b,.006,.006),place(a,.006,.006)],paint,outward)
+        body.face([place(a,.006,.006),place(b,.006,.006),
+                   place(b,width,.002),place(a,width,.002)],'rubber',outward)
+        body.face([place(a,width),place(b,width),place(b,width,-.034),place(a,width,-.034)],
                    'interior_trim',sub(center,point(*a)))
     # Fill only the material outside each curved corner. Glass has a true opening.
     for corner_uv,arc in corners:
-        for a,b in zip(arc,arc[1:]):
-            pts=[place(corner_uv,depth=-.001),place(a,depth=-.001),place(b,depth=-.001)]
+        boundary=[corner_uv]+arc;filled=[]
+        for a,b in zip(boundary,boundary[1:]+boundary[:1]):
+            filled.append(a)
+            if abs(a[1]-b[1])<1e-8:
+                filled.extend((u,a[1]) for u in sorted((u for u in cross_stations if min(a[0],b[0])+1e-8<u<max(a[0],b[0])-1e-8),reverse=a[0]>b[0]))
+            if abs(a[0]-b[0])<1e-8:
+                filled.extend((a[0],t) for t in sorted((t for t in along if min(a[1],b[1])+1e-8<t<max(a[1],b[1])-1e-8),reverse=a[1]>b[1]))
+        # Anchor on the curved edge so added boundary samples do not form
+        # zero-area ears. This closes the tiny wedges at windscreen corners.
+        pivot=filled.index(arc[len(arc)//2]);filled=filled[pivot:]+filled[:pivot]
+        for i in range(1,len(filled)-1):
+            pts=[place(filled[j]) for j in (0,i,i+1)]
+            if sum(v*v for v in cross(sub(pts[1],pts[0]),sub(pts[2],pts[0])))<1e-16:continue
             body.face(pts,paint,outward)
             body.face(list(reversed(pts)),'interior_trim')
+
+    return outline+[uv for uv,_ in corners]

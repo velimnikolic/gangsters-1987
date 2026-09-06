@@ -14,7 +14,12 @@ namespace LivingCity.Gameplay
             "04_Calder_Marivelle",
             "05_Monarch_Townline",
             "06_Bayside_Classic",
-            "07_Hikari_DX"
+            "07_Hikari_DX",
+            "14_Borough_Mica",
+            "08_Bayside_Trail",
+            "09_Bayside_Ranger",
+            "10_Albion_Highland",
+            "13_Calder_Voyager"
         };
         public static readonly string[] PassengerPaths =
             System.Array.ConvertAll(Models, model => Folder + model + ".prefab");
@@ -28,27 +33,22 @@ namespace LivingCity.Gameplay
             "CALDER MARIVELLE",
             "MONARCH TOWNLINE",
             "BAYSIDE CLASSIC",
-            "HIKARI DX"
+            "HIKARI DX",
+            "SRBO",
+            "BAYSIDE TRAIL",
+            "BAYSIDE RANGER",
+            "ALBION HIGHLAND",
+            "CALDER VOYAGER"
         };
 
-        // Available to the outfit, without adding them to the ambient sedan pool.
-        static readonly string[] SuvModels =
-        {
-            "08_Bayside_Trail", "09_Bayside_Ranger",
-            "10_Albion_Highland", "12_Monarch_Bastion"
-        };
-        static readonly string[] SuvDisplayNames =
-        {
-            "BAYSIDE TRAIL", "BAYSIDE RANGER", "ALBION HIGHLAND", "MONARCH BASTION"
-        };
+        // The armoured crew truck is sold by Don, outside the civilian traffic pool.
+        public const string ArmouredModel = "12_Monarch_Bastion";
         public static readonly string[] ServicePaths =
         {
             "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Sedan_01_Preset_Taxi.prefab",
             "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Taxi_01.prefab",
             "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Sedan_01_Preset_Food.prefab",
             "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Pickup_01_Preset_Construction.prefab",
-            "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Van_01.prefab",
-            "Assets/Synty/PolygonCity/Prefabs/Vehicles/SM_Veh_Car_Van_01.prefab",
         };
 
         public static bool IsAuthored(string nameOrPath) => PathFor(nameOrPath) != null;
@@ -60,9 +60,8 @@ namespace LivingCity.Gameplay
             var name = VehicleCatalog.BareName(nameOrPath);
             for (int i = 0; i < Models.Length; i++)
                 if (name == Models[i] || name == DisplayNames[i]) return PathAt(i);
-            for (int i = 0; i < SuvModels.Length; i++)
-                if (name == SuvModels[i] || name == SuvDisplayNames[i])
-                    return Folder + SuvModels[i] + ".prefab";
+            if (name == ArmouredModel || name == "MONARCH BASTION")
+                return Folder + ArmouredModel + ".prefab";
             return null;
         }
 

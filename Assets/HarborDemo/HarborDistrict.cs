@@ -143,6 +143,9 @@ namespace HarborDemo
         /// <summary>The back road's measured centre in district contract coordinates.
         /// Valid after <see cref="Build"/> has measured the warehouse depth.</summary>
         internal float BackStreetContractZ => _streetZ - PlannedStreetZ;
+        /// <summary>True once <see cref="Build"/> has measured the sheds and placed the
+        /// back street; before that the planned street is all there is.</summary>
+        internal bool BackStreetMeasured => _streetZ > 0f;
 
         /// <summary>Halfway between the two gates: the point the city's links are
         /// measured from, so the port sits square under the road lines it hangs off.</summary>

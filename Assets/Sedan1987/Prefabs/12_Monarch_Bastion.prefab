@@ -100,7 +100,7 @@ Transform:
   m_GameObject: {fileID: 1008}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: -0, w: 1}
-  m_LocalPosition: {x: -0.85, y: 0.395, z: 1.54}
+  m_LocalPosition: {x: -0.9, y: 0.435, z: 1.54}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -133,7 +133,7 @@ Transform:
   m_GameObject: {fileID: 1012}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: -0, w: 1}
-  m_LocalPosition: {x: -0.85, y: 0.395, z: -1.46}
+  m_LocalPosition: {x: -0.9, y: 0.435, z: -1.46}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -166,7 +166,7 @@ Transform:
   m_GameObject: {fileID: 1016}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: -0, w: 1}
-  m_LocalPosition: {x: 0.85, y: 0.395, z: 1.54}
+  m_LocalPosition: {x: 0.9, y: 0.435, z: 1.54}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -199,7 +199,7 @@ Transform:
   m_GameObject: {fileID: 1020}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: -0, w: 1}
-  m_LocalPosition: {x: 0.85, y: 0.395, z: -1.46}
+  m_LocalPosition: {x: 0.9, y: 0.435, z: -1.46}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -283,11 +283,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1537cdebdef94ab382e4b23d4463d9e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  frontLeft: {x: -0.392, y: 0.305, z: 0.55}
-  frontRight: {x: 0.392, y: 0.305, z: 0.55}
-  rearLeft: {x: -0.392, y: 0.305, z: -0.48}
-  rearRight: {x: 0.392, y: 0.305, z: -0.48}
+  frontLeft: {x: -0.3838, y: 0.265, z: 0.28}
+  frontRight: {x: 0.3838, y: 0.265, z: 0.28}
+  rearLeft: {x: -0.3838, y: 0.265, z: -0.64}
+  rearRight: {x: 0.3838, y: 0.265, z: -0.64}
   ceiling: 1.7200
+  additionalSeats: []
+  seatYaw: []
+  cabinPlanes:
+  - {x: 0, y: 1, z: 0, w: -1.72}
+  - {x: 1, y: 0, z: 0, w: -0.78}
+  - {x: -1, y: 0, z: 0, w: -0.78}
+  - {x: 0, y: 0.2951774, z: -0.9554425, w: -1.527854}
+  - {x: 0, y: 0.5256401, z: 0.850707, w: -1.614822}
 --- !u!33 &1006
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -503,6 +511,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_Materials:
   - {fileID: 2100000, guid: 8e217a34e452d0c4b8254a273b62f1a4, type: 2}
+  - {fileID: 2100000, guid: 8e217a34e452d0c4b8254a273b62f1a4, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -528,9 +537,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: af1cecb00cfe24d31a4701cbe5d9cbfb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  leftHeadlight: {x: -0.686, y: 0.93, z: 2.503986}
-  rightHeadlight: {x: 0.686, y: 0.93, z: 2.503957}
+  leftHeadlight: {x: -0.6868, y: 0.91, z: 2.486166}
+  rightHeadlight: {x: 0.6868, y: 0.91, z: 2.486045}
   lenses: {fileID: 1027}
+  tailMaterialIndex: 1
+  auxiliaryHeadlights:
+  - {x: -0.34, y: 2, z: 0.89}
+  - {x: 0.34, y: 2, z: 0.89}
 --- !u!33 &1031
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -556,6 +569,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_Materials:
   - {fileID: 2100000, guid: f6233a9474e35df0a199869ea177e9dc, type: 2}
+  - {fileID: 2100000, guid: 8f6396945d2c591989f4f926688646ba, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

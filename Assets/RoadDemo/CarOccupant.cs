@@ -39,7 +39,8 @@ namespace RoadDemo
 
         /// <summary>One body into one seat of this car - the seat in the car's own frame
         /// (CarBody.MeasureSeats, or a CarBody's SeatLocalPoint).</summary>
-        public static CarOccupant Seat(Transform car, GameObject prefab, AnimationClip sitLoop, Vector3 seatLocal, int layer = -1)
+        public static CarOccupant Seat(Transform car, GameObject prefab, AnimationClip sitLoop, Vector3 seatLocal,
+            int layer = -1, float yaw = 0f)
         {
             if (car == null || prefab == null || sitLoop == null) return null;
             var go = Instantiate(prefab, car);
@@ -57,7 +58,7 @@ namespace RoadDemo
             // on the cushion, facing the bonnet; the sit clip carries the pelvis up off
             // the root - the same seats the crews' riders are set into
             go.transform.localPosition = seatLocal;
-            go.transform.localRotation = Quaternion.identity;
+            go.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
 
             var occupant = go.AddComponent<CarOccupant>();
             occupant.Dress(sitLoop);

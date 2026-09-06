@@ -42,7 +42,7 @@ def forecourt(count=8,utilities=0):
         mesh.box((x, .10, -3.45), (1.75, .20, .18), 'concrete')
     if utilities:
         for i in range(utilities+1):
-            mesh.box(((utilities/2-i)*5.7,.012,14),(.055,.018,7.8),'line')
+            mesh.box(((3-i)*5.7,.012,14),(.055,.018,7.8),'line')
         for i in range(utilities):
             x=utility_placement(i)[0][0]
             mesh.box((x,.014,10.1),(4.8,.023,.055),'line')
@@ -120,8 +120,8 @@ def build(cars, prefabs, material, extra_cars=(), extra_prefabs=()):
             (car['name'],49,'#f3eddc'),
             ({'trail':'Compact three-door / rear spare','ranger':'Full-size two-door / wide stance',
               'highland':'Refined four-wheel drive','warden':'Partition / custody benches',
-              'bastion':'Armour / protected cabin','voyager':'Three rows / rear side glass'}[car['style']],28,'#b9ccca'),
-            ('REVIEW MODEL / awaiting approval',29,'#d3b879')])
+              'bastion':'Armour / protected cabin','voyager':'Three rows / rear side glass','mica':'Three doors / small steel wheels'}[car['style']],28,'#b9ccca'),
+            ('POLICE TRANSPORT' if car['style']=='warden' else 'CREW VEHICLE / available at Don' if car['style']=='bastion' else 'CIVILIAN FLEET / available at Don',29,'#d3b879')])
         label=scene.node(car['name']+' - review card',position=(utility_placement(i)[0][0],.5,18.7),pitch=-64)
         scene.renderer(label,placard,ua.material(car['id']+'_Sign',texture,unlit=True))
     reference_tex=sign('SyntyReference', [
@@ -209,7 +209,7 @@ def add_camera(scene, cars, lineup,clock_id,headlights_id,fill_id,extra_cars=())
   mapTransition: 0
   minDistance: 4.5
   mapCeiling: 80
-  hint: "F1-F6: new vehicles / U: new row / 1-8: sedans / 9: Synty / C: compare / 0: all / L: day-night"
+  hint: "F1-F7: new vehicles / U: new row / 1-8: sedans / 9: Synty / C: compare / 0: all / L: day-night / B: brakes"
   hintTopPx: 12
   showHint: 1
   showZoom: 0

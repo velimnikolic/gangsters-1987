@@ -99,7 +99,7 @@ for item in tree.findall(".//Compile"):
         continue
     sources.append((ROOT / "Tools/CoreSim" / name.replace("\\", "/")).resolve())
 sources += [ROOT / "Assets/RoadDemo" / name for name in (
-    "CoreBlockCatalog.cs", "CoreAmenityLayout.cs", "CoreServicePlan.cs", "RasterGateways.cs", "CoreRegion.cs", "PortIndustryLayout.cs", "StreetNames.cs")]
+    "CoreBlockCatalog.cs", "CoreAmenityLayout.cs", "CoreServicePlan.cs", "RasterGateways.cs", "CoreRegion.cs", "PortIndustryLayout.cs", "RegionalRing.cs", "StreetNames.cs")]
 sources += list(OUT.glob("*.cs"))
 sources += [ROOT / "Tools/RegionSim/Contracts.cs", ROOT / "Tools/RegionSim/Program.cs"]
 digest = hashlib.sha256()

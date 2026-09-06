@@ -9,6 +9,7 @@ from build import check
 from preview import Assets, documents
 from showroom import SCENE, REFERENCE, REFERENCE_ROOT, REFERENCE_BAY, placement
 from check_wheels import closed_tire,sidewall_coverage
+from check_cabins import check_cabin
 from check_utilities import validate_utilities,no_paint_behind_glass
 from palette import COLORS
 from bodywork import Coachwork
@@ -78,7 +79,7 @@ def validate():
         vertices, indices = assets.mesh(ua.guid(path.relative_to(ua.ROOT)))
         assert len(vertices) == mesh['m_VertexData']['m_VertexCount'], path
         assert mesh['m_VertexData']['m_DataSize'] == vertices.nbytes, path
-        assert mesh['m_SubMeshes'][0]['indexCount'] == indices.size, path
+        assert sum(part['indexCount'] for part in mesh['m_SubMeshes']) == indices.size, path
         assert indices.max() < len(vertices), path
         assert np.isfinite(vertices).all(), path
         assert np.allclose(np.linalg.norm(vertices[:, 3:6], axis=1), 1, atol=1e-5), path
@@ -95,7 +96,9 @@ def validate():
     lineup = json.loads((ua.ROOT/'Tools/sedans1987/lineup.json').read_text())
     assert len(lineup) == 8 and all(a['price'] > b['price'] for a, b in zip(lineup, lineup[1:]))
     assert len({c['paint'] for c in lineup}) == len(lineup)
-    for car in lineup:
+    compacts=json.loads((ua.ROOT/'Tools/sedans1987/compacts.json').read_text())
+    passenger=lineup+compacts
+    for car in passenger:
         closed_tire(car['radius'])
         for corner in ('FL','FR','RL','RR'):
             path=f'{ua.ASSET}/Meshes/{car["id"]}_Wheel_{corner}.asset'
@@ -108,6 +111,12 @@ def validate():
                      d['MonoBehaviour']['m_Script']['guid']==ua.guid('Assets/RoadDemo/VehicleLampRig.cs'))
         assert fitting['m_Script']['guid']==ua.guid('Assets/RoadDemo/VehicleLampRig.cs')
         assert docs[fitting['lenses']['fileID']][0]==23
+        assert fitting['tailMaterialIndex']==1
+        materials=docs[fitting['lenses']['fileID']][1]['MeshRenderer']['m_Materials']
+        assert len(materials)==2 and materials[0]==materials[1]
+        lamp_mesh=documents(ua.ROOT/f'{ua.ASSET}/Meshes/{car["id"]}_Lamps.asset')[4300000][1]['Mesh']
+        assert len(lamp_mesh['m_SubMeshes'])==2
+        assert lamp_mesh['m_SubMeshes'][1]['firstByte']==lamp_mesh['m_SubMeshes'][0]['indexCount']*2
         glass,glass_indices=assets.mesh(ua.guid(f'{ua.ASSET}/Meshes/{car["id"]}_Lamps.asset'))
         swatches=np.all(np.isclose(glass[:,10:12],synty_lamps.LAMP_UV['lamp_front'],atol=1e-7),axis=1)
         front=glass[swatches,:3]
@@ -141,9 +150,10 @@ def validate():
         assert wheel_names=={'Wheel_FL','Wheel_FR','Wheel_RL','Wheel_RR'}, (path,wheel_names)
         seats=next(d['MonoBehaviour'] for t,d in docs.values() if t==114 and
                    d['MonoBehaviour']['m_Script']['guid']==ua.guid('Assets/RoadDemo/VehicleSeatRig.cs'))
+        assert len(seats['cabinPlanes'])==5
         assert seats['frontLeft']['x']<0<seats['frontRight']['x']
         assert seats['frontLeft']['z']>seats['rearLeft']['z']
-        assert abs(seats['frontLeft']['y']+.43-(min(.52,car['height']-.90)+.085))<1e-5, ('Occupant off cushion',path)
+        assert abs(seats['frontLeft']['y']+.43-(min(.48,car['height']-.94)+.085))<1e-5, ('Occupant off cushion',path)
         z = sorted({t['m_LocalPosition']['z'] for t in wheels})
         assert abs(z[1]-z[0]-car['wheelbase']) < 1e-5, path
         objects = assets.objects(path)
@@ -156,7 +166,10 @@ def validate():
         assert points[:, 1].max() < car['height']+.2, path
         assert points[:, 2].max()-points[:, 2].min() < car['length']+.35, path
     extra=validate_utilities(assets)
-    for car in lineup:no_paint_behind_glass(assets,car)
+    for car in passenger:no_paint_behind_glass(assets,car)
+    for car in passenger+extra:check_cabin(assets,car)
+    print("PASS: all 15 roof/screen borders joined; glass reflection normals continuous across triangle edges.")
+    extra += compacts
     scene = documents(ua.ROOT/SCENE)
     instances = [d['PrefabInstance'] for t, d in scene.values() if t == 1001]
     assert len(instances) == len(lineup)+len(extra)+1
@@ -182,7 +195,7 @@ def validate():
     # Exercise the complete serialized hierarchy resolver used by the offline preview.
     reference_objects=len(assets.objects(ua.ROOT/REFERENCE))
     assert reference_objects==16
-    assert len(assets.objects(ua.ROOT/SCENE)) == 8*(len(lineup)+len(extra))+3+reference_objects
+    assert len(assets.objects(ua.ROOT/SCENE)) == 8*(len(lineup)+len(extra))+4+reference_objects
     clock=next(m for m in monos if m['m_Script']['guid']==ua.guid('Assets/Scripts/Ambient/CityClock.cs'))
     assert clock['m_Enabled']==0 and clock['running']==0, 'Review clock must not handle number keys'
     assert scene[review['clock']['fileID']][1]['MonoBehaviour']==clock
@@ -201,7 +214,7 @@ def validate():
     floats={k:v for d in window_mat['m_SavedProperties']['m_Floats'] for k,v in d.items()}
     assert window_mat['m_CustomRenderQueue']==3000 and '_SURFACE_TYPE_TRANSPARENT' in window_mat['m_ValidKeywords']
     assert (floats['_Surface'],floats['_ZWrite'],floats['_SrcBlend'],floats['_DstBlend'])==(1,0,5,10)
-    assert 'ShadowCaster' in window_mat['disabledShaderPasses']
+    assert 'shadowcaster' in {p.casefold() for p in window_mat['disabledShaderPasses']}
     tint=next(c['_BaseColor'] for c in window_mat['m_SavedProperties']['m_Colors'] if '_BaseColor' in c)
     assert .1<=tint['a']<=.3
     body_mat=next(iter(documents(ua.ROOT/f'{ua.ASSET}/Materials/SedanPalette.mat').values()))[1]['Material']
@@ -220,8 +233,8 @@ def validate():
     print(f'PASS: 24 retained GUIDs resolve uniquely to their recorded destination assets; {retained} unstaged moves accounted for.')
     print(f'PASS: closed outward tire shells; {4*len(lineup)} serialized wheels opaque from both sides (6144 sample rays).')
     print('PASS: fitted headlamp anchors, separate emissive lenses and shared clock/headlight wiring; low compact bonnet lip.')
-    print('PASS: each car with interior within 7000 triangles / 7 renderers / 3 shared materials; transparent glass and original Synty lamp material/UVs.')
-    print('PASS: original Synty prefab in adjacent bay; variant root and fifteen focus targets; no scale/material overrides.')
+    print('PASS: each sedan with interior within 7000 triangles / 7 renderers / 3 shared materials; transparent glass and original Synty lamp material/UVs.')
+    print('PASS: original Synty prefab in adjacent bay; variant root and sixteen focus targets; no scale/material overrides.')
     print('Not verified: Unity asset import, materials/lighting in URP, Play controls or manual visual acceptance.')
 
 

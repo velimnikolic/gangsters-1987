@@ -101,13 +101,16 @@ namespace RoadDemo
             // the west. The maintenance shop is now on the frontage, not behind it.
             var hf = Foot(ProcessHall, 180f);
             var hall = b.Put(ProcessHall, b.Out - hf.x, b.Far - hf.y, 180f);
+            // The manoeuvring court is booked before the frontage buildings: on the port
+            // zone's small parcels the court reaches the frontage, and a shop or shed
+            // that would stand in it is refused rather than the court.
+            float crossZ = hall.yMin - 21f;
+            b.ReserveRoute(new Rect(b.In + 1f, crossZ, b.Out - b.In - 2f, 8f));
             var sf = Foot(Workshop, 180f);
             var shop = b.Put(Workshop, b.Out - sf.x, b.Near, 0f);
             b.Put(YardShed, b.In, b.Near, 180f);
             float gateX = hall.xMin + 4f;
             b.Way = Gate(b, gateX, gateX + 11f);
-            float crossZ = hall.yMin - 21f;
-            b.ReserveRoute(new Rect(b.In + 1f, crossZ, b.Out - b.In - 2f, 8f));
             LoadingFace(b, hall, 48f, rng, "GOODS IN", false);
 
             // The maintenance doors face into the court; their apron is north of the
@@ -125,7 +128,7 @@ namespace RoadDemo
                 WallBoard(b, shop, "SERVICE");
             }
             ProcessTrain(b, hall, rng);
-            float parkingWidth = Mathf.Min(13f, shop.xMin - b.Way.y - 3f);
+            float parkingWidth = Mathf.Min(13f, (shop.width > 0f ? shop.xMin : b.Out) - b.Way.y - 3f);
             StaffParking(b, new Rect(b.Way.y + 2f, b.Near + 1f, parkingWidth, 6f), rng);
             StockPocket(b, new Rect(b.In + 1f, crossZ + 10f, 10f, 6f), rng, true);
             GateOffice(b, rng);
@@ -169,11 +172,13 @@ namespace RoadDemo
             b.Wall = Wall.Wire;
             var hf = Foot(DistributionHall, 180f);
             var hall = b.Put(DistributionHall, b.In + 1f, b.Far - hf.y, 180f);
+            // the court first, for the same reason as the plant's: a small parcel keeps
+            // its court and loses the gate office, not the other way round
+            b.ReserveRoute(new Rect(b.In + 1f, hall.yMin - 22f, b.Out - b.In - 2f, 9f));
             var sf = Foot(YardShed, 180f);
             var office = b.Put(YardShed, b.In, b.Near, 180f);
             float gate = Mathf.Clamp(hall.xMax + 2f, office.xMax + 3f, b.Out - 12f);
             b.Way = Gate(b, gate, gate + 10f);
-            b.ReserveRoute(new Rect(b.In + 1f, hall.yMin - 22f, b.Out - b.In - 2f, 9f));
             LoadingFace(b, hall, 36f, rng, "DESPATCH", true);
             StaffParking(b, new Rect(b.In + 1f, office.yMax + 2f, 13f, 6f), rng);
             StockPocket(b, new Rect(b.In + 20f, b.Near + 2f, 11f, 8f), rng, false);
@@ -266,6 +271,11 @@ namespace RoadDemo
         {
             if (hall.width < 1f) return;
             var apron = new Rect(hall.xMin, hall.yMin - 11.5f, hall.width, 11.5f);
+            // On the port zone's small parcels a frontage building can stand where the
+            // court would be; a hall with a building across its face has no loading
+            // face, rather than a pad poured under the office. Only BUILDINGS count: the
+            // drive booked by the gate and the court itself run over the apron by design.
+            foreach (var foot in b.Built) if (foot.Overlaps(apron)) return;
             ConcretePad(b, "reinforced loading apron", apron);
             // Doors are authored nine metres from each end of the nominal wall.
             for (int i = 0; i < 2; i++)

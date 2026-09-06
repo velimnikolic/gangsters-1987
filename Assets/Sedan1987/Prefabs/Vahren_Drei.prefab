@@ -283,11 +283,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1537cdebdef94ab382e4b23d4463d9e5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  frontLeft: {x: -0.33, y: 0.135, z: 0.075}
-  frontRight: {x: 0.33, y: 0.135, z: 0.075}
-  rearLeft: {x: -0.33, y: 0.135, z: -0.706701}
-  rearRight: {x: 0.33, y: 0.135, z: -0.706701}
+  frontLeft: {x: -0.3135, y: 0.095, z: 0.135}
+  frontRight: {x: 0.3135, y: 0.095, z: 0.135}
+  rearLeft: {x: -0.3135, y: 0.095, z: -0.58}
+  rearRight: {x: 0.3135, y: 0.095, z: -0.58}
   ceiling: 1.2800
+  additionalSeats: []
+  seatYaw: []
+  cabinPlanes:
+  - {x: 0, y: 1, z: 0, w: -1.28}
+  - {x: 1, y: 0, z: 0, w: -0.575}
+  - {x: -1, y: 0, z: 0, w: -0.575}
+  - {x: 0, y: 0.6270094, z: -0.7790117, w: -1.558308}
+  - {x: 0, y: 0.6892138, z: 0.7245581, w: -1.399369}
 --- !u!33 &1006
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -503,6 +511,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_Materials:
   - {fileID: 2100000, guid: 8e217a34e452d0c4b8254a273b62f1a4, type: 2}
+  - {fileID: 2100000, guid: 8e217a34e452d0c4b8254a273b62f1a4, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -528,9 +537,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: af1cecb00cfe24d31a4701cbe5d9cbfb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  leftHeadlight: {x: -0.595, y: 0.697, z: 2.107756}
-  rightHeadlight: {x: 0.595, y: 0.697, z: 2.107517}
+  leftHeadlight: {x: -0.595, y: 0.697, z: 2.097852}
+  rightHeadlight: {x: 0.595, y: 0.697, z: 2.097498}
   lenses: {fileID: 1027}
+  tailMaterialIndex: 1
+  auxiliaryHeadlights: []
 --- !u!33 &1031
 MeshFilter:
   m_ObjectHideFlags: 0

@@ -25,13 +25,20 @@ namespace HarborDemo
             var gates = new List<float> { _gateWestX, _gateEastX };
             gates.Sort();
 
+            // the gates, and the landward streets a neighbour runs out onto this road:
+            // every one a junction the graph can turn at
             var stops = new List<float> { x0 };
             stops.AddRange(gates);
+            foreach (float x in _standaloneBackStreetNorthLinks)
+                if (!stops.Exists(present => Mathf.Abs(present - x) < 0.1f) && x > x0 + 20f && x < x1 - 20f) stops.Add(x);
             stops.Add(x1);
+            stops.Sort();
 
             var net = HarborStreet.Build(_inner, stops, cz);
             var nodes = net.Nodes;
             _roads.AddRange(net.Edges);
+            _landward.Clear();
+            for (int k = 1; k + 1 < stops.Count; k++) _landward.Add((stops[k], nodes[k]));
 
             // the gates: where the city's streets come down to the quay
             for (int k = 0; k < gates.Count && k < _links.Length; k++)
@@ -47,6 +54,25 @@ namespace HarborDemo
                 });
             }
             Debug.Log($"[Harbor] {_portals.Count} gates to the city, {_roads.Count} lanes along the back street");
+        }
+
+        readonly List<(float OwnX, RoadNode Node)> _landward = new List<(float, RoadNode)>();
+
+        /// <summary>The back street's junction under a landward street at this contract
+        /// X - a gate or a link given to <see cref="SetStandaloneBackStreetNorthLinks"/> -
+        /// and the landward kerb face of its box in contract coordinates.</summary>
+        public bool TryLandwardJunction(float contractX, out RoadNode node, out Vector3 local)
+        {
+            node = null; local = default;
+            float ownX = contractX - GateSpanCentre;
+            foreach (var (x, at) in _landward)
+            {
+                if (Mathf.Abs(x - ownX) > 0.5f) continue;
+                node = at;
+                local = ToContract(new Vector3(x, 0f, _streetZ + StreetKit.StreetHalf));
+                return true;
+            }
+            return false;
         }
 
         /// <summary>The sheds, the stacks and the fence as ground a walker off the graph

@@ -398,7 +398,8 @@ namespace LivingCity.UI
             // (the blueprint's name is the first), and P closes the book everywhere
             // else - so a reader searching the archive for PAULIE must not lose it at
             // the first letter. Esc gives the keys back before it closes anything.
-            if (IsOpen && currentPage == LedgerPage.Wire && wireSheet.Typing)
+            if (IsOpen && !blockCardPick.IsValid &&
+                currentPage == LedgerPage.Wire && wireSheet.Typing)
             {
                 if (keyboard.escapeKey.wasPressedThisFrame)
                     wireSheet.StopTyping();
@@ -429,76 +430,89 @@ namespace LivingCity.UI
                 return;
             }
 
-            // [ and ] turn the pages; the tabs are the pointer's way. Both walk the
-            // TABS, not the page roots - a page with no tab is not in the book.
-            var tabIndex = System.Array.IndexOf(TabPages, currentPage);
-            if (keyboard.leftBracketKey.wasPressedThisFrame)
-                SetPage(TabPages[tabIndex < 0
-                    ? TabPages.Length - 1
-                    : (tabIndex + TabPages.Length - 1) % TabPages.Length]);
-            if (keyboard.rightBracketKey.wasPressedThisFrame)
-                SetPage(TabPages[(tabIndex < 0 ? 0 : tabIndex + 1) % TabPages.Length]);
-
-            // F2: the sixty-man scale roster - the ledger is specified to stay usable
-            // at sixty, and this is how a reviewer sees that without editor wiring.
-            if (keyboard.f2Key.wasPressedThisFrame)
+            if (blockCardPick.IsValid)
             {
-                director.DebugSeedLarge(60);
-                selectedId = -1;
-                listScroll = 0f;
-                dirty = true;
-            }
-
-            // F3: THE PHONE RINGS TOMORROW (EPIC 40's bench lever). The conditions the
-            // street wants - a lieutenant to bring the word, money for the whole path,
-            // our name in the paper - so the man's card comes at the next six o'clock
-            // cut and the rest can be walked through by hand.
-            if (keyboard.f3Key.wasPressedThisFrame && outfit != null)
-            {
-                outfit.DebugRingTomorrow(director);
-                dirty = true;
-            }
-
-            // THE WIRE walks on the arrow keys: the register is read line by line
-            // without a click, and the rest of its keys scroll the one list it has.
-            if (currentPage == LedgerPage.Wire)
-                wireSheet.Keys(keyboard);
-
-            if (keyboard.escapeKey.wasPressedThisFrame)
-            {
-                // Innermost state first - each Esc peels one layer, closing last.
-                if (currentPage == LedgerPage.Blocks && CloseBlocksTransient())
+                // The popup owns keyboard input; the page beneath keeps its selection.
+                if (keyboard.escapeKey.wasPressedThisFrame)
                 {
-                    // The blocks page consumed this Esc.
-                }
-                else if (currentPage == LedgerPage.Command && CloseCommandTransient())
-                {
-                    // The chain of command consumed this Esc.
-                }
-                else if (currentPage == LedgerPage.Blueprint && CloseBlueprintTransient())
-                {
-                    // The blueprint consumed this Esc: the flat's form first, then the
-                    // sheet itself, which gives back the page it was opened over.
-                }
-                else if (pendingConfirm != Confirm.None)
-                {
-                    pendingConfirm = Confirm.None;
-                    dirty = true;
-                }
-                else if (givePickerItemId >= 0)
-                {
-                    givePickerItemId = -1;
-                    dirty = true;
-                }
-                else if (sortMenu && sortMenu.activeSelf)
-                {
-                    sortMenu.SetActive(false);
-                }
-                else
-                {
-                    Close();
+                    CloseTradePopup();
                     return;
                 }
+            }
+            else
+            {
+                // [ and ] turn the pages; the tabs are the pointer's way. Both walk the
+                // TABS, not the page roots - a page with no tab is not in the book.
+                var tabIndex = System.Array.IndexOf(TabPages, currentPage);
+                if (keyboard.leftBracketKey.wasPressedThisFrame)
+                    SetPage(TabPages[tabIndex < 0
+                        ? TabPages.Length - 1
+                        : (tabIndex + TabPages.Length - 1) % TabPages.Length]);
+                if (keyboard.rightBracketKey.wasPressedThisFrame)
+                    SetPage(TabPages[(tabIndex < 0 ? 0 : tabIndex + 1) % TabPages.Length]);
+
+                // F2: the sixty-man scale roster - the ledger is specified to stay usable
+                // at sixty, and this is how a reviewer sees that without editor wiring.
+                if (keyboard.f2Key.wasPressedThisFrame)
+                {
+                    director.DebugSeedLarge(60);
+                    selectedId = -1;
+                    listScroll = 0f;
+                    dirty = true;
+                }
+
+                // F3: THE PHONE RINGS TOMORROW (EPIC 40's bench lever). The conditions the
+                // street wants - a lieutenant to bring the word, money for the whole path,
+                // our name in the paper - so the man's card comes at the next six o'clock
+                // cut and the rest can be walked through by hand.
+                if (keyboard.f3Key.wasPressedThisFrame && outfit != null)
+                {
+                    outfit.DebugRingTomorrow(director);
+                    dirty = true;
+                }
+
+                // THE WIRE walks on the arrow keys: the register is read line by line
+                // without a click, and the rest of its keys scroll the one list it has.
+                if (currentPage == LedgerPage.Wire)
+                    wireSheet.Keys(keyboard);
+
+                if (keyboard.escapeKey.wasPressedThisFrame)
+                {
+                    // Innermost state first - each Esc peels one layer, closing last.
+                    if (currentPage == LedgerPage.Blocks && CloseBlocksTransient())
+                    {
+                        // The blocks page consumed this Esc.
+                    }
+                    else if (currentPage == LedgerPage.Command && CloseCommandTransient())
+                    {
+                        // The chain of command consumed this Esc.
+                    }
+                    else if (currentPage == LedgerPage.Blueprint && CloseBlueprintTransient())
+                    {
+                        // The blueprint consumed this Esc: the flat's form first, then the
+                        // sheet itself, which gives back the page it was opened over.
+                    }
+                    else if (pendingConfirm != Confirm.None)
+                    {
+                        pendingConfirm = Confirm.None;
+                        dirty = true;
+                    }
+                    else if (givePickerItemId >= 0)
+                    {
+                        givePickerItemId = -1;
+                        dirty = true;
+                    }
+                    else if (sortMenu && sortMenu.activeSelf)
+                    {
+                        sortMenu.SetActive(false);
+                    }
+                    else
+                    {
+                        Close();
+                        return;
+                    }
+                }
+
             }
 
             // A full-bleed frame has to notice the window moving under it. A whole unit
@@ -622,6 +636,7 @@ namespace LivingCity.UI
             RefreshTelex();
             RefreshFooter();
             RefreshFilterTapes();
+            RebuildTradePopup();
         }
 
         /// <summary>The standalone menu scene's way in - Open is otherwise the P key's
@@ -681,6 +696,7 @@ namespace LivingCity.UI
 
         void Close()
         {
+            CloseTradePopup();
             if (page)
                 page.SetActive(false);
             IsOpen = false;
@@ -705,6 +721,7 @@ namespace LivingCity.UI
         /// scene, and the map would keep sending clicks to a page that is gone.</summary>
         void OnDestroy()
         {
+            CloseTradePopup();
             if (Instance == this)
                 Instance = null;
             ReleaseLedgerPause();
@@ -775,6 +792,8 @@ namespace LivingCity.UI
             if (pageKind != LedgerPage.Command && commandDossierId >= 0)
                 DismissCommandDossier();
 
+            if (currentPage != pageKind)
+                CloseTradePopup();
             currentPage = pageKind;
             if (System.Array.IndexOf(TabPages, pageKind) >= 0)
                 lastTab = pageKind;
@@ -827,6 +846,11 @@ namespace LivingCity.UI
             var scroll = mouse.scroll.ReadValue();
             var wheel = scroll.y;
             var point = mouse.position.ReadValue();
+            if (blockCardPick.IsValid)
+            {
+                ScrollTradePopup(wheel, point);
+                return;
+            }
 
             // A sideways notch - a trackpad's second axis, or a wheel that tilts - means
             // one thing on this book: pan the chain of command's tree. It is the only
@@ -2059,15 +2083,17 @@ namespace LivingCity.UI
                         OpenCommandDossier(line.CharacterId);
                         return;
                     case WireAction.Door:
+                        if (!IsOpen) OpenAtPage(LedgerPage.Wire);
+                        wireSheet.StopTyping();
+                        PickTrade(line.BusinessId);
+                        return;
                     case WireAction.Block:
                         if (!WireBlockOf(line, out var block))
                             break;
                         OpenAtPage(LedgerPage.Blocks);
                         blocksScroll = 0f;
                         if (blockCardId != block) OpenBlockCard(block);
-                        if (line.Action == WireAction.Block) CloseTradePopup();
-                        if (line.Action == WireAction.Door && blockCardPick != line.BusinessId)
-                            PickTrade(line.BusinessId);
+                        CloseTradePopup();
                         return;
                     case WireAction.Law: OpenAtPage(LedgerPage.Law); return;
                     case WireAction.Finances: OpenAtPage(LedgerPage.Finances); return;
@@ -2094,6 +2120,8 @@ namespace LivingCity.UI
                     return director?.Roster?.Find(line.CharacterId) == null
                         ? "This man is no longer in the outfit's roster." : "";
                 case WireAction.Door:
+                    return DoorMenu.TryRead(line.BusinessId, out _)
+                        ? "" : "This address is no longer available in the city.";
                 case WireAction.Block:
                     return WireBlockOf(line, out _)
                         ? "" : "This address is no longer available in the city.";

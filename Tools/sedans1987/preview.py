@@ -94,8 +94,16 @@ class Assets:
                 transform = matrix(by_go[go])
                 points = vertex[:, :3] @ transform[:3, :3].T + transform[:3, 3]
                 normals = vertex[:, 3:6] @ np.linalg.inv(transform[:3, :3])
-                texture, unlit = self.material(rend['m_Materials'][0]['guid'])
-                objects.append((points, normals, vertex[:, 10:12], index, texture, unlit))
+                materials=rend['m_Materials']
+                # Equal material slots (front/tail lamps) share the unlit preview.
+                if len({m['guid'] for m in materials})==1:
+                    texture,unlit=self.material(materials[0]['guid'])
+                    objects.append((points,normals,vertex[:,10:12],index,texture,unlit))
+                else:
+                    parts=documents(self.paths[filters[go]])[4300000][1]['Mesh']['m_SubMeshes']
+                    for material,part in zip(materials,parts):
+                        texture,unlit=self.material(material['guid']);first=part['firstByte']//6
+                        objects.append((points,normals,vertex[:,10:12],index[first:first+part['indexCount']//3],texture,unlit))
             elif kind == 1001:
                 instance = doc['PrefabInstance']
                 props = {m['propertyPath']: float(m['value']) for m in instance['m_Modification']['m_Modifications']}

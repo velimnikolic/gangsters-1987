@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using RoadDemo;
 using UnityEngine;
@@ -62,22 +63,33 @@ namespace RoadDemo
     }
     public class IndustrialDistrict : DistrictContract
     {
-        public bool compact, pocket;
+        public bool compact, pocket, portZone;
         public static int RejectPlans, PlanCalls;
         public override string Name => "Industry";
         public CoreRoads.Raster Raster;
+        public IndustrialLayout.Plan Layout;
+        public float SeawardCut => Layout?.SeawardCut ?? float.PositiveInfinity;
+        public static List<float> SeawardStreets(CoreRoads.Raster raster,float cut)
+        {
+            var crowns=new List<float>();
+            if(raster==null||float.IsPositiveInfinity(cut)) return crowns;
+            foreach(var reach in raster.Stretches)
+                if(!reach.Vertical&&reach.NodeB<0&&Math.Abs(reach.To-cut)<CoreRoads.Cell*0.51f) crowns.Add(reach.Crown);
+            crowns.Sort(); return crowns;
+        }
         public LaneNet Net = new();
         public override void Plan(float[] links,int seed)
         {
             PlanCalls++;
             if(RejectPlans>0) { RejectPlans--; Raster=new CoreRoads.Raster(); LocalBounds=new Rect(0,0,100,100); return; }
-            IndustrialLayout.Arrange(seed,out Raster,compact,pocket); LocalBounds=IndustrialLayout.Bounds(Raster);
+            Layout=IndustrialLayout.Arrange(seed,out Raster,IndustrialLayout.Shape.For(compact,pocket,portZone)); LocalBounds=IndustrialLayout.Bounds(Raster);
+            if(!float.IsPositiveInfinity(Layout.SeawardCut)) LocalBounds=Rect.MinMaxRect(LocalBounds.xMin,LocalBounds.yMin,Math.Min(LocalBounds.xMax,Layout.SeawardCut),LocalBounds.yMax);
             foreach(var box in Raster.Junctions) Net.Nodes.Add(new RoadNode());
         }
     }
     // Traffic prefab loading is outside this land-use harness.
     public static class CivilianFleet { public static List<GameObject> Load() => new(); }
-    public static class StreetKit { public const float StreetHalf=7.5f; }
+    public static class StreetKit { public const float StreetHalf=7.5f, OuterHalf=StreetHalf+6.5f; }
     public static class FuelStationBlock
     {
         public const float BlockFrontage=60f,BlockDepth=55f;

@@ -1241,6 +1241,10 @@ namespace CrewDemo
         static GameObject FindVehicle(string name)
         {
 #if UNITY_EDITOR
+            var authored = LivingCity.Gameplay.CivilianVehicleCatalog.PathFor(name);
+            if (authored != null) return DemoAssetLoad.Load<GameObject>(authored);
+            if (name == LivingCity.Gameplay.VehicleCatalog.PoliceTransportModel)
+                return DemoAssetLoad.Load<GameObject>(LivingCity.Gameplay.VehicleCatalog.PoliceTransportPath);
             foreach (var folder in VehicleFolders)
             {
                 var p = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(folder + name + ".prefab");

@@ -16,8 +16,8 @@ namespace LivingCity.Gameplay
         /// here - a wise guy in a golf cart is not a wise guy.</summary>
         public static readonly string[] GangsterCars =
         {
-            "SM_Veh_Sedan_01",
-            "SM_Veh_Suv_01",
+            "06_Bayside_Classic",
+            "09_Bayside_Ranger",
         };
 
         /// <summary>The two-wheelers that may be ridden, in the order a street wants
@@ -48,11 +48,15 @@ namespace LivingCity.Gameplay
             "SM_Veh_Motorbike_02",
         };
 
-        /// <summary>What the law drives. The marked pickup is the only body a patrol,
-        /// a dispatch answer or a station forecourt is dealt.</summary>
+        public const string PoliceTransportModel = "11_Borough_Warden";
+        public const string PoliceTransportPath = CivilianVehicleCatalog.Folder + PoliceTransportModel + ".prefab";
+
+        /// <summary>The existing marked pickup and the authored custody van. Both use
+        /// the shared force roster, dispatch and prisoner transport lifecycle.</summary>
         public static readonly string[] PoliceCars =
         {
             "SM_Veh_Pickup_01_Preset_Police",
+            PoliceTransportModel,
         };
 
         /// <summary>The force's own pack. EVERY vehicle in it wears a livery - its
@@ -98,6 +102,7 @@ namespace LivingCity.Gameplay
                 return true;
 
             var name = BareName(nameOrPath);
+            if (name == "BOROUGH WARDEN") return true;
             foreach (var marked in Liveried)
                 if (name == marked || name.StartsWith(marked + "_"))
                     return true;

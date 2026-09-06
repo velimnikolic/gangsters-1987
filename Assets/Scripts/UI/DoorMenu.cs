@@ -431,6 +431,12 @@ namespace LivingCity.UI
         public static void Forget()
         {
             SelectedCrewId = SelectedPersonId = -1;
+            ResetCard();
+        }
+
+        /// <summary>Clear the premises interaction while retaining the chosen men.</summary>
+        public static void ResetCard()
+        {
             Note = "";
             OpenSection = SectionDoor;
             Disarm();

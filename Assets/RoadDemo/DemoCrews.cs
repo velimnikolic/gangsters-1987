@@ -339,15 +339,10 @@ namespace RoadDemo
 
         // A lieutenant walks like a man who is expected; his hoods keep up, each at
         // his own pace - no two the same, none of them dawdling.
-        // Metres a second at the walk. Up from 1.75/1.8-2.15: the outfit reads as men
-        // with somewhere to be rather than as a stroll, and the ledger's own men keep
-        // ahead of the citizens they push past (the crowd walks 1.25-1.85). It stops
-        // here and not higher because the walk clip is keyed to the pace and past about
-        // half again its own rate the feet read as a wind-up toy - the SPEED of a crew
-        // getting somewhere comes from the run now (CrewWalker.Running), not from
-        // winding the walk up.
-        const float BossPace = 1.9f;
-        float HoodPace() => 1.9f + (float)_variety.NextDouble() * 0.3f;
+        // Metres per simulation second: a modestly brisker walk at 1x, with the
+        // usual time scaling and animation cadence following the physical pace.
+        const float BossPace = 2.1f;
+        float HoodPace() => BossPace + (float)_variety.NextDouble() * 0.3f;
         const float Spacing = 1.7f;   // metres between men along the sidewalk
         const float MinSpawnLink = 12f;
         const float AlertRange = 24f; // a rival crew opens up on the outfit this close

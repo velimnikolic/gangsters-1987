@@ -69,16 +69,20 @@ namespace LivingCity.Outfit
                 "SM_Wep_SubMachineGun_01"),
         };
 
-        /// <summary>The eight authored sedans and four SUVs, cheapest first.
+        /// <summary>The authored civilian vehicles and armoured crew truck, cheapest first.
         /// Showroom value bands set their campaign purchase prices. Police transport
-        /// and passenger vans are not merchandise. ModelName is the exact prefab key
+        /// is not merchandise. ModelName is the exact prefab key
         /// shared by the catalogue photograph, delivery and campaign travel model.</summary>
         public static readonly ArmoryItem[] Vehicles =
         {
+            new ArmoryItem(EquipmentKind.Vehicle, "SRBO", 3_990,
+                "A small three-door hatchback with plain steel wheels.", "14_Borough_Mica"),
             new ArmoryItem(EquipmentKind.Vehicle, "HIKARI DX", 8_500,
                 "A compact everyday sedan with a modest price and footprint.", "07_Hikari_DX"),
             new ArmoryItem(EquipmentKind.Vehicle, "BAYSIDE CLASSIC", 12_500,
                 "An ordinary full-size sedan with a roomy cabin.", "06_Bayside_Classic"),
+            new ArmoryItem(EquipmentKind.Vehicle, "CALDER VOYAGER", 15_500,
+                "A six-seat passenger van with three rows and windows all the way back.", "13_Calder_Voyager"),
             new ArmoryItem(EquipmentKind.Vehicle, "BAYSIDE TRAIL", 16_500,
                 "A short three-door 4x4 with a rear-mounted spare.", "08_Bayside_Trail"),
             new ArmoryItem(EquipmentKind.Vehicle, "MONARCH TOWNLINE", 22_500,
@@ -90,7 +94,7 @@ namespace LivingCity.Outfit
             new ArmoryItem(EquipmentKind.Vehicle, "VAHREN DREI", 27_000,
                 "A compact sporting sedan with a restrained silver finish.", "Vahren_Drei"),
             new ArmoryItem(EquipmentKind.Vehicle, "MONARCH BASTION", 30_000,
-                "A large crew SUV with black armour and protected glazing.", "12_Monarch_Bastion"),
+                "A four-door armoured crew truck with a protected cab and open cargo bed.", "12_Monarch_Bastion"),
             new ArmoryItem(EquipmentKind.Vehicle, "ALBION HIGHLAND", 35_000,
                 "An executive 4x4 with alloy wheels and bright trim.", "10_Albion_Highland"),
             new ArmoryItem(EquipmentKind.Vehicle, "ALBION SIX", 37_000,
@@ -194,15 +198,10 @@ namespace LivingCity.Outfit
         // Existing inventory/save names still resolve after leaving the sales shelf.
         static string LegacyBodyFor(string displayName) => displayName switch
         {
-            "Jalopy" => "SM_Veh_Pickup_01",
-            "Sedan" => "BAYSIDE CLASSIC",
-            "Panel Van" => "SM_Veh_Van_01",
-            // THE WAGON IS THE OUTFIT'S OWN BODY, like the tourer below: Palm City's SUV
-            // rebuilt by ArmouredSuvBuilder into Assets/Prefabs/Vehicles/
-            // SM_Veh_Suv_01_Armoured.prefab. No traffic bucket holds it (it is not in
-            // VehicleCatalog and never turns up in the city's own cars), so the ledger
-            // photographs it off LedgerModelSet.vehicles the way it photographs a bike.
-            "Armoured Wagon" => "SM_Veh_Suv_01_Armoured",
+            "Jalopy" => "14_Borough_Mica",
+            "Sedan" => "06_Bayside_Classic",
+            "Panel Van" => "13_Calder_Voyager",
+            "Armoured Wagon" => "12_Monarch_Bastion",
             // The two-wheelers, Palm City's. Named exactly, and never by a substring:
             // "Motorbike" also names the police pack's liveried tourer, and the outfit
             // does not ride one of those.
@@ -231,7 +230,7 @@ namespace LivingCity.Outfit
             // the stock body) - a delivery boy keeps his box.
             "Moped" => "SM_Veh_Moped_01_NoBox",
             "Scooter" => "SM_Veh_Scooter_01",
-            _ => "SM_Veh_Sedan_01",
+            _ => "06_Bayside_Classic",
         };
 
         /// <summary>3.0 Combat stars. Below this, handing a man the tommy gun earns

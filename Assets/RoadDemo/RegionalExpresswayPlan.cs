@@ -7,7 +7,7 @@ namespace RoadDemo
     /// <summary>Regional road composition using the ExpresswayDemo curve/deck/ramp contract.</summary>
     public sealed class RegionalExpresswayPlan
     {
-        public const float Band = 166f, Terminal = 90f, DeckHeight = 7f;
+        public const float Band = RegionalRing.Band, Terminal = RegionalRing.Terminal, DeckHeight = 7f;
         public sealed class Access
         {
             public CityEdge Edge;
@@ -97,17 +97,7 @@ namespace RoadDemo
         public RegionalExpresswayPlan(Rect city, IReadOnlyList<Access> access, LaneNet net, int seed, Rect river)
         {
             _net = net;
-            var ring = Rect.MinMaxRect(city.xMin - Band, city.yMin - Band, city.xMax + Band, city.yMax + Band);
-            Bounds = Rect.MinMaxRect(ring.xMin - 160f, ring.yMin - 160f, ring.xMax + 160f, ring.yMax + 160f);
-            float radius = Mathf.Min(240f + new System.Random(seed ^ 0x45585052).Next(5) * 15f,
-                Mathf.Min(ring.width, ring.height) * 0.24f);
-            // The complete river span and its abutments must lie on a straight deck.
-            // Widen the ring when the river is near a rounded corner.
-            if (river.width > 0f)
-            {
-                ring.xMin = Mathf.Min(ring.xMin, river.xMin - radius - 160f);
-                ring.xMax = Mathf.Max(ring.xMax, river.xMax + radius + 160f);
-            }
+            var ring = RegionalRing.Of(city, river, seed, out float radius);
             Bounds = Rect.MinMaxRect(ring.xMin - 160f, ring.yMin - 160f, ring.xMax + 160f, ring.yMax + 160f);
             var points = new List<Vector3>();
             RoadLine.Corner(points, new Vector3(ring.xMin, 0, ring.yMin), Vector3.left, Vector3.forward, radius);

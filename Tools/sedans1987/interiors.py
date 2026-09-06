@@ -1,6 +1,7 @@
 """Visible low-poly cabin furniture, merged into the existing opaque body mesh."""
 import math
 from bodywork import lerp
+from seating import seat_roots
 
 
 def cushion(mesh,center,size,color,lean=0):
@@ -17,20 +18,11 @@ def cushion(mesh,center,size,color,lean=0):
                   (outline[i][0]+outline[j][0],outline[i][1]+outline[j][1],0))
 
 
-def seat_roots(form):
-    car=form.car;bb,bt,_,_=car['cabin'];width=form.w*1.60
-    back_top=car['height']-.28
-    rear_top_z=lerp(bb,bt,(back_top-form.deck(bb))/(car['height']-form.deck(bb)))+.12
-    # Cushion height follows roof height; the authored root convention is .43 m below it.
-    seat_y=min(.52,car['height']-.90)
-    return [(side*width*.25,seat_y+.085-.43,z) for z in (form.shape['pillar']+.18,rear_top_z+.28)
-            for side in (-1,1)]
-
-
 def build_interior(mesh,form):
     car=form.car;bb,bt,ft,fb=car['cabin'];split=form.shape['pillar']
     width=form.w*1.60
-    floor=.27;seat_y=min(.52,car['height']-.90);back_top=car['height']-.28
+    seats=seat_roots(form)
+    floor=.27;seat_y=seats[0][1]+.43-.085;back_top=car['height']-.32
     upholstery='upholstery' if car['style'] in ('regent','calder','monarch','bayside') else 'dashboard'
     panel='seat_panel' if upholstery=='upholstery' else 'interior_trim'
     mesh.box((0,floor,(bb+fb)/2),(width,.06,fb-bb),'interior_trim')
@@ -40,8 +32,8 @@ def build_interior(mesh,form):
                  (.045,car['belt']-.36,fb-bb-.10),upholstery)
         mesh.box((side*(width/2-.065),car['belt']-.13,split+.23),(.10,.07,.42),'interior_trim')
         mesh.box((side*(width/2-.10),car['belt']-.05,split+.38),(.018,.024,.10),'chrome')
-    front_z=split+.18
-    for x in (-width*.25,width*.25):
+    front_z=seats[0][2]
+    for x in (seats[0][0],seats[1][0]):
         cushion(mesh,(x,seat_y,front_z),(width*.43,.17,.53),upholstery)
         back_z=front_z-.265
         cushion(mesh,(x,(seat_y+back_top)/2,back_z),
@@ -50,8 +42,7 @@ def build_interior(mesh,form):
         # An inset centre panel makes the seat silhouette/readable face distinct.
         mesh.box((x,(seat_y+back_top)/2,back_z+.071),
                  (width*.30,(back_top-seat_y)*.72,.008),panel)
-    rear_top_z=lerp(bb,bt,(back_top-form.deck(bb))/(car['height']-form.deck(bb)))+.12
-    rear_z=rear_top_z+.28
+    rear_z=seats[2][2];rear_top_z=rear_z-.28
     cushion(mesh,(0,seat_y,rear_z),(width*.94,.17,.50),upholstery)
     cushion(mesh,(0,(seat_y+back_top)/2,rear_top_z+.06),
             (width*.92,back_top-seat_y,.13),upholstery,lean=.075)

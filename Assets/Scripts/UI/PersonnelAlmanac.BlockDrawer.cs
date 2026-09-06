@@ -210,10 +210,6 @@ namespace LivingCity.UI
                 case BlockSheet.Squad:
                     BuildSquadSheet(host2, inner);
                     break;
-                default:
-                    if (blockCardPick.IsValid)
-                        BuildDoorSheet(host2, inner);
-                    break;
             }
         }
 

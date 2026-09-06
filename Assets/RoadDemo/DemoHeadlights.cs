@@ -33,7 +33,9 @@ namespace RoadDemo
             public RoadCar Vehicle;
             public VehicleLampRig Fittings;
             public Light L, R;
+            public Light[] Auxiliary;
             public bool Burning;
+            public VehicleBrakeState Brakes;
         }
 
         readonly List<Rig> _rigs = new List<Rig>();
@@ -41,7 +43,7 @@ namespace RoadDemo
         DemoCrews _crews;
         float[] _key = new float[0];
         int[] _order = new int[0];
-        float _nextResort;
+        float _nextResort, _nextBrakeSample, _brakeSampleAt;
         float _lit = -1f;
 
         public void Register(Transform car, float halfLen)
@@ -67,10 +69,14 @@ namespace RoadDemo
                 return car.InverseTransformPoint(fittings.transform.TransformPoint(
                     left ? fittings.leftHeadlight : fittings.rightHeadlight));
             }
+            int extra = fittings && fittings.auxiliaryHeadlights != null ? fittings.auxiliaryHeadlights.Length : 0;
+            var auxiliary = new Light[extra];
+            for (int i = 0; i < extra; i++)
+                auxiliary[i] = Attach(car, car.InverseTransformPoint(fittings.transform.TransformPoint(fittings.auxiliaryHeadlights[i])));
             return new Rig
             {
                 Car = car, Vehicle = vehicle, Fittings = fittings,
-                L = Attach(car, Position(true)), R = Attach(car, Position(false)),
+                L = Attach(car, Position(true)), R = Attach(car, Position(false)), Auxiliary = auxiliary,
             };
         }
 
@@ -136,6 +142,19 @@ namespace RoadDemo
             if (_rigs.Count == 0)
                 return;
 
+            // Brake indication runs in daylight too, independently of the slower
+            // beam ranking. No new Light objects or per-vehicle Update callbacks.
+            if (Time.unscaledTime >= _nextBrakeSample)
+            {
+                float now = Time.unscaledTime;
+                float dt = _brakeSampleAt > 0f ? now - _brakeSampleAt : 0f;
+                _brakeSampleAt = now; _nextBrakeSample = now + .08f;
+                foreach (var rig in _rigs)
+                    if (rig.Fittings && rig.Vehicle != null)
+                        rig.Fittings.SetBrakeLights(rig.Brakes.Step(rig.Vehicle.Speed, dt,
+                            WantsLights(rig), rig.Vehicle.Halted));
+            }
+
             float night = DemoSky.Nightness(clock ? clock.Hour : 12f);
             float target = Intensity * night;
 
@@ -148,7 +167,9 @@ namespace RoadDemo
 
             bool burn = target > 0.001f;
             var camera = Camera.main;
-            if (burn && camera && _rigs.Count * 2 > LitBeamBudget)
+            int installedBeams = _rigs.Count * 2;
+            foreach (var rig in _rigs) installedBeams += rig.Auxiliary.Length;
+            if (burn && camera && installedBeams > LitBeamBudget)
             {
                 // rank around where the camera looks, not where it stands - the rig
                 // parks it a couple hundred metres back along its boom
@@ -167,29 +188,32 @@ namespace RoadDemo
                         ? (car.position - eye).sqrMagnitude
                         : float.MaxValue;
                 }
-                DemoStreetLamps.Nearest(_key, _order, LitBeamBudget / 2);
+                DemoStreetLamps.Nearest(_key, _order, Mathf.Min(_rigs.Count, LitBeamBudget / 2));
             }
             else DemoStreetLamps.Prepare(ref _key, ref _order, _rigs.Count);
 
-            int litCars = 0;
+            int litBeams = 0;
             for (int rank = 0; rank < _order.Length; rank++)
             {
                 var rig = _rigs[_order[rank]];
                 bool wants = WantsLights(rig);
                 if (rig.Fittings) rig.Fittings.SetRunningLights(wants ? night : 0f);
-                bool burns = burn && wants && litCars * 2 < LitBeamBudget;
-                if (wants) litCars++;
+                int beams = 2 + rig.Auxiliary.Length;
+                bool burns = burn && wants && litBeams + beams <= LitBeamBudget;
+                if (burns) litBeams += beams;
                 // enabling a light re-registers it with the renderer: touched only on change
                 if (burns != rig.Burning)
                 {
                     rig.L.enabled = burns;
                     rig.R.enabled = burns;
+                    foreach (var light in rig.Auxiliary) if (light) light.enabled = burns;
                     rig.Burning = burns;
                 }
                 if (burns)
                 {
                     rig.L.intensity = target;
                     rig.R.intensity = target;
+                    foreach (var light in rig.Auxiliary) if (light) light.intensity = target;
                 }
             }
         }
@@ -200,18 +224,21 @@ namespace RoadDemo
             {
                 if (rig.L) rig.L.enabled = false;
                 if (rig.R) rig.R.enabled = false;
-                if (rig.Fittings) rig.Fittings.SetRunningLights(0f);
+                foreach (var light in rig.Auxiliary) if (light) light.enabled = false;
+                if (rig.Fittings) { rig.Fittings.SetBrakeLights(false); rig.Fittings.SetRunningLights(0f); }
                 rig.Burning = false;
+                rig.Brakes = default;
             }
             _lit = -1f;
-            _nextResort = 0f;
+            _nextResort = _nextBrakeSample = _brakeSampleAt = 0f;
         }
 
         static void Release(Rig rig)
         {
-            if (rig.Fittings) rig.Fittings.SetRunningLights(0f);
+            if (rig.Fittings) { rig.Fittings.SetBrakeLights(false); rig.Fittings.SetRunningLights(0f); }
             if (rig.L) { rig.L.enabled = false; Destroy(rig.L.gameObject); }
             if (rig.R) { rig.R.enabled = false; Destroy(rig.R.gameObject); }
+            foreach (var light in rig.Auxiliary) if (light) { light.enabled = false; Destroy(light.gameObject); }
         }
 
         void OnDestroy()

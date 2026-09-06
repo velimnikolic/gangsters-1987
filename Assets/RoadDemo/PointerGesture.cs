@@ -41,6 +41,15 @@ namespace RoadDemo
         /// </summary>
         public static bool DragTaken { get; set; }
 
+        /// <summary>Claim a UI press immediately, even if the EventSystem's hover
+        /// cache was read before its raycast this frame. Ownership lasts to release.</summary>
+        public static void ClaimPress()
+        {
+            Read();
+            _taken = true;
+            _clicked = false;
+        }
+
         static void Read()
         {
             if (_frame == Time.frameCount) return;

@@ -91,6 +91,23 @@ namespace LivingCity.Gameplay
         /// </summary>
         public static readonly Entry[] Table =
         {
+            // Authored fleet: keep sedan handling and inherit the existing class
+            // envelopes for 4x4s, vans, the economy hatch and the armoured truck.
+            new Entry("01_Regent_Bellavere",        1.00f, 1.00f, 1.00f),
+            new Entry("02_Kronen_K58",              1.00f, 1.00f, 1.00f),
+            new Entry("03_Albion_Six",              1.00f, 1.00f, 1.00f),
+            new Entry("Vahren_Drei",                1.00f, 1.00f, 1.00f),
+            new Entry("04_Calder_Marivelle",         1.00f, 1.00f, 1.00f),
+            new Entry("05_Monarch_Townline",         1.00f, 1.00f, 1.00f),
+            new Entry("06_Bayside_Classic",          1.00f, 1.00f, 1.00f),
+            new Entry("07_Hikari_DX",                1.00f, 1.00f, 1.00f),
+            new Entry("08_Bayside_Trail",            0.92f, 0.88f, 0.90f),
+            new Entry("09_Bayside_Ranger",           0.92f, 0.88f, 0.90f),
+            new Entry("10_Albion_Highland",          0.92f, 0.88f, 0.90f),
+            new Entry(VehicleCatalog.PoliceTransportModel, 0.96f, 0.95f, 0.92f),
+            new Entry(CivilianVehicleCatalog.ArmouredModel, 0.78f, 0.62f, 0.80f),
+            new Entry("13_Calder_Voyager",           0.82f, 0.72f, 0.88f),
+            new Entry("14_Borough_Mica",             0.86f, 0.85f, 1.00f),
             // --------------------------------------------------------- the heavy end
             new Entry("SM_Veh_Truck_01",            0.70f, 0.42f, 0.75f),
             new Entry("SM_Veh_Truck_Delivery_01",   0.72f, 0.45f, 0.75f),
@@ -189,7 +206,7 @@ namespace LivingCity.Gameplay
         {
             if (string.IsNullOrEmpty(nameOrPath)) return Ordinary;
 
-            var name = VehicleCatalog.BareName(nameOrPath);
+            var name = ModelKey(nameOrPath);
 
             // whole name first: a preset with a row of its own must beat its own stem
             foreach (var entry in Table)
@@ -216,10 +233,17 @@ namespace LivingCity.Gameplay
         public static bool Lists(string nameOrPath)
         {
             if (string.IsNullOrEmpty(nameOrPath)) return false;
-            var name = VehicleCatalog.BareName(nameOrPath);
+            var name = ModelKey(nameOrPath);
             foreach (var entry in Table)
                 if (name == entry.Name) return true;
             return false;
+        }
+
+        static string ModelKey(string nameOrPath)
+        {
+            var name = VehicleCatalog.BareName(nameOrPath);
+            if (name == "BOROUGH WARDEN") return VehicleCatalog.PoliceTransportModel;
+            return VehicleCatalog.BareName(CivilianVehicleCatalog.PathFor(name) ?? name);
         }
 
         /// <summary>Whether every row sits inside the bands above: the one rule the

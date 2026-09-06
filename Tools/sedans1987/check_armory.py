@@ -15,14 +15,15 @@ def main():
     args = parser.parse_args()
     expected = json.loads((HERE / 'lineup.json').read_text())
     expected += [row for row in json.loads((HERE / 'utilities.json').read_text())
-                 if row['style'] in ('trail', 'ranger', 'highland', 'bastion')]
+                 if row['style'] != 'warden']
+    expected += json.loads((HERE / 'compacts.json').read_text())
     expected.sort(key=lambda row: row['price'])
     catalog = (ROOT / 'Assets/Scripts/Outfit/ArmoryCatalog.cs').read_text()
     shelf = catalog.split('ArmoryItem[] Vehicles =', 1)[1].split('};', 1)[0]
     listings = re.findall(
         r'new ArmoryItem\(EquipmentKind.Vehicle, "([^"]+)", ([\d_]+),\s*'
         r'"([^"]+)", "([^"]+)"\)', shelf)
-    assert len(listings) == len(expected) == 12, 'Expected eight sedans and four SUVs'
+    assert len(listings) == len(expected) == 14, 'Expected all fourteen civilian/crew vehicles'
     for (name, price, note, model), row in zip(listings, expected):
         assert (name, int(price.replace('_', '')), model) == (
             row['name'], row['price'], row['id']), f'Catalogue drift: {name}'
@@ -47,7 +48,7 @@ def main():
     wired = before + '  vehicles:\n' + vehicles + '  people:\n' + after
     if wired != bridge:
         bridge_path.write_text(wired)
-    print('PASS: 12 exact showroom listings, ascending prices and valid Ledger prefab references; no vans for sale')
+    print('PASS: 14 exact showroom listings, ascending prices and valid Ledger prefab references; police transport excluded')
 
 
 if __name__ == '__main__':

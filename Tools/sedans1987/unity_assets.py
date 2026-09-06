@@ -6,6 +6,7 @@ import re
 import struct
 import uuid
 from geometry import unit, cross, sub
+from material_contract import matches as material_matches
 
 ROOT=Path(__file__).resolve().parents[2]
 ASSET='Assets/Sedan1987'
@@ -57,10 +58,12 @@ def meta(path,importer='NativeFormatImporter',extra='  mainObjectFileID: 4300000
         parent=parent.parent
 
 
-def mesh_asset(mesh,palette,full_uv=False):
+def mesh_asset(mesh,palette,full_uv=False,split_tail=False,split_color=None):
     path=f'{ASSET}/Meshes/{mesh.name}.asset'
     vertices,indices=[],[]
     welded={}
+    partition_color='lamp_tail' if split_tail else split_color
+    partitions=[[],[]] if partition_color else [[]]
     for face_index,(points,color) in enumerate(mesh.faces):
         normal=unit(cross(sub(points[1],points[0]),sub(points[2],points[0])))
         tangent=unit(sub(points[1],points[0]))
@@ -83,8 +86,9 @@ def mesh_asset(mesh,palette,full_uv=False):
                 vertices.append(vertex)
             face_indices.append(welded[key])
         for i in range(1,len(points)-1):
-            indices.extend((face_indices[0],face_indices[i],face_indices[i+1]))
-    assert len(vertices)<65536
+            partitions[int(partition_color is not None and color==partition_color)].extend((face_indices[0],face_indices[i],face_indices[i+1]))
+    indices=[index for part in partitions for index in part]
+    assert all(partitions) and len(vertices)<65536
     lo,hi=mesh.bounds
     bounds='      m_Center: '+v3([(a+b)/2 for a,b in zip(lo,hi)])+'\n      m_Extent: '+v3([(b-a)/2 for a,b in zip(lo,hi)])+'\n'
     channels=''
@@ -96,18 +100,22 @@ def mesh_asset(mesh,palette,full_uv=False):
         if name in ('Vertices','UV','Normals','Tangents','FloatColors'):
             compressed+='      m_Range: 0\n      m_Start: 0\n'
         compressed+='      m_Data: \n      m_BitSize: 0\n'
-    text=HEADER+'--- !u!43 &4300000\nMesh:\n'+COMMON+f'''  m_Name: {mesh.name}
-  serializedVersion: 12
-  m_SubMeshes:
-  - serializedVersion: 2
-    firstByte: 0
-    indexCount: {len(indices)}
+    submeshes='';byte_offset=0
+    for part in partitions:
+        submeshes+=f'''  - serializedVersion: 2
+    firstByte: {byte_offset}
+    indexCount: {len(part)}
     topology: 0
     baseVertex: 0
     firstVertex: 0
     vertexCount: {len(vertices)}
     localAABB:
-{bounds}  m_Shapes:
+{bounds}'''
+        byte_offset+=len(part)*2
+    text=HEADER+'--- !u!43 &4300000\nMesh:\n'+COMMON+f'''  m_Name: {mesh.name}
+  serializedVersion: 12
+  m_SubMeshes:
+{submeshes}  m_Shapes:
     vertices: []
     shapes: []
     channels: []
@@ -177,7 +185,7 @@ def texture_meta(path,srgb=True):
 ''')
 
 
-def material(name,texture,unlit=False,emission=None,surface=None,transparent=False):
+def material(name,texture,unlit=False,emission=None,surface=None,transparent=False,alpha=.20):
     path=f'{ASSET}/Materials/{name}.mat'
     # URP Lit and Unlit package assets; no custom shader or runtime Shader.Find.
     shader='650dd9526735d5b46b79224bc6e94025' if unlit else '933532a4fcc9baf4fa0491de14d08ed7'
@@ -232,7 +240,7 @@ def material(name,texture,unlit=False,emission=None,surface=None,transparent=Fal
     - _WorkflowMode: 1
     - _ZWrite: {0 if transparent else 1}
     m_Colors:
-    - _BaseColor: {{r: 1, g: 1, b: 1, a: {0.20 if transparent else 1}}}
+    - _BaseColor: {{r: 1, g: 1, b: 1, a: {alpha if transparent else 1}}}
     - _EmissionColor: {{r: {0.0001 if emission else 0}, g: {0.0001 if emission else 0}, b: {0.0001 if emission else 0}, a: {1 if emission else 0}}}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
@@ -264,7 +272,7 @@ MonoBehaviour:
         m_Scale: {{x: 1, y: 1}}
         m_Offset: {{x: 0, y: 0}}
     m_Ints: []''')
-    write(path,text)
+    write(path,previous if material_matches(previous,text) else text)
     meta(path,extra='  mainObjectFileID: 2100000\n')
     return path
 
@@ -292,8 +300,11 @@ class Hierarchy:
         self.extra.append(f'--- !u!{kind} &{cid}\n{name}:\n'+COMMON+f'  m_GameObject: {{fileID: {n["go"]}}}\n'+body)
         return cid
 
-    def renderer(self,n,mesh,mat,shadows=True):
+    def renderer(self,n,mesh,mat,shadows=True,tail_slot=False,second_material=None):
         self.component(n,33,'MeshFilter',f'  m_Mesh: {ref(mesh,4300000)}\n')
+        materials='  - '+ref(mat,2100000)+'\n'
+        if tail_slot:materials+=materials
+        elif second_material:materials+='  - '+ref(second_material,2100000)+'\n'
         return self.component(n,23,'MeshRenderer',f'''  m_Enabled: 1
   m_CastShadows: {1 if shadows else 0}
   m_ReceiveShadows: 1
@@ -303,8 +314,7 @@ class Hierarchy:
   m_ReflectionProbeUsage: 1
   m_RenderingLayerMask: 1
   m_Materials:
-  - {ref(mat,2100000)}
-  m_StaticBatchInfo:
+{materials}  m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
   m_StaticBatchRoot: {{fileID: 0}}

@@ -101,10 +101,10 @@ namespace RoadDemo
         /// <summary>The body is read the moment the transform is set: seats, doors,
         /// wheels, size - any pack car. The car is put on the road under it (or on
         /// open ground, off any road).</summary>
-        public void Attach(Transform tf)
+        public void Attach(Transform tf, string modelName = null)
         {
             Tf = tf;
-            Body = new CarBody(tf);
+            Body = new CarBody(tf, modelName);
             HalfLen = Body.TrafficHalfLength;
             HalfWide = Body.TrafficHalfWidth;
             AxleBack = Body.AxleBack;
@@ -122,7 +122,7 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ the body, passed through
 
-        public int Seats { get => Body != null ? Body.Seats : 4; set { if (Body != null) Body.Seats = value; } }
+        public int Seats { get => Body != null ? Body.Seats : CarBody.DefaultSeats; set { if (Body != null) Body.Seats = value; } }
         public int FreeSeats => Mathf.Max(0, Seats - Aboard.Count);
         public bool HasDoors => Body != null && Body.HasDoors;
 
@@ -142,6 +142,7 @@ namespace RoadDemo
         public static float SeatSide(int index) => CarBody.SeatSide(index);
         public Vector3 DoorPoint(int seat) => Body != null ? Body.DoorPoint(seat) : Position + (Tf != null ? Tf.right : Vector3.right) * 1.7f;
         public Vector3 Window(int index, Vector3 target) => Body != null ? Body.Window(index, target) : Position + Vector3.up;
+        public bool CanFireFromSeat(int seat) => Body == null || !Body.IsRearCentreSeat(seat);
         public void OpenDoorFor(int seat) => Body?.OpenDoorFor(seat);
         public void CloseDoorFor(int seat) => Body?.CloseDoorFor(seat);
         public void CloseAllDoors() => Body?.CloseAllDoors();

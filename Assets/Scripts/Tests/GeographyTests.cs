@@ -88,13 +88,15 @@ namespace LivingCity.Tests
                 },
                 houses);
 
-        /// <summary>The middle of one grid block, which is where a station house on it
-        /// stands for these cases.</summary>
-        static TerritoryPoint GridCentre(int i, int j) =>
-            new TerritoryPoint(i * Step + Block * 0.5f, j * Step + Block * 0.5f);
+        /// <summary>Where a station house on one grid block stands. Deliberately NOT the
+        /// block's middle: grid:0:0 has a smaller block nested inside it, and the middle
+        /// of the big one is inside the small one - the smallest-containing rule would
+        /// then seat the house on the nested block, correctly and confusingly.</summary>
+        static TerritoryPoint StationYard(int i, int j) =>
+            new TerritoryPoint(i * Step + Block * 0.85f, j * Step + Block * 0.85f);
 
         static TerritoryPrecinctSeat House(int stationId, int i, int j) =>
-            new TerritoryPrecinctSeat(stationId, GridCentre(i, j));
+            new TerritoryPrecinctSeat(stationId, StationYard(i, j));
 
         // ------------------------------------------------------------------- GEO-001
 

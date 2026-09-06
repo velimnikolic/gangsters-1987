@@ -5,6 +5,7 @@ from palette import glass_uv
 from geometry import Mesh,unit,sub
 from window_frames import aperture
 from roof_skin import RoofSkin
+from screen_skin import sampled,cowl
 
 SIDE_BOTTOM,SIDE_TOP=.11,.94
 POST_HALF,FRONT_POST=.035,.095
@@ -51,7 +52,8 @@ def build_cabin(mesh,form):
               'upholstery',(0,-1,0))
     def side_point(side,z,t,offset=0):
         x=lerp(form.width(z)*.90,roof_width(z),t)+.012*math.sin(math.pi*t)
-        return (side*(x+offset),lerp(form.deck(z),roof_height(1,z),t),z)
+        return (side*(x+offset),lerp(form.deck(z),roof_height(1,z),t),
+                lerp(form.position_z(x,z),z,t))
     split=s['pillar']
     def rear_mass(t):
         # Sporting saloons turn the rear lower corner forward into the door.
@@ -63,9 +65,7 @@ def build_cabin(mesh,form):
         def panel(u,t):
             z=lerp(lerp(bb,bt,t),lerp(fb,ft,t),u)
             return side_point(side,z,t)
-        # Only frame bands are opaque. There is no painted panel behind glass.
-        for low,high in [(0,SIDE_BOTTOM),(SIDE_TOP,1)]:
-            metal(panel,samples(0,1,6),[low,high],car['roof'],outward)
+        rail_stations={SIDE_BOTTOM:set(samples(0,1,6)),SIDE_TOP:set(samples(0,1,6))}
         for kind in ('rear','middle','front'):
             def pillar(u,t):
                 if kind=='rear':a=lerp(bb,bt,t);b=a+rear_mass(t)
@@ -76,29 +76,46 @@ def build_cabin(mesh,form):
         # Large clean apertures: the C-pillar has a deliberate mass, the front
         # pillar is slim, and the B-pillar is dark instead of a double chrome tube.
         for where in ('rear','front'):
-            def window(u,t):
+            def window_z(u,t):
                 back=lerp(bb,bt,t)+rear_mass(t) if where=='rear' else split+POST_HALF
                 front=split-POST_HALF if where=='rear' else lerp(fb,ft,t)-FRONT_POST
-                return side_point(side,lerp(back,front,u),t,.014)
-            if where=='rear' and car['style'] in ('regent','kronen','vahren','bayside'):
+                return lerp(back,front,u)
+            def window(u,t):return side_point(side,window_z(u,t),t)
+            def window_aperture(limits,width,**kwargs):
+                outline=aperture(mesh,glazing,window,limits,width,outward,car['roof'],glass_uv,**kwargs)
+                for u,t in outline:
+                    for edge in rail_stations:
+                        if abs(t-edge)<1e-8:
+                            a,b=lerp(bb,bt,t),lerp(fb,ft,t)
+                            rail_stations[edge].add((window_z(u,t)-a)/(b-a))
+            if where=='front' and car.get('hatchback'):
+                window_aperture((0,.76,SIDE_BOTTOM,SIDE_TOP),.030,corner=(.008,.008,.008,.008),along=samples(SIDE_BOTTOM,SIDE_TOP,3))
+                window_aperture((.79,1,SIDE_BOTTOM,SIDE_TOP),.028,corner=(.035,.008,.008,.012),along=samples(SIDE_BOTTOM,SIDE_TOP,3))
+                metal(window,[.76,.79],samples(SIDE_BOTTOM,SIDE_TOP,3),'rubber',outward)
+            elif where=='rear' and car['style'] in ('regent','kronen','vahren','bayside'):
                 # A fixed quarterlight follows the C pillar; the main door pane
                 # finishes square against the B pillar, unlike the sloping front.
                 q=.27 if car['style']!='regent' else .22
-                aperture(mesh,glazing,window,(0,q-.012,SIDE_BOTTOM,SIDE_TOP),.015,outward,car['roof'],glass_uv,
-                         corner=(.008,.055,.065,.008))
-                aperture(mesh,glazing,window,(q+.012,1,SIDE_BOTTOM,SIDE_TOP),.015,outward,car['roof'],glass_uv,
-                         corner=(.008,.008,.008,.008))
+                window_aperture((0,q-.012,SIDE_BOTTOM,SIDE_TOP),.030,
+                         corner=(.008,.055,.065,.008),along=samples(SIDE_BOTTOM,SIDE_TOP,3))
+                window_aperture((q+.012,1,SIDE_BOTTOM,SIDE_TOP),.030,
+                         corner=(.008,.008,.008,.008),along=samples(SIDE_BOTTOM,SIDE_TOP,3))
                 metal(window,[q-.012,q+.012],[SIDE_BOTTOM,SIDE_TOP],'rubber',outward)
             else:
                 corners=(.055,.008,.008,.012) if where=='front' else (.008,.060,.045,.008)
-                aperture(mesh,glazing,window,(0,1,SIDE_BOTTOM,SIDE_TOP),.018,outward,car['roof'],glass_uv,corner=corners)
+                window_aperture((0,1,SIDE_BOTTOM,SIDE_TOP),.035,corner=corners,along=samples(SIDE_BOTTOM,SIDE_TOP,3))
             if car['style'] in ('regent','kronen','calder','monarch','vahren'):
                 # Thin bright trim runs along the outside of the complete glazing.
-                for t in (SIDE_BOTTOM-.018,SIDE_TOP+.025):
+                for t in (SIDE_BOTTOM-.018,):
                     mesh.ribbon([window(u,t) for u in samples(0,1,4)],.011,'chrome',outward)
+        # The rails use every glazing/corner boundary station. Their upper edge
+        # also samples the existing roof skin, closing both sides of the strip.
+        for edge,outer in [(SIDE_BOTTOM,0),(SIDE_TOP,1)]:
+            stations=sorted(rail_stations[edge])
+            metal(panel,stations,sorted([edge,outer]),car['roof'],outward)
         mesh.ribbon([side_point(side,split,t,.016) for t in (SIDE_BOTTOM-.015,SIDE_TOP+.015)],POST_HALF*1.9,'rubber',outward)
         # Door seams are thin strips following the metal, not protruding bars.
-        for z in (bb+.07,split,fb-.13):
+        for z in ((split,fb-.13) if car.get('hatchback') else (bb+.07,split,fb-.13)):
             low=max(.27,form.arch_y(z)+.025);high=form.deck(z)-.018
             if low>=high:continue
             levels=sorted(set(samples(low,high,6)+[lerp(.21,form.deck(z),t) for t in (.16,.30,.42,.72,.86)
@@ -107,30 +124,35 @@ def build_cabin(mesh,form):
             mesh.ribbon(points,.0045,car['paint']+'_gap',(side,0,0))
         # Both doors are front-hinged (+Z): the latch/handle belongs at their
         # lower-Z trailing edge, just ahead of the C- and B-pillar door cuts.
-        for trailing,leading in ((bb+.07,split),(split,fb-.13)):
+        for trailing,leading in ([(split,fb-.13)] if car.get('hatchback') else [(bb+.07,split),(split,fb-.13)]):
             z=trailing+min(.17,(leading-trailing)*.18)
             y=form.deck(z)-.105;x=side*(form.side_x(y,z)+.009)
-            mesh.box((x,y,z),(.018,.023,.125),'rubber' if car['style'] in ('hikari','vahren') else 'chrome')
+            mesh.box((x,y,z),(.018,.023,.125),'rubber' if car['style'] in ('hikari','vahren','mica') else 'chrome')
         mirror(mesh,form,side,fb-.18,form.deck(fb-.18)+.06)
     for base,top,end in [(bb,bt,-1),(fb,ft,1)]:
-        def screen(u,t,offset=0):
-            x=(lerp(form.width(base)*.90,roof_width(top),t)+.012*math.sin(math.pi*t))*u
-            y=lerp(form.top(u,base)[1],roof_height(u,top),t)
-            z=lerp(base,top,t)+end*.018*(1-u*u)*math.sin(math.pi*t)
-            return (x,y+offset,z+end*offset)
-        for low,high in [(0,SCREEN_BOTTOM),(SCREEN_TOP,1)]:
-            metal(screen,[u for u in roof.us if -SCREEN_EDGE<=u<=SCREEN_EDGE],[low,high],car['paint'],(0,1,end))
+        # Screen and side pillars share their actual sampled outside edge.
+        side_ts=[0]+samples(SIDE_BOTTOM,SIDE_TOP,3)+[1]
+        def boundary(t):
+            return sampled(lambda v,_:side_point(1,lerp(base,top,v),v),side_ts,t,0)
+        def raw_screen(u,t):
+            x,edge_y,edge_z=boundary(t)
+            crown=lerp(form.top(u,base)[1]-form.top(1,base)[1],
+                       roof_height(u,top)-roof_height(1,top),t)
+            return x*u,edge_y+crown,edge_z+end*.018*(1-u*u)*math.sin(math.pi*t)
+        screen=lambda u,t:sampled(raw_screen,roof.us,u,t)
+        cowl(metal,form,screen,base,SCREEN_BOTTOM,roof.us,car['paint'],(0,1,end))
+        metal(screen,[u for u in roof.us if -SCREEN_EDGE<=u<=SCREEN_EDGE],[SCREEN_TOP,1],car['paint'],(0,1,end))
         for left,right in [(-1,-SCREEN_EDGE),(SCREEN_EDGE,1)]:
-            metal(screen,[left,right],[0,SCREEN_BOTTOM,SCREEN_TOP,1],car['paint'],(0,1,end))
-        glass=lambda u,t:screen(u,t,.012)
-        aperture(mesh,glazing,glass,(-SCREEN_EDGE,SCREEN_EDGE,SCREEN_BOTTOM,SCREEN_TOP),.020,
-                 (0,1,end),car['paint'],glass_uv,corner=.10,across=roof.us)
+            metal(screen,[left,right],side_ts[1:],car['paint'],(0,1,end))
+        glass=lambda u,t:screen(u,t)
+        aperture(mesh,glazing,glass,(-SCREEN_EDGE,SCREEN_EDGE,SCREEN_BOTTOM,SCREEN_TOP),.035,
+                 (0,1,end),car['paint'],glass_uv,corner=.050,across=roof.us,along=side_ts[1:-1])
         if end==1:
             for a,b in [(-.75,-.18),(.10,.66)]:
                 mesh.ribbon([glass(a,.10),glass(b,.135)],.012,'rubber',(0,1,1))
         else:
             x,y,z=glass(0,.115)
-            mesh.box((x,y+.009,z-.011),(.14,.026,.025),'red')
+            mesh.box((x,y+.009,z-.011),(.14,.026,.025),'lamp_tail')
     return glazing
 
 

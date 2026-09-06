@@ -11,6 +11,7 @@ namespace RoadDemo
         {
             public IDistrict District;
             public DistrictSlot Slot;
+            /// <summary>The landward end of the works' artery: where the city's road arrives.</summary>
             public RasterGateways.Gateway IndustryGateway;
             public Vector3 IndustryOrigin;
             public Rect World => District.Frame.ToWorldRect(District.LocalBounds);
@@ -23,13 +24,16 @@ namespace RoadDemo
             public Vector3 CityFace;
             public Quarter Quarter;
             public int Portal;
+            /// <summary>The quarter whose road carries this portal's traffic: the port's
+            /// main gate is reached along the works' artery, so no approach of its own is
+            /// laid from the expressway.</summary>
+            public Quarter Via;
             public bool Through => CityNode != null && Quarter != null;
         }
 
         public readonly List<Quarter> Quarters = new List<Quarter>();
         public readonly List<Connection> Connections = new List<Connection>();
         public Rect BeltBounds { get; private set; }
-        public float IndustryAreaTarget { get; private set; }
         public Rect IndustryGroundBounds => PortIndustryLayout.GroundBounds(Quarters);
         public Rect WorldBounds
         {
@@ -88,21 +92,18 @@ namespace RoadDemo
             float harborAt = Anchor(harborSide);
             var harbor = new HarborDemo.HarborDistrict { berths = 3 + dice.Next(2) };
             Add(harbor, DistrictKind.Harbor, harborSide, harborAt, new[] { 0f, 240f }, 0);
+            // One works zone behind the port, on the port's own road. A deal whose artery
+            // has no clear mouth at either end is thrown away and the next seed dealt.
             int industrySeed = dice.Next();
-            IndustrialLayout.Arrange(industrySeed, out var formerIndustry, true);
-            var formerBounds = IndustrialLayout.Bounds(formerIndustry);
-            IndustryAreaTarget = 2f * formerBounds.width * formerBounds.height;
-            float industryArea = 0f;
-            for (int attempt = 0; attempt < 24 && industryArea < IndustryAreaTarget; attempt++)
+            bool works = false;
+            for (int attempt = 0; attempt < 24 && !works; attempt++)
             {
-                var industry = new IndustrialDistrict { compact = true, pocket = true };
-                if (!Add(industry, DistrictKind.Pad, harborSide, harborAt + 360f, null, industrySeed))
-                { industrySeed = dice.Next(); continue; }
-                industryArea += industry.LocalBounds.width * industry.LocalBounds.height;
+                works = Add(new IndustrialDistrict { portZone = true }, DistrictKind.Pad, harborSide,
+                            harborAt + 360f, null, industrySeed);
                 industrySeed = dice.Next();
             }
-            if (industryArea < IndustryAreaTarget)
-                Debug.LogWarning($"[Region] Industry area {industryArea:0} below target {IndustryAreaTarget:0} after 24 layout attempts.");
+            if (!works)
+                Debug.LogWarning("[Region] No port works zone after 24 layout attempts; the port stands alone.");
             Add(new AirportDemo.AirportDistrict(), DistrictKind.Airport, airportSide,
                 Anchor(airportSide), new[] { 0f }, 0);
             for (int i = 0; i < Mathf.Clamp(suburbCount, 0, 4); i++)
@@ -127,12 +128,16 @@ namespace RoadDemo
             BeltBounds = Rect.MinMaxRect(x0, z0, x1, z1);
 
             // The port and its works were packed together. Preserve their shared back
-            // edge and plot gaps instead of separating each estate independently.
+            // edge and plot gaps instead of separating each estate independently. Every
+            // other district stands at least clear of the expressway's outer collector,
+            // which a river mouth can push well past the belt on the east or west.
+            var water = _core.Frame.ToWorldRect(_core.Layout.Water);
             foreach (var q in Quarters)
             {
                 float strip = 520f + dice.Next(5) * 30f;
                 bool portArea = q.District is HarborDemo.HarborDistrict || q.District is IndustrialDistrict;
-                Place(q, portArea ? q.Slot.strip : strip);
+                Place(q, portArea ? q.Slot.strip
+                                  : Mathf.Max(strip, RegionalRing.ClearOf(BeltBounds, water, seed, q.Slot.edge)));
                 if (!portArea) Separate(q);
             }
 
@@ -151,7 +156,7 @@ namespace RoadDemo
                     edge = edge, seed = districtSeed == 0 ? dice.Next() : districtSeed,
                     name = kind == DistrictKind.Suburb ? NextSuburbName()
                          : kind == DistrictKind.Harbor ? names.City + " Docks"
-                         : kind == DistrictKind.Airport ? names.City + " Regional Airport" : "Port Industry " + (Quarters.FindAll(q => q.District is IndustrialDistrict).Count + 1) } };
+                         : kind == DistrictKind.Airport ? names.City + " Regional Airport" : "Port Industry" } };
                 district.Plan(links, q.Slot.seed);
                 if (kind == DistrictKind.Suburb && _core.Layout.Water.width > 0f)
                 {
@@ -161,16 +166,19 @@ namespace RoadDemo
                         at = at < water.center.x ? water.xMin - 80f - turned.xMax
                                                  : water.xMax + 80f - turned.xMin;
                 }
-                // Run the long industrial parcels inland from the quay. Their western
-                // gateway faces the city after a quarter turn in the harbour's frame.
+                // Run the works' artery inland from the quay. After a quarter turn in the
+                // harbour's frame its western mouth faces the city; it must be a real
+                // junction mouth on the artery itself, not on a service street behind a
+                // tier. The seaward end is a dead end at the cut, joined to the port's
+                // back street by the builder.
                 if (district is IndustrialDistrict industrial)
                 {
                     var gateways = RasterGateways.Find(industrial.Raster);
-                    var gate = gateways.FindAll(g => g.Edge == CityEdge.West);
-                    if (gate.Count == 0) return false; // reject this estate before publishing any quarter or connection
-                    var selected = gate[dice.Next(gate.Count)];
-                    q.IndustryGateway = selected;
-                    q.IndustryOrigin = selected.Face;
+                    float arteryTo = industrial.Layout?.Roads.MainRoad.y ?? 0f;
+                    var west = gateways.FindAll(g => g.Edge == CityEdge.West && g.Face.z > 0f && g.Face.z < arteryTo);
+                    if (west.Count == 0) return false; // reject this deal before publishing any quarter or connection
+                    q.IndustryGateway = west[0];
+                    q.IndustryOrigin = west[0].Face;
                 }
                 if (kind == DistrictKind.Suburb)
                 {
@@ -296,6 +304,10 @@ namespace RoadDemo
                 c.Quarter = null;
                 if (c.CityNode == null) Connections.RemoveAt(i);
             }
+            // a gate reached through works that never built their road gets an approach
+            // of its own after all
+            foreach (var c in Connections)
+                if (c.Via != null && !Connections.Exists(o => o.Quarter == c.Via)) c.Via = null;
         }
 
         public void ReportConnections(int built, int lanes)
