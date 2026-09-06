@@ -106,6 +106,27 @@ namespace LivingCity.UI
         /// only; everything else fires on the press.</summary>
         public static string Armed { get; private set; }
 
+        /// <summary>
+        /// WHICH DOOR THAT WORD WAS GIVEN AT, and through which book.
+        ///
+        /// The state is static and three surfaces share it, so the row's own name is not
+        /// enough to remember an armed move by: TORCH IT armed on one shop would come up
+        /// already armed on the next shop opened, and the second premises would burn on
+        /// ONE press. The premises and the dispatch both have to match before a strip is
+        /// drawn or a commit is wired.
+        /// </summary>
+        static TerritoryBusinessId armedDoor;
+        static DoorDispatch armedDispatch;
+
+        /// <summary>Which page of WHO GOES is showing. The roster is not bounded - a
+        /// house with thirty spare hoods would run the card off the bottom of the window
+        /// and take the confirm strip with it - so the list is paged, never endless.
+        /// </summary>
+        static int crewPage;
+
+        /// <summary>How many rows of WHO GOES stand at once.</summary>
+        const int CrewPageRows = 5;
+
         /// <summary>Whether an irreversible move asks twice. The handoff's own switch;
         /// off, they fire on the first press like any other row.</summary>
         public static bool TwoStepConfirm = true;
@@ -116,15 +137,23 @@ namespace LivingCity.UI
             Version++;
         }
 
-        static void Arm(string key, string verb)
+        static void Arm(string key, string verb, Door door, DoorDispatch dispatch)
         {
             Armed = key;
+            armedDoor = door.Id;
+            armedDispatch = dispatch;
             Say(verb + " - waiting on your word");
+        }
+
+        static void Disarm()
+        {
+            Armed = null;
+            armedDoor = default;
         }
 
         static void CallOff()
         {
-            Armed = null;
+            Disarm();
             Say("Called off. Nothing sent.");
         }
 
@@ -510,10 +539,10 @@ namespace LivingCity.UI
             bool showCommands)
         {
             var size = MonoPx(9.8f);
-            var max = showCommands ? LineBox(size, 3) : LineBox(size, 6);
+            var max = Box(size, showCommands ? 3 : 6);
             var line = Paragraph(panel, LedgerStyle.Mono, size, LedgerStyle.RailNote,
                 x, -y, w, max, Sentence(door), 2f);
-            return y + Mathf.Clamp(line.preferredHeight, LineBox(size), max);
+            return y + Mathf.Clamp(line.preferredHeight, Box(size), max);
         }
 
         // --------------------------------------------------------------- the sections
@@ -668,7 +697,7 @@ namespace LivingCity.UI
             // An armed move whose row is gone - the standing moved under the card, the
             // crew was taken off it - must not leave a strip offering to commit nothing.
             if (Armed != null && commit == null)
-                Armed = null;
+                Disarm();
 
             if (commit != null)
                 y += Px(10f) + Confirm(panel, x, y + Px(10f), w, armedVerb, armedWarning,
@@ -706,59 +735,105 @@ namespace LivingCity.UI
             if (!open)
                 return h;
 
-            var body = y + h;
+            // THE LIST IS PAGED, NOT ENDLESS. A house with thirty spare hoods would push
+            // the sections, the confirm strip and the foot off the bottom of the window,
+            // and a card whose commit key cannot be reached is worse than a short list.
             var rowH = Px(27f);
-            var count = crews.Count + reserve.Count;
-            var bodyH = count > 0 ? rowH * count : Px(27f);
+            var total = crews.Count + reserve.Count;
+            var pages = Mathf.Max(1, Mathf.CeilToInt(total / (float)CrewPageRows));
+            crewPage = Mathf.Clamp(crewPage, 0, pages - 1);
+            var first = crewPage * CrewPageRows;
+            var shown = Mathf.Clamp(total - first, 0, CrewPageRows);
+            var pager = pages > 1;
 
+            var bodyH = (total > 0 ? rowH * shown : rowH) + (pager ? rowH : 0f);
+            var body = y + h;
             Block("Crew body", panel, x, -body, w, bodyH + 1f, LedgerStyle.Chrome);
             Rule(panel, x, -body, w, LedgerStyle.ChromeRule);
             var ry = body + 1f;
 
-            for (var i = 0; i < crews.Count; i++)
+            for (var i = first; i < first + shown; i++)
             {
-                var crew = crews[i];
-                var why = BlockMissionChoice.Refusal(roster, door.Block, crew.Id, restricted);
-                var men = Outfit.CrewKit.MenOf(roster, crew);
-                var word = BlockMissionChoice.Label(roster, crew);
-                CrewRow(panel, x, ry, w, rowH, word,
-                    why ?? men + (men == 1 ? " MAN" : " MEN"),
-                    why == null, crew.Id == SelectedCrewId,
-                    () =>
-                    {
-                        ToggleCrew(crew.Id);
-                        Pick(SelectedCrewId == crew.Id
-                            ? word + " brings " + men + (men == 1 ? " man." : " men.")
-                            : "Nobody picked.");
-                        changed?.Invoke();
-                    });
+                if (i < crews.Count)
+                {
+                    var crew = crews[i];
+                    var why = BlockMissionChoice.Refusal(
+                        roster, door.Block, crew.Id, restricted);
+                    var men = Outfit.CrewKit.MenOf(roster, crew);
+                    var word = BlockMissionChoice.Label(roster, crew);
+                    CrewRow(panel, x, ry, w, rowH, word,
+                        why ?? men + (men == 1 ? " MAN" : " MEN"),
+                        why == null, crew.Id == SelectedCrewId,
+                        () =>
+                        {
+                            ToggleCrew(crew.Id);
+                            Pick(SelectedCrewId == crew.Id
+                                ? word + " brings " + men + (men == 1 ? " man." : " men.")
+                                : "Nobody picked.");
+                            changed?.Invoke();
+                        });
+                }
+                else
+                {
+                    var man = reserve[i - crews.Count];
+                    var busy = roster.DoorOrders.Find(man.Id) != null;
+                    CrewRow(panel, x, ry, w, rowH, man.FullName,
+                        busy ? "already on a doorstep errand" : "ONE MAN · NO WITNESSES",
+                        !busy, man.Id == SelectedPersonId,
+                        () =>
+                        {
+                            TogglePerson(man.Id);
+                            Pick(SelectedPersonId == man.Id
+                                ? man.FullName + " goes alone."
+                                : "Nobody picked.");
+                            changed?.Invoke();
+                        });
+                }
                 ry += rowH;
             }
 
-            for (var i = 0; i < reserve.Count; i++)
-            {
-                var man = reserve[i];
-                var busy = roster.DoorOrders.Find(man.Id) != null;
-                CrewRow(panel, x, ry, w, rowH, man.FullName,
-                    busy ? "already on a doorstep errand" : "ONE MAN · NO WITNESSES",
-                    !busy, man.Id == SelectedPersonId,
-                    () =>
-                    {
-                        TogglePerson(man.Id);
-                        Pick(SelectedPersonId == man.Id
-                            ? man.FullName + " goes alone."
-                            : "Nobody picked.");
-                        changed?.Invoke();
-                    });
-                ry += rowH;
-            }
-
-            if (count == 0)
-                LedgerV2.Cell(panel, x + Px(24f), -ry, w - Px(34f), Px(27f),
+            if (total == 0)
+                LedgerV2.Cell(panel, x + Px(24f), -ry, w - Px(34f), rowH,
                     string.IsNullOrEmpty(refusal) ? "No men are available to send." : refusal,
                     MonoPx(9.8f), LedgerStyle.RailNote, 4.5f);
+            else if (pager)
+                Pager(panel, x, ry, w, rowH, first, shown, total, pages, changed);
 
             return h + bodyH + 1f;
+        }
+
+        /// <summary>The page keys under a roster too long to stand at once, and the count
+        /// that says where in it the reader is. The arrows are typed, not drawn: IBM Plex
+        /// Mono cuts the up and down arrows, which is why the almanac's own scroll hints
+        /// print them and not the triangles no face in this book carries.</summary>
+        static void Pager(RectTransform panel, float x, float y, float w, float rowH,
+            int first, int shown, int total, int pages, Action changed)
+        {
+            var row = NewRect("Crew pager", panel);
+            PlaceTopLeft(row, x, -y, w, rowH);
+            Fill(row, LedgerStyle.Chrome);
+            Rule(row, Px(24f), 0f, w - Px(34f), LedgerStyle.RailHair);
+
+            var keyW = Px(26f);
+            var keyH = Px(20f);
+            var keyY = (rowH - keyH) * 0.5f;
+
+            var up = LedgerV2.Button(row, "↑", Px(24f), -keyY, keyW, keyH,
+                () => { crewPage--; Version++; changed?.Invoke(); },
+                LedgerV2.Key.Ghost, MonoPx(9.8f));
+            LedgerV2.KeyEnabled(up, crewPage > 0,
+                LedgerV2.At(LedgerStyle.RailLabel, 0.4f));
+            var down = LedgerV2.Button(row, "↓", Px(24f) + keyW + Px(4f), -keyY, keyW, keyH,
+                () => { crewPage++; Version++; changed?.Invoke(); },
+                LedgerV2.Key.Ghost, MonoPx(9.8f));
+            LedgerV2.KeyEnabled(down, crewPage < pages - 1,
+                LedgerV2.At(LedgerStyle.RailLabel, 0.4f));
+
+            var count = (first + 1) + "-" + (first + shown) + " OF " + total;
+            var countW = Wide(count, MonoPx(9.8f), 4.5f);
+            LedgerV2.Cell(row, w - Px(10f) - countW, 0f, countW, rowH, count,
+                MonoPx(9.8f), LedgerStyle.RailNote, 4.5f,
+                TextAlignmentOptions.MidlineRight);
         }
 
         static void CrewRow(RectTransform panel, float x, float y, float w, float rowH,
@@ -901,7 +976,7 @@ namespace LivingCity.UI
             var noteW = Wide(row.Note, MonoPx(9.8f), 4.5f);
             return noteW <= w - keyW - Px(24f)
                 ? rowH
-                : rowH + NoteBox(NoteLines(row.Note, w));
+                : rowH + Box(MonoPx(9.8f), NoteLines(row.Note, w));
         }
 
         /// <summary>How many lines a dropped note runs to. Two is the ceiling: a row
@@ -909,10 +984,14 @@ namespace LivingCity.UI
         static int NoteLines(string note, float w) => Mathf.Clamp(
             Mathf.CeilToInt(Wide(note, MonoPx(9.8f), 4.5f) / Mathf.Max(1f, w)), 1, 2);
 
-        /// <summary>The room those lines need. Struck off the size that PRINTS at a real
-        /// line pitch, not off the point size - a box cut to the point size loses the
-        /// second line whole.</summary>
-        static float NoteBox(int lines) => Print(MonoPx(9.8f)) * 1.3f * lines + 4f;
+        /// <summary>
+        /// The room a run of lines needs, and there is only ONE right answer to that in
+        /// this book: LedgerKit.LineBox, struck off the size that PRINTS. TMP drops a
+        /// line WHOLE when its rect cannot hold it, and inside the ledger the printed
+        /// size is 15% over the point size - a box cut to the point size loses the line
+        /// there and nowhere else, which is the worst way to find out.
+        /// </summary>
+        static float Box(float size, int lines = 1) => LineBox(Print(size), lines);
 
         static float KeyWidth(string label) =>
             Px(15f) * 2f + Wide(label, MonoPx(8.7f), 7f);
@@ -934,12 +1013,13 @@ namespace LivingCity.UI
             var hard = Irreversible(row) && TwoStepConfirm;
             var key = RowKey(row);
             Action act = hard
-                ? () => { Arm(key, row.Label); changed?.Invoke(); }
-                : () => { Armed = null; press(); };
+                ? () => { Arm(key, row.Label, door, dispatch); changed?.Invoke(); }
+                : () => { Disarm(); press(); };
 
-            if (hard && live && Armed == key)
+            if (hard && live && Armed == key && armedDoor == door.Id &&
+                armedDispatch == dispatch)
             {
-                commit = () => { Armed = null; press(); };
+                commit = () => { Disarm(); press(); };
                 armedVerb = row.Label;
                 armedWarning = Warning(row);
             }
@@ -1032,7 +1112,7 @@ namespace LivingCity.UI
             var lines = Mathf.Clamp(
                 Mathf.CeilToInt(Wide(warnText, MonoPx(9.8f), 4.5f) / Mathf.Max(1f, warnW)),
                 1, 3);
-            var warnH = LineBox(MonoPx(9.8f), lines);
+            var warnH = Box(MonoPx(9.8f), lines);
             var h = Px(9f) * 2f + warnH + Px(8f) + keyH;
 
             Block("Confirm", panel, x, -y, w, h, LedgerV2.Rgb2(0x2b1210));
@@ -1105,7 +1185,7 @@ namespace LivingCity.UI
                             ? LedgerStyle.RailSafeGold
                             : LedgerV2.At(LedgerStyle.RailSafeGold, 0.4f));
                 var label = LedgerV2.Button(panel, word, cursor, -y, keyW, keyH,
-                    () => { Armed = null; press(); },
+                    () => { Disarm(); press(); },
                     money ? LedgerV2.Key.Dark : LedgerV2.Key.Ghost, MonoPx(8.7f));
                 LedgerV2.KeyEnabled(label, row.Available,
                     LedgerV2.At(money ? LedgerStyle.RailValue : LedgerStyle.RailRed, 0.4f));
@@ -1137,10 +1217,10 @@ namespace LivingCity.UI
             Color ink)
         {
             var size = MonoPx(9.8f);
-            var max = LineBox(size, 3);
+            var max = Box(size, 3);
             var line = Paragraph(panel, LedgerStyle.Mono, size, ink, x, -y, w, max,
                 text, 2f);
-            return Mathf.Clamp(line.preferredHeight, LineBox(size), max);
+            return Mathf.Clamp(line.preferredHeight, Box(size), max);
         }
 
         // ------------------------------------------------------------------ the rows

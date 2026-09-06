@@ -108,10 +108,29 @@ bug.
 10. **WHO GOES lists as many crews as the roster has**, and the men who can be sent
     alone under them - a demand or a threat can be put by one man in this game.
 
+## Three things an adversarial pass caught, and what was done
+
+1. **An armed move must be bound to the premises.** The state is static and three
+   surfaces share it, so a row name alone would let TORCH IT armed on one shop come up
+   already armed on the next shop opened - and the second premises would burn on one
+   press. `armedDoor` and `armedDispatch` travel with `Armed`, and all three must match
+   before a strip is drawn or a commit wired.
+2. **Every paragraph height is `LineBox` off the size that PRINTS.** TMP drops a line
+   WHOLE when its rect cannot hold it, and inside the ledger the printed size is 15%
+   over the point size, so a box cut to the point size loses the line THERE and nowhere
+   else. `Box(size, lines)` in the card is the one way heights are struck.
+3. **WHO GOES is paged, five rows at a time.** The roster is not bounded; a house with
+   thirty spare hoods would push the sections, the confirm strip and the foot off the
+   bottom of the window, and a card whose commit key cannot be reached is worse than a
+   short list. The `↑` / `↓` keys and an `n-m OF N` count sit at the foot of the body.
+   (Paged rather than scrolled on purpose: the book already drives its drawer's scroll
+   by hand off the raw wheel, and a `ScrollRect` nested inside it would move twice.)
+
 ## The bits that are still open
 
-- Nothing scrolls. With every section shut the card runs about 500 units and with the
-  deepest one open about 830, inside a 1080 canvas - but a very long roster in WHO GOES
-  can outrun the window. If it does, the crew body wants its own scroll, not a shorter
-  card.
+- The card itself does not scroll. Measured worst case - LEAN ON IT open with four rows,
+  two of them wrapping, a confirm strip up and a refusal at the foot - is about 1030
+  units against a 1080 canvas. It fits, with little to spare. Inside the ledger the
+  drawer's own scroll carries it; on the map it does not, so a section grown past four
+  rows wants checking against the window before it ships.
 - The portrait is the real `PortraitStudio` bust, not the handoff's halftone plate.

@@ -433,7 +433,8 @@ namespace LivingCity.UI
             SelectedCrewId = SelectedPersonId = -1;
             Note = "";
             OpenSection = SectionDoor;
-            Armed = null;
+            Disarm();
+            crewPage = 0;
             Version++;
         }
 

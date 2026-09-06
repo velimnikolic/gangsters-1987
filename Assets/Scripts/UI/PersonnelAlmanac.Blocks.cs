@@ -75,12 +75,17 @@ namespace LivingCity.UI
         static float BlocksDrawerW;
         static float BlocksLedgerW;
 
-        /// <summary>The design's clamp on the drawer: never narrower than its three role
-        /// cells need, never wider than 660, and 46% of the sheet between the two.
+        /// <summary>The ledger column takes ONE THIRD of the sheet and the drawer the
+        /// rest (the user, 2026-09-06). The handoff drew the drawer at 46% capped to 660
+        /// against a browser window; on this book's 1920 sheet that left the block itself
+        /// - the thing the page is played on - the smaller half of the screen.</summary>
+        const float BlocksLedgerShare = 1f / 3f;
+
+        /// <summary>Under this the ledger column stops being a column at all. It never
+        /// bites in at the reference frame, and full bleed only ever hands the sheet
+        /// more room, so it exists for the one case the frame is measured smaller.
         /// </summary>
-        const float BlocksDrawerMin = 420f;
-        const float BlocksDrawerMax = 660f;
-        const float BlocksDrawerShare = 0.46f;
+        const float BlocksLedgerMin = 320f;
 
         /// <summary>The hairline that closes the ledger column against the drawer.</summary>
         const float BlocksDrawerRule = 1f;
@@ -93,10 +98,9 @@ namespace LivingCity.UI
         {
             BlocksTop = PageTop - 76f;
             BlocksHeight = -(PageBottom - BlocksTop);
-            BlocksDrawerW = Mathf.Clamp(PageWidth * BlocksDrawerShare,
-                BlocksDrawerMin, BlocksDrawerMax);
-            BlocksLedgerW = Mathf.Max(320f,
-                PageWidth - BlocksDrawerW - BlocksDrawerRule);
+            BlocksLedgerW = Mathf.Max(BlocksLedgerMin, PageWidth * BlocksLedgerShare);
+            BlocksDrawerW = Mathf.Max(360f,
+                PageWidth - BlocksLedgerW - BlocksDrawerRule);
         }
 
         /// <summary>Air above the first section, and between one section and the next -
