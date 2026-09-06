@@ -278,8 +278,11 @@ namespace RoadDemo
             BeginRuntimePoolWhenReady();
         }
 
+        static readonly Unity.Profiling.ProfilerMarker updateMarker = new Unity.Profiling.ProfilerMarker("CityBlockRecycler.Update");
+
         void Update()
         {
+            using var profile = updateMarker.Auto();
             if (_model == null) return;
             ResolveSceneServices();
             ProcessInvalidations();

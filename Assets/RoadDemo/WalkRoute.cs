@@ -46,6 +46,10 @@ namespace RoadDemo
         // and whether a man can actually get from one square to the next, east and
         // north; the other two ways are the same passages read backwards
         static bool[] _passX, _passZ;
+        // Four directed diagonal answers share one byte (known/pass nibbles).
+        // The same edge was otherwise tested against every city's prop plan on
+        // every A* visit, even after cardinal edges and occupancy were cached.
+        static byte[] _diagonal;
         // the way the carriageway under each square runs, or zero where a square is not
         // on one. Kept as two floats rather than a Vector3 to hold the lattice down.
         static float[] _roadAx, _roadAz;
@@ -92,6 +96,7 @@ namespace RoadDemo
         {
             _free = null;
             _passX = _passZ = null;
+            _diagonal = null;
             _roadAx = _roadAz = null;
             _freeAt = _passXAt = _passZAt = _roadAt = null;
             _cost = null; _from = null; _stamp = null;
@@ -167,6 +172,7 @@ namespace RoadDemo
                 _free = new bool[n];
                 _passX = new bool[n];
                 _passZ = new bool[n];
+                _diagonal = new byte[n];
                 _roadAx = new float[n];
                 _roadAz = new float[n];
                 _freeAt = new int[n];
@@ -200,6 +206,9 @@ namespace RoadDemo
         static bool Free(int i)
         {
             if (_freeAt[i] == _cacheAt) return _free[i];
+            // Every outgoing edge shares this square's geometry epoch. Reusing its
+            // stamp avoids a second int per square just for diagonal answers.
+            _diagonal[i] = 0;
             var q = Middle(i);
             _free[i] = !WalkObstacles.Standing(q, ClearanceRadius) &&
                        WalkObstacles.InCity(q);
@@ -467,7 +476,7 @@ namespace RoadDemo
                     int next = z * _w + x;
                     if (_connectionSeen.Contains(next) || !Free(next)) continue;
                     bool pass = d < 4 ? Passable(cx, cz, _dx[d], _dz[d])
-                        : Walkable(Middle(cur), Middle(next));
+                        : Diagonal(cur, next, d);
                     if (!pass) continue;
                     _connectionSeen.Add(next);
                     _connectionOpen.Enqueue(next);
@@ -505,6 +514,20 @@ namespace RoadDemo
             }
             stamps[from] = _cacheAt;
             return values[from];
+        }
+
+        static bool Diagonal(int from, int to, int direction)
+        {
+            if (!Free(from)) return false;
+            int known = 1 << (direction - 4), pass = known << 4;
+            if ((_diagonal[from] & known) == 0)
+            {
+                // Keep the exact directed chord proof, including city-fence samples.
+                // Geometry edits invalidate it alongside the cardinal-edge cache.
+                bool clear = Walkable(Middle(from), Middle(to));
+                _diagonal[from] |= (byte)(known | (clear ? pass : 0));
+            }
+            return (_diagonal[from] & pass) != 0;
         }
 
         /// <summary>A* with virtual continuous endpoints. Every proved start connector
@@ -590,7 +613,7 @@ namespace RoadDemo
                         // Two clear L-shaped alternatives neither prove that diagonal
                         // (a table may sit in its middle) nor are required when the
                         // diagonal gap itself is genuinely wide enough.
-                        if (!Walkable(Middle(cur), Middle(nb))) continue;
+                        if (!Diagonal(cur, nb, d)) continue;
                     }
                     float step = d >= 4 ? Cell * 1.41421356f : Cell;
                     // A CROSSING IS FREE; WALKING DOWN THE ROAD IS NOT. The toll is on

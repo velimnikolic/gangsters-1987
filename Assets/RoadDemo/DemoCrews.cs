@@ -1032,6 +1032,7 @@ namespace RoadDemo
         // read as a shot at a man and not at the pavement (CrewWalker.AimGun).
         void LateUpdate()
         {
+            using var profile = aimMarker.Auto();
             float dt = Time.deltaTime;
             foreach (var unit in Units)
                 foreach (var man in unit.All())
@@ -1139,6 +1140,8 @@ namespace RoadDemo
         }
 
         static readonly Unity.Profiling.ProfilerMarker syncMarker = new Unity.Profiling.ProfilerMarker("Crews.Sync");
+        static readonly Unity.Profiling.ProfilerMarker updateMarker = new Unity.Profiling.ProfilerMarker("Crews.Update");
+        static readonly Unity.Profiling.ProfilerMarker aimMarker = new Unity.Profiling.ProfilerMarker("Crews.Aim");
         static readonly Unity.Profiling.ProfilerMarker jobsMarker = new Unity.Profiling.ProfilerMarker("Crews.Jobs");
         static readonly Unity.Profiling.ProfilerMarker quartersMarker = new Unity.Profiling.ProfilerMarker("Crews.Quarters");
         static readonly Unity.Profiling.ProfilerMarker combatMarker = new Unity.Profiling.ProfilerMarker("Crews.Combat");
@@ -1148,6 +1151,7 @@ namespace RoadDemo
 
         void Update()
         {
+            using var profile = updateMarker.Auto();
             TickCombatPrewarm();
             var director = PersonnelDirector.Instance;
             director?.SetOrganizationPhysicalSource(this);

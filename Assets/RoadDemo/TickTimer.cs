@@ -22,11 +22,22 @@ namespace RoadDemo
         static long _byteMark;
         static int _frames;
         static float _since;
+        // Two frame slots keep the preceding completed Update available regardless
+        // of whether the perf probe runs before or after the city's current Update.
+        static readonly long[,] FrameTicks = new long[2, Slots];
+        static readonly int[] FrameIds = { -1, -1 };
+        static int _frameSlot;
 
         /// <summary>Clear the accumulated section sample. The people census uses this
         /// before and after its preview-scene curve so its figures are the same sections
         /// the live update report labels, without leaking a partial sample into Play.</summary>
         public static void Reset()
+        {
+            ClearTotals();
+            FrameIds[0] = FrameIds[1] = -1;
+        }
+
+        static void ClearTotals()
         {
             for (int i = 0; i < Slots; i++)
             {
@@ -50,6 +61,9 @@ namespace RoadDemo
         /// <summary>A frame begins: the clock starts at the first section.</summary>
         public static void Frame()
         {
+            _frameSlot = Time.frameCount & 1;
+            FrameIds[_frameSlot] = Time.frameCount;
+            for (int i = 0; i < Slots; i++) FrameTicks[_frameSlot, i] = 0;
             _mark = System.Diagnostics.Stopwatch.GetTimestamp();
             // mono heap used so far: the delta across a section is what that section put
             // on the heap (GC.GetAllocatedBytesForCurrentThread is a stub in this Mono
@@ -66,6 +80,7 @@ namespace RoadDemo
             if (slot < 0 || slot >= Slots) return;
             long now = System.Diagnostics.Stopwatch.GetTimestamp();
             Ticks[slot] += now - _mark;
+            FrameTicks[_frameSlot, slot] += now - _mark;
             _mark = now;
             long nowB = UnityEngine.Profiling.Profiler.GetMonoUsedSizeLong();
             long grew = nowB - _byteMark;
@@ -73,6 +88,35 @@ namespace RoadDemo
             _byteMark = nowB;
             Names[slot] = name;
         }
+
+        /// <summary>Only an exact frame match can explain a recorded hitch.</summary>
+        public static void AppendFrame(System.Text.StringBuilder into, int frame)
+        {
+            if (frame < 0) return;
+            int row = frame & 1;
+            if (FrameIds[row] != frame)
+            {
+                into.AppendLine($"      city/ no sample for frame {frame}");
+                return;
+            }
+            double perTick = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+            double total = 0;
+            for (int i = 0; i < Slots; i++)
+            {
+                double ms = FrameTicks[row, i] * perTick;
+                total += ms;
+                if (ms <= .5) continue;
+                into.AppendLine($"      city/{SectionName(i)} {ms:F2} ms");
+            }
+            into.AppendLine($"      city/ timed sections total {total:F2} ms " +
+                "(signals through chats only; excludes merge and wayside watch)");
+        }
+
+        static string SectionName(int slot) => slot switch
+        {
+            0 => "signals", 1 => "cars", 2 => "patrol cars", 3 => "civilians",
+            4 => "crowd", 5 => "officers", 6 => "districts", 7 => "chats", _ => "unknown",
+        };
 
         /// <summary>Every few seconds, what the sections have cost per frame.</summary>
         public static void Report(bool on, float dt, string counts)
@@ -97,7 +141,7 @@ namespace RoadDemo
             Debug.Log($"[Tick] {total:F1} ms/frame, {totalBytes / 1024.0 / _frames:F1} KB/frame " +
                       $"over {_frames} frames ({counts}):{sb}");
 
-            Reset();
+            ClearTotals();
         }
     }
 }

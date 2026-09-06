@@ -15,6 +15,16 @@ namespace RoadDemo
     {
         const float WindowSeconds = 5f;
 
+        // Register before opening recorders: WalkRoute and other lazy systems may
+        // not have executed when this component starts. Their first hitch matters.
+        static readonly string[] ScriptMarkers =
+        {
+            "WalkRoute.Plan", "Crews.Update", "Crews.Sync", "Crews.Jobs",
+            "Crews.Quarters", "Crews.Combat", "Crews.Chase", "Crews.Walkers",
+            "Crews.Cohesion", "Crews.Aim", "PoliceDispatch.Update", "DoorBeat.Update",
+            "TerritoryRuntime.Update", "RoadCarSimulation.Simulate", "CityBlockRecycler.Update",
+        };
+
         static readonly (string label, ProfilerCategory cat, string marker)[] Markers =
         {
             ("main thread", ProfilerCategory.Internal, "Main Thread"),
@@ -30,6 +40,7 @@ namespace RoadDemo
             ("gfx wait for present", ProfilerCategory.Render, "Gfx.WaitForPresentOnGfxThread"),
             ("wait render thread", ProfilerCategory.Render, "Gfx.WaitForRenderThread"),
             ("semaphore wait", ProfilerCategory.Internal, "Semaphore.WaitForSignal"),
+            ("wait for presentation", ProfilerCategory.Internal, "WaitForLastPresentation"),
             ("GC.Collect", ProfilerCategory.Memory, "GC.Collect"),
             ("physics", ProfilerCategory.Physics, "FixedUpdate.PhysicsFixedUpdate"),
             ("audio", ProfilerCategory.Audio, "AudioManager.Update"),
@@ -99,20 +110,32 @@ namespace RoadDemo
         void Start()
         {
             _path = Path.Combine(Application.dataPath, "..", "Logs", "perf-probe.txt");
+            if (!OpenLog()) return;
+            var unavailable = new List<string>();
             foreach (var m in Markers)
             {
                 var rec = ProfilerRecorder.StartNew(m.cat, m.marker, 1);
-                if (rec.Valid) _recs.Add((m.label, rec)); else rec.Dispose();
+                if (rec.Valid) _recs.Add((m.label, rec));
+                else { unavailable.Add(m.label); rec.Dispose(); }
+            }
+            foreach (var name in ScriptMarkers)
+            {
+                var marker = new ProfilerMarker(name);
+                var rec = ProfilerRecorder.StartNew(marker, 1);
+                if (rec.Valid) _recs.Add(("game/" + name, rec));
+                else { unavailable.Add("game/" + name); rec.Dispose(); }
             }
             foreach (var name in CountMarkers)
             {
                 var rec = ProfilerRecorder.StartNew(ProfilerCategory.Memory, name);
-                if (rec.Valid) _counts.Add((name, rec)); else rec.Dispose();
+                if (rec.Valid) _counts.Add((name, rec));
+                else { unavailable.Add(name); rec.Dispose(); }
             }
             foreach (var name in SizeMarkers)
             {
                 var rec = ProfilerRecorder.StartNew(ProfilerCategory.Memory, name);
-                if (rec.Valid) _sizes.Add((name, rec)); else rec.Dispose();
+                if (rec.Valid) _sizes.Add((name, rec));
+                else { unavailable.Add(name); rec.Dispose(); }
             }
             _gcAlloc = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Allocated In Frame");
             _gcMemory = ProfilerRecorder.StartNew(ProfilerCategory.Memory, "GC Used Memory");
@@ -121,9 +144,59 @@ namespace RoadDemo
             _setPass = ProfilerRecorder.StartNew(ProfilerCategory.Render, "SetPass Calls Count");
             _tris = ProfilerRecorder.StartNew(ProfilerCategory.Render, "Triangles Count");
             _verts = ProfilerRecorder.StartNew(ProfilerCategory.Render, "Vertices Count");
+            foreach (var (label, rec) in new[] {
+                ("GC Allocated In Frame", _gcAlloc), ("GC Used Memory", _gcMemory),
+                ("Draw Calls Count", _drawCalls), ("Batches Count", _batches),
+                ("SetPass Calls Count", _setPass), ("Triangles Count", _tris), ("Vertices Count", _verts),
+            })
+                if (!rec.Valid && !unavailable.Contains(label)) unavailable.Add(label);
+            if (!AppendLog("markers not bound at Start: " +
+                (unavailable.Count == 0 ? "none" : string.Join(", ", unavailable)) + "\n")) return;
             _windowStart = Time.unscaledTime;
-            File.WriteAllText(_path, "perf probe\n");
         }
+
+        bool OpenLog()
+        {
+            try
+            {
+                string directory = Path.GetDirectoryName(_path);
+                Directory.CreateDirectory(directory);
+                if (File.Exists(_path))
+                {
+                    string history = Path.Combine(directory, "perf-probe-history");
+                    Directory.CreateDirectory(history);
+                    File.Move(_path, Path.Combine(history, $"perf-{System.DateTime.UtcNow:yyyyMMdd-HHmmss-fffffff}.txt"));
+                }
+                File.WriteAllText(_path, $"perf probe v2 | UTC {System.DateTime.UtcNow:O} | " +
+                    $"scene {UnityEngine.SceneManagement.SceneManager.GetActiveScene().path} | " +
+                    $"Unity {Application.unityVersion}\n" +
+                    "Frame intervals and latest profiler samples are separate observations; presentation/Editor waits can shift their alignment. Nested markers overlap and must not be added.\n");
+                return true;
+            }
+            catch (System.Exception error) when (error is IOException || error is System.UnauthorizedAccessException)
+            {
+                StopLogging(error);
+                return false;
+            }
+        }
+
+        void StopLogging(System.Exception error)
+        {
+            enabled = false;
+            DisposeRecorders();
+            Debug.LogWarning($"[Perf Probe] Recording disabled after a log write failed: {error.Message}");
+        }
+
+        bool AppendLog(string text)
+        {
+            try { File.AppendAllText(_path, text); return true; }
+            catch (System.Exception error) when (error is IOException || error is System.UnauthorizedAccessException)
+            { StopLogging(error); return false; }
+        }
+
+        static string Recorded(ProfilerRecorder recorder, double divisor = 1) =>
+            recorder.Valid ? (recorder.LastValue / divisor).ToString("F0",
+                System.Globalization.CultureInfo.InvariantCulture) : "n/a";
 
         // per-window accumulation: sum and max per marker (ns), gc bytes
         readonly Dictionary<string, (double sum, double max)> _acc = new Dictionary<string, (double, double)>();
@@ -134,12 +207,14 @@ namespace RoadDemo
             float ms = Time.unscaledDeltaTime * 1000f;
             _frames.Add(ms);
             _frameMarks.Clear();
+            double mainMs = 0;
             foreach (var (label, rec) in _recs)
             {
                 double v = rec.LastValue / 1e6; // ns -> ms
                 _acc.TryGetValue(label, out var a);
                 _acc[label] = (a.sum + v, Mathf.Max((float)a.max, (float)v));
                 _frameMarks.Add((label, v));
+                if (label == "main thread") mainMs = v;
             }
             // deltas first, then the slow-frame line can quote them
             _countDeltas.Clear();
@@ -151,17 +226,25 @@ namespace RoadDemo
                 _prevCount[label] = now;
             }
 
-            if (ms > 40f && _slowLogged < 8)
+            if ((ms > 40f || mainMs > 40) && _slowLogged < 8)
             {
                 _slowLogged++;
                 _frameMarks.Sort((x, y) => y.Item2.CompareTo(x.Item2));
-                _slow.Append($"    slow frame {ms:F0} ms @ {Time.frameCount} (t+{Time.unscaledTime:F0}s): cameras {Camera.allCamerasCount}, gc {(int)(_gcAlloc.Valid ? _gcAlloc.LastValue / 1024 : 0)} KB;");
+                _slow.Append($"    interval {ms:F0} ms before frame {Time.frameCount} (read t+{Time.unscaledTime:F0}s); latest profiler samples: gc {Recorded(_gcAlloc, 1024)} KB;");
                 for (int k = 0; k < Mathf.Min(6, _frameMarks.Count); k++)
                     if (_frameMarks[k].Item2 > 0.5) _slow.Append($" {_frameMarks[k].Item1} {_frameMarks[k].Item2:F1}");
                 _countDeltas.Sort((x, y) => System.Math.Abs(y.delta).CompareTo(System.Math.Abs(x.delta)));
                 for (int k = 0; k < Mathf.Min(4, _countDeltas.Count); k++)
                     _slow.Append($" [{_countDeltas[k].label} {_countDeltas[k].delta:+#;-#;0}]");
                 _slow.AppendLine();
+                // Keep the actionable child scopes even when engine/wait markers
+                // occupy all six places above. Do not infer an exact frame ID for
+                // native recorders from Time.frameCount around presentation stalls.
+                foreach (var (label, value) in _frameMarks)
+                    if (label.StartsWith("game/", System.StringComparison.Ordinal) && value > .5)
+                        _slow.AppendLine($"      {label.Substring(5)} {value:F2} ms");
+                _slow.AppendLine($"      city Update measurements for frame {Time.frameCount - 1}:");
+                TickTimer.AppendFrame(_slow, Time.frameCount - 1);
             }
             if (_gcAlloc.Valid)
             {
@@ -189,7 +272,11 @@ namespace RoadDemo
             var sb = new StringBuilder();
             sb.AppendLine($"--- window {++_windows} ({n} frames, {Time.unscaledTime:F0} s) hour {DemoClockHour():F1}");
             sb.AppendLine($"frame ms  avg {avg:F1}  p50 {p50:F1}  p90 {p90:F1}  p99 {p99:F1}  max {max:F1}   frames over 40 ms: {spikes}");
-            sb.AppendLine($"gc alloc/frame avg {(_gcSum / n / 1024):F1} KB  max {(_gcMax / 1024):F0} KB   gc heap {(_gcMemory.Valid ? _gcMemory.LastValue / 1048576.0 : 0):F0} MB");
+            sb.AppendLine($"runtime now: scale {Time.timeScale:F2}, focused {Application.isFocused}, " +
+                $"screen {Screen.width}x{Screen.height}, cameras {Camera.allCamerasCount}");
+            string allocations = _gcAlloc.Valid
+                ? $"avg {(_gcSum / n / 1024):F1} KB  max {(_gcMax / 1024):F0} KB" : "n/a";
+            sb.AppendLine($"gc alloc/frame {allocations}   gc heap {Recorded(_gcMemory, 1048576)} MB");
             if (_sizes.Count > 0)
             {
                 var mem = new StringBuilder("memory ");
@@ -197,16 +284,23 @@ namespace RoadDemo
                     mem.Append($" {label} {rec.LastValue / 1048576} MB;");
                 sb.AppendLine(mem.ToString());
             }
-            sb.AppendLine($"draw calls {(_drawCalls.Valid ? _drawCalls.LastValue : 0)}  batches {(_batches.Valid ? _batches.LastValue : 0)}  " +
-                          $"setpass {(_setPass.Valid ? _setPass.LastValue : 0)}  tris {(_tris.Valid ? _tris.LastValue / 1000 : 0)}k  verts {(_verts.Valid ? _verts.LastValue / 1000 : 0)}k");
+            sb.AppendLine($"draw calls {Recorded(_drawCalls)}  batches {Recorded(_batches)}  " +
+                          $"setpass {Recorded(_setPass)}  tris {Recorded(_tris, 1000)}k  verts {Recorded(_verts, 1000)}k");
             CityBlockRecycler.AppendStats(sb);
             foreach (var (label, _) in _recs)
             {
-                if (!_acc.TryGetValue(label, out var a) || a.max < 0.05) continue;
+                if (!_acc.TryGetValue(label, out var a)) continue;
+                if (label.StartsWith("game/", System.StringComparison.Ordinal) && a.max < .05)
+                {
+                    sb.AppendLine($"  {label} " + (a.max == 0
+                        ? "bound, no timed sample in this window" : "bound, under 0.05 ms"));
+                    continue;
+                }
+                if (a.max < 0.05) continue;
                 sb.AppendLine($"  {label,-24} avg {a.sum / n,7:F2} ms   max {a.max,7:F2} ms");
             }
             sb.Append(_slow);
-            File.AppendAllText(_path, sb.ToString());
+            AppendLog(sb.ToString());
 
             _slow.Clear();
             _slowLogged = 0;
@@ -222,9 +316,14 @@ namespace RoadDemo
             return clock ? clock.Hour : -1f;
         }
 
-        void OnDestroy()
+        void OnDestroy() => DisposeRecorders();
+
+        void DisposeRecorders()
         {
             foreach (var (_, rec) in _recs) rec.Dispose();
+            foreach (var (_, rec) in _counts) rec.Dispose();
+            foreach (var (_, rec) in _sizes) rec.Dispose();
+            _recs.Clear(); _counts.Clear(); _sizes.Clear();
             _gcAlloc.Dispose(); _gcMemory.Dispose(); _drawCalls.Dispose(); _batches.Dispose(); _setPass.Dispose(); _tris.Dispose(); _verts.Dispose();
         }
     }

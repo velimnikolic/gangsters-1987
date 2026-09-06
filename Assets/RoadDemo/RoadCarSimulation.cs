@@ -48,6 +48,7 @@ namespace RoadDemo
 
 #if UNITY_5_3_OR_NEWER
         static RoadCarSimulation instance;
+        static readonly Unity.Profiling.ProfilerMarker simulationMarker = new Unity.Profiling.ProfilerMarker("RoadCarSimulation.Simulate");
         readonly List<RoadCar> pending = new List<RoadCar>();
         readonly Dictionary<RoadCar, float> budgets = new Dictionary<RoadCar, float>();
         float elapsed;
@@ -63,6 +64,7 @@ namespace RoadDemo
 
         void LateUpdate()
         {
+            using var profile = simulationMarker.Auto();
             try { Simulate(pending, elapsed, budgets); }
             finally
             {

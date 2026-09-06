@@ -452,8 +452,11 @@ namespace RoadDemo
             return best;
         }
 
+        static readonly Unity.Profiling.ProfilerMarker updateMarker = new Unity.Profiling.ProfilerMarker("PoliceDispatch.Update");
+
         void Update()
         {
+            using var profile = updateMarker.Auto();
             float dt = Time.deltaTime;
             if (StreetAlarm.QuietFor > DecayAfter && Heat > 0f)
                 Heat = Mathf.Max(0f, Heat - HeatDecay * dt);

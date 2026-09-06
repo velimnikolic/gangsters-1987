@@ -197,6 +197,8 @@ namespace RoadDemo
 
         readonly List<Box> _boxes = new List<Box>();
         readonly Dictionary<long, List<int>> _grid = new Dictionary<long, List<int>>();
+        int _minCellX = int.MaxValue, _minCellZ = int.MaxValue;
+        int _maxCellX = int.MinValue, _maxCellZ = int.MinValue;
 
         /// <summary>
         /// The obstacle ledger subscribes only while this plan is registered. Keeping the
@@ -309,6 +311,8 @@ namespace RoadDemo
             var shift = new Vector2(origin.x, origin.z);
 
             _grid.Clear();
+            _minCellX = _minCellZ = int.MaxValue;
+            _maxCellX = _maxCellZ = int.MinValue;
             for (int i = 0; i < _boxes.Count; i++)
             {
                 var box = _boxes[i];
@@ -349,6 +353,7 @@ namespace RoadDemo
             int x1 = Mathf.FloorToInt((p.x + reach) / Cell);
             int z0 = Mathf.FloorToInt((p.y - reach) / Cell);
             int z1 = Mathf.FloorToInt((p.y + reach) / Cell);
+            if (!TouchesGrid(x0, z0, x1, z1)) return false;
             for (int cx = x0; cx <= x1; cx++)
                 for (int cz = z0; cz <= z1; cz++)
                 {
@@ -389,6 +394,7 @@ namespace RoadDemo
             }
             int x0 = Mathf.FloorToInt(lo.x / Cell) - 1, x1 = Mathf.FloorToInt(hi.x / Cell) + 1;
             int z0 = Mathf.FloorToInt(lo.y / Cell) - 1, z1 = Mathf.FloorToInt(hi.y / Cell) + 1;
+            if (!TouchesGrid(x0, z0, x1, z1)) return mask;
             float r2 = radius * radius;
             for (int cx = x0; cx <= x1; cx++)
                 for (int cz = z0; cz <= z1; cz++)
@@ -443,6 +449,7 @@ namespace RoadDemo
             int bx1 = Mathf.FloorToInt((Mathf.Max(a.x, b.x) + radius) / Cell);
             int bz0 = Mathf.FloorToInt((Mathf.Min(a.y, b.y) - radius) / Cell);
             int bz1 = Mathf.FloorToInt((Mathf.Max(a.y, b.y) + radius) / Cell);
+            if (!TouchesGrid(bx0, bz0, bx1, bz1)) return false;
             int cells = (bx1 - bx0 + 1) * (bz1 - bz0 + 1);
             if (cells <= 16)
             {
@@ -567,6 +574,7 @@ namespace RoadDemo
         {
             int x0 = Mathf.FloorToInt((p.x - reach) / Cell), x1 = Mathf.FloorToInt((p.x + reach) / Cell);
             int z0 = Mathf.FloorToInt((p.y - reach) / Cell), z1 = Mathf.FloorToInt((p.y + reach) / Cell);
+            if (!TouchesGrid(x0, z0, x1, z1)) return;
             SeenNear.Clear();
             for (int x = x0; x <= x1; x++)
                 for (int z = z0; z <= z1; z++)
@@ -705,6 +713,12 @@ namespace RoadDemo
 
         static long Key(int cx, int cz) => ((long)cx << 32) ^ (uint)cz;
 
+        // A walker asks every registered district plan. Reject remote plans before
+        // doing bucket lookups, using bounds maintained by the same grid owner.
+        // Pop may leave larger bounds behind; they are conservative until Reframe.
+        bool TouchesGrid(int x0, int z0, int x1, int z1) => _boxes.Count != 0 &&
+            x1 >= _minCellX && x0 <= _maxCellX && z1 >= _minCellZ && z0 <= _maxCellZ;
+
         void Bounds(in Box b, out int x0, out int z0, out int x1, out int z1)
         {
             float hx = Mathf.Abs(b.Ax.x) * b.H.x + Mathf.Abs(b.Az.x) * b.H.y;
@@ -718,6 +732,11 @@ namespace RoadDemo
         void Index(in Box b, int id, bool add)
         {
             Bounds(b, out int x0, out int z0, out int x1, out int z1);
+            if (add)
+            {
+                _minCellX = Mathf.Min(_minCellX, x0); _maxCellX = Mathf.Max(_maxCellX, x1);
+                _minCellZ = Mathf.Min(_minCellZ, z0); _maxCellZ = Mathf.Max(_maxCellZ, z1);
+            }
             for (int x = x0; x <= x1; x++)
                 for (int z = z0; z <= z1; z++)
                 {

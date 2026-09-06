@@ -444,8 +444,11 @@ namespace RoadDemo
                 business.Catalog, business.Directory));
         }
 
+        static readonly Unity.Profiling.ProfilerMarker updateMarker = new Unity.Profiling.ProfilerMarker("TerritoryRuntime.Update");
+
         void Update()
         {
+            using var profile = updateMarker.Auto();
             // Restore before advancing any territory channel. Waiting for the first
             // four-hour business tick left a loaded city running its fresh campaign
             // for minutes, and a paused city never loaded at all.

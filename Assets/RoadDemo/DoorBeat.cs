@@ -1087,8 +1087,11 @@ namespace RoadDemo
             return false;
         }
 
+        static readonly Unity.Profiling.ProfilerMarker updateMarker = new Unity.Profiling.ProfilerMarker("DoorBeat.Update");
+
         void Update()
         {
+            using var profile = updateMarker.Auto();
             RefreshPassages(Time.deltaTime);
             for (var i = calls.Count - 1; i >= 0; i--)
             {
