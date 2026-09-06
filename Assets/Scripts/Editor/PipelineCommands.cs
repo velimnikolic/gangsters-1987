@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -464,6 +464,21 @@ namespace GangstersTools
         public static object LedgerTests()
         {
             var failures = LivingCity.Tests.LedgerTests.Run();
+            return new
+            {
+                passed = failures.Count == 0,
+                failures = failures.ToArray(),
+            };
+        }
+
+        [CliCommand("gangsters_wire_tests",
+                    "Run THE WIRE's register contracts: newest first with both books " +
+                    "under one day, the day's own arithmetic, the origin printed only " +
+                    "when it changes, and every narrowing on the strip.",
+                    MainThreadRequired = true, Tags = new[] { "gangsters", "wire", "tests" })]
+        public static object WireTests()
+        {
+            var failures = LivingCity.Tests.WireRegisterTests.Run();
             return new
             {
                 passed = failures.Count == 0,

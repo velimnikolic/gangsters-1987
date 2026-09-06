@@ -3825,80 +3825,35 @@ namespace RoadDemo
 
         void SpawnCars()
         {
-            int placed = 0;
-            // Every lane in turn, in a shuffled order. Walking _edges as it was built
-            // gave the city's cars to the first few hundred lanes of the grid and left
-            // whatever was wired last - a district's streets, a motorway's decks - with
-            // none at all: the road existed and nothing was ever on it.
-            var lanes = new List<RoadEdge>(_edges.Count);
-            foreach (var e in _edges)
+            foreach (var slot in TrafficDistribution.Place(_edges, carCount, spacingSeed * 977 + 13))
             {
-                // never on an auxiliary lane: it begins or ends in the middle of a
-                // motorway, and a car put there at build time has nowhere to go but
-                // sideways before it has moved at all
-                if (e.Auxiliary) continue;
-                lanes.Add(e);
-            }
-            var shuffle = new System.Random(spacingSeed * 977 + 13);
-            for (int i = lanes.Count - 1; i > 0; i--)
-            {
-                int j = shuffle.Next(i + 1);
-                (lanes[i], lanes[j]) = (lanes[j], lanes[i]);
-            }
-            for (int round = 0; placed < carCount && round < 40; round++)
-            {
-                bool any = false;
-                foreach (var e in lanes)
+                var prefab = _carPrefabs[Random.Range(0, _carPrefabs.Count)];
+                var go = Instantiate(prefab, Vector3.zero, Quaternion.identity, _cars);
+                // a colour of its own, unless the body carries somebody's livery
+                LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
+                foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
+                foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
+
+                CarBody.MeasureTrafficFootprint(go.transform, out float halfLength, out float halfWidth);
+
+                var v = new DemoVehicle
                 {
-                    if (placed >= carCount) break;
-                    float s = 6f + round * 18f;
-                    if (s > e.Length - 12f) continue;
-                    any = true;
-
-                    var prefab = _carPrefabs[Random.Range(0, _carPrefabs.Count)];
-                    var go = Instantiate(prefab, Vector3.zero, Quaternion.identity, _cars);
-                    // a colour of its own, unless the body carries somebody's livery
-                    LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
-                    foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
-                    foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
-
-                    CarBody.MeasureTrafficFootprint(go.transform, out float halfLength, out float halfWidth);
-
-                    var v = new DemoVehicle
-                    {
-                        Tf = go.transform,
-                        HalfLen = halfLength,
-                        HalfWide = halfWidth,
-                    };
-                    v.Spawn(e, s);
-                    // somebody at the wheel, now and then somebody beside him - bodies
-                    // out of the crowd's wardrobe, culled with the crowd
-                    CarOccupant.Crew(go.transform, _pedPrefabs, _sitLoopClip, passengerChance: 0.3f, layer: CrowdLayer);
-                    _vehicles.Add(v);
-                    StreetTraffic.Users.Add(v); // the men on foot, and the outfit's drivers, see it
-                    // how far along this lane the traffic reached, so anything dealt onto
-                    // the road AFTER the ambient cars (the patrol fleet with no bay) is
-                    // put down in a slot that is provably empty rather than on top of one
-                    _laneFill[e] = s;
-                    placed++;
-                }
-                if (!any) break;
+                    Tf = go.transform,
+                    HalfLen = halfLength,
+                    HalfWide = halfWidth,
+                };
+                v.Spawn(slot.Lane, slot.Progress);
+                // somebody at the wheel, now and then somebody beside him - bodies
+                // out of the crowd's wardrobe, culled with the crowd
+                CarOccupant.Crew(go.transform, _pedPrefabs, _sitLoopClip, passengerChance: 0.3f, layer: CrowdLayer);
+                _vehicles.Add(v);
+                StreetTraffic.Users.Add(v); // the men on foot, and the outfit's drivers, see it
             }
         }
-
-        /// <summary>The last slot the ambient traffic took on each lane (SpawnCars lays
-        /// them at 6 m and every 18 m after). Read by the passes that come after it.
-        /// </summary>
-        readonly Dictionary<RoadEdge, float> _laneFill = new Dictionary<RoadEdge, float>();
 
         /// <summary>The next free slot on a lane, or -1 where the lane is too short to
         /// hold another body clear of the traffic already on it.</summary>
-        float FreeLaneSlot(RoadEdge lane)
-        {
-            float used = _laneFill.TryGetValue(lane, out var s) ? s : -12f;
-            float next = used + 18f;
-            return next <= lane.Length - 12f ? next : -1f;
-        }
+        float FreeLaneSlot(RoadEdge lane) => TrafficDistribution.FreeSlot(lane);
 
         // ----------------------------------------------------------------- bikes
 
@@ -4799,7 +4754,6 @@ namespace RoadDemo
                 if (at < 0f) continue;
                 var car = MakeRollingCar(parent, _policeCars.Count, house, routeHome, lane, at);
                 if (car == null) continue;
-                _laneFill[lane] = at;
                 car.AskForABay = rolling =>
                 {
                     int stall = FreeStall(house);

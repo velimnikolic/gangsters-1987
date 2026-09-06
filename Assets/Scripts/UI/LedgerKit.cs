@@ -689,8 +689,12 @@ namespace LivingCity.UI
         /// puts a tag over the message - what kind of thing came in, and what it cost.
         /// The body starts below that row instead of directly under the source line.
         /// </param>
+        /// <param name="bodySize">The point size the message is set in. A slip printed
+        /// small in the corner of a card and one that IS the page cannot share a size;
+        /// the caller says which, and there is still only one slip.</param>
         public static RectTransform Slip(Transform parent, float x, float y, float w, float h,
-            string source, string time, string body, Color? ink = null, bool tagged = false)
+            string source, string time, string body, Color? ink = null, bool tagged = false,
+            float bodySize = 12f)
         {
             var rect = NewRect("Slip", parent);
             PlaceTopLeft(rect, x, y, w, h);
@@ -707,8 +711,8 @@ namespace LivingCity.UI
                 TextAlignmentOptions.MidlineRight);
 
             var top = tagged ? -42f : -24f;
-            var copy = Paragraph(rect, LedgerStyle.Mono, 12f, LedgerStyle.InkSoft, 12f, top,
-                w - 24f, h + top - 4f, body, lineSpacing: 2f);
+            var copy = Paragraph(rect, LedgerStyle.Mono, bodySize, LedgerStyle.InkSoft,
+                12f, top, w - 24f, h + top - 4f, body, lineSpacing: 2f);
             copy.overflowMode = TextOverflowModes.Ellipsis;
             return rect;
         }

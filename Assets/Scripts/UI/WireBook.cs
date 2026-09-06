@@ -10,6 +10,14 @@ namespace LivingCity.UI
     public enum WireAction { Record, Person, Door, Block, Law, Finances, Families }
 
     /// <summary>
+    /// How hard a slip hits, which is NOT the same question as which pen it is written
+    /// in. The register sets a severe line in bold ink under a filled square and rules
+    /// its edge; a routine one is a hollow square and regular type. Red is the pen for
+    /// blood AND for a door that came up empty, and those two are not the same night.
+    /// </summary>
+    public enum WireWeight { Routine, Notable, Severe }
+
+    /// <summary>
     /// One line of the wire, whoever is printing it.
     ///
     /// Nothing here composes a sentence. IncidentText wrote the incident's line the day
@@ -21,6 +29,23 @@ namespace LivingCity.UI
     {
         public readonly string Source, Stamp, Body, Tag, Figure;
         public readonly Color Ink;
+
+        /// <summary>How hard it hits - the register's hierarchy.</summary>
+        public readonly WireWeight Weight;
+
+        /// <summary>Which of the two books filed it: the racket's doors, or our own
+        /// men. They are counted on different clocks and the register keeps them in
+        /// separate runs under one day.</summary>
+        public readonly bool FromDoor;
+
+        /// <summary>Police attention the night drew, and money that changed hands.
+        /// TWO figures and never one: a wire that prints them in one slot makes a
+        /// reader do arithmetic across units.</summary>
+        public readonly int Heat, Money;
+
+        /// <summary>The money came IN. A door that paid short still carries a figure,
+        /// and a day's takings must not count what was owed as what was taken.</summary>
+        public readonly bool MoneyIn;
 
         /// <summary>The campaign day it belongs to, for ordering a whole book of them.</summary>
         public readonly int Day;
@@ -39,6 +64,39 @@ namespace LivingCity.UI
         public readonly int CharacterId;
         public readonly WireAction Action;
 
+        /// <summary>Where the slip came from, without the wire's own prefix - the
+        /// quarter it happened in, or the racket. It was in the data from the first
+        /// day and no surface ever printed it.</summary>
+        public string Origin =>
+            Source != null && Source.StartsWith("WIRE - ") ? Source.Substring(7) : "";
+
+        /// <summary>The hour off a door slip's stamp, and nothing at all off an
+        /// incident's: a man's night is filed to the day, and a slip that borrowed an
+        /// hour it was never given would be the page inventing a fact.</summary>
+        public string ClockFace
+        {
+            get
+            {
+                var mark = Stamp != null ? Stamp.LastIndexOf('·') : -1;
+                return mark >= 0 ? Stamp.Substring(mark + 1).Trim() : "";
+            }
+        }
+
+        /// <summary>The register's FILE column - the same destination in one word, so a
+        /// reader can see down the column what each line opens. It sits beside the key's
+        /// own wording because two words for one destination must never drift apart.</summary>
+        public string FileWord => Action switch
+        {
+            WireAction.Person => "DOSSIER",
+            WireAction.Door => "DOOR",
+            WireAction.Block => "BLOCK",
+            WireAction.Law => "THE LAW",
+            WireAction.Finances => "FINANCES",
+            WireAction.Families => "FAMILIES",
+            _ => "ITEM",
+        };
+
+        /// <summary>The destination key's word on the slip.</summary>
         public string ActionLabel => Action switch
         {
             WireAction.Person => "OPEN DOSSIER",
@@ -67,8 +125,15 @@ namespace LivingCity.UI
 
         public WireLine(string source, string stamp, string body, string tag,
             string figure, Color ink, int day, TerritoryBusinessId businessId,
-            TerritoryBlockId blockId, int characterId, WireAction action)
+            TerritoryBlockId blockId, int characterId, WireAction action,
+            WireWeight weight = WireWeight.Routine, bool fromDoor = false,
+            int heat = 0, int money = 0, bool moneyIn = false)
         {
+            Weight = weight;
+            FromDoor = fromDoor;
+            Heat = heat;
+            Money = money;
+            MoneyIn = moneyIn;
             Source = source;
             Stamp = stamp;
             Body = body;
@@ -255,6 +320,91 @@ namespace LivingCity.UI
             }
         }
 
+        /// <summary>
+        /// The money on this slip came IN. Only two answers at a door do that - the
+        /// envelope handed over and the round carried home - and the day's takings are
+        /// summed off nothing else, so the register never reports what a shopkeeper
+        /// owed as though the outfit had it.
+        /// </summary>
+        public static bool Received(TerritoryDoorNews news) =>
+            news == TerritoryDoorNews.Agreed || news == TerritoryDoorNews.RoundBanked;
+
+        /// <summary>
+        /// How hard an incident hits. Severe is a body, a gun fired, a man taken or
+        /// sold, a sentence read out; notable is anything the boss must answer this
+        /// week; routine is the rest of the traffic. The register's whole hierarchy
+        /// hangs off this one table - never off the pen, which answers a different
+        /// question.
+        /// </summary>
+        public static WireWeight WeightOf(IncidentKind kind)
+        {
+            switch (kind)
+            {
+                case IncidentKind.Escalated:
+                case IncidentKind.DiedOnTheDetail:
+                case IncidentKind.StoppedIt:
+                case IncidentKind.TookRivalMoney:
+                case IncidentKind.Defected:
+                case IncidentKind.Demoted:
+                case IncidentKind.Convicted:
+                case IncidentKind.TakenIn:
+                case IncidentKind.WitnessKilled:
+                case IncidentKind.FiredOnTheOfficer:
+                case IncidentKind.PrisonerKilled:
+                case IncidentKind.TransferHalted:
+                case IncidentKind.FlatRaided:
+                    return WireWeight.Severe;
+                case IncidentKind.Froze:
+                case IncidentKind.Fled:
+                case IncidentKind.Deviated:
+                case IncidentKind.CaughtSkimming:
+                case IncidentKind.SkimmedTheStash:
+                case IncidentKind.BearsWatching:
+                case IncidentKind.NotToBeTrusted:
+                case IncidentKind.DemandedARaise:
+                case IncidentKind.PayrollShort:
+                case IncidentKind.KilosSold:
+                case IncidentKind.StatementTaken:
+                case IncidentKind.CaseOpened:
+                case IncidentKind.WitnessWithdrawn:
+                case IncidentKind.BailForfeit:
+                case IncidentKind.CutLoose:
+                case IncidentKind.Acquitted:
+                case IncidentKind.Promoted:
+                case IncidentKind.Sprung:
+                case IncidentKind.RefusedTheOfficer:
+                case IncidentKind.RanFromTheOfficer:
+                    return WireWeight.Notable;
+                default:
+                    return WireWeight.Routine;
+            }
+        }
+
+        /// <summary>The same rank at a door: a front smashed, a man on the floor, a
+        /// bag that never came home or a house that pays somebody else is severe; an
+        /// answer the boss has to deal with is notable; a week that went the way it
+        /// always goes is routine.</summary>
+        public static WireWeight WeightOf(TerritoryDoorNews news)
+        {
+            switch (news)
+            {
+                case TerritoryDoorNews.Wrecked:
+                case TerritoryDoorNews.Beaten:
+                case TerritoryDoorNews.OwnerBeaten:
+                case TerritoryDoorNews.RoundLost:
+                case TerritoryDoorNews.ChangedHands:
+                    return WireWeight.Severe;
+                case TerritoryDoorNews.Refused:
+                case TerritoryDoorNews.StoppedPaying:
+                case TerritoryDoorNews.PaidShort:
+                case TerritoryDoorNews.Threatened:
+                case TerritoryDoorNews.RoundBanked:
+                    return WireWeight.Notable;
+                default:
+                    return WireWeight.Routine;
+            }
+        }
+
         /// <summary>One incident, dressed as a slip.</summary>
         public static WireLine Of(Incident incident) =>
             new WireLine(
@@ -270,7 +420,7 @@ namespace LivingCity.UI
                 incident.Heat > 0 ? "+" + incident.Heat + " HEAT" : "",
                 InkOf(incident.Kind),
                 incident.Day, default, default, incident.CharacterId,
-                ActionOf(incident));
+                ActionOf(incident), WeightOf(incident.Kind), false, incident.Heat);
 
         static WireAction ActionOf(Incident incident)
         {
@@ -342,11 +492,16 @@ namespace LivingCity.UI
                 "DAY " + dispatch.Day + " · " + Clock(dispatch.HourOfDay),
                 TerritoryStandingVocabulary.Default.Describe(dispatch, name, blockName),
                 LedgerText.DoorNewsLabel(dispatch.News),
-                dispatch.Amount > 0 ? "$" + dispatch.Amount : "",
+                dispatch.Amount > 0 ? LedgerText.Cash(dispatch.Amount) : "",
                 DoorInk(dispatch.News),
                 dispatch.Day,
                 dispatch.BusinessId,
-                block);
+                block,
+                -1,
+                dispatch.BusinessId.IsValid ? WireAction.Door :
+                    block.IsValid ? WireAction.Block : WireAction.Record,
+                WeightOf(dispatch.News), true, 0, dispatch.Amount,
+                Received(dispatch.News));
         }
 
         /// <summary>The hour of a slip, as a clock face. A door answers at a time, and

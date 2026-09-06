@@ -1040,46 +1040,31 @@ namespace RoadDemo
         // ------------------------------------------------------------------ cars
 
         /// <summary>
-        /// The quarter's traffic, spread over the lanes the way the city spreads its own:
-        /// a car every eighteen metres round and round the lane list until the count is
-        /// met, each one a plain DemoVehicle on the graph. It is the city's car, driven by
-        /// the city's code; only the roads under it are this quarter's.
+        /// The quarter's traffic uses the city's placement and driving rules.
         /// </summary>
         void SpawnCars(Transform parent)
         {
             if (carCount <= 0 || _edges.Count == 0) return;
             var dice = new System.Random(_seed);
-            int placed = 0;
-            for (int round = 0; placed < carCount && round < 40; round++)
+            foreach (var slot in TrafficDistribution.Place(_edges, carCount, _seed))
             {
-                bool any = false;
-                foreach (var edge in _edges)
+                var prefab = CoreRoads.PickCar(dice);
+                if (prefab == null) return;
+                var go = Object.Instantiate(prefab, Vector3.zero, Quaternion.identity, parent);
+                LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
+                foreach (var body in go.GetComponentsInChildren<Rigidbody>()) Object.Destroy(body);
+                foreach (var collider in go.GetComponentsInChildren<Collider>()) Object.Destroy(collider);
+
+                CarBody.MeasureTrafficFootprint(go.transform, out float halfLength, out float halfWidth);
+                var car = new DemoVehicle
                 {
-                    if (placed >= carCount) break;
-                    float s = 6f + round * 18f;
-                    if (s > edge.Length - 12f) continue;
-                    any = true;
-
-                    var prefab = CoreRoads.PickCar(dice);
-                    if (prefab == null) return;
-                    var go = Object.Instantiate(prefab, Vector3.zero, Quaternion.identity, parent);
-                    LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
-                    foreach (var body in go.GetComponentsInChildren<Rigidbody>()) Object.Destroy(body);
-                    foreach (var collider in go.GetComponentsInChildren<Collider>()) Object.Destroy(collider);
-
-                    CarBody.MeasureTrafficFootprint(go.transform, out float halfLength, out float halfWidth);
-                    var car = new DemoVehicle
-                    {
-                        Tf = go.transform,
-                        HalfLen = halfLength,
-                        HalfWide = halfWidth,
-                    };
-                    car.Spawn(edge, s);
-                    _vehicles.Add(car);
-                    StreetTraffic.Users.Add(car);   // the men on foot, and the outfit's drivers, see it
-                    placed++;
-                }
-                if (!any) break;
+                    Tf = go.transform,
+                    HalfLen = halfLength,
+                    HalfWide = halfWidth,
+                };
+                car.Spawn(slot.Lane, slot.Progress);
+                _vehicles.Add(car);
+                StreetTraffic.Users.Add(car);   // the men on foot, and the outfit's drivers, see it
             }
         }
 

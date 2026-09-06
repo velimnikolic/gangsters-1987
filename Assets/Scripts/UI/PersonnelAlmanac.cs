@@ -394,6 +394,17 @@ namespace LivingCity.UI
                 return;
             }
 
+            // A caret owns the alphabet. THE WIRE has the book's second typed field
+            // (the blueprint's name is the first), and P closes the book everywhere
+            // else - so a reader searching the archive for PAULIE must not lose it at
+            // the first letter. Esc gives the keys back before it closes anything.
+            if (IsOpen && currentPage == LedgerPage.Wire && wireSheet.Typing)
+            {
+                if (keyboard.escapeKey.wasPressedThisFrame)
+                    wireSheet.StopTyping();
+                return;
+            }
+
             if (keyboard.pKey.wasPressedThisFrame)
             {
                 if (IsOpen)
@@ -447,6 +458,11 @@ namespace LivingCity.UI
                 outfit.DebugRingTomorrow(director);
                 dirty = true;
             }
+
+            // THE WIRE walks on the arrow keys: the register is read line by line
+            // without a click, and the rest of its keys scroll the one list it has.
+            if (currentPage == LedgerPage.Wire)
+                wireSheet.Keys(keyboard);
 
             if (keyboard.escapeKey.wasPressedThisFrame)
             {
@@ -1123,7 +1139,8 @@ namespace LivingCity.UI
 
             // ---- the pages, in tab order; each is a full-sheet root ----
             BuildNewspaperPage(paper);
-            wireSheet.Build(NewPageRoot(paper, LedgerPage.Wire), SheetW, SheetH, OpenWireItem);
+            wireSheet.Build(NewPageRoot(paper, LedgerPage.Wire), SheetW, SheetH,
+                OpenWireItem, WireTargetTrouble);
             BuildBlocksPage(paper);
             BuildFinancesPage(paper);
             BuildArmoryPage(paper);
@@ -1964,40 +1981,71 @@ namespace LivingCity.UI
         /// and commands. An expired target opens the record with an explanation.</summary>
         public void OpenWireItem(WireLine line)
         {
-            var unavailable = "";
+            var unavailable = WireTargetTrouble(line);
+            if (unavailable.Length == 0)
+                switch (line.Action)
+                {
+                    case WireAction.Person:
+                        OpenAtPage(LedgerPage.Command);
+                        OpenCommandDossier(line.CharacterId);
+                        return;
+                    case WireAction.Door:
+                    case WireAction.Block:
+                        if (!WireBlockOf(line, out var block))
+                            break;
+                        OpenAtPage(LedgerPage.Blocks);
+                        blocksScroll = 0f;
+                        if (blockCardId != block) OpenBlockCard(block);
+                        if (line.Action == WireAction.Block) CloseTradePopup();
+                        if (line.Action == WireAction.Door && blockCardPick != line.BusinessId)
+                            PickTrade(line.BusinessId);
+                        return;
+                    case WireAction.Law: OpenAtPage(LedgerPage.Law); return;
+                    case WireAction.Finances: OpenAtPage(LedgerPage.Finances); return;
+                    case WireAction.Families: OpenAtPage(LedgerPage.Diplomacy); return;
+                }
+            OpenAtPage(LedgerPage.Wire);
+            wireSheet.ShowRecord(line, unavailable);
+        }
+
+        /// <summary>
+        /// Whether the file a wire line points at is still there, and in what words it
+        /// is not.
+        ///
+        /// The register asks this when the slip is DRAWN rather than when the key is
+        /// pressed: a destination that cannot be reached is greyed with its reason
+        /// printed beside it, so the reader is told before he presses instead of being
+        /// left standing on the page he was already on.
+        /// </summary>
+        public string WireTargetTrouble(WireLine line)
+        {
             switch (line.Action)
             {
                 case WireAction.Person:
-                    if (director?.Roster?.Find(line.CharacterId) == null)
-                    { unavailable = "This man is no longer in the outfit's roster."; break; }
-                    OpenAtPage(LedgerPage.Command);
-                    OpenCommandDossier(line.CharacterId);
-                    return;
+                    return director?.Roster?.Find(line.CharacterId) == null
+                        ? "This man is no longer in the outfit's roster." : "";
                 case WireAction.Door:
                 case WireAction.Block:
-                    var block = line.BlockId;
-                    var found = line.Action == WireAction.Block;
-                    if (!found)
-                        foreach (var row in CityBusinesses.All)
-                            if (row.Id == line.BusinessId)
-                            { block = row.CanonicalBlockId; found = true; break; }
-                    var geography = TerritoryRuntime.Instance?.Geography;
-                    if (!found || !block.IsValid || geography == null ||
-                        !geography.TryGetBlock(block, out _))
-                    { unavailable = "This address is no longer available in the city."; break; }
-                    OpenAtPage(LedgerPage.Blocks);
-                    blocksScroll = 0f;
-                    if (blockCardId != block) OpenBlockCard(block);
-                    if (line.Action == WireAction.Block) CloseTradePopup();
-                    if (line.Action == WireAction.Door && blockCardPick != line.BusinessId)
-                        PickTrade(line.BusinessId);
-                    return;
-                case WireAction.Law: OpenAtPage(LedgerPage.Law); return;
-                case WireAction.Finances: OpenAtPage(LedgerPage.Finances); return;
-                case WireAction.Families: OpenAtPage(LedgerPage.Diplomacy); return;
+                    return WireBlockOf(line, out _)
+                        ? "" : "This address is no longer available in the city.";
+                default:
+                    return "";
             }
-            OpenAtPage(LedgerPage.Wire);
-            wireSheet.ShowRecord(line, unavailable);
+        }
+
+        /// <summary>The block a wire line's address belongs to, resolved from the city
+        /// as it stands now rather than from anything the slip remembers.</summary>
+        bool WireBlockOf(WireLine line, out TerritoryBlockId block)
+        {
+            block = line.BlockId;
+            var found = line.Action == WireAction.Block;
+            if (!found)
+                foreach (var row in CityBusinesses.All)
+                    if (row.Id == line.BusinessId)
+                    { block = row.CanonicalBlockId; found = true; break; }
+            var geography = TerritoryRuntime.Instance?.Geography;
+            return found && block.IsValid && geography != null &&
+                geography.TryGetBlock(block, out _);
         }
 
         void SetRailMeter(int index, string label, int current, int maximum, Color ink)

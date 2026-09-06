@@ -109,7 +109,7 @@ namespace RoadDemo
         public float Length;
         public Vector3[] Pts;          // world points, y = 0
         public float[] Cum;            // cumulative length at each point
-        public Vector3[] Tan;          // the smoothed tangent at each point (blended between its neighbours)
+        public Vector3[] Tan;          // the curve's own tangent at each point
         public bool[] Conflicts;       // coarse topology/debug table; runtime admission uses body envelopes
         public bool UTurn;             // the dead-end turn-round
         public float MinRadius = float.MaxValue;
@@ -754,6 +754,8 @@ namespace RoadDemo
         {
             var c = new Connector { Node = n, From = a, To = b, Index = n.Connectors.Count, UTurn = uturn };
             var pts = new List<Vector3>();
+            var tangents = new List<Vector3>();
+            void Add(Vector3 point, Vector3 tangent) { pts.Add(point); tangents.Add(tangent.normalized); }
             var p0 = a.End; p0.y = 0f;
             var p2 = b.Start; p2.y = 0f;
             if (uturn)
@@ -767,7 +769,8 @@ namespace RoadDemo
                 for (int i = 0; i <= steps; i++)
                 {
                     float t = Mathf.PI * i / steps;
-                    pts.Add(mid + side * (r * Mathf.Cos(t)) + fwd * (r * Mathf.Sin(t)));
+                    Add(mid + side * (r * Mathf.Cos(t)) + fwd * (r * Mathf.Sin(t)),
+                        -side * Mathf.Sin(t) + fwd * Mathf.Cos(t));
                 }
                 c.Kind = Turn.Left;
                 c.MinRadius = r;
@@ -793,27 +796,27 @@ namespace RoadDemo
                     }
                     else p1 = (p0 + p2) * 0.5f;
                 }
-                if (cornered && Mathf.Abs(dot) < 0.2f)
+                if (cornered && Mathf.Abs(dot) < 0.001f)
                 {
                     // a square corner: a straight to the arc, a circular arc of the radius
                     // the shorter leg allows (tangent to both lane lines), a straight out
                     float la = (p1 - p0).magnitude, lb = (p2 - p1).magnitude;
-                    float r = Mathf.Max(1.5f, Mathf.Min(la, lb));
+                    float r = Mathf.Min(la, lb);
                     var t0 = p1 + (p0 - p1).normalized * r;
                     var t2 = p1 + (p2 - p1).normalized * r;
                     var centre = t0 + (p2 - p1).normalized * r;
                     c.MinRadius = r;
                     int sa = Mathf.Max(1, Mathf.CeilToInt((la - r) / ConnectorStep));
-                    for (int i = 0; i < sa; i++) pts.Add(Vector3.Lerp(p0, t0, i / (float)sa));
+                    for (int i = 0; i < sa; i++) Add(Vector3.Lerp(p0, t0, i / (float)sa), a.Dir);
                     int arc = Mathf.Max(4, Mathf.CeilToInt(0.5f * Mathf.PI * r / ConnectorStep));
                     var u = t0 - centre; var v = t2 - centre;
                     for (int i = 0; i <= arc; i++)
                     {
                         float ang = 0.5f * Mathf.PI * i / arc;
-                        pts.Add(centre + u * Mathf.Cos(ang) + v * Mathf.Sin(ang));
+                        Add(centre + u * Mathf.Cos(ang) + v * Mathf.Sin(ang), -u * Mathf.Sin(ang) + v * Mathf.Cos(ang));
                     }
                     int sb = Mathf.Max(1, Mathf.CeilToInt((lb - r) / ConnectorStep));
-                    for (int i = 1; i <= sb; i++) pts.Add(Vector3.Lerp(t2, p2, i / (float)sb));
+                    for (int i = 1; i <= sb; i++) Add(Vector3.Lerp(t2, p2, i / (float)sb), b.Dir);
                 }
                 else
                 {
@@ -823,7 +826,7 @@ namespace RoadDemo
                     {
                         float t = i / (float)steps;
                         var q = Vector3.Lerp(Vector3.Lerp(p0, p1, t), Vector3.Lerp(p1, p2, t), t);
-                        pts.Add(q);
+                        Add(q, Vector3.Lerp(p1 - p0, p2 - p1, t));
                     }
                     if (c.Kind != Turn.Straight) c.MinRadius = Mathf.Max(1.5f, Mathf.Min((p1 - p0).magnitude, (p2 - p1).magnitude) * 0.7f);
                 }
@@ -832,7 +835,11 @@ namespace RoadDemo
             // long would double its first point, and the doubled point's tangent would
             // be the chord into the arc: a kink in the heading at the box's edge)
             for (int i = pts.Count - 1; i > 0; i--)
-                if ((pts[i] - pts[i - 1]).sqrMagnitude < 1e-4f) pts.RemoveAt(i == pts.Count - 1 ? i - 1 : i);
+                if ((pts[i] - pts[i - 1]).sqrMagnitude < 1e-4f)
+                {
+                    int remove = i == pts.Count - 1 ? i - 1 : i;
+                    pts.RemoveAt(remove); tangents.RemoveAt(remove);
+                }
             c.Pts = pts.ToArray();
             c.Cum = new float[c.Pts.Length];
             float s = 0f;
@@ -842,19 +849,11 @@ namespace RoadDemo
                 c.Cum[i] = s;
             }
             c.Length = Mathf.Max(0.1f, s);
-            // the tangent at each point: the chord over its neighbours; the ends are the
-            // lanes' own directions, so the heading meets the road without a kink
-            int m = c.Pts.Length;
-            c.Tan = new Vector3[m];
-            for (int i = 0; i < m; i++)
-            {
-                Vector3 d;
-                if (i == 0) d = a.Dir;
-                else if (i == m - 1) d = b.Dir;
-                else d = c.Pts[i + 1] - c.Pts[i - 1];
-                d.y = 0f;
-                c.Tan[i] = d.sqrMagnitude > 1e-8f ? d.normalized : (i > 0 ? c.Tan[i - 1] : a.Dir);
-            }
+            // Averaging neighbours at an arc/straight seam bends the straight past
+            // its lane, then countersteers back. Keep the generated curve's tangents.
+            c.Tan = tangents.ToArray();
+            c.Tan[0] = a.Dir;
+            c.Tan[c.Tan.Length - 1] = b.Dir;
             n.Connectors.Add(c);
         }
 

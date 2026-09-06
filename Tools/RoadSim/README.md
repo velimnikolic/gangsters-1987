@@ -20,6 +20,7 @@ with Unity 6000.5.6f1, its bundled SDK can run the harness without a separate SD
     dotnet run -c Release -- junctionpace # clear straight crossings retain cruise; red still stops the car
     dotnet run -c Release -- trafficadmission # missed parking entries, temporary claims, precise junction envelopes
     dotnet run -c Release -- trafficescape # pair-only gridlock escape, exclusions and lifecycle
+    dotnet run -c Release -- trafficflow # boundary distribution, turn overshoot and U-turns with followers
     SEED=5 TRACE=1 TRACEID=12 dotnet run -c Release -- crew   # other seed, per-car trace
 
 Soaks distinguish unauthorized body overlaps (must be 0) from `permittedPairSamples`:
@@ -71,3 +72,27 @@ its progress and no-jump requirements remain enforced.
 
 These are offline source/model checks, not Unity import, scene, UI-layout or Play
 acceptance. The user controls Editor and visual validation.
+
+`trafficflow` checks capacity-weighted initial placement, minimum spacing, seed
+repeatability, auxiliary exclusions, through-before-terminal placement (including
+capacity spillover) and later patrol spawn clearance.
+Junction choices must normalize missing directions, prefer less crowded exits and
+avoid terminal spurs even when a through exit is crowded, while retaining the only
+available exit. Two 120-second
+scenarios seed all 32 cars along a 5x5 grid's boundary and require redistribution
+inward without body overlaps, deletions or traffic recovery.
+
+The corner checks sample left/right connector headings across square and elongated
+junctions, rejecting steering beyond the intended angle or countersteering on the
+straight. U-turn checks cover both headings and simulation orders at 30 Hz and
+0.2-second frames. A following car with braking room must allow a completed turn;
+a fast close follower, approaching opposing traffic and a body on the arc still
+block admission. An opposing car already travelling away must not block the turn.
+Following-turn runs sweep both moving bodies each simulation substep and check
+rear-axle/heading continuity. These are shared road-model checks; the user's CoreDemo
+edge hotspots and rendered steering still require in-game review.
+Eight additional parking orders exercise the same turn with sedan/large bodies,
+both headings and 10/15 m road widths, with a follower present throughout.
+A 240-second, 24-car ring with terminal spurs requires reduced spur occupancy while
+retaining occasional visits, with zero overlaps or traffic recovery. This catches
+both congestion overriding the spur penalty and banning spurs until the ring jams.

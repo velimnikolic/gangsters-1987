@@ -21,6 +21,7 @@
     <Compile Include="KerbDeparture.cs" />
     <Compile Include="JunctionPace.cs" />
     <Compile Include="TrafficAdmission.cs" />
+    <Compile Include="TrafficFlow.cs" />
     <Compile Include="TrafficEscape.cs" />
     <Compile Include="BlockedYield.cs" />
     <Compile Include="Recovery.cs" />
@@ -45,6 +46,7 @@
     <Compile Include="../../Assets/RoadDemo/RoadCar.Parking.cs" />
     <Compile Include="../../Assets/RoadDemo/RoadCar.Trace.cs" />
     <Compile Include="../../Assets/RoadDemo/DriverProfile.cs" />
+    <Compile Include="../../Assets/RoadDemo/TrafficDistribution.cs" />
     <Compile Include="../../Assets/RoadDemo/RoadDemoNet.cs" />
     <Compile Include="../../Assets/RoadDemo/DriverNerve.cs" />
     <Compile Include="../../Assets/RoadDemo/RoadSpace.cs" />

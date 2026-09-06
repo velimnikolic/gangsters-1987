@@ -13,7 +13,7 @@ static class Program
     // ------------------------------------------------------------ builders
 
     // A city grid: n x m nodes, streets 2-lane (half 5, lane 2.5) unless boulevard.
-    static LaneNet Grid(float[] xs, float[] zs, bool signals, float setback = 5.7f, float nodeHalf = 5f, bool[] blvdX = null)
+    internal static LaneNet Grid(float[] xs, float[] zs, bool signals, float setback = 5.7f, float nodeHalf = 5f, bool[] blvdX = null)
     {
         var net = new LaneNet();
         var nodes = new RoadNode[xs.Length, zs.Length];
@@ -48,7 +48,7 @@ static class Program
 
     // The crew demo: a block with four streets round it, crossroads at the corners,
     // stubs beyond them to dead ends.
-    static LaneNet CrewRing(float wx = -45f, float ex = 45f, float sz = -35f, float nz = 35f, float reach = 35f)
+    internal static LaneNet CrewRing(float wx = -45f, float ex = 45f, float sz = -35f, float nz = 35f, float reach = 35f)
     {
         var net = new LaneNet();
         float[] xs = { wx - 5 - reach, wx, ex, ex + 5 + reach };
@@ -568,6 +568,7 @@ static class Program
         if (only == "all" || only == "kerbdeparture") KerbDeparture.Run();
         if (only == "all" || only == "junctionpace") JunctionPace.Run();
         if (only == "all" || only == "trafficadmission") TrafficAdmission.Run();
+        if (only == "all" || only == "trafficflow") TrafficFlow.Run();
         if (only == "all" || only == "trafficescape") TrafficEscape.Run();
         if (only == "all" || only == "blockedyield") BlockedYield.Run();
         if (only == "all" || only == "recovery") TrafficRecoveryChecks.Run();

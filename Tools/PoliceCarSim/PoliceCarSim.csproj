@@ -16,6 +16,7 @@
     <Compile Include="../../Assets/RoadDemo/RoadLine.cs" />
     <Compile Include="../../Assets/RoadDemo/RoadSpace.cs" />
     <Compile Include="../../Assets/RoadDemo/DriverProfile.cs" />
+    <Compile Include="../../Assets/RoadDemo/TrafficDistribution.cs" />
     <Compile Include="../../Assets/RoadDemo/DriverNerve.cs" />
     <Compile Include="../../Assets/RoadDemo/DriveTrace.cs" />
     <Compile Include="../../Assets/RoadDemo/PolicePatrolCar.cs" />

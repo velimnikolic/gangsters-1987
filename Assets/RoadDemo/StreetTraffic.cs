@@ -263,40 +263,31 @@ namespace RoadDemo
             if (lanes.Count == 0) return;
 
             var root = new GameObject("Traffic").transform;
-            int placed = 0;
-            for (int round = 0; placed < count && round < 40; round++)
+            foreach (var slot in TrafficDistribution.Place(lanes, count, 177, spacing: 22f))
             {
-                bool any = false;
-                foreach (var lane in lanes)
+                var lane = slot.Lane;
+                float s = slot.Progress;
+                var prefab = prefabs[Random.Range(0, prefabs.Count)];
+                var go = Instantiate(prefab, root);
+                go.name = prefab.name;
+                // a colour of its own, unless the body carries somebody's livery
+                LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
+                foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
+                foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
+                foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
+                go.transform.SetPositionAndRotation(lane.Start + lane.Dir * s + Vector3.up * roadY, Quaternion.LookRotation(lane.Dir, Vector3.up));
+                var body = new CarBody(go.transform);
+                var car = new Car
                 {
-                    if (placed >= count) break;
-                    float s = 8f + round * 22f;
-                    if (s > lane.Length - 12f) continue;
-                    any = true;
-                    var prefab = prefabs[Random.Range(0, prefabs.Count)];
-                    var go = Instantiate(prefab, root);
-                    go.name = prefab.name;
-                    // a colour of its own, unless the body carries somebody's livery
-                    LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
-                    foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
-                    foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
-                    foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
-                    go.transform.SetPositionAndRotation(lane.Start + lane.Dir * s + Vector3.up * roadY, Quaternion.LookRotation(lane.Dir, Vector3.up));
-                    var body = new CarBody(go.transform);
-                    var car = new Car
-                    {
-                        Tf = go.transform, Body = body, HalfLen = body.TrafficHalfLength, HalfWide = body.TrafficHalfWidth,
-                        AxleBack = body.AxleBack, RoadY = roadY, Net = net, Profile = DriverProfile.Traffic,
-                        Tag = "traffic",
-                    };
-                    // the body is measured first (CarBody reads the renderers); then the driver
-                    CarOccupant.Crew(go.transform, people, sitLoop, passengerChance: 0.3f);
-                    car.Spawn(lane, s);
-                    _cars.Add(car);
-                    Users.Add(car);
-                    placed++;
-                }
-                if (!any) break;
+                    Tf = go.transform, Body = body, HalfLen = body.TrafficHalfLength, HalfWide = body.TrafficHalfWidth,
+                    AxleBack = body.AxleBack, RoadY = roadY, Net = net, Profile = DriverProfile.Traffic,
+                    Tag = "traffic",
+                };
+                // the body is measured first (CarBody reads the renderers); then the driver
+                CarOccupant.Crew(go.transform, people, sitLoop, passengerChance: 0.3f);
+                car.Spawn(lane, s);
+                _cars.Add(car);
+                Users.Add(car);
             }
         }
 

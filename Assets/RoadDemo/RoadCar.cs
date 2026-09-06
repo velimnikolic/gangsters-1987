@@ -2915,38 +2915,35 @@ namespace RoadDemo
             if (Road.Busy(_occ, sweepS0, sweepS1, sweepLo, sweepHi)) { SweepWhy = DriveTrace.On ? $"something on the arc (s[{sweepS0:F1},{sweepS1:F1}] d[{sweepLo:F1},{sweepHi:F1}])" : "something on the arc"; return false; }
             if (!PhysicalArcClear(r, side)) { SweepWhy = "body crosses the turning arc"; return false; }
             if (!timing) return true;   // the ROOM is there; whether the traffic gives him the moment is another question
-            float arcSeconds = Mathf.PI * r / Mathf.Max(1f, Profile.UTurnSpeed);
-            float seconds = arcSeconds + Profile.OncomingMargin;
-            // Coming down OUR band is a car we would meet head on: the full margin.
-            if (Road.OncomingWithin(_occ, Heading, S + Heading * HalfLen, sweepS1, sweepLo, sweepHi, seconds, Mathf.Abs(Speed))) { SweepWhy = DriveTrace.On ? $"traffic coming down our band within {seconds:F1}s" : "traffic coming down our band"; return false; }
-            // THE FAR BAND IS NOT ONCOMING - it is the lane we come out INTO, facing the
-            // way he is already going, so once we are round he is a car BEHIND us and his
-            // own following gap is the thing that keeps him off. Asking for a head-on
-            // margin against him meant asking a busy street for four clear seconds it
-            // rarely has: on a quarter with five cars in it the turn was refused every
-            // time and the driver took the whole block instead, which is what the player
-            // watched on what he calls an empty street. What the arc really needs is the
-            // time it takes, and a second's grace on top.
-            float behindSeconds = arcSeconds + Mathf.Min(1f, Profile.OncomingMargin);
-            if (Road.OncomingWithin(_occ, -Heading, s0 - Heading * HalfLen, Heading > 0 ? sweepS0 : sweepS1, sweepLo, sweepHi, behindSeconds, 0f)) { SweepWhy = DriveTrace.On ? $"traffic coming down the far band within {behindSeconds:F1}s" : "traffic coming down the far band"; return false; }
-            // anyone behind us in the far band who would run into the sweep
-            seconds = behindSeconds;
-            var behind = Road.Behind(_occ, -Heading, Heading > 0 ? sweepS1 : sweepS0, -side * r - HalfWide, -side * r + HalfWide, out float gb);
-            if (behind != null && behind.Moving && gb < Mathf.Abs(behind.Vel) * seconds) { SweepWhy = "somebody coming up behind into the far band"; return false; }
+            float seconds = (Mathf.PI * r + Axle) / Mathf.Max(1f, UTurnArcSpeed()) + Profile.OncomingMargin;
+            foreach (var other in Road.Occupants)
+            {
+                if (other.Who == this || !other.Overlaps(sweepLo, sweepHi) || Mathf.Abs(other.Vel) < .5f) continue;
+                // Measure arrival at the sweep in HIS direction. A car that already
+                // passed us and is driving away cannot close this gap.
+                float gap = other.Vel > 0f ? sweepS0 - other.S1 : other.S0 - sweepS1;
+                if (gap < 0f) continue; // intersecting bodies/claims were refused above
+                float speed = Mathf.Abs(other.Vel);
+                var follower = other.Car;
+                if (other.Heading == Heading && other.Vel * Heading > 0f &&
+                    other.BodyOverlaps(D - HalfWide, D + HalfWide) && follower != null &&
+                    follower.CanEaseTraffic && !follower.Sliding)
+                {
+                    // A following car yields to our published sweep using the same
+                    // brakes and gap it already uses to follow us. It is not head-on.
+                    float stop = speed * speed / (2f * Mathf.Max(.1f, follower.Brake)) +
+                        speed * .3f + follower.Profile.FollowGap;
+                    if (gap >= stop) continue;
+                    SweepWhy = "follower needs braking room"; return false;
+                }
+                if (gap < speed * seconds) { SweepWhy = "traffic approaching the turning arc"; return false; }
+            }
             return true;
         }
 
-        /// <summary>Is there a turn-round HERE to be had, if only the driver slowed for
-        /// it? What the throttle asks before it comes down.
-        ///
-        /// SLOWING FOR A TURN YOU CANNOT HAVE IS A ROLLING ROADBLOCK. The throttle used
-        /// to come down the moment the driver merely WANTED to turn, and stay down for
-        /// the whole of his patience whether or not the road would ever grant it - a
-        /// car at walking pace in a running lane with a street queueing up behind it.
-        /// On a busy ring that cost more than the detour it was saving and jammed the
-        /// quarter outright (1536 belt refusals in one run of the lab, two cars frozen).
-        /// So the question is asked of the ROAD first: he keeps his pace until the arc
-        /// is actually free, and only then slows into it.</summary>
+        /// <summary>Room for a turn here, optionally including approaching traffic.
+        /// While seeking a gap, the driver slows for a physically clear arc; admission
+        /// still requires enough time for oncoming traffic and braking room behind.</summary>
         bool UTurnAvailable(bool timing = true)
         {
             if (Road == null || !Road.TwoWay || Via != null || _man != Manoeuvre.None) return false;
@@ -3240,11 +3237,7 @@ namespace RoadDemo
                 if (away != null && anyClear) return away;
             }
 
-            float roll = Random.value;
-            if (straight != null && (roll < 0.55f || (lefts.Count == 0 && rights.Count == 0))) return straight;
-            if (rights.Count > 0 && (roll < 0.8f || lefts.Count == 0)) return rights[Random.Range(0, rights.Count)];
-            if (lefts.Count > 0) return lefts[Random.Range(0, lefts.Count)];
-            return straight;
+            return TrafficDistribution.Choose(straight, lefts, rights, Random.value);
         }
 
         // A stopped approach can lose its permission after overshooting the line.

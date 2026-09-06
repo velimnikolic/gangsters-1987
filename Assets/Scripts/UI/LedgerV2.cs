@@ -284,6 +284,37 @@ namespace LivingCity.UI
             return label;
         }
 
+        /// <summary>
+        /// A mono word centred on the ROW it stands on rather than hung off a y.
+        ///
+        /// TMP centres a line inside the box it is given, and <see cref="Mono"/> takes
+        /// the box the face needs - so a column cell placed at the row's own y sits high
+        /// by half the difference, which is exactly the amount the eye catches down a
+        /// ruled register. The box is struck off the size that PRINTS: inside the book
+        /// that is not the size asked for.
+        /// </summary>
+        public static TextMeshProUGUI Cell(Transform parent, float x, float y, float w,
+            float rowH, string text, float size, Color ink, float spacing = 0f,
+            TextAlignmentOptions align = TextAlignmentOptions.MidlineLeft,
+            TMP_FontAsset font = null)
+        {
+            var box = LineBox(BookSize(size));
+            var label = Mono(parent, x, y - (rowH - box) * 0.5f, w, text, size, ink,
+                spacing, align);
+            if (font)
+                label.font = font;
+            return label;
+        }
+
+        /// <summary>The width a mono word takes at a size and a tracking, struck off the
+        /// size that actually prints. A strip laid out on the size ASKED for overlaps
+        /// itself inside the book, which lifts its small print.</summary>
+        public static float MonoWidth(string word, float size, float spacing)
+        {
+            var print = BookSize(size);
+            return word.Length * (print * 0.6f + print * spacing / 100f);
+        }
+
         /// <summary>A figure: mono, bold, and usually held to a right margin.</summary>
         public static TextMeshProUGUI Figure(Transform parent, float x, float y, float w,
             string text, float size = 12.5f, Color? colour = null,

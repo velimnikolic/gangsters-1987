@@ -37,6 +37,7 @@ another session's Play or replace its scene.
 | the closer threat: retargeting, reaction, bullet scatter | `Docs/design-briefs/closer-threat-brief.md` |
 | the law sheet: the docket, the cells, the wanted, the counsel, the verdicts | `Docs/ledger-law-sheet.md` |
 | the city wire: public-record gates, the 06:00 paper and its archive | `Docs/newspaper.md` |
+| THE WIRE tab: the ruled register, the day rail, the slip at the foot | `Docs/design-briefs/wire-register-brief.md` |
 | how a campaign ends: the three, and what is not one of them | `Docs/game-over.md` |
 | beating the proprietor and ordering a witness killed | `Docs/design-briefs/beat-the-owner-brief.md` |
 | killing and replacing the proprietor while the door remembers | `Docs/design-briefs/kill-the-owner-brief.md` |
