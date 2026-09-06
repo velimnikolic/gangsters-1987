@@ -360,7 +360,8 @@ namespace RoadDemo
             var go = Object.Instantiate(prefab, at, facing, root);
             go.name = prefab.name;
             LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
-            foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) Object.Destroy(mb);
+            foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>())
+                if (!CarBody.IsVisualRig(mb)) Object.Destroy(mb);
             foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Object.Destroy(rb);
             foreach (var col in go.GetComponentsInChildren<Collider>()) Object.Destroy(col);
             StoodCar.Park(go);

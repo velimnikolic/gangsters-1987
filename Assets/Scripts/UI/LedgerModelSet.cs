@@ -103,16 +103,23 @@ namespace LivingCity.UI
         /// bucket holds one.</summary>
         public static GameObject OwnBodyNamed(string name)
         {
+            if (string.IsNullOrEmpty(name)) return null;
             var bike = MotorcycleNamed(name);
             if (bike)
                 return bike;
 
+            var path = Gameplay.CivilianVehicleCatalog.PathFor(name);
             var set = Instance;
-            if (!set || set.vehicles == null || string.IsNullOrEmpty(name))
-                return null;
-            foreach (var prefab in set.vehicles)
-                if (prefab && prefab.name == name)
-                    return prefab;
+            if (set && set.vehicles != null)
+                foreach (var prefab in set.vehicles)
+                    if (prefab && (prefab.name == name ||
+                        (path != null && Gameplay.CivilianVehicleCatalog.PathFor(prefab.name) == path)))
+                        return prefab;
+#if UNITY_EDITOR
+            // An already-loaded bridge may predate a newly authored car. Both the
+            // catalogue photo and delivery resolve its explicit asset path here.
+            if (path != null) return RoadDemo.DemoAssetLoad.Load<GameObject>(path);
+#endif
             return null;
         }
 

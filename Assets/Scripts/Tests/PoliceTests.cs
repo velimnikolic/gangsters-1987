@@ -138,7 +138,50 @@ namespace LivingCity.Tests
                 ARivalPrisonerKeepsHisHouseThroughTheVerdict),
             ("TwoFailedTransfersPutHimBeforeTheJudgeOnPaper",
                 TwoFailedTransfersPutHimBeforeTheJudgeOnPaper),
+            // -------------------------------------------------- GAN-236: the precinct map
+            ("ThePaperCityIsPolicedByOneHouse", ThePaperCityIsPolicedByOneHouse),
         };
+
+        // ------------------------------------------------------------------- GAN-236
+
+        /// <summary>
+        /// THE PAPER PRECINCT. The headless yardstick stands one station house on its
+        /// first street, so a rule that asks whose precinct a block is in - the pad, the
+        /// captain's ceiling, a specialist's haunt - gets an answer with no city standing
+        /// up, and gets it out of the SAME pure map the scene reads.
+        ///
+        /// What it must hold: every block belongs to that one house, the house is nought
+        /// crossings from itself, and the count of crossings grows by one a street down
+        /// the row - which is what makes "the far end of town" mean anything on paper.
+        /// </summary>
+        static void ThePaperCityIsPolicedByOneHouse(List<string> failures)
+        {
+            var city = new PaperCity(houses: 3);
+
+            if (city.PrecinctOf(city.StationBlock) != PaperCity.PaperStationId)
+                failures.Add("PRECINCT: the station house does not police its own block.");
+            if (city.HopsToStation(city.StationBlock) != 0)
+                failures.Add("PRECINCT: the station house is not nought streets from itself.");
+
+            for (var b = 0; b < city.Blocks; b++)
+            {
+                var block = city.BlockAt(b);
+                if (city.PrecinctOf(block) != PaperCity.PaperStationId)
+                {
+                    failures.Add("PRECINCT: block " + b + " of the paper city is policed by " +
+                                 "nobody; a city with a station house has no lawless street.");
+                    break;
+                }
+
+                // A row of blocks: the b-th is b streets from the first.
+                if (city.HopsToStation(block) != b)
+                {
+                    failures.Add("PRECINCT: block " + b + " is " + city.HopsToStation(block) +
+                                 " streets from the station house rather than " + b + ".");
+                    break;
+                }
+            }
+        }
 
         // ------------------------------------------------------------------- AI-006
 

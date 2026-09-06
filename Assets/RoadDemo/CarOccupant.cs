@@ -91,6 +91,16 @@ namespace RoadDemo
             sit.SetTime(Random.value * sitLoop.length);
             output.SetSourcePlayable(sit);
             _graph.Play();
+            if (transform.parent && transform.parent.TryGetComponent<VehicleSeatRig>(out var cabin))
+            {
+                // Evaluate before measuring bones, including cars initially offscreen.
+                // No per-frame fitting or extra update component is needed.
+                var culling = animator.cullingMode;
+                animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                _graph.Evaluate(0f);
+                cabin.FitSeated(transform, animator, transform.localPosition);
+                animator.cullingMode = culling;
+            }
         }
 
         /// <summary>Shown or not - a parked cruiser's officer is indoors, not sat in it.</summary>

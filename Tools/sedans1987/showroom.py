@@ -7,7 +7,7 @@ from artwork import sign
 import unity_assets as ua
 
 SCENE = 'Assets/Scenes/Sedan1987Showroom.unity'
-CAMERA = dict(pivot=(0, .7, -.3), distance=43, pitch=34, yaw=180, fov=42)
+CAMERA = dict(pivot=(0, .8, 6.5), distance=54, pitch=34, yaw=180, fov=42)
 REFERENCE = 'Assets/Synty/PolygonPalmCity/Prefabs/Vehicles/SM_Veh_Sedan_01.prefab'
 # Existing PalmCityDemo/Overview instances serialize this variant's root Transform.
 REFERENCE_ROOT = 6977666779751257434
@@ -19,15 +19,20 @@ def placement(index,count=8):
     return (((count-1)/2-index)*4.8, 0, 0), -18
 
 
-def forecourt(count=8):
+def utility_placement(index):
+    return ((2.5-index)*5.7,0,14),-18
+
+
+def forecourt(count=8,utilities=0):
     mesh = Mesh('MiamiForecourt')
     extra=(count-7)*4.8
-    mesh.box((0, -.16, 0), (41+extra, .3, 21), 'concrete')
-    mesh.box((0, -.025, .5), (37+extra, .05, 13), 'asphalt')
-    mesh.box((0, .035, 7.1), (39+extra, .07, 2), 'tile')
+    extension=16 if utilities else 0
+    mesh.box((0, -.16, extension/2), (41+extra, .3, 21+extension), 'concrete')
+    mesh.box((0, -.025, .5+extension/2), (37+extra, .05, 13+extension), 'asphalt')
+    mesh.box((0, .035, 7.1+extension), (39+extra, .07, 2), 'tile')
     mesh.box((0, .11, -6.5), (39+extra, .22, 2), 'tile')
     for x in (-19-extra/2, 19+extra/2):
-        mesh.box((x, .095, .5), (.25, .19, 13.5), 'wall')
+        mesh.box((x, .095, .5+extension/2), (.25, .19, 13.5+extension), 'wall')
     for i in range(count+1):
         x = (count/2-i)*4.8
         mesh.box((x, .012, 0), (.055, .018, 7.1), 'line')
@@ -35,6 +40,13 @@ def forecourt(count=8):
         x = placement(i,count)[0][0]
         mesh.box((x, .014, -3.6), (3.9, .023, .055), 'line')
         mesh.box((x, .10, -3.45), (1.75, .20, .18), 'concrete')
+    if utilities:
+        for i in range(utilities+1):
+            mesh.box(((utilities/2-i)*5.7,.012,14),(.055,.018,7.8),'line')
+        for i in range(utilities):
+            x=utility_placement(i)[0][0]
+            mesh.box((x,.014,10.1),(4.8,.023,.055),'line')
+            mesh.box((x,.10,10.25),(1.75,.20,.18),'concrete')
     # A low pastel dealership wall keeps every silhouette against a quiet backdrop.
     mesh.box((0, 1.04, -7.1), (39+extra, 2.08, .5), 'wall')
     mesh.box((0, .3, -6.8), (39+extra, .26, .12), 'coral')
@@ -45,7 +57,7 @@ def forecourt(count=8):
         for step in range(3):
             mesh.box((side*(6.4+step*.4), 2.4-step*.2, -7.15), (.6, 1.4-step*.4, .7), 'coral')
     for x in range(-18, 19, 3):
-        mesh.box((x, .077, 7.1), (.016, .01, 2), 'concrete')
+        mesh.box((x, .077, 7.1+extension), (.016, .01, 2), 'concrete')
     for x in (-17.6-extra/2, 17.6+extra/2):
         mesh.box((x, .3, -4.7), (1.8, .6, 1.8), 'coral')
         mesh.box((x, .615, -4.7), (1.55, .025, 1.55), 'soil')
@@ -80,15 +92,16 @@ def sign_plane(name, width, height):
     return ua.mesh_asset(mesh, list(COLORS), full_uv=True)
 
 
-def build(cars, prefabs, material):
+def build(cars, prefabs, material, extra_cars=(), extra_prefabs=()):
     scene = ua.Hierarchy()
     court = scene.node('Miami 1987 - dealership forecourt')
     count=len(cars)+1
     bay=lambda i:i if i<REFERENCE_BAY else i+1
-    ua_mesh = ua.mesh_asset(forecourt(count), list(COLORS))
+    ua_mesh = ua.mesh_asset(forecourt(count,len(extra_cars)), list(COLORS))
     scene.renderer(court, ua_mesh, material)
     car_ids = [scene.prefab_instance(path, *placement(bay(i),count)) for i, path in enumerate(prefabs)]
     reference=scene.prefab_instance(REFERENCE,*placement(REFERENCE_BAY,count),root_file_id=REFERENCE_ROOT)
+    extra_ids=[scene.prefab_instance(path,*utility_placement(i)) for i,path in enumerate(extra_prefabs)]
     placard = sign_plane('CarPlacard', 3.65, .9125)
     for i, car in enumerate(cars):
         texture = sign(car['id']+'_Sign', [
@@ -101,6 +114,16 @@ def build(cars, prefabs, material):
         x = placement(bay(i),count)[0][0]
         label = scene.node(car['name']+' - display card', position=(x, .5, 4.5), pitch=-64)
         scene.renderer(label, placard, mat)
+    for i,car in enumerate(extra_cars):
+        texture=sign(car['id']+'_Sign',[
+            (f'F{i+1} / {car["role"]}',23,'#d3b879'),
+            (car['name'],49,'#f3eddc'),
+            ({'trail':'Compact three-door / rear spare','ranger':'Full-size two-door / wide stance',
+              'highland':'Refined four-wheel drive','warden':'Partition / custody benches',
+              'bastion':'Armour / protected cabin','voyager':'Three rows / rear side glass'}[car['style']],28,'#b9ccca'),
+            ('REVIEW MODEL / awaiting approval',29,'#d3b879')])
+        label=scene.node(car['name']+' - review card',position=(utility_placement(i)[0][0],.5,18.7),pitch=-64)
+        scene.renderer(label,placard,ua.material(car['id']+'_Sign',texture,unlit=True))
     reference_tex=sign('SyntyReference', [
         ('09 / COMPARISON', 23, '#d3b879'),
         ('SYNTY SEDAN', 49, '#f3eddc'),
@@ -112,7 +135,7 @@ def build(cars, prefabs, material):
     title_tex = sign('MiamiTitle', [
         ('BISCAYNE MOTOR CLUB', 68, '#d3b879'),
         ('MIAMI / 1987', 139, '#f3eddc'),
-        ('EIGHT SEDANS   /   SYNTY COMPARISON', 50, '#b9ccca'),
+        ('SEDANS / UTILITY COLLECTION / 1987', 50, '#b9ccca'),
     ], title=True)
     title = scene.node('Biscayne Motor Club sign', position=(0, 3.6, -6.83))
     scene.renderer(title, sign_plane('ShowroomTitle', 10.5, 2.625),
@@ -128,7 +151,7 @@ def build(cars, prefabs, material):
                             f'  clock: {{fileID: {clock_id}}}\n')
     scene.mono(lighting,'Assets/RoadDemo/DemoSky.cs',
                f'  clock: {{fileID: {clock_id}}}\n  sun: {{fileID: {sun_id}}}\n')
-    camera = add_camera(scene, car_ids+[reference], cars,clock_id,headlights_id,fill_id)
+    camera = add_camera(scene, car_ids+[reference]+extra_ids, cars,clock_id,headlights_id,fill_id,extra_cars)
     settings = (ua.ROOT/'Tools/sedans1987/scene_settings.txt').read_text()
     settings = settings.replace('m_Sun: {fileID: 0}', f'm_Sun: {{fileID: {sun_id}}}')
     ua.write(SCENE, settings+scene.text(scene=True))
@@ -136,7 +159,7 @@ def build(cars, prefabs, material):
     return camera
 
 
-def add_camera(scene, cars, lineup,clock_id,headlights_id,fill_id):
+def add_camera(scene, cars, lineup,clock_id,headlights_id,fill_id,extra_cars=()):
     cfg = CAMERA
     pitch = math.radians(cfg['pitch'])
     position = (0, cfg['pivot'][1]+math.sin(pitch)*cfg['distance'],
@@ -185,8 +208,8 @@ def add_camera(scene, cars, lineup,clock_id,headlights_id,fill_id):
   mapAt: 500
   mapTransition: 0
   minDistance: 4.5
-  mapCeiling: 65
-  hint: "1-8: cars / 9: Synty / C: compare / 0: lineup / L: day-night / WASD: pan / Q E: orbit / wheel: zoom"
+  mapCeiling: 80
+  hint: "F1-F6: new vehicles / U: new row / 1-8: sedans / 9: Synty / C: compare / 0: all / L: day-night"
   hintTopPx: 12
   showHint: 1
   showZoom: 0
@@ -195,6 +218,7 @@ def add_camera(scene, cars, lineup,clock_id,headlights_id,fill_id):
     body += '  labels:\n'+''.join('  - '+json.dumps(f'{i+1:02d} / {car["name"]} / {car["role"]}')+'\n'
                                   for i, car in enumerate(lineup))
     body += '  - "09 / SYNTY SEDAN / Original Palm City prefab"\n'
+    body += ''.join('  - '+json.dumps(f'F{i+1} / {car["name"]} / {car["role"]}')+'\n' for i,car in enumerate(extra_cars))
     body += f'''  clock: {{fileID: {clock_id}}}
   headlights: {{fileID: {headlights_id}}}
   editorFill: {{fileID: {fill_id}}}

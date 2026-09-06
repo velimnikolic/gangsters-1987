@@ -253,9 +253,9 @@ namespace LivingCity.UI
             var textW = blockCardW - BlockPad * 2f - railW - 10f;
             Caps(row, BlockPad, -10f, textW, order.Title, 13.2f,
                 can ? LedgerV2.Ink : LedgerV2.Label, 13f).font = LedgerStyle.MonoBold;
-            var copy = LedgerV2.Copytext(row, BlockPad, -30f, textW, 60f, order.Note,
-                12.8f, can ? LedgerV2.Body : LedgerV2.Muted);
-            var height = 30f + Mathf.Max(16f, copy.preferredHeight);
+            var copy = LedgerV2.Copytext(row, BlockPad, -30f, CopyMeasure(textW), 120f,
+                order.Note, 12.8f, can ? LedgerV2.Body : LedgerV2.Muted);
+            var height = 30f + CopyHeight(copy);
 
             if (!can)
             {
@@ -316,6 +316,12 @@ namespace LivingCity.UI
                     : Mathf.Clamp(Mathf.CeilToInt(value / cap * 4f), 1, 4);
         }
 
+        /// <summary>
+        /// The policy is a CREW's, not a block's, so a block nobody answers for has no
+        /// policy to show. It prints the reason instead of a bar: a dark NORMAL cell
+        /// over a crew that does not exist is a standing setting invented for the
+        /// drawing, and clicking it fires SetPolicy(-1) at the seam.
+        /// </summary>
         float BuildPolicyPanel(RectTransform body, float top)
         {
             var crewId = ResponsibleCrewId();
@@ -327,7 +333,21 @@ namespace LivingCity.UI
             var y = 11f;
             y += SectionBar(panel, BlockPad, y, width, "POLICY", "ON A SHORT OR A NO");
 
-            var policy = blockRacketOk ? blockRacket.Policy : CrewPolicy.Normal;
+            if (crewId < 0 || !blockRacketOk || !blockRacket.HasResponsible)
+            {
+                // Measured, never a fixed box: TMP TRUNCATES a paragraph to the rect it
+                // is given, and a sentence cut at "Name a lieutena..." is a sentence
+                // that did not get said.
+                var why = LedgerV2.Copytext(panel, BlockPad, -y, CopyMeasure(width),
+                    120f, "No crew answers for this block, so there is no policy to " +
+                    "set. Name a lieutenant and his own crew brings one with him.",
+                    12.8f, LedgerV2.Muted);
+                var bare = y + CopyHeight(why, 20f) + 14f;
+                panel.sizeDelta = new Vector2(blockCardW, bare);
+                return bare;
+            }
+
+            var policy = blockRacket.Policy;
             LedgerV2.Segmented(panel, BlockPad, -y, 26f, BlockPolicies, (int)policy,
                 index =>
                 {
@@ -351,12 +371,15 @@ namespace LivingCity.UI
                 readings = 0f;
             }
 
-            var copy = LedgerV2.Copytext(panel, BlockPad, -y, copyW, 70f,
+            var copy = LedgerV2.Copytext(panel, BlockPad, -y, CopyMeasure(copyW), 120f,
                 PolicyLine(policy), 12.8f, LedgerV2.Body);
-            var copyH = Mathf.Max(20f, copy.preferredHeight);
+            var copyH = CopyHeight(copy, 20f);
 
+            // The readings are held to the panel's own right margin, which is where
+            // the design puts them - the sentence is capped to a reading measure and
+            // the pair must not follow it inward.
             PolicyMarks(policy, out var fear, out var heat);
-            var readingX = readings > 0f ? BlockPad + copyW + 14f : BlockPad;
+            var readingX = readings > 0f ? BlockPad + width - readingW : BlockPad;
             if (readings <= 0f)
                 readings = y + copyH + 8f;
             Reading(readingX, readings, "FEAR", fear, LedgerV2.Red);
@@ -500,9 +523,10 @@ namespace LivingCity.UI
                 verdict += " One door needs an answer.";
             else if (needing > 1)
                 verdict += " " + needing + " doors need an answer.";
-            var copy = LedgerV2.Copytext(body, BlockPad + 12f, -y, width - 12f, 90f,
-                verdict, 13.8f, LedgerV2.Body, italic: true);
-            var copyH = Mathf.Max(24f, copy.preferredHeight);
+            var copy = LedgerV2.Copytext(body, BlockPad + 12f, -y,
+                CopyMeasure(width - 12f), 140f, verdict, 13.8f, LedgerV2.Body,
+                italic: true);
+            var copyH = CopyHeight(copy, 24f);
             Block("Verdict rule", body, BlockPad, -y, 3f, copyH, ink);
             y += copyH + 6f;
 

@@ -5,7 +5,7 @@ using UnityEngine;
 
 namespace LivingCity.Tests
 {
-    /// <summary>Paper-side contracts for the one generated Core fire station.</summary>
+    /// <summary>Paper-side contracts for fire-station parcels and Core service coverage.</summary>
     public static class FireStationTests
     {
         const float Epsilon = 0.01f;
@@ -16,7 +16,7 @@ namespace LivingCity.Tests
             RejectsSmallParcels(failures);
             TakesSmallestSuitableParcel(failures);
             CropsAgainstEveryRoadEdge(failures);
-            Seed1987GetsOneCompleteStation(failures);
+            Seed1987GetsCompleteServices(failures);
             return failures;
         }
 
@@ -88,7 +88,7 @@ namespace LivingCity.Tests
             }
         }
 
-        static void Seed1987GetsOneCompleteStation(List<string> failures)
+        static void Seed1987GetsCompleteServices(List<string> failures)
         {
             var core = new CoreDistrict();
             try
@@ -100,7 +100,9 @@ namespace LivingCity.Tests
                     failures.Add("Core seed 1987 did not reserve its fire station");
                     return;
                 }
-                ExpectDimensions(station, failures, "Core seed 1987");
+                ExpectDimensions(station, failures, "Core seed 1987", fullBlock: true);
+                if (core.Services.TotalPoliceCount != 3 || core.Services.FireCount != 5)
+                    failures.Add("Core seed 1987 needs three total precincts and five neighbourhood fire stations");
                 foreach (var housing in core.DevelopmentSites)
                     if (housing.Box.Overlaps(station.Box))
                         failures.Add("Core seed 1987 placed housing over the fire station");
@@ -124,15 +126,16 @@ namespace LivingCity.Tests
                                  (CoreLayout.Cell * CoreLayout.Cell)));
 
         static void ExpectDimensions(
-            CoreAmenityLayout.Site site, List<string> failures, string context)
+            CoreAmenityLayout.Site site, List<string> failures, string context, bool fullBlock = false)
         {
             bool side = site.Entry == ParkingEntrySide.East ||
                         site.Entry == ParkingEntrySide.West;
             float frontage = side ? site.Box.height : site.Box.width;
             float depth = side ? site.Box.width : site.Box.height;
-            if (!Near(frontage, FireStationBlock.BlockFrontage) ||
-                !Near(depth, FireStationBlock.BlockDepth))
-                failures.Add($"{context} measures {frontage:F1} x {depth:F1}, not 50 x 35 m");
+            float expectedFrontage = fullBlock ? FireStationBlock.BlockBounds.width : FireStationBlock.BlockFrontage;
+            float expectedDepth = fullBlock ? FireStationBlock.BlockBounds.height : FireStationBlock.BlockDepth;
+            if (!Near(frontage, expectedFrontage) || !Near(depth, expectedDepth))
+                failures.Add($"{context} measures {frontage:F1} x {depth:F1}, not {expectedFrontage} x {expectedDepth} m");
         }
 
         static bool Holds(Rect outer, Rect inner) =>

@@ -50,11 +50,30 @@ stubs = stubs.replace("public struct Vector3\n    {", """public struct Vector3
         public static Vector3 left => new Vector3(-1,0,0);
         public static Vector3 back => new Vector3(0,0,-1);
 """)
+if "class RuntimeInitializeOnLoadMethodAttribute" not in stubs:
+    stubs += """
+namespace UnityEngine {
+    public enum RuntimeInitializeLoadType { SubsystemRegistration }
+    public sealed class RuntimeInitializeOnLoadMethodAttribute : System.Attribute {
+        public RuntimeInitializeOnLoadMethodAttribute(RuntimeInitializeLoadType loadType) {}
+    }
+}
+"""
 (OUT / "Stubs.cs").write_text(stubs)
 head = "using System; using System.Collections.Generic; using UnityEngine;\nnamespace RoadDemo {\n"
 (OUT / "Territory.cs").write_text(head + extract("Assets/RoadDemo/CoreTerritory.cs", "    public enum CoreQuarterId", "    public enum QuarterConflictState") + "}\n")
 (OUT / "Frame.cs").write_text(head + extract("Assets/RoadDemo/District.cs", "    public enum DistrictKind", "    // ----------------------------------------------------------- reservations") + "}\n")
 (OUT / "Parking.cs").write_text(head + extract("Assets/RoadDemo/ParkingBlock.cs", "    public sealed class ParkingBlockPlan", "    public sealed class ParkingBlockSite") + "}\n")
+# Retain the real mini-city crop and facility dimensions; hand-written doubles
+# previously let the old 50 x 35 m fire-station assertion drift from its full block.
+(OUT / "CoreCrop.cs").write_text(head + "public partial class CoreDistrict {\n" +
+    extract("Assets/RoadDemo/CoreDistrict.cs", "        void KeepQuarters()", "        void PlanAmenities()") + "} }\n")
+(OUT / "ServiceDimensions.cs").write_text(head + "public static class FireStationBlock {\n" +
+    extract("Assets/RoadDemo/FireStationBlock.cs", "        public const float BlockFrontage", "        /// <summary>How much of the frontage") +
+    "} public static class PolicePrecinctBlock {\n" +
+    "\n".join(line for line in read("Assets/RoadDemo/PolicePrecinctBlock.cs").splitlines()
+              if "public const float BlockFrontage" in line or "public const float BlockDepth" in line
+              or "public static readonly Rect PreviewBounds" in line) + "} }\n")
 harbor_source = read("Assets/HarborDemo/HarborDistrict.cs")
 landmark_source = read("Assets/HarborDemo/HarborDistrict.Landmarks.cs")
 harbor_inputs = []

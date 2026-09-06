@@ -223,6 +223,30 @@ namespace RoadDemo
         /// screen without walking every crew again for each one.</summary>
         public bool Occupied(TerritoryBlockId blockId) => occupiedBlocks.Contains(blockId);
 
+        /// <summary>Which station house polices this block (GAN-236), or
+        /// <see cref="TerritoryPrecinctMap.NoPrecinct"/> when nothing does.</summary>
+        public int PrecinctOf(TerritoryBlockId blockId) =>
+            geography != null ? geography.PrecinctOf(blockId) : TerritoryPrecinctMap.NoPrecinct;
+
+        /// <summary>
+        /// Whose end of town a world point is in. The point is resolved the way an ACT is
+        /// resolved rather than the way a standing body is - a shooting in the middle of a
+        /// boulevard is still somebody's to answer - and then the block's own precinct is
+        /// read. A point on ground no block reaches answers
+        /// <see cref="TerritoryPrecinctMap.NoPrecinct"/> and the caller decides; nothing
+        /// here guesses a station house from a straight line.
+        /// </summary>
+        public int PrecinctAt(Vector3 world)
+        {
+            if (geography == null)
+                return TerritoryPrecinctMap.NoPrecinct;
+            var reach = geography.Settings.NeighbourGap;
+            return geography.TryGetBlockNear(new TerritoryPoint(world.x, world.z), reach,
+                                             out var blockId)
+                ? geography.PrecinctOf(blockId)
+                : TerritoryPrecinctMap.NoPrecinct;
+        }
+
         static readonly List<TerritoryBlockId> QuarterMembers = new List<TerritoryBlockId>();
 
         /// <summary>
@@ -318,7 +342,8 @@ namespace RoadDemo
                 }
             }
 
-            geography = new TerritoryGeography(definitions, GeographySettings(), OffGridAreas());
+            geography = new TerritoryGeography(
+                definitions, GeographySettings(), OffGridAreas(), PrecinctSeats());
             BindBusinessGeography();
             state = new TerritorySimulationState(definitions);
             truth = new TerritoryTruthQuery(state, this, this);
@@ -426,6 +451,20 @@ namespace RoadDemo
             }
 
             return areas;
+        }
+
+        /// <summary>
+        /// The station houses the city stood, handed to the geography so it can walk the
+        /// precinct map (GAN-236). The LAYOUT decides how many there are and the police
+        /// pass has already founded them by the time this runs (SpawnPolice precedes
+        /// BuildTerritoryFoundation), so this reads them rather than deciding anything:
+        /// each house's own station id and the ground it stands on, and nothing else.
+        /// </summary>
+        List<TerritoryPrecinctSeat> PrecinctSeats()
+        {
+            var seats = new List<TerritoryPrecinctSeat>();
+            builder?.CollectPrecinctSeats(seats);
+            return seats;
         }
 
         /// <summary>

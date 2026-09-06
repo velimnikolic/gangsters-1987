@@ -28,7 +28,7 @@ namespace RoadDemo
     ///   turf   - the ownership wash, MULTIPLIED over the ground by a material, so
     ///            TURF ON/OFF is one SetActive and costs nothing.
     ///   built  - every footprint.
-    ///   live   - crews, traffic, order markers, the selection box. Per frame.
+    ///   live   - crews, traffic and order markers. Per frame.
     ///
     /// and one layer that is NOT raster: the street names, real type floating over the
     /// paper as children of the sheet (<see cref="TurfMapLabels"/>). They stay above
@@ -82,9 +82,6 @@ namespace RoadDemo
         /// <summary>Authored units a click may miss a crew by and still take it. Two
         /// and a half is a man's own dot plus the shake of a mouse.</summary>
         const float PickRadius = 2.5f;
-
-        /// <summary>Authored units of drag before a click becomes a marquee.</summary>
-        const float DragSlop = 2f;
 
         /// <summary>The patrol box WALKING re-homes a crew to, in METRES - a city block
         /// and a bit. Not authored units: a box measured on the plate is a different
@@ -229,10 +226,10 @@ namespace RoadDemo
         /// street. Banked for the following Update, when Show(false) takes the map down.</summary>
         Vector2? _landingTarget;
 
-        /// <summary>The marquee's two corners, in WORLD METRES. A survey landing
-        /// mid-drag republishes the projection; a box held in authored units would jump
-        /// with it.</summary>
-        Vector2 _dragFrom, _dragTo;
+        /// <summary>Screen pixels keep the gesture independent of map zoom and surveys.</summary>
+        Vector2 _dragFrom, _dragPrevious;
+        LivingCity.UI.IMapTargetingConsumer _dragTarget;
+        Vector2 _areaFrom, _areaTo;
 
         int _paintedOwnership = -1;
 
@@ -1965,11 +1962,15 @@ namespace RoadDemo
 
         void Pointer()
         {
-            if (_rig != null && _rig.SuppressInput)
-                return;
             var mouse = Mouse.current;
-            if (mouse == null)
+            if ((_rig != null && _rig.SuppressInput) || mouse == null)
+            {
+                _dragging = false;
+                PointerOverChrome = false;
                 return;
+            }
+            if (!mouse.leftButton.isPressed && !mouse.leftButton.wasReleasedThisFrame)
+                _dragging = false;
 
             var screen = mouse.position.ReadValue();
             bool overChrome = _mapChrome.ClaimsPointer(screen) ||
@@ -2046,70 +2047,57 @@ namespace RoadDemo
                 }
                 _dragging = true;
                 _dragMoved = false;
-                _dragFrom = _dragTo = _survey.Plan.ToWorld(ToPlan(screen));
+                _dragFrom = _dragPrevious = screen;
+                var consumer = LivingCity.UI.MapTargeting.Consumer;
+                _dragTarget = consumer != null && consumer.WantsArea ? consumer : null;
+                _areaFrom = _areaTo = _survey.Plan.ToWorld(ToPlan(screen));
                 return;
             }
 
-            if (_dragging)
+            if (!_dragging)
+                return;
+
+            float slop = PointerGesture.DragSlopPx * Mathf.Max(1f, Screen.height / 1080f);
+            if ((screen - _dragFrom).sqrMagnitude > slop * slop)
+                _dragMoved = true;
+
+            // Only an explicitly armed area order owns a box. Normal map navigation
+            // never gathers crews, and a cancelled order cannot turn into a pan or click.
+            if (_dragTarget != null &&
+                !ReferenceEquals(_dragTarget, LivingCity.UI.MapTargeting.Consumer))
             {
-                _dragTo = _survey.Plan.ToWorld(ToPlan(screen));
-                var from = _survey.Plan.ToPlan(_dragFrom);
-                var to = _survey.Plan.ToPlan(_dragTo);
-                if (Mathf.Abs(to.x - from.x) > DragSlop || Mathf.Abs(to.y - from.y) > DragSlop)
-                    _dragMoved = true;
-
-                // The waiting page lights the blocks the box has swallowed so far,
-                // every frame of the drag - the same preview the camera map gives.
-                var dragging = LivingCity.UI.MapTargeting.Consumer;
-                if (_dragMoved && dragging != null && dragging.WantsArea)
-                    dragging.OnAreaPreview(Rect.MinMaxRect(
-                        Mathf.Min(_dragFrom.x, _dragTo.x), Mathf.Min(_dragFrom.y, _dragTo.y),
-                        Mathf.Max(_dragFrom.x, _dragTo.x), Mathf.Max(_dragFrom.y, _dragTo.y)));
+                _dragging = false;
+                return;
             }
+            if (_dragMoved && _dragTarget != null)
+            {
+                _areaTo = _survey.Plan.ToWorld(ToPlan(screen));
+                _dragTarget.OnAreaPreview(DragTargetArea());
+            }
+            else if (_dragMoved && _rig != null)
+            {
+                // Read both points through the same current projection: heading, tilt,
+                // zoom and a newly published survey cannot change the gesture's delta.
+                var was = _survey.Plan.ToWorld(ToPlan(_dragPrevious));
+                var here = _survey.Plan.ToWorld(ToPlan(screen));
+                _rig.PanBy(was - here);
+                FitSheet();
+            }
+            _dragPrevious = screen;
 
-            if (!mouse.leftButton.wasReleasedThisFrame || !_dragging)
+            if (!mouse.leftButton.wasReleasedThisFrame)
                 return;
 
             _dragging = false;
-            if (_dragMoved)
-            {
-                Marquee();
-                return;
-            }
-
-            Click(ToPlan(screen), screen);
+            if (_dragMoved && _dragTarget != null)
+                _dragTarget.OnAreaSelected(DragTargetArea());
+            else if (!_dragMoved && !overChrome)
+                Click(ToPlan(screen), screen);
         }
 
-        /// <summary>A dragged box takes every crew of OURS inside it and nobody
-        /// else's. A rival cannot be gathered, so a box thrown over a street brawl
-        /// selects our men out of it rather than both sides.</summary>
-        void Marquee()
-        {
-            var box = Rect.MinMaxRect(
-                Mathf.Min(_dragFrom.x, _dragTo.x), Mathf.Min(_dragFrom.y, _dragTo.y),
-                Mathf.Max(_dragFrom.x, _dragTo.x), Mathf.Max(_dragFrom.y, _dragTo.y));
-
-            // An area order drags its box on this paper; a crew marquee is what the
-            // same gesture means when no page is waiting for ground.
-            var consumer = LivingCity.UI.MapTargeting.Consumer;
-            if (consumer != null && consumer.WantsArea)
-            {
-                consumer.OnAreaSelected(box);
-                return;
-            }
-
-            _selected.Clear();
-            foreach (var crew in _units)
-                if (crew.Mine && crew.Alive &&
-                    box.Contains(new Vector2(crew.Unit.Position.x, crew.Unit.Position.z)))
-                    _selected.Add(crew.Id);
-
-            _inspectedBuilding = null;
-            _inspectedDistrict = null;
-            _inspectedCrew = null;
-            _crewFileRequested = false;
-            Changed();
-        }
+        Rect DragTargetArea() => Rect.MinMaxRect(
+            Mathf.Min(_areaFrom.x, _areaTo.x), Mathf.Min(_areaFrom.y, _areaTo.y),
+            Mathf.Max(_areaFrom.x, _areaTo.x), Mathf.Max(_areaFrom.y, _areaTo.y));
 
         /// <summary>One click, in the design's priority order: our crew, then anyone
         /// else's, then a footprint, then the ground it stands on. A pick armed by the
@@ -2767,7 +2755,7 @@ namespace RoadDemo
 
         /// <summary>
         /// The one layer redrawn per frame, in the design's order: traffic, I-key
-        /// movement routes, then crews with their glow, order markers and the marquee.
+        /// movement routes, then crews with their glow and order markers.
         /// Buildings and the wash are NOT here - they are stacked underneath as their
         /// own textures, which is what keeps this to a clear and a few thousand pixels.
         /// </summary>
@@ -2783,7 +2771,7 @@ namespace RoadDemo
             DrawBagUnits();
             DrawWitnesses();
             DrawMarkers();
-            DrawMarquee();
+            DrawTargetArea();
 
             _live.Apply(_liveTex);
         }
@@ -3431,13 +3419,13 @@ namespace RoadDemo
                    x0 <= TurfPlate.RW && y0 <= TurfPlate.RH;
         }
 
-        void DrawMarquee()
+        void DrawTargetArea()
         {
-            if (!_dragging || !_dragMoved)
+            if (!_dragging || !_dragMoved || _dragTarget == null)
                 return;
 
-            var from = _survey.Plan.ToPlan(_dragFrom);
-            var to = _survey.Plan.ToPlan(_dragTo);
+            var from = _survey.Plan.ToPlan(_areaFrom);
+            var to = _survey.Plan.ToPlan(_areaTo);
 
             int x0 = Mathf.RoundToInt(Mathf.Min(from.x, to.x) * TurfPlate.S);
             int y0 = Mathf.RoundToInt(Mathf.Min(from.y, to.y) * TurfPlate.S);

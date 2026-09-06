@@ -56,6 +56,7 @@ namespace LivingCity.Tests
 
         readonly TerritoryBlockId[] blocks;
         readonly int[] doorsPerBlock;
+        readonly TerritoryPrecinctMap precincts;
         readonly Dictionary<string, float> presence = new Dictionary<string, float>();
         readonly Dictionary<int, (TerritoryGangId House, TerritoryBlockId Block)> posted =
             new Dictionary<int, (TerritoryGangId, TerritoryBlockId)>();
@@ -102,7 +103,30 @@ namespace LivingCity.Tests
                 doorsPerBlock[b] = DoorsLadder[
                     (int)((uint)Potential.Mix(seed, b * 7 + 3) % (uint)DoorsLadder.Length)];
             }
+
+            // ONE STATION HOUSE, on the first street (GAN-236). The paper city is a row
+            // of blocks, so every block is some number of crossings from it and the
+            // headless yardstick reads the same precinct map the scene does - which is
+            // the whole point of it existing here: a mind that asks whose precinct a
+            // block is in must get an answer with no city standing up.
+            precincts = new TerritoryPrecinctMap(
+                blocks, Neighbours, blockId => Doorstep(blockId, 0),
+                new[] { new TerritoryPrecinctSeat(PaperStationId, blocks[0], Doorstep(blocks[0], 0)) });
         }
+
+        /// <summary>The one house the paper city stands. Its id is the scene's first
+        /// precinct's id, so a rule written against either reads the same number.</summary>
+        public const int PaperStationId = 0;
+
+        /// <summary>The block that house stands on.</summary>
+        public TerritoryBlockId StationBlock => BlockAt(0);
+
+        /// <summary>Which station house polices this block - the paper map's answer,
+        /// walked by the same pure code the city walks.</summary>
+        public int PrecinctOf(TerritoryBlockId blockId) => precincts.PrecinctOf(blockId);
+
+        /// <summary>How many streets from this block to the station house.</summary>
+        public int HopsToStation(TerritoryBlockId blockId) => precincts.HopsToStation(blockId);
 
         public int Blocks => blocks.Length;
         public int Day => (int)(Hour / 24.0);

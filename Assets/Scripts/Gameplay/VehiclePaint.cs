@@ -174,7 +174,7 @@ namespace LivingCity.Gameplay
             // Anybody's marked vehicle keeps its livery, and so does a taxi, a food sedan or a
             // works pickup: the paint swatch IS the livery on those bodies, and a repaint would
             // leave a cab with a roof sign and no yellow. VehicleCatalog holds the one list.
-            if (VehicleCatalog.WearsLivery(prefab.name))
+            if (VehicleCatalog.WearsLivery(prefab.name) || CivilianVehicleCatalog.IsAuthored(prefab.name))
                 return false;
 
             // ONE WALK OF THE BODY, and one reading of each renderer's slots. Both are

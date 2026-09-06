@@ -569,24 +569,8 @@ namespace CoverDemo
             "Assets/Synty/PolygonTown/Prefabs/Vehicles",
         };
 
-        List<GameObject> TrafficBodies()
-        {
-            var bodies = new List<GameObject>();
-#if UNITY_EDITOR
-            foreach (var name in TestBench.StreetCars)
-            {
-                var guids = UnityEditor.AssetDatabase.FindAssets("t:Prefab " + name, VehicleFolders);
-                foreach (var guid in guids)
-                {
-                    var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
-                    if (System.IO.Path.GetFileNameWithoutExtension(path) != name) continue;
-                    var go = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
-                    if (go) { bodies.Add(go); break; }
-                }
-            }
-#endif
-            return bodies;
-        }
+        List<GameObject> TrafficBodies() => CivilianFleet.Load(services: false);
+
 
         /// <summary>The pack prefab of this name, wherever in the packs it lives. The
         /// props here are drawn from several - the gang pack's yard rubbish, the palm

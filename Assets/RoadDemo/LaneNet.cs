@@ -118,7 +118,15 @@ namespace RoadDemo
         public void Pose(float s, out Vector3 pos, out Vector3 fwd)
         {
             int n = Pts.Length;
-            if (n < 2) { pos = Pts.Length > 0 ? Pts[0] : Vector3.zero; fwd = Vector3.forward; return; }
+            if (n < 2)
+            {
+                pos = n > 0 ? Pts[0] : Vector3.zero;
+                // District portals can join two lanes at the same point. Their
+                // zero-length connector still has the lanes' direction; north
+                // invents a sideways vehicle envelope on east/west approaches.
+                fwd = Tan != null && Tan.Length > 0 ? Tan[0] : To.Dir;
+                return;
+            }
             s = Mathf.Clamp(s, 0f, Length);
             int i = 1;
             while (i < n - 1 && Cum[i] < s) i++;

@@ -16,6 +16,12 @@ are the whole answer.
 Exit code 0 means every seed asked for came out clean. Thirty seeds is the tally that
 counts; one seed proves nothing.
 
+`--powerlines --seed 1987 --count 5` exercises the production pole/wire generator
+against crossed-road fixtures and generated city rasters. It checks pole clearance
+from roads, driveways, parking and water, plus supported, bounded wire spans. These
+are offline geometry checks using stub objects; they do not validate imported meshes
+or the appearance of an already-loaded Unity scene.
+
 `blocks.txt` is what the editor measured off the block prefabs (name, demo pivot, ground
 box, size in cells, mask north row first). Refresh it when a block prefab is re-baked:
 run `Tools/City/Core/Sketch The Core City` once, or the `eval` in

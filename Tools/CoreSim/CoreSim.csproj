@@ -13,6 +13,8 @@
     <EmbeddedResource Include="../../Assets/Resources/ResidentialDecor.json" LogicalName="ResidentialDecor.json" />
     <Compile Include="Stubs.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="Powerlines.cs" />
+    <Compile Include="../../Assets/RoadDemo/CorePowerlines.cs" />
     <Compile Include="..\..\Assets\RoadDemo\Dice.cs" />
     <Compile Include="..\..\Assets\RoadDemo\CoreBlockMetrics.cs" />
     <Compile Include="..\..\Assets\RoadDemo\CoreLayout.cs" />

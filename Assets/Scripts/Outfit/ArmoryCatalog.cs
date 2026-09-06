@@ -15,8 +15,8 @@ namespace LivingCity.Outfit
         /// <summary>The Synty pack prefab the catalogue photographs, by exact name (see
         /// LedgerModelSet.weapons). Null falls back to the kind's slot - which is why two
         /// listings of one kind (the .38 and the twin pack are both a pistol body)
-        /// can still name what they photograph. Vehicles name nothing: PortraitStudio finds their bodies in
-        /// the city's own PrefabDatabase.</summary>
+        /// can still name what they photograph. Vehicles name their exact prefab key; BodyFor shares it with
+        /// the catalogue photograph and physical delivery.</summary>
         public readonly string ModelName;
 
         public ArmoryItem(EquipmentKind kind, string displayName, int price, string note,
@@ -69,33 +69,36 @@ namespace LivingCity.Outfit
                 "SM_Wep_SubMachineGun_01"),
         };
 
-        /// <summary>
-        /// The first shelf of wheels: what a crew rides to work in, cheapest first, and
-        /// the ladder is anonymity against money. The three pack bodies are what anybody
-        /// can buy; the fourth is the outfit's own.
-        ///
-        /// THE ARMOURED WAGON IS NO PACK BODY. It is Palm City's SUV rebuilt by
-        /// ArmouredSuvBuilder - one black finish across body and armour, plate over the
-        /// sills and doors, a bull bar, bars across every window and a plate on the roof
-        /// - and it is priced as the decision it is: 6,000, which is the working car,
-        /// the van and a tommy gun
-        /// all at once. It is the boss's car and remains the dearest vehicle on the
-        /// counter even when the campaign starts with a testing bankroll.
-        ///
-        /// Like the tourer and the boxless moped, it names no model here and is found by
-        /// PortraitStudio.VehicleModelFor, the one table the catalogue's photograph and
-        /// the body at the kerb (CrewCars.BodyFor) both read.
-        /// </summary>
+        /// <summary>The eight authored sedans and four SUVs, cheapest first.
+        /// Showroom value bands set their campaign purchase prices. Police transport
+        /// and passenger vans are not merchandise. ModelName is the exact prefab key
+        /// shared by the catalogue photograph, delivery and campaign travel model.</summary>
         public static readonly ArmoryItem[] Vehicles =
         {
-            new ArmoryItem(EquipmentKind.Vehicle, "Jalopy", 800,
-                "Runs, mostly. Gets a crew off its feet."),
-            new ArmoryItem(EquipmentKind.Vehicle, "Sedan", 4_000,
-                "The working car - seats a crew, raises no eyebrows."),
-            new ArmoryItem(EquipmentKind.Vehicle, "Panel Van", 5_000,
-                "Slow and anonymous; swallows anything."),
-            new ArmoryItem(EquipmentKind.Vehicle, "Armoured Wagon", 30_000,
-                "Plated doors, barred glass, a bar on the nose - and every eye on the street."),
+            new ArmoryItem(EquipmentKind.Vehicle, "HIKARI DX", 8_500,
+                "A compact everyday sedan with a modest price and footprint.", "07_Hikari_DX"),
+            new ArmoryItem(EquipmentKind.Vehicle, "BAYSIDE CLASSIC", 12_500,
+                "An ordinary full-size sedan with a roomy cabin.", "06_Bayside_Classic"),
+            new ArmoryItem(EquipmentKind.Vehicle, "BAYSIDE TRAIL", 16_500,
+                "A short three-door 4x4 with a rear-mounted spare.", "08_Bayside_Trail"),
+            new ArmoryItem(EquipmentKind.Vehicle, "MONARCH TOWNLINE", 22_500,
+                "A broad American luxury sedan with a formal roof.", "05_Monarch_Townline"),
+            new ArmoryItem(EquipmentKind.Vehicle, "CALDER MARIVELLE", 23_000,
+                "A long luxury sedan with a padded vinyl roof.", "04_Calder_Marivelle"),
+            new ArmoryItem(EquipmentKind.Vehicle, "BAYSIDE RANGER", 23_500,
+                "A full-size two-door SUV with a tall, broad body.", "09_Bayside_Ranger"),
+            new ArmoryItem(EquipmentKind.Vehicle, "VAHREN DREI", 27_000,
+                "A compact sporting sedan with a restrained silver finish.", "Vahren_Drei"),
+            new ArmoryItem(EquipmentKind.Vehicle, "MONARCH BASTION", 30_000,
+                "A large crew SUV with black armour and protected glazing.", "12_Monarch_Bastion"),
+            new ArmoryItem(EquipmentKind.Vehicle, "ALBION HIGHLAND", 35_000,
+                "An executive 4x4 with alloy wheels and bright trim.", "10_Albion_Highland"),
+            new ArmoryItem(EquipmentKind.Vehicle, "ALBION SIX", 37_000,
+                "A low sporting luxury sedan with a long sculpted bonnet.", "03_Albion_Six"),
+            new ArmoryItem(EquipmentKind.Vehicle, "KRONEN K58", 64_000,
+                "A premium executive import with a long rear cabin.", "02_Kronen_K58"),
+            new ArmoryItem(EquipmentKind.Vehicle, "REGENT BELLAVERE", 119_000,
+                "A long-wheelbase luxury sedan with ivory coachwork.", "01_Regent_Bellavere"),
         };
 
         /// <summary>
@@ -181,10 +184,18 @@ namespace LivingCity.Outfit
         /// Three listings name a body this project MADE rather than one a pack ships -
         /// the armoured wagon, the blacked tourer, the boxless moped - and the comments
         /// on the arrays above say why for each.</summary>
-        public static string BodyFor(string displayName) => displayName switch
+        public static string BodyFor(string displayName)
+        {
+            foreach (var item in Vehicles)
+                if (item.DisplayName == displayName) return item.ModelName;
+            return LegacyBodyFor(displayName);
+        }
+
+        // Existing inventory/save names still resolve after leaving the sales shelf.
+        static string LegacyBodyFor(string displayName) => displayName switch
         {
             "Jalopy" => "SM_Veh_Pickup_01",
-            "Sedan" => "SM_Veh_Sedan_01",
+            "Sedan" => "BAYSIDE CLASSIC",
             "Panel Van" => "SM_Veh_Van_01",
             // THE WAGON IS THE OUTFIT'S OWN BODY, like the tourer below: Palm City's SUV
             // rebuilt by ArmouredSuvBuilder into Assets/Prefabs/Vehicles/

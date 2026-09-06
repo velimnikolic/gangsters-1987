@@ -416,10 +416,35 @@ namespace RoadDemo
             return precinct;
         }
 
-        /// <summary>Whose end of town this is. One station makes this trivial; it is
-        /// written as a search because the day there are several, a loss has to land on
-        /// the right books and not on the first ones in the list.</summary>
+        /// <summary>
+        /// WHOSE END OF TOWN THIS IS. Read off the territory layer's precinct map, which
+        /// is the one owner of that question (GAN-236): the block this point is on, and
+        /// the station house that block is fewest street crossings from. A tape measure
+        /// is not the rule - a house across a river is nobody's nearest station, however
+        /// short the straight line - and three separate tickets wanting a coverage map of
+        /// their own is exactly why this is asked in one place.
+        ///
+        /// Falls back to the straight line only where the map cannot answer: a scene with
+        /// no territory plan under it, or ground no block reaches. A loss then lands on
+        /// the same books it always did rather than on nobody's.
+        /// </summary>
         public Precinct Nearest(Vector3 where)
+        {
+            var territory = TerritoryRuntime.Instance;
+            var id = territory != null
+                ? territory.PrecinctAt(where)
+                : LivingCity.Territory.TerritoryPrecinctMap.NoPrecinct;
+            if (id >= 0)
+                for (var i = 0; i < _precincts.Count; i++)
+                    if (_precincts[i].Roster != null && _precincts[i].Roster.StationId == id)
+                        return _precincts[i];
+
+            return NearestByLine(where);
+        }
+
+        /// <summary>The straight line to a station house - the guess the whole city used
+        /// to make, kept for the ground the precinct map does not cover.</summary>
+        Precinct NearestByLine(Vector3 where)
         {
             Precinct best = null;
             var bestD = float.MaxValue;

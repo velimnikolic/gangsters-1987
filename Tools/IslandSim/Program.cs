@@ -12,6 +12,16 @@ class Program
     static void Check(bool yes,string message) { if(!yes) throw new Exception(message); }
     static int Main(string[] args)
     {
+        var straight=RoadLine.Straight(Vector3.zero,new Vector3(0,0,100));
+        var oldCorridor=new IslandRoadCorridors(); var accessCorridor=new IslandRoadCorridors();
+        oldCorridor.Add(straight,StreetKit.OuterHalf,s=>0f);
+        accessCorridor.Add(straight,StreetKit.OuterHalf,s=>0f,IslandLandform.AccessRoadBed,20f*Mathf.Sqrt(2f));
+        for(float x=-80;x<=80;x+=1f)
+        {
+            oldCorridor.Shape(x,50,20,out bool wasRoad);
+            accessCorridor.Shape(x,50,20,out bool isRoad);
+            Check(wasRoad==isRoad,"mesh padding widened vegetation exclusion");
+        }
         using var document=JsonDocument.Parse(File.ReadAllText(args[0]));
         int tested=0;
         foreach(var fixture in document.RootElement.EnumerateArray())
@@ -143,6 +153,15 @@ class Program
                         Check(land.WaterDistance(p.x,p.z)>0,$"seed {seed}: ground road in water at {p.x},{p.z}");
                         Check(land.Height(p.x,p.z)<.2f,$"seed {seed}: terrain covers road at {p.x},{p.z}");
                         Check(land.Height(p.x,p.z)>RoadDemoBuilder.WaterY,$"seed {seed}: ground road has a flooded bed at {p.x},{p.z}");
+                    }
+                    foreach(float side in new[]{-1f,1f})
+                    for(float offset=StreetKit.StreetHalf;offset<=StreetKit.OuterHalf;offset+=.5f)
+                    {
+                        // The actual StreetKit gutter dips 23 cm below asphalt. Check
+                        // interpolated terrain triangles, not only continuous samples.
+                        var gutter=at+right*(side*offset);
+                        Check(RegionalIslandView.SurfaceHeight(land,gutter.x,gutter.z)<=IslandLandform.AccessRoadBed+.001f,
+                            $"seed {seed}: meadow protrudes through access-road gutter at {gutter.x},{gutter.z}");
                     }
                 }
             }

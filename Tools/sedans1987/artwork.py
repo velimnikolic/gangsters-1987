@@ -27,15 +27,12 @@ def save_texture(name, image, linear=False):
     return path
 
 
-def make_palette(emission=False):
+def make_palette():
     image = Image.new('RGB', (len(COLORS)*8, 128))
     draw = ImageDraw.Draw(image)
-    emit={'lamp_front':'#ffd973','lamp_tail':'#ff1710','lamp_marker':'#ff7514'}
     for i, (key, color) in enumerate(COLORS.items()):
-        if emission:
-            color=emit.get(key,'#000000')
         draw.rectangle((i*8, 0, (i+1)*8-1, 127), fill=color)
-        if key=='glass' and not emission:
+        if key=='glass':
             stops=[(0,(48,67,81)),(.42,(89,113,123)),(.56,(41,57,65)),(1,(22,30,37))]
             for y in range(128):
                 t=y/127
@@ -44,7 +41,7 @@ def make_palette(emission=False):
                         k=(t-a)/(b-a)
                         shade=tuple(round(x+(z-x)*k) for x,z in zip(ca,cb));break
                 draw.line((i*8,y,(i+1)*8-1,y),fill=shade)
-    return save_texture('SedanLampEmission' if emission else 'SedanPalette', image)
+    return save_texture('SedanPalette', image)
 
 
 def make_surface():

@@ -1492,7 +1492,9 @@ namespace RoadDemo
                 Add(++id, null, area, rise, null, seen, name);
             }
 
+            CollectServiceLandmarks();
             FitLandmarksToBuildings();
+            NamePrecincts();
 
             // Biggest first, so a shed against a tower block still takes its own click:
             // the picker walks the list backwards and the small footprint is on top.
@@ -1564,7 +1566,7 @@ namespace RoadDemo
                             // belongs at the block centre. An amenity mixed among houses uses
                             // its own footprint and leaves the surrounding residential survey.
                             seen.Add(new FootprintKey(world));
-                            AddLandmark(world, unit.Name, recipe.BlockId,
+                            AddLandmark(world, unit.Name, TurfLandmarkKinds.From(unit.Name), recipe.BlockId,
                                 replacesFootprints: true);
                             if (plan.YardBlock)
                                 break;
@@ -1626,7 +1628,7 @@ namespace RoadDemo
                         (maxI - minI + 1) * cell,
                         (maxJ - minJ + 1) * cell);
                     string name = recipe.Name + ": " + label + (++group > 1 ? " " + group : "");
-                    AddLandmark(frame.ToWorldRect(local), name, recipe.BlockId,
+                    AddLandmark(frame.ToWorldRect(local), name, TurfLandmarkKinds.From(label), recipe.BlockId,
                         replacesFootprints: true);
 
                     void Visit(int x, int y)
@@ -1656,19 +1658,19 @@ namespace RoadDemo
                     if (!source.Contains("warehouse") && !source.Contains("police") &&
                         !source.Contains("nightclub"))
                         continue;
-                    AddLandmark(core.Frame.ToWorldRect(block.LocalBounds), source,
+                    AddLandmark(core.Frame.ToWorldRect(block.LocalBounds), source, TurfLandmarkKinds.From(source),
                         block.Id, replacesFootprints: true);
                 }
 
             for (int i = 0; i < core.ParkingSites.Count; i++)
                 AddLandmark(core.Frame.ToWorldRect(core.ParkingSites[i].Box),
-                    "PARKING", BlockAt(core.Frame.ToWorldRect(core.ParkingSites[i].Box).center),
+                    "PARKING", TurfLandmarkKind.Parking, BlockAt(core.Frame.ToWorldRect(core.ParkingSites[i].Box).center),
                     replacesFootprints: true);
 
             for (int i = 0; i < core.FuelSites.Count; i++)
             {
                 var local = CoreAmenityLayout.FuelSurface(core.FuelSites[i]);
-                AddLandmark(core.Frame.ToWorldRect(local), "FILLING STATION",
+                AddLandmark(core.Frame.ToWorldRect(local), "FILLING STATION", TurfLandmarkKind.FuelStation,
                     BlockAt(core.Frame.ToWorldRect(local).center), replacesFootprints: true);
             }
 
@@ -1759,7 +1761,7 @@ namespace RoadDemo
                         : box.yMax - room.Z1 * QuayWalk.Cell;
                     var local = new Rect(box.xMin, z0, box.width,
                         room.Length * QuayWalk.Cell);
-                    AddLandmark(core.Frame.ToWorldRect(local), label, block.BlockId,
+                    AddLandmark(core.Frame.ToWorldRect(local), label, TurfLandmarkKinds.From(label), block.BlockId,
                         replacesFootprints: true);
                 }
             }
@@ -1771,11 +1773,12 @@ namespace RoadDemo
             return block != null ? block.Id : -1;
         }
 
-        void AddLandmark(Rect world, string name, int blockId, bool replacesFootprints)
+        // Display names can contain quarter names such as Fairgrounds or Warehouse Row.
+        // Callers supply the kind from the feature itself, never from its address.
+        void AddLandmark(Rect world, string name, TurfLandmarkKind kind, int blockId, bool replacesFootprints)
         {
             if (world.width <= 0.01f || world.height <= 0.01f)
                 return;
-            var kind = TurfLandmarkKinds.From(name);
             Landmarks.Add(new TurfLandmark
             {
                 Kind = kind,
@@ -1785,6 +1788,99 @@ namespace RoadDemo
                 BlockId = blockId,
                 ReplacesFootprints = replacesFootprints,
             });
+        }
+
+        /// <summary>
+        /// THE TWO HOUSES THAT ANSWER A CALL: the precinct and the fire station. Both
+        /// were already surveyed - they come through the quarters' report and the
+        /// blocks' colliders like any other footprint - but a rectangle with no word on
+        /// it is a building, and a player looking for the law had nothing on the paper
+        /// to look for while the map was busy naming him a skatepark. They are matched
+        /// on the catalogue name the city raises them under, never on an address.
+        /// </summary>
+        void CollectServiceLandmarks()
+        {
+            // The list grows as landmarks are added; only the footprints already
+            // surveyed are considered.
+            int count = Buildings.Count;
+            for (int i = 0; i < count; i++)
+            {
+                var building = Buildings[i];
+                var kind = ServiceKind(building.Name);
+                if (kind == TurfLandmarkKind.Generic && building.Tf != null)
+                    kind = ServiceKind(building.Tf.name);
+                if (kind == TurfLandmarkKind.Generic || Named(kind, building.World.center))
+                    continue;
+                AddLandmark(building.World, building.Name, kind, building.BlockId,
+                    replacesFootprints: true);
+            }
+        }
+
+        /// <summary>The catalogue names a station house stands under, whichever pass
+        /// stood it: the grid's own prefab, Core's block, the service plan's compact
+        /// precinct and the fire station's shell. Matched on the whole word - "police"
+        /// on its own is a sign, a car and half the dressing in the city.</summary>
+        static TurfLandmarkKind ServiceKind(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return TurfLandmarkKind.Generic;
+            if (Has(name, "policestation") || Has(name, "police-station") ||
+                Has(name, "police station"))
+                return TurfLandmarkKind.Police;
+            if (Has(name, "firestation") || Has(name, "fire-station") ||
+                Has(name, "fire station") || Has(name, "firehouse"))
+                return TurfLandmarkKind.FireStation;
+            return TurfLandmarkKind.Generic;
+        }
+
+        /// <summary>Case-insensitive without lower-casing a copy: this runs over every
+        /// footprint in the city.</summary>
+        static bool Has(string name, string word) =>
+            name.IndexOf(word, System.StringComparison.OrdinalIgnoreCase) >= 0;
+
+        /// <summary>Whether this ground already carries a landmark of the same kind. A
+        /// station published as a whole block must not print its word a second time off
+        /// its own footprint.</summary>
+        bool Named(TurfLandmarkKind kind, Vector2 at)
+        {
+            for (int i = 0; i < Landmarks.Count; i++)
+                if (Landmarks[i].Kind == kind && Landmarks[i].World.Contains(at))
+                    return true;
+            return false;
+        }
+
+        /// <summary>
+        /// WHICH PRECINCT THIS IS. The plate said POLICE while the plaque beside it said
+        /// PRECINCT 2 - the same house under two names, and no way to read off the map
+        /// which end of town had lost its law. The word is now the roster's own name.
+        ///
+        /// Read here, with the footprints, and not in the draw: the houses are founded
+        /// before the map is built and none is ever added afterwards, and the draw runs
+        /// on a worker where a MonoBehaviour may not be asked anything. A house with no
+        /// forecourt and no car is not a precinct and keeps the plain word.
+        /// </summary>
+        void NamePrecincts()
+        {
+            var force = PoliceForce.Instance;
+            if (force == null)
+                return;
+
+            for (int i = 0; i < Landmarks.Count; i++)
+            {
+                var landmark = Landmarks[i];
+                if (landmark.Kind != TurfLandmarkKind.Police)
+                    continue;
+                for (int p = 0; p < force.Precincts.Count; p++)
+                {
+                    var precinct = force.Precincts[p];
+                    var roster = precinct.Roster;
+                    if (roster == null || string.IsNullOrEmpty(roster.Name) ||
+                        !landmark.World.Contains(new Vector2(precinct.At.x, precinct.At.z)))
+                        continue;
+                    landmark.Label = roster.Name.ToUpperInvariant();
+                    break;
+                }
+            }
         }
 
         /// <summary>Fixed Core and quay programmes begin with stable plan rectangles.

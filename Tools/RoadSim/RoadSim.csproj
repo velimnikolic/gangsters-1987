@@ -20,6 +20,7 @@
     <Compile Include="KerbApproach.cs" />
     <Compile Include="KerbDeparture.cs" />
     <Compile Include="JunctionPace.cs" />
+    <Compile Include="RegionalTraffic.cs" />
     <Compile Include="TrafficAdmission.cs" />
     <Compile Include="TrafficFlow.cs" />
     <Compile Include="TurnRouting.cs" />

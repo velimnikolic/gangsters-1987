@@ -236,14 +236,12 @@ namespace RoadDemo
         /// that makes a lamp read as switched ON rather than as a pole.</summary>
         const string BugLights = "Assets/Synty/PolygonGangWarfare/Prefabs/FX/FX_BugLights_01.prefab";
 
-        /// <summary>The works' own traffic: a van and two cars for the men who run it, which is
-        /// what a painted bay is for and what every bay in the block was missing.</summary>
-        static readonly string[] StaffCars =
+        /// <summary>Employees use the shared passenger fleet; the work van remains.</summary>
+        static readonly string[] StaffCars = new List<string>(
+            LivingCity.Gameplay.CivilianVehicleCatalog.PassengerPaths)
         {
             GangVeh + "SM_Veh_Van_01.prefab",
-            GangVeh + "SM_Veh_LowCar_01.prefab",
-            GangVeh + "SM_Veh_LowCar_02.prefab",
-        };
+        }.ToArray();
 
         static readonly string[] Containers =
         {

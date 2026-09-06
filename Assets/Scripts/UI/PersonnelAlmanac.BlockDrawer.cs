@@ -66,12 +66,16 @@ namespace LivingCity.UI
         internal RectTransform blockTabViewport;
         internal RectTransform blockTabContent;
         internal float blockTabScroll;
+        internal TMP_Text blockTabMoreAbove;
+        internal TMP_Text blockTabMoreBelow;
 
         /// <summary>The overlay's own list. A second region, but never at the same time:
         /// an overlay covers the tab body it stands over.</summary>
         internal RectTransform blockSheetViewport;
         internal RectTransform blockSheetContent;
         internal float blockSheetScroll;
+        internal TMP_Text blockSheetMoreAbove;
+        internal TMP_Text blockSheetMoreBelow;
 
         // ----------------------------------------------------------------- the layout
 
@@ -101,6 +105,34 @@ namespace LivingCity.UI
         /// body and under the footer's keys.</summary>
         const float BlockSayingH = 30f;
 
+        /// <summary>THE MEASURE ANY SENTENCE IS SET TO. The drawer took two thirds of
+        /// the sheet on 2026-09-06 and every serif line in it went to a hundred
+        /// characters, which is not a column a reader's eye can return down. Figures,
+        /// names and labels still take the whole width - they are scanned, not read.
+        /// </summary>
+        const float BlockCopyMeasure = 520f;
+
+        /// <summary>A sentence's own width inside a rect of <paramref name="room"/>.
+        /// </summary>
+        static float CopyMeasure(float room) => Mathf.Min(room, BlockCopyMeasure);
+
+        /// <summary>
+        /// A sentence sized to what it actually took, and the height it took.
+        ///
+        /// TMP TRUNCATES a paragraph to the rect it was handed, so a box guessed at a
+        /// line count silently eats the tail - which is what cut "Name a lieutena…" off
+        /// the policy panel. preferredHeight reports the whole of it whatever the
+        /// overflow mode says, so the rect is grown to match before anything is laid
+        /// under it.
+        /// </summary>
+        static float CopyHeight(TMP_Text copy, float least = 16f)
+        {
+            var height = Mathf.Max(least, copy.preferredHeight);
+            var rect = copy.rectTransform;
+            rect.sizeDelta = new Vector2(rect.sizeDelta.x, height);
+            return height;
+        }
+
         // ------------------------------------------------------------------ the shell
 
         /// <summary>
@@ -117,6 +149,8 @@ namespace LivingCity.UI
             blockTabContent = null;
             blockSheetViewport = null;
             blockSheetContent = null;
+            blockTabMoreAbove = blockTabMoreBelow = null;
+            blockSheetMoreAbove = blockSheetMoreBelow = null;
 
             var x = PageLeft + BlocksLedgerW;
             VRule(host, x, BlocksTop, BlocksHeight, LedgerV2.SheetRule);
@@ -203,8 +237,8 @@ namespace LivingCity.UI
                 .font = LedgerStyle.Mono;
 
             LedgerV2.Copytext(drawer, BlockPad,
-                -(BlockDrawerHeadH + BlockPlateH + 14f), blockCardW - BlockPad * 2f,
-                60f,
+                -(BlockDrawerHeadH + BlockPlateH + 14f),
+                CopyMeasure(blockCardW - BlockPad * 2f), 120f,
                 "A block's file is the block itself, filmed, with everything the outfit " +
                 "knows about the ground under it. Open one from the ledger.", 12.8f,
                 LedgerV2.Muted, italic: true);
@@ -410,6 +444,14 @@ namespace LivingCity.UI
             blockTabScroll = Mathf.Clamp(blockTabScroll, 0f,
                 Mathf.Max(0f, content - height));
             blockTabContent.anchoredPosition = new Vector2(0f, blockTabScroll);
+
+            // The drawer scrolls on its own, and says so: the ledger column beside it is
+            // a separate run and neither wheel reaches the other.
+            BuildScrollMarks(blockTabViewport, blockCardW - BlockPad,
+                BlockTabs[blockCardTab].ToLowerInvariant(),
+                out blockTabMoreAbove, out blockTabMoreBelow);
+            ShowScrollMarks(blockTabMoreAbove, blockTabMoreBelow, blockTabScroll,
+                content - height);
         }
 
         /// <summary>

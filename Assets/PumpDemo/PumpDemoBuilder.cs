@@ -494,7 +494,7 @@ namespace PumpDemo
         // (VehicleCatalog.PoolWeight): a saloon is common, a muscle car is not.
         List<GameObject> _cars;
 
-        List<GameObject> CarBodies() => _cars ??= TestBench.WeightedCars(FindVehicle);
+        List<GameObject> CarBodies() => _cars ??= TestBench.WeightedCars();
 
         static readonly string[] VehicleFolders =
         {

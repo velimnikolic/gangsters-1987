@@ -30,6 +30,7 @@ namespace LivingCity.Tests
             StandingResolvesRoadSpaceDeterministically(failures);
             BusinessesMapToExactlyOneBlock(failures);
             NeighbourGraphIsSymmetricAndGeometric(failures);
+            PrecinctsAreTheNearestStationHouseByHops(failures);
 
             return failures;
         }
@@ -74,7 +75,8 @@ namespace LivingCity.Tests
             return blocks;
         }
 
-        static TerritoryGeography Build(IEnumerable<TerritoryBlockDefinition> blocks = null) =>
+        static TerritoryGeography Build(IEnumerable<TerritoryBlockDefinition> blocks = null,
+                                        IEnumerable<TerritoryPrecinctSeat> houses = null) =>
             new TerritoryGeography(
                 blocks ?? City(),
                 TerritoryGeographySettings.Default,
@@ -83,7 +85,16 @@ namespace LivingCity.Tests
                     new TerritoryOffGridArea(
                         "Harbour", "Harbor", new TerritoryBounds(-400f, -400f, 200f, 200f),
                         "outside the territory plan"),
-                });
+                },
+                houses);
+
+        /// <summary>The middle of one grid block, which is where a station house on it
+        /// stands for these cases.</summary>
+        static TerritoryPoint GridCentre(int i, int j) =>
+            new TerritoryPoint(i * Step + Block * 0.5f, j * Step + Block * 0.5f);
+
+        static TerritoryPrecinctSeat House(int stationId, int i, int j) =>
+            new TerritoryPrecinctSeat(stationId, GridCentre(i, j));
 
         // ------------------------------------------------------------------- GEO-001
 
@@ -553,5 +564,99 @@ namespace LivingCity.Tests
                 return copy;
             }
         }
+
+        // ------------------------------------------------------------------- GAN-236
+
+        /// <summary>
+        /// THE PRECINCT MAP. A block belongs to the station house it is fewest street
+        /// crossings from, and that is measured on the block graph rather than with a
+        /// tape: the city here has a block across a 35 m boulevard and one alone in open
+        /// country, and both are answered by the rule rather than by their distance.
+        ///
+        /// The three properties that matter downstream: a city with no house says so
+        /// instead of guessing; an equal walk goes to the lower station id, so the answer
+        /// does not depend on the order the houses were handed over in; and a house that
+        /// stands on no block is a reported fault rather than a silent claim.
+        /// </summary>
+        static void PrecinctsAreTheNearestStationHouseByHops(List<string> failures)
+        {
+            var lawless = Build();
+            for (var i = 0; i < lawless.BlockIds.Count; i++)
+                if (lawless.PrecinctOf(lawless.BlockIds[i]) != TerritoryPrecinctMap.NoPrecinct)
+                {
+                    failures.Add("GAN-236: a city with no station house claimed a precinct.");
+                    break;
+                }
+            if (lawless.Report.Precincts != 0 ||
+                lawless.Report.UnpolicedBlocks != lawless.BlockIds.Count)
+                failures.Add("GAN-236: a city with no station house did not report itself " +
+                             "unpoliced.");
+
+            var houses = new[] { House(0, 0, 0), House(1, 2, 2) };
+            var city = Build(City(), houses);
+
+            if (city.PrecinctSeats.Count != 2)
+            {
+                failures.Add("GAN-236: two station houses did not seat on two blocks.");
+                return;
+            }
+
+            if (city.PrecinctSeats[0].Block != new TerritoryBlockId("grid:0:0") ||
+                city.PrecinctSeats[1].Block != new TerritoryBlockId("grid:2:2"))
+                failures.Add("GAN-236: a station house was seated on the wrong block.");
+
+            if (city.PrecinctOf(new TerritoryBlockId("grid:0:0")) != 0 ||
+                city.PrecinctOf(new TerritoryBlockId("grid:2:2")) != 1)
+                failures.Add("GAN-236: a station house does not police its own block.");
+
+            if (city.Precincts.HopsToStation(new TerritoryBlockId("grid:0:0")) != 0)
+                failures.Add("GAN-236: a station house is not nought crossings from itself.");
+
+            // One crossing from the first house, three from the second.
+            if (city.PrecinctOf(new TerritoryBlockId("grid:0:1")) != 0 ||
+                city.Precincts.HopsToStation(new TerritoryBlockId("grid:0:1")) != 1)
+                failures.Add("GAN-236: the block next door went to the wrong house.");
+
+            // One crossing from the second house, three from the first.
+            if (city.PrecinctOf(new TerritoryBlockId("grid:2:1")) != 1)
+                failures.Add("GAN-236: the far end of town went to the near house.");
+
+            // Two crossings from each: the lower id takes it, whoever was handed over first.
+            if (city.PrecinctOf(new TerritoryBlockId("grid:1:1")) != 0)
+                failures.Add("GAN-236: an equal walk did not break on the lower station id.");
+
+            // Inside grid:0:0, so one crossing from the first house and never orphaned.
+            if (city.PrecinctOf(new TerritoryBlockId("nested:0")) != 0)
+                failures.Add("GAN-236: a nested block is policed by nobody.");
+
+            // Off the graph entirely: the nearest house by open ground takes it rather
+            // than the city leaving a block lawless.
+            if (city.PrecinctOf(new TerritoryBlockId("lonely:0")) != 1)
+                failures.Add("GAN-236: a block off the block graph was left unpoliced.");
+            if (city.Report.UnpolicedBlocks != 0)
+                failures.Add("GAN-236: the report says a block is unpoliced when none is.");
+
+            // Ground the map covers, walked twice: the same city handed its houses in the
+            // other order is the same city.
+            var reversed = Build(City(), new[] { House(1, 2, 2), House(0, 0, 0) });
+            for (var i = 0; i < city.BlockIds.Count; i++)
+                if (city.PrecinctOf(city.BlockIds[i]) != reversed.PrecinctOf(city.BlockIds[i]))
+                {
+                    failures.Add("GAN-236: the precinct map moved when the houses were " +
+                                 "handed over in the other order.");
+                    break;
+                }
+
+            // A house standing on no block of this city is a fault, not a claim.
+            var stray = Build(City(), new[]
+            {
+                new TerritoryPrecinctSeat(0, new TerritoryPoint(5000f, 5000f)),
+            });
+            if (stray.Report.Passed)
+                failures.Add("GAN-236: a station house on no block was accepted in silence.");
+            if (stray.PrecinctOf(new TerritoryBlockId("grid:1:1")) != TerritoryPrecinctMap.NoPrecinct)
+                failures.Add("GAN-236: a station house on no block policed a block anyway.");
+        }
+
     }
 }

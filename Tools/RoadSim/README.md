@@ -96,3 +96,15 @@ both headings and 10/15 m road widths, with a follower present throughout.
 A 240-second, 24-car ring with terminal spurs requires reduced spur occupancy while
 retaining occasional visits, with zero overlaps or traffic recovery. This catches
 both congestion overriding the spur penalty and banning spurs until the ring jams.
+
+`regionaltraffic` checks pedestrian braking on streets and elevated roads, including
+junction traversal and reversing. People on the same level must still stop traffic;
+people seven metres above or below must not. It also reproduces the suburb portal
+shape (adopted district lanes meeting a shared road at one point), checking heading,
+opposing large-vehicle envelopes and continuous traversal in four directions at
+30 Hz and 0.2-second frames. These checks do not identify a person from a screenshot
+or establish the cause of a particular live queue.
+The same suite checks physical collision queries at overlapping road levels and
+an adopted hillside carriageway shared by local and visiting drivers. Suburb relief
+is now registered on those carriageways before spawning, instead of added only to
+the local vehicle's rendered transform.

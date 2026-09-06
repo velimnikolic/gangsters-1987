@@ -168,10 +168,9 @@ namespace LivingCity.EditorTools
         /// needs no line here; the armoured wagon is a variant of Palm City's SUV
         /// (ArmouredSuvBuilder) that the city never drives, so without this its listing
         /// would photograph nothing outside the editor.</summary>
-        static readonly string[] VehiclePaths =
-        {
-            "Assets/Prefabs/Vehicles/SM_Veh_Suv_01_Armoured.prefab",
-        };
+        static readonly string[] VehiclePaths = System.Array.ConvertAll(
+            LivingCity.Outfit.ArmoryCatalog.Vehicles,
+            item => LivingCity.Gameplay.CivilianVehicleCatalog.PathFor(item.ModelName));
 
         /// <summary>Fills set.vehicles additively, exactly as the bikes are filled, so an
         /// Inspector override survives a re-bake.</summary>

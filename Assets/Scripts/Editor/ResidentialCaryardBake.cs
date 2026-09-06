@@ -86,21 +86,14 @@ namespace LivingCity.EditorTools
         static void Vehicles(Transform root)
         {
             var cars=Group(root,"Cars for sale");
-            string[] names={"Sedan_01","Pickup_01","Sedan_01","Supercar_01","Sedan_01","Suv_01","Sedan_01","Van_01","Sedan_01"};
             Vector2[] positions={new Vector2(4,5),new Vector2(8,5),new Vector2(12,5),new Vector2(28,5),new Vector2(32,5),new Vector2(36,5),new Vector2(4,20),new Vector2(8,20),new Vector2(12,20)};
             for(int i=0;i<positions.Length;i++)
             {
-                var at=positions[i];var car=Stand("Vehicles/SM_Veh_"+names[i],cars,at.x,at.y,i<6?180f:0f,Deck);
+                var path=i==7 ? Palm+"Vehicles/SM_Veh_Van_01.prefab"
+                    : LivingCity.Gameplay.CivilianVehicleCatalog.PathAt(i);
+                var at=positions[i];var car=StandAbsolute(path,cars,at.x,at.y,i<6?180f:0f,Deck);
                 // Fit the vehicle uniformly to a real bay, including any mirrors and bumpers.
                 var b=Bounds(car);car.transform.localScale*=Mathf.Min(1f,Mathf.Min(2.65f/b.size.x,5.7f/b.size.z));Center(car,at.x,at.y,Deck);
-                // Synty atlas alternatives change the paint while retaining tyres and trim.
-                string suffix = new[] { "A", "B", "C" }[i % 3];
-                var finish = AssetDatabase.LoadAssetAtPath<Material>("Assets/Synty/PolygonPalmCity/Materials/Alts/PolygonPalmCity_03_" + suffix + ".mat");
-                if (finish != null) foreach (var renderer in car.GetComponentsInChildren<Renderer>(true))
-                {
-                    renderer.sharedMaterials = renderer.sharedMaterials.Select(m => m != null && m.name.StartsWith("PolygonPalmCity_03") ? finish : m).ToArray();
-                    PrefabUtility.RecordPrefabInstancePropertyModifications(renderer);
-                }
                 PrefabUtility.RecordPrefabInstancePropertyModifications(car.transform);
                 Box("Wheel stop",new Vector3(at.x,Deck+.065f,i<6?2.1f:22.9f),new Vector3(1.9f,.13f,.16f),concrete);
                 // Small supported price boards sit beside the bonnet, outside each vehicle envelope.
@@ -111,7 +104,7 @@ namespace LivingCity.EditorTools
                 Label(root,"$"+(2950+i*650),new Vector3(boardX,Deck+.94f,boardZ-.025f),.48f,.18f);
             }
             var prep=Group(root,"Vehicle preparation");
-            var service=Stand("Vehicles/SM_Veh_Sedan_01",prep,21f,20.6f,0f,Deck+.02f);
+            var service=StandAbsolute(LivingCity.Gameplay.CivilianVehicleCatalog.PathAt(0),prep,21f,20.6f,0f,Deck+.02f);
             var sb=Bounds(service);service.transform.localScale*=Mathf.Min(1f,Mathf.Min(2.7f/sb.size.x,5.6f/sb.size.z));Center(service,21,20.6f,Deck+.02f);PrefabUtility.RecordPrefabInstancePropertyModifications(service.transform);
             foreach(float x in new[]{17.3f,24.7f})foreach(float z in new[]{17.7f,24f})
                 Box("Preparation canopy post",new Vector3(x,1.65f,z),new Vector3(.12f,3.3f,.12f),steel);

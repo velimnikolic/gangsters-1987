@@ -127,21 +127,18 @@ namespace LivingCity.EditorTools
         /// A block whose buildings ask for those vehicles gets them from <see cref="Fleets"/>
         /// instead, on purpose and in quantity.
         /// </summary>
-        static readonly string[] CarPaths =
+        static readonly string[] CarPaths = CivilianPaths(true);
+
+        static string[] CivilianPaths(bool services)
         {
-            PalmVeh + "SM_Veh_Sedan_01",
-            PalmVeh + "SM_Veh_Sedan_01_Preset_Taxi",
-            PalmVeh + "SM_Veh_Suv_01",
-            PalmVeh + "SM_Veh_Van_01",
-            PalmVeh + "SM_Veh_Buggy_01",
-            PalmVeh + "SM_Veh_Supercar_01",
-            CityVeh + "SM_Veh_Car_Sedan_01",
-            CityVeh + "SM_Veh_Car_Medium_01",
-            CityVeh + "SM_Veh_Car_Muscle_01",
-            CityVeh + "SM_Veh_Car_Small_01",
-            CityVeh + "SM_Veh_Car_Taxi_01",
-            CityVeh + "SM_Veh_Car_Van_01",
-        };
+            var paths = new List<string>();
+            for (int i = 0; i < LivingCity.Gameplay.CivilianVehicleCatalog.Models.Length; i++)
+                paths.Add(LivingCity.Gameplay.CivilianVehicleCatalog.PathAt(i).Replace(".prefab", ""));
+            if (services)
+                foreach (var path in LivingCity.Gameplay.CivilianVehicleCatalog.ServicePaths)
+                    paths.Add(path.Replace(".prefab", ""));
+            return paths.ToArray();
+        }
 
         /// <summary>
         /// Whose cars these are. A police station's lot is full of cruisers, a warehouse
@@ -215,24 +212,8 @@ namespace LivingCity.EditorTools
                 PalmVeh + "SM_Veh_Van_01",
                 PalmVeh + "SM_Veh_Pickup_01_Preset_Construction",
             }),
-            (Fleet.Showroom, 0.9f, 0.95f, new[]
-            {
-                PalmVeh + "SM_Veh_Supercar_01",
-                PalmVeh + "SM_Veh_Supercar_02",
-                PalmVeh + "SM_Veh_Suv_01",
-                PalmVeh + "SM_Veh_Sedan_01",
-                CityVeh + "SM_Veh_Car_Muscle_01",
-                GangVeh + "SM_Veh_LowCar_01",
-                GangVeh + "SM_Veh_LowCar_02",
-            }),
-            (Fleet.Nightlife, 0.55f, 0.8f, new[]
-            {
-                PalmVeh + "SM_Veh_Supercar_01",
-                PalmVeh + "SM_Veh_Supercar_02",
-                PalmVeh + "SM_Veh_Suv_01",
-                CityVeh + "SM_Veh_Car_Muscle_01",
-                GangVeh + "SM_Veh_LowCar_01",
-            }),
+            (Fleet.Showroom, 0.9f, 0.95f, CivilianPaths(false)),
+            (Fleet.Nightlife, 0.55f, 0.8f, CivilianPaths(false)),
         };
 
         /// <summary>

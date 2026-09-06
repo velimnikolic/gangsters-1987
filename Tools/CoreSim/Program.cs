@@ -21,6 +21,7 @@ static class Program
     static int Main(string[] args)
     {
         int seed = 1, count = 1;
+        bool powerlines = false;
         bool synty = false, map = false, rows = false, tiles = false, stats = false, industrial = false;
         bool park = false, sweep = false, quay = false, residential = false, facade = false;
         int propsPercent = ResidentialFacade.DefaultPropsPercent;
@@ -32,6 +33,7 @@ static class Program
             switch (args[i])
             {
                 case "--seed": seed = int.Parse(args[++i]); break;
+                case "--powerlines": powerlines = true; break;
                 case "--count": count = int.Parse(args[++i]); break;
                 case "--synty": synty = true; break;
                 case "--industrial": industrial = true; break;
@@ -59,6 +61,7 @@ static class Program
         if (industrial) return Industry(seed, count, deal, map, rows, stats);
 
         var blocks = ReadBlocks(file);
+        if (powerlines) return PowerlineChecks.Run(blocks, seed, count);
         Console.WriteLine($"{blocks.Count} blocks from {Path.GetFullPath(file)}");
         if (quay) return Quays(blocks, seed, count, size, map, sweep);
 

@@ -926,15 +926,13 @@ namespace LivingCity.Tests
             }
         }
 
-        /// <summary>The counter's first shelf of wheels. Every listing must name a body
-        /// the tables can actually answer for, and the armoured wagon - the one car on
-        /// the shelf this project built rather than imported - must be dearest, because
-        /// its whole point is that it is a decision against everything else money buys.</summary>
+        /// <summary>The authored sedan/SUV shelf must resolve every exact model and
+        /// exclude the old merchandise, passenger van and police transport.</summary>
         static void CarsAreOnTheCounter(List<string> failures)
         {
-            var dearest = 0;
-            var dearestName = "";
             var seen = new List<string>();
+            if (ArmoryCatalog.Vehicles.Length != 12)
+                failures.Add("CarsAreOnTheCounter: expected eight sedans and four SUVs.");
 
             foreach (var car in ArmoryCatalog.Vehicles)
             {
@@ -949,28 +947,17 @@ namespace LivingCity.Tests
                                  "display name is the key every lookup uses.");
                 seen.Add(car.DisplayName);
 
-                // Same trap as the bikes: the body table's fallback IS a sedan, so a
-                // listing it has never heard of fails silently as a plain car. Only the
-                // sedan itself may answer with that body.
                 var body = LivingCity.UI.PortraitStudio.VehicleModelFor(car.DisplayName);
-                if (string.IsNullOrEmpty(body) ||
-                    (body == "SM_Veh_Sedan_01" && car.DisplayName != "Sedan"))
-                    failures.Add($"CarsAreOnTheCounter: {car.DisplayName} falls back to " +
-                                 "the sedan body.");
+                if (string.IsNullOrEmpty(car.ModelName) || body != car.ModelName ||
+                    LivingCity.Gameplay.CivilianVehicleCatalog.PathFor(body) == null)
+                    failures.Add($"CarsAreOnTheCounter: {car.DisplayName} has no exact authored body.");
                 if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(body))
                     failures.Add($"CarsAreOnTheCounter: {car.DisplayName} drives the " +
                                  $"law's own {body}.");
 
-                if (car.Price > dearest)
-                {
-                    dearest = car.Price;
-                    dearestName = car.DisplayName;
-                }
+                if (body == "11_Borough_Warden" || body == "13_Calder_Voyager")
+                    failures.Add($"CarsAreOnTheCounter: excluded van {body} is for sale.");
             }
-
-            if (dearestName != "Armoured Wagon")
-                failures.Add("CarsAreOnTheCounter: the armoured wagon is not the dearest " +
-                             $"car on the shelf - {dearestName} at {dearest} is.");
         }
 
         static void NewStockEntersThePoolUnheld(List<string> failures)

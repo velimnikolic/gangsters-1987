@@ -10,7 +10,7 @@ def round_lamp(mesh, form, x, y, radius):
     for inner,outer,depth,color in [(radius+.004,radius+.013,.026,'rubber'),
                                      (radius,radius+.005,.033,'chrome')]:
         for a,b in zip(samples(0,math.tau,16),samples(0,math.tau,16)[1:]):
-            pts=[(x+r*math.cos(t),y+r*math.sin(t),form.end_z(x+r*math.cos(t),1)+depth)
+            pts=[(x+r*math.cos(t),y+r*math.sin(t),form.skin_z(x+r*math.cos(t),1,y+r*math.sin(t))+depth)
                  for r,t in [(inner,a),(outer,a),(outer,b),(inner,b)]]
             mesh.face(pts,color,(0,0,1))
     # Shallow domed glass follows the nose's sweep and stays seated in the ring.
@@ -19,13 +19,13 @@ def round_lamp(mesh, form, x, y, radius):
         half=radius*math.sqrt(max(.00001,1-u*u))
         py=half*t
         dome=.005*(1-(px*px+py*py)/(radius*radius))
-        return (x+px,y+py,form.end_z(x+px,1)+.026+dome)
+        return (x+px,y+py,form.skin_z(x+px,1,y+py)+.026+dome)
     mesh.surface(glass,samples(-.999,.999,12),samples(-1,1,4),
                  'lamp_front',(0,0,1))
     # Submillimetre rim slivers close the two ends of the sampled glass.
     for side in (-1,1):
         a=glass(side*.999,-1); b=glass(side*.999,1)
-        mesh.face([a,(x+side*radius,y,form.end_z(x+side*radius,1)+.026),b],'lamp_front',(0,0,1))
+        mesh.face([a,(x+side*radius,y,form.skin_z(x+side*radius,1,y)+.026),b],'lamp_front',(0,0,1))
 
 
 def separate_lamps(body):

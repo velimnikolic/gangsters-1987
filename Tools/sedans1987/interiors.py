@@ -17,10 +17,20 @@ def cushion(mesh,center,size,color,lean=0):
                   (outline[i][0]+outline[j][0],outline[i][1]+outline[j][1],0))
 
 
+def seat_roots(form):
+    car=form.car;bb,bt,_,_=car['cabin'];width=form.w*1.60
+    back_top=car['height']-.28
+    rear_top_z=lerp(bb,bt,(back_top-form.deck(bb))/(car['height']-form.deck(bb)))+.12
+    # Cushion height follows roof height; the authored root convention is .43 m below it.
+    seat_y=min(.52,car['height']-.90)
+    return [(side*width*.25,seat_y+.085-.43,z) for z in (form.shape['pillar']+.18,rear_top_z+.28)
+            for side in (-1,1)]
+
+
 def build_interior(mesh,form):
     car=form.car;bb,bt,ft,fb=car['cabin'];split=form.shape['pillar']
     width=form.w*1.60
-    floor=.31;seat_y=.52;back_top=car['height']-.28
+    floor=.27;seat_y=min(.52,car['height']-.90);back_top=car['height']-.28
     upholstery='upholstery' if car['style'] in ('regent','calder','monarch','bayside') else 'dashboard'
     panel='seat_panel' if upholstery=='upholstery' else 'interior_trim'
     mesh.box((0,floor,(bb+fb)/2),(width,.06,fb-bb),'interior_trim')

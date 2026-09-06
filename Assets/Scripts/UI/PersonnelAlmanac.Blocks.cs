@@ -129,6 +129,20 @@ namespace LivingCity.UI
         /// <summary>How many slips of the wire stand on this sheet.</summary>
         const int BlocksWireLimit = 12;
 
+        /// <summary>
+        /// THE TWO COLUMNS SCROLL INDEPENDENTLY, and a reader has to be able to SEE
+        /// that they do. The book carries no scrollbars, so each window says so in
+        /// words at whichever edge still has content behind it - the same mark the
+        /// armory's counter carries.
+        ///
+        /// They are parented to the WINDOW and not to the run, so they hold their place
+        /// while the run moves under them, and they are toggled in the wheel handler
+        /// rather than repainted: a full sheet rebuild per notch would re-read the block
+        /// and re-film it for the sake of two words.
+        /// </summary>
+        TMP_Text blocksMoreAbove;
+        TMP_Text blocksMoreBelow;
+
         RectTransform blocksFixed;
         internal RectTransform blocksViewport;
         internal RectTransform blocksContent;
@@ -229,6 +243,41 @@ namespace LivingCity.UI
             blocksScroll = Mathf.Clamp(
                 blocksScroll, 0f, Mathf.Max(0f, contentHeight - BlocksHeight));
             blocksContent.anchoredPosition = new Vector2(0f, blocksScroll);
+
+            BuildScrollMarks(blocksViewport, BlocksLedgerW - BlocksLedgerPad,
+                "the city", out blocksMoreAbove, out blocksMoreBelow);
+            ShowScrollMarks(blocksMoreAbove, blocksMoreBelow, blocksScroll,
+                contentHeight - BlocksHeight);
+        }
+
+        /// <summary>Builds one window's pair of marks. They are drawn against the
+        /// window's own inside edges, held to the right margin where a column of names
+        /// leaves air.</summary>
+        static void BuildScrollMarks(RectTransform window, float width, string what,
+            out TMP_Text above, out TMP_Text below)
+        {
+            above = Mark(4f, "\u2191  more of " + what + " above");
+            below = Mark(-(window.rect.height - 18f),
+                "\u2193  more of " + what + " below · roll the wheel over it");
+
+            TMP_Text Mark(float y, string words)
+            {
+                var line = Line(window, LedgerStyle.MonoItalic, 11f, LedgerV2.Muted,
+                    0f, -y, width, 14f, words, TextAlignmentOptions.MidlineRight);
+                line.enabled = false;
+                return line;
+            }
+        }
+
+        /// <summary>Shows each mark only where there is something behind that edge.
+        /// Called at paint and again on every notch of the wheel.</summary>
+        internal static void ShowScrollMarks(TMP_Text above, TMP_Text below, float scroll,
+            float hidden)
+        {
+            if (above)
+                above.enabled = hidden > 1f && scroll > 1f;
+            if (below)
+                below.enabled = hidden > 1f && scroll < hidden - 1f;
         }
 
         /// <summary>A section head in the blocks column - the design's 19-point heading
@@ -1021,6 +1070,15 @@ namespace LivingCity.UI
 
         bool CloseBlocksTransient()
         {
+            // THE PICKER IS THE INNERMOST LAYER. It covers the whole drawer and eats
+            // every click under it, so Esc over one has to shut IT - without this test
+            // Esc fell through the whole chain and closed the book, which loses the page
+            // a boss was working over a menu he only wanted out of the way.
+            if (blockCardSheet != BlockSheet.None)
+            {
+                CloseBlockSheet();
+                return true;
+            }
             if (blocksMenu.IsValid)
             {
                 blocksMenu = default;
@@ -1041,6 +1099,8 @@ namespace LivingCity.UI
         void DismissBlocksTransient()
         {
             blocksMenu = default;
+            blockCardSheet = BlockSheet.None;
+            blockSheetScroll = 0f;
             ClearBlocksPendingBlock();
             // A shut book films nothing and holds no ground up: the second lens and the
             // streamer's hold on the block both belong to an OPEN file.

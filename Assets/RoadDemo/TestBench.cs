@@ -19,31 +19,9 @@ namespace RoadDemo
     {
         // ------------------------------------------------------------------ cars
 
-        /// <summary>The civilian pack cars a bench street is driven by.</summary>
-        public static readonly string[] StreetCars =
-        {
-            "SM_Veh_Car_Sedan_01", "SM_Veh_Car_Medium_01", "SM_Veh_Car_Small_01", "SM_Veh_Car_Muscle_01",
-            "SM_Veh_Sedan_01", "SM_Veh_Suv_01", "SM_Veh_Pickup_01", "SM_Veh_LowCar_01", "SM_Veh_LowCar_02",
-        };
-
-        /// <summary>The street cars, each found by the bench's own lookup, weighted the
-        /// way the city's pool is: duplicate-as-weight, since the list is drawn from
-        /// uniformly, and a hand-written list of nine bodies made the muscle car one
-        /// street car in nine. It takes two seats where a saloon takes six
-        /// (VehicleCatalog.PoolWeight), which is the mix the quarter drives.</summary>
-        public static List<GameObject> WeightedCars(System.Func<string, GameObject> find)
-        {
-            var bodies = new List<GameObject>();
-            foreach (var name in StreetCars)
-            {
-                var p = find(name);
-                if (!p) continue;
-                for (int seat = 0, seats = LivingCity.Gameplay.VehicleCatalog.PoolWeight(name);
-                     seat < seats; seat++)
-                    bodies.Add(p);
-            }
-            return bodies;
-        }
+        /// <summary>Focused streets exercise the same authored passenger fleet.</summary>
+        public static List<GameObject> WeightedCars() =>
+            CivilianFleet.Load(services: false);
 
         // ------------------------------------------------------------------ people
 

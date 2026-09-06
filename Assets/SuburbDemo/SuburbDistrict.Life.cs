@@ -325,17 +325,16 @@ namespace SuburbDemo
             public System.Func<float, float, float> GroundWorld;   // the relief under the car, in world coordinates
             static readonly List<RoadEdge> L = new List<RoadEdge>(), R = new List<RoadEdge>();
 
-            /// <summary>The shared driver places the car at the flat road level; the suburb
-            /// lifts it onto its hills and leans it to the slope ahead.</summary>
+            /// <summary>The shared carriageway places every car at road height;
+            /// the suburb's body also leans to the local slope.</summary>
             protected override void OnPlaced(float dt, float speed, float steerDegrees)
             {
                 if (GroundWorld == null || Tf == null) return;
                 var p = Tf.position;
                 var f = Tf.forward;
-                float h = GroundWorld(p.x, p.z);
                 float ahead = GroundWorld(p.x + f.x * 2f, p.z + f.z * 2f), behind = GroundWorld(p.x - f.x * 2f, p.z - f.z * 2f);
                 float pitch = -Mathf.Atan2(ahead - behind, 4f) * Mathf.Rad2Deg;
-                Tf.SetPositionAndRotation(new Vector3(p.x, p.y + h, p.z), Quaternion.AngleAxis(pitch, Tf.right) * Tf.rotation);
+                Tf.rotation = Quaternion.AngleAxis(pitch, Tf.right) * Tf.rotation;
             }
 
             protected override RoadEdge PickNext(RoadEdge straight, List<RoadEdge> lefts, List<RoadEdge> rights)

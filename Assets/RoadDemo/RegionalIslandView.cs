@@ -7,7 +7,8 @@ namespace RoadDemo
     /// <summary>Continuous terrain and ocean views. The landform owns all sampled heights.</summary>
     public static class RegionalIslandView
     {
-        const float Tile = 480f, Step = 20f;
+        const float Tile = 480f;
+        internal const float Step = 20f;
 
         /// <summary>Height of an unpaved terrain triangle, from BuildTile's grid.
         /// Paved cells retain the landform's level here; their rendered basement bed

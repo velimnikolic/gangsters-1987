@@ -9,6 +9,9 @@ static class Program
     static void Require(bool condition,string message) { if(!condition) throw new Exception(message); }
     static int Main()
     {
+        ChecksPublicStreetAtOppositeCorner();
+        ChecksAlternativeQuarterPair();
+        CheckRetainedServices();
         int[] seeds={1,2,7,31,1987,2026,91237,-42,int.MinValue,int.MaxValue};
         var layouts=new HashSet<string>();
         var fixtures=new List<object>();
@@ -22,9 +25,11 @@ static class Program
             var repurposed=new List<Rect>();
             CoreAmenityLayout.Select(core.Raster,core.Layout.Lots,seed,3,5,parking,fuel,development,core.Layout.Residential.Select(b=>b.Box),repurposed);
             var service=new CoreServicePlan();
+            CoreAmenityLayout.PickCourthouse(development,core.Layout.Territory);
             service.Plan(core.Layout,core.Raster,development,seed,repurposed);
+            CheckServices(core,service,parking,fuel,development);
             Require(service.FireCount>=2,$"seed {seed}: fewer than two fire stations ({service.FireCount})");
-            Require(service.PoliceCount>=2,$"seed {seed}: fewer than two precincts ({service.PoliceCount})");
+
             Require(fuel.Count>=2,$"seed {seed}: fewer than two fuel stations ({fuel.Count})");
             foreach(var site in service.Sites)
             {
@@ -91,7 +96,7 @@ static class Program
                 }
                 finally { IndustrialDistrict.RejectPlans=0; }
             }
-            Console.WriteLine($"seed {seed}: raster faults {faults}; {service.FireCount} fire, {service.PoliceCount} police, {fuel.Count} fuel; {region.Quarters.Count} districts, {region.Connections.Count} links");
+            Console.WriteLine($"seed {seed}: raster faults {faults}; {service.FireCount} fire, {service.TotalPoliceCount} total police, {fuel.Count} fuel; {region.Quarters.Count} districts, {region.Connections.Count} links");
         }
         Require(layouts.Count==seeds.Length,"different seeds reused region");
         var fixturePath=Environment.GetEnvironmentVariable("GANGSTERS_REGION_FIXTURES");
@@ -100,6 +105,86 @@ static class Program
         Require(CoreRegion.TryCreate(empty,new Rect(0,0,100,100),0,2)==null,"missing core gateway did not fall back");
         Console.WriteLine($"PASSED {seeds.Length} seeds: layout replay, variation, footprints, road frontage, spacing and connected port industry. Satellite views are doubles; no Unity/Play verdict.");
         return 0;
+    }
+    static void CheckServices(CoreDistrict core, CoreServicePlan service,
+        List<CoreAmenityLayout.Site> parking, List<CoreAmenityLayout.Site> fuel,
+        List<CoreAmenityLayout.Site> development)
+    {
+        int quarters=core.Layout.Territory.Quarters.Count(q=>q.BlockIds.Count>0);
+        int authored=core.Layout.Territory.Blocks.Count(b=>b.SourceName=="police-station-block");
+        Require(service.ExistingPoliceCount==authored,"authored station not counted");
+        Require(service.TotalPoliceCount==(quarters+1)/2,$"precinct quota: {service.TotalPoliceCount} for {quarters} quarters");
+        var residential=core.Layout.Territory.Quarters.Where(q=>q.BlockIds.Count>0 && q.Id!=CoreQuarterId.Downtown);
+        Require(service.FireCount==residential.Count(),"fire station missing from a residential quarter");
+        foreach(var q in residential)
+            Require(service.Sites.Count(s=>!s.Police && s.Quarter==q.Id)==1,"fire stations not distributed by quarter");
+        var covered=new HashSet<CoreQuarterId>();
+        foreach(var site in service.Sites)
+        {
+            var b=site.Parcel.Box;
+            Require(!development.Any(d=>d.Box.Overlaps(b)),"service still assigned to housing");
+            Require(!fuel.Any(f=>f.Box.Overlaps(b)) && !parking.Any(p=>p.Box.Overlaps(b)),"service overlaps amenity");
+            Require(!service.Sites.Any(s=>s!=site && s.Source.Overlaps(site.Source)),"services share a source block");
+            Require(CoreServicePlan.RoadWidth(core.Raster,b,site.Parcel.Entry)>=3,"service driveway lacks street");
+            if(!site.Police) continue;
+            Require(site.Serves.Count>=1 && site.Serves.Count<=2 && site.Serves.Contains(site.Quarter),"precinct outside its assigned quarters");
+            foreach(var q in site.Serves) Require(covered.Add(q),"quarter assigned to two new precincts");
+            var drive=site.Parcel.Entry;
+            var door=drive==ParkingEntrySide.East?ParkingEntrySide.North:drive==ParkingEntrySide.North?ParkingEntrySide.West:
+                drive==ParkingEntrySide.West?ParkingEntrySide.South:ParkingEntrySide.East;
+            Require(CoreServicePlan.RoadWidth(core.Raster,b,door)>=2,"precinct public entrance lacks street");
+        }
+    }
+    static void CheckRetainedServices()
+    {
+        foreach(int budget in new[]{1,2,3,4,5})
+        {
+            var core=new CoreDistrict {quarterBudget=budget}; core.Plan(1987);
+            var parking=new List<CoreAmenityLayout.Site>(); var fuel=new List<CoreAmenityLayout.Site>();
+            var development=new List<CoreAmenityLayout.Site>(); var repurposed=new List<Rect>();
+            CoreAmenityLayout.Select(core.Raster,core.Layout.Lots,1987,3,5,parking,fuel,development,core.Layout.Residential.Select(b=>b.Box),repurposed);
+            CoreAmenityLayout.PickCourthouse(development,core.Layout.Territory);
+            var service=new CoreServicePlan(); service.Plan(core.Layout,core.Raster,development,1987,repurposed);
+            CheckServices(core,service,parking,fuel,development);
+            string before=string.Join("|",service.Sites.Select(s=>$"{s.Police}:{s.Quarter}:{s.Parcel.Box}:{s.Parcel.Entry}"));
+            // Recreate the complete plan so raster mutation cannot hide nondeterminism.
+            var replay=new CoreDistrict {quarterBudget=budget}; replay.Plan(1987);
+            CoreAmenityLayout.Select(replay.Raster,replay.Layout.Lots,1987,3,5,parking,fuel,development,replay.Layout.Residential.Select(b=>b.Box),repurposed);
+            CoreAmenityLayout.PickCourthouse(development,replay.Layout.Territory);
+            service.Plan(replay.Layout,replay.Raster,development,1987,repurposed);
+            Require(before==string.Join("|",service.Sites.Select(s=>$"{s.Police}:{s.Quarter}:{s.Parcel.Box}:{s.Parcel.Entry}")),"service seed replay changed");
+            Console.WriteLine($"retained budget {budget}: {service.TotalPoliceCount}/{service.PoliceTarget} precincts, {service.FireCount} fire stations");
+            service.Clear();
+            Require(service.TotalPoliceCount==0 && service.PoliceTarget==0 && service.FireCount==0,"service cleanup retained coverage");
+        }
+    }
+    static void ChecksAlternativeQuarterPair()
+    {
+        var core=new CoreDistrict(); core.Plan(1987);
+        var parking=new List<CoreAmenityLayout.Site>(); var fuel=new List<CoreAmenityLayout.Site>();
+        var development=new List<CoreAmenityLayout.Site>(); var repurposed=new List<Rect>();
+        CoreAmenityLayout.Select(core.Raster,core.Layout.Lots,1987,3,5,parking,fuel,development,core.Layout.Residential.Select(b=>b.Box),repurposed);
+        CoreAmenityLayout.PickCourthouse(development,core.Layout.Territory);
+        // Both northern quarters retain their territory but all their candidate
+        // parcels are unavailable. Each must pair with a southern host instead.
+        bool North(CoreQuarterId? q)=>q==CoreQuarterId.NorthLandward || q==CoreQuarterId.NorthRiverside;
+        core.Layout.Residential.RemoveAll(b=>North(b.QuarterId));
+        development.RemoveAll(s=>North(core.Layout.Territory.QuarterAt(s.Box.center)));
+        var service=new CoreServicePlan(); service.Plan(core.Layout,core.Raster,development,1987,repurposed);
+        Require(service.TotalPoliceCount==3,"failed first pair dropped the precinct quota");
+        foreach(var q in new[]{CoreQuarterId.NorthLandward,CoreQuarterId.NorthRiverside})
+            Require(service.Sites.Any(s=>s.Police && s.Serves.Contains(q)),"failed pair stranded a quarter");
+    }
+    static void ChecksPublicStreetAtOppositeCorner()
+    {
+        var r=new CoreRoads.Raster {X0=-15,Z0=-15,NX=26,NZ=26,Kinds=new CoreRoads.Kind[26,26]};
+        // South driveway is equally good along the whole block; the public door
+        // reaches its east street only at the last crop, not the first one.
+        for(int i=0;i<26;i++) for(int j=0;j<26;j++)
+            r.Kinds[i,j]=i>=23?CoreRoads.Kind.StreetNS:j<3?CoreRoads.Kind.StreetEW:CoreRoads.Kind.Block;
+        Require(CoreServicePlan.TryFrontage(r,new Rect(0,0,100,100),ParkingEntrySide.South,40,45,
+            out var crop,out _,true),"opposite-corner public street rejected");
+        Require(crop.xMax==100,"precinct did not move to its public street");
     }
     static string Signature(CoreRegion region) => string.Join("|",region.Quarters.Select(q=>$"{q.District.Name}:{q.Slot.edge}:{q.Slot.seed}:{q.World}"));
     static float[] Box(Rect r)=>new[]{r.xMin,r.yMin,r.width,r.height};

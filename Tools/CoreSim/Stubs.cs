@@ -116,6 +116,13 @@ namespace UnityEngine
         public override bool Equals(object o) => ReferenceEquals(this, o);
         public override int GetHashCode() => base.GetHashCode();
         public static T Instantiate<T>(T prefab, Transform parent) where T : Object => prefab;
+        public static void Destroy(Object obj) { }
+        public static void DestroyImmediate(Object obj) { }
+    }
+
+    public static class Application
+    {
+        public static bool isPlaying => false;
     }
 
     public class Component : Object

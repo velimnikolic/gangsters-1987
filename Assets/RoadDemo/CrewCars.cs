@@ -70,6 +70,10 @@ namespace RoadDemo
         {
 #if UNITY_EDITOR
             if (string.IsNullOrEmpty(name)) return null;
+            // Authored body names differ from their file names. The same baked
+            // reference feeds the catalogue photograph and the purchased vehicle.
+            if (LivingCity.Gameplay.CivilianVehicleCatalog.IsAuthored(name))
+                return LivingCity.UI.LedgerModelSet.OwnBodyNamed(name);
             foreach (var folder in Folders)
             {
                 var path = folder + name + ".prefab";

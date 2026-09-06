@@ -10,6 +10,19 @@ Claude uses the Codex plugin's `codex:adversarial-review`. Codex uses Claude, as
 specified in AGENTS.md. Review before committing; only the user authorizes commits.
 Review a fixed SHA/diff and confirm coverage of the intended files.
 
+### When review is skipped
+
+A trivial change does not go through adversarial review. Trivial means ALL of:
+
+- it only changes what is displayed - a word, a label, a number's formatting, a
+  colour, a comment, a doc - or adds a diagnostic counter;
+- it adds no behaviour to the simulation, the economy, the police, money, saves,
+  threading or determinism, and changes no existing formula;
+- `python3 Tools/project.py compile` passes.
+
+Anything else - new systems, new state, anything a worker thread reads, anything
+that decides an outcome - is reviewed as before. When it is unclear, review it.
+
 ## Commands
 
     python3 Tools/project.py audit

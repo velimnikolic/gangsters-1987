@@ -12,6 +12,8 @@ namespace RoadDemo
         readonly Rect _city;
         public readonly Rect UrbanRiver;
         public const float QuayWidth = 12f;
+        /// <summary>Below the shared StreetKit gutter's measured -0.2303 m minimum.</summary>
+        public const float AccessRoadBed = -0.3f;
         readonly Vector2 _centre, _radius;
         readonly float _ridgeSide, _phase;
         readonly IslandWaters _water;
@@ -34,7 +36,12 @@ namespace RoadDemo
             {
                 foreach (var deck in expressway.Decks) Roads.Add(deck.Line, 14f, deck.Height);
                 foreach (var ramp in expressway.Ramps) Roads.Add(ramp.Line, 6f, ramp.Height);
-                foreach (var road in expressway.Ground) Roads.Add(road.Line, StreetKit.OuterHalf, s => 0f);
+                // The same street tiles as Core include a gutter 23 cm below asphalt.
+                // Lower every terrain vertex that can contribute to a triangle beneath
+                // the pavement; clearing only its centreline leaves meadow in the gutter.
+                float meshPadding = RegionalIslandView.Step * Mathf.Sqrt(2f);
+                foreach (var road in expressway.Ground)
+                    Roads.Add(road.Line, StreetKit.OuterHalf, s => 0f, AccessRoadBed, meshPadding);
             }
         }
 
@@ -93,7 +100,6 @@ namespace RoadDemo
             if (_reservations.FlatAt(x, z, 90f, out float level, out float weight))
                 height = Mathf.Lerp(height, level, weight);
             if (_airfield != null) height = _airfield.Shape(x, z, height);
-            height = Roads.Shape(x, z, height, out _);
             // Dry pads are protected against the feathered bay, but never against
             // actual shipping water. The basin itself remains below the hulls.
             float bank = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(65f, 0f, water));
@@ -103,7 +109,8 @@ namespace RoadDemo
                 height = Mathf.Lerp(height, RoadDemoBuilder.RoadBed,
                     (1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(QuayWidth + 10f, QuayWidth + 65f, quay))) *
                     Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(10f, 30f, coast)));
-            return height;
+            // Shore/quay grading must not raise terrain back through a road's gutter.
+            return Roads.Shape(x, z, height, out _);
         }
         public bool Roadside(float x, float z) { Roads.Shape(x, z, 0f, out bool road); return road || QuayDistance(x, z) < QuayWidth + 5f; }
         public static float Distance(Rect box, float x, float z)

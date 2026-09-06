@@ -2991,6 +2991,7 @@ namespace RoadDemo
                     float behind = Vector3.Dot(d, backDir) - HalfLen;
                     if (behind < -0.5f || behind > free) continue;
                     if (Mathf.Abs(Vector3.Dot(d, Vector3.Cross(Vector3.up, _fwd))) > HalfWide + 0.6f) continue;
+                    if (!RoadSpace.OnDrivingLevel(this, body)) continue;
                     free = Mathf.Min(free, Mathf.Max(0f, behind - 1f));
                 }
             return free;
@@ -3992,6 +3993,7 @@ namespace RoadDemo
                 float ahead = Vector3.Dot(d, f);
                 if (ahead < 0f || ahead > 14f) continue;
                 if (Mathf.Abs(Vector3.Dot(d, r)) > 1.6f) continue;
+                if (!RoadSpace.OnDrivingLevel(this, people[i].At)) continue;
                 best = Mathf.Min(best, Allowed(0f, ahead - HalfLen - 1.5f));
             }
             return best;
@@ -4016,6 +4018,7 @@ namespace RoadDemo
                 float ahead = Vector3.Dot(d, f);
                 if (ahead < 0f || ahead > 14f) continue;
                 if (Mathf.Abs(Vector3.Dot(d, r)) > 1.6f) continue;
+                if (!RoadSpace.OnDrivingLevel(this, people[i])) continue;
                 best = Mathf.Min(best, Allowed(0f, ahead - HalfLen - 1.5f));
             }
             return best;

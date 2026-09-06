@@ -88,6 +88,11 @@ namespace LivingCity.UI
             blockSheetScroll = Mathf.Clamp(blockSheetScroll, 0f,
                 Mathf.Max(0f, content - listH));
             blockSheetContent.anchoredPosition = new Vector2(0f, blockSheetScroll);
+
+            BuildScrollMarks(blockSheetViewport, blockCardW - BlockPad, "the list",
+                out blockSheetMoreAbove, out blockSheetMoreBelow);
+            ShowScrollMarks(blockSheetMoreAbove, blockSheetMoreBelow, blockSheetScroll,
+                content - listH);
         }
 
         void CloseBlockSheet()
@@ -150,7 +155,8 @@ namespace LivingCity.UI
             var y = 0f;
             if (crewId < 0 || blockCardCrewHands.Count == 0)
             {
-                LedgerV2.Copytext(list, BlockPad, -14f, blockCardW - BlockPad * 2f, 60f,
+                LedgerV2.Copytext(list, BlockPad, -14f,
+                    CopyMeasure(blockCardW - BlockPad * 2f), 120f,
                     crewId < 0
                         ? "No crew answers for this block. Name a lieutenant first - the " +
                           "bag is carried by one of his own men."
@@ -252,9 +258,9 @@ namespace LivingCity.UI
                        " of five for the bag.";
             if (hand.WalksTheStreet)
                 note += " He walks the crew's street line today and would leave it.";
-            var copy = LedgerV2.Copytext(row, textX, -46f, textW, 60f, note, 11.8f,
-                LedgerV2.Muted);
-            var height = 46f + Mathf.Max(16f, copy.preferredHeight) + 4f;
+            var copy = LedgerV2.Copytext(row, textX, -46f, CopyMeasure(textW), 120f,
+                note, 11.8f, LedgerV2.Muted);
+            var height = 46f + CopyHeight(copy) + 4f;
 
             if (!hand.Selectable)
             {
@@ -309,7 +315,8 @@ namespace LivingCity.UI
             var y = 0f;
             if (total == 0)
             {
-                LedgerV2.Copytext(list, BlockPad, -14f, blockCardW - BlockPad * 2f, 60f,
+                LedgerV2.Copytext(list, BlockPad, -14f,
+                    CopyMeasure(blockCardW - BlockPad * 2f), 120f,
                     "No crew of ours is on the street to send here, and no man is free " +
                     "to go alone.", 12.8f, LedgerV2.Red);
                 SizeBlockSheet(90f, listH);

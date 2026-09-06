@@ -60,6 +60,9 @@ namespace RoadDemo
             FindWheels();
         }
 
+        public static bool IsVisualRig(MonoBehaviour behaviour) =>
+            behaviour is VehicleLampRig || behaviour is VehicleSeatRig;
+
         static readonly HashSet<string> SeatsLogged = new HashSet<string>();
 
         /// <summary>Where the seats of this body are, in its own frame: the table above,
@@ -72,6 +75,12 @@ namespace RoadDemo
         {
             var seats = (Vector3[])SeatLocal.Clone();
             if (car == null) return seats;
+            if (car.TryGetComponent<VehicleSeatRig>(out var authored))
+            {
+                seats[0] = authored.frontLeft; seats[1] = authored.frontRight;
+                seats[2] = authored.rearLeft; seats[3] = authored.rearRight;
+                return seats;
+            }
             Renderer wheel = null;
             foreach (var t in car.GetComponentsInChildren<Transform>(true))
             {

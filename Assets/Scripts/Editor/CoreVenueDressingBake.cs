@@ -169,7 +169,7 @@ namespace LivingCity.EditorTools
                 var p=World(plan.Stalls[i].Stand);
                 Box("Wheel stop",V(p.x,Floor+.07f,p.z-2.35f),V(1.65f,.14f,.18f),concrete);
                 if(i%3==1)continue;
-                var car=Prop(dressing,Palm+"Vehicles/"+(i%2==0?"SM_Veh_Sedan_01":"SM_Veh_SUV_01")+".prefab","Visitor parked car "+(i+1),p,180,2.25f,5.05f);
+                var car=Prop(dressing,LivingCity.Gameplay.CivilianVehicleCatalog.PathAt(i),"Visitor parked car "+(i+1),p,180,2.25f,5.05f);
                 if(car!=null)
                 {
                     string variant=new[]{"A","B","C"}[i%3];

@@ -349,21 +349,13 @@ namespace AirportDemo
         /// <summary>The panel van the night run comes in: no windows behind the cab,
         /// which in 1987 is the whole specification.</summary>
         public const string NightVan = CityVeh + "SM_Veh_Car_Van_01.prefab";
-        /// <summary>What parks landside and drives the approach road: 1987 saloons and
-        /// vans only - no supercar, no electric anything (the outfit's own rule about
-        /// anachronisms, kept here by hand because this demo has no VehicleCatalog).</summary>
-        public static readonly string[] Cars =
+        /// <summary>Shared passenger models; commercial vans and the separate cab/
+        /// emergency fleets retain their existing bodies.</summary>
+        public static readonly string[] Cars = new List<string>(
+            LivingCity.Gameplay.CivilianVehicleCatalog.PassengerPaths)
         {
-            CityVeh + "SM_Veh_Car_Sedan_01.prefab",
-            CityVeh + "SM_Veh_Car_Medium_01.prefab",
-            CityVeh + "SM_Veh_Car_Small_01.prefab",
-            CityVeh + "SM_Veh_Car_Muscle_01.prefab",
-            CityVeh + "SM_Veh_Car_Van_01.prefab",
-            TownVeh + "SM_Veh_Pickup_01.prefab",
-            TownVeh + "SM_Veh_Convertable_01.prefab",
-            PalmVeh + "SM_Veh_Suv_01.prefab",
-            PalmVeh + "SM_Veh_Van_01.prefab",
-        };
+            NightVan, PalmVeh + "SM_Veh_Van_01.prefab",
+        }.ToArray();
         public static readonly string[] Lorries = { GangTruck, TownTruck, TownDelivery };
 
         // ------------------------------------------------------------ people
@@ -678,7 +670,8 @@ namespace AirportDemo
         public static void StripBehaviours(GameObject go, bool keepAnimator = true)
         {
             void Kill(Object o) { if (o == null) return; if (Application.isPlaying) Object.Destroy(o); else Object.DestroyImmediate(o); }
-            foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>(true)) Kill(mb);
+            foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>(true))
+                if (!RoadDemo.CarBody.IsVisualRig(mb)) Kill(mb);
             foreach (var rb in go.GetComponentsInChildren<Rigidbody>(true)) Kill(rb);
             foreach (var col in go.GetComponentsInChildren<Collider>(true)) Kill(col);
             foreach (var nav in go.GetComponentsInChildren<UnityEngine.AI.NavMeshAgent>(true)) Kill(nav);

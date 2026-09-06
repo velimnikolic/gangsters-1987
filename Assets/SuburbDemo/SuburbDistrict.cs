@@ -224,6 +224,7 @@ namespace SuburbDemo
             // does anything start walking about
             MoveIntoPlace();
             BuildPortals();
+            BindRoadSurfaces();
 
             SpawnCars();
             SpawnResidents();

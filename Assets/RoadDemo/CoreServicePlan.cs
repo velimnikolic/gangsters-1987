@@ -12,11 +12,22 @@ namespace RoadDemo
             public CoreAmenityLayout.Site Parcel;
             public Rect Source;
             public CoreQuarterId Quarter;
+            // Placement coverage; PoliceDispatch retains ownership of incident response.
+            public readonly List<CoreQuarterId> Serves = new List<CoreQuarterId>();
         }
 
         public readonly List<Site> Sites = new List<Site>();
         public int FireCount => Sites.FindAll(s => !s.Police).Count;
         public int PoliceCount => Sites.FindAll(s => s.Police).Count;
+        public int ExistingPoliceCount { get; private set; }
+        public int PoliceTarget { get; private set; }
+        public int TotalPoliceCount => ExistingPoliceCount + PoliceCount;
+
+        public void Clear()
+        {
+            Sites.Clear();
+            ExistingPoliceCount = PoliceTarget = 0;
+        }
 
         public bool Replaces(Rect box) => Sites.Exists(s => s.Source == box);
         public bool SurfaceAt(Vector2 point) => Sites.Exists(s => s.Parcel.Box.Contains(point));
@@ -24,19 +35,63 @@ namespace RoadDemo
         public void Plan(CoreLayout.Plan city, CoreRoads.Raster raster,
                          List<CoreAmenityLayout.Site> development, int seed, List<Rect> repurposed = null)
         {
-            Sites.Clear();
+            Clear();
             var candidates = new List<CoreAmenityLayout.Site>(development);
             // Existing generated residential blocks are also eligible. Their block ids and
             // territory remain stable; only their housing recipe is replaced by a service.
             foreach (var block in city.Residential)
                 if (repurposed == null || !repurposed.Contains(block.Box))
                     candidates.Add(new CoreAmenityLayout.Site(block.Box, ParkingEntrySide.South, 0));
-            var quarters = new HashSet<CoreQuarterId>();
-            foreach (var block in city.Residential) quarters.Add(block.QuarterId);
-            int fire = Mathf.Clamp(quarters.Count, 1, 5);
-            int police = Mathf.Clamp((quarters.Count + 1) / 2, 1, 3);
-            Pick(false, fire, 300f);
-            Pick(true, police, 550f);
+            var quarters = new List<CoreQuarterDefinition>();
+            foreach (var quarter in city.Territory.Quarters)
+                if (quarter.BlockIds.Count > 0) quarters.Add(quarter);
+            quarters.Sort((a, b) => a.Id.CompareTo(b.Id));
+            PoliceTarget = (quarters.Count + 1) / 2;
+            ExistingPoliceCount = 0;
+            var uncovered = new List<CoreQuarterDefinition>(quarters);
+            // The authored downtown station is already a working precinct. Count it and
+            // its nearest quarter before reserving additional compact station blocks.
+            foreach (var block in city.Territory.Blocks)
+            {
+                if (block.SourceName != "police-station-block") continue;
+                ExistingPoliceCount++;
+                uncovered.RemoveAll(q => q.Id == block.QuarterId);
+                var neighbour = Nearest(uncovered, block.LocalBounds.center);
+                if (neighbour != null) uncovered.Remove(neighbour);
+            }
+            // Reserve police corners first: they need streets on two sides. A fire
+            // station needs only one, so it must not consume the last usable corner.
+            while (uncovered.Count > 0 && TotalPoliceCount < PoliceTarget)
+            {
+                var first = uncovered[0];
+                var partners = new List<CoreQuarterDefinition>(uncovered);
+                partners.RemoveAt(0);
+                partners.Sort((a, b) =>
+                {
+                    int distance = (a.LocalAnchor - first.LocalAnchor).sqrMagnitude.CompareTo(
+                        (b.LocalAnchor - first.LocalAnchor).sqrMagnitude);
+                    return distance != 0 ? distance : a.Id.CompareTo(b.Id);
+                });
+                if (partners.Count == 0) partners.Add(null);
+                bool placed = false;
+                foreach (var second in partners)
+                {
+                    if (!TryPick(true, first, second)) continue;
+                    uncovered.Remove(first);
+                    if (second != null) uncovered.Remove(second);
+                    placed = true;
+                    break;
+                }
+                // A failed pair stays unassigned while every other partner is tried.
+                // Only a successfully reserved precinct consumes coverage.
+                if (!placed) break;
+            }
+            foreach (var quarter in quarters)
+                if (quarter.Id != CoreQuarterId.Downtown && !TryPick(false, quarter, null))
+                    Debug.LogWarning($"[Core] no fire station parcel in {quarter.Name}.");
+            if (TotalPoliceCount != PoliceTarget)
+                Debug.LogWarning($"[Core] precinct coverage incomplete: {TotalPoliceCount}/{PoliceTarget} " +
+                                 $"for {quarters.Count} quarters; no suitable street corner.");
 
             foreach (var site in Sites)
             {
@@ -46,51 +101,62 @@ namespace RoadDemo
                 CoreAmenityLayout.MarkParking(raster, site.Source);
             }
 
-            void Pick(bool isPolice, int count, float spacing)
+            bool TryPick(bool isPolice, CoreQuarterDefinition first, CoreQuarterDefinition second)
             {
                 Rect template = isPolice ? PolicePrecinctBlock.PreviewBounds : FireStationBlock.BlockBounds;
-                for (int n = 0; n < count; n++)
+                Vector2 anchor = second == null ? first.LocalAnchor
+                    : (first.LocalAnchor + second.LocalAnchor) * 0.5f;
+                Site best = null;
+                double bestScore = double.MinValue;
+                foreach (var candidate in candidates)
                 {
-                    Site best = null;
-                    double bestScore = double.MinValue;
-                    foreach (var candidate in candidates)
+                    if (Sites.Exists(s => s.Source.Overlaps(candidate.Box))) continue;
+                    var quarter = city.Territory.QuarterAt(candidate.Box.center);
+                    // Downtown may host a replacement if a retained plan lost its
+                    // authored station; it is otherwise already removed from coverage.
+                    if (quarter != first.Id && (second == null || quarter != second.Id)) continue;
+                    foreach (ParkingEntrySide entry in System.Enum.GetValues(typeof(ParkingEntrySide)))
                     {
-                        if (Sites.Exists(s => s.Source.Overlaps(candidate.Box))) continue;
-                        var quarter = city.Territory?.QuarterAt(candidate.Box.center);
-                        if (!quarter.HasValue || quarter.Value == CoreQuarterId.Downtown) continue;
-                        foreach (ParkingEntrySide entry in System.Enum.GetValues(typeof(ParkingEntrySide)))
-                        {
-                            // Compact precinct parking opens east, and its public door
-                            // opens north: both streets must exist before it can be used.
-                            float width = isPolice ? template.height : template.width;
-                            float depth = isPolice ? template.width : template.height;
-                            if (!TryFrontage(raster, candidate.Box, entry, width, depth,
-                                             out var crop, out int roadWidth)) continue;
-                            if (isPolice && !HasPublicFront(raster, crop, entry)) continue;
-                            float nearest = 1500f;
-                            bool covered = false;
-                            foreach (var other in Sites)
-                            {
-                                if (other.Police != isPolice) continue;
-                                nearest = Mathf.Min(nearest, Vector2.Distance(crop.center, other.Parcel.Box.center));
-                                covered |= other.Quarter == quarter.Value;
-                            }
-                            if (nearest < spacing) continue;
-                            double score = (covered ? 0 : 10000000) + nearest * 1000 + roadWidth * 5000;
-                            score -= candidate.Box.width * candidate.Box.height;
-                            uint tie = unchecked((uint)(seed * 486187739 ^
-                                Mathf.RoundToInt(crop.xMin) * 73856093 ^ Mathf.RoundToInt(crop.yMin) * 19349663));
-                            score += tie / (double)uint.MaxValue * 1000;
-                            if (score <= bestScore) continue;
-                            bestScore = score;
-                            best = new Site { Police = isPolice, Source = candidate.Box, Quarter = quarter.Value,
-                                Parcel = new CoreAmenityLayout.Site(crop, entry, 0) };
-                        }
+                        // The east driveway and north public door both need a street.
+                        float width = isPolice ? template.height : template.width;
+                        float depth = isPolice ? template.width : template.height;
+                        if (!TryFrontage(raster, candidate.Box, entry, width, depth,
+                                         out var crop, out int roadWidth, isPolice)) continue;
+                        // Keep facilities within the neighbourhood they serve, near its
+                        // centre. Maximising distance from other stations pushed them out
+                        // to the city's fringe; a hard spacing veto also dropped quotas.
+                        double score = -(crop.center - anchor).sqrMagnitude;
+                        score += roadWidth * 100;
+                        score -= candidate.Box.width * candidate.Box.height * 0.01;
+                        uint tie = unchecked((uint)(seed * 486187739 ^
+                            Mathf.RoundToInt(crop.xMin) * 73856093 ^ Mathf.RoundToInt(crop.yMin) * 19349663));
+                        score += tie / (double)uint.MaxValue;
+                        if (score <= bestScore) continue;
+                        bestScore = score;
+                        best = new Site { Police = isPolice, Source = candidate.Box, Quarter = quarter.Value,
+                            Parcel = new CoreAmenityLayout.Site(crop, entry, 0) };
                     }
-                    if (best == null) break;
-                    Sites.Add(best);
                 }
+                if (best == null) return false;
+                best.Serves.Add(first.Id);
+                if (second != null) best.Serves.Add(second.Id);
+                Sites.Add(best);
+                return true;
             }
+        }
+
+        static CoreQuarterDefinition Nearest(List<CoreQuarterDefinition> quarters, Vector2 anchor)
+        {
+            CoreQuarterDefinition best = null;
+            float distance = float.MaxValue;
+            foreach (var quarter in quarters)
+            {
+                float next = (quarter.LocalAnchor - anchor).sqrMagnitude;
+                if (next >= distance) continue;
+                best = quarter;
+                distance = next;
+            }
+            return best;
         }
 
         static bool HasPublicFront(CoreRoads.Raster raster, Rect box, ParkingEntrySide drive)
@@ -104,7 +170,7 @@ namespace RoadDemo
         }
 
         public static bool TryFrontage(CoreRoads.Raster raster, Rect source, ParkingEntrySide entry,
-                                       float frontage, float depth, out Rect crop, out int roadWidth)
+                                       float frontage, float depth, out Rect crop, out int roadWidth, bool publicFront = false)
         {
             bool horizontal = entry == ParkingEntrySide.South || entry == ParkingEntrySide.North;
             crop = default;
@@ -125,6 +191,9 @@ namespace RoadDemo
                     : new Rect(source.xMin, source.yMin + along, depth, frontage);
                 int width = RoadWidth(raster, box, entry);
                 if (width < 3 || width <= roadWidth) continue;
+                // Test every crop, not just the first equally wide driveway. The public
+                // street can be at the opposite end of this source block.
+                if (publicFront && !HasPublicFront(raster, box, entry)) continue;
                 crop = box;
                 roadWidth = width;
             }

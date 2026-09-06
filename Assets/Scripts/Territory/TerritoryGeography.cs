@@ -220,6 +220,15 @@ namespace LivingCity.Territory
         IReadOnlyList<TerritoryBlockId> Neighbours(TerritoryBlockId blockId);
         bool AreNeighbours(TerritoryBlockId one, TerritoryBlockId other);
 
+        /// <summary>The station houses this city stood, as the layout handed them over.</summary>
+        IReadOnlyList<TerritoryPrecinctSeat> PrecinctSeats { get; }
+
+        /// <summary>Which station house polices this block - the one it is fewest street
+        /// crossings from - or <see cref="TerritoryPrecinctMap.NoPrecinct"/> when the city
+        /// stood no station at all. The ONE owner of that question (GAN-236): nothing
+        /// downstream may work it out again from doors, distances or its own map.</summary>
+        int PrecinctOf(TerritoryBlockId blockId);
+
         bool TryGetBusinessBlock(TerritoryBusinessId businessId, out TerritoryBlockId blockId);
 
         /// <summary>
@@ -255,6 +264,10 @@ namespace LivingCity.Territory
         public int NestedBlocks { get; internal set; }
         public int PlacedBusinesses { get; internal set; }
         public int UnplacedBusinesses { get; internal set; }
+
+        /// <summary>Station houses the layout stood, and blocks none of them polices.</summary>
+        public int Precincts { get; internal set; }
+        public int UnpolicedBlocks { get; internal set; }
         public bool Passed => faults.Count == 0;
 
         internal void Fault(string line)
@@ -304,12 +317,15 @@ namespace LivingCity.Territory
         readonly List<TerritoryBusinessPlacement> unplaced =
             new List<TerritoryBusinessPlacement>();
         readonly List<TerritoryOffGridArea> offGrid = new List<TerritoryOffGridArea>();
+        readonly List<TerritoryPrecinctSeat> precinctSeats = new List<TerritoryPrecinctSeat>();
         readonly TerritoryGeographyReport report = new TerritoryGeographyReport();
+        TerritoryPrecinctMap precincts = TerritoryPrecinctMap.Empty;
 
         public TerritoryGeography(
             IEnumerable<TerritoryBlockDefinition> definitions,
             TerritoryGeographySettings settings,
-            IEnumerable<TerritoryOffGridArea> offGridAreas = null)
+            IEnumerable<TerritoryOffGridArea> offGridAreas = null,
+            IEnumerable<TerritoryPrecinctSeat> precinctHouses = null)
         {
             Settings = settings.NeighbourGap > 0f ? settings : TerritoryGeographySettings.Default;
 
@@ -344,6 +360,7 @@ namespace LivingCity.Territory
 
             BuildNeighbourGraph();
             BuildNeighborhoods();
+            BuildPrecincts(precinctHouses);
             Validate();
         }
 
@@ -354,6 +371,13 @@ namespace LivingCity.Territory
         public TerritoryBounds WorldBounds { get; private set; }
         public TerritoryGeographyReport Report => report;
         public IReadOnlyList<TerritoryBusinessPlacement> UnplacedBusinesses => unplaced;
+        public IReadOnlyList<TerritoryPrecinctSeat> PrecinctSeats => precinctSeats;
+
+        /// <summary>The precinct map itself, for a caller that wants the walk as well as
+        /// the answer - how far a block is from its own house, and what a house holds.</summary>
+        public TerritoryPrecinctMap Precincts => precincts;
+
+        public int PrecinctOf(TerritoryBlockId blockId) => precincts.PrecinctOf(blockId);
 
         public bool TryGetBlock(TerritoryBlockId blockId, out TerritoryBlockDefinition block) =>
             blocks.TryGetValue(blockId, out block);
@@ -671,6 +695,56 @@ namespace LivingCity.Territory
         }
 
         /// <summary>
+        /// Seat the city's station houses and walk the precinct map once (GAN-236). The
+        /// layout hands over a POINT per house, because that is what it has; which block
+        /// that point is on is a geography question and is answered here, with the same
+        /// reach an act on road space gets - a station house whose forecourt is on the
+        /// carriageway still belongs to the block behind it. A house that lands on
+        /// nothing is REPORTED and polices nothing: a precinct hung on the wrong block
+        /// would send the city's cars to the wrong end of town for the rest of a campaign.
+        /// </summary>
+        void BuildPrecincts(IEnumerable<TerritoryPrecinctSeat> houses)
+        {
+            if (houses == null)
+                return;
+
+            foreach (var house in houses)
+            {
+                var seat = house;
+                if (!seat.IsSeated)
+                {
+                    if (!seat.Where.IsFinite ||
+                        !TryGetBlockNear(seat.Where, Settings.NeighbourGap, out var blockId))
+                    {
+                        report.Fault("GEO: station house " + seat.StationId +
+                                     " stands on no canonical block; it polices nothing.");
+                        continue;
+                    }
+
+                    seat = seat.On(blockId);
+                }
+                else if (!blocks.ContainsKey(seat.Block))
+                {
+                    report.Fault("GEO: station house " + seat.StationId + " was seated on '" +
+                                 seat.Block.Value + "', which is not a block of this city.");
+                    continue;
+                }
+
+                precinctSeats.Add(seat);
+            }
+
+            precinctSeats.Sort((a, b) => a.StationId.CompareTo(b.StationId));
+            if (precinctSeats.Count == 0)
+                return;
+
+            precincts = new TerritoryPrecinctMap(
+                blockIds, Neighbours, BlockCentre, precinctSeats);
+        }
+
+        TerritoryPoint BlockCentre(TerritoryBlockId blockId) =>
+            blocks.TryGetValue(blockId, out var block) ? block.Center : default;
+
+        /// <summary>
         /// Block adjacency, measured off the plan's own rectangles: two blocks are
         /// neighbours when they face each other along a shared frontage across a gap no
         /// wider than the city's widest street, or when one stands inside the other (the
@@ -763,6 +837,20 @@ namespace LivingCity.Territory
             }
 
             report.IsolatedBlocks = isolated;
+
+            // THE LAW'S OWN MAP, printed like everything else the geography derives. A
+            // city with no station house is a legitimate city - the paper half of the
+            // police layer runs without one - so this is a note and never a fault.
+            report.Precincts = precincts.Stations;
+            var unpoliced = 0;
+            for (var i = 0; i < blockIds.Count; i++)
+                if (precincts.PrecinctOf(blockIds[i]) == TerritoryPrecinctMap.NoPrecinct)
+                    unpoliced++;
+            report.UnpolicedBlocks = unpoliced;
+            report.Note("GEO: " + report.Precincts + " station house(s) police " +
+                        (blockIds.Count - unpoliced) + " of " + blockIds.Count + " blocks.");
+            for (var i = 0; i < precincts.Notes.Count; i++)
+                report.Note("GEO: " + precincts.Notes[i]);
 
             for (var i = 0; i < neighborhoodIds.Count; i++)
             {

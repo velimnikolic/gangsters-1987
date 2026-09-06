@@ -24,11 +24,17 @@ if not verdict.get("passed") or verdict["source"] != checks.fingerprint():
     raise SystemExit("UNVERIFIED: compile does not match current source")
 
 version = (ROOT / "ProjectSettings/ProjectVersion.txt").read_text().splitlines()[0].split()[1]
-unity = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Unity/Hub/Editor" / version / "Editor/Data"
+unity = (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Unity/Hub/Editor" / version / "Editor/Data"
+         if os.name == "nt" else
+         Path("/Applications/Unity/Hub/Editor") / version / "Unity.app/Contents")
+scripting = unity if os.name == "nt" else unity / "Resources/Scripting"
+dotnet = scripting / "DotNetSdk" / ("dotnet.exe" if os.name == "nt" else "dotnet")
+sdk = int(subprocess.run([str(dotnet), "--list-sdks"], check=True,
+                         capture_output=True, text=True).stdout.splitlines()[-1].split('.')[0])
 out = Path(tempfile.mkdtemp(prefix="gangsters-turf-map-"))
 project = ET.Element("Project", Sdk="Microsoft.NET.Sdk")
 props = ET.SubElement(project, "PropertyGroup")
-for key, value in {"OutputType": "Exe", "TargetFramework": "net10.0", "EnableDefaultCompileItems": "false"}.items():
+for key, value in {"OutputType": "Exe", "TargetFramework": f"net{sdk}.0", "EnableDefaultCompileItems": "false"}.items():
     ET.SubElement(props, key).text = value
 items = ET.SubElement(project, "ItemGroup")
 program = ROOT / "Tools/TurfMapSim/Program.cs"
@@ -36,13 +42,13 @@ program_hash = hashlib.sha256(program.read_bytes()).hexdigest()
 ET.SubElement(items, "Compile", Include=str(program))
 for name, path in {
     "Assembly-CSharp": compiled / "Assembly-CSharp.dll",
-    "UnityEngine.CoreModule": unity / "Managed/UnityEngine/UnityEngine.CoreModule.dll",
+    "UnityEngine.CoreModule": scripting / "Managed/UnityEngine/UnityEngine.CoreModule.dll",
 }.items():
     reference = ET.SubElement(items, "Reference", Include=name)
     ET.SubElement(reference, "HintPath").text = str(path)
 ET.ElementTree(project).write(out / "TurfMapSim.csproj", encoding="unicode")
 print("Runtime snapshot:", verdict["source"], "Harness:", program_hash, "Output:", out, flush=True)
-result = subprocess.run(["dotnet", "run", "--project", str(out / "TurfMapSim.csproj"), "-c", "Release"], cwd=ROOT)
+result = subprocess.run([str(dotnet), "run", "--project", str(out / "TurfMapSim.csproj"), "-c", "Release"], cwd=ROOT)
 if checks.fingerprint() != verdict["source"] or hashlib.sha256(program.read_bytes()).hexdigest() != program_hash:
     raise SystemExit("UNVERIFIED: source changed during the geometry checks")
 raise SystemExit(result.returncode)

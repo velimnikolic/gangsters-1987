@@ -41,6 +41,30 @@ namespace RoadDemo
         /// crosses beneath the road it came off.</summary>
         public const float Storey = 3.2f;
 
+        /// <summary>Whether a nearby person stands on this driver's road level.
+        /// Query after horizontal culling: projecting a curved ramp is not free.</summary>
+        public static bool OnDrivingLevel(RoadCar car, Vector3 point)
+            => Mathf.Abs(point.y - SurfaceAt(car, point)) <= Storey;
+
+        static float SurfaceAt(RoadCar car, Vector3 point)
+        {
+            float level = car.RoadPosition.y;
+            if (car.Road != null)
+            {
+                // On a ramp use the surface beside the person, not the height
+                // at the car's centre up to fourteen metres away.
+                car.Road.Project(point, out float station, out _);
+                level = car.Road.SurfaceOn(station);
+            }
+            return level;
+        }
+
+        static Vector3 PhysicalPoint(IRoadUser self, Vector3 point)
+        {
+            if (self is RoadCar car && car.OnRoad) point.y = SurfaceAt(car, point);
+            return point;
+        }
+
         /// <summary>Do these two boxes on the ground share any ground - and if they do,
         /// the shortest shove that takes the first clear of the second.</summary>
         public static bool Overlap(Vector3 aP, Vector3 aF, float aHL, float aHW,
@@ -143,6 +167,9 @@ namespace RoadDemo
         {
             push = Vector3.zero;
             IRoadUser worst = null;
+            // Driver paths are planar; traffic occupants publish surface height.
+            // Compare both on that surface, including hills and elevated ramps.
+            at = PhysicalPoint(self, at);
             float deepest = 0f;
             var users = Nearby(at, halfLength + halfWidth + Air);
             for (int i = 0; i < users.Count; i++)
@@ -167,6 +194,8 @@ namespace RoadDemo
         static bool SeparatingStep(IRoadUser self, Vector3 from, Vector3 to,
             Vector3 fwd, float halfLength, float halfWidth)
         {
+            from = PhysicalPoint(self, from);
+            to = PhysicalPoint(self, to);
             var delta = to - from; delta.y = 0f;
             if (delta.sqrMagnitude < 1e-8f || delta.sqrMagnitude > Probe * Probe) return false;
             bool improves = false;

@@ -28,9 +28,10 @@ deliberate hood/fender creases, shoulder bevels and inset sill bands. The roof h
 a rolled perimeter; broad panel planes retain their slope changes instead of
 smoothing the whole shell into one highlight. Tires have rounded
 shoulders and closed sidewalls on both faces, independently of their decorative rims.
-Window reflections use atlas UVs, door cuts and trim use surface strips, and the
-wheel faces use inset radial panels. A shared packed metal/smoothness map gives
-paint, glass, chrome and rubber different surface responses without extra materials.
+Windows are transparent, with real openings in the body, painted pillars, thick
+rubber seals and inner reveals. Seats, headrests, dashboard, steering wheel,
+console and inner door panels share the opaque body mesh. A packed
+metal/smoothness map distinguishes paint, chrome, rubber and upholstery.
 Names and emblems are fictional. Displayed prices are rounded design references
 for the lineup's economic classes, not campaign prices or historical invoices.
 
@@ -47,24 +48,42 @@ audit findings.
 Each reusable prefab lives under `Assets/Sedan1987/Prefabs`, faces +Z, has unit
 scale and a ground-level root, and contains a body plus four wheel pivots.
 The body and four wheels share one URP Lit material and palette texture. A sixth
-renderer holds only the front lamps, front markers and rear running-light lenses,
-with a separate URP emissive material and colour mask. `VehicleLampRig` supplies
-the two exact beam origins and receives emission from the shared `DemoHeadlights`
-owner. Its normal RoadCar registration applies night, engine, parking, wreck and
-visibility state, and preserves the existing 48-beam budget. Visible lens emission
-does not consume extra Light components. Brake/turn/reverse actuation is not fitted.
+renderer holds the lamp lenses and uses the **original Synty**
+`PolygonPalmCity_03_A.mat`, with UVs sampled from its real emissive atlas.
+The seventh renderer holds transparent glass with depth writes and shadows off.
+`VehicleLampRig` supplies exact beam origins and receives per-instance emission
+from `DemoHeadlights`, retaining its night/engine/parking/wreck/visibility rules
+and existing 48-beam limit. Brake/turn/reverse actuation is not fitted.
 
-The models have roughly 4,700–5,400 triangles each, with a hard 6,000-triangle
-authoring budget checked before writing assets. The previous design used
-17,376–22,480 triangles per car. All eight still use six renderers/two shared
-materials per car; the existing 48-headlight-beam limit is unchanged. Coincident
-vertices with identical packed position/normal/tangent/UV data are welded.
+The models have 5,586–6,294 triangles each, including the interior, with a hard
+6,500-triangle authoring budget. They use seven renderers and three shared
+materials per car. Coincident vertices with identical packed data are welded.
+Transparent glass adds overdraw; these are resource counts, not an FPS result.
+The user owns Unity import, Play and visual/performance acceptance.
 
-This reduces geometry and mesh-buffer cost. The material adds one small packed
-texture lookup to distinguish surfaces. These are offline resource counts, not
-an FPS measurement; Unity import, shadows, draw submission and live traffic cost
-still require the user's Play/profile pass. The models are review assets; traffic admission,
-colliders, vehicle configuration and moving door/interior rigs are not installed.
+## Game fleet
+
+`CivilianVehicleCatalog` owns the eight passenger model paths and explicit
+retained taxi, food delivery, works pickup and commercial van paths.
+`CivilianFleet` loads that catalog for RoadDemo/CoreDemo traffic, CoreRoads
+parking, fuel customers, harbor/airport parking, industrial staff cars and focused benches. It never falls back
+to an old passenger model. Police, emergency and crew/inventory catalogs retain
+their existing models. This uses the game's current Editor-only `DemoAssetLoad`
+path; a standalone Player asset-loading migration is outside this change.
+
+`VehicleSeatRig` supplies driver/passenger roots aligned to the cushions;
+`Wheel_FL/FR/RL/RR` names support the shared wheel rig. Preparation retains these
+visual rig components. `VehiclePaint` preserves the approved palette and original
+lamp material. Traffic collision/parking bounds still use `CarBody` measurements.
+No per-car update component or new light budget was introduced.
+
+Future parking/venue bakes use the catalog. `adopt_parked.py` retargets 14 old
+passenger instances in the existing nightclub and car-yard prefabs, preserving
+parent/root IDs and placement while discarding obsolete source-part overrides.
+It leaves service variants and source packs intact; `--check` rejects remaining
+old passenger instances in those lots. This is offline serialized authoring,
+not an Editor rebake or a live scene update. Re-enter Play manually to build the
+city with the new fleet.
 
 ## Offline authoring
 

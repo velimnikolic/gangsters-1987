@@ -673,6 +673,18 @@ namespace GangstersTools
                     mark.Kind == TurfLandmarkKind.Cafe) ?? 0,
                 subways = survey?.Landmarks.Count(mark =>
                     mark.Kind == TurfLandmarkKind.Transit) ?? 0,
+                precincts = survey?.Landmarks.Count(mark =>
+                    mark.Kind == TurfLandmarkKind.Police) ?? 0,
+                fireStations = survey?.Landmarks.Count(mark =>
+                    mark.Kind == TurfLandmarkKind.FireStation) ?? 0,
+                // The words themselves, so a check can read PRECINCT 2 off the plate
+                // rather than trusting that a police landmark got a number.
+                stationWords = survey != null
+                    ? survey.Landmarks
+                        .Where(mark => mark.Kind == TurfLandmarkKind.Police ||
+                                       mark.Kind == TurfLandmarkKind.FireStation)
+                        .Select(mark => mark.Label).ToArray()
+                    : System.Array.Empty<string>(),
                 residentialGreens = survey?.ResidentialGreenCount ?? 0,
                 parkSurfaces = survey?.ParkSurfaceCount ?? 0,
                 corePaving = survey?.CorePavingCount ?? 0,

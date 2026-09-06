@@ -1757,58 +1757,23 @@ namespace RoadDemo
         }
 
         /// <summary>
-        /// The cars a car park holds: every road car of the Synty packs the city draws its
-        /// traffic from, less what the catalog bars (the wrong decade, the wrong livery)
-        /// and less anything marked as police or emergency - VehicleCatalog's rules, the
-        /// same ones RoadDemoBuilder's traffic pool applies - each weighted the way the
-        /// catalog weights the pool, so the lots hold saloons and not one of everything.
+        /// The same authored passenger cars and retained services as moving traffic.
         /// </summary>
         static class Cars
         {
-            static readonly string[] Folders =
-            {
-                "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles",
-                "Assets/Synty/PolygonCity/Prefabs/Vehicles",
-            };
-            static readonly string[] Deny =
-            {
-                "boat", "yacht", "jetski", "helicopter", "plane", "cart", "scooter", "bike", "moped",
-                "bot", "steering", "wheel", "trailer", "monster", "quad", "attach", "bus", "truck",
-            };
             static List<GameObject> _pool;
             static List<GameObject> _prefabs;
+
+            [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+            static void Reset() { _pool = null; _prefabs = null; }
 
             static void Ensure()
             {
                 if (_pool != null) return;
-                _pool = new List<GameObject>();
+                _pool = CivilianFleet.Load();
                 _prefabs = new List<GameObject>();
-#if UNITY_EDITOR
-                // in path order, not the index's: FindAssets answers in whatever order
-                // the asset database holds its entries, which is not the same on two
-                // machines, and the dice index into this list - so the list is sorted
-                // before it is weighted, and one seed picks one car anywhere
-                var paths = new List<string>();
-                foreach (var guid in DemoAssetLoad.Find("t:Prefab", Folders))
-                    paths.Add(UnityEditor.AssetDatabase.GUIDToAssetPath(guid));
-                paths.Sort(string.CompareOrdinal);
-                foreach (var path in paths)
-                {
-                    string low = path.ToLowerInvariant();
-                    bool denied = false;
-                    foreach (var deny in Deny)
-                        if (low.Contains(deny)) { denied = true; break; }
-                    if (denied) continue;
-                    if (LivingCity.Gameplay.VehicleCatalog.IsBarred(path)) continue;
-                    if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
-                    var prefab = DemoAssetLoad.Load<GameObject>(path);
-                    if (prefab == null) continue;
-                    _prefabs.Add(prefab);
-                    for (int seat = 0, seats = LivingCity.Gameplay.VehicleCatalog.PoolWeight(path); seat < seats; seat++)
-                        _pool.Add(prefab);
-                }
-#endif
-                if (_pool.Count == 0) Debug.LogWarning("[CoreRoads] no cars for the car parks: the vehicle folders came up empty.");
+                foreach (var prefab in _pool)
+                    if (!_prefabs.Contains(prefab)) _prefabs.Add(prefab);
             }
 
             public static IReadOnlyList<GameObject> Prefabs

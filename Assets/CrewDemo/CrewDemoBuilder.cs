@@ -755,7 +755,7 @@ namespace CrewDemo
             traffic.Init(bodies, _net, -0.08f, trafficCars * 2, PassersBy(), clips.SitLoop, along);
         }
 
-        List<GameObject> TrafficBodies() => TestBench.WeightedCars(FindCivilianVehicle);
+        List<GameObject> TrafficBodies() => TestBench.WeightedCars();
 
         // Cars stood at the kerb of the two side streets, which nothing drives down.
         // They are geometry, not traffic: something to walk round, take cover behind

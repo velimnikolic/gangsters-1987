@@ -104,7 +104,7 @@ namespace RoadDemo
         }
         /// <summary>Plan-owned filling stations, kept stable even if their 3D views change.</summary>
         public IReadOnlyList<CoreAmenityLayout.Site> FuelSites => _fuelSites;
-        /// <summary>The one plan-owned fire station, or null when the retained city has no
+        /// <summary>The first plan-owned fire station, or null when the retained city has no
         /// road-served parcel large enough for the complete engine hall and apron.</summary>
         public CoreAmenityLayout.Site FireStationSite => _services.Sites.Find(s => !s.Police)?.Parcel;
         public CoreServicePlan Services => _services;
@@ -738,7 +738,7 @@ namespace RoadDemo
                       $"{_raster.Stretches.Count} stretches of road, {_edges.Count} lanes, " +
                       $"{_vehicles.Count} traffic cars, {_parkingSites.Count} ParkingDemo lots, " +
                       $"{_fuelSites.Count} PumpDemo station(s), " +
-                      $"{_services.FireCount} fire station, " +
+                      $"{_services.FireCount} fire station(s), {_services.TotalPoliceCount}/{_services.PoliceTarget} precincts, " +
                       $"{_raster.Faults} faults.{System.Environment.NewLine}" +
                       string.Join(System.Environment.NewLine, _plan.Rows) + System.Environment.NewLine + _raster.Report);
         }
@@ -1174,7 +1174,7 @@ namespace RoadDemo
             _fuelSites.Clear();
             _developmentSites.Clear();
             _courthouseSite = null;
-            _services.Sites.Clear();
+            _services.Clear();
             _amenityReplacements.Clear();
             RegionGateways = null;
             // Build-time geometry normally dies with its host. A detached compatibility

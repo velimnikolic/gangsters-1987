@@ -1,247 +1,302 @@
-# Plan: um igre na Infinite Axis Utility System (Dave Mark)
+# Plan: um igre na Infinite Axis Utility System (Dave Mark) — EPIC 48
 
 Stanje na dan 2026-09-06, pročitano iz koda na `main` (HEAD a82732275). Ništa u kodu
 nije dirano. Građa: `Docs/rival-families.md` (kako um kuće radi danas),
 `Docs/rival-ai-plan.md` (šta je izmereno na ulici 2026-09-04), GAN-244 (EPIC 25,
 D-tabela), Dave Mark: *Building a Better Centaur* (GDC 2015), Mark & Dill: *Improving AI
-Decision Modeling Through Utility Theory* (GDC 2010).
+Decision Modeling Through Utility Theory* (GDC 2010), Dill: *Dual-Utility Reasoning*
+(Game AI Pro 1, 2013).
+
+Ovo je druga verzija: prva je prošla kontraški prolaz (§0b) i korisnikove presude (§0a).
+Obe su ugrađene; tamo gde se razlikuju od prve verzije, piše zašto.
 
 ---
 
-## 0. Šta je IAUS, u tri rečenice
+## 0a. Presude korisnika (2026-09-06)
 
-Svaka **radnja** (Action) ima spisak **razmatranja** (Consideration). Razmatranje uzima
-jedan **ulaz** iz sveta (dolari u sefu, sati od napada, strah na bloku), svede ga na
-0..1 i provuče kroz **krivulju odziva** (linearna, kvadratna, logistička, logit; četiri
-broja: m, k, b, c). Ocena radnje je **proizvod** svih razmatranja, popravljen za broj
-razmatranja da se šest sitnih faktora ne sruši na nulu:
+1. **Obim: sve što bira.** Um kuće, sto, policijski desk i odgovor na vratima. Ulična
+   borba (ko koga gađa, zaklon, beg) NIJE u epicu: „borba je za sad ok"; dobija svoj
+   epic tek kad soak pokaže izmeren bag u odluci.
+2. **Otvori odmah.** Nema faze „iste odluke kao pojasevi": „ni ovaj današnji nismo
+   nešto specijalno istestirali da je prestabilan pa da ga čuvamo". Današnji um ostaje
+   na prekidaču samo kao merilo za sweep.
+3. **Krivulje u C# tabeli** kao `HouseMindConfig`, ne u editoru.
+4. **Jedan epic** UTIL-000..009 u Linear; 008/009 backlog.
+5. **Biblioteka: ne** — jezgro se piše samo (§10).
+6. **Karta i sto ne troše potez**: obilazak (pravi potez na terenu) uvek dobija svoj
+   potez od tri na sat.
+7. **Lanac hapšenja se ne menja kao lanac**; menjaju se samo dve tačke gde neko bira:
+   ko ide na koji poziv (policijski desk) i šta ekipa odgovori na vratima.
+8. Pretpostavka bez izričite presude (predloženo, nije osporeno): spratovi 1–3 ostaju
+   strogi jer su redosledi, sve ostalo je jedna arena od prvog dana.
+9. **Stari um nije tjunovan, pa nije merilo.** „Novi tuče stari" ne znači ništa. Ciljevi
+   u brojkama se ne znaju unapred („pojma nemam ni ja, igraćemo pa ćemo da vidimo"):
+   presuda je IGRANJE u editoru; tabela ciljeva u `Docs/utility-ai-baseline.md` počinje
+   kao privremene pretpostavke (§11a) i prepisuje se posle svake sesije igranja. Stari
+   um ostaje samo kao kolona pored, radi orijentacije.
 
-    mod   = 1 - 1/n
-    ocena = p + (1 - p) * mod * p          (p = proizvod krivulja)
-    konačno = težina_radnje * ocena         (težina = pojas: 5 preživi, 4 plate, ... 1 dokolica)
+## 0b. Šta je kontraški prolaz promenio (usvojeno u celini)
 
-Um bira **najviše ocenjenu (radnja, meta)**; meta je blok, vrata, kuća, čovek. Sve je
-podatak (tabela krivulja), ništa nije `if`. Um ostaje čist i determinističan: isti pogled,
-ista ocena, dvaput.
+| nalaz | promena u planu |
+|---|---|
+| množeći pojasevi ne mogu da ponove `Walk`; senka pa flip = pozorište | **Dual-Utility**: radnja ima RANG i TEŽINU; najviši rang s kandidatom iznad nule pobeđuje, težina×ocena bira unutar ranga. Uz presudu 2 (otvori odmah): rang 1–3 strogi, rang 4 arena |
+| senka poredi jedan think, a pitanje je putanja od 30 dana | dokaz = **sweep** 30 seed-ova × 30 dana na oba mozga, iste kolone kao danas; klasifikator neslaganja u tri korpe, prikazuje se samo treća |
+| `NoteThink` (D22) i `PaperCity.Answered` čitaju vraćeni tier | svaka radnja u knjizi nosi tier 1..9, `Think` ga i dalje vraća; test |
+| cap 3 + top-3 truje `HouseBackoffs` | jedan takmičarski intent po thinku; `CrewsSpokenFor` na pogledu kao blizanac `Committed`; presuda 6 |
+| `Max` nagađani, `BlockTake $2000` ravna grad | svaki `Max` izmeren pre ijedne krivulje (percentil raspodele iz sweep-a); komanda štampa stopu zasićenja po osi |
+| Commitment kao bonus ponavlja izmerenu lekciju | `WorkedOut` ostaje tvrda kapija; meka verzija tek posle, sa kapijom kao kontrolom |
+| pola „radnji" su sekvenceri | reasoner samo gde JESTE trade-off; sekvenceri = generatori kandidata s fiksnim rangom |
+| razlog stola je enum (58 poređenja u testovima) | reasoner BIRA koji enum, ne piše rečenicu; isto za `HouseIntent.Reason` |
+| ZAŠTO = najjače razmatranje odgovara na pogrešno pitanje | ZAŠTO = najslabije razmatranje pobednika + ono što je ugušilo drugoplasiranog |
+| ulica ne pripada epicu | van (presuda 1) |
+| redosled prema EPIC 43–47 | UTIL-000..004 pre EPIC 43; svaki kasniji epic dodaje RED u knjigu, nikad šetača |
+| `HouseMind.Utility.cs` kao partial pada `sizes --check` | nova klasa `HouseReasoner`, tanjenje `HouseMind.cs` u istom ticketu |
+| `Math.Exp` = Mono/CoreCLR razlika | bez transcendentnih u `Mind/`: racionalna sigmoida `x/(1+|x|)` / smoothstep; skener tokena |
+| testova je 19, ne 21 | ispravljeno |
+| ZAŠTO u ledgeru curi tuđe misli koje EPIC 43 gejtuje | u tragu i probi uvek; u ledgeru tek kad EPIC 43 da nivo |
 
 ---
 
-## 1. Gde igra danas odlučuje (izmereno)
+## 1. Šta je IAUS, u tri rečenice
 
-| mesto | fajl | oblik danas | kandidat |
+Svaka **radnja** ima spisak **razmatranja**. Razmatranje uzima jedan **ulaz** iz sveta
+(dolari u sefu, sati od napada, strah na bloku), svede ga na 0..1 i provuče kroz
+**krivulju odziva** (linearna, kvadratna, sigmoida, logit; četiri broja m, k, b, c).
+Ocena radnje je **proizvod** razmatranja, popravljen za broj razmatranja da se šest
+sitnih faktora ne sruši na nulu:
+
+    mod    = 1 - 1/n
+    ocena  = p + (1 - p) * mod * p        (p = proizvod krivulja)
+    (rang, težina × ocena)                 (Dual-Utility: rang prvo, pa težina×ocena)
+
+Um bira najviši **rang** koji ima kandidata iznad nule, pa unutar njega najvišu
+**težina × ocena** po (radnja, meta); meta je blok, vrata, kuća, čovek, poziv, jedinica.
+Sve je podatak (tabela), pravila korisnika su kapije (0/1 osa s imenom pravila). Um
+ostaje čist i determinističan: isti pogled, ista ocena, dvaput.
+
+---
+
+## 2. Gde igra danas odlučuje (izmereno)
+
+| mesto | fajl | oblik danas | u epicu |
 |---|---|---|---|
-| um kuće | `Assets/Scripts/Outfit/HouseMind.cs` (2149 l.) | 9 strogih pojaseva, 13 „šetača" (`Walk`: Home, Merge, Replace, Law, Answer, Defend, Feud, Expand, Grow, Buy + Release, Collect, AnswerTheCard, Diplomacy), prvi pojas s kandidatom pobeđuje; jedna ocena bloka (`Score` = nedeljni uzimak − skokovi·$100 − pažnja·$20); D-tabela `HouseMindConfig` (25 brojeva) | **DA, prvi** |
-| sto (odgovor na predlog) | `Assets/Scripts/Outfit/HouseDiplomacy.cs` `Answer` (l. 491) | `switch` po vrsti predloga, tvrda pravila (pobeđeni ne može da odbije), `DeskAnswer` s razlogom u rečima | **DA, drugi** |
-| gazda (plaća / koleba / odbija) | `Assets/Scripts/Territory/TerritoryRacket.cs` `TerritoryComplianceEvaluation` (l. 257) | VEĆ korisnost: linearna suma 4 težine + dva praga + pomak ličnosti + pomak tiera | već jeste; samo krivulje umesto prave (nisko) |
-| ulični borac (koga gađa, kad beži, kad u zaklon) | `Assets/RoadDemo/DemoCrews.Combat.cs` (`BestMark`, `CloserThreatThan`, nerv l. 1666), `DemoCrews.Cover.cs`, `CrewWalker.Flee/PanicFrom` | najbliži čovek + izuzeci; nerv = `Random.value < BossNerve`; 15 `Random.*` u Combat, 54 u CrewWalker | **DA, treći**, s budžetom |
-| policija (ko odgovara na koji poziv) | `Assets/RoadDemo/PoliceDispatch.*.cs` (`Nearest`, `NearestToAnswer`, `NearestAvailable`) | najbliža jedinica; redosled poziva = redosled dolaska | samo „koji poziv prvi" (nisko) |
-| pešaci, kola, patrole, pritvor, sud | `HumanBehavior`, `RoadCar`, `PolicePatrolCar`, `PrisonPipeline`, `CourtCase` | rute, rasporedi, stanja bez izbora | **NE** — nema odluke koju bi um donosio |
-
-„Cela igra" u smislu uma = prva četiri reda. Peti je logistika, šesti je kretanje.
-
-Šta se čuva po pravilu korisnika i po `Docs/rival-families.md`:
-
-* um je ČIST: ne čita `TerritoryRuntime`, `Ledger`, `Roll`; test `gangsters_house_tests`
-  skenira `HouseMind.cs` za te tokene — skener se proširuje na nove fajlove uma;
-* svaki broj u UI se čita rečima (pravilo „mehanika objašnjena u UI"): svako razmatranje
-  nosi rečenicu, trag štampa tri najbolje radnje s ocenama i rečenicama;
-* svaki broj u jednoj klasi (D-tabela), nikad literal u metodi: krivulje žive u C#
-  tabeli pored `HouseMindConfig`, ne u ScriptableObject-u (scene su probni stolovi,
-  ništa se ne podešava u editoru);
-* determinizam: `double`, zaokruživanje pre poređenja (Mono i CoreCLR se ne slažu oko
-  poslednjeg bita — komentar na `HouseDiplomacy.Answer`), izjednačene ocene lomi
-  stabilan ključ (`HouseIntent.Key`), nikad redosled liste.
+| um kuće | `Assets/Scripts/Outfit/HouseMind.cs` (2149 l.) | 9 strogih pojaseva, 13 šetača (`Walk` l. 449), prvi pojas s kandidatom pobeđuje; jedna ocena bloka (`Score` l. 1620 = uzimak − skokovi·$100 − pažnja·$20); D-tabela `HouseMindConfig` (25 brojeva) | **DA** (000–004) |
+| sto | `Assets/Scripts/Outfit/HouseDiplomacy.cs` `Answer` (l. 491) | `switch` po vrsti, tvrda pravila, `DeskAnswer` s enum-razlogom | **DA** (005) |
+| policijski desk | `Assets/RoadDemo/PoliceDispatch.Complaint.cs` (`_calls`, `TickCalls` l. 269, `NearestToAnswer` l. 428), `PoliceDispatch.cs` `Nearest` l. 734 | redom kako stižu + strpljenje; najbliža jedinica; nikad se ne skida s poziva; kola po vrelini (lestvica, već tabela) | **DA** (006) |
+| odgovor na vratima | `Assets/Scripts/Police/SurrenderRoll.cs` | VEĆ korisnost: hrabrost·0.5 + temper·0.3 − lojalnost·0.2, pod 5–95 %, sejani tok | **DA** (007), više osa |
+| gazda | `Assets/Scripts/Territory/TerritoryRacket.cs` `TerritoryComplianceEvaluation` (l. 257) | VEĆ korisnost: 4 težine + 2 praga + pomak ličnosti + tiera | NE (ne menja ni jednu presudu) |
+| ulična borba | `DemoCrews.Combat.cs` (`BestMark` l. 249 po hicu, nerv l. 1666 na smrt druga), `DemoCrews.Cover.cs` (prostorni upit), `CrewWalker.Flee` | tri razna takta, nedeterministična (fizika, dt), 10.811 linija partiala | NE (presuda 1) |
+| lanac hapšenja posle pitanja (lisice, cela jedinica, sprovod, prag stanice, ćelija, sud) | `PoliceDispatch.Arrest/Custody`, `PrisonPipeline`, `CourtCase` | redosled, ne izbor | NE (presuda 7) |
+| pešaci, kola, patrole | `HumanBehavior`, `RoadCar`, `PolicePatrolCar` | rute i stanja | NE |
 
 ---
 
-## 2. Šta se dobija, i šta se gubi
+## 3. Šta se dobija, i šta se gubi
 
 Dobija: kuća meri UMESTO da broji. Danas jedan incident od pre 11 sati blokira širenje
-(pojas 5 pre pojasa 7), sef od $300 kupuje pištolj ako je pojas 8 na redu, a tri
-kolebljiva vrata drže celu kuću kod kuće (nalaz Z2 u `rival-ai-plan.md`). S krivuljama
-napad star 11 h vredi 0.1, širenje na blok od $900 vredi 0.8, i kuća ide na blok, a gard
-stavlja usput. Ista tabela za 21 kuću, ličnost kuće = drugi brojevi u istoj tabeli.
+(pojas 5 pre 7), sef od $300 kupuje pištolj ako je pojas 8 na redu, tri kolebljiva
+vrata drže kuću kod kuće (Z2 u `rival-ai-plan.md`). U areni napad star 11 h vredi 0.1,
+blok od $9.000 vredi 0.9, kuća ide na blok i stavlja gard usput. Policija: pucnjava s
+mrtvima dobija kola PRE stare iznude, jedinica se skida s iznude kad pozornik padne dva
+bloka dalje. Vrata: ekipa s poternicom i pištoljima puca, goloruki novajlije idu mirno.
 
-Gubi: čitljivost pojasa („kuća 4 je u pojasu 6") postaje „kuća 4 dala 0.73 odbrani,
-0.71 širenju". Zato trag i UI MORAJU da štampaju reči po razmatranju, ne samo broj.
-Drugi gubitak: ocene blizu jedna drugoj = kuća menja odluku svakog sata („kaša").
-Lek je razmatranje **zalet** (commitment): radnja koja već teče dobija bonus dok ne
-završi ili dok je ne pregazi ocena veća za prag.
-
----
-
-## 3. Arhitektura (novi fajlovi, sve u `Assets/Scripts/Outfit/Mind/`)
-
-| fajl | šta | čist? |
-|---|---|---|
-| `Curve.cs` | `enum CurveShape { Linear, Quadratic, Logistic, Logit }` + struct `Curve(shape, m, k, b, c)`, `double Y(double x)` s Clamp01 | da, bez alokacija |
-| `Axis.cs` | jedna osa: `AxisId`, ime, rečenica, `Read(context) → 0..1` (normalizacija u odnosu na `Max` iz tabele) | da |
-| `Consideration.cs` | `(AxisId, Curve)`; nula = veto (kapija) | da |
-| `MindAction.cs` | ime, pojas-težina, razmatranja, `Kind` (koji šetač je nekad bio), `Targets(context)` | da |
-| `Reasoner.cs` | `Score(action, target)` s Markovom popravkom i ranim izlazom (kad proizvod padne ispod najbolje dosadašnje ocene, prekini), `Best(context, into)` vraća listu `(action, target, score, reči)` sortiranu | da |
-| `HouseAxes.cs` | 20-30 osa iz `HouseView` (v. §4) | da |
-| `HouseBook.cs` | TABELA: sve radnje kuće s razmatranjima i krivuljama; jedno mesto za veto korisnika, kao `HouseMindConfig` | da |
-| `HouseMind.Utility.cs` | novi `Think`: generiši kandidate → `Reasoner.Best` → najviše tri u `HouseIntent` kao danas | da |
-| `DeskBook.cs`, `DeskAxes.cs` | isto za sto (§5) | da |
-| `FighterBook.cs`, `FighterAxes.cs` | isto za ulicu (§6); živi u `Assets/RoadDemo`, ne u `Outfit` | ne (čita scenu), ali bez `Random` |
-
-Runtime ivica ostaje `TerritoryRuntime.Minds.cs`: isti `Look` → pogled, isti `Carry`
-kroz ista vrata (`TerritoryCommandGateway.Submit`, `Underworld.Issue`, `HouseOps`), isti
-`HouseBackoffs`, isti `DriveTrace.House`. Prekidač `HouseMindConfig.Brain = Tiers |
-Utility | Both` (Both = senka, §7).
-
-Budžet fajlova (`python3 Tools/project.py sizes`): svaki novi fajl ispod 600 linija;
-`HouseMind.cs` se posle prebacivanja tanji — šetači postaju generatori kandidata
-(`Candidates.Home(view, into)`) bez `if (X) return Tier`.
+Gubi: čitljivost pojasa („kuća 4 je u pojasu 6") postaje „kuća 4: Defend 0.73, Expand
+0.71". Zato trag i UI štampaju ZAŠTO kao najslabije razmatranje pobednika i ono što je
+ugušilo drugoplasiranog — jer korisnikovo pitanje je „zašto kuća STOJI", ne „zašto je
+gard jak". Drugi gubitak: bliske ocene = kuća menja odluku svakog sata. `WorkedOut`
+(izmereno dvaput: bez njega trećina manje zemlje, s jačim pola vrata) ostaje tvrda
+kapija; meki zalet tek posle flipa, sa kapijom kao kontrolom u sweep-u.
 
 ---
 
-## 4. Ose kuće (ulazi iz `HouseView`, ništa novo u pogledu)
+## 4. Arhitektura
 
-Svaka osa: ime, rečenica, čitanje, `Max` za normalizaciju. Prvih dvadeset:
+Novi fajlovi u `Assets/Scripts/Outfit/Mind/` (čisti, bez UnityEngine, bez
+`Math.Exp/Pow/Log`, bez `Random`; skener zabranjenih tokena pokriva direktorijum):
 
-| osa | čita | Max | rečenica u tragu |
+| fajl | šta |
+|---|---|
+| `Curve.cs` | `enum CurveShape { Linear, Quadratic, Sigmoid, Logit }` + struct `Curve(shape, m, k, b, c)`, `double Y(double x)` Clamp01; sigmoida racionalna, bez transcendentnih |
+| `Axis.cs` | `AxisId`, ime, `Line` (rečenica s brojem), `Read(context)` → 0..1 uz `Max` iz tabele |
+| `Consideration.cs` | `(AxisId, Curve)`; nula = veto (kapija) |
+| `MindAction.cs` | ime, **rang**, **težina**, razmatranja, `Tier` (1..9, obavezno), `Targets(context)` |
+| `Reasoner.cs` | `Score(action, target)` s Markovom popravkom i ranim izlazom; `Best(context, into)` → `(action, target, rank, score, weakest, suppressor)`; `double`, poređenje 1e-6, izjednačenje lomi `string.CompareOrdinal(Key)` |
+| `HouseAxes.cs` | ose kuće (§5) |
+| `HouseBook.cs` | TABELA radnji kuće (§6); jedno mesto za veto korisnika |
+| `HouseReasoner.cs` | NOVA statička klasa (ne partial): generatori kandidata → `Reasoner.Best` → jedan takmičarski `HouseIntent` + „uvek pored" |
+| `DeskBook.cs`, `DeskAxes.cs` | sto (§7) |
+
+Policija u `Assets/Scripts/Police/` (čisto kao `WantedLevels`, `PoliceShifts`):
+`PoliceDesk.cs`, `PoliceDeskAxes.cs`, `PoliceDeskBook.cs` (§8); `SurrenderRoll` dobija
+`DoorBook` (§9). `PoliceDispatch` ostaje ivica i samo pita desk.
+
+Runtime ivica kuće ostaje `TerritoryRuntime.Minds.cs`: isti `Look`, isti `Carry`, isti
+`HouseBackoffs`, isti `DriveTrace.House`; `Think` i dalje vraća tier (D22 `NoteThink`,
+`PaperCity.Answered`). Prekidač `HouseMindConfig.Brain = Tiers | Utility`; `Tiers`
+ostaje samo kao merilo za sweep.
+
+Budžet (`python3 Tools/project.py sizes --check`): svaki novi fajl ispod 600 linija;
+`HouseMind.cs` se tanji u ISTOM ticketu u kom `HouseReasoner` raste (šetači postaju
+`Candidates.*` bez `if (X) return Tier`).
+
+---
+
+## 5. Ose kuće (ulazi iz `HouseView`, ništa novo u pogledu)
+
+`Max` u tabeli je PLACEHOLDER dok UTIL-001 ne izmeri; komanda `gangsters_house_axes`
+štampa raspodelu i stopu zasićenja po osi na 30 seed-ova, pa se `Max` upisuje kao
+percentil (p90) izmerene raspodele.
+
+| osa | čita | Max (izmeriti) | `Line` |
 |---|---|---|---|
-| SafeDays | `Accounts.Safe / DailyPayroll` | 14 d | „sef pokriva N dana plata" |
-| WeeklyTakeShare | `WeeklyTake / (7·DailyPayroll)` | 2 | „vrata nose N% plata" |
+| SafeDays | `Safe / DailyPayroll` | ~14 d | „sef pokriva N dana plata" |
+| WeeklyTakeShare | `WeeklyTake / (7·DailyPayroll)` | ~2 | „vrata nose N% plata" |
 | CrewsFree | slobodne ekipe / sve | 1 | „N od M ekipa besposleno" |
-| CrewsUnderTarget | `(BlocksLed·CrewsPerBlock + Spare − ekipe) / target` | 1 | „fali N ekipa do cilja" |
+| CrewsUnderTarget | fali do `BlocksLed·CrewsPerBlock + Spare` | 1 | „fali N ekipa do cilja" |
 | UnarmedShare | `UnarmedMen / WorkingHoods` | 1 | „N ljudi bez oružja" |
-| HoodsShort | fale hoods do `MaxHoods` po ekipi | 4 | „ekipa X ima N od 4" |
-| IncidentFresh | `1 − sati od poslednjeg incidenta / ThreatMemoryHours` | 1 | „napad pre N h" |
-| IncidentUnanswered | ima li neodgovoren u `AnswerWindowHours` | 0/1 | „napad bez odgovora" |
-| FrontAlarm | rastojanje nevolje od fronta / `HqAlarmMetres` | 1 | „pucnjava N m od kuće" |
-| BlockTake (meta) | uzimak bloka, otvorena vrata | $2000 | „blok vredi $N nedeljno" |
-| BlockHops (meta) | skokovi od najbližeg našeg bloka | 4 | „N ulica daleko" |
-| BlockHeat (meta) | `PoliceAttention(block)` | 100 | „policija gleda blok N/100" |
-| BlockAskable (meta) | vrata koja se još mogu pitati / sva | 1 | „N vrata još nepitana" |
-| BlockWalkedAgo (meta) | sati od `LastWalked` / `DemandCooldownHours` | 1 | „obišli pre N h" |
-| Grievance (kuća-meta) | `Grievance(them) / AttackBusinessAt` | 2 | „duguju nam N radnji" |
-| TheirStrength (kuća-meta) | `TheirEndurance / Endurance` | 3 | „jači su N puta" |
-| StanceWar (kuća-meta) | rat / primirje / mir | 0/1 | „u ratu smo" |
-| MenInCells | `Cells.Count / WorkingHoods` | 1 | „N naših u ćeliji" |
+| HoodsShort | fale hoods do `MaxHoods` | 4 | „ekipa X ima N od 4" |
+| IncidentFresh | `1 − h od poslednjeg / ThreatMemoryHours` | 1 | „napad pre N h" |
+| IncidentUnanswered | neodgovoren u `AnswerWindowHours` | 0/1 | „napad bez odgovora" |
+| FrontAlarm | nevolja od fronta / `HqAlarmMetres` | 1 | „pucnjava N m od kuće" |
+| BlockTake (meta) | uzimak bloka | **p90 iz sweep-a** (srednji blok $1.500–7.500, bogat $20k) | „blok vredi $N nedeljno" |
+| BlockHops (meta) | skokovi od našeg bloka | 4 | „N ulica daleko" |
+| BlockHeat (meta) | `PoliceAttention` | 100 | „policija gleda blok N/100" |
+| BlockAskable (meta) | vrata koja se mogu pitati / sva | 1 | „N vrata još nepitana" |
+| BlockWalkedAgo (meta) | h od `LastWalked` / `DemandCooldownHours` | 1 | „obišli pre N h" |
+| Grievance (kuća) | `Grievance / AttackBusinessAt` | 2 | „duguju nam N radnji" |
+| TheirStrength (kuća) | `TheirEndurance / Endurance` | 3 | „jači su N puta" |
+| StanceWar (kuća) | rat / primirje / mir | 0/1 | „u ratu smo" |
+| MenInCells | `Cells / WorkingHoods` | 1 | „N naših u ćeliji" |
 | BailCoverage | `Safe / Bail` | 3 | „kaucija je N% sefa" |
-| Commitment | radnja iste vrste već teče | 0/1 | „već radimo to" |
-| Backoff | `Blocked(key)` | 0/1 (veto) | „odbijeno pre N h" |
-
-Sve ove vrednosti pogled VEĆ daje; ni jedna ne prelazi zid (tuđi roster, sef, knjiga,
-ličnost gazde, kocka ostaju izvan).
+| Backoff | `Blocked(key)` | veto | „odbijeno pre N h" |
+| WorkedOut | Z2 kapija | veto | „na ovom bloku ima još da se pita" |
+| CrewSpokenFor | ekipa već dobila intent OVOG thinka | veto | „ekipa X je već poslata" |
 
 ---
 
-## 5. Radnje kuće (današnjih 13 šetača kao tabela)
+## 6. Radnje kuće (Dual-Utility tabela)
 
-Prva verzija tabele ponavlja današnji redosled kroz težine pojasa, da prvi prelaz
-donosi ISTE odluke na yardstick-u (`gangsters_house_tests`, `gangsters_underworld_sim`,
-`TheMvpRunsForEverySeed`). Tek posle flip-a se težine spuštaju i krivulje omekšavaju.
+Rang 1–3 su redosledi (nema trade-off-a); rang 4 je arena. Svaka radnja nosi `Tier`
+današnjeg pojasa da bi D22 i MVP test čitali isto što i danas.
 
-| radnja | pojas (težina) | meta | razmatranja (kapije boldom) |
-|---|---|---|---|
-| Home (front pod vatrom) | 5 | — | FrontAlarm↑ logistička, **CrewsFree** |
-| Merge | 4 | ekipa | SafeDays↓ (ispod 3 d strmo), broj ekipa ≥ 2 |
-| Replace / Sign | 3 | ekipa | HoodsShort↑, SafeDays↑ (`ReserveDays`), WeeklyTakeShare↑, **CanSign** |
-| Bail / Retain | 3 | čovek | MenInCells↑, BailCoverage↑, rang čoveka↑ |
-| Answer (uzvrati) | 3 | kuća | IncidentUnanswered, IncidentFresh↑, CrewsFree, **Backoff** |
-| Defend (gard) | 2.5 | blok | IncidentFresh↑, BlockTake↑, CrewsFree, nije već čuvan |
-| Feud (lestvica: pretnja/udar/otimanje) | 2.5 | kuća | Grievance↑, TheirStrength↓, SafeDays↑, ReadyToCollide |
-| Expand (radi na bloku / pitaj vrata) | 2 | blok | BlockTake↑, BlockHops↓, BlockHeat↓ (veto iznad `WalkAttentionCap`), BlockAskable↑, BlockWalkedAgo↑, CrewsFree, Commitment |
-| Grow (potpiši čoveka) | 1.5 | — | CrewsUnderTarget↑, WeeklyTakeShare↑, SafeDays↑, NothingLeftToAsk |
-| Buy (pištolj / kola) | 1 | čovek / ekipa | UnarmedShare↑, SafeDays↑ strmo (`ReserveDays` + cena), QuietThinks |
-| Release, Collect, AnswerTheCard, Diplomacy | van takmičenja | — | ostaju „uvek pored" kao danas: ne troše ekipu ili su vezani za sat (runda, karta, sto) |
+| radnja | rang | težina | Tier | meta | razmatranja (kapije boldom) |
+|---|---|---|---|---|---|
+| Home (front pod vatrom) | 1 | 1 | 1 | — | FrontAlarm↑ sigmoida, **CrewsFree** |
+| Merge | 2 | 1 | 2 | ekipa | SafeDays↓ strmo ispod 3 d, **≥ 2 ekipe** |
+| Replace / Sign | 3 | 1 | 3 | ekipa | HoodsShort↑, **CanSign** (A30, D9) |
+| Law (savet pa kaucija) | 3 | 1 | 3 | čovek | MenInCells↑, BailCoverage↑, rang čoveka↑, **savet pre kaucije** |
+| Answer (uzvrati) | 4 | 1.0 | 5 | kuća | **IncidentUnanswered**, IncidentFresh↑, CrewsFree, **Backoff** |
+| Defend (gard) | 4 | 0.9 | 6 | blok | IncidentFresh↑, BlockTake↑, CrewsFree, **nije već čuvan** |
+| Feud (lestvica) | 4 | 0.9 | 6 | kuća | Grievance↑, TheirStrength↓, SafeDays↑, **ReadyToCollide**, **sledeći stepenik lestvice** |
+| Expand (radi na bloku) | 4 | 0.8 | 7 | blok | BlockTake↑, BlockHops↓, BlockHeat↓ (**veto iznad `WalkAttentionCap`**), BlockAskable↑, BlockWalkedAgo↑, CrewsFree, **WorkedOut**, **nikad tuđa vrata** |
+| Grow (potpiši) | 4 | 0.6 | 8 | — | CrewsUnderTarget↑, WeeklyTakeShare↑, SafeDays↑, **NothingLeftToAsk** |
+| Buy (pištolj / kola) | 4 | 0.5 | 8 | čovek / ekipa | UnarmedShare↑, SafeDays↑ strmo (`ReserveDays` + cena), **QuietThinks** (D22) |
+| Release, Collect, AnswerTheCard, Diplomacy | van takmičenja | | | | kao danas; **ne troše potez** (presuda 6) |
 
-Pojasevi: kad je Home 0.4·5 = 2.0, Expand mora 1.0·2 da izjednači — dakle „kuća pod
-vatrom širi se samo ako je uzbuna slaba". To je namerno: pojasevi nisu nestali, samo su
-propustljivi. Kad flip prođe, korisnik menja jedan broj u `HouseBook` da bi kuća bila
-lakomija ili plašljivija — bez koda, kao i danas s D-tabelom.
+Jedan takmičarski intent po thinku (kao danas `Walk`). Ako korisnik posle hoće dva,
+`CrewSpokenFor` je već tu.
 
-Ličnost kuće: `HouseBook` ima `Temper` po kući (tri profila: Lakom, Oprezan, Ratoboran) =
-množioci na tri težine. Ne u prvoj verziji.
+Ličnost kuće (`HouseBook.Temper`: Lakom, Oprezan, Ratoboran = množioci na tri težine):
+UTIL-008, backlog.
 
 ---
 
-## 6. Sto i ulica
+## 7. Sto
 
-**Sto** (`HouseDiplomacy.Answer`): svaki `ProposalKind` postaje radnja s dve mete (Da,
-Ne). Tvrda pravila ostaju kapije s ocenom 0/1 (`MustAccept` → Ne dobija 0). Ostalo
-postaje krivulja: „posle novca ispod praga otimanja" = osa AfterMoney / RetakeAt
-logistička. `DeskAnswer` zadržava razlog u rečima — razlog je rečenica najjačeg
-razmatranja, ne više fiksni string.
+Svaki `ProposalKind` = radnja s dve mete (Da, Ne). Tvrda pravila ostaju kapije
+(`MustAccept` → Ne dobija 0). Ostalo krivulja: AfterMoney / RetakeAt sigmoida,
+TheirStrength, Grievance, CrewOnTheirGround. `DeskAnswer.Reason` OSTAJE enum
+(`Reason*` konstante, 58 poređenja u `DiplomacyTests`): reasoner bira koji, po
+razmatranju koje je presudilo. Dokaz: `DiplomacyTests` zeleni + sweep sa stolom.
 
-**Ulica** (`DemoCrews.Combat`, `Cover`, `CrewWalker.Flee`): jedan mali reasoner PO
-JEDINICI (ne po čoveku), otkucaj na 0.25 s, ne svaki frejm. Radnje: Gađaj (meta =
-čovek u dometu), Zaklon (meta = `CoverAnchor`), Beži, Stoj. Ose: rastojanje, viđen,
-ranjen, oružje, prijatelj pao u `NerveRange`, poručnik ili hood, brojnost, zaklon
-postoji. Nerv prestaje da bude `Random.value < BossNerve`: postaje osa PalMrtavBlizu ×
-krivulja po rangu, a slučajnost, ako je korisnik hoće, iz sejanog toka (`MixSeed`,
-sim-determinism traps), nikad `UnityEngine.Random`. Pravila korisnika ostaju kapije:
-čovek koji trči nikad ne puca (BarrelOn 30°), samo pilion puca s motora, `Engagement.May`
-(stav) je kapija na Gađaj.
+## 8. Policijski desk
 
-**Gazda**: `TerritoryComplianceEvaluation` ostaje kakav jeste; četiri težine se mogu
-izraziti kao četiri linearne ose kroz isti `Reasoner`, ali to ne menja ni jednu presudu.
-Radi se samo ako se posle flip-a pokaže da gazdi treba krivulja (npr. strah da deluje
-tek iznad praga). Nije u epicu.
+Čist model `PoliceDesk.Rank(calls, units, into)` ocenjuje parove (poziv, jedinica):
 
-**Policija**: samo `PoliceDispatch.Complaint` red poziva — osa starosti poziva, tier
-vrata, ima li mrtvih. Nije u epicu; zaseban ticket ako korisnik hoće.
+| osa | `Line` |
+|---|---|
+| CallAge | „poziv star N s" |
+| Severity (mrtvi > pozornik ranjen > hici > iznuda) | „N mrtvih na mestu" |
+| DoorTier | „vrata tiera N" |
+| Distance (jedinica → poziv) | „N m daleko" |
+| UnitsFree | „N jedinica slobodno" |
+| PullOffCost (jedinica već na manjem pozivu) | „skida se s poziva X" |
 
----
+`PoliceDispatch.Complaint.TickCalls` i `Wanted.NearestAvailable` pitaju desk umesto
+`Nearest`. Lestvica kola po vrelini ostaje tabela. Sve posle „jedinica stigla" je lanac
+(presuda 7) i ne menja se. Dokaz: `PoliceTests` + scenario „pucnjava s mrtvima ide pre
+stare iznude" + „jedinica se skida s iznude kad pozornik padne".
 
-## 7. Redosled rada (tickets, svaki sam za sebe isporučiv)
+## 9. Odgovor na vratima
 
-| ticket | šta | dokaz |
-|---|---|---|
-| UTIL-000 | `Curve`, `Axis`, `Consideration`, `MindAction`, `Reasoner` + testovi oblika krivulja, popravke za n, ranog izlaza, stabilnog izjednačenja | `gangsters_house_tests` nova grupa `UtilityCoreTests`; skener zabranjenih tokena pokriva `Outfit/Mind/` |
-| UTIL-001 | `HouseAxes` (§4) s rečenicama; `gangsters_house_axes --house N` štampa sve ose kuće rečima | komanda + test „svaka osa 0..1 na svakom seed-u" |
-| UTIL-002 | `HouseBook` (§5) i `HouseMind.Utility.cs`; šetači postaju generatori kandidata; `Brain = Tiers` i dalje podrazumevano | 21 stari test zelen na OBA mozga |
-| UTIL-003 | SENKA: `Brain = Both` — tieri odlučuju, utility ocenjuje pored; `gangsters_underworld_sim --brain both --days 30` štampa tabelu neslaganja (sat, kuća, tier je rekao X, utility je rekao Y, zašto rečima) | tabela u `Docs/utility-ai-shadow.md`; svako neslaganje ili namerno ili bag u tabeli |
-| UTIL-004 | FLIP: `Brain = Utility` podrazumevano; trag štampa tri najbolje (radnja, meta, ocena, rečenica); `HouseThinkRecord.Lines` nosi ocene; testovi koji su brojali pojaseve prepisani na „prva radnja je X" | 21 + novi testovi: „napad star 11 h ne zaustavlja širenje", „sef od $300 ne kupuje pištolj", „tri kolebljiva vrata ne drže kuću kod kuće" (Z2) |
-| UTIL-005 | UI: kartica kuće u ledgeru (INTELLIGENCE / sto) dobija red „ZAŠTO" = najjače razmatranje rečima, po pravilu mehanika-u-rečima | vizuelno, korisnik u editoru |
-| UTIL-006 | Sto (`DeskBook`) | `DiplomacyTests` zeleni; senka kao UTIL-003 na stolu |
-| UTIL-007 | Ulica (`FighterBook`) + izbacivanje `UnityEngine.Random` iz odluka (ne iz FX) | `gangsters_ambush_probe`, soak `--brawl`, CrewAudit bez novih redova |
-| UTIL-008 | `HouseBook.Temper` (tri ćudi kuće) | novine i sto pokazuju razliku; sim 30 d |
-| UTIL-009 | Alat: `Tools/mind/curves.py` crta krivulje iz tabele u ASCII i piše `Docs/utility-ai-book.md` iz koda (generisani dokument, sveže se proverava) | dokument + freshness check u `project.py audit` |
-
-Šta se ne radi: pešaci, kola, patrole, pritvor, sud, ledgeri (Presence, Fear, Control),
-kontrola bloka, cene. Ništa od toga ne bira.
-
-Redosled je tvrd: 000 → 001 → 002 → 003 → 004, pa 005 i 006 u bilo kom redu, 007 tek
-kad je kuća stabilna nedelju dana u editoru, 008/009 kad korisnik zatraži.
+`SurrenderRoll` postaje tri radnje (Quiet, Run, Fight) nad osama: hrabrost poručnika,
+temper, lojalnost (današnje tri) + naoružan, brojnost (pozornici : ljudi), poternica
+(nivo), kaucija u sefu (kuća može da izvuče), kola blizu. Sejani tok ostaje kao JEDNA
+osa (pravilo iz koda: „0 ili 1 bi napravilo tablicu"), isti `StreamFor(citySeed,
+crewKey, incident)`. Igračeva naredba „napadni" i dalje pregazi. Sve posle odgovora
+(lisice, cela jedinica, sprovod, prag) ostaje. Dokaz: `PoliceTests` + „ekipa s poternicom
+i pištoljima puca; goloruki novajlije idu mirno".
 
 ---
-
-## 8. Pre-mortem (šta može da pukne)
-
-| rizik | znak | lek |
-|---|---|---|
-| kaša: kuća menja odluku svakog sata | trag pokazuje A, B, A, B | osa Commitment + prag pregaženja (nova radnja mora za 0.1 da bude bolja od one koja teče) |
-| tabela nečitljiva | korisnik ne zna zašto kuća stoji | UTIL-001 komanda i UTIL-005 red ZAŠTO PRE flip-a, ne posle |
-| dva mozga se razilaze, nejasno ko je u pravu | senka puna neslaganja | svako neslaganje se presuđuje ručno i upisuje u `utility-ai-shadow.md` pre UTIL-004; nema flip-a s nepresuđenim redom |
-| gubitak pravila korisnika koja žive u `if`-ovima (nikad tuđa vrata, nikad dva zahteva za redom, Don bez naredbi, prag prihoda A30) | test padne ili tiho nestane | svako takvo pravilo = kapija (0/1 osa) s imenom pravila; test `TheMindNeverAsksADoorAnotherHouseHolds` i drugi ostaju kakvi jesu |
-| `float` neslaganje Mono/CoreCLR | test prolazi ofline, pada u editoru | `double` svuda u reasoneru, poređenje na 1e-6, ključ lomi izjednačenje |
-| ulica preskupa | frame time raste na 10k pešaka | reasoner po jedinici na 0.25 s, ose bez alokacija, `BestMark` ostaje kao brzi kandidat-generator |
-| tabela u C# = korisnik mora rebuild da bi menjao ćud | sporo podešavanje | prihvaćeno (isto kao D-tabela danas); `unity command recompile` je 20 s |
-
----
-
-## 9. Presude korisnika (2026-09-06)
-
-1. Obim: SVE — um kuće, sto i ulica su u epicu (007 nije backlog, samo ide posle kuće).
-2. Prva verzija tabele donosi iste odluke kao pojasevi, da bi se tjunovala od poznate
-   tačke; senka pa flip.
-3. Krivulje u C# tabeli kao `HouseMindConfig`, ne u editoru.
-4. Jedan epic UTIL-000..009 u Linear; 008/009 backlog.
-5. Biblioteka: jezgro se piše samo (v. §10).
 
 ## 10. Biblioteka ili svoje jezgro
 
 Pregledano 2026-09-06: `ZorPastaman/UtilityAI` (MIT, čist C# Brain/Action/Consideration,
-Unity omotač odvojen, linearna/kvadratna/logaritamska razmatranja, bez Markove popravke,
-bez meta po radnji), `Bartvanderkruys/utility-ai` (MIT, Unity 5, MonoBehaviour),
-`DreamersIncStudios/ECS-IAUS-sytstem` (MIT, DOTS/ECS, ne vadi se), `NWagter/Utility_AI_Unity`
-(MIT, školski projekat, logistička i logit krivulja nedovršene), Apex Utility AI
-(komercijalan, ugašen 2019). Ni jedan ne daje: `double` i stabilno izjednačenje, Markovu
-popravku za n, meta po radnji, rečenicu po razmatranju, rad bez alokacija, skener
-zabranjenih tokena. Jezgro koje treba je oko 300 linija (`Curve`, `Axis`,
-`Consideration`, `MindAction`, `Reasoner`); četiri krivulje su javne formule iz Markove
-knjige. Piše se svoje; od biblioteka se ne uzima ništa.
+Unity omotač odvojen; bez Markove popravke, bez meta po radnji, `float`),
+`Bartvanderkruys/utility-ai` (MIT, Unity 5, MonoBehaviour), `DreamersIncStudios/ECS-IAUS-sytstem`
+(MIT, jedini pravi IAUS, DOTS/ECS, ne vadi se), `NWagter/Utility_AI_Unity` (MIT, školski),
+Apex Utility AI (komercijalan, ugašen 2019). Ni jedan ne daje `double` + stabilno
+izjednačenje, rang+težinu, Markovu popravku, metu po radnji, rečenicu po razmatranju,
+rad bez alokacija ni skener tokena. Jezgro je ~300 linija; krivulje su javne formule.
+Piše se svoje.
+
+---
+
+## 11. Redosled rada (tickets)
+
+| ticket | šta | dokaz |
+|---|---|---|
+| UTIL-000 | jezgro: `Curve`, `Axis`, `Consideration`, `MindAction`, `Reasoner` (rang + težina, Markova popravka, rani izlaz, `double`, ordinal izjednačenje, racionalna sigmoida); `UtilityCoreTests`; skener zabranjenih tokena (`TerritoryRuntime`, `Ledger`, `Roll`, `Random`, `Math.Exp/Pow/Log`) na `Outfit/Mind/` | `gangsters_house_tests` nova grupa |
+| UTIL-001 | mera pre krivulje: `HouseAxes` s `Line`; `gangsters_house_axes --sweep 30` štampa raspodelu i stopu zasićenja po osi; `Max` = p90; baseline sweep današnjeg uma (blokovi/vrata po kući dan 14, dani u minusu, zamrznute kuće) u `Docs/utility-ai-baseline.md` — korisnik pokreće editor | dokument s brojevima |
+| UTIL-002 | `HouseBook` (§6) i `HouseReasoner`; šetači = `Candidates.*`; svaka radnja nosi Tier; jedan takmičarski intent; `CrewSpokenFor`; karta i sto ne troše potez; `WorkedOut` kapija; `Brain` prekidač (`Tiers` podrazumevano do 003); `HouseMind.cs` tanji u istom ticketu | 19 starih testova zeleni na `Tiers`; `sizes --check` |
+| UTIL-003 | PRESUDA: `gangsters_underworld_sim --brain tiers|utility --sweep 30 --days 30`, iste kolone, stari um kao kolona pored; klasifikator neslaganja prikazuje samo treću korpu; tri Z-tvrdnje; `Brain = Utility` podrazumevano kad su Z-tvrdnje zelene, nema izuzetaka, i korisnik posle IGRANJA kaže da ima smisla (presuda 9); privremeni ciljevi §11a se prepisuju posle igranja; testovi koji su brojali pojaseve prepisani na „prva radnja je X" | sweep tabela + korisnikov zapis posle igranja u `Docs/utility-ai-baseline.md` |
+| UTIL-004 | reči: trag štampa tri najbolje + ZAŠTO (najslabije razmatranje pobednika, gušitelj drugoplasiranog); `HouseThinkRecord.Lines` nosi ocene; `HouseIntent.Reason` fiksna linija po (radnja, razmatranje); u ledgeru tek kad EPIC 43 da nivo | probni ispis = ono što ekran pokazuje |
+| UTIL-005 | sto (`DeskBook`, `DeskAxes`); reasoner bira enum-razlog | `DiplomacyTests` zeleni; sweep |
+| UTIL-006 | policijski desk (§8): `PoliceDesk` čist; `PoliceDispatch` pita | `PoliceTests` + dva scenarija |
+| UTIL-007 | odgovor na vratima (§9): `DoorBook` u `SurrenderRoll`, pet novih osa, sejani tok kao osa | `PoliceTests` + scenario |
+| UTIL-008 | `HouseBook.Temper` (tri ćudi) — backlog | sweep pokazuje razliku |
+| UTIL-009 | `Tools/mind/curves.py` crta krivulje u ASCII i generiše `Docs/utility-ai-book.md` iz koda (freshness u `project.py audit`); `Docs/utility-ai.md` sloj; memorija; sve na Done — backlog | dokument + audit |
+
+### 11a. Privremeni ciljevi (pretpostavke, prepisuju se posle igranja)
+
+Nisu presuda. Prve brojke da sweep ima šta da štampa u crvenom ili zelenom; korisnik ih
+menja posle svake sesije u editoru.
+
+| cilj (14. dan, bez sudara) | privremeno |
+|---|---|
+| blokova koje kuća vodi | 3 |
+| dana zamrznuta (bez poteza na terenu) | 0 |
+| dana zaredom u minusu | ≤ 2 |
+| sati da se ceo blok obiđe od vrata do vrata | ≤ 24 |
+| prvi sudar dve kuće | dan 10–20 |
+| vrata koja plaćaju na vođenom bloku | ≥ 60 % |
+
+Redosled tvrd: 000 → 001 → 002 → 003 → 004; pa 005, 006, 007 u bilo kom redu;
+008/009 kad korisnik zatraži. **UTIL-000..004 pre EPIC 43**; svaki kasniji epic (43,
+44, 45, 46, 47) dodaje RED u `HouseBook`, nikad šetača.
+
+---
+
+## 12. Pre-mortem
+
+| rizik | znak | lek |
+|---|---|---|
+| kaša u areni | trag A, B, A, B | `WorkedOut` kapija; sweep s kapijom kao kontrola pre mekog zaleta |
+| tabela nečitljiva | korisnik ne zna zašto kuća stoji | ZAŠTO = najslabije + gušitelj; UTIL-001 komanda PRE flipa |
+| novi um gori od starog | sweep ispod baseline-a | `Brain = Tiers` ostaje; flip tek kad tuče brojke |
+| pravila u `if`-ovima tiho nestanu | test padne ili nestane | svako pravilo = kapija s imenom; stari testovi ostaju |
+| Mono/CoreCLR poslednji bit | test prolazi ofline, pada u editoru | `double`, bez transcendentnih, 1e-6, ordinal ključ |
+| `Max` pogrešan | jedna osa 1.0 svuda | stopa zasićenja po osi u komandi |
+| desk skida jedinicu bez kraja | ping-pong između dva poziva | PullOffCost raste sa svakim skidanjem; kapija „ne skidaj dvaput" |
+| vrata: previše pucaju | soak `--law` broji mrtve pozornike | težine kao danas (srednja ekipa 0.30), nove ose pomeraju, ne zamenjuju |
+| tabela u C# = rebuild da bi se menjala | sporo | prihvaćeno (presuda 3) |

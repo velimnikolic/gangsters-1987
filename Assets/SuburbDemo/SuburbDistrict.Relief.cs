@@ -8,7 +8,7 @@ namespace SuburbDemo
     // city's ground (or the lawn skirt) meets it. Everything that is placed asks
     // TownKit.Ground for its height: the 5 m tiles tilt to the local slope, props and
     // fences stand on it, the houses sit level with their foundations in it, the
-    // walkers' nodes are on it and the cars are lifted onto it as they go (OnPlaced).
+    // walkers' nodes and the shared carriageway surfaces are on it.
     public partial class SuburbDistrict
     {
         // three directional waves and some bumps, rolled once per plan
@@ -65,6 +65,21 @@ namespace SuburbDemo
         {
             var own = _placed ? _inner.ToLocal(new Vector3(wx, 0f, wz)) : new Vector3(wx, 0f, wz);
             return Ground(own.x, own.z);
+        }
+
+        // Publish relief before any car spawns. RegionalRoads.Join preserves these
+        // carriageways, so visitors and suburb traffic use the same physical height.
+        void BindRoadSurfaces()
+        {
+            foreach (var edge in _edges)
+            {
+                var road = RoadDemo.LaneNet.Shared.Adopt(edge);
+                road.SurfaceAt = s =>
+                {
+                    var point = road.Pose(s, 0f);
+                    return _inner.origin.y + GroundWorld(point.x, point.z);
+                };
+            }
         }
 
         /// <summary>The ground's unit normal at a point (finite differences).</summary>

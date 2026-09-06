@@ -89,7 +89,45 @@ static class Program
             Require(Same(pixels[outside], TurfInk.Water) && water[outside], "Triangle filled empty corner");
         }
         BuildingMassesStayInsidePickBounds();
-        Console.WriteLine($"PASSED: {checks} assertions in 16 surface and building-mass scenarios; offline managed geometry only.");
+        GroundFeatureKindsIgnoreQuarterNames();
+        Console.WriteLine($"PASSED: {checks} assertions in surface, building-mass and landmark scenarios; offline managed geometry only.");
+    }
+
+    static void GroundFeatureKindsIgnoreQuarterNames()
+    {
+        var collect = typeof(TurfMapSurvey).GetMethod("CollectGroundFeatures",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        var survey = new TurfMapSurvey();
+        foreach (string quarter in new[] { "Fairgrounds", "Warehouse Row", "Riverside" })
+        foreach (var feature in new[] {
+            (ResidentialLot.Use.Cafe, "CAFE", TurfLandmarkKind.Cafe, "CAFE"),
+            (ResidentialLot.Use.Subway, "SUBWAY", TurfLandmarkKind.Transit, "METRO") })
+        {
+            var plan = new ResidentialLot.Plan { W = 4, D = 3,
+                Ground = new ResidentialLot.Use[4, 3] };
+            // Two separate groups exercise the numbered display name as well.
+            plan.Ground[0, 0] = feature.Item1;
+            plan.Ground[1, 0] = feature.Item1;
+            plan.Ground[3, 2] = feature.Item1;
+            string name = quarter + " Block 01";
+            var recipe = new ResidentialBlockRecipe("test", name,
+                new Rect(100, 200, 16, 12), plan, 1, blockId: 7);
+            survey.Landmarks.Clear();
+            collect.Invoke(survey, new object[] { DistrictFrame.Identity, recipe, feature.Item1, feature.Item2 });
+            Require(survey.Landmarks.Count == 2, "Ground feature groups lost");
+            for (int i = 0; i < survey.Landmarks.Count; i++)
+            {
+                var landmark = survey.Landmarks[i];
+                Require(landmark.Kind == feature.Item3 && landmark.Label == feature.Item4,
+                    $"{landmark.Name} classified as {landmark.Label}");
+                Require(landmark.BlockId == 7 && landmark.Name ==
+                    (name + ": " + feature.Item2 + (i == 0 ? "" : " 2")).ToUpperInvariant(),
+                    "Landmark lost its block identity or display name");
+            }
+        }
+        Require(TurfLandmarkKinds.From("FAIRGROUND") == TurfLandmarkKind.Fairground &&
+            TurfLandmarkKinds.Label(TurfLandmarkKind.Fairground) == "FAIR",
+            "The real quay fairground lost its label");
     }
 
     static void BuildingMassesStayInsidePickBounds()

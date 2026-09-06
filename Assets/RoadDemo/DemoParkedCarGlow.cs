@@ -144,6 +144,9 @@ namespace RoadDemo
             // Add before the share roll: an unselected dynamic car must still be hidden
             // from the later whole-scene decorative scan.
             if (!car || !_seen.Add(car)) return;
+            // Authored lenses belong to DemoHeadlights; do not add guessed bulbs or
+            // replace the transparent cabin material. Keep the root in VisualCars.
+            if (car.TryGetComponent<VehicleLampRig>(out _)) return;
 
             float roll = Hash01(car.position, 0x51ED270Bu);
             if (roll >= LitShare) return;
@@ -309,7 +312,8 @@ namespace RoadDemo
             Transform found = null;
             for (var at = node; at && at != boundary; at = at.parent)
             {
-                if (at.name.StartsWith("SM_Veh_", System.StringComparison.OrdinalIgnoreCase) ||
+                if (LivingCity.Gameplay.CivilianVehicleCatalog.IsAuthored(at.name) ||
+                    at.name.StartsWith("SM_Veh_", System.StringComparison.OrdinalIgnoreCase) ||
                     at.name.StartsWith("Parking Car", System.StringComparison.OrdinalIgnoreCase) ||
                     at.name.StartsWith("Patrol Car", System.StringComparison.OrdinalIgnoreCase))
                     found = at;

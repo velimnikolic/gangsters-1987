@@ -488,7 +488,8 @@ namespace HarborDemo
         public static void StripBehaviours(GameObject go, bool keepAnimator = true)
         {
             void Kill(Object o) { if (o == null) return; if (Application.isPlaying) Object.Destroy(o); else Object.DestroyImmediate(o); }
-            foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>(true)) Kill(mb);
+            foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>(true))
+                if (!RoadDemo.CarBody.IsVisualRig(mb)) Kill(mb);
             foreach (var rb in go.GetComponentsInChildren<Rigidbody>(true)) Kill(rb);
             foreach (var col in go.GetComponentsInChildren<Collider>(true)) Kill(col);
             foreach (var nav in go.GetComponentsInChildren<UnityEngine.AI.NavMeshAgent>(true)) Kill(nav);
@@ -564,33 +565,7 @@ namespace HarborDemo
         /// <summary>The cars a port may park on a roll-on berth: the scan the city's own
         /// traffic is drawn from, less anything barred outright and anything wearing a
         /// livery - a shipload of imports is not a shipload of squad cars.</summary>
-        public static List<GameObject> ScanCars()
-        {
-            var list = new List<GameObject>();
-#if UNITY_EDITOR
-            string[] deny = { "boat", "yacht", "jetski", "helicopter", "plane", "cart", "scooter",
-                              "bike", "moped", "bot", "steering", "wheel", "trailer", "monster",
-                              "quad", "attach" };
-            foreach (var guid in UnityEditor.AssetDatabase.FindAssets("t:Prefab", CarFolders))
-            {
-                string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
-                string low = path.ToLowerInvariant();
-                bool denied = false;
-                foreach (var d in deny) if (low.Contains(d)) { denied = true; break; }
-                if (denied) continue;
-                if (!System.IO.Path.GetFileName(path).StartsWith("SM_Veh")) continue;
-                if (LivingCity.Gameplay.VehicleCatalog.IsBarred(path)) continue;
-                if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
-                var go = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
-                if (go != null) list.Add(go);
-            }
-            // FindAssets promises no order, and the caller draws from this list with the
-            // port's seeded RNG: unsorted, the same seed parks a different fleet after a
-            // reimport or on another machine
-            list.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
-#endif
-            return list;
-        }
+        public static List<GameObject> ScanCars() => RoadDemo.CivilianFleet.Load(weighted: false);
 
         public static float Range(System.Random rng, float lo, float hi) => lo + (float)rng.NextDouble() * (hi - lo);
         public static T Pick<T>(System.Random rng, IList<T> list) => list == null || list.Count == 0 ? default : list[rng.Next(list.Count)];

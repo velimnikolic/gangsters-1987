@@ -21,12 +21,8 @@ namespace LivingCity.UI
         const float ShelfHeadH = 100f;
         static float CatalogueTop = PageTop - ShelfHeadH;
 
-        /// <summary>The board is one row of plates deep, because every shelf the
-        /// catalogue stocks is five listings or fewer and five fit across the sheet. It
-        /// is still a WINDOW rather than a fixed list - a sixth listing on any shelf
-        /// scrolls, and CatalogueEdges says so out loud - but a second row's worth of
-        /// blank board under a full shelf is a hole in the page, so the stock book gets
-        /// that space instead.</summary>
+        /// <summary>One visible row leaves room for the stock book. Larger catalogues
+        /// scroll through further rows, with CatalogueEdges showing the way.</summary>
         const float CatalogueHeight = CardH + 8f;
 
         const float CatalogueGap = 16f;
@@ -258,12 +254,14 @@ namespace LivingCity.UI
             var card = LedgerV2.Card("Plate", catalogueContent, x, y, CardW, CardH);
             const float pad = 14f;
             var inner = CardW - pad * 2f;
+            var vehicle = item.Kind == EquipmentKind.Vehicle ||
+                          item.Kind == EquipmentKind.Motorcycle;
 
             var name = Line(card, LedgerStyle.Condensed, 17f, LedgerV2.Ink, pad, -8f,
-                inner - 76f, LineBox(17f), item.DisplayName.ToUpperInvariant());
+                vehicle ? inner : inner - 76f, LineBox(17f), item.DisplayName.ToUpperInvariant());
             name.characterSpacing = 2f;
             name.overflowMode = TextOverflowModes.Ellipsis;
-            Caps(card, pad + inner - 76f, -11f, 76f,
+            if (!vehicle) Caps(card, pad + inner - 76f, -11f, 76f,
                 "CAT. " + ShelfCodes[Mathf.Clamp(shelf, 0, ShelfCodes.Length - 1)] + "-" +
                 (char)('A' + Mathf.Clamp(index, 0, 25)), 9f, LedgerV2.Label, 2f,
                 TextAlignmentOptions.MidlineRight);
@@ -279,8 +277,6 @@ namespace LivingCity.UI
             var raw = LedgerV2.PortraitPlate(card, 0f, -33f, CardW, 90f,
                 item.DisplayName.ToUpperInvariant(), LedgerV2.Plate, LedgerV2.Muted);
             Block("Art rule", card, 0f, -123f, CardW, 1f, LedgerV2.Rule);
-            var vehicle = item.Kind == EquipmentKind.Vehicle ||
-                          item.Kind == EquipmentKind.Motorcycle;
             var model = vehicle
                 ? PortraitStudio.FindVehiclePrefab(
                     PortraitStudio.VehicleModelFor(item.DisplayName))

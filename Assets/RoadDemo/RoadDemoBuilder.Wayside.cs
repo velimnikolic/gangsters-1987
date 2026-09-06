@@ -312,7 +312,8 @@ namespace RoadDemo
                 var go = Instantiate(prefab, root);
                 go.name = prefab.name;
                 LivingCity.Gameplay.VehiclePaint.Apply(go, prefab);
-                foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
+                foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>())
+                    if (!CarBody.IsVisualRig(mb)) Destroy(mb);
                 foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
                 foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
 
@@ -367,7 +368,8 @@ namespace RoadDemo
             go.name = prefab.name + " (driver)";
             foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
             foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
-            foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
+            foreach (var mb in go.GetComponentsInChildren<MonoBehaviour>())
+                    if (!CarBody.IsVisualRig(mb)) Destroy(mb);
             foreach (var animator in go.GetComponentsInChildren<Animator>())
                 animator.runtimeAnimatorController = null;
             SetLayerDeep(go, CrowdLayer);

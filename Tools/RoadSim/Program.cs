@@ -567,6 +567,7 @@ static class Program
         if (only == "all" || only == "kerbapproach") KerbApproach.Run();
         if (only == "all" || only == "kerbdeparture") KerbDeparture.Run();
         if (only == "all" || only == "junctionpace") JunctionPace.Run();
+        if (only == "all" || only == "regionaltraffic") RegionalTraffic.Run();
         if (only == "all" || only == "trafficadmission") TrafficAdmission.Run();
         if (only == "all" || only == "trafficflow") TrafficFlow.Run();
         if (only == "all" || only == "turnrouting") TurnRouting.Run();

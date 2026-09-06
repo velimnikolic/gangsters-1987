@@ -1038,18 +1038,26 @@ namespace LivingCity.UI
                 blocksScroll = Mathf.Clamp(
                     blocksScroll - wheel * WheelStep, 0f, maxScroll);
                 content.anchoredPosition = new Vector2(0f, blocksScroll);
+                // The marks are toggled, never repainted: a sheet rebuild per notch
+                // would re-read the open block and re-film it for two words.
+                ShowScrollMarks(blocksMoreAbove, blocksMoreBelow, blocksScroll,
+                    maxScroll);
             }
             else if (viewport == blockTabViewport)
             {
                 blockTabScroll = Mathf.Clamp(
                     blockTabScroll - wheel * WheelStep, 0f, maxScroll);
                 content.anchoredPosition = new Vector2(0f, blockTabScroll);
+                ShowScrollMarks(blockTabMoreAbove, blockTabMoreBelow, blockTabScroll,
+                    maxScroll);
             }
             else if (viewport == blockSheetViewport)
             {
                 blockSheetScroll = Mathf.Clamp(
                     blockSheetScroll - wheel * WheelStep, 0f, maxScroll);
                 content.anchoredPosition = new Vector2(0f, blockSheetScroll);
+                ShowScrollMarks(blockSheetMoreAbove, blockSheetMoreBelow,
+                    blockSheetScroll, maxScroll);
             }
             else if (viewport == blueprintViewport)
             {

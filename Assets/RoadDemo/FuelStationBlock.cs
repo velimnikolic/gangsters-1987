@@ -115,7 +115,7 @@ namespace RoadDemo
 
             var standing = new GameObject("Standing Vehicles").transform;
             standing.SetParent(stationRoot, false);
-            var cars = TestBench.WeightedCars(FindVehicle);
+            var cars = TestBench.WeightedCars();
             var tanker = FindVehicle("SM_Veh_Truck_Delivery_01") ?? FindVehicle("SM_Veh_Truck_01");
             ForecourtSet.StandTheStill(
                 stood.Station, standing, tanker, cars, new System.Random(seed * 613 + 97));

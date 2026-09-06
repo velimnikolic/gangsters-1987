@@ -10,6 +10,9 @@ namespace RoadDemo
     {
         const string PalmProps = "Assets/Synty/PolygonPalmCity/Prefabs/Props/";
         const string PowerPolePath = PalmProps + "SM_Prop_Powerpole_01.prefab";
+        const float PoleSpacing = 21f;
+        // Covers the 2.223 m crossarm in either orientation, with a small margin.
+        const float PoleClearance = 1.25f;
         static readonly string[] PowerWirePaths =
         {
             PalmProps + "SM_Prop_Powerline_02.prefab",
@@ -56,7 +59,7 @@ namespace RoadDemo
 
             int poles = 0, spans = 0;
             foreach (var run in PowerRuns(raster))
-                PoleRun(run, root, pole, wires, dice, stand, ref poles, ref spans);
+                PoleRun(run, raster, root, pole, wires, dice, stand, ref poles, ref spans);
 
             if (poles == 0 && spans == 0) DestroyNow(root.gameObject);
             else Debug.Log($"[Core] powerlines: {poles} poles, {spans} spans.");
@@ -124,7 +127,7 @@ namespace RoadDemo
         static float PowerlineLateral(int width) =>
             width * CoreRoads.Cell * 0.5f + CoreRoads.Cell * 0.5f;
 
-        static void PoleRun(PowerRun run, Transform parent, GameObject pole, List<GameObject> wires,
+        static void PoleRun(PowerRun run, CoreRoads.Raster raster, Transform parent, GameObject pole, List<GameObject> wires,
                             System.Random dice, System.Func<GameObject, Transform, GameObject> stand,
                             ref int poles, ref int spans)
         {
@@ -139,6 +142,9 @@ namespace RoadDemo
                 : new Vector3(along, 0.1f, lateral + run.Side * side);
 
             var spots = PoleSpots(run.From + 2f, run.To - 2f);
+            // Merging road stretches also bridges junctions. The setback from this
+            // road alone says nothing about a crossing road, driveway or wider road.
+            spots.RemoveAll(along => !PoleClear(raster, At(along, 0f)));
             foreach (float along in spots)
             {
                 var go = Spawn(pole, parent, stand);
@@ -147,6 +153,10 @@ namespace RoadDemo
             }
 
             for (int k = 0; k + 1 < spots.Count; k++)
+            {
+                // Keep an overhead crossing after removing one unsafe pole, but do
+                // not stretch a wire across an arbitrarily long rejected run.
+                if (spots[k + 1] - spots[k] > 2f * PoleSpacing) continue;
                 foreach (float off in strand)
                 {
                     var wire = Spawn(wires[dice.Next(wires.Count)], parent, stand);
@@ -156,6 +166,22 @@ namespace RoadDemo
                     wire.transform.localScale = new Vector3(1f, 1f, (spots[k + 1] - spots[k]) / WireLen);
                     spans++;
                 }
+            }
+        }
+
+        static bool PoleClear(CoreRoads.Raster raster, Vector3 position)
+        {
+            int i0 = Mathf.FloorToInt((position.x - PoleClearance - raster.X0) / CoreRoads.Cell);
+            int i1 = Mathf.FloorToInt((position.x + PoleClearance - raster.X0) / CoreRoads.Cell);
+            int j0 = Mathf.FloorToInt((position.z - PoleClearance - raster.Z0) / CoreRoads.Cell);
+            int j1 = Mathf.FloorToInt((position.z + PoleClearance - raster.Z0) / CoreRoads.Cell);
+            for (int i = i0; i <= i1; i++)
+                for (int j = j0; j <= j1; j++)
+                {
+                    var kind = raster.At(i, j);
+                    if (CoreRoads.IsRoad(kind) || kind == CoreRoads.Kind.Water) return false;
+                }
+            return true;
         }
 
         static GameObject Spawn(GameObject prefab, Transform parent,
@@ -167,7 +193,7 @@ namespace RoadDemo
         static List<float> PoleSpots(float from, float to)
         {
             var spots = new List<float>();
-            for (float p = from; p < to; p += 21f) spots.Add(p);
+            for (float p = from; p < to; p += PoleSpacing) spots.Add(p);
             return spots;
         }
 

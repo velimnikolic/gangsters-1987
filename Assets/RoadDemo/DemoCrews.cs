@@ -837,6 +837,8 @@ namespace RoadDemo
         readonly List<CityBlocks.BlockInfo> _mapVisionBlocksBefore =
             new List<CityBlocks.BlockInfo>();
         readonly HashSet<int> _mapVisionBlockIds = new HashSet<int>();
+        readonly List<Vector2> _mapVisionEyes = new List<Vector2>();
+        Vector2 _mapVisionMin, _mapVisionMax;
         int _mapVisionFrame = -1;
 
         // The fog on the 3D street itself: which bodies are drawn (WorldFogView).
@@ -1394,7 +1396,7 @@ namespace RoadDemo
             for (var i = 0; i < _mapVisionBlocks.Count; i++)
                 if (SqrDistanceTo(_mapVisionBlocks[i].Union, target) <= streetSqr)
                     return true;
-            return false;
+            return FreeRoamMapVisible(target) && CityBlocks.At(target, includeInterSlabGaps: true) == null;
         }
 
         void RefreshMapVisionBlocks()
@@ -1407,10 +1409,10 @@ namespace RoadDemo
             _mapVisionBlocksBefore.AddRange(_mapVisionBlocks);
             _mapVisionBlocks.Clear();
             _mapVisionBlockIds.Clear();
+            _mapVisionEyes.Clear();
 
             var blocks = CityBlocks.Blocks;
-            if (blocks.Count > 0)
-                CollectMapVisionBlocks(blocks);
+            CollectMapVisionBlocks(blocks);
             if (!SameMapVisionBlocks())
                 _mapVisionVersion++;
         }
@@ -1441,6 +1443,7 @@ namespace RoadDemo
                 if (CrewQuarters.TryGetDoorstep(unit, out var billet))
                 {
                     var doorstep = new Vector2(billet.x, billet.z);
+                    CacheMapVisionEye(doorstep);
                     var held = CityBlocks.At(doorstep) ?? ClosestBlock(doorstep, blocks);
                     if (held != null && _mapVisionBlockIds.Add(held.Id))
                         _mapVisionBlocks.Add(held);
@@ -1453,6 +1456,7 @@ namespace RoadDemo
                         continue;
 
                     var at = new Vector2(man.Tf.position.x, man.Tf.position.z);
+                    CacheMapVisionEye(at);
                     var block = CityBlocks.At(at) ?? ClosestBlock(at, blocks);
                     if (block != null && _mapVisionBlockIds.Add(block.Id))
                         _mapVisionBlocks.Add(block);
@@ -1460,27 +1464,21 @@ namespace RoadDemo
             }
         }
 
+        void CacheMapVisionEye(Vector2 at)
+        {
+            _mapVisionMin = _mapVisionEyes.Count == 0 ? at : Vector2.Min(_mapVisionMin, at);
+            _mapVisionMax = _mapVisionEyes.Count == 0 ? at : Vector2.Max(_mapVisionMax, at);
+            _mapVisionEyes.Add(at);
+        }
+
         bool FreeRoamMapVisible(Vector2 target)
         {
             float radiusSqr = FreeRoamVisionRadius * FreeRoamVisionRadius;
-            foreach (var unit in Units)
-            {
-                if (unit == null || unit.Faction != 0)
-                    continue;
-                // The same for the open-floor scenes: a crew indoors still sees out.
-                if (CrewQuarters.TryGetDoorstep(unit, out var billet) &&
-                    (target - new Vector2(billet.x, billet.z)).sqrMagnitude <= radiusSqr)
-                    return true;
-                foreach (var man in unit.All())
-                {
-                    if (man == null || man.Dead || man.Tf == null ||
-                        !man.Tf.gameObject.activeInHierarchy)
-                        continue;
-                    var at = new Vector2(man.Tf.position.x, man.Tf.position.z);
-                    if ((target - at).sqrMagnitude <= radiusSqr)
-                        return true;
-                }
-            }
+            if (_mapVisionEyes.Count == 0 || SqrDistanceTo(Rect.MinMaxRect(
+                _mapVisionMin.x, _mapVisionMin.y, _mapVisionMax.x, _mapVisionMax.y), target) > radiusSqr)
+                return false;
+            foreach (var eye in _mapVisionEyes)
+                if ((target - eye).sqrMagnitude <= radiusSqr) return true;
             return false;
         }
 

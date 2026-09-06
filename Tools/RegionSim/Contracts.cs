@@ -31,7 +31,7 @@ namespace RoadDemo
         }
         public abstract void Plan(float[] links,int seed);
     }
-    public class CoreDistrict
+    public partial class CoreDistrict
     {
         public CoreRoads.Raster Raster;
         public IReadOnlyList<RasterGateways.Gateway> RegionGateways;
@@ -40,9 +40,17 @@ namespace RoadDemo
         public CoreLayout.Plan Layout;
         public Rect LocalBounds;
         public List<CoreAmenityLayout.Site> FuelSites = new();
+        List<CoreLayout.Block> _blocks;
+        CoreLayout.Plan _plan { get => Layout; set => Layout=value; }
+        CoreRoads.Raster _raster { get => Raster; set => Raster=value; }
+        int _seed;
+        public int quarterBudget;
         public void Plan(int seed)
         {
-            Layout=CoreLayout.Arrange(CoreBlockCatalog.CreateBlocks(),seed,out Raster);
+            _seed=seed;
+            _blocks=CoreBlockCatalog.CreateBlocks();
+            Layout=CoreLayout.Arrange(_blocks,seed,out Raster);
+            KeepQuarters();
             LocalBounds=Rect.MinMaxRect(Raster.X0,Raster.Z0,Raster.X(Raster.NX),Raster.Z(Raster.NZ));
             Frame=DistrictFrame.At(-LocalBounds.xMin,-LocalBounds.yMin,0);
             foreach(var box in Raster.Junctions)
@@ -67,19 +75,14 @@ namespace RoadDemo
             foreach(var box in Raster.Junctions) Net.Nodes.Add(new RoadNode());
         }
     }
+    // Traffic prefab loading is outside this land-use harness.
+    public static class CivilianFleet { public static List<GameObject> Load() => new(); }
     public static class StreetKit { public const float StreetHalf=7.5f; }
     public static class FuelStationBlock
     {
         public const float BlockFrontage=60f,BlockDepth=55f;
         public static Rect PreviewBounds => new Rect(-30,-35,60,55);
     }
-    public static class FireStationBlock
-    {
-        public const float BlockFrontage=50f,BlockDepth=35f;
-        public static Rect PreviewBounds => new Rect(-25,-17.5f,50,35);
-        public static Rect BlockBounds => new Rect(-35,-30,70,60);
-    }
-    public static class PolicePrecinctBlock { public static Rect PreviewBounds => new Rect(-20,-20,45,40); }
     public static class ParkingBlockSite { public static Rect Surface(Rect box,ParkingBlockStyle style) => box; }
 }
 namespace HarborDemo

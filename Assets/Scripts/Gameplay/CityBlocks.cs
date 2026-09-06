@@ -88,8 +88,9 @@ namespace LivingCity.Gameplay
         }
 
         /// <summary>The block whose slabs contain the point, else null - the point may
-        /// be on a street, which belongs to nobody.</summary>
-        public static BlockInfo At(Vector2 worldXZ)
+        /// be on a street, which belongs to nobody. Fog can include inter-slab gaps
+        /// to keep an unrevealed block's courtyards private as well.</summary>
+        public static BlockInfo At(Vector2 worldXZ, bool includeInterSlabGaps = false)
         {
             EnsureCollected();
             if (gridCols == 0)
@@ -106,6 +107,7 @@ namespace LivingCity.Gameplay
                 var block = candidates[i];
                 if (!block.Union.Contains(worldXZ))
                     continue;
+                if (includeInterSlabGaps) return block;
                 foreach (var slab in block.Slabs)
                     if (slab.Contains(worldXZ))
                         return block;

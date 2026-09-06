@@ -18,7 +18,9 @@ namespace RoadDemo
         float _overviewDistance, _overviewYaw, _overviewPitch;
         int _focused = -1;
         int _comparison = 3;
-        const string Controls = "1-8: cars   9: Synty   C: compare   0: lineup   L: day/night\n" +
+        const int FirstUtility = 9;
+        const string Controls = "F1-F6: new vehicles   U: new row   1-8: sedans   9: Synty\n" +
+            "C: compare   0: all vehicles   L: day/night\n" +
             "WASD/arrows: pan   Q/E or right-drag: orbit   wheel: zoom";
 
         void Awake()
@@ -29,7 +31,7 @@ namespace RoadDemo
             _overviewYaw = _camera.yaw;
             _overviewPitch = _camera.pitch;
             _camera.showHint = true;
-            Overview();
+            NewVehicles();
         }
 
         void Start()
@@ -48,7 +50,8 @@ namespace RoadDemo
         {
             string label = _focused >= 0 && cars != null && _focused < cars.Length && cars[_focused]
                 ? (labels != null && _focused < labels.Length ? labels[_focused] : cars[_focused].name)
-                : (_focused == -2 ? cars[_comparison].name + " / SYNTY SEDAN" : "MIAMI 1987 / luxury to everyday");
+                : (_focused == -2 ? cars[_comparison].name + " / SYNTY SEDAN"
+                    : _focused == -3 ? "NEW UTILITY VEHICLES / awaiting approval" : "MIAMI 1987 / complete collection");
             _camera.hint = label + (clock && clock.Hour > 20f ? " / NIGHT" : " / DAY") + "\n" + Controls;
         }
 
@@ -63,16 +66,33 @@ namespace RoadDemo
             RefreshHint();
         }
 
+        void NewVehicles()
+        {
+            if (cars == null || cars.Length <= FirstUtility) { Overview(); return; }
+            Vector3 centre = Vector3.zero;
+            int count = 0;
+            for (int i = FirstUtility; i < cars.Length; i++)
+                if (cars[i]) { centre += cars[i].position; count++; }
+            if (count == 0) { Overview(); return; }
+            _camera.Drop();
+            _camera.pivot = centre / count + Vector3.up;
+            _camera.distance = 32f;
+            _camera.yaw = 180f;
+            _camera.pitch = 32f;
+            _focused = -3;
+            RefreshHint();
+        }
+
         void Focus(int index)
         {
-            if (cars == null || index >= cars.Length || !cars[index]) return;
+            if (cars == null || index < 0 || index >= cars.Length || !cars[index]) return;
             _camera.Drop();
-            _camera.pivot = cars[index].position + Vector3.up * 0.65f;
-            _camera.distance = 9.5f;
+            _camera.pivot = cars[index].position + Vector3.up * (index >= FirstUtility ? 0.9f : 0.65f);
+            _camera.distance = index >= FirstUtility ? 11f : 9.5f;
             _camera.yaw = cars[index].eulerAngles.y + 145f;
             _camera.pitch = 26f;
             _focused = index;
-            if (index < 8) _comparison = index;
+            if (index != 8) _comparison = index;
             RefreshHint();
         }
 
@@ -108,6 +128,13 @@ namespace RoadDemo
             if (keys.digit8Key.wasPressedThisFrame) Focus(7);
             if (keys.digit9Key.wasPressedThisFrame) Focus(8);
             if (keys.cKey.wasPressedThisFrame) Compare();
+            if (keys.uKey.wasPressedThisFrame) NewVehicles();
+            if (keys.f1Key.wasPressedThisFrame) Focus(FirstUtility);
+            if (keys.f2Key.wasPressedThisFrame) Focus(FirstUtility + 1);
+            if (keys.f3Key.wasPressedThisFrame) Focus(FirstUtility + 2);
+            if (keys.f4Key.wasPressedThisFrame) Focus(FirstUtility + 3);
+            if (keys.f5Key.wasPressedThisFrame) Focus(FirstUtility + 4);
+            if (keys.f6Key.wasPressedThisFrame) Focus(FirstUtility + 5);
         }
     }
 }

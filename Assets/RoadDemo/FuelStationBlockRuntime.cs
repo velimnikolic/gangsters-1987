@@ -434,10 +434,11 @@ namespace RoadDemo
         {
             foreach (var col in go.GetComponentsInChildren<Collider>()) Destroy(col);
             foreach (var rb in go.GetComponentsInChildren<Rigidbody>()) Destroy(rb);
-            foreach (var behaviour in go.GetComponentsInChildren<MonoBehaviour>()) Destroy(behaviour);
+            foreach (var behaviour in go.GetComponentsInChildren<MonoBehaviour>())
+                if (!CarBody.IsVisualRig(behaviour)) Destroy(behaviour);
         }
 
-        List<GameObject> CarBodies() => _cars ??= TestBench.WeightedCars(FindVehicle);
+        List<GameObject> CarBodies() => _cars ??= TestBench.WeightedCars();
 
         static readonly string[] VehicleFolders =
         {

@@ -282,6 +282,7 @@ namespace RoadDemo
         SportsCourt,
         Parking,
         Police,
+        FireStation,
         Nightclub,
         Warehouse,
         Fairground,
@@ -307,6 +308,7 @@ namespace RoadDemo
                 case TurfLandmarkKind.SportsCourt: return "COURT";
                 case TurfLandmarkKind.Parking: return "PARKING";
                 case TurfLandmarkKind.Police: return "POLICE";
+                case TurfLandmarkKind.FireStation: return "FIRE STATION";
                 case TurfLandmarkKind.Nightclub: return "CLUB";
                 case TurfLandmarkKind.Warehouse: return "WAREHOUSE";
                 case TurfLandmarkKind.Fairground: return "FAIR";
@@ -335,6 +337,12 @@ namespace RoadDemo
             if (name.Contains("parking") || name.Contains("car-park") ||
                 name.Contains("car park")) return TurfLandmarkKind.Parking;
             if (name.Contains("police")) return TurfLandmarkKind.Police;
+            // The fire house is matched on the whole word: "fire" alone is a hydrant,
+            // an escape and half the dressing in the city.
+            if (name.Contains("firestation") || name.Contains("fire-station") ||
+                name.Contains("fire station") || name.Contains("firehouse") ||
+                name.Contains("fire-house") || name.Contains("fire house"))
+                return TurfLandmarkKind.FireStation;
             if (name.Contains("nightclub") || name.Contains("night-club") ||
                 name.Contains("night club")) return TurfLandmarkKind.Nightclub;
             if (name.Contains("warehouse")) return TurfLandmarkKind.Warehouse;

@@ -34,6 +34,22 @@ class Coachwork:
         self.front=car['wheelbase']/2+self.shape['axle_offset']
         self.rear=self.front-car['wheelbase']
         self.arch=car['radius']+.055
+        self.cap_faces={}
+
+    def cap_z(self,x,end,y):
+        """Project a fitting onto the actual triangulated end panel."""
+        for a,b,c,limits in self.cap_faces.get(end,[]):
+            if not (limits[0]-1e-7<=x<=limits[1]+1e-7 and limits[2]-1e-7<=y<=limits[3]+1e-7):continue
+            det=(b[1]-c[1])*(a[0]-c[0])+(c[0]-b[0])*(a[1]-c[1])
+            if abs(det)<1e-12:continue
+            u=((b[1]-c[1])*(x-c[0])+(c[0]-b[0])*(y-c[1]))/det
+            v=((c[1]-a[1])*(x-c[0])+(a[0]-c[0])*(y-c[1]))/det
+            if u>=-1e-7 and v>=-1e-7 and u+v<=1+1e-7:return u*a[2]+v*b[2]+(1-u-v)*c[2]
+        return None
+
+    def skin_z(self,x,end,y):
+        z=self.cap_z(x,end,y)
+        return self.end_z(x,end,y) if z is None else z
 
     def width(self, z):
         s=self.shape
@@ -60,7 +76,8 @@ class Coachwork:
         return end*(self.end-self.shape['corner']*(abs(x)/self.width(end*self.end))**3-tuck)
 
     def position_z(self, x, z, y=None):
-        amount=max(0,(abs(z)-(self.end-.6))/.6)
+        # Spread the turn far enough that swept side stations cannot double back.
+        amount=max(0,(abs(z)-(self.end-.9))/.9)
         tuck=0 if y is None else max(0,(.48-y)/.27)*.15
         return z-math.copysign((self.shape['corner']*(abs(x)/self.width(z))**3+tuck)*amount*amount,z)
 
@@ -82,12 +99,12 @@ class Coachwork:
     def shell(self, mesh):
         car=self.car
         bb,_,_,fb=car['cabin']
-        rings=set(samples(-self.end,self.end,12)+[bb,fb,-self.end+.6,self.end-.6])
+        rings=set(samples(-self.end,self.end,12)+[bb,fb,-self.end+.9,self.end-.9])
         for axle in (self.rear,self.front):
             rings.update(axle+self.arch*math.cos(i*math.pi/12) for i in range(13))
             rings.update((axle-self.arch-.035,axle+self.arch+.035))
         rings=sorted({round(z,7) for z in rings})
-        mesh.box((0,.19,0),(self.w*1.6,.10,car['wheelbase']+1.0),'rubber')
+        mesh.box((0,.19,0),(self.w*1.4,.10,car['wheelbase']+1.0),'rubber')
         for side in (-1,1):
             bands=[0,.16,.30,.42,.72,.86,1]
             for a,b in zip(rings,rings[1:]):
@@ -136,8 +153,15 @@ class Coachwork:
                 y=lerp(.21,self.top(u,z)[1],t)
                 x=u*self.side_x(min(y,self.deck(z)),z)
                 return (x,y,self.end_z(x,end,y))
+            start=len(mesh.faces)
             mesh.surface(cap,sorted(set(across+samples(-1,1,10))),[0,.16,.30,.42,.72,.86,1],
                          car['paint'],(0,0,end),smooth=False)
+            self.cap_faces[end]=[]
+            for points,_ in mesh.faces[start:]:
+                for i in range(1,len(points)-1):
+                    a,b,c=points[0],points[i],points[i+1]
+                    self.cap_faces[end].append((a,b,c,(min(p[0] for p in (a,b,c)),max(p[0] for p in (a,b,c)),
+                                                     min(p[1] for p in (a,b,c)),max(p[1] for p in (a,b,c)))))
 
     def belt_trim(self, mesh, height, thickness, color):
         for side in (-1,1):

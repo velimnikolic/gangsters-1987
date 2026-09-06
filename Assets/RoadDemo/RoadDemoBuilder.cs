@@ -954,42 +954,14 @@ namespace RoadDemo
                 if (palm != null) _palms.Add(palm);
             }
 
-            // road vehicles from every Synty pack in the project; boats, aircraft,
-            // two-wheelers and attachment parts are filtered out by name
+            _carPrefabs.AddRange(CivilianFleet.Load());
+            // Patrol admission remains separate from the ambient fleet.
             string[] vehicleFolders =
             {
                 "Assets/Synty/PolygonPalmCity/Prefabs/Vehicles",
                 "Assets/Synty/PolygonCity/Prefabs/Vehicles",
                 "Assets/Synty/PolygonPoliceStation/Prefabs/Vehicles",
             };
-            string[] vehicleDeny =
-            {
-                "boat", "yacht", "jetski", "helicopter", "plane", "cart", "scooter",
-                "bike", "moped", "bot", "steering", "wheel", "trailer", "monster",
-                "quad", "attach",
-            };
-            foreach (var path in ScanPrefabPaths(vehicleFolders, vehicleDeny))
-            {
-                if (!System.IO.Path.GetFileName(path).StartsWith("SM_Veh")) continue;
-                // bodies that may not reach a scene at all, whatever the scan turns up
-                if (LivingCity.Gameplay.VehicleCatalog.IsBarred(path)) continue;
-                // anybody's marked vehicle - the law, the ambulance, the coastguard -
-                // is on a call, and a car on a call does not queue at a light with the
-                // rest of the traffic. Asked with the PATH, because the police pack's
-                // own names give nothing away: "SM_Veh_Car_01" and "SM_Veh_Van_01" are
-                // liveried cruisers, and the old name filter ("police" in the name)
-                // drove all four of them as ordinary traffic
-                if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
-                var v = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
-                if (v == null) continue;
-                // duplicate-as-weight: every pool in the demo is drawn from uniformly, so the
-                // only place a mix can be tuned is the list itself. An exotic takes one seat
-                // where a saloon takes six (VehicleCatalog.PoolWeight)
-                for (int seat = 0, seats = LivingCity.Gameplay.VehicleCatalog.PoolWeight(path);
-                     seat < seats; seat++)
-                    _carPrefabs.Add(v);
-            }
-
             foreach (var name in LivingCity.Gameplay.VehicleCatalog.PoliceCars)
                 foreach (var folder in vehicleFolders)
                 {
@@ -4553,6 +4525,29 @@ namespace RoadDemo
             station.Officers.Add(beat);
             _patrolMarkers?.Add(beat);
             return beat;
+        }
+
+        /// <summary>
+        /// EVERY STATION HOUSE THIS CITY ACTUALLY FOUNDED, for the territory layer's
+        /// precinct map (GAN-236): its own station id and the ground it stands on. Houses
+        /// that never became a precinct - a building with no forecourt, or no car - are
+        /// not among them, because the map answers "whose men come" and those send none.
+        ///
+        /// Handed over as points rather than as blocks: where a house stands is what the
+        /// layout knows, and which block that is belongs to the geography.
+        /// </summary>
+        public void CollectPrecinctSeats(List<LivingCity.Territory.TerritoryPrecinctSeat> into)
+        {
+            if (into == null) return;
+            for (int i = 0; i < _stations.Count; i++)
+            {
+                var station = _stations[i];
+                var roster = station.Precinct?.Roster;
+                if (roster == null) continue;
+                into.Add(new LivingCity.Territory.TerritoryPrecinctSeat(
+                    roster.StationId,
+                    new LivingCity.Territory.TerritoryPoint(station.At.x, station.At.z)));
+            }
         }
 
         /// <summary>The house this beat was dealt at, or null for a block beat.</summary>

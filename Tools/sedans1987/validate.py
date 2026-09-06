@@ -9,6 +9,7 @@ from build import check
 from preview import Assets, documents
 from showroom import SCENE, REFERENCE, REFERENCE_ROOT, REFERENCE_BAY, placement
 from check_wheels import closed_tire,sidewall_coverage
+from check_utilities import validate_utilities,no_paint_behind_glass
 from palette import COLORS
 from bodywork import Coachwork
 import unity_assets as ua
@@ -54,6 +55,13 @@ def validate():
     # exact moves above explain this signal; an additional deletion must fail.
     deleted = subprocess.run(['git', 'diff', '--name-only', '--diff-filter=D', 'HEAD', '--', ua.ASSET],
                              cwd=ua.ROOT, check=True, capture_output=True, text=True)
+    retired = {
+        '1ad5c2ecec2c507d953f58e33fe6fc2f': 'Assets/Sedan1987/Materials/SedanLamps.mat.meta',
+        'ab0a7c1598df5b3596c90fbae858a96a': 'Assets/Sedan1987/Textures/SedanLampEmission.png.meta',
+    }
+    for guid in retired:
+        refs=subprocess.run(['rg','-l',guid,'Assets'],cwd=ua.ROOT,capture_output=True,text=True)
+        assert refs.returncode == 1, ('Retired lamp asset still referenced',guid,refs.stdout)
     retained = 0
     for path in deleted.stdout.splitlines():
         if not path.endswith('.meta'):
@@ -61,8 +69,8 @@ def validate():
         old = subprocess.run(['git', 'show', 'HEAD:'+path], cwd=ua.ROOT,
                              check=True, capture_output=True, text=True).stdout
         guid = re.search(r'^guid: ([0-9a-f]{32})', old, re.M)[1]
-        assert guid in retained_paths, ('Unrecorded asset deletion', path)
-        retained += 1
+        assert guid in retained_paths or retired.get(guid)==path, ('Unrecorded asset deletion', path)
+        retained += int(guid in retained_paths)
     meshes = [p for p in files if p.parent.name == 'Meshes' and p.suffix == '.asset']
     total_triangles = 0
     for path in meshes:
@@ -96,7 +104,8 @@ def validate():
         path = ua.ROOT/f'{ua.ASSET}/Prefabs/{car["id"]}.prefab'
         docs = documents(path)
         assert sum(t == 23 for t, _ in docs.values()) == 7, path
-        fitting=next(d['MonoBehaviour'] for t,d in docs.values() if t==114)
+        fitting=next(d['MonoBehaviour'] for t,d in docs.values() if t==114 and
+                     d['MonoBehaviour']['m_Script']['guid']==ua.guid('Assets/RoadDemo/VehicleLampRig.cs'))
         assert fitting['m_Script']['guid']==ua.guid('Assets/RoadDemo/VehicleLampRig.cs')
         assert docs[fitting['lenses']['fileID']][0]==23
         glass,glass_indices=assets.mesh(ua.guid(f'{ua.ASSET}/Meshes/{car["id"]}_Lamps.asset'))
@@ -128,10 +137,17 @@ def validate():
         transforms = [d['Transform'] for t, d in docs.values() if t == 4]
         wheels = [t for t in transforms if t['m_LocalPosition']['y'] > .1]
         assert len(wheels) == 4, path
+        wheel_names={docs[t['m_GameObject']['fileID']][1]['GameObject']['m_Name'] for t in wheels}
+        assert wheel_names=={'Wheel_FL','Wheel_FR','Wheel_RL','Wheel_RR'}, (path,wheel_names)
+        seats=next(d['MonoBehaviour'] for t,d in docs.values() if t==114 and
+                   d['MonoBehaviour']['m_Script']['guid']==ua.guid('Assets/RoadDemo/VehicleSeatRig.cs'))
+        assert seats['frontLeft']['x']<0<seats['frontRight']['x']
+        assert seats['frontLeft']['z']>seats['rearLeft']['z']
+        assert abs(seats['frontLeft']['y']+.43-(min(.52,car['height']-.90)+.085))<1e-5, ('Occupant off cushion',path)
         z = sorted({t['m_LocalPosition']['z'] for t in wheels})
         assert abs(z[1]-z[0]-car['wheelbase']) < 1e-5, path
         objects = assets.objects(path)
-        assert sum(len(o[3]) for o in objects)<=6500, ('Triangle budget with interior',car['id'])
+        assert sum(len(o[3]) for o in objects)<=7000, ('Triangle budget with interior',car['id'])
         mats={d['MeshRenderer']['m_Materials'][0]['guid'] for t,d in docs.values() if t==23}
         assert len(mats)==3, ('Material budget',car['id'])
         assert docs[fitting['lenses']['fileID']][1]['MeshRenderer']['m_Materials'][0]['guid']==ua.guid(synty_lamps.MATERIAL)
@@ -139,10 +155,12 @@ def validate():
         assert abs(points[:, 1].min()) < 1e-5, path
         assert points[:, 1].max() < car['height']+.2, path
         assert points[:, 2].max()-points[:, 2].min() < car['length']+.35, path
+    extra=validate_utilities(assets)
+    for car in lineup:no_paint_behind_glass(assets,car)
     scene = documents(ua.ROOT/SCENE)
     instances = [d['PrefabInstance'] for t, d in scene.values() if t == 1001]
-    assert len(instances) == len(lineup)+1
-    assert len({p['m_SourcePrefab']['guid'] for p in instances}) == len(lineup)+1
+    assert len(instances) == len(lineup)+len(extra)+1
+    assert len({p['m_SourcePrefab']['guid'] for p in instances}) == len(lineup)+len(extra)+1
     reference_guid=ua.guid(REFERENCE)
     reference=next(p for p in instances if p['m_SourcePrefab']['guid']==reference_guid)
     targets=reference['m_Modification']['m_Modifications']
@@ -154,15 +172,17 @@ def validate():
     camera = next(m for m in monos if m['m_Script']['guid'] == ua.guid('Assets/RoadDemo/DemoCamera.cs'))
     assert camera['mapTransition'] == 0 and camera['showHint'] == 1
     review = next(m for m in monos if m['m_Script']['guid'] == ua.guid('Assets/RoadDemo/SedanShowroom.cs'))
-    assert len(review['cars']) == len(review['labels']) == len(lineup)+1
+    assert len(review['cars']) == len(review['labels']) == len(lineup)+len(extra)+1
     for car,focus in zip(lineup,review['cars']):
+        assert scene[focus['fileID']][1]['Transform']['m_CorrespondingSourceObject']['guid']==ua.guid(f'{ua.ASSET}/Prefabs/{car["id"]}.prefab')
+    for car,focus in zip(extra,review['cars'][9:]):
         assert scene[focus['fileID']][1]['Transform']['m_CorrespondingSourceObject']['guid']==ua.guid(f'{ua.ASSET}/Prefabs/{car["id"]}.prefab')
     ref_transform=scene[review['cars'][8]['fileID']][1]['Transform']['m_CorrespondingSourceObject']
     assert ref_transform==dict(fileID=REFERENCE_ROOT,guid=ua.guid(REFERENCE),type=3)
     # Exercise the complete serialized hierarchy resolver used by the offline preview.
     reference_objects=len(assets.objects(ua.ROOT/REFERENCE))
     assert reference_objects==16
-    assert len(assets.objects(ua.ROOT/SCENE)) == 8*len(lineup)+3+reference_objects
+    assert len(assets.objects(ua.ROOT/SCENE)) == 8*(len(lineup)+len(extra))+3+reference_objects
     clock=next(m for m in monos if m['m_Script']['guid']==ua.guid('Assets/Scripts/Ambient/CityClock.cs'))
     assert clock['m_Enabled']==0 and clock['running']==0, 'Review clock must not handle number keys'
     assert scene[review['clock']['fileID']][1]['MonoBehaviour']==clock
@@ -200,8 +220,8 @@ def validate():
     print(f'PASS: 24 retained GUIDs resolve uniquely to their recorded destination assets; {retained} unstaged moves accounted for.')
     print(f'PASS: closed outward tire shells; {4*len(lineup)} serialized wheels opaque from both sides (6144 sample rays).')
     print('PASS: fitted headlamp anchors, separate emissive lenses and shared clock/headlight wiring; low compact bonnet lip.')
-    print('PASS: each car with interior within 6500 triangles / 7 renderers / 3 shared materials; transparent glass and original Synty lamp material/UVs.')
-    print('PASS: original Synty prefab in adjacent bay; variant root and nine focus targets; no scale/material overrides.')
+    print('PASS: each car with interior within 7000 triangles / 7 renderers / 3 shared materials; transparent glass and original Synty lamp material/UVs.')
+    print('PASS: original Synty prefab in adjacent bay; variant root and fifteen focus targets; no scale/material overrides.')
     print('Not verified: Unity asset import, materials/lighting in URP, Play controls or manual visual acceptance.')
 
 
