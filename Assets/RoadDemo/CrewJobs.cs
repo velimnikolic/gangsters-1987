@@ -145,7 +145,7 @@ namespace RoadDemo
         /// together. Clearing only its route lets the book send it straight back out.</summary>
         public static void Interrupt(DemoCrews.Unit unit)
         {
-            if (unit == null || unit.IsDetachment) return;
+            if (unit == null || unit.IsDetachment || unit.IsSolo) return;
             var house = Underworld.Current?.Of(unit.Faction);
             if (house != null && house.Runner.InterruptCrew(house.Roster, unit.CrewId) > 0)
                 house.Touch();
@@ -179,7 +179,7 @@ namespace RoadDemo
 
             foreach (var unit in crews.Units)
             {
-                if (unit == null || unit.IsPolice || unit.Wiped ||
+                if (unit == null || unit.IsPolice || unit.IsSolo || unit.Wiped ||
                     DemoCrews.PoliceStopsWork(unit) || unit.Fleeing)
                     continue;
 

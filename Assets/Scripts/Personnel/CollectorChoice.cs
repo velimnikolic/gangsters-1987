@@ -15,6 +15,22 @@ namespace LivingCity.Personnel
     /// </summary>
     public static class CollectorChoice
     {
+        public const string NoGroundReason =
+            "his leader has no blocks to collect from · assign him a block first";
+
+        /// <summary>Appointment requires the same canonical responsibility the round
+        /// scheduler reads. Dues and the weekday decide departure, not appointment.</summary>
+        public static string GroundRefusal(Roster roster, Crew crew)
+        {
+            if (roster == null || crew == null)
+                return UI.LedgerText.ReasonNoSuchCrew;
+            var paper = roster.Organization.BlockResponsibilities;
+            for (var i = 0; i < paper.Count; i++)
+                if (paper[i].LeaderId == crew.LieutenantId && paper[i].BlockId.IsValid)
+                    return null;
+            return NoGroundReason;
+        }
+
         /// <summary>
         /// What makes a good bag man, in half-steps: he knows what a shop turns over
         /// (Streetwise), gets the money without a scene (Persuasion) and notices the
@@ -72,7 +88,8 @@ namespace LivingCity.Personnel
             {
                 var man = roster.Find(crew.HoodIds[i]);
                 if (man != null && !man.Gone && man.Rank == Rank.Hood &&
-                    man.Status == CharacterStatus.Active)
+                    man.Status == CharacterStatus.Active && !man.OutOfTown &&
+                    roster.DoorOrders.Find(man.Id) == null)
                     into.Add(man);
             }
             into.Sort(Compare);

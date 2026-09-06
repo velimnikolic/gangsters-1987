@@ -67,7 +67,7 @@ namespace LivingCity.UI
             int responsibleCrewId, CrewPolicy policy, int collectsWeekday,
             string collectsWord, int collectors, bool roundOut, int roundCursor,
             int roundStops, int roundCarried, string roundCollectorName,
-            int owed, int inTheBag, int bankedThisWeek,
+            int owed, int inTheBag, int bankedThisWeek, int bankedAllGame,
             int lastRoundDay, int lastRoundBanked, int lastRoundShort,
             int doorsNeedingAnswer, int holdouts,
             int collectorId = -1, string collectorName = "",
@@ -91,6 +91,7 @@ namespace LivingCity.UI
             Owed = owed;
             InTheBag = inTheBag;
             BankedThisWeek = bankedThisWeek;
+            BankedAllGame = bankedAllGame;
             LastRoundDay = lastRoundDay;
             LastRoundBanked = lastRoundBanked;
             LastRoundShort = lastRoundShort;
@@ -135,6 +136,12 @@ namespace LivingCity.UI
         public int InTheBag { get; }
 
         public int BankedThisWeek { get; }
+
+        /// <summary>Every dollar our rounds have ever banked off this block, from the
+        /// first day of the campaign. Never reset - the week's figure above is, and a
+        /// boss reading only that cannot tell a block that has paid for itself twice
+        /// over from one that has never paid at all.</summary>
+        public int BankedAllGame { get; }
 
         /// <summary>0 = never.</summary>
         public int LastRoundDay { get; }
@@ -341,19 +348,19 @@ namespace LivingCity.UI
                 0 => new BlockRacketView(
                     true, "Dutch Kaminski", crewId, PolicyOf(crewId), 4, "Thursdays", 2,
                     true, 3, 7, 410, "Dutch Kaminski",
-                    owed, 410, 1240,
+                    owed, 410, 1240, 18600,
                     5, 980, 1, 3, 2,
                     bagMan, NameOf(bagMan), bagMan >= 0 && namedByBoss.Contains(bagMan)),
                 1 => new BlockRacketView(
                     true, "Sal Petrosino", crewId, PolicyOf(crewId), -1, "", 0,
                     false, 0, 0, 0, "",
-                    owed, 0, 0,
+                    owed, 0, 0, 0,
                     0, 0, 0, 4, 3,
                     bagMan, NameOf(bagMan), bagMan >= 0 && namedByBoss.Contains(bagMan)),
                 _ => new BlockRacketView(
                     true, "Frank Bevilacqua", crewId, PolicyOf(crewId), 1, "Mondays", 1,
                     false, 0, 0, 0, "",
-                    owed, 0, 860,
+                    owed, 0, 860, 7430,
                     3, 720, 0, 1, 1,
                     bagMan, NameOf(bagMan), bagMan >= 0 && namedByBoss.Contains(bagMan)),
             };

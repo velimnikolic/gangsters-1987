@@ -43,6 +43,8 @@ namespace LivingCity.Personnel
         public readonly List<RosterEquipment> Equipment = new List<RosterEquipment>();
         public OrganizationState Organization { get; } = new OrganizationState();
 
+        public SoloDoorOrders DoorOrders { get; } = new SoloDoorOrders();
+
         public int BossId => Organization.BossId;
 
         /// <summary>The member managing headquarters; -1 when the desk is empty.</summary>

@@ -1346,11 +1346,8 @@ namespace LivingCity.Outfit
 
         // ------------------------------------------------------------------- tier 4
 
-        /// <summary>
-        /// COLLECT. The scheduler sends the rounds; the mind only makes sure the paper
-        /// is there for it to read - a man on the bag in every crew that protects doors,
-        /// and its lieutenant answering for the blocks those doors are on.
-        /// </summary>
+        /// <summary>Give collecting crews their ground, then a bag man. The scheduler
+        /// owns departure.</summary>
         static void Collect(
             HouseView view, HouseMindConfig config, List<HouseIntent> into)
         {
@@ -1365,6 +1362,13 @@ namespace LivingCity.Outfit
                 if (crew == null)
                     continue;
 
+                // File the ground first so naming its collector passes the shared
+                // appointment rule when these intents are carried out in order.
+                if (!Answers(roster, crew.LieutenantId, blockId) &&
+                    Room(roster, crew.LieutenantId))
+                    Propose(view, into, HouseIntent.GiveBlock(crew.LieutenantId, blockId,
+                        TierCollect, "he answers for the doors that pay us there"));
+
                 if (!HasCollector(roster, crew))
                 {
                     for (var i = 0; i < crew.HoodIds.Count; i++)
@@ -1378,11 +1382,6 @@ namespace LivingCity.Outfit
                             break;
                     }
                 }
-
-                if (!Answers(roster, crew.LieutenantId, blockId) &&
-                    Room(roster, crew.LieutenantId))
-                    Propose(view, into, HouseIntent.GiveBlock(crew.LieutenantId, blockId,
-                        TierCollect, "he answers for the doors that pay us there"));
             }
         }
 

@@ -60,6 +60,9 @@ namespace RoadDemo
             /// books name a crew, and the crew is the parent - while everything that
             /// samples bodies (presence, arrivals, combat) sees him like any man.</summary>
             public bool IsDetachment;
+            public bool IsSolo;
+            internal SoloDoorOrder SoloOrder;
+            internal float SoloHomeNearest = float.PositiveInfinity, SoloHomeProgressAt = -1f;
             public Unit Parent;
 
             /// <summary>Grenades the crew is carrying - what it can throw at a shopfront
@@ -3211,8 +3214,8 @@ namespace RoadDemo
                         if (!lineActive) break;
                         var hood = book.Find(id);
                         if (hood != null && hood.Status == CharacterStatus.Active &&
-                            !trackedCustodyIds.Contains(hood.Id) &&
-                            tacticalHoods < Crew.MaxTacticalHoods)
+                            !trackedCustodyIds.Contains(hood.Id) && !hood.OutOfTown &&
+                            !book.DoorOrders.Keeps(book, hood.Id) && tacticalHoods < Crew.MaxTacticalHoods)
                         {
                             wanted[id] = (house, crew, false);
                             tacticalHoods++;
@@ -3237,7 +3240,8 @@ namespace RoadDemo
             foreach (var kv in _byCharacter)
                 if (!wanted.ContainsKey(kv.Key) &&
                     !trackedCustodyIds.Contains(kv.Key) &&
-                    !releasedCustodyIds.Contains(kv.Key) && !kv.Value.Dead)
+                    !releasedCustodyIds.Contains(kv.Key) && !kv.Value.Dead &&
+                    !IsSoloReserved(underworld, kv.Key, kv.Value))
                     gone.Add(kv.Key);
             foreach (int id in gone) RemoveMan(id);
 
@@ -3248,6 +3252,7 @@ namespace RoadDemo
                     foreach (var man in unit.All()) previousUnitOf[man] = unit;
 
             var liveUnits = new List<Unit>();
+            KeepSoloUnits(underworld, liveUnits);
             for (var h = 0; h < _houses.Count; h++)
             {
                 var house = underworld.Of(_houses[h]);
@@ -3524,7 +3529,7 @@ namespace RoadDemo
 
                 into.Add(new TacticalPersonnelMapping(
                     unit.CrewId * 2 + (unit.IsDetachment ? 1 : 0),
-                    unit.CommandParentId, ids, unit.IsDetachment));
+                    unit.CommandParentId, ids, unit.IsDetachment || unit.IsSolo));
             }
         }
 
@@ -4019,6 +4024,7 @@ namespace RoadDemo
         void RemoveMan(int id)
         {
             if (!_byCharacter.TryGetValue(id, out var man)) return;
+            RememberSoloBody(man);
             _byCharacter.Remove(id);
             _chasers.Remove(man);
             DoorBeat.Evict(man);
@@ -4078,6 +4084,7 @@ namespace RoadDemo
 
         void Orphaned(Unit unit, CrewWalker man)
         {
+            RememberSoloBody(man);
             Debug.LogWarning("[Crews] " + man.DisplayName + " (#" + man.CharacterId + ") of " +
                              unit.Name + " lost his body while " + man.State +
                              (man.Dead ? ", dead" : "") +

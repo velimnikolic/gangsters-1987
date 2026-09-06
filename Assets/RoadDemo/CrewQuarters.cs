@@ -217,6 +217,17 @@ namespace RoadDemo
         }
 
         /// <summary>
+        /// WHERE THIS UNIT STANDS on the map, the one rule every surface that draws it
+        /// or follows it uses: its billet door while it is behind one, and otherwise the
+        /// men themselves. A crew switched off inside a building still has bodies with
+        /// positions, but they are the positions of the pavement it walked in from - the
+        /// door is where the map, the tip and the camera must all agree it is.
+        /// </summary>
+        public static Vector3 WhereStands(DemoCrews.Unit unit) =>
+            TryGetDoorstep(unit, out var doorstep) ? doorstep
+                : unit != null ? unit.Position : Vector3.zero;
+
+        /// <summary>
         /// TAKE THEM INSIDE. The crew is sent to the premises and moves in when it gets
         /// there. The door's own pavement point and the word painted outside it are read
         /// here rather than passed in, so every surface that offers the row - the street

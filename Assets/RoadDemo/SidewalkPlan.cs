@@ -492,6 +492,30 @@ namespace RoadDemo
             return false;
         }
 
+        /// <summary>Recovery may leave an existing overlap only along an outward
+        /// normal. Every other box still requires a completely clear swept circle.</summary>
+        internal static bool RecoveryStepClear(in Box box, Vector2 a, Vector2 b,
+            float radius, out bool overlapping)
+        {
+            overlapping = false;
+            if (!box.Solid || box.KeepClear) return true;
+            var offset = a - box.C;
+            var p = new Vector2(Vector2.Dot(offset, box.Ax), Vector2.Dot(offset, box.Az));
+            overlapping = PointRectDistanceSq(p, box.H) <= radius * radius;
+            if (!overlapping) return !SweptCircleHits(box, a, b, radius);
+            var step = b - a;
+            var d = new Vector2(Vector2.Dot(step, box.Ax), Vector2.Dot(step, box.Az));
+            var outside = p - new Vector2(Mathf.Clamp(p.x, -box.H.x, box.H.x),
+                                         Mathf.Clamp(p.y, -box.H.y, box.H.y));
+            if (outside.sqrMagnitude > 1e-10f) return Vector2.Dot(outside, d) > 1e-8f;
+            float x = Mathf.Abs(p.x) - box.H.x, z = Mathf.Abs(p.y) - box.H.y;
+            float dx = p.x == 0f ? Mathf.Abs(d.x) : Mathf.Sign(p.x) * d.x;
+            float dz = p.y == 0f ? Mathf.Abs(d.y) : Mathf.Sign(p.y) * d.y;
+            // The nearest face supplies a supporting normal of the signed distance.
+            // Positive motion along it cannot first go deeper and exit the far face.
+            return (x >= z - 1e-6f && dx > 1e-8f) || (z >= x - 1e-6f && dz > 1e-8f);
+        }
+
         static bool SweptCircleHits(in Box box, Vector2 a, Vector2 b, float radius)
         {
             var oa = a - box.C;

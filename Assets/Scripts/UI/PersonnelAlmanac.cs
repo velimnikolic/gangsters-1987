@@ -195,6 +195,7 @@ namespace LivingCity.UI
             /// - the building's mast on the film, or its header in the trade column - and
             /// never from the strip (EPIC 27).</summary>
             Blueprint,
+            Wire, // Appended to preserve existing page IDs.
         }
 
         /// <summary>The tabs the folder actually shows, in strip order. ORDERS and
@@ -202,7 +203,7 @@ namespace LivingCity.UI
         /// workflow can reach them in code.</summary>
         static readonly string[] TabNames =
         {
-            "THE PAPER", "CHAIN OF COMMAND", "BLOCKS", "FINANCES", "ARMORY",
+            "THE PAPER", "THE WIRE", "CHAIN OF COMMAND", "BLOCKS", "FINANCES", "ARMORY",
             "FAMILIES", "THE LAW",
         };
 
@@ -210,7 +211,7 @@ namespace LivingCity.UI
         /// tab-less working pages.</summary>
         static readonly LedgerPage[] TabPages =
         {
-            LedgerPage.Newspaper, LedgerPage.Command, LedgerPage.Blocks,
+            LedgerPage.Newspaper, LedgerPage.Wire, LedgerPage.Command, LedgerPage.Blocks,
             LedgerPage.Finances, LedgerPage.Armory, LedgerPage.Diplomacy,
             LedgerPage.Law,
         };
@@ -260,20 +261,12 @@ namespace LivingCity.UI
         TMP_Text railWireCount;
         float railWireScroll;
 
-        /// <summary>What the wire read when it was last laid out - WireBook's own figure,
-        /// which moves on a filing and not on a repaint. The run is rebuilt when this
-        /// moves and on no other account.</summary>
+        /// <summary>Last painted WireBook version.</summary>
         int railWirePainted = -1;
 
         readonly List<WireLine> railWireLines = new List<WireLine>();
 
-        /// <summary>Whether the rail is showing only the picked block's slips. Held
-        /// while the book is open, because a boss reading one block's night wants the
-        /// next repaint to still be about that block.</summary>
         bool railWireThisBlock;
-
-        /// <summary>The block the rail was last narrowed to. A different block picked
-        /// under a narrowed rail is a different rail, so it repaints.</summary>
         TerritoryBlockId railWireBlock;
 
         RectTransform railWireScopeThis, railWireScopeAll;
@@ -308,6 +301,8 @@ namespace LivingCity.UI
             ? director.Roster.Day
             : 0;
         OutfitDirector outfit;
+        readonly WireSheet wireSheet = new WireSheet();
+        int paintedWireVersion = -1;
         Ambient.CityClock cityClock;
 
         /// <summary>Whether the scene has been asked for its clock. A scene with none is
@@ -537,7 +532,8 @@ namespace LivingCity.UI
             if (blueprintTyping)
                 return;
 
-            if (dirty || paintedVersion != director.Version ||
+            var wireVersion = WireBook.Version(outfit);
+            if (dirty || paintedWireVersion != wireVersion || paintedVersion != director.Version ||
                 paintedOutfitVersion != outfitVersion ||
                 paintedGangVersion != Gangs.GangRegistry.Version ||
                 paintedTerritoryVersion != territoryVersion ||
@@ -545,6 +541,7 @@ namespace LivingCity.UI
                 paintedRacketVersion != racketVersion ||
                 paintedExposure != exposure)
             {
+                paintedWireVersion = wireVersion;
                 paintedVersion = director.Version;
                 paintedOutfitVersion = outfitVersion;
                 paintedGangVersion = Gangs.GangRegistry.Version;
@@ -567,6 +564,9 @@ namespace LivingCity.UI
         {
             switch (currentPage)
             {
+                case LedgerPage.Wire:
+                    wireSheet.Refresh(outfit);
+                    break;
                 case LedgerPage.Newspaper:
                     RebuildNewspaper();
                     break;
@@ -837,6 +837,12 @@ namespace LivingCity.UI
                 return;
             }
 
+            if (currentPage == LedgerPage.Wire)
+            {
+                wireSheet.Scroll(wheel, point);
+                return;
+            }
+
             // A page nominates its scrolling regions; the wheel means nothing anywhere
             // else on the sheet. The armory nominates two - the merchandise board and the
             // stock book - and whichever the pointer sits over takes the wheel.
@@ -968,17 +974,19 @@ namespace LivingCity.UI
             }
             else if (viewport == commandViewport)
             {
-                // The tree is the one thing on this sheet that reads ACROSS, so with the
-                // pointer over it, and more tree than sheet, the wheel pans it. Held with
-                // shift - or anywhere else on the page - the same notch scrolls the
-                // sheet, so nothing under the tree is unreachable.
+                // The wheel scrolls the SHEET, everywhere on the sheet, including over
+                // the tree. The tree is the one thing here that reads across, but it
+                // stands at the top of the page and grows as files are opened, so a
+                // tree that took the plain notch could cover the whole window and leave
+                // the page with no vertical scroll at all. Held with shift - and by a
+                // sideways notch, handled above - the same wheel pans the tree.
                 var reach = CommandPanReach();
                 var overTree = reach > 0f && commandTreeWindow &&
                     RectTransformUtility.RectangleContainsScreenPoint(
                         commandTreeWindow, point);
                 var keys = Keyboard.current;
                 var shift = keys != null && keys.shiftKey.isPressed;
-                if (overTree && !shift)
+                if (overTree && shift)
                 {
                     commandPan = Mathf.Clamp(
                         commandPan - wheel * WheelStep, 0f, reach);
@@ -1148,6 +1156,7 @@ namespace LivingCity.UI
 
             // ---- the pages, in tab order; each is a full-sheet root ----
             BuildNewspaperPage(paper);
+            wireSheet.Build(NewPageRoot(paper, LedgerPage.Wire), SheetW, SheetH, OpenWireItem);
             BuildBlocksPage(paper);
             BuildFinancesPage(paper);
             BuildArmoryPage(paper);
@@ -1261,11 +1270,14 @@ namespace LivingCity.UI
                 Mathf.Max(0f, FrameW - RailW - CloseW - TimeStripW), ChromeH);
             tabStrip.gameObject.AddComponent<RectMask2D>();
 
+            var naturalWidth = 0f;
+            foreach (var name in TabNames) naturalWidth += TabWidthFor(name);
+            var padCut = Mathf.Max(0f, naturalWidth - tabStrip.sizeDelta.x) / TabNames.Length;
             var x = 0f;
             for (var i = 0; i < TabNames.Length; i++)
             {
                 var kind = TabPages[i];
-                var w = TabWidthFor(TabNames[i]);
+                var w = TabWidthFor(TabNames[i]) - padCut;
                 var rect = NewRect("Tab " + TabNames[i], tabStrip);
                 PlaceTopLeft(rect, x, 0f, w, ChromeH);
                 tabRects[i] = rect;
@@ -1648,27 +1660,7 @@ namespace LivingCity.UI
             return cursor + height;
         }
 
-        /// <summary>
-        /// The wire, and all of it.
-        ///
-        /// The strip over the sheet runs the night's traffic past once and is gone; this
-        /// is the book that strip reads from, stood on its end in the rail with the whole
-        /// campaign still in it - every incident our men wrote and every answer given at
-        /// a door, newest first, back to the first morning. It is the one thing on the
-        /// rail that scrolls, because it is the one thing on the rail that GROWS: the
-        /// five readouts and the two capacities are as long today as they will be on the
-        /// last night, and this is longer every time somebody does something.
-        ///
-        /// It takes the room the outfit's five counts, the week's four and the three
-        /// flags used to hold, and it takes it by STRETCH rather than by a height: the
-        /// wire runs from the foot of the outfit panel to the top of the payroll block,
-        /// whatever the window's height, so a taller screen reads further back instead
-        /// of leaving a strip of empty rail under the last slip.
-        ///
-        /// Nothing here composes a sentence. WireBook dresses both books and the street
-        /// strip prints out of the same one, so the boss cannot be told two accounts of
-        /// one night depending on which screen he read it on.
-        /// </summary>
+        /// <summary>The shared wire archive in the rail's available scrolling space.</summary>
         void BuildRailWire(float cursor)
         {
             railWire = NewRect("The Wire", railRoot);
@@ -1892,12 +1884,7 @@ namespace LivingCity.UI
             SetRailMeter(1, "BLOCKS HELD", railHeld, railBlockCap, LedgerStyle.RailGreen);
         }
 
-        /// <summary>
-        /// Lays the wire out again - and only when there is something new on it. The rail
-        /// repaints on every tick of a city running at 4x, and a column that tore down
-        /// two hundred slips and built them again for a night when nothing happened is a
-        /// column that costs more than everything else in the book put together.
-        /// </summary>
+        /// <summary>Rebuild the rail only when its shared book or scope changes.</summary>
         void RefreshRailWire()
         {
             if (railWireRun == null)
@@ -1965,15 +1952,7 @@ namespace LivingCity.UI
             railWireRun.anchoredPosition = new Vector2(0f, railWireScroll);
         }
 
-        /// <summary>
-        /// One slip on the rail's wire: the kind's ink down its left edge, the day and
-        /// what it was over the copy, whatever it cost on the right, and the sentence
-        /// itself set to as many lines as it takes. Answers the y under it.
-        ///
-        /// The height is MEASURED off the face rather than assumed, because these are
-        /// the only lines in the book whose length nobody chose - a door in a long
-        /// street name runs to three where the one under it runs to one.
-        /// </summary>
+        /// <summary>A measured slip; every filed item opens its current actions.</summary>
         float LayWireSlip(float y, WireLine line)
         {
             const float EdgeW = 3f;
@@ -2002,32 +1981,56 @@ namespace LivingCity.UI
                 Caps(railWireRun, CopyX, y - 1f, copyW, line.Figure, 11f,
                     LedgerStyle.RailAmber, 6f, TextAlignmentOptions.MidlineRight);
 
-            // A slip WITH AN ADDRESS is a way into that door: the block file opens on
-            // its block and the door's own menu with it. An incident has no address and
-            // stays what it is - a line of the record.
-            if (line.BusinessId.IsValid)
+            if (!string.IsNullOrEmpty(line.Tag))
             {
-                var surface = NewRect("Slip", railWireRun);
+                var surface = NewRect("Slip " + line.ActionLabel, railWireRun);
                 PlaceTopLeft(surface, RailPad, y, RailInner, height);
                 surface.SetAsFirstSibling();
-                var door = line.BusinessId;
-                var block = line.BlockId;
-                RowButton(surface, ClickSurface(surface), () => OpenWireDoor(block, door));
+                RowButton(surface, ClickSurface(surface), () => OpenWireItem(line));
             }
 
             Rule(railWireRun, RailPad, y - height + 3f, RailInner, LedgerStyle.RailHair);
             return y - height;
         }
 
-        /// <summary>A door named on the wire, opened where a door is read - the BLOCKS
-        /// sheet, on that door's own block, with its menu already beside the row.
-        /// </summary>
-        void OpenWireDoor(TerritoryBlockId blockId, TerritoryBusinessId businessId)
+        /// <summary>Resolve stable targets at click time; the destination owns admission
+        /// and commands. An expired target opens the record with an explanation.</summary>
+        public void OpenWireItem(WireLine line)
         {
-            if (blockId.IsValid && blockCardId != blockId)
-                OpenBlockCard(blockId);
-            SetPage(LedgerPage.Blocks);
-            PickTrade(businessId);
+            var unavailable = "";
+            switch (line.Action)
+            {
+                case WireAction.Person:
+                    if (director?.Roster?.Find(line.CharacterId) == null)
+                    { unavailable = "This man is no longer in the outfit's roster."; break; }
+                    OpenAtPage(LedgerPage.Command);
+                    OpenCommandDossier(line.CharacterId);
+                    return;
+                case WireAction.Door:
+                case WireAction.Block:
+                    var block = line.BlockId;
+                    var found = line.Action == WireAction.Block;
+                    if (!found)
+                        foreach (var row in CityBusinesses.All)
+                            if (row.Id == line.BusinessId)
+                            { block = row.CanonicalBlockId; found = true; break; }
+                    var geography = TerritoryRuntime.Instance?.Geography;
+                    if (!found || !block.IsValid || geography == null ||
+                        !geography.TryGetBlock(block, out _))
+                    { unavailable = "This address is no longer available in the city."; break; }
+                    OpenAtPage(LedgerPage.Blocks);
+                    blocksScroll = 0f;
+                    if (blockCardId != block) OpenBlockCard(block);
+                    if (line.Action == WireAction.Block) CloseTradePopup();
+                    if (line.Action == WireAction.Door && blockCardPick != line.BusinessId)
+                        PickTrade(line.BusinessId);
+                    return;
+                case WireAction.Law: OpenAtPage(LedgerPage.Law); return;
+                case WireAction.Finances: OpenAtPage(LedgerPage.Finances); return;
+                case WireAction.Families: OpenAtPage(LedgerPage.Diplomacy); return;
+            }
+            OpenAtPage(LedgerPage.Wire);
+            wireSheet.ShowRecord(line, unavailable);
         }
 
         void SetRailMeter(int index, string label, int current, int maximum, Color ink)
@@ -2070,7 +2073,7 @@ namespace LivingCity.UI
         int railMen, railManCap, railHeld, railBlockCap;
         int railPosted, railIdle, railHurt;
         int railContested, railAtWar, railIssued, railStock, railProfit;
-        int railOverCapacity, railPaperOnly, railAwaiting;
+        int railOverCapacity, railPaperOnly;
         string railFirstIdle = "";
 
         void TallyOutfit()
@@ -2078,7 +2081,7 @@ namespace LivingCity.UI
             railMen = railManCap = railHeld = railBlockCap = 0;
             railPosted = railIdle = railHurt = 0;
             railContested = railAtWar = railIssued = railStock = railProfit = 0;
-            railOverCapacity = railPaperOnly = railAwaiting = 0;
+            railOverCapacity = railPaperOnly = 0;
             railFirstIdle = "";
 
             var roster = director.Roster;
@@ -2156,7 +2159,6 @@ namespace LivingCity.UI
                         outfit.StanceWith(gangs[i].Id) == Outfit.Stance.War)
                         railAtWar++;
 
-                railAwaiting = outfit.Filings.AwaitingCount;
 
                 var sheet = outfit.Accounts.Current;
                 if (sheet != null)
@@ -2350,9 +2352,6 @@ namespace LivingCity.UI
                 telexMessages.Add((railPaperOnly +
                     (railPaperOnly == 1 ? " block named" : " blocks named") +
                     " on paper we do not hold on the street", TelexVoice.Warn));
-            if (railAwaiting > 0)
-                telexMessages.Add(("The outfit is still ruling on " + railAwaiting +
-                    (railAwaiting > 1 ? " orders" : " order"), TelexVoice.Plain));
 
             ComposePageTelex();
 
@@ -2628,7 +2627,8 @@ namespace LivingCity.UI
             // own file, not of the book, so it says which building it is instead of a
             // page number the book does not have - and the array is never indexed past
             // its end, which is what an added page did to this line the first time.
-            var folio = (int)currentPage < TabFolios.Length
+            var folio = currentPage == LedgerPage.Wire ? "THE WIRE"
+                : (int)currentPage < TabFolios.Length
                 ? "PAGE " + TabFolios[(int)currentPage].ToString("00") + " OF " + Folios
                 : "THE BLUEPRINT";
             footerRight.text = "[ ] TURN THE PAGE   [ESC] SHUT THE FILE   |   " + folio;

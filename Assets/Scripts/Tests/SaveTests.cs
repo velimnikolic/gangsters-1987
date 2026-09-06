@@ -982,17 +982,17 @@ namespace LivingCity.Tests
             them.Runner.Accounts.Safe = 9_000;
             them.Runner.Accounts.Current.JobIncome = 733;
 
-            // A canonical bag branch. Its node and escorts are deliberately removed
-            // from HoodIds by the real roster operations before the snapshot is taken.
+            // A canonical bag branch with ground, appointed through the real operations.
             for (var i = 0; i < them.Roster.Crews.Count; i++)
             {
                 var crew = them.Roster.Crews[i];
                 if (crew.HoodIds.Count < 3)
                     continue;
-                var collector = crew.HoodIds[0];
                 var firstEscort = crew.HoodIds[1];
                 var secondEscort = crew.HoodIds[2];
-                if (RosterOps.NameCollector(them.Roster, crew.Id, collector).Ok &&
+                RosterOps.AssignBlockResponsibility(them.Roster,
+                    new TerritoryBlockId("save:bag-ground"), crew.LieutenantId, true);
+                if (RosterOps.NameCollector(them.Roster, crew.Id, crew.HoodIds[0]).Ok &&
                     RosterOps.PostEscort(them.Roster, crew.Id, firstEscort).Ok &&
                     RosterOps.PostEscort(them.Roster, crew.Id, secondEscort).Ok)
                     break;

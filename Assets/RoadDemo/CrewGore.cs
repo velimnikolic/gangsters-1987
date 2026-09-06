@@ -28,6 +28,38 @@ namespace RoadDemo
         static readonly Queue<GameObject> splats = new Queue<GameObject>();
         static readonly Dictionary<PedestrianAgent, MaterialPropertyBlock> blocks = new Dictionary<PedestrianAgent, MaterialPropertyBlock>();
 
+        // ------------------------------------------------------------- the weather
+        // NOTHING ON THE PAVEMENT IS FOREVER. Blood and chalk used to be retired only by
+        // the caps in here, and a cap is not time: a quiet city kept every pool and every
+        // outline for the whole session, so a corner where one man died in the first hour
+        // still read as a crime scene days later. Every mark on the ground now holds its
+        // colour for a while and then goes out - rain, traffic, and the men with the hose.
+        //
+        // Counted in GAME hours off the city's own clock, never in real seconds: the
+        // scenes run their clocks at anything from 15 to 600 real seconds to the hour, and
+        // a fade written in real time would be a week in one scene and a blink in another.
+        const float SplatHold = 2f;    // game hours a pool stays as dark as it fell
+        const float SplatFade = 6f;    // and the hours it takes to wash out of the stone
+        const float ChalkHold = 8f;    // the outline stays while the case is fresh
+        const float ChalkFade = 16f;   // and is gone a day after the body went
+        const float SweepStep = 0.02f; // game hours between passes over the yard
+
+        struct Mark
+        {
+            public GameObject Go;
+            public MeshRenderer Mr;
+            public Color Tint;   // the colour it was laid in; the fade only takes its alpha
+            public float Born;   // game hours
+            public float Hold, Fade;
+            public bool Chalk;   // owns a mesh of its own: destroyed at the end, not pooled
+        }
+
+        static readonly List<Mark> marks = new List<Mark>();
+        // One block for every mark that is written this frame. A renderer keeps its own
+        // copy of whatever is handed to SetPropertyBlock, so the same one serves them all.
+        static readonly MaterialPropertyBlock scratch = new MaterialPropertyBlock();
+        static float sweepAt;
+
         // The chalk outlines, capped like the splats. Each is a GameObject with a mesh
         // all its own (never batched), one laid on every death and, before this cap, kept
         // for the rest of the session: a violent night piled thousands of un-batchable
@@ -43,6 +75,8 @@ namespace RoadDemo
             root = null;
             splats.Clear();
             chalks.Clear();
+            marks.Clear();
+            sweepAt = 0f;
             blocks.Clear();
             holeMaterial = null;
             holes.Clear();
@@ -109,26 +143,42 @@ namespace RoadDemo
         static void Splat(Vector3 at, float groundY, float size, Color tint)
         {
             if (!EnsureSplatMaterial()) return;
-            if (root == null) root = new GameObject("Blood").transform;
+            EnsureRoot();
 
-            GameObject go;
-            if (splats.Count >= MaxSplats)
+            // A quad that has already faded out is standing there switched off: take that
+            // one back before making another. The queue is oldest first, so the head is
+            // the one most likely to be spent.
+            GameObject go = null;
+            if (splats.Count > 0)
             {
-                go = splats.Dequeue();
-                if (go == null) go = NewSplat();
+                var head = splats.Peek();
+                if (head == null || !head.activeSelf)
+                {
+                    go = splats.Dequeue();
+                    if (go == null) go = NewSplat();
+                }
             }
-            else go = NewSplat();
+            if (go == null)
+            {
+                if (splats.Count >= MaxSplats)
+                {
+                    go = splats.Dequeue();
+                    if (go == null) go = NewSplat();
+                }
+                else go = NewSplat();
+            }
             splats.Enqueue(go);
 
             go.transform.SetPositionAndRotation(
                 new Vector3(at.x, groundY + 0.012f + Random.value * 0.004f, at.z),
                 Quaternion.Euler(90f, Random.value * 360f, 0f));
             go.transform.localScale = new Vector3(size * Random.Range(0.8f, 1.2f), size, 1f);
-            var block = new MaterialPropertyBlock();
-            block.SetColor(BaseColorId, tint);
-            block.SetColor(ColorId, tint);
-            go.GetComponent<MeshRenderer>().SetPropertyBlock(block);
+            var mr = go.GetComponent<MeshRenderer>();
+            scratch.SetColor(BaseColorId, tint);
+            scratch.SetColor(ColorId, tint);
+            mr.SetPropertyBlock(scratch);
             go.SetActive(true);
+            Track(go, mr, tint, SplatHold, SplatFade, chalk: false);
         }
 
         static bool EnsureSplatMaterial()
@@ -143,16 +193,119 @@ namespace RoadDemo
             splatMaterial.mainTexture = texture;
             if (splatMaterial.HasProperty("_BaseMap"))
                 splatMaterial.SetTexture("_BaseMap", texture);
-            splatMaterial.SetFloat("_Surface", 1f);
-            splatMaterial.SetFloat("_Blend", 0f);
-            splatMaterial.SetFloat("_ZWrite", 0f);
-            splatMaterial.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            splatMaterial.SetInt("_DstBlend",
-                (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            splatMaterial.SetOverrideTag("RenderType", "Transparent");
-            splatMaterial.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
-            splatMaterial.renderQueue = 3000;
+            MakeTransparent(splatMaterial);
             return true;
+        }
+
+        /// <summary>The transparent setup a mark on the ground needs, and the reason the
+        /// fade works at all: an opaque URP Unlit throws away whatever alpha a property
+        /// block writes, so a material set up any other way simply pops out of existence
+        /// at the end of its life instead of going.</summary>
+        static void MakeTransparent(Material material)
+        {
+            material.SetFloat("_Surface", 1f);
+            material.SetFloat("_Blend", 0f);
+            material.SetFloat("_ZWrite", 0f);
+            material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            material.SetOverrideTag("RenderType", "Transparent");
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.renderQueue = 3000;
+        }
+
+        // ------------------------------------------------------------- ageing
+
+        /// <summary>The node every mark on the ground hangs off, with the one component
+        /// that ages them. A mark is never a MonoBehaviour of its own: a violent night
+        /// would put four hundred Updates on the frame.</summary>
+        static Transform EnsureRoot()
+        {
+            if (root == null)
+            {
+                var go = new GameObject("Blood");
+                go.AddComponent<GoreFade>();
+                root = go.transform;
+            }
+            return root;
+        }
+
+        /// <summary>Hours the city has run, days folded in so the number only ever climbs.
+        /// A scene with no clock (a bare bench) is read at a game hour to the real minute,
+        /// so its marks still go.</summary>
+        static float GameHours
+        {
+            get
+            {
+                var clock = DayClock.Current;
+                return clock != null ? clock.Day * 24f + clock.Hour : Time.time / 60f;
+            }
+        }
+
+        static void Track(GameObject go, MeshRenderer mr, Color tint, float hold, float fade, bool chalk)
+        {
+            // a quad taken back out of the pool is a new mark: its old life is struck off,
+            // or the fade would carry on ageing the fresh splash drawn over it
+            for (int i = marks.Count - 1; i >= 0; i--)
+                if (marks[i].Go == go) marks.RemoveAt(i);
+            marks.Add(new Mark
+            {
+                Go = go, Mr = mr, Tint = tint, Born = GameHours,
+                Hold = hold, Fade = fade, Chalk = chalk,
+            });
+        }
+
+        /// <summary>Ages every mark on the ground: full colour while it holds, then out
+        /// over its fade, then gone - a splat switched off and left in the pool, an
+        /// outline destroyed with the mesh it owns.</summary>
+        internal static void Age()
+        {
+            float now = GameHours;
+            if (now < sweepAt) return;
+            sweepAt = now + SweepStep;
+            PruneChalks();
+            for (int i = marks.Count - 1; i >= 0; i--)
+            {
+                var mark = marks[i];
+                if (mark.Go == null || mark.Mr == null) { marks.RemoveAt(i); continue; }
+                float age = now - mark.Born;
+                if (age < 0f)
+                {
+                    // the clock arrived after the mark did - a scene builds its city before
+                    // it builds its clock - so take the reading again rather than wash a
+                    // fresh pool off the stone at once.
+                    mark.Born = now;
+                    marks[i] = mark;
+                    continue;
+                }
+                if (age <= mark.Hold) continue;
+                float left = 1f - (age - mark.Hold) / mark.Fade;
+                if (left <= 0f)
+                {
+                    if (mark.Chalk)
+                    {
+                        var mf = mark.Go.GetComponent<MeshFilter>();
+                        if (mf != null && mf.sharedMesh != null) Object.Destroy(mf.sharedMesh);
+                        Object.Destroy(mark.Go);
+                    }
+                    else mark.Go.SetActive(false); // back to the pool, not destroyed
+                    marks.RemoveAt(i);
+                    continue;
+                }
+                var tint = mark.Tint;
+                tint.a *= left;
+                scratch.SetColor(BaseColorId, tint);
+                scratch.SetColor(ColorId, tint);
+                mark.Mr.SetPropertyBlock(scratch);
+            }
+        }
+
+        /// <summary>Outlines fade in the order they were drawn, so the spent ones are at
+        /// the head. Taken off the queue here rather than where they are destroyed: Unity
+        /// does not finish a Destroy until the end of the frame, so the reference only
+        /// reads null on the next pass.</summary>
+        static void PruneChalks()
+        {
+            while (chalks.Count > 0 && chalks.Peek() == null) chalks.Dequeue();
         }
 
         static GameObject NewSplat()
@@ -240,6 +393,7 @@ namespace RoadDemo
         // ------------------------------------------------------------------ the chalk
 
         static Material chalkMaterial;
+        static readonly Color ChalkLine = new Color(0.93f, 0.93f, 0.9f, 1f);
 
         // The outline the police draw round a body: a chalk line on the ground in the
         // shape of a man lying as this one lay - head end where his head was, one arm
@@ -356,10 +510,11 @@ namespace RoadDemo
                 var shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
                 if (shader == null) return null;
                 chalkMaterial = new Material(shader) { name = "Chalk" };
-                chalkMaterial.SetColor(BaseColorId, new Color(0.93f, 0.93f, 0.9f, 1f));
-                chalkMaterial.SetColor(ColorId, new Color(0.93f, 0.93f, 0.9f, 1f));
+                chalkMaterial.SetColor(BaseColorId, ChalkLine);
+                chalkMaterial.SetColor(ColorId, ChalkLine);
+                MakeTransparent(chalkMaterial);
             }
-            if (root == null) root = new GameObject("Blood").transform;
+            EnsureRoot();
 
             // where he lies: head and hips off the rig if it has them, else his forward
             var animator = man.Tf.GetComponentInChildren<Animator>();
@@ -441,6 +596,7 @@ namespace RoadDemo
             mr.sharedMaterial = chalkMaterial;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             mr.receiveShadows = false;
+            Track(go, mr, ChalkLine, ChalkHold, ChalkFade, chalk: true);
 
             // hold the yard to MaxChalk: the oldest outline is taken up, its own mesh
             // freed with it (a bare Destroy of the object would leak the Mesh asset)
@@ -457,5 +613,13 @@ namespace RoadDemo
             }
             return go;
         }
+    }
+
+    /// <summary>The one thing on the Blood node: it ages what is drawn on the ground.
+    /// Deliberately dumb - the bookkeeping is CrewGore's, because CrewGore is what lays
+    /// the marks and what pools them.</summary>
+    public sealed class GoreFade : MonoBehaviour
+    {
+        void Update() => CrewGore.Age();
     }
 }

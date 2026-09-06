@@ -4,10 +4,9 @@ using LivingCity.Personnel;
 
 namespace LivingCity.Outfit
 {
-    /// <summary>Where one filed order stands with the outfit's office.</summary>
+    /// <summary>What the outfit's office made of one order.</summary>
     public enum FilingStatus
     {
-        Filed,
         Granted,
         Refused,
     }
@@ -33,56 +32,42 @@ namespace LivingCity.Outfit
     }
 
     /// <summary>
-    /// One order asked of the outfit. The order is a REQUEST while it stands at Filed:
-    /// nothing in the roster or on the territory has moved yet. The mutation the caller
-    /// wants happens inside the resolver, at ruling time, and never at the click.
+    /// One order asked of the outfit, and what came of it. The office answers at the
+    /// counter: by the time a filing exists the mutation the caller wanted has already
+    /// happened or been refused, so this is a RECEIPT the sheet prints - never a request
+    /// standing unanswered while the player waits on it.
     /// </summary>
     public sealed class Filing
     {
-        internal Filing(int id, string stamp, string text, Func<FilingRuling> resolver)
+        internal Filing(int id, string stamp, string text, FilingRuling ruling)
         {
             Id = id;
             Stamp = stamp ?? "";
             Text = text ?? "";
-            Resolver = resolver;
-            Status = FilingStatus.Filed;
-            Ruling = "awaiting the outfit's ruling";
+            Status = ruling.Status;
+            Ruling = ruling.Ruling;
         }
 
         public int Id { get; }
         public string Stamp { get; }
         public string Text { get; }
-        public FilingStatus Status { get; private set; }
-        public string Ruling { get; private set; }
-        public bool Awaiting => Status == FilingStatus.Filed;
-
-        internal float SecondsLeft;
-        internal Func<FilingRuling> Resolver;
-
-        internal void Settle(FilingRuling ruling)
-        {
-            Status = ruling.Status;
-            Ruling = ruling.Ruling;
-            Resolver = null;
-        }
+        public FilingStatus Status { get; }
+        public string Ruling { get; }
     }
 
     /// <summary>
-    /// The outfit's filing office: the paper trail between asking for something and it
-    /// being so. Every organizational verb the ledger offers is filed here, stands for
-    /// a moment as an unanswered request, and is then granted or refused - the refusal
-    /// being the only place capacity is HARD. The roster's own mechanics stay soft
-    /// (RosterOps will happily carry an overage a fight or a promotion created); what
-    /// this office will not do is FILE a new order that puts a man over his limit.
+    /// The outfit's filing office: the paper trail of every organizational verb the
+    /// ledger offers. An order given here is carried out ON THE CLICK and granted or
+    /// refused in the same breath - the refusal being the only place capacity is HARD.
+    /// The roster's own mechanics stay soft (RosterOps will happily carry an overage a
+    /// fight or a promotion created); what this office will not do is FILE an order that
+    /// puts a man over his limit.
     ///
-    /// Pure: no Unity types, no clock of its own. Whoever owns it ticks it in real
-    /// seconds, which is what the ruling delay is measured in.
+    /// Pure: no Unity types, no clock - the office keeps no time of its own because it
+    /// never sits on anything.
     /// </summary>
     public sealed class OutfitFilings
     {
-        /// <summary>How long the office sits on an order before it answers.</summary>
-        public const float DefaultRulingSeconds = 1.4f;
-
         /// <summary>The sheet shows the most recent handful; the rest is archive that
         /// nothing reads, so it is dropped rather than grown without bound.</summary>
         const int HistoryLimit = 40;
@@ -90,71 +75,27 @@ namespace LivingCity.Outfit
         readonly List<Filing> filings = new List<Filing>();
         int nextId;
 
-        public float RulingSeconds { get; set; } = DefaultRulingSeconds;
-
         /// <summary>Newest first - the order the sheet prints them in.</summary>
         public IReadOnlyList<Filing> All => filings;
 
-        /// <summary>Bumped whenever a filing is added or answered, so a versioned
-        /// repaint notices the office without polling every field.</summary>
+        /// <summary>Bumped whenever an order is answered, so a versioned repaint
+        /// notices the office without polling every field.</summary>
         public int Version { get; private set; }
 
-        public int AwaitingCount
-        {
-            get
-            {
-                var count = 0;
-                for (var i = 0; i < filings.Count; i++)
-                    if (filings[i].Awaiting)
-                        count++;
-                return count;
-            }
-        }
-
-        /// <summary>Files one order. The resolver runs when the office answers, on the
-        /// thread that ticks - it is where the state change belongs, not here.</summary>
+        /// <summary>Gives one order. The resolver runs HERE, on the caller's thread and
+        /// at the moment of the click - the man is hired, promoted or moved before this
+        /// returns - and what comes back is the receipt to print.</summary>
         public Filing File(string stamp, string text, Func<FilingRuling> resolver)
         {
-            var filing = new Filing(++nextId, stamp, text, resolver)
-            {
-                SecondsLeft = Math.Max(0f, RulingSeconds),
-            };
+            var ruling = resolver != null
+                ? resolver()
+                : FilingRuling.Refuse("the order was lost in the office");
+            var filing = new Filing(++nextId, stamp, text, ruling);
             filings.Insert(0, filing);
             while (filings.Count > HistoryLimit)
                 filings.RemoveAt(filings.Count - 1);
             Version++;
             return filing;
-        }
-
-        /// <summary>Answers everything whose delay has run out. Returns true when any
-        /// filing changed, so the owner can bump its own version once.</summary>
-        public bool Tick(float seconds)
-        {
-            if (seconds <= 0f)
-                return false;
-
-            var changed = false;
-            // Oldest first: two orders filed in the same frame are answered in the
-            // order they were asked, which is the only ordering a paper office has.
-            for (var i = filings.Count - 1; i >= 0; i--)
-            {
-                var filing = filings[i];
-                if (!filing.Awaiting)
-                    continue;
-                filing.SecondsLeft -= seconds;
-                if (filing.SecondsLeft > 0f)
-                    continue;
-
-                var resolver = filing.Resolver;
-                filing.Settle(resolver != null
-                    ? resolver()
-                    : FilingRuling.Refuse("the order was lost in the office"));
-                changed = true;
-            }
-
-            if (changed)
-                Version++;
-            return changed;
         }
 
         public void Clear()

@@ -167,14 +167,24 @@ namespace RoadDemo
                 yield return null;
                 if (cafe != null)
                 {
-                    int interiorSeed = StorefrontSeed(
-                        plan.Seed, placed.Spot.Name, placed.Gap.At, placed.Gap.Side, cafeNth++);
-                    Vector3 outward = CafeLocalOutward(placed.Gap, root, cafe.transform);
-                    foreach (int _ in StorefrontDressingSteps(
-                        cafe, placed.Spot.Unit,
-                        "cafe:" + (placed.Spot.Path ?? placed.Spot.Unit?.Name ?? placed.Spot.Name),
-                        interiorSeed, outward, stood))
+                    // As on the eager path: only a harvested storefront takes the shallow
+                    // rooms. A kit venue on its own ground keeps its authored front.
+                    if (NeedsStorefrontDressing(placed.Spot.Unit))
+                    {
+                        int interiorSeed = StorefrontSeed(
+                            plan.Seed, placed.Spot.Name, placed.Gap.At, placed.Gap.Side, cafeNth++);
+                        Vector3 outward = CafeLocalOutward(placed.Gap, root, cafe.transform);
+                        foreach (int _ in StorefrontDressingSteps(
+                            cafe, placed.Spot.Unit,
+                            "cafe:" + (placed.Spot.Path ?? placed.Spot.Unit?.Name ?? placed.Spot.Name),
+                            interiorSeed, outward, stood))
+                            yield return null;
+                    }
+                    else if (placed.Spot.Unit != null)
+                    {
+                        BuildingCutaway.Prepare(cafe, placed.Spot.Unit);
                         yield return null;
+                    }
 
                     if ((placed.Spot.Unit?.Seats ?? 0) < OwnSeats)
                     {

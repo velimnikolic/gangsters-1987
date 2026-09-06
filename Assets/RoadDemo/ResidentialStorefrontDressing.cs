@@ -592,7 +592,13 @@ namespace RoadDemo
                                           nextGroup++, found);
             }
 
-            if (found.Count == 0)
+            // BOTH remaining routes measure a WHOLE FACADE, not a pane, so they are only
+            // ever right for a building that really carries shop modules and only lost
+            // their glass. A standalone authored shop - the radnja units, harvested whole
+            // out of Palm City with their own windows and stands - has no shop module at
+            // all, and the fallback stamped one 12 m fake room across its front. The user,
+            // 2026-09-06: "fake enterijeri idu samo na storefronts".
+            if (found.Count == 0 && HasAuthoredShopModules(unit))
             {
                 Vector3? hint = fallbackOutward ?? StorefrontFallback(unit);
                 if (hint.HasValue && hint.Value.sqrMagnitude >= 0.25f &&
@@ -602,10 +608,25 @@ namespace RoadDemo
             }
             // Metadata is only a last-resort safety net. Synthesizing it before the real
             // fallback made cafe shells span a whole 25-40 m unit and read as loose boards.
-            if (found.Count == 0) AddMissingUnitFaces(found, unit, ref nextGroup);
+            if (found.Count == 0 && HasAuthoredShopModules(unit))
+                AddMissingUnitFaces(found, unit, ref nextGroup);
 
             found.Sort(CompareOpenings);
             return found.ToArray();
+        }
+
+        /// <summary>Whether the unit was harvested with a real shop module in its wall.
+        /// The measured pane is the only thing that makes a shallow room honest; a unit
+        /// with no `SM_Bld_Shop_*` anywhere is a whole authored building, not a bay.</summary>
+        static bool HasAuthoredShopModules(ResidentialUnit unit)
+        {
+            var bays = unit != null ? unit.ShopBays : null;
+            if (bays == null) return false;
+            for (int i = 0; i < bays.Length; i++)
+                if (!string.IsNullOrEmpty(bays[i].Module) &&
+                    bays[i].Module.StartsWith("SM_Bld_Shop", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            return false;
         }
 
         static bool StorefrontMesh(string name)

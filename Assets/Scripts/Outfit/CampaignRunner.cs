@@ -1538,9 +1538,7 @@ namespace LivingCity.Outfit
         /// <summary>
         /// The end of the job card's flow - only here does the job exist. It joins the
         /// back of the lieutenant's book and his crew starts it as soon as they are
-        /// free; there is no turn to wait for. Headcount is clamped to the men he
-        /// actually has, because a job cannot book five men out of a crew of three and
-        /// pretending otherwise only produces a job that never starts.
+        /// free. Headcount excludes men currently carrying independent errands.
         /// </summary>
         public OpResult Issue(Roster roster, Job job)
         {
@@ -1561,7 +1559,7 @@ namespace LivingCity.Outfit
             if (job.Type == OrderType.SetUpBusiness)
                 return OpResult.Fail(UI.LedgerText.ReasonNotBuiltYet);
 
-            var available = CrewKit.MenOf(crew);
+            var available = CrewKit.MenOf(roster, crew);
             if (job.Men < 1)
                 job.Men = 1;
             if (job.Men > available)

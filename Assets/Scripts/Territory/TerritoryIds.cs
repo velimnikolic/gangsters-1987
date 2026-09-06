@@ -80,6 +80,7 @@ namespace LivingCity.Territory
         Boss,
         Lieutenant,
         Crew,
+        Character,
     }
 
     /// <summary>
@@ -101,6 +102,9 @@ namespace LivingCity.Territory
 
         public static TerritoryCommandNodeId Crew(int crewId) =>
             new TerritoryCommandNodeId(TerritoryCommandNodeKind.Crew, crewId);
+
+        public static TerritoryCommandNodeId Character(int characterId) =>
+            new TerritoryCommandNodeId(TerritoryCommandNodeKind.Character, characterId);
 
         public static TerritoryCommandNodeId Boss(int characterId) =>
             new TerritoryCommandNodeId(TerritoryCommandNodeKind.Boss, characterId);

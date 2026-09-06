@@ -566,22 +566,8 @@ namespace RoadDemo
             return false;
         }
 
-        /// <summary>Read a stretch of walk against EVERYTHING that has been blocked -
-        /// what <see cref="Block"/> was told about as well as every plan a kit registered
-        /// in <see cref="Props"/>.
-        ///
-        /// A crowd on a link only ever knows what its link was sampled against
-        /// (PedLink.SampleClearance), and a walk laid across ground more than one pass
-        /// furnished has to be read against all of them. A filling station's forecourt is
-        /// the case that showed it: the walk runs along the shop front, and the shop, the
-        /// hedge, the gas cage and the cars in the parking row are all blocked HERE and
-        /// in no street kit's plan - so a walk sampled against the kit alone is a walk
-        /// whose crowd goes through a wall.
-        ///
-        /// Build-time only, like the sampling it wraps. It is deliberately NOT what the
-        /// city's own pavements are read against: those are thousands of links against
-        /// thousands of building boxes, and the sampling is already the dearest thing in
-        /// the load. It is for the short, furnished walks a place lays for itself.</summary>
+        /// <summary>Refresh a link against buildings and every registered prop plan.
+        /// Builders call this initially; blocked walkers refresh stale live clearance.</summary>
         public static void SampleWalk(PedLink link, float radius)
         {
             if (link == null) return;
@@ -593,6 +579,26 @@ namespace RoadDemo
         }
 
         static readonly List<SidewalkPlan> _against = new List<SidewalkPlan>();
+
+        static readonly List<SidewalkPlan.Box> RecoveryBoxes = new List<SidewalkPlan.Box>();
+        /// <summary>Leave existing overlaps monotonically; never enter another solid.</summary>
+        internal static bool ClearRecoveryStep(Vector3 from, Vector3 to, float radius)
+        {
+            if (!InCity(from) || !InCity(to)) return false;
+            var a = new Vector2(from.x, from.z); var b = new Vector2(to.x, to.z);
+            float reach = (b - a).magnitude + radius;
+            RecoveryBoxes.Clear();
+            _solids.SolidNear(a, reach, RecoveryBoxes);
+            _composedProps.SolidNear(a, reach, RecoveryBoxes);
+            foreach (var plan in _props) plan.SolidNear(a, reach, RecoveryBoxes);
+            bool overlap = false;
+            foreach (var box in RecoveryBoxes)
+            {
+                if (!SidewalkPlan.RecoveryStepClear(box, a, b, radius, out bool inside)) return false;
+                overlap |= inside;
+            }
+            return overlap;
+        }
 
         // ------------------------------------------------------------------ the road
 
@@ -1133,11 +1139,8 @@ namespace RoadDemo
             return road != null && Mathf.Abs(d) < road.HalfRoad;
         }
 
-        /// <summary>The solid furniture within reach of a point - the PROPS only. The
-        /// walls are left out on purpose (a building face is not something a man gets
-        /// behind and shoots over), and so is the traffic, which whoever wants a car's
-        /// flank asks StreetTraffic for itself. What DemoCrews.CoverNear offers a
-        /// pressed man beyond the parked cars.</summary>
+        /// <summary>Solid furniture for cover queries; excludes walls and traffic.
+        /// Recovery separately includes walls in ClearRecoveryStep.</summary>
         public static void PropsNear(Vector3 p, float reach, List<SidewalkPlan.Box> into)
         {
             into.Clear();
@@ -1146,10 +1149,8 @@ namespace RoadDemo
             for (int i = 0; i < _props.Count; i++) _props[i].SolidNear(q, reach, into);
         }
 
-        /// <summary>The same run as <see cref="Clear"/>, but past the FIXED things only -
-        /// no traffic. What a way across the city is drawn against (WalkRoute): a line
-        /// that dodged wherever the cars happened to be standing would be a line round
-        /// nothing a moment later.</summary>
+        /// <summary>Fixed geometry clearance for route planning. Passing traffic is
+        /// handled by the live step instead of being baked into a static route.</summary>
         public static float ClearStanding(Vector3 from, Vector3 dir, float radius, float ahead)
         {
             var p = new Vector2(from.x, from.z);
@@ -1264,8 +1265,7 @@ namespace RoadDemo
         /// ahead goes round it the open way, not back the way he came. Boxed in,
         /// whichever line runs furthest. <paramref name="clear"/> is how far the
         /// line given runs before it hits something: the most he may step this
-        /// frame. A man stood inside something already (dealt there, shoved there)
-        /// is let walk straight out of it.</summary>
+        /// frame. Invalid standing placements require a separate recovery.</summary>
         public static Vector3 Steer(Vector3 from, Vector3 want, Vector3 going, float radius, float ahead,
             ref int side, out float clear, int preferredSide = 0,
             float trafficRadius = -1f, float minForwardDot = -1f)

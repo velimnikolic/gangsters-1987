@@ -3,20 +3,16 @@ using UnityEngine;
 
 namespace RoadDemo
 {
-    // One patrol car cycling Resting -> Undocking -> Patrolling -> Returning ->
-    // Docking forever. The driving halves ride DemoVehicle's own lane-graph logic
-    // (the same car-following and signal discipline as the civilian traffic); the
-    // parked halves are hand-animated over PatrolDocking's Bezier.
-    //
-    // A patrol is a run of WAYPOINTS drawn uniformly over the whole lane graph,
-    // each reached by BFS-routed turns - not a random wander, which statistically
-    // loiters around the station and never sees the far districts. The budget
-    // counts waypoints; when it runs dry the same routing brings the car back to
-    // the kerb in front of the station and it swings into its stall.
+    // Shared road driving between uniformly drawn, BFS-routed patrol waypoints.
+    // Patrols rest at legal kerbs or use the configured station docking curves.
+    // Disabled bodies leave the roster immediately and the street after cleanup.
     public class PolicePatrolCar : DemoVehicle, IPatrolMarker, IPoliceUnit
     {
-        // the law rests on its docking and holds a scene: never cleared away
+        // A healthy patrol may rest or hold a scene indefinitely.
         protected override bool VanishesWhenStuck => false;
+        public const float DisabledRemovalSeconds = 30f;
+        float _disabledFor;
+        internal System.Action<PolicePatrolCar> BeforeRemoval;
 
         public enum Mode { Resting, Undocking, Patrolling, Returning, Docking, Responding, OnScene, Parking }
 
@@ -394,11 +390,9 @@ namespace RoadDemo
         /// stand at a kerb waiting for one.</summary>
         void BackOnTheRound()
         {
-            // whatever it was driving to is forgotten, and a car stood at a kerb pulls
-            // out: a round that kept a parking goal would have parked at the end of it
-            // and stood there for ever, patrolling in name only
-            if (HasGoal || ParkingFailed) Stop();
-            if (Parked) PullOut();
+            // Release the failed order's brake and any deferred junction halt too.
+            // Merely dropping its goal leaves a failed entry stopped in the road.
+            ResumeTraffic();
             HasRestSpot = false;
             GiveUpKerb();
             State = Mode.Patrolling;
@@ -490,6 +484,24 @@ namespace RoadDemo
 
         public void TickPatrol(float dt)
         {
+            if (Gone) return;
+            if (Wrecked || EngineDead || _transferHalt || _retiredFromFleet)
+            {
+                _disabledFor += Mathf.Max(0f, dt);
+                if (_disabledFor >= DisabledRemovalSeconds)
+                {
+                    Speed = 0f;
+                    BeforeRemoval?.Invoke(this);
+                    BeforeRemoval = null;
+                    GiveUpKerb();
+                    Swinging.Remove(this);
+                    Fleet.Remove(this);
+                    HasRestSpot = HoldAtKerb = CustodyReserved = _sceneWanted = false;
+                    Vanish();
+                    return;
+                }
+                if (Wrecked) return;
+            }
             if (Officer != null)
                 Officer.Show(State != Mode.OnScene &&
                              (State != Mode.Resting || (RestsAtKerbs && !_inTheYard)));
@@ -652,12 +664,10 @@ namespace RoadDemo
 
         // ------------------------------------------------------------ the call
 
-        Transform IPoliceUnit.Tf => Tf;
-        Vector3 IPoliceUnit.Position => Tf.position;
-        /// <summary>Still a working body in the precinct fleet. A lost car remains in
-        /// the road scene as wreckage/derelict scenery, but no dispatch or watch may
-        /// count it as an authorised cruiser.</summary>
-        public bool Fleetworthy =>
+        Transform IPoliceUnit.Tf => Gone ? null : Tf;
+        Vector3 IPoliceUnit.Position => Position;
+        /// <summary>A disabled car leaves the roster before its body is removed.</summary>
+        public bool Fleetworthy => !Gone &&
             LivingCity.Police.PoliceFleet.CountsAsBody(
                 Wrecked, EngineDead, _retiredFromFleet);
 
@@ -674,6 +684,7 @@ namespace RoadDemo
         /// reports OnScene.</summary>
         public void RouteTo(Vector3 scene, float standOff)
         {
+            if (_transferHalt || !Fleetworthy) return;
             _transferHalt = false;
             _scenePos = scene;
             _sceneStandOff = Mathf.Max(0f, standOff);
@@ -764,6 +775,14 @@ namespace RoadDemo
         /// <summary>Done at the scene: back to the station.</summary>
         public void Release()
         {
+            // Ending custody cannot restart a transfer disabled by gunfire,
+            // including the interval while it is still braking out of a junction.
+            if (_transferHalt || !Fleetworthy)
+            {
+                GiveUpKerb();
+                _sceneWanted = false;
+                return;
+            }
             _transferHalt = false;
             if (State != Mode.Responding && State != Mode.OnScene) { _sceneWanted = false; return; }
             GiveUpKerb();
@@ -952,7 +971,7 @@ namespace RoadDemo
 
         // ------------------------------------------------------------ the marker
 
-        Transform IPatrolMarker.MarkerTf => Tf;
+        Transform IPatrolMarker.MarkerTf => Gone ? null : Tf;
         float IPatrolMarker.MarkerHeight => 2.8f;
         bool IPatrolMarker.MarkerDimmed => State == Mode.Resting;
         string IPatrolMarker.MarkerTitle => "Patrol Car " + UnitNumber;

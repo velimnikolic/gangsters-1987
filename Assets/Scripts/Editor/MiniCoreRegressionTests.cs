@@ -140,9 +140,10 @@ namespace LivingCity.Tests
                     var world = LivingCity.Outfit.Underworld.Deal(1987 + repetition, 2);
                     var roster = world.Of(1).Roster;
                     var crew = new Crew { Id = 1001, LieutenantId = roster.Members[1].Id };
-                    crew.HoodIds.Add(roster.Members[2].Id);
-                    crew.HoodIds.Add(roster.Members[3].Id);
+                    crew.HoodIds.AddRange(new[] { roster.Members[2].Id, roster.Members[3].Id });
                     roster.Crews.Clear(); roster.Crews.Add(crew);
+                    RosterOps.AssignBlockResponsibility(roster,
+                        new LivingCity.Territory.TerritoryBlockId("regression:bag-ground"), crew.LieutenantId, true);
                     Require(RosterOps.NameCollector(roster, crew.Id, roster.Members[2].Id).Ok,
                         "fixture could not assign its collector");
                     Require(RosterOps.PostEscort(roster, crew.Id, roster.Members[3].Id).Ok,
@@ -3134,4 +3135,3 @@ namespace LivingCity.Tests
         }
     }
 }
-

@@ -19,13 +19,12 @@ namespace LivingCity.UI
     /// <summary>Who the ledger is allowed to put behind a door order.</summary>
     public enum DoorDispatch
     {
-        /// <summary>The floating command menu: explicitly picked men, then the only
+        /// <summary>The floating command menu: an explicitly chosen crew, then the only
         /// crew currently out on the street.</summary>
         PickedOrStreet,
 
-        /// <summary>The block file: an explicit picker choice first, then its named
-        /// lieutenant, otherwise the one crew physically standing on that block. It
-        /// never borrows an unrelated selected crew from the 3D view.</summary>
+        /// <summary>The block file: only the responsible leader's crew when assigned.
+        /// Otherwise an explicit crew choice, then the one crew standing there.</summary>
         BlockResponsibility,
     }
 
@@ -36,7 +35,7 @@ namespace LivingCity.UI
     /// It is painted in TWO places and written ONCE: under the block file in the ledger,
     /// beside the row of the premise that was picked, and over the turf map, beside the
     /// premise that was clicked. Both surfaces call <see cref="Open"/>, both share the
-    /// same picked men and the same last ruling, so a row added here appears on both and
+    /// same chosen crew and the same last ruling, so a row added here appears on both and
     /// an order given from either is literally the same order.
     ///
     /// Nothing here decides a rule. The rows come from TerritoryRacketOrders, the money
@@ -374,11 +373,9 @@ namespace LivingCity.UI
 
         // ---------------------------------------------------------------- the state
 
-        /// <summary>The men picked for the next job. ONE list: men picked on the map are
-        /// the men the ledger's menu shows picked, because it is the same menu.</summary>
-        static readonly List<int> picked = new List<int>();
-
-        public static IReadOnlyList<int> Picked => picked;
+        /// <summary>One crew identity shared by the block band and door menu.</summary>
+        public static int SelectedCrewId { get; private set; } = -1;
+        public static int SelectedPersonId { get; private set; } = -1;
 
         /// <summary>What the office last said about an order given here. Painted at the
         /// foot of the menu wherever it stands.</summary>
@@ -388,19 +385,11 @@ namespace LivingCity.UI
         /// surface holding the panel open knows to repaint it.</summary>
         public static int Version { get; private set; }
 
-        /// <summary>The order this menu has with the office right now, while it is still
-        /// unanswered. The note under the keys is REPLACED by the ruling the moment it
-        /// lands: this panel is the only place a reader sees what became of an order
-        /// given at a door, and one that reads "not answered yet" for the rest of the
-        /// session hides every refusal the office ever wrote.</summary>
-        static Outfit.Filing awaiting;
-
         /// <summary>Drops the pick and the last ruling - a different door, or a menu
         /// shut.</summary>
         public static void Forget()
         {
-            picked.Clear();
-            awaiting = null;
+            SelectedCrewId = SelectedPersonId = -1;
             Note = "";
             Version++;
         }
@@ -411,43 +400,29 @@ namespace LivingCity.UI
             Version++;
         }
 
-        /// <summary>
-        /// Reads the office. Whatever surface is holding the menu open calls it on its
-        /// own beat - the version only moves when the answer has actually arrived, so a
-        /// panel that is waiting costs nothing.
-        /// </summary>
-        public static void Poll()
+        public static void ToggleCrew(int crewId)
         {
-            if (awaiting == null || awaiting.Awaiting)
-                return;
-            var answered = awaiting;
-            awaiting = null;
-            Say(answered.Ruling);
+            SelectedCrewId = SelectedCrewId == crewId ? -1 : crewId;
+            SelectedPersonId = -1;
+            Version++;
         }
 
-        /// <summary>
-        /// Picks a man for the job, or drops him. ONE job rides in ONE lieutenant's book:
-        /// picking a man of another branch does not build an impossible crew for the
-        /// filing to refuse later - it starts the pick over on his branch, there and then.
-        /// </summary>
-        public static void Toggle(int characterId)
+        public static void TogglePerson(int personId)
         {
-            if (picked.Remove(characterId))
-            {
-                Version++;
-                return;
-            }
+            SelectedPersonId = SelectedPersonId == personId ? -1 : personId;
+            SelectedCrewId = -1;
+            Version++;
+        }
 
-            var roster = Book();
-            if (roster != null && picked.Count > 0)
-            {
-                var his = roster.CrewOf(characterId);
-                var current = roster.CrewOf(picked[0]);
-                if (his == null || current == null || his.Id != current.Id)
-                    picked.Clear();
-            }
-
-            picked.Add(characterId);
+        public static void ConstrainToBlock(Roster roster, TerritoryBlockId block,
+            IReadOnlyList<TacticalPersonnelMapping> physical = null)
+        {
+            var staleCrew = SelectedCrewId >= 0 && BlockMissionChoice.Refusal(
+                roster, block, SelectedCrewId, true) != null;
+            var staleMan = SelectedPersonId >= 0 && BlockMissionChoice.PersonRefusal(
+                roster, block, SelectedPersonId, true, physical) != null;
+            if (!staleCrew && !staleMan) return;
+            SelectedCrewId = SelectedPersonId = -1;
             Version++;
         }
 
@@ -478,9 +453,6 @@ namespace LivingCity.UI
             DoorDispatch dispatch = DoorDispatch.PickedOrStreet,
             bool showCommands = true)
         {
-            // The office first: a panel repainted because a ruling landed must be painted
-            // with the ruling on it, not with the line it was filed under.
-            Poll();
             var infoOnly = !showCommands;
 
             var panel = LedgerV2.Card("Door menu", parent, 0f, 0f, width, 1f, LedgerV2.Head);
@@ -573,17 +545,8 @@ namespace LivingCity.UI
             public bool IsOpen => root != null && root.gameObject.activeSelf;
 
             /// <summary>True when the menu is up and something it draws itself from has
-            /// moved - the surface repaints it on its own beat. The office is read here
-            /// too: a ruling landing while the panel floats is exactly the thing the
-            /// surface has to repaint for, and nothing else polls it out there.</summary>
-            public bool Stale
-            {
-                get
-                {
-                    Poll();
-                    return IsOpen && stamp != Version;
-                }
-            }
+            /// moved - the surface repaints it on its own beat.</summary>
+            public bool Stale => IsOpen && stamp != Version;
 
             /// <summary>Whether the pointer is on the panel. A surface that polls the
             /// mouse itself has to stand aside for it.</summary>
@@ -937,144 +900,20 @@ namespace LivingCity.UI
 
         // ---------------------------------------------------------------- who goes
 
-        static readonly List<int> offer = new List<int>();
-        static readonly List<RosterEquipment> kit = new List<RosterEquipment>();
         static readonly List<TerritoryActorObservation> actors =
             new List<TerritoryActorObservation>();
 
-        /// <summary>The men who can go: the ones already standing on this door's block
-        /// first, then whoever is idle under the outfit. The pip says whether he is
-        /// carrying.</summary>
         static float Hands(RectTransform panel, float x, float top, float width,
             Door door, Action changed, DoorDispatch dispatch)
         {
-            // The menu offers only men a filing will ACCEPT: men on a branch. A pool man
-            // has no lieutenant's book to ride in, and a chip that gets refused at the
-            // filing is a trap, not an offer.
             var roster = Book();
-
-            // WHO ANSWERS THESE KEYS, said out loud. With men ticked it is their branch;
-            // with none it is whoever the menu would fall back to, named, so the reader
-            // is never guessing which lieutenant just got the order - and where there is
-            // nobody to fall back to, the line is the reason the keys below are faded.
-            var standing = CrewToSend(door, dispatch, out _, out var noCrew,
-                out var source);
-            var standingBoss = standing != null && roster != null
-                ? roster.Find(standing.LieutenantId)
-                : null;
-            if (standingBoss != null && string.IsNullOrEmpty(standingBoss.Surname))
-                standingBoss = null;
-            Caps(panel, x, -top, width,
-                picked.Count > 0
-                    ? "SEND A CREW · " + picked.Count + " PICKED"
-                    : dispatch == DoorDispatch.BlockResponsibility && standingBoss != null
-                    ? "SEND A CREW · " + standingBoss.Surname.ToUpperInvariant() + source
-                    : dispatch == DoorDispatch.BlockResponsibility
-                        ? "SEND A CREW · " + noCrew.ToUpperInvariant()
-                    : standingBoss != null
-                        ? "SEND A CREW · " + standingBoss.Surname.ToUpperInvariant() +
-                          "'S UNLESS MEN ARE PICKED"
-                        : standing != null
-                            ? "SEND A CREW · THE CREW OUT UNLESS MEN ARE PICKED"
-                            : "SEND A CREW · " + noCrew.ToUpperInvariant(),
-                9f, LedgerV2.HeadDim, 10f).font = LedgerStyle.Mono;
-            var y = top + 18f;
-
-            offer.Clear();
-
-            void Offer(int manId)
-            {
-                if (roster == null || offer.Count >= 12 || offer.Contains(manId) ||
-                    roster.CrewOf(manId) == null)
-                    return;
-                var member = roster.Find(manId);
-                if (member == null || member.Status != CharacterStatus.Active)
-                    return;
-                offer.Add(manId);
-            }
-
-            var runtime = TerritoryRuntime.Instance;
-            if (runtime != null && door.Block.IsValid)
-            {
-                actors.Clear();
-                runtime.CollectActors(door.Block, actors);
-                for (var i = 0; i < actors.Count; i++)
-                {
-                    var actor = actors[i];
-                    if (!actor.GangId.IsValid ||
-                        actor.GangId.Value != GangCatalog.PlayerGangId ||
-                        !actor.CharacterId.IsValid)
-                        continue;
-                    Offer(actor.CharacterId.Value);
-                }
-            }
-
-            if (roster != null)
-                for (var c = 0; c < roster.Crews.Count && offer.Count < 12; c++)
-                {
-                    var branch = roster.Crews[c];
-                    Offer(branch.LieutenantId);
-                    for (var h = 0; h < branch.HoodIds.Count && offer.Count < 12; h++)
-                        Offer(branch.HoodIds[h]);
-                }
-
-            if (offer.Count == 0)
-            {
-                Line(panel, LedgerStyle.MonoItalic, 10.5f, LedgerV2.Boss, x, -y, width, 18f,
-                    "No branch has a man free to send. Idle men ride nowhere - put them under a lieutenant first.");
-                return y + 24f - top;
-            }
-
-            const float chipH = 24f;
-            const float gap = 5f;
-            var cursorX = x;
-            for (var i = 0; i < offer.Count; i++)
-            {
-                var manId = offer[i];
-                var member = roster != null ? roster.Find(manId) : null;
-                var label = member != null ? ShortName(member.FirstName, member.Surname)
-                    : "#" + manId;
-                var armed = IsArmed(roster, manId);
-                var on = picked.Contains(manId);
-                var chipW = Mathf.Min(width, 26f + label.Length * 7.2f);
-
-                if (cursorX > x && cursorX + chipW > x + width)
-                {
-                    cursorX = x;
-                    y += chipH + gap;
-                }
-
-                var chip = NewRect("Man " + label, panel);
-                PlaceTopLeft(chip, cursorX, -y, chipW, chipH);
-                Fill(chip, on ? LedgerV2.Red : LedgerV2.DarkPlate);
-                RowButton(chip, ClickSurface(chip), () =>
-                {
-                    Toggle(manId);
-                    changed?.Invoke();
-                });
-                LedgerV2.StreetMark(chip, 7f, -9f, armed ? TenurePaying : LedgerV2.Boss, 6f);
-                Line(chip, LedgerStyle.MonoBold, 10f,
-                    on ? LedgerV2.HeadCream : LedgerV2.HeadInk,
-                    17f, -5f, chipW - 22f, 14f, label);
-                cursorX += chipW + gap;
-            }
-
-            y += chipH + 8f;
-            LedgerV2.Mono(panel, x, -y, width,
-                "the pip says he is carrying · the rest go bare-handed", 9f,
-                LedgerV2.HeadDim, 0.5f);
-            return y + 16f - top;
-        }
-
-        static bool IsArmed(Roster roster, int memberId)
-        {
-            if (roster == null)
-                return false;
-            roster.HeldBy(memberId, kit);
-            for (var i = 0; i < kit.Count; i++)
-                if (RosterOps.IsWeapon(kit[i].Kind))
-                    return true;
-            return false;
+            var restricted = dispatch == DoorDispatch.BlockResponsibility;
+            if (restricted) ConstrainToBlock(roster, door.Block, CrewMissionPicker.Physical());
+            var going = CrewToSend(door.Block, dispatch, out _, out _, out _);
+            return CrewMissionPicker.Draw(panel, x, top, width, roster, door.Block,
+                restricted, SelectedCrewId, SelectedPersonId, going?.Id ?? -1,
+                crewId => { ToggleCrew(crewId); changed?.Invoke(); },
+                manId => { TogglePerson(manId); changed?.Invoke(); }, dark: true);
         }
 
         static string ShortName(string first, string surname)
@@ -1106,8 +945,10 @@ namespace LivingCity.UI
             // order no crew can carry is refused by the office a second and a half
             // later, on a line nothing on this panel ever showed - so the row stands
             // faded instead, which is what the shared table's hasCrew is for.
-            var going = CrewToSend(door, dispatch, out _, out _, out _);
-            var hasCrew = going != null;
+            var going = CrewToSend(door.Block, dispatch, out _, out _, out _);
+            var solo = SelectedPersonId >= 0;
+            var soloReason = solo ? SoloRefusal(door, dispatch) : null;
+            var hasCrew = going != null || (solo && soloReason == null);
 
             TerritoryRacketOrders.For(
                 door.Standing, door.Tenure, racketable: true, hasCrew,
@@ -1149,7 +990,9 @@ namespace LivingCity.UI
                 }
                 // And the dead key goes dim rather than into the paper greys, which are
                 // bright over black - that is what made every key on the panel read alike.
-                LedgerV2.KeyEnabled(label, row.Available,
+                var soloOrder = row.Kind == TerritoryDoorRowKind.Racket &&
+                    (row.Intent == TerritoryRacketIntent.Demand || row.Intent == TerritoryRacketIntent.Threaten);
+                LedgerV2.KeyEnabled(label, row.Available && (!solo || (soloOrder && soloReason == null)),
                     LedgerV2.HeadDim, LedgerV2.DarkPlate);
                 cursorX += keyWidth + 6f;
             }
@@ -1266,7 +1109,7 @@ namespace LivingCity.UI
         static void MoveQuarters(
             Door door, TerritoryQuartersMove move, DoorDispatch dispatch)
         {
-            var crew = CrewToSend(door, dispatch, out _, out var refusal, out _);
+            var crew = CrewToSend(door.Block, dispatch, out _, out var refusal, out _);
             var unit = StreetUnit(crew);
             if (unit == null)
             {
@@ -1305,81 +1148,25 @@ namespace LivingCity.UI
 
         // ------------------------------------------------------------ filing a job
 
-        /// <summary>
-        /// Sends the picked men to a door. The job goes into the lieutenant's book like
-        /// any other: the men travel, they put the hours in, and the outfit's record says
-        /// afterwards what came of it and who came back hurt. Nothing happens at the
-        /// click, and a request the outfit cannot honour comes back refused with the
-        /// reason on it.
-        /// </summary>
+        /// <summary>Files the chosen crew's job and rechecks its block responsibility.</summary>
         static void FileStreetJob(Door door, Outfit.OrderType type, DoorDispatch dispatch)
         {
             var word = LedgerText.OrderLabel(type);
-            var men = new List<int>(picked);
             File(word + " at " + door.Name + " asked for.", () =>
             {
                 var outfit = Gameplay.OutfitDirector.Instance;
                 if (outfit == null)
-                    return Outfit.FilingRuling.Refuse(
-                        "the outfit's order book is not open in this scene");
-
-                var roster = Book();
-                if (roster == null)
-                    return Outfit.FilingRuling.Refuse("the roster is unavailable");
-
-                Crew crew;
-                var going = 0;
-                if (men.Count > 0)
-                {
-                    // A job belongs to ONE lieutenant's book. Men picked out of two
-                    // branches is not a crew, and the office will not file it as one.
-                    crew = roster.CrewOf(men[0]);
-                    if (crew == null)
-                        return Outfit.FilingRuling.Refuse(
-                            "he is under nobody · put him on a branch first");
-                    for (var i = 1; i < men.Count; i++)
-                    {
-                        var other = roster.CrewOf(men[i]);
-                        if (other == null || other.Id != crew.Id)
-                            return Outfit.FilingRuling.Refuse(
-                                "men from two branches do not ride together");
-                    }
-                    going = men.Count;
-                }
-                else if (dispatch == DoorDispatch.BlockResponsibility)
-                {
-                    crew = CrewToSend(door, dispatch, out going, out var why, out _);
-                    if (crew == null)
-                        return Outfit.FilingRuling.Refuse(why);
-                }
-                else
-                {
-                    // NOBODY TICKED IS NOT NOBODY TO SEND. The doorstep keys on this
-                    // panel have always fallen back to the one crew of ours on the
-                    // street, and the street card sends its selected crew without asking
-                    // for names at all - so the wrecking, the torch and the robbery fall
-                    // back the same way instead of dying in the office unread.
-                    crew = CrewToSend(door, dispatch, out going, out var whose, out _);
-                    if (crew == null)
-                        return Outfit.FilingRuling.Refuse(whose);
-                }
-
-                // The keys are an offer made when the menu was painted; the door can have
-                // changed hands since. The shared builder asks the rule again at the moment
-                // the job is filed - the only moment that binds.
-                going = Mathf.Max(1, going);
-                if (!Gameplay.DoorJobs.TryBuild(
-                        door.Id, type, crew.Id, going, out var job, out var refusal))
+                    return Outfit.FilingRuling.Refuse("the outfit's order book is not open in this scene");
+                var crew = CrewToSend(door.Block, dispatch, out var going, out var why, out _);
+                if (crew == null) return Outfit.FilingRuling.Refuse(why);
+                if (!Gameplay.DoorJobs.TryBuild(door.Id, type, crew.Id, Mathf.Max(1, going),
+                        out var job, out var refusal))
                     return Outfit.FilingRuling.Refuse(refusal);
-
                 var result = outfit.IssueOrder(job);
                 return result.Ok
-                    ? Outfit.FilingRuling.Grant(
-                        going + (going == 1 ? " man goes" : " men go") +
-                        " · they leave as soon as they are free")
+                    ? Outfit.FilingRuling.Grant(BlockMissionChoice.Label(Book(), crew) + " will go")
                     : Outfit.FilingRuling.Refuse(result.Reason);
             });
-            picked.Clear();
         }
 
         /// <summary>Buys the premises outright. The asking price is the one the economy
@@ -1387,7 +1174,6 @@ namespace LivingCity.UI
         /// </summary>
         static void FileBuyPremises(Door door, DoorDispatch dispatch)
         {
-            var men = new List<int>(picked);
             File(door.Name + " bought outright. " +
                  LedgerText.Cash(door.BuyPrice) + " committed.", () =>
             {
@@ -1395,15 +1181,9 @@ namespace LivingCity.UI
                 if (outfit == null)
                     return Outfit.FilingRuling.Refuse(
                         "the outfit's order book is not open in this scene");
-                var roster = Book();
-                var going = men.Count;
-                var crew = roster != null && men.Count > 0
-                    ? roster.CrewOf(men[0])
-                    : null;
+                var crew = CrewToSend(door.Block, dispatch, out var going, out var why, out _);
                 if (crew == null)
-                    crew = CrewToSend(door, dispatch, out going, out _, out _);
-                if (crew == null)
-                    return Outfit.FilingRuling.Refuse("no crew to send about it");
+                    return Outfit.FilingRuling.Refuse(why);
                 if (outfit.Accounts.Safe < door.BuyPrice)
                     return Outfit.FilingRuling.Refuse(
                         "the safe does not cover " + LedgerText.Cash(door.BuyPrice));
@@ -1418,7 +1198,6 @@ namespace LivingCity.UI
                     ? Outfit.FilingRuling.Grant("the paperwork is with them")
                     : Outfit.FilingRuling.Refuse(result.Reason);
             });
-            picked.Clear();
         }
 
         /// <summary>
@@ -1439,28 +1218,29 @@ namespace LivingCity.UI
                 return;
             }
 
-            if (!TryPickStreetCrew(runtime, door, dispatch, out var crew, out var node,
-                    out var refusal))
+            var solo = SelectedPersonId >= 0;
+            var who = "";
+            TerritoryCommandNodeId node;
+            if (solo)
             {
-                Say(refusal);
-                return;
+                var reason = SoloRefusal(door, dispatch);
+                if (reason != null) { Say(reason); return; }
+                node = TerritoryCommandNodeId.Character(SelectedPersonId);
+                who = roster.Find(SelectedPersonId).FullName;
             }
-
-            // COLLECT is the round: every paying door on this block, walked in order, the
-            // take carried home (ECON-004). Everything else is the doorstep chain.
-            var sent = intent == TerritoryRacketIntent.Collect
-                ? runtime.Commands.Submit(Gameplay.PlayerCommands.Stamp(
-                    new CollectDuesCommand(node, door.Block)))
-                : runtime.Commands.Submit(Gameplay.PlayerCommands.Stamp(
-                    new ApproachBusinessCommand(node, door.Id, intent)));
-            if (sent.Status == TerritoryCommandStatus.Rejected)
+            else
             {
-                Say(sent.Reason);
-                return;
+                if (!TryPickStreetCrew(runtime, door, dispatch, out var crew, out node, out var refusal))
+                { Say(refusal); return; }
+                who = BlockMissionChoice.Label(roster, crew);
             }
+            var approach = new ApproachBusinessCommand(node, door.Id, intent,
+                door.Block, dispatch == DoorDispatch.BlockResponsibility);
+            var sent = intent == TerritoryRacketIntent.Collect && !solo
+                ? runtime.Commands.Submit(Gameplay.PlayerCommands.Stamp(new CollectDuesCommand(node, door.Block)))
+                : runtime.Commands.Submit(Gameplay.PlayerCommands.Stamp(approach));
+            if (sent.Status == TerritoryCommandStatus.Rejected) { Say(sent.Reason); return; }
 
-            var lieutenant = roster.Find(crew.LieutenantId);
-            var who = lieutenant != null ? lieutenant.Surname + "'s crew" : "the crew";
             Say(intent switch
             {
                 TerritoryRacketIntent.Demand =>
@@ -1473,16 +1253,16 @@ namespace LivingCity.UI
             });
         }
 
-        /// <summary>
-        /// THE CREW THIS MENU SENDS, for every key on it: the picked men's own branch
-        /// first, and with nothing picked the one crew of ours standing on the street.
-        /// That second answer is the street card's own - right-clicking a shop out there
-        /// sends the SELECTED crew and asks nobody to tick names first - so an order
-        /// given off the sheet and the same order given over the shop go to the same men.
-        /// A crew the outfit happens to list first is not an answer, it is a guess with
-        /// men in it, so two crews out and no pick is refused in words.
-        /// </summary>
-        static Crew CrewToSend(Door door, DoorDispatch dispatch, out int men,
+        static string SoloRefusal(Door door, DoorDispatch dispatch)
+        {
+            var runtime = TerritoryRuntime.Instance;
+            if (runtime == null) return "the territory command gateway is unavailable";
+            return runtime.SoloRefusal(Gameplay.PlayerCommands.House, door.Block,
+                SelectedPersonId, dispatch == DoorDispatch.BlockResponsibility);
+        }
+
+        /// <summary>Resolve the same crew shown by the picker at the moment of dispatch.</summary>
+        internal static Crew CrewToSend(TerritoryBlockId block, DoorDispatch dispatch, out int men,
             out string refusal, out string source)
         {
             men = 0;
@@ -1495,22 +1275,24 @@ namespace LivingCity.UI
                 return null;
             }
 
-            if (picked.Count > 0)
+            if (SelectedPersonId >= 0)
             {
-                var his = roster.CrewOf(picked[0]);
-                if (his == null)
-                    refusal = "he is under nobody · put him on a branch first";
-                else
-                {
-                    men = picked.Count;
-                    source = " · PICKED FOR THIS ORDER";
-                }
-                return his;
+                refusal = "one man is selected · choose a door to demand or threaten";
+                return null;
+            }
+            if (SelectedCrewId >= 0)
+            {
+                refusal = BlockMissionChoice.Refusal(roster, block, SelectedCrewId,
+                    dispatch == DoorDispatch.BlockResponsibility) ?? "";
+                if (refusal.Length > 0) return null;
+                var chosen = roster.FindCrew(SelectedCrewId);
+                men = Outfit.CrewKit.MenOf(roster, chosen);
+                source = " · PICKED FOR THIS ORDER";
+                return chosen;
             }
 
             if (dispatch == DoorDispatch.BlockResponsibility)
-                return BlockCrewToSend(roster, door.Block, out men, out refusal,
-                    out source);
+                return BlockCrewToSend(roster, block, out men, out refusal, out source);
 
             var runtime = TerritoryRuntime.Instance;
             Crew onStreet = null;
@@ -1533,12 +1315,12 @@ namespace LivingCity.UI
 
             if (streetCrews == 1)
             {
-                men = Outfit.CrewKit.MenOf(onStreet);
+                men = Outfit.CrewKit.MenOf(roster, onStreet);
                 return onStreet;
             }
 
             refusal = streetCrews > 1
-                ? "several crews are out · pick a man of the one to send"
+                ? "several crews are out · choose the crew to send"
                 : "no crew of ours is on the street to send";
             return null;
         }
@@ -1554,20 +1336,12 @@ namespace LivingCity.UI
             refusal = "";
             source = "";
 
-            var assignments = roster.Organization.BlockResponsibilities;
-            for (var i = 0; i < assignments.Count; i++)
+            if (BlockMissionChoice.ResponsibleLeader(roster, block) >= 0)
             {
-                if (assignments[i].BlockId != block)
-                    continue;
-                var leader = roster.Find(assignments[i].LeaderId);
-                var assigned = leader != null ? roster.CrewOf(leader.Id) : null;
-                if (leader == null || leader.Status != CharacterStatus.Active ||
-                    assigned == null || assigned.LieutenantId != assignments[i].LeaderId)
-                {
-                    refusal = "the leader named for this block has no active crew";
-                    return null;
-                }
-                men = Outfit.CrewKit.MenOf(assigned);
+                var assigned = BlockMissionChoice.ResponsibleCrew(roster, block);
+                refusal = BlockMissionChoice.Refusal(roster, block, assigned?.Id ?? -1, true) ?? "";
+                if (refusal.Length > 0) return null;
+                men = Outfit.CrewKit.MenOf(roster, assigned);
                 source = "'S CREW · RESPONSIBLE FOR THIS BLOCK";
                 return assigned;
             }
@@ -1582,7 +1356,6 @@ namespace LivingCity.UI
             actors.Clear();
             runtime.CollectActors(block, actors);
             Crew local = null;
-            var localIds = new HashSet<int>();
             for (var i = 0; i < actors.Count; i++)
             {
                 var actor = actors[i];
@@ -1591,7 +1364,10 @@ namespace LivingCity.UI
                     !actor.CharacterId.IsValid)
                     continue;
                 var crew = roster.CrewOf(actor.CharacterId.Value);
-                if (crew == null)
+                var man = roster.Find(actor.CharacterId.Value);
+                if (man == null || man.Duty == Duty.Collector || man.Duty == Duty.Escort ||
+                    roster.DoorOrders.Find(man.Id) != null ||
+                    BlockMissionChoice.Refusal(roster, block, crew?.Id ?? -1, true) != null)
                     continue;
                 if (local != null && local.Id != crew.Id)
                 {
@@ -1599,7 +1375,6 @@ namespace LivingCity.UI
                     return null;
                 }
                 local = crew;
-                localIds.Add(actor.CharacterId.Value);
             }
 
             if (local == null)
@@ -1608,7 +1383,7 @@ namespace LivingCity.UI
                 return null;
             }
 
-            men = Mathf.Max(1, localIds.Count);
+            men = Outfit.CrewKit.MenOf(roster, local);
             source = "'S CREW · STANDING ON THIS BLOCK";
             return local;
         }
@@ -1619,7 +1394,7 @@ namespace LivingCity.UI
             DoorDispatch dispatch,
             out Crew crew, out TerritoryCommandNodeId node, out string refusal)
         {
-            crew = CrewToSend(door, dispatch, out _, out refusal, out _);
+            crew = CrewToSend(door.Block, dispatch, out _, out refusal, out _);
             if (crew == null || !runtime.TryGetCrewNode(crew.Id, out node))
             {
                 node = default;
@@ -1632,20 +1407,15 @@ namespace LivingCity.UI
             return true;
         }
 
-        /// <summary>The office. With an outfit in the scene the order is FILED and
-        /// answered later; without one the resolver runs on the spot, so a demo scene
-        /// still says what would have happened.</summary>
+        /// <summary>The office. The order takes effect at the click and the menu prints
+        /// what came of it; with no outfit in the scene the same resolver runs
+        /// unrecorded, so a demo scene still says what happened.</summary>
         static void File(string text, Func<Outfit.FilingRuling> resolver)
         {
             var outfit = Gameplay.OutfitDirector.Instance;
-            if (outfit == null)
-            {
-                Say(resolver().Ruling);
-                return;
-            }
-
-            awaiting = outfit.Filings.File(Stamp(outfit), text, resolver);
-            Say("filed · the outfit has not answered yet");
+            Say(outfit != null
+                ? outfit.Filings.File(Stamp(outfit), text, resolver).Ruling
+                : resolver().Ruling);
         }
 
         static Ambient.CityClock clock;

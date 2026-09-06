@@ -253,7 +253,6 @@ namespace RoadDemo
         {
             _rig = rig;
             _camera = rig != null ? rig.GetComponent<Camera>() : null;
-            CityConditionHud.Ensure(rig);
         }
 
         void Awake()

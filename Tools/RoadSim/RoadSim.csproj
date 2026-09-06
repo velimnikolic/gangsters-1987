@@ -18,6 +18,8 @@
     <Compile Include="ArcMotion.cs" />
     <Compile Include="KerbCompletion.cs" />
     <Compile Include="KerbApproach.cs" />
+    <Compile Include="KerbDeparture.cs" />
+    <Compile Include="JunctionPace.cs" />
     <Compile Include="BlockedYield.cs" />
     <Compile Include="Recovery.cs" />
     <Compile Include="RecoveryGoal.cs" />

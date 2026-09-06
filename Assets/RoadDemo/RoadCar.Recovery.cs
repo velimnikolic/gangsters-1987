@@ -5,8 +5,18 @@ namespace RoadDemo
 {
     public partial class RoadCar
     {
-        /// <summary>Optional visibility provider for isolated simulations. Runtime
-        /// scenes use the same visibility service as the map and world renderers.</summary>
+        /// <summary>Resume autonomous driving without changing the body's current curve or pose.</summary>
+        protected void ResumeTraffic()
+        {
+            Stop();
+            _halted = _haltWhenClear = _keepGoalWhenHaltClear = _pullOutWanted = false;
+            _parkingRetreat = _parkPlanReady = false;
+            _backLeft = 0f;
+            _freeGoal = null;
+            if (Parked) PullOut();
+        }
+
+        /// <summary>Optional simulation override for the runtime map visibility service.</summary>
         public static Func<Vector3, bool> RecoveryVisibility;
         const float RecoveryDelay = 45f;
         const float RecoveryRetryDelay = 5f;
@@ -19,15 +29,12 @@ namespace RoadDemo
         float _recoveryStillFor;
         float _recoveryRetryFor;
 
-        static bool RecoveryRevealed(Vector3 position)
-        {
-            if (RecoveryVisibility != null) return RecoveryVisibility(position);
+        static bool RecoveryRevealed(Vector3 position) => RecoveryVisibility?.Invoke(position) ??
 #if UNITY_5_3_OR_NEWER
-            return LivingCity.Gameplay.MapVisionRegistry.IsRevealed(position);
+            LivingCity.Gameplay.MapVisionRegistry.IsRevealed(position);
 #else
-            return true;
+            true;
 #endif
-        }
 
         bool RecoveryBodyHidden(Vector3 position, Vector3 forward)
         {
@@ -65,8 +72,6 @@ namespace RoadDemo
         {
             if (!OnRoad || Parked || _halted || _haltWhenClear || Wrecked || Gone) return false;
             float reach = hidden ? HiddenRecoveryReach : VisibleRecoveryReach;
-            // Stay on the current road or either end of the connector already chosen.
-            // This cannot skip across a block onto an unrelated road or lose a route.
             if (Road != null && (RecoveryOnRoad(Road, Heading, reach, hidden) ||
                 RecoveryOnRoad(Road, -Heading, reach, hidden))) return true;
             var connector = Via ?? _via;
@@ -98,8 +103,6 @@ namespace RoadDemo
                     if (hidden && (!RecoveryBodyHidden(_pos, _fwd) || !RecoveryBodyHidden(position, forward))) continue;
                     if (!hidden)
                     {
-                        // An exceptional relocation may bypass a vehicle deadlock.
-                        // Pedestrians and the complete landing body remain protected.
                         bool peopleClear = true;
                         float yaw = Vector3.SignedAngle(_fwd, forward, Vector3.up);
                         int steps = Mathf.Max(1, Mathf.Max(Mathf.CeilToInt(distance / .5f), Mathf.CeilToInt(Mathf.Abs(yaw) / 10f)));

@@ -30,6 +30,7 @@ namespace RoadDemo
         }
 
         const float Travel = 0.5f;
+        internal const float Clearance = .16f;
         const float TurnRadius = 3f;
         const int MaxExpansions = 80000;
         readonly ParkingBlockSite _site;
@@ -143,7 +144,7 @@ namespace RoadDemo
             var forward = new Vector3(sx, 0f, cz);
             foreach (var body in _bodies)
                 if (RoadSpace.Overlap(position, forward, _halfLength, _halfWidth,
-                    body.Position, body.Forward, body.HalfLength, body.HalfWidth, 0.16f, out _)) return false;
+                    body.Position, body.Forward, body.HalfLength, body.HalfWidth, Clearance, out _)) return false;
             return true;
         }
 

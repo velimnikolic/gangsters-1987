@@ -748,6 +748,7 @@ namespace RoadDemo
         {
             // Before the arrivals: a walk that has stopped closing on its door is sent
             // out again here, because nothing else in the game ever looks at it.
+            TendSoloOrders();
             TendApproaches();
             sampledLocations.Clear();
             presence?.BeginSample();
@@ -1992,15 +1993,18 @@ namespace RoadDemo
 
                 pendingApproaches.RemoveAt(i);
                 if (RacketClosureRefusal(pending.BusinessId) != null)
-                    continue;
+                { ReturnSolo(unit); continue; }
                 racketChanges.Clear();
                 // ONE VISIT, ONE SLIP. A bare GO TO THE DOOR is worth a line of its own -
                 // the men standing there IS the news. A walk that carries a demand or a
                 // threat is not: the answer, seconds later, is what happened at that door,
                 // and the pair read as two visits on the wire.
-                racket.Approach(pending.BusinessId, observation.GangId, gameHour,
-                    racketChanges,
-                    announce: pending.FollowUp == TerritoryRacketIntent.Approach);
+                var firstApproach = !unit.IsSolo ||
+                    (LivingCity.Outfit.Underworld.Current?.Of(unit.Faction)?.Roster?.DoorOrders
+                        .RecordApproach(actor.CharacterId) ?? false);
+                if (firstApproach)
+                    racket.Approach(pending.BusinessId, observation.GangId, gameHour,
+                        racketChanges, announce: pending.FollowUp == TerritoryRacketIntent.Approach);
                 if (geography != null &&
                     geography.TryGetBusinessBlock(pending.BusinessId, out var blockId))
                     PublishRacket(blockId);
@@ -2019,21 +2023,31 @@ namespace RoadDemo
                 var speaking = pending.BusinessId;
                 var house = observation.GangId;
                 var mouth = observation.CharacterId;
+                // The walk held this door while it lasted; the conversation holds it
+                // from here until he is back on the pavement, so the errand is one
+                // unbroken claim from the order to the answer (DoorClaims).
+                var errand = unit.CrewId;
+                if (pending.FollowUp != TerritoryRacketIntent.Approach)
+                    ClaimDoor(house, errand, speaking, actor);
                 if (pending.FollowUp == TerritoryRacketIntent.Demand)
                 {
                     DoorBeat.VisitBusiness(actor, speaking, pending.Door, () =>
                     {
+                        if (!SoloMayAnswer(unit)) return;
                         if (ResolveDemand(house, speaking, out var verdict, out _))
                             AnnounceVerdict(house, speaking, threat: false, verdict, mouth);
-                    });
+                        ReturnSolo(unit);
+                    }, whenOut: () => ReleaseDoor(errand, speaking));
                 }
                 else if (pending.FollowUp == TerritoryRacketIntent.Threaten)
                 {
                     DoorBeat.VisitBusiness(actor, speaking, pending.Door, () =>
                     {
+                        if (!SoloMayAnswer(unit)) return;
                         if (ResolveThreat(house, speaking, mouth, out var verdict, out _))
                             AnnounceVerdict(house, speaking, threat: true, verdict, mouth);
-                    });
+                        ReturnSolo(unit);
+                    }, whenOut: () => ReleaseDoor(errand, speaking));
                 }
             }
         }
@@ -2152,6 +2166,7 @@ namespace RoadDemo
                 if (DemoCrews.PoliceStopsWork(unit) ||
                     RacketClosureRefusal(pending.BusinessId) != null)
                 {
+                    ReturnSolo(unit);
                     pendingApproaches.RemoveAt(i);
                     continue;
                 }
@@ -2236,7 +2251,11 @@ namespace RoadDemo
         /// walk is dropped and a collection round in hand is lost with its take. The
         /// street overlay calls this for orders that never pass the command gateway -
         /// the gateway's own moves already do it.</summary>
-        public void CallOffErrands(int crewId) => DropPendingApproaches(crewId);
+        public void CallOffErrands(int crewId)
+        {
+            if (crews != null) ReturnSolo(StandingUnitOfCrew(crewId));
+            DropPendingApproaches(crewId);
+        }
 
         public bool TryGetPendingApproach(int crewId, out Vector3 door)
         {
@@ -2719,32 +2738,25 @@ namespace RoadDemo
 
         public TerritoryCommandExecution Execute(ApproachBusinessCommand command)
         {
-            if (!command.BusinessId.IsValid)
-                return TerritoryCommandExecution.Reject("Unknown business.");
-
-            var unit = FindUnit(command.House, command.GroupId, out var refusal);
-            if (unit == null)
-                return TerritoryCommandExecution.Reject(refusal);
-
-            // The doorstep comes from the simulated site, so an order can be given to a
-            // business whose block is streamed out - which is most of the city most of the
-            // time. A live marker is used only for the ground height under it.
-            if (!TryGetBusinessApproach(command.BusinessId, out var door))
-                return TerritoryCommandExecution.Reject("No such business in this city.");
-            if (!IsRacketable(command.BusinessId))
-                return TerritoryCommandExecution.Reject("That place carries no business.");
-            var closureRefusal = RacketClosureRefusal(command.BusinessId);
-            if (closureRefusal != null)
-                return TerritoryCommandExecution.Reject(closureRefusal);
-
-            // A STREET UNDER OUR WORD is refused at the door too (EPIC 42).
-            if (geography != null &&
-                geography.TryGetBusinessBlock(command.BusinessId, out var doorBlock))
+            var refusal = ApproachRefusal(command, out var door, out var block);
+            if (refusal != null) return TerritoryCommandExecution.Reject(refusal);
+            if (command.GroupId.Kind == TerritoryCommandNodeKind.Character)
+                return ExecuteSoloApproach(command, door, block);
+            var unit = FindUnit(command.House, command.GroupId, out refusal);
+            if (unit == null) return TerritoryCommandExecution.Reject(refusal);
+            if (command.RestrictToResponsible)
             {
-                var word = KeptOff(command.House, doorBlock);
-                if (word != null)
-                    return TerritoryCommandExecution.Reject(word);
+                var roster = LivingCity.Outfit.Underworld.Current?.Of(command.House.Value)?.Roster;
+                refusal = BlockMissionChoice.Refusal(roster, block, unit.CrewId, true);
+                if (refusal != null) return TerritoryCommandExecution.Reject(refusal);
             }
+
+            // ONE HOUSE, ONE DOOR (TerritoryRuntime.DoorClaims). A counter another of
+            // our crews is working is not a second crew's to be sent a question at. A
+            // bare GO TO THE DOOR asks nothing and is never refused by this.
+            if (command.FollowUp != TerritoryRacketIntent.Approach &&
+                DoorTaken(command.House, unit.CrewId, command.BusinessId, out var taken))
+                return TerritoryCommandExecution.Reject(taken);
 
             if (!crews.MarchTo(unit, door))
                 return TerritoryCommandExecution.Reject("The physical crew refused the order.");
@@ -2775,6 +2787,14 @@ namespace RoadDemo
             if (gangId != command.House)
                 return TerritoryCommandExecution.Reject(NotThisHouses);
 
+            // ONE HOUSE, ONE DOOR (TerritoryRuntime.DoorClaims). A counter another of
+            // our crews is working is not this one's to speak at.
+            var speaker = FindWalker(command.ActorId);
+            var asking = speaker != null && crews != null ? crews.UnitOf(speaker) : null;
+            var askingCrew = asking != null ? asking.CrewId : NoCrew;
+            if (DoorTaken(gangId, askingCrew, command.BusinessId, out var busy))
+                return TerritoryCommandExecution.Reject(busy);
+
             // HE GOES IN FIRST. This is the path a player takes every time his men are
             // already standing at the door - after a smash they always are - and it used
             // to settle the demand and put the answer over the street BEFORE the visit
@@ -2786,7 +2806,8 @@ namespace RoadDemo
             var mouth = command.ActorId;
             if (TryGetBusinessApproach(speaking, out var door))
             {
-                var walker = FindWalker(mouth);
+                var walker = speaker;
+                ClaimDoor(house, askingCrew, speaking, walker);
                 DoorBeat.VisitBusiness(walker, speaking, door, () =>
                 {
                     // ONE VISIT, ONE TELEPHONE. The player can chain a second order onto
@@ -2795,7 +2816,7 @@ namespace RoadDemo
                     if (ResolveDemand(house, speaking,
                             DoorBeat.ClaimTelephone(walker), out var answered, out _))
                         AnnounceVerdict(house, speaking, threat: false, answered, mouth);
-                });
+                }, whenOut: () => ReleaseDoor(askingCrew, speaking));
                 return TerritoryCommandExecution.Pending(
                     "He goes in; the owner answers at the counter.");
             }
@@ -2829,6 +2850,17 @@ namespace RoadDemo
             if (gangId != command.House)
                 return TerritoryCommandExecution.Reject(NotThisHouses);
 
+            // ONE HOUSE, ONE DOOR (TerritoryRuntime.DoorClaims). Two crews leaning on
+            // one shopkeeper at once is two leans, two Fear acts and two rolls at his
+            // telephone for one conversation, so the second crew is turned away.
+            var leaningMan = FindWalker(command.ActorId);
+            var leaningUnit = leaningMan != null && crews != null
+                ? crews.UnitOf(leaningMan)
+                : null;
+            var leaningCrew = leaningUnit != null ? leaningUnit.CrewId : NoCrew;
+            if (DoorTaken(gangId, leaningCrew, command.BusinessId, out var held))
+                return TerritoryCommandExecution.Reject(held);
+
             // The lean is a conversation too: he goes in, and what it got out of the
             // owner comes back from inside.
             var leaned = command.BusinessId;
@@ -2836,7 +2868,8 @@ namespace RoadDemo
             var man = command.ActorId;
             if (TryGetBusinessApproach(leaned, out var doorstep))
             {
-                var leaner = FindWalker(man);
+                var leaner = leaningMan;
+                ClaimDoor(leaning, leaningCrew, leaned, leaner);
                 DoorBeat.VisitBusiness(leaner, leaned, doorstep, () =>
                 {
                     // The same one-visit rule as the demand above: a lean chained onto a
@@ -2844,7 +2877,7 @@ namespace RoadDemo
                     if (ResolveThreat(leaning, leaned, man,
                             DoorBeat.ClaimTelephone(leaner), out var answered, out _))
                         AnnounceVerdict(leaning, leaned, threat: true, answered, man);
-                });
+                }, whenOut: () => ReleaseDoor(leaningCrew, leaned));
                 return TerritoryCommandExecution.Pending(
                     "He goes in; the owner is leaned on at the counter.");
             }
@@ -2999,7 +3032,7 @@ namespace RoadDemo
                 var unit = crews.Units[i];
                 // the crew's LINE answers to the node; its bag man is a detachment
                 // of it, never the addressee of an order (GAN-262)
-                if (unit != null && !unit.IsDetachment && unit.CrewId == nodeId.Value)
+                if (unit != null && !unit.IsDetachment && !unit.IsSolo && unit.CrewId == nodeId.Value)
                     return unit;
             }
             return null;

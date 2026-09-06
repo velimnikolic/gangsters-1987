@@ -34,6 +34,12 @@ namespace RoadDemo
         readonly Dictionary<TerritoryBlockId, int> bankedThisWeek =
             new Dictionary<TerritoryBlockId, int>();
 
+        /// <summary>What each block has banked SINCE THE FIRST DAY. Never cleared: it is
+        /// the block's whole record, and it is the one figure that tells a boss whether
+        /// a street has ever paid for the men standing on it.</summary>
+        readonly Dictionary<TerritoryBlockId, int> bankedAllGame =
+            new Dictionary<TerritoryBlockId, int>();
+
         /// <summary>Which campaign week the tally above belongs to. The WEEK, not the
         /// weekday: two rounds banking on consecutive Wednesdays are seven days apart
         /// and a weekday comparison sees no wrap between them, so the second week's
@@ -81,6 +87,9 @@ namespace RoadDemo
 
             bankedThisWeek.TryGetValue(blockId, out var already);
             bankedThisWeek[blockId] = already + banked;
+
+            bankedAllGame.TryGetValue(blockId, out var ever);
+            bankedAllGame[blockId] = ever + banked;
             BumpRacketSeam();
         }
 
@@ -248,11 +257,12 @@ namespace RoadDemo
 
                 runtime.lastRounds.TryGetValue(blockId, out var last);
                 runtime.bankedThisWeek.TryGetValue(blockId, out var banked);
+                runtime.bankedAllGame.TryGetValue(blockId, out var bankedEver);
 
                 view = new BlockRacketView(
                     leaderId >= 0, name, crewId, policy, weekday, word, collectors.Count,
                     roundOut, cursor, stops, carried, collectorName,
-                    owed, roundOut ? carried : 0, banked,
+                    owed, roundOut ? carried : 0, banked, bankedEver,
                     last.Day, last.Banked, last.Short, needing, holdouts,
                     bagManId, bagManName, bagNamedByBoss);
                 return true;

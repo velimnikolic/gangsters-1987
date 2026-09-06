@@ -2721,13 +2721,7 @@ namespace RoadDemo
         {
             if (unit.IsDetachment)
             {
-                var state = TerritoryRuntime.Instance != null &&
-                            TerritoryRuntime.Instance.TryGetRound(
-                                unit.CrewId, out _, out _, out _)
-                    ? "ON THE ROUND"
-                    : CrewQuarters.Inside(unit) ? "IN THE HOUSE"
-                    : unit.TargetUnit != null ? "DEFENDING"
-                    : "OUTSIDE";
+                var state = CrewStatus.Bag(unit) ?? "OUTSIDE";
                 var roster = LivingCity.Outfit.Underworld.Current?.Of(unit.Faction)?.Roster;
                 var role = roster?.Find(man.CharacterId)?.Duty == LivingCity.Personnel.Duty.Collector
                     ? "COLLECTOR" : "BAG ESCORT";

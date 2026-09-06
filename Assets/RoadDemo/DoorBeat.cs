@@ -1015,6 +1015,25 @@ namespace RoadDemo
         public static bool Active(CrewWalker man) => PhaseOf(man) != VisitPhase.None;
 
         /// <summary>
+        /// IS THE BEAT STILL HOLDING THIS MAN AT A DOOR - the plain doorstep word as well
+        /// as the passage through a threshold? <see cref="PhaseOf"/> answers for the
+        /// passage: a doorstep call that never crosses a leaf is ARRIVED at with no talk
+        /// and keeps its phase at None for the whole of its life, so anything asking the
+        /// blunt question - is he on a visit at all - has to ask the call list itself.
+        /// The door claim (TerritoryRuntime.DoorClaims) is measured by this and by
+        /// nothing else, which is why it cannot be the phase.
+        /// </summary>
+        public static bool OnAVisit(CrewWalker man)
+        {
+            if (instance == null || man == null)
+                return false;
+            for (var i = 0; i < instance.calls.Count; i++)
+                if (instance.calls[i].Man == man)
+                    return true;
+            return false;
+        }
+
+        /// <summary>
         /// THE OWNER IS PUT TO THE TELEPHONE ONCE PER VISIT. True the first time this
         /// man's current shop visit asks, false every time after - so a demand and the
         /// threat the player chains onto the same counter (see <see cref="Chain"/>) roll

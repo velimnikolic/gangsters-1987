@@ -404,13 +404,27 @@ namespace RoadDemo
             {
                 var cafe = CafeStand(placed.Spot, root, stood);
                 if (cafe == null) continue;
-                int interiorSeed = StorefrontSeed(
-                    plan.Seed, placed.Spot.Name, placed.Gap.At, placed.Gap.Side, cafeNth++);
-                Vector3 outward = CafeLocalOutward(placed.Gap, root, cafe.transform);
-                foreach (int _ in StorefrontDressingSteps(
-                    cafe, placed.Spot.Unit,
-                    "cafe:" + (placed.Spot.Path ?? placed.Spot.Unit?.Name ?? placed.Spot.Name),
-                    interiorSeed, outward, stood)) { }
+                // Shallow rooms belong to STOREFRONTS - a shop bay cut into a building's
+                // wall. A kit venue standing on its own ground (the coffee shop, the diner,
+                // the burger joint) is a whole authored building with its own front, and it
+                // was given a fake room only because the fallback measurement found its
+                // glass. It does not need one (the user, 2026-09-06: "vec ima fake enterijer
+                // a nema potrebe, fake enterijeri idu samo na storefronts").
+                if (NeedsStorefrontDressing(placed.Spot.Unit))
+                {
+                    int interiorSeed = StorefrontSeed(
+                        plan.Seed, placed.Spot.Name, placed.Gap.At, placed.Gap.Side, cafeNth++);
+                    Vector3 outward = CafeLocalOutward(placed.Gap, root, cafe.transform);
+                    foreach (int _ in StorefrontDressingSteps(
+                        cafe, placed.Spot.Unit,
+                        "cafe:" + (placed.Spot.Path ?? placed.Spot.Unit?.Name ?? placed.Spot.Name),
+                        interiorSeed, outward, stood)) { }
+                }
+                else if (placed.Spot.Unit != null)
+                {
+                    // A harvested unit stands with its cutaway deferred to the dressing.
+                    BuildingCutaway.Prepare(cafe, placed.Spot.Unit);
+                }
                 // A storefront that arrived with its own terrace is not given a second one.
                 if ((placed.Spot.Unit?.Seats ?? 0) < OwnSeats)
                 {

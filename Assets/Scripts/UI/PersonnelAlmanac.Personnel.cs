@@ -2380,6 +2380,8 @@ namespace LivingCity.UI
             var canCarry = member.Rank == Rank.Hood && crew != null;
             var carries = canCarry && member.Duty == Duty.Collector;
             var escorts = canCarry && member.Duty == Duty.Escort;
+            var noGround = canCarry && crew.BagId < 0 &&
+                           CollectorChoice.GroundRefusal(roster, crew) != null;
             var hasBagVerb = canCarry && (carries || escorts || crew.BagId < 0 ||
                                           crew.EscortIds.Count < Crew.MaxEscorts);
             if (hasBagVerb)
@@ -2388,7 +2390,7 @@ namespace LivingCity.UI
                 var onBag = carries;
                 var onDetail = escorts;
                 var crewId = crew.Id;
-                LedgerV2.Button(cardFoot,
+                var bagKey = LedgerV2.Button(cardFoot,
                     onBag ? "TAKE HIM OFF THE BAG"
                         : onDetail ? "TAKE HIM OFF THE DETAIL"
                         : crew.BagId >= 0 ? "PUT HIM ON THE BAG'S DETAIL"
@@ -2407,33 +2409,26 @@ namespace LivingCity.UI
                         dirty = true;
                     },
                     red: false, outline: !onBag && !onDetail);
+                LedgerV2.KeyEnabled(bagKey, !noGround || onBag || onDetail);
             }
 
-            // THE BOTTOM LINE, split in two. LOY-003's marks on the left - the choice is
-            // made on the man's history, and what the book has already decided about him
-            // must stand beside the keys that act on it - and on the right what the bag
-            // actually means for him: whose doors, and on what day. Neither may sit in
-            // the right half of the key row any more; the bag's own key is there.
+            // History flags on the left; bag status or its admission reason on the right.
             var marks = ManFlags.Of(member);
             if (marks != ManFlag.None)
                 Caps(cardFoot, 0f, -(14f + buttonH + 4f), half, ManFlags.Line(marks), 9.5f,
                     (marks & ManFlag.RedFlag) != 0 ? LedgerV2.Red : LedgerV2.Lieutenant,
                     2f, TextAlignmentOptions.MidlineLeft);
 
-            if (carries || escorts)
+            if (carries || escorts || noGround)
                 LedgerV2.Mono(cardFoot, half + 12f, -(14f + buttonH + 4f), half,
-                    carries ? RoundWord(roster, member.Id)
+                    noGround ? "assign his leader a block first"
+                        : carries ? RoundWord(roster, member.Id)
                         : "guards " + (roster.Find(crew.BagId)?.Surname ?? "the collector"),
                     9.5f, LedgerV2.Muted, 0.5f,
                     TextAlignmentOptions.MidlineRight);
         }
 
-        /// <summary>
-        /// The round a marked man actually walks: the blocks his lieutenant answers for
-        /// and the days they are collected on. A collector on a branch with no ground is
-        /// a man carrying a bag to nowhere, and the card says that rather than leaving
-        /// the mark to imply work that does not exist.
-        /// </summary>
+        /// <summary>Current round or assignment, including an old bag that lost its ground.</summary>
         static string RoundWord(Roster roster, int id)
         {
             var crew = roster?.CrewOf(id);
@@ -2441,6 +2436,8 @@ namespace LivingCity.UI
                 return "in no crew " + DOT_ + " he walks nothing";
             if (BlockRacketSeam.SourceOrStub.TryGetRoundOf(id, out var roundBlock))
                 return "on the round " + DOT_ + " " + BlockNameOf(roundBlock);
+            if (CollectorChoice.GroundRefusal(roster, crew) != null)
+                return "no blocks to collect from";
             var leader = roster.Find(crew.LieutenantId);
             return "carries the bag for " +
                    (leader != null ? leader.Surname + "'s ground" : "the outfit") +

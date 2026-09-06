@@ -147,9 +147,6 @@ namespace LivingCity.UI
             if (!blocksFixed || !blocksContent)
                 return;
 
-            if (blocksNote == FiledNote && outfit && outfit.Filings.AwaitingCount == 0)
-                blocksNote = "";
-
             // The live plate is not page furniture. Park it directly under the scrolling
             // content while the old columns are torn down, then BuildBlockModel puts that
             // SAME view into the new plate. The camera and RenderTexture therefore survive
@@ -498,6 +495,7 @@ namespace LivingCity.UI
                 var slip = blocksWire[i];
                 var row = NewRect("Slip " + i, frame);
                 PlaceTopLeft(row, 0f, -(i * rowH), blocksW, rowH);
+                RowButton(row, ClickSurface(row), () => OpenWireItem(slip));
                 if (i > 0)
                     Rule(row, 0f, 0f, blocksW, LedgerV2.Rule);
 
@@ -514,7 +512,7 @@ namespace LivingCity.UI
             if (total > shown)
             {
                 Caps(blocksColumn, 0f, -(cursor + 6f), blocksW,
-                    "AND " + (total - shown) + " OLDER SLIPS · THE RAIL KEEPS THEM ALL",
+                    "AND " + (total - shown) + " OLDER SLIPS · OPEN THE WIRE FOR THE FULL BOOK",
                     9f, LedgerV2.Label, 3f);
                 cursor += 22f;
             }

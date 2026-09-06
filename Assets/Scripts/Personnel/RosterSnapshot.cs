@@ -102,6 +102,7 @@ namespace LivingCity.Personnel
         public CharacterDto[] members;
         public CrewDto[] crews;
         public EquipmentDto[] equipment;
+        public SoloDoorOrder[] doorOrders;
     }
 
     /// <summary>
@@ -124,6 +125,7 @@ namespace LivingCity.Personnel
             var dto = new RosterDto
             {
                 gangId = roster.GangId,
+                doorOrders = roster.DoorOrders.Snapshot(),
                 seed = roster.Seed,
                 year = roster.Year,
                 day = roster.Day,
@@ -165,6 +167,7 @@ namespace LivingCity.Personnel
             if (roster == null || dto == null)
                 return;
 
+            roster.DoorOrders.Restore(dto.doorOrders);
             roster.Members.Clear();
             roster.Crews.Clear();
             roster.Equipment.Clear();

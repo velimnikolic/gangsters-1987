@@ -51,7 +51,7 @@ namespace RoadDemo
     /// <see cref="Contains"/> for the world pickers, exactly as CrewBar does: a click
     /// that worked a key here must not also select a man behind it.
     /// </summary>
-    public sealed class StreetHud : MonoBehaviour
+    public sealed partial class StreetHud : MonoBehaviour
     {
         const int SortingOrder = 115;
 
@@ -254,8 +254,9 @@ namespace RoadDemo
         /// </summary>
         public bool Contains(Vector2 screen) =>
             _canvas != null && _canvas.enabled &&
-            (Over(_chipRoot, screen) || Over(_fileRoot, screen) ||
-             Over(_wireRoot, screen) || Over(_keyRoot, screen));
+            (Over(_chipRoot, screen) || Over(_collectorRoot, screen) ||
+             Over(_fileRoot, screen) || Over(_wireRoot, screen) ||
+             Over(_keyRoot, screen));
 
         static bool Over(RectTransform rect, Vector2 screen) =>
             rect != null && rect.gameObject.activeInHierarchy &&
@@ -288,6 +289,7 @@ namespace RoadDemo
             _night.Relight();
             PaintFileIfMoved();
             RefreshChips();
+            TendCollectors();
 
             var outfit = OutfitDirector.Instance;
             var incidents = outfit != null ? outfit.Incidents.Count : 0;
@@ -839,9 +841,7 @@ namespace RoadDemo
 
         // -------------------------------------------------------------------- wire
 
-        // The slip itself, the ink it is ruled in and the words on it are WireBook's -
-        // the ledger's rail prints the same run out of the same book, and two strips
-        // that composed their own sentences would be two accounts of one night.
+        // WireBook supplies the same text and stable click targets as the ledger.
 
         /// <summary>A slip cut to one line: stock, the kind's ink at full strength
         /// down the left edge, the sentence in the mono face cut off with an ellipsis
@@ -936,11 +936,11 @@ namespace RoadDemo
                 var fade = slip.gameObject.AddComponent<WireSlip>();
                 fade.Rest = 1f - i * 0.18f;
                 fade.Group = group;
-                // The newest slip arrives: it comes in from eight units above and fades
-                // up over the design's 260ms, so a message landing on a busy screen is
-                // seen to land instead of merely being there next time the eye passes.
+                // The newest slip slides down and fades in over 260ms.
                 fade.Arrive = i == 0;
-                ClickSurface(slip);
+                if (!string.IsNullOrEmpty(line.Tag))
+                    RowButton(slip, ClickSurface(slip),
+                        () => PersonnelAlmanac.Instance?.OpenWireItem(line));
 
                 y -= tall + WireGap;
             }

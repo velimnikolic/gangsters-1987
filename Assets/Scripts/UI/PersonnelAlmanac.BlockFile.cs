@@ -47,14 +47,6 @@ namespace LivingCity.UI
 
         readonly List<CrewHandView> blockCardCrewHands = new List<CrewHandView>();
 
-        /// <summary>The man NAMED to walk this block's doors, and through him the crew
-        /// that walks them. The design names men rather than crews because that is what
-        /// a boss points at; the orders take the crew he belongs to.</summary>
-        int blockCardWalkerId = -1;
-
-        /// <summary>How many chips the band offers before it stops.</summary>
-        const int BlockCardWalkersShown = 8;
-
         /// <summary>Whether the six orders under the block are open. Closed by default:
         /// the design shuts them behind one bar so the block and its figures are not
         /// three hundred units apart.</summary>
@@ -205,7 +197,6 @@ namespace LivingCity.UI
             blockCardBagOpen = false;
             blockCardMenOpen = false;
             blockCardTradesOpen = false;
-            blockCardWalkerId = -1;
             DoorMenu.Forget();
             blocksMenu = default;
             dirty = true;
@@ -217,7 +208,7 @@ namespace LivingCity.UI
         void PickTrade(TerritoryBusinessId businessId)
         {
             blockCardPick = blockCardPick == businessId ? default : businessId;
-            DoorMenu.Forget();
+            DoorMenu.Say("");
             dirty = true;
         }
 
@@ -1084,6 +1075,13 @@ namespace LivingCity.UI
                     LedgerText.Cash(blockRacket.BankedThisWeek),
                     blockRacket.BankedThisWeek > 0 ? LedgerV2.Green : LedgerV2.Muted);
 
+                // And the whole record under it: every dollar this ground has ever put
+                // in the safe. The week's figure is wiped each Monday, so on its own it
+                // cannot tell a street that has paid for years from one that never has.
+                y += Fact(card, x, y, width, "BANKED ALL GAME",
+                    LedgerText.Cash(blockRacket.BankedAllGame),
+                    blockRacket.BankedAllGame > 0 ? LedgerV2.Green : LedgerV2.Muted);
+
                 // A block with a lieutenant on it and nobody carrying the bag earns
                 // nothing at all, and the sheet says so in red rather than printing a
                 // blank where a weekday should be.
@@ -1615,12 +1613,11 @@ namespace LivingCity.UI
             return top + height;
         }
 
-        /// <summary>Shuts the door's menu without touching the block's file. The men
-        /// picked for a job go with it - a pick belongs to the door it was made at.</summary>
+        /// <summary>Close the door while retaining this block's chosen crew.</summary>
         void CloseTradePopup()
         {
             blockCardPick = default;
-            DoorMenu.Forget();
+            DoorMenu.Say("");
             dirty = true;
         }
 
@@ -1713,9 +1710,9 @@ namespace LivingCity.UI
 
             var leaderId = organizationPaper.TryGetValue(blockCardId, out var id) ? id : -1;
             var leader = Leader(leaderId);
-            // The crew that walks these doors: the man the boss named, or failing that
-            // the lieutenant whose paper the block is on.
+            // The same whole crew that the block and door pickers display.
             var crewId = WalkingCrewId();
+            var bagCrewId = BlockMissionChoice.ResponsibleCrew(director?.Roster, blockCardId)?.Id ?? -1;
             var block = blockCardId;
             var source = BlockRacketSeam.SourceOrStub;
             var actions = BlockRacketSeam.ActionsOrStub;
@@ -1735,20 +1732,20 @@ namespace LivingCity.UI
                     LivingCity.Territory.TerritoryRacketOrders.ShakeDownLabel,
                     LivingCity.Territory.TerritoryRacketOrders.ShakeDownNote,
                     source.Refusal("shakedown", crewId, block),
-                    () => FireRacketOrder("shakedown",
+                    () => FireRacketOrder("shakedown", crewId,
                         () => actions.ShakeDown(crewId, block)));
 
                 inner += OrderRow(panel, barW, inner, "SEND THE ROUND NOW",
                     LivingCity.Territory.TerritoryRacketOrders.RoundNote,
-                    source.Refusal("round", crewId, block),
-                    () => FireRacketOrder("round",
-                        () => actions.SendRound(crewId, block)));
+                    source.Refusal("round", bagCrewId, block),
+                    () => FireRacketOrder("round", bagCrewId,
+                        () => actions.SendRound(bagCrewId, block)));
 
                 inner += OrderRow(panel, barW, inner,
                     LivingCity.Territory.TerritoryRacketOrders.LeanLabel,
                     LivingCity.Territory.TerritoryRacketOrders.LeanNote,
                     source.Refusal("lean", crewId, block),
-                    () => FireRacketOrder("lean",
+                    () => FireRacketOrder("lean", crewId,
                         () => actions.LeanOnHoldouts(crewId, block)));
 
                 inner += OrderRow(panel, barW, inner, "PUT A MAN ON IT",
@@ -1758,7 +1755,7 @@ namespace LivingCity.UI
                 // WHO CARRIES THE BAG (GAN-262). One man of the responsible crew walks
                 // this block's doors; the row says who and on whose word, and opens
                 // the crew's own roll to change it.
-                var bagWord = !blockRacketOk || crewId < 0
+                var bagWord = !blockRacketOk || bagCrewId < 0
                     ? "NOBODY ON THE BAG"
                     : blockRacket.CollectorId >= 0
                         ? blockRacket.CollectorName.ToUpperInvariant() +
@@ -1767,11 +1764,11 @@ namespace LivingCity.UI
                               : " · " + ShortLeaderWord(leader) + "'S PICK")
                         : "NOBODY ON THE BAG";
                 inner += OrderRow(panel, barW, inner, "WHO CARRIES THE BAG · " + bagWord,
-                    crewId < 0
+                    bagCrewId < 0
                         ? "no crew answers for this block · name a lieutenant first"
                         : "one of his men walks these doors alone and banks the take at " +
                           "the front · he leaves the crew's line",
-                    crewId < 0 ? "nobody answers for this block" : "",
+                    bagCrewId < 0 ? "nobody answers for this block" : "",
                     () => { blockCardBagOpen = !blockCardBagOpen; dirty = true; });
 
                 inner += OrderRow(panel, barW, inner,
@@ -1795,7 +1792,7 @@ namespace LivingCity.UI
             }
 
             if (blockRacketOk && blockRacket.HasResponsible)
-                y += BuildPolicyBar(card, x, y + 16f, Mathf.Min(width, 400f), crewId) + 16f;
+                y += BuildPolicyBar(card, x, y + 16f, Mathf.Min(width, 400f), bagCrewId) + 16f;
 
             y += BuildWalkers(card, x, y + 16f, width) + 16f;
 
@@ -1803,9 +1800,9 @@ namespace LivingCity.UI
                 y += BuildBlockCardAssign(card, x, y + 8f, Mathf.Min(width, 400f),
                     leaderId) + 8f;
 
-            if (blockCardBagOpen && crewId >= 0)
+            if (blockCardBagOpen && bagCrewId >= 0)
                 y += BuildBlockCardBag(card, x, y + 8f, Mathf.Min(width, 400f),
-                    crewId, leader) + 8f;
+                    bagCrewId, leader) + 8f;
 
             var saying = BlockCardSaying;
             if (saying.Length > 0)
@@ -1819,117 +1816,23 @@ namespace LivingCity.UI
             return y - top;
         }
 
-        /// <summary>The crew this block's orders are given to: the crew of the man the
-        /// boss named on the chips, or the lieutenant's whose paper it is on.</summary>
         int WalkingCrewId()
         {
-            var roster = director != null ? director.Roster : null;
-            if (roster != null && blockCardWalkerId >= 0)
-            {
-                var crew = roster.CrewOf(blockCardWalkerId);
-                if (crew != null)
-                    return crew.Id;
-                for (var i = 0; i < roster.Crews.Count; i++)
-                    if (roster.Crews[i].LieutenantId == blockCardWalkerId)
-                        return roster.Crews[i].Id;
-            }
-            return blockRacketOk ? blockRacket.ResponsibleCrewId : -1;
+            DoorMenu.ConstrainToBlock(director != null ? director.Roster : null, blockCardId, CrewMissionPicker.Physical());
+            return DoorMenu.CrewToSend(blockCardId, DoorDispatch.BlockResponsibility,
+                out _, out _, out _)?.Id ?? -1;
         }
 
-        /// <summary>
-        /// WHO WALKS THE DOORS. The men who could be sent at this block, nearest first:
-        /// the ones standing on it, then the lieutenant's own branch, then whoever is
-        /// spare. Naming one names his CREW - the orders above are given to a crew, and
-        /// a boss points at a man.
-        /// </summary>
         float BuildWalkers(RectTransform card, float x, float top, float width)
         {
             var roster = director != null ? director.Roster : null;
-            if (roster == null)
-                return 0f;
-
-            blockCardWalkers.Clear();
-            for (var i = 0; i < blockCardHands.Count &&
-                            blockCardWalkers.Count < BlockCardWalkersShown; i++)
-                blockCardWalkers.Add(blockCardHands[i].Id);
-
-            var responsible = organizationPaper.TryGetValue(blockCardId, out var paper)
-                ? paper
-                : -1;
-            var branch = responsible >= 0 ? roster.CrewOf(responsible) : null;
-            if (branch == null && responsible >= 0)
-                for (var i = 0; i < roster.Crews.Count && branch == null; i++)
-                    if (roster.Crews[i].LieutenantId == responsible)
-                        branch = roster.Crews[i];
-            if (branch != null)
-            {
-                if (!blockCardWalkers.Contains(branch.LieutenantId) &&
-                    blockCardWalkers.Count < BlockCardWalkersShown)
-                    blockCardWalkers.Add(branch.LieutenantId);
-                for (var i = 0; i < branch.HoodIds.Count &&
-                                blockCardWalkers.Count < BlockCardWalkersShown; i++)
-                    if (!blockCardWalkers.Contains(branch.HoodIds[i]))
-                        blockCardWalkers.Add(branch.HoodIds[i]);
-            }
-            for (var i = 0; i < roster.Crews.Count &&
-                            blockCardWalkers.Count < BlockCardWalkersShown; i++)
-                if (!blockCardWalkers.Contains(roster.Crews[i].LieutenantId))
-                    blockCardWalkers.Add(roster.Crews[i].LieutenantId);
-
-            if (blockCardWalkers.Count == 0)
-                return 0f;
-
-            var named = blockCardWalkerId >= 0 &&
-                        blockCardWalkers.Contains(blockCardWalkerId);
-            Caps(card, x, -top, width,
-                    "WHO WALKS THE DOORS · " +
-                    (named ? "1 MAN NAMED" : "NAME THE MEN WHO WALK THE DOORS"),
-                    9.5f, LedgerV2.Label, 14f)
-                .font = LedgerStyle.Mono;
-
-            var y = top + 19f;
-            var chipX = 0f;
-            var line = 0;
-            for (var i = 0; i < blockCardWalkers.Count; i++)
-            {
-                var manId = blockCardWalkers[i];
-                var man = roster.Find(manId);
-                if (man == null)
-                    continue;
-
-                var word = ShortName(man);
-                var chipW = word.Length * 6.6f + 34f;
-                if (chipX + chipW > width && chipX > 0f)
-                {
-                    chipX = 0f;
-                    line++;
-                }
-
-                var picked = manId == blockCardWalkerId;
-                var chip = NewRect("Walker " + manId, card);
-                PlaceTopLeft(chip, x + chipX, -(y + line * 28f), chipW, 22f);
-                Fill(chip, picked ? LedgerV2.Red : LedgerV2.PanelDark);
-                if (!picked)
-                    Frame(chip, 1f, LedgerV2.Rule);
-                RowButton(chip, ClickSurface(chip), () =>
-                {
-                    blockCardWalkerId = blockCardWalkerId == manId ? -1 : manId;
-                    dirty = true;
-                });
-                var chipTextTop = -(22f - LineBox(10.5f)) * 0.5f;
-                Block("Armed", chip, 10f,
-                    LedgerV2.MarkY(chipTextTop, LineBox(10.5f), 6f), 6f, 6f,
-                    man.Gone ? LedgerV2.Red : TenurePaying);
-                LedgerV2.Mono(chip, 22f, chipTextTop, chipW - 30f, word, 10.5f,
-                    picked ? LedgerV2.HeadCream : LedgerV2.Ink, 1f)
-                    .font = LedgerStyle.MonoBold;
-                chipX += chipW + 6f;
-            }
-
-            return y - top + line * 28f + 22f;
+            if (roster == null) return 0f;
+            var going = WalkingCrewId();
+            return CrewMissionPicker.Draw(card, x, top, width, roster, blockCardId,
+                true, DoorMenu.SelectedCrewId, DoorMenu.SelectedPersonId, going,
+                crewId => { DoorMenu.ToggleCrew(crewId); dirty = true; },
+                manId => { DoorMenu.TogglePerson(manId); dirty = true; }, dark: false);
         }
-
-        readonly List<int> blockCardWalkers = new List<int>();
 
         /// <summary>"Dutch K." - the chips have room for a first name and an initial.
         /// </summary>
@@ -1995,9 +1898,15 @@ namespace LivingCity.UI
 
         /// <summary>Fires one racket order through the seam and keeps the key OUT while
         /// the office has it. An order that was never accepted says why instead.</summary>
-        void FireRacketOrder(string key, System.Func<TerritoryCommandResult> run)
+        void FireRacketOrder(string key, int crewId, System.Func<TerritoryCommandResult> run)
         {
-            var result = run();
+            var roster = director != null ? director.Roster : null;
+            var refusal = key == "round"
+                ? (BlockMissionChoice.ResponsibleCrew(roster, blockCardId)?.Id == crewId
+                    ? null : "this crew does not answer for this block")
+                : BlockMissionChoice.Refusal(roster, blockCardId, crewId, true);
+            var result = refusal == null ? run()
+                : new TerritoryCommandResult(0, TerritoryCommandStatus.Rejected, refusal);
             if (result.Status == TerritoryCommandStatus.Rejected ||
                 result.Status == TerritoryCommandStatus.Failed)
             {
@@ -2112,10 +2021,10 @@ namespace LivingCity.UI
                 carries ? LedgerV2.Muted : LedgerV2.PaperBlue, 1f,
                 TextAlignmentOptions.MidlineRight);
             bag.font = LedgerStyle.MonoBold;
-            // ON THE BAG names him for HIS OWN crew's bag (GAN-262) - the men on this
-            // roll may belong to different crews, so the seam resolves the crew from
-            // the man rather than the block's own.
-            WordButton(row, bag, () => SetCollector(manId, !carries));
+            var bagRefusal = BlockMissionChoice.BagRefusal(roster, blockCardId, manId);
+            if (bagRefusal == null && roster?.DoorOrders.Find(manId) == null)
+                WordButton(row, bag, () => SetCollector(manId, !carries));
+            else bag.color = LedgerV2.Rule;
 
             var pull = LedgerV2.Mono(row, width - pullW, -12f, pullW, "PULL", 9.5f,
                 LedgerV2.Red, 1f, TextAlignmentOptions.MidlineRight);
@@ -2141,7 +2050,8 @@ namespace LivingCity.UI
         /// which is the same way every other refusal on this page is printed.</summary>
         void SetCollector(int characterId, bool on)
         {
-            var refusal = BlockRacketSeam.ActionsOrStub.SetCollector(characterId, on);
+            var refusal = BlockMissionChoice.BagRefusal(director?.Roster, blockCardId, characterId) ??
+                          BlockRacketSeam.ActionsOrStub.SetCollector(characterId, on);
             if (!string.IsNullOrEmpty(refusal))
                 SayOnTheBlockCard(refusal);
             dirty = true;
@@ -2244,7 +2154,8 @@ namespace LivingCity.UI
                     blockCardBagOpen = false;
                     if (carries)
                         return;
-                    var refusal = BlockRacketSeam.ActionsOrStub.NameCollector(crewId, manId);
+                    var refusal = BlockMissionChoice.BagRefusal(director?.Roster, blockCardId, manId) ??
+                                  BlockRacketSeam.ActionsOrStub.NameCollector(crewId, manId);
                     if (!string.IsNullOrEmpty(refusal))
                         SayOnTheBlockCard(refusal);
                     dirty = true;
@@ -2260,7 +2171,9 @@ namespace LivingCity.UI
             RowButton(pick, ClickSurface(pick), () =>
             {
                 blockCardBagOpen = false;
-                var refusal = BlockRacketSeam.ActionsOrStub.LetLieutenantPick(crewId);
+                var responsible = BlockMissionChoice.ResponsibleCrew(director?.Roster, blockCardId);
+                var refusal = responsible?.Id != crewId ? "this block now answers to another leader" :
+                    BlockRacketSeam.ActionsOrStub.LetLieutenantPick(crewId);
                 if (!string.IsNullOrEmpty(refusal))
                     SayOnTheBlockCard(refusal);
                 dirty = true;
@@ -2278,7 +2191,8 @@ namespace LivingCity.UI
                 RowButton(off, ClickSurface(off), () =>
                 {
                     blockCardBagOpen = false;
-                    var refusal = BlockRacketSeam.ActionsOrStub.TakeOffTheBag(holder);
+                    var refusal = BlockMissionChoice.BagRefusal(director?.Roster, blockCardId, holder) ??
+                                  BlockRacketSeam.ActionsOrStub.TakeOffTheBag(holder);
                     if (!string.IsNullOrEmpty(refusal))
                         SayOnTheBlockCard(refusal);
                     dirty = true;
@@ -2357,6 +2271,7 @@ namespace LivingCity.UI
         void FileMenOntoBlock()
         {
             var blockId = blockCardId;
+            var crewId = WalkingCrewId();
             FileOrder("Men put on " + BlockName(blockId) + ".", () =>
             {
                 var runtime = TerritoryRuntime.Instance;
@@ -2365,19 +2280,9 @@ namespace LivingCity.UI
                     return Outfit.FilingRuling.Refuse(
                         "the territory command gateway is unavailable");
 
-                // The lieutenant whose name is on the block goes first; failing that,
-                // whoever the reader picked; failing that, the first crew on the books.
-                Crew crew = null;
-                if (organizationPaper.TryGetValue(blockId, out var leaderId))
-                    for (var i = 0; i < roster.Crews.Count && crew == null; i++)
-                        if (roster.Crews[i].LieutenantId == leaderId)
-                            crew = roster.Crews[i];
-                if (crew == null && DoorMenu.Picked.Count > 0)
-                    crew = roster.CrewOf(DoorMenu.Picked[0]);
-                if (crew == null && roster.Crews.Count > 0)
-                    crew = roster.Crews[0];
-                if (crew == null)
-                    return Outfit.FilingRuling.Refuse("there is no crew to send");
+                var refusal = BlockMissionChoice.Refusal(roster, blockId, crewId, true);
+                if (refusal != null) return Outfit.FilingRuling.Refuse(refusal);
+                var crew = roster.FindCrew(crewId);
 
                 var lieutenant = roster.Find(crew.LieutenantId);
                 if (!runtime.TryGetCrewNode(crew.Id, out var node))

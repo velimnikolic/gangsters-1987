@@ -561,6 +561,8 @@ static class Program
         if (only == "all" || only == "arcmotion") ArcMotion.Run();
         if (only == "all" || only == "kerbcompletion") KerbCompletion.Run();
         if (only == "all" || only == "kerbapproach") KerbApproach.Run();
+        if (only == "all" || only == "kerbdeparture") KerbDeparture.Run();
+        if (only == "all" || only == "junctionpace") JunctionPace.Run();
         if (only == "all" || only == "blockedyield") BlockedYield.Run();
         if (only == "all" || only == "recovery") TrafficRecoveryChecks.Run();
         if (only == "all" || only == "recoverygoal") RecoveryGoalChecks.Run();

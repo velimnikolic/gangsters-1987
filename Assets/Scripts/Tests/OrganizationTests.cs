@@ -24,11 +24,13 @@ namespace LivingCity.Tests
             QueryProjectsHierarchyAndPhysicalMappings(failures);
             TheBossesOwnDetailIsNotAStaleCommandParent(failures);
             ValidationReportsCorruptionWithoutRepairingIt(failures);
-            FilingOfficeAnswersOnlyAfterItsDelay(failures);
+            FilingOfficeAnswersAtTheCounter(failures);
             FilingOfficeIsWhereCapacityIsHard(failures);
             OnlyAHoodInACrewCarriesTheBag(failures);
             TheBagIsOneMansAndTheLieutenantHandsIt(failures);
             BagNodeAndEscortsStayAuthoritative(failures);
+            failures.AddRange(CollectorGroundTests.Run());
+            failures.AddRange(BlockMissionChoiceTests.Run());
             TheChairPassesToTheMostLoyalLieutenant(failures);
             AHouseWithNoLieutenantHasNobodyToTakeTheChair(failures);
             return failures;
@@ -38,6 +40,7 @@ namespace LivingCity.Tests
         {
             var roster = RosterSeeder.GenerateStaffed(273);
             var crew = roster.Crews[0];
+            RosterOps.AssignBlockResponsibility(roster, BlockA, crew.LieutenantId, true);
             while (crew.HoodIds.Count < 4)
             {
                 var hood = new Character
@@ -75,13 +78,13 @@ namespace LivingCity.Tests
             var validation = new List<string>();
             roster.Find(refusedEscort).Duty = Duty.Escort;
             OrganizationValidator.Validate(
-                roster, new HashSet<TerritoryBlockId>(), null, validation);
+                roster, new HashSet<TerritoryBlockId> { BlockA }, null, validation);
             if (!Contains(validation, "Escort duty outside a bag node"))
                 failures.Add("BAG NODE: validation missed an escort outside the node.");
             roster.Find(refusedEscort).Duty = Duty.None;
             validation.Clear();
             OrganizationValidator.Validate(
-                roster, new HashSet<TerritoryBlockId>(), null, validation);
+                roster, new HashSet<TerritoryBlockId> { BlockA }, null, validation);
             if (validation.Count != 0)
                 failures.Add("BAG NODE: a legal collector detail reports " + validation[0]);
 
@@ -298,6 +301,7 @@ namespace LivingCity.Tests
             var roster = RosterSeeder.GenerateStaffed(31);
             var crew = roster.Crews[0];
             var lieutenant = roster.Find(crew.LieutenantId);
+            RosterOps.AssignBlockResponsibility(roster, BlockA, crew.LieutenantId, true);
             // Four men to the crew, whatever the seeder left it holding - the bands
             // below are written against a roll of four.
             var draw = new System.Random(262);
@@ -417,6 +421,7 @@ namespace LivingCity.Tests
                 for (var i = 0; i < roster.Crews[c].HoodIds.Count; i++)
                     roster.Find(roster.Crews[c].HoodIds[i]).Duty = Duty.None;
             }
+            roster.Organization.BlockResponsibilities.Clear();
             roster.Organization.BlockResponsibilities.Add(
                 new OrganizationBlockResponsibility(BlockA, crew.LieutenantId));
             var handed = new List<(int crewId, int hoodId)>();
@@ -456,6 +461,7 @@ namespace LivingCity.Tests
             if (roster.Crews.Count > 1)
             {
                 var other = roster.Crews[1];
+                RosterOps.AssignBlockResponsibility(roster, BlockB, other.LieutenantId, true);
                 var theirs = other.HoodIds.Count > 0 ? other.HoodIds[0] : -1;
                 if (theirs >= 0)
                 {
@@ -493,6 +499,7 @@ namespace LivingCity.Tests
         {
             var roster = RosterSeeder.GenerateStaffed(31);
             var crew = roster.Crews[0];
+            RosterOps.AssignBlockResponsibility(roster, BlockA, crew.LieutenantId, true);
             var hood = crew.HoodIds[0];
 
             if (!RosterOps.SetDuty(roster, hood, Duty.Collector).Ok)
@@ -531,11 +538,12 @@ namespace LivingCity.Tests
                 failures.Add("DUTY: taking a man off the bag was refused.");
         }
 
-        /// <summary>The sheet ASKS and the outfit ANSWERS: nothing the resolver does may
-        /// happen at the moment the order is filed, and it must happen exactly once.</summary>
-        static void FilingOfficeAnswersOnlyAfterItsDelay(List<string> failures)
+        /// <summary>The sheet ASKS and the outfit ANSWERS in the same breath: the order
+        /// takes effect at the click, exactly once, and the receipt carries its ruling.
+        /// </summary>
+        static void FilingOfficeAnswersAtTheCounter(List<string> failures)
         {
-            var office = new OutfitFilings { RulingSeconds = 1f };
+            var office = new OutfitFilings();
             var ran = 0;
             var filing = office.File("D1 09:00", "A man put under Artie Byrne.", () =>
             {
@@ -543,23 +551,13 @@ namespace LivingCity.Tests
                 return FilingRuling.Grant("he reports to him from today");
             });
 
-            if (ran != 0 || filing.Status != FilingStatus.Filed || office.AwaitingCount != 1)
-                failures.Add("Filings: an order took effect at the moment it was filed.");
-
-            if (office.Tick(0.5f) || ran != 0 || filing.Status != FilingStatus.Filed)
-                failures.Add("Filings: the office answered before its delay ran out.");
-
-            if (!office.Tick(0.6f) || ran != 1 ||
-                filing.Status != FilingStatus.Granted ||
+            if (ran != 1 || filing.Status != FilingStatus.Granted ||
                 filing.Ruling != "he reports to him from today")
-                failures.Add("Filings: the ruling did not land exactly once.");
+                failures.Add("Filings: the order did not take effect at the click.");
 
-            if (office.Tick(10f) || ran != 1 || office.AwaitingCount != 0)
-                failures.Add("Filings: a settled order was ruled on a second time.");
-
-            // Newest first, and both answered in the order they were asked.
+            // Newest first, and each answered where it was given.
             var order = new List<int>();
-            var second = new OutfitFilings { RulingSeconds = 0.5f };
+            var second = new OutfitFilings();
             second.File("D1 09:01", "first", () =>
             {
                 order.Add(1);
@@ -570,7 +568,6 @@ namespace LivingCity.Tests
                 order.Add(2);
                 return FilingRuling.Refuse("no room");
             });
-            second.Tick(1f);
             if (order.Count != 2 || order[0] != 1 || order[1] != 2)
                 failures.Add("Filings: orders were not answered in the order they were asked.");
             if (second.All.Count != 2 || second.All[0].Text != "second" ||

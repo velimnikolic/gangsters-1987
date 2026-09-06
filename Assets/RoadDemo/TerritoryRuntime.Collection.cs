@@ -952,40 +952,7 @@ namespace RoadDemo
         /// his feet. A crew with nobody marked still collects - the mark is an
         /// arrangement, not a requirement.
         /// </summary>
-        static CrewWalker CollectorOf(DemoCrews.Unit unit)
-        {
-            if (unit == null)
-                return null;
-
-            var roster = LivingCity.Outfit.Underworld.Current?
-                .Of(unit.Faction)?.Roster;
-            if (roster != null)
-                for (var i = 0; i < unit.Hoods.Count; i++)
-                {
-                    var hood = unit.Hoods[i];
-                    if (hood == null || hood.Dead || hood.Tf == null)
-                        continue;
-                    // A character id of 0 is a REAL id in this project; a man the roster
-                    // does not know is a null lookup, never a zero.
-                    var man = roster.Find(hood.CharacterId);
-                    if (man != null && !man.Gone &&
-                        man.Duty == LivingCity.Personnel.Duty.Collector)
-                        return hood;
-                }
-
-            // Match DemoCrews.MarchTo's lead choice exactly. A boarded hood may be
-            // temporarily hidden before MarchTo unboards him, but he is still the man
-            // assigned to this job and the bag appears with him when he steps out.
-            if (unit.Boss != null && !unit.Boss.Dead && unit.Boss.Tf != null)
-                return unit.Boss;
-            for (var i = 0; i < unit.Hoods.Count; i++)
-            {
-                var hood = unit.Hoods[i];
-                if (hood != null && !hood.Dead && hood.Tf != null)
-                    return hood;
-            }
-            return null;
-        }
+        static CrewWalker CollectorOf(DemoCrews.Unit unit) => CrewStatus.Carrier(unit);
 
         // ------------------------------------------------------- the standing round
 
@@ -1366,11 +1333,20 @@ namespace RoadDemo
                         NextStop(walking, who);
                         return;
                     }
+                    // THE MEN ARE AT THAT COUNTER. A round's stop - and a block
+                    // shakedown's, which walks the same machine - holds the door for as
+                    // long as it is being worked, so no second crew is ordered onto a
+                    // shopkeeper this one is already talking to (DoorClaims).
+                    ClaimDoor(walking.House, who.CrewId, here.BusinessId, actor);
                     DoorBeat.VisitBusiness(
                         actor, here.BusinessId, door,
                         whenInside: () => SettleDoor(
                             walking, here, who, seen, lastGameHour),
-                        whenOut: () => NextStop(walking, who));
+                        whenOut: () =>
+                        {
+                            ReleaseDoor(who.CrewId, here.BusinessId);
+                            NextStop(walking, who);
+                        });
                 }
                 else
                 {

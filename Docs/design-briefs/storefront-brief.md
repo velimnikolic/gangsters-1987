@@ -75,6 +75,16 @@ has **22**; the `Shops` column counts street-visible faces only). Draw-call budg
 3. **The shutter follows the real state** of the business (closed by `BusinessShutdowns`, or the
    clock at night). The 23 % dice is retired; `BusinessPopulation` promises no invented vacancies.
 4. Every scene built for this work carries camera controls at Play (`ReviewSceneCamera`).
+5. **The shallow rooms go on storefronts only** (the user, 2026-09-06: "fake enterijeri idu samo
+   na storefronts"). A building standing on its own ground takes no fake room, in two places:
+   * the kit venue in a cafe gap - the coffee shop, the diner, the burger joint - is a whole
+     authored building with its own front, so the gap dressing is gated on
+     `NeedsStorefrontDressing` (`ResidentialBlocks.cs`, `ResidentialBlocks.Incremental.cs`);
+   * the whole-facade routes in `DiscoverStorefronts` (`MeasureFallback`, `AddMissingUnitFaces`)
+     only run for a unit that carries a real `SM_Bld_Shop_*` module (`HasAuthoredShopModules`).
+     The harvested standalone shops - `radnja1/2/3`, Palm City groups with their own windows and
+     stands and no shop module at all - were being given one 12 m room across the front.
+   A measured pane, or an authored shop bay, is what makes a shallow room honest.
 
 ## 3. Design decisions (from the contrarian pass — the shape of the work)
 

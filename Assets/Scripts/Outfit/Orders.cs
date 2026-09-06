@@ -699,6 +699,9 @@ namespace LivingCity.Outfit
         /// <summary>Crew size as labour: the lieutenant works too.</summary>
         public static int MenOf(Crew crew) => crew == null ? 0 : 1 + crew.HoodIds.Count;
 
+        public static int MenOf(Roster roster, Crew crew) => crew == null ? 0 :
+            MenOf(crew) - (roster?.DoorOrders.CountOf(crew) ?? 0);
+
         /// <summary>The crew's best half-steps at a stat, dead men excluded.</summary>
         public static int BestAt(Roster roster, Crew crew, CharacterAttribute attribute)
         {
@@ -709,7 +712,7 @@ namespace LivingCity.Outfit
             void Consider(int id)
             {
                 var member = roster.Find(id);
-                if (member == null || member.Gone)
+                if (member == null || member.Gone || roster.DoorOrders.Find(id) != null)
                     return;
                 var value = member.GetHalfSteps(attribute);
                 if (value > best)
@@ -736,7 +739,7 @@ namespace LivingCity.Outfit
                 if (into.Count >= men)
                     return;
                 var member = roster.Find(id);
-                if (member != null && !member.Gone)
+                if (member != null && !member.Gone && roster.DoorOrders.Find(id) == null)
                     into.Add(id);
             }
 

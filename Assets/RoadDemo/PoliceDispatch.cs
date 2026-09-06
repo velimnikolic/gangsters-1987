@@ -160,12 +160,11 @@ namespace RoadDemo
         {
             if (unit == null || _units.Contains(unit)) return;
             _units.Add(unit);
+            if (unit is PolicePatrolCar patrol) patrol.BeforeRemoval = PrepareCarRemoval;
             if (unit.Carries && unit.Tf != null) _lights[unit] = new PoliceLights(unit.Tf);
         }
 
-        /// <summary>A permanent street unit whose body has been lost leaves dispatch's
-        /// books before its replacement is dealt. Temporary response squads use their
-        /// existing lifecycle and never come through here.</summary>
+        /// <summary>Remove a lost permanent unit before its replacement is dealt.</summary>
         public void Unregister(IPoliceUnit unit)
         {
             if (unit == null) return;
@@ -791,6 +790,7 @@ namespace RoadDemo
             switch (squad.State)
             {
                 case SquadState.Sent:
+                    if (ride.Tf == null) { Done(squad); return; }
                     // TickFoot leaves owned responses to this state machine. A pair
                     // that cannot reach the scene must therefore be released here;
                     // waiting only on OnScene otherwise owns it forever.
@@ -956,7 +956,7 @@ namespace RoadDemo
                             squad.Ordered = true;
                             int k = 0;
                             foreach (var man in squad.Men.All())
-                                if (!man.Dead) man.OrderToPoint(ride.Position + ride.Tf.right * (k++ % 2 == 0 ? -2.2f : 2.2f), k * 0.3f);
+                                if (!man.Dead) man.OrderToPoint(ride.Position + (ride.Tf != null ? ride.Tf.right : Vector3.right) * (k++ % 2 == 0 ? -2.2f : 2.2f), k * 0.3f);
                         }
                         foreach (var man in squad.Men.All())
                             if (!man.Dead && (man.HasOrder || (man.Tf.position - ride.Position).sqrMagnitude > 4f * 4f)) return;

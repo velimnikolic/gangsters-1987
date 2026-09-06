@@ -341,6 +341,8 @@ namespace LivingCity.Personnel
                 return OpResult.Success;
             }
 
+            if (roster.DoorOrders.Find(id) != null)
+                return OpResult.Fail(SoloDoorOrders.BusyReason);
             if (member.Rank != Rank.Hood)
                 return OpResult.Fail("only a hood carries the bag");
             var assignment = roster.AssignmentOf(id);
@@ -369,6 +371,9 @@ namespace LivingCity.Personnel
 
             if (duty != Duty.Collector)
                 return OpResult.Fail("that duty is not carried by a crew");
+            var groundRefusal = CollectorChoice.GroundRefusal(roster, crew);
+            if (groundRefusal != null)
+                return OpResult.Fail(groundRefusal);
 
             // One collector node per crew. Replacing its head returns the previous
             // collector to the line; the escorts remain attached to the bag.
@@ -600,8 +605,9 @@ namespace LivingCity.Personnel
         {
             hoodId = -1;
             var crew = roster?.FindCrew(crewId);
-            if (crew == null)
-                return OpResult.Fail(LedgerText.ReasonNoSuchCrew);
+            var groundRefusal = CollectorChoice.GroundRefusal(roster, crew);
+            if (groundRefusal != null)
+                return OpResult.Fail(groundRefusal);
             var pick = CollectorChoice.Pick(roster, crew);
             if (pick < 0)
                 return OpResult.Fail("he has nobody to give the bag to");
@@ -673,21 +679,12 @@ namespace LivingCity.Personnel
             for (var c = 0; c < roster.Crews.Count; c++)
             {
                 var crew = roster.Crews[c];
-                if (!AnswersForABlock(roster, crew.LieutenantId))
+                if (CollectorChoice.GroundRefusal(roster, crew) != null)
                     continue;
                 var picked = TendCrewBag(roster, crew);
                 if (picked >= 0)
                     handed?.Add((crew.Id, picked));
             }
-        }
-
-        static bool AnswersForABlock(Roster roster, int leaderId)
-        {
-            var paper = roster.Organization.BlockResponsibilities;
-            for (var i = 0; i < paper.Count; i++)
-                if (paper[i].LeaderId == leaderId && paper[i].BlockId.IsValid)
-                    return true;
-            return false;
         }
 
         /// <summary>The men of one crew who are marked for the bag and able to walk it.

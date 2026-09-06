@@ -135,10 +135,15 @@ namespace LivingCity.Tests
                 return;
             }
 
+            var block = new TerritoryBlockId("schedule:deferred-door");
             Crew crew = null;
             for (var i = 0; i < house.Roster.Crews.Count; i++)
             {
                 var candidate = house.Roster.Crews[i];
+                if (CollectorChoice.Pick(house.Roster, candidate) < 0 ||
+                    !RosterOps.AssignBlockResponsibility(
+                        house.Roster, block, candidate.LieutenantId, true).Ok)
+                    continue;
                 RosterOps.TendCrewBag(house.Roster, candidate);
                 if (RosterOps.CollectorOf(house.Roster, candidate.Id) < 0)
                     continue;
@@ -150,14 +155,6 @@ namespace LivingCity.Tests
                 failures.Add("SCHEDULE fixture: no crew could name a collector.");
                 return;
             }
-            var block = new TerritoryBlockId("schedule:deferred-door");
-            if (!RosterOps.AssignBlockResponsibility(
-                    house.Roster, block, crew.LieutenantId, true).Ok)
-            {
-                failures.Add("SCHEDULE fixture: the crew could not take its block.");
-                return;
-            }
-
             var scheduler = new TerritoryRoundScheduler
             {
                 Owed = (_, _) => 40,

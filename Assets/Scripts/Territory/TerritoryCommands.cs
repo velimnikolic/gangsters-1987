@@ -141,12 +141,15 @@ namespace LivingCity.Territory
 
         public ApproachBusinessCommand(
             TerritoryCommandNodeId groupId, TerritoryBusinessId businessId,
-            TerritoryRacketIntent followUp)
+            TerritoryRacketIntent followUp, TerritoryBlockId blockScope = default,
+            bool restrictToResponsible = false)
         {
             House = default;
             GroupId = groupId;
             BusinessId = businessId;
             FollowUp = followUp;
+            BlockScope = blockScope;
+            RestrictToResponsible = restrictToResponsible;
         }
 
         public TerritoryCommandNodeId GroupId { get; }
@@ -156,6 +159,8 @@ namespace LivingCity.Territory
         /// Threaten mean the men put it to the owner the moment they arrive, so an order
         /// given from across the city is one order, not a walk and a second click.</summary>
         public TerritoryRacketIntent FollowUp { get; }
+        public TerritoryBlockId BlockScope { get; }
+        public bool RestrictToResponsible { get; }
     }
 
     /// <summary>Send a crew on a collection round (ECON-004): every shop on the block

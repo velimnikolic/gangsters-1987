@@ -152,9 +152,8 @@ namespace LivingCity.Gameplay
         public int Heat => Runner.Heat;
 
         /// <summary>The outfit's filing office - every organizational order the ledger
-        /// asks for stands here until it is granted or refused. It lives on the
-        /// director rather than on the book so a ruling still lands while the ledger is
-        /// shut.</summary>
+        /// asks for is carried out and recorded here at the click. It lives on the
+        /// director rather than on the book so the record outlives an open ledger.</summary>
         public OutfitFilings Filings { get; } = new OutfitFilings();
 
         public int Version { get; private set; }
@@ -305,13 +304,6 @@ namespace LivingCity.Gameplay
         void Update()
         {
             RegisterHeadquartersArmory();
-
-            // The office answers in REAL seconds and before the clock is read: a
-            // filing has to be ruled on whether or not a day clock exists in the scene.
-            // The ledger deliberately pauses scaled world time while it is open, but
-            // its filing desk must still answer without advancing the city simulation.
-            if (Filings.Tick(Time.unscaledDeltaTime))
-                Version++;
 
             var clock = Ambient.DayClock.Current;
             if (clock == null)

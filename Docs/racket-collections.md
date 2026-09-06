@@ -18,6 +18,11 @@ surface prints them in that order and never sums them:
 | `IN THE BAG` | a collector is carrying it, on the street, right now |
 | `BANKED THIS WEEK` | it reached the front and went into the safe. The only real one. |
 
+`BANKED ALL GAME` stands under the three: every dollar this block's rounds have banked
+since day one, never reset. It is the block's whole record, not a step in the walk, so
+it is printed apart from the three above and never summed with them. The week's figure
+is wiped when the campaign's week wraps; this one is not.
+
 `NET OFF THIS BLOCK` is banked minus wages, both over the same week.
 
 The second rule: **the sim never opens a demand in the player's name.** Automatic
@@ -262,6 +267,44 @@ PROTECTION and THREATEN THE OWNER are unavailable throughout the closure. Their 
 delayed visits recheck the same live deadline, so an order started before the killing cannot
 ask the successor while the shop is closed.
 
+## One house, one door
+
+A family calls on a shopkeeper **once at a time**. Two crews of the same house used to be
+sent at one counter together and the door answered both: two demands or two leans filed
+against the shop, two Fear acts on the block, and - because the owner's telephone is
+claimed per MAN and not per counter (`DoorBeat.ClaimTelephone`) - two separate rolls at
+ringing the precinct for what the street saw as one conversation.
+
+`TerritoryRuntime.DoorClaims.cs` owns the claim that stops it. A crew HOLDS a door while it
+has an errand there, and the claim comes from two places:
+
+* **the walk** - a pending approach *carrying* a demand or a threat is already an errand at
+  that door, so `pendingApproaches` is the claim while the men cross the city. A bare GO TO
+  THE DOOR carries no question and reserves nothing: standing men are not a conversation,
+  and a crew walking up to watch a street must not lock the counter against the crew that
+  is going to work it;
+* **the conversation** - taken as a man steps into the shop and held for exactly as long as
+  that doorway visit lives. A collection round's stop and a block shakedown's stop take it
+  too: those men are at that counter.
+
+Who is refused: DEMAND PROTECTION, THREATEN THE OWNER, and a walk that carries either, when
+**another crew of the same house** holds the door. The refusal names the crew that has it.
+Work already in hand is never interrupted - only a new order is turned away - and a rival
+family pressing the same shop is never blocked, because that is the game. A house working on
+paper has no bodies and no counters, so `TerritoryRuntime.Paper` never asks.
+
+**One owner, one lifetime.** A claim is alive while `DoorBeat` still has that man's visit and
+dead the moment it does not; it keeps no clock of its own to drift from the beat. That is
+what makes the awkward cases come out right without a special case each: a second order
+given while the man is already inside answers itself on the spot - his body is hidden, so the
+visit cannot be played twice - and its release must not take the live visit's claim with it;
+a visit cancelled from outside (an arrest takes the crew) never runs its `whenOut` at all,
+and the claim has to go anyway; and a paused game freezes the beat, which is exactly when a
+clock of ours would have expired underneath it. The claim is also measured by the MAN and
+never by the crew number, because a bag detail shares its line's number and outlives a line
+wiped under it. What a caller owes the file is one thing: `ClaimDoor` is followed
+immediately by the visit it belongs to.
+
 ## The two block orders
 
 An arrest challenge interrupts every active mission and queued order of the challenged crew,
@@ -323,6 +366,7 @@ settle, duty change and policy change.
 | personnel card | collector and escort posting keys, and the round under them |
 | roster row | the COLLECTOR / escort duty mark |
 | the wire (rail + street strip) | short, missed, round out, banked, lost |
+| **the collectors' row (street HUD, under the clock)** | one panel per bag detail: who carries it, the state word, what is in the bag, doors left — and a press follows him with the camera |
 | the street | a toast when a standing round goes out, and when a bag is lost |
 
 The map's block menu opens on the block `HoverBlock` has a **label** up for, so the reader
@@ -338,6 +382,28 @@ round is the one thing in the racket the player did not order, and without it he
 round had gone only when the money arrived — or never, if it did not. A detail still
 crossing the headquarters door is not `RoundOut`; the scheduler confirms that daily slip
 only after the round ledger contains the opened round.
+
+## Watching the detail cross the city
+
+`StreetHud.Collectors` stacks one small panel per player bag detail under the clock
+strip, in crew order, beside the lieutenant chips it hangs below. Each panel carries the
+carrier's name (`CrewStatus.Carrier`), the state word, the money on his person and the
+doors left on the round — the last two straight off `TerritoryRuntime.TryGetRound`, so the
+panel says what the round ledger says and never a figure of its own. A bag lying on the
+ground takes the line: `BAG ON THE GROUND`, its take, and `GO AND GET IT`.
+
+Pressing a panel puts the shared camera on the detail and pressing it again lets go; the
+place followed is `CrewQuarters.WhereStands` — the billet door while the men are switched
+off behind it, the men themselves otherwise, and the dropped bag once nobody is standing.
+The panel does not SELECT the detail: the bag man takes no street orders, and a pointer
+holding a man who refuses every order is a pointer that lies.
+
+`CrewStatus.Bag` is the one word table for a detail — `ON THE ROUND`, the billet's own
+`INSIDE …`/`GOING INSIDE`, `DEFENDING`, `IN CUSTODY`, `DOWN`, or what the carrier's feet
+are doing. The map's hover tip, the marker over his head (`CrewOverlay.MenTag`) and this
+panel all print it, so three surfaces cannot disagree about what he is doing.
+`CrewStatus.Carrier` is likewise the one answer to who carries the bag:
+`TerritoryRuntime.CollectorOf` delegates to it.
 
 ## Money split
 

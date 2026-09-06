@@ -13,6 +13,30 @@ namespace RoadDemo
     /// </summary>
     public sealed class PrisonerCarriage
     {
+        public static int ReadLivingBodies(DemoCrews.Unit crew, List<CrewWalker> into)
+        {
+            into.Clear();
+            if (crew == null) return 0;
+            foreach (var man in crew.All())
+                if (man != null && !man.Dead && man.Tf != null) into.Add(man);
+            return into.Count;
+        }
+
+        public static RoadCar CarrierOf(IPoliceUnit unit)
+        {
+            if (unit is RoadCar roadCar) return roadCar;
+            return unit is PoliceCruiser cruiser ? cruiser.Car : null;
+        }
+
+        public static Vector3 CargoPoint(Vector3[] seats, int seatIndex)
+        {
+            var slot = Mathf.Clamp(seatIndex - CustodyPlan.EscortSeats, 0,
+                CustodyPlan.PrisonersPerPickup - 1);
+            var rear = seats[Mathf.Min(4, seats.Length - 1)];
+            return new Vector3(slot % 2 == 0 ? -0.32f : 0.32f,
+                rear.y, rear.z - (slot / 2) * 0.18f);
+        }
+
         public sealed class SeatedBody
         {
             public CrewWalker Man;
@@ -229,7 +253,7 @@ namespace RoadDemo
 
         public void BeginHalt()
         {
-            if (Stage == CarriageStage.Riding)
+            if (Stage == CarriageStage.Riding || (Stage == CarriageStage.Boarding && _prisonerSeated))
                 Stage = CarriageStage.Halted;
         }
 
@@ -745,22 +769,28 @@ namespace RoadDemo
             return body;
         }
 
-        public static void RestoreBodies(List<SeatedBody> bodies, Vector3 around)
+        public static void RestoreBodies(List<SeatedBody> bodies, Vector3 around,
+            bool atEachCarrier = false, Transform onlyCarrier = null)
         {
             if (bodies == null) return;
             var prisoner = 0;
             var escort = 0;
-            for (var i = 0; i < bodies.Count; i++)
+            for (var i = 0; i < bodies.Count;)
             {
                 var body = bodies[i];
+                if (onlyCarrier != null && body?.Man?.Tf != null && body.Man.Tf.parent != onlyCarrier)
+                { i++; continue; }
+                bodies.RemoveAt(i);
                 if (body?.Visual != null) Object.Destroy(body.Visual.gameObject);
                 if (body?.Man?.Tf == null) continue;
+                var origin = atEachCarrier && body.Man.Tf.parent != null
+                    ? body.Man.Tf.parent.position : around;
                 body.Man.Tf.SetParent(body.Parent, true);
                 body.Man.Tf.localScale = body.LocalScale;
                 var n = body.Prisoner ? prisoner++ : escort++;
                 var side = body.Prisoner ? -1f : 1f;
                 body.Man.Tf.position = WalkObstacles.ClearSpot(
-                    around + new Vector3(side * (2f + n * 0.8f), 0f,
+                    origin + new Vector3(side * (2f + n * 0.8f), 0f,
                         (n % 2 == 0 ? -1f : 1f) * 1.2f),
                     WalkObstacles.CrewTravelRadius, 3f);
                 body.Man.SetRiding(false);
@@ -770,7 +800,6 @@ namespace RoadDemo
                     if (body.Renderers[r] != null)
                         body.Renderers[r].enabled = body.Shown[r];
             }
-            bodies.Clear();
         }
 
         public static Vector3 VehicleDoor(Transform car, Vector3 localSeat,

@@ -5,42 +5,13 @@ using UnityEngine;
 namespace RoadDemo
 {
     /// <summary>
-    /// THE FORCE, as an institution rather than a set of props.
-    ///
-    /// Until this the police were dealt once at scene build and never again. Nothing
-    /// rotated, nothing was replaced: kill every officer and every car crew near you
-    /// and there was no law in the city for the rest of the session, because Send found
-    /// no unit and quietly did nothing. That is not a police force, it is a fixed number
-    /// of lives.
-    ///
-    /// So each station keeps a ROSTER (PoliceRoster, pure and testable): what the city
-    /// authorised, what is missing, and the absolute campaign day the department fills
-    /// each hole. The bodies on the street are VIEWS of it -
-    ///
-    ///  * an officer killed (heard on StreetAlarm, like every other death) takes a man
-    ///    off the roster of the precinct nearest the shooting;
-    ///  * a wrecked car takes a car off it;
-    ///  * on the campaign day tick, every hole whose day has come is filled - and the
-    ///    men that fills reach the street only through the door, at the next handover;
-    ///  * the WATCH decides how many of them are out at all: by day the beat walks and
-    ///    half the cars stand in the yard, by night the reverse.
-    ///
-    /// Nothing is ever conjured mid-incident or dropped onto a pavement. A replacement
-    /// car appears PARKED in a forecourt stall (the spread of resting cars over the
-    /// city's kerbs gridlocked the ambient traffic - SpreadPatrolHomes' SPREAD = false
-    /// lesson - and this must not reintroduce it).
-    ///
-    /// WHAT IS ON A ROSTER: everything. The cars docked on the forecourt, the crews they
-    /// carry, the pair that rests behind the station door, AND the beat pairs dealt over
-    /// the blocks all over the map. One rule, decided by the user on 2026-09-02: a
-    /// precinct's strength is all the law this city has, so the plaque's number is the
-    /// number, and the watch thins the beat across the whole map at night rather than
-    /// only outside the station.
-    ///
-    /// A pair with a door stands its watch down INSIDE it; a block pair has no door, so
-    /// it holds its corner instead - the long stand at a corner is already what the end
-    /// of its round looks like. Either way it comes off the dispatcher's books, which is
-    /// what "fewer men by night" has to mean if it is to mean anything.
+    /// Precinct rosters own authorized strength, casualties and replacement days;
+    /// street bodies are their views. StreetAlarm charges actual officer deaths and
+    /// disabled carriers leave the fleet before their physical wreckage is removed.
+    /// Replacements arrive through station doors or parked forecourt stalls at the
+    /// scheduled handover. The watch includes all precinct cars, crews and beat pairs
+    /// across the city. Off-duty pairs wait inside their door or at their block corner
+    /// and leave dispatch's available book until their next watch.
     /// </summary>
     public sealed class PoliceForce : MonoBehaviour
     {
@@ -249,6 +220,7 @@ namespace RoadDemo
         /// edge its map mark and pointer target are public even beyond ordinary fog.</summary>
         public bool IsAnnouncedTransfer(RoadCar car)
         {
+            if (car == null || car.Gone) return false;
             for (var i = 0; i < _convoys.Count; i++)
             {
                 var convoy = _convoys[i];
@@ -940,7 +912,7 @@ namespace RoadDemo
                 // somebody has to have done it. A body destroyed for any other reason (a
                 // scene torn down, a rebuild) would otherwise open the doors of every
                 // transfer in the city and report two officers killed that nobody killed.
-                if (car == null || car.Tf == null)
+                if (car == null || (car.Tf == null && !(car.Gone && convoy.Dismounted)))
                 {
                     if (convoy.Carriage?.Prisoner != null &&
                         convoy.Carriage.Prisoner.Dead)
@@ -1105,9 +1077,7 @@ namespace RoadDemo
             return true;
         }
 
-        /// <summary>A round into a police body is an attack on the law even though the
-        /// shooter's strategic mark is a car rather than an officer unit. For a loaded
-        /// transfer the first such round also turns the carriage into a foot fight.</summary>
+        /// <summary>Shots at police tin provoke the law and dismount a loaded transfer.</summary>
         public void RoundIntoPoliceTin(RoadCar car, CrewWalker shooter)
         {
             if (car == null || shooter == null) return;
@@ -1209,6 +1179,36 @@ namespace RoadDemo
                     if (_precincts[p].Cars[i] == car)
                         return _precincts[p];
             return null;
+        }
+
+        internal void PrepareCarRemoval(PolicePatrolCar car)
+        {
+            for (var i = _convoys.Count - 1; i >= 0; i--)
+            {
+                var convoy = _convoys[i];
+                if (convoy.Car != car || convoy.Closed || convoy.AwaitingCourtExit) continue;
+                var carriage = convoy.Carriage;
+                if (car.Wrecked || carriage == null || !convoy.Loaded)
+                {
+                    if (car.Wrecked) EndWrecked(convoy);
+                    else ReturnToSource(convoy);
+                    convoy.LeaveCarStood = true;
+                    CleanupConvoy(convoy, releaseCar: false);
+                    _convoys.RemoveAt(i);
+                    continue;
+                }
+                if (carriage.Stage == CarriageStage.Riding || carriage.Stage == CarriageStage.Boarding)
+                {
+                    carriage.BeginHalt();
+                    SetCarriageStage(convoy, CarriageStage.Halted);
+                    convoy.HardBy = Time.time + CustodyPlan.StrandedBackstopSeconds;
+                    convoy.By = convoy.HardBy;
+                }
+                if (carriage.Stage == CarriageStage.Halted && !convoy.Dismounted)
+                    carriage.DismountHalted(car.Position);
+                convoy.Dismounted = true;
+                convoy.LeaveCarStood = true;
+            }
         }
 
         bool TickHalted(Convoy convoy)

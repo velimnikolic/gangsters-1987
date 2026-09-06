@@ -16,11 +16,6 @@ namespace LivingCity.UI
     /// </summary>
     public sealed partial class PersonnelAlmanac
     {
-        /// <summary>The line the sheet writes when an order goes in. It is cleared the
-        /// moment the office has nothing left to answer, so a stale "not answered yet"
-        /// never stands over a page where everything has been ruled on.</summary>
-        const string FiledNote = "filed · the outfit has not answered yet";
-
         string organizationNote = "";
 
         /// <summary>The man picked out of the pool, waiting for a branch to take him.</summary>
@@ -292,21 +287,15 @@ namespace LivingCity.UI
 
         // ------------------------------------------------------------------- filings
 
-        /// <summary>Files one order with the outfit. Where there is no filing office in
-        /// the scene the order is carried out at once instead, so a demo rig without the
+        /// <summary>Gives one order to the outfit. It takes effect on the click and the
+        /// sheet prints what came of it there and then; where there is no filing office
+        /// in the scene the same resolver runs unrecorded, so a demo rig without the
         /// campaign director still commands the same systems.</summary>
         void FileOrder(string text, System.Func<Outfit.FilingRuling> resolver)
         {
-            if (!outfit)
-            {
-                var immediate = resolver();
-                SayOnThisSheet(immediate.Ruling);
-                dirty = true;
-                return;
-            }
-
-            outfit.Filings.File(FilingStamp(), text, resolver);
-            SayOnThisSheet(FiledNote);
+            SayOnThisSheet(outfit
+                ? outfit.Filings.File(FilingStamp(), text, resolver).Ruling
+                : resolver().Ruling);
             dirty = true;
         }
 
@@ -756,19 +745,11 @@ namespace LivingCity.UI
             return "Paper and street agree.";
         }
 
-        static Color StatusColour(Outfit.FilingStatus status) => status switch
-        {
-            Outfit.FilingStatus.Granted => LedgerV2.Green,
-            Outfit.FilingStatus.Refused => LedgerV2.Red,
-            _ => LedgerV2.Filed,
-        };
+        static Color StatusColour(Outfit.FilingStatus status) =>
+            status == Outfit.FilingStatus.Granted ? LedgerV2.Green : LedgerV2.Red;
 
-        static string StatusWord(Outfit.FilingStatus status) => status switch
-        {
-            Outfit.FilingStatus.Granted => "GRANTED",
-            Outfit.FilingStatus.Refused => "REFUSED",
-            _ => "FILED",
-        };
+        static string StatusWord(Outfit.FilingStatus status) =>
+            status == Outfit.FilingStatus.Granted ? "GRANTED" : "REFUSED";
 
         int CountHeldBlocks()
         {

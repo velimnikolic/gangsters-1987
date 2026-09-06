@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Linq;
 using RoadDemo;
 using UnityEngine;
 
@@ -14,7 +15,10 @@ static class KerbApproach
     static void Set(RoadCar car, string field, object value) =>
         typeof(RoadCar).GetField(field, Private).SetValue(car, value);
 
-    sealed class ObservedCar : RoadCar
+    static string Plan(RoadCar car) => string.Join(" ", new[] { "_goalS", "_parkEntryS", "_parkEntryD", "_parkEntryLen", "_sFrom", "_sLen", "_dTo" }
+        .Select(name => name + "=" + typeof(RoadCar).GetField(name, Private).GetValue(car)));
+
+    internal class ObservedCar : RoadCar
     {
         public RoadCar Obstacle;
         public bool Overlapped;
@@ -71,6 +75,8 @@ static class KerbApproach
                         (Name: "large", Length: 3.72353f, Width: 1.28412f) })
                         foreach (float dt in new[] { 1f / 30f, .2f })
                         {
+                            string filter = Environment.GetEnvironmentVariable("CASE");
+                            if (filter != null && filter != $"{halfRoad}/{heading}/{parkedStart}/{size.Name}/{dt:F3}") continue;
                             cases++;
                             if (!Check(halfRoad, heading, parkedStart, size.Name, size.Length, size.Width, dt)) failures++;
                         }
@@ -78,11 +84,13 @@ static class KerbApproach
             foreach (float dt in new[] { 1f / 30f, .2f })
                 foreach (string scenario in new[] { "clear kerb", "behind same heading", "destination taken during pull-in" })
                 {
+                    string filter = Environment.GetEnvironmentVariable("CASE");
+                    if (filter != null && filter != $"{scenario}/{heading}/{dt:F3}") continue;
                     cases++;
                     if (!CheckTransition(scenario, heading, dt)) failures++;
                 }
         Console.WriteLine($"kerb approach: {cases - failures}/{cases} passed");
-        if (failures != 0) Environment.ExitCode = 1;
+        if (failures != 0 || cases == 0) Environment.ExitCode = 1;
     }
 
     static bool Check(float halfRoad, int heading, bool parkedStart, string size,
@@ -99,7 +107,7 @@ static class KerbApproach
             new[] { 2.5f }, 10f, null, null, true);
         net.Finish();
         float blockerS = heading > 0 ? 65f : 75f;
-        var blocker = new RoadCar { Net = net, HalfLen = halfLength, HalfWide = halfWidth };
+        var blocker = new ObservedCar { Net = net, HalfLen = halfLength, HalfWide = halfWidth };
         bool blockerPlaced = blocker.PlaceAt(road.Pose(blockerS, road.KerbD(heading, halfWidth)), road.Axis * heading);
         Set(blocker, "<Parked>k__BackingField", true);
         Set(blocker, "<Speed>k__BackingField", 0f);
@@ -133,8 +141,8 @@ static class KerbApproach
             if (car.DoingLine != lastDoing || step % Math.Max(1, (int)(2f / dt)) == 0)
             {
                 lastDoing = car.DoingLine;
-                history.Add($"t={elapsed:F1} s={car.S:F2} d={car.D:F2} v={car.Speed:F2} {lastDoing} {car.Why}");
-                if (history.Count > 12) history.RemoveAt(0);
+                history.Add($"t={elapsed:F1} s={car.S:F2} d={car.D:F2} v={car.Speed:F2} {lastDoing} {car.Why} {Plan(car)}");
+                if (history.Count > 80) history.RemoveAt(0);
             }
         }
         float distance = (car.Position - goal).magnitude;
@@ -146,10 +154,30 @@ static class KerbApproach
             (car.S - blockerS) * heading > halfLength * 2f && distance <= halfLength * 2f &&
             Math.Abs(car.D - goalD) <= .3f && Vector3.Dot(car.Forward, road.Axis * heading) > .999f &&
             !car.Overlapped && car.Discontinuities == 0 && car.TrafficRecoveries == 0 && elapsed <= Deadline + .01f;
+        // The new arrival must not trap the neighbour's own departure.
+        bool neighbourExited = false;
+        if (passed)
+        {
+            blocker.Obstacle = car;
+            blocker.GoTo(road.Pose(blockerS + heading * 45f, heading * 2.5f), false, stopAtGoal: false, wantHeading: heading);
+            var departing = new List<RoadCar> { blocker };
+            bool Exited() => (blocker.S - car.S) * heading > car.HalfLen + blocker.HalfLen + 1f &&
+                Math.Abs(blocker.D - heading * 2.5f) < .01f && blocker.Doing == RoadCar.Manoeuvre.None;
+            for (int step = 0; step < Math.Ceiling(25f / dt) && !Exited(); step++)
+            {
+                Time.time += dt;
+                Time.frameCount++;
+                RoadCarSimulation.Simulate(departing, dt);
+            }
+            neighbourExited = Exited() &&
+                !blocker.Overlapped && blocker.Discontinuities == 0 && blocker.TrafficRecoveries == 0;
+            passed &= neighbourExited;
+            if (!neighbourExited) Console.WriteLine($"  neighbour departure: {blocker.Describe()} goal={blocker.HasGoal} overlap={blocker.Overlapped} {blocker.FirstDiscontinuity}");
+        }
         Console.WriteLine($"{(passed ? "PASS" : "FAIL")} kerb approach {size} width={halfRoad * 2f:F0} h={heading} " +
             $"start={(parkedStart ? "parked" : "moving")} dt={dt:F3} time={elapsed:F1} distance={distance:F2} " +
             $"overlap={car.Overlapped} jumps={car.Discontinuities} recovery={car.TrafficRecoveries} " +
-            $"parked={car.Parked} {car.Describe()}");
+            $"parked={car.Parked} neighbourExited={neighbourExited} neighbourJumps={blocker.Discontinuities} {car.Describe()}");
         if (car.FirstDiscontinuity != null) Console.WriteLine("  " + car.FirstDiscontinuity);
         if (!passed || Environment.GetEnvironmentVariable("TRACE") == "1")
             foreach (string entry in history) Console.WriteLine("  " + entry);
@@ -222,8 +250,8 @@ static class KerbApproach
             changedHeading |= car.Heading != heading;
             if (step % Math.Max(1, (int)(2f / dt)) == 0)
             {
-                history.Add($"t={elapsed:F1} s={car.S:F2} d={car.D:F2} h={car.Heading} v={car.Speed:F2} {car.DoingLine} {car.Why}");
-                if (history.Count > 12) history.RemoveAt(0);
+                history.Add($"t={elapsed:F1} s={car.S:F2} d={car.D:F2} h={car.Heading} v={car.Speed:F2} {car.DoingLine} {car.Why} {Plan(car)}");
+                if (history.Count > 80) history.RemoveAt(0);
             }
         }
         float distance = (car.Position - goal).magnitude;

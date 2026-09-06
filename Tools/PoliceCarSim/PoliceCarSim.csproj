@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <WarningLevel>0</WarningLevel>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../RoadSim/Stubs.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadCar*.cs" />
+    <Compile Include="../../Assets/RoadDemo/DemoVehicle.cs" />
+    <Compile Include="../../Assets/RoadDemo/LaneNet.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadDemoNet.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadLine.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadSpace.cs" />
+    <Compile Include="../../Assets/RoadDemo/DriverProfile.cs" />
+    <Compile Include="../../Assets/RoadDemo/DriverNerve.cs" />
+    <Compile Include="../../Assets/RoadDemo/DriveTrace.cs" />
+    <Compile Include="../../Assets/RoadDemo/PolicePatrolCar.cs" />
+    <Compile Include="../../Assets/RoadDemo/PrisonerCarriage.cs" />
+    <Compile Include="../../Assets/RoadDemo/PatrolDocking.cs" />
+    <Compile Include="../../Assets/RoadDemo/LaneGate.cs" />
+    <Compile Include="../../Assets/RoadDemo/CrewCars.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/VehiclePerformance.cs" />
+    <Compile Include="../../Assets/Scripts/Gameplay/VehicleCatalog.cs" />
+    <Compile Include="../../Assets/Scripts/Police/PoliceShifts.cs" />
+    <Compile Include="../../Assets/Scripts/Police/PoliceRoster.cs" />
+    <Compile Include="../../Assets/Scripts/Police/PoliceRosterConfig.cs" />
+  </ItemGroup>
+</Project>

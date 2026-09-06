@@ -7,6 +7,8 @@ using UnityEngine;
 
 namespace LivingCity.UI
 {
+    public enum WireAction { Record, Person, Door, Block, Law, Finances, Families }
+
     /// <summary>
     /// One line of the wire, whoever is printing it.
     ///
@@ -32,6 +34,22 @@ namespace LivingCity.UI
         /// an incident, which is why THIS BLOCK drops them.</summary>
         public readonly TerritoryBlockId BlockId;
 
+        // Presentation targets are reconstructed from the persisted incident/dispatch.
+        // Keep IDs, never references to streamed actors or an old menu's commands.
+        public readonly int CharacterId;
+        public readonly WireAction Action;
+
+        public string ActionLabel => Action switch
+        {
+            WireAction.Person => "OPEN DOSSIER",
+            WireAction.Door => "DOOR ACTIONS",
+            WireAction.Block => "OPEN BLOCK",
+            WireAction.Law => "OPEN THE LAW",
+            WireAction.Finances => "OPEN FINANCES",
+            WireAction.Families => "OPEN FAMILIES",
+            _ => "READ ITEM",
+        };
+
         public WireLine(string source, string stamp, string body, string tag,
             string figure, Color ink, int day)
             : this(source, stamp, body, tag, figure, ink, day, default, default)
@@ -41,6 +59,15 @@ namespace LivingCity.UI
         public WireLine(string source, string stamp, string body, string tag,
             string figure, Color ink, int day,
             TerritoryBusinessId businessId, TerritoryBlockId blockId)
+            : this(source, stamp, body, tag, figure, ink, day, businessId, blockId,
+                -1, businessId.IsValid ? WireAction.Door :
+                    blockId.IsValid ? WireAction.Block : WireAction.Record)
+        {
+        }
+
+        public WireLine(string source, string stamp, string body, string tag,
+            string figure, Color ink, int day, TerritoryBusinessId businessId,
+            TerritoryBlockId blockId, int characterId, WireAction action)
         {
             Source = source;
             Stamp = stamp;
@@ -51,6 +78,8 @@ namespace LivingCity.UI
             Day = day;
             BusinessId = businessId;
             BlockId = blockId;
+            CharacterId = characterId;
+            Action = action;
         }
     }
 
@@ -240,7 +269,44 @@ namespace LivingCity.UI
                 // that drew none says nothing rather than nothing-shaped.
                 incident.Heat > 0 ? "+" + incident.Heat + " HEAT" : "",
                 InkOf(incident.Kind),
-                incident.Day);
+                incident.Day, default, default, incident.CharacterId,
+                ActionOf(incident));
+
+        static WireAction ActionOf(Incident incident)
+        {
+            switch (incident.Kind)
+            {
+                case IncidentKind.ComplaintRung:
+                case IncidentKind.StatementTaken:
+                case IncidentKind.CaseOpened:
+                case IncidentKind.WitnessWithdrawn:
+                case IncidentKind.WitnessKilled:
+                case IncidentKind.BailPosted:
+                case IncidentKind.BailForfeit:
+                case IncidentKind.Convicted:
+                case IncidentKind.Acquitted:
+                case IncidentKind.CaseDismissed:
+                case IncidentKind.CutLoose:
+                case IncidentKind.FlatRaided:
+                case IncidentKind.NobodyCame:
+                case IncidentKind.RefusedTheOfficer:
+                case IncidentKind.RanFromTheOfficer:
+                case IncidentKind.FiredOnTheOfficer:
+                case IncidentKind.TakenIn:
+                case IncidentKind.Sprung:
+                case IncidentKind.PrisonerKilled:
+                case IncidentKind.TransferHalted:
+                case IncidentKind.WalkedIn:
+                    return WireAction.Law;
+                case IncidentKind.PayrollShort:
+                case IncidentKind.KilosSold:
+                    return WireAction.Finances;
+                case IncidentKind.AWordBetweenHouses:
+                    return WireAction.Families;
+                default:
+                    return incident.CharacterId >= 0 ? WireAction.Person : WireAction.Record;
+            }
+        }
 
         /// <summary>One thing that happened at a door, in the racket's own words.</summary>
         public static WireLine Of(TerritoryDoorDispatch dispatch)

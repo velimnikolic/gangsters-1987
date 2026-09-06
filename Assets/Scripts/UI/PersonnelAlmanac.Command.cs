@@ -31,7 +31,9 @@ namespace LivingCity.UI
     ///
     /// A branch NEVER gives that measure back. Twelve branches make a 4800-unit tree
     /// and the tree is drawn at 4800, inside a window the width of the sheet that pans
-    /// sideways under the wheel. The chain of command is a ROW, and a row squeezed into
+    /// sideways under SHIFT+WHEEL - the plain notch always scrolls the sheet, because
+    /// the tree stands at the top of the page and can grow taller than the whole
+    /// window. The chain of command is a ROW, and a row squeezed into
     /// a column of full-width slabs down the page is a different diagram wearing this
     /// one's name. Only the tree reads across: the reserve, the watch and the order log
     /// under it are the sheet's, and they stand still while it pans.
@@ -307,9 +309,6 @@ namespace LivingCity.UI
         {
             if (!commandFixed || !commandContent)
                 return;
-
-            if (organizationNote == FiledNote && outfit && outfit.Filings.AwaitingCount == 0)
-                organizationNote = "";
 
             foreach (Transform old in commandFixed)
                 Destroy(old.gameObject);
@@ -928,8 +927,8 @@ namespace LivingCity.UI
                     "THE TREE READS ACROSS \u00b7 " + commandBranches.Count +
                     " BRANCHES, " + Mathf.RoundToInt(commandTreeWidth) +
                     " WIDE ON A " + Mathf.RoundToInt(PageWidth) +
-                    " SHEET \u00b7 WHEEL OVER THE TREE PANS IT \u00b7 " +
-                    "SHIFT+WHEEL SCROLLS THE SHEET", 10f, LedgerV2.Muted, 2f)
+                    " SHEET \u00b7 SHIFT+WHEEL OVER THE TREE PANS IT \u00b7 " +
+                    "THE WHEEL ALONE SCROLLS THE SHEET", 10f, LedgerV2.Muted, 2f)
                 .overflowMode = TextOverflowModes.Ellipsis;
 
             return y + LineBox(10f);
@@ -2931,17 +2930,13 @@ namespace LivingCity.UI
                     .overflowMode = TextOverflowModes.Ellipsis;
             }
 
-            var awaiting = filings != null ? filings.AwaitingCount : 0;
             LedgerV2.Mono(panel, pad, -(count * rowH + 10f), PageWidth - pad * 2f,
                 filings == null
                     ? "The outfit's filing office is not open in this scene · orders " +
                       "take effect the moment they are given."
                     : count == 0
                         ? "Nothing has been asked of the outfit yet."
-                        : awaiting > 0
-                            ? "Nothing above has happened yet. The outfit is still " +
-                              "ruling on " + awaiting + "."
-                            : "Every order on this sheet has been ruled on.",
+                        : "Every order here took effect the moment it was given.",
                 11.5f, LedgerV2.Muted, 0f);
 
             return cursor + count * rowH + footH;

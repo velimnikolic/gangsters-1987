@@ -97,17 +97,11 @@ namespace RoadDemo
         static bool FitsParkingStall(GameObject prefab)
         {
             if (FitsStall.TryGetValue(prefab, out bool fits)) return fits;
-            var bounds = new Bounds();
-            bool measured = false;
-            foreach (var renderer in prefab.GetComponentsInChildren<Renderer>())
-            {
-                if (!measured) { bounds = renderer.bounds; measured = true; }
-                else bounds.Encapsulate(renderer.bounds);
-            }
+            bool measured = CarBody.MeasureTrafficFootprint(prefab.transform, out float halfLength, out float halfWidth);
             // The traffic catalogue includes seven-metre pickups. Those belong in
             // larger bays; placing them in this plan fills its manoeuvring aisle.
-            fits = measured && bounds.size.z <= ParkingBlockPlan.StallDepth &&
-                bounds.size.x + 2f * RoadSpace.Air <= ParkingBlockPlan.StallWidth;
+            fits = measured && halfLength * 2f + ParkingManeuver.Clearance <= ParkingBlockPlan.StallDepth &&
+                halfWidth * 2f + ParkingManeuver.Clearance <= ParkingBlockPlan.StallWidth;
             FitsStall[prefab] = fits;
             return fits;
         }

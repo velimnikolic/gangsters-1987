@@ -10,6 +10,7 @@ namespace UnityEngine
         public Vector3(float x, float y, float z) { this.x = x; this.y = y; this.z = z; }
         public static Vector3 zero => new Vector3(0, 0, 0);
         public static Vector3 up => new Vector3(0, 1, 0);
+        public static Vector3 down => new Vector3(0, -1, 0);
         public static Vector3 forward => new Vector3(0, 0, 1);
         public static Vector3 right => new Vector3(1, 0, 0);
         public static Vector3 back => new Vector3(0, 0, -1);
@@ -91,6 +92,11 @@ namespace UnityEngine
         public static Quaternion identity => new Quaternion { fwd = Vector3.forward };
         public static Quaternion LookRotation(Vector3 f) => new Quaternion { fwd = f.normalized };
         public static Quaternion LookRotation(Vector3 f, Vector3 up) => new Quaternion { fwd = f.normalized };
+        public static Quaternion Slerp(Quaternion a, Quaternion b, float t)
+        {
+            float yaw = Vector3.SignedAngle(a.fwd, b.fwd, Vector3.up);
+            return LookRotation(Euler(0f, yaw * Mathf.Clamp01(t), 0f) * a.fwd);
+        }
         public static Quaternion Euler(float x, float y, float z) => new Quaternion { fwd = new Vector3(MathF.Sin(y * Mathf.Deg2Rad), 0, MathF.Cos(y * Mathf.Deg2Rad)) };
         public static Vector3 operator *(Quaternion q, Vector3 v)
         {
@@ -150,7 +156,7 @@ namespace UnityEngine
         public static int frameCount;
     }
 
-    public class Transform
+    public partial class Transform
     {
         public Vector3 position;
         public Quaternion rotation;
@@ -166,20 +172,24 @@ namespace UnityEngine
         }
     }
 
-    public class GameObject
+    public partial class GameObject
     {
         public string name;
+        public Transform transform;
+        public bool activeSelf = true;
+        public void SetActive(bool active) => activeSelf = active;
     }
 
     public class Object
     {
-        public static void Destroy(object o) { }
+        public static Action<object> Destroying;
+        public static void Destroy(object o) => Destroying?.Invoke(o);
     }
     public class Component : Object { }
     public class Behaviour : Component { }
     public class MonoBehaviour : Behaviour { }
     public class MeshRenderer : Component { }
-    public class Renderer : Component { }
+    public partial class Renderer : Component { }
     public class AudioClip : Object { }
 
     public static class Debug
@@ -225,7 +235,7 @@ namespace RoadDemo
         public static bool CrossesQuiet(UnityEngine.Vector3 a, UnityEngine.Vector3 b) => false;
     }
 
-    public class CrewWalker { }
+    public partial class CrewWalker { }
     public static class CarSmoke { public static void Bonnet(RoadCar car) { } }
     public static class CrewGore
     {

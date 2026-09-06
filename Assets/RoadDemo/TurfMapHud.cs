@@ -703,14 +703,9 @@ namespace RoadDemo
             if (bag != null)
             {
                 _hoverBlock = default;
-                var state = TerritoryRuntime.Instance != null &&
-                            TerritoryRuntime.Instance.TryGetRound(
-                                bag.CrewId, out _, out _, out _)
-                    ? "on the round"
-                    : CrewQuarters.Inside(bag) ? "in the house"
-                    : CrewQuarters.MovingIn(bag) ? "going inside"
-                    : bag.TargetUnit != null ? "defending the block"
-                    : "outside";
+                // One word table for the detail, wherever it is read: the tip, the
+                // marker over his head and his panel on the top bar (CrewStatus.Bag).
+                var state = (CrewStatus.Bag(bag) ?? "outside").ToLowerInvariant();
                 _hoverText = "THE BAG · " + (bag.Parent?.Name ?? bag.Name) + "\n" +
                              bag.Standing() + (bag.Standing() == 1 ? " man · " : " men · ") +
                              state;
@@ -788,8 +783,7 @@ namespace RoadDemo
                 var unit = _crews.Units[i];
                 if (unit == null || unit.Faction != 0 || !unit.IsDetachment || unit.Wiped)
                     continue;
-                var world = CrewQuarters.TryGetDoorstep(unit, out var doorstep)
-                    ? doorstep : unit.Position;
+                var world = CrewQuarters.WhereStands(unit);
                 var dx = world.x - ground.x;
                 var dz = world.z - ground.y;
                 var sqr = dx * dx + dz * dz;
@@ -3184,8 +3178,7 @@ namespace RoadDemo
                 var bag = _crews.Units[i];
                 if (bag == null || bag.Faction != 0 || !bag.IsDetachment || bag.Wiped)
                     continue;
-                var world = CrewQuarters.TryGetDoorstep(bag, out var doorstep)
-                    ? doorstep : bag.Position;
+                var world = CrewQuarters.WhereStands(bag);
                 var plan = _survey.Plan.ToPlan(world);
                 var cx = Mathf.RoundToInt(plan.x * TurfPlate.S);
                 var cy = Mathf.RoundToInt(plan.y * TurfPlate.S);
