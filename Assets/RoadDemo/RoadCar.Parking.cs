@@ -19,7 +19,11 @@ namespace RoadDemo
         bool _parkingRetreat;
         Manoeuvre _failedParkingMan;
         float _parkingRetryBy;
-        readonly List<float> _failedKerbSpots = new List<float>();
+        bool _parkReturnApproach;
+        bool _parkReservationBlocked;
+        float _parkingRetryAt;
+        public string ParkingReason { get; private set; } = "";
+        readonly List<Vector2> _failedKerbSpots = new List<Vector2>();
         readonly List<RoadCar> _parkingNeighbours = new List<RoadCar>();
         System.Predicate<RoadOccupant> _parkingLeaderFilter;
 
@@ -39,7 +43,19 @@ namespace RoadDemo
         /// <summary>The last parking order failed; a new order clears this result.</summary>
         public bool ParkingFailed { get; private set; }
 
-        protected void ClearParkingFailure() { ParkingFailed = false; _parkingRetryBy = 0f; }
+        /// <summary>Specialised owners can keep an angled failed manoeuvre in place
+        /// until they have preserved and redirected its higher-level assignment.</summary>
+        protected virtual bool KeepsFailedParkingCurve => false;
+
+        protected void ClearParkingFailure()
+        {
+            ParkingFailed = false;
+            ParkingReason = "";
+            _failedParkingMan = Manoeuvre.None;
+            _parkingRetryBy = 0f;
+            _parkingRetryAt = 0f;
+            _parkReturnApproach = false;
+        }
 
         /// <summary>Back out of a failed angled entry before selecting another goal.</summary>
         protected bool PrepareParkingRetry()
@@ -52,10 +68,11 @@ namespace RoadDemo
             if ((_failedParkingMan != Manoeuvre.PullIn && _failedParkingMan != Manoeuvre.PullOut) ||
                 RoadCarSimulation.Now >= _parkingRetryBy)
             {
+                var failedMan = _failedParkingMan;
                 ResumeTraffic();
-                if (_failedParkingMan == Manoeuvre.Pass || _failedParkingMan == Manoeuvre.Crown ||
-                    _failedParkingMan == Manoeuvre.Aside || _failedParkingMan == Manoeuvre.LaneChange)
-                    _man = _failedParkingMan;
+                if (failedMan == Manoeuvre.Pass || failedMan == Manoeuvre.Crown ||
+                    failedMan == Manoeuvre.Aside || failedMan == Manoeuvre.LaneChange)
+                    _man = failedMan;
                 return false;
             }
             if (Profile.Reverses && ClearBehind() >= .6f)
@@ -66,14 +83,19 @@ namespace RoadDemo
             return !Sliding;
         }
 
-        /// <summary>Autonomous cars resume traffic; player crews may keep their stop.</summary>
+        /// <summary>Release a failed destination without abandoning the driven curve.</summary>
         protected virtual void OnParkingFailed()
         {
-            // Retain an angled entry for a new order or PrepareParkingRetry.
-            if (Sliding) return;
             _halted = false;
             _haltWhenClear = false;
             _keepGoalWhenHaltClear = false;
+            if (Sliding && _man != Manoeuvre.Reverse)
+            {
+                _man = Manoeuvre.PullOut;
+                _manD = _dTo;
+                _manPastS = _sFrom + Heading * (_sLen + Axle);
+                _exitAdvance = false;
+            }
             if (Parked) PullOut();
         }
 
@@ -83,11 +105,22 @@ namespace RoadDemo
         /// <summary>Keep specialised claims in step when the chooser moves the goal.</summary>
         protected virtual void ParkingSpotSelected(Vector3 at) { }
 
+        bool FindParking(bool aheadOnly = false)
+        {
+            if (ChooseKerbSpot(aheadOnly)) return true;
+            if (!_parkReservationBlocked || _parkTrying >= ParkingAttemptLimit) return false;
+            _parkingRetryAt = RoadCarSimulation.Now + .7f;
+            ParkingReason = "Waiting for parking reservation";
+            return true;
+        }
+
         // A slot needs both an entry and an exit for the real rear axle.
-        bool ChooseKerbSpot(bool aheadOnly = false)
+        bool ChooseKerbSpot(bool aheadOnly = false, bool returnApproach = false)
         {
             var road = _goalRoad;
             if (road == null || !_goalPark) return false;
+            ParkingReason = "No free parking nearby";
+            _parkReservationBlocked = false;
             CollectParkingNeighbours();
             float kerb = road.KerbD(_goalHeading, HalfWide);
             int h = _goalHeading;
@@ -109,7 +142,7 @@ namespace RoadDemo
             bool here = Road == road && Heading == h;
             if (here && !Sliding && !Parked &&
                 (_man == Manoeuvre.Pass || _man == Manoeuvre.None && Mathf.Abs(D - fromD) <= .5f)) fromD = D;
-            bool forwardApproach = here && (aheadOnly || (_parkRequestedS - S) * h >= 0f);
+            bool forwardApproach = !returnApproach && here && (aheadOnly || (_parkRequestedS - S) * h >= 0f);
             float earliestEntry = ParkingEntryFloor(fromD);
             float cruise = Profile.CruiseOn(road.Class) * Machine.Top;
             if (Profile.ObeysLimit) cruise = Mathf.Min(cruise, _goalLane.SpeedLimit);
@@ -122,6 +155,7 @@ namespace RoadDemo
             float bestEntry = 0f, bestLength = 0f;
             for (int shape = -1; shape < 2; shape++)
             {
+                if (returnApproach && shape == 0) continue;
                 if (shape == -1 && (!here || !ParkingAligned(kerb))) continue;
                 float length = shape == -1 ? 0f : shape == 0 ? comfortable : minimum;
                 float end = taken[0].y;
@@ -131,7 +165,13 @@ namespace RoadDemo
                     float a = end, b = t.x;
                     end = Mathf.Max(end, t.y);
                     if (b - a < need) continue;
+                    ParkingReason = "No reachable parking approach";
                     float min = a + HalfLen + .8f, max = b - HalfLen - .8f;
+                    if (returnApproach)
+                    {
+                        if (h > 0) max = Mathf.Min(max, S - 4f);
+                        else min = Mathf.Max(min, S + 4f);
+                    }
                     if (shape >= 0 && forwardApproach)
                     {
                         float entryPace = LateralCap(length, Mathf.Abs(kerb - fromD));
@@ -153,11 +193,14 @@ namespace RoadDemo
                             if (!_kerbCandidates.Add(centre)) continue;
                             float dist = Mathf.Abs(centre - _parkRequestedS);
                             if (dist > ParkingSearchReach || dist >= bestDist || FailedKerbSpot(centre)) continue;
-                            if (!ParkingSpotAvailable(road.Pose(centre, kerb))) continue;
+                            if (!ParkingSpotAvailable(road.Pose(centre, kerb)))
+                            { _parkReservationBlocked = true; ParkingReason = "Parking reserved"; continue; }
                             if (!TryKerbEntry(centre, fromD, kerb, length, out float entry)) continue;
                             // Arrival can roll a fraction past the requested centre.
-                            if (!KerbExitClear(centre, kerb) || !KerbExitClear(centre + h * .3f, kerb) ||
-                                ParkingReservationTaken(centre, kerb, refresh: false)) continue;
+                            if (!KerbExitClear(centre, kerb) || !KerbExitClear(centre + h * .3f, kerb))
+                            { ParkingReason = "No clear parking exit"; continue; }
+                            if (ParkingReservationTaken(centre, kerb, refresh: false))
+                            { _parkReservationBlocked = true; ParkingReason = "Parking or neighbour exit reserved"; continue; }
                             bestDist = dist;
                             bestS = centre;
                             bestEntry = entry;
@@ -168,6 +211,15 @@ namespace RoadDemo
             if (float.IsNaN(bestS))
             {
                 _parkPlanReady = false;
+                // Missing the last possible entry is not a full kerb. Find a
+                // reachable slot behind us and let normal routing return to it.
+                if (forwardApproach && !returnApproach && _goalUTurns < MaxGoalUTurns)
+                {
+                    bool reserved = _parkReservationBlocked;
+                    bool found = ChooseKerbSpot(aheadOnly, returnApproach: true);
+                    _parkReservationBlocked |= reserved;
+                    if (found) { Replan(); return true; }
+                }
                 return false;
             }
             _goalS = bestS;
@@ -176,8 +228,10 @@ namespace RoadDemo
             _parkEntryD = bestLength == 0f ? kerb : fromD;
             _parkEntryLen = bestLength;
             _parkPlanReady = true;
+            _parkReturnApproach = returnApproach;
             _parkTrafficCheck = 0f;
             _parkTrafficClear = false;
+            ParkingReason = "Approaching parking";
             ParkingSpotSelected(road.Pose(bestS, kerb));
             return true;
         }
@@ -185,13 +239,41 @@ namespace RoadDemo
         static readonly List<Vector2> _taken = new List<Vector2>();
         static readonly HashSet<float> _kerbCandidates = new HashSet<float>();
 
+        bool ReturnToParkingEntry()
+        {
+            if (!_parkReturnApproach || !_hasGoal || !_goalPark || Road != _goalRoad || Heading != _goalHeading)
+                return false;
+            if (_man == Manoeuvre.Reverse) return true;
+            float back = (S - _parkEntryS) * Heading + .5f;
+            if (back <= .1f) { _parkReturnApproach = false; _holdFor = 0f; return false; }
+            // A short missed approach can be recovered without driving to a dead end.
+            // The whole straight reverse must be clear, then every step is checked again.
+            if (!Profile.Reverses || back > 25f || Sliding || _man != Manoeuvre.None)
+            { _parkReturnApproach = false; return false; }
+            ParkingReason = "Returning to parking approach";
+            if (Mathf.Abs(Speed) > .15f) return true;
+            if (ClearBehind(back + 1f) < back + .5f)
+            { ParkingReason = "Waiting for parking approach"; return true; }
+            _backLeft = back;
+            _man = Manoeuvre.Reverse;
+            Speed = 0f;
+            _holdFor = 0f;
+            Claim(S + Heading * HalfLen, _parkEntryS - Heading * (HalfLen + 1f),
+                D - HalfWide - .2f, D + HalfWide + .2f);
+            return true;
+        }
+
         static bool FixedParkingObstacle(RoadOccupant o) => o.Car == null ||
             o.Car.Parked || o.Car.Derelict || o.Car.Wrecked;
 
         bool FailedKerbSpot(float s)
         {
-            foreach (float failed in _failedKerbSpots)
-                if (Mathf.Abs(s - failed) < 1.5f) return true;
+            for (int i = _failedKerbSpots.Count - 1; i >= 0; i--)
+            {
+                var failed = _failedKerbSpots[i];
+                if (RoadCarSimulation.Now >= failed.y) { _failedKerbSpots.RemoveAt(i); continue; }
+                if (Mathf.Abs(s - failed.x) < 1.5f) return true;
+            }
             return false;
         }
 
@@ -222,7 +304,7 @@ namespace RoadDemo
                 if (Road != road || Heading != heading || Sliding ||
                     !ParkingAligned(kerb) || (centre - S) * heading < 0f ||
                     road.Busy(_occ, Mathf.Min(S, centre) - HalfLen,
-                        Mathf.Max(S, centre) + HalfLen, kerb - HalfWide, kerb + HalfWide)) return false;
+                        Mathf.Max(S, centre) + HalfLen, kerb - HalfWide, kerb + HalfWide, stationaryOnly: true)) return false;
                 entry = S;
                 return true;
             }
@@ -246,12 +328,12 @@ namespace RoadDemo
                 Vector3.Dot(_fwd, Road.DirAt(s) * Heading) > .999f;
         }
 
-        bool ParkingDestinationTaken()
+        bool ParkingDestinationTaken(bool stationaryOnly = false)
         {
             if (!ParkingSpotAvailable(_goalRoad.Pose(_goalS, _goalD))) return true;
             if (ParkingReservationTaken(_goalS, _goalD) ||
                 RoadSpace.Inside(this, _goalRoad.Pose(_goalS, _goalD),
-                    _goalRoad.DirAt(_goalS) * _goalHeading, HalfLen, HalfWide, out _) != null) return true;
+                    _goalRoad.DirAt(_goalS) * _goalHeading, HalfLen, HalfWide, out _, stationaryOnly) != null) return true;
             foreach (var o in _goalRoad.Occupants)
                 if (!ReferenceEquals(o.Who, this) && FixedParkingObstacle(o) &&
                     o.BodyS0 < _goalS + HalfLen + .3f && o.BodyS1 > _goalS - HalfLen - .3f &&
@@ -333,7 +415,7 @@ namespace RoadDemo
             if (!ParkingDestinationTaken() && KerbExitClear(S, D) &&
                 RoadSpace.Inside(this, Position, Forward, HalfLen, HalfWide, out _) == null) return true;
             RejectKerbApproach();
-            if (!ChooseKerbSpot(aheadOnly: true)) FailParking();
+            if (!FindParking(aheadOnly: true)) FailParking();
             return false;
         }
 
@@ -349,7 +431,7 @@ namespace RoadDemo
 
         void RejectKerbApproach()
         {
-            if (!FailedKerbSpot(_goalS)) _failedKerbSpots.Add(_goalS);
+            if (!FailedKerbSpot(_goalS)) _failedKerbSpots.Add(new Vector2(_goalS, RoadCarSimulation.Now + 6f));
             _parkPlanReady = false;
             _spotCheck = 0f;
             _parkTrafficCheck = 0f;
@@ -386,19 +468,34 @@ namespace RoadDemo
                 _failedParkingMan = _parkingRetreat ? Manoeuvre.PullIn : _man;
                 _parkingRetryBy = RoadCarSimulation.Now + PullOutPatience;
             }
+            _parkReturnApproach = false;
             _parkPlanReady = false;
             _pullOutWanted = false;
-            if (_man == Manoeuvre.Reverse)
+            if (KeepsFailedParkingCurve)
             {
-                _backLeft = 0f;
-                Speed = 0f;
-                _man = Manoeuvre.None;
-                ClearClaim();
+                if (_man == Manoeuvre.Reverse)
+                {
+                    _backLeft = 0f;
+                    Speed = 0f;
+                    _man = Manoeuvre.None;
+                    ClearClaim();
+                }
+                _parkingRetreat = false;
+                Halt(false);
             }
-            _parkingRetreat = false;
-            Halt(false);
+            else
+            {
+                _hasGoal = false;
+                Route = null;
+                _turnFirst = false;
+                _freeGoal = null;
+                if (!Sliding && _man != Manoeuvre.Reverse)
+                { _man = Manoeuvre.None; ClearClaim(); }
+            }
             ParkingFailed = true;
-            Why = "No reachable parking nearby";
+            if (ParkingReason == "" || ParkingReason == "Approaching parking")
+                ParkingReason = "Parking manoeuvre unavailable";
+            Why = ParkingReason;
             OnParkingFailed();
             // Do not call OnArrived or mark a traffic lane as parked.
             if (DriveTrace.On) DriveTrace.Event("man", "car " + Id, "parking unavailable", ManFields());

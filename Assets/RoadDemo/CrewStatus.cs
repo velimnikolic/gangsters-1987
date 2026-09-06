@@ -149,7 +149,7 @@ namespace RoadDemo
 
             var car = unit.Car;
             if (car != null)
-                return car.ParkingFailed ? "NO PARKING"
+                return car.ParkingFailed || car.HasGoal && car.ParkingReason.Length > 0 ? car.ParkingReason
                     : car.State == CrewCar.Mode.DriveBy ? "DRIVE-BY" : "IN THE CAR";
             if (unit.Boarding != null)
                 return "GETTING IN";

@@ -135,6 +135,9 @@ namespace RoadDemo
             DriveTrace.Int(sb, "lead", _leadId);
             DriveTrace.Num(sb, "lgap", _leadGap, "F1");
             DriveTrace.Str(sb, "why", Why);
+            DriveTrace.Str(sb, "parking", ParkingReason);
+            DriveTrace.Int(sb, "blockedBy", Deadlock.BlockerId);
+            DriveTrace.Int(sb, "escapePeer", Deadlock.PeerId);
             DriveTrace.Vec(sb, "p", _pos);
             return sb;
         }
@@ -184,7 +187,9 @@ namespace RoadDemo
         }
 
         /// <summary>Read by the traffic's spawner and the overlay: what the driver is doing.</summary>
-        public string DoingLine => ParkingFailed ? "No parking nearby" : _man switch
+        public string DoingLine => Deadlock.Active ? (Deadlock.Waiting ? "Letting blocked traffic clear" : "Easing past blocked traffic") :
+            ParkingFailed ? ParkingReason :
+            _hasGoal && _goalPark && _man == Manoeuvre.None ? ParkingReason : _man switch
         {
             Manoeuvre.Pass => "Going round",
             Manoeuvre.Crown => "On the crown",

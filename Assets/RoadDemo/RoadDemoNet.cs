@@ -10,6 +10,7 @@ namespace RoadDemo
     /// table - is what keeps two cars from meeting in the middle of it.</summary>
     public class RoadNode
     {
+        internal JunctionClearance.Cache BodyClearance;
         public int I, J;
         public float X, Z;
         public float XMin, XMax, ZMin, ZMax;

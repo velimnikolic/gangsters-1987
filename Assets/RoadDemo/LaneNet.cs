@@ -110,9 +110,8 @@ namespace RoadDemo
         public Vector3[] Pts;          // world points, y = 0
         public float[] Cum;            // cumulative length at each point
         public Vector3[] Tan;          // the smoothed tangent at each point (blended between its neighbours)
-        public bool[] Conflicts;       // by the node's connector index
+        public bool[] Conflicts;       // coarse topology/debug table; runtime admission uses body envelopes
         public bool UTurn;             // the dead-end turn-round
-        /// <summary>The tightest radius on it (a straight: none).</summary>
         public float MinRadius = float.MaxValue;
 
         /// <summary>Where a car this far along the connector is, and which way it faces.</summary>
@@ -349,13 +348,15 @@ namespace RoadDemo
         }
 
         /// <summary>Is anyone's claim in this box of road (other than ours)?</summary>
-        public bool Busy(RoadOccupant self, float s0, float s1, float d0, float d1, bool ignoreParked = false)
+        public bool Busy(RoadOccupant self, float s0, float s1, float d0, float d1,
+            bool ignoreParked = false, bool stationaryOnly = false)
         {
             for (int i = 0; i < Occupants.Count; i++)
             {
                 var o = Occupants[i];
                 if (ReferenceEquals(o, self) || (self != null && ReferenceEquals(o.Who, self.Who))) continue;
                 if (ignoreParked && o.Parked) continue;
+                if (stationaryOnly && o.Car != null && !o.Car.Parked && !o.Car.Derelict && !o.Car.Wrecked) continue;
                 if (o.S0 < s1 && o.S1 > s0 && o.Overlaps(d0, d1)) return true;
             }
             return false;
@@ -439,12 +440,8 @@ namespace RoadDemo
         /// <summary>Metres between the points a connector is laid from.</summary>
         const float ConnectorStep = 0.5f;
         /// <summary>Two connectors nearer than this anywhere along their length cross.</summary>
-        // Two lines through the box this close count as crossing. It is not the width of
-        // a car but of a car AND ITS SWING: the line is what the rear axle follows, and
-        // the body swings wide of it through a turn, so two paths a car's width apart
-        // still put two bodies in the same place. At 2.4 m the lab watched pairs meet in
-        // the middle of junctions both had been let into (hundreds of refused steps in a
-        // single run); a car and a half of air is what actually keeps them apart.
+        // Conservative topology/debug table. Runtime admission refines this using
+        // JunctionClearance envelopes for the actual bodies and axle offsets.
         const float ConflictReach = 3.6f;
         /// <summary>Metres of car each side of the connector's ends - the body still on
         /// the approach, and the nose already out the far side.</summary>
@@ -609,6 +606,7 @@ namespace RoadDemo
         public void Prepare(RoadNode n)
         {
             if (n == null || n.Connectors.Count > 0) return;
+            n.BodyClearance = null;
             foreach (var e in n.Incoming) if (e.Road == null) Adopt(e);
             foreach (var e in n.Outgoing) if (e.Road == null) Adopt(e);
             if (!Nodes.Contains(n)) Nodes.Add(n);

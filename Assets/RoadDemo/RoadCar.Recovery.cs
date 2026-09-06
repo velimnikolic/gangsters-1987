@@ -100,6 +100,14 @@ namespace RoadDemo
                     var position = road.Pose(axleStation, lane.Offset) + forward * Axle;
                     float distance = (position - _pos).magnitude;
                     if (distance > reach || distance < .25f && Vector3.Angle(_fwd, forward) < 5f) continue;
+                    // A clear destination can still cut directly into a moving queue.
+                    // Admission must leave the follower its stopping distance.
+                    var behind = road.Behind(_occ, heading, station - heading * HalfLen,
+                        lane.Offset - HalfWide - .25f, lane.Offset + HalfWide + .25f, out float gap);
+                    float approach = behind == null ? 0f : Mathf.Max(0f, behind.Vel * heading);
+                    float braking = behind?.Car != null ? behind.Car.Brake : DriverProfile.Traffic.Brake;
+                    if (approach > .1f && gap < approach * approach / (2f * Mathf.Max(1f, braking)) + approach * .3f + 3f)
+                        continue;
                     if (hidden && (!RecoveryBodyHidden(_pos, _fwd) || !RecoveryBodyHidden(position, forward))) continue;
                     if (!hidden)
                     {

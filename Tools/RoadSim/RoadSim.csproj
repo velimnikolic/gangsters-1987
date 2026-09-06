@@ -20,6 +20,8 @@
     <Compile Include="KerbApproach.cs" />
     <Compile Include="KerbDeparture.cs" />
     <Compile Include="JunctionPace.cs" />
+    <Compile Include="TrafficAdmission.cs" />
+    <Compile Include="TrafficEscape.cs" />
     <Compile Include="BlockedYield.cs" />
     <Compile Include="Recovery.cs" />
     <Compile Include="RecoveryGoal.cs" />
@@ -37,6 +39,8 @@
     <Compile Include="../../Assets/Scripts/Gameplay/VehiclePerformance.cs" />
     <Compile Include="../../Assets/Scripts/Gameplay/VehicleCatalog.cs" />
     <Compile Include="../../Assets/RoadDemo/LaneNet.cs" />
+    <Compile Include="../../Assets/RoadDemo/JunctionClearance.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadDeadlock.cs" />
     <Compile Include="../../Assets/RoadDemo/RoadCar.cs" />
     <Compile Include="../../Assets/RoadDemo/RoadCar.Parking.cs" />
     <Compile Include="../../Assets/RoadDemo/RoadCar.Trace.cs" />

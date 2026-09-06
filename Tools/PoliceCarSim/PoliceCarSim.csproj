@@ -10,6 +10,8 @@
     <Compile Include="../../Assets/RoadDemo/RoadCar*.cs" />
     <Compile Include="../../Assets/RoadDemo/DemoVehicle.cs" />
     <Compile Include="../../Assets/RoadDemo/LaneNet.cs" />
+    <Compile Include="../../Assets/RoadDemo/JunctionClearance.cs" />
+    <Compile Include="../../Assets/RoadDemo/RoadDeadlock.cs" />
     <Compile Include="../../Assets/RoadDemo/RoadDemoNet.cs" />
     <Compile Include="../../Assets/RoadDemo/RoadLine.cs" />
     <Compile Include="../../Assets/RoadDemo/RoadSpace.cs" />

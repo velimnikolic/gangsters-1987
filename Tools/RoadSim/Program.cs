@@ -83,7 +83,7 @@ static class Program
 
     class Stats
     {
-        public int Overlaps, Stalls, BeltHits, Frames;
+        public int Overlaps, PermittedOverlaps, Stalls, BeltHits, Frames;
         public float SpeedSum; public int SpeedN;
         public Dictionary<RoadCar, float> StillFor = new Dictionary<RoadCar, float>();
         public Dictionary<RoadCar, Vector3> LastPositions = new Dictionary<RoadCar, Vector3>();
@@ -105,6 +105,10 @@ static class Program
                 if (RoadSpace.Overlap(a.RoadPosition, a.RoadForward, a.HalfLength, a.HalfWidth,
                                       b.RoadPosition, b.RoadForward, b.HalfLength, b.HalfWidth, 0f, out var push))
                 {
+                    if (a is RoadCar ac && b is RoadCar bc &&
+                        (ac.Deadlock.Ignores(bc) || bc.Deadlock.Ignores(ac)) &&
+                        Math.Abs(ac.Speed) <= RoadDeadlock.Pace + .01f && Math.Abs(bc.Speed) <= RoadDeadlock.Pace + .01f)
+                    { st.PermittedOverlaps++; continue; }
                     st.Overlaps++;
                     st.MaxDepth = Math.Max(st.MaxDepth, push.magnitude);
                     if (st.Notes.Count < 12)
@@ -182,7 +186,7 @@ static class Program
         Console.WriteLine($"   longest stand at the end: {maxStill:F0}s");
         if (frozen > 0) foreach (var kv in st.StillFor) if (kv.Value > 60f && st.Notes.Count < 60) st.Notes.Add("   FROZEN car " + kv.Key.Id + " " + kv.Key.Profile.Name + " " + kv.Key.Describe() + " pass: " + kv.Key.PassWhy);
         st.BeltHits = RoadCar.BeltHits;
-        Console.WriteLine($"== {title}: {cars.Count} cars, {seconds}s: overlaps={st.Overlaps} (max depth {st.MaxDepth:F2}) stalls={st.Stalls} beltHits={st.BeltHits} avgSpeed={(st.SpeedN > 0 ? st.SpeedSum / st.SpeedN : 0):F1} lastMinuteAvg={(lateN > 0 ? lateSpeed / lateN : 0):F1} frozen>60s={frozen} tick={tickMs / frames:F2}ms/frame");
+        Console.WriteLine($"== {title}: {cars.Count} cars, {seconds}s: overlaps={st.Overlaps} (max depth {st.MaxDepth:F2}) permittedPairSamples={st.PermittedOverlaps} stalls={st.Stalls} beltHits={st.BeltHits} avgSpeed={(st.SpeedN > 0 ? st.SpeedSum / st.SpeedN : 0):F1} lastMinuteAvg={(lateN > 0 ? lateSpeed / lateN : 0):F1} frozen>60s={frozen} tick={tickMs / frames:F2}ms/frame");
         if (st.Overlaps > 0 || frozen > 0 || st.BeltHits > 0)
             Environment.ExitCode = 1;
         foreach (var n in st.Notes) Console.WriteLine("   " + n);
@@ -563,6 +567,8 @@ static class Program
         if (only == "all" || only == "kerbapproach") KerbApproach.Run();
         if (only == "all" || only == "kerbdeparture") KerbDeparture.Run();
         if (only == "all" || only == "junctionpace") JunctionPace.Run();
+        if (only == "all" || only == "trafficadmission") TrafficAdmission.Run();
+        if (only == "all" || only == "trafficescape") TrafficEscape.Run();
         if (only == "all" || only == "blockedyield") BlockedYield.Run();
         if (only == "all" || only == "recovery") TrafficRecoveryChecks.Run();
         if (only == "all" || only == "recoverygoal") RecoveryGoalChecks.Run();

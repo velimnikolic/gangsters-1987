@@ -13,19 +13,11 @@ namespace RoadDemo
     /// something), junctions are crossed on a connector's polyline, and a turn in
     /// the road is an arc. Nothing here steers toward a point and hopes.
     ///
-    /// Two rules keep the cars apart. ONE: the car's box of road - its body, and
-    /// the stretch of whatever manoeuvre it is in the middle of - is entered in the
-    /// carriageway's occupant list every frame, and its throttle answers to the
-    /// nearest occupant ahead in the band it stands in or is moving into; nobody
-    /// starts into a band (a lane change, the crown, the far lane, a turn-round, a
-    /// reverse) without first finding it free of claims ahead, free of anyone
-    /// behind who would have to brake hard, and free of anyone coming the other
-    /// way within the driver's margin - and from that moment the band is claimed,
-    /// so everyone else plans round it. TWO: a junction is entered only on a
-    /// connector that crosses none in use, with room to leave it on the far side,
-    /// and the car is in the box's list until its tail is out. Under both, the belt
-    /// (RoadSpace) refuses the last few centimetres if the arithmetic ever lets two
-    /// bodies meet - and counts it, because it should not happen.
+    /// Road occupancy publishes the body and active manoeuvre; following and
+    /// manoeuvre admission respect that shared state. Junction admission checks
+    /// body envelopes and exit room, retaining its claim until the tail clears.
+    /// RoadSpace guards physical steps. A RoadDeadlock lease may temporarily
+    /// exempt one mutually blocked traffic pair at walking speed, never parking.
     ///
     /// Who is driving is a DriverProfile: thresholds and permissions only.
     /// </summary>
@@ -60,7 +52,45 @@ namespace RoadDemo
 
         public RoadCar()
         {
+            Deadlock = new RoadDeadlock(this);
             Registered.Add(this);
+        }
+
+        internal readonly RoadDeadlock Deadlock;
+        System.Predicate<RoadOccupant> _escapeLeaderFilter;
+        bool BlocksEscapePath(RoadOccupant other) => !Deadlock.Ignores(other.Car);
+        internal Connector PlannedCrossing => _via;
+        internal bool CanEaseTraffic => OnRoad && !Gone && !Wrecked && !Derelict && !Parked &&
+            !_halted && !_haltWhenClear && !EngineDead && !Sliding && _man == Manoeuvre.None &&
+            !(_hasGoal && _goalPark) && !(Via?.UTurn ?? false) && Mathf.Abs(CrossingOffset) < .05f;
+        internal bool TrafficPoseAhead(float distance, out Vector3 position, out Vector3 forward)
+        {
+            position = Position; forward = Forward;
+            if (Via != null)
+            {
+                if (ViaS + distance - Via.Length + HalfLen >= Via.To.Length) return false;
+                JunctionClearance.Pose(Via, ViaS + distance, Axle, out position, out forward);
+                return RecoveryPeopleClear(position, forward);
+            }
+            if (Road == null || Road.Path != null) return false;
+            float station = S + Heading * distance;
+            float progress = Heading > 0 ? station : Road.Length - station;
+            if (progress > Road.Length - HalfLen || progress < HalfLen && !_boxLeft) return false;
+            // Crossing the connector/road seam does not end the body's real curve.
+            // Its rear axle can still be in the box while its centre is on this road.
+            if (_tailVia != null)
+            {
+                float behind = (_tailViaEndS - (station - Heading * Axle)) * Heading;
+                if (behind > 0f && behind <= _tailVia.Length)
+                {
+                    _tailVia.Pose(_tailVia.Length - behind, out position, out forward);
+                    position += forward * Axle;
+                    return RecoveryPeopleClear(position, forward);
+                }
+            }
+            forward = Road.DirAt(station) * Heading;
+            position = Road.Pose(station - Heading * Axle, D) + forward * Axle;
+            return RecoveryPeopleClear(position, forward);
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -84,6 +114,8 @@ namespace RoadDemo
         /// with its front wheels). Unset: read as six tenths of the half length.</summary>
         public float AxleBack = float.NaN;
         float Axle => float.IsNaN(AxleBack) || AxleBack <= 0f ? HalfLen * 0.6f : Mathf.Min(AxleBack, HalfLen);
+        internal float CrossingAxle => Axle;
+        internal float CrossingOffset => Via != null ? _viaD0 : (D - _laneD) * Heading;
         /// <summary>The road surface's height: where the body sits.</summary>
         public float RoadY;
         public DriverProfile Profile = DriverProfile.Traffic;
@@ -459,10 +491,7 @@ namespace RoadDemo
             SetLane(lane);
             Speed = Mathf.Min(Cruise(), Road.SpeedLimit) * 0.5f;
             Parked = false;
-            // a car put onto a lane is a car being put back into traffic: whatever it was
-            // told to stand still for belonged to the life it had before. Left set, a halt
-            // survived the Spawn and the car sat in the running lane for ever - which is
-            // what a customer coming off a forecourt did, having held the kerb on the way in.
+            // Rejoining traffic must not retain a halt from an earlier forecourt/kerb stop.
             _halted = false;
             _haltWhenClear = false;
             _occ = NewOccupant(Road);
@@ -543,6 +572,9 @@ namespace RoadDemo
 
         void Leave()
         {
+            Deadlock.Cancel(detach: true);
+            _parkPlanReady = _parkReturnApproach = _parkingRetreat = _parkReservationBlocked = false;
+            _parkingRetryAt = 0f;
             if (_occ != null) { _occ.Road.Occupants.Remove(_occ); _occ = null; }
             if (_occNext != null) { _occNext.Road.Occupants.Remove(_occNext); _occNext = null; }
             LeaveBox();
@@ -681,6 +713,7 @@ namespace RoadDemo
         /// guns never out.</param>
         public bool GoTo(Vector3 point, bool park, float standOff = 0f, bool stopAtGoal = true, int wantHeading = 0)
         {
+            Deadlock.Cancel();
             if (Net == null) return false;
             _parkTrying = 0f;
             ClearParkingFailure();
@@ -688,6 +721,7 @@ namespace RoadDemo
             _parkPlanReady = false;
             _parkTrafficCheck = 0f;
             _parkingRetreat = false;
+            _parkReturnApproach = false;
             _halted = false;
             _freeGoal = null;
             var road = Net.Locate(point, out float s, out float d, within: 12f);
@@ -717,7 +751,7 @@ namespace RoadDemo
             _goalLane = goalLane;
             _turnBackFor = 0f;
             _goalUTurns = 0;
-            if (park && !ChooseKerbSpot()) { FailParking(); return true; }
+            if (park && !FindParking()) { FailParking(); return true; }
             if (Parked)
             {
                 if (park && _parkEntryLen == 0f && ParkingAligned(_goalD)) Parked = false;
@@ -826,6 +860,7 @@ namespace RoadDemo
         /// traffic does (a patrol car released from a call).</summary>
         public void Stop()
         {
+            Deadlock.Cancel();
             ClearParkingFailure();
             _hasGoal = false;
             Route = null;
@@ -841,6 +876,7 @@ namespace RoadDemo
 
         public void Halt(bool hard)
         {
+            Deadlock.Cancel();
             // Never dead in the middle of a junction. The box is everybody else's road,
             // and a car left standing across one queues a whole quarter behind it - the
             // lab found six cars nose to tail for four minutes behind one whose driver
@@ -1038,8 +1074,15 @@ namespace RoadDemo
         {
             if (Gone) return;      // cleared off the street; the owner's list may still hold us
             if (Wrecked) return;   // a blown car drives nowhere and holds nothing
-            WatchTrafficRecovery(dt);
-            WatchDerelict(dt);
+            Deadlock.Tick();
+            if (Deadlock.Active)
+            {
+                _beltFor = _wedgedFor = _boxStuck = _backOutFor = _holdFor = _giveUntil = 0f;
+                if (Deadlock.Waiting)
+                { Speed = _want = 0f; Why = "Letting a blocked vehicle clear"; UpdateOccupant(); OnPlaced(dt, 0f, 0f); return; }
+                Speed = Mathf.Min(Speed, RoadDeadlock.Pace);
+            }
+            if (!Deadlock.Active && !Deadlock.Mutual) { WatchTrafficRecovery(dt); WatchDerelict(dt); }
             if (!OnRoad) { TickFree(dt); return; }
             if (Via != null) TickNode(dt);
             else TickRoad(dt);
@@ -1061,22 +1104,11 @@ namespace RoadDemo
         void WatchDerelict(float dt)
         {
             bool derelict = Mathf.Abs(Speed) < 0.15f && _halted && !Parked;
-            // AND a car wedged INSIDE a junction box at a standstill, whoever it is: being
-            // in the box means it already committed to cross, so it is not "waiting its
-            // turn" - it is stuck across everyone's path. Held there far longer than any
-            // crossing takes, it gives the box up like a wreck so the junction clears.
-            // This is the one deadlock the halted-only rule missed: a U-turn is spared the
-            // back-out (its came-in line is ambiguous) and never halts, so wedged mid-box
-            // it held the whole junction for the rest of the run and a quarter queued
-            // behind it (car soak: 8000+ belt refusals off one such lock).
+            // A prolonged stationary junction occupant must eventually release its claim;
+            // a brief crossing wait is not abandonment.
             bool wedged = Mathf.Abs(Speed) < 0.15f && !Parked && _inNode != null;
-            // THE RELEASE BACKSTOP. A stuck car is planned round, but one left standing
-            // across the wrong metre of road still queues a quarter behind it for the
-            // rest of the run (a silent stop just past a box tail did exactly that, 233
-            // seconds of it, with the derelict flag long since self-cleared). Whatever
-            // logic put it there, a dead thing does not get to keep the street: plain
-            // traffic that has stood dead still long enough is cleared away (Vanish;
-            // opt-in per class, see VanishesWhenStuck).
+            // Only opt-in ambient traffic may vanish after a prolonged standstill.
+            // Owned vehicles retain their normal recovery and lifecycle rules.
             if (VanishesWhenStuck && !Parked && Mathf.Abs(Speed) < 0.15f)
             {
                 _stoodStillFor += dt;
@@ -1139,7 +1171,11 @@ namespace RoadDemo
                 Mathf.Abs(S - _parkRequestedS) < ParkingSearchReach + 15f)
             {
                 _parkTrying += dt;
-                if (_parkTrying > ParkingAttemptLimit) FailParking();
+                if (_parkTrying > ParkingAttemptLimit)
+                { ParkingReason = "Parking search timed out"; FailParking(); }
+                else if (!_parkPlanReady && _man == Manoeuvre.None && !Sliding &&
+                    RoadCarSimulation.Now >= _parkingRetryAt && !FindParking(aheadOnly: true))
+                    FailParking();
             }
 
             // out of the lane ahead - the junction (or the end of the road)
@@ -1158,15 +1194,8 @@ namespace RoadDemo
             if (_next == null && node != null && _man != Manoeuvre.UTurn && !requiredTurn)
                 PlanNext(node);
 
-            // THE CLAIM MUST SAY WHERE WE ARE ACTUALLY GOING. It names the way through
-            // the box, and every other driver plans against that name: a car whose line
-            // crosses ours waits, one whose line does not comes on. Think the turn again
-            // after taking the claim - the route redrawn, an exit that would not clear,
-            // the kerb given up on - and the claim still names the OLD way through, so
-            // the cars whose path crosses the NEW one are told there is nothing in their
-            // way. Two left turns were let into the same boulevard box that way, sharing
-            // nine metres of the same line, and the belt was the only thing between them.
-            // And a claim on a box we are no longer going through is nobody's to hold.
+            // Keep a junction claim synchronized with the chosen connector.
+            // A stale claim admits conflicting movements against the wrong route.
             if (_inNode != null && Via == null)
             {
                 // turning round in the road ends the crossing, tail or no tail: the car
@@ -1204,6 +1233,8 @@ namespace RoadDemo
             if (!Fearless && _nerve.Bolting && !_nerve.Approaching) v *= 1.3f;
             if (Sliding) v = Mathf.Min(v, LateralCap(_sLen, Mathf.Abs(_dTo - _dFrom)));
             bool hard = false;
+            bool returningToParking = ReturnToParkingEntry();
+            if (returningToParking) v = 0f;
 
             // the wrong way round for where he is going: turn HERE as soon as the sweep
             // is clear (slowed right down for it); only near the junction, or after long
@@ -1215,7 +1246,7 @@ namespace RoadDemo
             // at a mark thirty metres behind it used to ride the whole way round the
             // quarter, because the lane graph has no U-turn in it to route through and
             // the only road it could draw went forward.
-            if (_hasGoal && _man != Manoeuvre.UTurn && !NoTurnBack &&
+            if (_hasGoal && !returningToParking && _man != Manoeuvre.UTurn && !NoTurnBack &&
                 (_goalUTurns < MaxGoalUTurns || requiredTurn) &&
                 (_turnFirst || (road == _goalRoad && Heading != _goalHeading && Route == null)) &&
                 road.TwoWay && Profile.UTurnsInRoad && road.MedianHalf <= 0f)
@@ -1298,8 +1329,8 @@ namespace RoadDemo
             else if (_goalUTurns < MaxGoalUTurns) _turnBackFor = 0f;
 
             // the goal on this road
-            if (_hasGoal && road == _goalRoad && Heading == _goalHeading && _man != Manoeuvre.UTurn &&
-                (!_goalPark || _man == Manoeuvre.PullIn || (_man == Manoeuvre.None && !Sliding)))
+            if (_hasGoal && !returningToParking && road == _goalRoad && Heading == _goalHeading && _man != Manoeuvre.UTurn &&
+                (!_goalPark || _parkPlanReady && (_man == Manoeuvre.PullIn || (_man == Manoeuvre.None && !Sliding))))
             {
                 if (_goalPark && _man == Manoeuvre.None && (_goalS - S) * Heading >= -3f)
                 {
@@ -1310,9 +1341,9 @@ namespace RoadDemo
                     if (!_parkPlanReady || missedEntry || _spotCheck <= 0f)
                     {
                         _spotCheck = .7f;
-                        if (!_parkPlanReady || missedEntry || ParkingDestinationTaken() ||
+                        if (!_parkPlanReady || missedEntry || ParkingDestinationTaken(stationaryOnly: true) ||
                             !ParkingEntryClear(stationaryOnly: true))
-                            if (!ChooseKerbSpot(aheadOnly: true)) FailParking();
+                            if (!FindParking(aheadOnly: true)) FailParking();
                     }
                 }
                 float toGoal = (_goalS - S) * Heading;
@@ -1367,6 +1398,7 @@ namespace RoadDemo
                             }
                             if (!_parkTrafficClear)
                             {
+                                ParkingReason = "Waiting for parking approach";
                                 // Brake before the fixed start, not after reaching it.
                                 // A moving car gets time to clear the same planned arc.
                                 v = Mathf.Min(v, Allowed(0f, Mathf.Max(0f, toEntry - .3f)));
@@ -1374,6 +1406,7 @@ namespace RoadDemo
                             }
                             else if (toEntry <= armReach)
                             {
+                                ParkingReason = "Approaching parking";
                                 BeginPullIn();
                                 v = Mathf.Min(v, entrySpeed);
                             }
@@ -1509,6 +1542,7 @@ namespace RoadDemo
             // whoever is ahead in the band we stand in or are moving into
             float d0 = BandLo(), d1 = BandHi();
             var leader = road.Ahead(_occ, Heading, noseS, tailS, d0, d1, out float gap,
+                Deadlock.Active ? (_escapeLeaderFilter ??= BlocksEscapePath) :
                 _man == Manoeuvre.PullIn || _man == Manoeuvre.PullOut || StraightKerbApproach
                     ? (_parkingLeaderFilter ??= BlocksParkingPath) : null);
             _leadId = leader == null ? -1 : leader.Car != null ? leader.Car.Id : -2;
@@ -1563,6 +1597,7 @@ namespace RoadDemo
                     v = Mathf.Min(v, Allowed(0f, gap - (leader.Parked ? KerbHoldBack : PassHoldBack)));
             }
             _blocker = leader;
+            if (leader != null && v < .5f) Deadlock.BlockedBy(leader.Car);
             InQueue = heldByNode || (leader != null && leader.Car != null && leader.Car.InQueue && !leader.Moving);
             // the full reason is a trace string and nothing but the trace reads it (the
             // sim only ever tests Why for "red"/"yellow", which are set as constants
@@ -1600,7 +1635,7 @@ namespace RoadDemo
             // stood back from something, waiting for the way round to open
             if (_holdFor > 0f) { _holdFor -= dt; if (_man == Manoeuvre.None) v = 0f; }
 
-            v = LimitTarget(v);
+            v = LimitTarget(Deadlock.Active ? Mathf.Min(v, RoadDeadlock.Pace) : v);
 
             // ---- which lane he means to be in, and the move over into it
             TickLaneChange(dt, toEnd);
@@ -1622,7 +1657,7 @@ namespace RoadDemo
             float rate = v < Speed ? (hard || v <= 0.01f ? HardBrake : Brake) : Accel;
             if (v < Speed && v > 0.01f && !hard) rate = Brake;
             _want = v; _wantHard = hard;
-            Speed = Mathf.MoveTowards(Speed, Mathf.Max(0f, v), rate * dt);
+            Speed = Mathf.MoveTowards(Mathf.Max(0f, Speed), Mathf.Max(0f, v), rate * dt);
             float step = Speed * dt;
             if (_hasGoal && _goalPark && _parkPlanReady && !_parkTrafficClear && _parkTrafficCheck > 0f &&
                 _parkEntryLen > 0f && road == _goalRoad && Heading == _goalHeading &&
@@ -1678,6 +1713,7 @@ namespace RoadDemo
                 var moved = RoadSpace.Advance(this, _pos, to, fwd, HalfLen, HalfWide, out var hit);
                 if (hit != null)
                 {
+                    Deadlock.BlockedBy(hit as RoadCar);
                     BeltHits++;
                     if (DriveTrace.On)
                     {
@@ -1808,16 +1844,7 @@ namespace RoadDemo
             float a = Axle;
             if (Via != null)
             {
-                Vector3 axle;
-                float sa = ViaS - a;
-                if (sa >= 0f) Via.Pose(sa, out axle, out fwd);
-                else
-                {
-                    // the axle still on the lane behind the box
-                    axle = Via.Pts[0] + Via.From.Dir * sa;
-                    fwd = Via.From.Dir;
-                }
-                pos = axle + fwd * a;
+                JunctionClearance.Pose(Via, ViaS, a, out pos, out fwd);
                 if (Mathf.Abs(_viaD0) > 0.01f)
                 {
                     float t = Mathf.Clamp01(ViaS / Mathf.Max(1f, Via.Length * 0.6f));
@@ -2293,7 +2320,8 @@ namespace RoadDemo
 
         void Decide(float dt, RoadOccupant leader, float gap, float vLead, RoadNode node, float toEnd)
         {
-            // Keep failed player orders at their stopped pose until another command.
+            if (Deadlock.Active || Deadlock.Mutual) return;
+            // An explicit halt after failure still overrides autonomous recovery.
             if (ParkingFailed && _halted) return;
             float now = RoadCarSimulation.Now;
             bool stopped = Mathf.Abs(Speed) < 0.4f;
@@ -3000,11 +3028,11 @@ namespace RoadDemo
         }
 
         // Metres of free road straight behind the rear bumper, to ten.
-        float ClearBehind()
+        float ClearBehind(float reach = 10f)
         {
             float tailS = S - Heading * HalfLen;
             var o = Road.Behind(_occ, Heading, tailS, D - HalfWide - 0.2f, D + HalfWide + 0.2f, out float gap);
-            float free = o != null ? Mathf.Min(10f, gap) : 10f;
+            float free = o != null ? Mathf.Min(reach, gap) : reach;
             // the end of the road behind us
             float back = (tailS - Road.EndS(-Heading)) * Heading;
             free = Mathf.Min(free, Mathf.Max(0f, back - 0.5f));
@@ -3048,6 +3076,13 @@ namespace RoadDemo
             if (_backLeft > 0.01f && step > 0f) return;
             _backLeft = 0f;
             Speed = 0f;
+            if (_parkReturnApproach)
+            {
+                _man = Manoeuvre.None;
+                ClearClaim();
+                _holdFor = 0f;
+                return;
+            }
             if (_parkingRetreat)
             {
                 if ((S - _sFrom) * Heading > .02f) { FailParking(); return; }
@@ -3258,13 +3293,7 @@ namespace RoadDemo
             // asks - and asked FIRST, since no light on earth waves you past a barrier.
             if (node.Toll != null && !node.Toll.MayPass(this)) { Why = "toll"; return false; }
 
-            // ROTATION CLOSES THE CROSSING APPROACHES BEFORE THE POLICE GET THERE.
-            // Merely letting the response car run a red is not right of way: cars on
-            // somebody else's green keep claiming the box in front of it, so it waits
-            // for them all exactly as if it had obeyed the light. A lower-priority
-            // driver now sees the response while there is still ample stopping room
-            // and holds at his own line. Cars on the same or a non-crossing movement
-            // continue, so they clear the responder's route rather than sealing it.
+            // Reserve a responder's crossing early; independent movements still drain.
             if (YieldsToEmergencyAt(node))
             {
                 Why = "emergency vehicle";
@@ -3302,31 +3331,9 @@ namespace RoadDemo
                 else
                 {
                     if (!Profile.RunsRed) { Why = "red"; return false; }
-                    // A RED IS SOMEBODY ELSE'S GREEN, and a gap in one is not a thing to
-                    // be clever about.
-                    //
-                    // This used to be ConflictApproaching(node, 3f) - is anybody on a
-                    // crossing line due at the box inside three seconds - which is the
-                    // right question for slipping through a gap and the wrong one for
-                    // this. It fails two ways. The decision is taken at the commit
-                    // distance and then STICKS (the whole box-claim system rests on
-                    // that), so a gap that was there when the machine looked has closed
-                    // by the time it arrives; and the cars being cut across have the
-                    // light, so they are at their cruise and not looking for him.
-                    //
-                    // Measured over eight crossings of a signalled quarter with sixty
-                    // cars in it, against the same machine stopping for every red: the
-                    // red-runner crossed SLOWER (94s against 58s), was held at junctions
-                    // nearly twice as long, one crossing in eight never arrived, and the
-                    // belt went from 5.9 refusals a second to 24.1 - in a quarter where
-                    // the traffic on its own, with no machine in it at all, refuses
-                    // nothing whatever.
-                    //
-                    // So the non-emergency rule is the blunt one: a red is run across a
-                    // DESERTED junction and no other. A response under roof lights is a
-                    // different contract: YieldsToEmergencyAt makes the conflicting arms
-                    // hold in advance, while the Inside check below still keeps the pickup
-                    // out of a body already physically clearing the box.
+                    // Non-emergency red runners require a deserted junction, not a predicted
+                    // gap that can close after commitment. Responders reserve their crossing
+                    // in advance but still respect physical occupants.
                     if (!Profile.EmergencyRightOfWay &&
                         (ConflictApproaching(node, 4f) || !BoxDeserted(node)))
                     { Why = "red: traffic"; return false; }
@@ -3363,7 +3370,7 @@ namespace RoadDemo
             for (int i = 0; i < node.Inside.Count; i++)
             {
                 var o = node.Inside[i];
-                if (o.Car == this) continue;
+                if (o.Car == this || Deadlock.Ignores(o.Car)) continue;
                 if (o.Via.From == _via.From && o.Via != _via)
                 { Why = "box: previous turn clearing " + o.Car.Id; return false; }
                 if (o.Via == _via || o.Via.From == _via.From)
@@ -3381,7 +3388,8 @@ namespace RoadDemo
                     if (FollowBody(o.Car, _fwd, Vector3.Cross(Vector3.up, _fwd)) < 1f) { Why = "box: following " + o.Car.Id; return false; }
                     continue;
                 }
-                if (o.Via.Index < _via.Conflicts.Length && _via.Conflicts[o.Via.Index]) { Why = "box: crossing " + o.Car.Id; return false; }
+                if (JunctionClearance.Conflicts(_via, this, o.Via, o.Car))
+                { Deadlock.BlockedBy(o.Car); Why = "box: crossing " + o.Car.Id; return false; }
             }
             // room to leave the box: the far lane's start clear for our length and a gap
             var far = _next.Road;
@@ -3429,7 +3437,7 @@ namespace RoadDemo
                     float noseToEnd = edge.Length - other.Progress - other.HalfLen;
                     if (noseToEnd > node.StopSetback + 1.5f || noseToEnd < -1f ||
                         Mathf.Abs(other.D - edge.Offset) > 1f ||
-                        other._via.Index >= _via.Conflicts.Length || !_via.Conflicts[other._via.Index]) continue;
+                        !JunctionClearance.Conflicts(_via, this, other._via, other)) continue;
                     var exit = other._next;
                     float need = 2f * other.HalfLen + other.Profile.FollowGap + 0.5f;
                     float free = exit.Road.FreeAhead(null, exit.Heading, exit.S0,
@@ -3476,7 +3484,7 @@ namespace RoadDemo
                         // Following the same approach lets the road ahead empty. A route
                         // that the conflict table proves independent need not be stopped.
                         if (his.From == _via.From) continue;
-                        if (his.Index < _via.Conflicts.Length && !_via.Conflicts[his.Index]) continue;
+                        if (!JunctionClearance.Conflicts(_via, this, his, response)) continue;
                     }
                     else if (edge == Lane)
                     {
@@ -3531,34 +3539,15 @@ namespace RoadDemo
                 if (o.Car == this || o.Car == null) continue;
                 if (o.Via == _via || o.Via.From == _via.From)
                 {
-                    // ON THE SAME LINE, AND STILL IN AN ORDER. Following the car in front
-                    // across the box needs a rule for WHICH of two is in front, and this
-                    // had none: FollowBody asks "is he ahead of MY nose", and through a
-                    // turn two noses point different ways - so each of a pair read the
-                    // other as the man in front, both braked to nothing, and the junction
-                    // was shut for the rest of the run with the quarter queued behind it.
-                    // (Measured: the pair was not even wedged - the belt refused only the
-                    // odd step. They were simply waiting for each other.) The crossing
-                    // case below has had a strict order for exactly this reason since a
-                    // motorcycle and a car stood nose to nose for forty-eight seconds;
-                    // it is the same order, so the two halves cannot disagree.
+                    // Following and crossing use the same strict order: progress, priority, id.
+                    // Projecting both noses independently around a bend can make each car
+                    // mistake the other for its leader.
                     if (YieldsInBox(o, mine)) v = Mathf.Min(v, FollowBody(o.Car, f, r));
                     continue;
                 }
-                // NOBODY ON A CROSSING LINE SHOULD BE IN HERE WITH US - the claim taken at
-                // the line sees to that. One door is left open on purpose: a car that
-                // cannot pull up at a late red goes in rather than stopping across the
-                // line, and it goes in without asking anybody. When two of those meet,
-                // neither is watching the other: each drives at the other until the belt
-                // refuses its step, and then again the next frame, for as long as the
-                // scene runs (a motorcycle and a car stood nose to nose for forty-eight
-                // seconds and a thousand refused steps between them).
-                // So they watch each other after all. Whoever is FURTHER ACROSS the box
-                // has the right of way and the other brakes for his body like any other
-                // thing in the road. The order is strict - how far across, then priority,
-                // then the lower id - so of any two exactly one gives way, and a circle
-                // of three all waiting for each other cannot form.
-                if (o.Via.Index >= _via.Conflicts.Length || !_via.Conflicts[o.Via.Index]) continue;
+                // A late arrival unable to stop can share a conflicting crossing.
+                // Sequence these cars by progress, priority and id; never yield both ways.
+                if (!JunctionClearance.Conflicts(_via, this, o.Via, o.Car)) continue;
                 if (!YieldsInBox(o, mine)) continue;
                 float vy = FollowBody(o.Car, f, r);
                 if (vy < v) { v = vy; _gaveWay = o.Car; if (v < 0.5f) Why = "box: giving way to " + o.Car.Id; }
@@ -3573,26 +3562,21 @@ namespace RoadDemo
             return v;
         }
 
-        /// <summary>Of two cars in one junction box, do WE give way to him? Whoever is
-        /// further across the box has the right of way; a dead heat is settled by the
-        /// profile's priority and then by the lower id. Strict, so of any two exactly one
-        /// yields and a ring of three all waiting for each other cannot form.
-        ///
-        /// Asked of cars on crossing lines and of cars on the SAME line alike - see
-        /// BoxFollow for what the same-line case cost before it was asked. (Named apart
-        /// from GivesWayTo(int faction), which is a different question entirely: whether
-        /// this vehicle brakes for a person of that faction.)</summary>
+        /// <summary>A transitive order for following and crossing: progress bucket,
+        /// profile priority, then id. Pairwise epsilon comparisons can form cycles.</summary>
         bool YieldsInBox(NodeOccupant o, float mine)
         {
             float his = o.S > 0f && o.Via.Length > 0.5f ? o.S / o.Via.Length : 0f;
-            return his > mine + 0.02f ||
-                   (his > mine - 0.02f &&
+            int ourBucket = Mathf.FloorToInt(mine * 50f), hisBucket = Mathf.FloorToInt(his * 50f);
+            return hisBucket > ourBucket ||
+                   (hisBucket == ourBucket &&
                     (o.Car.Profile.Priority > Profile.Priority ||
                      (o.Car.Profile.Priority == Profile.Priority && o.Car.Id < Id)));
         }
 
         float FollowBody(RoadCar c, Vector3 f, Vector3 r)
         {
+            if (Deadlock.Ignores(c)) return float.MaxValue;
             var d = c._pos - _pos;
             d.y = 0f;
             float along = Vector3.Dot(d, f);
@@ -3607,7 +3591,9 @@ namespace RoadDemo
             if (Mathf.Abs(side) > HalfWide + hisAcross + 0.3f) return float.MaxValue;
             float gap = along - HalfLen - hisAlong;
             float his = Vector3.Dot(cf, f) * Mathf.Abs(c.Speed);
-            return Follow(his, gap);
+            float speed = Follow(his, gap);
+            if (speed < .5f) Deadlock.BlockedBy(c);
+            return speed;
         }
 
         // Somebody coming the other way, straight across, within reach of the box.
@@ -3621,6 +3607,7 @@ namespace RoadDemo
                 {
                     var c = e.Cars[k];
                     if (c == this || c.Via != null || c._turn != Turn.Straight) continue;
+                    if (c._via != null && !JunctionClearance.Conflicts(_via, this, c._via, c)) continue;
                     if (c.Speed < 0.3f && c.Profile.Priority <= Profile.Priority && c._heldAtLine > 3f) continue;
                     float dist = e.Length - c.Progress;
                     // the longer we have waited, the smaller the gap we take (nobody waits for ever)
@@ -3675,7 +3662,7 @@ namespace RoadDemo
                     float dist = e.Length - c.Progress - c.HalfLen;
                     if (dist > Mathf.Max(c.Speed, 4f) * seconds + 4f) continue;
                     var his = c._via ?? (c._next != null ? node.ConnectorFor(e, c._next) : null);
-                    if (his == null || (his.Index < _via.Conflicts.Length && _via.Conflicts[his.Index])) return true;
+                    if (JunctionClearance.Conflicts(_via, this, his, c)) return true;
                 }
             }
             return false;
@@ -3684,19 +3671,8 @@ namespace RoadDemo
         void EnterBox(RoadNode node)
         {
             if (Derelict) { _committed = true; return; }   // a wreck claims nothing: it is driven round
-            // ONE CLAIM AT A TIME, and neither half of that is optional.
-            //
-            // Taking a second claim while the first still stands leaves the first in ITS
-            // junction's list for ever - nothing gives it back - and every car whose way
-            // crosses that phantom waits at a green light until the scene is closed (the
-            // lab found six cars queued six minutes behind an empty junction). Simply
-            // dropping the old claim is no better: the car is still IN that junction, and
-            // dropping it lets somebody in on top of it (the belt then refuses both their
-            // steps, which is how this was found the second time).
-            //
-            // So: still in the box behind us, the commitment is not made at all. The car
-            // holds at the line until its tail is out of the one it is crossing, which is
-            // a rule of the road anyway - you do not enter a junction you cannot leave.
+            // Keep the previous junction until the tail clears it. Claiming two boxes
+            // or releasing the first early gives other drivers contradictory admission.
             if (_inNode != null && _nodeOf != node) return;
             _committed = true;
             if (_inNode != null) return;   // this one is already ours
@@ -3712,7 +3688,7 @@ namespace RoadDemo
                 {
                     var o = node.Inside[i];
                     if (o.Car == this || o.Car == null || o.Via == _via || o.Via.From == _via.From) continue;
-                    if (o.Via.Index < _via.Conflicts.Length && _via.Conflicts[o.Via.Index]) continue;
+                    if (JunctionClearance.Conflicts(_via, this, o.Via, o.Car)) continue;
                     if (DriveTrace.On)
                         DriveTrace.Event("man", "car " + Id,
                             $"in with car {o.Car.Id} ({Line(o.Via)}) - the table says {Line(_via)} does not meet it",
@@ -3786,10 +3762,8 @@ namespace RoadDemo
 
         float _backOutFor, _boxSaidAt, _boxStillFor;
 
-        /// <summary>Seconds a car may stand in a junction box before it is let out of it
-        /// whatever else it thinks. Long enough that ordinary give-and-take inside a box
-        /// is never cut short, short enough that a quarter is not queued behind a pair of
-        /// cars that are each other's only reason.</summary>
+        /// <summary>Seconds before a near-exit stall may crawl out, still respecting
+        /// pedestrians and the physical guard.</summary>
         const float BoxCrawlAfter = 8f;
 
         /// <summary>The pace it comes out at - walking speed, so it is a car easing out of
@@ -3809,25 +3783,13 @@ namespace RoadDemo
             var previousViaS = ViaS;
 
 
-            // A STANDOFF IN THE MIDDLE OF A JUNCTION. We gave way to a car on a crossing
-            // line (neither of us should be in here with the other - one of us came in
-            // unable to stop) and we have stood for him ever since. Giving way is not
-            // enough: he cannot get past our body either, and the belt refuses HIS step
-            // now instead of ours, every frame, for as long as the scene runs. So we get
-            // out of his way the only way there is - backwards, off the line we came in
-            // on - and take our turn again from the line.
-            // ...or simply WEDGED: something is standing in our body and the belt has
-            // been refusing our step for a second and a half. Whose fault it was does not
-            // matter - it cannot be undone from the inside (see _beltFor) - and the way
-            // out is the same one a car that gave way takes: back off the line we came in
-            // on and take our turn again.
+            // A stalled crossing normally backs along its driven connector.
+            // A confirmed reciprocal wait may instead receive a pair-scoped escape;
+            // neither recovery may discard the physical curve or bypass a third body.
             _wedgedFor = RoadCarSimulation.Now - _beltAt < BeltMemory && Mathf.Abs(Speed) < 0.15f
                 ? _wedgedFor + dt : 0f;
             bool wedgedInBox = _wedgedFor > 1.5f;
-            // WHAT THE WEDGE ACTUALLY LOOKS LIKE, once a second while it lasts. A car
-            // standing inside another in a junction is the one jam that has outlived
-            // three separate recoveries, and every one of them was aimed by guesswork at
-            // a state nobody had written down. Now it is written down.
+            // Trace persistent stalls with their physical and planning causes.
             _boxStillFor = Mathf.Abs(Speed) < 0.15f ? _boxStillFor + dt : 0f;
             if (DriveTrace.On && _boxStillFor > 4f && RoadCarSimulation.Now >= _boxSaidAt)
             {
@@ -3837,13 +3799,8 @@ namespace RoadDemo
                     $"stuck {_boxStuck:F1}s viaS {ViaS:F1}/{(_via != null ? _via.Length : 0f):F1} " +
                     $"why '{Why}'", ManFields());
             }
-            // ...and a car the FAR LANE has kept in the box past all patience is stuck
-            // by any reading, though no belt ever touched it and it gave way to nobody:
-            // the stretch beyond its exit is stood full, the relaxed gap (12 s,
-            // wantsGap) did not help, and the thing it waits on may be waiting on the
-            // queue behind US (a dead-end stub did exactly that: the stander could
-            // never turn with a tail crowding it, and the pair held a quarter for the
-            // run). Off the line, then, the same way every other box recovery goes.
+            // A prolonged blocked exit can form the same cycle as physical contact.
+            // Normal recovery reverses along the existing connector.
             _boxStuck = wedgedInBox || _heldInBox > 20f ||
                         (_gaveWay != null && !_gaveWay.Parked && Mathf.Abs(Speed) < 0.15f)
                 ? _boxStuck + dt : 0f;
@@ -3853,7 +3810,8 @@ namespace RoadDemo
                     occupant.Via.From == via.From && occupant.Car._backOutFor > 0f &&
                     occupant.Car.ViaS > ViaS + .1f)
                 { _backOutFor = Mathf.Max(.01f, _backOutFor); break; }
-            if ((_backOutFor > 0f || _boxStuck > (wedgedInBox ? 1.5f : 3f)) && _man != Manoeuvre.UTurn)
+            if (!Deadlock.Active && !Deadlock.Mutual &&
+                (_backOutFor > 0f || _boxStuck > (wedgedInBox ? 1.5f : 3f)) && _man != Manoeuvre.UTurn)
             {
                 float back = Mathf.Min(2.5f * dt, ViaS);
                 Speed = 0f;
@@ -3898,7 +3856,8 @@ namespace RoadDemo
             var far = _next.Road;
             float farNose = _next.RoadS(ViaS - via.Length) + _next.Heading * HalfLen;
             float farTail = farNose - _next.Heading * 2f * HalfLen;
-            var lead = far.Ahead(_occNext, _next.Heading, farNose, farTail, _next.Offset - HalfWide - SideAir, _next.Offset + HalfWide + SideAir, out float fgap);
+            var lead = far.Ahead(_occNext, _next.Heading, farNose, farTail, _next.Offset - HalfWide - SideAir, _next.Offset + HalfWide + SideAir, out float fgap,
+                Deadlock.Active ? (_escapeLeaderFilter ??= BlocksEscapePath) : null);
             // A CLAIM IS NOT A CAR. The lane beyond is claimed ahead of time by whoever
             // is coming into it - off its approach, or across this very box on a merging
             // way - and that claim stopped us dead in the middle of the junction: a
@@ -3912,27 +3871,9 @@ namespace RoadDemo
                 lead = null;
                 fgap = float.MaxValue;
             }
-            // Something STOOD in the lane we come out into - parked, or left there - is a
-            // thing to drive round once we are out, not a reason to sit in the middle of
-            // a junction waiting for it to move, which it never will. Waiting here blocks
-            // everybody crossing (the lab watched a quarter queue for five minutes behind
-            // one car parked at the mouth of a street). Out first, round it after: the
-            // road's own following and passing take it from there. Only if it is right on
-            // the exit is holding better than coming out on top of it.
-            // Held in the box by something STOOD on the far side: out anyway, in the end.
-            // Waiting in a junction for a parked car to move is waiting for ever, and
-            // every crossing car waits behind us while we do it; better a tight stop on
-            // the road, where the belt is the last word and the thing can be driven round.
-            // AND A CAR THAT HAS SIMPLY STOPPED THERE IS THE SAME THING TO US. It does
-            // not have to be parked to be immovable: the one this was measured on was the
-            // tail of a queue that ran back through our own box, so it was waiting on us
-            // while we waited on it. A car one and a half metres from the end of its
-            // connector stood a hundred and fifty seconds that way, with the belt never
-            // refusing a single step of its own - nothing wedged, nothing parked, the two
-            // of them simply each other's reason. The gap is still asked for before we
-            // come out (wantsGap), so this never puts a car out into a queue with no room
-            // for it; it only stops us holding a junction against a street that is never
-            // going to clear while we hold it.
+            // A stopped body beyond the exit may be passed once on the road.
+            // After a prolonged wait, accept a tighter gap, but never emerge inside it.
+            // A stationary queue tail can cause the same cycle as a parked obstacle.
             bool stood = lead != null && (lead.Parked ||
                          (lead.Car != null && (lead.Car.Derelict || lead.Car.RoadSpeed < 0.15f)));
             _heldInBox = stood ? _heldInBox + dt : 0f;
@@ -3949,23 +3890,14 @@ namespace RoadDemo
                 float vl = Mathf.Max(0f, lead.Vel * _next.Heading);
                 if (lead.Vel * _next.Heading < -0.5f) vl = 0f;
                 v = Mathf.Min(v, Follow(vl, fgap, lead.Slowing));
+                if (v < .5f) Deadlock.BlockedBy(lead.Car);
                 if (v < 0.5f) Why = DriveTrace.On
                     ? "box: far lane " + (lead.Car != null ? "car " + lead.Car.Id : "static") + $" gap {fgap:F1} his s[{lead.S0:F1},{lead.S1:F1}] d[{lead.D0:F1},{lead.D1:F1}] farNose {farNose:F1}"
                     : "box: far lane";
             }
-            // A CAR THAT IS ALL BUT OUT MUST NOT BE HELD IN BY A MIN. Every rule above can
-            // only LOWER v, so a car braking for something inside the box (BoxFollow) is
-            // already at nothing by the time the far-lane relaxation is asked - and that
-            // relaxation is another Min, so it can never let anybody out. Measured: a car
-            // a metre and a half from the end of its connector stood ninety seconds at v 0
-            // with the belt never once touching it, braking for a car that sat at the line
-            // waiting for the very box it was holding. Each was the other's whole reason.
-            //
-            // So a car that has stood in a box long enough for that to be what is
-            // happening, and is nearly through it, and has room on the far side, is given
-            // a crawl OUT - onto the road, where the belt is the last word and a thing in
-            // the way can be driven round. The people are still asked after this: a floor
-            // on the traffic's own reasons is not a licence to drive through anybody.
+            // After a prolonged near-exit stall, allow a crawl if the far lane has room.
+            // This floor precedes pedestrian and physical checks, and must not override
+            // the pair escape speed cap. An unsuccessful crawl requests a real reverse.
             if (_boxStillFor > BoxCrawlAfter && remaining < 2f * HalfLen && fgap > HalfLen + 1f &&
                 _man != Manoeuvre.UTurn)
             {
@@ -3992,7 +3924,7 @@ namespace RoadDemo
             v = Mathf.Min(v, BodiesAhead(dt));
             bool hard = false;
             if (!Fearless) v = Mathf.Min(v, _nerve.Limit(_pos, _fwd, Brake, out hard));
-            v = LimitTarget(v);
+            v = LimitTarget(Deadlock.Active ? Mathf.Min(v, RoadDeadlock.Pace) : v);
             if (_halted) { v = 0f; if (_haltHard) hard = true; }
             InQueue = v < 0.5f;
             _want = v; _wantHard = hard;

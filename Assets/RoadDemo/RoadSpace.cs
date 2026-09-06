@@ -4,16 +4,11 @@ using UnityEngine;
 namespace RoadDemo
 {
     /// <summary>
-    /// The one rule of the road no driver may break: two cars are never in the same
-    /// metres of it. Every driver here plans ahead - the path, the following gap, the
-    /// way round what is stopped - and every plan is made on a picture of the street
-    /// that is a frame old, so now and then two of them want the same patch of tarmac
-    /// at the same moment (a car swings out as another comes past, a turn is begun as
-    /// something rolls into its sweep). This is the belt under all of it: the step a
-    /// car takes is cut short before its body enters anybody else's, and a car that
-    /// has ended up inside one anyway is eased back out. It never steers and never
-    /// plans - it only refuses the last few centimetres - so the driving stays the
-    /// drivers' (CrewCar, StreetTraffic), and nothing is ever seen to interpenetrate.
+    /// Final physical movement guard under the traffic planner. Rejects a step
+    /// entering another body and permits gradual separation from existing contact.
+    /// RoadDeadlock may exempt exactly one traffic pair during a walking-speed
+    /// escape. Geometry/admission queries remain strict; parked bodies, people
+    /// and third-party vehicles never inherit that exception.
     /// </summary>
     public static class RoadSpace
     {
@@ -139,7 +134,7 @@ namespace RoadDemo
         /// <summary>Whoever this body would be inside of, stood here turned this way.</summary>
         public static IRoadUser Inside(IRoadUser self, Vector3 at, Vector3 fwd,
                                        float halfLength, float halfWidth, out Vector3 push,
-                                       bool stationaryOnly = false)
+                                       bool stationaryOnly = false, bool trafficEscape = false)
         {
             push = Vector3.zero;
             IRoadUser worst = null;
@@ -149,6 +144,7 @@ namespace RoadDemo
             {
                 var u = users[i];
                 if (ReferenceEquals(u, self)) continue;
+                if (trafficEscape && self is RoadCar driver && u is RoadCar peer && driver.Deadlock.Ignores(peer)) continue;
                 if (stationaryOnly && u is RoadCar car && !car.Parked && !car.Derelict && !car.Wrecked) continue;
                 if (!Overlap(at, fwd, halfLength, halfWidth,
                              u.RoadPosition, u.RoadForward, u.HalfLength, u.HalfWidth, Air, out var p)) continue;
@@ -197,7 +193,7 @@ namespace RoadDemo
             // Test the current pose before sweeping toward the next one. Applying
             // the future heading here can invent a collision at the old position.
             var fromForward = self.RoadForward;
-            hit = Inside(self, from, fromForward, halfLength, halfWidth, out var push);
+            hit = Inside(self, from, fromForward, halfLength, halfWidth, out var push, trafficEscape: true);
             if (hit != null)
             {
                 if (SeparatingStep(self, from, to, fwd, halfLength, halfWidth))
@@ -221,7 +217,7 @@ namespace RoadDemo
             {
                 var at = from + step * (i / (float)n);
                 var facing = Vector3.Slerp(fromForward, fwd, i / (float)n);
-                var blocker = Inside(self, at, facing, halfLength, halfWidth, out _);
+                var blocker = Inside(self, at, facing, halfLength, halfWidth, out _, trafficEscape: true);
                 if (blocker != null)
                 {
                     hit = blocker;

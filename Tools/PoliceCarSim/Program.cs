@@ -203,7 +203,8 @@ static class Program
                 // Fault injection at the production failed-entry boundary. The car
                 // must resume even when the owner releases it before its next retry.
                 Call(car, typeof(RoadCar), "FailParking");
-                Require(car.ParkingFailed && car.Halted && !car.Parked, "failed-entry setup");
+                Require(car.ParkingFailed && car.Halted && car.Sliding && !car.Parked && !car.HasGoal && !car.AtGoal,
+                    "failed police entry retains its curve for the owner's retry or release");
                 if (scenario == "failed response released") car.Release();
                 else f.ExpireParking();
                 break;

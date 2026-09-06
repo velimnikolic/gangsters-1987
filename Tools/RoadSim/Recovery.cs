@@ -56,6 +56,20 @@ static class TrafficRecoveryChecks
                 car.Vanish();
 
                 car = Make();
+                var follower = new RoadCar { Net = net, Profile = DriverProfile.Traffic };
+                follower.Spawn(road.LaneFor(1, 2.5f), 39f);
+                Set(follower, "<Speed>k__BackingField", 14f);
+                typeof(RoadCar).GetMethod("UpdateOccupant", Private).Invoke(follower, null);
+                StreetTraffic.Users.Add(follower); Time.frameCount++;
+                recovered = Recover(car, false);
+                float followingGap = car.S - car.HalfLen - follower.S - follower.HalfLen;
+                float stopping = 14f * 14f / (2f * DriverProfile.Traffic.Brake) + 14f * .3f + 3f;
+                Check(recovered && (car.Heading != 1 || Math.Abs(car.D - 2.5f) > 2f ||
+                    car.S + car.HalfLen < follower.S - follower.HalfLen || followingGap >= stopping),
+                    "recovery cannot cut inside a moving follower's braking distance " + repetition);
+                follower.Vanish(); car.Vanish();
+
+                car = Make();
                 Set(car, "<D>k__BackingField", 40f);
                 Set(car, "_pos", road.Pose(50f, 40f)); original = car.Position;
                 RoadCar.RecoveryVisibility = _ => true;

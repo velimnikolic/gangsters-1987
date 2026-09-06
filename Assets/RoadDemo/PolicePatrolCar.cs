@@ -220,10 +220,15 @@ namespace RoadDemo
             _hasReservedKerb = false;
         }
 
+        protected override bool KeepsFailedParkingCurve => true;
+
         protected override void OnParkingFailed()
         {
             GiveUpKerb();
-            base.OnParkingFailed();
+            // The patrol owner retries or redirects this response through
+            // PrepareParkingRetry. Keep an angled body on its real curve until that
+            // owner can back it out; ordinary road cars release the failed order.
+            if (!Sliding) base.OnParkingFailed();
         }
 
         float _responseParkingReachSq = float.PositiveInfinity;

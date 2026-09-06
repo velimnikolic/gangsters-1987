@@ -18,10 +18,15 @@ with Unity 6000.5.6f1, its bundled SDK can run the harness without a separate SD
     dotnet run -c Release -- kerbapproach # park just past a parked car, both headings, widths/sizes and starts
     dotnet run -c Release -- kerbdeparture # full bodies, room to leave, competing slots and late occupancy
     dotnet run -c Release -- junctionpace # clear straight crossings retain cruise; red still stops the car
+    dotnet run -c Release -- trafficadmission # missed parking entries, temporary claims, precise junction envelopes
+    dotnet run -c Release -- trafficescape # pair-only gridlock escape, exclusions and lifecycle
     SEED=5 TRACE=1 TRACEID=12 dotnet run -c Release -- crew   # other seed, per-car trace
 
-Every run reports body overlaps (must be 0), RoadSpace belt hits (must be 0), stalls,
-frozen cars and average speed. Keep it at zero before touching RoadCar.
+Soaks distinguish unauthorized body overlaps (must be 0) from `permittedPairSamples`:
+samples in which an explicitly leased traffic pair overlaps at walking speed.
+Parking tests still require zero overlaps, without exceptions. Belt hits, stalls,
+frozen cars and average speed remain separate diagnostics; an intentionally injected
+deadlock must first exercise the normal guard before its escape may activate.
 
 `kerbapproach` includes 32 approaches immediately beyond a parked car, plus 12
 transition cases: leaving a clear kerb, returning to a goal behind on the same
@@ -41,3 +46,28 @@ reverse along its actual curve, find another clear departure and regain the lane
 For a focused diagnostic use `CASE='5/1/False/sedan/0.200' TRACE=1` (road half-width,
 heading, parked start, body, frame step) or `CASE='destination taken during pull-in/1/0.200'`.
 An unmatched filter fails rather than reporting a zero-case success.
+
+`trafficadmission` covers empty kerbs whose entry was missed near a road end,
+temporary reservations, failed orders continuing in traffic, despawned claims,
+opposing straight crossings (including wide vehicles), a transitive priority order,
+dense body-envelope checks for turns, and cache size/rebuild invalidation. A short
+return to a missed entry uses an admitted, continuously checked straight reverse.
+
+`trafficescape` requires reciprocal blocking evidence and no meaningful progress
+for six simulation seconds. One vehicle may pass its specific peer at at most
+1 m/s, with an initially clear complete escape path. After 20 seconds or a new order,
+the lease ends immediately if the pair is clear. Existing contact instead enters a
+finishing phase: the other car may take over on a checked clear path if a late
+obstacle sealed the first exit. The commanded car waits with its new order intact.
+The pair's contact ownership ends after separation; a removed car releases it immediately.
+If neither exit is clear, both wait and recheck without bypassing a third party.
+Admission excludes
+parked/disabled/halted vehicles, parking manoeuvres, same-direction queues, and
+intentional roadblocks. A third vehicle or person is never exempt. Tests cover
+simulation order, accelerated frames, persistent late vehicles/people and orders or
+halts issued after the bodies have already begun overlapping.
+`junctionreverse` reports permitted pair samples separately from illegal overlaps;
+its progress and no-jump requirements remain enforced.
+
+These are offline source/model checks, not Unity import, scene, UI-layout or Play
+acceptance. The user controls Editor and visual validation.

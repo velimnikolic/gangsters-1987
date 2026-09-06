@@ -457,9 +457,8 @@ namespace RoadDemo
 
         protected override void OnParkingFailed()
         {
-            // The dispatcher retries a civic errand while its car keeps moving.
-            // A player's failed order stays stopped and visible until another order.
-            if (Civic) base.OnParkingFailed();
+            // Failure remains visible, but must not strand a crew in a running lane.
+            base.OnParkingFailed();
         }
 
         /// <summary>Coast to a stop where it is (the crew is getting out and the car is

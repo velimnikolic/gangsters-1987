@@ -35,7 +35,7 @@ static class JunctionReverse
         turn.Spawn(fromSouth, fromSouth.Length); turn.Route = new Dictionary<RoadEdge, RoadEdge> { { fromSouth, west.LaneFor(-1, -2.5f) } };
         Call(turn, "PlanNext", c); Call(turn, "EnterNode", c, 1.66f); Call(turn, "Place", 0f, float.NaN, float.NaN);
         foreach (var car in cars) { StreetTraffic.Users.Add(car); typeof(RoadCar).GetField("<Speed>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(car, 0f); }
-        var a = straight.Position; var b = turn.Position; float ma = 0, mb = 0; int overlaps = 0, jumps = 0;
+        var a = straight.Position; var b = turn.Position; float ma = 0, mb = 0; int overlaps = 0, eased = 0, jumps = 0;
         var previous = new Vector3[cars.Count];
         for (int frame = 0; frame < Math.Ceiling(120f / dt); frame++)
         {
@@ -46,11 +46,19 @@ static class JunctionReverse
             for (int i = 0; i < cars.Count; i++)
             {
                 if ((cars[i].Position - previous[i]).magnitude > 30f * dt + .15f) jumps++;
-                for (int j = i + 1; j < cars.Count; j++) if (RoadSpace.Overlap(cars[i].Position, cars[i].RoadForward, cars[i].HalfLen, cars[i].HalfWide, cars[j].Position, cars[j].RoadForward, cars[j].HalfLen, cars[j].HalfWide, 0f, out _)) overlaps++;
+                for (int j = i + 1; j < cars.Count; j++)
+                    if (RoadSpace.Overlap(cars[i].Position, cars[i].RoadForward, cars[i].HalfLen, cars[i].HalfWide,
+                        cars[j].Position, cars[j].RoadForward, cars[j].HalfLen, cars[j].HalfWide, 0f, out _))
+                    {
+                        if ((cars[i].Deadlock.Ignores(cars[j]) || cars[j].Deadlock.Ignores(cars[i])) &&
+                            Math.Abs(cars[i].Speed) <= RoadDeadlock.Pace + .01f &&
+                            Math.Abs(cars[j].Speed) <= RoadDeadlock.Pace + .01f) eased++;
+                        else overlaps++;
+                    }
             }
         }
         bool ok = ma > 10 && mb > 10 && overlaps == 0 && jumps == 0;
-        Console.WriteLine($"== collection junction dt={dt:F3}: {(ok ? "PASS" : "FAIL")} straight={ma:F2} turn={mb:F2} overlaps={overlaps} jumps={jumps}");
+        Console.WriteLine($"== collection junction dt={dt:F3}: {(ok ? "PASS" : "FAIL")} straight={ma:F2} turn={mb:F2} overlaps={overlaps} permittedPairSamples={eased} jumps={jumps}");
         if (!ok) Environment.ExitCode = 1;
         foreach (var car in cars) car.Vanish();
     }
