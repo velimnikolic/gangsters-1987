@@ -1,0 +1,163 @@
+[
+  {
+    "id": "01_Regent_Sovereign",
+    "name": "REGENT SOVEREIGN",
+    "price": 119000,
+    "role": "SUPER LUXURY",
+    "paint": "ivory",
+    "roof": "ivory",
+    "length": 5.38,
+    "width": 1.89,
+    "height": 1.49,
+    "wheelbase": 3.16,
+    "radius": 0.35,
+    "belt": 1.02,
+    "cabin": [
+      -1.64,
+      -1.04,
+      0.62,
+      1.29
+    ],
+    "style": "regent",
+    "detail": "Ivory coachwork / upright chrome grille / long rear cabin",
+    "era": "Long-wheelbase British luxury sedan"
+  },
+  {
+    "id": "02_Kronen_560",
+    "name": "KRONEN 560",
+    "price": 64000,
+    "role": "EXECUTIVE IMPORT",
+    "paint": "navy",
+    "roof": "navy",
+    "length": 5.16,
+    "width": 1.82,
+    "height": 1.44,
+    "wheelbase": 3.07,
+    "radius": 0.34,
+    "belt": 0.95,
+    "cabin": [
+      -1.56,
+      -0.89,
+      0.61,
+      1.36
+    ],
+    "style": "kronen",
+    "detail": "Midnight blue / grey lower cladding / restrained alloy wheels",
+    "era": "German executive sedan"
+  },
+  {
+    "id": "03_Albion_Six",
+    "name": "ALBION SIX",
+    "price": 37000,
+    "role": "SPORTING LUXURY",
+    "paint": "green",
+    "roof": "green",
+    "length": 4.96,
+    "width": 1.78,
+    "height": 1.37,
+    "wheelbase": 2.87,
+    "radius": 0.33,
+    "belt": 0.88,
+    "cabin": [
+      -1.48,
+      -0.91,
+      0.5,
+      1.13
+    ],
+    "style": "albion",
+    "detail": "British racing green / four round lamps / low sculpted bonnet",
+    "era": "Low British sporting saloon"
+  },
+  {
+    "id": "04_Calder_Brougham",
+    "name": "CALDER BROUGHAM",
+    "price": 23000,
+    "role": "AMERICAN LUXURY",
+    "paint": "champagne",
+    "roof": "cream",
+    "length": 5.62,
+    "width": 1.91,
+    "height": 1.44,
+    "wheelbase": 3.08,
+    "radius": 0.35,
+    "belt": 1.0,
+    "cabin": [
+      -1.74,
+      -1.19,
+      0.47,
+      1.14
+    ],
+    "style": "calder",
+    "detail": "Champagne / padded vinyl roof / narrow whitewalls / vertical rear lamps",
+    "era": "Formal American luxury sedan"
+  },
+  {
+    "id": "05_Monarch_Townline",
+    "name": "MONARCH TOWNLINE",
+    "price": 22500,
+    "role": "AMERICAN COMFORT",
+    "paint": "wine",
+    "roof": "maroon",
+    "length": 5.57,
+    "width": 1.98,
+    "height": 1.44,
+    "wheelbase": 2.98,
+    "radius": 0.35,
+    "belt": 1.0,
+    "cabin": [
+      -1.78,
+      -1.27,
+      0.49,
+      1.22
+    ],
+    "style": "monarch",
+    "detail": "Burgundy two-tone / formal roof / broad grille / turbine wheel covers",
+    "era": "American land yacht"
+  },
+  {
+    "id": "06_Bayside_Classic",
+    "name": "BAYSIDE CLASSIC",
+    "price": 12500,
+    "role": "EVERYDAY FULL-SIZE",
+    "paint": "blue",
+    "roof": "blue",
+    "length": 5.39,
+    "width": 1.91,
+    "height": 1.44,
+    "wheelbase": 2.95,
+    "radius": 0.34,
+    "belt": 0.96,
+    "cabin": [
+      -1.67,
+      -1.05,
+      0.51,
+      1.21
+    ],
+    "style": "bayside",
+    "detail": "Powder blue / 1987 composite headlamps / bench-seat proportions",
+    "era": "Everyday American full-size sedan"
+  },
+  {
+    "id": "07_Hikari_DX",
+    "name": "HIKARI DX",
+    "price": 8500,
+    "role": "ECONOMY COMPACT",
+    "paint": "sand",
+    "roof": "sand",
+    "length": 4.14,
+    "width": 1.64,
+    "height": 1.38,
+    "wheelbase": 2.43,
+    "radius": 0.285,
+    "belt": 0.88,
+    "cabin": [
+      -1.28,
+      -0.8,
+      0.41,
+      1.01
+    ],
+    "style": "hikari",
+    "detail": "Sand beige / small steel wheels / black bumpers / compact four-door body",
+    "era": "Japanese economy sedan"
+  }
+]
