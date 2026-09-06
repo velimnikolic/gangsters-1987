@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using LivingCity.Entities;
 using LivingCity.Outfit;
 using LivingCity.Personnel;
 using LivingCity.UI;
@@ -24,7 +23,7 @@ namespace LivingCity.Tests
             SameSeedSameRoster(failures);
             DifferentSeedsDiffer(failures);
             SeedShapeInvariants(failures);
-            NamesComeFromTheSharedTables(failures);
+            failures.AddRange(GangsterNameTests.Run());
             HalfStepScaleRoundTrips(failures);
             AssignmentOfIsExclusive(failures);
             PromoteCreatesEmptyCrew(failures);
@@ -451,23 +450,6 @@ namespace LivingCity.Tests
                 }
                 if (pistols != RosterSeeder.PistolCount || vehicles != 1)
                     failures.Add($"{tag}: stock is {pistols} pistols / {vehicles} vehicles.");
-            }
-        }
-
-        static void NamesComeFromTheSharedTables(List<string> failures)
-        {
-            var firsts = new HashSet<string>(PedestrianIdentity.AllMaleNames);
-            var surnames = new HashSet<string>(PedestrianIdentity.AllSurnames);
-
-            var roster = RosterSeeder.GenerateStaffed(7);
-            foreach (var member in roster.Members)
-            {
-                if (member.Rank == Rank.Boss)
-                    continue;
-                if (!firsts.Contains(member.FirstName))
-                    failures.Add($"NamesComeFromTheSharedTables: {member.FirstName}.");
-                if (!surnames.Contains(member.Surname))
-                    failures.Add($"NamesComeFromTheSharedTables: {member.Surname}.");
             }
         }
 

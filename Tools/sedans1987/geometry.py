@@ -20,13 +20,38 @@ def unit(v):
 class Mesh:
     def __init__(self, name):
         self.name, self.faces = name, []
+        self.normals = {}
 
-    def face(self, points, color, outward=None):
+    def face(self, points, color, outward=None, normals=None):
         points = list(points)
         normal = unit(cross(sub(points[1], points[0]), sub(points[2], points[0])))
         if outward and sum(a*b for a, b in zip(normal, outward)) < 0:
             points.reverse()
+            if normals is not None:
+                normals = list(reversed(normals))
+        if normals is not None:
+            self.normals[len(self.faces)] = [unit(n) for n in normals]
         self.faces.append((points, color))
+
+    def surface(self, point, us, vs, color, outward, smooth=True, normal_at=None):
+        """Sample a curved panel with analytic-position finite-difference normals."""
+        def normal(u, v):
+            e = .0001
+            if normal_at is not None:
+                n=unit(normal_at(u,v))
+            else:
+                du = tuple(x/(2*e) for x in sub(point(u+e, v), point(u-e, v)))
+                dv = tuple(x/(2*e) for x in sub(point(u, v+e), point(u, v-e)))
+                n = unit(cross(du, dv))
+            wanted = outward(point(u, v)) if callable(outward) else outward
+            return tuple(-x for x in n) if sum(a*b for a,b in zip(n,wanted)) < 0 else n
+        for u0, u1 in zip(us, us[1:]):
+            for v0, v1 in zip(vs, vs[1:]):
+                coords = [(u0,v0),(u1,v0),(u1,v1),(u0,v1)]
+                pts = [point(u,v) for u,v in coords]
+                wanted = outward(pts[0]) if callable(outward) else outward
+                shade = color((u0+u1)/2,(v0+v1)/2) if callable(color) else color
+                self.face(pts,shade,wanted,[normal(u,v) for u,v in coords] if smooth else None)
 
     def box(self, center, size, color):
         x, y, z = center
@@ -72,7 +97,10 @@ class Mesh:
 
     def add(self, other, position=(0,0,0), yaw=0):
         s,c=math.sin(math.radians(yaw)),math.cos(math.radians(yaw))
-        for points,color in other.faces:
+        for index,(points,color) in enumerate(other.faces):
+            if index in other.normals:
+                self.normals[len(self.faces)] = [(n[0]*c+n[2]*s,n[1],-n[0]*s+n[2]*c)
+                                                for n in other.normals[index]]
             self.faces.append(([(p[0]*c+p[2]*s+position[0], p[1]+position[1],
                                  -p[0]*s+p[2]*c+position[2]) for p in points],color))
 

@@ -7,41 +7,42 @@ from artwork import sign
 import unity_assets as ua
 
 SCENE = 'Assets/Scenes/Sedan1987Showroom.unity'
-CAMERA = dict(pivot=(0, .7, -.3), distance=34, pitch=42, yaw=180, fov=42)
+CAMERA = dict(pivot=(0, .7, -.3), distance=38, pitch=34, yaw=180, fov=42)
 
 
-def placement(index):
+def placement(index,count=8):
     # +Z is towards the viewer: descending X reads left to right from this camera.
-    return ((3-index)*4.8, 0, 0), -18
+    return (((count-1)/2-index)*4.8, 0, 0), -18
 
 
-def forecourt():
+def forecourt(count=8):
     mesh = Mesh('MiamiForecourt')
-    mesh.box((0, -.15, 0), (41, .3, 21), 'concrete')
-    mesh.box((0, -.025, .5), (37, .05, 13), 'asphalt')
-    mesh.box((0, .035, 7.1), (39, .07, 2), 'tile')
-    mesh.box((0, .11, -6.5), (39, .22, 2), 'tile')
-    for x in (-19, 19):
+    extra=(count-7)*4.8
+    mesh.box((0, -.16, 0), (41+extra, .3, 21), 'concrete')
+    mesh.box((0, -.025, .5), (37+extra, .05, 13), 'asphalt')
+    mesh.box((0, .035, 7.1), (39+extra, .07, 2), 'tile')
+    mesh.box((0, .11, -6.5), (39+extra, .22, 2), 'tile')
+    for x in (-19-extra/2, 19+extra/2):
         mesh.box((x, .095, .5), (.25, .19, 13.5), 'wall')
-    for i in range(8):
-        x = (3.5-i)*4.8
+    for i in range(count+1):
+        x = (count/2-i)*4.8
         mesh.box((x, .012, 0), (.055, .018, 7.1), 'line')
-    for i in range(7):
-        x = placement(i)[0][0]
+    for i in range(count):
+        x = placement(i,count)[0][0]
         mesh.box((x, .014, -3.6), (3.9, .023, .055), 'line')
         mesh.box((x, .10, -3.45), (1.75, .20, .18), 'concrete')
     # A low pastel dealership wall keeps every silhouette against a quiet backdrop.
-    mesh.box((0, 1.04, -7.1), (39, 2.08, .5), 'wall')
-    mesh.box((0, .3, -6.8), (39, .26, .12), 'coral')
-    mesh.box((0, 1.78, -6.81), (39, .1, .13), 'teal')
-    mesh.box((0, 2.09, -7.1), (39.3, .13, .8), 'coral')
-    mesh.box((0, 2.8, -7.2), (12.2, 2.0, .7), 'teal')
+    mesh.box((0, 1.04, -7.1), (39+extra, 2.08, .5), 'wall')
+    mesh.box((0, .3, -6.8), (39+extra, .26, .12), 'coral')
+    mesh.box((0, 1.78, -6.81), (39+extra, .1, .13), 'teal')
+    mesh.box((0, 2.09, -7.1), (39.3+extra, .13, .8), 'coral')
+    mesh.box((0, 3.5, -7.2), (12.2, 3.0, .7), 'teal')
     for side in (-1, 1):
         for step in range(3):
             mesh.box((side*(6.4+step*.4), 2.4-step*.2, -7.15), (.6, 1.4-step*.4, .7), 'coral')
     for x in range(-18, 19, 3):
         mesh.box((x, .077, 7.1), (.016, .01, 2), 'concrete')
-    for x in (-17.6, 17.6):
+    for x in (-17.6-extra/2, 17.6+extra/2):
         mesh.box((x, .3, -4.7), (1.8, .6, 1.8), 'coral')
         mesh.box((x, .615, -4.7), (1.55, .025, 1.55), 'soil')
         palm(mesh, x, -4.7)
@@ -78,9 +79,9 @@ def sign_plane(name, width, height):
 def build(cars, prefabs, material):
     scene = ua.Hierarchy()
     court = scene.node('Miami 1987 - dealership forecourt')
-    ua_mesh = ua.mesh_asset(forecourt(), list(COLORS))
+    ua_mesh = ua.mesh_asset(forecourt(len(cars)), list(COLORS))
     scene.renderer(court, ua_mesh, material)
-    car_ids = [scene.prefab_instance(path, *placement(i)) for i, path in enumerate(prefabs)]
+    car_ids = [scene.prefab_instance(path, *placement(i,len(cars))) for i, path in enumerate(prefabs)]
     placard = sign_plane('CarPlacard', 3.65, .9125)
     for i, car in enumerate(cars):
         texture = sign(car['id']+'_Sign', [
@@ -90,15 +91,15 @@ def build(cars, prefabs, material):
             (f'1987 price class: ${car["price"]:,}', 32, '#d3b879'),
         ])
         mat = ua.material(car['id']+'_Sign', texture, unlit=True)
-        x = placement(i)[0][0]
+        x = placement(i,len(cars))[0][0]
         label = scene.node(car['name']+' - display card', position=(x, .5, 4.5), pitch=-64)
         scene.renderer(label, placard, mat)
     title_tex = sign('MiamiTitle', [
         ('BISCAYNE MOTOR CLUB', 68, '#d3b879'),
         ('MIAMI / 1987', 139, '#f3eddc'),
-        ('SEVEN SEDANS   /   LUXURY TO EVERYDAY', 50, '#b9ccca'),
+        ('EIGHT SEDANS   /   LUXURY TO EVERYDAY', 50, '#b9ccca'),
     ], title=True)
-    title = scene.node('Biscayne Motor Club sign', position=(0, 2.85, -6.83))
+    title = scene.node('Biscayne Motor Club sign', position=(0, 3.6, -6.83))
     scene.renderer(title, sign_plane('ShowroomTitle', 10.5, 2.625),
                    ua.material('MiamiTitle', title_tex, unlit=True))
     camera = add_camera(scene, car_ids, cars)
@@ -163,7 +164,7 @@ def add_camera(scene, cars, lineup):
   mapTransition: 0
   minDistance: 4.5
   mapCeiling: 65
-  hint: "1-7: inspect car / 0: full lineup / WASD: pan / Q E: orbit / wheel: zoom"
+  hint: "1-8: inspect car / 0: full lineup / WASD: pan / Q E: orbit / wheel: zoom"
   hintTopPx: 12
   showHint: 1
   showZoom: 0

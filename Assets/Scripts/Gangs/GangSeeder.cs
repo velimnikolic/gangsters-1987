@@ -25,9 +25,8 @@ namespace LivingCity.Gangs
     /// whenever the house runs a crew at all, which is the contract the door slot at
     /// every front is written to.
     ///
-    /// Names come from PedestrianIdentity's shared tables, through RosterSeeder: a
-    /// gangster can share a name with some civilian across town, exactly as two
-    /// civilians already can.
+    /// Names mirror the roster's saved identity. GangsterNames assigns new recruits
+    /// a street name based on their skills before the roster publishes them here.
     /// </summary>
     public static class GangSeeder
     {

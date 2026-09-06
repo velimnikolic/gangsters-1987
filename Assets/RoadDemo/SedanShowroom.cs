@@ -3,7 +3,7 @@ using UnityEngine.InputSystem;
 
 namespace RoadDemo
 {
-    /// <summary>Review navigation only; the seven cars are reusable authored prefabs.</summary>
+    /// <summary>Review navigation only; the cars are reusable authored prefabs.</summary>
     [RequireComponent(typeof(DemoCamera))]
     public sealed class SedanShowroom : MonoBehaviour
     {
@@ -13,7 +13,7 @@ namespace RoadDemo
         DemoCamera _camera;
         Vector3 _overviewPivot;
         float _overviewDistance, _overviewYaw, _overviewPitch;
-        const string Controls = "1-7: inspect car   0: full lineup\n" +
+        const string Controls = "1-8: inspect car   0: full lineup\n" +
             "WASD/arrows: pan   Q/E or right-drag: orbit   wheel: zoom";
 
         void Awake()
@@ -62,6 +62,7 @@ namespace RoadDemo
             if (keys.digit5Key.wasPressedThisFrame) Focus(4);
             if (keys.digit6Key.wasPressedThisFrame) Focus(5);
             if (keys.digit7Key.wasPressedThisFrame) Focus(6);
+            if (keys.digit8Key.wasPressedThisFrame) Focus(7);
         }
     }
 }

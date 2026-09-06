@@ -212,18 +212,16 @@ namespace LivingCity.Tests
 
         static void NamesComeFromTheSharedTables(List<string> failures)
         {
-            var firsts = new HashSet<string>(PedestrianIdentity.AllMaleNames);
-            var surnames = new HashSet<string>(PedestrianIdentity.AllSurnames);
+            var firsts = new HashSet<string>(GangsterNames.AllNicknames);
+            var surnames = new HashSet<string>(GangsterNames.AllSurnames);
 
             foreach (var gang in Deal(7))
                 foreach (var member in gang.Members)
                 {
                     if (!firsts.Contains(member.FirstName))
-                        failures.Add($"Seeder: first name '{member.FirstName}' is not in " +
-                                     "the shared table.");
+                        failures.Add($"Seeder: '{member.FirstName}' is not a street nickname.");
                     if (!surnames.Contains(member.Surname))
-                        failures.Add($"Seeder: surname '{member.Surname}' is not in the " +
-                                     "shared table.");
+                        failures.Add($"Seeder: '{member.Surname}' is not in the English surname table.");
                 }
         }
 
@@ -1009,19 +1007,20 @@ namespace LivingCity.Tests
             // Both gender tables, though the roster deals male names today: the mirror
             // reads whatever Personnel writes, and the budget must not depend on that.
             var widestFirst = "";
-            foreach (var table in new[]
+            foreach (var table in new IEnumerable<string>[]
                      {
                          PedestrianIdentity.AllMaleNames,
                          PedestrianIdentity.AllFemaleNames,
+                         GangsterNames.AllNicknames,
                      })
                 foreach (var first in table)
                     if (first.Length > widestFirst.Length)
                         widestFirst = first;
 
             var widestSurname = "";
-            foreach (var surname in PedestrianIdentity.AllSurnames)
-                if (surname.Length > widestSurname.Length)
-                    widestSurname = surname;
+            foreach (var table in new[] { PedestrianIdentity.AllSurnames, GangsterNames.AllSurnames })
+                foreach (var surname in table)
+                    if (surname.Length > widestSurname.Length) widestSurname = surname;
 
             var title = UI.GangIntention.Title(widestFirst, widestSurname, lieutenant: true);
             if (title.Length > TitleBudget)

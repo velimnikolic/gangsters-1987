@@ -52,13 +52,15 @@ def meta(path,importer='NativeFormatImporter',extra='  mainObjectFileID: 4300000
         target=str(parent)+'.meta'
         if not (ROOT/target).exists():
             write(target,f'fileFormatVersion: 2\nguid: {guid(parent)}\nfolderAsset: yes\nDefaultImporter:\n  externalObjects: {{}}\n  userData: \n  assetBundleName: \n  assetBundleVariant: \n')
+        else:
+            write(target,(ROOT/target).read_bytes())
         parent=parent.parent
 
 
 def mesh_asset(mesh,palette,full_uv=False):
     path=f'{ASSET}/Meshes/{mesh.name}.asset'
     vertices,indices=[],[]
-    for points,color in mesh.faces:
+    for face_index,(points,color) in enumerate(mesh.faces):
         normal=unit(cross(sub(points[1],points[0]),sub(points[2],points[0])))
         tangent=unit(sub(points[1],points[0]))
         start=len(vertices)
@@ -66,7 +68,10 @@ def mesh_asset(mesh,palette,full_uv=False):
         for i,p in enumerate(points):
             # Front-facing +Z signs: viewer's right is world -X.
             tex=[(1,0),(0,0),(0,1),(1,1)][i] if full_uv else uv
-            vertices.append((*p,*normal,*tangent,1,*tex))
+            vertex_normal=mesh.normals.get(face_index,[normal]*len(points))[i]
+            dot=sum(a*b for a,b in zip(tangent,vertex_normal))
+            vertex_tangent=unit(tuple(a-dot*b for a,b in zip(tangent,vertex_normal)))
+            vertices.append((*p,*vertex_normal,*vertex_tangent,1,*tex))
         for i in range(1,len(points)-1):
             indices.extend((start,start+i,start+i+1))
     assert len(vertices)<65536
@@ -166,8 +171,16 @@ def material(name,texture,unlit=False):
     path=f'{ASSET}/Materials/{name}.mat'
     # URP Lit and Unlit package assets; no custom shader or runtime Shader.Find.
     shader='650dd9526735d5b46b79224bc6e94025' if unlit else '933532a4fcc9baf4fa0491de14d08ed7'
+    # Preserve the version subasset's local ID if Unity has already saved this file.
+    # Our package's MaterialPostprocessor otherwise adds this metadata on import,
+    # invalidating a byte-level freshness check despite unchanged material settings.
+    previous=(ROOT/path).read_text() if (ROOT/path).exists() else ''
+    version_id=re.search(r'^--- !u!114 &(\d+)',previous,re.M)
+    version_id=version_id[1] if version_id else '11400000'
     write(path,HEADER+'--- !u!21 &2100000\nMaterial:\n  serializedVersion: 8\n'+COMMON+f'''  m_Name: {name}
   m_Shader: {{fileID: 4800000, guid: {shader}, type: 3}}
+  m_Parent: {{fileID: 0}}
+  m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
   m_InvalidKeywords: []
   m_LightmapFlags: 4
@@ -177,6 +190,7 @@ def material(name,texture,unlit=False):
   stringTagMap:
     RenderType: Opaque
   disabledShaderPasses: []
+  m_LockedProperties: {''}
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs:
@@ -186,26 +200,40 @@ def material(name,texture,unlit=False):
         m_Offset: {{x: 0, y: 0}}
     m_Ints: []
     m_Floats:
-    - _WorkflowMode: 1
-    - _Surface: 0
-    - _Blend: 0
-    - _SrcBlend: 1
-    - _DstBlend: 0
-    - _ZWrite: 1
-    - _Cull: 2
     - _AlphaClip: 0
-    - _Cutoff: 0.5
-    - _Smoothness: 0.26
-    - _Metallic: 0.08
+    - _Blend: 0
     - _BumpScale: 1
-    - _OcclusionStrength: 1
-    - _SpecularHighlights: 1
+    - _Cull: 2
+    - _Cutoff: 0.5
+    - _DstBlend: 0
     - _EnvironmentReflections: 1
+    - _Metallic: 0.08
+    - _OcclusionStrength: 1
     - _ReceiveShadows: 1
+    - _Smoothness: 0.26
+    - _SpecularHighlights: 1
+    - _SrcBlend: 1
+    - _Surface: 0
+    - _WorkflowMode: 1
+    - _ZWrite: 1
     m_Colors:
     - _BaseColor: {{r: 1, g: 1, b: 1, a: 1}}
     - _EmissionColor: {{r: 0, g: 0, b: 0, a: 0}}
   m_BuildTextureStacks: []
+  m_AllowLocking: 1
+--- !u!114 &{version_id}
+MonoBehaviour:
+  m_ObjectHideFlags: 11
+  m_CorrespondingSourceObject: {{fileID: 0}}
+  m_PrefabInstance: {{fileID: 0}}
+  m_PrefabAsset: {{fileID: 0}}
+  m_GameObject: {{fileID: 0}}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {{fileID: 11500000, guid: d0353a89b1f911e48b9e16bdc9f2e058, type: 3}}
+  m_Name: {''}
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Editor::UnityEditor.Rendering.Universal.AssetVersion
+  version: 10
 ''')
     meta(path,extra='  mainObjectFileID: 2100000\n')
     return path

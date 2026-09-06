@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using LivingCity.Entities;
 using LivingCity.Generation;
 using LivingCity.Gangs;
 
@@ -19,9 +18,8 @@ namespace LivingCity.Personnel
     /// can never re-lay the city. The draw order is FIXED and documented inline - insert a
     /// draw mid-sequence and every fixture's six reshuffles.
     ///
-    /// Names index into PedestrianIdentity's tables - already 1980s-flavoured, already
-    /// length-budgeted for popups - so a gangster can share a name with some civilian
-    /// across town. At 1,920 combinations, so can two civilians.
+    /// GangsterNames assigns an English street name after the skills are known, on
+    /// its own stream. The story Don keeps his authored identity.
     /// </summary>
     public static class RosterSeeder
     {
@@ -93,8 +91,8 @@ namespace LivingCity.Personnel
         /// (<see cref="RosterOps.Promote"/> and <see cref="RosterOps.AssignToCrew"/>),
         /// so a family can never stand in a shape the rules forbid.
         ///
-        /// One dealer of names for everybody: nothing outside this class draws a
-        /// gangster's name any more.
+        /// GangsterNames is the shared naming rule; creation paths assign the name
+        /// after dealing skills, before publishing the person to the roster.
         /// </summary>
         public static Roster Generate(int seed, int gangId)
         {
@@ -166,16 +164,16 @@ namespace LivingCity.Personnel
             var roster = Roster.Create(GangCatalog.PlayerGangId);
             roster.Seed = seed;
 
-            // Draws 1..N, per man in id order: first name, surname (both redrawn together
-            // on a full-name collision among the six), his rap sheet (a count, then three
-            // draws a line - see RapSheet.Deal), the 11 attributes in enum order, then
+            // Draws 1..N, per man in id order: two name-seed draws, his rap sheet
+            // (a count, then three draws a line - see RapSheet.Deal), then the 11
+            // attributes in enum order and
             // loyalty. The order is FIXED: inserting a draw mid-sequence re-deals every
             // seed's starting six, which is why the rap sheet went in beside the name
             // rather than anywhere more convenient.
             for (var i = 0; i < FixtureStaffCount; i++)
             {
                 var member = new Character { Id = roster.NextCharacterId() };
-                DrawName(rng, roster, member);
+                var nameSeed = GangsterNames.DrawSeed(rng);
                 RapSheet.Deal(rng, member);
 
                 // Ceilings first, off his own stream - the stats below are dealt into
@@ -193,6 +191,7 @@ namespace LivingCity.Personnel
                         rng.Next(AttributeScale.MinHalfSteps, AttributeScale.MaxHalfSteps + 1));
 
                 member.Loyalty = rng.Next(35, 86);
+                GangsterNames.Assign(roster, member, nameSeed);
                 roster.Members.Add(member);
             }
 
@@ -247,7 +246,7 @@ namespace LivingCity.Personnel
                     AddBoss(roster);
 
                 var member = new Character { Id = roster.NextCharacterId() };
-                DrawName(rng, roster, member);
+                var nameSeed = GangsterNames.DrawSeed(rng);
                 RapSheet.Deal(rng, member);
                 var stream = Potential.StreamFor(roster.Seed, member.Id);
                 Potential.Roll(member, stream);
@@ -259,6 +258,7 @@ namespace LivingCity.Personnel
                         rng.Next(AttributeScale.MinHalfSteps, AttributeScale.MaxHalfSteps + 1));
 
                 member.Loyalty = rng.Next(35, 86);
+                GangsterNames.Assign(roster, member, nameSeed);
                 roster.Members.Add(member);
             }
 
@@ -368,11 +368,10 @@ namespace LivingCity.Personnel
         /// </summary>
         static void AddFamilyBoss(System.Random rng, Roster roster, int gangId)
         {
-            var firsts = PedestrianIdentity.AllMaleNames;
+            var nameSeed = rng.Next();
             var boss = new Character
             {
                 Id = roster.NextCharacterId(),
-                FirstName = firsts[rng.Next(firsts.Count)],
                 Surname = GangCatalog.Names[gangId],
                 Rank = Rank.Boss,
                 // The boss-only suit, the same one Don Salvatore wears. A Don is a Don
@@ -382,6 +381,7 @@ namespace LivingCity.Personnel
                 Loyalty = 100,
             };
             DealInto(rng, roster, boss);
+            GangsterNames.Assign(roster, boss, nameSeed, GangCatalog.Names[gangId]);
             roster.Members.Add(boss);
             roster.Organization.BossId = boss.Id;
         }
@@ -416,8 +416,9 @@ namespace LivingCity.Personnel
         static Character DealMan(System.Random rng, Roster roster)
         {
             var member = new Character { Id = roster.NextCharacterId(), Rank = Rank.Hood };
-            DrawName(rng, roster, member);
+            var nameSeed = GangsterNames.DrawSeed(rng);
             DealInto(rng, roster, member);
+            GangsterNames.Assign(roster, member, nameSeed);
             roster.Members.Add(member);
             return member;
         }
@@ -469,7 +470,7 @@ namespace LivingCity.Personnel
                 Id = roster.NextCharacterId(),
                 Rank = Rank.Hood,
             };
-            DrawName(rng, roster, member);
+            var nameSeed = GangsterNames.DrawSeed(rng);
             RapSheet.Deal(rng, member);
             var stream = Potential.StreamFor(roster.Seed, member.Id);
             Potential.Roll(member, stream);
@@ -495,6 +496,7 @@ namespace LivingCity.Personnel
             }
 
             member.Loyalty = rng.Next(35, 86);
+            GangsterNames.Assign(roster, member, nameSeed);
             roster.Members.Add(member);
             if (roster.FindBoss() != null)
                 roster.Organization.BossHoodIds.Add(member.Id);
@@ -539,7 +541,7 @@ namespace LivingCity.Personnel
                 ceilingHalfSteps = AttributeScale.MaxHalfSteps;
 
             var member = new Character { Id = -1 };
-            DrawName(rng, roster, member);
+            var nameSeed = GangsterNames.DrawSeed(rng);
             RapSheet.Deal(rng, member);
             Potential.Roll(member, potentialStream);
             Aging.RollBirth(member, potentialStream, YearOf(roster), CalendarDaysPerYear);
@@ -549,31 +551,8 @@ namespace LivingCity.Personnel
                 member.SetHalfSteps((CharacterAttribute)a,
                     rng.Next(AttributeScale.MinHalfSteps, ceilingHalfSteps + 1));
             member.Loyalty = rng.Next(35, 86);
+            GangsterNames.Assign(roster, member, nameSeed);
             return member;
-        }
-
-        static void DrawName(System.Random rng, Roster roster, Character member)
-        {
-            var firsts = PedestrianIdentity.AllMaleNames;
-            var surnames = PedestrianIdentity.AllSurnames;
-
-            // The guard cannot plausibly trip (6 names out of 1,920 pairs), but an rng
-            // loop without one is a hang waiting on a shrunk name table.
-            for (var guard = 0; guard < 50; guard++)
-            {
-                member.FirstName = firsts[rng.Next(firsts.Count)];
-                member.Surname = surnames[rng.Next(surnames.Count)];
-
-                var taken = false;
-                for (var i = 0; i < roster.Members.Count; i++)
-                    if (roster.Members[i].FullName == member.FullName)
-                    {
-                        taken = true;
-                        break;
-                    }
-                if (!taken)
-                    return;
-            }
         }
 
         static void AssignStartingRoles(Roster roster)

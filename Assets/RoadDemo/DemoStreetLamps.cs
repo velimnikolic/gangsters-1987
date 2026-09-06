@@ -59,7 +59,7 @@ namespace RoadDemo
         const float ResortInterval = 0.4f;
 
         readonly List<Light> _lamps = new List<Light>();
-        readonly HashSet<Transform> _wired = new HashSet<Transform>();
+        readonly Dictionary<Transform, Light> _wired = new Dictionary<Transform, Light>();
         readonly List<Transform> _transformScratch = new List<Transform>();
         // the lamps never move: their positions are read once, and each resort
         // ranks an index table by plain arithmetic - no transform reads, no closure
@@ -121,7 +121,7 @@ namespace RoadDemo
                     match = true;
                     break;
                 }
-                if (!match || !_wired.Add(transform)) continue;
+                if (!match || (_wired.TryGetValue(transform, out var existing) && existing)) continue;
 
                 // A cached block unregisters its bulbs without destroying its hierarchy.
                 // Rebinding that same payload must reuse the old bulb, not hang another
@@ -130,7 +130,7 @@ namespace RoadDemo
                 var light = holder != null ? holder.GetComponent<Light>() : null;
                 if (light == null)
                 {
-                    holder = new GameObject("lamp-light");
+                    if (holder == null) holder = new GameObject("lamp-light");
                     holder.transform.SetParent(transform, false);
                     holder.transform.localPosition = bulb;
                     holder.transform.localRotation = Quaternion.Euler(90f, 0f, 0f); // straight down
@@ -146,10 +146,12 @@ namespace RoadDemo
                     light.enabled = false;
                     light.lightmapBakeType = LightmapBakeType.Realtime;
                     light.renderMode = LightRenderMode.ForcePixel;
-                    holder.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalLightData>()
-                          .usePipelineSettings = true;
+                    if (!holder.TryGetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalLightData>(out var data))
+                        data = holder.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalLightData>();
+                    data.usePipelineSettings = true;
                 }
 
+                _wired[transform] = light;
                 _lamps.Add(light);
                 added = true;
             }
@@ -167,10 +169,11 @@ namespace RoadDemo
             for (int i = 0; i < _transformScratch.Count; i++)
             {
                 var transform = _transformScratch[i];
-                if (!_wired.Remove(transform)) continue;
-                var holder = transform.Find("lamp-light");
-                var light = holder != null ? holder.GetComponent<Light>() : null;
-                if (light != null) _lamps.Remove(light);
+                if (!_wired.Remove(transform, out var light)) continue;
+                // Keep the registered identity even if its component/child was destroyed.
+                // A cached hierarchy may be enabled before it is registered again.
+                if (light) light.enabled = false;
+                _lamps.Remove(light);
                 removed = true;
             }
             _transformScratch.Clear();
@@ -179,6 +182,7 @@ namespace RoadDemo
 
         void Reindex()
         {
+            PruneDestroyedLamps();
             _at = new Vector3[_lamps.Count];
             _key = new float[_lamps.Count];
             _order = new int[_lamps.Count];
@@ -196,6 +200,21 @@ namespace RoadDemo
                     : Fault.None;
                 _flickerPhase[i] = Hash01(_at[i], 0x9E3779B9u) * 19f;
             }
+            _nextResort = 0f;
+        }
+
+        bool PruneDestroyedLamps()
+        {
+            // Streaming and dressing can retire a post before Unregister sees it.
+            // Compact before sizing the parallel arrays or reading any Light property.
+            bool removed = _lamps.RemoveAll(lamp => !lamp) > 0;
+            _transformScratch.Clear();
+            foreach (var pair in _wired)
+                if (!pair.Key || !pair.Value) _transformScratch.Add(pair.Key);
+            for (int i = 0; i < _transformScratch.Count; i++)
+                _wired.Remove(_transformScratch[i]);
+            _transformScratch.Clear();
+            return removed;
         }
 
         void LateUpdate()
@@ -208,6 +227,9 @@ namespace RoadDemo
 
             if (Time.unscaledTime >= _nextResort)
             {
+                // Dead entries must not consume the nearest-light budget when no new
+                // block arrives to trigger registration and a fresh index.
+                if (PruneDestroyedLamps()) Reindex();
                 _nextResort = Time.unscaledTime + ResortInterval;
                 Resort(target);
             }

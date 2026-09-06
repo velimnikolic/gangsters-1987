@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Author or check the seven sedan assets without launching/contacting Unity."""
+"""Author or check the sedan lineup without launching/contacting Unity."""
 import argparse
 import hashlib
 import json
@@ -15,7 +15,10 @@ MANIFEST = HERE/'manifest.json'
 
 
 def fingerprint():
-    inputs = list(HERE.glob('*.py')) + [HERE/'lineup.json', HERE/'scene_settings.txt']
+    inputs = [HERE/name for name in ('artwork.py', 'build.py', 'geometry.py', 'palette.py',
+              'sedans.py', 'bodywork.py', 'cabins.py', 'fascias.py', 'wheels.py',
+              'showroom.py', 'unity_assets.py', 'lineup.json', 'scene_settings.txt',
+              'requirements.txt')]
     return {str(p.relative_to(ua.ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted(inputs)}
 
@@ -38,8 +41,9 @@ def check():
 
 def generate():
     cars = json.loads((HERE/'lineup.json').read_text())
-    assert len(cars) == 7 and len({c['id'] for c in cars}) == 7
+    assert len(cars) == 8 and len({c['id'] for c in cars}) == 8
     assert all(a['price'] > b['price'] for a, b in zip(cars, cars[1:]))
+    authored=[build_car(car) for car in cars]
     ua.meta('Assets/RoadDemo/SedanShowroom.cs', 'MonoImporter', '''  serializedVersion: 2
   defaultReferences: []
   executionOrder: 0
@@ -47,8 +51,7 @@ def generate():
 ''')
     material = ua.material('SedanPalette', make_palette())
     prefabs, stats = [], []
-    for car in cars:
-        body, wheels = build_car(car)
+    for car,(body,wheels) in zip(cars,authored):
         prefab = ua.Hierarchy()
         root = prefab.node(car['name'])
         hull = prefab.node('Body', parent=root['tf'])
@@ -64,13 +67,6 @@ def generate():
         triangles = sum(len(list(mesh.triangles())) for mesh in [body]+[w for w, _ in wheels])
         stats.append(dict(id=car['id'], triangles=triangles, renderers=5, wheelbase=car['wheelbase']))
     showroom.build(cars, prefabs, material)
-    # Include existing deterministic folder metas too, so every generated artifact
-    # participates in freshness and repeated builds have the same manifest.
-    for path in (ua.ROOT/ua.ASSET).rglob('*'):
-        if path.is_file():
-            ua.WRITTEN[str(path.relative_to(ua.ROOT))] = hashlib.sha256(path.read_bytes()).hexdigest()
-    folder = ua.ROOT/(ua.ASSET+'.meta')
-    ua.WRITTEN[str(folder.relative_to(ua.ROOT))] = hashlib.sha256(folder.read_bytes()).hexdigest()
     manifest = dict(inputs=fingerprint(), outputs=dict(sorted(ua.WRITTEN.items())), cars=stats,
                     font_sha256=hashlib.sha256(font_path().read_bytes()).hexdigest())
     MANIFEST.write_text(json.dumps(manifest, indent=2)+'\n')

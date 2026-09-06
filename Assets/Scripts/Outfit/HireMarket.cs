@@ -208,6 +208,8 @@ namespace LivingCity.Outfit
 
             man.Rank = Rank.Hood;
             man.Specialty = Specialty.Lawyer;
+            var trade = GangsterNames.Assign(roster, man, Potential.Mix(seed, day * AdsPerEdition + slot),
+                man.Surname);
             man.WageAsked = Wages.AskFor(man);
 
             var box = "BOX " + (11 + rng.Next(80)) + "-" +
@@ -216,7 +218,7 @@ namespace LivingCity.Outfit
             return new HireAd
             {
                 Man = man,
-                Trade = CharacterAttribute.Awareness,
+                Trade = trade,
                 Specialty = Specialty.Lawyer,
                 From = "THE COURTHOUSE",
                 Box = box,
@@ -241,6 +243,8 @@ namespace LivingCity.Outfit
             // demotion tears the bargain up and puts him on the house scale
             // (RosterOps, WAGE-002).
             man.Rank = Rank.Lieutenant;
+            var trade = GangsterNames.Assign(roster, man, Potential.Mix(seed, day * AdsPerEdition + slot),
+                man.Surname);
             man.WageAsked = Wages.AskFor(man);
 
             var from = Neighbourhoods[rng.Next(Neighbourhoods.Length)];
@@ -250,7 +254,7 @@ namespace LivingCity.Outfit
             return new HireAd
             {
                 Man = man,
-                Trade = BestTrade(man, day + slot),
+                Trade = trade,
                 From = from,
                 Box = box,
             };
@@ -267,30 +271,6 @@ namespace LivingCity.Outfit
                 man.SetPotential(attribute, AttributeScale.ValueOf(HeadFloorHalfSteps));
             if (man.GetHalfSteps(attribute) < HeadFloorHalfSteps)
                 man.SetHalfSteps(attribute, HeadFloorHalfSteps);
-        }
-
-        /// <summary>The stat the ad is headed with: his best, ties broken by attribute
-        /// order rotated with the edition, so four men rolled the same morning do not
-        /// all advertise as gun hands.</summary>
-        static CharacterAttribute BestTrade(Character man, int salt)
-        {
-            var start = salt % AttributeScale.Count;
-            if (start < 0)
-                start += AttributeScale.Count;
-
-            var best = (CharacterAttribute)start;
-            var bestValue = man.GetHalfSteps(best);
-            for (var step = 1; step < AttributeScale.Count; step++)
-            {
-                var attribute = (CharacterAttribute)((start + step) % AttributeScale.Count);
-                var value = man.GetHalfSteps(attribute);
-                if (value > bestValue)
-                {
-                    best = attribute;
-                    bestValue = value;
-                }
-            }
-            return best;
         }
 
         /// <summary>Avalanches (seed, day) before System.Random sees it - nearby seeds
