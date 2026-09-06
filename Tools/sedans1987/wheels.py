@@ -1,51 +1,54 @@
-"""Rounded tire shoulders and distinct hubcaps, alloys and steel wheels."""
+"""Closed low-cost tires and readable inset wheel faces, not stacks of cylinders."""
 import math
 from geometry import Mesh
 
+SEGMENTS=16
+
+
+def annulus(mesh,side,x,inner,outer,color,segments=SEGMENTS):
+    for i in range(segments):
+        a,b=i*math.tau/segments,(i+1)*math.tau/segments
+        mesh.face([(side*x,r*math.cos(t),r*math.sin(t))
+                   for r,t in [(inner,a),(outer,a),(outer,b),(inner,b)]],color,(side,0,0))
+
 
 def build_wheels(form):
-    car=form.car
-    radius=car['radius']
-    style=car['style']
-    wheels=[]
+    car=form.car;radius=car['radius'];style=car['style'];wheels=[]
     for side,label in [(-1,'L'),(1,'R')]:
         for axle,where in [(form.front,'F'),(form.rear,'R')]:
             mesh=Mesh(car['id']+'_Wheel_'+where+label)
             tire(mesh,radius)
             if style in ('regent','calder','monarch'):
-                mesh.cylinder((side*.113,0,0),radius*.82,.008,'cream',sides=24)
-                mesh.cylinder((side*.119,0,0),radius*.75,.009,'tireface',sides=24)
-            wheel_color='wheelshade' if style=='hikari' else 'chrome'
-            mesh.cylinder((side*.125,0,0),radius*.65,.023,wheel_color,sides=24)
-            mesh.cylinder((side*.140,0,0),radius*.52,.014,'wheelshade',sides=24)
+                annulus(mesh,side,.114,radius*.76,radius*.81,'cream')
+            # A dished face stays inside the rubber shoulder; the rim is a thin
+            # bright outline and dark spoke wells give the wheel depth at game scale.
+            mesh.cylinder((side*.106,0,0),radius*.64,.008,'wheelshade',sides=SEGMENTS)
+            annulus(mesh,side,.113,radius*.59,radius*.66,'chrome')
             if style=='regent':
-                mesh.cylinder((side*.15,0,0),radius*.49,.021,'chrome',sides=24)
-                mesh.cylinder((side*.168,0,0),radius*.13,.016,'gold',sides=12)
-            elif style=='vahren':
-                for i in range(16):
-                    a=i*math.tau/16
-                    for twist in (-.20,.20):
-                        mesh.beam((side*.153,math.cos(a)*radius*.22,math.sin(a)*radius*.22),
-                                  (side*.152,math.cos(a+twist)*radius*.53,math.sin(a+twist)*radius*.53),.013,'chrome')
-                mesh.cylinder((side*.165,0,0),radius*.19,.017,'chrome',sides=16)
-            elif style in ('kronen','hikari','bayside'):
-                count=8 if style=='kronen' else 6
-                for i in range(count):
-                    angle=i*math.tau/count
-                    y,z=math.cos(angle)*radius*.42,math.sin(angle)*radius*.42
-                    mesh.cylinder((side*.151,y,z),radius*.07,.007,'rubber',sides=10)
-                mesh.cylinder((side*.153,0,0),radius*(.31 if style=='bayside' else .24),.019,
-                              'wheelshade' if style=='hikari' else 'chrome',sides=16)
+                mesh.cylinder((side*.115,0,0),radius*.54,.008,'chrome',sides=SEGMENTS)
+                annulus(mesh,side,.12,radius*.27,radius*.29,'wheelshade')
+                mesh.cylinder((side*.122,0,0),radius*.10,.005,'gold',sides=8)
+            elif style=='hikari':
+                annulus(mesh,side,.115,radius*.37,radius*.54,'wheelshade')
+                for i in range(6):
+                    a=i*math.tau/6
+                    mesh.cylinder((side*.121,radius*.43*math.cos(a),radius*.43*math.sin(a)),
+                                  radius*.066,.004,'rubber',sides=6)
+                mesh.cylinder((side*.12,0,0),radius*.25,.008,'wheelshade',sides=12)
             else:
-                count=22 if style=='calder' else 15 if style=='monarch' else 10
+                count={'vahren':10,'kronen':8,'albion':10,'calder':16,'monarch':12,'bayside':6}[style]
+                broad=.20 if style=='bayside' else .11 if style in ('kronen','monarch') else .055
                 for i in range(count):
                     a=i*math.tau/count
-                    b=a+(.18 if style=='monarch' else -.12 if style=='calder' else 0)
-                    mesh.beam((side*.153,math.cos(a)*radius*.20,math.sin(a)*radius*.20),
-                              (side*.152,math.cos(b)*radius*.51,math.sin(b)*radius*.51),
-                              .015 if style=='calder' else .026,'chrome')
-                mesh.cylinder((side*.165,0,0),radius*.18,.018,'chrome',sides=16)
-            wheels.append((mesh,(side*(form.width(axle)-.12),radius,axle)))
+                    twists=(-.13,.13) if style in ('vahren','calder') else (.15 if style=='monarch' else 0,)
+                    for twist in twists:
+                        points=[(side*x,radius*r*math.cos(t),radius*r*math.sin(t))
+                                for x,r,t in [(.119,.23,a-broad),(.113,.58,a+twist-broad*.5),
+                                              (.113,.58,a+twist+broad*.5),(.119,.23,a+broad)]]
+                        mesh.face(points,'chrome',(side,0,0))
+                mesh.cylinder((side*.12,0,0),radius*.24,.010,'chrome',sides=12)
+                mesh.cylinder((side*.127,0,0),radius*.065,.003,'wheelshade',sides=8)
+            wheels.append((mesh,(side*(form.width(axle)-.13),radius,axle)))
     return wheels
 
 
@@ -53,19 +56,16 @@ def tire(mesh,radius):
     profile=[(-.095,.79),(-.113,.92),(-.078,1),(.078,1),(.113,.92),(.095,.79)]
     normals=[(-1,0),(-.85,.5),(-.25,.97),(.25,.97),(.85,.5),(1,0)]
     for row,((x0,r0),(x1,r1)) in enumerate(zip(profile,profile[1:])):
-        for i in range(24):
-            a,b=i*math.tau/24,(i+1)*math.tau/24
+        for i in range(SEGMENTS):
+            a,b=i*math.tau/SEGMENTS,(i+1)*math.tau/SEGMENTS
             points=[(x0,radius*r0*math.cos(a),radius*r0*math.sin(a)),
                     (x1,radius*r1*math.cos(a),radius*r1*math.sin(a)),
                     (x1,radius*r1*math.cos(b),radius*r1*math.sin(b)),
                     (x0,radius*r0*math.cos(b),radius*r0*math.sin(b))]
             ns=[(normals[j][0],normals[j][1]*math.cos(angle),normals[j][1]*math.sin(angle))
                 for j,angle in [(row,a),(row+1,a),(row+1,b),(row,b)]]
-            wanted=tuple(sum(n[k] for n in ns) for k in range(3))
-            mesh.face(points,'rubber',wanted,ns)
-    # Close both sidewalls at the bead. The outboard hubcap is decorative; neither
-    # side of the tire may depend on it to hide an open hole through the wheel.
+            mesh.face(points,'rubber',tuple(sum(n[k] for n in ns) for k in range(3)),ns)
     for side in (-1,1):
-        ring=[(side*.095,radius*.79*math.cos(i*math.tau/24),
-               radius*.79*math.sin(i*math.tau/24)) for i in range(24)]
-        mesh.face(ring,'rubber',(side,0,0))
+        mesh.face([(side*.095,radius*.79*math.cos(i*math.tau/SEGMENTS),
+                    radius*.79*math.sin(i*math.tau/SEGMENTS)) for i in range(SEGMENTS)],
+                  'rubber',(side,0,0))

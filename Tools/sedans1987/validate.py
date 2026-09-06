@@ -9,6 +9,8 @@ from build import check
 from preview import Assets, documents
 from showroom import SCENE
 from check_wheels import closed_tire,sidewall_coverage
+from palette import COLORS
+from bodywork import Coachwork
 import unity_assets as ua
 
 
@@ -92,13 +94,45 @@ def validate():
             sidewall_coverage(vertices,indices,car['radius'])
         path = ua.ROOT/f'{ua.ASSET}/Prefabs/{car["id"]}.prefab'
         docs = documents(path)
-        assert sum(t == 23 for t, _ in docs.values()) == 5, path
+        assert sum(t == 23 for t, _ in docs.values()) == 6, path
+        fitting=next(d['MonoBehaviour'] for t,d in docs.values() if t==114)
+        assert fitting['m_Script']['guid']==ua.guid('Assets/RoadDemo/VehicleLampRig.cs')
+        assert docs[fitting['lenses']['fileID']][0]==23
+        glass,glass_indices=assets.mesh(ua.guid(f'{ua.ASSET}/Meshes/{car["id"]}_Lamps.asset'))
+        swatches=np.floor(glass[:,10]*len(COLORS)).astype(int)
+        front=glass[swatches==list(COLORS).index('lamp_front'),:3]
+        assert len(front)>0
+        form=Coachwork(car)
+        assert front[:,1].max()<form.top(0,form.end)[1]+.012, ('Lamp above hood',car['id'])
+        for side,key in [(-1,'leftHeadlight'),(1,'rightHeadlight')]:
+            anchor=np.array([fitting[key][a] for a in 'xyz'])
+            lens=front[front[:,0]*side>0]
+            assert side*anchor[0]>0
+            assert lens[:,0].min()<=anchor[0]<=lens[:,0].max()
+            assert lens[:,1].min()<=anchor[1]<=lens[:,1].max()
+            faces=glass[glass_indices[swatches[glass_indices[:,0]]==list(COLORS).index('lamp_front')],:3]
+            a,b,c=faces[:,0],faces[:,1],faces[:,2]
+            det=(b[:,1]-c[:,1])*(a[:,0]-c[:,0])+(c[:,0]-b[:,0])*(a[:,1]-c[:,1])
+            valid=np.abs(det)>1e-9
+            a,b,c,det=a[valid],b[valid],c[valid],det[valid]
+            x,y=anchor[:2]
+            u=((b[:,1]-c[:,1])*(x-c[:,0])+(c[:,0]-b[:,0])*(y-c[:,1]))/det
+            v=((c[:,1]-a[:,1])*(x-c[:,0])+(a[:,0]-c[:,0])*(y-c[:,1]))/det
+            hit=(u>=-1e-6)&(v>=-1e-6)&(u+v<=1.000001)
+            depth=u*a[:,2]+v*b[:,2]+(1-u-v)*c[:,2]
+            assert hit.any() and .002<anchor[2]-depth[hit].max()<.065, ('Beam not ahead of glass',car['id'])
+        if car['style']=='vahren':
+            assert 0<form.top(0,form.end)[1]-front[:,1].max()<.04, 'Oversized bonnet lip'
+            assert front[:,2].max()-form.end<.036, 'Protruding headlamp glass'
         transforms = [d['Transform'] for t, d in docs.values() if t == 4]
         wheels = [t for t in transforms if t['m_LocalPosition']['y'] > .1]
         assert len(wheels) == 4, path
         z = sorted({t['m_LocalPosition']['z'] for t in wheels})
         assert abs(z[1]-z[0]-car['wheelbase']) < 1e-5, path
         objects = assets.objects(path)
+        assert sum(len(o[1]) for o in objects)<=6000, ('Triangle budget',car['id'])
+        mats={d['MeshRenderer']['m_Materials'][0]['guid'] for t,d in docs.values() if t==23}
+        assert len(mats)==2, ('Material budget',car['id'])
         points = np.concatenate([o[0] for o in objects])
         assert abs(points[:, 1].min()) < 1e-5, path
         assert points[:, 1].max() < car['height']+.2, path
@@ -113,11 +147,33 @@ def validate():
     review = next(m for m in monos if m['m_Script']['guid'] == ua.guid('Assets/RoadDemo/SedanShowroom.cs'))
     assert len(review['cars']) == len(review['labels']) == len(lineup)
     # Exercise the complete serialized hierarchy resolver used by the offline preview.
-    assert len(assets.objects(ua.ROOT/SCENE)) == 6*len(lineup)+2
+    assert len(assets.objects(ua.ROOT/SCENE)) == 7*len(lineup)+2
+    clock=next(m for m in monos if m['m_Script']['guid']==ua.guid('Assets/Scripts/Ambient/CityClock.cs'))
+    assert clock['m_Enabled']==0 and clock['running']==0, 'Review clock must not handle number keys'
+    assert scene[review['clock']['fileID']][1]['MonoBehaviour']==clock
+    head=scene[review['headlights']['fileID']][1]['MonoBehaviour']
+    assert head['m_Script']['guid']==ua.guid('Assets/RoadDemo/DemoHeadlights.cs')
+    assert head['clock']==review['clock']
+    lamp_mat=next(iter(documents(ua.ROOT/f'{ua.ASSET}/Materials/SedanLamps.mat').values()))[1]['Material']
+    assert '_EMISSION' in lamp_mat['m_ValidKeywords']
+    assert any('_EmissionMap' in t for t in lamp_mat['m_SavedProperties']['m_TexEnvs'])
+    body_mat=next(iter(documents(ua.ROOT/f'{ua.ASSET}/Materials/SedanPalette.mat').values()))[1]['Material']
+    assert '_METALLICSPECGLOSSMAP' in body_mat['m_ValidKeywords']
+    surface=next(t['_MetallicGlossMap']['m_Texture']['guid'] for t in body_mat['m_SavedProperties']['m_TexEnvs'] if '_MetallicGlossMap' in t)
+    surface_path=assets.paths[surface]
+    assert re.search(r'^\s+sRGBTexture: 0$',Path(str(surface_path)+'.meta').read_text(),re.M), 'Surface data must import linearly'
+    from PIL import Image
+    data=np.asarray(Image.open(surface_path).convert('RGBA'))
+    column=lambda key:round((list(COLORS).index(key)+.5)*data.shape[1]/len(COLORS))
+    assert data[0,column('rubber'),3]<data[0,column('glass'),3]
+    assert data[0,column('chrome'),0]>data[0,column('silver'),0]
+    assert data.shape[0]*data.shape[1]<=65536, 'Shared surface atlas grew beyond its small-texture budget'
     print(f'PASS: {len(meshes)} meshes / {total_triangles} triangles; valid buffers, bounds, normals and UVs.')
     print(f'PASS: {checked_refs} GUID references; {len(lineup)} distinct prefabs, four grounded wheels each; camera and focus references.')
     print(f'PASS: 24 retained GUIDs resolve uniquely to their recorded destination assets; {retained} unstaged moves accounted for.')
     print(f'PASS: closed outward tire shells; {4*len(lineup)} serialized wheels opaque from both sides (6144 sample rays).')
+    print('PASS: fitted headlamp anchors, separate emissive lenses and shared clock/headlight wiring; low compact bonnet lip.')
+    print('PASS: each car within 6000 triangles / 6 renderers / 2 materials; compact linear surface atlas.')
     print('Not verified: Unity asset import, materials/lighting in URP, Play controls or manual visual acceptance.')
 
 

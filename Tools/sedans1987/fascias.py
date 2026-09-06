@@ -1,6 +1,7 @@
 """Distinct faces and tails, fitted to each curved body envelope."""
 import math
 from bodywork import samples,lerp
+from lenses import round_lamp
 
 
 def patch(mesh,form,end,x,y,width,height,color,depth=.04,radius=.025):
@@ -11,7 +12,11 @@ def patch(mesh,form,end,x,y,width,height,color,depth=.04,radius=.025):
         half=height/2-radius+math.sqrt(max(0,radius*radius-corner*corner))
         px=x+dx
         return (px,y+lerp(-half,half,t),form.end_z(px,end)+end*depth)
-    mesh.surface(panel,samples(-1,1,8 if width>.25 else 2),[0,1],color,(0,0,end))
+    # Include the tangent points: three samples made small grilles look pointed.
+    count=10 if width>.8 else 6 if width>.3 else 2
+    across=sorted(set(samples(-1,1,count)+[-1+radius/width,-1+2*radius/width,
+                                         1-2*radius/width,1-radius/width]))
+    mesh.surface(panel,across,[0,1],color,(0,0,end))
 
 
 def grille(mesh,form,width,height,y,vertical=False):
@@ -29,56 +34,62 @@ def front(mesh,form):
     car=form.car
     style=car['style']
     width=form.width(form.end)
-    level=form.deck(form.end)-.205
+    level=form.deck(form.end)-.125
     if style=='vahren':
-        # A compact, upright twin-opening face with four independent round lamps.
-        patch(mesh,form,1,0,level,1.38,.24,'rubber',.025,radius=.025)
+        level=form.deck(form.end)-.093
+        # Slim bonnet lip, full-width recessed mask, shallow four-lamp face.
+        patch(mesh,form,1,0,level-.022,1.43,.226,'rubber',.012,radius=.012)
         for side in (-1,1):
-            patch(mesh,form,1,side*.095,level,.16,.22,'chrome',.042,radius=.025)
-            patch(mesh,form,1,side*.095,level,.122,.188,'rubber',.052,radius=.02)
-            for x in (.40,.64):
-                z=form.end_z(side*x,1)
-                mesh.cylinder((side*x,level+.006,z+.055),.114,.025,'chrome',axis=2,sides=24)
-                mesh.cylinder((side*x,level+.006,z+.072),.095,.018,'headlight',axis=2,sides=24)
+            patch(mesh,form,1,side*.081,level-.024,.134,.164,'chrome',.022,radius=.014)
+            patch(mesh,form,1,side*.081,level-.024,.112,.144,'rubber',.025,radius=.009)
+            for x in (.405,.595):
+                round_lamp(mesh,form,side*x,level,.076)
             for offset in (-.035,0,.035):
-                patch(mesh,form,1,side*.095+offset,level,.009,.165,'chrome',.059,radius=.002)
-            patch(mesh,form,1,side*.58,.39,.28,.065,'amber',.11,radius=.015)
-        return
+                patch(mesh,form,1,side*.081+offset,level-.024,.005,.13,'chrome',.029,radius=.001)
+            patch(mesh,form,1,side*.57,.463,.225,.051,'lamp_marker',.112,radius=.008)
+        patch(mesh,form,1,0,.31,.81,.074,'rubber',.02,radius=.007)
+        for side in (-1,1):
+            patch(mesh,form,1,side*.56,.315,.18,.068,'rubber',.027,radius=.009)
+        return [(-.595,level,form.end_z(-.595,1)+.046),(.595,level,form.end_z(.595,1)+.046)]
     layouts={
         'regent':(.59,.40),'kronen':(.67,.255),'albion':(.69,.14),
         'calder':(.56,.405),'monarch':(1.05,.23),'bayside':(.94,.16),'hikari':(.67,.105),
     }
     gw,gh=layouts[style]
-    grille(mesh,form,gw,gh,level,style in ('regent','calder','monarch'))
+    grille_y=min(level,form.deck(form.end)-gh/2-.028)
+    grille(mesh,form,gw,gh,grille_y,style in ('regent','calder','monarch'))
+    anchors=[]
     for side in (-1,1):
         if style=='albion':
-            for x,r in ((.68,.125),(.42,.102)):
-                z=form.end_z(side*x,1)
-                mesh.cylinder((side*x,level+.028,z+.045),r+.022,.040,'chrome',axis=2,sides=24)
-                mesh.cylinder((side*x,level+.028,z+.071),r,.020,'headlight',axis=2,sides=24)
-            patch(mesh,form,1,side*.64,.405,.32,.055,'amber',.10)
+            for x,r in ((.66,.090),(.44,.077)):
+                round_lamp(mesh,form,side*x,level+.012,r)
+            anchors.append((side*.66,level+.012,form.end_z(side*.66,1)+.047))
+            patch(mesh,form,1,side*.64,.405,.32,.055,'lamp_marker',.10)
         elif style=='calder':
             # Stacked sealed-beam lamps and tall outboard corner lenses.
-            for dy in (-.068,.068):
-                patch(mesh,form,1,side*.62,level+dy,.335,.116,'chrome',.04,radius=.016)
-                patch(mesh,form,1,side*.62,level+dy,.293,.082,'headlight',.047,radius=.012)
+            for dy in (-.10,.01):
+                patch(mesh,form,1,side*.62,level+dy,.31,.102,'chrome',.025,radius=.010)
+                patch(mesh,form,1,side*.62,level+dy,.293,.082,'lamp_front',.031,radius=.007)
+            anchors.append((side*.62,level+.01,form.end_z(side*.62,1)+.049))
         else:
             lw={'regent':.43,'kronen':.43,'monarch':.29,'bayside':.35,'hikari':.32}[style]
             lh={'regent':.175,'kronen':.19,'monarch':.205,'bayside':.18,'hikari':.135}[style]
             x=side*(gw/2+(width-gw/2)*.52)
             patch(mesh,form,1,x,level+.02,lw+.04,lh+.035,
                   'rubber' if style=='hikari' else 'chrome',.032)
-            patch(mesh,form,1,x,level+.02,lw,lh,'headlight',.043)
+            patch(mesh,form,1,x,level+.02,lw,lh,'lamp_front',.043)
+            anchors.append((x,level+.02,form.end_z(x,1)+.062))
             if style=='regent':
                 patch(mesh,form,1,x,level+.02,.022,lh+.02,'chrome',.05,radius=.005)
             if style=='kronen':
                 patch(mesh,form,1,x+side*.10,level+.02,.013,lh,'glasslight',.05,radius=.003)
         if style!='albion':
-            patch(mesh,form,1,side*(width-.035),level,.055,.16,'amber',.05,radius=.012)
+            patch(mesh,form,1,side*(width-.035),level,.055,.16,'lamp_marker',.05,radius=.012)
     if style in ('regent','kronen','calder'):
         y=form.deck(form.end-.19)+form.shape['crown']
         mesh.beam((0,y,form.end-.19),(0,y+.078,form.end-.19),.012,'chrome')
         mesh.box((0,y+.082,form.end-.19),(.033,.037,.016),'gold' if style=='regent' else 'chrome')
+    return anchors
 
 
 def rear(mesh,form):
@@ -87,7 +98,7 @@ def rear(mesh,form):
     y=form.deck(-form.end)-.205
     if style=='monarch':
         patch(mesh,form,-1,0,y+.02,1.63,.13,'chrome',.03)
-        patch(mesh,form,-1,0,y+.02,1.56,.082,'red',.043)
+        patch(mesh,form,-1,0,y+.02,1.56,.082,'lamp_tail',.043)
         for x in (-.50,0,.50):
             patch(mesh,form,-1,x,y+.02,.025,.09,'chrome',.05,radius=.005)
     else:
@@ -97,7 +108,7 @@ def rear(mesh,form):
         for side in (-1,1):
             x=side*(width-lw/2-.045)
             patch(mesh,form,-1,x,y,lw+.035,lh+.035,'chrome',.025,radius=.02)
-            patch(mesh,form,-1,x,y,lw,lh,'red',.04,radius=.02)
+            patch(mesh,form,-1,x,y,lw,lh,'lamp_tail',.04,radius=.02)
             if style=='kronen':
                 for dy in (-.05,0,.05):
                     patch(mesh,form,-1,x,y+dy,lw,.012,'seam',.048,radius=.002)
@@ -120,5 +131,8 @@ def rear(mesh,form):
 def build_fascias(mesh,form):
     for end in (-1,1):
         form.bumper(mesh,end,'rubber' if form.car['style']=='hikari' else 'chrome')
-    front(mesh,form)
+    anchors=front(mesh,form)
     rear(mesh,form)
+    if form.car['style'] not in ('vahren','regent','calder'):
+        patch(mesh,form,1,0,.31,.82,.060,'rubber',.024,radius=.005)
+    return anchors

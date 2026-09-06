@@ -18,21 +18,46 @@ def font_path():
     raise RuntimeError('Install Arial or DejaVu Sans to regenerate the sign textures.')
 
 
-def save_texture(name, image):
+def save_texture(name, image, linear=False):
     path = f'{ua.ASSET}/Textures/{name}.png'
     stream = BytesIO()
     image.save(stream, format='PNG')
     ua.write(path, stream.getvalue())
-    ua.texture_meta(path)
+    ua.texture_meta(path,srgb=not linear)
     return path
 
 
-def make_palette():
-    image = Image.new('RGB', (len(COLORS)*32, 32))
+def make_palette(emission=False):
+    image = Image.new('RGB', (len(COLORS)*8, 128))
     draw = ImageDraw.Draw(image)
-    for i, color in enumerate(COLORS.values()):
-        draw.rectangle((i*32, 0, (i+1)*32-1, 31), fill=color)
-    return save_texture('SedanPalette', image)
+    emit={'lamp_front':'#ffd973','lamp_tail':'#ff1710','lamp_marker':'#ff7514'}
+    for i, (key, color) in enumerate(COLORS.items()):
+        if emission:
+            color=emit.get(key,'#000000')
+        draw.rectangle((i*8, 0, (i+1)*8-1, 127), fill=color)
+        if key=='glass' and not emission:
+            stops=[(0,(48,67,81)),(.42,(89,113,123)),(.56,(41,57,65)),(1,(22,30,37))]
+            for y in range(128):
+                t=y/127
+                for (a,ca),(b,cb) in zip(stops,stops[1:]):
+                    if t<=b:
+                        k=(t-a)/(b-a)
+                        shade=tuple(round(x+(z-x)*k) for x,z in zip(ca,cb));break
+                draw.line((i*8,y,(i+1)*8-1,y),fill=shade)
+    return save_texture('SedanLampEmission' if emission else 'SedanPalette', image)
+
+
+def make_surface():
+    """Packed metal/smoothness atlas: one shared material, correct rubber/glass/paint."""
+    image=Image.new('RGBA',(len(COLORS)*8,128));draw=ImageDraw.Draw(image)
+    for i,key in enumerate(COLORS):
+        metal,smooth=(25,153)
+        if key in ('rubber','tireface','seam') or key.endswith('_gap'):metal,smooth=0,35
+        elif key in ('chrome','wheelshade','gold'):metal,smooth=205,220
+        elif key in ('glass','glasslight','glasssky'):metal,smooth=30,245
+        elif key in ('cream','maroon','cladding'):metal,smooth=0,90
+        draw.rectangle((i*8,0,(i+1)*8-1,127),fill=(metal,0,0,smooth))
+    return save_texture('SedanSurface',image,linear=True)
 
 
 def sign(name, lines, title=False):

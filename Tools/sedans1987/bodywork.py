@@ -43,8 +43,8 @@ class Coachwork:
             (self.end,-self.shape['hood_drop'])],z)
 
     def side_x(self, y, z):
-        t=(y-.30)/(self.deck(z)-.30)
-        return self.width(z)*interpolate([(0,.88),(.2,.96),(.62,1),(.85,.99),(1,.92)],t)
+        t=(y-.21)/(self.deck(z)-.21)
+        return self.width(z)*interpolate([(0,.90),(.15,.95),(.64,1),(.91,.99),(1,.92)],t)
 
     def end_z(self, x, end):
         return end*(self.end-self.shape['corner']*(abs(x)/self.width(end*self.end))**6)
@@ -58,7 +58,7 @@ class Coachwork:
         return (x,self.deck(z)+self.shape['crown']*(1-u*u),self.position_z(x,z))
 
     def arch_y(self, z):
-        y=.32
+        y=.21
         for axle in (self.rear,self.front):
             d=abs(z-axle)
             if d < self.arch:
@@ -83,12 +83,12 @@ class Coachwork:
     def shell(self, mesh):
         car=self.car
         bb,_,_,fb=car['cabin']
-        rings=set(samples(-self.end,self.end,32)+[bb,fb,-self.end+.6,self.end-.6])
+        rings=set(samples(-self.end,self.end,12)+[bb,fb,-self.end+.6,self.end-.6])
         for axle in (self.rear,self.front):
-            rings.update(axle+self.arch*math.cos(i*math.pi/18) for i in range(19))
+            rings.update(axle+self.arch*math.cos(i*math.pi/12) for i in range(13))
             rings.update((axle-self.arch-.035,axle+self.arch+.035))
         rings=sorted({round(z,7) for z in rings})
-        mesh.box((0,.29,0),(self.w*1.6,.09,car['wheelbase']+1.0),'rubber')
+        mesh.box((0,.19,0),(self.w*1.6,.10,car['wheelbase']+1.0),'rubber')
         for side in (-1,1):
             def paint(z,t):
                 y=lerp(self.arch_y(z),self.deck(z),t)
@@ -97,12 +97,12 @@ class Coachwork:
                 if car['style']=='monarch' and y<.49:
                     return 'maroon'
                 return car['paint']
-            mesh.surface(lambda z,t:self.side(side,z,t),rings,[0,.12,.28,.52,.75,.9,1],
+            mesh.surface(lambda z,t:self.side(side,z,t),rings,[0,.16,.62,.90,1],
                          paint,(side,0,0),normal_at=lambda z,t:self.side_normal(side,z,t))
             # Recessed wheel wells and rolled sheet-metal lips frame the tires.
             for axle in (self.rear,self.front):
                 previous=None
-                for angle in samples(0,math.pi,24):
+                for angle in samples(0,math.pi,12):
                     z=axle+self.arch*math.cos(angle)
                     y=car['radius']+self.arch*math.sin(angle)
                     x=self.side_x(y,z)
@@ -110,45 +110,50 @@ class Coachwork:
                     inner=(side*(x-.12),y,z)
                     if previous:
                         mesh.face([previous[0],here,inner,previous[1]],'rubber',(0,-1,0))
-                        mesh.beam(previous[0],here,.021,car['paint'])
+                        mesh.ribbon([previous[0],here],.020,car['paint'],(side,0,0))
                     previous=(here,inner)
         for za,zb in [(-self.end,bb),(fb,self.end)]:
-            mesh.surface(self.top,samples(-1,1,12),samples(za,zb,12),car['paint'],(0,1,0))
+            mesh.surface(self.top,samples(-1,1,8),samples(za,zb,4),car['paint'],(0,1,0))
+        # A stamped bonnet panel between the fenders, with a millimetre-scale
+        # shut line. The hood should read as sheet metal rather than a solid block.
+        def seam_point(u,z):
+            x,y,pz=self.top(u,z)
+            return (x,y+.006,pz)
+        for side in (-1,1):
+            line=[seam_point(side*.80,z) for z in samples(fb+.045,self.end-.035,6)]
+            mesh.ribbon(line,.003,car['paint']+'_gap',(0,1,0))
+        line=[seam_point(u,self.end-.035) for u in samples(-.80,.80,6)]
+        mesh.ribbon(line,.003,car['paint']+'_gap',(0,1,0))
         for end in (-1,1):
             def cap(u,t):
                 z=end*self.end
-                y=lerp(.32,self.deck(z)+self.shape['crown']*(1-u*u),t)
+                y=lerp(.22,self.deck(z)+self.shape['crown']*(1-u*u),t)
                 x=u*self.side_x(min(y,self.deck(z)),z)
                 return (x,y,self.end_z(x,end))
-            mesh.surface(cap,samples(-1,1,18),[0,.18,.5,.8,1],car['paint'],(0,0,end))
+            mesh.surface(cap,samples(-1,1,10),[0,.2,.7,1],car['paint'],(0,0,end))
 
     def belt_trim(self, mesh, height, thickness, color):
         for side in (-1,1):
             points=[]
-            for z in samples(-self.end+.35,self.end-.35,24):
+            for z in samples(-self.end+.35,self.end-.35,12):
                 y=self.deck(z)-height
                 if y < self.arch_y(z)+.025:
                     points=[]
                     continue
                 point=(side*(self.side_x(y,z)+.012),y,self.position_z(self.side_x(y,z),z))
                 if points:
-                    mesh.beam(points[-1],point,thickness,color)
+                    mesh.ribbon([points[-1],point],thickness,color,(side,0,0))
                 points.append(point)
 
     def bumper(self, mesh, end, color):
         w=self.width(end*self.end)*1.03
+        bottom,top=(.405,.525) if self.car['style']=='vahren' else (.38,.55)
         def panel(u,t):
             x=u*w
-            y=lerp(.38,.56,t)
+            y=lerp(bottom,top,t)
             z=self.end_z(x,end)+end*(.07+.018*math.sin(math.pi*t))
             return (x,y,z)
-        mesh.surface(panel,samples(-1,1,24),[0,.12,.4,.8,1],color,(0,0,end))
-        for height in (.385,.56):
-            for xa,xb in zip(samples(-w,w,24),samples(-w,w,24)[1:]):
-                a=(xa,height,self.end_z(xa,end)+end*.07)
-                b=(xb,height,self.end_z(xb,end)+end*.07)
-                mesh.beam(a,b,.025,color)
+        mesh.surface(panel,samples(-1,1,12),[0,.16,.84,1],color,(0,0,end))
         # Rubber contact strip follows the curved bumper instead of a straight box.
-        for xa,xb in zip(samples(-w,w,24),samples(-w,w,24)[1:]):
-            mesh.beam((xa,.465,self.end_z(xa,end)+end*.09),
-                      (xb,.465,self.end_z(xb,end)+end*.09),.035,'rubber')
+        mesh.ribbon([(x,.465,self.end_z(x,end)+end*.092) for x in samples(-w,w,12)],
+                    .052,'rubber',(0,0,end))

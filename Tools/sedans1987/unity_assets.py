@@ -60,20 +60,30 @@ def meta(path,importer='NativeFormatImporter',extra='  mainObjectFileID: 4300000
 def mesh_asset(mesh,palette,full_uv=False):
     path=f'{ASSET}/Meshes/{mesh.name}.asset'
     vertices,indices=[],[]
+    welded={}
     for face_index,(points,color) in enumerate(mesh.faces):
         normal=unit(cross(sub(points[1],points[0]),sub(points[2],points[0])))
         tangent=unit(sub(points[1],points[0]))
-        start=len(vertices)
+        face_indices=[]
         uv=((palette.index(color)+.5)/len(palette),.5)
         for i,p in enumerate(points):
             # Front-facing +Z signs: viewer's right is world -X.
             tex=[(1,0),(0,0),(0,1),(1,1)][i] if full_uv else uv
+            if face_index in mesh.uvs:
+                tex=mesh.uvs[face_index][i]
             vertex_normal=mesh.normals.get(face_index,[normal]*len(points))[i]
-            dot=sum(a*b for a,b in zip(tangent,vertex_normal))
-            vertex_tangent=unit(tuple(a-dot*b for a,b in zip(tangent,vertex_normal)))
-            vertices.append((*p,*vertex_normal,*vertex_tangent,1,*tex))
+            # No normal maps: a stable orthogonal basis lets coincident smooth
+            # corners share the exact same packed vertex instead of per-face tangents.
+            axis=(0,1,0) if abs(vertex_normal[1])<.95 else (1,0,0)
+            vertex_tangent=unit(cross(axis,vertex_normal))
+            vertex=(*p,*vertex_normal,*vertex_tangent,1,*tex)
+            key=struct.pack('<12f',*vertex)
+            if key not in welded:
+                welded[key]=len(vertices)
+                vertices.append(vertex)
+            face_indices.append(welded[key])
         for i in range(1,len(points)-1):
-            indices.extend((start,start+i,start+i+1))
+            indices.extend((face_indices[0],face_indices[i],face_indices[i+1]))
     assert len(vertices)<65536
     lo,hi=mesh.bounds
     bounds='      m_Center: '+v3([(a+b)/2 for a,b in zip(lo,hi)])+'\n      m_Extent: '+v3([(b-a)/2 for a,b in zip(lo,hi)])+'\n'
@@ -141,12 +151,12 @@ def mesh_asset(mesh,palette,full_uv=False):
     return path
 
 
-def texture_meta(path):
-    meta(path,'TextureImporter','''  serializedVersion: 13
+def texture_meta(path,srgb=True):
+    meta(path,'TextureImporter',f'''  serializedVersion: 13
   mipmaps:
     mipMapMode: 0
     enableMipMap: 0
-    sRGBTexture: 1
+    sRGBTexture: {int(srgb)}
   isReadable: 0
   textureFormat: 1
   maxTextureSize: 2048
@@ -167,7 +177,7 @@ def texture_meta(path):
 ''')
 
 
-def material(name,texture,unlit=False):
+def material(name,texture,unlit=False,emission=None,surface=None):
     path=f'{ASSET}/Materials/{name}.mat'
     # URP Lit and Unlit package assets; no custom shader or runtime Shader.Find.
     shader='650dd9526735d5b46b79224bc6e94025' if unlit else '933532a4fcc9baf4fa0491de14d08ed7'
@@ -177,11 +187,11 @@ def material(name,texture,unlit=False):
     previous=(ROOT/path).read_text() if (ROOT/path).exists() else ''
     version_id=re.search(r'^--- !u!114 &(\d+)',previous,re.M)
     version_id=version_id[1] if version_id else '11400000'
-    write(path,HEADER+'--- !u!21 &2100000\nMaterial:\n  serializedVersion: 8\n'+COMMON+f'''  m_Name: {name}
+    text=HEADER+'--- !u!21 &2100000\nMaterial:\n  serializedVersion: 8\n'+COMMON+f'''  m_Name: {name}
   m_Shader: {{fileID: 4800000, guid: {shader}, type: 3}}
   m_Parent: {{fileID: 0}}
   m_ModifiedSerializedProperties: 0
-  m_ValidKeywords: []
+  m_ValidKeywords: [{', '.join(k for k,enabled in [('_EMISSION',emission),('_METALLICSPECGLOSSMAP',surface)] if enabled)}]
   m_InvalidKeywords: []
   m_LightmapFlags: 4
   m_EnableInstancingVariants: 1
@@ -210,7 +220,8 @@ def material(name,texture,unlit=False):
     - _Metallic: 0.08
     - _OcclusionStrength: 1
     - _ReceiveShadows: 1
-    - _Smoothness: 0.26
+    - _Smoothness: {0.85 if surface else 0.65 if emission else 0.26}
+    - _SmoothnessTextureChannel: 0
     - _SpecularHighlights: 1
     - _SrcBlend: 1
     - _Surface: 0
@@ -234,7 +245,22 @@ MonoBehaviour:
   m_Name: {''}
   m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Editor::UnityEditor.Rendering.Universal.AssetVersion
   version: 10
-''')
+'''
+    if emission:
+        # Keyword is baked so the Player keeps the emissive variant. The runtime
+        # varies only _EmissionColor through a renderer property block.
+        text=text.replace('    m_Ints: []',f'''    - _EmissionMap:
+        m_Texture: {ref(emission,2800000,3)}
+        m_Scale: {{x: 1, y: 1}}
+        m_Offset: {{x: 0, y: 0}}
+    m_Ints: []''')
+    if surface:
+        text=text.replace('    m_Ints: []',f'''    - _MetallicGlossMap:
+        m_Texture: {ref(surface,2800000,3)}
+        m_Scale: {{x: 1, y: 1}}
+        m_Offset: {{x: 0, y: 0}}
+    m_Ints: []''')
+    write(path,text)
     meta(path,extra='  mainObjectFileID: 2100000\n')
     return path
 
@@ -264,7 +290,7 @@ class Hierarchy:
 
     def renderer(self,n,mesh,mat):
         self.component(n,33,'MeshFilter',f'  m_Mesh: {ref(mesh,4300000)}\n')
-        self.component(n,23,'MeshRenderer',f'''  m_Enabled: 1
+        return self.component(n,23,'MeshRenderer',f'''  m_Enabled: 1
   m_CastShadows: 1
   m_ReceiveShadows: 1
   m_DynamicOccludee: 1
@@ -289,8 +315,8 @@ class Hierarchy:
   m_AdditionalVertexStreams: {{fileID: 0}}
 ''')
 
-    def mono(self,n,path,body):
-        return self.component(n,114,'MonoBehaviour','  m_Enabled: 1\n  m_EditorHideFlags: 0\n'+
+    def mono(self,n,path,body,enabled=True):
+        return self.component(n,114,'MonoBehaviour',f'  m_Enabled: {int(enabled)}\n  m_EditorHideFlags: 0\n'+
                 f'  m_Script: {ref(path,11500000,3)}\n  m_Name: \n  m_EditorClassIdentifier: \n'+body)
 
     def prefab_instance(self,path,position,yaw):

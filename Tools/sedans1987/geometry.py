@@ -21,19 +21,24 @@ class Mesh:
     def __init__(self, name):
         self.name, self.faces = name, []
         self.normals = {}
+        self.uvs = {}
 
-    def face(self, points, color, outward=None, normals=None):
+    def face(self, points, color, outward=None, normals=None, uvs=None):
         points = list(points)
         normal = unit(cross(sub(points[1], points[0]), sub(points[2], points[0])))
         if outward and sum(a*b for a, b in zip(normal, outward)) < 0:
             points.reverse()
             if normals is not None:
                 normals = list(reversed(normals))
+            if uvs is not None:
+                uvs = list(reversed(uvs))
         if normals is not None:
             self.normals[len(self.faces)] = [unit(n) for n in normals]
+        if uvs is not None:
+            self.uvs[len(self.faces)] = list(uvs)
         self.faces.append((points, color))
 
-    def surface(self, point, us, vs, color, outward, smooth=True, normal_at=None):
+    def surface(self, point, us, vs, color, outward, smooth=True, normal_at=None, uv=None):
         """Sample a curved panel with analytic-position finite-difference normals."""
         def normal(u, v):
             e = .0001
@@ -51,7 +56,18 @@ class Mesh:
                 pts = [point(u,v) for u,v in coords]
                 wanted = outward(pts[0]) if callable(outward) else outward
                 shade = color((u0+u1)/2,(v0+v1)/2) if callable(color) else color
-                self.face(pts,shade,wanted,[normal(u,v) for u,v in coords] if smooth else None)
+                self.face(pts,shade,wanted,[normal(u,v) for u,v in coords] if smooth else None,
+                          [uv(u,v) for u,v in coords] if uv else None)
+
+    def ribbon(self, points, width, color, outward):
+        """A surface strip for panel gaps/trim, not a stack of capped cuboids."""
+        for a,b in zip(points,points[1:]):
+            direction=unit(sub(b,a))
+            n=outward(a) if callable(outward) else outward
+            across=unit(cross(n,direction))
+            pts=[tuple(p[i]+s*width*.5*across[i] for i in range(3))
+                 for p,s in [(a,-1),(b,-1),(b,1),(a,1)]]
+            self.face(pts,color,n)
 
     def box(self, center, size, color):
         x, y, z = center
@@ -98,6 +114,8 @@ class Mesh:
     def add(self, other, position=(0,0,0), yaw=0):
         s,c=math.sin(math.radians(yaw)),math.cos(math.radians(yaw))
         for index,(points,color) in enumerate(other.faces):
+            if index in other.uvs:
+                self.uvs[len(self.faces)] = other.uvs[index]
             if index in other.normals:
                 self.normals[len(self.faces)] = [(n[0]*c+n[2]*s,n[1],-n[0]*s+n[2]*c)
                                                 for n in other.normals[index]]

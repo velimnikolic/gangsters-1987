@@ -102,11 +102,18 @@ def build(cars, prefabs, material):
     title = scene.node('Biscayne Motor Club sign', position=(0, 3.6, -6.83))
     scene.renderer(title, sign_plane('ShowroomTitle', 10.5, 2.625),
                    ua.material('MiamiTitle', title_tex, unlit=True))
-    camera = add_camera(scene, car_ids, cars)
     sun = scene.node('Warm afternoon sun', pitch=50, yaw=-32)
     sun_id = scene.component(sun, 108, 'Light', light_body(1.4, '{r: 1, g: 0.95, b: 0.86, a: 1}', 2))
     fill = scene.node('Soft sky fill', pitch=65, yaw=148)
-    scene.component(fill, 108, 'Light', light_body(.32, '{r: 0.72, g: 0.84, b: 1, a: 1}', 0))
+    fill_id=scene.component(fill, 108, 'Light', light_body(.32, '{r: 0.72, g: 0.84, b: 1, a: 1}', 0))
+    lighting=scene.node('Shared vehicle lighting')
+    clock_id=scene.mono(lighting,'Assets/Scripts/Ambient/CityClock.cs',
+                       '  startHour: 14\n  running: 0\n',enabled=False)
+    headlights_id=scene.mono(lighting,'Assets/RoadDemo/DemoHeadlights.cs',
+                            f'  clock: {{fileID: {clock_id}}}\n')
+    scene.mono(lighting,'Assets/RoadDemo/DemoSky.cs',
+               f'  clock: {{fileID: {clock_id}}}\n  sun: {{fileID: {sun_id}}}\n')
+    camera = add_camera(scene, car_ids, cars,clock_id,headlights_id,fill_id)
     settings = (ua.ROOT/'Tools/sedans1987/scene_settings.txt').read_text()
     settings = settings.replace('m_Sun: {fileID: 0}', f'm_Sun: {{fileID: {sun_id}}}')
     ua.write(SCENE, settings+scene.text(scene=True))
@@ -114,7 +121,7 @@ def build(cars, prefabs, material):
     return camera
 
 
-def add_camera(scene, cars, lineup):
+def add_camera(scene, cars, lineup,clock_id,headlights_id,fill_id):
     cfg = CAMERA
     pitch = math.radians(cfg['pitch'])
     position = (0, cfg['pivot'][1]+math.sin(pitch)*cfg['distance'],
@@ -164,7 +171,7 @@ def add_camera(scene, cars, lineup):
   mapTransition: 0
   minDistance: 4.5
   mapCeiling: 65
-  hint: "1-8: inspect car / 0: full lineup / WASD: pan / Q E: orbit / wheel: zoom"
+  hint: "1-8: inspect car / 0: lineup / L: day-night lights / WASD: pan / Q E: orbit / wheel: zoom"
   hintTopPx: 12
   showHint: 1
   showZoom: 0
@@ -172,6 +179,10 @@ def add_camera(scene, cars, lineup):
     body = '  cars:\n'+''.join(f'  - {{fileID: {car}}}\n' for car in cars)
     body += '  labels:\n'+''.join('  - '+json.dumps(f'{i+1:02d} / {car["name"]} / {car["role"]}')+'\n'
                                   for i, car in enumerate(lineup))
+    body += f'''  clock: {{fileID: {clock_id}}}
+  headlights: {{fileID: {headlights_id}}}
+  editorFill: {{fileID: {fill_id}}}
+'''
     scene.mono(camera, 'Assets/RoadDemo/SedanShowroom.cs', body)
     return camera
 

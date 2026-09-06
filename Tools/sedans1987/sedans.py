@@ -4,6 +4,7 @@ from bodywork import Coachwork
 from cabins import build_cabin
 from fascias import build_fascias
 from wheels import build_wheels
+from lenses import separate_lamps
 
 
 def build_car(car):
@@ -11,7 +12,7 @@ def build_car(car):
     form=Coachwork(car)
     form.shell(body)
     build_cabin(body,form)
-    build_fascias(body,form)
+    anchors=build_fascias(body,form)
     trim='rubber' if car['style']=='hikari' else 'chrome'
     form.belt_trim(body,.17,.022 if trim=='rubber' else .012,trim)
     if car['style'] in ('regent','calder','monarch'):
@@ -25,4 +26,4 @@ def build_car(car):
     body.box((x,y-.17,z),(.009,.12,.16),'seam')
     body.box((x+.006,y-.17,z),(.009,.106,.146),car['paint'])
     body.box((-.46,.29,-form.end+.055),(.074,.055,.19),'rubber')
-    return body,build_wheels(form)
+    return body,build_wheels(form),separate_lamps(body),anchors

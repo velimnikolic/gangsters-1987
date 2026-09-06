@@ -31,6 +31,7 @@ namespace RoadDemo
         {
             public Transform Car;
             public RoadCar Vehicle;
+            public VehicleLampRig Fittings;
             public Light L, R;
             public bool Burning;
         }
@@ -45,13 +46,7 @@ namespace RoadDemo
 
         public void Register(Transform car, float halfLen)
         {
-            var rig = new Rig
-            {
-                Car = car,
-                L = Attach(car, new Vector3(-0.55f, 0.7f, halfLen - 0.5f)),
-                R = Attach(car, new Vector3(0.55f, 0.7f, halfLen - 0.5f)),
-            };
-            _rigs.Add(rig);
+            if (car) _rigs.Add(CreateRig(car, null, halfLen));
         }
 
         /// <summary>Register a live road car so its engine/parking state can drive the
@@ -60,14 +55,23 @@ namespace RoadDemo
         public void Register(RoadCar car)
         {
             if (car == null || !car.Tf || !_registered.Add(car)) return;
-            var rig = new Rig
+            _rigs.Add(CreateRig(car.Tf, car, car.HalfLen));
+        }
+
+        static Rig CreateRig(Transform car, RoadCar vehicle, float halfLen)
+        {
+            var fittings = car.GetComponentInChildren<VehicleLampRig>(true);
+            Vector3 Position(bool left)
             {
-                Car = car.Tf,
-                Vehicle = car,
-                L = Attach(car.Tf, new Vector3(-0.55f, 0.7f, car.HalfLen - 0.5f)),
-                R = Attach(car.Tf, new Vector3(0.55f, 0.7f, car.HalfLen - 0.5f)),
+                if (!fittings) return new Vector3(left ? -0.55f : 0.55f, 0.7f, halfLen - 0.5f);
+                return car.InverseTransformPoint(fittings.transform.TransformPoint(
+                    left ? fittings.leftHeadlight : fittings.rightHeadlight));
+            }
+            return new Rig
+            {
+                Car = car, Vehicle = vehicle, Fittings = fittings,
+                L = Attach(car, Position(true)), R = Attach(car, Position(false)),
             };
-            _rigs.Add(rig);
         }
 
         /// <summary>Crew cars are dealt from the ledger after the city and its night
@@ -86,7 +90,7 @@ namespace RoadDemo
                 Register(_crews.Cars[i]);
         }
 
-        static bool WantsLights(Rig rig) => rig.Car != null &&
+        static bool WantsLights(Rig rig) => rig.Car != null && rig.Car.gameObject.activeInHierarchy &&
             LivingCity.Gameplay.MapVisionRegistry.IsRevealed(rig.Car.position) &&
             (rig.Vehicle == null ||
              (!rig.Vehicle.Parked && !rig.Vehicle.EngineOff &&
@@ -125,6 +129,7 @@ namespace RoadDemo
             for (int i = _rigs.Count - 1; i >= 0; i--)
                 if (!_rigs[i].L || !_rigs[i].R)
                 {
+                    Release(_rigs[i]);
                     if (_rigs[i].Vehicle != null) _registered.Remove(_rigs[i].Vehicle);
                     _rigs.RemoveAt(i);
                 }
@@ -171,6 +176,7 @@ namespace RoadDemo
             {
                 var rig = _rigs[_order[rank]];
                 bool wants = WantsLights(rig);
+                if (rig.Fittings) rig.Fittings.SetRunningLights(wants ? night : 0f);
                 bool burns = burn && wants && litCars * 2 < LitBeamBudget;
                 if (wants) litCars++;
                 // enabling a light re-registers it with the renderer: touched only on change
@@ -186,6 +192,33 @@ namespace RoadDemo
                     rig.R.intensity = target;
                 }
             }
+        }
+
+        void OnDisable()
+        {
+            foreach (var rig in _rigs)
+            {
+                if (rig.L) rig.L.enabled = false;
+                if (rig.R) rig.R.enabled = false;
+                if (rig.Fittings) rig.Fittings.SetRunningLights(0f);
+                rig.Burning = false;
+            }
+            _lit = -1f;
+            _nextResort = 0f;
+        }
+
+        static void Release(Rig rig)
+        {
+            if (rig.Fittings) rig.Fittings.SetRunningLights(0f);
+            if (rig.L) { rig.L.enabled = false; Destroy(rig.L.gameObject); }
+            if (rig.R) { rig.R.enabled = false; Destroy(rig.R.gameObject); }
+        }
+
+        void OnDestroy()
+        {
+            foreach (var rig in _rigs) Release(rig);
+            _rigs.Clear();
+            _registered.Clear();
         }
     }
 }
