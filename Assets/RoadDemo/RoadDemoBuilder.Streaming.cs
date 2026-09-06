@@ -103,22 +103,32 @@ namespace RoadDemo
         public void SetMax3DDistance(float metres)
         {
             _runtimeMax3DDistance = Mathf.Max(40f, metres);
-            if (_rig != null) _rig.mapAt = _runtimeMax3DDistance;
+            if (_rig != null) _rig.SetMaxGroundHeight(_runtimeMax3DDistance);
         }
 
         void ConfigureCityView(DemoCamera rig)
         {
             if (rig == null) return;
-            rig.mapAt = _runtimeMax3DDistance >= 40f
-                ? _runtimeMax3DDistance
-                : ResolvedCityView.Max3DDistance;
             rig.ConfigurePitch(ResolvedCityView.StreetPitch, ResolvedCityView.PitchFreedom);
+            rig.SetMaxGroundHeight(_runtimeMax3DDistance >= 40f
+                ? _runtimeMax3DDistance
+                : ResolvedCityView.Max3DDistance);
+            rig.ConfigureGround(CameraGroundHeight);
             for (int i = 0; i < _blockRecyclers.Count; i++)
                 if (_blockRecyclers[i] != null) _blockRecyclers[i].SetCamera(rig);
         }
 
+        float CameraGroundHeight(float x, float z)
+        {
+            if (this == null) return 0f;
+            return Mathf.Max(0f, _regionalIsland != null
+                ? RegionalIslandView.SurfaceHeight(_regionalIsland, x, z)
+                : LandHeight(x, z));
+        }
+
         void DisposeStreaming()
         {
+            if (_rig != null) _rig.ConfigureGround(null);
             for (int i = 0; i < _residentialMapSources.Count; i++)
                 if (_residentialMapSources[i].Model != null)
                     _residentialMapSources[i].Model.Changed -= ResidentialGeometryChanged;

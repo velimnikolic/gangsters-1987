@@ -349,7 +349,7 @@ namespace RoadDemo
         {
             if (_camera == null || _rig == null) return false;
             float planeY = transform.position.y;
-            float cap = Mathf.Max(40f, _rig.distance * _config.GroundRayBooms);
+            float cap = Mathf.Max(40f, _rig.GroundRayDistance(planeY) * _config.GroundRayBooms);
             for (int i = 0; i < ViewCorners.Length; i++)
             {
                 var ray = _camera.ViewportPointToRay(ViewCorners[i]);

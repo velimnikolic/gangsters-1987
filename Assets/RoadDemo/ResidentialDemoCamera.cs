@@ -37,9 +37,9 @@ namespace RoadDemo
 
             var rig = camera.gameObject.AddComponent<DemoCamera>();
             var view = CityViewConfig.Resolve();
-            rig.mapAt = view.Max3DDistance;
             rig.mapTransition = false;
             rig.ConfigurePitch(view.StreetPitch, view.PitchFreedom);
+            rig.SetMaxGroundHeight(view.Max3DDistance);
             rig.yaw = 20f;
             rig.showHint = false;
 

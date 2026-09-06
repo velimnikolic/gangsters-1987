@@ -19,6 +19,7 @@ class Program
             int seed=fixture.GetProperty("seed").GetInt32();
             var city=Box(fixture.GetProperty("city")); var ring=Box(fixture.GetProperty("ring"));
             var reservations=new DistrictReservations(); reservations.Level(city,RoadDemoBuilder.RoadBed);
+            var portArea=new List<CoreRegion.Quarter>();
             var river=Box(fixture.GetProperty("river"));
             river.yMin=city.yMin-1000; river.yMax=city.yMax+1000; reservations.Sea(river,false);
             CityEdge harborSide=CityEdge.West; AirportDemo.AirportDistrict airfield=null;
@@ -32,7 +33,12 @@ class Program
                 {
                     // Actual harbor Plan/Reserve: no prefab/Editor calls occur here.
                     var harbor=new HarborDemo.HarborDistrict {berths=district.GetProperty("berths").GetInt32(),Frame=frame};
-                    harbor.Plan(new[]{0f,240f},ds); harbor.Reserve(reservations);
+                    harbor.Plan(new[]{0f,240f},ds);
+                    harbor.PlanSeaRoute(IslandLandform.BoundsFor(Box(fixture.GetProperty("region"))),reservations);
+                    harbor.Reserve(reservations);
+                    portArea.Add(new CoreRegion.Quarter {District=harbor,Slot=new DistrictSlot {
+                        kind=kind,edge=(CityEdge)district.GetProperty("edge").GetInt32()}});
+                    Check(harbor.LocalBounds==Box(district.GetProperty("bounds")),"region fixture has stale harbor bounds");
                     harborSide=(CityEdge)district.GetProperty("edge").GetInt32();
                 }
                 else if(kind==DistrictKind.Airport)
@@ -40,9 +46,17 @@ class Program
                     var airport=new AirportDemo.AirportDistrict {Frame=frame};
                     airfield=airport; airport.Plan(new[]{0f},ds); airport.Reserve(reservations);
                 }
+                else if(kind==DistrictKind.Pad)
+                {
+                    var estate=new IndustrialDistrict {compact=true,pocket=true,Frame=frame}; estate.Plan(null,ds);
+                    estate.Reserve(reservations);
+                    portArea.Add(new CoreRegion.Quarter {District=estate,Slot=new DistrictSlot {
+                        kind=kind,edge=(CityEdge)district.GetProperty("edge").GetInt32()}});
+                }
                 else reservations.Level(frame.ToWorldRect(Box(district.GetProperty("bounds"))),RoadDemoBuilder.RoadBed);
             }
             var net=new LaneNet(); var accesses=new List<RegionalExpresswayPlan.Access>();
+            CheckIndustrialGround(portArea,reservations);
             var stubs=new List<Carriageway>();
             var freight=new FreightNetwork(fixture,net);
             foreach(var item in fixture.GetProperty("access").EnumerateArray())
@@ -194,6 +208,31 @@ class Program
         }
         Console.WriteLine($"PASSED {tested} island/expressway fixtures using actual runtime assembly, harbor/airport reservations. Suburb/industrial footprints are model contracts; no meshes/Unity/Play verdict.");
         return 0;
+    }
+
+    static void CheckIndustrialGround(List<CoreRegion.Quarter> area,DistrictReservations reservations)
+    {
+        var port=area.Single(q=>q.District is HarborDemo.HarborDistrict);
+        var gaps=new List<Vector3>(); var beyond=new List<Vector3>();
+        foreach(var q in area.Where(q=>q.District is IndustrialDistrict))
+        {
+            var bounds=q.World;
+            var a=port.District.Frame.ToLocal(new Vector3(bounds.xMin,0,bounds.yMin));
+            var b=port.District.Frame.ToLocal(new Vector3(bounds.xMax,0,bounds.yMax));
+            float x=(a.x+b.x)*.5f;
+            gaps.Add(port.District.Frame.ToWorld(new Vector3(x,0,15f)));
+            beyond.Add(port.District.Frame.ToWorld(new Vector3(x,0,Math.Max(a.z,b.z)+45f)));
+        }
+        Check(gaps.Any(p=>!reservations.InBare(p.x,p.z)),"fixture does not exercise the unreserved port gap");
+        var oldBeyond=beyond.Select(p=>reservations.InBare(p.x,p.z)).ToArray();
+        PortIndustryLayout.ReserveGround(area,reservations);
+        foreach(var point in gaps)
+            Check(reservations.InBare(point.x,point.z),"gap between estate and port permits wild flora");
+        for(int i=0;i<beyond.Count;i++)
+            Check(reservations.InBare(beyond[i].x,beyond[i].z)==oldBeyond[i],"industrial clearing extends beyond a shorter estate");
+        var apron=port.District.Frame.ToWorld(new Vector3(port.District.LocalBounds.center.x,0,5f));
+        Check(reservations.FlatAt(apron.x,apron.z,20,out var level,out _) && Math.Abs(level-HarborDemo.HarborDistrict.LandY)<.001f,
+            "shared industrial ground overrides the harbor apron level");
     }
     static float SegmentDistance(Vector3 p,Vector3 a,Vector3 b)
     {

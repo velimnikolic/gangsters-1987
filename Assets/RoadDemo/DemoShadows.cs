@@ -75,11 +75,11 @@ namespace RoadDemo
                 _authoredSplit2 = _urp.cascade2Split;
             }
 
-            float pitch = Mathf.Clamp(rig.pitch, 1f, 89f);
+            float pitch = Mathf.Clamp(rig.ViewPitch, 1f, 89f);
             float half = _cam.fieldOfView * 0.5f;
             // measured, not derived from the boom: the pivot is not always on the
             // ground, and the ground is what the shadows land on
-            float height = Mathf.Max(1f, transform.position.y);
+            float height = Mathf.Max(1f, transform.position.y - rig.FocusGroundHeight);
 
             float far = GroundDepth(height, pitch, Mathf.Max(pitch - half, MinGroundAngle));
             float near = GroundDepth(height, pitch, Mathf.Min(pitch + half, 89.5f));

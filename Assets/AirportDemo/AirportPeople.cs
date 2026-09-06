@@ -36,6 +36,17 @@ namespace AirportDemo
         /// <summary>Which way round an obstacle he committed to last frame, so he does
         /// not dither left and right in front of it.</summary>
         int _side;
+        // THE PROBE EVERY OTHER FRAME. Forty of these extras walk the field and every one
+        // of them asked the obstacle field for a fresh line every frame - the single
+        // biggest cost of the whole airport (measured 2026-09-06). A man crossing a ramp
+        // at walking pace moves five centimetres between frames; the line he was given
+        // last frame, with the clearance it came with less the step he took, is the same
+        // answer. Odd and even walkers take turns so the load is level.
+        Vector3 _steer;
+        float _steerClear;
+        int _steerFrame = -1;
+        static int _steerParity;
+        readonly int _steerTurn = _steerParity++ & 1;
         static readonly System.Random Rng = new System.Random(1987);
 
         public void Begin(bool atFirst = false)
@@ -86,10 +97,23 @@ namespace AirportDemo
             // and the answer turned back into the field's own coordinates
             var want = to / dist;
             var parent = Tf.parent;
-            var wantWorld = parent != null ? parent.TransformDirection(want) : want;
-            var steer = WalkObstacles.Steer(Tf.position, wantWorld, wantWorld, 0.45f, 4f, ref _side, out float clear);
-            if (steer.sqrMagnitude > 0.001f) want = parent != null ? parent.InverseTransformDirection(steer) : steer;
+            float clear;
+            int frame = Time.frameCount;
+            if (_steerFrame == frame - 1 && (frame & 1) != _steerTurn && _steerClear > 0.2f)
+            {
+                want = _steer;
+                clear = _steerClear;
+            }
+            else
+            {
+                var wantWorld = parent != null ? parent.TransformDirection(want) : want;
+                var steer = WalkObstacles.Steer(Tf.position, wantWorld, wantWorld, 0.45f, 4f, ref _side, out clear);
+                if (steer.sqrMagnitude > 0.001f) want = parent != null ? parent.InverseTransformDirection(steer) : steer;
+            }
             var step = want * Mathf.Min(dist, Mathf.Min(clear, Speed * dt));
+            _steer = want;
+            _steerClear = clear - step.magnitude;
+            _steerFrame = frame;
             var p = Tf.localPosition + step;
             p.y = goal.y;
             Tf.localPosition = p;

@@ -26,7 +26,7 @@ sealed class FreightNetwork
                 var graph=RasterGraph.Build(estate.Raster,frame,9,13,5.4f);
                 RegionalRoads.Join(net,graph.Edges);
                 _estates.Add((frame.ToWorldRect(estate.LocalBounds),graph));
-                foreach(var gate in RasterGateways.Find(estate.Raster).Where(g=>g.Edge==CityEdge.North))
+                foreach(var gate in RasterGateways.Find(estate.Raster))
                     _portals.Add((frame.ToWorld(gate.Face),graph.Nodes[gate.Junction]));
             }
             else if(kind==DistrictKind.Harbor)

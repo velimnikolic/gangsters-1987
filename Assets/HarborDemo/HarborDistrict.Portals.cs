@@ -67,7 +67,12 @@ namespace HarborDemo
                         else b.Encapsulate(r.bounds);
                     }
                     if (!started || b.size.y < 1.5f) continue;
-                    host.Blocked(b, t.name);
+                    if (root == _warehouseRoot)
+                    {
+                        host.Blocked(b, t.name);
+                        MapGeometry.AddBuilding(b, t, t.name, TurfType.Warehouse);
+                    }
+                    else WalkObstacles.Block(b);
                     n++;
                 }
             }
@@ -87,6 +92,7 @@ namespace HarborDemo
                 }
                 if (!started) continue;
                 host.Blocked(b, what);
+                MapGeometry.AddBuilding(b, at, what, TurfType.Warehouse);
                 n++;
             }
             if (n > 0) Debug.Log($"[Harbor] {n} sheds, works and fences walkers go round");

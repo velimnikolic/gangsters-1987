@@ -841,9 +841,9 @@ namespace RoadDemo
                 return;
             }
 
-            // The same reading the full map makes of the boom, so the box on the card
-            // and the ground the wheel would open on are the same rectangle.
-            float down = Mathf.Max(20f, _rig.distance * DemoCamera.BoomToMetres);
+            // The map uses nominal zoom; the street frame includes terrain clearance.
+            float boom = _rig.MapOut ? _rig.distance : _rig.ViewDistance;
+            float down = Mathf.Max(20f, boom * DemoCamera.BoomToMetres);
             float across = down * Mathf.Max(0.1f,
                 (float)Screen.width / Mathf.Max(1, Screen.height));
 

@@ -9,10 +9,13 @@ namespace RoadDemo
         {
             _coreRegion = CoreRegion.TryCreate(PrimaryCore, _primaryWorld, BuiltFromSeed, suburbsMax);
             if (_coreRegion == null) return;
+            PortIndustryLayout.ReserveGround(_coreRegion.Quarters, _reservations);
             CityEdge harborSide = CityEdge.West;
             AirportDemo.AirportDistrict airport = null;
+            var islandBounds = IslandLandform.BoundsFor(_coreRegion.WorldBounds);
             foreach (var q in _coreRegion.Quarters)
             {
+                if (q.District is HarborDemo.HarborDistrict harbor) harbor.PlanSeaRoute(islandBounds, _reservations);
                 _built.Add(q.District);
                 _districtPlans.Add(new DistrictPlan(q.Slot.name, q.Slot.kind, q.World));
                 _landRects.Add(q.World);

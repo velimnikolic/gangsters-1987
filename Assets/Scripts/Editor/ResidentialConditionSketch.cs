@@ -46,7 +46,7 @@ namespace LivingCity.EditorTools
             {
                 rig = camera.gameObject.AddComponent<DemoCamera>();
                 var view = CityViewConfig.Resolve();
-                rig.mapAt = view.Max3DDistance;
+                rig.mapAt = CameraGrounding.BoomForHeight(view.Max3DDistance, view.StreetPitch);
                 rig.ConfigurePitch(view.StreetPitch, view.PitchFreedom);
                 rig.yaw = 20f;
                 camera.fieldOfView = 45f;

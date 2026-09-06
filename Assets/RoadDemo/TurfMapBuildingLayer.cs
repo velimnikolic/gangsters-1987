@@ -731,10 +731,12 @@ namespace RoadDemo
                     continue;
                 reserve.Add(renderer.bounds);
                 var filter = renderer.GetComponent<MeshFilter>();
-                if (filter != null && filter.sharedMesh != null && Structural(filter, filter.sharedMesh))
+                if (!building.AuthoredFootprint && filter != null && filter.sharedMesh != null &&
+                    Structural(filter, filter.sharedMesh))
                     structural.Add(renderer.bounds);
             }
-            Rasterise(structural.Count > 0 ? structural : reserve, result);
+            Rasterise(structural.Count > 0 ? structural : reserve, result,
+                building.AuthoredFootprint ? (Rect?)building.World : null);
             return result;
         }
 
@@ -747,7 +749,7 @@ namespace RoadDemo
                    name.Contains("facade");
         }
 
-        static void Rasterise(List<Bounds> boxes, List<SceneMass> result)
+        static void Rasterise(List<Bounds> boxes, List<SceneMass> result, Rect? footprint = null)
         {
             if (boxes == null || boxes.Count == 0) return;
             float x0 = float.MaxValue, z0 = float.MaxValue;
@@ -810,10 +812,16 @@ namespace RoadDemo
                     }
                     for (int x = 0; x < wide; x++)
                         for (int z = 0; z < deep; z++) used[i + x, j + z] = true;
-                    result.Add(new SceneMass(
-                        new Rect(x0 + i * step, z0 + j * step,
-                                 wide * step, deep * step),
-                        low == float.MaxValue ? 0f : low, high));
+                    var area = new Rect(x0 + i * step, z0 + j * step, wide * step, deep * step);
+                    if (footprint.HasValue)
+                    {
+                        var clip = footprint.Value;
+                        area = Rect.MinMaxRect(Mathf.Max(area.xMin, clip.xMin),
+                            Mathf.Max(area.yMin, clip.yMin), Mathf.Min(area.xMax, clip.xMax),
+                            Mathf.Min(area.yMax, clip.yMax));
+                        if (area.width <= 0f || area.height <= 0f) continue;
+                    }
+                    result.Add(new SceneMass(area, low == float.MaxValue ? 0f : low, high));
                 }
         }
 

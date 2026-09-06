@@ -30,6 +30,7 @@ namespace RoadDemo
         public readonly List<Connection> Connections = new List<Connection>();
         public Rect BeltBounds { get; private set; }
         public float IndustryAreaTarget { get; private set; }
+        public Rect IndustryGroundBounds => PortIndustryLayout.GroundBounds(Quarters);
         public Rect WorldBounds
         {
             get
@@ -91,14 +92,13 @@ namespace RoadDemo
             IndustrialLayout.Arrange(industrySeed, out var formerIndustry, true);
             var formerBounds = IndustrialLayout.Bounds(formerIndustry);
             IndustryAreaTarget = 2f * formerBounds.width * formerBounds.height;
-            float industryArea = 0f, industryDepth = 0f;
+            float industryArea = 0f;
             for (int attempt = 0; attempt < 24 && industryArea < IndustryAreaTarget; attempt++)
             {
                 var industry = new IndustrialDistrict { compact = true, pocket = true };
                 if (!Add(industry, DistrictKind.Pad, harborSide, harborAt + 360f, null, industrySeed))
                 { industrySeed = dice.Next(); continue; }
                 industryArea += industry.LocalBounds.width * industry.LocalBounds.height;
-                industryDepth = Mathf.Max(industryDepth, industry.LocalBounds.height);
                 industrySeed = dice.Next();
             }
             if (industryArea < IndustryAreaTarget)
@@ -116,6 +116,8 @@ namespace RoadDemo
                     anchor + bank * (i / 2 * 650f), new[] { 0f }, slot.seed);
             }
 
+            PortIndustryLayout.Arrange(Quarters, Connections);
+
             // The belt contains every access line even when a small city receives a wide
             // airport or the industrial estate extends past its original rectangle.
             float x0 = city.xMin, x1 = city.xMax, z0 = city.yMin, z1 = city.yMax;
@@ -124,15 +126,14 @@ namespace RoadDemo
                 else { z0 = Mathf.Min(z0, c.Across - 140); z1 = Mathf.Max(z1, c.Across + 140); }
             BeltBounds = Rect.MinMaxRect(x0, z0, x1, z1);
 
-            // Industry sits between the belt and the quay. Its warehouses stay landward
-            // of the harbour basin; suburbs and the airport stand on the other shores.
+            // The port and its works were packed together. Preserve their shared back
+            // edge and plot gaps instead of separating each estate independently.
             foreach (var q in Quarters)
             {
                 float strip = 520f + dice.Next(5) * 30f;
-                if (q.District is HarborDemo.HarborDistrict)
-                    strip += industryDepth + 220f;
-                Place(q, strip);
-                Separate(q);
+                bool portArea = q.District is HarborDemo.HarborDistrict || q.District is IndustrialDistrict;
+                Place(q, portArea ? q.Slot.strip : strip);
+                if (!portArea) Separate(q);
             }
 
             float Anchor(CityEdge edge)
@@ -160,32 +161,16 @@ namespace RoadDemo
                         at = at < water.center.x ? water.xMin - 80f - turned.xMax
                                                  : water.xMax + 80f - turned.xMin;
                 }
-                // IndustrialDistrict uses the raster's own coordinates, not the district
-                // contract. Turn its northern gateway toward the city and normalise it.
+                // Run the long industrial parcels inland from the quay. Their western
+                // gateway faces the city after a quarter turn in the harbour's frame.
                 if (district is IndustrialDistrict industrial)
                 {
                     var gateways = RasterGateways.Find(industrial.Raster);
-                    var gate = gateways.FindAll(g => g.Edge == CityEdge.North);
+                    var gate = gateways.FindAll(g => g.Edge == CityEdge.West);
                     if (gate.Count == 0) return false; // reject this estate before publishing any quarter or connection
                     var selected = gate[dice.Next(gate.Count)];
                     q.IndustryGateway = selected;
                     q.IndustryOrigin = selected.Face;
-                    var relative = DistrictFrame.At(0f, 0f, RasterGateways.Yaw(edge)).ToWorldRect(
-                        new Rect(district.LocalBounds.xMin - selected.Face.x,
-                                 district.LocalBounds.yMin - selected.Face.z,
-                                 district.LocalBounds.width, district.LocalBounds.height));
-                    float first = Vertical(edge) ? relative.xMin : relative.yMin;
-                    float lastGate = harborAt;
-                    foreach (var c in Connections)
-                        if (c.Quarter?.Slot.kind == DistrictKind.Harbor) lastGate = Mathf.Max(lastGate, c.Across);
-                        else if (c.Quarter?.District is IndustrialDistrict previous)
-                        {
-                            var bounds = previous.LocalBounds;
-                            var box = new Rect(bounds.xMin - c.Quarter.IndustryOrigin.x, bounds.yMin - c.Quarter.IndustryOrigin.z, bounds.width, bounds.height);
-                            var turned = DistrictFrame.At(0f, 0f, RasterGateways.Yaw(edge)).ToWorldRect(box);
-                            lastGate = Mathf.Max(lastGate, c.Across + (Vertical(edge) ? turned.xMax : turned.yMax));
-                        }
-                    at = Mathf.Max(at, lastGate + 100f - first);
                 }
                 if (kind == DistrictKind.Suburb)
                 {
@@ -208,7 +193,8 @@ namespace RoadDemo
                 for (int p = 0; p < values.Length; p++)
                 {
                     float across = at + Across(edge, frame.ToWorldDir(new Vector3(values[p], 0f, 0f)));
-                    var existing = Connections.Find(c => c.Edge == edge && c.Quarter == null && Mathf.Abs(c.Across - across) < 0.1f);
+                    var existing = district is IndustrialDistrict ? null :
+                        Connections.Find(c => c.Edge == edge && c.Quarter == null && Mathf.Abs(c.Across - across) < 0.1f);
                     if (existing == null)
                     { existing = new Connection { Edge = edge, Across = across }; Connections.Add(existing); }
                     existing.Quarter = q;
@@ -234,7 +220,11 @@ namespace RoadDemo
                     : edge == CityEdge.West ? BeltBounds.xMin - strip : BeltBounds.xMax + strip;
             var origin = Vertical(edge) ? new Vector3(first.Across, 0f, u) : new Vector3(u, 0f, first.Across);
             var frame = new DistrictFrame { origin = origin, yaw = RasterGateways.Yaw(edge) };
-            if (q.District is IndustrialDistrict) frame.origin -= frame.ToWorldDir(q.IndustryOrigin);
+            if (q.District is IndustrialDistrict)
+            {
+                frame.yaw = (frame.yaw + 90) % 360;
+                frame.origin -= frame.ToWorldDir(q.IndustryOrigin);
+            }
             q.District.Frame = frame;
         }
 
@@ -280,7 +270,8 @@ namespace RoadDemo
             if (c.Quarter.District is IndustrialDistrict industry)
             {
                 if (industry.Net == null || c.Quarter.IndustryGateway.Junction >= industry.Net.Nodes.Count) return false;
-                portal = new DistrictPortal { Local = c.Quarter.IndustryOrigin, LocalDir = Vector3.forward,
+                portal = new DistrictPortal { Local = c.Quarter.IndustryOrigin,
+                    LocalDir = RasterGateways.Outward(c.Quarter.IndustryGateway.Edge),
                     Node = industry.Net.Nodes[c.Quarter.IndustryGateway.Junction], Tag = "industrial service road" };
                 return portal.Node != null;
             }

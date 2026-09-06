@@ -331,6 +331,7 @@ namespace RoadDemo
             CollectDistricts();
             CoreRegionMap.AddDistricts(_builder.Region, Districts);
             CollectCoreRiver();
+            _districtMap.Collect(_builder);
 
             // Every family's ink mixed here, on the main thread, so no drawing pass has
             // to mix one - two surveys draw at once and they would be mixing into the
@@ -524,7 +525,7 @@ namespace RoadDemo
             SampleWater();
             DrawGround();
             DrawSeams();
-            DrawQuarters();
+            _districtMap.Draw(_plan, Ground, _water);
             DrawCoreRiver();
             // Concrete district ground is the base; intentional parks are printed over it.
             // The old order erased every Core park under the primary district rectangle.
@@ -807,30 +808,7 @@ namespace RoadDemo
             }
         }
 
-        /// <summary>The quarters that hang off the grid - the harbour, the airfield,
-        /// the yards. Their ground is CONCRETE on a plan, speckled, and their own
-        /// buildings are drawn over it with everything else.</summary>
-        void DrawQuarters()
-        {
-            foreach (var district in _builder.DistrictPlans)
-            {
-                if (district.Kind == DistrictKind.Suburb)
-                    continue;
-                // Core is an irregular plan of blocks, streets, parks and open river.
-                // Its primary DistrictPlan is only a hosting/camera bound; filling that
-                // rectangle prints a fake pavement frame around the whole city.
-                if (_builder.HasPrimaryStructure &&
-                    district.Name == _builder.PrimaryCore?.Name)
-                    continue;
-
-                var plan = _plan.ToPlan(district.World);
-                if (!OnSheet(plan))
-                    continue;
-
-                Ground.Fill(plan, TurfInk.Concrete);
-                Scatter(plan, 0x51B7, 20, TurfInk.Concrete2, TurfInk.Concrete2);
-            }
-        }
+        readonly TurfDistrictMap _districtMap = new TurfDistrictMap();
 
         /// <summary>
         /// Core's conquerable quarters remain legible before anybody owns them. The line is
@@ -1475,6 +1453,14 @@ namespace RoadDemo
                     CollectCorePark(core, core.Layout.Parks[i]);
 
             CollectCoreLandmarks(core);
+            foreach (var district in _builder.BuiltDistricts)
+                if (district is IDistrictMapSource source)
+                    foreach (var building in source.MapGeometry.Buildings)
+                    {
+                        var b = building.Bounds;
+                        Add(++id, building.View, Rect.MinMaxRect(b.min.x, b.min.z, b.max.x, b.max.z),
+                            b.size.y, null, seen, building.Name, building.Type, authoredFootprint: true);
+                    }
 
             if (blockRoot != null)
             {
@@ -1849,7 +1835,7 @@ namespace RoadDemo
 
         void Add(int id, Transform tf, Rect world, float rise, BusinessMarker business,
                  HashSet<FootprintKey> seen = null, string reportedName = null,
-                 TurfType? reportedType = null)
+                 TurfType? reportedType = null, bool authoredFootprint = false)
         {
             if (world.width <= 0.01f || world.height <= 0.01f)
                 return;
@@ -1865,6 +1851,7 @@ namespace RoadDemo
             {
                 Id = id,
                 Tf = tf,
+                AuthoredFootprint = authoredFootprint,
                 Business = business,
                 World = world,
                 Type = type,

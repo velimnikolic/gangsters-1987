@@ -375,6 +375,9 @@ namespace RoadDemo
         public int Id;
         public Transform Tf;
         public BusinessMarker Business;
+        /// <summary>A district explicitly identified this structure and its pick bounds.
+        /// Use its complete renderer mass, clipped to World, without mesh-name guesses.</summary>
+        public bool AuthoredFootprint;
 
         /// <summary>World XZ footprint, metres - renderer bounds, the same union the
         /// street card measures.</summary>

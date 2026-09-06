@@ -39,7 +39,7 @@ namespace AirportDemo
     // hangars at aircraft scale, the tower, the windsock, the airfield lights, the
     // ground equipment - is baked out of Synty modules by Editor/AirportKitBash
     // before Play.
-    public partial class AirportDistrict : IDistrict
+    public partial class AirportDistrict : IDistrict, IDistrictMapSource
     {
         // ---------------------------------------------------------------- settings
 
@@ -195,6 +195,9 @@ namespace AirportDemo
                 origin = _frame.ToWorld(new Vector3(-AirportSpec.ApproachX, 0f, -BoundaryZ)),
                 yaw = _frame.yaw,
             };
+            MapGeometry.Reset(_inner);
+            MapGeometry.Fill(Rect.MinMaxRect(AirportSpec.MapX0, AirportSpec.MapZ0,
+                AirportSpec.MapX1, AirportSpec.MapZ1), TurfInk.Grass, AirportSpec.LandY);
 
             // the hangars, the tower and the field furniture are baked before Play by
             // Editor/AirportDemoAutoBake (a runtime class cannot call the editor assembly)
@@ -291,6 +294,7 @@ namespace AirportDemo
 
         public void Dispose()
         {
+            MapGeometry.Clear();
             _people?.Dispose();
             _boarding?.Dispose();
             _ground?.Dispose();
@@ -324,6 +328,7 @@ namespace AirportDemo
 
         /// <summary>The frame the field's own coordinates go through.</summary>
         public DistrictFrame Placed => _inner;
+        public DistrictMapGeometry MapGeometry { get; } = new DistrictMapGeometry();
 
         // ------------------------------------------------------------ rng helpers
 

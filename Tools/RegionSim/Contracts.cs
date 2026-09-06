@@ -10,6 +10,7 @@ namespace RoadDemo
     public class LaneNet { public readonly List<RoadNode> Nodes = new(); }
     public struct DistrictPortal { public Vector3 Local,LocalDir; public RoadNode Node; public string Tag; }
     public class DistrictSlot { public DistrictKind kind; public CityEdge edge; public int seed,sizeAcross,sizeDeep; public string name; public float strip; }
+    public class DistrictReservations { public void NoFlora(Rect world) {} }
     public interface IDistrict
     {
         string Name { get; } DistrictFrame Frame {get;set;} Rect LocalBounds {get;}
@@ -83,11 +84,13 @@ namespace RoadDemo
 }
 namespace HarborDemo
 {
-    public class HarborDistrict : DistrictContract
+    public partial class HarborDistrict : DistrictContract
     {
-        public int berths=3;
         public override string Name => "Harbor";
-        public override void Plan(float[] links,int seed) { LocalBounds=new Rect(-320,-290,1050,290); Publish(links); }
+        int seed;
+        float[] _links;
+        System.Random _rng;
+        // The bounds planner and its numerical inputs are extracted from runtime source.
     }
 }
 namespace AirportDemo

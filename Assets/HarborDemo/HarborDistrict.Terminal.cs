@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using RoadDemo;
 using UnityEngine;
 
 namespace HarborDemo
@@ -12,6 +13,7 @@ namespace HarborDemo
         // Geometry is grouped by finish, so hundreds of pours cost six renderers.
         void PourTerminalApron(string name, Rect area)
         {
+            MapGeometry.Fill(area, TurfInk.Concrete, TileTop);
             var batches = new Draft[6];
             for (int i = 0; i < batches.Length; i++)
             {

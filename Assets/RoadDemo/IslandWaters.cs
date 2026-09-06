@@ -10,10 +10,13 @@ namespace RoadDemo
         readonly List<Rect> _harbors = new List<Rect>();
         readonly Rect _river;
         readonly float _phase, _outward;
+        readonly bool _harborVertical;
 
         public IslandWaters(Rect city, DistrictReservations reservations, CityEdge harborSide, float phase, Rect? developedRegion = null)
         {
-            _phase = phase; _outward = harborSide == CityEdge.West ? -1f : 1f;
+            _phase = phase;
+            _outward = harborSide == CityEdge.West || harborSide == CityEdge.South ? -1f : 1f;
+            _harborVertical = harborSide == CityEdge.South || harborSide == CityEdge.North;
             for (int i = 0; i < reservations.Water.Count; i++)
             {
                 var water = reservations.Water[i];
@@ -42,13 +45,14 @@ namespace RoadDemo
             }
             foreach (var harbor in _harbors)
             {
-                float inland = _outward < 0f ? harbor.xMax : harbor.xMin;
-                float along = (x - inland) * _outward;
+                float inland = _harborVertical ? (_outward < 0f ? harbor.yMax : harbor.yMin)
+                    : (_outward < 0f ? harbor.xMax : harbor.xMin);
+                float along = ((_harborVertical ? z : x) - inland) * _outward;
                 float t = Mathf.Max(0f, along - 180f) / 700f;
                 float flare = Mathf.SmoothStep(0f, 1f, t);
-                float middle = harbor.center.y + 80f * flare * Mathf.Sin(t * 1.2f + _phase);
-                float half = harbor.height * 0.5f + flare * (180f + 80f * Mathf.Sin(t * 1.7f - _phase));
-                float dx = Mathf.Max(0f, -along), dz = Mathf.Max(0f, Mathf.Abs(z - middle) - half);
+                float middle = (_harborVertical ? harbor.center.x : harbor.center.y) + 80f * flare * Mathf.Sin(t * 1.2f + _phase);
+                float half = (_harborVertical ? harbor.width : harbor.height) * 0.5f + flare * (180f + 80f * Mathf.Sin(t * 1.7f - _phase));
+                float dx = Mathf.Max(0f, -along), dz = Mathf.Max(0f, Mathf.Abs((_harborVertical ? x : z) - middle) - half);
                 closest = Mathf.Min(closest, Mathf.Sqrt(dx * dx + dz * dz));
             }
             return closest;

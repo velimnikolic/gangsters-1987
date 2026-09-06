@@ -40,8 +40,11 @@ static class Program
             fixtures.Add(Fixture(core,region,seed));
             var expanded=new CoreRegion(core,world,seed,4);
             CheckConnections(expanded);
+            CheckPortIndustry(expanded);
             fixtures.Add(Fixture(core,expanded,seed));
-            fixtures.Add(Fixture(core,new CoreRegion(core,world,seed,0),seed));
+            var noSuburbs=new CoreRegion(core,world,seed,0);
+            CheckPortIndustry(noSuburbs);
+            fixtures.Add(Fixture(core,noSuburbs,seed));
             string signature=Signature(region);
             Require(signature==Signature(new CoreRegion(core,world,seed,2)),"seed replay changed region");
             layouts.Add(signature);
@@ -71,6 +74,7 @@ static class Program
                 Require(c.Across>lo && c.Across<hi,"connection outside belt");
             }
             CheckConnections(region);
+            CheckPortIndustry(region);
             foreach(var c in region.Connections) Require(region.TryPortal(c,out _),"published portal was not resolved");
             if(seed==1987)
             {
@@ -94,7 +98,7 @@ static class Program
         if(!string.IsNullOrEmpty(fixturePath)) System.IO.File.WriteAllText(fixturePath,System.Text.Json.JsonSerializer.Serialize(fixtures));
         var empty=new CoreDistrict {Raster=new CoreRoads.Raster()};
         Require(CoreRegion.TryCreate(empty,new Rect(0,0,100,100),0,2)==null,"missing core gateway did not fall back");
-        Console.WriteLine($"PASSED {seeds.Length} seeds: layout replay, variation, footprints, road frontage, spacing and district reservations. Satellite contracts are doubles; no Unity/Play verdict.");
+        Console.WriteLine($"PASSED {seeds.Length} seeds: layout replay, variation, footprints, road frontage, spacing and connected port industry. Satellite views are doubles; no Unity/Play verdict.");
         return 0;
     }
     static string Signature(CoreRegion region) => string.Join("|",region.Quarters.Select(q=>$"{q.District.Name}:{q.Slot.edge}:{q.Slot.seed}:{q.World}"));
@@ -109,7 +113,7 @@ static class Program
             {var at=c.Quarter.District.Frame.ToWorld(p.Local);access.Add(new {edge=(int)c.Edge,outlying=true,point=new[]{at.x,at.z}});}
         }
         return new {seed,city=Box(core.Frame.ToWorldRect(core.LocalBounds)),ring=Box(region.BeltBounds),region=Box(region.WorldBounds),
-            river=Box(core.Frame.ToWorldRect(core.Layout.Water)),access,
+            river=Box(core.Frame.ToWorldRect(core.Layout.Water)),industryGround=Box(region.IndustryGroundBounds),access,
             districts=region.Quarters.Select(q=>new {kind=(int)q.Slot.kind,edge=(int)q.Slot.edge,q.Slot.seed,
                 frame=new[]{q.District.Frame.origin.x,q.District.Frame.origin.z,(float)q.District.Frame.yaw},
                 bounds=Box(q.District.LocalBounds),berths=q.District is HarborDemo.HarborDistrict h?h.berths:0}).ToArray()};
@@ -143,5 +147,49 @@ static class Program
         region.ReconcilePortals();
         Require(!region.Connections.Any(c=>c.Quarter==port),"missing portals retained a freeway exit");
         Require(region.Connections.Any(c=>c.CityNode!=null),"portal failure removed core gateways");
+    }
+
+    static void CheckPortIndustry(CoreRegion region)
+    {
+        var port=region.Quarters.Single(q=>q.Slot.kind==DistrictKind.Harbor);
+        var works=region.Quarters.Where(q=>q.District is IndustrialDistrict).ToArray();
+        var joined=new HashSet<CoreRegion.Quarter> {port};
+        bool added;
+        do
+        {
+            added=false;
+            foreach(var q in works)
+            {
+                if(joined.Contains(q)) continue;
+                if(!joined.Any(other=>Gap(q.World,other.World)<=30.01f)) continue;
+                joined.Add(q); added=true;
+            }
+        } while(added);
+        Require(joined.Count==works.Length+1,"industry is not one connected port area");
+        foreach(var q in works)
+        {
+            Require(q.Slot.edge==port.Slot.edge,"estate left the port shore");
+            var box=q.World;
+            var a=port.District.Frame.ToLocal(new Vector3(box.xMin,0,box.yMin));
+            var b=port.District.Frame.ToLocal(new Vector3(box.xMax,0,box.yMax));
+            Require(Math.Abs(Math.Min(a.z,b.z)-30f)<.01f,"estate is not beside the port's landward edge");
+            var ground=region.IndustryGroundBounds;
+            Require(ground.xMin<=box.xMin && ground.xMax>=box.xMax && ground.yMin<=box.yMin && ground.yMax>=box.yMax,
+                "shared industrial ground misses an estate");
+            var gap=port.District.Frame.ToWorld(new Vector3((a.x+b.x)*.5f,0,15));
+            Require(ground.Contains(new Vector2(gap.x,gap.z)),"gap behind port has no shared ground reservation");
+            var connection=region.Connections.Single(c=>c.Quarter==q);
+            Require(region.TryPortal(connection,out var portal),"estate lost its real raster gateway");
+            var facing=q.District.Frame.ToWorldDir(portal.LocalDir);
+            Require(Vector3.Dot(facing,RasterGateways.Outward(connection.Edge))<-.99f,"estate gateway faces away from the city");
+            var face=q.District.Frame.ToWorld(portal.Local);
+            Require(Math.Abs(CoreRegion.Across(connection.Edge,face)-connection.Across)<.01f,"estate approach misses its rotated gateway");
+        }
+    }
+    static float Gap(Rect a,Rect b)
+    {
+        float x=Math.Max(0,Math.Max(a.xMin-b.xMax,b.xMin-a.xMax));
+        float z=Math.Max(0,Math.Max(a.yMin-b.yMax,b.yMin-a.yMax));
+        return (float)Math.Sqrt(x*x+z*z);
     }
 }

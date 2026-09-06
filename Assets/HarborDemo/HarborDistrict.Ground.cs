@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using RoadDemo;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -405,6 +406,7 @@ namespace HarborDemo
             var b = HarborKit.PrefabBounds(tile);
             float tx = b.size.x, tz = b.size.z;
             if (tx < 0.05f || tz < 0.05f) return 0;
+            MapGeometry.Fill(Rect.MinMaxRect(x0, z0, x1, z1), TurfInk.Concrete, top);
 
             int nx = Mathf.Max(1, Mathf.RoundToInt((x1 - x0) / tx));
             int nz = Mathf.Max(1, Mathf.RoundToInt((z1 - z0) / tz));
@@ -439,6 +441,8 @@ namespace HarborDemo
         GameObject FlatPlane(string name, float x0, float x1, float z0, float z1, float y, Material mat, float cell, Transform parent)
         {
             if (x1 - x0 < 0.05f || z1 - z0 < 0.05f) return null;
+            MapGeometry.Fill(Rect.MinMaxRect(x0, z0, x1, z1),
+                mat == _asphaltMat ? TurfInk.Road : TurfInk.Concrete, y);
             const float U0 = 0.04f, U1 = 0.96f;
             int nx = Mathf.Max(1, Mathf.CeilToInt((x1 - x0) / cell - 0.001f));
             int nz = Mathf.Max(1, Mathf.CeilToInt((z1 - z0) / cell - 0.001f));

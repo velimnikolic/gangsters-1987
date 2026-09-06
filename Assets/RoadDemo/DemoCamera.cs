@@ -13,6 +13,55 @@ namespace RoadDemo
         public float yaw = 35f;
         public float pitch = 52f;
 
+        System.Func<float, float, float> _groundHeight;
+        float _maxGroundHeight;
+        float _heightPitch;
+        float _terrainLift;
+        float _groundClearance;
+
+        /// <summary>Scene-owned terrain model. Null restores the ordinary orbit used
+        /// by focused review scenes; no physics or streamed mesh is needed.</summary>
+        public void ConfigureGround(System.Func<float, float, float> heightAt)
+        {
+            _groundHeight = heightAt;
+            _terrainLift = 0f;
+            FocusGroundHeight = 0f;
+        }
+
+        /// <summary>City settings are vertical metres above local ground. Keep the
+        /// existing boom units for map scale, wheel steps and streaming consumers.</summary>
+        public void SetMaxGroundHeight(float metres)
+        {
+            _maxGroundHeight = Mathf.Max(40f, metres);
+            RefreshMapThreshold();
+        }
+
+        void RefreshMapThreshold()
+        {
+            if (_maxGroundHeight <= 0f) return;
+            float angle = Mathf.Clamp(pitch, _minimumPitch, _maximumPitch);
+            // Tilt preserves selected height and the distance/mapAt ratio, so it
+            // cannot open/close the map and recycle the city without a wheel step.
+            if (_heightPitch > 0f && !Mathf.Approximately(_heightPitch, angle))
+                distance = CameraGrounding.BoomForHeight(
+                    CameraGrounding.HeightForBoom(distance, _heightPitch), angle);
+            _heightPitch = angle;
+            mapAt = CameraGrounding.BoomForHeight(_maxGroundHeight, angle);
+        }
+
+        public float ZoomHeight => CameraGrounding.HeightForBoom(distance, pitch);
+        /// <summary>Actual ground under the focus, before descent easing or ride height.
+        /// Unconfigured review rigs keep their original world-zero ground plane.</summary>
+        public float FocusGroundHeight { get; private set; }
+
+        /// <summary>The actual view can be lifted/tilted to clear terrain.</summary>
+        public float ViewDistance => Vector3.Distance(transform.position, pivot);
+        public float ViewPitch => transform.eulerAngles.x;
+
+        /// <summary>View-axis distance to a consumer's ground plane, including relief.</summary>
+        public float GroundRayDistance(float planeY) => Mathf.Max(distance,
+            (transform.position.y - planeY) / Mathf.Max(0.01f, -transform.forward.y));
+
         [SerializeField, HideInInspector] float _minimumPitch = CityViewConfig.MinimumStreetPitch;
         [SerializeField, HideInInspector] float _maximumPitch = CityViewConfig.MaximumStreetPitch;
 
@@ -28,9 +77,12 @@ namespace RoadDemo
             _minimumPitch = range.x;
             _maximumPitch = range.y;
             pitch = Mathf.Clamp(centre, _minimumPitch, _maximumPitch);
+            RefreshMapThreshold();
         }
 
-        /// <summary>The boom at which the city stops being a place and becomes a
+        /// <summary>SetMaxGroundHeight owns this threshold once configured; scene
+        /// adapters without a ground-height policy may still set the serialized boom.
+        /// The boom at which the city stops being a place and becomes a
         /// PLAN: pull back past this and the printed map takes the screen, push in
         /// past it and the streets come back exactly where they were. The map is the
         /// same camera - same pivot, same wheel - drawn another way, so the two never
@@ -164,6 +216,7 @@ namespace RoadDemo
 
         void LateUpdate()
         {
+            RefreshMapThreshold();
             // Every scene's camera samples even while input is suppressed or the
             // mouse is absent, so no press/release edge is lost behind a UI gate.
             bool rightDragging = RightPointerGesture.Dragging;
@@ -245,9 +298,33 @@ namespace RoadDemo
             distance = Mathf.Clamp(distance, Mathf.Max(0.5f, minDistance),
                 MaximumDistance);
             pitch = Mathf.Clamp(pitch, _minimumPitch, _maximumPitch);
+            RefreshMapThreshold();
 
             var rot = Quaternion.Euler(pitch, yaw, 0f);
-            transform.SetPositionAndRotation(pivot + rot * new Vector3(0f, 0f, -distance), rot);
+            var offset = rot * new Vector3(0f, 0f, -distance);
+            if (_groundHeight != null)
+            {
+                float ground = _groundHeight(pivot.x, pivot.z);
+                FocusGroundHeight = ground;
+                // Free pan must descend again after leaving a mountain. A ride may
+                // focus above the ground (a bridge or a person), but never below it.
+                float target = CameraGrounding.FocusHeight(pivot.y, ground, _ride != null);
+                pivot.y = CameraGrounding.SettleHeight(pivot.y, target, dt);
+            }
+            var position = pivot + offset;
+            if (_groundHeight != null)
+            {
+                float lensGround = _groundHeight(position.x, position.z);
+                float requiredY = CameraGrounding.LensHeight(pivot.y, lensGround, offset.y);
+                _terrainLift = CameraGrounding.SettleHeight(_terrainLift,
+                    Mathf.Max(0f, requiredY - position.y), dt);
+                position.y += _terrainLift;
+                _groundClearance = position.y - lensGround;
+                // Terrain clearance must not move a map landing or ridden crew
+                // off centre. Preferred pitch stays unchanged for player controls.
+                rot = Quaternion.LookRotation(pivot - position, Vector3.up);
+            }
+            transform.SetPositionAndRotation(position, rot);
         }
 
         /// <summary>Shove the pivot by the ground the pointer travelled over this
@@ -391,8 +468,10 @@ namespace RoadDemo
                 if (_zoomStyle == null)
                     _zoomStyle = new GUIStyle(GUI.skin.label) { fontSize = 32, fontStyle = FontStyle.Bold };
 
-                int d = Mathf.RoundToInt(distance * 10f);
-                int p = Mathf.RoundToInt(pitch);
+                float metres = _groundHeight != null && !MapOut ? _groundClearance
+                    : _maxGroundHeight > 0f ? ZoomHeight : distance;
+                int d = Mathf.RoundToInt(metres * 10f);
+                int p = Mathf.RoundToInt(_groundHeight != null && !MapOut ? ViewPitch : pitch);
                 int y = Mathf.RoundToInt(Mathf.Repeat(yaw, 360f));
                 int px = Mathf.RoundToInt(pivot.x);
                 int pz = Mathf.RoundToInt(pivot.z);

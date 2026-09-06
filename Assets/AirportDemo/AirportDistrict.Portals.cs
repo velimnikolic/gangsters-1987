@@ -111,14 +111,20 @@ namespace AirportDemo
                         b = new Bounds(new Vector3(footprint.center.x, b.center.y, footprint.center.z),
                             new Vector3(footprint.size.x, b.size.y, footprint.size.z));
                     }
-                    host.Blocked(b, t.name);
+                    if (root == _buildingRoot)
+                    {
+                        host.Blocked(b, t.name);
+                        MapGeometry.AddBuilding(b, t, t.name,
+                            facade != null ? TurfType.Terminal : TurfType.Hangar);
+                    }
+                    else WalkObstacles.Block(b);
                     n++;
                 }
             }
             foreach (var go in _parkedBodies)
             {
                 if (go == null) continue;
-                host.Blocked(AirportKit.BoundsOf(go));
+                WalkObstacles.Block(AirportKit.BoundsOf(go));
                 n++;
             }
             for (int i = 0; i < _localWalkBlocks.Count; i++)

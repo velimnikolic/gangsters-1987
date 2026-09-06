@@ -17,7 +17,7 @@ namespace HarborDemo
     // Everything is laid out in the port's own coordinates, quay along X and sea at
     // -Z, and the frame turns the whole thing onto whichever shore the city rolled:
     // south at yaw 0, west at 90, north at 180, east at 270.
-    public partial class HarborDistrict : IDistrict
+    public partial class HarborDistrict : IDistrict, IDistrictMapSource
     {
         // ---------------------------------------------------------------- settings
 
@@ -224,6 +224,7 @@ namespace HarborDemo
                 origin = _frame.ToWorld(new Vector3(GateSpanCentre, 0f, -PlannedStreetZ)),
                 yaw = _frame.yaw,
             };
+            MapGeometry.Reset(_inner);
 
             _groundRoot = Root("Harbor Ground");
             _quayRoot = Root("Harbor Quay");
@@ -320,6 +321,7 @@ namespace HarborDemo
 
         public void Dispose()
         {
+            MapGeometry.Clear();
             foreach (var truck in _trucks) truck.Dispose();
             _trucks.Clear();
             _yardStreet?.UnregisterWalkPlan();
@@ -363,6 +365,7 @@ namespace HarborDemo
         /// <summary>The frame the port's own coordinates go through - for the gear that
         /// has to turn a world point back into the port's own (the cranes).</summary>
         public DistrictFrame Placed => _inner;
+        public DistrictMapGeometry MapGeometry { get; } = new DistrictMapGeometry();
 
         // The port is a plain object now, not a MonoBehaviour, so the two Unity calls
         // it leans on all over come through here rather than off a base class.

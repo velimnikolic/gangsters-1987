@@ -23,8 +23,8 @@ namespace RoadDemo
             Seed = seed; _city = city; _reservations = reservations;
             UrbanRiver = urbanRiver ?? city;
             _centre = region.center;
-            _radius = new Vector2((region.width * 0.5f + 850f) * 1.2f, (region.height * 0.5f + 950f) * 1.2f);
-            Bounds = new Rect(_centre - _radius - Vector2.one * 500f, _radius * 2f + Vector2.one * 1000f);
+            _radius = Radius(region);
+            Bounds = BoundsFor(region);
             var random = new System.Random(seed ^ 0x49534c45);
             _phase = (float)random.NextDouble() * 6.28f;
             _ridgeSide = random.Next(2) == 0 ? -1f : 1f;
@@ -36,6 +36,16 @@ namespace RoadDemo
                 foreach (var ramp in expressway.Ramps) Roads.Add(ramp.Line, 6f, ramp.Height);
                 foreach (var road in expressway.Ground) Roads.Add(road.Line, StreetKit.OuterHalf, s => 0f);
             }
+        }
+
+        static Vector2 Radius(Rect region) =>
+            new Vector2((region.width * 0.5f + 850f) * 1.2f, (region.height * 0.5f + 950f) * 1.2f);
+
+        /// <summary>The terrain envelope, available before districts reserve their water.</summary>
+        public static Rect BoundsFor(Rect region)
+        {
+            var radius = Radius(region);
+            return new Rect(region.center - radius - Vector2.one * 500f, radius * 2f + Vector2.one * 1000f);
         }
 
         public float Coast(float x, float z)

@@ -18,7 +18,7 @@ namespace RoadDemo
         public const string AssetPath = "Assets/Configs/CityViewConfig.asset";
 
         [Header("Street to map")]
-        [Tooltip("Camera boom in metres at which the existing 2D turf map takes over.")]
+        [Tooltip("Camera zoom height above local ground in metres at which the existing 2D turf map takes over.")]
         [Min(40f)] public float max3DDistance = DefaultMax3DDistance;
         [Tooltip("Normal street-camera pitch. The shared Core/Game camera is held at this angle when freedom is zero.")]
         [Range(MinimumStreetPitch, MaximumStreetPitch)] public float streetPitch = DefaultStreetPitch;

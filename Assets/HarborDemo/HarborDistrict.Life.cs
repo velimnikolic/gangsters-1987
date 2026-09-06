@@ -14,6 +14,21 @@ namespace HarborDemo
         /// the devanning gang onto the box the gantry has just landed.</summary>
         readonly Dictionary<int, HarborCargo> _cargoes = new Dictionary<int, HarborCargo>();
 
+        public HarborSeaRoute SeaRoute { get; private set; }
+
+        /// <summary>After placement, connect the local shipping lanes to open sea through
+        /// the harbor mouth. Keep the along-quay reservation local so it cannot dredge a
+        /// canal the length of the island.</summary>
+        public void PlanSeaRoute(Rect islandBounds, DistrictReservations reservations)
+        {
+            var a = Frame.ToLocal(new Vector3(islandBounds.xMin, 0f, islandBounds.yMin));
+            var b = Frame.ToLocal(new Vector3(islandBounds.xMax, 0f, islandBounds.yMax));
+            float depth = -Mathf.Min(a.z, b.z) - PlannedStreetZ + 200f;
+            SeaRoute = new HarborSeaRoute(Mathf.Max(seaRun, QuayHalf + 240f), depth, berths);
+            var quay = new DistrictFrame { origin = Frame.ToWorld(new Vector3(GateSpanCentre, 0f, -PlannedStreetZ)), yaw = Frame.yaw };
+            reservations.Sea(quay.ToWorldRect(SeaRoute.Water));
+        }
+
         void BuildShipping()
         {
             var ships = HarborKit.LoadAll(HarborKit.CargoShips, quiet: true);

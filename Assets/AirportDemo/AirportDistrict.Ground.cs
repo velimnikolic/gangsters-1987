@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using RoadDemo;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -138,6 +139,9 @@ namespace AirportDemo
                              bool atlas = false, float tile = 24f)
         {
             if (x1 - x0 < 0.05f || z1 - z0 < 0.05f) return null;
+            MapGeometry.Fill(Rect.MinMaxRect(x0, z0, x1, z1),
+                mat == _grassMat ? TurfInk.Grass : mat == _asphaltMat ? TurfInk.Road :
+                mat == _shoulderMat ? TurfInk.RoadInk : TurfInk.Concrete, y);
             const float U0 = 0.04f, U1 = 0.96f;
             int nx = Mathf.Max(1, Mathf.CeilToInt((x1 - x0) / cell - 0.001f));
             int nz = Mathf.Max(1, Mathf.CeilToInt((z1 - z0) / cell - 0.001f));
@@ -264,6 +268,7 @@ namespace AirportDemo
                 else { tris.Add(0); tris.Add(i + 1); tris.Add(i); }
             }
             var mesh = new Mesh { name = "fillet" };
+            MapGeometry.Mesh(verts, tris, TurfInk.Road);
             mesh.SetVertices(verts); mesh.SetNormals(norms); mesh.SetUVs(0, uvs); mesh.SetTriangles(tris, 0);
             mesh.RecalculateBounds();
             var go = new GameObject("Fillet");
@@ -324,6 +329,8 @@ namespace AirportDemo
                 }
             }
             var mesh = new Mesh { name = name };
+            MapGeometry.Mesh(verts, tris, mat == _asphaltMat ? TurfInk.Road :
+                mat == _grassMat ? TurfInk.Grass : TurfInk.Concrete);
             mesh.SetVertices(verts); mesh.SetUVs(0, uvs); mesh.SetNormals(norms); mesh.SetTriangles(tris, 0);
             mesh.RecalculateBounds();
             var go = new GameObject(name);
@@ -381,6 +388,8 @@ namespace AirportDemo
 
         sealed class Painter
         {
+            public DistrictMapGeometry Map;
+            public Color32 MapInk;
             readonly List<Vector3> _v = new List<Vector3>();
             readonly List<Vector3> _n = new List<Vector3>();
             readonly List<Vector2> _uv = new List<Vector2>();
@@ -451,6 +460,8 @@ namespace AirportDemo
 
             public void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d)
             {
+                if (Map != null)
+                { Map.Triangle(a, b, c, MapInk); Map.Triangle(a, c, d, MapInk); }
                 int i = _v.Count;
                 _v.Add(a); _v.Add(b); _v.Add(c); _v.Add(d);
                 for (int k = 0; k < 4; k++) _n.Add(Vector3.up);

@@ -23,6 +23,7 @@ namespace LivingCity.Tests
             FrustumIntersectionAndHeight(failures);
             FallbackGeometryIsOpaqueResidential(failures);
             CameraPitchPolicy(failures);
+            failures.AddRange(CameraGroundingTests.Run());
             TurfMapProxyHeightProjection(failures);
             CompactCoreInfillHasEnoughProgramme(failures);
             CoreBlocksHaveStableNamesAndQuarters(failures);

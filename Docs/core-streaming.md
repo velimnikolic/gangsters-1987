@@ -51,8 +51,14 @@ so a vertical right-drag cannot expose an arbitrarily long corridor of detailed 
 right-drag still rotates yaw normally. The frustum path remains the safety net for scripted camera
 motion and future device profiles.
 
-`180 m` is a boom threshold, not a guarantee about view depth. If pitch freedom is enabled later,
-a shallow view can genuinely see a long corridor through the city while its boom is still 165 m.
+`180 m` is the selected vertical zoom height above local ground. `DemoCamera` converts it to
+the shared boom threshold (about 220 m at 55 degrees), including when pitch changes. The camera
+follows the island height model during pan, orbit, riding and map return. Ground below the lens
+can lift it further to clear an uphill slope without changing zoom or opening the map.
+The view then aims back at its pivot; descent eases back down while ascent immediately clears
+the ground. Prefetch, minimap framing and shadows use the resulting camera pose. The street
+debug readout reports actual clearance; tilt preserves selected zoom and cannot toggle the map.
+This does not limit view depth: a shallow view can see a long corridor through the city.
 Those blocks are legitimate visible ViewHolders. We are deliberately leaving a distant HLOD/proxy
 view type for that future requirement instead of paying its complexity in the current locked view.
 
@@ -62,7 +68,7 @@ The project setting is `Assets/Configs/CityViewConfig.asset`:
 
 | setting | current value | meaning |
 |---|---:|---|
-| `max3DDistance` | 180 m | Boom greater than this opens the existing 2D map and clears 3D blocks. |
+| `max3DDistance` | 180 m | Selected height above local ground; converted to the shared boom threshold for the 2D map and block recycling. |
 | `streetPitch` | 55 degrees | Fixed normal angle for the shared street camera. |
 | `streetPitchFreedom` | 0 degrees | Vertical orbit range on either side; zero disables tilt but preserves yaw. |
 | `streetCutaway` | off | Keep exterior shells intact; current residential prefabs have no interiors to reveal. `H` remains a diagnostic toggle. |

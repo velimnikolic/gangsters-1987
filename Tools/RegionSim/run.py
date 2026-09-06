@@ -55,6 +55,23 @@ head = "using System; using System.Collections.Generic; using UnityEngine;\nname
 (OUT / "Territory.cs").write_text(head + extract("Assets/RoadDemo/CoreTerritory.cs", "    public enum CoreQuarterId", "    public enum QuarterConflictState") + "}\n")
 (OUT / "Frame.cs").write_text(head + extract("Assets/RoadDemo/District.cs", "    public enum DistrictKind", "    // ----------------------------------------------------------- reservations") + "}\n")
 (OUT / "Parking.cs").write_text(head + extract("Assets/RoadDemo/ParkingBlock.cs", "    public sealed class ParkingBlockPlan", "    public sealed class ParkingBlockSite") + "}\n")
+harbor_source = read("Assets/HarborDemo/HarborDistrict.cs")
+landmark_source = read("Assets/HarborDemo/HarborDistrict.Landmarks.cs")
+harbor_inputs = []
+for source, marker in ((harbor_source, "public int berths ="),
+                       (harbor_source, "public float berthPitch ="),
+                       (harbor_source, "public float QuayHalf =>"),
+                       (harbor_source, "public const float BasinReach ="),
+                       (harbor_source, "const float PlannedStreetZ ="),
+                       (landmark_source, "public const float BulkTerminalLength ="),
+                       (landmark_source, "public float PlannedBulkTerminalEast =>")):
+    harbor_inputs.append(next(line for line in source.splitlines() if marker in line))
+harbor_plan = extract("Assets/HarborDemo/HarborDistrict.cs", "        public void Plan(", "        public void Reserve(")
+harbor_plan = harbor_plan.replace("public void Plan", "public override void Plan")
+harbor_plan = harbor_plan.replace("this.seed = seed;", "this.seed = seed; Publish(links);")
+harbor_plan = harbor_plan.replace("_bounds =", "LocalBounds =")
+(OUT / "HarborPlan.cs").write_text("using UnityEngine; namespace HarborDemo { public partial class HarborDistrict {\n" +
+    "\n".join(harbor_inputs) + "\n" + harbor_plan + "} }\n")
 tree = ET.parse(ROOT / "Tools/CoreSim/CoreSim.csproj")
 sources = []
 for item in tree.findall(".//Compile"):
@@ -63,7 +80,7 @@ for item in tree.findall(".//Compile"):
         continue
     sources.append((ROOT / "Tools/CoreSim" / name.replace("\\", "/")).resolve())
 sources += [ROOT / "Assets/RoadDemo" / name for name in (
-    "CoreBlockCatalog.cs", "CoreAmenityLayout.cs", "CoreServicePlan.cs", "RasterGateways.cs", "CoreRegion.cs", "StreetNames.cs")]
+    "CoreBlockCatalog.cs", "CoreAmenityLayout.cs", "CoreServicePlan.cs", "RasterGateways.cs", "CoreRegion.cs", "PortIndustryLayout.cs", "StreetNames.cs")]
 sources += list(OUT.glob("*.cs"))
 sources += [ROOT / "Tools/RegionSim/Contracts.cs", ROOT / "Tools/RegionSim/Program.cs"]
 digest = hashlib.sha256()

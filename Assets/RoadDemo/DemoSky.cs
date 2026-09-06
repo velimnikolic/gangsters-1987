@@ -48,16 +48,18 @@ namespace RoadDemo
 
         // -- sun motion --------------------------------------------------------
         [Header("Sun motion")]
-        [Tooltip("Seconds of game time used for one smooth sun/shadow movement segment. " +
-                 "The segment follows Time.timeScale, so pause freezes it and the clock's " +
+        [Tooltip("Seconds of scaled game time between sun/shadow position samples. " +
+                 "The interval follows Time.timeScale, so pause freezes it and the clock's " +
                  "speed buttons keep light and simulation together.")]
         [Min(1f)] public float sunAnimationSeconds = 30f;
-        [Tooltip("How gently the sun closes on each thirty-second target. A shorter value " +
-                 "moves shadows faster; a longer one keeps them moving for most of the interval.")]
-        [Min(0.1f)] public float sunAnimationSmoothTime = 8f;
+        [Tooltip("Seconds to finish moving to each sampled position, then hold still. " +
+                 "Capped at half the sample interval so every transition has a stationary period.")]
+        [Min(0.1f)] public float sunAnimationSmoothTime = 12f;
 
+        Quaternion _sunFrom;
         Quaternion _sunTarget;
         float _sunSampleElapsed;
+        float _sunTransitionElapsed;
         float _lastSunHour;
         bool _sunMotionReady;
 
@@ -239,15 +241,17 @@ namespace RoadDemo
         // night - which is what walks the procedural skybox through sunset glow
         // into genuine darkness with no blending code at all. Its direction is
         // sampled every thirty seconds instead of being assigned straight from a
-        // slightly different clock value every frame. The one existing light eases
-        // toward each sample, leaving the shadow atlas, cascade count and render cost alone.
+        // slightly different clock value every frame. A finite ease reaches each
+        // sample, then holds still until the next; an exponential chase never settled.
         void ApplySun(float hour, float night)
         {
             if (!sun)
                 return;
 
             Quaternion clockRotation = SunRotation(hour, out float elevation);
-            sun.transform.rotation = AnimatedSunRotation(hour, clockRotation);
+            Quaternion rotation = AnimatedSunRotation(hour, clockRotation);
+            if (!rotation.Equals(sun.transform.rotation))
+                sun.transform.rotation = rotation;
 
             // weaker and warmer near the horizon; gone once night has it
             float height = Mathf.Sin(Mathf.Max(0f, elevation) * Mathf.Deg2Rad);
@@ -280,39 +284,53 @@ namespace RoadDemo
 
         Quaternion AnimatedSunRotation(float hour, Quaternion clockRotation)
         {
-            // A scene without the shared clock has one authored time of day. Likewise,
-            // an inspector-frozen clock must not let its lighting continue on its own.
-            if (!clock || !clock.Running)
+            // Without a ticking clock, show the authored hour exactly. Inspector
+            // freeze is used to judge lighting; gameplay pause instead holds below.
+            if (!clock || !clock.Running || !clock.isActiveAndEnabled)
             {
                 _sunMotionReady = false;
                 return clockRotation;
             }
 
-            float frameHours = Time.deltaTime / clock.SecondsPerHour;
+            float dt = Mathf.Max(0f, Time.deltaTime);
+            float frameHours = dt / clock.SecondsPerHour;
             if (!_sunMotionReady || ClockJumped(hour, frameHours))
             {
+                _sunFrom = clockRotation;
                 _sunTarget = clockRotation;
                 _sunSampleElapsed = 0f;
+                _sunTransitionElapsed = float.PositiveInfinity;
                 _sunMotionReady = true;
                 _lastSunHour = hour;
                 return clockRotation;
             }
 
             _lastSunHour = hour;
-            float dt = Mathf.Max(0f, Time.deltaTime);
+            // Freeze the displayed pose, including an unfinished transition. A clock
+            // scrub still takes the reset above, even while paused.
+            if (dt <= 0f)
+                return sun.transform.rotation;
+
             float seconds = Mathf.Max(1f, sunAnimationSeconds);
             _sunSampleElapsed += dt;
             if (_sunSampleElapsed >= seconds)
             {
                 _sunSampleElapsed %= seconds;
+                _sunFrom = sun.transform.rotation;
                 _sunTarget = clockRotation;
+                _sunTransitionElapsed = 0f;
             }
 
-            // Frame-rate independent exponential ease. It never snaps at a sample
-            // boundary and allocates nothing; only the same directional light moves.
-            float smooth = Mathf.Max(0.1f, sunAnimationSmoothTime);
-            float blend = 1f - Mathf.Exp(-dt / smooth);
-            return Quaternion.Slerp(sun.transform.rotation, _sunTarget, blend);
+            float duration = Mathf.Clamp(sunAnimationSmoothTime, 0.1f, seconds * 0.5f);
+            if (_sunTransitionElapsed >= duration)
+                return sun.transform.rotation;
+
+            _sunTransitionElapsed = Mathf.Min(_sunTransitionElapsed + dt, duration);
+            if (_sunTransitionElapsed >= duration)
+                return _sunTarget;
+
+            float blend = Mathf.SmoothStep(0f, 1f, _sunTransitionElapsed / duration);
+            return Quaternion.Slerp(_sunFrom, _sunTarget, blend);
         }
 
         bool ClockJumped(float hour, float expectedFrameHours)

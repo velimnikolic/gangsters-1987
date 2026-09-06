@@ -14,8 +14,8 @@ namespace HarborDemo
     //   - a ship leaves her lane only in her berth's WINDOW of the coast, and only
     //     while no other window overlapping it is in use and no ship under way is
     //     inside it; a ship running the coast holds short of a window in use.
-    // The berths open staggered - one empty with her ship seconds out, the rest
-    // alongside at different points of their stay - so the water moves at once.
+    // Regional berths open occupied at different points of their stay; the long
+    // sea approaches must not leave the opening port empty while its fleet arrives.
     public sealed class HarborShipping
     {
         public enum Phase { Gap, Inbound, Approach, Alongside, Depart, Outbound }
@@ -46,7 +46,9 @@ namespace HarborDemo
         }
 
         public const float WindowMargin = 15f;
-        public const float LaneOffset = 24f;
+        // The bulk pier projects 18 m beyond the main quay. Keep the widest hull
+        // clear of its outer wall even on the innermost outbound lane.
+        public const float LaneOffset = 32f;
         public const float LaneStep = 18f;
         public const float Standoff = 12f;
         public const float ApproachCap = 1.8f;
@@ -60,11 +62,15 @@ namespace HarborDemo
         readonly GameObject _coaster, _ripple, _smoke, _plank;
         readonly List<GameObject> _boats;
         readonly float _spawnX;
+        readonly HarborSeaRoute _seaRoute;
         readonly List<Berth> _berths = new List<Berth>();
         readonly List<HarborShip> _passers = new List<HarborShip>();
         float _passerTimer;
 
         public IReadOnlyList<Berth> Berths => _berths;
+
+        public static float PassingLaneZ(int berthCount, bool eastbound) =>
+            -(LaneOffset + berthCount * LaneStep + 12f) - (eastbound ? 0f : LaneStep);
 
         public HarborShipping(HarborDistrict builder, Transform live, System.Random rng,
                               List<GameObject> shipPrefabs, GameObject coaster, List<GameObject> boats,
@@ -79,16 +85,15 @@ namespace HarborDemo
             _ripple = ripple;
             _smoke = smoke;
             _plank = plank;
-            // where a ship is first seen and where she is let go: the end of the coast,
-            // not the end of the quay. In the city the host sets seaRun to the island's
-            // own reach, so she comes up over the horizon at one end of the map and
-            // stands out at the other; on her own the port keeps the old short run.
+            _seaRoute = builder.SeaRoute;
+            // Coastal extent. A regional SeaRoute adds the entrances through the bay;
+            // legacy hosts may still configure a long straight coast with seaRun.
             _spawnX = Mathf.Max(builder.QuayHalf + 240f, builder.seaRun);
             _passerTimer = 1f + (float)rng.NextDouble() * 3f;
         }
 
-        /// <summary>A berth at this x on the quay with this cargo handler; the first
-        /// berth opens empty (her ship seconds away), the rest with a ship in.</summary>
+        /// <summary>A berth at this x on the quay with this cargo handler. Regional
+        /// berths open occupied; the short standalone run keeps its first berth empty.</summary>
         public void AddBerth(float x, HarborCargo cargo, bool small = false)
         {
             var berth = new Berth { Index = _berths.Count, X = x, Cargo = cargo, Small = small };
@@ -97,7 +102,7 @@ namespace HarborDemo
             berth.RunOut = berth.RunIn;
             _berths.Add(berth);
 
-            if (berth.Index == 0 || _shipPrefabs.Count == 0)
+            if ((berth.Index == 0 && _seaRoute == null) || _shipPrefabs.Count == 0)
             {
                 berth.Phase = Phase.Gap;
                 berth.Timer = 3f + (float)_rng.NextDouble() * 4f;
@@ -108,18 +113,17 @@ namespace HarborDemo
             Geometry(berth, spec);
             berth.Ship = Launch(spec, new Vector3(x, HarborDistrict.WaterY, berth.ShipZ), Vector3.right, 0.6f, "Ship " + berth.Index);
             berth.Phase = Phase.Alongside;
-            berth.Timer = Stay() * HarborKit.Range(_rng, 0.25f, 0.6f);
+            berth.Timer = Stay(berth) * HarborKit.Range(_rng, 0.25f, 0.6f);
             MakeFast(berth, midStay: true);
         }
 
-        /// <summary>How long a ship lies alongside. The stay on the inspector is for a
-        /// port whose ships come in off the end of the quay; when the run is the length of
-        /// the island - four or five minutes each way - a berth worked for ninety seconds
-        /// and then stood empty for ten minutes, and the port read as abandoned. Stretched
-        /// with the run, so a berth is busy about as often as it was.</summary>
-        float Stay()
+        /// <summary>Preserve the configured busy/transit ratio over the actual voyage,
+        /// including the bends and sea approaches. A fixed scale cap makes large islands'
+        /// berths progressively emptier. Each berth still owns one ship and its cargo cycle.</summary>
+        float Stay(Berth berth)
         {
-            float scale = Mathf.Clamp(_spawnX / Mathf.Max(1f, _b.QuayHalf + 240f), 1f, 4f);
+            float travel = _seaRoute != null ? _seaRoute.CrossingLength(berth.LaneZ) : _spawnX * 2f;
+            float scale = Mathf.Max(1f, travel / Mathf.Max(1f, 2f * (_b.QuayHalf + 240f)));
             return HarborKit.Range(_rng, _b.stayRange.x, _b.stayRange.y) * scale;
         }
 
@@ -186,9 +190,12 @@ namespace HarborDemo
                     {
                         var spec = ChooseSpec(b);
                         Geometry(b, spec);
-                        var start = new Vector3(-_spawnX, HarborDistrict.WaterY, b.LaneZ);
-                        b.Ship = Launch(spec, start, Vector3.right, 1f, "Ship " + b.Index);
-                        b.Ship.SetPath(new[] { HarborShip.Leg.Straight(start, new Vector3(b.X - b.RunIn, HarborDistrict.WaterY, b.LaneZ), _b.sailSpeed) });
+                        var coast = new Vector3(-_spawnX, HarborDistrict.WaterY, b.LaneZ);
+                        var start = _seaRoute != null ? _seaRoute.Entry(b.LaneZ) : coast;
+                        b.Ship = Launch(spec, start, _seaRoute != null ? Vector3.forward : Vector3.right, 1f, "Ship " + b.Index);
+                        var path = _seaRoute != null ? new List<HarborShip.Leg>(_seaRoute.Inlet(b.LaneZ, _b.sailSpeed)) : new List<HarborShip.Leg>();
+                        path.Add(HarborShip.Leg.Straight(coast, new Vector3(b.X - b.RunIn, HarborDistrict.WaterY, b.LaneZ), _b.sailSpeed));
+                        b.Ship.SetPath(path);
                         b.Phase = Phase.Inbound;
                         b.Holding = false;
                         var berth = b;
@@ -197,6 +204,9 @@ namespace HarborDemo
                     return;
 
                 case Phase.Inbound:
+                    // Offshore traffic has not entered the coastal manoeuvre windows.
+                    // A hold here would otherwise replace the inlet with a diagonal shortcut.
+                    if (_seaRoute != null && b.Ship != null && b.Ship.X < -_spawnX - 0.01f) return;
                     // hold short of any window in use ahead; go on when it frees
                     RunTheCoast(b, b.X - b.RunIn, () => WantApproach(b));
                     return;
@@ -251,7 +261,8 @@ namespace HarborDemo
             if (b.Holding)
             {
                 b.Holding = false;
-                ship.SetPath(new[] { HarborShip.Leg.Straight(ship.Position, new Vector3(goal, HarborDistrict.WaterY, b.LaneZ), _b.sailSpeed) });
+                if (then == null) ship.SetPath(Outbound(ship.Position, b.LaneZ));
+                else ship.SetPath(new[] { HarborShip.Leg.Straight(ship.Position, new Vector3(goal, HarborDistrict.WaterY, b.LaneZ), _b.sailSpeed) });
             }
             // near her goal an inbound ship asks early, so a clear window is entered
             // without a stop; stopped at the goal she keeps asking
@@ -269,13 +280,13 @@ namespace HarborDemo
                     break;
                 case Phase.Approach:
                     b.Phase = Phase.Alongside;
-                    b.Timer = Stay();
+                    b.Timer = Stay(b);
                     MakeFast(b, midStay: false);
                     break;
                 case Phase.Depart:
                     b.Phase = Phase.Outbound;
                     b.Holding = false;
-                    b.Ship.SetPath(new[] { HarborShip.Leg.Straight(b.Ship.Position, new Vector3(_spawnX, HarborDistrict.WaterY, b.LaneZ), _b.sailSpeed) });
+                    b.Ship.SetPath(Outbound(b.Ship.Position, b.LaneZ));
                     b.Ship.Arrived = () => OnArrived(b);
                     break;
                 case Phase.Outbound:
@@ -286,6 +297,14 @@ namespace HarborDemo
                     b.Timer = HarborKit.Range(_rng, _b.gapRange.x, _b.gapRange.y);
                     break;
             }
+        }
+
+        IEnumerable<HarborShip.Leg> Outbound(Vector3 from, float laneZ)
+        {
+            yield return HarborShip.Leg.Straight(from, new Vector3(_spawnX, HarborDistrict.WaterY, laneZ),
+                _b.sailSpeed, _seaRoute != null ? _b.sailSpeed : 0f);
+            if (_seaRoute != null)
+                foreach (var leg in _seaRoute.Outlet(laneZ, _b.sailSpeed)) yield return leg;
         }
 
         /// <summary>The turn in: if her window is free the approach and the crab are
@@ -404,15 +423,16 @@ namespace HarborDemo
             // were a dozen freighters abreast of the town at once. Spaced so about three
             // are in sight, which is a working coast and not a convoy.
             const float Abreast = 3f;
-            float crossing = _spawnX * 2f / Mathf.Max(1f, _b.sailSpeed);
+            float distance = _seaRoute != null ? _seaRoute.CrossingLength(PassingLaneZ(_berths.Count, true)) : _spawnX * 2f;
+            float crossing = distance / Mathf.Max(1f, _b.sailSpeed);
             float gap = Mathf.Clamp(crossing / Abreast, PasserGapMin, 600f);
             _passerTimer = HarborKit.Range(_rng, gap * 0.7f, gap * 1.3f);
 
             bool eastbound = _rng.Next(2) == 0;
             // outside the channel buoys (z = -66): a freighter is wider than the boats that used to run here
-            float laneZ = -(LaneOffset + _berths.Count * LaneStep + 12f) - (eastbound ? 0f : 16f);
+            float laneZ = PassingLaneZ(_berths.Count, eastbound);
             float y = HarborDistrict.WaterY;
-            var from = new Vector3(eastbound ? -_spawnX : _spawnX, y, laneZ);
+            var from = _seaRoute != null ? _seaRoute.Entry(laneZ, eastbound) : new Vector3(eastbound ? -_spawnX : _spawnX, y, laneZ);
             var to = new Vector3(eastbound ? _spawnX : -_spawnX, y, laneZ);
             // freighters only on the coast run - the coaster or one of the big two, laden
             // like everything else that passes a box port (Launched stows and crews her)
@@ -420,10 +440,11 @@ namespace HarborDemo
                 ? HarborShipSpec.Coaster
                 : HarborShipSpec.For(HarborKit.Pick(_rng, _shipPrefabs)?.name);
             if (spec == null && _coaster == null) return;
-            var vessel = Launch(spec, from, (to - from).normalized, 1f, "Passer");
+            var vessel = Launch(spec, from, _seaRoute != null ? Vector3.forward : (to - from).normalized, 1f, "Passer");
             if (vessel == null) return;
             float knots = spec == HarborShipSpec.Coaster ? 7f : _b.sailSpeed;
-            vessel.SetPath(new[] { HarborShip.Leg.Straight(from, to, knots, knots) });
+            vessel.SetPath(_seaRoute != null ? _seaRoute.Crossing(laneZ, knots, eastbound)
+                : new[] { HarborShip.Leg.Straight(from, to, knots, knots) });
             vessel.Passer = true;
             _passers.Add(vessel);
         }

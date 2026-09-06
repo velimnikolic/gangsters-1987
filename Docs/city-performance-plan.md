@@ -190,3 +190,23 @@ uništeno svetlo; (3) fog i sken neprijatelja iz §5.
 `RoadCarSimulation` 2,3 (4–9 kad frejm pređe 33 ms i uđe drugi podkorak); okruzi 2,1; civili 1,4;
 DemoCrews 1,0 + 0,8; `TurfMarks.Update` 0,5 (210 alokacija po frejmu, `GetComponent` na null);
 stanice goriva/vatrogasci 0,7. Pod editorskog frejma bez ijedne skripte je ~12 ms.
+
+### 5.2 Treći prolaz: šta je probano i šta nije pomoglo
+
+- **`mergeVisibleBlocks: 1`** (spajanje mreža strimovanih blokova) — na istom pogledu render
+  petlja 2,5 ms i čekanje render job-ova 2,0 ms, isto kao bez spajanja; a korak gradnje bloka
+  skače do 196 ms. Vraćeno na 0. Nije vredno.
+- **Aerodromski šetači** (40): proba prepreka jednom u dva frejma po šetaču, sa prošlom
+  linijom i preostalim slobodnim metrima između — uštedа ~0,5 ms.
+- **TurfMarks**: 1 ms po Sweep-u svakih 0,25 s (`DoorMenu.Read` za 119 radnji) — ostavljeno.
+- **Pool prefab delova**: kapacitet 5.600 = tačno radni skup 18–20 aktivnih blokova na
+  početnom kadru, pa je „spremno" 13 i svaki NOVI blok instancira (promašaji 4.311 : 246
+  ponovnih upotreba, skoro svi pri dizanju grada jer prewarm ne postoji). Sa recycler
+  popravkom iz §5.1 posle dizanja nema izbacivanja (2 sagrađena / 0 izbačena za 4 min mirne
+  kamere). Ako smeta pri panovanju: `prewarmPartLimit` u CityViewConfig-u dići na ~9.000 —
+  odluka o memoriji, nije doneta.
+- Zašto 18–20 aktivnih blokova, a ne 5 kao u `core-streaming.md`: `Visible()` širi otisak
+  kamere za `prefetch` 25 m plus „facade lead" do 60 m, pa pogled sa 165 m booma i 55° nagiba
+  hvata ~20 recepata. Smanjenje tog vođenja je pitanje pop-in-a, ne koda.
+- **Frejm sada** (pokrenut grad, editor, početni kadar): ~22–24 ms; od toga EditorLoop 4,4,
+  render + job-ovi ~4,5, animatori 2,6, skripte ~9. Pauziran grad ~16 ms. Na mapi ~14 ms.

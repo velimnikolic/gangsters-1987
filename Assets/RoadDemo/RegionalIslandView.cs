@@ -9,6 +9,28 @@ namespace RoadDemo
     {
         const float Tile = 480f, Step = 20f;
 
+        /// <summary>Height of an unpaved terrain triangle, from BuildTile's grid.
+        /// Paved cells retain the landform's level here; their rendered basement bed
+        /// is deliberately below the streets the camera must clear. The continuous
+        /// landform can lie below the mesh on sharp road shoulders.</summary>
+        public static float SurfaceHeight(IslandLandform land, float x, float z)
+        {
+            var area = land.Bounds;
+            if (x < area.xMin || x >= area.xMax || z < area.yMin || z >= area.yMax)
+                return 0f;
+            float tileX = area.xMin + Mathf.Floor((x - area.xMin) / Tile) * Tile;
+            float tileZ = area.yMin + Mathf.Floor((z - area.yMin) / Tile) * Tile;
+            float x0 = tileX + Mathf.Floor((x - tileX) / Step) * Step;
+            float z0 = tileZ + Mathf.Floor((z - tileZ) / Step) * Step;
+            float x1 = Mathf.Min(x0 + Step, area.xMax);
+            float z1 = Mathf.Min(z0 + Step, area.yMax);
+            float u = (x - x0) / (x1 - x0), v = (z - z0) / (z1 - z0);
+            float b = land.Height(x1, z0), c = land.Height(x0, z1);
+            return u + v <= 1f
+                ? land.Height(x0, z0) * (1f - u - v) + b * u + c * v
+                : b * (1f - v) + c * (1f - u) + land.Height(x1, z1) * (u + v - 1f);
+        }
+
         public static void Build(IslandLandform land, DistrictReservations reservations, Transform parent)
         {
             var owned = parent.gameObject.AddComponent<LandscapeResources>();

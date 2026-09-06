@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using RoadDemo;
 using UnityEngine;
 
 namespace AirportDemo
@@ -22,7 +23,7 @@ namespace AirportDemo
             float half = RunwayHalf;
             float w = AirportSpec.RunwayHalfWidth;
             float y = AirportSpec.MarkY;
-            var white = new Painter(WearTiers);
+            var white = new Painter(WearTiers) { Map = MapGeometry, MapInk = TurfInk.Lane };
             var rubber = new Painter();
 
             // side stripes, their outer edge on the pavement edge. Laid in lengths
@@ -123,7 +124,7 @@ namespace AirportDemo
             float tz = AirportSpec.TaxiwayZ, th = AirportSpec.TaxiwayHalf;
             float y = AirportSpec.MarkY;
             float cw = AirportSpec.TaxiCentrelineWidth * 0.5f;
-            var yellow = new Painter(WearTiers);
+            var yellow = new Painter(WearTiers) { Map = MapGeometry, MapInk = TurfInk.Dash };
 
             // the parallel taxiway's centreline, unbroken from end to end - laid in
             // lengths so it wears where the traffic is, which on a taxiway is the ends
@@ -179,8 +180,8 @@ namespace AirportDemo
         void PaintApron()
         {
             float y = AirportSpec.MarkY;
-            var yellow = new Painter(WearTiers);
-            var white = new Painter(WearTiers);
+            var yellow = new Painter(WearTiers) { Map = MapGeometry, MapInk = TurfInk.Dash };
+            var white = new Painter(WearTiers) { Map = MapGeometry, MapInk = TurfInk.Lane };
             float cw = AirportSpec.TaxiCentrelineWidth * 0.5f;
 
             // the ramp's own taxilanes: one along the front of the stands, one down
