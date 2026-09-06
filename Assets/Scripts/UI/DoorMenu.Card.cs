@@ -1070,14 +1070,23 @@ namespace LivingCity.UI
             var cursor = x;
             var refusals = "";
 
+            // The money move first, whatever order the shared table happened to add them
+            // in: the foot reads "buy it, or leave it", and the quiet key is the answer
+            // to the expensive one.
+            for (var pass = 0; pass < 2; pass++)
             for (var i = 0; i < orders.Count; i++)
             {
                 var row = orders[i];
                 if (BucketOf(row) != Bucket.Foot)
                     continue;
 
-                var money = row.Cash > 0;
-                var word = money
+                // The DEED is the money key whether or not the book carries a price for
+                // it - a premises with no asking price still stands here, faded, with
+                // the shared table's reason on it.
+                var money = row.Job == OrderType.BuyPremises;
+                if (money == (pass > 0))
+                    continue;
+                var word = row.Cash > 0
                     ? row.Label + " · " + LedgerText.Cash(row.Cash)
                     : row.Label;
                 var keyW = KeyWidth(word);
