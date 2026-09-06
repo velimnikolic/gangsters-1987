@@ -5,6 +5,7 @@ Only unused scene dependencies are stubbed; SidewalkPlan collision math is real.
 scenarios live in PedestrianGraphDetourTests; this is not scene/Play acceptance.
 """
 import hashlib
+import os
 import re
 import subprocess
 import tempfile
@@ -12,8 +13,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 version = (ROOT / 'ProjectSettings/ProjectVersion.txt').read_text().split()[1]
-unity = Path('/Applications/Unity/Hub/Editor') / version / 'Unity.app/Contents'
-sdk = unity / 'Resources/Scripting/DotNetSdk'
+if os.name == 'nt':
+    unity = Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / 'Unity/Hub/Editor' / version / 'Editor/Data'
+    sdk = unity / 'DotNetSdk'
+    managed = unity / 'Managed/UnityEngine'
+else:
+    unity = Path('/Applications/Unity/Hub/Editor') / version / 'Unity.app/Contents'
+    sdk = unity / 'Resources/Scripting/DotNetSdk'
+    managed = unity / 'Resources/Scripting/Managed/UnityEngine'
 output = Path(tempfile.mkdtemp(prefix='gangsters-pedestrian-sim-'))
 sources = [
     'Assets/RoadDemo/PedestrianGraph.cs',
@@ -48,12 +55,12 @@ class Program {
     static int Main() {
         var failures = LivingCity.Tests.PedestrianGraphDetourTests.Run();
         foreach (var failure in failures) System.Console.WriteLine(failure);
-        System.Console.WriteLine(failures.Count == 0 ? "PASSED: 26 graph-detour scenarios" : "FAILED");
+        System.Console.WriteLine(failures.Count == 0 ? "PASSED: 33 graph-detour scenarios" : "FAILED");
         return failures.Count == 0 ? 0 : 1;
     }
 }
 ''')
-core = unity / 'Resources/Scripting/Managed/UnityEngine/UnityEngine.CoreModule.dll'
+core = managed / 'UnityEngine.CoreModule.dll'
 references = ''.join(f'<Reference Include="{p.stem}"><HintPath>{p}</HintPath></Reference>' for p in sorted(core.parent.glob('*.dll')))
 runtime = sorted((sdk / 'shared/Microsoft.NETCore.App').iterdir())[-1].name
 framework = 'net' + runtime.split('.')[0] + '.0'
@@ -63,6 +70,6 @@ framework = 'net' + runtime.split('.')[0] + '.0'
 <ItemGroup>{references}</ItemGroup>
 </Project>''')
 print('Source snapshot:', digest.hexdigest(), 'Output:', output, flush=True)
-result = subprocess.run([str(sdk / 'dotnet'), 'run', '--project', str(output / 'Sim.csproj'),
+result = subprocess.run([str(sdk / ('dotnet.exe' if os.name == 'nt' else 'dotnet')), 'run', '--project', str(output / 'Sim.csproj'),
                          '--verbosity', 'quiet'], cwd=output)
 raise SystemExit(result.returncode)

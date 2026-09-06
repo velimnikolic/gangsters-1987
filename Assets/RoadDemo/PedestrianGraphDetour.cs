@@ -23,6 +23,9 @@ namespace RoadDemo
         bool _queued;
         Vector3? _recovered;
         public bool Pending => _link != null;
+        /// <summary>The last positive-budget attempt had no executable step.
+        /// A tiny accepted stride or a zero-budget crowd/gait pause is not blocked.</summary>
+        public bool Blocked { get; private set; }
 
         // Searches run serially on the simulation thread. The scratch grid is shared;
         // only the few pulled corners belong to an individual walker.
@@ -97,6 +100,7 @@ namespace RoadDemo
         {
             position = from;
             turnBack = false;
+            Blocked = false;
             // A new order/link or a bench/door/chat moved the walker: this path no
             // longer belongs to the feet. Normal graph movement chooses afresh.
             if (link == null || link != _link || FlatDistance(from, _expected) > 0.05f)
@@ -145,6 +149,7 @@ namespace RoadDemo
                 _path.Clear();
                 _cursor = 0;
             }
+            Blocked = true;
             if (_blockedSeconds >= 2f)
             { turnBack = true; Reset(); }
             return true;
@@ -167,10 +172,11 @@ namespace RoadDemo
                 _recovered = from = repaired.Value;
                 t = Metre(link, from);
             }
-            float first = Mathf.Max(0f, t - (link.Gated ? 0f : Behind));
             float last = Mathf.Min(link.Length, t + Ahead);
             if (last - t < 0.01f) return;
-            int rows = Mathf.Min(13, Mathf.CeilToInt((last - first) / Pitch) + 1);
+            int behindRows = link.Gated ? 0 : Mathf.CeilToInt(Mathf.Min(t, Behind) / Pitch);
+            int rows = Mathf.Min(MaxNodes / Columns,
+                behindRows + Mathf.CeilToInt((last - t) / Pitch) + 1);
             float half = link.Gated ? PedestrianAgent.ZebraSlip : PedestrianAgent.PavementLane;
             var direction = link.To.Pos - link.From.Pos;
             direction.y = 0f;
@@ -180,7 +186,10 @@ namespace RoadDemo
             Open.Clear();
             for (int row = 0; row < rows; row++)
             {
-                float metre = Mathf.Lerp(first, last, row / (float)(rows - 1));
+                // Keep a row at the actual feet, including near either junction.
+                // Stretching a uniform grid between clamped ends omitted that row:
+                // a clear sideways exit between props then had no start connector.
+                float metre = Mathf.Clamp(t + (row - behindRows) * Pitch, 0f, link.Length);
                 var centre = Vector3.Lerp(link.From.Pos, link.To.Pos, metre / link.Length);
                 if (link.Gated) centre.y -= 0.08f * Mathf.Sin(Mathf.PI * metre / link.Length);
                 for (int col = 0; col < Columns; col++)
@@ -218,7 +227,7 @@ namespace RoadDemo
                         if (cost >= Cost[n] || !_clear(Points[i], Points[n])) continue;
                         Cost[n] = cost;
                         Parent[n] = i;
-                        float remaining = (rows - 1 - r) * (last - first) / (rows - 1);
+                        float remaining = last - Metre(link, Points[n]);
                         Open.Push(n, cost + remaining);
                     }
             }

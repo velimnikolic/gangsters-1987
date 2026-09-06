@@ -122,7 +122,8 @@ namespace RoadDemo
                 (mouse == null || !mouse.rightButton.isPressed))
                 DemoCamera.RightDragTaken = false;
             if (!_aiming) return;
-            if (mouse == null || _crews == null || _aimCrew == null || _aimCrew.Wiped ||
+            if (mouse == null || !mouse.rightButton.isPressed || !Application.isFocused ||
+                _crews == null || _aimCrew == null || _aimCrew.Wiped ||
                 _crews.Selected != _aimCrew || BookOpen)
             { EndCoverAim(order: false); return; }
 

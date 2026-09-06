@@ -23,6 +23,9 @@ namespace RoadDemo
 
         [Header("Traffic")]
         public int carCount = 24;
+        [Tooltip("Civilian cars standing in the street parking strips.")]
+        [Min(0)] public int parkedCarCount = 60;
+        ParkedTraffic _parkedTraffic;
         public float streetSpeed = 9f;
         public float boulevardSpeed = 13f;
         public float alleySpeed = 5f;
@@ -274,6 +277,15 @@ namespace RoadDemo
             runtime.treesPerHectare = 14f;
 
             runtimeObject.SetActive(true);
+            var parkingFrontage = new CoreParkingFrontage(district.Raster);
+            foreach (var recipe in district.ResidentialBlocks.Blocks)
+                parkingFrontage.Add(recipe.LocalBounds, recipe.Plan);
+            foreach (var park in district.Layout.Parks) parkingFrontage.Add(park.Box);
+            _parkedTraffic = new ParkedTraffic(runtime.transform, district.Net,
+                dice => CoreRoads.PickCar(dice), Mathf.Max(0, parkedCarCount), seed ^ 0x5041524B,
+                (road, s, side, halfLength) => parkingFrontage.Allows(
+                    district.Frame.ToLocal(road.Pose(s - halfLength - 1f, side * (road.HalfRoad + 1f))),
+                    district.Frame.ToLocal(road.Pose(s + halfLength + 1f, side * (road.HalfRoad + 1f)))));
 
             // the books first: the men who will be stood up are the men the ledger says
             // the outfit has, so the run's outfit is written before it deals
@@ -346,5 +358,6 @@ namespace RoadDemo
             int value = System.BitConverter.ToInt32(System.Guid.NewGuid().ToByteArray(), 0) & int.MaxValue;
             return value == 0 ? 1 : value;
         }
+        void OnDestroy() => _parkedTraffic?.Dispose();
     }
 }

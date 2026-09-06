@@ -17,12 +17,13 @@ namespace RoadDemo
         float _parkTrafficCheck;
         bool _parkTrafficClear;
         bool _parkingRetreat;
+        Manoeuvre _failedParkingMan;
+        float _parkingRetryBy;
         readonly List<float> _failedKerbSpots = new List<float>();
         readonly List<RoadCar> _parkingNeighbours = new List<RoadCar>();
         System.Predicate<RoadOccupant> _parkingLeaderFilter;
 
-        // Filtering happens before the nearest leader is selected, so a parked
-        // shoulder cannot hide moving traffic farther along the real entry path.
+        // Filter parked shoulders before selecting the nearest moving leader.
         bool StraightKerbApproach => _hasGoal && _goalPark && _parkPlanReady &&
             _parkEntryLen == 0f && Road == _goalRoad && Heading == _goalHeading && !Sliding;
 
@@ -35,18 +36,40 @@ namespace RoadDemo
             return !RemainingSlideClearOf(other);
         }
 
-        /// <summary>The last parking order had no reachable kerb. This is not arrival;
-        /// a new order clears the result and starts a new search.</summary>
+        /// <summary>The last parking order failed; a new order clears this result.</summary>
         public bool ParkingFailed { get; private set; }
 
-        protected void ClearParkingFailure() => ParkingFailed = false;
+        protected void ClearParkingFailure() { ParkingFailed = false; _parkingRetryBy = 0f; }
 
-        /// <summary>Autonomous road users release the failed order to their owner
-        /// and continue with traffic. A player crew can keep the requested stop.</summary>
+        /// <summary>Back out of a failed angled entry before selecting another goal.</summary>
+        protected bool PrepareParkingRetry()
+        {
+            if (!Sliding) return true;
+            if (!ParkingFailed || Mathf.Abs(Speed) >= .2f) return false;
+            // Non-parking sweeps keep moving forward. A permanently blocked rear
+            // also releases the brake after a bounded wait, retaining the real curve
+            // and the patrol owner's response/return intent instead of releasing it.
+            if ((_failedParkingMan != Manoeuvre.PullIn && _failedParkingMan != Manoeuvre.PullOut) ||
+                RoadCarSimulation.Now >= _parkingRetryBy)
+            {
+                ResumeTraffic();
+                if (_failedParkingMan == Manoeuvre.Pass || _failedParkingMan == Manoeuvre.Crown ||
+                    _failedParkingMan == Manoeuvre.Aside || _failedParkingMan == Manoeuvre.LaneChange)
+                    _man = _failedParkingMan;
+                return false;
+            }
+            if (Profile.Reverses && ClearBehind() >= .6f)
+            {
+                ParkingFailed = _halted = false;
+                RetreatFromKerb();
+            }
+            return !Sliding;
+        }
+
+        /// <summary>Autonomous cars resume traffic; player crews may keep their stop.</summary>
         protected virtual void OnParkingFailed()
         {
-            // An angled failed entry retains its real curve while stopped. Its
-            // owner must issue a new order; releasing the throttle would repeat it.
+            // Retain an angled entry for a new order or PrepareParkingRetry.
             if (Sliding) return;
             _halted = false;
             _haltWhenClear = false;
@@ -54,13 +77,10 @@ namespace RoadDemo
             if (Parked) PullOut();
         }
 
-        /// <summary>An extra claim book for a specialised car. The road itself knows
-        /// bodies and manoeuvre claims, but not destinations selected by another car
-        /// that is still across town.</summary>
+        /// <summary>Specialised claims include destinations of cars still across town.</summary>
         protected virtual bool ParkingSpotAvailable(Vector3 at) => true;
 
-        /// <summary>The parking chooser may move a requested point into another gap as
-        /// traffic changes. Specialised cars can keep their destination claim in step.</summary>
+        /// <summary>Keep specialised claims in step when the chooser moves the goal.</summary>
         protected virtual void ParkingSpotSelected(Vector3 at) { }
 
         // A slot needs both an entry and an exit for the real rear axle.
@@ -175,8 +195,7 @@ namespace RoadDemo
             return false;
         }
 
-        // A parking order can arrive while still stood at the kerb or overtaking.
-        // Include that exit/return NOW, not after driving past the selected entry.
+        // Include any pending kerb exit or overtaking return before selecting an entry.
         float ParkingEntryFloor(float fromD)
         {
             float travel = 0f;
@@ -240,8 +259,7 @@ namespace RoadDemo
             return false;
         }
 
-        // Destination claims survive the trip across town. An approaching car is
-        // not yet a parked obstacle, but its selected slot is already spoken for.
+        // Approaching cars reserve their destinations before becoming parked obstacles.
         bool ArrivingNeighbour(RoadCar other) => !other.Wrecked && !other.Derelict &&
             other._hasGoal && other._goalPark && other._parkPlanReady && other._goalRoad == _goalRoad;
 
@@ -285,8 +303,7 @@ namespace RoadDemo
             => TryKerbExit(road, heading, s, d, out _, out _,
                 obstacle, facing, halfLength, halfWidth);
 
-        // Admission and departure share a checked swing onto the lane or a
-        // passing line when the next parked shoulder obstructs that lane.
+        // Admission and departure share a checked exit onto the lane or passing line.
         bool TryKerbExit(Carriageway road, int heading, float s, float d,
             out float target, out float length, Vector3? obstacle = null,
             Vector3 facing = default, float halfLength = 0f, float halfWidth = 0f)
@@ -320,8 +337,7 @@ namespace RoadDemo
             return false;
         }
 
-        // Only an actual overlap with the chosen destination can mean "our spot".
-        // The parked neighbour on the approach must still be passed or backed away from.
+        // Only destination overlap means "our spot"; approach obstacles must be passed.
         bool IsOurParkingSpot(RoadOccupant o)
         {
             if (!_hasGoal || !_goalPark || Road != _goalRoad || Heading != _goalHeading || o == null || !o.Parked) return false;
@@ -339,8 +355,7 @@ namespace RoadDemo
             _parkTrafficCheck = 0f;
         }
 
-        // Retrace the entry that was actually driven. Dropping its curve and
-        // starting a fresh slide here would turn a stopped, angled body in place.
+        // Retrace the driven curve; rebasing a slide would rotate the stopped body.
         void RetreatFromKerb()
         {
             if (_man == Manoeuvre.PullIn) RejectKerbApproach();
@@ -366,6 +381,11 @@ namespace RoadDemo
 
         void FailParking()
         {
+            if (_parkingRetryBy <= 0f)
+            {
+                _failedParkingMan = _parkingRetreat ? Manoeuvre.PullIn : _man;
+                _parkingRetryBy = RoadCarSimulation.Now + PullOutPatience;
+            }
             _parkPlanReady = false;
             _pullOutWanted = false;
             if (_man == Manoeuvre.Reverse)
@@ -388,8 +408,7 @@ namespace RoadDemo
         {
             _man = Manoeuvre.PullIn;
             _pullInAsked = RoadCarSimulation.Now;
-            // Arm before the start, but drive the very same curve that was checked.
-            // Negative progress is a straight approach; no rebasing or shorter arc.
+            // Drive the checked curve, including its straight approach before the start.
             _dFrom = _parkEntryD;
             _dTo = _goalD;
             _sFrom = _parkEntryS;

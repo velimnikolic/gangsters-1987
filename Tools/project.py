@@ -4,6 +4,7 @@ import argparse
 from collections import defaultdict
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -104,8 +105,10 @@ def compile_sources():
     This is source verification, never a Player build or Play acceptance.
     """
     version = (ROOT / "ProjectSettings/ProjectVersion.txt").read_text().splitlines()[0].split()[1]
-    scripting = Path("/Applications/Unity/Hub/Editor") / version / "Unity.app/Contents/Resources/Scripting"
-    dotnet = scripting / "DotNetSdk/dotnet"
+    scripting = (Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Unity/Hub/Editor" / version / "Editor/Data"
+                 if os.name == "nt" else
+                 Path("/Applications/Unity/Hub/Editor") / version / "Unity.app/Contents/Resources/Scripting")
+    dotnet = scripting / "DotNetSdk" / ("dotnet.exe" if os.name == "nt" else "dotnet")
     compilers = sorted((scripting / "DotNetSdk/sdk").glob("*/Roslyn/bincore/csc.dll"))
     if not dotnet.is_file() or not compilers:
         raise RuntimeError("Unity's bundled .NET compiler is unavailable")
@@ -135,7 +138,7 @@ def compile_sources():
                 continue
             if assembly.endswith("-Editor") and line.startswith("-r:"):
                 line = re.sub(r'"[^"]*/Assembly-CSharp(?:\.ref)?\.dll"',
-                              '"' + str(output / "Assembly-CSharp.dll") + '"', line)
+                              lambda _: '"' + (output / "Assembly-CSharp.dll").as_posix() + '"', line)
             lines.append(line)
         for name in sorted(current - sources):
             path = Path(name)

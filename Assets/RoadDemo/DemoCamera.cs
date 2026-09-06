@@ -166,6 +166,9 @@ namespace RoadDemo
 
         void LateUpdate()
         {
+            // Every scene's camera samples even while input is suppressed or the
+            // mouse is absent, so no press/release edge is lost behind a UI gate.
+            bool rightDragging = RightPointerGesture.Dragging;
             float dt = Time.unscaledDeltaTime;
             var kb = BookOpen || SuppressInput ? null : Keyboard.current;
             if (kb != null)
@@ -206,7 +209,7 @@ namespace RoadDemo
                 float scroll = mouse.scroll.ReadValue().y;
                 if (scroll != 0f && !TurfMapHud.IsOpen)
                     distance = DistanceAfterWheel(scroll);
-                if (mouse.rightButton.isPressed && !MapOut && !RightDragTaken)
+                if (rightDragging && !MapOut && !RightDragTaken)
                 {
                     Vector2 d = mouse.delta.ReadValue();
                     yaw += d.x * 0.25f;

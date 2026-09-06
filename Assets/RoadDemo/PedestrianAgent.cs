@@ -294,6 +294,8 @@ namespace RoadDemo
         float _push;    // this frame's shove from whoever is in his way
         float _hold = 1f; // 1 clear road ahead, 0 stopped behind somebody
         float _shuffle;   // how far he has edged sideways waiting at a light
+        bool _graphStopped; // rejected geometry or a detour waiting for a usable step
+        float _graphJoinCooldown;
 
         PlayableGraph _graph;
         AnimationMixerPlayable _mixer;
@@ -413,6 +415,8 @@ namespace RoadDemo
             // each hold their own side pass each other, which is what they do.
             _lane = Random.Range(0.35f, 0.95f);
             _lateral = _lane;
+            _graphStopped = false;
+            _graphJoinCooldown = 0f;
             WalkCadence = Random.Range(0.96f, 1.04f);
             if (!Walking.Contains(this)) Walking.Add(this);
 
@@ -624,14 +628,27 @@ namespace RoadDemo
             }
 
             ReadCrowd(dt);
+            _graphJoinCooldown = Mathf.Max(0f, _graphJoinCooldown - dt);
             // a man walking into the back of the man ahead of him stops instead
-            BlendLocomotion(dt, !_waiting && _hold > 0.25f);
+            BlendLocomotion(dt, !_waiting && _hold > 0.25f && !_graphStopped,
+                joins: _graphJoinCooldown <= 0f);
 
             if (_waiting) { Jostle(dt); TracePed(dt); return; }
             // and a man about to step in front of a car crossing the pavement stops too
             if (StandingBack()) { BlendLocomotion(dt, false); TracePed(dt); return; }
             _shuffle = 0f;
+            _graphStopped = false;
             Move(dt);
+            // Only a refused step stops the gait: arrival handoffs, traffic waits
+            // and authored turns can legitimately have no transform write. Resume
+            // with a plain blend through intermittent blocks so each short opening
+            // cannot restart a start clip. Leave movement-permitted actions intact.
+            if (_graphStopped)
+            {
+                _graphJoinCooldown = 0.5f;
+                EndJoin();
+                SetPose(PoseIdle);
+            }
             TracePed(dt);
         }
 
@@ -2220,7 +2237,8 @@ namespace RoadDemo
             float step = Mathf.Min(Mathf.Max(0f, speed) * dt, FrameStepLimit);
             if (!_graphDetour.Step(_link, before, step, Time.time,
                                   out var position, out bool turnBack, Time.frameCount, WalkObstacles.Version, dt)) return false;
-            if (turnBack) { ReverseCourse(); return true; }
+            if (turnBack) { _graphStopped = !ReverseCourse(); return true; }
+            _graphStopped = _graphDetour.Blocked;
             SetWalkPosition(position);
             CarrySeat(); // progress follows the feet, including a retreat around a prop
             var direction = position - before;
@@ -2269,6 +2287,7 @@ namespace RoadDemo
                 if (!TryGraphAdvance(_t, nextT, _link.Length, clear,
                                      out float committedT, out _))
                 {
+                    _graphStopped = true;
                     GraphStepBlocked(nodePosition);
                     return;
                 }
@@ -2302,6 +2321,7 @@ namespace RoadDemo
                 if (!TryGraphAdvance(_t, nextT, _link.Length, clear,
                                      out float committedT, out _))
                 {
+                    _graphStopped = true;
                     GraphStepBlocked(step);
                     return;
                 }
@@ -2323,6 +2343,7 @@ namespace RoadDemo
             if (!TryGraphAdvance(_t, nextT, _link.Length, heldClear,
                                  out float heldT, out _))
             {
+                _graphStopped = true;
                 GraphStepBlocked(held);
                 return;
             }

@@ -584,6 +584,8 @@ namespace RoadDemo
                 case Mode.Patrolling:
                 case Mode.Returning:
                     Tick(dt);
+                    // A failed departure has no parking goal to trigger a retry.
+                    if (Fleetworthy && !_transferHalt && ParkingFailed && PrepareParkingRetry()) ClearParkingFailure();
                     if (State != Mode.Returning || CurrentEdge != _home)
                     {
                         _askedAtHome = false;
@@ -639,7 +641,7 @@ namespace RoadDemo
                     if (LivingCity.Police.PoliceProcedure.ResponseCarArrived(
                             AtGoal, ParkedAtKerb))
                         State = Mode.OnScene;
-                    else if (!HasGoal && Time.time >= _responseRetryAt)
+                    else if (!HasGoal && Time.time >= _responseRetryAt && PrepareParkingRetry())
                         SetResponseGoal();
                     break;
 
@@ -653,7 +655,7 @@ namespace RoadDemo
                     }
                     else if (Time.time > _parkingBy)
                         BackOnTheRound();   // every kerb it tried was taken: round again
-                    else if (!HasGoal && Time.time >= _responseRetryAt)
+                    else if (!HasGoal && Time.time >= _responseRetryAt && PrepareParkingRetry())
                         SetRestGoal();
                     break;
 

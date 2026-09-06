@@ -38,12 +38,15 @@ namespace LivingCity.Tests
                     new Vector3(-.7f, 0f, 2.3f), dt));
                 Check(failures, $"crossing mouth dt={dt}", () => Pass(
                     new[] { new Prop(0f, 11.7f, .12f, .12f) }, new Vector3(0f, 0f, 11.05f), dt, true));
+                Check(failures, $"sideways exit near start dt={dt}", () => TightPocket(.2f, dt));
+                Check(failures, $"sideways exit near end dt={dt}", () => TightPocket(10.8f, dt));
             }
             Check(failures, "closed corridor turns back", () => ClosedCorridor());
             Check(failures, "streamed obstacle invalidates path", ChangedGeometry);
             Check(failures, "external move cancels old path", MovedExternally);
             Check(failures, "link change cancels old path", ChangedLink);
             Check(failures, "crowd and gait stop movement", Stopped);
+            Check(failures, "tiny accepted stride is not a geometry refusal", TinyStride);
             Check(failures, "search failure is throttled", Throttled);
             Check(failures, "rotated pavement", Rotated);
             Check(failures, "global search budget and queue fairness", GlobalBudget);
@@ -61,6 +64,7 @@ namespace LivingCity.Tests
         {
             readonly PedestrianGraphDetour _detour;
             public bool Pending => _detour.Pending;
+            public bool Blocked => _detour.Blocked;
             public Harness(Func<Vector3, Vector3, bool> clear) => _detour = new PedestrianGraphDetour(clear);
             public void Begin(PedLink link, Vector3 from, float now) => _detour.Begin(link, from, now, Frame, 0);
             public bool Step(PedLink link, Vector3 from, float budget, float now, out Vector3 at, out bool back) =>
@@ -113,6 +117,15 @@ namespace LivingCity.Tests
             Require(back && at == from && !detour.Pending, "closed corridor did not yield a safe reversal");
         }
 
+        static void TightPocket(float metre, float dt)
+        {
+            // Only a sideways first step clears these shoulders. The exit is wide
+            // enough, but a grid with no row at the feet cannot see that connector.
+            Pass(new[] { new Prop(0f, metre - .61f, .25f, .15f),
+                         new Prop(0f, metre + .61f, .25f, .15f) },
+                new Vector3(0f, 0f, metre), dt);
+        }
+
         static void ChangedGeometry()
         {
             var props = new List<Prop> { new Prop(0f, 3f, .15f, .15f) };
@@ -157,6 +170,16 @@ namespace LivingCity.Tests
             detour.Begin(link, Vector3.forward, 0f);
             detour.Step(link, Vector3.forward, 0f, 20f, out var at, out bool back);
             Require(at == Vector3.forward && !back && detour.Pending, "moved during a crowd/gait stop");
+            Require(!detour.Blocked, "crowd/gait pause was reported as geometry refusal");
+        }
+
+        static void TinyStride()
+        {
+            var link = Link();
+            var detour = new Harness((a, b) => true);
+            detour.Begin(link, Vector3.forward, 0f);
+            detour.Step(link, Vector3.forward, .000001f, .1f, out _, out bool back);
+            Require(!back && !detour.Blocked, "a permitted microscopic stride was reported as blocked");
         }
 
         static void Throttled()
@@ -169,6 +192,7 @@ namespace LivingCity.Tests
             for (int i = 1; i < 30; i++)
                 detour.Step(link, Vector3.forward, .025f, i / 60f, out _, out _);
             Require(queries == first, "repeated the failed search every frame");
+            Require(detour.Blocked, "failed plan did not report its rejected step");
         }
 
         static void Rotated()

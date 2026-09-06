@@ -683,7 +683,7 @@ namespace RoadDemo
         {
             if (Net == null) return false;
             _parkTrying = 0f;
-            ParkingFailed = false;
+            ClearParkingFailure();
             _failedKerbSpots.Clear();
             _parkPlanReady = false;
             _parkTrafficCheck = 0f;
@@ -826,7 +826,7 @@ namespace RoadDemo
         /// traffic does (a patrol car released from a call).</summary>
         public void Stop()
         {
-            ParkingFailed = false;
+            ClearParkingFailure();
             _hasGoal = false;
             Route = null;
             _turnFirst = false;
@@ -1919,9 +1919,8 @@ namespace RoadDemo
 
         // ------------------------------------------------------------------ lateral
 
-        // A hypothetical slide uses exactly the rear-axle geometry used by Pose.
-        // travel is the centre's road progress since the slide began; its axle
-        // reaches the end Axle metres later. Reading a plan never changes the car.
+        // Sample Pose's rear-axle geometry without moving the car. The axle
+        // finishes Axle metres after the centre's road progress reaches the end.
         void SlidePose(Carriageway road, int heading, float startS, float fromD,
             float toD, float len, float travel, out Vector3 position, out Vector3 forward)
         {
@@ -2280,10 +2279,8 @@ namespace RoadDemo
                 RetreatFromKerb();
                 return true;
             }
-            // Following can stop a sweep before the collision belt ever refuses a
-            // step. Keeping its projected reservation then makes the other driver
-            // wait for us too. Withdraw that sweep at the current position; ordinary
-            // following and the belt still protect the actual body.
+            // Withdraw a stalled sweep's reservation to release waiting traffic;
+            // following and the collision belt still protect the actual body.
             _lateralStillFor = 0f;
             _sLen = 0f;
             _pullOutWanted = false;
@@ -2296,27 +2293,18 @@ namespace RoadDemo
 
         void Decide(float dt, RoadOccupant leader, float gap, float vLead, RoadNode node, float toEnd)
         {
-            // A failed player order remains at its real stopped pose until another
-            // command. Generic jam recovery must not restart or erase that curve.
+            // Keep failed player orders at their stopped pose until another command.
             if (ParkingFailed && _halted) return;
             float now = RoadCarSimulation.Now;
             bool stopped = Mathf.Abs(Speed) < 0.4f;
             if (ReleaseStalledLateral(dt)) return;
 
-            // The belt's unbroken counter is deliberately short-lived: its little shove
-            // can buy one clear frame. Remember recent refusals as long as the car is
-            // still standing, or a deep overlap resets its own recovery for ever.
+            // Remember recent refusals: an isolated clear frame cannot reset a wedge.
             _wedgedFor = now - _beltAt < BeltMemory && Mathf.Abs(Speed) < 0.15f
                 ? _wedgedFor + dt : 0f;
 
-            // WEDGED IN THE MIDDLE OF A MANOEUVRE. The swing has met something the plan
-            // did not see - a body standing in the far lane at a red, most often, reached
-            // by the corner of a car turned across the crown - and nothing inside the
-            // manoeuvre can undo it: the pose is laid from S and D again every frame, so
-            // the belt's easing is thrown away and the pair stands there for as long as
-            // the scene runs (1489 refused steps in seventy-five seconds, in the run that
-            // found this). The manoeuvre is given up instead, which puts the car back on
-            // its own lane - the one place it is certainly standing in nobody.
+            // A late obstruction can wedge a sweep. Retrace parking curves;
+            // other lateral manoeuvres use their ordinary abort path.
             bool lateralWedge = Sliding ||
                 (_man != Manoeuvre.None && _man != Manoeuvre.UTurn && _man != Manoeuvre.Reverse);
             if (_wedgedFor > 1.5f && Road != null && lateralWedge)
@@ -2332,13 +2320,8 @@ namespace RoadDemo
                 _beltFor = 0f;
                 _wedgedFor = 0f;
             }
-            // AND WEDGED WITH NO MANOEUVRE TO GIVE UP: driving straight, with a body
-            // inside ours. The shove across the road (Place) cannot help - the overlap is
-            // ALONG the road, one of them five metres inside the other - so the only way
-            // out is backwards. Failing that (nothing behind, or nowhere to go), the car
-            // says so: Derelict is how the street is told to plan round a thing that is
-            // not going to move, and it is better than two vehicles standing in each
-            // other for fifty seconds with a quarter queued behind them.
+            // With no manoeuvre to retract, back away or become an obstacle
+            // that the rest of the traffic can plan around.
             else if (_wedgedFor > 3f && Road != null && _man == Manoeuvre.None &&
                      Mathf.Abs(Speed) < 0.15f && !Parked)
             {
@@ -3039,9 +3022,7 @@ namespace RoadDemo
             return free;
         }
 
-        // Backing up gives way to everybody, whatever the fight: a man behind a car is
-        // not in its way, he is under its boot, and nothing about a gunfight makes
-        // reversing over somebody a manoeuvre.
+        // Every reverse yields to pedestrians, including during combat.
         static readonly List<Vector3> _behind = new List<Vector3>();
 
         static List<Vector3> Behind(List<StreetTraffic.Body> bodies)
@@ -3069,8 +3050,8 @@ namespace RoadDemo
             Speed = 0f;
             if (_parkingRetreat)
             {
-                _parkingRetreat = false;
                 if ((S - _sFrom) * Heading > .02f) { FailParking(); return; }
+                _parkingRetreat = false;
                 D = _dFrom;
                 _sLen = 0f;
                 _man = Manoeuvre.None;

@@ -35,7 +35,7 @@ namespace RoadDemo
 
         /// <summary>Stand this body on the road with the same traffic footprint as a
         /// moving car, and put it among the road's users.</summary>
-        public static StoodCar Park(GameObject car)
+        public static StoodCar Park(GameObject car, LaneNet net = null)
         {
             if (car == null) return null;
             // An owned car becoming a roadblock already has a measured body. Its
@@ -55,7 +55,7 @@ namespace RoadDemo
             var stood = new StoodCar(car.transform, halfLength, halfWidth);
             StreetTraffic.Users.Add(stood);
             // and on the road's own books (LaneNet): the lane's traffic plans round it
-            stood._occupant = LaneNet.Active?.AddStatic(stood);
+            stood._occupant = (net ?? LaneNet.Active)?.AddStatic(stood);
             return stood;
         }
 
@@ -65,7 +65,7 @@ namespace RoadDemo
         {
             StreetTraffic.Users.Remove(this);
             Registered.Remove(this);
-            if (_occupant != null) { LaneNet.Active?.Remove(_occupant); _occupant = null; }
+            if (_occupant != null) { _occupant.Road?.Net?.Remove(_occupant); _occupant = null; }
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]

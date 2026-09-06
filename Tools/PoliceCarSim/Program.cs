@@ -115,7 +115,11 @@ static class Program
                     "transfer released while braking", "retired transfer released",
                     "parking timeout during retreat", "response released during retreat",
                     "disabled engine removed", "wreck removed", "halted transfer removed",
-                    "healthy rest retained" })
+                    "healthy rest retained", "failed response retried", "response redirected mid-entry",
+                    "response redirected during retreat", "custody return during retreat",
+                    "failed rest retried", "failed response waits behind", "failed response retreat interrupted",
+                    "failed patrol departure retried", "permanent walker behind", "permanent car behind",
+                    "failed parking during pass" })
                 {
                     total++;
                     try { Check(scenario, heading, dt); }
@@ -135,6 +139,18 @@ static class Program
     {
         using var f = new Fixture(heading, dt, scenario == "response released in junction");
         var car = f.Car;
+        if (scenario.StartsWith("permanent ") || scenario == "failed parking during pass")
+        {
+            CheckParkingFallback(f, scenario, heading, dt);
+            return;
+        }
+        if (scenario.StartsWith("failed response") && scenario != "failed response released" ||
+            scenario == "failed rest retried" || scenario.StartsWith("response redirected") ||
+            scenario == "custody return during retreat")
+        {
+            CheckParkingOrder(f, scenario, heading, dt);
+            return;
+        }
         if (scenario.EndsWith("removed") || scenario == "healthy rest retained")
         {
             CheckRemoval(f, scenario, heading);
@@ -194,6 +210,18 @@ static class Program
             case "parking timeout mid-entry":
                 f.EnterCurve(false);
                 f.ExpireParking();
+                break;
+            case "failed patrol departure retried":
+                car.InitAtKerb(f.Goal, Quaternion.LookRotation(f.Lane.Dir), f.Lane, 20f,
+                    f.Net.Edges, new Dictionary<RoadEdge, RoadEdge>(),
+                    new Vector2(90f, 240f), new Vector2Int(4, 6), 0f);
+                for (int i = 0; i < Math.Ceiling(15f / dt) &&
+                    (!car.Sliding || Math.Abs(car.D - f.Road.KerbD(heading, car.HalfWide)) < .2f); i++)
+                    f.Step();
+                Require(car.State == PolicePatrolCar.Mode.Patrolling && car.Sliding &&
+                    Math.Abs(car.D - f.Road.KerbD(heading, car.HalfWide)) >= .2f,
+                    "fixture never entered its patrol departure curve");
+                Call(car, typeof(RoadCar), "FailParking");
                 break;
             case "rest completed":
                 car.InitAtKerb(f.Goal, Quaternion.LookRotation(f.Lane.Dir), f.Lane, 20f,
@@ -317,6 +345,134 @@ static class Program
                 "repeated owner ticks reran removal or retained custody callback");
         }
         Console.WriteLine($"PASS {scenario} h={heading}");
+    }
+
+    static void CheckParkingOrder(Fixture f, string scenario, int heading, float dt)
+    {
+        var car = f.Car;
+        bool resting = scenario == "failed rest retried";
+        f.EnterCurve(!resting);
+        if (resting)
+        {
+            // Keep the rest draw on this street, away from its assigned home lane.
+            typeof(PolicePatrolCar).GetField("_allEdges", Private).SetValue(car, new List<RoadEdge> { f.Lane });
+            typeof(PolicePatrolCar).GetField("_home", Private).SetValue(car,
+                f.Road.LaneFor(-heading, -f.Lane.Offset));
+        }
+        if (scenario.EndsWith("during retreat"))
+        {
+            Call(car, typeof(RoadCar), "RetreatFromKerb");
+            f.Step();
+            Require(car.Speed < 0f, "fixture did not reverse the parking curve");
+        }
+        var target = f.Goal;
+        bool custody = scenario == "custody return during retreat";
+        if (resting || scenario.StartsWith("failed response"))
+        {
+            Call(car, typeof(RoadCar), "FailParking");
+            if (scenario == "failed response waits behind" || scenario == "failed response retreat interrupted")
+            {
+                if (scenario.EndsWith("interrupted"))
+                {
+                    for (int i = 0; i < Math.Ceiling(3f / dt) && car.Speed >= 0f; i++) f.Step();
+                    Require(car.Speed < 0f, "retry never started its retreat");
+                }
+                else typeof(RoadCar).GetField("<Speed>k__BackingField", Private).SetValue(car, 0f);
+                var position = car.Position;
+                StreetTraffic.Walkers.Add(position - car.Forward * (car.HalfLen + 1.2f));
+                f.Run(2f);
+                Require((car.Position - position).magnitude < .05f && !car.ParkedAtKerb,
+                    "blocked retreat moved through the person or reported arrival");
+                StreetTraffic.Walkers.Clear();
+            }
+        }
+        else if (custody)
+        {
+            car.HoldAtKerb = car.CustodyReserved = true;
+            car.Release();
+        }
+        else
+        {
+            target += f.Lane.Dir * 25f;
+            car.RouteTo(target, 0f);
+        }
+        var start = car.Position;
+        for (int i = 0; i < Math.Ceiling(30f / dt) &&
+            (custody ? (car.Position - start).magnitude < 20f :
+                car.State != (resting ? PolicePatrolCar.Mode.Resting : PolicePatrolCar.Mode.OnScene)); i++)
+            f.Step();
+        Require(car.Discontinuities == 0, "motion discontinuity: " + car.FirstDiscontinuity);
+        Require(car.TrafficRecoveries == 0 && !car.Gone, "relocation or deletion hid failed order");
+        if (custody)
+            Require(car.State == PolicePatrolCar.Mode.Returning && car.HasGoal &&
+                (car.Position - start).magnitude >= 20f && !car.Available,
+                "custody did not resume its return route: " + car.Describe());
+        else
+            Require(car.State == (resting ? PolicePatrolCar.Mode.Resting : PolicePatrolCar.Mode.OnScene) &&
+                car.AtGoal && car.ParkedAtKerb &&
+                (car.Position - (resting ? car.RestSpot : target)).magnitude < 12f,
+                $"response never parked: mode={car.State} halted={car.Halted} failed={car.ParkingFailed} " + car.Describe());
+        Console.WriteLine($"PASS {scenario} h={heading} dt={dt:F3}");
+    }
+
+    static void CheckParkingFallback(Fixture f, string scenario, int heading, float dt)
+    {
+        var car = f.Car;
+        RoadCar obstacle = null;
+        bool passing = scenario == "failed parking during pass";
+        if (passing)
+        {
+            obstacle = new RoadCar { Net = f.Net };
+            obstacle.PlaceAt(f.Road.Pose(car.S + heading * 25f, f.Lane.Offset), f.Lane.Dir);
+            typeof(RoadCar).GetField("<Parked>k__BackingField", Private).SetValue(obstacle, true);
+            Call(obstacle, typeof(RoadCar), "UpdateOccupant");
+            f.Obstacles.Add(obstacle);
+            StreetTraffic.Users.Add(obstacle);
+            car.RouteTo(f.Goal, 0f);
+            for (int i = 0; i < Math.Ceiling(20f / dt) &&
+                !(car.Doing == RoadCar.Manoeuvre.Pass && car.Sliding && Math.Abs(car.D - f.Lane.Offset) > .2f); i++)
+                f.Step();
+            Require(car.Doing == RoadCar.Manoeuvre.Pass && car.Sliding && car.Speed > 1f,
+                "fixture never drove its overtaking curve: " + car.Describe());
+        }
+        else f.EnterCurve(true);
+        Call(car, typeof(RoadCar), "FailParking");
+        if (!passing)
+        {
+            typeof(RoadCar).GetField("<Speed>k__BackingField", Private).SetValue(car, 0f);
+            if (scenario == "permanent walker behind")
+                StreetTraffic.Walkers.Add(car.Position - car.Forward * (car.HalfLen + 1.2f));
+            else
+            {
+                obstacle = new RoadCar { Net = f.Net };
+                obstacle.PlaceAt(f.Road.Pose(car.S - heading * (car.HalfLen + obstacle.HalfLen + .4f), car.D), f.Lane.Dir);
+                typeof(RoadCar).GetField("<Parked>k__BackingField", Private).SetValue(obstacle, true);
+                Call(obstacle, typeof(RoadCar), "UpdateOccupant");
+                f.Obstacles.Add(obstacle);
+                StreetTraffic.Users.Add(obstacle);
+            }
+        }
+        var start = car.Position;
+        bool escaped = false;
+        for (int i = 0; i < Math.Ceiling(25f / dt) && !escaped; i++)
+        {
+            float speed = car.Speed;
+            f.Step();
+            Require(car.Speed >= -.01f, "reversed an overtaking curve or into a permanent rear obstacle");
+            Require(speed - car.Speed <= car.Profile.HardBrake * dt + .21f,
+                "recovery stopped a moving car without braking");
+            if (obstacle != null)
+                Require(!RoadSpace.Overlap(car.Position, car.Forward, car.HalfLen, car.HalfWide,
+                    obstacle.Position, obstacle.Forward, obstacle.HalfLen, obstacle.HalfWide, 0f, out _),
+                    "recovery crossed the parked car");
+            escaped = !car.Sliding && !car.Halted && !car.ParkingFailed &&
+                (car.Position - start).magnitude > 10f;
+        }
+        Require(escaped && car.State == PolicePatrolCar.Mode.Responding && car.HasGoal,
+            "did not clear the failed manoeuvre and retain the response: " + car.Describe());
+        Require(car.Discontinuities == 0 && car.TrafficRecoveries == 0 && !car.Gone,
+            "jump or relocation hid the failure: " + car.FirstDiscontinuity);
+        Console.WriteLine($"PASS {scenario} h={heading} dt={dt:F3}");
     }
 
     static void Require(bool condition, string message)

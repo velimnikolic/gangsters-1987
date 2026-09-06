@@ -69,6 +69,14 @@ Tools/CoreSim/bin/
 Tools/CoreSim/obj/
 !Tools/CoreSim/CoreSim.csproj
 
+# Parking simulation harnesses: keep their projects, drop generated build output
+Tools/ParkingFrontageSim/bin/
+Tools/ParkingFrontageSim/obj/
+!Tools/ParkingFrontageSim/ParkingFrontageSim.csproj
+Tools/ParkingLaneSim/bin/
+Tools/ParkingLaneSim/obj/
+!Tools/ParkingLaneSim/ParkingLaneSim.csproj
+
 # Scratch of a working session: probe scripts, screenshots, the accidental dev/null
 dev/
 # Editor screenshot dumps

@@ -61,9 +61,6 @@ namespace RoadDemo
         /// <summary>How long a refused order's reason stands on the crew's chip.</summary>
         const float RefusalSeconds = 2.5f;
 
-        const float ClickSlackPx = 8f; // a right-drag beyond this is the camera's
-        const float ClickHold = 0.45f;
-
         static readonly Color BossOn = new Color(1f, 0.78f, 0.32f, 1f);
         static readonly Color HoodOn = new Color(1f, 0.78f, 0.32f, 0.6f);
         static readonly Color MarkTint = new Color(1f, 0.78f, 0.32f, 0.9f);
@@ -138,7 +135,6 @@ namespace RoadDemo
         System.Func<Vector2, bool> _previousVeto;
         bool _claimedThisFrame;
         Vector2 _rightDown;
-        float _rightDownAt;
         bool _rightPending;
         int _hovered = -1;
         CrewCar _hoveredCar;   // one car pick a frame, shared by the tag and the chip
@@ -801,42 +797,46 @@ namespace RoadDemo
             (CrewBar.Instance != null && Mouse.current != null &&
              CrewBar.Instance.Contains(Mouse.current.position.ReadValue()));
 
-        // A right click - pressed and released in place, quickly - is an order; a
-        // right-drag is DemoCamera's orbit and must not also send anyone anywhere.
+        // Orders and camera orbit read the same gesture, including its full travel.
         void ReadRightClick(Mouse mouse)
         {
+            bool clicked = RightPointerGesture.Clicked;
             if (mouse.rightButton.wasPressedThisFrame)
             {
+                // A new press can share a frame with the old aim's release. Retire
+                // that ownership before deciding what the new gesture is aimed at.
+                if (_aiming)
+                {
+                    EndCoverAim(order: false);
+                    DemoCamera.RightDragTaken = false;
+                }
                 // the card is a question; a right click anywhere is the answer "none of
                 // them", and never also an order to the ground under it
                 if (_ordersOpen) { CloseOrders(); _rightPending = false; return; }
                 _rightPending = !BookOpen && !PointerOverUi();
                 _rightDown = mouse.position.ReadValue();
-                _rightDownAt = Time.unscaledTime;
                 // A PRESS ON SOMETHING TO GET BEHIND IS A QUESTION, NOT YET AN ORDER
                 // (CrewOverlay.CoverAim). Held, it draws the crew's places in grey and
                 // the pointer turns them; released without having moved, it is the same
                 // single click it always was.
                 if (_rightPending && CoverAimUnder(_rightDown, out var aim)) BeginCoverAim(aim);
-                return;
             }
+            // A batched release-then-press ends down: its release belongs to the
+            // previous hold, not to the new pending click or cover preview.
+            if (mouse.rightButton.isPressed) return;
             // the aim owns its own release: the order leaves on the heading he stopped
             // at, and the rest of this chain never sees the click
             if (mouse.rightButton.wasReleasedThisFrame && _aiming)
             {
                 _rightPending = false;
-                EndCoverAim(order: true);
+                EndCoverAim(order: !BookOpen && !PointerOverUi() && Application.isFocused);
                 return;
             }
             if (!_rightPending || !mouse.rightButton.wasReleasedThisFrame) return;
             _rightPending = false;
 
-            var up = mouse.position.ReadValue();
-            float slack = ClickSlackPx * (_canvas != null ? _canvas.scaleFactor : 1f);
-            if ((up - _rightDown).sqrMagnitude > slack * slack ||
-                Time.unscaledTime - _rightDownAt > ClickHold)
-                return;
-            if (BookOpen) return;
+            if (!clicked || BookOpen) return;
+            var up = RightPointerGesture.ClickAt;
 
             // With NO crew picked, a shop under the click still answers: the card opens
             // on its crew-picker stage and comes back carrying the orders. Everything
@@ -2530,8 +2530,6 @@ namespace RoadDemo
                     !BookOpen && !PointerOverUi())
                     ClaimsClick(PointerGesture.ClickAt);
                 ReadRightClick(mouse);
-                // the pointer swinging under a held right button: the ambush turns
-                TickCoverAim(mouse);
                 // the middle button: the selected crew out of its car, wherever the
                 // pointer is - no aiming at the car needed
                 if (mouse.middleButton.wasPressedThisFrame && !BookOpen && !PointerOverUi())
@@ -2541,6 +2539,9 @@ namespace RoadDemo
                         ShowMark(ride.Position + Vector3.up * 1.0f, MarkTint);
                 }
             }
+
+            // Device loss must also cancel a cover preview and return camera ownership.
+            TickCoverAim(mouse);
 
             var pointerBlocked = mouse == null || BookOpen || _ordersOpen || _aiming ||
                                  PointerOverUi();
