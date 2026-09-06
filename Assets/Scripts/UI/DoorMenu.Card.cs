@@ -58,6 +58,30 @@ namespace LivingCity.UI
         static float CondPx(float px) =>
             LedgerStyle.FromPx(px * Zoom, LedgerStyle.CondensedOptical);
 
+        /// <summary>Whether this card is being painted inside the book, whose small
+        /// print is lifted (LedgerKit.BookSize) because it is read further away.</summary>
+        static bool inBook;
+
+        /// <summary>The size a size actually prints at, here.</summary>
+        static float Print(float size) => inBook ? BookSize(size) : size;
+
+        /// <summary>
+        /// THE WIDTH A MONO WORD TAKES, and it has to be the true one: this card lays
+        /// out by measurement - the key, then the leader, then the note held to the
+        /// right margin - and a width guessed 20% wide drops notes onto a second line
+        /// that had room on the first.
+        ///
+        /// IBM Plex Mono advances 0.6 em, the tracking is em hundredths, and BOTH are
+        /// drawn at the face's measured optical (LedgerStyle.MonoOptical), which is what
+        /// LedgerV2.MonoWidth leaves out - it was written for the paper sheets, where a
+        /// generous reserve costs nothing.
+        /// </summary>
+        static float Wide(string word, float size, float spacing) =>
+            string.IsNullOrEmpty(word)
+                ? 0f
+                : word.Length * Print(size) * LedgerStyle.MonoOptical *
+                  (0.6f + spacing / 100f);
+
         /// <summary>The card's fixed width - the design's 420 at the size it is read
         /// at. A surface with less room than this clamps it; nothing widens it.</summary>
         public const float MaxWidth = 470f;
@@ -124,8 +148,11 @@ namespace LivingCity.UI
             // rows beneath it would otherwise answer.
             ClickSurface(panel);
 
+            inBook = parent != null &&
+                     parent.GetComponentInParent<PersonnelAlmanac>(true) != null;
+
             var y = FileBand(panel, width, door, close);
-            y = Body(panel, width, y, door, changed, close, dispatch, showCommands);
+            y = Body(panel, width, y, door, changed, dispatch, showCommands);
 
             PlaceTopLeft(panel, 0f, 0f, width, y);
             return panel;
@@ -153,7 +180,7 @@ namespace LivingCity.UI
 
             var outfit = Gameplay.OutfitDirector.Instance;
             var day = "DAY " + (outfit ? outfit.Campaign.Day : 1);
-            var dayW = LedgerV2.MonoWidth(day, MonoPx(9f), 8f);
+            var dayW = Wide(day, MonoPx(9f), 8f);
             LedgerV2.Cell(panel, right - dayW, 0f, dayW, h, day, MonoPx(9f),
                 LedgerStyle.RailLabel, 8f, TextAlignmentOptions.MidlineRight);
             right -= dayW + Px(10f);
@@ -187,7 +214,7 @@ namespace LivingCity.UI
         // ------------------------------------------------------------------- the body
 
         static float Body(RectTransform panel, float width, float top, Door door,
-            Action changed, Action close, DoorDispatch dispatch, bool showCommands)
+            Action changed, DoorDispatch dispatch, bool showCommands)
         {
             var x = Px(14f);
             var w = width - x * 2f;
@@ -223,7 +250,7 @@ namespace LivingCity.UI
         {
             var chipWord = TenureWord(door.Tenure);
             var chipH = Px(22f);
-            var chipW = LedgerV2.MonoWidth(chipWord, MonoPx(8.7f), 6f) + Px(20f);
+            var chipW = Wide(chipWord, MonoPx(8.7f), 6f) + Px(20f);
             var nameH = Px(24f);
             var subH = Px(13f);
             var blockH = nameH + subH;
@@ -319,7 +346,7 @@ namespace LivingCity.UI
             }
             else
             {
-                var labelW = LedgerV2.MonoWidth("NERVE", MonoPx(9.8f), 4.5f);
+                var labelW = Wide("NERVE", MonoPx(9.8f), 4.5f);
                 LedgerV2.Cell(panel, tx, -ty, labelW, Px(12f), "NERVE",
                     MonoPx(9.8f), LedgerStyle.RailLabel, 4.5f);
 
@@ -435,8 +462,8 @@ namespace LivingCity.UI
         static void Leader(RectTransform panel, float x, float y, float w, float rowH,
             string label, string figure, Color ink)
         {
-            var labelW = LedgerV2.MonoWidth(label, MonoPx(9.8f), 4.5f);
-            var figureW = LedgerV2.MonoWidth(figure, MonoPx(11.6f), 0f);
+            var labelW = Wide(label, MonoPx(9.8f), 4.5f);
+            var figureW = Wide(figure, MonoPx(11.6f), 0f);
             LedgerV2.Cell(panel, x, -y, labelW, rowH, label, MonoPx(9.8f),
                 LedgerStyle.RailLabel, 4.5f);
             Dots(panel, x + labelW + Px(8f), y + rowH * 0.68f,
@@ -449,7 +476,7 @@ namespace LivingCity.UI
         static void LeaderPips(RectTransform panel, float x, float y, float w, float rowH,
             string label, int filled)
         {
-            var labelW = LedgerV2.MonoWidth(label, MonoPx(9.8f), 4.5f);
+            var labelW = Wide(label, MonoPx(9.8f), 4.5f);
             var pipsW = LedgerV2.PipsWidth(6, Px(7f), Px(9f));
             LedgerV2.Cell(panel, x, -y, labelW, rowH, label, MonoPx(9.8f),
                 LedgerStyle.RailLabel, 4.5f);
@@ -609,18 +636,26 @@ namespace LivingCity.UI
             var armedVerb = "";
             var armedWarning = "";
 
-            y += MoveSection(panel, x, y, w, Bucket.Door, SectionDoor, "AT THE DOOR",
-                "NO HEAT", LedgerStyle.RailNote, default, door, changed, dispatch,
-                solo, soloReason, ref commit, ref armedVerb, ref armedWarning) + gap;
-            y += MoveSection(panel, x, y, w, Bucket.Lean, SectionLean, "LEAN ON IT",
-                "HEAT", LedgerStyle.RailGold, default, door, changed, dispatch,
-                solo, soloReason, ref commit, ref armedVerb, ref armedWarning) + gap;
-            y += MoveSection(panel, x, y, w, Bucket.NoWay, SectionNoWay, "NO WAY BACK",
-                "FINAL", LedgerStyle.RailRed, LedgerV2.Red, door, changed, dispatch,
-                solo, soloReason, ref commit, ref armedVerb, ref armedWarning) + gap;
-            y += MoveSection(panel, x, y, w, Bucket.House, SectionHouse, "OUR OWN DOOR",
-                "OURS", LedgerStyle.RailSafeGold, LedgerStyle.RailSafeGold, door, changed,
-                dispatch, solo, soloReason, ref commit, ref armedVerb, ref armedWarning);
+            Step(Bucket.Door, SectionDoor, "AT THE DOOR", "NO HEAT",
+                LedgerStyle.RailNote, default);
+            Step(Bucket.Lean, SectionLean, "LEAN ON IT", "HEAT",
+                LedgerStyle.RailGold, default);
+            Step(Bucket.NoWay, SectionNoWay, "NO WAY BACK", "FINAL",
+                LedgerStyle.RailRed, LedgerV2.Red);
+            Step(Bucket.House, SectionHouse, "OUR OWN DOOR", "OURS",
+                LedgerStyle.RailSafeGold, LedgerStyle.RailSafeGold);
+
+            void Step(Bucket bucket, string key, string label, string word, Color ink,
+                Color accent)
+            {
+                var took = MoveSection(panel, x, y, w, bucket, key, label, word, ink,
+                    accent, door, changed, dispatch, solo, soloReason,
+                    ref commit, ref armedVerb, ref armedWarning);
+                // A section with no rows in it is not drawn, and must not leave the air
+                // between two sections behind either.
+                if (took > 0f)
+                    y += took + gap;
+            }
 
             // An armed move whose row is gone - the standing moved under the card, the
             // crew was taken off it - must not leave a strip offering to commit nothing.
@@ -721,8 +756,8 @@ namespace LivingCity.UI
                 Block("Picked", row, 0f, 0f, Px(3f), rowH, LedgerStyle.RailSafeGold);
 
             var lx = Px(24f);
-            var labelW = LedgerV2.MonoWidth(label, MonoPx(10.6f), 3f);
-            var noteW = LedgerV2.MonoWidth(note, MonoPx(9.8f), 4.5f);
+            var labelW = Wide(label, MonoPx(10.6f), 3f);
+            var noteW = Wide(note, MonoPx(9.8f), 4.5f);
             labelW = Mathf.Min(labelW, w - lx - Px(20f));
             LedgerV2.Cell(row, lx, 0f, labelW, rowH, label.ToUpperInvariant(),
                 MonoPx(10.6f), available ? LedgerStyle.RailValue : LedgerStyle.RailLabel,
@@ -817,12 +852,12 @@ namespace LivingCity.UI
             LedgerKit.Caret(row, lx, -h * 0.5f, Px(8.4f), open, LedgerStyle.RailLabel);
             lx += Px(8.4f) + Px(8f);
 
-            var labelW = LedgerV2.MonoWidth(label, MonoPx(9.8f), 6f);
+            var labelW = Wide(label, MonoPx(9.8f), 6f);
             LedgerV2.Cell(row, lx, 0f, labelW, h, label, MonoPx(9.8f),
                 LedgerStyle.RailValue, 6f, TextAlignmentOptions.MidlineLeft,
                 LedgerStyle.MonoBold);
 
-            var wordW = Mathf.Min(LedgerV2.MonoWidth(word, wordSize, 4.5f),
+            var wordW = Mathf.Min(Wide(word, wordSize, 4.5f),
                 w - lx - labelW - Px(26f));
             Dots(panel, x + lx + labelW + Px(8f), y + h * 0.68f,
                 w - lx - labelW - wordW - Px(26f));
@@ -841,12 +876,12 @@ namespace LivingCity.UI
         static float MoveRowHeight(TerritoryRacketOrder row, float w, float rowH)
         {
             var keyW = KeyWidth(row.Label);
-            var noteW = LedgerV2.MonoWidth(row.Note, MonoPx(9.8f), 4.5f);
+            var noteW = Wide(row.Note, MonoPx(9.8f), 4.5f);
             return noteW <= w - keyW - Px(24f) ? rowH : rowH + Px(13f);
         }
 
         static float KeyWidth(string label) =>
-            LedgerV2.ButtonWidth(label, MonoPx(8.7f), 7f, Px(15f));
+            Px(15f) * 2f + Wide(label, MonoPx(8.7f), 7f);
 
         static void MoveRow(RectTransform panel, float x, float y, float w, float h,
             float rowH, TerritoryRacketOrder row, Bucket bucket, Door door,
@@ -868,7 +903,7 @@ namespace LivingCity.UI
                 ? () => { Arm(key, row.Label); changed?.Invoke(); }
                 : () => { Armed = null; press(); };
 
-            if (hard && Armed == key)
+            if (hard && live && Armed == key)
             {
                 commit = () => { Armed = null; press(); };
                 armedVerb = row.Label;
@@ -901,7 +936,7 @@ namespace LivingCity.UI
 
             var note = row.Note;
             var noteInk = NoteInk(bucket, row);
-            var noteW = LedgerV2.MonoWidth(note, MonoPx(9.8f), 4.5f);
+            var noteW = Wide(note, MonoPx(9.8f), 4.5f);
             if (h > rowH)
             {
                 // The note dropped under the key: it is a sentence now, so it is set
@@ -954,27 +989,29 @@ namespace LivingCity.UI
             var commitLabel = "COMMIT · " + verb;
             var commitW = KeyWidth(commitLabel);
             var offW = KeyWidth("CALL IT OFF");
-            var warnW = w - pad * 2f - commitW - offW - Px(18f);
 
-            var lines = warnW <= Px(120f) ? 2 : 1;
+            // The warning is never the thing that gets dropped when the strip is tight -
+            // it is the whole reason the strip is there - so it takes a line of its own
+            // above the keys rather than sharing one with them.
+            var warnW = w - pad * 2f - Px(3f);
+            var warnText = warning + " Say it twice or not at all.";
+            var lines = Mathf.Clamp(
+                Mathf.CeilToInt(Wide(warnText, MonoPx(9.8f), 4.5f) / Mathf.Max(1f, warnW)),
+                1, 3);
             var warnH = LineBox(MonoPx(9.8f), lines);
-            var h = Mathf.Max(keyH, warnH) + Px(18f);
+            var h = Px(9f) * 2f + warnH + Px(8f) + keyH;
 
             Block("Confirm", panel, x, -y, w, h, LedgerV2.Rgb2(0x2b1210));
             Block("Confirm edge", panel, x, -y, Px(3f), h, LedgerV2.Red);
 
-            if (warnW > Px(120f))
-                Paragraph(panel, LedgerStyle.Mono, MonoPx(9.8f), LedgerStyle.RailRed,
-                    x + pad + Px(3f), -(y + (h - warnH) * 0.5f), warnW, warnH,
-                    warning + " Say it twice or not at all.", 2f);
+            Paragraph(panel, LedgerStyle.Mono, MonoPx(9.8f), LedgerStyle.RailRed,
+                x + pad + Px(3f), -(y + Px(9f)), warnW, warnH, warnText, 2f);
 
-            var keyY = y + (h - keyH) * 0.5f;
-            KeyBox(panel, x + w - pad - offW - Px(9f) - commitW, -keyY, commitW, keyH,
-                LedgerStyle.RailRed);
-            LedgerV2.Button(panel, commitLabel,
-                x + w - pad - offW - Px(9f) - commitW, -keyY, commitW, keyH,
+            var keyY = y + Px(9f) + warnH + Px(8f);
+            LedgerV2.Button(panel, commitLabel, x + pad + Px(3f), -keyY, commitW, keyH,
                 () => { commit(); changed?.Invoke(); }, LedgerV2.Key.Red, MonoPx(8.7f));
-            LedgerV2.Button(panel, "CALL IT OFF", x + w - pad - offW, -keyY, offW, keyH,
+            LedgerV2.Button(panel, "CALL IT OFF",
+                x + pad + Px(3f) + commitW + Px(9f), -keyY, offW, keyH,
                 () => { CallOff(); changed?.Invoke(); }, LedgerV2.Key.Ghost, MonoPx(8.7f));
             return h;
         }
@@ -1017,10 +1054,13 @@ namespace LivingCity.UI
                 }
 
                 var press = Press(door, row, changed, dispatch);
-                var edge = money ? LedgerStyle.RailSafeGold : LedgerStyle.RailLabel;
-                if (!row.Available)
-                    edge = LedgerV2.At(edge, 0.4f);
-                KeyBox(panel, cursor, -y, keyW, keyH, edge);
+                // The gold edge is what marks the move paid for out of the safe. The
+                // quiet key beside it is a ghost and takes no box at all.
+                if (money)
+                    KeyBox(panel, cursor, -y, keyW, keyH,
+                        row.Available
+                            ? LedgerStyle.RailSafeGold
+                            : LedgerV2.At(LedgerStyle.RailSafeGold, 0.4f));
                 var label = LedgerV2.Button(panel, word, cursor, -y, keyW, keyH,
                     () => { Armed = null; press(); },
                     money ? LedgerV2.Key.Dark : LedgerV2.Key.Ghost, MonoPx(8.7f));
