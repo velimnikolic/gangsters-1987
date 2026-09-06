@@ -675,6 +675,7 @@ namespace LivingCity.UI
             lastCloseFrame = Time.frameCount;
             pendingConfirm = Confirm.None;
             lastRefusal = "";
+            LawSheetClosed();
             HideHoverNote();
             if (sortMenu)
                 sortMenu.SetActive(false);
@@ -822,6 +823,13 @@ namespace LivingCity.UI
                 return;
             }
 
+            // And THE LAW's map and its two strips, which read across as a matter of
+            // course: a mind map is drawn wider than any window, and a strip of files
+            // has no other axis at all.
+            if (scroll.x != 0f && currentPage == LedgerPage.Law &&
+                ScrollLawAcross(scroll.x, point))
+                return;
+
             if (wheel == 0f)
                 return;
 
@@ -906,28 +914,11 @@ namespace LivingCity.UI
                     break;
                 case LedgerPage.Law:
                     // FOUR REGIONS on this sheet, and whichever the pointer sits over
-                    // takes the wheel - the PERSONNEL and ARMORY rule.
-                    if (Over(lawArchiveViewport, point))
-                    {
-                        viewport = lawArchiveViewport;
-                        content = lawArchiveContent;
-                    }
-                    else if (Over(lawInsideViewport, point))
-                    {
-                        viewport = lawInsideViewport;
-                        content = lawInsideContent;
-                    }
-                    else if (Over(lawWantedViewport, point))
-                    {
-                        viewport = lawWantedViewport;
-                        content = lawWantedContent;
-                    }
-                    else
-                    {
-                        viewport = lawDocketViewport;
-                        content = lawDocketContent;
-                    }
-                    break;
+                    // takes the wheel - the PERSONNEL and ARMORY rule. Two of them read
+                    // SIDEWAYS off the same notch, so the sheet answers for itself
+                    // instead of nominating one region to the tail below.
+                    ScrollLaw(wheel, point);
+                    return;
                 default:
                     return;
             }
@@ -1017,30 +1008,6 @@ namespace LivingCity.UI
                 blueprintScroll = Mathf.Clamp(
                     blueprintScroll - wheel * WheelStep, 0f, maxScroll);
                 content.anchoredPosition = new Vector2(0f, blueprintScroll);
-            }
-            else if (viewport == lawDocketViewport)
-            {
-                lawDocketScroll = Mathf.Clamp(
-                    lawDocketScroll - wheel * WheelStep, 0f, maxScroll);
-                content.anchoredPosition = new Vector2(0f, lawDocketScroll);
-            }
-            else if (viewport == lawInsideViewport)
-            {
-                lawInsideScroll = Mathf.Clamp(
-                    lawInsideScroll - wheel * WheelStep, 0f, maxScroll);
-                content.anchoredPosition = new Vector2(0f, lawInsideScroll);
-            }
-            else if (viewport == lawWantedViewport)
-            {
-                lawWantedScroll = Mathf.Clamp(
-                    lawWantedScroll - wheel * WheelStep, 0f, maxScroll);
-                content.anchoredPosition = new Vector2(0f, lawWantedScroll);
-            }
-            else if (viewport == lawArchiveViewport)
-            {
-                lawArchiveScroll = Mathf.Clamp(
-                    lawArchiveScroll - wheel * WheelStep, 0f, maxScroll);
-                content.anchoredPosition = new Vector2(0f, lawArchiveScroll);
             }
             else
             {

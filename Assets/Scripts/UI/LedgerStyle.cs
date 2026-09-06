@@ -327,6 +327,22 @@ namespace LivingCity.UI
 
         // -------------------------------------------------------------------- fonts
 
+        /// <summary>
+        /// EACH FACE'S OPTICAL FIGURE, NAMED. The numbers below are the ones measured in
+        /// <see cref="Font"/> and written into every face's <c>faceInfo.scale</c>; they
+        /// are constants here because a page built from a DESIGN EXPORT has to divide by
+        /// one. A handoff's px is a size in the NEW face, and this book's point sizes
+        /// were written against the old ones, so the conversion is
+        /// <c>size = px / optical</c> - the rule the street HUD was built to as well.
+        /// </summary>
+        public const float TypeOptical = 1.082f;
+        public const float MonoOptical = 0.831f;
+        public const float SerifOptical = 1.017f;
+        public const float CondensedOptical = 0.864f;
+
+        /// <summary>A design export's px in this book's own point size.</summary>
+        public static float FromPx(float px, float optical) => px / optical;
+
         static TMP_FontAsset type, mono, monoBold, monoItalic;
         static TMP_FontAsset serif, serifBold, serifItalic, condensed, condensedText;
         static TMP_FontAsset pixel, pixelBold;
@@ -341,32 +357,32 @@ namespace LivingCity.UI
         /// caps do not fill 0.35 of its em - the H glyph measures 51.0 units on a 72
         /// em, 0.709 - against Lekton's 47.2, 0.655. The ratio is 1.082, and the 0.53
         /// this carried before printed every typed word in the book at half height.</summary>
-        public static TMP_FontAsset Type => Font(ref type, "Lekton-Bold", 0f, 1.082f);
+        public static TMP_FontAsset Type => Font(ref type, "Lekton-Bold", 0f, TypeOptical);
 
         /// <summary>The ledger's figures and body copy. Fixed pitch is the point - a
         /// column of money only lines up if every digit takes the same width.</summary>
-        public static TMP_FontAsset Mono => Font(ref mono, "IBMPlexMono-Regular", 0.05f, 0.831f);
-        public static TMP_FontAsset MonoBold => Font(ref monoBold, "IBMPlexMono-Bold", 0f, 0.831f);
-        public static TMP_FontAsset MonoItalic => Font(ref monoItalic, "IBMPlexMono-Italic", 0.05f, 0.831f);
+        public static TMP_FontAsset Mono => Font(ref mono, "IBMPlexMono-Regular", 0.05f, MonoOptical);
+        public static TMP_FontAsset MonoBold => Font(ref monoBold, "IBMPlexMono-Bold", 0f, MonoOptical);
+        public static TMP_FontAsset MonoItalic => Font(ref monoItalic, "IBMPlexMono-Italic", 0.05f, MonoOptical);
 
         /// <summary>The newspaper's face, and the hand in the margin. PT Serif is cut
         /// for newsprint and for a screen, so it holds its stems at the sizes the book
         /// actually prints at.</summary>
-        public static TMP_FontAsset Serif => Font(ref serif, "PTSerif-Regular", 0f, 1.017f);
-        public static TMP_FontAsset SerifBold => Font(ref serifBold, "PTSerif-Bold", 0f, 1.017f);
-        public static TMP_FontAsset SerifItalic => Font(ref serifItalic, "PTSerif-Italic", 0f, 1.017f);
+        public static TMP_FontAsset Serif => Font(ref serif, "PTSerif-Regular", 0f, SerifOptical);
+        public static TMP_FontAsset SerifBold => Font(ref serifBold, "PTSerif-Bold", 0f, SerifOptical);
+        public static TMP_FontAsset SerifItalic => Font(ref serifItalic, "PTSerif-Italic", 0f, SerifOptical);
 
         /// <summary>Stamped chrome: the masthead, the headline decks, the rubber stamps,
         /// every small-caps label. Oswald is the Alternate Gothic the period's headline
         /// decks were actually set in.</summary>
-        public static TMP_FontAsset Condensed => Font(ref condensed, "Oswald-Bold", 0f, 0.864f);
+        public static TMP_FontAsset Condensed => Font(ref condensed, "Oswald-Bold", 0f, CondensedOptical);
 
         /// <summary>The same gothic at reading weight - the running text of the screens
         /// the city itself wears: map marks, block tags, a popup's line. A deck and its
         /// copy set in one family is what a printed page of the period looked like.
         /// </summary>
         public static TMP_FontAsset CondensedText =>
-            Font(ref condensedText, "Oswald-Regular", 0.04f, 0.864f);
+            Font(ref condensedText, "Oswald-Regular", 0.04f, CondensedOptical);
 
         /// <summary>
         /// The one face that is not type but PIXELS: Silkscreen, the bitmap gothic an

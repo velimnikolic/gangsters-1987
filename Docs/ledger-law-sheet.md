@@ -6,7 +6,7 @@ Before this sheet the same facts were scattered over the men's own files: a held
 
 ## Where it is
 
-`P` opens the book; **THE LAW** is the last tab after FAMILIES, folio 17. The page is `Assets/Scripts/UI/PersonnelAlmanac.Law.cs`, a partial like every other sheet.
+`P` opens the book; **THE LAW** is the last tab after FAMILIES, folio 17. The page is `Assets/Scripts/UI/PersonnelAlmanac.Law.cs` (the sheet) and `Assets/Scripts/UI/PersonnelAlmanac.Law.Map.cs` (the map in the middle of it), partials like every other sheet.
 
 ## What it reads, and the one rule about it
 
@@ -16,11 +16,25 @@ The page holds no state the model does not, and writes only through `RoadDemo.La
 
 | Region | Rows | Source |
 |---|---|---|
-| THE DOCKET (left, ~3/5) | one card per open case of ours, soonest court day first, complaints with nobody taken last | `PrisonPipeline.Cases` where `Status == Open` |
-| INSIDE (right, top) | every prisoner of ours, his charge and where in the pipe he stands | `PrisonPipeline.Inside` |
-| WANTED (right, middle) | every man with a level, what for, and how long he has been out of sight | `Character.WantedLevel` + `WantedLevels` |
-| COUNSEL (right, foot) | the lawyer, his stars, his record, his wage — or the want of one and a key to the column | `Lawyer.Counsel` |
-| VERDICTS (foot, full width) | every closed case of ours, newest first, a line per man | `CourtCase.Verdicts` |
+| OPEN FILES (a tab strip across the head) | one tab per open case of ours, soonest court day first, complaints with nobody taken last | `PrisonPipeline.Cases` where `Status == Open` |
+| THE MAP (the centre panel) | the ONE case the strip has open, drawn as a mind map | the selected `DocketRow` |
+| THE HOUSE · I. INSIDE | every prisoner of ours, his charge and where in the pipe he stands | `PrisonPipeline.Inside` |
+| THE HOUSE · II. WANTED | every man with a level, what for, and how long he has been out of sight | `Character.WantedLevel` + `WantedLevels` |
+| THE HOUSE · III. COUNSEL | the lawyer, his stars, his record, his wage — or the want of one and a key to the column | `Lawyer.Counsel` |
+| CLOSED FILES (a drawer along the foot) | every closed case of ours, newest first; clicking one prints its verdicts on the desk line | `CourtCase.Verdicts` |
+
+## The map (the redesign, 2026-09-06)
+
+The docket was a scrolling column of dense cards, which buried the soonest court day and spent a third of the width on three starved panes. The sheet now carries **one case at a time as a mind map**, from the handoff `THE LAW mind map`:
+
+* the **charge** is a black node in the middle of a dark stage, opening at a click into when it was opened, when it is listed and who will be heard;
+* the **men named** branch left, folded to a name over `HELD · BAIL $2,400` and opening into his photograph, why he is on the file, his answer at the door and the three keys — `POST BAIL`, `SKIP BAIL`, `CUT HIM LOOSE` — which appear on **the man the player picked and nowhere else**;
+* the **witnesses** branch right, tinted by their standing, and a man the court **will not hear** is joined to the case by a broken line, which is the one thing on the map that reads without opening anything;
+* **counsel's read** hangs below the charge, in `Verdict.Leaning`'s own words and never a number.
+
+Nothing about the world lives on the page. What it holds is view state — the open file, the man in hand, which nodes are unfolded, and one wheel position per region — all of it thrown away when the book shuts.
+
+Geometry is measured, never typed: every node's height is the sum of the line boxes the faces actually print, and the stage is grown to hold whatever came out and centred in its window. The handoff's px are **design px in the design system's own faces**, so a type size is `px / optical` (`LedgerStyle.MonoOptical` and its two neighbours); a length copies 1:1. The links are one mesh, `LedgerLinks` (`Assets/Scripts/UI/LedgerLinks.cs`), drawn under every node and taking no clicks.
 
 ## Two rules worth knowing before changing anything
 
@@ -82,7 +96,8 @@ order, deed and verdict tables therefore never receive arbitrary JSON integers.
 
 * **A GameObject holds one Image.** `AddComponent<Image>` on a TMP text returns **null** rather than throwing, and the caller dies on the next line, far from the cause — it took the whole paint down after the first INSIDE row and left three boxes empty. Every clickable name here gets its own surface rect through `LedgerKit.ClickSurface`, which documents the same trap in as many words.
 * **`pageRoots` was a hard-coded 9.** A tenth page threw `IndexOutOfRange` at `NewPageRoot`. It is sized off the enum now.
-* **Four windows, four wheel positions.** Every Law pane once fell through to the generic branch and wrote `ordersScroll`: scroll a long docket, put the pointer on a short INSIDE, and the short pane's clamp dragged the long one back to the top — and the ORDERS page inherited whatever the law sheet was last left at. Each region has its own field and its own branch, and `LawSettle` clamps each to its own run at every repaint.
+* **Four windows, four wheel positions.** Every Law pane once fell through to the generic branch and wrote `ordersScroll`: scroll a long docket, put the pointer on a short INSIDE, and the short pane's clamp dragged the long one back to the top — and the ORDERS page inherited whatever the law sheet was last left at. Each region has its own field, and the sheet now answers the wheel itself (`ScrollLaw` / `ScrollLawAcross`) because the map and the two strips read **across** as well as down.
+* **A panel is built once and only its run is cleared.** The page head, both dark panel head bands, the strips' label cells and the desk line are therefore painted on the sheet's own fixed layer, which is created **after** the four panels so it draws over them — a head band painted into a card would stack another band on it at every repaint, and a label cell painted before the card would sit behind its face.
 * **A seeded roll is not a fixture.** The conviction contract picks a court day the stream is known to convict on and then asserts the record against the sentence the prisoner actually got, so a stream that changed its mind fails rather than passing quietly.
 
 ## Checking it
