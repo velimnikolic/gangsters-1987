@@ -68,7 +68,6 @@ namespace RoadDemo
 
         static GameObject Body(string name)
         {
-#if UNITY_EDITOR
             if (string.IsNullOrEmpty(name)) return null;
             // Authored body names differ from their file names. The same baked
             // reference feeds the catalogue photograph and the purchased vehicle.
@@ -82,7 +81,6 @@ namespace RoadDemo
                 var prefab = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                 if (prefab != null) return prefab;
             }
-#endif
             return null;
         }
 

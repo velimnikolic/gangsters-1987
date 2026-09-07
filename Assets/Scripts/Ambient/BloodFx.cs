@@ -113,11 +113,7 @@ namespace LivingCity.Ambient
 
         static T Load<T>(string path) where T : Object
         {
-#if UNITY_EDITOR
             return RoadDemo.DemoAssetLoad.Load<T>(path);
-#else
-            return null;
-#endif
         }
 
         sealed class Impact

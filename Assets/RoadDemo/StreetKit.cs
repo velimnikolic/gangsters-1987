@@ -162,7 +162,6 @@ namespace RoadDemo
 
         public bool Load()
         {
-#if UNITY_EDITOR
             GameObject L(string path) => RoadDemo.DemoAssetLoad.Load<GameObject>(path);
             _roadHalf = L(CityEnv + "SM_Env_Road_YellowLines_02.prefab");
             _swStraight = L(CityEnv + "SM_Env_Sidewalk_Straight_01.prefab");
@@ -215,9 +214,6 @@ namespace RoadDemo
             if (!_loaded)
                 Debug.LogWarning("[StreetKit] PolygonCity road tiles missing - no street.");
             return _loaded;
-#else
-            return false;
-#endif
         }
         /// <summary>A plain two-way street along X on centre line <paramref name="cz"/>,
         /// from <paramref name="xFrom"/> to <paramref name="xTo"/> (the 5 m beat, the

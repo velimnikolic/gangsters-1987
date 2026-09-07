@@ -161,7 +161,9 @@ namespace RoadDemo
             _moon.color = MoonColour;
             _moon.intensity = 0f;
             _moon.shadows = LightShadows.None;
+#if UNITY_EDITOR
             _moon.lightmapBakeType = LightmapBakeType.Realtime;
+#endif
 
             if (cloudRenderer)
             {

@@ -1194,7 +1194,6 @@ namespace RoadDemo
         // stands: two cones six metres apart, the tape between them.
         void TapeOff(Squad squad)
         {
-#if UNITY_EDITOR
             var cone = RoadDemo.DemoAssetLoad.Load<GameObject>(
                 "Assets/Synty/PolygonPoliceStation/Prefabs/Props/SM_Prop_Cone_01.prefab");
             var tape = RoadDemo.DemoAssetLoad.Load<GameObject>(
@@ -1236,7 +1235,6 @@ namespace RoadDemo
             }
             foreach (var mb in root.GetComponentsInChildren<MonoBehaviour>()) Destroy(mb);
             foreach (var col in root.GetComponentsInChildren<Collider>()) Destroy(col);
-#endif
         }
 
         // ------------------------------------------------------------ on foot

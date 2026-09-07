@@ -423,23 +423,15 @@ namespace AirportDemo
 
         public static GameObject Load(string path)
         {
-#if UNITY_EDITOR
-            var go = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            var go = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
             if (go == null) Debug.LogWarning("[AirportDemo] missing prefab " + path);
             return go;
-#else
-            return null;
-#endif
         }
 
         /// <summary>Loads without complaint - for the optional pieces.</summary>
         public static GameObject TryLoad(string path)
         {
-#if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
-#else
-            return null;
-#endif
+            return RoadDemo.DemoAssetLoad.Load<GameObject>(path);
         }
 
         public static List<GameObject> LoadAll(IEnumerable<string> paths, bool quiet = false)
@@ -457,12 +449,8 @@ namespace AirportDemo
         /// without dirtying the shared asset.</summary>
         public static Material LoadMaterial(string path)
         {
-#if UNITY_EDITOR
-            var src = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(path);
+            var src = RoadDemo.DemoAssetLoad.Load<Material>(path);
             return src != null ? new Material(src) : null;
-#else
-            return null;
-#endif
         }
 
         /// <summary>Paint. The markings are not a Synty asset in any pack - no road

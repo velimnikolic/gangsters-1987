@@ -33,13 +33,11 @@ namespace RoadDemo
         public static List<GameObject> Bodies()
         {
             var bodies = new List<GameObject>();
-#if UNITY_EDITOR
             foreach (var name in LivingCity.Gameplay.VehicleCatalog.Motorcycles)
             {
                 var body = Body(name, marked: false);
                 if (body != null) bodies.Add(body);
             }
-#endif
             return bodies;
         }
 
@@ -47,20 +45,17 @@ namespace RoadDemo
         /// is how anything marked is had (VehicleCatalog).</summary>
         public static GameObject PoliceBody()
         {
-#if UNITY_EDITOR
             foreach (var name in LivingCity.Gameplay.VehicleCatalog.PoliceMotorcycles)
             {
                 var path = LivingCity.Gameplay.VehicleCatalog.PoliceFleetFolder + name + ".prefab";
                 var body = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                 if (body != null) return body;
             }
-#endif
             return null;
         }
 
         static GameObject Body(string name, bool marked)
         {
-#if UNITY_EDITOR
             if (string.IsNullOrEmpty(name)) return null;
             foreach (var folder in Folders)
             {
@@ -70,7 +65,6 @@ namespace RoadDemo
                 var prefab = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                 if (prefab != null) return prefab;
             }
-#endif
             return null;
         }
 

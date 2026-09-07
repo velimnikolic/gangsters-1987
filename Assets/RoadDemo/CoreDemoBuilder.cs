@@ -190,7 +190,6 @@ namespace RoadDemo
 
         void Awake()
         {
-#if UNITY_EDITOR
             if (newSeedEveryPlay) seed = FreshPlaySeed();
             Debug.Log($"[CoreDemo] Play seed {seed}." +
                       (newSeedEveryPlay
@@ -357,9 +356,6 @@ namespace RoadDemo
                 // the top bar and the wire ticker besides.
                 rig.showHint = false;
             }
-#else
-            Debug.LogError("[CoreDemo] The core loads Synty prefabs through the AssetDatabase and only runs in the editor.");
-#endif
         }
 
         /// <summary>Independent of UnityEngine.Random so choosing the city's identity does

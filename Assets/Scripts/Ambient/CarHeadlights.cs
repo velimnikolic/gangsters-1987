@@ -277,7 +277,9 @@ namespace LivingCity.Ambient
             // before Apply reaches it - Scan runs from the same LateUpdate, but "the pass right
             // after this one will fix it" is exactly the kind of ordering that stops being true.
             light.enabled = intensity > 0.001f && !Parked(car);
+#if UNITY_EDITOR
             light.lightmapBakeType = LightmapBakeType.Realtime;
+#endif
             light.renderMode = LightRenderMode.ForcePixel;
 
             holder.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalLightData>()

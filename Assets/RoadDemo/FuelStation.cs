@@ -546,7 +546,6 @@ namespace RoadDemo
         /// perimeter planting belongs to that generator rather than to the rural skirt.</summary>
         public void Dress(Transform under, System.Random rng, bool plantTreeLine)
         {
-#if UNITY_EDITOR
             if (under == null) return;
             float yaw = Rot.eulerAngles.y;
             var loaded = new Dictionary<string, GameObject>();
@@ -554,7 +553,7 @@ namespace RoadDemo
             GameObject Load(string path)
             {
                 if (loaded.TryGetValue(path, out var cached)) return cached;
-                var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                var prefab = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                 if (prefab == null) Debug.LogWarning("[Fuel] the forecourt is missing " + path);
                 loaded[path] = prefab;
                 return prefab;
@@ -580,7 +579,6 @@ namespace RoadDemo
             }
 
             if (plantTreeLine) PlantTreeLine(under, rng, Load);
-#endif
         }
 
         /// <summary>A tree line down both sides of the forecourt and along the back, on
@@ -785,7 +783,6 @@ namespace RoadDemo
                                         float groundY, float crossZ, bool blockWalkers)
         {
             var station = Wire(anchor, rot, groundY, crossZ);
-#if UNITY_EDITOR
             var seat = anchor;
             seat.y = groundY;
             var canopy = SuburbDemo.TownKit.LoadByName(SuburbDemo.TownClusters.GasStation.Anchor);
@@ -816,7 +813,6 @@ namespace RoadDemo
                 }
             }
             station.Footprint = Measure(under);
-#endif
             if (blockWalkers) station.BlockWalkers();
             return station;
         }

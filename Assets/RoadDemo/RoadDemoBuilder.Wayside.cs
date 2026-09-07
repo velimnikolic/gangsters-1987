@@ -299,7 +299,6 @@ namespace RoadDemo
         /// else, and the route map the station worked out is what steers them back.</summary>
         void SendCustomers(FuelStation station, WaysidePlan plan)
         {
-#if UNITY_EDITOR
             if (_carPrefabs.Count == 0 || station.Lane == null) return;
             var clips = ((IDistrictHost)this).Clips;
             var crowd = new System.Random(plan.Seed * 613 + 131);
@@ -352,7 +351,6 @@ namespace RoadDemo
                 StreetTraffic.Users.Add(car);
                 _fuelCustomers.Add(car);
             }
-#endif
         }
 
         /// <summary>The man who will get out of the car, made and put away. He is stood
@@ -464,7 +462,6 @@ namespace RoadDemo
 
         GameObject Tanker()
         {
-#if UNITY_EDITOR
             if (_tankerLooked) return _tanker;
             _tankerLooked = true;
             foreach (var path in new[]
@@ -473,10 +470,9 @@ namespace RoadDemo
                 "Assets/Synty/PolygonTown/Prefabs/Vehicles/SM_Veh_Truck_01.prefab",
             })
             {
-                _tanker = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                _tanker = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                 if (_tanker != null) break;
             }
-#endif
             return _tanker;
         }
 

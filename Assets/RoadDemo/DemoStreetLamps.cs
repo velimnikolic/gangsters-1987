@@ -144,7 +144,9 @@ namespace RoadDemo
                     light.intensity = 0f;
                     light.shadows = LightShadows.None;
                     light.enabled = false;
+#if UNITY_EDITOR
                     light.lightmapBakeType = LightmapBakeType.Realtime;
+#endif
                     light.renderMode = LightRenderMode.ForcePixel;
                     if (!holder.TryGetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalLightData>(out var data))
                         data = holder.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalLightData>();

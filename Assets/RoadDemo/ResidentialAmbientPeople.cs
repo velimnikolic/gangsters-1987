@@ -1102,12 +1102,10 @@ namespace RoadDemo
 
         static AnimationClip IdleFbx(string relative)
         {
-#if UNITY_EDITOR
             string path = IdlePack + relative;
-            foreach (var asset in UnityEditor.AssetDatabase.LoadAllAssetRepresentationsAtPath(path))
+            foreach (var asset in RoadDemo.DemoAssetLoad.LoadAllAssetRepresentationsAtPath(path))
                 if (asset is AnimationClip clip && !clip.name.StartsWith("__preview__"))
                     return clip;
-#endif
             return null;
         }
     }

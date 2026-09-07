@@ -119,7 +119,9 @@ namespace RoadDemo
             light.intensity = 0f;
             light.shadows = LightShadows.None;
             light.enabled = false;
+#if UNITY_EDITOR
             light.lightmapBakeType = LightmapBakeType.Realtime;
+#endif
             light.renderMode = LightRenderMode.ForcePixel;
             holder.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalLightData>()
                   .usePipelineSettings = true;

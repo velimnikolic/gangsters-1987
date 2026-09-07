@@ -87,7 +87,6 @@ namespace RoadDemo
             var stood = new Stood();
             if (root == null) return stood;
 
-#if UNITY_EDITOR
             var stationRoot = new GameObject("Full PumpDemo Station Parcel").transform;
             stationRoot.SetParent(root, false);
             var rotation = Quaternion.Euler(0f, 180f, 0f);
@@ -144,13 +143,9 @@ namespace RoadDemo
                 if (live == null) live = root.gameObject.AddComponent<FuelStationBlockRuntime>();
                 live.nameSeed = seed;
             }
-#else
-            Debug.LogError("[FuelBlock] The visual block loads Synty prefabs in the editor.");
-#endif
             return stood;
         }
 
-#if UNITY_EDITOR
         static T Load<T>(string path) where T : Object => DemoAssetLoad.Load<T>(path);
 
         static CorePavement.Plan PavementPlan(FuelStation station)
@@ -241,7 +236,11 @@ namespace RoadDemo
         static GameObject Raise(GameObject prefab, Transform parent)
         {
             if (prefab == null) return null;
-            return (GameObject)UnityEditor.PrefabUtility.InstantiatePrefab(prefab, parent);
+#if UNITY_EDITOR
+            if (!Application.isPlaying)
+                return (GameObject)UnityEditor.PrefabUtility.InstantiatePrefab(prefab, parent);
+#endif
+            return Object.Instantiate(prefab, parent);
         }
 
         static Vector3 Marker(Transform root, string name, FuelStation station, float x)
@@ -265,11 +264,10 @@ namespace RoadDemo
             {
                 string path = folder + name + ".prefab";
                 if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
-                var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                var prefab = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                 if (prefab != null) return prefab;
             }
             return null;
         }
-#endif
     }
 }

@@ -172,15 +172,13 @@ namespace RoadDemo
             string key = directory + file;
             if (Cache.TryGetValue(key, out var held)) return held;
             AnimationClip found = null;
-#if UNITY_EDITOR
-            foreach (var asset in UnityEditor.AssetDatabase
+            foreach (var asset in RoadDemo.DemoAssetLoad
                          .LoadAllAssetRepresentationsAtPath(directory + file + ".fbx"))
                 if (asset is AnimationClip clip && !clip.name.StartsWith("__preview__"))
                 {
                     found = clip;
                     break;
                 }
-#endif
             Cache[key] = found;
             return found;
         }

@@ -214,7 +214,9 @@ namespace LivingCity.Ambient
                     // Explicit because the default is not something to bet on: a light left on Baked
                     // contributes nothing at all until a lightmap bake has been run, which looks
                     // exactly like a light that is not working.
+#if UNITY_EDITOR
                     light.lightmapBakeType = LightmapBakeType.Realtime;
+#endif
                     light.renderMode = LightRenderMode.ForcePixel;
 
                     // URP would add this itself on first use, but adding it here means the lamps

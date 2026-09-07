@@ -641,7 +641,6 @@ namespace RoadDemo
 
         void Awake()
         {
-#if UNITY_EDITOR
             _buildClock.Start();
             long prefabsAt = _buildClock.ElapsedMilliseconds;
             if (!LoadPrefabs()) return;
@@ -750,14 +749,13 @@ namespace RoadDemo
             Pass("BuildMap", BuildMap);
             Pass("BuildLotOverlay", BuildLotOverlay);
 
+            // physics only while a body exists (PhysicsGate)
+            if (GetComponent<PhysicsGate>() == null) gameObject.AddComponent<PhysicsGate>();
             Pass("OptimiseScene", OptimiseScene);
             Pass("AssignCullLayers", AssignCullLayers);
             ReportBuildTime();
             // the merge itself waits for the first Update: every Start (the night
             // windows, the map, the lamps) must see the pieces first
-#else
-            Debug.LogError("[RoadDemo] This demo loads Synty prefabs through the AssetDatabase and only runs in the editor.");
-#endif
         }
 
         void Update()
@@ -894,19 +892,13 @@ namespace RoadDemo
         }
 
         // A pack material as a runtime instance, so the demo can retune it without
-        // dirtying the shared asset. Null when the asset is gone (or in a player
-        // build) - every caller falls back to plain colour.
+        // dirtying the shared asset. Missing assets fall back to plain colour.
         static Material LoadMaterial(string path)
         {
-#if UNITY_EDITOR
             var src = RoadDemo.DemoAssetLoad.Load<Material>(path);
             return src != null ? new Material(src) : null;
-#else
-            return null;
-#endif
         }
 
-#if UNITY_EDITOR
         static GameObject Load(string path)
         {
             var go = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
@@ -919,7 +911,7 @@ namespace RoadDemo
             var paths = new List<string>();
             foreach (var guid in RoadDemo.DemoAssetLoad.Find("t:Prefab", folders))
             {
-                string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                string path = RoadDemo.DemoAssetLoad.GUIDToAssetPath(guid);
                 string low = path.ToLowerInvariant();
                 bool denied = false;
                 foreach (var deny in denySubstrings)
@@ -1143,14 +1135,14 @@ namespace RoadDemo
             var guids = RoadDemo.DemoAssetLoad.Find(
                 "t:Prefab", new[] { BlocksDir.TrimEnd('/') });
             System.Array.Sort(guids, (a, b) => string.CompareOrdinal(
-                UnityEditor.AssetDatabase.GUIDToAssetPath(a),
-                UnityEditor.AssetDatabase.GUIDToAssetPath(b)));
+                RoadDemo.DemoAssetLoad.GUIDToAssetPath(a),
+                RoadDemo.DemoAssetLoad.GUIDToAssetPath(b)));
 
             var loose = new List<string>();
             foreach (var guid in guids)
             {
                 var prefab = RoadDemo.DemoAssetLoad.Load<GameObject>(
-                    UnityEditor.AssetDatabase.GUIDToAssetPath(guid));
+                    RoadDemo.DemoAssetLoad.GUIDToAssetPath(guid));
                 if (prefab == null) continue;
                 _bakeNames.Add(prefab.name);
                 if (prefab == _blockPrefab) continue;
@@ -1273,7 +1265,6 @@ namespace RoadDemo
                              row >= 0 && row < blockDepths.Length;
             return inPalette ? $"{(char)('A' + column)}{row + 1}" : null;
         }
-#endif
 
         // The police station inside a block, or null. A bake's members are its direct
         // children and keep the prefab's name, which is the same test the feature packer
@@ -5169,7 +5160,6 @@ namespace RoadDemo
             sky.sun = _sun;
             sky.linearHaze = linearHaze;
 
-#if UNITY_EDITOR
             // (no cloud ring: the PalmCity ring was a slab of geometry turning over
             // the whole city for a few painted clouds, and it was asked off)
 
@@ -5186,7 +5176,6 @@ namespace RoadDemo
                 sky.skyDome = dome.transform;
                 sky.skyDomeRenderer = dome.GetComponentInChildren<Renderer>();
             }
-#endif
 
             // PalmCity's own colour grade over the top of all of it (the component
             // brings its own global Volume in)
@@ -5247,8 +5236,10 @@ namespace RoadDemo
         {
             var go = new GameObject("Audio");
             go.AddComponent<DemoAudio>().Init(_clock, _rig, _vehicles, _policeCars, _pedestrians);
-            // and the frame-time probe, writing Logs/perf-probe.txt every few seconds
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            // Detailed profiling remains available in the Editor and development builds.
             new GameObject("Perf Probe").AddComponent<DemoPerfProbe>();
+#endif
         }
 
         // ---------------------------------------------------- territory foundation

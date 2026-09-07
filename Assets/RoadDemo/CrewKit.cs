@@ -620,11 +620,9 @@ namespace RoadDemo
         /// asset's representations like the UAL takes, skipping the editor preview.</summary>
         static AnimationClip FbxClip(string path)
         {
-#if UNITY_EDITOR
-            foreach (var asset in UnityEditor.AssetDatabase.LoadAllAssetRepresentationsAtPath(path))
+            foreach (var asset in RoadDemo.DemoAssetLoad.LoadAllAssetRepresentationsAtPath(path))
                 if (asset is AnimationClip clip && !clip.name.StartsWith("__preview__"))
                     return clip;
-#endif
             return null;
         }
 
@@ -632,16 +630,14 @@ namespace RoadDemo
         /// asset, so they are found among its representations, not by path.</summary>
         public static AnimationClip UalClip(string name)
         {
-#if UNITY_EDITOR
             // Blender-exported takes arrive as "Armature|Pistol_Shoot": the take name
             // is what follows the bar. Preview clips (__preview__...) are not the take.
-            foreach (var asset in UnityEditor.AssetDatabase.LoadAllAssetRepresentationsAtPath(UalPath))
+            foreach (var asset in RoadDemo.DemoAssetLoad.LoadAllAssetRepresentationsAtPath(UalPath))
             {
                 if (!(asset is AnimationClip clip) || clip.name.StartsWith("__preview__")) continue;
                 if (clip.name == name || clip.name.EndsWith("|" + name))
                     return clip;
             }
-#endif
             return null;
         }
 
@@ -649,23 +645,17 @@ namespace RoadDemo
         /// an arms-only layer over the locomotion pack's run, not as a full-body idle.</summary>
         static AnimationClip AirportClip(string name)
         {
-#if UNITY_EDITOR
-            foreach (var asset in UnityEditor.AssetDatabase.LoadAllAssetRepresentationsAtPath(AirportAnimationPath))
+            foreach (var asset in RoadDemo.DemoAssetLoad.LoadAllAssetRepresentationsAtPath(AirportAnimationPath))
             {
                 if (!(asset is AnimationClip clip) || clip.name.StartsWith("__preview__")) continue;
                 if (clip.name == name) return clip;
             }
-#endif
             return null;
         }
 
         static T Load<T>(string path) where T : Object
         {
-#if UNITY_EDITOR
             return RoadDemo.DemoAssetLoad.Load<T>(path);
-#else
-            return null;
-#endif
         }
     }
 }

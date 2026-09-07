@@ -70,11 +70,9 @@ namespace RoadDemo
         {
             get
             {
-#if UNITY_EDITOR
                 if (!_carGlyph)
                     _carGlyph = DemoAssetLoad.Load<GameObject>(
                         "Assets/Synty/PolygonIcons/Prefabs/SM_Icon_Car_01.prefab");
-#endif
                 return _carGlyph;
             }
         }

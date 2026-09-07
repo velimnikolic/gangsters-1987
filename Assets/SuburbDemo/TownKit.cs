@@ -196,43 +196,31 @@ namespace SuburbDemo
         /// folder - the clusters lifted off the demo scene name their pieces, not their paths.</summary>
         public static GameObject LoadByName(string name)
         {
-#if UNITY_EDITOR
             if (_byName == null)
             {
                 _byName = new Dictionary<string, string>();
-                foreach (var guid in UnityEditor.AssetDatabase.FindAssets("t:Prefab", new[] { Root.TrimEnd('/') }))
+                foreach (var guid in RoadDemo.DemoAssetLoad.Find("t:Prefab", new[] { Root.TrimEnd('/') }))
                 {
-                    var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                    var path = RoadDemo.DemoAssetLoad.GUIDToAssetPath(guid);
                     var stem = System.IO.Path.GetFileNameWithoutExtension(path);
                     if (!_byName.ContainsKey(stem)) _byName[stem] = path;
                 }
             }
-            if (_byName.TryGetValue(name, out var p)) return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(p);
+            if (_byName.TryGetValue(name, out var p)) return RoadDemo.DemoAssetLoad.Load<GameObject>(p);
             Debug.LogWarning("[SuburbDemo] missing prefab (by name) " + name);
             return null;
-#else
-            return null;
-#endif
         }
 
         public static GameObject Load(string path)
         {
-#if UNITY_EDITOR
-            var go = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            var go = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
             if (go == null) Debug.LogWarning("[SuburbDemo] missing prefab " + path);
             return go;
-#else
-            return null;
-#endif
         }
 
         public static GameObject TryLoad(string path)
         {
-#if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
-#else
-            return null;
-#endif
+            return RoadDemo.DemoAssetLoad.Load<GameObject>(path);
         }
 
         public static List<GameObject> LoadAll(IEnumerable<string> paths)
@@ -248,13 +236,9 @@ namespace SuburbDemo
 
         public static Material LoadMaterial(string path)
         {
-#if UNITY_EDITOR
-            var m = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(path);
+            var m = RoadDemo.DemoAssetLoad.Load<Material>(path);
             if (m == null) Debug.LogWarning("[SuburbDemo] missing material " + path);
             return m;
-#else
-            return null;
-#endif
         }
 
         /// <summary>Swaps every PolygonTown atlas slot on the instance for the given

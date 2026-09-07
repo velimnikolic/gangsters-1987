@@ -54,7 +54,6 @@ namespace RoadDemo
         void Awake()
         {
             if (!Application.isPlaying) return;
-#if UNITY_EDITOR
             if (!ValidFrame()) return;
 
             _liveRoot = new GameObject("Live Fuel Activity").transform;
@@ -101,9 +100,6 @@ namespace RoadDemo
                       $"{_customers.Count} fuel customer(s), {_walkers.Count} shop walker(s), " +
                       $"{_station.Bays.Length} pump bay(s), " +
                       $"{(_ownsNet ? "standalone logical road" : "city road") }.");
-#else
-            Debug.LogError("[FuelBlock] The preview loads Synty bodies in the editor only.");
-#endif
         }
 
         void Update()
@@ -262,7 +258,6 @@ namespace RoadDemo
 
         void BuildCustomers(PedClips clips)
         {
-#if UNITY_EDITOR
             if (_station?.Lane == null || fuelCustomers <= 0) return;
             var cars = CarBodies();
             var people = PassersBy();
@@ -309,7 +304,6 @@ namespace RoadDemo
                 StreetTraffic.Users.Add(car);
                 _customers.Add(car);
             }
-#endif
         }
 
         FuelDriver MakeDriver(GameObject prefab, PedClips clips, Transform root)
@@ -333,7 +327,6 @@ namespace RoadDemo
 
         void BuildStationWalkers(PedClips clips)
         {
-#if UNITY_EDITOR
             if (_station == null || stationWalkers <= 0 || clips.Walk == null || clips.Idle == null)
                 return;
 
@@ -382,7 +375,6 @@ namespace RoadDemo
                 agent.Setup(_life);
                 _walkers.Add(agent);
             }
-#endif
         }
 
         void WireDoor(Vector3 pos, Vector3 outward)
@@ -449,15 +441,13 @@ namespace RoadDemo
 
         static GameObject FindVehicle(string name)
         {
-#if UNITY_EDITOR
             for (int i = 0; i < VehicleFolders.Length; i++)
             {
                 string path = VehicleFolders[i] + name + ".prefab";
                 if (LivingCity.Gameplay.VehicleCatalog.IsMarkedService(path)) continue;
-                var prefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                var prefab = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                 if (prefab != null) return prefab;
             }
-#endif
             return null;
         }
 
@@ -465,26 +455,24 @@ namespace RoadDemo
         {
             if (_people != null) return _people;
             _people = new List<GameObject>();
-#if UNITY_EDITOR
             foreach (var folder in new[]
             {
                 "Assets/Synty/PolygonCity/Prefabs/Characters",
                 "Assets/Synty/PolygonPalmCity/Prefabs/Characters",
             })
-                foreach (string guid in UnityEditor.AssetDatabase.FindAssets("t:Prefab", new[] { folder }))
+                foreach (string guid in RoadDemo.DemoAssetLoad.Find("t:Prefab", new[] { folder }))
                 {
-                    string path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                    string path = RoadDemo.DemoAssetLoad.GUIDToAssetPath(guid);
                     string file = System.IO.Path.GetFileNameWithoutExtension(path);
                     string lower = file.ToLowerInvariant();
                     if (lower.Contains("police") || lower.Contains("attach")) continue;
                     if (LivingCity.Gangs.GangLooks.IsGangBody(file)) continue;
                     if (LivingCity.Entities.CrowdLooks.IsBarred(file)) continue;
-                    var go = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                    var go = RoadDemo.DemoAssetLoad.Load<GameObject>(path);
                     var animator = go != null ? go.GetComponentInChildren<Animator>() : null;
                     if (animator == null || animator.avatar == null || !animator.avatar.isHuman) continue;
                     _people.Add(go);
                 }
-#endif
             return _people;
         }
 

@@ -34,11 +34,7 @@ namespace RoadDemo
 
         public static GameObject TryLoad(string path)
         {
-#if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(path);
-#else
-            return null;
-#endif
+            return RoadDemo.DemoAssetLoad.Load<GameObject>(path);
         }
 
         static readonly Dictionary<GameObject, Bounds> Measured = new Dictionary<GameObject, Bounds>();

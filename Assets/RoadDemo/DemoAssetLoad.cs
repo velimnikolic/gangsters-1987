@@ -3,19 +3,8 @@ using UnityEngine;
 namespace RoadDemo
 {
     /// <summary>
-    /// Timed wrapper around the demo's runtime asset loads.
-    ///
-    /// This demo is editor-only and pulls its prefabs straight out of the
-    /// AssetDatabase, which is fine at build time - but several call sites are LAZY:
-    /// they fire the first time a system needs its prop, minutes into Play. An
-    /// AssetDatabase load is native editor code, so it appears in NO profiler marker;
-    /// a slow one reads as a frame that simply stopped, with no CPU in it and nothing
-    /// allocated. Loading one prefab pulls its whole dependency chain (materials,
-    /// textures, meshes) and, on a machine whose page cache has been swapped out, that
-    /// chain comes off disk.
-    ///
-    /// So every lazy load goes through here and says so when it is dear. Costs one
-    /// Stopwatch per load; the threshold keeps the log quiet.
+    /// Shared path-based loading: AssetDatabase in the Editor, packaged content in
+    /// a Player. Lazy requests keep the same paths and load only their dependencies.
     /// </summary>
     public static class DemoAssetLoad
     {
@@ -42,7 +31,7 @@ namespace RoadDemo
                 Debug.Log($"[assetload] {Clock.ElapsedMilliseconds} ms  {typeof(T).Name}  {path}");
             return asset;
 #else
-            return null;
+            return PlayerAssetBundle.Load<T>(path);
 #endif
         }
 
@@ -57,7 +46,7 @@ namespace RoadDemo
                 Debug.Log($"[assetload] {Clock.ElapsedMilliseconds} ms  FindAssets(\"{filter}\", {folders.Length} folders) -> {guids.Length} hits");
             return guids;
 #else
-            return new string[0];
+            return PlayerAssetBundle.Find(filter, folders);
 #endif
         }
 
@@ -73,7 +62,26 @@ namespace RoadDemo
                 Debug.Log($"[assetload] {Clock.ElapsedMilliseconds} ms  FindAssets(\"{filter}\") -> {guids.Length} hits");
             return guids;
 #else
-            return new string[0];
+            return PlayerAssetBundle.Find(filter, null);
+#endif
+        }
+
+        public static string GUIDToAssetPath(string guid)
+        {
+#if UNITY_EDITOR
+            return UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+#else
+            // Player searches return canonical asset paths instead of editor GUIDs.
+            return guid;
+#endif
+        }
+
+        public static Object[] LoadAllAssetRepresentationsAtPath(string path)
+        {
+#if UNITY_EDITOR
+            return UnityEditor.AssetDatabase.LoadAllAssetRepresentationsAtPath(path);
+#else
+            return PlayerAssetBundle.LoadAll(path);
 #endif
         }
     }

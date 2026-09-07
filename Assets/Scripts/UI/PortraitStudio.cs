@@ -267,7 +267,6 @@ namespace LivingCity.UI
         /// </summary>
         static GameObject EditorFallback(string prefabName, bool vehicle = false)
         {
-#if UNITY_EDITOR
             if (string.IsNullOrEmpty(prefabName))
                 return null;
 
@@ -280,7 +279,7 @@ namespace LivingCity.UI
                     continue;
                 foreach (var guid in RoadDemo.DemoAssetLoad.Find(candidate + " t:Prefab"))
                 {
-                    var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guid);
+                    var path = RoadDemo.DemoAssetLoad.GUIDToAssetPath(guid);
                     if (System.IO.Path.GetFileNameWithoutExtension(path) != candidate)
                         continue;
                     // A name alone is not enough to pick a body with. Two packs ship a
@@ -300,7 +299,6 @@ namespace LivingCity.UI
                     return prefab;
                 }
             }
-#endif
             return null;
         }
 
